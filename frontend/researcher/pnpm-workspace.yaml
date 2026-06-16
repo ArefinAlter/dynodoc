@@ -1,0 +1,5 @@
+# pnpm 11 reads settings from here. Allow esbuild (pulled in by Vite) to run its
+# install script; pnpm blocks dependency build scripts by default as a
+# supply-chain safeguard.
+allowBuilds:
+  esbuild: true

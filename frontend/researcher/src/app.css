@@ -1,0 +1,34 @@
+/* Global design-system base. Mirrors src/lib/tokens.ts (docs/01 §6, docs/19). */
+:root {
+  --color-parchment: #f4efe6;
+  --color-terracotta: #b14b2c;
+  --color-ink: #2b2622;
+  --color-muted: #6b635a;
+  --color-rule: #dcd3c4;
+
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-body: 'Source Serif 4', Georgia, serif;
+  --font-ui: 'IBM Plex Sans', system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--color-parchment);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--color-terracotta);
+}

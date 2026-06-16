@@ -1,0 +1,111 @@
+# dynodoc task runner (go-task — https://taskfile.dev).
+# Cross-platform; chosen over GNU Make for first-class Windows/PowerShell support.
+#
+# Quick start:
+#   task setup     # one-time: copy .env, install frontend deps
+#   task dev       # boot Postgres, run migrations, start API + frontend
+#   task test      # run all test suites
+version: "3"
+
+dotenv: [".env"]
+
+vars:
+  COMPOSE: docker compose -f infra/docker-compose.yml
+  FRONTEND: frontend/researcher
+
+tasks:
+  default:
+    cmds:
+      - task --list
+    silent: true
+
+  setup:
+    desc: One-time local setup — create .env and install frontend deps.
+    cmds:
+      - cmd: cp .env.example .env
+        platforms: [linux, darwin]
+      - cmd: powershell -NoProfile -Command "if (-not (Test-Path .env)) { Copy-Item .env.example .env }"
+        platforms: [windows]
+      - cd {{.FRONTEND}} && pnpm install
+
+  # --- Infrastructure ---
+  up:
+    desc: Start the Postgres container in the background.
+    cmds:
+      - "{{.COMPOSE}} up -d"
+      - "{{.COMPOSE}} exec -T postgres sh -c 'until pg_isready -U dynodoc -d dynodoc; do sleep 1; done'"
+
+  down:
+    desc: Stop the Postgres container (keeps data volume).
+    cmds:
+      - "{{.COMPOSE}} down"
+
+  # --- Migrations (schema lands in stage 13) ---
+  migrate:
+    desc: Apply pending database migrations.
+    deps: [up]
+    cmds:
+      - sqlx migrate run --source migrations
+
+  migrate-reset:
+    desc: DEV ONLY — drop the database and re-apply all migrations.
+    deps: [up]
+    cmds:
+      - sqlx database drop -y
+      - sqlx database create
+      - sqlx migrate run --source migrations
+
+  # --- Dev (long-running; runs API + frontend concurrently) ---
+  dev:
+    desc: Boot the full local stack (Postgres, migrations, API, frontend).
+    deps: [migrate]
+    cmds:
+      - task: dev:run
+
+  dev:run:
+    internal: true
+    deps: [dev:api, dev:frontend]
+
+  dev:api:
+    internal: true
+    cmds:
+      - cargo run -p engine-api
+
+  dev:frontend:
+    internal: true
+    cmds:
+      - cd {{.FRONTEND}} && pnpm dev
+
+  # --- Quality ---
+  test:
+    desc: Run all test suites (Rust + frontend).
+    cmds:
+      - cargo test --workspace
+      - cd {{.FRONTEND}} && pnpm test
+
+  lint:
+    desc: Lint Rust (clippy) and frontend (eslint + svelte-check).
+    cmds:
+      - cargo clippy --workspace --all-targets -- -D warnings
+      - cd {{.FRONTEND}} && pnpm lint
+
+  fmt:
+    desc: Format Rust and frontend code.
+    cmds:
+      - cargo fmt --all
+      - cd {{.FRONTEND}} && pnpm format
+
+  fmt-check:
+    desc: Verify formatting without writing changes (used by CI).
+    cmds:
+      - cargo fmt --all -- --check
+      - cd {{.FRONTEND}} && pnpm format:check
+
+  clean:
+    desc: Remove build artifacts (target/, .svelte-kit/, node_modules/).
+    cmds:
+      - cargo clean
+      - cmd: rm -rf {{.FRONTEND}}/.svelte-kit {{.FRONTEND}}/build {{.FRONTEND}}/node_modules
+        platforms: [linux, darwin]
+      - cmd: powershell -NoProfile -Command "Remove-Item -Recurse -Force -ErrorAction SilentlyContinue {{.FRONTEND}}/.svelte-kit,{{.FRONTEND}}/build,{{.FRONTEND}}/node_modules"
+        platforms: [windows]

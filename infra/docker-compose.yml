@@ -1,0 +1,35 @@
+# Local dev stack for the dynodoc PoC.
+#
+# Scope (per the PoC brief): one Postgres container only. The Rust API binary and
+# the SvelteKit dev server run on the host via the Taskfile, not in containers, so
+# that hot-reload and debugging stay fast. MinIO and Redis from the full-platform
+# design are intentionally omitted: PoC snapshots stay in Postgres JSONB and
+# ephemeral state (idempotency, rate windows) is Postgres-backed.
+name: dynodoc
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: dynodoc-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: dynodoc
+      POSTGRES_PASSWORD: dynodoc
+      POSTGRES_DB: dynodoc
+      # Deterministic, UTC-everywhere (the schema uses TIMESTAMPTZ exclusively).
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      # Bind to localhost only — never expose Postgres on 0.0.0.0 in dev.
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - dynodoc-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dynodoc -d dynodoc"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  dynodoc-pgdata:
+    name: dynodoc-pgdata

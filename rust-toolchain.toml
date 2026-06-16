@@ -1,0 +1,8 @@
+# Pin the Rust toolchain so the engine builds identically across the team and CI.
+# Update quarterly (per docs/12-build-repo-and-environment.md). The doc's original
+# 1.83.0 pin predates the current crate ecosystem (edition2024 deps require 1.85+);
+# pinned to the current stable as of 2026-06.
+[toolchain]
+channel = "1.96.0"
+components = ["rustfmt", "clippy"]
+profile = "default"

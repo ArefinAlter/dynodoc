@@ -1,0 +1,15 @@
+[package]
+name = "engine-shared"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Types shared across the dynodoc engine (events, nodes, identity newtypes)."
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+ulid = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }

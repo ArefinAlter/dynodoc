@@ -1,0 +1,37 @@
+# --- Rust ---
+/target/
+**/target/
+*.rs.bk
+Cargo.lock.orig
+
+# --- Node / SvelteKit ---
+node_modules/
+.svelte-kit/
+build/
+.output/
+.vercel/
+.netlify/
+dist/
+*.tsbuildinfo
+.pnpm-store/
+
+# --- Playwright ---
+test-results/
+playwright-report/
+playwright/.cache/
+
+# --- Environment / secrets ---
+.env
+.env.*
+!.env.example
+
+# --- Editor / OS ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# --- Docker / data volumes (if bind-mounted locally) ---
+/infra/data/
