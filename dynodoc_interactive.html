@@ -1,0 +1,3183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dynodoc — Interactive Prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,500&family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+Bengali:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #F4EFE6;
+    --surface: #FBF8F1;
+    --surface-elevated: #FFFEF9;
+    --ink: #1A1612;
+    --ink-muted: #5C544A;
+    --ink-subtle: #8A8170;
+    --border: #DDD3C3;
+    --border-strong: #C4B8A4;
+    --accent: #B14B2C;
+    --accent-soft: #E5C5B6;
+    --accent-bg: #F5E6DD;
+    --agent: #4A6741;
+    --agent-soft: #C8D4BC;
+    --agent-bg: #E5EBDD;
+    --suggest: #7B8F50;
+    --suggest-bg: #EDF1DD;
+    --warn: #C18A3F;
+    --warn-bg: #F5E6CC;
+
+    --font-display: 'Fraunces', Georgia, serif;
+    --font-body: 'Source Serif 4', Georgia, serif;
+    --font-ui: 'IBM Plex Sans', system-ui, sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+    --font-bn: 'Noto Sans Bengali', var(--font-body);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  button { font-family: inherit; cursor: pointer; }
+  [hidden] { display: none !important; }
+
+  /* ============= TOP BAR ============= */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 32px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 50;
+  }
+
+  .brand { display: flex; align-items: center; gap: 14px; font-family: var(--font-ui); }
+
+  .brand-mark {
+    width: 28px; height: 28px;
+    background: var(--ink); border-radius: 4px;
+    display: grid; place-items: center;
+    color: var(--bg);
+    font-family: var(--font-display);
+    font-weight: 600; font-size: 18px; font-style: italic;
+  }
+
+  .breadcrumb {
+    font-family: var(--font-ui);
+    font-size: 13px;
+    color: var(--ink-muted);
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  .breadcrumb strong { color: var(--ink); font-weight: 500; }
+  .breadcrumb .sep { color: var(--ink-subtle); }
+
+  .version-badge {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    background: var(--accent-bg);
+    color: var(--accent);
+    padding: 2px 8px;
+    border-radius: 3px;
+    margin-left: 4px;
+    letter-spacing: 0.02em;
+  }
+
+  /* Mode toggle */
+  .mode-toggle {
+    display: flex;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 2px;
+    font-family: var(--font-ui);
+    font-size: 13px;
+  }
+
+  .mode-toggle button {
+    background: transparent; border: none;
+    padding: 6px 14px;
+    color: var(--ink-muted);
+    border-radius: 4px;
+    transition: all 0.15s ease;
+    font-weight: 400; font-size: inherit;
+  }
+
+  .mode-toggle button.active {
+    background: var(--ink); color: var(--bg); font-weight: 500;
+  }
+
+  .mode-toggle button:hover:not(.active) { color: var(--ink); }
+
+  .topbar-actions {
+    display: flex; align-items: center; gap: 12px;
+    font-family: var(--font-ui); font-size: 13px;
+  }
+
+  /* Suggesting toggle — explicit, prominent */
+  .suggest-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--ink-muted);
+    font-family: var(--font-ui);
+    font-size: 13px;
+    transition: all 0.15s;
+  }
+  .suggest-toggle:hover { border-color: var(--ink-muted); color: var(--ink); }
+  .suggest-toggle.active {
+    background: var(--suggest-bg);
+    border-color: var(--suggest);
+    color: var(--suggest);
+    font-weight: 500;
+  }
+  .suggest-toggle .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--ink-subtle);
+  }
+  .suggest-toggle.active .dot { background: var(--suggest); }
+
+  .icon-btn {
+    width: 32px; height: 32px;
+    border-radius: 6px;
+    background: transparent;
+    border: 1px solid transparent;
+    display: grid; place-items: center;
+    color: var(--ink-muted);
+    transition: all 0.15s;
+    position: relative;
+  }
+  .icon-btn:hover { background: var(--bg); border-color: var(--border); color: var(--ink); }
+  .icon-btn .badge {
+    position: absolute; top: 2px; right: 2px;
+    width: 7px; height: 7px;
+    background: var(--accent);
+    border-radius: 50%;
+    border: 1.5px solid var(--surface);
+  }
+  .icon-btn svg { width: 16px; height: 16px; }
+
+  .share-btn {
+    background: var(--ink); color: var(--bg);
+    border: none;
+    padding: 7px 14px; border-radius: 6px;
+    font-family: var(--font-ui); font-size: 13px; font-weight: 500;
+  }
+  .share-btn:hover { background: #2C2620; }
+
+  .avatar-stack { display: flex; }
+  .avatar {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    border: 2px solid var(--surface);
+    margin-left: -8px;
+    display: grid; place-items: center;
+    color: white;
+    font-family: var(--font-ui);
+    font-size: 11px; font-weight: 500;
+  }
+  .avatar:first-child { margin-left: 0; }
+  .avatar.a-verne { background: #8B5A3C; }
+  .avatar.a-aluk { background: #4A6741; }
+  .avatar.a-rahman { background: #6B7B8C; }
+  .avatar.a-agent { background: var(--agent); position: relative; }
+
+  /* ============= SUGGESTING MODE BANNER ============= */
+  .suggesting-banner {
+    background: var(--suggest-bg);
+    border-bottom: 1px solid var(--suggest);
+    color: #4A5630;
+    padding: 8px 32px;
+    font-family: var(--font-ui);
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    position: sticky;
+    top: 60px;
+    z-index: 49;
+  }
+  .suggesting-banner strong { font-weight: 500; }
+
+  /* ============= LAYOUT ============= */
+  .workspace {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    min-height: calc(100vh - 60px);
+    transition: grid-template-columns 0.2s ease;
+  }
+  body.no-inspector .workspace { grid-template-columns: 1fr; }
+
+  .main-col {
+    display: flex;
+    justify-content: center;
+    padding: 40px 32px 80px;
+  }
+
+  .document { width: 100%; max-width: 720px; }
+
+  /* ============= DOCUMENT HEADER ============= */
+  .doc-header {
+    margin-bottom: 56px;
+    padding-bottom: 28px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .doc-overline {
+    font-family: var(--font-ui);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--ink-subtle);
+    margin-bottom: 12px;
+  }
+
+  .doc-title {
+    font-family: var(--font-display);
+    font-size: 38px; line-height: 1.1;
+    font-weight: 400;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+    margin-bottom: 14px;
+  }
+
+  .doc-title em { font-style: italic; font-weight: 300; }
+
+  .doc-meta {
+    font-family: var(--font-ui);
+    font-size: 13px;
+    color: var(--ink-muted);
+    display: flex; gap: 20px; flex-wrap: wrap;
+  }
+  .doc-meta strong { color: var(--ink); font-weight: 500; }
+
+  /* ============= SECTIONS ============= */
+  .section { margin-bottom: 48px; }
+
+  .section-header {
+    display: flex; align-items: baseline; gap: 16px;
+    margin-bottom: 28px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .section-num {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 16px;
+    color: var(--accent);
+    font-weight: 500;
+  }
+
+  .section-title {
+    font-family: var(--font-display);
+    font-size: 22px; font-weight: 500;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+  }
+
+  .section-meta {
+    font-family: var(--font-ui);
+    font-size: 11px;
+    color: var(--ink-subtle);
+    margin-left: auto;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+
+  /* Module banner */
+  .module-banner {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px;
+    padding: 14px 18px;
+    background: var(--accent-bg);
+    border-left: 3px solid var(--accent);
+    margin-bottom: 24px;
+    border-radius: 0 4px 4px 0;
+  }
+  .module-banner-content { display: flex; align-items: baseline; gap: 12px; }
+  .module-tag {
+    font-family: var(--font-mono); font-size: 11px;
+    background: var(--accent); color: white;
+    padding: 2px 7px; border-radius: 3px;
+    letter-spacing: 0.02em; font-weight: 500;
+  }
+  .module-name {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 15px;
+    color: var(--ink); font-weight: 500;
+  }
+  .module-cite { font-family: var(--font-ui); font-size: 12px; color: var(--ink-muted); }
+
+  /* ============= ITEMS ============= */
+  .item {
+    position: relative;
+    display: grid;
+    grid-template-columns: 40px 1fr;
+    gap: 16px;
+    padding: 14px 16px;
+    margin-left: -16px;
+    border-radius: 4px;
+    transition: background 0.12s ease;
+    cursor: pointer;
+  }
+  .item:hover { background: rgba(225, 215, 195, 0.25); }
+  .item.selected {
+    background: var(--surface-elevated);
+    box-shadow: -3px 0 0 var(--accent), 0 1px 2px rgba(0,0,0,0.04);
+  }
+
+  .gutter {
+    display: flex; flex-direction: column;
+    align-items: flex-end; gap: 6px;
+    padding-top: 4px;
+  }
+
+  .gutter-num {
+    font-family: var(--font-ui);
+    font-size: 13px;
+    color: var(--ink-subtle);
+    font-variant-numeric: tabular-nums;
+    transition: color 0.15s ease;
+  }
+  .item.selected .gutter-num { color: var(--accent); font-weight: 500; }
+
+  .gutter-actions {
+    display: flex; flex-direction: column; gap: 4px;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .item:hover .gutter-actions, .item.selected .gutter-actions { opacity: 1; }
+
+  .gutter-btn {
+    width: 22px; height: 22px;
+    display: grid; place-items: center;
+    background: transparent; border: none;
+    border-radius: 3px;
+    color: var(--ink-subtle);
+    transition: all 0.12s;
+  }
+  .gutter-btn:hover { background: var(--bg); color: var(--ink); }
+  .gutter-btn svg { width: 14px; height: 14px; }
+
+  .item-body { min-width: 0; }
+
+  .item-text {
+    font-family: var(--font-body);
+    font-size: 17px; line-height: 1.55;
+    color: var(--ink);
+    margin-bottom: 8px;
+    outline: none;
+    border-radius: 3px;
+    padding: 1px 2px;
+    margin-left: -2px;
+    transition: background 0.15s;
+  }
+  .item-text[contenteditable="true"]:focus {
+    background: rgba(255,255,249,0.8);
+    box-shadow: 0 0 0 2px var(--accent-soft);
+  }
+  body.suggesting .item-text[contenteditable="true"]:focus {
+    box-shadow: 0 0 0 2px var(--suggest);
+  }
+  .item-text em { font-style: italic; }
+
+  .item-meta {
+    font-family: var(--font-ui);
+    font-size: 12px;
+    color: var(--ink-subtle);
+    display: flex; align-items: center; gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 4px;
+  }
+
+  .type-pill {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--ink-muted);
+    background: rgba(196, 184, 164, 0.3);
+    padding: 1px 6px; border-radius: 2px;
+    letter-spacing: 0.02em;
+  }
+
+  .logic-pill {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--warn);
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+
+  .item-indicators {
+    position: absolute;
+    right: 16px; top: 18px;
+    display: flex; gap: 6px;
+  }
+
+  .indicator {
+    font-family: var(--font-ui);
+    font-size: 11px;
+    padding: 2px 7px; border-radius: 10px;
+    display: inline-flex; align-items: center; gap: 3px;
+  }
+  .indicator-comment { background: var(--bg); color: var(--ink-muted); border: 1px solid var(--border); }
+  .indicator-suggestion { background: var(--suggest-bg); color: var(--suggest); border: 1px solid var(--suggest); }
+
+  .choices { margin-top: 10px; padding-left: 4px; }
+  .choice {
+    font-family: var(--font-body);
+    font-size: 15.5px;
+    color: var(--ink);
+    padding: 3px 0;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .choice::before {
+    content: '';
+    width: 14px; height: 14px;
+    border: 1.5px solid var(--ink-subtle);
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+  .choice.radio::before { border-radius: 50%; }
+  .choice.bn { font-family: var(--font-bn); }
+
+  /* Inline suggestion card */
+  .suggestion-card {
+    margin: 8px 0 4px 56px;
+    border-left: 2px solid var(--suggest);
+    background: var(--suggest-bg);
+    padding: 12px 16px;
+    border-radius: 0 4px 4px 0;
+    font-family: var(--font-ui);
+    font-size: 13px;
+    animation: slideIn 0.25s ease;
+  }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .suggestion-header {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 8px;
+    font-size: 12px;
+    color: var(--suggest); font-weight: 500;
+  }
+  .suggestion-header.from-agent { color: var(--agent); }
+  .suggestion-author { color: var(--ink); font-weight: 500; }
+  .suggestion-time { color: var(--ink-subtle); font-weight: 400; margin-left: auto; }
+
+  .suggestion-body {
+    font-family: var(--font-body);
+    font-size: 14.5px;
+    color: var(--ink);
+    line-height: 1.5;
+    margin-bottom: 8px;
+  }
+
+  .suggestion-diff {
+    background: var(--surface-elevated);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 8px 10px; margin-bottom: 10px;
+    font-family: var(--font-body);
+    font-size: 14px; line-height: 1.45;
+  }
+
+  .diff-add {
+    background: rgba(123, 143, 80, 0.18);
+    color: var(--ink); padding: 0 1px;
+  }
+  .diff-remove {
+    background: rgba(177, 75, 44, 0.12);
+    color: var(--ink-muted);
+    text-decoration: line-through;
+    text-decoration-color: var(--accent);
+    padding: 0 1px;
+  }
+
+  .suggestion-rationale {
+    font-size: 13px;
+    color: var(--ink-muted);
+    margin-bottom: 10px;
+    line-height: 1.5;
+  }
+
+  .suggestion-actions { display: flex; gap: 8px; align-items: center; }
+
+  .sug-btn {
+    font-family: var(--font-ui);
+    font-size: 12px;
+    padding: 5px 12px;
+    border-radius: 4px;
+    border: none;
+    font-weight: 500;
+    transition: all 0.12s;
+  }
+  .sug-btn.accept { background: var(--suggest); color: white; }
+  .sug-btn.accept:hover { background: #6A7E42; }
+  .sug-btn.reject { background: transparent; color: var(--ink-muted); border: 1px solid var(--border); }
+  .sug-btn.reject:hover { color: var(--ink); border-color: var(--ink-muted); }
+  .sug-btn.reply { background: transparent; color: var(--ink-muted); }
+  .sug-btn.reply:hover { color: var(--ink); }
+
+  /* Comment thread */
+  .comment-thread {
+    margin: 8px 0 4px 56px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 16px;
+    animation: slideIn 0.25s ease;
+  }
+
+  .comment {
+    display: flex; gap: 12px;
+    padding: 8px 0;
+  }
+  .comment + .comment {
+    border-top: 1px dashed var(--border);
+    margin-top: 4px;
+    padding-top: 12px;
+  }
+
+  .comment-avatar {
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    display: grid; place-items: center;
+    font-family: var(--font-ui);
+    font-size: 10.5px; color: white; font-weight: 500;
+  }
+
+  .comment-body { flex: 1; min-width: 0; }
+  .comment-meta {
+    font-family: var(--font-ui);
+    font-size: 12px;
+    margin-bottom: 4px;
+    display: flex; align-items: baseline; gap: 8px;
+  }
+  .comment-author { font-weight: 500; color: var(--ink); }
+  .comment-author.is-agent { color: var(--agent); }
+  .comment-time { color: var(--ink-subtle); font-size: 11px; }
+
+  .comment-text {
+    font-family: var(--font-body);
+    font-size: 14.5px; line-height: 1.5;
+    color: var(--ink);
+  }
+  .comment-text .mention {
+    background: var(--agent-bg); color: var(--agent);
+    padding: 0 4px; border-radius: 3px;
+    font-weight: 500;
+    font-family: var(--font-ui); font-size: 13px;
+  }
+
+  .agent-output {
+    margin-top: 8px;
+    padding: 10px 12px;
+    background: var(--surface-elevated);
+    border-left: 2px solid var(--agent);
+    border-radius: 0 3px 3px 0;
+    font-size: 14px;
+    color: var(--ink);
+  }
+  .agent-output.bn { font-family: var(--font-bn); font-size: 15px; }
+  .agent-output .label {
+    font-family: var(--font-ui);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--agent);
+    font-weight: 600;
+    margin-bottom: 6px;
+    display: block;
+  }
+
+  .comment-actions {
+    margin-top: 8px;
+    display: flex; gap: 8px; align-items: center;
+  }
+
+  .comment-input {
+    margin-top: 12px;
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .comment-input-field {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 7px 10px;
+    font-family: var(--font-ui);
+    font-size: 13px;
+    color: var(--ink);
+  }
+  .comment-input-field:focus { outline: none; border-color: var(--accent); }
+
+  .comment-send {
+    background: var(--ink); color: white;
+    border: none;
+    padding: 7px 12px; border-radius: 4px;
+    font-family: var(--font-ui); font-size: 12px; font-weight: 500;
+  }
+  .comment-send:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* Agent typing indicator */
+  .agent-typing {
+    display: flex; gap: 12px; padding: 8px 0;
+    border-top: 1px dashed var(--border); margin-top: 4px; padding-top: 12px;
+  }
+  .agent-typing .comment-avatar { background: var(--agent); }
+  .typing-dots {
+    display: flex; gap: 4px; align-items: center; height: 26px;
+  }
+  .typing-dots span {
+    width: 6px; height: 6px;
+    background: var(--agent);
+    border-radius: 50%;
+    animation: bounce 1.4s infinite ease-in-out;
+  }
+  .typing-dots span:nth-child(2) { animation-delay: 0.16s; }
+  .typing-dots span:nth-child(3) { animation-delay: 0.32s; }
+  @keyframes bounce {
+    0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; }
+    40% { transform: scale(1); opacity: 1; }
+  }
+
+  /* ============= INSPECTOR ============= */
+  .inspector {
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    overflow-y: auto;
+    position: sticky;
+    top: 60px;
+    height: calc(100vh - 60px);
+  }
+
+  .inspector-empty {
+    padding: 60px 32px;
+    text-align: center;
+    color: var(--ink-subtle);
+    font-family: var(--font-ui);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .inspector-empty svg {
+    width: 36px; height: 36px;
+    color: var(--ink-subtle);
+    opacity: 0.4;
+    margin-bottom: 16px;
+  }
+  .inspector-empty strong {
+    color: var(--ink-muted); font-weight: 500;
+    display: block; margin-bottom: 6px;
+  }
+
+  .inspector-header {
+    padding: 24px 24px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .inspector-overline {
+    font-family: var(--font-ui);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--ink-subtle);
+    margin-bottom: 6px;
+  }
+
+  .inspector-title {
+    font-family: var(--font-display);
+    font-size: 18px; font-weight: 500;
+    color: var(--ink); line-height: 1.3;
+    letter-spacing: -0.01em;
+  }
+
+  .inspector-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    gap: 20px;
+    font-family: var(--font-ui);
+    font-size: 13px;
+  }
+
+  .inspector-tab {
+    padding: 10px 0;
+    color: var(--ink-subtle);
+    background: transparent; border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: all 0.15s;
+  }
+  .inspector-tab.active { color: var(--ink); border-bottom-color: var(--accent); font-weight: 500; }
+  .inspector-tab:hover:not(.active) { color: var(--ink-muted); }
+
+  .inspector-section {
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .inspector-section-label {
+    font-family: var(--font-ui);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--ink-subtle);
+    margin-bottom: 12px;
+    font-weight: 500;
+  }
+
+  .field {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 0;
+    font-family: var(--font-ui); font-size: 13px;
+  }
+  .field-label { color: var(--ink-muted); }
+  .field-value {
+    color: var(--ink); font-weight: 500;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    background: var(--bg);
+    padding: 2px 7px;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+    min-width: 80px;
+    text-align: right;
+  }
+
+  .choice-editor-list { list-style: none; padding: 0; }
+  .choice-editor-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 0;
+    font-family: var(--font-ui);
+    font-size: 13px;
+    color: var(--ink);
+    border-bottom: 1px solid rgba(221, 211, 195, 0.5);
+  }
+  .choice-editor-item:last-child { border-bottom: none; }
+  .choice-handle { color: var(--ink-subtle); cursor: grab; font-family: var(--font-mono); user-select: none; }
+  .choice-key {
+    font-family: var(--font-mono); font-size: 11px;
+    color: var(--ink-subtle);
+    background: var(--bg);
+    padding: 1px 5px; border-radius: 2px;
+  }
+  .choice-text {
+    flex: 1;
+    background: transparent; border: none;
+    font: inherit; color: inherit;
+    outline: none;
+    padding: 2px 4px;
+    border-radius: 2px;
+  }
+  .choice-text:focus { background: var(--bg); box-shadow: 0 0 0 1px var(--border-strong); }
+  .choice-remove {
+    background: transparent; border: none;
+    color: var(--ink-subtle);
+    width: 20px; height: 20px;
+    border-radius: 3px;
+    display: grid; place-items: center;
+    opacity: 0; transition: all 0.15s;
+  }
+  .choice-editor-item:hover .choice-remove { opacity: 1; }
+  .choice-remove:hover { color: var(--accent); background: var(--bg); }
+
+  .add-choice {
+    margin-top: 8px;
+    background: transparent;
+    border: 1px dashed var(--border-strong);
+    color: var(--ink-muted);
+    padding: 7px;
+    width: 100%;
+    border-radius: 4px;
+    font-family: var(--font-ui);
+    font-size: 12.5px;
+  }
+  .add-choice:hover { color: var(--ink); border-color: var(--ink-muted); }
+
+  .logic-display {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px 12px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--ink);
+  }
+  .logic-display .keyword { color: var(--accent); }
+  .logic-display .ref {
+    background: var(--accent-bg);
+    padding: 1px 4px;
+    border-radius: 2px;
+  }
+
+  /* Agent panel inside inspector */
+  .agent-panel {
+    margin: 18px 24px;
+    background: var(--agent-bg);
+    border-radius: 6px;
+    padding: 14px;
+  }
+  .agent-panel-header {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 8px;
+  }
+  .agent-icon {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: var(--agent);
+    display: grid; place-items: center;
+    color: white;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 13px; font-weight: 600;
+  }
+  .agent-name {
+    font-family: var(--font-ui); font-size: 12px;
+    color: var(--agent); font-weight: 600;
+  }
+
+  .agent-actions {
+    display: flex; flex-direction: column; gap: 4px;
+    margin-top: 10px;
+  }
+  .agent-action {
+    background: rgba(255,255,255,0.6);
+    border: none;
+    text-align: left;
+    padding: 8px 10px;
+    border-radius: 4px;
+    font-family: var(--font-ui);
+    font-size: 12.5px;
+    color: var(--ink);
+    transition: background 0.15s;
+    width: 100%;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .agent-action:hover { background: white; }
+  .agent-action.thinking {
+    background: white;
+    color: var(--ink-subtle);
+    pointer-events: none;
+  }
+  .agent-action::before {
+    content: '◐';
+    color: var(--agent);
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+  .agent-action.thinking::before {
+    animation: spin 1.6s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* History tab content */
+  .history-event {
+    padding: 10px 0;
+    font-family: var(--font-ui);
+    font-size: 13px;
+    border-bottom: 1px dashed var(--border);
+    display: flex; gap: 10px;
+  }
+  .history-event:last-child { border-bottom: none; }
+  .history-time {
+    color: var(--ink-subtle);
+    font-size: 11px;
+    flex-shrink: 0;
+    width: 56px;
+  }
+  .history-text { color: var(--ink-muted); }
+  .history-text strong { color: var(--ink); font-weight: 500; }
+
+  /* Floating activity pill */
+  .activity-pill {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--ink); color: var(--bg);
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-family: var(--font-ui);
+    font-size: 12px;
+    display: flex; align-items: center; gap: 10px;
+    box-shadow: 0 4px 16px rgba(26, 22, 18, 0.18);
+    z-index: 40;
+  }
+  .activity-pill .dot {
+    width: 7px; height: 7px;
+    background: #5BA64C; border-radius: 50%;
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  /* Mode visibility */
+  .mode-content { display: none; }
+  body[data-mode="document"] .mode-document { display: block; }
+  body[data-mode="outline"] .mode-outline { display: block; }
+  body[data-mode="spec"] .mode-spec { display: block; }
+  body[data-mode="preview"] .mode-preview { display: block; }
+  body[data-mode="document"] .inspector { display: block; }
+  body[data-mode="outline"] .inspector,
+  body[data-mode="spec"] .inspector,
+  body[data-mode="preview"] .inspector { display: none; }
+  body[data-mode="outline"] .workspace,
+  body[data-mode="spec"] .workspace,
+  body[data-mode="preview"] .workspace { grid-template-columns: 1fr; }
+
+  /* OUTLINE MODE */
+  .outline-view {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 32px;
+    max-width: 1000px;
+    margin: 0 auto;
+  }
+  .outline-tree {
+    border-right: 1px solid var(--border);
+    padding-right: 24px;
+    font-family: var(--font-ui);
+    font-size: 13px;
+  }
+  .tree-node {
+    padding: 5px 0;
+    color: var(--ink-muted);
+    cursor: pointer;
+    border-radius: 3px;
+    padding-left: 8px;
+    margin-left: -8px;
+  }
+  .tree-node.section {
+    color: var(--accent);
+    font-weight: 500;
+    margin-top: 14px;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    cursor: default;
+    padding-left: 0;
+    margin-left: 0;
+  }
+  .tree-node.item-node { padding-left: 16px; }
+  .tree-node.item-node:hover {
+    color: var(--ink);
+    background: var(--surface-elevated);
+  }
+  .tree-node.item-node.active {
+    color: var(--accent);
+    background: var(--accent-bg);
+    font-weight: 500;
+  }
+  .outline-detail { padding: 24px; }
+
+  /* SPEC MODE */
+  .spec-table {
+    width: 100%; border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    background: var(--surface);
+    margin-top: 20px;
+  }
+  .spec-table th {
+    background: var(--ink); color: var(--bg);
+    padding: 10px 12px;
+    text-align: left;
+    font-family: var(--font-ui);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 500;
+  }
+  .spec-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--ink);
+    vertical-align: top;
+  }
+  .spec-table tr:hover td { background: var(--accent-bg); }
+  .spec-table .group-row td { color: var(--ink-subtle); font-style: italic; }
+
+  /* PREVIEW MODE */
+  .preview-frame {
+    max-width: 420px; margin: 40px auto;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 8px 40px rgba(26, 22, 18, 0.15);
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .preview-header {
+    background: #2C2620; color: white;
+    padding: 14px 20px;
+    font-family: var(--font-ui);
+    font-size: 13px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .preview-header .signal {
+    font-family: var(--font-mono);
+    font-size: 11px; opacity: 0.7;
+  }
+  .preview-body { padding: 32px 24px; font-family: var(--font-ui); }
+  .preview-progress {
+    height: 3px; background: #EFEAE0;
+    border-radius: 2px;
+    margin-bottom: 28px;
+    overflow: hidden;
+  }
+  .preview-progress-fill {
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.3s ease;
+  }
+  .preview-q-num {
+    font-family: var(--font-ui);
+    font-size: 11px;
+    color: var(--ink-subtle);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 8px;
+  }
+  .preview-q-text {
+    font-family: var(--font-body);
+    font-size: 19px; color: var(--ink);
+    margin-bottom: 24px;
+    line-height: 1.4;
+  }
+  .preview-choice {
+    border: 1.5px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 16px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    display: flex; align-items: center; gap: 12px;
+    transition: all 0.15s;
+    font-size: 15px;
+    user-select: none;
+  }
+  .preview-choice:hover { border-color: var(--ink-muted); }
+  .preview-choice.checked {
+    border-color: var(--accent);
+    background: var(--accent-bg);
+  }
+  .preview-checkbox {
+    width: 20px; height: 20px;
+    border: 1.5px solid var(--ink-subtle);
+    border-radius: 4px;
+    flex-shrink: 0;
+    position: relative;
+  }
+  .preview-checkbox.radio { border-radius: 50%; }
+  .preview-choice.checked .preview-checkbox {
+    background: var(--accent); border-color: var(--accent);
+  }
+  .preview-choice.checked .preview-checkbox::after {
+    content: '✓'; color: white;
+    position: absolute; inset: 0;
+    display: grid; place-items: center;
+    font-size: 14px; font-weight: 600;
+  }
+  .preview-input {
+    width: 100%;
+    padding: 14px 16px;
+    border: 1.5px solid var(--border);
+    border-radius: 6px;
+    font: inherit;
+    font-size: 17px;
+  }
+  .preview-input:focus { outline: none; border-color: var(--accent); }
+  .preview-nav {
+    display: flex; justify-content: space-between;
+    margin-top: 32px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+  }
+  .preview-btn {
+    background: var(--ink); color: white;
+    border: none;
+    padding: 10px 18px; border-radius: 6px;
+    font-family: var(--font-ui);
+    font-size: 13px; font-weight: 500;
+  }
+  .preview-btn:disabled { opacity: 0.3; }
+  .preview-btn.secondary { background: transparent; color: var(--ink-muted); }
+
+  /* Decorative ornament */
+  .ornament {
+    text-align: center;
+    margin: 40px 0 24px;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 18px;
+    color: var(--accent-soft);
+    letter-spacing: 0.5em;
+  }
+
+  /* Right-click context menu */
+  .context-menu {
+    position: fixed;
+    background: var(--surface-elevated);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    box-shadow: 0 8px 28px rgba(26, 22, 18, 0.18);
+    padding: 6px;
+    min-width: 240px;
+    z-index: 100;
+    font-family: var(--font-ui);
+    font-size: 13px;
+  }
+  .menu-section + .menu-section {
+    border-top: 1px solid var(--border);
+    margin-top: 4px; padding-top: 4px;
+  }
+  .menu-item {
+    padding: 7px 10px;
+    border-radius: 3px;
+    background: transparent; border: none; width: 100%;
+    color: var(--ink);
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 14px;
+    font: inherit;
+    text-align: left;
+  }
+  .menu-item:hover { background: var(--bg); }
+  .menu-item.agent-item { color: var(--agent); }
+  .menu-item.agent-item::before {
+    content: '◐';
+    color: var(--agent);
+    margin-right: 6px;
+  }
+  .menu-shortcut {
+    color: var(--ink-subtle);
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+  .menu-section-label {
+    padding: 4px 10px;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--ink-subtle);
+  }
+
+  /* Activity log panel */
+  .activity-log {
+    position: fixed;
+    top: 60px; right: 0;
+    width: 380px;
+    height: calc(100vh - 60px);
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    box-shadow: -4px 0 16px rgba(26, 22, 18, 0.06);
+    z-index: 45;
+    transform: translateX(100%);
+    transition: transform 0.25s ease;
+    display: flex; flex-direction: column;
+  }
+  .activity-log.open { transform: translateX(0); }
+  .activity-log-header {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .activity-log-title {
+    font-family: var(--font-display);
+    font-size: 18px; font-weight: 500;
+    color: var(--ink);
+  }
+  .activity-log-body {
+    flex: 1; overflow-y: auto;
+    padding: 16px 24px;
+  }
+  .activity-event {
+    padding: 12px 0;
+    border-bottom: 1px dashed var(--border);
+    font-family: var(--font-ui);
+    font-size: 13px;
+  }
+  .activity-event:last-child { border-bottom: none; }
+  .activity-event-meta {
+    font-size: 11px; color: var(--ink-subtle);
+    margin-bottom: 4px;
+    display: flex; gap: 8px;
+  }
+  .activity-event-text { color: var(--ink); line-height: 1.5; }
+  .activity-event-text strong { font-weight: 500; }
+
+  /* Conflict modal */
+  .modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(26, 22, 18, 0.5);
+    z-index: 200;
+    display: grid; place-items: center;
+    padding: 40px;
+    animation: fadeIn 0.2s;
+  }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+  .modal {
+    background: var(--surface);
+    border-radius: 10px;
+    box-shadow: 0 24px 60px rgba(26, 22, 18, 0.3);
+    max-width: 920px; width: 100%;
+    max-height: 90vh; overflow-y: auto;
+  }
+  .modal-header {
+    padding: 24px 28px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .modal-overline {
+    font-family: var(--font-ui);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--warn);
+    margin-bottom: 6px;
+    font-weight: 500;
+  }
+  .modal-title {
+    font-family: var(--font-display);
+    font-size: 24px;
+    font-weight: 500;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+  }
+  .modal-subtitle {
+    font-family: var(--font-ui);
+    font-size: 13px;
+    color: var(--ink-muted);
+    margin-top: 6px;
+  }
+  .modal-body { padding: 24px 28px; }
+  .modal-footer {
+    padding: 16px 28px;
+    border-top: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+    background: var(--bg);
+    border-radius: 0 0 10px 10px;
+  }
+
+  /* Conflict cards (4 + optional AI) */
+  .conflict-cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  .conflict-card {
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 18px;
+    background: var(--surface-elevated);
+    cursor: pointer;
+    transition: all 0.15s;
+    position: relative;
+  }
+  .conflict-card:hover {
+    border-color: var(--ink-muted);
+    background: white;
+  }
+  .conflict-card.selected {
+    border-color: var(--accent);
+    background: white;
+    box-shadow: 0 0 0 4px var(--accent-bg);
+  }
+  .conflict-card-author {
+    font-family: var(--font-ui);
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink-subtle);
+    margin-bottom: 8px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .conflict-card.original .conflict-card-author { color: var(--ink-muted); }
+  .conflict-card.aluk .conflict-card-author { color: var(--agent); }
+  .conflict-card.rahman .conflict-card-author { color: #4A5C70; }
+  .conflict-card.compose .conflict-card-author { color: var(--accent); }
+  .conflict-card.synth .conflict-card-author { color: var(--agent); }
+
+  .conflict-card-text {
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--ink);
+    min-height: 4.5em;
+  }
+  .conflict-card.compose .conflict-card-text {
+    font-family: var(--font-ui);
+    font-size: 13px;
+    color: var(--ink-subtle);
+    font-style: italic;
+  }
+
+  .conflict-radio {
+    position: absolute;
+    top: 16px; right: 16px;
+    width: 18px; height: 18px;
+    border: 1.5px solid var(--ink-subtle);
+    border-radius: 50%;
+  }
+  .conflict-card.selected .conflict-radio {
+    border-color: var(--accent);
+    background: var(--accent);
+    box-shadow: inset 0 0 0 3px white;
+  }
+
+  .synth-button {
+    grid-column: 1 / -1;
+    margin-top: 4px;
+    padding: 14px;
+    background: var(--agent-bg);
+    border: 1px dashed var(--agent);
+    border-radius: 8px;
+    color: var(--agent);
+    font-family: var(--font-ui);
+    font-size: 13px;
+    font-weight: 500;
+    transition: background 0.15s;
+  }
+  .synth-button:hover { background: #D5DEC4; }
+
+  .modal-btn {
+    background: var(--ink); color: white;
+    border: none;
+    padding: 10px 18px; border-radius: 6px;
+    font-family: var(--font-ui);
+    font-size: 13px; font-weight: 500;
+  }
+  .modal-btn:disabled { background: var(--ink-subtle); opacity: 0.5; }
+  .modal-btn.secondary { background: transparent; color: var(--ink-muted); }
+
+  /* Toast */
+  .toasts {
+    position: fixed;
+    top: 80px; right: 24px;
+    z-index: 250;
+    display: flex; flex-direction: column;
+    gap: 8px;
+  }
+  .toast {
+    background: var(--ink); color: var(--bg);
+    padding: 10px 16px;
+    border-radius: 6px;
+    font-family: var(--font-ui);
+    font-size: 13px;
+    box-shadow: 0 8px 24px rgba(26, 22, 18, 0.2);
+    animation: toastIn 0.25s ease;
+  }
+  .toast.success { background: #4A5630; }
+  .toast.warn { background: #8B5A20; }
+  @keyframes toastIn {
+    from { opacity: 0; transform: translateX(20px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  /* Tutorial overlay */
+  .tutorial-overlay {
+    position: fixed; inset: 0;
+    background: rgba(26, 22, 18, 0.4);
+    z-index: 300;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 40px 20px;
+    overflow-y: auto;
+  }
+  .tutorial {
+    background: var(--surface-elevated);
+    border-radius: 12px;
+    max-width: 540px; width: 100%;
+    padding: 36px;
+    box-shadow: 0 24px 60px rgba(26, 22, 18, 0.3);
+    font-family: var(--font-ui);
+    position: relative;
+    margin: auto;
+  }
+  .tutorial-close {
+    position: absolute;
+    top: 14px; right: 14px;
+    width: 32px; height: 32px;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--ink-muted);
+    display: grid; place-items: center;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .tutorial-close:hover { background: var(--bg); color: var(--ink); }
+  .tutorial-close svg { width: 18px; height: 18px; }
+  .tutorial-title {
+    font-family: var(--font-display);
+    font-size: 28px;
+    font-weight: 500;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+    margin-bottom: 8px;
+  }
+  .tutorial-subtitle {
+    font-size: 14px;
+    color: var(--ink-muted);
+    margin-bottom: 24px;
+    line-height: 1.55;
+  }
+  .tutorial-list {
+    list-style: none;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .tutorial-list li {
+    display: flex; gap: 14px;
+    font-size: 14px;
+    color: var(--ink);
+    line-height: 1.5;
+  }
+  .tutorial-list .num {
+    flex-shrink: 0;
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: white;
+    display: grid; place-items: center;
+    font-size: 12px; font-weight: 500;
+    font-family: var(--font-ui);
+  }
+  .tutorial-list code {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    background: var(--bg);
+    padding: 1px 6px;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+  }
+  .tutorial-actions { margin-top: 28px; display: flex; gap: 12px; justify-content: flex-end; }
+  .tutorial-actions .modal-btn { padding: 10px 22px; }
+</style>
+</head>
+<body data-mode="document">
+
+<!-- ============= TOP BAR ============= -->
+<div class="topbar">
+  <div class="brand">
+    <div class="brand-mark">V</div>
+    <div class="breadcrumb">
+      <span>Verne / Dynodoc</span>
+      <span class="sep">›</span>
+      <strong>Heat Stress &amp; Health, Chittagong Pilot</strong>
+      <span class="version-badge" id="versionBadge">draft v0.3</span>
+    </div>
+  </div>
+
+  <div class="mode-toggle">
+    <button data-mode-btn="document" class="active">Document</button>
+    <button data-mode-btn="outline">Outline</button>
+    <button data-mode-btn="spec">Spec</button>
+    <button data-mode-btn="preview">Preview</button>
+  </div>
+
+  <div class="topbar-actions">
+    <button class="suggest-toggle" id="suggestToggle" title="Toggle suggesting mode (Cmd+Shift+S)">
+      <span class="dot"></span>
+      <span id="suggestToggleLabel">Editing</span>
+    </button>
+
+    <button class="icon-btn" id="conflictDemoBtn" title="Demo: conflict resolution">
+      <svg fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24">
+        <path d="M12 2v8m0 4v8M4.93 4.93l5.66 5.66m2.82 2.82l5.66 5.66M2 12h8m4 0h8M4.93 19.07l5.66-5.66m2.82-2.82l5.66-5.66"/>
+      </svg>
+    </button>
+
+    <button class="icon-btn" id="activityBtn" title="Activity log">
+      <svg fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>
+      </svg>
+      <span class="badge" id="activityBadge"></span>
+    </button>
+
+    <div class="avatar-stack">
+      <div class="avatar a-verne" title="Verne (you)">VR</div>
+      <div class="avatar a-aluk" title="Aluk">AL</div>
+      <div class="avatar a-rahman" title="Dr. Rahman">RA</div>
+      <div class="avatar a-agent" title="Methodologist agent">◐</div>
+    </div>
+
+    <button class="share-btn" id="shareBtn">Share</button>
+  </div>
+</div>
+
+<!-- Suggesting mode banner -->
+<div class="suggesting-banner" id="suggestingBanner" hidden>
+  <strong>Suggesting mode is on.</strong>
+  Edits become suggestions on items, attributed to you. Reviewers accept or reject one at a time.
+</div>
+
+<!-- ============= WORKSPACE ============= -->
+<div class="workspace">
+
+  <main class="main-col">
+
+    <!-- DOCUMENT MODE -->
+    <div class="mode-content mode-document">
+      <div class="document">
+        <header class="doc-header">
+          <div class="doc-overline" id="docOverline"></div>
+          <h1 class="doc-title" id="docTitle"></h1>
+          <div class="doc-meta" id="docMeta"></div>
+        </header>
+        <div id="document-body"></div>
+        <div class="ornament">·  ·  ·</div>
+      </div>
+    </div>
+
+    <!-- OUTLINE MODE -->
+    <div class="mode-content mode-outline">
+      <div class="outline-view" id="outline-body"></div>
+    </div>
+
+    <!-- SPEC MODE -->
+    <div class="mode-content mode-spec" style="max-width: 100%;">
+      <div style="padding: 24px; max-width: 1100px; margin: 0 auto;">
+        <div class="doc-overline">XLSFORM · SURVEY SHEET · LIVE</div>
+        <h2 class="doc-title" style="font-size: 26px; margin-bottom: 8px;">Spec</h2>
+        <p style="color: var(--ink-muted); margin-bottom: 24px; font-family: var(--font-ui); font-size: 14px;">
+          Tabular xlsform of the same instrument. Edits in Document mode appear here immediately. This compiles to ODK XForm and uploads to Central or Kobo.
+        </p>
+        <table class="spec-table" id="spec-body"></table>
+      </div>
+    </div>
+
+    <!-- PREVIEW MODE -->
+    <div class="mode-content mode-preview">
+      <div style="padding: 24px;">
+        <div style="text-align: center; margin-bottom: 16px;">
+          <div class="doc-overline">PREVIEW · AS YOUR RESPONDENT WILL SEE IT</div>
+          <p style="color: var(--ink-muted); margin-top: 8px; font-family: var(--font-ui); font-size: 13px;">
+            Live render. Skip logic and validation are real. Use the buttons to navigate the form like a respondent on a tablet.
+          </p>
+        </div>
+        <div id="preview-body"></div>
+      </div>
+    </div>
+
+  </main>
+
+  <aside class="inspector" id="inspector"></aside>
+</div>
+
+<!-- ============= ACTIVITY LOG ============= -->
+<aside class="activity-log" id="activityLog">
+  <div class="activity-log-header">
+    <h3 class="activity-log-title">Activity</h3>
+    <button class="icon-btn" onclick="toggleActivityLog()">
+      <svg fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24">
+        <path d="M18 6L6 18M6 6l12 12"/>
+      </svg>
+    </button>
+  </div>
+  <div class="activity-log-body" id="activityLogBody"></div>
+</aside>
+
+<!-- ============= ACTIVITY PILL ============= -->
+<div class="activity-pill" id="activityPill">
+  <span class="dot"></span>
+  <span id="activityPillText">Saved · 3 reviewers active</span>
+</div>
+
+<!-- ============= CONTEXT MENU ============= -->
+<div class="context-menu" id="contextMenu" hidden></div>
+
+<!-- ============= CONFLICT MODAL ============= -->
+<div class="modal-overlay" id="conflictModal" hidden>
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-overline">5 conflicts to resolve · § 2 · Question 5</div>
+      <h2 class="modal-title">Two reviewers changed the same item differently</h2>
+      <p class="modal-subtitle">Pick a version, or compose a new one. The decision and rationale will be logged in the activity trail.</p>
+    </div>
+    <div class="modal-body">
+      <div class="conflict-cards" id="conflictCards"></div>
+    </div>
+    <div class="modal-footer">
+      <span style="color: var(--ink-subtle); font-family: var(--font-ui); font-size: 13px;">
+        Conflict 1 of 5 — 4 will follow.
+      </span>
+      <div style="display: flex; gap: 10px;">
+        <button class="modal-btn secondary" onclick="closeConflictModal()">Cancel</button>
+        <button class="modal-btn" id="applyResolution" disabled onclick="applyResolution()">Apply &amp; continue →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============= TOASTS ============= -->
+<div class="toasts" id="toasts"></div>
+
+<!-- ============= TUTORIAL ============= -->
+<div class="tutorial-overlay" id="tutorialOverlay" onclick="if(event.target === this) closeTutorial()">
+  <div class="tutorial">
+    <button class="tutorial-close" onclick="closeTutorial()" aria-label="Close tutorial">
+      <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+    <h1 class="tutorial-title">Try the working theory.</h1>
+    <p class="tutorial-subtitle">
+      Every action below is wired to real state. Try to break it. The data model is shared across all four modes; edits anywhere round-trip everywhere.
+    </p>
+    <ol class="tutorial-list">
+      <li><span class="num">1</span><span><strong>Click any question</strong> to select it. The Inspector on the right updates with that item's properties — edit a choice, watch the document update.</span></li>
+      <li><span class="num">2</span><span><strong>Right-click any question</strong> for the agent menu. Pick "Review for clarity" or "Translate to Bangla" — the agent generates a real suggestion that appears inline.</span></li>
+      <li><span class="num">3</span><span><strong>Toggle "Editing" → "Suggesting"</strong> in the toolbar. Now edit a question's text directly: it becomes a suggestion attributed to you.</span></li>
+      <li><span class="num">4</span><span><strong>Click the comment icon</strong> in the gutter (visible on hover). Type a comment, or use <code>@agent</code> to ask the methodologist.</span></li>
+      <li><span class="num">5</span><span><strong>Switch modes</strong> in the toolbar. Outline lets you navigate. Spec is the live xlsform. Preview shows what the respondent sees.</span></li>
+      <li><span class="num">6</span><span><strong>Click the conflict icon</strong> in the toolbar to walk through the four-card conflict resolution flow.</span></li>
+    </ol>
+    <div class="tutorial-actions">
+      <button class="modal-btn" onclick="closeTutorial()">Start exploring</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+ * DATA MODEL
+ * ============================================================ */
+
+const QUESTIONNAIRE = {
+  meta: {
+    title: 'Heat stress, coping behavior &amp; mental wellbeing in <em>peri-urban</em> Chittagong',
+    overline: 'Cross-sectional · Household survey · Bangla &amp; English',
+    estimatedMinutes: 14,
+  },
+  sections: [
+    {
+      id: 'demographics', number: '1', title: 'Demographics',
+      items: [
+        { id: 'q_age', number: '1', text: 'How old are you, in completed years?',
+          type: 'integer', variableName: 'age', required: true,
+          constraint: '. >= 18 and . <= 99', meta: 'range 18–99' },
+        { id: 'q_gender', number: '2', text: 'What is your gender?',
+          type: 'select_one', variableName: 'gender', required: true,
+          choices: [
+            { key: 'female', label: 'Female' },
+            { key: 'male', label: 'Male' },
+            { key: 'other', label: 'Other' },
+            { key: 'no_answer', label: 'Prefer not to say' }
+          ]},
+      ]
+    },
+    {
+      id: 'heat', number: '2', title: 'Heat exposure &amp; coping',
+      items: [
+        { id: 'q_hours_outdoors', number: '3',
+          text: 'In the hottest months of the year, how many hours per day do you typically spend outdoors?',
+          type: 'integer', variableName: 'hours_outdoors', required: true, meta: '0–24' },
+        { id: 'q_cool_down', number: '4',
+          text: 'When the heat feels most intense at home, what do you typically do to cool down? <em>Select all that apply.</em>',
+          type: 'select_multiple', variableName: 'cool_down', required: true,
+          relevant: '${hours_outdoors} >= 4',
+          choices: [
+            { key: 'fan', label: 'Use a fan' },
+            { key: 'ac', label: 'Use air conditioning' },
+            { key: 'cold_water', label: 'Drink cold water or other cold drinks' },
+            { key: 'cold_bath', label: 'Take a cold bath or shower' },
+            { key: 'cooler_room', label: 'Move to a cooler room or shaded area' },
+            { key: 'wet_cloth', label: 'Wet a cloth and place on body' }
+          ]},
+        { id: 'q_symptoms', number: '5',
+          text: 'In the last 7 days, have you experienced any of the following while exposed to heat?',
+          type: 'select_multiple', variableName: 'symptoms_7d', required: true,
+          choices: [
+            { key: 'headache', label: 'Headache or dizziness' },
+            { key: 'sweating', label: 'Excessive sweating or weakness' },
+            { key: 'sleep', label: 'Difficulty sleeping due to heat' },
+            { key: 'cramps', label: 'Cramps in the legs or abdomen' },
+            { key: 'none', label: 'None of the above' }
+          ]},
+      ]
+    },
+    {
+      id: 'phq9', number: '3', title: 'Mental wellbeing — last two weeks',
+      module: { tag: 'PHQ-9', name: 'Patient Health Questionnaire — depression',
+        citation: 'Kroenke, Spitzer &amp; Williams 2001' },
+      items: [
+        { id: 'phq_1', number: '6.1',
+          text: 'Over the last two weeks, how often have you been bothered by <em>little interest or pleasure in doing things</em>?',
+          type: 'select_one', variableName: 'phq_1', required: true,
+          choices: [
+            { key: '0', label: 'Not at all' },
+            { key: '1', label: 'Several days' },
+            { key: '2', label: 'More than half the days' },
+            { key: '3', label: 'Nearly every day' }
+          ]},
+        { id: 'phq_2', number: '6.2',
+          text: 'Over the last two weeks, how often have you been bothered by <em>feeling down, depressed or hopeless</em>?',
+          type: 'select_one', variableName: 'phq_2', required: true,
+          choices: [
+            { key: '0', label: 'Not at all' },
+            { key: '1', label: 'Several days' },
+            { key: '2', label: 'More than half the days' },
+            { key: '3', label: 'Nearly every day' }
+          ]},
+      ]
+    }
+  ]
+};
+
+const state = {
+  mode: 'document',
+  selectedItemId: 'q_cool_down',
+  suggestingMode: false,
+  inspectorTab: 'properties',
+  showCommentInput: null, // itemId
+
+  suggestions: [
+    {
+      id: 'sug_aluk_1',
+      itemId: 'q_hours_outdoors',
+      author: 'Aluk',
+      authorInitials: 'AL',
+      authorClass: 'a-aluk',
+      authorColor: '#4A6741',
+      timeAgo: '2 hours ago',
+      kind: 'rewording',
+      currentText: 'In the hottest months of the year, how many hours per day do you typically spend outdoors?',
+      proposedText: 'In the period from April to September, how many hours per day do you typically spend in direct sunlight or in unshaded outdoor settings?',
+      reasoning: '"Hottest months" is interpretively variable across households; making the period explicit reduces recall noise. Same for "outdoors" — domestic courtyards count differently than open fields.',
+      status: 'open'
+    }
+  ],
+
+  comments: {
+    'phq_1': [
+      {
+        id: 'c1', author: 'Dr. Rahman', authorInitials: 'RA', authorClass: 'a-rahman',
+        timeAgo: '5 hours ago',
+        text: 'The Bangla translation of <em>"little interest or pleasure"</em> in our 2019 study tested poorly — respondents conflated it with general fatigue. <span class="mention">@agent</span> can you check the validated Bangla PHQ-9 (Chowdhury et al., 2004) and propose a translation we should use here?',
+      },
+      {
+        id: 'c2', author: 'Methodologist', isAgent: true,
+        timeAgo: '5 hours ago · just now',
+        text: 'The Chowdhury et al. validation (Psychiatry Research, 2004) used <strong>"কোনো কাজে মন না লাগা বা আনন্দ না পাওয়া"</strong> for this item. It is also the rendering used by the WHO Bangla mental health field guide.',
+        agentOutput: {
+          label: 'Proposed translation',
+          content: 'বিগত দুই সপ্তাহে, আপনি কতবার <em>কোনো কাজে মন না লাগা বা আনন্দ না পাওয়া</em>-র সমস্যায় ভুগেছেন?',
+          isBn: true
+        }
+      }
+    ]
+  },
+
+  activity: [
+    { time: '2h ago', actor: 'Aluk', action: 'suggested rewording on', target: 'Q3 — Hours outdoors' },
+    { time: '5h ago', actor: 'Dr. Rahman', action: 'added comment on', target: 'Q6.1 — Little interest' },
+    { time: '5h ago', actor: 'Methodologist', action: 'responded with translation', target: 'Q6.1' },
+    { time: 'yesterday', actor: 'Verne', action: 'created', target: 'v0.3 draft' }
+  ],
+
+  // Preview mode state
+  previewIndex: 3, // start at Q4 (index 3)
+  previewAnswers: { q_cool_down: ['ac', 'cold_water'] },
+};
+
+/* ============================================================
+ * AGENT RESPONSES (canned but realistic)
+ * ============================================================ */
+
+const AGENT_RESPONSES = {
+  q_age: {
+    review: {
+      proposedText: 'How old are you, in completed years?',
+      reasoning: 'Item is well-formed. One observation: range 18–99 may be too restrictive in Bangladeshi household contexts where elderly respondents over 100 are not uncommon. Consider expanding to 18–110, or splitting into a separate ‘elderly cohort’ flag.',
+      kind: 'no-text-change'
+    },
+    translate: {
+      proposedText: 'আপনার বয়স কত? (পূর্ণ বছরে)',
+      reasoning: 'Standard rendering, also used in BBS Census 2022. The parenthetical clarifies “completed years” which Bangla doesn’t mark by default.',
+      isBn: true
+    },
+    alternatives: {
+      reasoning: 'Age is universal — no validated alternative needed. Consider also collecting birth year separately for cross-validation.',
+      noChange: true
+    },
+    codebook: {
+      label: 'Codebook entry',
+      content: 'age: integer (18–99). Age in completed years. Missing: refuse, dont_know coded as 9999.'
+    }
+  },
+  q_gender: {
+    review: {
+      proposedText: 'What is your gender?',
+      reasoning: 'Standard gender item with appropriate options. Consider whether your study context warrants explicit recognition of hijra as a category — recognized as a third gender by the Bangladesh government since 2013 — rather than folding it into "Other".',
+      kind: 'category-suggestion'
+    },
+    translate: {
+      proposedText: 'আপনার লিঙ্গ কি?',
+      reasoning: 'Standard rendering used across BBS and BDHS surveys.',
+      isBn: true
+    },
+    alternatives: {
+      reasoning: 'For more granular work, consider the two-step approach (sex assigned at birth + current gender identity) used in many recent population health studies.',
+      noChange: true
+    },
+    codebook: {
+      label: 'Codebook entry',
+      content: 'gender: categorical. 1=Female, 2=Male, 3=Other, 4=Refuse. Frequency expected: F~52%, M~48% in Chittagong.'
+    }
+  },
+  q_hours_outdoors: {
+    review: {
+      proposedText: 'In the period from April to September, how many hours per day do you typically spend in direct sunlight or in unshaded outdoor settings?',
+      reasoning: '"Hottest months" is interpretively variable across households. Making the period explicit reduces recall noise. "Outdoors" is also ambiguous — domestic courtyards count differently than open fields. Note: this matches the suggestion already made by Aluk.',
+      kind: 'rewording'
+    },
+    translate: {
+      proposedText: 'বছরের সবচেয়ে গরম মাসগুলোতে, আপনি প্রতিদিন গড়ে কত ঘন্টা বাইরে কাটান?',
+      reasoning: 'Direct translation. If you adopt the more specific rewording (April–September, direct sunlight), the Bangla version will need to be re-translated to match.',
+      isBn: true
+    },
+    alternatives: {
+      reasoning: 'No widely-validated heat-exposure recall instrument exists. Closest is Watts et al. 2019 Lancet Countdown adaptation indicators, which use month-bound recall (April–September) rather than “hottest months.”',
+      noChange: false,
+      proposedText: 'In the period from April to September, how many hours per day do you typically spend in direct sunlight?'
+    },
+    codebook: {
+      label: 'Codebook entry',
+      content: 'hours_outdoors: integer (0–24). Self-reported daily hours outdoors during peak heat months. Used as relevance gate for q_cool_down (≥4 hours triggers).'
+    }
+  },
+  q_cool_down: {
+    review: {
+      proposedText: 'When the heat feels most intense at home, what do you typically do to cool down? <em>Select all that apply.</em>',
+      reasoning: 'Multi-select with 6 options. Consider adding "None / I do nothing" for completeness — acquiescence bias literature supports including a null option in symptom and coping checklists. Without it, respondents who genuinely take no action may pick something close enough.',
+      kind: 'choice-suggestion',
+      choiceToAdd: { key: 'none', label: 'None / I do nothing' }
+    },
+    translate: {
+      proposedText: 'যখন বাড়িতে গরম সবচেয়ে তীব্র মনে হয়, আপনি ঠান্ডা হওয়ার জন্য সাধারণত কী করেন? <em>প্রযোজ্য সবগুলো নির্বাচন করুন।</em>',
+      reasoning: 'Field-tested phrasing from icddr,b heat-health 2022 baseline. The "প্রযোজ্য সবগুলো নির্বাচন করুন" multi-select prompt tested well in literacy-low contexts.',
+      isBn: true
+    },
+    alternatives: {
+      reasoning: 'WHO Heat-Health Action Plan field instruments use a similar 6-option multi-select. Consider adopting that exact wording for cross-study comparability — citation: WHO Regional Office for Europe, 2021, Heat-Health Action Plans toolkit.',
+      noChange: true
+    },
+    codebook: {
+      label: 'Codebook entry',
+      content: 'cool_down: select_multiple. Each option dummy-coded 0/1 in analysis. Show condition: hours_outdoors >= 4. Composite indicator (n_strategies) = sum of options selected.'
+    }
+  },
+  q_symptoms: {
+    review: {
+      proposedText: 'In the last 7 days, have you experienced any of the following while exposed to heat?',
+      reasoning: '7-day recall period appropriate for symptom self-report. "None of the above" is included — good. Consider whether to add "I do not know" for older adults whose recall may be less reliable. Also, the "while exposed to heat" qualifier may be hard to attribute — consider splitting into "any of the following" + a follow-up "did you attribute these to heat?"',
+      kind: 'rewording'
+    },
+    translate: {
+      proposedText: 'গত ৭ দিনে, গরমের সংস্পর্শে থাকা অবস্থায় আপনি কি নিচের যেকোনোটি অনুভব করেছেন?',
+      reasoning: '7-day recall in Bangla typically uses "গত ৭ দিনে". Verified with Bangla Health Atlas v3 phrasing.',
+      isBn: true
+    },
+    alternatives: {
+      reasoning: 'See WHO ICD-11 heat-related illness symptom inventory (codes T67.0-T67.9). For epidemiological work, the BDHS 2022 health module has a comparable 5-day version.',
+      noChange: true
+    },
+    codebook: {
+      label: 'Codebook entry',
+      content: 'symptoms_7d: select_multiple. Each option dummy-coded 0/1. Composite (n_symptoms_7d) = sum excluding "none". Used as outcome variable in heat-stress models.'
+    }
+  },
+  phq_1: {
+    review: {
+      proposedText: 'Over the last two weeks, how often have you been bothered by <em>little interest or pleasure in doing things</em>?',
+      reasoning: 'Standard PHQ-9 item, do not modify wording — modifying validated instrument items invalidates the scale. The English form is correct. Cross-cultural translation is the work; see Dr. Rahman’s thread on the Bangla rendering.',
+      kind: 'no-text-change'
+    },
+    translate: {
+      proposedText: 'বিগত দুই সপ্তাহে, আপনি কতবার <em>কোনো কাজে মন না লাগা বা আনন্দ না পাওয়া</em>-র সমস্যায় ভুগেছেন?',
+      reasoning: 'Validated Bangla PHQ-9 wording (Chowdhury et al., 2004). Used by WHO Bangla mental health field guide. Do not translate independently — use only validated renderings for scored instruments.',
+      isBn: true
+    },
+    alternatives: {
+      reasoning: 'PHQ-9 is the standard. Alternatives: PHQ-2 (2-item screen) for shorter forms; CES-D-10 if depression is a primary outcome; HADS for medical settings.',
+      noChange: true
+    },
+    codebook: {
+      label: 'Codebook entry',
+      content: 'phq_1: ordered categorical, 0–3. PHQ-9 item 1. Score: sum(phq_1..phq_9). Cutoffs: 0–4 minimal, 5–9 mild, 10–14 moderate, 15–19 mod-severe, 20–27 severe.'
+    }
+  },
+  phq_2: {
+    review: {
+      proposedText: 'Over the last two weeks, how often have you been bothered by <em>feeling down, depressed or hopeless</em>?',
+      reasoning: 'Standard PHQ-9 item. Do not modify wording.',
+      kind: 'no-text-change'
+    },
+    translate: {
+      proposedText: 'বিগত দুই সপ্তাহে, আপনি কতবার <em>মন খারাপ, বিষণ্ণ বা হতাশ অনুভব করার</em> সমস্যায় ভুগেছেন?',
+      reasoning: 'Validated Bangla PHQ-9 wording (Chowdhury et al., 2004).',
+      isBn: true
+    },
+    alternatives: {
+      reasoning: 'See note on phq_1 — PHQ-9 should be used as a unit; do not pick and choose individual items unless using validated short forms (PHQ-2, PHQ-4).',
+      noChange: true
+    },
+    codebook: {
+      label: 'Codebook entry',
+      content: 'phq_2: ordered categorical, 0–3. PHQ-9 item 2. See phq_1 for scoring.'
+    }
+  }
+};
+
+/* ============================================================
+ * CONFLICT DEMO DATA
+ * ============================================================ */
+
+const CONFLICT_DEMO = {
+  itemNumber: '5',
+  itemTitle: 'Heat-related symptoms',
+  options: [
+    { id: 'original', author: 'Original · v0.3 baseline', text: 'In the last 7 days, have you experienced any of the following while exposed to heat?' },
+    { id: 'aluk', author: 'Aluk · methodology review', text: 'In the past week, did any of the following happen to you on a hot day?' },
+    { id: 'rahman', author: 'Dr. Rahman · clinical review', text: 'During heat exposure in the last 7 days, did you experience any of these symptoms?' },
+    { id: 'compose', author: 'Compose new', text: 'Click to write a synthesis...' },
+    { id: 'synth', author: '◐ AI synthesis', text: 'In the last 7 days, did you experience any of the following symptoms while it was hot?', hidden: true }
+  ]
+};
+
+let selectedConflict = null;
+
+/* ============================================================
+ * UTILITIES
+ * ============================================================ */
+
+function findItem(id) {
+  for (const section of QUESTIONNAIRE.sections) {
+    for (const item of section.items) {
+      if (item.id === id) return { section, item };
+    }
+  }
+  return null;
+}
+
+function flatItems() {
+  const out = [];
+  QUESTIONNAIRE.sections.forEach(s => s.items.forEach(i => out.push({ section: s, item: i })));
+  return out;
+}
+
+function totalItems() {
+  return flatItems().length;
+}
+
+function findSuggestionsFor(itemId) {
+  return state.suggestions.filter(s => s.itemId === itemId && s.status === 'open');
+}
+
+function findCommentsFor(itemId) {
+  return state.comments[itemId] || [];
+}
+
+function logActivity(action, target) {
+  state.activity.unshift({ time: 'just now', actor: 'You', action, target });
+  if (state.activity.length > 30) state.activity.length = 30;
+  renderActivity();
+  updateActivityBadge();
+}
+
+function showToast(text, kind) {
+  const toasts = document.getElementById('toasts');
+  const t = document.createElement('div');
+  t.className = 'toast' + (kind ? ' ' + kind : '');
+  t.textContent = text;
+  toasts.appendChild(t);
+  setTimeout(() => t.style.opacity = '0', 2400);
+  setTimeout(() => t.remove(), 2900);
+}
+
+function updateActivityBadge() {
+  const badge = document.getElementById('activityBadge');
+  badge.style.display = 'block';
+}
+
+/* ============================================================
+ * RENDERING — DOCUMENT MODE
+ * ============================================================ */
+
+function renderDocumentHeader() {
+  document.getElementById('docOverline').innerHTML = QUESTIONNAIRE.meta.overline;
+  document.getElementById('docTitle').innerHTML = QUESTIONNAIRE.meta.title;
+  const total = totalItems();
+  const sections = QUESTIONNAIRE.sections.length;
+  const modules = QUESTIONNAIRE.sections.filter(s => s.module).length;
+  const openSugs = state.suggestions.filter(s => s.status === 'open').length;
+  document.getElementById('docMeta').innerHTML = `
+    <span><strong>${total}</strong> items</span>
+    <span><strong>${sections}</strong> sections</span>
+    <span><strong>${modules}</strong> validated module${modules !== 1 ? 's' : ''}</span>
+    <span>Estimated <strong>${QUESTIONNAIRE.meta.estimatedMinutes} min</strong> per respondent</span>
+    ${openSugs > 0 ? `<span style="color: var(--suggest);">● ${openSugs} open suggestion${openSugs > 1 ? 's' : ''}</span>` : ''}
+  `;
+}
+
+function renderItem(item, sectionId) {
+  const sugs = findSuggestionsFor(item.id);
+  const comments = findCommentsFor(item.id);
+  const isSelected = state.selectedItemId === item.id;
+  const showCommentInput = state.showCommentInput === item.id;
+
+  const indicators = [];
+  if (sugs.length) indicators.push(`<span class="indicator indicator-suggestion">+${sugs.length} suggestion${sugs.length > 1 ? 's' : ''}</span>`);
+  if (comments.length) indicators.push(`<span class="indicator indicator-comment">💬 ${comments.length}</span>`);
+
+  const choicesHtml = item.choices ? `
+    <div class="choices">
+      ${item.choices.map(c => `<div class="choice ${item.type === 'select_one' ? 'radio' : ''}">${c.label}</div>`).join('')}
+    </div>
+  ` : '';
+
+  const metaParts = [`<span class="type-pill">${item.type}</span>`];
+  if (item.meta) metaParts.push(`<span>· ${item.meta}</span>`);
+  if (item.relevant) metaParts.push(`<span class="logic-pill">⤳ shows if ${item.relevant.replace(/\$\{/g, '').replace(/\}/g, '')}</span>`);
+
+  const editable = state.suggestingMode || isSelected;
+
+  let itemHtml = `
+    <div class="item ${isSelected ? 'selected' : ''}" data-item-id="${item.id}" oncontextmenu="showContextMenu(event, '${item.id}'); return false;">
+      <div class="gutter">
+        <span class="gutter-num">${item.number}</span>
+        <div class="gutter-actions">
+          <button class="gutter-btn" onclick="event.stopPropagation(); toggleCommentInput('${item.id}')" title="Comment (Cmd+M)">
+            <svg fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          </button>
+          <button class="gutter-btn" onclick="event.stopPropagation(); showContextMenuAt(event, '${item.id}')" title="More">
+            <svg fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><circle cx="12" cy="6" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="18" r="1.5"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="item-body">
+        <div class="item-text"
+             ${editable ? `contenteditable="true" onblur="onItemTextBlur('${item.id}', this)"` : ''}
+             onclick="event.stopPropagation()">${item.text}</div>
+        <div class="item-meta">${metaParts.join(' ')}</div>
+        ${choicesHtml}
+      </div>
+      ${indicators.length ? `<div class="item-indicators">${indicators.join('')}</div>` : ''}
+    </div>
+  `;
+
+  // Inline suggestion cards
+  for (const sug of sugs) {
+    itemHtml += renderSuggestionCard(sug);
+  }
+
+  // Inline comment thread
+  if (comments.length || showCommentInput) {
+    itemHtml += renderCommentThread(item.id, comments, showCommentInput);
+  }
+
+  return itemHtml;
+}
+
+function renderSuggestionCard(sug) {
+  const isAgent = sug.author === 'Methodologist';
+  let diffHtml = '';
+  if (sug.kind === 'no-text-change') {
+    diffHtml = `<div class="suggestion-diff" style="font-size: 13px; color: var(--ink-muted);"><em>No text change proposed — see rationale.</em></div>`;
+  } else if (sug.isBn) {
+    diffHtml = `<div class="suggestion-diff" style="font-family: var(--font-bn); font-size: 16px;">${sug.proposedText}</div>`;
+  } else if (sug.kind === 'choice-suggestion') {
+    diffHtml = `<div class="suggestion-diff" style="font-size: 13px;"><strong>Add new option:</strong> "${sug.choiceToAdd?.label || 'None / I do nothing'}"</div>`;
+  } else {
+    // Word-level diff (basic)
+    diffHtml = `<div class="suggestion-diff">${diffStrings(sug.currentText, sug.proposedText)}</div>`;
+  }
+
+  return `
+    <div class="suggestion-card" id="sug_${sug.id}">
+      <div class="suggestion-header ${isAgent ? 'from-agent' : ''}">
+        ${isAgent ? '<span style="color: var(--agent);">◐</span>' : ''}
+        <span class="suggestion-author">${sug.author}</span>
+        <span>· ${sug.kindLabel || labelForKind(sug.kind)}</span>
+        <span class="suggestion-time">${sug.timeAgo}</span>
+      </div>
+      ${diffHtml}
+      <div class="suggestion-rationale">${sug.reasoning || ''}</div>
+      <div class="suggestion-actions">
+        <button class="sug-btn accept" onclick="acceptSuggestion('${sug.id}')">✓ Accept</button>
+        <button class="sug-btn reject" onclick="rejectSuggestion('${sug.id}')">✕ Reject</button>
+        <button class="sug-btn reply" onclick="toggleCommentInput('${sug.itemId}')">Reply</button>
+      </div>
+    </div>
+  `;
+}
+
+function labelForKind(kind) {
+  return ({
+    'rewording': 'suggested rewording',
+    'no-text-change': 'methodology note',
+    'choice-suggestion': 'suggested choice addition',
+    'category-suggestion': 'category note',
+    'translation': 'proposed translation'
+  })[kind] || 'suggestion';
+}
+
+function diffStrings(a, b) {
+  // Very simple word-level diff
+  if (a === b) return b;
+  const aw = a.split(/(\s+)/);
+  const bw = b.split(/(\s+)/);
+  // For simplicity, mark mismatches as add/remove
+  let i = 0, j = 0, out = '';
+  while (i < aw.length || j < bw.length) {
+    if (i < aw.length && j < bw.length && aw[i] === bw[j]) {
+      out += escapeHtml(aw[i]);
+      i++; j++;
+    } else {
+      // collect divergences until a common token
+      let aChunk = '', bChunk = '';
+      while (i < aw.length && (j >= bw.length || aw[i] !== bw[j])) { aChunk += aw[i]; i++; }
+      while (j < bw.length && (i >= aw.length || aw[i] !== bw[j])) { bChunk += bw[j]; j++; }
+      if (aChunk) out += `<span class="diff-remove">${escapeHtml(aChunk)}</span>`;
+      if (bChunk) out += `<span class="diff-add">${escapeHtml(bChunk)}</span>`;
+    }
+  }
+  return out;
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function renderCommentThread(itemId, comments, showInput) {
+  return `
+    <div class="comment-thread">
+      ${comments.map(c => renderComment(c)).join('')}
+      <div class="comment-input">
+        <div class="comment-avatar a-verne">VR</div>
+        <input class="comment-input-field" id="comment_input_${itemId}" placeholder="Reply, or @agent for help…"
+               onkeypress="if (event.key === 'Enter') submitComment('${itemId}', this.value, this)" />
+        <button class="comment-send" onclick="const i = document.getElementById('comment_input_${itemId}'); submitComment('${itemId}', i.value, i)">Send</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderComment(c) {
+  const avatarClass = c.isAgent ? 'a-agent' : (c.authorClass || 'a-verne');
+  const initials = c.isAgent ? '◐' : (c.authorInitials || 'VR');
+  let agentOutputHtml = '';
+  if (c.agentOutput) {
+    agentOutputHtml = `
+      <div class="agent-output ${c.agentOutput.isBn ? 'bn' : ''}">
+        <span class="label">${c.agentOutput.label}</span>
+        ${c.agentOutput.content}
+      </div>
+      <div class="comment-actions">
+        <button class="sug-btn accept" onclick="applyAgentTranslation('${c.id}')">✓ Apply as suggestion</button>
+        <button class="sug-btn reply">View 2 alternatives</button>
+        <button class="sug-btn reply">Cite source</button>
+      </div>
+    `;
+  }
+  return `
+    <div class="comment">
+      <div class="comment-avatar ${avatarClass}">${initials}</div>
+      <div class="comment-body">
+        <div class="comment-meta">
+          <span class="comment-author ${c.isAgent ? 'is-agent' : ''}">${c.author}</span>
+          <span class="comment-time">${c.timeAgo}</span>
+        </div>
+        <div class="comment-text">${c.text}${agentOutputHtml}</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderDocument() {
+  renderDocumentHeader();
+  const root = document.getElementById('document-body');
+  root.innerHTML = QUESTIONNAIRE.sections.map(section => `
+    <section class="section">
+      <header class="section-header">
+        <span class="section-num">§ ${section.number}</span>
+        <h2 class="section-title">${section.title}</h2>
+        <span class="section-meta">${section.items.length} item${section.items.length > 1 ? 's' : ''}${section.module ? ' · validated' : ''}</span>
+      </header>
+      ${section.module ? renderModuleBanner(section.module) : ''}
+      ${section.items.map(item => renderItem(item, section.id)).join('')}
+    </section>
+  `).join('');
+
+  // Wire up item click → select
+  root.querySelectorAll('.item').forEach(el => {
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('button')) return;
+      if (e.target.closest('.suggestion-card')) return;
+      if (e.target.closest('.comment-thread')) return;
+      if (e.target.closest('[contenteditable]')) return;
+      selectItem(el.dataset.itemId);
+    });
+  });
+}
+
+function renderModuleBanner(module) {
+  return `
+    <div class="module-banner">
+      <div class="module-banner-content">
+        <span class="module-tag">${module.tag}</span>
+        <span class="module-name">${module.name}</span>
+      </div>
+      <span class="module-cite">${module.citation}</span>
+    </div>
+  `;
+}
+
+/* ============================================================
+ * RENDERING — INSPECTOR
+ * ============================================================ */
+
+function renderInspector() {
+  const inspector = document.getElementById('inspector');
+  if (!state.selectedItemId) {
+    inspector.innerHTML = `
+      <div class="inspector-empty">
+        <svg fill="none" stroke="currentColor" stroke-width="1.4" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 3"/></svg>
+        <strong>Inspector</strong>
+        Select any question to view and edit its properties, or to ask the methodologist agent for help.
+      </div>
+    `;
+    return;
+  }
+
+  const found = findItem(state.selectedItemId);
+  if (!found) return;
+  const { section, item } = found;
+
+  let bodyHtml;
+  if (state.inspectorTab === 'properties') bodyHtml = renderInspectorProperties(item);
+  else if (state.inspectorTab === 'history') bodyHtml = renderInspectorHistory(item);
+  else if (state.inspectorTab === 'codebook') bodyHtml = renderInspectorCodebook(item);
+
+  inspector.innerHTML = `
+    <div class="inspector-header">
+      <div class="inspector-overline">§ ${section.number} · ITEM ${item.number} · ${item.type}</div>
+      <div class="inspector-title">${stripHtml(item.text).slice(0, 60)}${stripHtml(item.text).length > 60 ? '…' : ''}</div>
+    </div>
+    <div class="inspector-tabs">
+      <button class="inspector-tab ${state.inspectorTab === 'properties' ? 'active' : ''}" onclick="setInspectorTab('properties')">Properties</button>
+      <button class="inspector-tab ${state.inspectorTab === 'history' ? 'active' : ''}" onclick="setInspectorTab('history')">History</button>
+      <button class="inspector-tab ${state.inspectorTab === 'codebook' ? 'active' : ''}" onclick="setInspectorTab('codebook')">Codebook</button>
+    </div>
+    ${bodyHtml}
+  `;
+}
+
+function renderInspectorProperties(item) {
+  let choicesHtml = '';
+  if (item.choices) {
+    choicesHtml = `
+      <div class="inspector-section">
+        <div class="inspector-section-label">Choices (${item.choices.length})</div>
+        <ul class="choice-editor-list">
+          ${item.choices.map((c, i) => `
+            <li class="choice-editor-item">
+              <span class="choice-handle">⋮⋮</span>
+              <span class="choice-key">${c.key}</span>
+              <input class="choice-text" value="${escapeHtml(c.label)}" onblur="updateChoice('${item.id}', '${c.key}', this.value)" />
+              <button class="choice-remove" onclick="removeChoice('${item.id}', '${c.key}')" title="Remove">
+                <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
+              </button>
+            </li>
+          `).join('')}
+        </ul>
+        <button class="add-choice" onclick="addChoice('${item.id}')">+ Add choice</button>
+      </div>
+    `;
+  }
+
+  let logicHtml = '';
+  if (item.relevant) {
+    logicHtml = `
+      <div class="inspector-section">
+        <div class="inspector-section-label">Logic</div>
+        <div class="logic-display"><span class="keyword">show if</span> <span class="ref">${item.relevant.replace(/\$\{/g, '${').replace(/\}/g, '}')}</span></div>
+      </div>
+    `;
+  } else {
+    logicHtml = `
+      <div class="inspector-section">
+        <div class="inspector-section-label">Logic</div>
+        <div style="font-family: var(--font-ui); font-size: 12.5px; color: var(--ink-subtle);">No skip logic. Always shown.</div>
+      </div>
+    `;
+  }
+
+  let constraintHtml = '';
+  if (item.constraint) {
+    constraintHtml = `
+      <div class="inspector-section">
+        <div class="inspector-section-label">Constraint</div>
+        <div class="logic-display">${item.constraint.replace(/\./g, '<span class="ref">.</span>')}</div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="inspector-section">
+      <div class="inspector-section-label">Identity</div>
+      <div class="field"><span class="field-label">Variable name</span><span class="field-value">${item.variableName}</span></div>
+      <div class="field"><span class="field-label">Type</span><span class="field-value">${item.type}</span></div>
+      <div class="field"><span class="field-label">Required</span><span class="field-value">${item.required ? 'yes' : 'no'}</span></div>
+    </div>
+    ${choicesHtml}
+    ${logicHtml}
+    ${constraintHtml}
+    <div class="agent-panel">
+      <div class="agent-panel-header">
+        <div class="agent-icon">◐</div>
+        <span class="agent-name">METHODOLOGIST</span>
+      </div>
+      <div style="font-family: var(--font-ui); font-size: 12.5px; color: var(--ink-muted); line-height: 1.5;">
+        Ready to review this item. Pick an action — or right-click the item for the same menu.
+      </div>
+      <div class="agent-actions" id="agentActionsFor_${item.id}">
+        <button class="agent-action" onclick="askAgent('${item.id}', 'review')">Review for clarity &amp; bias</button>
+        <button class="agent-action" onclick="askAgent('${item.id}', 'translate')">Translate to Bangla</button>
+        <button class="agent-action" onclick="askAgent('${item.id}', 'alternatives')">Suggest validated alternatives</button>
+        <button class="agent-action" onclick="askAgent('${item.id}', 'codebook')">Generate codebook entry</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderInspectorHistory(item) {
+  // Mock history
+  const events = [
+    { time: 'now', text: 'Selected by <strong>You</strong>' },
+    { time: '2h ago', text: '<strong>Aluk</strong> opened a suggestion' },
+    { time: 'yesterday', text: '<strong>Verne</strong> created this item' },
+    { time: 'yesterday', text: 'Choice <em>Use a fan</em> was added' },
+    { time: 'yesterday', text: 'Type set to <em>select_multiple</em>' }
+  ];
+  return `
+    <div class="inspector-section">
+      <div class="inspector-section-label">Item history</div>
+      ${events.map(e => `
+        <div class="history-event">
+          <span class="history-time">${e.time}</span>
+          <span class="history-text">${e.text}</span>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderInspectorCodebook(item) {
+  const cb = AGENT_RESPONSES[item.id]?.codebook;
+  if (!cb) {
+    return `
+      <div class="inspector-section">
+        <div class="inspector-section-label">Codebook</div>
+        <div style="font-family: var(--font-ui); font-size: 12.5px; color: var(--ink-subtle);">No codebook entry yet. Click "Generate codebook entry" in the agent panel to draft one.</div>
+      </div>
+    `;
+  }
+  return `
+    <div class="inspector-section">
+      <div class="inspector-section-label">Codebook entry</div>
+      <div style="font-family: var(--font-mono); font-size: 12px; color: var(--ink); line-height: 1.6; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 12px;">
+        ${cb.content}
+      </div>
+      <div style="margin-top: 12px; display: flex; gap: 8px;">
+        <button class="sug-btn accept" style="background: var(--ink);">Copy as Stata .do</button>
+        <button class="sug-btn reject">Copy as R</button>
+      </div>
+    </div>
+  `;
+}
+
+function stripHtml(html) {
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  return tmp.textContent || '';
+}
+
+/* ============================================================
+ * RENDERING — OUTLINE MODE
+ * ============================================================ */
+
+function renderOutline() {
+  const root = document.getElementById('outline-body');
+  let treeHtml = '';
+  for (const section of QUESTIONNAIRE.sections) {
+    treeHtml += `<div class="tree-node section">§ ${section.number} · ${stripHtml(section.title)}</div>`;
+    for (const item of section.items) {
+      const active = state.selectedItemId === item.id ? 'active' : '';
+      treeHtml += `<div class="tree-node item-node ${active}" onclick="selectItemFromOutline('${item.id}')">${item.number}. ${stripHtml(item.text).slice(0, 40)}${stripHtml(item.text).length > 40 ? '…' : ''}</div>`;
+    }
+  }
+
+  let detailHtml = '';
+  if (state.selectedItemId) {
+    const found = findItem(state.selectedItemId);
+    if (found) {
+      const { section, item } = found;
+      detailHtml = `
+        <div class="outline-detail">
+          <div class="doc-overline" style="margin-bottom: 14px;">SELECTED · § ${section.number} · ITEM ${item.number}</div>
+          <div class="doc-title" style="font-size: 22px; line-height: 1.3;">${item.text}</div>
+          <div class="doc-meta" style="margin-top: 16px;">
+            <span><strong>Type</strong> ${item.type}</span>
+            ${item.choices ? `<span><strong>Choices</strong> ${item.choices.length}</span>` : ''}
+            ${item.relevant ? `<span><strong>Logic</strong> ${item.relevant}</span>` : ''}
+          </div>
+          <p style="margin-top: 28px; font-size: 14px; color: var(--ink-muted); line-height: 1.6; font-family: var(--font-ui);">
+            Outline mode is for navigating and restructuring. Click any node to focus it. Drag to reorder (not wired in this prototype). Switch back to Document mode to edit.
+          </p>
+          <button class="modal-btn" onclick="setMode('document')" style="margin-top: 16px;">Open in Document mode →</button>
+        </div>
+      `;
+    }
+  } else {
+    detailHtml = `<div class="outline-detail" style="color: var(--ink-subtle); font-family: var(--font-ui);">Click any item in the tree to focus it.</div>`;
+  }
+
+  root.innerHTML = `
+    <div class="outline-tree">${treeHtml}</div>
+    ${detailHtml}
+  `;
+}
+
+function selectItemFromOutline(id) {
+  state.selectedItemId = id;
+  renderOutline();
+}
+
+/* ============================================================
+ * RENDERING — SPEC MODE
+ * ============================================================ */
+
+function renderSpec() {
+  const tbody = document.getElementById('spec-body');
+  let rows = `
+    <thead>
+      <tr>
+        <th>type</th><th>name</th><th>label</th><th>required</th><th>relevant</th><th>constraint</th>
+      </tr>
+    </thead>
+    <tbody>
+  `;
+  for (const section of QUESTIONNAIRE.sections) {
+    rows += `<tr class="group-row"><td>begin_group</td><td>${section.id}</td><td>${stripHtml(section.title)}</td><td></td><td></td><td></td></tr>`;
+    for (const item of section.items) {
+      const isSelected = state.selectedItemId === item.id ? ' style="background: var(--accent-bg);"' : '';
+      const typeStr = item.choices ? `${item.type} ${item.variableName}_choices` : item.type;
+      rows += `<tr${isSelected}>
+        <td>${typeStr}</td>
+        <td>${item.variableName}</td>
+        <td>${stripHtml(item.text)}</td>
+        <td>${item.required ? 'yes' : ''}</td>
+        <td>${item.relevant || ''}</td>
+        <td>${item.constraint || ''}</td>
+      </tr>`;
+    }
+    rows += `<tr class="group-row"><td>end_group</td><td></td><td></td><td></td><td></td><td></td></tr>`;
+  }
+  rows += '</tbody>';
+  tbody.innerHTML = rows;
+}
+
+/* ============================================================
+ * RENDERING — PREVIEW MODE
+ * ============================================================ */
+
+function renderPreview() {
+  const root = document.getElementById('preview-body');
+  const items = flatItems();
+  if (state.previewIndex >= items.length) state.previewIndex = items.length - 1;
+  if (state.previewIndex < 0) state.previewIndex = 0;
+
+  // Skip items that are not relevant
+  while (state.previewIndex < items.length) {
+    const { item } = items[state.previewIndex];
+    if (item.relevant && !evalRelevant(item.relevant)) {
+      state.previewIndex++;
+    } else break;
+  }
+
+  const total = items.length;
+  const { item } = items[state.previewIndex] || items[0];
+
+  let inputHtml;
+  if (item.type === 'integer') {
+    inputHtml = `<input class="preview-input" type="number" placeholder="Enter a number..." value="${state.previewAnswers[item.id] || ''}" oninput="setPreviewAnswer('${item.id}', this.value)" />`;
+  } else if (item.type === 'select_one') {
+    const current = state.previewAnswers[item.id];
+    inputHtml = item.choices.map(c => `
+      <div class="preview-choice ${current === c.key ? 'checked' : ''}" onclick="togglePreviewChoice('${item.id}', '${c.key}', false)">
+        <div class="preview-checkbox radio"></div>${c.label}
+      </div>
+    `).join('');
+  } else if (item.type === 'select_multiple') {
+    const current = state.previewAnswers[item.id] || [];
+    inputHtml = item.choices.map(c => `
+      <div class="preview-choice ${current.includes(c.key) ? 'checked' : ''}" onclick="togglePreviewChoice('${item.id}', '${c.key}', true)">
+        <div class="preview-checkbox"></div>${c.label}
+      </div>
+    `).join('');
+  }
+
+  const progress = Math.round(((state.previewIndex + 1) / total) * 100);
+
+  root.innerHTML = `
+    <div class="preview-frame">
+      <div class="preview-header">
+        <span>Heat &amp; Health · Chittagong</span>
+        <span class="signal">≡ ${state.previewIndex + 1} of ${total}</span>
+      </div>
+      <div class="preview-body">
+        <div class="preview-progress"><div class="preview-progress-fill" style="width: ${progress}%"></div></div>
+        <div class="preview-q-num">Question ${state.previewIndex + 1} of ${total}</div>
+        <div class="preview-q-text">${item.text}</div>
+        ${inputHtml}
+        <div class="preview-nav">
+          <button class="preview-btn secondary" onclick="previewPrev()" ${state.previewIndex === 0 ? 'disabled' : ''}>← Back</button>
+          <button class="preview-btn" onclick="previewNext()" ${state.previewIndex === total - 1 ? 'disabled' : ''}>Continue →</button>
+        </div>
+      </div>
+    </div>
+    <div style="text-align: center; margin-top: 20px; font-family: var(--font-ui); font-size: 12px; color: var(--ink-subtle);">
+      ${item.relevant ? `Skip logic active: shows if ${item.relevant.replace(/[\${}]/g, '')}` : 'Always shown'}
+    </div>
+  `;
+}
+
+function evalRelevant(expr) {
+  // Very simple evaluator for ${var} >= n, ${var} == n, etc.
+  const m = expr.match(/\$\{(\w+)\}\s*([><=!]+)\s*(\d+)/);
+  if (!m) return true;
+  const [, varName, op, valStr] = m;
+  // Find the item with that variableName and look up its answer
+  for (const { item } of flatItems()) {
+    if (item.variableName === varName) {
+      const ans = state.previewAnswers[item.id];
+      const aN = parseFloat(ans);
+      const bN = parseFloat(valStr);
+      if (isNaN(aN)) return false;
+      if (op === '>=') return aN >= bN;
+      if (op === '<=') return aN <= bN;
+      if (op === '>') return aN > bN;
+      if (op === '<') return aN < bN;
+      if (op === '==' || op === '=') return aN === bN;
+      if (op === '!=') return aN !== bN;
+    }
+  }
+  return true;
+}
+
+function setPreviewAnswer(itemId, value) {
+  state.previewAnswers[itemId] = value;
+}
+
+function togglePreviewChoice(itemId, key, multi) {
+  if (multi) {
+    state.previewAnswers[itemId] = state.previewAnswers[itemId] || [];
+    const idx = state.previewAnswers[itemId].indexOf(key);
+    if (idx >= 0) state.previewAnswers[itemId].splice(idx, 1);
+    else state.previewAnswers[itemId].push(key);
+  } else {
+    state.previewAnswers[itemId] = key;
+  }
+  renderPreview();
+}
+
+function previewPrev() {
+  state.previewIndex--;
+  // Skip irrelevant items going backwards
+  const items = flatItems();
+  while (state.previewIndex > 0) {
+    const { item } = items[state.previewIndex];
+    if (item.relevant && !evalRelevant(item.relevant)) state.previewIndex--;
+    else break;
+  }
+  renderPreview();
+}
+
+function previewNext() {
+  state.previewIndex++;
+  renderPreview();
+}
+
+/* ============================================================
+ * RENDERING — ACTIVITY LOG
+ * ============================================================ */
+
+function renderActivity() {
+  const body = document.getElementById('activityLogBody');
+  body.innerHTML = state.activity.map(e => `
+    <div class="activity-event">
+      <div class="activity-event-meta">
+        <span>${e.time}</span>
+        <span>·</span>
+        <span>${e.actor}</span>
+      </div>
+      <div class="activity-event-text">${e.actor === 'You' ? '<strong>You</strong>' : `<strong>${e.actor}</strong>`} ${e.action} <em>${e.target}</em></div>
+    </div>
+  `).join('');
+
+  // Update the floating pill
+  const lastReal = state.activity.find(e => e.actor !== 'You');
+  if (lastReal) {
+    document.getElementById('activityPillText').innerHTML =
+      `Saved · 3 reviewers active · last edit by <strong style="color:white">${lastReal.actor}</strong> ${lastReal.time}`;
+  }
+}
+
+/* ============================================================
+ * ACTIONS
+ * ============================================================ */
+
+function selectItem(id) {
+  state.selectedItemId = id;
+  renderDocument();
+  renderInspector();
+}
+
+function setInspectorTab(tab) {
+  state.inspectorTab = tab;
+  renderInspector();
+}
+
+function setMode(mode) {
+  state.mode = mode;
+  document.body.dataset.mode = mode;
+  document.querySelectorAll('[data-mode-btn]').forEach(b => {
+    b.classList.toggle('active', b.dataset.modeBtn === mode);
+  });
+  if (mode === 'document') renderDocument();
+  if (mode === 'outline') renderOutline();
+  if (mode === 'spec') renderSpec();
+  if (mode === 'preview') {
+    if (state.selectedItemId) {
+      const idx = flatItems().findIndex(x => x.item.id === state.selectedItemId);
+      if (idx >= 0) state.previewIndex = idx;
+    }
+    renderPreview();
+  }
+}
+
+function toggleSuggestingMode() {
+  state.suggestingMode = !state.suggestingMode;
+  const banner = document.getElementById('suggestingBanner');
+  const toggle = document.getElementById('suggestToggle');
+  const label = document.getElementById('suggestToggleLabel');
+  banner.hidden = !state.suggestingMode;
+  toggle.classList.toggle('active', state.suggestingMode);
+  label.textContent = state.suggestingMode ? 'Suggesting' : 'Editing';
+  document.body.classList.toggle('suggesting', state.suggestingMode);
+  renderDocument();
+  showToast(state.suggestingMode ? 'Suggesting mode on. Edits become suggestions.' : 'Back to editing mode.', state.suggestingMode ? 'success' : '');
+}
+
+function onItemTextBlur(itemId, el) {
+  const found = findItem(itemId);
+  if (!found) return;
+  const newText = el.innerHTML;
+  if (newText === found.item.text) return;
+
+  if (state.suggestingMode) {
+    // Create a suggestion
+    const sug = {
+      id: 'sug_user_' + Date.now(),
+      itemId,
+      author: 'Verne',
+      authorInitials: 'VR',
+      authorClass: 'a-verne',
+      timeAgo: 'just now',
+      kind: 'rewording',
+      currentText: found.item.text,
+      proposedText: newText,
+      reasoning: 'Edited in suggesting mode.',
+      status: 'open'
+    };
+    state.suggestions.push(sug);
+    el.innerHTML = found.item.text; // revert visual
+    logActivity('suggested rewording on', `${found.item.number} — ${stripHtml(found.item.text).slice(0, 30)}…`);
+    showToast('Suggestion saved. Reviewers can accept or reject.', 'success');
+    renderDocument();
+  } else {
+    // Direct edit
+    found.item.text = newText;
+    logActivity('edited', `${found.item.number} — ${stripHtml(newText).slice(0, 30)}…`);
+    renderDocument();
+    if (state.mode === 'spec') renderSpec();
+  }
+}
+
+function updateChoice(itemId, choiceKey, newLabel) {
+  const found = findItem(itemId);
+  if (!found || !found.item.choices) return;
+  const choice = found.item.choices.find(c => c.key === choiceKey);
+  if (!choice) return;
+  if (choice.label !== newLabel) {
+    choice.label = newLabel;
+    logActivity('renamed choice in', `${found.item.number} — "${newLabel}"`);
+    renderDocument();
+  }
+}
+
+function addChoice(itemId) {
+  const found = findItem(itemId);
+  if (!found || !found.item.choices) return;
+  const newKey = 'opt_' + Date.now().toString(36).slice(-4);
+  found.item.choices.push({ key: newKey, label: 'New option' });
+  logActivity('added choice to', `${found.item.number}`);
+  renderDocument();
+  renderInspector();
+  showToast('Choice added.', 'success');
+}
+
+function removeChoice(itemId, choiceKey) {
+  const found = findItem(itemId);
+  if (!found || !found.item.choices) return;
+  found.item.choices = found.item.choices.filter(c => c.key !== choiceKey);
+  logActivity('removed choice from', `${found.item.number}`);
+  renderDocument();
+  renderInspector();
+}
+
+function toggleCommentInput(itemId) {
+  state.showCommentInput = state.showCommentInput === itemId ? null : itemId;
+  selectItem(itemId);
+  setTimeout(() => {
+    const el = document.getElementById('comment_input_' + itemId);
+    if (el) el.focus();
+  }, 50);
+}
+
+function submitComment(itemId, text, inputEl) {
+  if (!text || !text.trim()) return;
+  const trimmed = text.trim();
+  state.comments[itemId] = state.comments[itemId] || [];
+  const mentionsAgent = /@agent/i.test(trimmed);
+  const newComment = {
+    id: 'c_user_' + Date.now(),
+    author: 'Verne',
+    authorInitials: 'VR',
+    authorClass: 'a-verne',
+    timeAgo: 'just now',
+    text: trimmed.replace(/@agent/gi, '<span class="mention">@agent</span>')
+  };
+  state.comments[itemId].push(newComment);
+  inputEl.value = '';
+  logActivity('commented on', findItem(itemId)?.item.number || itemId);
+  renderDocument();
+
+  if (mentionsAgent) {
+    showAgentTyping(itemId);
+    setTimeout(() => {
+      addAgentResponse(itemId, trimmed);
+      hideAgentTyping(itemId);
+    }, 1400);
+  }
+}
+
+function showAgentTyping(itemId) {
+  // Add a typing indicator inside the comment thread
+  const items = document.querySelectorAll(`[data-item-id="${itemId}"]`);
+  if (!items.length) return;
+  const itemEl = items[0];
+  const thread = itemEl.parentElement.querySelector('.comment-thread');
+  if (!thread) return;
+  const input = thread.querySelector('.comment-input');
+  const typing = document.createElement('div');
+  typing.className = 'agent-typing';
+  typing.id = 'typing_' + itemId;
+  typing.innerHTML = `
+    <div class="comment-avatar a-agent">◐</div>
+    <div class="comment-body">
+      <div class="comment-meta">
+        <span class="comment-author is-agent">Methodologist</span>
+        <span class="comment-time">typing…</span>
+      </div>
+      <div class="typing-dots"><span></span><span></span><span></span></div>
+    </div>
+  `;
+  thread.insertBefore(typing, input);
+}
+
+function hideAgentTyping(itemId) {
+  const el = document.getElementById('typing_' + itemId);
+  if (el) el.remove();
+}
+
+function addAgentResponse(itemId, prompt) {
+  // Generate a context-aware-ish response
+  const found = findItem(itemId);
+  if (!found) return;
+  const lc = prompt.toLowerCase();
+
+  let responseText = '';
+  let agentOutput = null;
+
+  if (/translat|bangla|bengali/.test(lc)) {
+    const t = AGENT_RESPONSES[itemId]?.translate;
+    if (t) {
+      responseText = t.reasoning;
+      agentOutput = { label: 'Proposed translation', content: t.proposedText, isBn: t.isBn };
+    } else {
+      responseText = 'I can translate this item — let me draft a Bangla version.';
+    }
+  } else if (/bias|leading|double|clarity|review/.test(lc)) {
+    const r = AGENT_RESPONSES[itemId]?.review;
+    if (r) responseText = r.reasoning;
+    else responseText = 'I reviewed this item and don\'t see obvious clarity or bias issues.';
+  } else if (/short|reduce|brief/.test(lc)) {
+    responseText = 'I could propose a shorter version, but PHQ-9 items must not be modified individually — modifying validated instrument items invalidates the scale. For shorter forms, consider PHQ-2 or PHQ-4 (validated short forms).';
+  } else if (/source|citation|reference/.test(lc)) {
+    responseText = 'For citations on this item, I can pull from Chowdhury et al. 2004 (validation in Bangladesh) and the original Kroenke 2001 Annals of Internal Medicine paper. Want me to add them to the codebook?';
+  } else {
+    responseText = `I read your question. Based on this item (${found.item.number} — ${found.item.type}), here's my read: ${AGENT_RESPONSES[itemId]?.review?.reasoning?.split('.')[0] || 'this looks well-formed, but tell me what specifically you want me to check.'}.`;
+  }
+
+  state.comments[itemId].push({
+    id: 'c_agent_' + Date.now(),
+    author: 'Methodologist',
+    isAgent: true,
+    timeAgo: 'just now',
+    text: responseText,
+    agentOutput
+  });
+  logActivity('responded on', found.item.number);
+  renderDocument();
+}
+
+function applyAgentTranslation(commentId) {
+  // Find the comment
+  for (const itemId in state.comments) {
+    const c = state.comments[itemId].find(cc => cc.id === commentId);
+    if (c && c.agentOutput) {
+      // Create a suggestion to apply this translation
+      state.suggestions.push({
+        id: 'sug_translation_' + Date.now(),
+        itemId,
+        author: 'Methodologist',
+        timeAgo: 'just now',
+        kind: 'translation',
+        currentText: findItem(itemId).item.text,
+        proposedText: c.agentOutput.content,
+        reasoning: 'Applying validated translation from comment thread.',
+        isBn: true,
+        status: 'open'
+      });
+      logActivity('proposed translation on', findItem(itemId)?.item.number);
+      showToast('Translation added as a suggestion.', 'success');
+      renderDocument();
+      return;
+    }
+  }
+}
+
+function askAgent(itemId, action) {
+  const btnEl = event.target;
+  if (btnEl.classList.contains('thinking')) return;
+  const originalLabel = btnEl.textContent;
+  btnEl.classList.add('thinking');
+  btnEl.textContent = 'Thinking…';
+
+  setTimeout(() => {
+    btnEl.classList.remove('thinking');
+    btnEl.textContent = originalLabel;
+
+    const r = AGENT_RESPONSES[itemId]?.[action];
+    if (!r) {
+      showToast('No response template for this combination.', 'warn');
+      return;
+    }
+    const found = findItem(itemId);
+    if (!found) return;
+
+    if (action === 'codebook') {
+      state.inspectorTab = 'codebook';
+      renderInspector();
+      showToast('Codebook entry generated. See Inspector → Codebook.', 'success');
+      logActivity('generated codebook for', found.item.number);
+      return;
+    }
+
+    let kind = 'rewording';
+    if (action === 'translate') kind = 'translation';
+    else if (action === 'review' && r.kind) kind = r.kind;
+    else if (action === 'alternatives') kind = r.noChange ? 'no-text-change' : 'rewording';
+
+    const sug = {
+      id: 'sug_agent_' + Date.now(),
+      itemId,
+      author: 'Methodologist',
+      timeAgo: 'just now',
+      kind,
+      currentText: found.item.text,
+      proposedText: r.proposedText || found.item.text,
+      reasoning: r.reasoning,
+      isBn: r.isBn,
+      choiceToAdd: r.choiceToAdd,
+      status: 'open'
+    };
+    state.suggestions.push(sug);
+    logActivity(`asked agent for ${action} on`, found.item.number);
+    showToast(`Agent ${action} suggestion added.`, 'success');
+    renderDocument();
+  }, 800 + Math.random() * 600);
+}
+
+function acceptSuggestion(sugId) {
+  const sug = state.suggestions.find(s => s.id === sugId);
+  if (!sug) return;
+  const found = findItem(sug.itemId);
+  if (!found) return;
+
+  if (sug.kind === 'choice-suggestion' && sug.choiceToAdd) {
+    found.item.choices.push(sug.choiceToAdd);
+  } else if (sug.kind === 'no-text-change') {
+    // No actual text change, just acknowledge
+  } else if (sug.proposedText) {
+    found.item.text = sug.proposedText;
+  }
+  sug.status = 'accepted';
+  state.suggestions = state.suggestions.filter(s => s.id !== sugId);
+  logActivity('accepted suggestion on', found.item.number);
+  showToast('Suggestion applied.', 'success');
+  renderDocument();
+  renderInspector();
+}
+
+function rejectSuggestion(sugId) {
+  const sug = state.suggestions.find(s => s.id === sugId);
+  if (!sug) return;
+  state.suggestions = state.suggestions.filter(s => s.id !== sugId);
+  logActivity('rejected suggestion on', findItem(sug.itemId)?.item.number);
+  renderDocument();
+}
+
+/* ============================================================
+ * CONTEXT MENU
+ * ============================================================ */
+
+function showContextMenu(e, itemId) {
+  e.preventDefault();
+  selectItem(itemId);
+  const menu = document.getElementById('contextMenu');
+  menu.innerHTML = `
+    <div class="menu-section">
+      <div class="menu-section-label">Item</div>
+      <button class="menu-item" onclick="closeContextMenu(); toggleCommentInput('${itemId}')"><span>Add comment</span><span class="menu-shortcut">⌘M</span></button>
+      <button class="menu-item" onclick="closeContextMenu(); selectItem('${itemId}')"><span>Open in inspector</span><span class="menu-shortcut">⏎</span></button>
+      <button class="menu-item" onclick="closeContextMenu()"><span>Duplicate</span><span class="menu-shortcut">⌘D</span></button>
+    </div>
+    <div class="menu-section">
+      <div class="menu-section-label">Ask the agent…</div>
+      <button class="menu-item agent-item" onclick="closeContextMenu(); askAgentFromMenu('${itemId}', 'review')">Review for clarity &amp; bias</button>
+      <button class="menu-item agent-item" onclick="closeContextMenu(); askAgentFromMenu('${itemId}', 'translate')">Translate to Bangla</button>
+      <button class="menu-item agent-item" onclick="closeContextMenu(); askAgentFromMenu('${itemId}', 'alternatives')">Suggest validated alternatives</button>
+      <button class="menu-item agent-item" onclick="closeContextMenu(); askAgentFromMenu('${itemId}', 'codebook')">Generate codebook entry</button>
+    </div>
+  `;
+  menu.style.left = e.pageX + 'px';
+  menu.style.top = e.pageY + 'px';
+  menu.hidden = false;
+
+  // Position correction if it overflows
+  setTimeout(() => {
+    const r = menu.getBoundingClientRect();
+    if (r.right > window.innerWidth) menu.style.left = (window.innerWidth - r.width - 12) + 'px';
+    if (r.bottom > window.innerHeight) menu.style.top = (window.innerHeight - r.height - 12) + 'px';
+  }, 0);
+}
+
+function showContextMenuAt(e, itemId) {
+  showContextMenu(e, itemId);
+}
+
+function closeContextMenu() {
+  document.getElementById('contextMenu').hidden = true;
+}
+
+function askAgentFromMenu(itemId, action) {
+  // Simulate the agent action button being clicked. Use the inspector's button.
+  const btn = document.querySelector(`#agentActionsFor_${itemId} button[onclick*="${action}"]`);
+  if (btn) {
+    btn.click();
+  } else {
+    // fallback: synthesize event
+    const fakeEvent = { target: { classList: { contains: () => false, add: () => {}, remove: () => {} }, textContent: '' } };
+    window.event = fakeEvent;
+    askAgent(itemId, action);
+  }
+}
+
+/* ============================================================
+ * ACTIVITY LOG
+ * ============================================================ */
+
+function toggleActivityLog() {
+  const log = document.getElementById('activityLog');
+  log.classList.toggle('open');
+  document.getElementById('activityBadge').style.display = 'none';
+}
+
+/* ============================================================
+ * CONFLICT MODAL
+ * ============================================================ */
+
+function openConflictModal() {
+  const modal = document.getElementById('conflictModal');
+  selectedConflict = null;
+  renderConflictCards();
+  modal.hidden = false;
+  document.getElementById('applyResolution').disabled = true;
+}
+
+function closeConflictModal() {
+  document.getElementById('conflictModal').hidden = true;
+}
+
+function renderConflictCards() {
+  const root = document.getElementById('conflictCards');
+  root.innerHTML = CONFLICT_DEMO.options.filter(o => !o.hidden || selectedConflict === 'synth').map(o => `
+    <div class="conflict-card ${o.id} ${selectedConflict === o.id ? 'selected' : ''}" onclick="selectConflict('${o.id}')">
+      <div class="conflict-radio"></div>
+      <div class="conflict-card-author">${o.author}</div>
+      <div class="conflict-card-text">${o.text}</div>
+    </div>
+  `).join('') + (
+    CONFLICT_DEMO.options.find(o => o.id === 'synth').hidden && selectedConflict !== 'synth'
+      ? `<button class="synth-button" onclick="askSynthesis()">◐  Ask AI to synthesize all three versions</button>`
+      : ''
+  );
+}
+
+function selectConflict(id) {
+  selectedConflict = id;
+  document.getElementById('applyResolution').disabled = false;
+  renderConflictCards();
+}
+
+function askSynthesis() {
+  // Reveal the AI synth card
+  CONFLICT_DEMO.options.find(o => o.id === 'synth').hidden = false;
+  selectedConflict = 'synth';
+  document.getElementById('applyResolution').disabled = false;
+  renderConflictCards();
+  showToast('Agent synthesized a fifth option.', 'success');
+}
+
+function applyResolution() {
+  const choice = CONFLICT_DEMO.options.find(o => o.id === selectedConflict);
+  // Apply to the item q_symptoms
+  const found = findItem('q_symptoms');
+  if (found && choice) {
+    found.item.text = choice.text;
+    logActivity(`resolved conflict on ${CONFLICT_DEMO.itemTitle} using`, choice.author);
+    showToast('Resolution applied. 4 more conflicts to resolve in this session.', 'success');
+  }
+  closeConflictModal();
+  renderDocument();
+}
+
+/* ============================================================
+ * KEYBOARD SHORTCUTS
+ * ============================================================ */
+
+document.addEventListener('keydown', (e) => {
+  // Cmd+Shift+S = toggle suggesting mode
+  if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 's') {
+    e.preventDefault();
+    toggleSuggestingMode();
+  }
+  // Cmd+M = comment on selected item
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'm') {
+    if (state.selectedItemId) {
+      e.preventDefault();
+      toggleCommentInput(state.selectedItemId);
+    }
+  }
+  // Esc = close menus, modals, tutorial
+  if (e.key === 'Escape') {
+    closeContextMenu();
+    if (!document.getElementById('conflictModal').hidden) closeConflictModal();
+    const tut = document.getElementById('tutorialOverlay');
+    if (tut) closeTutorial();
+  }
+});
+
+// Click outside context menu closes it
+document.addEventListener('click', (e) => {
+  const menu = document.getElementById('contextMenu');
+  if (!menu.contains(e.target) && !menu.hidden) {
+    menu.hidden = true;
+  }
+});
+
+/* ============================================================
+ * TUTORIAL
+ * ============================================================ */
+
+function closeTutorial() {
+  const overlay = document.getElementById('tutorialOverlay');
+  if (overlay) {
+    overlay.style.display = 'none';
+    overlay.remove();
+  }
+}
+window.closeTutorial = closeTutorial;
+
+/* ============================================================
+ * EVENT WIRING
+ * ============================================================ */
+
+document.querySelectorAll('[data-mode-btn]').forEach(b => {
+  b.addEventListener('click', () => setMode(b.dataset.modeBtn));
+});
+
+document.getElementById('suggestToggle').addEventListener('click', toggleSuggestingMode);
+document.getElementById('activityBtn').addEventListener('click', toggleActivityLog);
+document.getElementById('conflictDemoBtn').addEventListener('click', openConflictModal);
+document.getElementById('shareBtn').addEventListener('click', () => showToast('Share link copied to clipboard.', 'success'));
+
+/* ============================================================
+ * INITIAL RENDER
+ * ============================================================ */
+
+renderDocument();
+renderInspector();
+renderActivity();
+
+</script>
+</body>
+</html>
