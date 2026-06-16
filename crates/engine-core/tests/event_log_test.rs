@@ -8,7 +8,7 @@
 //! Requires a reachable Postgres (DATABASE_URL): the dev container or CI service.
 
 use engine_core::log::{
-    append, read_range, read_since_snapshot, verify_chain, EventError, ZERO_HASH,
+    append, append_in_tx, read_range, read_since_snapshot, verify_chain, EventError, ZERO_HASH,
 };
 use engine_shared::{DocumentId, EventPayload, IdentityId, NodeId};
 use serde_json::json;
@@ -187,5 +187,81 @@ async fn verify_chain_detects_payload_tampering(pool: PgPool) -> anyhow::Result<
         Err(EventError::ChainBroken { seq, .. }) => assert_eq!(seq, 2),
         other => panic!("expected ChainBroken at seq 2, got {other:?}"),
     }
+    Ok(())
+}
+
+/// Two events appended on one transaction are atomic and stay gap-free: the second
+/// `append_in_tx` sees the first's row, so seq is 1,2 and the chain links. This is the
+/// primitive the stage-16 governance accept relies on (wrapped event + SuggestionAccepted
+/// in one transaction — FR-19 "atomically").
+#[sqlx::test(migrations = "../../migrations")]
+async fn append_in_tx_appends_two_events_atomically(pool: PgPool) -> anyhow::Result<()> {
+    let (actor, doc, node) = seed(&pool).await?;
+
+    let mut tx = pool.begin().await?;
+    let e1 = append_in_tx(
+        &mut tx,
+        doc,
+        &EventPayload::NodeCreated {
+            node_id: node.clone(),
+            node_type: engine_shared::NodeType::Item,
+            parent_id: None,
+            pos: "a0".into(),
+            fields: json!({ "label": "Seeded" }),
+            var_name: Some("q1".into()),
+        },
+        actor,
+    )
+    .await?;
+    let e2 = append_in_tx(
+        &mut tx,
+        doc,
+        &field_edit(&node, "label", "How many?"),
+        actor,
+    )
+    .await?;
+    tx.commit().await?;
+
+    assert_eq!(
+        (e1.seq, e2.seq),
+        (1, 2),
+        "seq is gap-free within the transaction"
+    );
+    assert_eq!(e1.prev_chain_hash, ZERO_HASH.to_vec());
+    assert_eq!(
+        e2.prev_chain_hash, e1.chain_hash,
+        "the chain links across the two appends"
+    );
+    verify_chain(&pool, doc).await?;
+    Ok(())
+}
+
+/// A transaction dropped without commit rolls back *both* appends — nothing reaches the
+/// log. Atomicity holds in the failure direction too: a half-applied accept is impossible.
+#[sqlx::test(migrations = "../../migrations")]
+async fn append_in_tx_rolls_back_without_commit(pool: PgPool) -> anyhow::Result<()> {
+    let (actor, doc, node) = seed(&pool).await?;
+
+    {
+        let mut tx = pool.begin().await?;
+        append_in_tx(
+            &mut tx,
+            doc,
+            &field_edit(&node, "label", "uncommitted"),
+            actor,
+        )
+        .await?;
+        append_in_tx(
+            &mut tx,
+            doc,
+            &field_edit(&node, "hint", "uncommitted"),
+            actor,
+        )
+        .await?;
+        // tx dropped here without commit -> rollback.
+    }
+
+    let events = read_range(&pool, doc, 1, i64::MAX).await?;
+    assert!(events.is_empty(), "rolled-back appends leave no events");
     Ok(())
 }

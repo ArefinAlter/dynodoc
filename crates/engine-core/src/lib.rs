@@ -4,8 +4,9 @@
 //! snapshotted fold / materialization (stage 15), semantic ops + governance
 //! (stage 16), referential integrity + semantic merge (stage 21).
 //!
-//! `log` and `materializer`/`snapshot` are implemented (stages 14–15); `ops` and
-//! `integrity` are still placeholders so the workspace builds.
+//! `log`, `materializer`/`snapshot`, `ops`, `governance`, and the referential-
+//! integrity pass are implemented (stages 14–16); the semantic three-way merge that
+//! also builds on `integrity` lands in stage 21.
 
 /// Append-only, hash-chained event log (the system of record). See docs/14.
 pub mod log;
@@ -16,8 +17,12 @@ pub mod materializer;
 /// Snapshot storage, Merkle commitments, and snapshot-backed current-state reads.
 pub mod snapshot;
 
-/// Semantic operation handlers + governance gate. See docs/16.
-pub mod ops {}
+/// Semantic operation handlers: per-variant validation against current state. See docs/16.
+pub mod ops;
 
-/// Referential integrity pass + semantic three-way merge. See docs/21.
-pub mod integrity {}
+/// Capability matrix, governance gate, and proposal lifecycle. See docs/16.
+pub mod governance;
+
+/// Referential integrity pass (deploy gate, stage 16) + semantic three-way merge
+/// (stage 21). See docs/16 part 4 and docs/21.
+pub mod integrity;

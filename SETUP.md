@@ -187,3 +187,54 @@ only the event stream).
 > **Fix applied while completing this stage:** the snapshot integration `seed` appended a
 > `NodeCreated` event without first inserting the node row, violating
 > `event_target_node_id_fkey` (3 tests failed). Inserting the node row in `seed` resolved it.
+
+## Stage-16 verification status (semantic ops & governance gate)
+
+Every change now passes through a **governance gate** before it may be appended. The gate
+is pure decision logic over the materialized `DocumentState` — no I/O — so it is
+exhaustively testable without a database (`cargo test -p engine-core --lib`). Three new
+modules in `engine-core`:
+
+- `ops` — `validate_op(state, op)` validates each `EventPayload` variant against current
+  state: parent exists and containment is legal (a choice cannot hold a section), `var_name`
+  is unique, a `NodeMoved` would not place a node inside its own subtree (the Vol II §C.2.2
+  cycle check), choices target an item, suggestions are pending, and a `SuggestionProposed`
+  wraps a *valid content* op. Returns a typed `OpError`; validation runs **before** append.
+- `governance` — the PoC **capability matrix** `can_perform(role, op)` over the three PoC
+  roles (`Author` / `Reviewer` / `Auditor`, PRD §6.8 FR-27) — **not** the full platform's
+  T0–T3/Sponsor/Moderator tiers or consultation ops (`VoteCast`, `ModerationDecided`), which
+  are out of PoC scope (PRD §3.2 NG2). `authorize(role, op, state)` composes capability →
+  validity → (for `Deployed`) the integrity gate. `proposal_status` and `plan_acceptance`
+  carry the suggestion lifecycle (see below).
+- `integrity` — `validate_integrity(state)` is the §C.3.6 "silent semantic breakage" defense:
+  it flags dangling `${var}` references, duplicate `var_name`s, and relevance dependency
+  cycles. The gate refuses a `Deployed` if any violation exists (PRD §6.6). The richer
+  three-way semantic merge that also uses this graph lands in stage 21.
+
+PoC deviations recorded for later stages:
+
+- **Roles, not tiers.** The capability matrix is `Author`/`Reviewer`/`Auditor` per the PRD,
+  replacing docs/16's consultation tier matrix.
+- **Proposal lifecycle without new event types.** A `SuggestionProposed.detail` carries the
+  internally-tagged JSON of the wrapped content op (no schema/migration change). The
+  materializer already tracks suggestion side-state (`accepted` / `rejected_reason`);
+  `plan_acceptance` returns the now-canonical wrapped op an accept must append.
+- **Two-event accept is a primitive, not yet wired.** FR-19 ("accepting atomically applies
+  the wrapped event") is realized by `log::append_in_tx` (a new transaction-composable
+  append, factored out of `append` with identical behavior) + `post_commit_snapshot`. The
+  stage-18 API drives the actual `append_in_tx(wrapped) + append_in_tx(SuggestionAccepted)`
+  in one transaction, alongside materializing the `node` table — which the event-log FK
+  `event.target_node_id → node(id)` requires and which no stage before 18 wires.
+
+- [x] `cargo test --workspace --lib` green — **+44 lib tests** total (39 engine-core,
+      5 engine-shared), including: per-variant `validate_op` unit tests; an integrity suite
+      (dangling refs, duplicate vars, relevance/self cycles, constraint-is-not-a-cycle); a
+      capability **proptest** (256 cases — `authorize` returns `Unauthorized` iff
+      `can_perform` is false, before any validation); and fold-level tests proving an
+      accepted proposal's wrapped op folds into canonical state while a rejected one does
+      not. Two `#[sqlx::test]` integration tests cover `append_in_tx` (two events atomic and
+      gap-free; rollback leaves no events) — **DB-gated, run by `ci-rust`** (no local
+      Postgres on this machine: Docker daemon down, host PG creds unknown).
+- [x] `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --check` clean.
+- [x] `cargo test --workspace --no-run` compiles every target (the `append_in_tx` refactor
+      preserves `append`'s signature, so the stage 14/15 integration tests are unchanged).

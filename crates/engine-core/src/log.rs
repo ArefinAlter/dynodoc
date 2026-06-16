@@ -58,13 +58,39 @@ pub enum EventError {
 ///
 /// Opens a transaction, locks the document row to serialize concurrent appends,
 /// computes the hashes, and inserts with `seq = prev_seq + 1` (genesis `seq = 1`).
+/// After the commit it runs the post-commit snapshot step (immediate for `Deployed`,
+/// otherwise a best-effort background `ensure_recent`).
 pub async fn append(
     pool: &PgPool,
     document_id: DocumentId,
     payload: &EventPayload,
     actor_id: IdentityId,
 ) -> Result<Event, EventError> {
-    // Generate the event id outside the critical section (a ULID embeds its own
+    let mut tx = pool.begin().await?;
+    let inserted = append_in_tx(&mut tx, document_id, payload, actor_id).await?;
+    tx.commit().await?;
+
+    post_commit_snapshot(pool, document_id, std::slice::from_ref(payload)).await?;
+    Ok(inserted)
+}
+
+/// Append one event inside a caller-owned transaction, returning the inserted row
+/// *without* committing or taking any snapshot.
+///
+/// This is the linearization primitive: it locks the document row, reads the prior
+/// chain head, and inserts at `seq = prev_seq + 1`. Calling it twice on the same
+/// transaction appends two events atomically (the governance `accept` path appends
+/// the now-canonical wrapped event and the `SuggestionAccepted` event together —
+/// docs/16 "two-event semantics"); the second call sees the first's row, so the
+/// chain stays gap-free. The caller is responsible for `commit()` and for running
+/// [`post_commit_snapshot`] afterward.
+pub async fn append_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    document_id: DocumentId,
+    payload: &EventPayload,
+    actor_id: IdentityId,
+) -> Result<Event, EventError> {
+    // Generate the event id outside the lock-sensitive work (a ULID embeds its own
     // creation time, so it is correct here and keeps the lock window short).
     let event_id = ulid::Ulid::new().to_string();
 
@@ -80,8 +106,6 @@ pub async fn append(
         &actor_id.0,
     );
 
-    let mut tx = pool.begin().await?;
-
     // Serialize all appends for this document. Locking the document row (rather than
     // the latest event row) is what actually makes appends linearizable: a lock on
     // the latest *existing* event does not stop a concurrent txn from selecting that
@@ -89,7 +113,7 @@ pub async fn append(
     let exists: Option<(Uuid,)> =
         sqlx::query_as("select id from document where id = $1 for update")
             .bind(document_id.0)
-            .fetch_optional(&mut *tx)
+            .fetch_optional(&mut **tx)
             .await?;
     if exists.is_none() {
         return Err(EventError::DocumentNotFound(document_id.0));
@@ -99,7 +123,7 @@ pub async fn append(
         "select seq, chain_hash from event where document_id = $1 order by seq desc limit 1",
     )
     .bind(document_id.0)
-    .fetch_optional(&mut *tx)
+    .fetch_optional(&mut **tx)
     .await?;
 
     let (prev_seq, prev_chain_hash) = match prev {
@@ -126,12 +150,21 @@ pub async fn append(
     .bind(&content_hash[..])
     .bind(&prev_chain_hash[..])
     .bind(&chain_hash[..])
-    .fetch_one(&mut *tx)
+    .fetch_one(&mut **tx)
     .await?;
 
-    tx.commit().await?;
+    Ok(inserted)
+}
 
-    if snapshot::requires_immediate_snapshot(payload) {
+/// Run the post-commit snapshot step for a batch of just-committed events: take an
+/// immediate snapshot if any event requires one (`Deployed`), otherwise spawn a
+/// best-effort background `ensure_recent`. Call this once, after `commit()`.
+pub async fn post_commit_snapshot(
+    pool: &PgPool,
+    document_id: DocumentId,
+    payloads: &[EventPayload],
+) -> Result<(), EventError> {
+    if payloads.iter().any(snapshot::requires_immediate_snapshot) {
         SnapshotEngine::new(pool.clone())
             .take(document_id, SnapshotReason::Deployed)
             .await
@@ -139,8 +172,7 @@ pub async fn append(
     } else {
         snapshot::spawn_ensure_recent(pool.clone(), document_id, DEFAULT_MAX_EVENTS_IN_TAIL);
     }
-
-    Ok(inserted)
+    Ok(())
 }
 
 /// Replay a document's log in `seq` order, recompute every hash, and confirm it
