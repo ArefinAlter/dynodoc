@@ -6,8 +6,8 @@
 > a typed semantic data model instead of plain text: concurrent edits, suggestions, and merges
 > happen at the level of items, choices, and fields rather than lines of XML.
 
-**Status:** Proof of Concept in progress — engine foundation (Stages 12–13) complete; editor,
-API, and merge engine in build. &nbsp;·&nbsp; **License:** [AGPL v3](LICENSE)
+**Status:** Proof of Concept in progress — engine foundation (Stages 12–14: repo, schema,
+hash-chained event log) complete; snapshot engine, API, editor, and merge engine in build. &nbsp;·&nbsp; **License:** [AGPL v3](LICENSE)
 
 ---
 
@@ -142,7 +142,7 @@ stage-number → file map).
 |------:|-------------|:---:|:------:|
 | 12 | Repository & dev environment | ✅ | **done** |
 | 13 | Database schema & migrations | ✅ | **done** |
-| 14 | Event log core (hash chain) | ✅ | pending |
+| 14 | Event log core (hash chain) | ✅ | **done** |
 | 15 | Snapshot engine & materialization | ✅ | pending |
 | 16 | Semantic ops & governance gate | ✅ | pending |
 | 17 | Auth & identity (email magic-link only) | ◐ | pending |
