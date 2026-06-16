@@ -26,4 +26,4 @@ README stages (used in `SETUP.md` and conversation) map to `docs/*-build-*.md` f
 | 30 | `docs/30-build-transparency-and-audit.md` | 19 | no |
 | 31 | `docs/31-build-deployment.md` | 20 | no |
 
-PoC schema note: stage 13 uses migrations `0000`–`0004` and `0009_views` only; skip `0005`–`0008` (consultation tables) until post-PoC.
+PoC schema note: stage 13 uses migrations `0000`–`0004` and `0009_views`; `0005`–`0008` are reserved for consultation tables (post-PoC). Stage 17 adds `0010_auth` (PoC auth: `document_access`, `refresh_token`) after that reserved block.

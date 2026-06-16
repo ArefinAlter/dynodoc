@@ -14,9 +14,11 @@ pub mod payload;
 pub mod rows;
 
 pub use enums::{DocumentStatus, EventType, NodeType, ParseEnumError};
-pub use ids::{DocumentId, EventId, IdentityId, MagicLinkId, NodeId, SnapshotId};
+pub use ids::{DocumentId, EventId, IdentityId, MagicLinkId, NodeId, RefreshTokenId, SnapshotId};
 pub use payload::EventPayload;
-pub use rows::{Document, Event, Identity, MagicLink, Node, Snapshot};
+pub use rows::{
+    Document, DocumentAccess, Event, Identity, MagicLink, Node, RefreshToken, Snapshot,
+};
 
 #[cfg(test)]
 mod tests {

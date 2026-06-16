@@ -10,7 +10,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::FromRow;
 
-use crate::ids::{DocumentId, EventId, IdentityId, MagicLinkId, NodeId, SnapshotId};
+use crate::ids::{
+    DocumentId, EventId, IdentityId, MagicLinkId, NodeId, RefreshTokenId, SnapshotId,
+};
 
 /// A row of `document` — materialized current state of an instrument.
 #[derive(Debug, Clone, PartialEq, Eq, FromRow, Serialize, Deserialize)]
@@ -101,5 +103,31 @@ pub struct MagicLink {
     pub token_hash: Vec<u8>,
     pub expires_at: DateTime<Utc>,
     pub consumed_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}
+
+/// A row of `document_access` — an identity's role on a document (the access list).
+#[derive(Debug, Clone, PartialEq, Eq, FromRow, Serialize, Deserialize)]
+pub struct DocumentAccess {
+    pub document_id: DocumentId,
+    pub identity_id: IdentityId,
+    /// The PoC role (`author` | `reviewer` | `auditor`), stored as text; parsed into
+    /// `engine_core::governance::Role` at the API boundary.
+    pub role: String,
+    pub created_at: DateTime<Utc>,
+}
+
+/// A row of `refresh_token` — a rotating session-continuation token (stored hashed).
+#[derive(Debug, Clone, PartialEq, Eq, FromRow, Serialize, Deserialize)]
+pub struct RefreshToken {
+    pub id: RefreshTokenId,
+    pub identity_id: IdentityId,
+    /// SHA-256 of the issued opaque token (32 bytes); the token itself is never stored.
+    pub token_hash: Vec<u8>,
+    pub expires_at: DateTime<Utc>,
+    /// Set when this token has been exchanged for a successor (rotation).
+    pub rotated_at: Option<DateTime<Utc>>,
+    /// Set when explicitly revoked.
+    pub revoked_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
 }

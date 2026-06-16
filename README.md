@@ -6,9 +6,9 @@
 > a typed semantic data model instead of plain text: concurrent edits, suggestions, and merges
 > happen at the level of items, choices, and fields rather than lines of XML.
 
-**Status:** Proof of Concept in progress — engine foundation (Stages 12–16: repo, schema,
-hash-chained event log, snapshot/materialization engine, semantic ops & governance gate)
-complete; auth, API, editor, and merge engine in build. &nbsp;·&nbsp; **License:** [AGPL v3](LICENSE)
+**Status:** Proof of Concept in progress — engine foundation (Stages 12–16) and magic-link
+auth/identity (Stage 17: Paseto v4 tokens, per-document access list) complete; API surface,
+editor, and merge engine in build. &nbsp;·&nbsp; **License:** [AGPL v3](LICENSE)
 
 ---
 
@@ -127,7 +127,7 @@ crates/
   engine-api/       Rust — Axum HTTP server, SSE, auth
   engine-cli/       Rust — admin CLI (migrate, snapshot, verify, replay)
   engine-shared/    Rust — types shared across crates
-migrations/         SQL migrations (append-only once applied; 0000–0004 + 0009_views in PoC)
+migrations/         SQL migrations (append-only once applied; 0000–0004, 0009_views, 0010_auth in PoC)
 frontend/researcher/  SvelteKit researcher UI (Phase-0 deliverable)
 infra/              docker-compose.yml (Postgres only for the PoC)
 docs/               Design + mathematics + sequential build reference (see docs/README.md)
@@ -146,7 +146,7 @@ stage-number → file map).
 | 14 | Event log core (hash chain) | ✅ | **done** |
 | 15 | Snapshot engine & materialization | ✅ | **done** |
 | 16 | Semantic ops & governance gate | ✅ | **done** |
-| 17 | Auth & identity (email magic-link only) | ◐ | pending |
+| 17 | Auth & identity (email magic-link only) | ◐ | **done** |
 | 18 | Web API surface (REST + SSE) | ✅ | pending |
 | 19 | Research IDE frontend (four-mode editor) | ✅ | pending |
 | 20 | CRDT convergence layer | ⏭ | **skipped (PoC)** |

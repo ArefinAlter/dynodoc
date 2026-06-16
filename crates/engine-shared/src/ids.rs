@@ -39,3 +39,8 @@ pub struct IdentityId(pub Uuid);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]
 #[sqlx(transparent)]
 pub struct MagicLinkId(pub Uuid);
+
+/// Refresh-token identity (UUID, db-generated).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(transparent)]
+pub struct RefreshTokenId(pub Uuid);

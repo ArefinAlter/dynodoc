@@ -238,3 +238,49 @@ PoC deviations recorded for later stages:
 - [x] `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --check` clean.
 - [x] `cargo test --workspace --no-run` compiles every target (the `append_in_tx` refactor
       preserves `append`'s signature, so the stage 14/15 integration tests are unchanged).
+
+## Stage-17 verification status (authentication & identity)
+
+PoC auth is **email + magic link only** (PRD §6.8, NFR-9): no passwords, no tiers, no
+phone/OAuth, no Redis/rate-limits/Sybil signals — those are consultation scope and were
+trimmed from docs/17. The flow: `POST /auth/magic-link` (email) issues a one-time link →
+`POST /auth/verify` exchanges it for a **Paseto v4 local** access token (NFR-8, not JWT) plus
+a rotating refresh token → `POST /auth/refresh` rotates → protected handlers use the
+`Authorization: Bearer` extractor. A document's capability role is **not** in the token; it is
+per-document state in `document_access`, read at request time and handed to the stage-16 gate.
+
+Structure / deviations recorded for later stages:
+
+- **`engine-api` is now lib + bin.** The app is exposed as a library (`engine_api::app`,
+  `AppState`, `auth::*`) with a thin binary, so the router/handlers are integration-testable
+  from `tests/` (the bin-only crate could not be). The binary connects Postgres, runs
+  `sqlx::migrate!` on boot, and serves.
+- **Migration `0010_auth.sql`** (not 0005): 0005–0008 are reserved for consultation tables and
+  0009 is views, so the PoC auth tables (`document_access`, `refresh_token`) take the next free
+  number. Only the SHA-256 of every magic-link / refresh token is stored.
+- **Roles, not tiers** (continued from stage 16): `document_access.role ∈ {author, reviewer,
+  auditor}`; `governance::Role` gained `FromStr` to parse the column.
+- **Magic link returned in the response** (`magic_link_token`) is a PoC/local-dev affordance —
+  a deployment emails it instead. The all-zero `PASETO_LOCAL_KEY` placeholder is allowed for
+  local dev with a startup warning.
+- **Deferred to stage 18** (kept minimal here): wiring `store::role_for` into endpoint
+  authorization (the `Forbidden` path), HttpOnly refresh-cookie + UA/IP binding, and the
+  document/event REST + SSE surface.
+
+- [x] `cargo test --workspace` green against a local Postgres — **+12 stage-17 tests**: 6 Paseto
+      unit tests (mint/verify round-trip, expired/tampered/wrong-key/malformed rejected, short
+      key invalid) and 6 DB+HTTP integration tests driving the real router via
+      `tower::oneshot` (register→verify→`/auth/me`; magic link single-use; expired link
+      rejected; refresh rotates and the old token is then rejected; `/auth/me` needs a valid
+      bearer; `role_for` resolves the access list). All prior DB suites (14/15/16) still pass.
+- [x] `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --check` clean.
+- [x] Live binary smoke test: `engine-api` boots, applies migrations, and serves the full flow
+      — `/auth/magic-link` → `/auth/verify` (returns a `v4.local.…` token) → `/auth/me` 200 with
+      the bearer, **401** without it.
+
+> **Local DB note (this machine):** a host PostgreSQL 17 service occupies `127.0.0.1:5432`
+> (unknown creds), so the compose container cannot bind it. For verification, run a throwaway
+> container on **5433** and point `DATABASE_URL` at it:
+> `docker run -d --name dynodoc-pg-5433 -e POSTGRES_USER=dynodoc -e POSTGRES_PASSWORD=dynodoc -e POSTGRES_DB=dynodoc -p 127.0.0.1:5433:5432 postgres:16`
+> then `DATABASE_URL=postgres://dynodoc:dynodoc@127.0.0.1:5433/dynodoc`. To use the documented
+> compose stack on 5432 instead, stop the host service (`postgresql-x64-17`) first.

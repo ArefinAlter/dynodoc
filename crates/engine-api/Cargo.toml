@@ -6,6 +6,10 @@ rust-version.workspace = true
 license.workspace = true
 description = "dynodoc HTTP API server (Axum + SSE + auth)."
 
+[lib]
+name = "engine_api"
+path = "src/lib.rs"
+
 [[bin]]
 name = "engine-api"
 path = "src/main.rs"
@@ -24,3 +28,13 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
+# Auth (stage 17): Paseto v4 tokens, hashing/CSPRNG, time and id types.
+pasetors = { workspace = true }
+hex = { workspace = true }
+ring = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+# `ServiceExt::oneshot` (tower `util`) drives the router in integration tests.
+tower = { workspace = true, features = ["util"] }

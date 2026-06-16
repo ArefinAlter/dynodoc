@@ -58,6 +58,24 @@ impl Role {
     }
 }
 
+impl std::str::FromStr for Role {
+    type Err = engine_shared::ParseEnumError;
+
+    /// Parse the `document_access.role` text (its [`Role::as_str`] form) back into a
+    /// `Role` at the API boundary.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "author" => Ok(Role::Author),
+            "reviewer" => Ok(Role::Reviewer),
+            "auditor" => Ok(Role::Auditor),
+            other => Err(engine_shared::ParseEnumError {
+                kind: "role",
+                value: other.to_string(),
+            }),
+        }
+    }
+}
+
 /// The proposal lifecycle status of a suggestion, derived from materialized state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ProposalStatus {

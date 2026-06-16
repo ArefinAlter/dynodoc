@@ -50,6 +50,11 @@ chrono = { version = "0.4", features = ["serde"] }
 # the laptop, so the engine is built/run on a SAC-free machine (home PC / WSL2 / CI).
 ring = "0.17"
 
+# Auth: Paseto v4 local tokens (symmetric AEAD) instead of JWT — no alg-confusion or
+# `none`-algorithm footguns (docs/17, NFR-8). `hex` decodes the 32-byte signing key.
+pasetors = "0.7"
+hex = "0.4"
+
 # Errors + logging
 thiserror = "1"
 anyhow = "1"
