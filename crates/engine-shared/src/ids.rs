@@ -9,7 +9,9 @@ use uuid::Uuid;
 
 /// Stable node identity (ULID). Never changes for a node's lifetime, never reused.
 /// The load-bearing data-model decision (docs/04 §D.1).
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, sqlx::Type,
+)]
 #[sqlx(transparent)]
 pub struct NodeId(pub String);
 

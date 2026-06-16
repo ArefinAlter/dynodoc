@@ -147,3 +147,40 @@ Deferred (not blocking the stage's correctness goals):
       `criterion` is not yet a workspace dependency and DB-backed benches need a running
       Postgres; add when wiring perf gates. Functional latency is well within target at
       PoC scale.
+
+## Stage-15 verification status (snapshot engine & materialization)
+
+Reads must cost `O(events since last snapshot)`, not `O(N)`. `engine-core::materializer`
+folds the event stream into a `DocumentState` (`BTreeMap<NodeId, MaterializedNode>` plus
+comment / suggestion / removed-choice side-state); `engine-core::snapshot` takes snapshots,
+maintains a node-hash **Merkle root**, and serves the snapshot-backed read path. The CLI's
+`replay` and `snapshot` subcommands are now implemented (were stubbed).
+
+PoC scope: snapshots stay in **Postgres JSONB** (no MinIO offload); the only mandatory
+immediate-snapshot trigger is **`Deployed`** (`ConsultationOpened/Closed` are out of scope).
+
+Merkle root is over the **materialized node set** (leaf `H(0x00 ‖ canonical_json(node))`,
+internal `H(0x01 ‖ left ‖ right)`, balanced binary padded with zero hashes, deterministic
+ULID order), per docs/15 §E.3.1 — reusing the stage-14 canonical-JSON encoder.
+
+Snapshotting is wired into the append happy path (per docs/15 §4/§6): `Deployed` takes an
+immediate snapshot synchronously after commit; other appends spawn a best-effort background
+`ensure_recent` (threshold 500). `append`'s FK on `event.target_node_id → node(id)` means a
+node row must exist before an event targets it — in the live system the stage-16 op handlers
+do this atomically; the stage-15 tests insert the node row directly (the fold itself reads
+only the event stream).
+
+- [x] `cargo test --workspace` green — **+1 materializer proptest** (128 cases): for every
+      cut `k`, `fold(events) == from_snapshot(snapshot@k, events[k..])` (snapshots are
+      correct); a snapshot Merkle test (changing one node byte changes the root); and **4
+      snapshot integration tests** (`#[sqlx::test]`): take + `read_current_state` round-trip;
+      `Deployed` triggers an immediate snapshot; `ensure_recent` snapshots past threshold;
+      1000-node + 500-event materialization stays < 10 ms.
+- [x] `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --check` clean.
+- [x] `engine-cli replay <uuid>` folds the log and prints `DocumentState` JSON; `engine-cli
+      snapshot <uuid>` takes a snapshot and prints its id, `through_seq`, and Merkle/chain
+      hashes — both verified live against the dev DB.
+
+> **Fix applied while completing this stage:** the snapshot integration `seed` appended a
+> `NodeCreated` event without first inserting the node row, violating
+> `event_target_node_id_fkey` (3 tests failed). Inserting the node row in `seed` resolved it.

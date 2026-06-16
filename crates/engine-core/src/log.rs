@@ -29,6 +29,8 @@ use serde_json::Value;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::snapshot::{self, SnapshotEngine, SnapshotReason, DEFAULT_MAX_EVENTS_IN_TAIL};
+
 /// The genesis `prev_chain_hash`: 32 zero bytes, so the column stays NOT NULL.
 pub const ZERO_HASH: [u8; 32] = [0u8; 32];
 
@@ -47,6 +49,9 @@ pub enum EventError {
     /// [`verify_chain`] found the stored chain inconsistent at this `seq`.
     #[error("chain broken at seq {seq}: {detail}")]
     ChainBroken { seq: i64, detail: String },
+    /// The event committed but the required post-commit snapshot step failed.
+    #[error("post-commit snapshot failed: {0}")]
+    PostCommitSnapshot(String),
 }
 
 /// Append one semantic event to a document's log and return the inserted row.
@@ -125,6 +130,16 @@ pub async fn append(
     .await?;
 
     tx.commit().await?;
+
+    if snapshot::requires_immediate_snapshot(payload) {
+        SnapshotEngine::new(pool.clone())
+            .take(document_id, SnapshotReason::Deployed)
+            .await
+            .map_err(|err| EventError::PostCommitSnapshot(err.to_string()))?;
+    } else {
+        snapshot::spawn_ensure_recent(pool.clone(), document_id, DEFAULT_MAX_EVENTS_IN_TAIL);
+    }
+
     Ok(inserted)
 }
 
@@ -271,7 +286,7 @@ fn finish(ctx: Context) -> [u8; 32] {
 /// (e.g. `1.0`) could in principle differ across the round-trip. PoC payloads are
 /// string/object-shaped, so this is not hit; a production-grade decimal
 /// canonicalization is a later hardening step.
-fn canonical_json(value: &Value) -> Vec<u8> {
+pub(crate) fn canonical_json(value: &Value) -> Vec<u8> {
     let mut out = Vec::new();
     write_canonical(value, &mut out);
     out

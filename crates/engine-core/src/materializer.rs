@@ -1,0 +1,409 @@
+//! Snapshotted fold / state materialization (docs/15).
+//!
+//! The event log is the system of record; reads use a folded `DocumentState`
+//! rebuilt from a snapshot plus a short event tail.
+
+use std::collections::{BTreeMap, HashSet};
+
+use engine_shared::{Event, EventPayload, NodeId, Snapshot};
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
+
+/// One node in the materialized current state.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MaterializedNode {
+    pub id: NodeId,
+    pub parent_id: Option<NodeId>,
+    #[serde(rename = "type")]
+    pub node_type: String,
+    pub pos: String,
+    pub current_fields: Value,
+    pub var_name: Option<String>,
+    pub deleted: bool,
+}
+
+/// A reviewer comment carried in the log but not directly changing tree state.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CommentState {
+    pub node_id: Option<NodeId>,
+    pub body: String,
+}
+
+/// Suggestion workflow state carried alongside the document tree.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SuggestionState {
+    pub target_node_id: Option<NodeId>,
+    pub detail: Value,
+    pub accepted: bool,
+    pub rejected_reason: Option<String>,
+}
+
+/// The folded current state used by the read path.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DocumentState {
+    pub nodes: BTreeMap<NodeId, MaterializedNode>,
+    #[serde(default)]
+    pub comments: Vec<CommentState>,
+    #[serde(default)]
+    pub suggestions: BTreeMap<String, SuggestionState>,
+    #[serde(default)]
+    pub removed_choices: HashSet<NodeId>,
+}
+
+/// Errors while folding or restoring materialized state.
+#[derive(Debug, thiserror::Error)]
+pub enum MaterializeError {
+    #[error("snapshot state could not be deserialized: {0}")]
+    Deserialize(#[from] serde_json::Error),
+    #[error("event payload for seq {seq} is invalid: {source}")]
+    InvalidPayload {
+        seq: i64,
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("event seq {seq} referenced missing node {node_id}")]
+    MissingNode { seq: i64, node_id: String },
+    #[error("node {node_id} has non-object current_fields at seq {seq}")]
+    NonObjectFields { seq: i64, node_id: String },
+    #[error("event seq {seq} referenced missing suggestion {suggestion_id}")]
+    MissingSuggestion { seq: i64, suggestion_id: String },
+}
+
+/// Fold event tails into materialized state.
+pub struct Materializer;
+
+impl Materializer {
+    /// Build current state from genesis by folding the whole event stream.
+    pub fn fold(events: &[Event]) -> Result<DocumentState, MaterializeError> {
+        let mut state = DocumentState::default();
+        Self::fold_into(&mut state, events)?;
+        Ok(state)
+    }
+
+    /// Restore a prior snapshot and fold the tail events on top.
+    pub fn from_snapshot(
+        snapshot: &Snapshot,
+        tail: &[Event],
+    ) -> Result<DocumentState, MaterializeError> {
+        let mut state: DocumentState = serde_json::from_value(snapshot.state.clone())?;
+        Self::fold_into(&mut state, tail)?;
+        Ok(state)
+    }
+
+    fn fold_into(state: &mut DocumentState, events: &[Event]) -> Result<(), MaterializeError> {
+        for event in events {
+            let payload: EventPayload =
+                serde_json::from_value(event.payload.clone()).map_err(|source| {
+                    MaterializeError::InvalidPayload {
+                        seq: event.seq,
+                        source,
+                    }
+                })?;
+
+            match payload {
+                EventPayload::NodeCreated {
+                    node_id,
+                    node_type,
+                    parent_id,
+                    pos,
+                    fields,
+                    var_name,
+                } => {
+                    state.nodes.insert(
+                        node_id.clone(),
+                        MaterializedNode {
+                            id: node_id,
+                            parent_id,
+                            node_type: node_type.as_str().to_string(),
+                            pos,
+                            current_fields: object_or_value(fields),
+                            var_name,
+                            deleted: false,
+                        },
+                    );
+                }
+                EventPayload::FieldEdited {
+                    node_id,
+                    field,
+                    value,
+                } => {
+                    let node = state.nodes.get_mut(&node_id).ok_or_else(|| {
+                        MaterializeError::MissingNode {
+                            seq: event.seq,
+                            node_id: node_id.0.clone(),
+                        }
+                    })?;
+                    let fields = node.current_fields.as_object_mut().ok_or_else(|| {
+                        MaterializeError::NonObjectFields {
+                            seq: event.seq,
+                            node_id: node_id.0.clone(),
+                        }
+                    })?;
+                    fields.insert(field, value);
+                }
+                EventPayload::NodeMoved {
+                    node_id,
+                    new_parent_id,
+                    new_pos,
+                } => {
+                    let node = state.nodes.get_mut(&node_id).ok_or_else(|| {
+                        MaterializeError::MissingNode {
+                            seq: event.seq,
+                            node_id: node_id.0.clone(),
+                        }
+                    })?;
+                    node.parent_id = new_parent_id;
+                    node.pos = new_pos;
+                }
+                EventPayload::NodeDeleted { node_id } => {
+                    let node = state.nodes.get_mut(&node_id).ok_or_else(|| {
+                        MaterializeError::MissingNode {
+                            seq: event.seq,
+                            node_id: node_id.0.clone(),
+                        }
+                    })?;
+                    node.deleted = true;
+                }
+                EventPayload::ChoiceAdded {
+                    node_id,
+                    choice_id,
+                    fields,
+                } => {
+                    state
+                        .nodes
+                        .entry(choice_id.clone())
+                        .or_insert(MaterializedNode {
+                            id: choice_id.clone(),
+                            parent_id: Some(node_id),
+                            node_type: "choice".to_string(),
+                            pos: choice_id.0.clone(),
+                            current_fields: object_or_value(fields),
+                            var_name: None,
+                            deleted: false,
+                        });
+                    state.removed_choices.remove(&choice_id);
+                }
+                EventPayload::ChoiceRemoved { choice_id, .. } => {
+                    state.removed_choices.insert(choice_id);
+                }
+                EventPayload::CommentAdded { node_id, body } => {
+                    state.comments.push(CommentState { node_id, body });
+                }
+                EventPayload::SuggestionProposed {
+                    suggestion_id,
+                    target_node_id,
+                    detail,
+                } => {
+                    state.suggestions.insert(
+                        suggestion_id,
+                        SuggestionState {
+                            target_node_id,
+                            detail,
+                            accepted: false,
+                            rejected_reason: None,
+                        },
+                    );
+                }
+                EventPayload::SuggestionAccepted { suggestion_id } => {
+                    let suggestion =
+                        state.suggestions.get_mut(&suggestion_id).ok_or_else(|| {
+                            MaterializeError::MissingSuggestion {
+                                seq: event.seq,
+                                suggestion_id: suggestion_id.clone(),
+                            }
+                        })?;
+                    suggestion.accepted = true;
+                    suggestion.rejected_reason = None;
+                }
+                EventPayload::SuggestionRejected {
+                    suggestion_id,
+                    reason,
+                } => {
+                    let suggestion =
+                        state.suggestions.get_mut(&suggestion_id).ok_or_else(|| {
+                            MaterializeError::MissingSuggestion {
+                                seq: event.seq,
+                                suggestion_id: suggestion_id.clone(),
+                            }
+                        })?;
+                    suggestion.accepted = false;
+                    suggestion.rejected_reason = reason;
+                }
+                EventPayload::Deployed { .. } => {}
+            }
+        }
+
+        Ok(())
+    }
+}
+
+fn object_or_value(value: Value) -> Value {
+    match value {
+        Value::Object(_) => value,
+        other => Value::Object(
+            [("value".to_string(), other)]
+                .into_iter()
+                .collect::<Map<String, Value>>(),
+        ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, Instant};
+
+    use engine_shared::{
+        DocumentId, Event, EventId, EventPayload, IdentityId, NodeId, Snapshot, SnapshotId,
+    };
+    use proptest::prelude::*;
+    use serde_json::json;
+    use uuid::Uuid;
+
+    use super::*;
+
+    fn event(seq: i64, payload: EventPayload) -> Event {
+        Event {
+            id: EventId(format!("01TEST{:08}", seq)),
+            document_id: DocumentId(Uuid::nil()),
+            seq,
+            event_type: payload.event_type().as_str().to_string(),
+            actor_id: IdentityId(Uuid::nil()),
+            target_node_id: payload.target_node_id().cloned(),
+            payload: serde_json::to_value(&payload).unwrap(),
+            content_hash: vec![0; 32],
+            prev_chain_hash: vec![0; 32],
+            chain_hash: vec![0; 32],
+            created_at: chrono::Utc::now(),
+        }
+    }
+
+    fn valid_event_sequences() -> impl Strategy<Value = Vec<Event>> {
+        (1usize..8).prop_map(|count| {
+            let mut out = Vec::new();
+            let mut seq = 1i64;
+            for idx in 0..count {
+                let node = NodeId(format!("01NODE{idx:08}"));
+                out.push(event(
+                    seq,
+                    EventPayload::NodeCreated {
+                        node_id: node.clone(),
+                        node_type: engine_shared::NodeType::Item,
+                        parent_id: None,
+                        pos: format!("a{idx:04}"),
+                        fields: json!({ "label": format!("Q{idx}") }),
+                        var_name: Some(format!("q_{idx}")),
+                    },
+                ));
+                seq += 1;
+                out.push(event(
+                    seq,
+                    EventPayload::FieldEdited {
+                        node_id: node.clone(),
+                        field: "hint".to_string(),
+                        value: json!(format!("hint-{idx}")),
+                    },
+                ));
+                seq += 1;
+                if idx % 2 == 0 {
+                    out.push(event(
+                        seq,
+                        EventPayload::NodeMoved {
+                            node_id: node.clone(),
+                            new_parent_id: None,
+                            new_pos: format!("b{idx:04}"),
+                        },
+                    ));
+                    seq += 1;
+                }
+                if idx % 3 == 0 {
+                    out.push(event(seq, EventPayload::NodeDeleted { node_id: node }));
+                    seq += 1;
+                }
+            }
+            out
+        })
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(128))]
+
+        #[test]
+        fn fold_matches_snapshot_plus_tail(events in valid_event_sequences()) {
+            let full = Materializer::fold(&events).unwrap();
+            for cut in 0..=events.len() {
+                let base = Materializer::fold(&events[..cut]).unwrap();
+                let snapshot = Snapshot {
+                    id: SnapshotId(Uuid::nil()),
+                    document_id: DocumentId(Uuid::nil()),
+                    through_seq: events.get(cut.saturating_sub(1)).map(|e| e.seq).unwrap_or(0),
+                    state: serde_json::to_value(&base).unwrap(),
+                    merkle_root: vec![0; 32],
+                    event_chain_hash: vec![0; 32],
+                    created_at: chrono::Utc::now(),
+                };
+                let from_snapshot = Materializer::from_snapshot(&snapshot, &events[cut..]).unwrap();
+                prop_assert_eq!(from_snapshot, full.clone());
+            }
+        }
+    }
+
+    #[test]
+    fn benchmark_materialization_from_snapshot_tail_stays_small() {
+        let mut nodes = BTreeMap::new();
+        for idx in 0..1000 {
+            let node_id = NodeId(format!("01BENCH{idx:08}"));
+            nodes.insert(
+                node_id.clone(),
+                MaterializedNode {
+                    id: node_id,
+                    parent_id: None,
+                    node_type: "item".to_string(),
+                    pos: format!("a{idx:04}"),
+                    current_fields: json!({ "label": format!("Question {idx}") }),
+                    var_name: Some(format!("q_{idx}")),
+                    deleted: false,
+                },
+            );
+        }
+
+        let snapshot = Snapshot {
+            id: SnapshotId(Uuid::nil()),
+            document_id: DocumentId(Uuid::nil()),
+            through_seq: 1000,
+            state: serde_json::to_value(DocumentState {
+                nodes,
+                comments: Vec::new(),
+                suggestions: BTreeMap::new(),
+                removed_choices: HashSet::new(),
+            })
+            .unwrap(),
+            merkle_root: vec![0; 32],
+            event_chain_hash: vec![0; 32],
+            created_at: chrono::Utc::now(),
+        };
+
+        let tail: Vec<Event> = (0..500)
+            .map(|idx| {
+                event(
+                    1001 + idx,
+                    EventPayload::FieldEdited {
+                        node_id: NodeId(format!("01BENCH{:08}", idx % 1000)),
+                        field: "label".to_string(),
+                        value: json!(format!("Updated {idx}")),
+                    },
+                )
+            })
+            .collect();
+
+        let start = Instant::now();
+        let state = Materializer::from_snapshot(&snapshot, &tail).unwrap();
+        let elapsed = start.elapsed();
+
+        assert_eq!(state.nodes.len(), 1000);
+        assert!(
+            elapsed < Duration::from_millis(10),
+            "snapshot + tail materialization took {:?}",
+            elapsed
+        );
+    }
+}

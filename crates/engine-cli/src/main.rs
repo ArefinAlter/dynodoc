@@ -1,14 +1,17 @@
 //! dynodoc admin CLI.
 //!
-//! `verify` (stage 14) replays a document's event log and confirms hash-chain
-//! integrity — the audit guarantee made operational. `replay`/`snapshot` land in
-//! stage 15.
+//! - `verify` (stage 14) — replay the log and confirm hash-chain integrity.
+//! - `replay` (stage 15) — fold the whole log and print the materialized state.
+//! - `snapshot` (stage 15) — take a snapshot of current state and print its digest.
 
 use anyhow::Context as _;
 use clap::{Parser, Subcommand};
-use engine_core::log::{verify_chain, EventError};
+use engine_core::log::{self, verify_chain, EventError};
+use engine_core::materializer::Materializer;
+use engine_core::snapshot::{SnapshotEngine, SnapshotReason};
 use engine_shared::DocumentId;
 use sqlx::postgres::PgPoolOptions;
+use sqlx::PgPool;
 use uuid::Uuid;
 
 #[derive(Parser)]
@@ -26,9 +29,15 @@ enum Command {
         document_id: String,
     },
     /// Replay a document's event log and print the materialized state.
-    Replay { document_id: String },
+    Replay {
+        /// Document id (UUID).
+        document_id: String,
+    },
     /// Take a snapshot of a document's current state.
-    Snapshot { document_id: String },
+    Snapshot {
+        /// Document id (UUID).
+        document_id: String,
+    },
 }
 
 #[tokio::main]
@@ -42,28 +51,32 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Command::Verify { document_id } => verify(document_id).await,
-        Command::Replay { document_id } => {
-            anyhow::bail!("replay {document_id}: not implemented until stage 15");
-        }
-        Command::Snapshot { document_id } => {
-            anyhow::bail!("snapshot {document_id}: not implemented until stage 15");
-        }
+        Command::Replay { document_id } => replay(document_id).await,
+        Command::Snapshot { document_id } => snapshot(document_id).await,
     }
 }
 
-async fn verify(document_id: String) -> anyhow::Result<()> {
-    let doc = DocumentId(
-        Uuid::parse_str(&document_id)
-            .with_context(|| format!("invalid document id (expected a UUID): {document_id}"))?,
-    );
+/// Parse the UUID argument into a `DocumentId`.
+fn parse_document_id(document_id: &str) -> anyhow::Result<DocumentId> {
+    Uuid::parse_str(document_id)
+        .map(DocumentId)
+        .with_context(|| format!("invalid document id (expected a UUID): {document_id}"))
+}
 
+/// Connect to Postgres from `DATABASE_URL`.
+async fn connect() -> anyhow::Result<PgPool> {
     let database_url =
         std::env::var("DATABASE_URL").context("DATABASE_URL is not set (see .env / SETUP.md)")?;
-    let pool = PgPoolOptions::new()
+    PgPoolOptions::new()
         .max_connections(4)
         .connect(&database_url)
         .await
-        .context("could not connect to Postgres")?;
+        .context("could not connect to Postgres")
+}
+
+async fn verify(document_id: String) -> anyhow::Result<()> {
+    let doc = parse_document_id(&document_id)?;
+    let pool = connect().await?;
 
     match verify_chain(&pool, doc).await {
         Ok(()) => {
@@ -78,4 +91,49 @@ async fn verify(document_id: String) -> anyhow::Result<()> {
         }
         Err(other) => Err(other).context("verify failed"),
     }
+}
+
+async fn replay(document_id: String) -> anyhow::Result<()> {
+    let doc = parse_document_id(&document_id)?;
+    let pool = connect().await?;
+
+    // A true replay folds the whole log from genesis (snapshot_seq 0 = no snapshot).
+    let events = log::read_since_snapshot(&pool, doc, 0)
+        .await
+        .context("reading the event log failed")?;
+    let state = Materializer::fold(&events).context("folding the event log failed")?;
+
+    println!(
+        "replayed {} event(s) for document {document_id}",
+        events.len()
+    );
+    println!("{}", serde_json::to_string_pretty(&state)?);
+    Ok(())
+}
+
+async fn snapshot(document_id: String) -> anyhow::Result<()> {
+    let doc = parse_document_id(&document_id)?;
+    let pool = connect().await?;
+
+    let snapshot = SnapshotEngine::new(pool)
+        .take(doc, SnapshotReason::Periodic)
+        .await
+        .context("taking a snapshot failed")?;
+
+    println!(
+        "snapshot {} taken for document {document_id}",
+        snapshot.id.0
+    );
+    println!("  through_seq:  {}", snapshot.through_seq);
+    println!("  merkle_root:  {}", to_hex(&snapshot.merkle_root));
+    println!("  chain_hash:   {}", to_hex(&snapshot.event_chain_hash));
+    Ok(())
+}
+
+fn to_hex(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        s.push_str(&format!("{b:02x}"));
+    }
+    s
 }

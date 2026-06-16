@@ -61,9 +61,23 @@ fn field_edit(node: &NodeId, field: &str, value: &str) -> EventPayload {
 async fn append_builds_a_verifiable_chain(pool: PgPool) -> anyhow::Result<()> {
     let (actor, doc, node) = seed(&pool).await?;
 
-    let e1 = append(&pool, doc, &field_edit(&node, "label", "How many?"), actor).await?;
-    let e2 = append(&pool, doc, &field_edit(&node, "hint", "in hours"), actor).await?;
-    let e3 = append(
+    let e1 = append(
+        &pool,
+        doc,
+        &EventPayload::NodeCreated {
+            node_id: node.clone(),
+            node_type: engine_shared::NodeType::Item,
+            parent_id: None,
+            pos: "a0".into(),
+            fields: json!({ "label": "Seeded" }),
+            var_name: Some("q1".into()),
+        },
+        actor,
+    )
+    .await?;
+    let e2 = append(&pool, doc, &field_edit(&node, "label", "How many?"), actor).await?;
+    let e3 = append(&pool, doc, &field_edit(&node, "hint", "in hours"), actor).await?;
+    let e4 = append(
         &pool,
         doc,
         &EventPayload::Deployed { snapshot_id: None },
@@ -72,13 +86,14 @@ async fn append_builds_a_verifiable_chain(pool: PgPool) -> anyhow::Result<()> {
     .await?;
 
     // Genesis is seq 1 with a zero prev-hash; seq is gap-free and 1-based.
-    assert_eq!((e1.seq, e2.seq, e3.seq), (1, 2, 3));
+    assert_eq!((e1.seq, e2.seq, e3.seq, e4.seq), (1, 2, 3, 4));
     assert_eq!(e1.prev_chain_hash, ZERO_HASH.to_vec());
     assert_eq!(e2.prev_chain_hash, e1.chain_hash);
     assert_eq!(e3.prev_chain_hash, e2.chain_hash);
+    assert_eq!(e4.prev_chain_hash, e3.chain_hash);
 
     // The document-level Deployed event carries no target.
-    assert_eq!(e3.target_node_id, None);
+    assert_eq!(e4.target_node_id, None);
     assert_eq!(
         e1.target_node_id.as_ref().map(|n| n.0.as_str()),
         Some(node.0.as_str())
