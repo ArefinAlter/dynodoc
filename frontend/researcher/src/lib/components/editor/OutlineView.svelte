@@ -18,7 +18,11 @@
         <div class="section-title">{section.number}. {section.title}</div>
         <div class="children">
           {#each section.items as item}
-            <button type="button" class:selected={item.id === selectedId} onclick={() => onSelect(item)}>
+            <button
+              type="button"
+              class:selected={item.id === selectedId}
+              onclick={() => onSelect(item)}
+            >
               <span>{item.number}</span>
               <strong>{item.varName ?? item.type}</strong>
             </button>

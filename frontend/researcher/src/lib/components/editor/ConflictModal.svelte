@@ -26,18 +26,30 @@
 </script>
 
 {#if open}
-  <div class="overlay" role="button" tabindex="0" aria-label="Close conflict dialog" onclick={handleOverlayClick} onkeydown={handleOverlayKeydown}>
+  <div
+    class="overlay"
+    role="button"
+    tabindex="0"
+    aria-label="Close conflict dialog"
+    onclick={handleOverlayClick}
+    onkeydown={handleOverlayKeydown}
+  >
     <div class="modal" role="dialog" aria-modal="true" tabindex="-1">
       <div class="overline">{conflict.remaining} conflicts pending · {conflict.itemLabel}</div>
       <h2>Four-card conflict resolution</h2>
       <p>
-        This UI is safe to build in the PoC because same-field conflicts are a core product
-        promise, even before the final merge engine wiring is complete.
+        This UI is safe to build in the PoC because same-field conflicts are a core product promise,
+        even before the final merge engine wiring is complete.
       </p>
 
       <div class="cards">
         {#each conflict.options as option}
-          <button type="button" class:selected={selectedOptionId === option.id} class="card" onclick={() => onSelect(option.id)}>
+          <button
+            type="button"
+            class:selected={selectedOptionId === option.id}
+            class="card"
+            onclick={() => onSelect(option.id)}
+          >
             <div class="label">{option.label}</div>
             <div class="text">{option.text}</div>
           </button>

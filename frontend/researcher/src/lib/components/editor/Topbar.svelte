@@ -34,7 +34,7 @@
     </div>
   </div>
 
-  <ModeToggle mode={mode} onChange={onModeChange} />
+  <ModeToggle {mode} onChange={onModeChange} />
 
   <div class="actions">
     <button type="button" class:suggesting onclick={onToggleSuggesting}>

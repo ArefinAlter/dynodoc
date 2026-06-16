@@ -29,7 +29,9 @@
   });
 
   function findSelectedItem(): EditorItem | undefined {
-    return document.sections.flatMap((section) => section.items).find((item) => item.id === selectedId);
+    return document.sections
+      .flatMap((section) => section.items)
+      .find((item) => item.id === selectedId);
   }
 
   function selectItem(item: EditorItem) {
@@ -51,9 +53,9 @@
 <div class="page">
   <main class:full={mode !== 'document'} class="main">
     {#if mode === 'document'}
-      <DocumentView {document} selectedId={selectedId} {suggesting} onSelect={selectItem} />
+      <DocumentView {document} {selectedId} {suggesting} onSelect={selectItem} />
     {:else if mode === 'outline'}
-      <OutlineView {document} selectedId={selectedId} onSelect={selectItem} />
+      <OutlineView {document} {selectedId} onSelect={selectItem} />
     {:else if mode === 'spec'}
       <SpecView {document} />
     {:else}

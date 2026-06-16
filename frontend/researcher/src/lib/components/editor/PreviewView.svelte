@@ -23,7 +23,9 @@
 
     {#if firstQuestion}
       <div class="question">
-        <div class="count">Question 1 of {document.sections.flatMap((section) => section.items).length}</div>
+        <div class="count">
+          Question 1 of {document.sections.flatMap((section) => section.items).length}
+        </div>
         <h2>{firstQuestion.text}</h2>
         <div class="choices">
           {#each firstQuestion.choices ?? [] as choice}

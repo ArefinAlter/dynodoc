@@ -17,16 +17,30 @@
     <section>
       <h3>Properties</h3>
       <dl>
-        <div><dt>Type</dt><dd>{item.type}</dd></div>
-        <div><dt>Var name</dt><dd>{item.varName ?? '—'}</dd></div>
-        <div><dt>Hint</dt><dd>{item.hint ?? '—'}</dd></div>
-        <div><dt>Relevance</dt><dd><code>{item.relevance ?? '—'}</code></dd></div>
+        <div>
+          <dt>Type</dt>
+          <dd>{item.type}</dd>
+        </div>
+        <div>
+          <dt>Var name</dt>
+          <dd>{item.varName ?? '—'}</dd>
+        </div>
+        <div>
+          <dt>Hint</dt>
+          <dd>{item.hint ?? '—'}</dd>
+        </div>
+        <div>
+          <dt>Relevance</dt>
+          <dd><code>{item.relevance ?? '—'}</code></dd>
+        </div>
       </dl>
     </section>
 
     <section>
       <h3>Discussion</h3>
-      <p>This panel is safe to build now because comments and suggestions are item-scoped in the PoC.</p>
+      <p>
+        This panel is safe to build now because comments and suggestions are item-scoped in the PoC.
+      </p>
       <ul class="meta-list">
         <li>{item.commentsCount ?? 0} comments</li>
         <li>{item.suggestionsCount ?? 0} suggestions</li>

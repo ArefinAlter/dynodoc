@@ -23,7 +23,9 @@
       <span>{document.languages.join(', ')}</span>
     </p>
     {#if suggesting}
-      <div class="banner">Suggesting mode is on. Edits should create proposals, not direct canonical changes.</div>
+      <div class="banner">
+        Suggesting mode is on. Edits should create proposals, not direct canonical changes.
+      </div>
     {/if}
   </section>
 
@@ -51,7 +53,12 @@
 
       <div class="items">
         {#each section.items as item}
-          <button type="button" class:selected={item.id === selectedId} class="item" onclick={() => onSelect(item)}>
+          <button
+            type="button"
+            class:selected={item.id === selectedId}
+            class="item"
+            onclick={() => onSelect(item)}
+          >
             <div class="gutter">
               <div class="number">{item.number}</div>
               <div class="counts">
@@ -218,7 +225,9 @@
 
   .item.selected {
     background: var(--color-surface);
-    box-shadow: inset 4px 0 0 var(--color-accent), 0 1px 2px rgba(0, 0, 0, 0.05);
+    box-shadow:
+      inset 4px 0 0 var(--color-accent),
+      0 1px 2px rgba(0, 0, 0, 0.05);
   }
 
   .number {

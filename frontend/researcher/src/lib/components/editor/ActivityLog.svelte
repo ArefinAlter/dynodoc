@@ -19,7 +19,10 @@
     {#each activity as event}
       <div class="event">
         <div class="meta">{event.time} · {event.actor}</div>
-        <div class="text"><strong>{event.actor}</strong> {event.action} <em>{event.target}</em></div>
+        <div class="text">
+          <strong>{event.actor}</strong>
+          {event.action} <em>{event.target}</em>
+        </div>
       </div>
     {/each}
   </div>
