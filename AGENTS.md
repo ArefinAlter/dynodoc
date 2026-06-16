@@ -62,6 +62,18 @@ task migrate-reset  # DEV ONLY — drops database
 | `.cursor/hooks/` | Safety gates (destructive commands, migration edits) |
 | `.cursor/stage-map.md` | README stage number → doc file mapping |
 
+## Claude Code assets in this repo
+
+| Path | Purpose |
+|------|---------|
+| `.claude/agents/` | Subagents: `build-stage`, `engine-reviewer`, `poc-scope-guard`, `schema-guardian` |
+| `.claude/skills/` | Skills: `dynodoc-build-stage`, `dynodoc-verify-stage`, `dynodoc-architecture` |
+| `.claude/hooks/` | Safety hooks (destructive-command guard, migration-edit reminder) |
+| `.claude/settings.json` | Hook wiring (`PreToolUse` on Bash, `PostToolUse` on Write/Edit) |
+
+These mirror the Cursor/Codex assets in Claude Code's native formats. The
+`.cursor/stage-map.md` table is the shared canonical stage → doc mapping.
+
 ## Codex assets in this repo
 
 | Path | Purpose |
