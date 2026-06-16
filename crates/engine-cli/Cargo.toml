@@ -15,6 +15,7 @@ engine-core = { workspace = true }
 engine-shared = { workspace = true }
 tokio = { workspace = true }
 sqlx = { workspace = true }
+uuid = { workspace = true }
 clap = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }

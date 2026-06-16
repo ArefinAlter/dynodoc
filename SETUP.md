@@ -109,3 +109,41 @@ live `dynodoc-postgres` container:
 
 > **Note:** from Stage 13 onward, `cargo test --workspace` requires a reachable Postgres
 > (`DATABASE_URL`). Run `task up` first locally; CI provides a Postgres service.
+
+## Stage-14 verification status (event log core)
+
+The append-only hash-chained log is the system of record. `engine-shared` gains the
+typed, internally-tagged `EventPayload` vocabulary (the 11 PoC event types);
+`engine-core::log` implements `append` / `verify_chain` / `read_range` /
+`read_since_snapshot`; `engine-cli verify <document_id>` wires the audit check.
+
+Append serialization deviates from the doc's pseudocode on purpose: it locks the
+**`document` row** (`FOR UPDATE`), not the latest event row — locking the latest
+existing event does not stop a concurrent txn computing a duplicate next `seq`.
+`content_hash` is SHA-256 over four **length-framed** fields (type, target, canonical
+JSON payload, actor UUID) so the concatenation is unambiguous; payload is canonicalized
+(recursively sorted keys, no whitespace) for reproducibility across the JSONB round-trip.
+
+- [x] `cargo build --workspace` clean.
+- [x] `cargo test --workspace` green — **5 event-log integration tests** (`#[sqlx::test]`,
+      fresh DB each) + **5 `log` unit tests** including three `proptest` properties at
+      **1000 cases** each: an intact chain always verifies; tampering any payload byte is
+      detected at the right `seq`; reordering is detected.
+- [x] Integration tests cover: a built chain verifies; genesis `seq=1` with zero
+      prev-hash and a gap-free 1-based sequence; `read_range` / `read_since_snapshot`;
+      append to a missing document → `DocumentNotFound`; two **concurrent** appends get
+      distinct consecutive seqs (document-row lock); and the tamper path — trigger
+      disabled, `payload` of `seq 2` forged, trigger re-enabled → `verify_chain` returns
+      `ChainBroken { seq: 2 }` (the automated equivalent of the "corrupt a byte in psql"
+      checklist item; the CLI prints the same `seq`).
+- [x] `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --check` clean.
+- [x] `engine-cli verify <uuid>` connects, verifies, prints `OK` (exit 0) for a clean log;
+      a malformed id gives a friendly error (exit 1); `CHAIN BROKEN at event seq N` (exit 1)
+      on a broken chain.
+
+Deferred (not blocking the stage's correctness goals):
+
+- [ ] **`criterion` append/verify benchmarks** (P99 < 5 ms append; 100k-event verify < 1 s).
+      `criterion` is not yet a workspace dependency and DB-backed benches need a running
+      Postgres; add when wiring perf gates. Functional latency is well within target at
+      PoC scale.

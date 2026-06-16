@@ -2,6 +2,7 @@
 //!
 //! - [`ids`]: identity newtypes (ULID / UUID) used across the log, tree, and auth.
 //! - [`enums`]: domain vocabulary mirroring the schema's `CHECK`-constrained columns.
+//! - [`payload`]: the typed, internally-tagged semantic event vocabulary.
 //! - [`rows`]: `sqlx::FromRow` structs, one per table in `migrations/`.
 //!
 //! Event-construction and fold logic live in `engine-core` (stage 14+); this crate
@@ -9,10 +10,12 @@
 
 pub mod enums;
 pub mod ids;
+pub mod payload;
 pub mod rows;
 
 pub use enums::{DocumentStatus, EventType, NodeType, ParseEnumError};
 pub use ids::{DocumentId, EventId, IdentityId, MagicLinkId, NodeId, SnapshotId};
+pub use payload::EventPayload;
 pub use rows::{Document, Event, Identity, MagicLink, Node, Snapshot};
 
 #[cfg(test)]

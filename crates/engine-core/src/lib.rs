@@ -7,7 +7,7 @@
 //! Stage 12 scaffolding only — modules are placeholders so the workspace builds.
 
 /// Append-only, hash-chained event log (the system of record). See docs/14.
-pub mod log {}
+pub mod log;
 
 /// Snapshotted fold / state materialization. See docs/15.
 pub mod materializer {}
