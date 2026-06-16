@@ -62,6 +62,16 @@ task migrate-reset  # DEV ONLY — drops database
 | `.cursor/hooks/` | Safety gates (destructive commands, migration edits) |
 | `.cursor/stage-map.md` | README stage number → doc file mapping |
 
+## Codex assets in this repo
+
+| Path | Purpose |
+|------|---------|
+| `.codex/skills/` | Codex-friendly copies of the stage and architecture workflows |
+| `.codex/agents/` | Repo-local prompts for build stage, scope guard, schema, and engine review |
+| `.codex/hooks/` | Hook scripts mirroring the destructive-command and migration safeguards |
+| `.codex/hooks.json` | Hook wiring metadata for Codex-compatible setups |
+| `.codex/README.md` | Quick entrypoint for future Codex sessions |
+
 ## Starting a build stage
 
 Use the **dynodoc-build-stage** skill or the **build-stage** subagent:
@@ -69,3 +79,5 @@ Use the **dynodoc-build-stage** skill or the **build-stage** subagent:
 > Implement build stage 14 (event log core)
 
 The agent will read the stage doc, respect PoC scope, implement, and run the verification checklist.
+
+For Codex, start from `AGENTS.md`, then reuse the mirrored assets in `.codex/` while still treating `docs/` as the source of truth.
