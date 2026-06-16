@@ -50,18 +50,11 @@ natively. On a fresh machine with SAC in Enforce, either turn it off (Windows Se
 App & browser control → Smart App Control → Off, reboot — **irreversible**) or build inside
 WSL2 (SAC governs only Windows .exe).
 
-**Docker requires WSL2 — not yet enabled.** Docker Desktop is installed but its WSL2
-backend can't start because WSL is not installed (`wsl --status` → "not installed"). To
-enable the docker-compose Postgres:
-
-```powershell
-wsl --install            # run as Administrator; installs WSL2 + VirtualMachinePlatform
-# reboot when prompted
-```
-
-After reboot: start Docker Desktop, wait for the whale icon to settle, then `task up`.
-Until then, the Rust backend and frontend run fine without Docker (Stage 12 has no DB
-calls); a database is first needed in Stage 13.
+**Docker / WSL2 — enabled (resolved).** WSL2 is installed (`wsl --status` → "Default
+Version: 2") and Docker Desktop's Linux engine starts cleanly. `docker compose -f
+infra/docker-compose.yml up -d` brings up `dynodoc-postgres` (Postgres 16.14) healthy,
+with the `dynodoc` user + database created and bound to `127.0.0.1:5432`. Start Docker
+Desktop first (wait for the whale icon to settle), then `task up`.
 
 CI (Linux runners) is unaffected and runs the full test suite.
 
@@ -82,11 +75,15 @@ Verified natively on this machine (Rust 1.96.0, SAC off):
 - [x] `engine-api` `/healthz` → 200 `{"status":"ok","service":"engine-api"}`.
 - [x] researcher frontend `/healthz` → 200; home page renders ("dynodoc").
 - [x] Frontend `pnpm check`, `pnpm build`, `pnpm test:unit` pass.
-- [x] Toolchain installed: Rust 1.96.0, go-task 3.50.0, pnpm 11.7.0, Docker Desktop.
+- [x] Toolchain installed: Rust 1.96.0, go-task 3.50.0, pnpm 11.7.0, Docker Desktop,
+      sqlx-cli 0.9.0 (`--features postgres,rustls`).
+- [x] `task up` — `dynodoc-postgres` (Postgres 16.14) boots healthy on `127.0.0.1:5432`.
+- [x] Postgres user + database `dynodoc` exist (verified via `\conninfo`).
+- [x] `sqlx migrate run --source migrations` succeeds against the live DB and creates the
+      `_sqlx_migrations` ledger (no migrations yet — schema lands in Stage 13).
+- [x] `/healthz` → 200 with Postgres running (API is a Stage-12 placeholder; no DB calls yet).
 
-Pending:
+Pending (run on CI Linux runners, not this machine):
 
-- [ ] `task up` / `task dev` with Postgres — needs WSL2 enabled for Docker (see above).
-- [ ] Postgres user + database `dynodoc` exist (created by the compose container on first `task up`).
 - [ ] Playwright E2E — not run locally yet (CI installs the browser and runs it).
 - [ ] `ci-rust.yml` and `ci-frontend.yml` pass on a pushed branch (Linux runners).
