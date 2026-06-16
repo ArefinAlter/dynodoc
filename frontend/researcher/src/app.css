@@ -1,14 +1,26 @@
-/* Global design-system base. Mirrors src/lib/tokens.ts (docs/01 §6, docs/19). */
+/* Global design-system base. Mirrors src/lib/tokens.ts and the stage-19 prototype direction. */
 :root {
   --color-parchment: #f4efe6;
+  --color-surface: #fbf8f1;
+  --color-surface-muted: #f0e7d8;
   --color-terracotta: #b14b2c;
+  --color-accent: #b14b2c;
+  --color-accent-bg: #f5e6dd;
   --color-ink: #2b2622;
   --color-muted: #6b635a;
+  --color-subtle: #8a8170;
   --color-rule: #dcd3c4;
+  --color-border: #dcd3c4;
+  --color-border-strong: #c4b8a4;
+  --color-suggest: #7b8f50;
+  --color-suggest-bg: #edf1dd;
+  --color-warn: #c18a3f;
+  --color-agent: #4a6741;
 
   --font-display: 'Fraunces', Georgia, serif;
   --font-body: 'Source Serif 4', Georgia, serif;
   --font-ui: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
 }
 
 * {
@@ -22,6 +34,7 @@ body {
 }
 
 body {
+  min-height: 100vh;
   background: var(--color-parchment);
   color: var(--color-ink);
   font-family: var(--font-body);
@@ -31,4 +44,11 @@ body {
 
 a {
   color: var(--color-terracotta);
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
 }
