@@ -13,7 +13,7 @@
 >    - The document maintains a `proposal_state: HashMap<EventId, ProposalStatus>` where ProposalStatus is `Pending | Accepted | Rejected | Withdrawn`.
 >    - `SuggestionAccepted{event_id}` from an authorized identity marks the proposal accepted, AND emits the wrapped event as a now-canonical event (which folds into state on next materialization).
 >    - `SuggestionRejected{event_id, reason}` marks the proposal rejected without applying it.
-> 3. Implement the **capability check** at the governance gate: before accepting any operation, verify the author's identity tier is permitted to perform it (using the capability matrix from `research_ide_public_consultation_design.md` §5.4). Examples:
+> 3. Implement the **capability check** at the governance gate: before accepting any operation, verify the author's identity tier is permitted to perform it (using the capability matrix from `dynodoc_public_consultation_design.md` §5.4). Examples:
 >    - T0 can read; can't append anything.
 >    - T1 can `VoteCast`; can't `CommentAdded`.
 >    - T2 can `CommentAdded`, `SuggestionProposed`, `AlternativeCreated`; can't `Deployed`.

@@ -1,4 +1,4 @@
-# Agentic Research IDE — Feasibility, Market, and Strategy Assessment
+# Dynodoc — Feasibility, Market, and Strategy Assessment
 
 *Working title for the concept: a self‑hostable, AI‑native "Research/Study IDE" that takes a study description and produces a methodologically sound, ODK/Kobo‑compatible questionnaire, with collaborative review, mock‑data simulation, validity checks, and direct deployment to data collection.*
 
@@ -327,7 +327,7 @@ For institutional and self‑hosted customers, gross margin is higher (60–80%)
 | Data residency/privacy concerns block adoption | High | Medium | Self-hosted tier from Day 1; published privacy and data flow documentation |
 | Translation quality for low-resource languages | High | Medium | Human-in-the-loop translation review; partner with local linguists for key markets |
 | Verne team bandwidth — core team is stretched across other priorities | High | High | Hire dedicated product owner; phase the build; resist scope creep |
-| Cultural fit issues — research community distrusts SaaS UX | Medium | Medium | "Research IDE" aesthetic, not "SaaS dashboard"; thoughtful defaults; methodology-first language |
+| Cultural fit issues — research community distrusts SaaS UX | Medium | Medium | "Dynodoc" aesthetic, not "SaaS dashboard"; thoughtful defaults; methodology-first language |
 
 ### 9.2 Pitfall: the "just wraps ChatGPT" objection
 

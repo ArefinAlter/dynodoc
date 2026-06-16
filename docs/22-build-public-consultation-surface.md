@@ -2,7 +2,7 @@
 
 ### Claude Code prompt to start this stage
 
-> Start the public consultation work. This stage builds the read-only citizen-facing surface for a document under consultation, with no participation features yet — just clean, fast, accessible viewing. The engine stays unchanged; this is a new frontend that consumes the existing API. Reference: `research_ide_public_consultation_design.md` §8 (citizen UX). In `frontend/citizen/`:
+> Start the public consultation work. This stage builds the read-only citizen-facing surface for a document under consultation, with no participation features yet — just clean, fast, accessible viewing. The engine stays unchanged; this is a new frontend that consumes the existing API. Reference: `dynodoc_public_consultation_design.md` §8 (citizen UX). In `frontend/citizen/`:
 >
 > 1. **Routing**:
 >    - `/` — landing page listing all open consultations, each with a one-paragraph summary, deadline, and participant count.

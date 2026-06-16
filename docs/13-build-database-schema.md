@@ -2,7 +2,7 @@
 
 ### Claude Code prompt to start this stage
 
-> Building on the scaffolding from stage 01, implement the database schema for the research-ide platform. The full schema is documented in the prior summary message and rests on the design from `research_ide_versioning_complete.md` Volume II §D.1 and §E. For this stage:
+> Building on the scaffolding from stage 01, implement the database schema for Dynodoc. The full schema is documented in the prior summary message and rests on the design from `dynodoc_versioning_complete.md` Volume II §D.1 and §E. For this stage:
 >
 > 1. Use **sqlx-cli** for migrations. Create migration files numbered `0001_core.sql`, `0002_events.sql`, `0003_snapshots.sql`, `0004_identity.sql`, `0005_moderation.sql`, `0006_deliberation.sql`, `0007_closeout.sql`, `0008_rate_and_signals.sql`, mirroring the schema sections.
 > 2. Implement the schema exactly as specified in the build summary, including all indexes. Add the `pgcrypto` and `pg_trgm` extensions in `0000_extensions.sql`.

@@ -2,15 +2,15 @@
 
 ### How to use this series
 
-This is a numbered, sequential reference for building the Research IDE + Public Consultation platform end to end. Each file represents one focused stage of work, in the order you should do them. They are written assuming you are working with Claude Code or a similar AI coding assistant, with **one Claude Code prompt at the top of each stage's file** that you can paste in to start.
+This is a numbered, sequential reference for building Dynodoc platform end to end. Each file represents one focused stage of work, in the order you should do them. They are written assuming you are working with Claude Code or a similar AI coding assistant, with **one Claude Code prompt at the top of each stage's file** that you can paste in to start.
 
 The stages are sized so that each is roughly 1–3 weeks of focused work for a small team. Don't skip ahead. The decisions taken in earlier files constrain later files — for example, the database schema chosen in stage 02 is referenced by every subsequent stage, and the event-log invariants established in stage 03 are what the CRDT layer in stage 09 relies on.
 
 ### Companion reading
 
-- `research_ide_versioning_complete.md` — the design and mathematics (Volumes I & II). Read sections referenced by each stage.
-- `research_ide_public_consultation_design.md` — the public-scale extension. Referenced in stages 11+.
-- `research_ide_interface.html` / `research_ide_interactive.html` — the UX prototype the Phase-0 frontend should converge toward.
+- `dynodoc_versioning_complete.md` — the design and mathematics (Volumes I & II). Read sections referenced by each stage.
+- `dynodoc_public_consultation_design.md` — the public-scale extension. Referenced in stages 11+.
+- `dynodoc_interface.html` / `dynodoc_interactive.html` — the UX prototype the Phase-0 frontend should converge toward.
 
 ### The full sequence
 
@@ -23,7 +23,7 @@ The stages are sized so that each is roughly 1–3 weeks of focused work for a s
 05 · Semantic Operation Vocabulary and Governance Gate
 06 · Authentication and Identity Tiers (T1–T2)
 07 · Web API Surface (REST + Server-Sent Events)
-08 · Research IDE Frontend (the Phase-0 deliverable)
+08 · Dynodoc Frontend (the Phase-0 deliverable)
 09 · CRDT Convergence Layer (for live co-edit)
 10 · Referential Integrity and Semantic Merge Engine
 11 · Public Consultation Surface (read-only public view)
@@ -38,7 +38,7 @@ The stages are sized so that each is roughly 1–3 weeks of focused work for a s
 20 · Multi-Tenant Hardening and Deployment
 ```
 
-Stages 01–10 deliver the **Research IDE Phase-0 product** (small expert teams). Stages 11–20 add the **public consultation layers** on top of the same engine. A working team should hit usable state after stage 08, deployable internally after stage 10, deployable to a pilot consultation after stage 14, and ready for national-scale deployment after stage 18.
+Stages 01–10 deliver the **Dynodoc Phase-0 product** (small expert teams). Stages 11–20 add the **public consultation layers** on top of the same engine. A working team should hit usable state after stage 08, deployable internally after stage 10, deployable to a pilot consultation after stage 14, and ready for national-scale deployment after stage 18.
 
 ---
 
@@ -59,9 +59,9 @@ The cost of Rust here is real (slower to write than Python, smaller hiring pool 
 
 ### Frontend: SvelteKit + TypeScript
 
-For both the Research IDE (expert-team editor) and the citizen-facing consultation surface, use **SvelteKit** with **TypeScript**. Reasons:
+For both Dynodoc (expert-team editor) and the citizen-facing consultation surface, use **SvelteKit** with **TypeScript**. Reasons:
 
-- The Research IDE needs rich editing UI — track-changes, suggesting mode, four-mode editor, inline conflict resolution. Svelte's component model and store primitives map directly onto these patterns; the prototype HTML files we built can be ported into Svelte components mostly unchanged.
+- Dynodoc needs rich editing UI — track-changes, suggesting mode, four-mode editor, inline conflict resolution. Svelte's component model and store primitives map directly onto these patterns; the prototype HTML files we built can be ported into Svelte components mostly unchanged.
 - The citizen surface needs phone-first, low-bandwidth, accessibility-compliant rendering. SvelteKit's server-rendered-by-default mode produces small initial payloads (~50–100 KB) compared to React or Next.js (~200–400 KB minimum), which matters on a 2G connection in Cox's Bazar.
 - TypeScript everywhere so the API contract between Rust backend and Svelte frontend is type-checked end-to-end via OpenAPI codegen.
 - Svelte's transition primitives make the suggesting-mode interaction (highlights appearing inline, accept/reject animations) feel native without library dependencies.
@@ -119,7 +119,7 @@ Build, test, lint, and deploy via the repository host's actions runner. For sove
 |---|---|---|
 | Event log & engine core | Rust + Axum + SQLx + Tokio | Speed, safety, static binaries |
 | Database | PostgreSQL 16+ | Boring, audited, sovereign |
-| Research IDE frontend | SvelteKit + TypeScript | Rich UI, small bundles, ports prototype |
+| Dynodoc frontend | SvelteKit + TypeScript | Rich UI, small bundles, ports prototype |
 | Citizen consultation frontend | SvelteKit + TypeScript (same codebase) | Phone-first, accessibility, sovereignty |
 | ML / deliberation / moderation classifiers | Python + FastAPI + scikit-learn + sentence-transformers | First-class libraries |
 | Real-time channel | SSE over HTTP/2 | Simpler than WebSockets, reconnects free |
@@ -136,7 +136,7 @@ Build, test, lint, and deploy via the repository host's actions runner. For sove
 A single monorepo. The pieces have clean boundaries but enough cross-cutting concerns (the OpenAPI schema, the shared event types, the integration tests) that splitting them costs more than it saves at this scale.
 
 ```
-research-ide/
+dynodoc/
 ├── crates/
 │   ├── engine-core/        Rust — event log, hash chain, materialization
 │   ├── engine-api/         Rust — Axum HTTP server, SSE, auth
@@ -147,7 +147,7 @@ research-ide/
 │   ├── moderation/         Python — soft classifiers, summary loop
 │   └── summarizer/         Python — LLM client + validation loop
 ├── frontend/
-│   ├── researcher/         SvelteKit — the Research IDE
+│   ├── researcher/         SvelteKit — Dynodoc itself
 │   ├── citizen/            SvelteKit — the public consultation surface
 │   └── shared/             TypeScript — shared types, components, OpenAPI client
 ├── infra/

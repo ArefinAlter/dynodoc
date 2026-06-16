@@ -2,7 +2,7 @@
 
 ### Claude Code prompt to start this stage
 
-> I'm building a monorepo for a system called "research-ide" that combines a Rust backend (Axum + SQLx + Tokio), Python services (FastAPI + scikit-learn + sentence-transformers), and SvelteKit frontends. The full stack is documented in `docs/00-index-and-stack.md`. For this stage, please:
+> I'm building a monorepo for a system called "dynodoc" that combines a Rust backend (Axum + SQLx + Tokio), Python services (FastAPI + scikit-learn + sentence-transformers), and SvelteKit frontends. The full stack is documented in `docs/00-index-and-stack.md`. For this stage, please:
 >
 > 1. Scaffold the repository structure exactly as specified in the layout in `00-index-and-stack.md`.
 > 2. Set up `docker-compose.yml` with services for: PostgreSQL 16, MinIO (S3-compatible), and a small Redis (for ephemeral session/rate-limit state). Use named volumes for persistence.

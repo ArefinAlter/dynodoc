@@ -2,7 +2,7 @@
 
 ### Claude Code prompt to start this stage
 
-> Add the three participation modes from `research_ide_public_consultation_design.md` §8.1: vote (T1), comment (T2), suggest a change (T2). The engine endpoints already exist from stage 07; this stage builds the citizen-facing UX flows and the aggregation views. In `frontend/citizen/`:
+> Add the three participation modes from `dynodoc_public_consultation_design.md` §8.1: vote (T1), comment (T2), suggest a change (T2). The engine endpoints already exist from stage 07; this stage builds the citizen-facing UX flows and the aggregation views. In `frontend/citizen/`:
 >
 > 1. **The Add Your View interaction**:
 >    - From a clause's right rail, "Add your view" opens a modal/sheet.

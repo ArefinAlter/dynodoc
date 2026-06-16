@@ -1,8 +1,8 @@
-# A Versioning, Review & Collaboration Protocol for the Research IDE
+# A Versioning, Review & Collaboration Protocol for Dynodoc
 
 ### Design compendium — every approach, end-to-end, with the science, mathematics, engineering, and economics behind each
 
-**Project:** Verne Research IDE (agentic questionnaire authoring for ODK / Kobo / REDCap workflows)
+**Project:** Dynodoc (agentic questionnaire authoring for ODK / Kobo / REDCap workflows)
 **Document type:** Architecture & protocol design brief
 **Status:** Exploratory — intended to precede an architectural decision record (ADR)
 **Companion documents:** *Feasibility & Market Assessment*; *UI/UX Theory*
@@ -11,7 +11,7 @@
 
 ## 0. How to read this document
 
-This is a design compendium, not a specification. Its job is to lay out the full solution space for "Git-like" editing, appending, and reviewing inside the Research IDE, so that the eventual decision is made with the whole landscape visible rather than by defaulting to the first plausible library.
+This is a design compendium, not a specification. Its job is to lay out the full solution space for "Git-like" editing, appending, and reviewing inside Dynodoc, so that the eventual decision is made with the whole landscape visible rather than by defaulting to the first plausible library.
 
 The argument runs in four movements. **Part I** (§1–§2) establishes the problem and the underlying science: what a version-control system actually *is* once you strip away Git's command-line surface, and the mathematics of diffing, merging, causality, and convergence that any honest design must reckon with. **Part II** (§3) surveys prior art — the systems we are standing on the shoulders of, and where each one's ideas transfer or fail to transfer to our domain. **Part III** (§4–§6) builds the semantic model specific to survey instruments and then presents five complete, end-to-end candidate architectures, mapping the strongest one back onto the two-tier collaboration UX already designed. **Part IV** (§7–§10) covers engineering, economics, and a concrete phased recommendation, followed by formal appendices.
 

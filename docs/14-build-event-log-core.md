@@ -2,7 +2,7 @@
 
 ### Claude Code prompt to start this stage
 
-> This is the irreducible heart of the system. The event log is the system of record; all other state is derived from it. Reference: `research_ide_versioning_complete.md` Volume II §D.2 (commutativity theorem) and §E.2 (hash chain + tamper-evidence theorem). For this stage in `crates/engine-core`:
+> This is the irreducible heart of the system. The event log is the system of record; all other state is derived from it. Reference: `dynodoc_versioning_complete.md` Volume II §D.2 (commutativity theorem) and §E.2 (hash chain + tamper-evidence theorem). For this stage in `crates/engine-core`:
 >
 > 1. Define the `Event` struct in `engine-shared` mirroring the database row, plus an `EventPayload` enum with variants for every semantic op_type: `NodeCreated`, `FieldEdited`, `NodeMoved`, `NodeDeleted`, `CommentAdded`, `VoteCast`, `SuggestionProposed`, `SuggestionAccepted`, `SuggestionRejected`, `ModerationDecided`, `Deployed`, `ConsultationOpened`, `ConsultationClosed`. Use serde with internally-tagged JSON.
 > 2. Implement `EventLog::append(payload, author, parent_event) -> Event` in `engine-core/src/log.rs`. This function:

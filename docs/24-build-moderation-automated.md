@@ -2,7 +2,7 @@
 
 ### Claude Code prompt to start this stage
 
-> Build the automated portions of the moderation pipeline: hard filters, soft classifiers, publish-with-flagging. Stage 4 (human review) comes in stage 14. Reference: `research_ide_public_consultation_design.md` §6.1–§6.3. In `services/moderation/`:
+> Build the automated portions of the moderation pipeline: hard filters, soft classifiers, publish-with-flagging. Stage 4 (human review) comes in stage 14. Reference: `dynodoc_public_consultation_design.md` §6.1–§6.3. In `services/moderation/`:
 >
 > 1. **Service interface**: a FastAPI service exposing:
 >    - `POST /moderate` — accepts `{event_id, op_type, text, language, author_id, author_tier, author_first_n_contributions}`; returns `{stage1: pass|block|hold, stage2_classification: {hate: 0.0-1.0, harassment: 0.0-1.0, spam: 0.0-1.0, off_topic: 0.0-1.0}, action: publish|hold|block, reason_code: str?}`.

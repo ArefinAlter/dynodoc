@@ -2,7 +2,7 @@
 
 ### Claude Code prompt to start this stage
 
-> Implement the deliberation layer that turns raw contributions and votes into bridge statements, cluster summaries, and the structure of opinion. Reference: `research_ide_public_consultation_design.md` §7.1–§7.4. In `services/deliberation/`:
+> Implement the deliberation layer that turns raw contributions and votes into bridge statements, cluster summaries, and the structure of opinion. Reference: `dynodoc_public_consultation_design.md` §7.1–§7.4. In `services/deliberation/`:
 >
 > 1. **Inputs and outputs**:
 >    - Reads from the engine's event log (Postgres) and the deliberation cache tables.

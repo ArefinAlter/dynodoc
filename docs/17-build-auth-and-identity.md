@@ -2,7 +2,7 @@
 
 ### Claude Code prompt to start this stage
 
-> Build the identity layer that issues credentials and assigns capability tiers. T3 (civic-ID verified) is deferred to stage 17; this stage covers T0 (anonymous read), T1 (email/SMS), T2 (T1 + phone/behavioral). Reference: `research_ide_public_consultation_design.md` §5. In `crates/engine-api/src/auth/`:
+> Build the identity layer that issues credentials and assigns capability tiers. T3 (civic-ID verified) is deferred to stage 17; this stage covers T0 (anonymous read), T1 (email/SMS), T2 (T1 + phone/behavioral). Reference: `dynodoc_public_consultation_design.md` §5. In `crates/engine-api/src/auth/`:
 >
 > 1. **Token format**: use **Paseto v4 local** tokens (not JWT). Paseto v4 is symmetric AEAD, no algorithm-confusion attacks, no `none` algorithm, no key-type bait. Use the `pasetors` crate. Token payload: `{ identity_id, tier, expires_at, issued_at, kid }`. 24-hour expiry, refresh via a separate long-lived refresh token in an HttpOnly cookie.
 > 2. **Registration endpoints**:

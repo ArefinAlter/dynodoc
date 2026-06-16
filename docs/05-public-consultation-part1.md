@@ -1,9 +1,9 @@
-# Public Consultation at Scale — A System Design for the Research IDE Protocol Applied to Policy Drafts
+# Public Consultation at Scale — A System Design for Dynodoc Protocol Applied to Policy Drafts
 
 ### From a small expert team to thousands of citizen contributors on a government document
 
 **Status:** Design exploration, follow-on to the two-volume versioning protocol
-**Companion documents:** `research_ide_versioning_complete.md` (the underlying engine — Volumes I & II)
+**Companion documents:** `dynodoc_versioning_complete.md` (the underlying engine — Volumes I & II)
 **Reading time:** sequential — Part I sets the problem, Parts II–VI build the answer
 
 ---

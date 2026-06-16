@@ -1,4 +1,4 @@
-# UI/UX Theory for an Agentic Research IDE
+# UI/UX Theory for an Dynodoc
 
 *A design philosophy for the questionnaire authoring environment, the collaborative review surface, and the agent integration model. Grounded in references from REDCap, Notion-class block editors, Google Docs, Figma branching, NN/G human factors work, and outliner theory. Aimed at field researchers, not developers.*
 

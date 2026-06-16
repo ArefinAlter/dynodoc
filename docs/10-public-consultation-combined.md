@@ -1,9 +1,9 @@
-# Public Consultation at Scale — A System Design for the Research IDE Protocol Applied to Policy Drafts
+# Public Consultation at Scale — A System Design for Dynodoc Protocol Applied to Policy Drafts
 
 ### From a small expert team to thousands of citizen contributors on a government document
 
 **Status:** Design exploration, follow-on to the two-volume versioning protocol
-**Companion documents:** `research_ide_versioning_complete.md` (the underlying engine — Volumes I & II)
+**Companion documents:** `dynodoc_versioning_complete.md` (the underlying engine — Volumes I & II)
 **Reading time:** sequential — Part I sets the problem, Parts II–VI build the answer
 
 ---
@@ -396,7 +396,7 @@ A successful consultation interface progresses through the same flow a citizen's
 
 - **Vote (T1).** Tap "agree" or "disagree" on any statement someone else has made. Zero typing. Designed for the silent supermajority — the 27,000 of 30,000 from §2 who will not write but will react.
 - **Comment (T2).** Write a sentence about the clause. The interface gently suggests reading existing comments first and offers "agree with this existing comment" as an alternative to writing yet another — *aggregation, not duplication*. When the citizen does write, the comment is shown to them as a position; if a near-duplicate cluster exists, the platform suggests "your view is similar to this group of 240 citizens; do you want to join their position or start a new one?" The default action is *join*, which is what makes the platform's signal coherent rather than fragmented.
-- **Suggest a change (T2 also).** "Propose specific wording for this clause." This produces a `SuggestionProposed` event in the engine, with the new wording shown beside the original. The interaction is the same one the research-IDE prototype already demonstrated — track-changes style — but the *vocabulary* is "suggested change," never "branch" or "alternative draft."
+- **Suggest a change (T2 also).** "Propose specific wording for this clause." This produces a `SuggestionProposed` event in the engine, with the new wording shown beside the original. The interaction is the same one Dynodoc prototype already demonstrated — track-changes style — but the *vocabulary* is "suggested change," never "branch" or "alternative draft."
 
 **See your contribution in context.** After submitting, the citizen sees: *where their contribution sits* (the cluster it joined or started), *the cluster's overall position*, and *the bridge statements they happened to also agree with*. This is the loop that converts a one-shot input into a moment of learning about the public's range of views.
 
@@ -636,7 +636,7 @@ A serious treatment of a serious idea ends with what can go wrong.
 
 A brief, honest framing for the close.
 
-**What it is.** A complete system architecture for taking the structured-document version-control engine of the original Research IDE and applying it, with new layers above and around, to public consultation at the scale of tens of thousands of participants — keeping the engine's correctness guarantees (audit, attribution, semantic merge, content-addressed history) and adding the participation, identity, moderation, deliberation, presentation, and legitimacy layers that public participation actually requires. It assembles existing primitives — Polis clustering, proof-of-personhood, the Decidim modular philosophy, hash-linked audit trails — into a coherent stack whose components have been independently validated at scale.
+**What it is.** A complete system architecture for taking the structured-document version-control engine of the original Dynodoc engine and applying it, with new layers above and around, to public consultation at the scale of tens of thousands of participants — keeping the engine's correctness guarantees (audit, attribution, semantic merge, content-addressed history) and adding the participation, identity, moderation, deliberation, presentation, and legitimacy layers that public participation actually requires. It assembles existing primitives — Polis clustering, proof-of-personhood, the Decidim modular philosophy, hash-linked audit trails — into a coherent stack whose components have been independently validated at scale.
 
 **What it is not.** It is not a panacea for legitimacy. It cannot make a government act on its public's input; it can only make the failure to act visible. It cannot eliminate Sybil attacks; it can raise their cost and surface them in the public record. It cannot ensure participation by digitally-excluded populations alone; it must be combined with offline outreach that uses the platform as a back-end, not a front-end. It cannot replace political will; it can replace the *excuse* that gathering structured public input on a policy draft is too hard.
 

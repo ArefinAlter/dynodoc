@@ -1,9 +1,9 @@
-# The Mathematics, Science & Engineering of the Research IDE Versioning Protocol
+# The Mathematics, Science & Engineering of Dynodoc Versioning Protocol
 
 ### A rigorous companion — formal foundations, equations, algorithms, complexity, and the patterns we reject and why
 
 **Status:** Deep theoretical & engineering treatment
-**Companion to:** `research_ide_versioning_protocol.md` (the design narrative). That document argued *what* to build and *why*; this one proves the claims, states the mathematics formally, gives the algorithms in full, analyzes their costs, and dissects the expensive patterns we deliberately avoid.
+**Companion to:** `dynodoc_versioning_protocol.md` (the design narrative). That document argued *what* to build and *why*; this one proves the claims, states the mathematics formally, gives the algorithms in full, analyzes their costs, and dissects the expensive patterns we deliberately avoid.
 
 **Reading contract.** Every non-trivial equation is followed by a plain-language gloss of *what each symbol means and why the equation says something we care about.* Diagrams are given as labeled ASCII (portable inside the document) and supplemented by rendered figures in the chat. Pseudocode is given for every algorithm we would actually implement. Complexity is stated in $O(\cdot)$ with the reasoning, not asserted.
 
@@ -1051,4 +1051,4 @@ The scope caveats (E.2.1, E.6) also sharpen the roadmap: Merkle structure is nec
 - Content-addressing, deduplication, O(depth) incremental snapshot — E.5
 - Integrity / authenticity / prevention layering — E.6
 
-*End of the rigorous companion. Read alongside `research_ide_versioning_protocol.md`: that document is the argument; this one is the proof, the cost accounting, and the algorithms in full.*
+*End of the rigorous companion. Read alongside `dynodoc_versioning_protocol.md`: that document is the argument; this one is the proof, the cost accounting, and the algorithms in full.*

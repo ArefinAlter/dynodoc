@@ -9,11 +9,11 @@
 >    - For deployment-per-tenant: every stack ships from the same codebase via Helm charts; configuration is per-deployment.
 >    - For single-instance multi-tenant: add a `tenant_id` column to every relevant table, row-level security via Postgres policies (`CREATE POLICY tenant_isolation ON event FOR ALL TO app_role USING (tenant_id = current_setting('app.tenant_id')::uuid)`).
 >
-> 2. **Helm chart**: in `infra/helm/research-ide/`:
+> 2. **Helm chart**: in `infra/helm/dynodoc/`:
 >    - Subcharts for: postgres (or external reference), redis, minio, the rust API, each python service, the frontends, vLLM (optional).
 >    - Configurable values: tenant identity, sponsor branding, civic-ID provider, LLM provider, replicas per service, resource requests/limits, ingress host, TLS certs.
 >    - Default values for a small national consultation (matching §11.5's sizing).
->    - `helm install research-ide ./helm/research-ide -f values-production.yaml` should be the complete deploy command.
+>    - `helm install dynodoc ./helm/dynodoc -f values-production.yaml` should be the complete deploy command.
 >
 > 3. **Observability hardening**:
 >    - OpenTelemetry instrumentation in every service: traces, metrics, logs all unified.
@@ -94,7 +94,7 @@ A few specific commitments matter:
 
 ### What comes after stage 20
 
-You have a platform. It serves the Research IDE Phase-0 product, hosts public consultations at national scale, and is hardened for sovereign deployment. From here, the work is operational and political:
+You have a platform. It serves Dynodoc Phase-0 product, hosts public consultations at national scale, and is hardened for sovereign deployment. From here, the work is operational and political:
 
 - Recruit the first sovereign deployment (a ministry, a city government, a regulator).
 - Run a real consultation on a real policy. Document what breaks.
