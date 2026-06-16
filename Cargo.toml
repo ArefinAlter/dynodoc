@@ -26,12 +26,8 @@ tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "compression-gzip", "trace"] }
 
 # Database
-# native-tls (Windows SChannel) instead of rustls: rustls pulls `ring`
-# transitively, whose build-script binary is blocked by Smart App Control on the
-# dev machine. native-tls uses the OS TLS stack and has no such build script.
-sqlx = { version = "0.8", default-features = false, features = [
-    "runtime-tokio",
-    "tls-native-tls",
+sqlx = { version = "0.8", features = [
+    "runtime-tokio-rustls",
     "postgres",
     "macros",
     "migrate",
@@ -49,11 +45,10 @@ ulid = "1"
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 
-# Crypto (hash chain). RustCrypto `sha2` (pure Rust, no build script) is used
-# instead of the doc's `ring`: Smart App Control (enforce mode) on the Windows dev
-# machine blocks ring's freshly-built build-script binary. Ed25519 signatures
-# (later stages) will use `ed25519-dalek` for the same reason.
-sha2 = "0.10"
+# Crypto: ring per docs/11 (audited, fast SHA-256 for the hash chain; Ed25519 for
+# signatures later). ring's build-script binary is blocked by Smart App Control on
+# the laptop, so the engine is built/run on a SAC-free machine (home PC / WSL2 / CI).
+ring = "0.17"
 
 # Errors + logging
 thiserror = "1"

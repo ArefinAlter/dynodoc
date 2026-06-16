@@ -9,7 +9,7 @@ description = "dynodoc engine core: event log, hash chain, materialization, merg
 [dependencies]
 engine-shared = { workspace = true }
 sqlx = { workspace = true }
-sha2 = { workspace = true }
+ring = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 ulid = { workspace = true }

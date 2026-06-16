@@ -44,21 +44,25 @@ task lint           # clippy + eslint + svelte-check
 
 Smart App Control (SAC) is in **Enforce** mode on the current dev machine
 (`HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy\VerifiedAndReputablePolicyState = 1`).
-It unpredictably blocks freshly-built, unsigned binaries — `cargo test`/`cargo run`
-fail intermittently with `os error 4551` ("An Application Control policy has blocked
-this file"). SAC uses Microsoft cloud reputation, not the local certificate store, so
-code-signing locally does **not** help.
+It blocks freshly-built, unsigned binaries — including `ring`'s build-script binary, so
+with the chosen `ring` + `rustls` deps the Rust workspace **does not even build on this
+laptop** (`os error 4551`, "An Application Control policy has blocked this file"). SAC uses
+Microsoft cloud reputation, not the local certificate store, so code-signing locally does
+**not** help.
 
-The Rust workspace **compiles** fine; only *executing* the produced binaries is blocked.
-Two ways to resolve (pick one — both need a reboot):
+**The Rust backend is therefore built and run on a SAC-free machine** — your home PC, a
+WSL2 distro, or CI. The frontend (`pnpm`) and lockfile resolution (`cargo generate-lockfile`)
+work fine on the laptop; only compiling/running native binaries is blocked. To verify
+locally on a SAC-free box:
 
-1. **Develop the backend in WSL2 (recommended).** SAC governs only Windows PE
-   executables, so building/running/testing the engine inside a WSL2 Linux distro
-   sidesteps it entirely and matches the Linux deployment target. Docker Desktop already
-   enables WSL2. `wsl --install` a distro, clone there, and run `cargo`/`task` inside it.
-2. **Turn off Smart App Control.** Windows Security → App & browser control → Smart App
-   Control → Off, then reboot. ⚠️ **Irreversible** — SAC cannot be re-enabled without
-   resetting Windows. A genuine reduction in the machine's malware protection.
+```sh
+cargo build --workspace && cargo test --workspace
+task dev   # once Docker is running
+```
+
+If you ever want native Windows dev on this laptop, SAC can be turned off (Windows Security
+→ App & browser control → Smart App Control → Off, then reboot) — but that is **irreversible**
+(SAC cannot be re-enabled without resetting Windows). WSL2 is the safer route.
 
 CI (Linux runners) is unaffected and runs the full test suite.
 
@@ -66,23 +70,24 @@ CI (Linux runners) is unaffected and runs the full test suite.
 
 - Rust toolchain pinned to **1.96.0** (doc said 1.83.0 — stale; current crates need
   edition2024 / Rust 1.85+).
-- **`sha2`** (RustCrypto) instead of `ring`, and sqlx on **native-tls** instead of rustls
-  — both to avoid `ring`'s build-script binary, which SAC blocks. Ed25519 (later) will use
-  `ed25519-dalek`. See `docs/decisions/000-initial.md`.
+- Everything else matches the doc: **`ring`** for crypto and sqlx on **`rustls`**.
 
 ## Stage-12 verification status
 
-Verified on the current machine:
+Verified on this laptop:
 
-- [x] Rust workspace **compiles** clean (`cargo build --workspace`, `cargo fmt --check`).
 - [x] Frontend **passes** `pnpm check`, `pnpm build`, and `pnpm test:unit`.
+- [x] Cargo dependency graph resolves; `Cargo.lock` generated with `ring` + `rustls`.
+- [x] Rust workspace compiled clean under a SAC-safe config (sha2/native-tls) before
+      reverting to `ring`/`rustls` per request — so the non-crypto code is known-good.
 - [x] Toolchain installed: Rust 1.96.0, go-task 3.50.0, pnpm 11.7.0, Docker Desktop
       (installed; needs reboot).
 
-Blocked / pending (see the SAC and Docker notes above):
+To finish on a SAC-free machine (home PC / WSL2 / CI):
 
-- [ ] `task dev` boots the stack cleanly — needs Docker running (reboot) + SAC resolution.
-- [ ] `engine-api` `/healthz` returns 200 — needs SAC resolution to run the binary.
+- [ ] `cargo build --workspace` + `cargo test --workspace` green (blocked here by SAC on `ring`).
+- [ ] `task dev` boots the stack cleanly — needs Docker running (reboot).
+- [ ] `engine-api` `/healthz` returns 200.
 - [ ] researcher frontend `/healthz` returns 200 — runnable now via `pnpm preview`.
 - [ ] `cargo test --workspace` green — blocked by SAC on the Windows host (passes on CI / WSL2).
 - [ ] Playwright E2E — not run locally yet (CI installs the browser and runs it).

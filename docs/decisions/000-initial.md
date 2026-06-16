@@ -45,9 +45,9 @@ Recorded here so later stages don't re-litigate them:
 - **Task runner = go-task** (`Taskfile.yml`), chosen over GNU Make for Windows-first dev.
 - **Naming:** the repo directory and all internal names use `dynodoc` (the design docs say
   `research-ide`; the code uses `dynodoc`).
-- **Crypto crate:** RustCrypto `sha2` (and later `ed25519-dalek`) instead of the doc's
-  `ring`. Smart App Control (enforce mode) on the Windows dev machine blocks ring's
-  freshly-built build-script binary; the pure-Rust crates have no build script and produce
-  the same SHA-256 / Ed25519 primitives.
+- **Crypto + TLS:** `ring` and sqlx `rustls` per docs/11 (audited, fast — SHA-256 for the
+  hash chain, Ed25519 for signatures later). Smart App Control (enforce) on the laptop
+  blocks ring's build-script binary, so the engine is **built and run on a SAC-free
+  machine** (home PC / WSL2 / CI), not this laptop. See `SETUP.md`.
 - **Rust toolchain:** pinned to current stable **1.96.0**, not the doc's 1.83.0 (stale —
   current crates require edition2024 / Rust 1.85+).
