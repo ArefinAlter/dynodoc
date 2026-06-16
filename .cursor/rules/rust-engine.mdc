@@ -1,0 +1,15 @@
+---
+description: Rust engine crate conventions (event log, API, shared types)
+globs: crates/**/*
+alwaysApply: false
+---
+
+# Rust engine rules
+
+- Crates: `engine-shared` (types), `engine-core` (log, snapshots, merge), `engine-api` (HTTP/SSE), `engine-cli` (migrate, verify, replay).
+- Hash chain: `ring::digest::SHA256`; canonical JSON (sorted keys, no whitespace) for `content_hash`.
+- Event append: serializable tx, `FOR UPDATE` on latest event per document, genesis `prev_chain_hash` = 32 zero bytes.
+- IDs: ULIDs for `node.id` and `event.id`; UUIDs for `document.id`, `identity.id`.
+- Errors: `thiserror` in libraries; `anyhow` at CLI/API boundaries.
+- SQL: prefer `sqlx::query!` / `query_as!` with compile-time checking; integration tests in `engine-core/tests/`.
+- After edits: `cargo fmt`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`.

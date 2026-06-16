@@ -87,3 +87,25 @@ Pending (run on CI Linux runners, not this machine):
 
 - [ ] Playwright E2E — not run locally yet (CI installs the browser and runs it).
 - [ ] `ci-rust.yml` and `ci-frontend.yml` pass on a pushed branch (Linux runners).
+
+## Stage-13 verification status (database schema)
+
+Schema scope is **engine + auth only** (per the PoC brief): migrations `0000`–`0004`
+plus `0009_views`; the consultation-layer tables (`0005`–`0008`: moderation,
+deliberation, closeout, rate/signals) are intentionally skipped. Verified against the
+live `dynodoc-postgres` container:
+
+- [x] `sqlx database drop -y && sqlx database create && sqlx migrate run` applies all six
+      migrations cleanly (`task migrate-reset`).
+- [x] `\dt` shows `document`, `node`, `event`, `snapshot`, `identity`, `magic_link`
+      (+ `_sqlx_migrations`); `\dv` shows `current_documents`.
+- [x] `cargo test --workspace` green — **7 schema integration tests** + 3 unit tests.
+      The integration tests use `#[sqlx::test]` (fresh migrated DB per test): insert +
+      FromRow read-back, all expected indexes present (`pg_indexes`), 32-byte hash
+      columns store/round-trip, non-32-byte hash rejected by `octet_length` CHECK,
+      `event` UPDATE/DELETE raise (append-only), `node.id` reassignment raises
+      (stable-identity trigger), `content_hash` NOT NULL enforced.
+- [x] `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --check` clean.
+
+> **Note:** from Stage 13 onward, `cargo test --workspace` requires a reachable Postgres
+> (`DATABASE_URL`). Run `task up` first locally; CI provides a Postgres service.

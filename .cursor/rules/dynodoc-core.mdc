@@ -1,0 +1,13 @@
+---
+description: Dynodoc PoC scope, stack, and build conventions
+alwaysApply: true
+---
+
+# Dynodoc core conventions
+
+- **PoC scope:** `docs/decisions/000-initial.md` and `docs/dynodoc_poc_prd.md` win over full-platform docs. No consultation layers (stages 22–31), no Python `services/`, no `frontend/citizen`, no CRDT (stage 20).
+- **Stack:** Rust (Axum + SQLx + Tokio + ring) backend; PostgreSQL 16; SvelteKit + TypeScript frontend; `task` runner (not Make).
+- **Naming:** repo and crates use `dynodoc`, not `research-ide`.
+- **Build order:** follow `.cursor/stage-map.md`; do not skip stages.
+- **Commits:** Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`). Only commit when asked.
+- **Changes:** minimal diffs; match surrounding style; no drive-by refactors.

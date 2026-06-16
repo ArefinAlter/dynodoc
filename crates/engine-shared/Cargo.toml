@@ -7,6 +7,7 @@ license.workspace = true
 description = "Types shared across the dynodoc engine (events, nodes, identity newtypes)."
 
 [dependencies]
+sqlx = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 ulid = { workspace = true }

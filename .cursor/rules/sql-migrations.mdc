@@ -1,0 +1,16 @@
+---
+description: PostgreSQL migration immutability and schema invariants
+globs: migrations/**/*
+alwaysApply: false
+---
+
+# SQL migration rules
+
+- **Never edit applied migrations.** Add a new numbered file instead.
+- PoC scope: only `0000`–`0004` + `0009_views`; defer `0005`–`0008` (consultation) until post-PoC.
+- Extensions in `0000_extensions.sql`: `pgcrypto`, `pg_trgm`.
+- Timestamps: always `TIMESTAMPTZ` (UTC).
+- `event` table: append-only triggers on UPDATE/DELETE; `content_hash`, `chain_hash`, `prev_chain_hash` NOT NULL.
+- `node.id`: ULID string PK; add trigger to reject UPDATE of `id`.
+- Enum-like columns: Postgres `CHECK` constraints, not Rust-only enums.
+- Verify with: `task migrate-reset` then `cargo test -p engine-core --test schema_test`.

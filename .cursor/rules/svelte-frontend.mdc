@@ -1,0 +1,14 @@
+---
+description: SvelteKit researcher frontend conventions
+globs: frontend/**/*
+alwaysApply: false
+---
+
+# SvelteKit frontend rules
+
+- PoC UI lives in `frontend/researcher` only (no `frontend/citizen`).
+- OpenAPI client: `frontend/researcher/src/lib/api` (generated from Rust API).
+- SSR via `@sveltejs/adapter-node`; real-time via SSE (not WebSockets).
+- UX reference: `docs/01-uiux-theory.md` — quiet default UI, explicit modes (Reading/Writing/Reviewing/Inspecting), suggestions identical for human and agent authors.
+- English-only UI for PoC; data model keeps `Map<language, string>` for labels.
+- After edits: `cd frontend/researcher && pnpm lint && pnpm check`.

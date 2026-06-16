@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {
+        "command": "node .cursor/hooks/guard-destructive.js",
+        "matcher": "sqlx|migrate-reset|docker compose down|docker volume|drop database|truncate table event|delete from event",
+        "failClosed": false
+      }
+    ],
+    "postToolUse": [
+      {
+        "command": "node .cursor/hooks/migration-edit-hint.js",
+        "matcher": "Write|StrReplace|EditNotebook"
+      }
+    ]
+  }
+}
