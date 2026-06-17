@@ -28,7 +28,6 @@ import type {
 } from './api/types';
 import type {
   ActivityEvent,
-  ConflictCard,
   EditorChoice,
   EditorDocument,
   EditorItem,
@@ -168,8 +167,9 @@ export function toEditorDocument(detail: DocumentDetail): EditorDocument {
     languages: detail.languages.length ? detail.languages : ['en'],
     collaborators: [],
     sections,
-    activity: [],
-    conflict: emptyConflict()
+    activity: []
+    // No `conflict`: the live editor derives four-card conflicts from the store
+    // (`DocumentStore.conflicts`), not from this view model (stage 21).
   };
 }
 
@@ -180,11 +180,6 @@ function shortId(id: string): string {
 
 function capitalize(s: string): string {
   return s.length ? s[0].toUpperCase() + s.slice(1) : s;
-}
-
-/** The conflict card the scaffold's `ConflictModal` needs; empty until merge (stage 21). */
-export function emptyConflict(): ConflictCard {
-  return { id: '', itemId: '', itemLabel: '', remaining: 0, options: [] };
 }
 
 /** Map raw event rows into the scaffold's `ActivityEvent` timeline shape. */

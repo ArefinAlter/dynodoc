@@ -160,6 +160,42 @@ export interface OpResponse {
   event: EventRow;
 }
 
+// --- conflicts (stage 21) -------------------------------------------------------
+
+/**
+ * One competing proposal in a four-card conflict (`conflicts::derive::ConflictOption`).
+ * `actor` is the proposing identity when the server could attribute it.
+ */
+export interface ConflictOption {
+  suggestion_id: string;
+  actor?: string;
+  value: unknown;
+}
+
+/**
+ * A live four-card conflict: a `(node_id, field)` whose pending suggestions disagree
+ * (`conflicts::derive::ConflictView`). `conflict_id` is opaque — pass it back to
+ * `/resolve` unchanged. Conflicts are derived from current state, never stored.
+ */
+export interface ConflictView {
+  conflict_id: string;
+  node_id: string;
+  field: string;
+  /** The current canonical value (the "Original" card), or null if unset. */
+  ancestor: unknown;
+  options: ConflictOption[];
+}
+
+/** `GET /documents/{id}/conflicts` — `{ items: [ConflictView...] }`. */
+export interface ConflictList {
+  items: ConflictView[];
+}
+
+/** `POST .../resolve` — the appended canonical events, `{ events: [...] }`. */
+export interface ResolveResponse {
+  events: EventRow[];
+}
+
 // --- audit ----------------------------------------------------------------------
 
 /** `GET /documents/{id}/verify` — hash-chain verification result. */

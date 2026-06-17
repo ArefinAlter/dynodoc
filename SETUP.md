@@ -483,3 +483,97 @@ can call the API as-is.
   rules. A true cross-lang parity harness is deferred.
 - **Full Playwright E2E against a live stack + Lighthouse scoring** — not gated for the PoC.
 - **Typed API responses** (utoipa response-body annotations) — see above.
+
+## Stage-21 verification status (referential integrity & semantic merge — engine core)
+
+The engine-core half of stage 21 is implemented in `crates/engine-core/`. The API
+`/conflicts` + `/resolve` endpoints and the frontend ConflictModal wiring were a separate
+follow-up (now complete — see "API + frontend half" below).
+
+### What was built
+
+- **Expression parser** (`src/expr.rs`): a hand-rolled recursive-descent parser for the
+  ODK/XLSForm subset (`${var}`, comparison / arithmetic / boolean operators, `.`, string
+  and numeric literals, `name(arg, …)` calls). No new crate dependency (no `nom`/`winnow`).
+  Public API: `parse() -> Result<Expr, ParseError>`, `referenced_vars()`, and
+  `selected_choice_refs()` (extracts `(var, choice_literal)` from `selected()`, both ODK
+  arg orders). It does **not** evaluate — only shape + reference extraction.
+- **Integrity additions** (`src/integrity.rs`): two new `IntegrityViolation` variants —
+  `TypeMismatch` (conservative: a numeric operator over a non-numeric `${var}`; equality
+  and unknown types never flag) and `UndefinedChoice` (a `selected(${q},'lit')` whose
+  select-type `q` exists but lacks a live choice `'lit'`; a dangling `q` stays a
+  `DanglingReference`, never double-reported). The scan now also covers `calculation`.
+  Choice-value convention: `current_fields["value"]`, falling back to `["name"]`. One pass,
+  all violations, deterministic order. Unparseable expressions degrade gracefully (no panic,
+  no invented violation); the existing `${var}` scan still backs dangling/cycle.
+- **Three-way merge** (`src/merge.rs`): pure `three_way_merge(ancestor, branch_a,
+  branch_b) -> MergeResult { auto_merged_events, pending_conflicts, integrity_warnings }`.
+  Per-`(node, field)` classification (`OnlyInA/OnlyInB/BothSame` auto-merge,
+  `BothDifferent` → `FourCardConflict`), whole-node adds auto-merge, post-merge
+  `validate_integrity` over the proposed state, and `MergeResult::is_blocked()`. The new
+  `materializer::apply_payload` helper (shared with the log fold) replays a branch's
+  `EventPayload`s onto a cloned ancestor.
+- The stage-16 `governance::authorize` deploy gate automatically also blocks on the new
+  violation variants (it already runs `validate_integrity` on every `Deployed` event);
+  existing governance tests still pass unchanged.
+
+### Verification commands that passed (SAC-free environment, Rust 1.96.0)
+
+- `cargo test -p engine-core` — all green: **67 lib unit tests** (incl. 12 `expr`, 18
+  `integrity`, 9 `merge`) plus the unchanged event-log / schema / snapshot integration
+  suites. The doc's 5 integrity/merge tests are covered.
+- `cargo clippy -p engine-core --all-targets -- -D warnings` — clean.
+- `cargo fmt --all -- --check` — clean.
+
+### Structural-merge limitation (PoC, documented)
+
+Field-level edits and whole-node additions present in only one branch merge precisely.
+Other structural ops (move / delete / choice add-remove) are carried through additively
+from each branch — concurrent *structural* divergence on the same node is not split into a
+four-card decision in this PoC. No change is silently dropped; field conflicts surface and
+the post-merge integrity pass catches semantic breakage regardless of op type.
+
+### API + frontend half (completed follow-up)
+
+The `/conflicts` + `/resolve` endpoints and the frontend ConflictModal wiring are now
+implemented on top of the engine-core half above.
+
+**Conflict source decision (PoC).** Stage 20 (CRDT) is skipped, so there is no branch
+source. A conflict is instead **two or more concurrent *pending* suggestions that edit
+the same `(node_id, field)` to different values** — the PoC instantiation of the merge
+engine's `BothDifferent` classification, generalized to N proposals (the pure
+`merge::three_way_merge` remains the 2-branch primitive). The author resolves by accepting
+one proposal (the others are rejected as "superseded by conflict resolution") or entering a
+custom value (all proposals rejected). Conflicts are **not stored** — they are recomputed
+from current state on every `/conflicts` read and `/resolve` call; `conflict_id` is a
+deterministic URL-safe-base64 encoding of `(node_id, field)`.
+
+- **Backend** (`crates/engine-api/src/conflicts/`): pure `derive::derive_conflicts` /
+  `find_conflict` (unit-tested), `GET /documents/:id/conflicts` `[auth]`, and
+  `POST /documents/:id/conflicts/:conflict_id/resolve` `[Author]`. The resolve write
+  reuses the `ops::apply` transaction pattern (materialize → `append_in_tx` →
+  `post_commit_snapshot` → SSE `publish`). `openapi.yaml` regenerated (no drift);
+  `ConflictView` / `ConflictOption` / `ResolveRequest` registered in `ApiDoc`.
+- **Frontend** (`frontend/researcher`): typed `listConflicts` / `resolveConflict` client
+  helpers + `ConflictView` / `ConflictOption` types; `DocumentStore.conflicts` with
+  `loadConflicts()` (on load + refetched when a SuggestionProposed/Accepted/Rejected or
+  FieldEdited event arrives over SSE) and `resolveConflict()`; the real four-card
+  `ConflictModal` (Original card + one card per proposal + a Compose custom-value field),
+  surfaced from the Topbar conflict button (enabled only when `conflicts.length > 0`). The
+  adapter's `emptyConflict()` stub was removed.
+
+### Verification commands that passed (API + frontend half)
+
+- `DATABASE_URL=… cargo test -p engine-api` — green: 17 integration tests (5 new conflict
+  tests) + lib unit tests (incl. the new `conflicts::derive` tests).
+- `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --all -- --check`,
+  `cargo run -p engine-cli -- openapi | diff - openapi.yaml` — all clean / no drift.
+- Frontend `pnpm check`, `pnpm lint`, `pnpm exec vitest --run` (32 tests, 2 new), `pnpm
+  build` — all green.
+
+### Limitation
+
+The modal resolves one conflict at a time (the first in the list) and advances to the next
+on apply; with >2 proposals on a field all competing values are shown as cards and the
+non-chosen ones are rejected together. Conflicts are refetched on every relevant SSE event
+(simple and correct; not incrementally derived client-side).

@@ -11,6 +11,8 @@
     onToggleSuggesting: () => void;
     onToggleActivity: () => void;
     onOpenConflict: () => void;
+    /** Number of live four-card conflicts; the conflict button is disabled at 0. */
+    conflictCount?: number;
   }
 
   let {
@@ -21,7 +23,8 @@
     onModeChange,
     onToggleSuggesting,
     onToggleActivity,
-    onOpenConflict
+    onOpenConflict,
+    conflictCount = 0
   }: Props = $props();
 </script>
 
@@ -41,7 +44,14 @@
       <span class="dot"></span>
       {suggesting ? 'Suggesting' : 'Editing'}
     </button>
-    <button type="button" onclick={onOpenConflict}>Conflict demo</button>
+    <button
+      type="button"
+      class:active={conflictCount > 0}
+      disabled={conflictCount === 0}
+      onclick={onOpenConflict}
+    >
+      Conflicts{conflictCount > 0 ? ` (${conflictCount})` : ''}
+    </button>
     <button type="button" class:active={activityOpen} onclick={onToggleActivity}>Activity</button>
   </div>
 </header>
@@ -130,6 +140,11 @@
   .actions button:hover {
     color: var(--color-ink);
     border-color: var(--color-border-strong);
+  }
+
+  .actions button:disabled {
+    opacity: 0.5;
+    cursor: default;
   }
 
   .actions button.suggesting {

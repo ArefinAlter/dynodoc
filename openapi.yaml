@@ -82,6 +82,70 @@ paths:
               schema: {}
         '404':
           description: No such document
+  /documents/{id}/conflicts:
+    get:
+      tags:
+      - conflicts
+      summary: List the live four-card conflicts for a document. `[auth]`.
+      operationId: list_conflicts
+      parameters:
+      - name: id
+        in: path
+        description: Document id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 'Live conflicts, `{ items: [ConflictView...] }`'
+          content:
+            application/json:
+              schema: {}
+        '404':
+          description: No such document
+      security:
+      - bearer: []
+  /documents/{id}/conflicts/{conflict_id}/resolve:
+    post:
+      tags:
+      - conflicts
+      summary: Resolve one conflict. `[Author]`.
+      operationId: resolve
+      parameters:
+      - name: id
+        in: path
+        description: Document id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: conflict_id
+        in: path
+        description: Opaque conflict id from GET /conflicts
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveRequest'
+        required: true
+      responses:
+        '200':
+          description: 'The appended canonical events, `{ events: [...] }`'
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Neither/both decision fields set, or an unknown suggestion id
+        '403':
+          description: Not the document author
+        '404':
+          description: No such document or live conflict
+      security:
+      - bearer: []
   /documents/{id}/deploy:
     post:
       tags:
@@ -455,6 +519,53 @@ components:
           type:
           - string
           - 'null'
+    ConflictOption:
+      type: object
+      description: |-
+        A single proposed value in a four-card conflict, attributable to the pending
+        suggestion (and, when the route enriches it, the actor) that proposed it.
+      required:
+      - suggestion_id
+      - value
+      properties:
+        actor:
+          type:
+          - string
+          - 'null'
+          description: |-
+            The identity that proposed the suggestion, when known. Pure derivation from
+            state cannot supply this (the materializer does not carry the proposer), so the
+            derive helper leaves it `None` and the GET route fills it from the event log.
+        suggestion_id:
+          type: string
+          description: The pending suggestion this option came from (the id `resolve` accepts).
+        value:
+          description: The value this suggestion would write to the field.
+    ConflictView:
+      type: object
+      description: 'One four-card conflict: a `(node_id, field)` whose pending suggestions disagree.'
+      required:
+      - conflict_id
+      - node_id
+      - field
+      - options
+      properties:
+        ancestor:
+          description: |-
+            The current canonical field value (the "Original" card), or `None` if the field
+            has no value yet.
+        conflict_id:
+          type: string
+          description: Opaque, deterministic encoding of `(node_id, field)` (see module docs).
+        field:
+          type: string
+        node_id:
+          type: string
+        options:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConflictOption'
+          description: The competing proposals (≥2, each a distinct value).
     CreateDocumentRequest:
       type: object
       description: Body for `POST /documents`.
@@ -512,6 +623,17 @@ components:
           type:
           - string
           - 'null'
+    ResolveRequest:
+      type: object
+      description: '`POST .../resolve` body. Exactly one of the two fields must be set.'
+      properties:
+        accept_suggestion_id:
+          type:
+          - string
+          - 'null'
+          description: Accept this competing proposal's value as canonical.
+        custom_value:
+          description: Override all proposals with this custom value.
     SuggestRequest:
       type: object
       description: '`POST /ops/suggest`. `detail` is the wrapped content op (internally-tagged JSON).'
@@ -532,5 +654,7 @@ tags:
   description: Document read + create
 - name: operations
   description: The write path (governance-gated)
+- name: conflicts
+  description: Four-card conflict resolution
 - name: audit
   description: Public hash-chain audit endpoints

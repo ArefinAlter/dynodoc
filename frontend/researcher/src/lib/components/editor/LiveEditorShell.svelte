@@ -2,6 +2,7 @@
   import type { EditorItem, EditorMode } from '$lib/types/editor';
   import type { DocumentStore } from '$lib/stores/documentStore.svelte';
   import { toEditorDocument } from '$lib/adapter';
+  import { toConflictCard } from '$lib/conflictCards';
 
   import Topbar from './Topbar.svelte';
   import DocumentView from './DocumentView.svelte';
@@ -11,6 +12,7 @@
   import InspectorLive from './InspectorLive.svelte';
   import ProposalsPanel from './ProposalsPanel.svelte';
   import HistoryPanel from './HistoryPanel.svelte';
+  import ConflictModal from './ConflictModal.svelte';
 
   interface Props {
     store: DocumentStore;
@@ -28,6 +30,25 @@
   let activityOpen = $state(false);
   let proposalsOpen = $state(false);
   let historyOpen = $state(false);
+  let conflictOpen = $state(false);
+  let selectedConflictOptionId = $state('');
+
+  // The four-card modal resolves one conflict at a time: the first live conflict.
+  const activeConflict = $derived(store.conflicts[0] ?? null);
+  const conflictCard = $derived(
+    activeConflict ? toConflictCard(activeConflict, store.conflicts.length) : null
+  );
+
+  async function applyResolution(selection: {
+    accept_suggestion_id?: string;
+    custom_value?: string;
+  }) {
+    if (!activeConflict) return;
+    await store.resolveConflict(activeConflict.conflict_id, selection);
+    selectedConflictOptionId = '';
+    // Close when no conflicts remain; otherwise the modal advances to the next one.
+    if (store.conflicts.length === 0) conflictOpen = false;
+  }
 
   // Focus the main region on mode switch (keyboard/focus management).
   let mainEl: HTMLElement | undefined = $state();
@@ -76,7 +97,8 @@
   onModeChange={switchMode}
   onToggleSuggesting={() => (suggesting = !suggesting)}
   onToggleActivity={openHistory}
-  onOpenConflict={openProposals}
+  onOpenConflict={() => (conflictOpen = true)}
+  conflictCount={store.conflicts.length}
 />
 
 <div class="connection {store.connection}">
@@ -114,6 +136,20 @@
     <InspectorLive item={selectedItem} {suggesting} onEdit={editField} />
   {/if}
 </div>
+
+{#if conflictCard}
+  <ConflictModal
+    conflict={conflictCard}
+    open={conflictOpen}
+    selectedOptionId={selectedConflictOptionId}
+    onClose={() => {
+      conflictOpen = false;
+      selectedConflictOptionId = '';
+    }}
+    onSelect={(id) => (selectedConflictOptionId = id)}
+    onApply={applyResolution}
+  />
+{/if}
 
 <ProposalsPanel {store} open={proposalsOpen} onClose={() => (proposalsOpen = false)} />
 <HistoryPanel

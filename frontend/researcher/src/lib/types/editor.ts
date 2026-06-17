@@ -62,5 +62,9 @@ export interface EditorDocument {
   collaborators: string[];
   sections: EditorSection[];
   activity: ActivityEvent[];
-  conflict: ConflictCard;
+  /**
+   * Optional demo conflict for the static {@link EditorShell} scaffold. The live editor
+   * drives the four-card modal from {@link DocumentStore.conflicts}, not this field.
+   */
+  conflict?: ConflictCard;
 }

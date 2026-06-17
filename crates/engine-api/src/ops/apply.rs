@@ -131,7 +131,7 @@ pub async fn reject_proposal(
 /// so the `event.target_node_id → node(id)` FK holds when the event is inserted, and so
 /// later reads from a fresh snapshot match the log. Suggestion/comment/deploy ops touch
 /// no node row (`CommentAdded` may anchor to a node that already exists; nothing to do).
-async fn materialize_node_change(
+pub(crate) async fn materialize_node_change(
     tx: &mut Transaction<'_, Postgres>,
     document_id: DocumentId,
     op: &EventPayload,

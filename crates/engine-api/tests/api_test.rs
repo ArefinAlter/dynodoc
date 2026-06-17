@@ -277,6 +277,255 @@ async fn suggest_then_accept_applies_the_wrapped_op(pool: PgPool) {
     assert_eq!(body["current_fields"]["title"], "New");
 }
 
+// --- four-card conflicts (stage 21) ---------------------------------------------
+
+/// Seed a form node, then two pending suggestions editing its `title` to different
+/// values. Returns `(doc_id, node_id, author_token, reviewer_id)`.
+async fn seed_conflict(pool: &PgPool, router: &Router) -> (Uuid, String, String, Uuid) {
+    let author = seed_identity(pool, "author@dynodoc.local").await;
+    let reviewer = seed_identity(pool, "reviewer@dynodoc.local").await;
+    let token = bearer(author);
+    let doc_id = create_document(router, &token, "Form").await;
+    auth_store::grant_access(pool, DocumentId(doc_id), reviewer, Role::Reviewer)
+        .await
+        .unwrap();
+
+    let (_, body) = send(
+        router,
+        auth_post(
+            &format!("/documents/{doc_id}/ops/node-create"),
+            &token,
+            &json!({ "node_type": "form", "pos": "a0", "fields": { "title": "Old" } }),
+        ),
+    )
+    .await;
+    let node_id = body["event"]["target_node_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Two concurrent pending suggestions on the same field, different values.
+    for (sid, value) in [("sug-foo", "Foo"), ("sug-bar", "Bar")] {
+        let wrapped =
+            json!({ "type": "FieldEdited", "node_id": node_id, "field": "title", "value": value });
+        let (status, _) = send(
+            router,
+            auth_post(
+                &format!("/documents/{doc_id}/ops/suggest"),
+                &bearer(reviewer),
+                &json!({ "suggestion_id": sid, "detail": wrapped }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+    }
+    (doc_id, node_id, token, reviewer)
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn conflicts_list_groups_two_pending_edits_on_one_field(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let (doc_id, node_id, token, _reviewer) = seed_conflict(&pool, &router).await;
+
+    let (status, body) = send(
+        &router,
+        auth_post_get(&format!("/documents/{doc_id}/conflicts"), &token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "list conflicts failed: {body}");
+    let items = body["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1, "exactly one conflict");
+    let c = &items[0];
+    assert_eq!(c["node_id"], node_id);
+    assert_eq!(c["field"], "title");
+    assert_eq!(c["ancestor"], "Old");
+    let options = c["options"].as_array().unwrap();
+    assert_eq!(options.len(), 2);
+    let values: Vec<&str> = options
+        .iter()
+        .map(|o| o["value"].as_str().unwrap())
+        .collect();
+    assert!(values.contains(&"Foo") && values.contains(&"Bar"));
+    // Options are attributed to the proposing actor.
+    assert!(options.iter().all(|o| o["actor"].is_string()));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn resolve_accept_makes_chosen_value_canonical_and_rejects_others(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let (doc_id, node_id, token, _reviewer) = seed_conflict(&pool, &router).await;
+
+    let (_, list) = send(
+        &router,
+        auth_post_get(&format!("/documents/{doc_id}/conflicts"), &token),
+    )
+    .await;
+    let conflict_id = list["items"][0]["conflict_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Accept the "Foo" suggestion.
+    let (status, body) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc_id}/conflicts/{conflict_id}/resolve"),
+            &token,
+            &json!({ "accept_suggestion_id": "sug-foo" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "resolve failed: {body}");
+    assert!(body["events"].as_array().unwrap().len() >= 2);
+
+    // The accepted value is now canonical.
+    let (_, node) = send(&router, get(&format!("/documents/{doc_id}/node/{node_id}"))).await;
+    assert_eq!(node["current_fields"]["title"], "Foo");
+
+    // Suggestion states: foo accepted, bar rejected (superseded).
+    let (_, detail) = send(&router, get(&format!("/documents/{doc_id}"))).await;
+    let suggestions = &detail["state"]["suggestions"];
+    assert_eq!(suggestions["sug-foo"]["accepted"], true);
+    assert_eq!(
+        suggestions["sug-bar"]["rejected_reason"],
+        "superseded by conflict resolution"
+    );
+
+    // The conflict is gone.
+    let (_, list2) = send(
+        &router,
+        auth_post_get(&format!("/documents/{doc_id}/conflicts"), &token),
+    )
+    .await;
+    assert!(list2["items"].as_array().unwrap().is_empty());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn resolve_custom_value_supersedes_all_suggestions(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let (doc_id, node_id, token, _reviewer) = seed_conflict(&pool, &router).await;
+
+    let (_, list) = send(
+        &router,
+        auth_post_get(&format!("/documents/{doc_id}/conflicts"), &token),
+    )
+    .await;
+    let conflict_id = list["items"][0]["conflict_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let (status, _) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc_id}/conflicts/{conflict_id}/resolve"),
+            &token,
+            &json!({ "custom_value": "Compromise" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (_, node) = send(&router, get(&format!("/documents/{doc_id}/node/{node_id}"))).await;
+    assert_eq!(node["current_fields"]["title"], "Compromise");
+
+    // Every pending suggestion in the group is now rejected.
+    let (_, detail) = send(&router, get(&format!("/documents/{doc_id}"))).await;
+    let suggestions = &detail["state"]["suggestions"];
+    assert_eq!(
+        suggestions["sug-foo"]["rejected_reason"],
+        "superseded by conflict resolution"
+    );
+    assert_eq!(
+        suggestions["sug-bar"]["rejected_reason"],
+        "superseded by conflict resolution"
+    );
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn resolve_requires_author(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let (doc_id, _node_id, token, reviewer) = seed_conflict(&pool, &router).await;
+
+    let (_, list) = send(
+        &router,
+        auth_post_get(&format!("/documents/{doc_id}/conflicts"), &token),
+    )
+    .await;
+    let conflict_id = list["items"][0]["conflict_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // A reviewer (non-author) cannot resolve.
+    let (status, _) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc_id}/conflicts/{conflict_id}/resolve"),
+            &bearer(reviewer),
+            &json!({ "accept_suggestion_id": "sug-foo" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn resolve_unknown_conflict_id_is_404(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let (doc_id, _node_id, token, _reviewer) = seed_conflict(&pool, &router).await;
+
+    let (status, _) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc_id}/conflicts/bm90LXJlYWw/resolve"),
+            &token,
+            &json!({ "accept_suggestion_id": "sug-foo" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn single_suggestion_is_not_a_conflict(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let author = seed_identity(&pool, "author@dynodoc.local").await;
+    let token = bearer(author);
+    let doc_id = create_document(&router, &token, "Form").await;
+
+    let (_, body) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc_id}/ops/node-create"),
+            &token,
+            &json!({ "node_type": "form", "pos": "a0", "fields": { "title": "Old" } }),
+        ),
+    )
+    .await;
+    let node_id = body["event"]["target_node_id"].as_str().unwrap();
+
+    let wrapped =
+        json!({ "type": "FieldEdited", "node_id": node_id, "field": "title", "value": "Solo" });
+    send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc_id}/ops/suggest"),
+            &token,
+            &json!({ "suggestion_id": "only", "detail": wrapped }),
+        ),
+    )
+    .await;
+
+    let (status, body) = send(
+        &router,
+        auth_post_get(&format!("/documents/{doc_id}/conflicts"), &token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["items"].as_array().unwrap().is_empty());
+}
+
 // --- idempotency ----------------------------------------------------------------
 
 #[sqlx::test(migrations = "../../migrations")]

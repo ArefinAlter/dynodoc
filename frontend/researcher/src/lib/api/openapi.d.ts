@@ -39,6 +39,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/documents/{id}/conflicts': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List the live four-card conflicts for a document. `[auth]`. */
+    get: operations['list_conflicts'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/documents/{id}/conflicts/{conflict_id}/resolve': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Resolve one conflict. `[Author]`. */
+    post: operations['resolve'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/documents/{id}/deploy': {
     parameters: {
       query?: never;
@@ -262,6 +296,36 @@ export interface components {
       body: string;
       node_id?: string | null;
     };
+    /**
+     * @description A single proposed value in a four-card conflict, attributable to the pending
+     *     suggestion (and, when the route enriches it, the actor) that proposed it.
+     */
+    ConflictOption: {
+      /**
+       * @description The identity that proposed the suggestion, when known. Pure derivation from
+       *     state cannot supply this (the materializer does not carry the proposer), so the
+       *     derive helper leaves it `None` and the GET route fills it from the event log.
+       */
+      actor?: string | null;
+      /** @description The pending suggestion this option came from (the id `resolve` accepts). */
+      suggestion_id: string;
+      /** @description The value this suggestion would write to the field. */
+      value: unknown;
+    };
+    /** @description One four-card conflict: a `(node_id, field)` whose pending suggestions disagree. */
+    ConflictView: {
+      /**
+       * @description The current canonical field value (the "Original" card), or `None` if the field
+       *     has no value yet.
+       */
+      ancestor?: unknown;
+      /** @description Opaque, deterministic encoding of `(node_id, field)` (see module docs). */
+      conflict_id: string;
+      field: string;
+      node_id: string;
+      /** @description The competing proposals (≥2, each a distinct value). */
+      options: components['schemas']['ConflictOption'][];
+    };
     /** @description Body for `POST /documents`. */
     CreateDocumentRequest: {
       languages?: string[];
@@ -285,6 +349,13 @@ export interface components {
     /** @description `POST /proposals/:event_id/reject`. */
     RejectRequest: {
       reason?: string | null;
+    };
+    /** @description `POST .../resolve` body. Exactly one of the two fields must be set. */
+    ResolveRequest: {
+      /** @description Accept this competing proposal's value as canonical. */
+      accept_suggestion_id?: string | null;
+      /** @description Override all proposals with this custom value. */
+      custom_value?: unknown;
     };
     /** @description `POST /ops/suggest`. `detail` is the wrapped content op (internally-tagged JSON). */
     SuggestRequest: {
@@ -381,6 +452,86 @@ export interface operations {
         };
       };
       /** @description No such document */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  list_conflicts: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Document id */
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Live conflicts, `{ items: [ConflictView...] }` */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description No such document */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  resolve: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Document id */
+        id: string;
+        /** @description Opaque conflict id from GET /conflicts */
+        conflict_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ResolveRequest'];
+      };
+    };
+    responses: {
+      /** @description The appended canonical events, `{ events: [...] }` */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Neither/both decision fields set, or an unknown suggestion id */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Not the document author */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description No such document or live conflict */
       404: {
         headers: {
           [name: string]: unknown;

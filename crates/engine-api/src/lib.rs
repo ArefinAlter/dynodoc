@@ -14,6 +14,7 @@
 
 pub mod audit;
 pub mod auth;
+pub mod conflicts;
 pub mod documents;
 pub mod error;
 pub mod idempotency;
@@ -72,6 +73,7 @@ pub fn app(state: AppState) -> Router {
         .merge(auth::router())
         .merge(documents::router())
         .merge(ops::router())
+        .merge(conflicts::router())
         .merge(stream::router())
         .merge(audit::router())
         .with_state(state)
@@ -113,6 +115,8 @@ async fn openapi_json() -> Json<Value> {
         ops::routes::accept,
         ops::routes::reject,
         ops::routes::deploy,
+        conflicts::routes::list_conflicts,
+        conflicts::routes::resolve,
         audit::verify,
         audit::get_snapshot,
         audit::merkle_proof,
@@ -124,10 +128,14 @@ async fn openapi_json() -> Json<Value> {
         ops::routes::CommentRequest,
         ops::routes::SuggestRequest,
         ops::routes::RejectRequest,
+        conflicts::routes::ResolveRequest,
+        conflicts::derive::ConflictView,
+        conflicts::derive::ConflictOption,
     )),
     tags(
         (name = "documents", description = "Document read + create"),
         (name = "operations", description = "The write path (governance-gated)"),
+        (name = "conflicts", description = "Four-card conflict resolution"),
         (name = "audit", description = "Public hash-chain audit endpoints"),
     )
 )]

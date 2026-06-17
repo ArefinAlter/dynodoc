@@ -17,12 +17,14 @@ import type { paths } from './openapi.d.ts';
 import { API_BASE_URL } from './config';
 import { refresh as refreshTokens } from './auth';
 import type {
+  ConflictList,
   Document,
   DocumentDetail,
   EventRow,
   MaterializedNode,
   OpResponse,
   Page,
+  ResolveResponse,
   VerifyResult
 } from './types';
 import { clearSession, session, setAccessToken, setTokens } from '$lib/stores/session.svelte';
@@ -232,6 +234,32 @@ export async function rejectProposal(
     { params: { path: { id, event_id: suggestionId } }, body: { reason } as never }
   );
   return unwrap<OpResponse>(data, error, response);
+}
+
+// --- conflicts (stage 21) --------------------------------------------------------
+
+/** `GET /documents/{id}/conflicts` — the live four-card conflicts. */
+export async function listConflicts(id: string): Promise<ConflictList> {
+  const { data, error, response } = await client.GET('/documents/{id}/conflicts', {
+    params: { path: { id } }
+  });
+  return unwrap<ConflictList>(data, error, response);
+}
+
+/**
+ * `POST /documents/{id}/conflicts/{conflict_id}/resolve`. Set exactly one of
+ * `accept_suggestion_id` (accept a competing proposal) or `custom_value` (override all).
+ */
+export async function resolveConflict(
+  id: string,
+  conflictId: string,
+  body: { accept_suggestion_id?: string; custom_value?: unknown }
+): Promise<ResolveResponse> {
+  const { data, error, response } = await client.POST(
+    '/documents/{id}/conflicts/{conflict_id}/resolve',
+    { params: { path: { id, conflict_id: conflictId } }, body: body as never }
+  );
+  return unwrap<ResolveResponse>(data, error, response);
 }
 
 /** `POST /documents/{id}/deploy` — runs the integrity gate, pins a snapshot. */

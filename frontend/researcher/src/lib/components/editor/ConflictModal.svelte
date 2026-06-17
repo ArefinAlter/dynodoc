@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { ConflictCard } from '$lib/types/editor';
+  import { ANCESTOR_OPTION_ID } from '$lib/conflictCards';
 
   interface Props {
     conflict: ConflictCard;
@@ -7,12 +8,43 @@
     selectedOptionId: string;
     onClose: () => void;
     onSelect: (id: string) => void;
+    /** Apply the author's decision: accept a proposal, or write a composed custom value. */
+    onApply: (selection: { accept_suggestion_id?: string; custom_value?: string }) => void;
   }
 
-  let { conflict, open, selectedOptionId, onClose, onSelect }: Props = $props();
+  let { conflict, open, selectedOptionId, onClose, onSelect, onApply }: Props = $props();
+
+  const COMPOSE_ID = '__compose__';
+
+  let composeValue = $state('');
+  let applying = $state(false);
+
+  // "Apply" is enabled for any real proposal selection, or Compose with non-empty text.
+  // The read-only Original card cannot be applied (keeping the value needs no resolution).
+  const canApply = $derived(
+    (selectedOptionId === COMPOSE_ID && composeValue.trim().length > 0) ||
+      (selectedOptionId !== '' &&
+        selectedOptionId !== COMPOSE_ID &&
+        selectedOptionId !== ANCESTOR_OPTION_ID)
+  );
+
+  async function apply() {
+    if (!canApply || applying) return;
+    applying = true;
+    try {
+      if (selectedOptionId === COMPOSE_ID) {
+        await onApply({ custom_value: composeValue });
+      } else {
+        await onApply({ accept_suggestion_id: selectedOptionId });
+      }
+      composeValue = '';
+    } finally {
+      applying = false;
+    }
+  }
 
   function handleOverlayKeydown(event: KeyboardEvent) {
-    if (event.key === 'Enter' || event.key === ' ') {
+    if (event.key === 'Escape') {
       event.preventDefault();
       onClose();
     }
@@ -38,8 +70,8 @@
       <div class="overline">{conflict.remaining} conflicts pending · {conflict.itemLabel}</div>
       <h2>Four-card conflict resolution</h2>
       <p>
-        This UI is safe to build in the PoC because same-field conflicts are a core product promise,
-        even before the final merge engine wiring is complete.
+        Two or more pending suggestions edit this field to different values. Choose the proposal to
+        keep — the others are rejected — or compose a new value.
       </p>
 
       <div class="cards">
@@ -47,6 +79,7 @@
           <button
             type="button"
             class:selected={selectedOptionId === option.id}
+            class:readonly={option.id === ANCESTOR_OPTION_ID}
             class="card"
             onclick={() => onSelect(option.id)}
           >
@@ -54,11 +87,29 @@
             <div class="text">{option.text}</div>
           </button>
         {/each}
+
+        <button
+          type="button"
+          class:selected={selectedOptionId === COMPOSE_ID}
+          class="card"
+          onclick={() => onSelect(COMPOSE_ID)}
+        >
+          <div class="label">Compose new</div>
+          <input
+            type="text"
+            placeholder="Enter a custom value…"
+            bind:value={composeValue}
+            onfocus={() => onSelect(COMPOSE_ID)}
+            onclick={(e) => e.stopPropagation()}
+          />
+        </button>
       </div>
 
       <div class="footer">
         <button type="button" class="secondary" onclick={onClose}>Close</button>
-        <button type="button" disabled={!selectedOptionId}>Apply selection</button>
+        <button type="button" disabled={!canApply || applying} onclick={apply}>
+          Apply selection
+        </button>
       </div>
     </div>
   </div>
@@ -125,12 +176,27 @@
     background: var(--color-accent-bg);
   }
 
+  .card.readonly {
+    opacity: 0.85;
+  }
+
   .label {
     color: var(--color-accent);
     font-size: 0.78rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     margin-bottom: 0.45rem;
+  }
+
+  .card input {
+    width: 100%;
+    margin-top: 0.2rem;
+    padding: 0.45rem 0.55rem;
+    border: 1px solid var(--color-border);
+    border-radius: 0.5rem;
+    font: inherit;
+    background: var(--color-surface);
+    color: inherit;
   }
 
   .footer {

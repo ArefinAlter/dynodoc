@@ -69,6 +69,157 @@ pub enum MaterializeError {
     MissingSuggestion { seq: i64, suggestion_id: String },
 }
 
+/// Errors while applying a single [`EventPayload`] to a [`DocumentState`] out of the
+/// log context (no `seq`). Used by the merge engine (stage 21) when replaying a
+/// branch's payloads onto a cloned ancestor state.
+#[derive(Debug, thiserror::Error)]
+pub enum ApplyError {
+    #[error("payload referenced missing node {node_id}")]
+    MissingNode { node_id: String },
+    #[error("node {node_id} has non-object current_fields")]
+    NonObjectFields { node_id: String },
+    #[error("payload referenced missing suggestion {suggestion_id}")]
+    MissingSuggestion { suggestion_id: String },
+}
+
+/// Apply a single semantic [`EventPayload`] to `state` in place, mutating the
+/// materialized tree exactly as the log fold would. This is the shared core of
+/// [`Materializer::fold`] and the stage-21 merge engine, which replays branch payloads
+/// onto a cloned ancestor without minting `Event` rows.
+pub fn apply_payload(state: &mut DocumentState, payload: &EventPayload) -> Result<(), ApplyError> {
+    match payload {
+        EventPayload::NodeCreated {
+            node_id,
+            node_type,
+            parent_id,
+            pos,
+            fields,
+            var_name,
+        } => {
+            state.nodes.insert(
+                node_id.clone(),
+                MaterializedNode {
+                    id: node_id.clone(),
+                    parent_id: parent_id.clone(),
+                    node_type: node_type.as_str().to_string(),
+                    pos: pos.clone(),
+                    current_fields: object_or_value(fields.clone()),
+                    var_name: var_name.clone(),
+                    deleted: false,
+                },
+            );
+        }
+        EventPayload::FieldEdited {
+            node_id,
+            field,
+            value,
+        } => {
+            let node = state
+                .nodes
+                .get_mut(node_id)
+                .ok_or_else(|| ApplyError::MissingNode {
+                    node_id: node_id.0.clone(),
+                })?;
+            let fields =
+                node.current_fields
+                    .as_object_mut()
+                    .ok_or_else(|| ApplyError::NonObjectFields {
+                        node_id: node_id.0.clone(),
+                    })?;
+            fields.insert(field.clone(), value.clone());
+        }
+        EventPayload::NodeMoved {
+            node_id,
+            new_parent_id,
+            new_pos,
+        } => {
+            let node = state
+                .nodes
+                .get_mut(node_id)
+                .ok_or_else(|| ApplyError::MissingNode {
+                    node_id: node_id.0.clone(),
+                })?;
+            node.parent_id = new_parent_id.clone();
+            node.pos = new_pos.clone();
+        }
+        EventPayload::NodeDeleted { node_id } => {
+            let node = state
+                .nodes
+                .get_mut(node_id)
+                .ok_or_else(|| ApplyError::MissingNode {
+                    node_id: node_id.0.clone(),
+                })?;
+            node.deleted = true;
+        }
+        EventPayload::ChoiceAdded {
+            node_id,
+            choice_id,
+            fields,
+        } => {
+            state
+                .nodes
+                .entry(choice_id.clone())
+                .or_insert(MaterializedNode {
+                    id: choice_id.clone(),
+                    parent_id: Some(node_id.clone()),
+                    node_type: "choice".to_string(),
+                    pos: choice_id.0.clone(),
+                    current_fields: object_or_value(fields.clone()),
+                    var_name: None,
+                    deleted: false,
+                });
+            state.removed_choices.remove(choice_id);
+        }
+        EventPayload::ChoiceRemoved { choice_id, .. } => {
+            state.removed_choices.insert(choice_id.clone());
+        }
+        EventPayload::CommentAdded { node_id, body } => {
+            state.comments.push(CommentState {
+                node_id: node_id.clone(),
+                body: body.clone(),
+            });
+        }
+        EventPayload::SuggestionProposed {
+            suggestion_id,
+            target_node_id,
+            detail,
+        } => {
+            state.suggestions.insert(
+                suggestion_id.clone(),
+                SuggestionState {
+                    target_node_id: target_node_id.clone(),
+                    detail: detail.clone(),
+                    accepted: false,
+                    rejected_reason: None,
+                },
+            );
+        }
+        EventPayload::SuggestionAccepted { suggestion_id } => {
+            let suggestion = state.suggestions.get_mut(suggestion_id).ok_or_else(|| {
+                ApplyError::MissingSuggestion {
+                    suggestion_id: suggestion_id.clone(),
+                }
+            })?;
+            suggestion.accepted = true;
+            suggestion.rejected_reason = None;
+        }
+        EventPayload::SuggestionRejected {
+            suggestion_id,
+            reason,
+        } => {
+            let suggestion = state.suggestions.get_mut(suggestion_id).ok_or_else(|| {
+                ApplyError::MissingSuggestion {
+                    suggestion_id: suggestion_id.clone(),
+                }
+            })?;
+            suggestion.accepted = false;
+            suggestion.rejected_reason = reason.clone();
+        }
+        EventPayload::Deployed { .. } => {}
+    }
+    Ok(())
+}
+
 /// Fold event tails into materialized state.
 pub struct Materializer;
 
@@ -100,140 +251,26 @@ impl Materializer {
                     }
                 })?;
 
-            match payload {
-                EventPayload::NodeCreated {
-                    node_id,
-                    node_type,
-                    parent_id,
-                    pos,
-                    fields,
-                    var_name,
-                } => {
-                    state.nodes.insert(
-                        node_id.clone(),
-                        MaterializedNode {
-                            id: node_id,
-                            parent_id,
-                            node_type: node_type.as_str().to_string(),
-                            pos,
-                            current_fields: object_or_value(fields),
-                            var_name,
-                            deleted: false,
-                        },
-                    );
-                }
-                EventPayload::FieldEdited {
-                    node_id,
-                    field,
-                    value,
-                } => {
-                    let node = state.nodes.get_mut(&node_id).ok_or_else(|| {
-                        MaterializeError::MissingNode {
-                            seq: event.seq,
-                            node_id: node_id.0.clone(),
-                        }
-                    })?;
-                    let fields = node.current_fields.as_object_mut().ok_or_else(|| {
-                        MaterializeError::NonObjectFields {
-                            seq: event.seq,
-                            node_id: node_id.0.clone(),
-                        }
-                    })?;
-                    fields.insert(field, value);
-                }
-                EventPayload::NodeMoved {
-                    node_id,
-                    new_parent_id,
-                    new_pos,
-                } => {
-                    let node = state.nodes.get_mut(&node_id).ok_or_else(|| {
-                        MaterializeError::MissingNode {
-                            seq: event.seq,
-                            node_id: node_id.0.clone(),
-                        }
-                    })?;
-                    node.parent_id = new_parent_id;
-                    node.pos = new_pos;
-                }
-                EventPayload::NodeDeleted { node_id } => {
-                    let node = state.nodes.get_mut(&node_id).ok_or_else(|| {
-                        MaterializeError::MissingNode {
-                            seq: event.seq,
-                            node_id: node_id.0.clone(),
-                        }
-                    })?;
-                    node.deleted = true;
-                }
-                EventPayload::ChoiceAdded {
-                    node_id,
-                    choice_id,
-                    fields,
-                } => {
-                    state
-                        .nodes
-                        .entry(choice_id.clone())
-                        .or_insert(MaterializedNode {
-                            id: choice_id.clone(),
-                            parent_id: Some(node_id),
-                            node_type: "choice".to_string(),
-                            pos: choice_id.0.clone(),
-                            current_fields: object_or_value(fields),
-                            var_name: None,
-                            deleted: false,
-                        });
-                    state.removed_choices.remove(&choice_id);
-                }
-                EventPayload::ChoiceRemoved { choice_id, .. } => {
-                    state.removed_choices.insert(choice_id);
-                }
-                EventPayload::CommentAdded { node_id, body } => {
-                    state.comments.push(CommentState { node_id, body });
-                }
-                EventPayload::SuggestionProposed {
-                    suggestion_id,
-                    target_node_id,
-                    detail,
-                } => {
-                    state.suggestions.insert(
-                        suggestion_id,
-                        SuggestionState {
-                            target_node_id,
-                            detail,
-                            accepted: false,
-                            rejected_reason: None,
-                        },
-                    );
-                }
-                EventPayload::SuggestionAccepted { suggestion_id } => {
-                    let suggestion =
-                        state.suggestions.get_mut(&suggestion_id).ok_or_else(|| {
-                            MaterializeError::MissingSuggestion {
-                                seq: event.seq,
-                                suggestion_id: suggestion_id.clone(),
-                            }
-                        })?;
-                    suggestion.accepted = true;
-                    suggestion.rejected_reason = None;
-                }
-                EventPayload::SuggestionRejected {
-                    suggestion_id,
-                    reason,
-                } => {
-                    let suggestion =
-                        state.suggestions.get_mut(&suggestion_id).ok_or_else(|| {
-                            MaterializeError::MissingSuggestion {
-                                seq: event.seq,
-                                suggestion_id: suggestion_id.clone(),
-                            }
-                        })?;
-                    suggestion.accepted = false;
-                    suggestion.rejected_reason = reason;
-                }
-                EventPayload::Deployed { .. } => {}
-            }
+            apply_payload(state, &payload).map_err(|err| err.with_seq(event.seq))?;
         }
 
         Ok(())
+    }
+}
+
+impl ApplyError {
+    /// Lift an out-of-context apply error into a [`MaterializeError`] carrying the
+    /// log `seq` (used when this is invoked from the snapshot fold path).
+    fn with_seq(self, seq: i64) -> MaterializeError {
+        match self {
+            ApplyError::MissingNode { node_id } => MaterializeError::MissingNode { seq, node_id },
+            ApplyError::NonObjectFields { node_id } => {
+                MaterializeError::NonObjectFields { seq, node_id }
+            }
+            ApplyError::MissingSuggestion { suggestion_id } => {
+                MaterializeError::MissingSuggestion { seq, suggestion_id }
+            }
+        }
     }
 }
 

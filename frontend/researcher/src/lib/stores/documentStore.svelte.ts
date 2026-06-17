@@ -14,16 +14,26 @@ import { DocumentStream, type ConnectionStatus } from '$lib/api/sse';
 import {
   acceptProposal,
   getDocument,
+  listConflicts,
   opComment,
   opFieldEdit,
   opNodeCreate,
   rejectProposal,
+  resolveConflict,
   opSuggest
 } from '$lib/api/client';
-import type { DocumentDetail, DocumentState, EventRow } from '$lib/api/types';
+import type { ConflictView, DocumentDetail, DocumentState, EventRow } from '$lib/api/types';
 import { emptyState, applyEvent, applyPayload } from '$lib/materializer';
 import { session } from './session.svelte';
 import { pushToast } from './toast.svelte';
+
+/** Event types that can create or clear a four-card conflict (trigger a refetch). */
+const CONFLICT_AFFECTING = new Set([
+  'SuggestionProposed',
+  'SuggestionAccepted',
+  'SuggestionRejected',
+  'FieldEdited'
+]);
 
 export class DocumentStore {
   detail = $state<DocumentDetail | null>(null);
@@ -32,6 +42,8 @@ export class DocumentStore {
   connection = $state<ConnectionStatus>('reconnecting');
   loading = $state(true);
   error = $state<string | null>(null);
+  /** Live four-card conflicts, refetched on load + whenever a suggestion/field event lands. */
+  conflicts = $state<ConflictView[]>([]);
 
   private stream: DocumentStream | null = null;
   /** Highest seq we've folded — the dedupe watermark for SSE echoes. */
@@ -53,6 +65,7 @@ export class DocumentStore {
       this.seq = detail.latest_seq;
       this.appliedSeq = this.seq;
       this.subscribe();
+      void this.loadConflicts();
     } catch (e) {
       this.error = e instanceof Error ? e.message : 'failed to load document';
     } finally {
@@ -75,6 +88,45 @@ export class DocumentStore {
     applyEvent(this.state, event);
     this.appliedSeq = event.seq;
     this.seq = event.seq;
+    // Suggestion/field events can create or clear a four-card conflict; refetch the
+    // derived set (cheap, and keeps the modal authoritative without re-deriving here).
+    if (CONFLICT_AFFECTING.has(event.type)) {
+      void this.loadConflicts();
+    }
+  }
+
+  /** Refetch the live conflicts derived from current state. Best-effort (never throws). */
+  async loadConflicts(): Promise<void> {
+    try {
+      const { items } = await listConflicts(this.documentId);
+      this.conflicts = items;
+    } catch {
+      // A transient failure leaves the prior list; the next event refetches.
+    }
+  }
+
+  /**
+   * Resolve a four-card conflict (author action): accept one competing proposal or
+   * write a custom value. Refetches conflicts on success so the modal updates.
+   */
+  async resolveConflict(
+    conflictId: string,
+    body: { accept_suggestion_id?: string; custom_value?: unknown }
+  ): Promise<void> {
+    try {
+      const { events } = await resolveConflict(this.documentId, conflictId, body);
+      // Fold the canonical events the server appended (the field edit + lifecycle).
+      for (const event of events) {
+        if (event.seq > this.appliedSeq) {
+          applyEvent(this.state, event);
+          this.markApplied(event.seq);
+        }
+      }
+      await this.loadConflicts();
+    } catch (e) {
+      this.toastError(e, 'Resolve failed');
+      throw e;
+    }
   }
 
   /** Tear down the live stream (call on unmount). */

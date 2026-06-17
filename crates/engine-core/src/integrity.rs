@@ -1,30 +1,47 @@
-//! Referential integrity pass over the materialized state (docs/16 part 4).
+//! Referential integrity pass over the materialized state (docs/16 part 4, extended in
+//! docs/21 part 2).
 //!
-//! Items carry `relevance` and `constraint` expressions (ODK-style `${var}`
-//! references, docs/04 §C.3.6). Two ways an instrument can be *silently* broken:
+//! Items carry `relevance`, `constraint`, and `calculation` expressions (ODK-style
+//! `${var}` references, docs/04 §C.3.6). Ways an instrument can be *silently* broken:
 //!
 //! 1. **Dangling reference** — an expression names a `var_name` that no live node
 //!    defines (a typo, or the referenced item was deleted). At runtime the form
 //!    skip-logic evaluates against a missing variable and misbehaves in the field.
 //! 2. **Relevance cycle** — item A's visibility depends (transitively) on item B's,
 //!    whose depends back on A's. No assignment of answers settles the skip logic.
+//! 3. **Type mismatch** — a numeric operator applied to a non-numeric `${var}`
+//!    (stage 21, conservative: equality and unknown types are never flagged).
+//! 4. **Undefined choice** — a `selected(${q}, 'lit')` whose select-type `q` exists but
+//!    has no live choice equal to `'lit'` (stage 21).
 //!
-//! [`validate_integrity`] finds every such violation in a `DocumentState`. The
-//! governance gate (docs/16 part 3) runs it on every `Deployed` event and refuses
-//! the deploy if any violation exists — the §C.3.6 "silent semantic breakage"
-//! defense. The richer three-way semantic merge that also leans on this graph lands
-//! in stage 21.
+//! [`validate_integrity`] finds every such violation in a `DocumentState` in one pass.
+//! The governance gate (docs/16 part 3) runs it on every `Deployed` event and refuses
+//! the deploy if any violation exists, and the stage-21 three-way merge
+//! ([`crate::merge`]) runs it on every proposed merged state — the §C.3.6 "silent
+//! semantic breakage" defense. The richer stage-21 checks parse expressions via
+//! [`crate::expr`]; the existing `${var}` scan ([`extract_var_refs`]) still backs the
+//! dangling/cycle logic, and an unparseable expression degrades gracefully.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use engine_shared::NodeId;
 use serde::{Deserialize, Serialize};
 
+use crate::expr;
 use crate::materializer::{DocumentState, MaterializedNode};
 
-/// The two `current_fields` keys whose string values are reference-bearing
-/// expressions. Both are scanned for `${var}` references.
-const EXPRESSION_FIELDS: [&str; 2] = ["relevance", "constraint"];
+/// The `current_fields` keys whose string values are reference-bearing expressions
+/// (docs/21 item 2: relevance, constraint, calculation). All are scanned for `${var}`
+/// references and parsed for the richer type/choice checks.
+const EXPRESSION_FIELDS: [&str; 3] = ["relevance", "constraint", "calculation"];
+
+/// The set of `current_fields["type"]` values that are non-numeric — applying an
+/// arithmetic or ordering operator to a var of one of these types is a clear mismatch.
+const NON_NUMERIC_TYPES: [&str; 3] = ["text", "select_one", "select_multiple"];
+
+/// The `current_fields["type"]` values that carry a choice list (so a
+/// `selected(${q}, 'lit')` reference is meaningful against them).
+const SELECT_TYPES: [&str; 2] = ["select_one", "select_multiple"];
 
 /// A single referential-integrity problem found in a [`DocumentState`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -45,6 +62,33 @@ pub enum IntegrityViolation {
     /// A relevance dependency cycle: each node's visibility depends, transitively, on
     /// its own. `cycle` lists the nodes on the cycle in dependency order.
     RelevanceCycle { cycle: Vec<NodeId> },
+    /// An expression applies a numeric operator (arithmetic, or an ordering comparison
+    /// `< <= > >=`) to a `${var}` whose defining node has a non-numeric data type
+    /// (`text` / `select_one` / `select_multiple`). Equality (`= !=`) is never flagged
+    /// — it is valid on any type — and a var whose type is absent/unknown is left
+    /// alone, so the check is conservative and avoids false positives.
+    TypeMismatch {
+        node_id: NodeId,
+        /// Which expression field carried the operation.
+        field: String,
+        var_name: String,
+        /// What the operator requires (`"numeric"`).
+        expected: String,
+        /// The referenced var's actual data type.
+        actual: String,
+    },
+    /// A `selected(${q}, 'lit')` reference whose var `q` resolves to a live select
+    /// node, but that node has no live `choice` child whose value equals `'lit'`. A
+    /// dangling `q` is reported as [`IntegrityViolation::DanglingReference`] instead, so
+    /// this variant never double-reports it.
+    UndefinedChoice {
+        node_id: NodeId,
+        /// Which expression field carried the reference.
+        field: String,
+        var_name: String,
+        /// The choice literal that resolved to no live choice on `var_name`'s node.
+        choice: String,
+    },
 }
 
 /// Find every referential-integrity violation in `state`. An empty vector means the
@@ -96,7 +140,154 @@ pub fn validate_integrity(state: &DocumentState) -> Vec<IntegrityViolation> {
     }
 
     violations.extend(find_relevance_cycles(&live, &by_var));
+
+    // Type-mismatch and choice-reference checks. These need expression *shape*, so we
+    // parse with the recursive-descent `expr` parser. An unparseable expression
+    // degrades gracefully: the existing `${var}` scan above already covered its
+    // dangling/cycle refs, and a parse failure here simply contributes no shape-based
+    // violation (we do not panic and we do not invent a violation). `node_var_type`
+    // maps each live var to its node's declared data type; `choices_by_node` indexes
+    // live choice values under their parent select node.
+    let mut node_var_type: BTreeMap<&str, &str> = BTreeMap::new();
+    for node in &live {
+        if let (Some(var), Some(ty)) = (
+            node.var_name.as_deref().filter(|v| !v.is_empty()),
+            node.current_fields.get("type").and_then(|v| v.as_str()),
+        ) {
+            node_var_type.insert(var, ty);
+        }
+    }
+    // var_name -> set of live choice values defined under that var's node.
+    let mut choices_by_var: BTreeMap<&str, BTreeSet<String>> = BTreeMap::new();
+    // node_id -> var_name, so we can attribute a choice child to its parent's var.
+    let var_of_node: BTreeMap<&NodeId, &str> = live
+        .iter()
+        .filter_map(|n| {
+            n.var_name
+                .as_deref()
+                .filter(|v| !v.is_empty())
+                .map(|v| (&n.id, v))
+        })
+        .collect();
+    for node in &live {
+        if node.node_type != "choice" {
+            continue;
+        }
+        let Some(parent) = node.parent_id.as_ref() else {
+            continue;
+        };
+        let Some(parent_var) = var_of_node.get(parent) else {
+            continue;
+        };
+        if let Some(value) = choice_value(node) {
+            choices_by_var.entry(parent_var).or_default().insert(value);
+        }
+    }
+
+    for node in &live {
+        for field in EXPRESSION_FIELDS {
+            let Some(text) = node.current_fields.get(field).and_then(|v| v.as_str()) else {
+                continue;
+            };
+            let Ok(ast) = expr::parse(text) else {
+                continue; // unparseable -> no shape-based violation (graceful degrade)
+            };
+
+            // Type mismatches: a numeric operator over a non-numeric var.
+            for (var_name, actual) in numeric_var_usages(&ast, &node_var_type) {
+                violations.push(IntegrityViolation::TypeMismatch {
+                    node_id: node.id.clone(),
+                    field: field.to_string(),
+                    var_name,
+                    expected: "numeric".to_string(),
+                    actual,
+                });
+            }
+
+            // Choice references: `selected(${q}, 'lit')` must resolve to a live choice.
+            for (var_name, choice) in expr::selected_choice_refs(&ast) {
+                // A dangling var is already reported as DanglingReference; skip here.
+                if !defined.contains(var_name.as_str()) {
+                    continue;
+                }
+                // Only meaningful against a select-type node.
+                let is_select = node_var_type
+                    .get(var_name.as_str())
+                    .is_some_and(|ty| SELECT_TYPES.contains(ty));
+                if !is_select {
+                    continue;
+                }
+                let has_choice = choices_by_var
+                    .get(var_name.as_str())
+                    .is_some_and(|set| set.contains(&choice));
+                if !has_choice {
+                    violations.push(IntegrityViolation::UndefinedChoice {
+                        node_id: node.id.clone(),
+                        field: field.to_string(),
+                        var_name,
+                        choice,
+                    });
+                }
+            }
+        }
+    }
+
     violations
+}
+
+/// A node's choice value, by the documented convention: prefer `current_fields["value"]`,
+/// fall back to `current_fields["name"]`. Both are read as strings.
+fn choice_value(node: &MaterializedNode) -> Option<String> {
+    node.current_fields
+        .get("value")
+        .and_then(|v| v.as_str())
+        .or_else(|| node.current_fields.get("name").and_then(|v| v.as_str()))
+        .map(str::to_string)
+}
+
+/// Collect `(var_name, actual_type)` pairs where a numeric operator (arithmetic or an
+/// ordering comparison) is applied to a `${var}` whose declared type is non-numeric.
+/// Equality is never numeric-requiring, so it never contributes. De-duplicated and
+/// returned in `var_name` order for deterministic output.
+fn numeric_var_usages(
+    ast: &expr::Expr,
+    node_var_type: &BTreeMap<&str, &str>,
+) -> Vec<(String, String)> {
+    let mut found: BTreeMap<String, String> = BTreeMap::new();
+    walk_numeric(ast, node_var_type, &mut found);
+    found.into_iter().collect()
+}
+
+fn walk_numeric(
+    ast: &expr::Expr,
+    node_var_type: &BTreeMap<&str, &str>,
+    found: &mut BTreeMap<String, String>,
+) {
+    use expr::Expr;
+    match ast {
+        Expr::BinOp(op, lhs, rhs) => {
+            if op.is_arithmetic() || op.is_ordering() {
+                for operand in [lhs.as_ref(), rhs.as_ref()] {
+                    if let Expr::VarRef(var) = operand {
+                        if let Some(ty) = node_var_type.get(var.as_str()) {
+                            if NON_NUMERIC_TYPES.contains(ty) {
+                                found.insert(var.clone(), (*ty).to_string());
+                            }
+                        }
+                    }
+                }
+            }
+            walk_numeric(lhs, node_var_type, found);
+            walk_numeric(rhs, node_var_type, found);
+        }
+        Expr::UnaryOp(_, operand) => walk_numeric(operand, node_var_type, found),
+        Expr::Call(_, args) => {
+            for arg in args {
+                walk_numeric(arg, node_var_type, found);
+            }
+        }
+        Expr::VarRef(_) | Expr::Literal(_) | Expr::Dot => {}
+    }
 }
 
 /// Extract the `var` names from every `${var}` reference in an expression, in order
@@ -249,6 +440,18 @@ mod tests {
         }
     }
 
+    fn choice(id: &str, parent: &str, value: &str) -> MaterializedNode {
+        MaterializedNode {
+            id: NodeId(id.into()),
+            parent_id: Some(NodeId(parent.into())),
+            node_type: "choice".into(),
+            pos: "a0".into(),
+            current_fields: json!({ "value": value }),
+            var_name: None,
+            deleted: false,
+        }
+    }
+
     fn state_of(nodes: Vec<MaterializedNode>) -> DocumentState {
         let mut map = BTreeMap::new();
         for n in nodes {
@@ -380,5 +583,135 @@ mod tests {
             .filter(|v| matches!(v, IntegrityViolation::RelevanceCycle { .. }))
             .count();
         assert_eq!(cycles, 0);
+    }
+
+    #[test]
+    fn type_mismatch_numeric_op_on_text_var() {
+        // q1 is text; `${q1} > 5` applies an ordering comparison to it.
+        let state = state_of(vec![
+            node(
+                "01A",
+                Some("q1"),
+                json!({ "type": "text", "label": "Name" }),
+            ),
+            node("01B", Some("q2"), json!({ "relevance": "${q1} > 5" })),
+        ]);
+        let violations = validate_integrity(&state);
+        assert!(violations.iter().any(|v| matches!(
+            v,
+            IntegrityViolation::TypeMismatch { var_name, actual, .. }
+                if var_name == "q1" && actual == "text"
+        )));
+    }
+
+    #[test]
+    fn equality_on_text_var_is_not_a_mismatch() {
+        // `=` is valid on any type, so no TypeMismatch is raised.
+        let state = state_of(vec![
+            node("01A", Some("q1"), json!({ "type": "text" })),
+            node("01B", Some("q2"), json!({ "relevance": "${q1} = 'x'" })),
+        ]);
+        assert!(validate_integrity(&state)
+            .iter()
+            .all(|v| !matches!(v, IntegrityViolation::TypeMismatch { .. })));
+    }
+
+    #[test]
+    fn unknown_type_is_not_flagged() {
+        // q1 declares no `type` -> conservative: no TypeMismatch.
+        let state = state_of(vec![
+            node("01A", Some("q1"), json!({ "label": "Q" })),
+            node("01B", Some("q2"), json!({ "relevance": "${q1} > 5" })),
+        ]);
+        assert!(validate_integrity(&state)
+            .iter()
+            .all(|v| !matches!(v, IntegrityViolation::TypeMismatch { .. })));
+    }
+
+    #[test]
+    fn undefined_choice_reference_is_reported() {
+        // q1 is select_one with choice 'no' only; constraint references 'yes'.
+        let state = state_of(vec![
+            node("01A", Some("q1"), json!({ "type": "select_one" })),
+            choice("01A-c1", "01A", "no"),
+            node(
+                "01B",
+                Some("q2"),
+                json!({ "constraint": "selected(${q1}, 'yes')" }),
+            ),
+        ]);
+        let violations = validate_integrity(&state);
+        assert!(violations.iter().any(|v| matches!(
+            v,
+            IntegrityViolation::UndefinedChoice { var_name, choice, .. }
+                if var_name == "q1" && choice == "yes"
+        )));
+    }
+
+    #[test]
+    fn present_choice_reference_is_clean() {
+        // The 'yes' choice exists -> no UndefinedChoice, no other violation.
+        let state = state_of(vec![
+            node("01A", Some("q1"), json!({ "type": "select_one" })),
+            choice("01A-c1", "01A", "yes"),
+            node(
+                "01B",
+                Some("q2"),
+                json!({ "constraint": "selected(${q1}, 'yes')" }),
+            ),
+        ]);
+        assert!(validate_integrity(&state).is_empty());
+    }
+
+    #[test]
+    fn choice_value_falls_back_to_name() {
+        let mut ch = choice("01A-c1", "01A", "ignored");
+        ch.current_fields = json!({ "name": "yes" });
+        let state = state_of(vec![
+            node("01A", Some("q1"), json!({ "type": "select_one" })),
+            ch,
+            node(
+                "01B",
+                Some("q2"),
+                json!({ "constraint": "selected(${q1}, 'yes')" }),
+            ),
+        ]);
+        assert!(validate_integrity(&state)
+            .iter()
+            .all(|v| !matches!(v, IntegrityViolation::UndefinedChoice { .. })));
+    }
+
+    #[test]
+    fn dangling_choice_var_reported_once_not_double() {
+        // q1 does not exist at all: a DanglingReference, but NOT also UndefinedChoice.
+        let state = state_of(vec![node(
+            "01B",
+            Some("q2"),
+            json!({ "constraint": "selected(${q1}, 'yes')" }),
+        )]);
+        let violations = validate_integrity(&state);
+        assert!(violations
+            .iter()
+            .any(|v| matches!(v, IntegrityViolation::DanglingReference { .. })));
+        assert!(violations
+            .iter()
+            .all(|v| !matches!(v, IntegrityViolation::UndefinedChoice { .. })));
+    }
+
+    #[test]
+    fn calculation_field_is_scanned_for_dangling_refs() {
+        let state = state_of(vec![node(
+            "01B",
+            Some("total"),
+            json!({ "calculation": "${a} + ${b}" }),
+        )]);
+        let violations = validate_integrity(&state);
+        assert_eq!(
+            violations
+                .iter()
+                .filter(|v| matches!(v, IntegrityViolation::DanglingReference { field, .. } if field == "calculation"))
+                .count(),
+            2
+        );
     }
 }

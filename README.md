@@ -6,9 +6,11 @@
 > a typed semantic data model instead of plain text: concurrent edits, suggestions, and merges
 > happen at the level of items, choices, and fields rather than lines of XML.
 
-**Status:** Proof of Concept in progress — engine foundation (Stages 12–16) and magic-link
-auth/identity (Stage 17: Paseto v4 tokens, per-document access list) complete; API surface,
-editor, and merge engine in build. &nbsp;·&nbsp; **License:** [AGPL v3](LICENSE)
+**Status:** Proof of Concept **feature-complete** — all PoC stages (12–21, CRDT layer 20
+deferred) done: append-only event log, snapshots, semantic ops + governance, magic-link auth
+(Paseto v4), the REST + SSE API, the four-mode SvelteKit editor, and the referential-integrity
++ semantic-merge engine with four-card conflict resolution. Verified end to end against a live
+Postgres. &nbsp;·&nbsp; **License:** [AGPL v3](LICENSE)
 
 ---
 
@@ -103,8 +105,9 @@ civic identity, moderation, deliberation, LLM summary, and multi-tenant deployme
   violation that **blocks the `Deployed` event** with a clear message.
 - The auditor CLI returns **OK** for a clean log and pinpoints the exact event `seq` if a row is
   corrupted.
-- **Lighthouse 95+** on the researcher frontend; all Rust property tests and Playwright E2E tests
-  passing.
+- All Rust property/integration tests and frontend unit tests passing (verified against a live
+  Postgres). **Lighthouse 95+** and the full Playwright E2E flows are scaffolded but deferred —
+  they need a running stack + browsers; see [SETUP.md](SETUP.md).
 
 ## Tech stack
 
@@ -127,7 +130,7 @@ crates/
   engine-api/       Rust — Axum HTTP server, SSE, auth
   engine-cli/       Rust — admin CLI (migrate, snapshot, verify, replay)
   engine-shared/    Rust — types shared across crates
-migrations/         SQL migrations (append-only once applied; 0000–0004, 0009_views, 0010_auth in PoC)
+migrations/         SQL migrations (append-only once applied; 0000–0004, 0009_views, 0010_auth, 0011_idempotency in PoC)
 frontend/researcher/  SvelteKit researcher UI (Phase-0 deliverable)
 infra/              docker-compose.yml (Postgres only for the PoC)
 docs/               Design + mathematics + sequential build reference (see docs/README.md)
@@ -147,12 +150,13 @@ stage-number → file map).
 | 15 | Snapshot engine & materialization | ✅ | **done** |
 | 16 | Semantic ops & governance gate | ✅ | **done** |
 | 17 | Auth & identity (email magic-link only) | ◐ | **done** |
-| 18 | Web API surface (REST + SSE) | ✅ | pending |
-| 19 | Research IDE frontend (four-mode editor) | ✅ | pending |
+| 18 | Web API surface (REST + SSE) | ✅ | **done** |
+| 19 | Research IDE frontend (four-mode editor) | ✅ | **done** |
 | 20 | CRDT convergence layer | ⏭ | **skipped (PoC)** |
-| 21 | Referential integrity & semantic merge | ✅ | pending |
+| 21 | Referential integrity & semantic merge | ✅ | **done** |
 
-Stages 22–31 (public consultation, ML, civic ID, closeout, deployment) are **out of PoC scope**.
+The PoC build (Stages 12–21, CRDT excluded) is **complete**. Stages 22–31 (public consultation,
+ML, civic ID, closeout, deployment) are **out of PoC scope**.
 
 ## Getting started
 

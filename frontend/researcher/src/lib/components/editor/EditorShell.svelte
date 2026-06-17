@@ -48,6 +48,7 @@
   onToggleSuggesting={() => (suggesting = !suggesting)}
   onToggleActivity={() => (activityOpen = !activityOpen)}
   onOpenConflict={() => (conflictOpen = true)}
+  conflictCount={document.conflict ? document.conflict.remaining : 0}
 />
 
 <div class="page">
@@ -69,16 +70,22 @@
 </div>
 
 <ActivityLog activity={document.activity} open={activityOpen} />
-<ConflictModal
-  conflict={document.conflict}
-  open={conflictOpen}
-  selectedOptionId={selectedConflictOptionId}
-  onClose={() => {
-    conflictOpen = false;
-    selectedConflictOptionId = '';
-  }}
-  onSelect={(id) => (selectedConflictOptionId = id)}
-/>
+{#if document.conflict}
+  <ConflictModal
+    conflict={document.conflict}
+    open={conflictOpen}
+    selectedOptionId={selectedConflictOptionId}
+    onClose={() => {
+      conflictOpen = false;
+      selectedConflictOptionId = '';
+    }}
+    onSelect={(id) => (selectedConflictOptionId = id)}
+    onApply={() => {
+      conflictOpen = false;
+      selectedConflictOptionId = '';
+    }}
+  />
+{/if}
 
 <style>
   .page {
