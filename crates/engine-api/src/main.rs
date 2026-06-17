@@ -1,9 +1,10 @@
 //! dynodoc API server (binary entry point).
 //!
 //! Reads configuration from the environment, connects to Postgres, applies pending
-//! migrations, and serves [`engine_api::app`]. Stage 17 adds the `/auth/*` identity
-//! routes (email magic link → Paseto v4 access token); the full REST + SSE surface
-//! lands in stage 18.
+//! migrations, and serves [`engine_api::app`]. The server exposes the full REST + SSE
+//! surface (stage 18) on top of the `/auth/*` identity routes (stage 17): documents,
+//! the governance-gated write path, the per-document event stream, and the public
+//! audit endpoints.
 
 use std::net::SocketAddr;
 
@@ -34,10 +35,7 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("running database migrations failed")?;
 
-    let state = AppState {
-        pool,
-        auth: load_auth_config()?,
-    };
+    let state = AppState::new(pool, load_auth_config()?);
 
     let host = std::env::var("API_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
     let port: u16 = std::env::var("API_PORT")

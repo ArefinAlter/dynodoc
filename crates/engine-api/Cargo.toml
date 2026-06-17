@@ -18,6 +18,8 @@ path = "src/main.rs"
 engine-core = { workspace = true }
 engine-shared = { workspace = true }
 tokio = { workspace = true }
+tokio-stream = { workspace = true }
+futures = { workspace = true }
 axum = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true }
@@ -34,6 +36,10 @@ hex = { workspace = true }
 ring = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }
+# Stage 18: ULIDs for suggestion ids, opaque cursors, OpenAPI generation.
+ulid = { workspace = true }
+base64 = { workspace = true }
+utoipa = { workspace = true }
 
 [dev-dependencies]
 # `ServiceExt::oneshot` (tower `util`) drives the router in integration tests.

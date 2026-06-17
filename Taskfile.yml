@@ -101,6 +101,17 @@ tasks:
       - cargo fmt --all -- --check
       - cd {{.FRONTEND}} && pnpm format:check
 
+  # --- OpenAPI (stage 18) ---
+  openapi:
+    desc: Regenerate the committed OpenAPI spec from the annotated handlers.
+    cmds:
+      - cargo run -p engine-cli -- openapi --out openapi.yaml
+
+  openapi-check:
+    desc: Fail if the committed openapi.yaml drifts from the generated spec (CI gate).
+    cmds:
+      - cargo run -p engine-cli -- openapi | diff - openapi.yaml
+
   clean:
     desc: Remove build artifacts (target/, .svelte-kit/, node_modules/).
     cmds:

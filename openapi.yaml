@@ -1,0 +1,536 @@
+openapi: 3.1.0
+info:
+  title: dynodoc engine API
+  description: Append-only, hash-chained questionnaire authoring engine (PoC).
+  license:
+    name: AGPL-3.0-or-later
+    identifier: AGPL-3.0-or-later
+  version: 0.1.0
+paths:
+  /documents:
+    get:
+      tags:
+      - documents
+      summary: List public (non-archived) documents, cursor-paginated. `[public]`.
+      operationId: list_documents
+      parameters:
+      - name: status
+        in: query
+        description: Filter by lifecycle status
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        description: Opaque pagination cursor
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        description: Page size (1..=1000)
+        required: false
+        schema:
+          type: integer
+          format: int64
+      responses:
+        '200':
+          description: A page of documents, `{ items, next_cursor }`
+          content:
+            application/json:
+              schema: {}
+    post:
+      tags:
+      - documents
+      summary: Create a new document; the creator becomes its `Author`. `[Sponsor/creator]`.
+      operationId: create_document
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDocumentRequest'
+        required: true
+      responses:
+        '200':
+          description: The created document
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Invalid body
+      security:
+      - bearer: []
+  /documents/{id}:
+    get:
+      tags:
+      - documents
+      summary: Document metadata + current materialized state. `[public]`.
+      operationId: get_document
+      parameters:
+      - name: id
+        in: path
+        description: Document id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Document detail (metadata + materialized state)
+          content:
+            application/json:
+              schema: {}
+        '404':
+          description: No such document
+  /documents/{id}/deploy:
+    post:
+      tags:
+      - operations
+      summary: |-
+        Mark a deployed checkpoint (runs the referential-integrity gate, pins a snapshot).
+        `[Sponsor]`.
+      operationId: deploy
+      parameters:
+      - name: id
+        in: path
+        description: Document id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: The Deployed event
+          content:
+            application/json:
+              schema: {}
+        '409':
+          description: 'Deploy refused: referential-integrity violations'
+      security:
+      - bearer: []
+  /documents/{id}/events:
+    get:
+      tags:
+      - documents
+      summary: |-
+        Raw, cursor-paginated event log for a document. `[auth]` — the audit stream is for
+        authenticated participants, not the public read path.
+      operationId: list_events
+      parameters:
+      - name: id
+        in: path
+        description: Document id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: from_seq
+        in: query
+        description: Lowest seq to return
+        required: false
+        schema:
+          type: integer
+          format: int64
+      - name: to_seq
+        in: query
+        description: Highest seq to return
+        required: false
+        schema:
+          type: integer
+          format: int64
+      - name: cursor
+        in: query
+        description: Opaque pagination cursor
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        description: Page size (1..=1000)
+        required: false
+        schema:
+          type: integer
+          format: int64
+      responses:
+        '200':
+          description: A page of events, `{ items, next_cursor }`
+          content:
+            application/json:
+              schema: {}
+      security:
+      - bearer: []
+  /documents/{id}/merkle-proof/{event_id}:
+    get:
+      tags:
+      - audit
+      summary: Inclusion proof for an event within the latest snapshot's covered range. `[public]`.
+      operationId: merkle_proof
+      parameters:
+      - name: id
+        in: path
+        description: Document id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: event_id
+        in: path
+        description: Event id (ULID)
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Inclusion proof
+          content:
+            application/json:
+              schema: {}
+        '404':
+          description: No snapshot, or event not in range
+  /documents/{id}/node/{node_id}:
+    get:
+      tags:
+      - documents
+      summary: A single node's current materialized state. `[public]`.
+      operationId: get_node
+      parameters:
+      - name: id
+        in: path
+        description: Document id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: node_id
+        in: path
+        description: Node id (ULID)
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Node state
+          content:
+            application/json:
+              schema: {}
+        '404':
+          description: No such document or node
+  /documents/{id}/ops/comment:
+    post:
+      tags:
+      - operations
+      summary: Add a comment, optionally anchored to a node. `[T2+]`.
+      operationId: op_comment
+      parameters:
+      - name: id
+        in: path
+        description: Document id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommentRequest'
+        required: true
+      responses:
+        '200':
+          description: The appended event
+          content:
+            application/json:
+              schema: {}
+      security:
+      - bearer: []
+  /documents/{id}/ops/field-edit:
+    post:
+      tags:
+      - operations
+      summary: Edit a single field of a node. `[T2+]`.
+      operationId: op_field_edit
+      parameters:
+      - name: id
+        in: path
+        description: Document id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FieldEditRequest'
+        required: true
+      responses:
+        '200':
+          description: The appended event
+          content:
+            application/json:
+              schema: {}
+      security:
+      - bearer: []
+  /documents/{id}/ops/node-create:
+    post:
+      tags:
+      - operations
+      summary: Create a node. `[T2+]` (Author/Reviewer-via-suggest in the PoC role model).
+      operationId: op_node_create
+      parameters:
+      - name: id
+        in: path
+        description: Document id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NodeCreateRequest'
+        required: true
+      responses:
+        '200':
+          description: The appended event
+          content:
+            application/json:
+              schema: {}
+      security:
+      - bearer: []
+  /documents/{id}/ops/suggest:
+    post:
+      tags:
+      - operations
+      summary: Propose a wrapped change without applying it (the suggesting workflow). `[T2+]`.
+      operationId: op_suggest
+      parameters:
+      - name: id
+        in: path
+        description: Document id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SuggestRequest'
+        required: true
+      responses:
+        '200':
+          description: The appended proposal event
+          content:
+            application/json:
+              schema: {}
+      security:
+      - bearer: []
+  /documents/{id}/proposals/{event_id}/accept:
+    post:
+      tags:
+      - operations
+      summary: |-
+        Accept a pending proposal (atomic: applies the wrapped op + records acceptance).
+        `[Sponsor]` (Author in the PoC role model). The `:event_id` path segment is the
+        suggestion id.
+      operationId: accept
+      parameters:
+      - name: id
+        in: path
+        description: Document id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: event_id
+        in: path
+        description: Suggestion id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The canonical wrapped event
+          content:
+            application/json:
+              schema: {}
+      security:
+      - bearer: []
+  /documents/{id}/proposals/{event_id}/reject:
+    post:
+      tags:
+      - operations
+      summary: Reject a pending proposal (recorded with its reason, never applied). `[Sponsor]`.
+      operationId: reject
+      parameters:
+      - name: id
+        in: path
+        description: Document id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: event_id
+        in: path
+        description: Suggestion id
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RejectRequest'
+        required: true
+      responses:
+        '200':
+          description: The rejection event
+          content:
+            application/json:
+              schema: {}
+      security:
+      - bearer: []
+  /documents/{id}/snapshot/{snapshot_id}:
+    get:
+      tags:
+      - audit
+      summary: A full snapshot, including its Merkle root and bound chain hash. `[public]`.
+      operationId: get_snapshot
+      parameters:
+      - name: id
+        in: path
+        description: Document id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: snapshot_id
+        in: path
+        description: Snapshot id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: The snapshot
+          content:
+            application/json:
+              schema: {}
+        '404':
+          description: No such snapshot for this document
+  /documents/{id}/verify:
+    get:
+      tags:
+      - audit
+      summary: Replay + verify the hash chain. `[public]`, cacheable 60s.
+      operationId: verify
+      parameters:
+      - name: id
+        in: path
+        description: Document id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Verification result
+          content:
+            application/json:
+              schema: {}
+components:
+  schemas:
+    CommentRequest:
+      type: object
+      description: '`POST /ops/comment`.'
+      required:
+      - body
+      properties:
+        body:
+          type: string
+        node_id:
+          type:
+          - string
+          - 'null'
+    CreateDocumentRequest:
+      type: object
+      description: Body for `POST /documents`.
+      required:
+      - title
+      properties:
+        languages:
+          type: array
+          items:
+            type: string
+        title:
+          type: string
+    FieldEditRequest:
+      type: object
+      description: '`POST /ops/field-edit`.'
+      required:
+      - node_id
+      - field
+      - value
+      properties:
+        field:
+          type: string
+        node_id:
+          type: string
+        value: {}
+    NodeCreateRequest:
+      type: object
+      description: '`POST /ops/node-create`. `node_id` is optional; absent, the server mints a ULID.'
+      required:
+      - node_type
+      - pos
+      properties:
+        fields: {}
+        node_id:
+          type:
+          - string
+          - 'null'
+        node_type:
+          type: string
+        parent_id:
+          type:
+          - string
+          - 'null'
+        pos:
+          type: string
+        var_name:
+          type:
+          - string
+          - 'null'
+    RejectRequest:
+      type: object
+      description: '`POST /proposals/:event_id/reject`.'
+      properties:
+        reason:
+          type:
+          - string
+          - 'null'
+    SuggestRequest:
+      type: object
+      description: '`POST /ops/suggest`. `detail` is the wrapped content op (internally-tagged JSON).'
+      required:
+      - detail
+      properties:
+        detail: {}
+        suggestion_id:
+          type:
+          - string
+          - 'null'
+        target_node_id:
+          type:
+          - string
+          - 'null'
+tags:
+- name: documents
+  description: Document read + create
+- name: operations
+  description: The write path (governance-gated)
+- name: audit
+  description: Public hash-chain audit endpoints

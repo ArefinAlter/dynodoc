@@ -1,9 +1,9 @@
 //! Auth HTTP surface: the `/auth/*` routes and the `Authorization: Bearer` extractor.
 //!
 //! Public routes (`magic-link`, `verify`, `refresh`) need no token; `me` requires a
-//! valid access token via the [`AuthContext`] extractor. The full document/event REST
-//! surface — and wiring [`store::role_for`] into the governance gate — lands in stage
-//! 18; this stage delivers identity issuance and the extractor those endpoints will use.
+//! valid access token via the [`AuthContext`] extractor. The document/event REST + SSE
+//! surface (stage 18) reuses this [`AuthContext`] and wires [`store::role_for`] into the
+//! governance gate on the write path (see [`crate::ops::apply`]).
 
 use axum::extract::{FromRequestParts, State};
 use axum::http::header::AUTHORIZATION;

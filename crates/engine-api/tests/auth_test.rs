@@ -18,14 +18,14 @@ use sqlx::PgPool;
 use tower::ServiceExt;
 
 fn test_state(pool: PgPool) -> AppState {
-    AppState {
+    AppState::new(
         pool,
-        auth: AuthConfig {
+        AuthConfig {
             paseto_key: [7u8; 32],
             token_ttl_seconds: 3600,
             public_base_url: "http://test.local".into(),
         },
-    }
+    )
 }
 
 fn post(uri: &str, body: &Value) -> Request<Body> {

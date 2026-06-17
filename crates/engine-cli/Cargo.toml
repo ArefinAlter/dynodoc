@@ -11,6 +11,7 @@ name = "engine-cli"
 path = "src/main.rs"
 
 [dependencies]
+engine-api = { workspace = true }
 engine-core = { workspace = true }
 engine-shared = { workspace = true }
 tokio = { workspace = true }
@@ -18,6 +19,7 @@ sqlx = { workspace = true }
 uuid = { workspace = true }
 clap = { workspace = true }
 serde_json = { workspace = true }
+utoipa = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
