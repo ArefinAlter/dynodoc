@@ -154,13 +154,27 @@ impl SnapshotEngine {
         &self,
         document_id: DocumentId,
     ) -> Result<DocumentState, SnapshotError> {
+        Ok(self.read_current_state_with_seq(document_id).await?.0)
+    }
+
+    /// Like [`read_current_state`](Self::read_current_state), but also returns the event
+    /// `seq` the state was folded through (0 for an empty log). The seq comes from the
+    /// same tail read as the fold, so it is exactly the position of the returned state —
+    /// callers (the API read path) hand it to clients to resume an SSE stream without
+    /// re-folding or missing events.
+    pub async fn read_current_state_with_seq(
+        &self,
+        document_id: DocumentId,
+    ) -> Result<(DocumentState, i64), SnapshotError> {
         if let Some(snapshot) = latest_snapshot(&self.pool, document_id).await? {
             let tail =
                 log::read_since_snapshot(&self.pool, document_id, snapshot.through_seq).await?;
-            Ok(Materializer::from_snapshot(&snapshot, &tail)?)
+            let seq = tail.last().map_or(snapshot.through_seq, |event| event.seq);
+            Ok((Materializer::from_snapshot(&snapshot, &tail)?, seq))
         } else {
             let events = log::read_since_snapshot(&self.pool, document_id, 0).await?;
-            Ok(Materializer::fold(&events)?)
+            let seq = events.last().map_or(0, |event| event.seq);
+            Ok((Materializer::fold(&events)?, seq))
         }
     }
 }

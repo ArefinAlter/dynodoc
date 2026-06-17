@@ -380,3 +380,106 @@ non-DB suites ran locally:
       implemented (no Redis in the PoC; deprioritized per the stage brief in favor of
       idempotency + SSE). Only the per-document SSE subscriber cap is enforced. Revisit
       with the consultation layer.
+
+## Stage-19 verification status (Dynodoc researcher frontend)
+
+The mock-driven editor scaffold in `frontend/researcher/` is now wired to the real
+stage-18 REST + SSE API. The four-mode editor (Document / Outline / Spec / Preview)
+renders live document state folded from the event log, with an authenticated SSE stream
+applying incoming events incrementally, optimistic write ops, a suggesting workflow, a
+proposals queue, and a history/audit view.
+
+### What was built
+
+- **Typed API client** (`src/lib/api/`): `pnpm gen:api` regenerates `openapi.d.ts` from
+  `../../openapi.yaml` via `openapi-typescript`; `client.ts` layers `openapi-fetch` (typed
+  requests) plus hand-written response types (`types.ts`) — needed because stage-18
+  annotated every response body as `serde_json::Value`, so the generated responses are
+  `unknown`. The client attaches `Authorization: Bearer <token>` and, on a `401`, attempts
+  one refresh-token rotation then replays the request; if refresh fails it clears the
+  session and the layout routes the user to `/login`.
+- **Materializer reducer** (`src/lib/materializer.ts`): a TS port of the Rust fold in
+  `crates/engine-core/src/materializer.rs`, mirroring each event arm (incl.
+  `object_or_value` → non-object fields stored under `"value"`, `ChoiceAdded` `or_insert`,
+  `removed_choices` tombstoning). 17 vitest cases lock it to the Rust rules.
+- **Adapter** (`src/lib/adapter.ts`): folds the flat `DocumentState` node tree into the
+  existing `EditorDocument` view model (sections → items → choices, ordered by `pos`,
+  dropping deleted nodes / removed choices). 5 vitest cases.
+- **Document store** (`src/lib/stores/documentStore.svelte.ts`, Svelte 5 runes): `load()`
+  GETs `/documents/{id}`, seeds folded state, then opens the SSE stream resuming from
+  `detail.latest_seq` — the seq the server folded the state through (see the backend note
+  below); events apply through the reducer with no refetch. Tracks
+  `connected | reconnecting | offline`. Write ops apply optimistically and reconcile;
+  the SSE echo of our own write is deduped by seq.
+  > **Backend follow-up done in this stage.** `GET /documents/{id}` now returns
+  > `latest_seq` (`crates/engine-api/src/documents/routes.rs` + a new
+  > `SnapshotEngine::read_current_state_with_seq` in `engine-core`). This replaced a
+  > frontend workaround that paged `/events` to the last page on every editor open just
+  > to find the resume seq — an O(events) request fan-out with a race (events landing
+  > between the two requests were dropped from the live view). The seq now comes from the
+  > same tail read as the fold, so it's exact: no extra request, no re-fold, no missed
+  > window. Response stays `serde_json::Value` in `openapi.yaml`, so no spec drift.
+- **SSE client** (`src/lib/api/sse.ts`): a fetch-based reader (native `EventSource` can't
+  send the bearer header) parsing `text/event-stream` frames with `?since_seq=` resume and
+  backoff reconnect.
+- **Routes**: real document list at `/` (GET `/documents` + create), `/login`
+  (magic-link → verify), the `/documents/[documentId]` editor with in-page mode switching,
+  a **Proposals** panel (author accept/reject of pending suggestions), and a **History**
+  panel (GET `/events` + a `verify` chain badge). A toast host surfaces op errors.
+- **Suggesting interaction**: with the Topbar toggle on, an Inspector field edit POSTs
+  `/ops/suggest` (wrapping a `FieldEdited` in `detail`) instead of `/ops/field-edit`, and
+  the proposal appears in the queue.
+
+### Verification commands that passed (Node 24, pnpm 11, this machine)
+
+- `pnpm install` — clean.
+- `pnpm gen:api` — regenerated `src/lib/api/openapi.d.ts` (committed).
+- `pnpm check` — **0 errors, 0 warnings** (330 files).
+- `pnpm lint` (prettier + eslint + svelte-check) — clean.
+- `pnpm test:unit -- --run` — **30 tests passed** (4 tokens + 17 materializer + 5 adapter
+  + 4 editor-view component tests). Note: vitest needs Svelte's `browser` resolve
+  condition to `mount()` components in jsdom — set in `vite.config.ts`, scoped to
+  `process.env.VITEST` so the production build is unaffected.
+- `pnpm build` — succeeds (SSR + client bundles).
+
+> The Playwright E2E (`e2e/smoke.spec.ts`) was updated to match the new home/login shells
+> and `pnpm exec playwright test` stays wired, but it is **not required to pass** here (no
+> live backend / browsers installed). The two full E2E flows from the doc (login → open →
+> edit → reload, and the two-user suggesting flow) need a running stack and are deferred.
+
+### CORS status
+
+No backend change needed. `crates/engine-api/src/lib.rs` already applies a permissive
+`CorsLayer` (`allow_origin(Any)`, `allow_methods(Any)`, `allow_headers(Any)`) for the
+local-only PoC, so the dev frontend on `http://localhost:5173` / `http://127.0.0.1:5173`
+can call the API as-is.
+
+### PoC deviations (deliberate, per the stage brief and `000-initial.md`)
+
+- **In-page mode switching, not `/d/[id]/*` sub-routes.** The doc sketches one route per
+  mode; we reuse the working scaffold's `ModeToggle` (Document / Outline / Spec / Preview
+  switch in one `/documents/[documentId]` page). Mode switches are state-only and focus
+  the main region for keyboard users. Proposals + history are in-page panels, not separate
+  routes.
+- **API client lives in `frontend/researcher/src/lib/api`, not `frontend/shared`** — only
+  one frontend in the PoC (`000-initial.md`).
+- **Thin hand-written auth client** (`src/lib/api/auth.ts`) for `/auth/{magic-link,verify,
+  refresh}` — these routes predate utoipa and are **not** in `openapi.yaml`, so they can't
+  go through the generated client. This is the one documented exception; the rest of the
+  surface uses the generated `openapi-fetch` client. Tokens persist in `localStorage` for
+  the PoC (a production build would move the refresh token to an httpOnly cookie).
+- **Hand-written response types** layered over the generated client, because stage-18
+  responses are `serde_json::Value` in `openapi.yaml`. A future stage can annotate the
+  handlers' response bodies (utoipa) so responses are typed end-to-end and these
+  hand-written shapes can be dropped.
+
+### Deferred (documented, not built)
+
+- **Service worker / offline write queue** — the doc itself says defer if the team is slim.
+- **Drag-and-drop reordering in Outline** — selection/navigation only for now.
+- **Cross-language materializer fuzz parity** — the doc's watch-out is a fuzz harness that
+  runs random event sequences through both the Rust and TS folds and asserts equality. The
+  PoC substitute is the per-event-type `materializer.test.ts` suite mirroring the Rust
+  rules. A true cross-lang parity harness is deferred.
+- **Full Playwright E2E against a live stack + Lighthouse scoring** — not gated for the PoC.
+- **Typed API responses** (utoipa response-body annotations) — see above.

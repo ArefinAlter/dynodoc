@@ -98,6 +98,10 @@ pub struct DocumentDetail {
     pub document: Document,
     /// The folded current state (nodes + comment/suggestion side-state).
     pub state: DocumentState,
+    /// The event `seq` `state` was folded through (0 for an empty log). Clients resume
+    /// the SSE stream from here so the backfill carries only newer events — no second
+    /// request, no re-fold, no missed window.
+    pub latest_seq: i64,
 }
 
 /// Document metadata + current materialized state. `[public]`.
@@ -120,13 +124,14 @@ pub async fn get_document(
         .await?
         .ok_or(ApiError::NotFound)?;
 
-    let current = SnapshotEngine::new(state.pool.clone())
-        .read_current_state(document_id)
+    let (current, latest_seq) = SnapshotEngine::new(state.pool.clone())
+        .read_current_state_with_seq(document_id)
         .await?;
 
     Ok(Json(DocumentDetail {
         document,
         state: current,
+        latest_seq,
     }))
 }
 
