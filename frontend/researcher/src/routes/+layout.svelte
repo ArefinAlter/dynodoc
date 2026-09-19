@@ -1,5 +1,10 @@
 <script lang="ts">
   import '../app.css';
+  import { onMount } from 'svelte';
+  import { loadSession } from '$lib/stores/session.svelte';
+  onMount(() => {
+    void loadSession();
+  });
   import { goto } from '$app/navigation';
   import { setUnauthorizedHandler } from '$lib/api/client';
   import ToastHost from '$lib/components/ToastHost.svelte';

@@ -21,6 +21,7 @@ pub mod idempotency;
 pub mod ops;
 pub mod pagination;
 pub mod stream;
+pub mod workspace;
 
 use axum::{routing::get, Json, Router};
 use serde_json::{json, Value};
@@ -76,6 +77,7 @@ pub fn app(state: AppState) -> Router {
         .merge(conflicts::router())
         .merge(stream::router())
         .merge(audit::router())
+        .merge(workspace::router())
         .with_state(state)
         .layer(cors)
         .layer(CompressionLayer::new())
@@ -102,6 +104,7 @@ async fn openapi_json() -> Json<Value> {
         description = "Append-only, hash-chained questionnaire authoring engine (PoC).",
         version = "0.1.0"
     ),
+    modifiers(&WorkspaceDocs),
     paths(
         documents::routes::list_documents,
         documents::routes::get_document,
@@ -136,7 +139,14 @@ async fn openapi_json() -> Json<Value> {
         (name = "documents", description = "Document read + create"),
         (name = "operations", description = "The write path (governance-gated)"),
         (name = "conflicts", description = "Four-card conflict resolution"),
-        (name = "audit", description = "Public hash-chain audit endpoints"),
+        (name = "audit", description = "Member-only hash-chain audit endpoints"),
     )
 )]
 pub struct ApiDoc;
+
+struct WorkspaceDocs;
+impl utoipa::Modify for WorkspaceDocs {
+    fn modify(&self, api: &mut utoipa::openapi::OpenApi) {
+        api.merge(workspace::WorkspaceApi::openapi());
+    }
+}

@@ -8,6 +8,7 @@
 use axum::extract::{FromRequestParts, State};
 use axum::http::header::AUTHORIZATION;
 use axum::http::request::Parts;
+use axum::http::HeaderMap;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::{DateTime, Duration, Utc};
@@ -52,6 +53,7 @@ pub fn router() -> Router<AppState> {
         .route("/auth/verify", post(verify))
         .route("/auth/refresh", post(refresh))
         .route("/auth/me", get(me))
+        .route("/auth/exchange", post(exchange))
 }
 
 // --- magic link request ---------------------------------------------------------
@@ -76,8 +78,19 @@ struct MagicLinkResponse {
 /// Create the identity if new and issue a one-time magic link.
 async fn magic_link_request(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(req): Json<MagicLinkRequest>,
 ) -> Result<Json<MagicLinkResponse>, AuthError> {
+    require_service(&state, &headers, true)?;
+    if req.email.len() > 254 || !req.email.contains('@') {
+        return Err(AuthError::Forbidden);
+    }
+    let rate_key = sha256(req.email.trim().to_lowercase().as_bytes());
+    let attempts: i32 = sqlx::query_scalar("insert into auth_request_window(key_hash) values($1) on conflict(key_hash) do update set attempts=case when auth_request_window.started_at < now()-interval '15 minutes' then 1 else auth_request_window.attempts+1 end, started_at=case when auth_request_window.started_at < now()-interval '15 minutes' then now() else auth_request_window.started_at end returning attempts")
+        .bind(rate_key).fetch_one(&state.pool).await?;
+    if attempts > 5 {
+        return Err(AuthError::Forbidden);
+    }
     let identity =
         store::upsert_identity(&state.pool, &req.email, req.display_name.as_deref()).await?;
 
@@ -193,4 +206,51 @@ async fn me(
         email: identity.email,
         display_name: identity.display_name,
     }))
+}
+
+// Only the web server may exchange a provider-verified identity. This route is
+// unavailable without a configured service credential, including local development.
+#[derive(Deserialize)]
+struct ExchangeRequest {
+    email: String,
+    display_name: Option<String>,
+}
+async fn exchange(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<ExchangeRequest>,
+) -> Result<Json<TokenResponse>, AuthError> {
+    require_service(&state, &headers, false)?;
+    if req.email.len() > 254 || !req.email.contains('@') {
+        return Err(AuthError::Forbidden);
+    }
+    let identity = store::upsert_identity(
+        &state.pool,
+        &req.email.trim().to_lowercase(),
+        req.display_name.as_deref(),
+    )
+    .await?;
+    Ok(Json(mint_session(&state, identity.id.0).await?))
+}
+fn require_service(
+    state: &AppState,
+    headers: &HeaderMap,
+    allow_local: bool,
+) -> Result<(), AuthError> {
+    match &state.auth.service_key {
+        Some(expected) => {
+            let presented = headers
+                .get("x-dynodoc-service-key")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("");
+            // HMAC verification uses ring's constant-time comparison.
+            let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA256, expected.as_bytes());
+            let tag = ring::hmac::sign(&key, b"dynodoc-service-auth");
+            let candidate = ring::hmac::Key::new(ring::hmac::HMAC_SHA256, presented.as_bytes());
+            ring::hmac::verify(&candidate, b"dynodoc-service-auth", tag.as_ref())
+                .map_err(|_| AuthError::Forbidden)
+        }
+        None if allow_local => Ok(()),
+        None => Err(AuthError::Forbidden),
+    }
 }

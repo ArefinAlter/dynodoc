@@ -26,6 +26,8 @@ pub enum OpError {
     /// The op targets a tombstoned node (deleted nodes are immutable).
     #[error("node {0} is deleted")]
     NodeDeleted(String),
+    #[error("move or remove the children of node {0} before removing it")]
+    NodeHasChildren(String),
     /// A `NodeCreated`/`ChoiceAdded` reused an id already present in the tree.
     #[error("node {0} already exists")]
     NodeExists(String),
@@ -84,8 +86,20 @@ pub fn validate_op(state: &DocumentState, op: &EventPayload) -> Result<(), OpErr
             var_name.as_deref(),
         ),
 
-        EventPayload::FieldEdited { node_id, .. } => {
+        EventPayload::FieldEdited {
+            node_id,
+            field,
+            value,
+        } => {
             require_live(state, node_id)?;
+            if field == "var_name" || field == "varName" {
+                let name = value.as_str().ok_or_else(|| {
+                    OpError::InvalidWrappedOp("Variable name must be text".into())
+                })?;
+                if var_name_taken(state, name, Some(node_id)) {
+                    return Err(OpError::DuplicateVarName(name.into()));
+                }
+            }
             Ok(())
         }
 
@@ -95,7 +109,26 @@ pub fn validate_op(state: &DocumentState, op: &EventPayload) -> Result<(), OpErr
             ..
         } => validate_node_moved(state, node_id, new_parent_id.as_ref()),
 
+        EventPayload::NodeRestored { node_id } => {
+            let node = require_present(state, node_id)?;
+            if let Some(parent) = &node.parent_id {
+                require_live(state, parent)?;
+            }
+            if let Some(name) = node.var_name.as_deref().filter(|n| !n.is_empty()) {
+                if var_name_taken(state, name, Some(node_id)) {
+                    return Err(OpError::DuplicateVarName(name.into()));
+                }
+            }
+            Ok(())
+        }
         EventPayload::NodeDeleted { node_id } => {
+            if state.nodes.values().any(|n| {
+                n.parent_id.as_ref() == Some(node_id)
+                    && !n.deleted
+                    && !state.removed_choices.contains(&n.id)
+            }) {
+                return Err(OpError::NodeHasChildren(node_id.0.clone()));
+            }
             // Deleting an already-deleted node is a no-op error; require it live.
             require_live(state, node_id)?;
             Ok(())
@@ -179,6 +212,7 @@ fn is_content_op(op: &EventPayload) -> bool {
         EventPayload::NodeCreated { .. }
             | EventPayload::NodeMoved { .. }
             | EventPayload::NodeDeleted { .. }
+            | EventPayload::NodeRestored { .. }
             | EventPayload::FieldEdited { .. }
             | EventPayload::ChoiceAdded { .. }
             | EventPayload::ChoiceRemoved { .. }

@@ -25,6 +25,7 @@ fn test_state(pool: PgPool) -> AppState {
         pool,
         AuthConfig {
             paseto_key: KEY,
+            service_key: None,
             token_ttl_seconds: 3600,
             public_base_url: "http://test.local".into(),
         },
@@ -93,13 +94,17 @@ async fn create_then_read_document(pool: PgPool) {
     let doc_id = create_document(&router, &token, "Survey").await;
 
     // Public read: metadata + (empty) materialized state.
-    let (status, body) = send(&router, get(&format!("/documents/{doc_id}"))).await;
+    let (status, body) = send(
+        &router,
+        auth_post_get(&format!("/documents/{doc_id}"), &token),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK, "get document failed: {body}");
     assert_eq!(body["title"], "Survey");
     assert!(body["state"]["nodes"].is_object());
 
     // Public list includes it.
-    let (status, body) = send(&router, get("/documents")).await;
+    let (status, body) = send(&router, auth_post_get("/documents", &token)).await;
     assert_eq!(status, StatusCode::OK);
     assert!(body["items"]
         .as_array()
@@ -125,10 +130,10 @@ async fn create_document_requires_auth(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn missing_document_is_404(pool: PgPool) {
+async fn anonymous_read_requires_auth(pool: PgPool) {
     let router = app(test_state(pool));
     let (status, _) = send(&router, get(&format!("/documents/{}", Uuid::new_v4()))).await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
 // --- write path + governance ----------------------------------------------------
@@ -169,7 +174,11 @@ async fn node_create_and_field_edit_round_trip(pool: PgPool) {
     assert_eq!(status, StatusCode::OK, "field-edit failed: {body}");
 
     // The materialized state reflects the edit.
-    let (status, body) = send(&router, get(&format!("/documents/{doc_id}/node/{node_id}"))).await;
+    let (status, body) = send(
+        &router,
+        auth_post_get(&format!("/documents/{doc_id}/node/{node_id}"), &token),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["current_fields"]["title"], "Hello");
 }
@@ -273,7 +282,11 @@ async fn suggest_then_accept_applies_the_wrapped_op(pool: PgPool) {
     .await;
     assert_eq!(status, StatusCode::OK);
 
-    let (_, body) = send(&router, get(&format!("/documents/{doc_id}/node/{node_id}"))).await;
+    let (_, body) = send(
+        &router,
+        auth_post_get(&format!("/documents/{doc_id}/node/{node_id}"), &token),
+    )
+    .await;
     assert_eq!(body["current_fields"]["title"], "New");
 }
 
@@ -379,11 +392,19 @@ async fn resolve_accept_makes_chosen_value_canonical_and_rejects_others(pool: Pg
     assert!(body["events"].as_array().unwrap().len() >= 2);
 
     // The accepted value is now canonical.
-    let (_, node) = send(&router, get(&format!("/documents/{doc_id}/node/{node_id}"))).await;
+    let (_, node) = send(
+        &router,
+        auth_post_get(&format!("/documents/{doc_id}/node/{node_id}"), &token),
+    )
+    .await;
     assert_eq!(node["current_fields"]["title"], "Foo");
 
     // Suggestion states: foo accepted, bar rejected (superseded).
-    let (_, detail) = send(&router, get(&format!("/documents/{doc_id}"))).await;
+    let (_, detail) = send(
+        &router,
+        auth_post_get(&format!("/documents/{doc_id}"), &token),
+    )
+    .await;
     let suggestions = &detail["state"]["suggestions"];
     assert_eq!(suggestions["sug-foo"]["accepted"], true);
     assert_eq!(
@@ -426,11 +447,19 @@ async fn resolve_custom_value_supersedes_all_suggestions(pool: PgPool) {
     .await;
     assert_eq!(status, StatusCode::OK);
 
-    let (_, node) = send(&router, get(&format!("/documents/{doc_id}/node/{node_id}"))).await;
+    let (_, node) = send(
+        &router,
+        auth_post_get(&format!("/documents/{doc_id}/node/{node_id}"), &token),
+    )
+    .await;
     assert_eq!(node["current_fields"]["title"], "Compromise");
 
     // Every pending suggestion in the group is now rejected.
-    let (_, detail) = send(&router, get(&format!("/documents/{doc_id}"))).await;
+    let (_, detail) = send(
+        &router,
+        auth_post_get(&format!("/documents/{doc_id}"), &token),
+    )
+    .await;
     let suggestions = &detail["state"]["suggestions"];
     assert_eq!(
         suggestions["sug-foo"]["rejected_reason"],
@@ -633,7 +662,7 @@ fn auth_post_get(uri: &str, token: &str) -> Request<Body> {
 // --- audit ----------------------------------------------------------------------
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn verify_is_public_and_ok_for_a_clean_log(pool: PgPool) {
+async fn verify_requires_membership_and_is_ok_for_a_clean_log(pool: PgPool) {
     let router = app(test_state(pool.clone()));
     let author = seed_identity(&pool, "author@dynodoc.local").await;
     let token = bearer(author);
@@ -648,7 +677,11 @@ async fn verify_is_public_and_ok_for_a_clean_log(pool: PgPool) {
     )
     .await;
 
-    let (status, body) = send(&router, get(&format!("/documents/{doc_id}/verify"))).await;
+    let (status, body) = send(
+        &router,
+        auth_post_get(&format!("/documents/{doc_id}/verify"), &token),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["ok"], true);
 }
@@ -702,4 +735,382 @@ async fn sse_delivers_a_new_event_within_100ms(pool: PgPool) {
         text.contains("NodeCreated"),
         "expected a NodeCreated SSE frame, got: {text}"
     );
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn private_document_reads_are_scoped_to_members(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let owner = seed_identity(&pool, "owner@example.test").await;
+    let stranger = seed_identity(&pool, "stranger@example.test").await;
+    let doc = create_document(&router, &bearer(owner), "Private study").await;
+    for suffix in ["", "/events", "/stream", "/verify", "/conflicts"] {
+        let (status, _) = send(
+            &router,
+            auth_post_get(&format!("/documents/{doc}{suffix}"), &bearer(stranger)),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "unrelated user read {suffix}"
+        );
+    }
+    let (_, list) = send(&router, auth_post_get("/documents", &bearer(stranger))).await;
+    assert!(list["items"].as_array().unwrap().is_empty());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn stale_field_edits_are_refused_but_disjoint_edits_work(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let owner = seed_identity(&pool, "owner@example.test").await;
+    let token = bearer(owner);
+    let doc = create_document(&router, &token, "Study").await;
+    let (_, created) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc}/ops/node-create"),
+            &token,
+            &json!({"node_type":"form","pos":"a0","fields":{"label":"Original"}}),
+        ),
+    )
+    .await;
+    let node = created["event"]["target_node_id"].as_str().unwrap();
+    let first = json!({"node_id":node,"field":"label","value":"First edit","base_seq":1});
+    let second = json!({"node_id":node,"field":"label","value":"Stale edit","base_seq":1});
+    let third = json!({"node_id":node,"field":"hint","value":"Independent","base_seq":1});
+    assert_eq!(
+        send(
+            &router,
+            auth_post(&format!("/documents/{doc}/ops/field-edit"), &token, &first)
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        send(
+            &router,
+            auth_post(&format!("/documents/{doc}/ops/field-edit"), &token, &second)
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        send(
+            &router,
+            auth_post(&format!("/documents/{doc}/ops/field-edit"), &token, &third)
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let (_, read) = send(&router, auth_post_get(&format!("/documents/{doc}"), &token)).await;
+    assert_eq!(
+        read["state"]["nodes"][node]["current_fields"]["label"],
+        "First edit"
+    );
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn concurrent_acceptance_only_applies_once(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let (doc, node, token, _) = seed_conflict(&pool, &router).await;
+    let uri = format!("/documents/{doc}/proposals/sug-foo/accept");
+    let (a, b) = tokio::join!(
+        send(&router, auth_post(&uri, &token, &json!({}))),
+        send(&router, auth_post(&uri, &token, &json!({})))
+    );
+    assert_eq!(
+        usize::from(a.0 == StatusCode::OK) + usize::from(b.0 == StatusCode::OK),
+        1
+    );
+    let count: i64 = sqlx::query_scalar(
+        "select count(*) from event where document_id=$1 and type='SuggestionAccepted'",
+    )
+    .bind(doc)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(count, 1);
+    let (_, read) = send(
+        &router,
+        auth_post_get(&format!("/documents/{doc}/node/{node}"), &token),
+    )
+    .await;
+    assert_eq!(read["current_fields"]["title"], "Foo");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn batch_rolls_back_and_deploy_pins_its_exact_state(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let owner = seed_identity(&pool, "owner@example.test").await;
+    let token = bearer(owner);
+    let doc = create_document(&router, &token, "Study").await;
+    let node = engine_shared::NodeId(ulid::Ulid::new().to_string());
+    let create = json!({"type":"NodeCreated","node_id":node,"node_type":"form","pos":"a0","fields":{"label":"Study"}});
+    let bad = json!({"type":"FieldEdited","node_id":"missing","field":"label","value":"bad"});
+    let (status, _) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc}/batch"),
+            &token,
+            &json!({"ops":[create.clone(),bad],"base_seq":0}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (_, read) = send(&router, auth_post_get(&format!("/documents/{doc}"), &token)).await;
+    assert_eq!(read["latest_seq"], 0);
+    assert_eq!(
+        send(
+            &router,
+            auth_post(
+                &format!("/documents/{doc}/batch"),
+                &token,
+                &json!({"ops":[create],"base_seq":0})
+            )
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        send(
+            &router,
+            auth_post(&format!("/documents/{doc}/deploy"), &token, &json!({}))
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let (_, read) = send(&router, auth_post_get(&format!("/documents/{doc}"), &token)).await;
+    assert_eq!(read["status"], "deployed");
+    let snapshot = read["deployed_snapshot_id"].as_str().unwrap();
+    let (_, snap) = send(
+        &router,
+        auth_post_get(&format!("/documents/{doc}/snapshot/{snapshot}"), &token),
+    )
+    .await;
+    assert_eq!(snap["through_seq"], 2);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn ten_researchers_merge_independent_cells_without_loss(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let owner = seed_identity(&pool, "owner@team.test").await;
+    let token = bearer(owner);
+    let doc = create_document(&router, &token, "Ten researchers").await;
+    let (_, created) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc}/ops/node-create"),
+            &token,
+            &json!({"node_type":"form","pos":"a0","fields":{}}),
+        ),
+    )
+    .await;
+    let node = created["event"]["target_node_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let mut tokens = Vec::new();
+    for i in 0..10 {
+        let email = format!("researcher{i}@team.test");
+        let person = seed_identity(&pool, &email).await;
+        let (status, _) = send(
+            &router,
+            auth_post(
+                &format!("/documents/{doc}/members"),
+                &token,
+                &json!({"email":email,"role":"author"}),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        tokens.push(bearer(person));
+    }
+    let futures=tokens.iter().enumerate().map(|(i,token)| {let router=router.clone();let node=node.clone();async move {send(&router,auth_post(&format!("/documents/{doc}/batch"),token,&json!({"base_seq":1,"ops":[{"type":"FieldEdited","node_id":node,"field":format!("cell_{i}"),"value":format!("Researcher {i}")}]}))).await}});
+    for (status, body) in futures::future::join_all(futures).await {
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+    let (_, read) = send(&router, auth_post_get(&format!("/documents/{doc}"), &token)).await;
+    assert_eq!(read["latest_seq"], 11);
+    for i in 0..10 {
+        assert_eq!(
+            read["state"]["nodes"][&node]["current_fields"][format!("cell_{i}")],
+            format!("Researcher {i}")
+        );
+    }
+    let (_, verify) = send(
+        &router,
+        auth_post_get(&format!("/documents/{doc}/verify"), &token),
+    )
+    .await;
+    assert_eq!(verify["ok"], true);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn personal_draft_conflicts_are_reviewed_and_old_versions_restore_stable_ids(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let owner = seed_identity(&pool, "owner@draft.test").await;
+    let token = bearer(owner);
+    let doc = create_document(&router, &token, "Draft test").await;
+    let (_, created) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc}/ops/node-create"),
+            &token,
+            &json!({"node_type":"form","pos":"a0","fields":{"label":"Original"}}),
+        ),
+    )
+    .await;
+    let node = created["event"]["target_node_id"].as_str().unwrap();
+    let (status, version) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc}/versions"),
+            &token,
+            &json!({"name":"Original"}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{version}");
+    let (_, draft) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc}/drafts"),
+            &token,
+            &json!({"name":"Alternative"}),
+        ),
+    )
+    .await;
+    let draft = draft["id"].as_str().unwrap();
+    let draft_uri = format!("/documents/{doc}/drafts/{draft}");
+    let (status,edited)=send(&router,auth_post(&draft_uri,&token,&json!({"revision":0,"ops":[{"type":"FieldEdited","node_id":node,"field":"label","value":"Draft"}]}))).await;
+    assert_eq!(status, StatusCode::OK, "{edited}");
+    let stale=send(&router,auth_post(&draft_uri,&token,&json!({"revision":0,"ops":[{"type":"FieldEdited","node_id":node,"field":"label","value":"Stale"}]}))).await;
+    assert_eq!(stale.0, StatusCode::CONFLICT);
+    send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc}/ops/field-edit"),
+            &token,
+            &json!({"node_id":node,"field":"label","value":"Team"}),
+        ),
+    )
+    .await;
+    let (_, preview) = send(
+        &router,
+        auth_post(
+            &format!("{draft_uri}/sync"),
+            &token,
+            &json!({"action":"preview"}),
+        ),
+    )
+    .await;
+    assert_eq!(preview["conflicts"].as_array().unwrap().len(), 1);
+    let (status,merged)=send(&router,auth_post(&format!("{draft_uri}/sync"),&token,&json!({"action":"share","team_seq":preview["team_seq"],"revision":1,"resolutions":{format!("{node}:label"):"draft"}}))).await;
+    assert_eq!(status, StatusCode::OK, "{merged}");
+    assert_eq!(merged["completed"], true);
+    send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc}/batch"),
+            &token,
+            &json!({"base_seq":3,"ops":[{"type":"NodeDeleted","node_id":node}]}),
+        ),
+    )
+    .await;
+    let (status, restored) = send(
+        &router,
+        auth_post(
+            &format!(
+                "/documents/{doc}/versions/{}/restore",
+                version["id"].as_str().unwrap()
+            ),
+            &token,
+            &json!({"base_seq":4}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{restored}");
+    assert!(restored["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|e| e["type"] == "NodeRestored"));
+    let (_, read) = send(&router, auth_post_get(&format!("/documents/{doc}"), &token)).await;
+    assert_eq!(read["state"]["nodes"][node]["deleted"], false);
+    assert_eq!(
+        read["state"]["nodes"][node]["current_fields"]["label"],
+        "Original"
+    );
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn content_search_never_returns_another_teams_document(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let owner = seed_identity(&pool, "owner@search.test").await;
+    let stranger = seed_identity(&pool, "stranger@search.test").await;
+    let token = bearer(owner);
+    let doc = create_document(&router, &token, "Fieldwork").await;
+    send(&router,auth_post(&format!("/documents/{doc}/ops/node-create"),&token,&json!({"node_type":"form","pos":"a0","fields":{"label":"confidential community interviews"}}))).await;
+    let (status, found) = send(&router, auth_post_get("/search?q=community", &token)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(found["items"].as_array().unwrap().len(), 1);
+    let (_, hidden) = send(
+        &router,
+        auth_post_get("/search?q=community", &bearer(stranger)),
+    )
+    .await;
+    assert!(hidden["items"].as_array().unwrap().is_empty());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn archive_is_reversible_and_keeps_membership_boundaries(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let owner = seed_identity(&pool, "owner@archive.test").await;
+    let stranger = seed_identity(&pool, "stranger@archive.test").await;
+    let token = bearer(owner);
+    let doc = create_document(&router, &token, "Archived research").await;
+    let uri = format!("/documents/{doc}/metadata");
+    let (status, _) = send(&router, auth_post(&uri, &token, &json!({"archived":true}))).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, active) = send(&router, auth_post_get("/documents", &token)).await;
+    assert!(active["items"].as_array().unwrap().is_empty());
+    let (_, archived) = send(&router, auth_post_get("/documents?status=archived", &token)).await;
+    assert_eq!(archived["items"][0]["id"], doc.to_string());
+    let (_, hidden) = send(
+        &router,
+        auth_post_get("/documents?status=archived", &bearer(stranger)),
+    )
+    .await;
+    assert!(hidden["items"].as_array().unwrap().is_empty());
+    let (status, _) = send(
+        &router,
+        auth_post(&uri, &bearer(stranger), &json!({"archived":false})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _) = send(&router, auth_post(&uri, &token, &json!({"archived":false}))).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, restored) = send(&router, auth_post_get("/documents", &token)).await;
+    assert_eq!(restored["items"][0]["id"], doc.to_string());
+    assert_eq!(restored["items"][0]["status"], "draft");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn file_import_batches_can_exceed_the_framework_default_limit(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let owner = seed_identity(&pool, "owner@large-import.test").await;
+    let token = bearer(owner);
+    let doc = create_document(&router, &token, "Large import").await;
+    let text = "a".repeat(2 * 1024 * 1024 + 1);
+    let (status, response) = send(&router, auth_post(
+        &format!("/documents/{doc}/batch"), &token,
+        &json!({"base_seq":0,"ops":[{"type":"NodeCreated","node_id":ulid::Ulid::new().to_string(),"node_type":"form","pos":"a0","fields":{"label":text}}]})
+    )).await;
+    assert_eq!(status, StatusCode::OK, "{response}");
+    assert_eq!(response["events"].as_array().unwrap().len(), 1);
 }

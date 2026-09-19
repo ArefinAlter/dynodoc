@@ -20,7 +20,6 @@
 
 use engine_core::governance::{self, Role};
 use engine_core::log;
-use engine_core::snapshot::SnapshotEngine;
 use engine_shared::{DocumentId, Event, EventPayload, IdentityId, NodeId};
 use serde_json::Value;
 
@@ -49,14 +48,10 @@ pub async fn resolve_conflict(
     conflict_id: &str,
     resolution: Resolution,
 ) -> Result<Vec<Event>, ApiError> {
-    let role = apply::require_role(&state.pool, document_id, actor).await?;
+    let (mut tx, role, current) = apply::begin_write(state, document_id, actor).await?;
     if role != Role::Author {
         return Err(ApiError::Forbidden);
     }
-
-    let current = SnapshotEngine::new(state.pool.clone())
-        .read_current_state(document_id)
-        .await?;
 
     // Re-derive the conflict; a stale id (already resolved) is a 404.
     let conflict = derive::find_conflict(&current, conflict_id).ok_or(ApiError::NotFound)?;
@@ -99,7 +94,6 @@ pub async fn resolve_conflict(
 
     // One transaction: materialize the field edit, append it, then append every
     // lifecycle event. All land or none does (mirrors apply::accept_proposal).
-    let mut tx = state.pool.begin().await?;
     apply::materialize_node_change(&mut tx, document_id, &field_edit).await?;
     let mut appended = Vec::with_capacity(1 + lifecycle.len());
     let edit_event = log::append_in_tx(&mut tx, document_id, &field_edit, actor)

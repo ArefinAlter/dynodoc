@@ -48,6 +48,8 @@ pub enum EventPayload {
     },
     /// A node was tombstoned (nodes are never row-deleted).
     NodeDeleted { node_id: NodeId },
+    /// Restore a tombstone using its original stable identity.
+    NodeRestored { node_id: NodeId },
     /// A single field of a node's `current_fields` was edited.
     FieldEdited {
         node_id: NodeId,
@@ -100,6 +102,7 @@ impl EventPayload {
             EventPayload::NodeCreated { .. } => EventType::NodeCreated,
             EventPayload::NodeMoved { .. } => EventType::NodeMoved,
             EventPayload::NodeDeleted { .. } => EventType::NodeDeleted,
+            EventPayload::NodeRestored { .. } => EventType::NodeRestored,
             EventPayload::FieldEdited { .. } => EventType::FieldEdited,
             EventPayload::ChoiceAdded { .. } => EventType::ChoiceAdded,
             EventPayload::ChoiceRemoved { .. } => EventType::ChoiceRemoved,
@@ -119,6 +122,7 @@ impl EventPayload {
             EventPayload::NodeCreated { node_id, .. }
             | EventPayload::NodeMoved { node_id, .. }
             | EventPayload::NodeDeleted { node_id }
+            | EventPayload::NodeRestored { node_id }
             | EventPayload::FieldEdited { node_id, .. }
             | EventPayload::ChoiceAdded { node_id, .. }
             | EventPayload::ChoiceRemoved { node_id, .. } => Some(node_id),

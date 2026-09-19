@@ -1,63 +1,27 @@
-/**
- * Auth session: access + refresh tokens, persisted in `localStorage`.
- *
- * PoC trade-off (documented in SETUP.md): tokens live in `localStorage` so a reload
- * keeps the session. A production build would move the refresh token to an
- * httpOnly cookie; the access token can stay in memory. The API surface this app
- * uses is the generated openapi-fetch client; only the `/auth/*` routes (which
- * predate utoipa and are absent from `openapi.yaml`) go through the thin typed
- * client in `./auth`.
- */
-import { browser } from '$app/environment';
-
-const ACCESS_KEY = 'dynodoc.access_token';
-const REFRESH_KEY = 'dynodoc.refresh_token';
-
-interface SessionState {
-  accessToken: string | null;
-  refreshToken: string | null;
+/** Sessions are encrypted, HttpOnly cookies; access tokens never enter browser storage. */
+export const session = $state<{ accessToken: null; refreshToken: null; authenticated: boolean }>({
+  accessToken: null,
+  refreshToken: null,
+  authenticated: false
+});
+export function isAuthenticated() {
+  return session.authenticated;
 }
-
-function read(): SessionState {
-  if (!browser) return { accessToken: null, refreshToken: null };
-  return {
-    accessToken: localStorage.getItem(ACCESS_KEY),
-    refreshToken: localStorage.getItem(REFRESH_KEY)
-  };
+export async function loadSession() {
+  const res = await fetch('/auth/session');
+  session.authenticated = res.ok && (await res.json()).authenticated;
 }
-
-const initial = read();
-
-/** Reactive session state (Svelte 5 runes). */
-export const session = $state<SessionState>(initial);
-
-/** True when an access token is present (does not validate expiry). */
-export function isAuthenticated(): boolean {
-  return Boolean(session.accessToken);
+export async function clearSession() {
+  session.authenticated = false;
+  await fetch('/auth/logout', { method: 'POST' });
 }
-
-/** Persist a freshly minted token pair. */
-export function setTokens(accessToken: string, refreshToken: string): void {
-  session.accessToken = accessToken;
-  session.refreshToken = refreshToken;
-  if (browser) {
-    localStorage.setItem(ACCESS_KEY, accessToken);
-    localStorage.setItem(REFRESH_KEY, refreshToken);
-  }
+// Compatibility exports for existing API callers. Cookie sessions handle rotation server-side.
+export function setAccessToken(_token: string) {
+  void _token;
+  session.authenticated = true;
 }
-
-/** Replace only the access token (refresh keeps the rotated successor). */
-export function setAccessToken(accessToken: string): void {
-  session.accessToken = accessToken;
-  if (browser) localStorage.setItem(ACCESS_KEY, accessToken);
-}
-
-/** Clear the session (logout / unrecoverable 401). */
-export function clearSession(): void {
-  session.accessToken = null;
-  session.refreshToken = null;
-  if (browser) {
-    localStorage.removeItem(ACCESS_KEY);
-    localStorage.removeItem(REFRESH_KEY);
-  }
+export function setTokens(_access: string, _refresh: string) {
+  void _access;
+  void _refresh;
+  session.authenticated = true;
 }

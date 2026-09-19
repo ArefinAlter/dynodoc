@@ -127,6 +127,9 @@ pub fn apply_payload(state: &mut DocumentState, payload: &EventPayload) -> Resul
                         node_id: node_id.0.clone(),
                     })?;
             fields.insert(field.clone(), value.clone());
+            if field == "var_name" || field == "varName" {
+                node.var_name = value.as_str().map(str::to_string);
+            }
         }
         EventPayload::NodeMoved {
             node_id,
@@ -141,6 +144,16 @@ pub fn apply_payload(state: &mut DocumentState, payload: &EventPayload) -> Resul
                 })?;
             node.parent_id = new_parent_id.clone();
             node.pos = new_pos.clone();
+        }
+        EventPayload::NodeRestored { node_id } => {
+            let node = state
+                .nodes
+                .get_mut(node_id)
+                .ok_or_else(|| ApplyError::MissingNode {
+                    node_id: node_id.0.clone(),
+                })?;
+            node.deleted = false;
+            state.removed_choices.remove(node_id);
         }
         EventPayload::NodeDeleted { node_id } => {
             let node = state
@@ -213,7 +226,7 @@ pub fn apply_payload(state: &mut DocumentState, payload: &EventPayload) -> Resul
                 }
             })?;
             suggestion.accepted = false;
-            suggestion.rejected_reason = reason.clone();
+            suggestion.rejected_reason = Some(reason.clone().unwrap_or_else(|| "rejected".into()));
         }
         EventPayload::Deployed { .. } => {}
     }

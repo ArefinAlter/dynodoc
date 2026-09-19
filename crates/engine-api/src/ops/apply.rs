@@ -19,8 +19,9 @@
 
 use engine_core::governance::{self, Role};
 use engine_core::log;
-use engine_core::snapshot::SnapshotEngine;
-use engine_shared::{DocumentId, Event, EventPayload, IdentityId, NodeId, NodeType};
+use engine_core::materializer::{DocumentState, Materializer};
+use engine_core::snapshot::merkle_root;
+use engine_shared::{DocumentId, Event, EventPayload, IdentityId, NodeId, NodeType, Snapshot};
 use serde_json::Value;
 use sqlx::{PgPool, Postgres, Transaction};
 
@@ -47,24 +48,61 @@ pub async fn apply_op(
     actor: IdentityId,
     op: EventPayload,
 ) -> Result<Event, ApiError> {
-    let role = require_role(&state.pool, document_id, actor).await?;
-    let current = SnapshotEngine::new(state.pool.clone())
-        .read_current_state(document_id)
-        .await?;
+    apply_checked_op(state, document_id, actor, op, None).await
+}
 
-    // Gate: capability → validity → (Deployed) integrity. Pure decision, no I/O.
+/// Serialize validation and append against the same document state. A stale field
+/// write is refused; edits to other fields remain independent.
+pub async fn apply_checked_op(
+    state: &AppState,
+    document_id: DocumentId,
+    actor: IdentityId,
+    op: EventPayload,
+    base_seq: Option<i64>,
+) -> Result<Event, ApiError> {
+    let (mut tx, role, current) = begin_write(state, document_id, actor).await?;
     governance::authorize(role, &op, &current).map_err(ApiError::from)?;
-
-    let mut tx = state.pool.begin().await?;
+    if let (
+        Some(base),
+        EventPayload::FieldEdited {
+            node_id,
+            field,
+            value,
+        },
+    ) = (base_seq, &op)
+    {
+        let changed: bool = sqlx::query_scalar(
+            "select exists(select 1 from event where document_id=$1 and seq>$2
+             and target_node_id=$3 and type='FieldEdited' and payload->>'field'=$4)",
+        )
+        .bind(document_id.0)
+        .bind(base)
+        .bind(&node_id.0)
+        .bind(field)
+        .fetch_one(&mut *tx)
+        .await?;
+        let canonical = current
+            .nodes
+            .get(node_id)
+            .and_then(|n| n.current_fields.get(field));
+        if changed && canonical != Some(value) {
+            return Err(ApiError::Conflict { reason: "Another researcher changed this field. Review the latest version before saving your change.".into() });
+        }
+    }
     materialize_node_change(&mut tx, document_id, &op).await?;
     let inserted = log::append_in_tx(&mut tx, document_id, &op, actor)
         .await
         .map_err(ApiError::from)?;
+    if matches!(op, EventPayload::Deployed { .. }) {
+        checkpoint_in_tx(&mut tx, document_id, &current, &inserted).await?;
+    }
     tx.commit().await?;
 
-    log::post_commit_snapshot(&state.pool, document_id, std::slice::from_ref(&op))
-        .await
-        .map_err(ApiError::from)?;
+    if !matches!(op, EventPayload::Deployed { .. }) {
+        log::post_commit_snapshot(&state.pool, document_id, std::slice::from_ref(&op))
+            .await
+            .map_err(ApiError::from)?;
+    }
     state.subscriptions.publish(document_id, inserted.clone());
 
     Ok(inserted)
@@ -79,10 +117,7 @@ pub async fn accept_proposal(
     actor: IdentityId,
     suggestion_id: &str,
 ) -> Result<Event, ApiError> {
-    let role = require_role(&state.pool, document_id, actor).await?;
-    let current = SnapshotEngine::new(state.pool.clone())
-        .read_current_state(document_id)
-        .await?;
+    let (mut tx, role, current) = begin_write(state, document_id, actor).await?;
 
     // The wrapped op an accept must append, re-validated against current state.
     let wrapped = governance::plan_acceptance(role, &current, suggestion_id)?;
@@ -90,7 +125,6 @@ pub async fn accept_proposal(
         suggestion_id: suggestion_id.to_string(),
     };
 
-    let mut tx = state.pool.begin().await?;
     materialize_node_change(&mut tx, document_id, &wrapped).await?;
     let wrapped_event = log::append_in_tx(&mut tx, document_id, &wrapped, actor)
         .await
@@ -180,6 +214,14 @@ pub(crate) async fn materialize_node_change(
             field,
             value,
         } => {
+            if field == "var_name" || field == "varName" {
+                sqlx::query("update node set var_name=$2 where id=$1 and document_id=$3")
+                    .bind(&node_id.0)
+                    .bind(value.as_str())
+                    .bind(document_id.0)
+                    .execute(&mut **tx)
+                    .await?;
+            }
             sqlx::query(
                 "update node
                  set current_fields = jsonb_set(coalesce(current_fields, '{}'::jsonb), array[$2], $3, true),
@@ -203,6 +245,15 @@ pub(crate) async fn materialize_node_change(
             .bind(&node_id.0)
             .bind(new_parent_id.as_ref().map(|n| n.0.clone()))
             .bind(new_pos)
+            .execute(&mut **tx)
+            .await?;
+        }
+        EventPayload::NodeRestored { node_id } => {
+            sqlx::query(
+                "update node set deleted=false,updated_at=now() where id=$1 and document_id=$2",
+            )
+            .bind(&node_id.0)
+            .bind(document_id.0)
             .execute(&mut **tx)
             .await?;
         }
@@ -264,4 +315,74 @@ fn object_or_empty(fields: &Value) -> Value {
         Value::Null => serde_json::json!({}),
         other => serde_json::json!({ "value": other }),
     }
+}
+
+/// Every write path takes this lock before reading state or validating a proposal.
+pub(crate) async fn begin_write(
+    state: &AppState,
+    document_id: DocumentId,
+    actor: IdentityId,
+) -> Result<(Transaction<'_, Postgres>, Role, DocumentState), ApiError> {
+    let mut tx = state.pool.begin().await?;
+    let exists: Option<uuid::Uuid> =
+        sqlx::query_scalar("select id from document where id=$1 for update")
+            .bind(document_id.0)
+            .fetch_optional(&mut *tx)
+            .await?;
+    if exists.is_none() {
+        return Err(ApiError::NotFound);
+    }
+    let role: Option<String> = sqlx::query_scalar(
+        "select role from document_access where document_id=$1 and identity_id=$2",
+    )
+    .bind(document_id.0)
+    .bind(actor.0)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let role = role
+        .and_then(|r| r.parse().ok())
+        .ok_or(ApiError::Forbidden)?;
+    let snapshot = sqlx::query_as::<_, Snapshot>(
+        "select * from snapshot where document_id=$1 order by through_seq desc limit 1",
+    )
+    .bind(document_id.0)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let tail = sqlx::query_as::<_, Event>(
+        "select * from event where document_id=$1 and seq>$2 order by seq",
+    )
+    .bind(document_id.0)
+    .bind(snapshot.as_ref().map_or(0, |s| s.through_seq))
+    .fetch_all(&mut *tx)
+    .await?;
+    let current = match snapshot {
+        Some(s) => Materializer::from_snapshot(&s, &tail),
+        None => Materializer::fold(&tail),
+    }
+    .map_err(|e| ApiError::Internal(e.to_string()))?;
+    Ok((tx, role, current))
+}
+
+async fn checkpoint_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    document_id: DocumentId,
+    current: &DocumentState,
+    event: &Event,
+) -> Result<(), ApiError> {
+    let root = merkle_root(current).map_err(|e| ApiError::Internal(e.to_string()))?;
+    let json = serde_json::to_value(current).map_err(|e| ApiError::Internal(e.to_string()))?;
+    let id: uuid::Uuid = sqlx::query_scalar(
+        "insert into snapshot(document_id,through_seq,state,merkle_root,event_chain_hash)
+         values($1,$2,$3,$4,$5) returning id",
+    )
+    .bind(document_id.0)
+    .bind(event.seq)
+    .bind(json)
+    .bind(root.as_slice())
+    .bind(&event.chain_hash)
+    .fetch_one(&mut **tx)
+    .await?;
+    sqlx::query("update document set status='deployed', deployed_snapshot_id=$2, updated_at=now() where id=$1")
+        .bind(document_id.0).bind(id).execute(&mut **tx).await?;
+    Ok(())
 }

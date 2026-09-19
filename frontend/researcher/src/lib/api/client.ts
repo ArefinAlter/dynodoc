@@ -15,7 +15,6 @@ import createClient, { type Middleware } from 'openapi-fetch';
 
 import type { paths } from './openapi.d.ts';
 import { API_BASE_URL } from './config';
-import { refresh as refreshTokens } from './auth';
 import type {
   ConflictList,
   Document,
@@ -27,7 +26,7 @@ import type {
   ResolveResponse,
   VerifyResult
 } from './types';
-import { clearSession, session, setAccessToken, setTokens } from '$lib/stores/session.svelte';
+import { session, setAccessToken } from '$lib/stores/session.svelte';
 
 let onUnauthorized: (() => void) | null = null;
 
@@ -37,38 +36,12 @@ export function setUnauthorizedHandler(handler: () => void): void {
 }
 
 const authMiddleware: Middleware = {
-  async onRequest({ request }) {
-    if (session.accessToken) {
-      request.headers.set('Authorization', `Bearer ${session.accessToken}`);
-    }
-    return request;
-  },
-  async onResponse({ request, response }) {
-    if (response.status !== 401) return response;
-    // Don't try to refresh the refresh call itself.
-    if (request.headers.get('x-retry') === '1') return response;
-
-    const refreshToken = session.refreshToken;
-    if (!refreshToken) {
-      clearSession();
+  onResponse({ response }) {
+    if (response.status === 401) {
+      session.authenticated = false;
       onUnauthorized?.();
-      return response;
     }
-
-    try {
-      const tokens = await refreshTokens(refreshToken);
-      setTokens(tokens.access_token, tokens.refresh_token);
-    } catch {
-      clearSession();
-      onUnauthorized?.();
-      return response;
-    }
-
-    // Replay the original request once with the new token.
-    const retry = new Request(request, { headers: new Headers(request.headers) });
-    retry.headers.set('Authorization', `Bearer ${session.accessToken}`);
-    retry.headers.set('x-retry', '1');
-    return fetch(retry);
+    return response;
   }
 };
 
@@ -91,8 +64,8 @@ class ApiError extends Error {
 function unwrap<T>(data: unknown, error: unknown, response: Response): T {
   if (error !== undefined || !response.ok) {
     const detail =
-      error && typeof error === 'object' && 'message' in error
-        ? String((error as { message: unknown }).message)
+      error && typeof error === 'object' && 'error' in error
+        ? String((error as { error: unknown }).error)
         : `request failed (${response.status})`;
     throw new ApiError(response.status, detail);
   }
@@ -181,7 +154,7 @@ export async function opNodeCreate(
 /** `POST /documents/{id}/ops/field-edit`. */
 export async function opFieldEdit(
   id: string,
-  body: { node_id: string; field: string; value: unknown }
+  body: { node_id: string; field: string; value: unknown; base_seq?: number }
 ): Promise<OpResponse> {
   const { data, error, response } = await client.POST('/documents/{id}/ops/field-edit', {
     params: { path: { id } },

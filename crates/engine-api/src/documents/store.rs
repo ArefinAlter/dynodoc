@@ -43,6 +43,7 @@ pub async fn get_document(
 /// and `last_id` the UUID, so paging continues strictly after the last returned row.
 pub async fn list_documents(
     pool: &PgPool,
+    identity_id: Uuid,
     status: Option<&str>,
     after: Option<&Cursor>,
     limit: i64,
@@ -61,7 +62,8 @@ pub async fn list_documents(
 
     let rows = sqlx::query_as::<_, Document>(
         "select * from document
-         where status <> 'archived'
+         where ($1::text = 'archived' or status <> 'archived')
+           and exists(select 1 from document_access a where a.document_id=document.id and a.identity_id=$5)
            and ($1::text is null or status = $1)
            and (
                 $2::bigint is null
@@ -75,6 +77,7 @@ pub async fn list_documents(
     .bind(after_micros)
     .bind(after_id)
     .bind(limit)
+    .bind(identity_id)
     .fetch_all(pool)
     .await?;
     Ok(rows)

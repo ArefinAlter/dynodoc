@@ -1,20 +1,16 @@
 import { expect, test } from '@playwright/test';
-
-// These smoke tests exercise the static shell only — they do NOT require a live backend.
-// The full E2E flows from the stage doc (login → open → edit → reload, and the
-// two-user suggesting flow) need a running API + browsers and are deferred (SETUP.md).
-
-test('home page renders the documents list shell', async ({ page }) => {
+test('homepage explains the workflow and responds to interaction', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Documents' })).toBeVisible();
-  await expect(page.getByPlaceholder('New questionnaire title…')).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Good research/ })).toBeVisible();
+  await page.getByRole('tab', { name: /See what changed/ }).click();
+  await expect(page.getByText('Small changes. Full context.')).toBeVisible();
 });
-
-test('login page renders the magic-link form', async ({ page }) => {
+test('login offers Google and email without exposing credentials', async ({ page }) => {
   await page.goto('/login');
-  await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Welcome to your workspace.' })).toBeVisible();
+  await expect(page.getByLabel('Work email')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Email me a sign-in link' })).toBeVisible();
 });
-
 test('frontend healthz returns ok', async ({ request }) => {
   const res = await request.get('/healthz');
   expect(res.ok()).toBeTruthy();

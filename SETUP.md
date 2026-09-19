@@ -2,7 +2,8 @@
 
 The PoC stack: **Rust** engine (Axum + SQLx + Tokio), **PostgreSQL 16** (Docker),
 **SvelteKit** researcher frontend, orchestrated by **go-task**. See
-`docs/decisions/000-initial.md` for PoC scope.
+`docs/decisions/001-research-team-demo.md` for the expanded hosted pilot. The numbered
+stage notes below are historical; the latest verification is at the end of this file.
 
 ## Prerequisites
 
@@ -21,8 +22,9 @@ The PoC stack: **Rust** engine (Axum + SQLx + Tokio), **PostgreSQL 16** (Docker)
 ## First run
 
 ```sh
-task setup          # copies .env.example -> .env, installs frontend deps
-task dev            # boots Postgres, runs migrations (none yet), starts API + frontend
+task setup          # creates .env only if absent, installs frontend deps
+# Before task dev, edit .env as described below.
+task dev            # boots Postgres, applies migrations, starts API + frontend
 ```
 
 Then verify the Stage-12 gate:
@@ -30,10 +32,22 @@ Then verify the Stage-12 gate:
 ```sh
 curl http://127.0.0.1:8080/healthz        # -> {"status":"ok","service":"engine-api"}
 curl http://127.0.0.1:5173/healthz        # -> {"status":"ok","service":"researcher-frontend"}
-# Browser: http://127.0.0.1:5173 shows the dynodoc shell page.
+# Browser: http://127.0.0.1:5173 shows the homepage.
 task test           # cargo test --workspace + frontend vitest/playwright
 task lint           # clippy + eslint + svelte-check
 ```
+
+Generate independent random values for `PASETO_LOCAL_KEY` (32 bytes as 64 hex
+characters), `WEB_SERVICE_KEY`, and `SESSION_SECRET` (at least 32 characters).
+Use `DEV_AUTH=true` only on your local machine to display a development email
+sign-in button. `task dev` passes the root `.env` to both processes. When running
+`pnpm dev` separately, also configure `frontend/researcher/.env` from its example,
+using the same `WEB_SERVICE_KEY`. Keep `DATABASE_URL` consistent with the local
+Compose port (5432 by default). Existing environment files are preserved by setup.
+
+For the public pilot use [Google and Resend setup](docs/GOOGLE-AND-EMAIL-SETUP.md)
+and [Vercel/VPS operations](docs/VERCEL-DEPLOYMENT.md). The public deployment always
+disables development sign-in.
 
 ## Useful tasks
 
@@ -577,3 +591,72 @@ The modal resolves one conflict at a time (the first in the list) and advances t
 on apply; with >2 proposals on a field all competing values are shown as cards and the
 non-chosen ones are rejected together. Conflicts are refetched on every relevant SSE event
 (simple and correct; not incrementally derived client-side).
+
+## Hosted researcher pilot verification — 19 September 2026
+
+This section supersedes historical statements above about browser token storage,
+public audit access, missing E2E coverage and the absence of personal drafts.
+Sessions now use encrypted HttpOnly cookies. Documents and audit endpoints require
+membership. The pilot adds Google login, Resend delivery, document/spreadsheet
+editing, file interchange, sharing and personal draft/version workflows.
+
+- Rust 1.96: `cargo test --workspace -- --test-threads=4` — **143 tests passed**,
+  using a separate PostgreSQL 16 test instance; no live research database reset.
+  The cases include ten parallel researchers editing independent fields, concurrent
+  suggestion acceptance, stale overlapping edits, membership isolation, batch
+  rollback, a payload above 2 MB, archive restoration, draft conflicts and stable IDs.
+- `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all -- --check`
+  passed. The committed OpenAPI schema and generated frontend declarations include
+  workspace endpoints.
+- Frontend `pnpm exec vitest --run` — **46 tests passed**. `pnpm lint` passed,
+  including Svelte checks with **zero errors and zero warnings**.
+- `pnpm build` passed with the Node adapter; `VERCEL=1 pnpm build` passed with the
+  Vercel adapter. The large-editor bundle warning remains; no Lighthouse performance
+  score is claimed.
+- `PILOT_E2E=true PLAYWRIGHT_BASE_URL=http://127.0.0.1:4173 pnpm exec playwright test`
+  — **11 browser scenarios verified** against a local running API and web server with
+  `DEV_AUTH=true`. These cover the homepage, login/session cookies, document edits,
+  sharing, versions, draft sharing/restoration, reviewer proposals accepted by a
+  second user, spreadsheet formulas and row deletion, Word/XLSX/XLSForm/CSV imports,
+  original-file download availability, archive restoration, access/CSRF rejection and
+  the ODK/Kobo connection GUI using a provider fixture. One CSV selector was updated
+  to distinguish the two import buttons and passed on rerun.
+  Local email tests bypass delivery explicitly; they do not validate Google or Resend.
+- Connector unit tests cover pagination, token exclusion, nested values, refusal of
+  oversized exports and private/cross-host address rejection. An actual HTTPS request
+  to Kobo with an intentionally invalid test token returned the expected 401. Real
+  study-account verification is pending.
+- The live homepage passed a 390 px mobile layout check with reduced motion enabled,
+  working navigation and no browser runtime errors. This is not a complete
+  accessibility audit.
+- On the VPS, a synthetic document/version was created and its event chain verified.
+  The synthetic document was archived afterward. Legacy binary DOC conversion
+  produced a readable DOCX containing the expected text.
+- Final deployment verification also exercised the encrypted-cookie web gateway,
+  version creation, archive and chain verification using a synthetic account.
+  The deployed connector refused a private server address and reached Kobo's
+  expected invalid-token response. The public source download matched the release
+  archive's SHA-256 hash, and anonymous document access returned 401.
+- A VPS database backup was restored into a separate temporary database. Document,
+  event and version counts and event-chain hashes matched the original. Only that
+  temporary verification database was dropped. Daily local backups are scheduled;
+  off-site backup is still required.
+
+For complete local browser scenarios, run the API and Node web build with matching
+`WEB_SERVICE_KEY`, a random `SESSION_SECRET`, `ENGINE_API_URL` pointing at the API,
+`DEV_AUTH=true`, and `ORIGIN=http://127.0.0.1:4173`. Wait for both health endpoints
+before running Playwright. Tests create synthetic accounts/documents in that local
+instance. Use a dedicated database. Ordinary `pnpm test:e2e` runs public-page checks
+and explicitly skips authenticated workflows unless `PILOT_E2E=true` is set.
+
+The verification environment used Windows Rust/Docker and Linux Node 24/pnpm 10.34.5.
+Frontend builds ran from a temporary Linux checkout to avoid filesystem executable
+permission issues on the mounted Windows workspace. Windows workspace dependencies
+were reinstalled successfully afterward. DB-backed tests used four workers and
+an isolated temporary PostgreSQL instance to avoid disk-related database-creation
+timeouts; those test-only durability settings are not used on the VPS.
+
+Outstanding: owner Google/Resend configuration and delivery tests, manual Vercel
+publication, study-specific acceptance with the ten real researchers, external
+research platform validation, a complete accessibility audit and broader load tests.
+See [the current assessment](docs/PROJECT-STATUS.md) for remaining product work.

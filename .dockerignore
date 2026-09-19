@@ -1,0 +1,15 @@
+.git
+.env
+.env.*
+**/node_modules
+**/.svelte-kit
+**/build
+**/.vercel
+**/test-results
+**/playwright-report
+target
+.codex
+.cursor
+.claude
+source.tar.gz
+backups

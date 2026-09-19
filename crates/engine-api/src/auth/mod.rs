@@ -32,6 +32,7 @@ pub use routes::{router, AuthContext};
 pub struct AuthConfig {
     /// The 32-byte Paseto v4 local symmetric key (`PASETO_LOCAL_KEY`, hex-decoded).
     pub paseto_key: [u8; 32],
+    pub service_key: Option<String>,
     /// Access-token lifetime in seconds (`TOKEN_TTL_SECONDS`, default 24h).
     pub token_ttl_seconds: i64,
     /// Base URL used to render magic links (`PUBLIC_API_BASE_URL`).
@@ -86,7 +87,12 @@ impl IntoResponse for AuthError {
         if status == StatusCode::INTERNAL_SERVER_ERROR {
             tracing::error!(error = %self, "auth internal error");
         }
-        (status, axum::Json(json!({ "error": self.to_string() }))).into_response()
+        let message = if status == StatusCode::INTERNAL_SERVER_ERROR {
+            "Authentication service unavailable".to_string()
+        } else {
+            self.to_string()
+        };
+        (status, axum::Json(json!({ "error": message }))).into_response()
     }
 }
 

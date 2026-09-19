@@ -63,9 +63,10 @@ pub struct ResolveRequest {
 pub async fn list_conflicts(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    _auth: AuthContext,
+    auth: AuthContext,
 ) -> Result<Json<Value>, ApiError> {
     let document_id = DocumentId(id);
+    crate::ops::apply::require_role(&state.pool, document_id, IdentityId(auth.identity_id)).await?;
     if !doc_store::document_exists(&state.pool, document_id).await? {
         return Err(ApiError::NotFound);
     }
@@ -111,6 +112,7 @@ pub async fn resolve(
     Json(req): Json<ResolveRequest>,
 ) -> Result<Json<Value>, ApiError> {
     let document_id = DocumentId(id);
+    crate::ops::apply::require_role(&state.pool, document_id, IdentityId(auth.identity_id)).await?;
     if !doc_store::document_exists(&state.pool, document_id).await? {
         return Err(ApiError::NotFound);
     }

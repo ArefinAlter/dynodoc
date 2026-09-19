@@ -1,13 +1,8 @@
-import adapter from '@sveltejs/adapter-node';
+import node from '@sveltejs/adapter-node';
+import vercel from '@sveltejs/adapter-vercel';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
-
 /** @type {import('@sveltejs/kit').Config} */
-const config = {
+export default {
   preprocess: vitePreprocess(),
-  kit: {
-    // SSR by default (small initial payloads — see docs/11).
-    adapter: adapter()
-  }
+  kit: { adapter: process.env.VERCEL ? vercel() : node() }
 };
-
-export default config;

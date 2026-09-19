@@ -30,6 +30,7 @@ export type EventTypeName =
   | 'NodeCreated'
   | 'NodeMoved'
   | 'NodeDeleted'
+  | 'NodeRestored'
   | 'FieldEdited'
   | 'ChoiceAdded'
   | 'ChoiceRemoved'
@@ -92,6 +93,7 @@ export type DocumentDetail = Document & {
   state: DocumentState;
   /** Event seq `state` was folded through; resume the SSE stream from here. */
   latest_seq: number;
+  role?: 'author' | 'reviewer' | 'auditor';
 };
 
 // --- events ---------------------------------------------------------------------
@@ -113,6 +115,7 @@ export type EventPayload =
     }
   | { type: 'NodeMoved'; node_id: string; new_parent_id?: string | null; new_pos: string }
   | { type: 'NodeDeleted'; node_id: string }
+  | { type: 'NodeRestored'; node_id: string }
   | { type: 'FieldEdited'; node_id: string; field: string; value: unknown }
   | { type: 'ChoiceAdded'; node_id: string; choice_id: string; fields?: unknown }
   | { type: 'ChoiceRemoved'; node_id: string; choice_id: string }

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { DocumentStore } from '$lib/stores/documentStore.svelte';
-  import LiveEditorShell from '$lib/components/editor/LiveEditorShell.svelte';
+  import WorkspaceEditor from '$lib/components/workspace/WorkspaceEditor.svelte';
 
   let { params } = $props();
 
@@ -25,10 +25,10 @@
   {:else if store.error}
     <div class="state error">
       {store.error}
-      <a class="back" href="/">← Back to documents</a>
+      <a class="back" href="/workspace">← Back to documents</a>
     </div>
   {:else if store.detail}
-    <LiveEditorShell {store} />
+    <WorkspaceEditor {store} />
   {/if}
 {/if}
 

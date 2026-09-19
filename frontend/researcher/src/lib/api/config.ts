@@ -1,3 +1,2 @@
-/** API base URL, configurable per environment (`VITE_API_BASE_URL`). */
-export const API_BASE_URL: string =
-  (import.meta.env?.VITE_API_BASE_URL as string | undefined) ?? 'http://127.0.0.1:8080';
+/** Same-origin gateway authenticates requests with the encrypted HttpOnly session. */
+export const API_BASE_URL = '/api/engine';

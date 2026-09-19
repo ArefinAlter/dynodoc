@@ -22,7 +22,7 @@ tasks:
   setup:
     desc: One-time local setup — create .env and install frontend deps.
     cmds:
-      - cmd: cp .env.example .env
+      - cmd: test -f .env || cp .env.example .env
         platforms: [linux, darwin]
       - cmd: powershell -NoProfile -Command "if (-not (Test-Path .env)) { Copy-Item .env.example .env }"
         platforms: [windows]

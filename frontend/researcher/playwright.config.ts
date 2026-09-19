@@ -1,14 +1,19 @@
 import { defineConfig } from '@playwright/test';
-
-// E2E runs against the built app served by `vite preview`.
+const external = process.env.PLAYWRIGHT_BASE_URL;
 export default defineConfig({
   testDir: 'e2e',
-  webServer: {
-    command: 'pnpm build && pnpm preview --port 4173',
-    port: 4173,
-    reuseExistingServer: !process.env.CI
-  },
+  timeout: 60000,
+  workers: 1,
+  webServer: external
+    ? undefined
+    : {
+        command: 'pnpm build && pnpm preview --port 4173',
+        port: 4173,
+        reuseExistingServer: !process.env.CI
+      },
   use: {
-    baseURL: 'http://localhost:4173'
+    baseURL: external || 'http://localhost:4173',
+    screenshot: 'only-on-failure',
+    trace: 'retain-on-failure'
   }
 });

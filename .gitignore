@@ -35,3 +35,5 @@ Thumbs.db
 
 # --- Docker / data volumes (if bind-mounted locally) ---
 /infra/data/
+/source.tar.gz
+/backups/

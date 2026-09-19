@@ -1,6 +1,6 @@
 //! The `/documents` REST surface (docs/18 §2 "Documents").
 //!
-//! Reads (`list`, `get`, `node`) are `[public]` — no token; they serve materialized
+//! Reads (`list`, `get`, `node`) are `[document member]` and require a valid token; they serve materialized
 //! current state via the snapshot engine. The raw event stream is `[auth]`. Creating a
 //! document requires a valid identity (the creator becomes its `Author`).
 
@@ -17,8 +17,10 @@ use uuid::Uuid;
 use super::store;
 use crate::auth::AuthContext;
 use crate::error::ApiError;
+use crate::ops::apply::require_role;
 use crate::pagination::{Page, PageParams};
 use crate::AppState;
+use engine_shared::IdentityId;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -55,7 +57,7 @@ impl ListQuery {
     }
 }
 
-/// List public (non-archived) documents, cursor-paginated. `[public]`.
+/// List accessible (non-archived) documents, cursor-paginated. `[document member]`.
 #[utoipa::path(
     get,
     path = "/documents",
@@ -70,6 +72,7 @@ impl ListQuery {
 pub async fn list_documents(
     State(state): State<AppState>,
     Query(query): Query<ListQuery>,
+    auth: AuthContext,
 ) -> Result<Json<Page<Document>>, ApiError> {
     let page = query.page();
     let cursor = page.decoded_cursor().map_err(|_| ApiError::BadRequest {
@@ -77,8 +80,14 @@ pub async fn list_documents(
     })?;
     let limit = page.effective_limit();
 
-    let rows =
-        store::list_documents(&state.pool, query.status.as_deref(), cursor.as_ref(), limit).await?;
+    let rows = store::list_documents(
+        &state.pool,
+        auth.identity_id,
+        query.status.as_deref(),
+        cursor.as_ref(),
+        limit,
+    )
+    .await?;
 
     // A full page implies there may be more; hand back a cursor to the last row.
     let next = if rows.len() as i64 == limit {
@@ -102,9 +111,10 @@ pub struct DocumentDetail {
     /// the SSE stream from here so the backfill carries only newer events — no second
     /// request, no re-fold, no missed window.
     pub latest_seq: i64,
+    pub role: String,
 }
 
-/// Document metadata + current materialized state. `[public]`.
+/// Document metadata + current materialized state. `[document member]`.
 #[utoipa::path(
     get,
     path = "/documents/{id}",
@@ -117,9 +127,11 @@ pub struct DocumentDetail {
 )]
 pub async fn get_document(
     State(state): State<AppState>,
+    auth: AuthContext,
     Path(id): Path<Uuid>,
 ) -> Result<Json<DocumentDetail>, ApiError> {
     let document_id = DocumentId(id);
+    require_role(&state.pool, document_id, IdentityId(auth.identity_id)).await?;
     let document = store::get_document(&state.pool, document_id)
         .await?
         .ok_or(ApiError::NotFound)?;
@@ -132,12 +144,16 @@ pub async fn get_document(
         document,
         state: current,
         latest_seq,
+        role: require_role(&state.pool, document_id, IdentityId(auth.identity_id))
+            .await?
+            .as_str()
+            .into(),
     }))
 }
 
 // --- get node -------------------------------------------------------------------
 
-/// A single node's current materialized state. `[public]`.
+/// A single node's current materialized state. `[document member]`.
 #[utoipa::path(
     get,
     path = "/documents/{id}/node/{node_id}",
@@ -153,9 +169,11 @@ pub async fn get_document(
 )]
 pub async fn get_node(
     State(state): State<AppState>,
+    auth: AuthContext,
     Path((id, node_id)): Path<(Uuid, String)>,
 ) -> Result<Json<MaterializedNode>, ApiError> {
     let document_id = DocumentId(id);
+    require_role(&state.pool, document_id, IdentityId(auth.identity_id)).await?;
     if !store::document_exists(&state.pool, document_id).await? {
         return Err(ApiError::NotFound);
     }
@@ -218,9 +236,10 @@ pub async fn list_events(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     Query(query): Query<EventsQuery>,
-    _auth: AuthContext,
+    auth: AuthContext,
 ) -> Result<Json<Page<Event>>, ApiError> {
     let document_id = DocumentId(id);
+    require_role(&state.pool, document_id, IdentityId(auth.identity_id)).await?;
     if !store::document_exists(&state.pool, document_id).await? {
         return Err(ApiError::NotFound);
     }

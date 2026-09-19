@@ -61,6 +61,8 @@ pub struct NodeCreateRequest {
 /// `POST /ops/field-edit`.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct FieldEditRequest {
+    #[serde(default)]
+    pub base_seq: Option<i64>,
     pub node_id: String,
     pub field: String,
     pub value: Value,
@@ -141,7 +143,20 @@ pub async fn op_field_edit(
         field: req.field,
         value: req.value,
     };
-    write(&state, &headers, DocumentId(id), auth, "ops/field-edit", op).await
+    let actor = IdentityId(auth.identity_id);
+    with_idempotency(
+        &state,
+        &headers,
+        actor,
+        "ops/field-edit",
+        DocumentId(id),
+        || async {
+            let event =
+                apply::apply_checked_op(&state, DocumentId(id), actor, op, req.base_seq).await?;
+            Ok(json!({ "event": event }))
+        },
+    )
+    .await
 }
 
 /// Add a comment, optionally anchored to a node. `[T2+]`.
@@ -336,7 +351,9 @@ where
         return run().await.map(Json);
     };
 
-    match idempotency::reserve(&state.pool, actor.0, &key, path).await? {
+    apply::require_role(&state.pool, document_id, actor).await?;
+    let path = format!("/documents/{}/{path}", document_id.0);
+    match idempotency::reserve(&state.pool, actor.0, &key, &path).await? {
         idempotency::Reservation::Replay { body, .. } => Ok(Json(body)),
         idempotency::Reservation::InFlight => Err(ApiError::Conflict {
             reason: "a request with this idempotency key is in progress".into(),

@@ -102,6 +102,7 @@ string_enum!(
         NodeCreated => "NodeCreated",
         NodeMoved => "NodeMoved",
         NodeDeleted => "NodeDeleted",
+        NodeRestored => "NodeRestored",
         FieldEdited => "FieldEdited",
         ChoiceAdded => "ChoiceAdded",
         ChoiceRemoved => "ChoiceRemoved",

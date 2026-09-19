@@ -1,0 +1,89 @@
+name: dynodoc-demo
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: dynodoc
+      POSTGRES_DB: dynodoc
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - database:/var/lib/postgresql/data
+    networks: [engine]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U dynodoc -d dynodoc']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  api:
+    build:
+      context: ../..
+      dockerfile: infra/demo/Dockerfile.api
+    restart: unless-stopped
+    environment:
+      PASETO_LOCAL_KEY: ${PASETO_LOCAL_KEY:?Set PASETO_LOCAL_KEY}
+      WEB_SERVICE_KEY: ${WEB_SERVICE_KEY:?Set WEB_SERVICE_KEY}
+      TOKEN_TTL_SECONDS: ${TOKEN_TTL_SECONDS:-3600}
+      PUBLIC_API_BASE_URL: ${ORIGIN}
+      DATABASE_URL: postgres://dynodoc:${POSTGRES_PASSWORD}@postgres:5432/dynodoc
+      API_HOST: 0.0.0.0
+      API_PORT: 8080
+      APP_ENV: production
+      RUST_LOG: info
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [engine]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp:size=64m]
+  web:
+    build:
+      context: ../..
+      dockerfile: infra/demo/Dockerfile.web
+    restart: unless-stopped
+    environment:
+      ORIGIN: ${ORIGIN:?Set ORIGIN}
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET}
+      WEB_SERVICE_KEY: ${WEB_SERVICE_KEY:?Set WEB_SERVICE_KEY}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      CONVERTER_KEY: ${CONVERTER_KEY:?Set CONVERTER_KEY}
+      SOURCE_ARCHIVE_PATH: /app/source.tar.gz
+      ENGINE_API_URL: http://api:8080
+      CONVERTER_URL: http://converter:8090
+      DEV_AUTH: 'false'
+    volumes: ['../../source.tar.gz:/app/source.tar.gz:ro']
+    ports: ['127.0.0.1:3088:3000']
+    networks: [engine, conversion, web]
+    depends_on: [api]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp:size=64m]
+  converter:
+    build:
+      context: ../..
+      dockerfile: infra/converter/Dockerfile
+    restart: unless-stopped
+    environment:
+      CONVERTER_KEY: ${CONVERTER_KEY:?Set CONVERTER_KEY}
+    networks: [conversion]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp:size=256m]
+    mem_limit: 768m
+    cpus: 1
+    pids_limit: 128
+networks:
+  engine:
+    internal: true
+  conversion:
+    internal: true
+  web: {}
+volumes:
+  database: {}

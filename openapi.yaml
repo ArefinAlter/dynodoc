@@ -11,7 +11,7 @@ paths:
     get:
       tags:
       - documents
-      summary: List public (non-archived) documents, cursor-paginated. `[public]`.
+      summary: List accessible (non-archived) documents, cursor-paginated. `[document member]`.
       operationId: list_documents
       parameters:
       - name: status
@@ -64,7 +64,7 @@ paths:
     get:
       tags:
       - documents
-      summary: Document metadata + current materialized state. `[public]`.
+      summary: Document metadata + current materialized state. `[document member]`.
       operationId: get_document
       parameters:
       - name: id
@@ -82,6 +82,36 @@ paths:
               schema: {}
         '404':
           description: No such document
+  /documents/{id}/batch:
+    post:
+      tags:
+      - workspace
+      operationId: batch
+      parameters:
+      - name: id
+        in: path
+        description: Resource identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Success; requires document membership
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Review a concurrent change before retrying
   /documents/{id}/conflicts:
     get:
       tags:
@@ -172,6 +202,165 @@ paths:
           description: 'Deploy refused: referential-integrity violations'
       security:
       - bearer: []
+  /documents/{id}/drafts:
+    get:
+      tags:
+      - workspace
+      operationId: drafts
+      parameters:
+      - name: id
+        in: path
+        description: Resource identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Success; requires document membership
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Review a concurrent change before retrying
+    post:
+      tags:
+      - workspace
+      operationId: create_draft
+      parameters:
+      - name: id
+        in: path
+        description: Resource identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Success; requires document membership
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Review a concurrent change before retrying
+  /documents/{id}/drafts/{draft_id}:
+    get:
+      tags:
+      - workspace
+      operationId: get_draft
+      parameters:
+      - name: id
+        in: path
+        description: Resource identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: draft_id
+        in: path
+        description: Resource identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Success; requires document membership
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Review a concurrent change before retrying
+    post:
+      tags:
+      - workspace
+      operationId: edit_draft
+      parameters:
+      - name: id
+        in: path
+        description: Resource identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: draft_id
+        in: path
+        description: Resource identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Success; requires document membership
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Review a concurrent change before retrying
+  /documents/{id}/drafts/{draft_id}/sync:
+    post:
+      tags:
+      - workspace
+      operationId: sync_draft
+      parameters:
+      - name: id
+        in: path
+        description: Resource identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: draft_id
+        in: path
+        description: Resource identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Success; requires document membership
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Review a concurrent change before retrying
   /documents/{id}/events:
     get:
       tags:
@@ -223,11 +412,65 @@ paths:
               schema: {}
       security:
       - bearer: []
+  /documents/{id}/members:
+    get:
+      tags:
+      - workspace
+      operationId: members
+      parameters:
+      - name: id
+        in: path
+        description: Resource identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Success; requires document membership
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Review a concurrent change before retrying
+    post:
+      tags:
+      - workspace
+      operationId: share
+      parameters:
+      - name: id
+        in: path
+        description: Resource identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Success; requires document membership
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Review a concurrent change before retrying
   /documents/{id}/merkle-proof/{event_id}:
     get:
       tags:
       - audit
-      summary: Inclusion proof for an event within the latest snapshot's covered range. `[public]`.
+      summary: Inclusion proof for an event within the latest snapshot's covered range. `[document member]`.
       operationId: merkle_proof
       parameters:
       - name: id
@@ -251,11 +494,41 @@ paths:
               schema: {}
         '404':
           description: No snapshot, or event not in range
+  /documents/{id}/metadata:
+    post:
+      tags:
+      - workspace
+      operationId: metadata
+      parameters:
+      - name: id
+        in: path
+        description: Resource identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Success; requires document membership
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Review a concurrent change before retrying
   /documents/{id}/node/{node_id}:
     get:
       tags:
       - documents
-      summary: A single node's current materialized state. `[public]`.
+      summary: A single node's current materialized state. `[document member]`.
       operationId: get_node
       parameters:
       - name: id
@@ -460,7 +733,7 @@ paths:
     get:
       tags:
       - audit
-      summary: A full snapshot, including its Merkle root and bound chain hash. `[public]`.
+      summary: A full snapshot, including its Merkle root and bound chain hash. `[document member]`.
       operationId: get_snapshot
       parameters:
       - name: id
@@ -485,11 +758,97 @@ paths:
               schema: {}
         '404':
           description: No such snapshot for this document
+  /documents/{id}/uploads:
+    get:
+      tags:
+      - workspace
+      operationId: uploads
+      parameters:
+      - name: id
+        in: path
+        description: Resource identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Success; requires document membership
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Review a concurrent change before retrying
+    post:
+      tags:
+      - workspace
+      operationId: upload
+      parameters:
+      - name: id
+        in: path
+        description: Resource identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Success; requires document membership
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Review a concurrent change before retrying
+  /documents/{id}/uploads/{upload_id}:
+    get:
+      tags:
+      - workspace
+      operationId: download_upload
+      parameters:
+      - name: id
+        in: path
+        description: Resource identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: upload_id
+        in: path
+        description: Resource identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Success; requires document membership
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Review a concurrent change before retrying
   /documents/{id}/verify:
     get:
       tags:
       - audit
-      summary: Replay + verify the hash chain. `[public]`, cacheable 60s.
+      summary: Replay + verify the hash chain. `[document member]`, cacheable 60s.
       operationId: verify
       parameters:
       - name: id
@@ -505,6 +864,121 @@ paths:
           content:
             application/json:
               schema: {}
+  /documents/{id}/versions:
+    get:
+      tags:
+      - workspace
+      operationId: versions
+      parameters:
+      - name: id
+        in: path
+        description: Resource identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Success; requires document membership
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Review a concurrent change before retrying
+    post:
+      tags:
+      - workspace
+      operationId: save_version
+      parameters:
+      - name: id
+        in: path
+        description: Resource identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Success; requires document membership
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Review a concurrent change before retrying
+  /documents/{id}/versions/{version_id}/restore:
+    post:
+      tags:
+      - workspace
+      operationId: restore_version
+      parameters:
+      - name: id
+        in: path
+        description: Resource identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: version_id
+        in: path
+        description: Resource identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Success; requires document membership
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Review a concurrent change before retrying
+  /search:
+    get:
+      tags:
+      - workspace
+      operationId: search
+      parameters:
+      - name: q
+        in: query
+        description: Literal search term, 2–200 characters
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success; requires document membership
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Review a concurrent change before retrying
 components:
   schemas:
     CommentRequest:
@@ -586,6 +1060,11 @@ components:
       - field
       - value
       properties:
+        base_seq:
+          type:
+          - integer
+          - 'null'
+          format: int64
         field:
           type: string
         node_id:
@@ -657,4 +1136,4 @@ tags:
 - name: conflicts
   description: Four-card conflict resolution
 - name: audit
-  description: Public hash-chain audit endpoints
+  description: Member-only hash-chain audit endpoints

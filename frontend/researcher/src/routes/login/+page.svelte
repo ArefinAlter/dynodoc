@@ -1,167 +1,311 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
-  import { magicLink, verify } from '$lib/api/auth';
-  import { setTokens } from '$lib/stores/session.svelte';
-  import { pushToast } from '$lib/stores/toast.svelte';
-
-  let email = $state('');
-  let displayName = $state('');
-  let magicToken = $state('');
-  let busy = $state(false);
-  // PoC: the magic-link token comes back in the response, so we can complete login in
-  // one screen. Production would email the token and the user would click the link.
-  let stage = $state<'request' | 'verify'>('request');
-
+  import { session } from '$lib/stores/session.svelte';
+  import { ArrowRight, ArrowLeft, Mail, CheckCircle2 } from '@lucide/svelte';
+  let email = $state(''),
+    name = $state(''),
+    message = $state(''),
+    error = $state(''),
+    busy = $state(false),
+    sent = $state(false),
+    devToken = $state('');
+  let options = $state({ google: false, email: false, development: false });
+  onMount(async () => {
+    const res = await fetch('/auth/options');
+    if (res.ok) options = await res.json();
+  });
   async function requestLink(event: SubmitEvent) {
     event.preventDefault();
-    if (!email.trim()) return;
     busy = true;
+    error = '';
     try {
-      const res = await magicLink(email.trim(), displayName.trim() || undefined);
-      magicToken = res.magic_link_token;
-      stage = 'verify';
-      pushToast('Magic link issued (PoC: token returned in response).', 'info');
+      const res = await fetch('/auth/email', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email, display_name: name })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      devToken = data.development_token || '';
+      sent = true;
+      message = 'Check your inbox. Your sign-in link is valid for 15 minutes.';
     } catch (e) {
-      pushToast(e instanceof Error ? e.message : 'Could not request a link', 'error');
+      error = e instanceof Error ? e.message : 'Please try again.';
     } finally {
       busy = false;
     }
   }
-
-  async function completeLogin(event: SubmitEvent) {
-    event.preventDefault();
-    if (!magicToken.trim()) return;
+  async function verify(token: string) {
     busy = true;
+    error = '';
     try {
-      const tokens = await verify(magicToken.trim());
-      setTokens(tokens.access_token, tokens.refresh_token);
-      const next = $page.url.searchParams.get('next') ?? '/';
-      await goto(next);
+      const res = await fetch('/auth/verify', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      session.authenticated = true;
+      await goto('/workspace');
     } catch (e) {
-      pushToast(e instanceof Error ? e.message : 'Verification failed', 'error');
+      error = e instanceof Error ? e.message : 'Please request another link.';
     } finally {
       busy = false;
     }
   }
 </script>
 
-<main>
-  <div class="eyebrow">dynodoc · researcher</div>
-  <h1>Sign in</h1>
-  <p class="lede">
-    The PoC uses email magic links. Locally the one-time token is returned in the response, so you
-    can complete sign-in here without a mail provider.
-  </p>
-
-  {#if stage === 'request'}
-    <form onsubmit={requestLink}>
-      <label>
-        <span>Email</span>
-        <input type="email" bind:value={email} placeholder="you@example.org" required />
-      </label>
-      <label>
-        <span>Display name (optional)</span>
-        <input type="text" bind:value={displayName} placeholder="Your name" />
-      </label>
-      <button class="primary" type="submit" disabled={busy}>
-        {busy ? 'Requesting…' : 'Request magic link'}
-      </button>
-    </form>
-  {:else}
-    <form onsubmit={completeLogin}>
-      <label>
-        <span>Magic-link token</span>
-        <input type="text" bind:value={magicToken} required />
-      </label>
-      <div class="actions">
-        <button class="primary" type="submit" disabled={busy}>
-          {busy ? 'Verifying…' : 'Complete sign-in'}
-        </button>
-        <button type="button" class="ghost" onclick={() => (stage = 'request')}>Back</button>
+<svelte:head><title>Sign in · Dynodoc</title><meta name="robots" content="noindex" /></svelte:head>
+<main class="auth-page">
+  <a href="/" class="back"><ArrowLeft size={16} /> Back to Dynodoc</a>
+  <section class="card">
+    <a class="brand" href="/">d<span>.</span></a>
+    <p class="eyebrow">YOUR RESEARCH, TOGETHER</p>
+    <h1>Welcome to your workspace.</h1>
+    <p class="intro">A little less file chaos.<br />A lot more room for good research.</p>
+    {#if $page.url.searchParams.get('token')}
+      <div class="notice">
+        <Mail size={22} />
+        <p>Your secure sign-in link is ready.</p>
       </div>
-    </form>
-  {/if}
+      <button
+        class="primary"
+        disabled={busy}
+        onclick={() => verify($page.url.searchParams.get('token') || '')}
+        >Continue to workspace <ArrowRight size={18} /></button
+      >
+    {:else if sent}
+      <div class="notice">
+        <CheckCircle2 size={26} />
+        <p>{message}</p>
+      </div>
+      {#if devToken}<button class="primary" disabled={busy} onclick={() => verify(devToken)}
+          >Continue in local development <ArrowRight size={18} /></button
+        >{/if}
+      <button
+        class="text-button"
+        onclick={() => {
+          sent = false;
+          devToken = '';
+        }}>Use a different email</button
+      >
+    {:else}
+      <a
+        class:disabled={!options.google}
+        class="google"
+        href={options.google ? '/auth/google' : undefined}
+        aria-disabled={!options.google}><span class="g">G</span> Continue with Google</a
+      >
+      {#if !options.google}<p class="setup">Google sign-in is awaiting administrator setup.</p>{/if}
+      <div class="divider"><span></span>or use your email<span></span></div>
+      <form onsubmit={requestLink}>
+        <label
+          >Your name<input
+            autocomplete="name"
+            bind:value={name}
+            placeholder="How should we call you?"
+            maxlength="100"
+          /></label
+        >
+        <label
+          >Work email<input
+            type="email"
+            autocomplete="email"
+            bind:value={email}
+            placeholder="you@research.org"
+            required
+          /></label
+        >
+        <button class="primary" disabled={busy || (!options.email && !options.development)}
+          >{busy ? 'Sending your link…' : 'Email me a sign-in link'}<ArrowRight size={18} /></button
+        >
+      </form>
+      {#if !options.email && !options.development}<p class="setup">
+          Email sign-in is awaiting administrator setup.
+        </p>{/if}
+      <p class="fine">
+        No password to remember. Your documents are only visible to the people you share them with.
+      </p>
+    {/if}
+    {#if error}<p role="alert" class="error">{error}</p>{/if}
+  </section>
+  <p class="footer">Made for the people behind the research.</p>
 </main>
 
 <style>
-  main {
-    max-width: 32rem;
-    margin: 6rem auto;
-    padding: 0 1.5rem;
-  }
-
-  .eyebrow {
+  .auth-page {
+    min-height: 100vh;
+    background: #f5f7fb;
     font-family: var(--font-ui);
-    color: var(--color-muted);
-    font-size: 0.76rem;
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
+    padding: 32px;
   }
-
+  .back {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #64748b;
+    text-decoration: none;
+    font-size: 13px;
+  }
+  .card {
+    margin: 40px auto 24px;
+    max-width: 460px;
+    background: white;
+    padding: 40px;
+    border: 1px solid #e5e9f0;
+    border-radius: 20px;
+    box-shadow: 0 16px 60px #22385c08;
+  }
+  .brand {
+    font: 700 42px Georgia;
+    color: #1b3d35;
+    text-decoration: none;
+  }
+  .brand span {
+    color: #d0a163;
+  }
+  .eyebrow {
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: #58706b;
+    margin: 24px 0 12px;
+  }
   h1 {
-    font-family: var(--font-display);
-    color: var(--color-terracotta);
-    font-size: 2.6rem;
-    margin: 0.4rem 0 0.6rem;
+    font: 500 34px/1.15 Georgia;
+    letter-spacing: -1px;
+    color: #183a32;
+    margin: 0 0 12px;
+  }
+  .intro {
+    font-size: 14px;
+    color: #6c7784;
+    line-height: 1.7;
+    margin-bottom: 28px;
+  }
+  .google,
+  .primary {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    width: 100%;
+    min-height: 46px;
+    border: 1px solid #dce1e7;
+    border-radius: 8px;
+    text-decoration: none;
+    font-size: 14px;
     font-weight: 500;
+    color: #28374a;
+    background: white;
+    cursor: pointer;
   }
-
-  .lede {
-    color: var(--color-muted);
-    margin-bottom: 2rem;
+  .g {
+    font: bold 20px Arial;
+    color: #4285f4;
   }
-
+  .primary {
+    background: #244f44;
+    color: white;
+    border-color: #244f44;
+    margin-top: 10px;
+    justify-content: space-between;
+    padding: 0 16px;
+  }
+  .disabled,
+  button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: #88939f;
+    font-size: 12px;
+    margin: 22px 0;
+  }
+  .divider span {
+    height: 1px;
+    background: #e7ebf0;
+    flex: 1;
+  }
   form {
     display: grid;
-    gap: 1rem;
+    gap: 16px;
   }
-
   label {
+    font-size: 12px;
+    font-weight: 500;
+    color: #3f4d5d;
     display: grid;
-    gap: 0.35rem;
-    font-family: var(--font-ui);
-    font-size: 0.85rem;
-    color: var(--color-muted);
+    gap: 6px;
   }
-
   input {
-    border: 1px solid var(--color-border);
-    border-radius: 0.6rem;
-    padding: 0.7rem 0.85rem;
-    background: var(--color-surface);
-    color: var(--color-ink);
+    border: 1px solid #dce1e7;
+    border-radius: 7px;
+    padding: 11px 12px;
+    font-size: 14px;
+    width: 100%;
+    background: white;
   }
-
-  .actions {
+  input:focus {
+    outline: 2px solid #b4d2c6;
+    outline-offset: 2px;
+  }
+  .fine,
+  .setup {
+    font-size: 11px;
+    color: #788490;
+    line-height: 1.6;
+  }
+  .fine {
+    margin-top: 20px;
+  }
+  .setup {
+    margin: 8px 0;
+  }
+  .footer {
+    text-align: center;
+    font-size: 12px;
+    color: #8a94a0;
+  }
+  .notice {
     display: flex;
-    gap: 0.6rem;
-  }
-
-  .primary {
-    display: inline-flex;
+    gap: 12px;
     align-items: center;
-    padding: 0.75rem 1rem;
+    color: #285b46;
+    background: #eff7f1;
+    border-radius: 10px;
+    padding: 14px;
+    font-size: 14px;
+    margin: 20px 0;
+  }
+  .text-button {
     border: 0;
-    border-radius: 0.7rem;
-    background: var(--color-ink);
-    color: var(--color-surface);
-    font-family: var(--font-ui);
+    background: none;
+    color: #365f50;
+    text-decoration: underline;
+    font-size: 12px;
+    margin: 16px 0;
     cursor: pointer;
   }
-
-  .primary:disabled {
-    opacity: 0.6;
-    cursor: default;
+  .error {
+    color: #a73434;
+    background: #fff1f1;
+    padding: 12px;
+    border-radius: 8px;
+    font-size: 13px;
   }
-
-  .ghost {
-    border: 1px solid var(--color-border);
-    border-radius: 0.7rem;
-    padding: 0.75rem 1rem;
-    background: transparent;
-    color: var(--color-muted);
-    font-family: var(--font-ui);
-    cursor: pointer;
+  @media (max-width: 600px) {
+    .auth-page {
+      padding: 20px;
+    }
+    .card {
+      padding: 28px 22px;
+      margin-top: 28px;
+    }
   }
 </style>

@@ -35,7 +35,13 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("running database migrations failed")?;
 
-    let state = AppState::new(pool, load_auth_config()?);
+    let config = load_auth_config()?;
+    if std::env::var("APP_ENV").as_deref() == Ok("production")
+        && config.service_key.as_ref().is_none_or(|s| s.len() < 32)
+    {
+        anyhow::bail!("Production requires WEB_SERVICE_KEY of at least 32 characters");
+    }
+    let state = AppState::new(pool, config);
 
     let host = std::env::var("API_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
     let port: u16 = std::env::var("API_PORT")
@@ -59,10 +65,8 @@ fn load_auth_config() -> anyhow::Result<AuthConfig> {
         .as_slice()
         .try_into()
         .map_err(|_| anyhow::anyhow!("PASETO_LOCAL_KEY must be 32 bytes (64 hex chars)"))?;
-    if paseto_key == [0u8; 32] {
-        tracing::warn!(
-            "PASETO_LOCAL_KEY is the all-zero placeholder — fine for local dev, never for a deployment"
-        );
+    if paseto_key == [0u8; 32] && std::env::var("APP_ENV").as_deref() == Ok("production") {
+        anyhow::bail!("Production requires a random PASETO_LOCAL_KEY");
     }
 
     let token_ttl_seconds = std::env::var("TOKEN_TTL_SECONDS")
@@ -74,6 +78,7 @@ fn load_auth_config() -> anyhow::Result<AuthConfig> {
 
     Ok(AuthConfig {
         paseto_key,
+        service_key: std::env::var("WEB_SERVICE_KEY").ok(),
         token_ttl_seconds,
         public_base_url,
     })

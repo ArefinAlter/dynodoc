@@ -1,34 +1,31 @@
 # Research IDE (codename **dynodoc**)
 
-> An authoring environment for structured research instruments — ODK / Kobo / REDCap-style
-> questionnaires — with rigorous version control, auditability, and collaborative review built
-> into the data model rather than bolted on. **Think GitHub for research instruments**, but with
-> a typed semantic data model instead of plain text: concurrent edits, suggestions, and merges
-> happen at the level of items, choices, and fields rather than lines of XML.
+> A shared research workspace for documents, spreadsheets and questionnaires. Edit in familiar interfaces, try changes in personal drafts, review what changed, and keep an attributable history of your team's decisions.
 
-**Status:** Proof of Concept **feature-complete** — all PoC stages (12–21, CRDT layer 20
-deferred) done: append-only event log, snapshots, semantic ops + governance, magic-link auth
-(Paseto v4), the REST + SSE API, the four-mode SvelteKit editor, and the referential-integrity
-+ semantic-merge engine with four-card conflict resolution. Verified end to end against a live
-Postgres. &nbsp;·&nbsp; **License:** [AGPL v3](LICENSE)
+**Status:** Hosted researcher pilot under active development. Core editing and version workflows work; Google/Resend account configuration and broader editor/integration parity remain unfinished. The public-consultation platform is a future extension. **License:** [AGPL v3](LICENSE).
+
+- [Current implementation and remaining work](docs/PROJECT-STATUS.md)
+- [Google and email setup](docs/GOOGLE-AND-EMAIL-SETUP.md)
+- [Vercel and VPS deployment](docs/VERCEL-DEPLOYMENT.md)
+- [Research file compatibility](docs/research-compatibility.md)
+- [ODK Central and KoboToolbox connection](docs/ODK-KOBO-SETUP.md)
+- [Expanded pilot scope](docs/decisions/001-research-team-demo.md)
 
 ---
 
 ## The problem
 
-Survey methodologists, regulated-trial researchers, and policy drafters all work on artifacts
-that are deeply *structured* — every item has a variable name, a type, a constraint expression,
-a relevance condition, a translation set, choice options — but their tools treat those artifacts
-as *text or spreadsheets*. XLSForm diffs in Excel are hostile; Git on XML exports produces
-unreadable diffs and silently merges across semantic boundaries; the mainstream form designers
-(Kobo, ODK Build, REDCap) have no real version control at all. For low-stakes work this is
-annoying. For a regulated clinical-trial protocol or a national policy draft it is disqualifying.
+Research teams revise interview guides, questionnaires, codebooks and data tables together.
+A questionnaire also contains structure: variables, question types, choices, translations
+and logic. Comparing whole files makes it difficult to follow these changes and resolve
+different researchers' edits. Dynodoc aims to make that review understandable at the level
+of a paragraph, question or cell, while keeping a history across the team's research files.
 
 The Research IDE makes version control and the audit trail **part of the data model**. Every
-change is a typed semantic event, attributable, hash-linked, and replayable. Concurrent edits to
+content change is a typed semantic event, attributable, hash-linked, and replayable. Concurrent edits to
 different fields merge automatically; same-field edits surface as a structured conflict, not a
 textual one; a reviewer's suggestion is a first-class proposal the author accepts or rejects with
-a recorded reason. The audit trail is not a feature layered on top — it is the substrate.
+a recorded outcome. Document metadata and permission changes still need equivalent audit events.
 
 ## How it works
 
@@ -45,25 +42,25 @@ The system rests on an **append-only, hash-chained event log** as the system of 
   authoritative.
 - **Tamper-evidence.** Each event is chained: `chain_hash = SHA256(content_hash ‖ prev_chain_hash)`,
   genesis from 32 zero bytes. A **Merkle root** over snapshots commits to the whole tree. Anyone
-  with read access can replay the log and confirm it has not been altered — change any event and
-  either the head hash differs (tamper *detected*) or SHA-256 has been broken.
+  with document access can verify the chain's internal consistency. Detecting a wholesale
+  rewrite by a database administrator also requires an independently retained trusted hash
+  or backup; the current deployment does not publish external integrity checkpoints.
 
-This is the audit guarantee that makes the system trustworthy for high-stakes work. The math is
-proven in the versioning volumes: **disjoint-node commutativity** (edits to different nodes/fields
-converge in any order), **strong eventual consistency**, vector-clock causality, and cycle-safe
-moves. See [docs/02-versioning-design-vol1.md](docs/02-versioning-design-vol1.md) (narrative) and
-[docs/03-versioning-mathematics-vol2.md](docs/03-versioning-mathematics-vol2.md) (proofs).
+The versioning volumes explain the design and its intended mathematical properties.
+The pilot uses serialized server writes and explicit merge review; the CRDT convergence
+layer is deferred. See [docs/02-versioning-design-vol1.md](docs/02-versioning-design-vol1.md)
+and [docs/03-versioning-mathematics-vol2.md](docs/03-versioning-mathematics-vol2.md).
 
 ### The editor and the review workflow
 
-The frontend (ported from an existing HTML prototype) is a **four-mode editor**:
+The original prototype provides four questionnaire views. The hosted workspace now has separate document, spreadsheet and questionnaire editors; these legacy views remain in the codebase:
 
 | Mode | What it is |
 |------|-----------|
 | **Document** | Prose-shaped rendering — reads like a printed methodology appendix. Default mode. |
 | **Outline** | Two-pane tree view for navigation and structural reorganization. |
 | **Spec** | The underlying XLSForm as an editable spreadsheet table. |
-| **Preview** | The compiled form rendered as a respondent will see it (skip logic, validation). |
+| **Preview** | Respondent-style controls; execution of skip logic and validation is not yet implemented. |
 
 On top of it sits the **suggesting workflow**: a reviewer proposes a change without applying it;
 it lives as a proposal in the author's queue until accepted or rejected. When two edits touch the
@@ -77,7 +74,7 @@ blocks a `Deployed` event when the instrument would break.
 The architectural commitment: **the engine never changes** between regimes.
 
 1. **Research IDE** (the immediate target) — a small expert team co-authoring an instrument.
-   This is what the PoC delivers.
+   This is the current implementation focus.
 2. **Public consultation at national scale** (a later extension) — thousands of public
    contributors on a government policy draft. New layers (identity tiers, moderation, Polis-style
    deliberation clustering, citizen UX, closeout/legitimacy reports) are added *above* the engine,
@@ -106,8 +103,7 @@ civic identity, moderation, deliberation, LLM summary, and multi-tenant deployme
 - The auditor CLI returns **OK** for a clean log and pinpoints the exact event `seq` if a row is
   corrupted.
 - All Rust property/integration tests and frontend unit tests passing (verified against a live
-  Postgres). **Lighthouse 95+** and the full Playwright E2E flows are scaffolded but deferred —
-  they need a running stack + browsers; see [SETUP.md](SETUP.md).
+  Postgres). Core Playwright workflows are now exercised against a running local stack; Lighthouse and broader accessibility/load audits remain open. See [SETUP.md](SETUP.md).
 
 ## Tech stack
 
@@ -149,14 +145,16 @@ stage-number → file map).
 | 14 | Event log core (hash chain) | ✅ | **done** |
 | 15 | Snapshot engine & materialization | ✅ | **done** |
 | 16 | Semantic ops & governance gate | ✅ | **done** |
-| 17 | Auth & identity (email magic-link only) | ◐ | **done** |
+| 17 | Auth & identity (email link and Google) | ◐ | **implemented; provider setup pending** |
 | 18 | Web API surface (REST + SSE) | ✅ | **done** |
 | 19 | Research IDE frontend (four-mode editor) | ✅ | **done** |
 | 20 | CRDT convergence layer | ⏭ | **skipped (PoC)** |
 | 21 | Referential integrity & semantic merge | ✅ | **done** |
 
-The PoC build (Stages 12–21, CRDT excluded) is **complete**. Stages 22–31 (public consultation,
-ML, civic ID, closeout, deployment) are **out of PoC scope**.
+The original PoC stages have implementations, with verification limits recorded in
+[SETUP.md](SETUP.md). The expanded researcher product is still in development; see
+[the current assessment](docs/PROJECT-STATUS.md). Public consultation, ML and civic
+identity remain future work.
 
 ## Getting started
 

@@ -27,6 +27,14 @@ export default ts.config(
     }
   },
   {
-    ignores: ['build/', '.svelte-kit/', 'dist/', 'node_modules/', 'playwright-report/']
+    ignores: [
+      'build/',
+      '.svelte-kit/',
+      '.vercel/',
+      'dist/',
+      'node_modules/',
+      'playwright-report/',
+      'test-results/'
+    ]
   }
 );

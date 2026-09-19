@@ -1,0 +1,1681 @@
+<script lang="ts">
+  import { onMount, untrack } from 'svelte';
+  import { beforeNavigate, goto } from '$app/navigation';
+  import {
+    ArrowLeft,
+    FileText,
+    Table2,
+    ClipboardList,
+    Check,
+    Cloud,
+    Users,
+    History,
+    MessageSquare,
+    GitBranch,
+    X,
+    Plus,
+    Download,
+    Copy,
+    AlertCircle,
+    UploadCloud,
+    RefreshCw,
+    ShieldCheck,
+    LoaderCircle
+  } from '@lucide/svelte';
+  import { ulid } from 'ulid';
+  import type { DocumentStore } from '$lib/stores/documentStore.svelte';
+  import type { DocumentState, EventPayload, EventRow } from '$lib/api/types';
+  import { applyPayload } from '$lib/materializer';
+  import {
+    documentKind,
+    workspaceRequest as request,
+    saveBatch,
+    type Member,
+    type Version,
+    type Draft
+  } from '$lib/workspace/api';
+  import { cloneState, richContent, richChanges, stateChanges } from '$lib/workspace/changes';
+  import {
+    download,
+    exportDocument,
+    exportSpreadsheet,
+    textOf,
+    type TextBlock
+  } from '$lib/workspace/files';
+  import { createDocument, listEvents } from '$lib/api/client';
+  import RichEditor from './RichEditor.svelte';
+  import SheetEditor from './SheetEditor.svelte';
+  import QuestionnaireEditor from './QuestionnaireEditor.svelte';
+  import type { JSONContent } from '@tiptap/core';
+  let { store }: { store: DocumentStore } = $props();
+  const kind = $derived(documentKind(store.detail!));
+  const author = $derived(store.detail?.role === 'author');
+  let local = $state<DocumentState>(untrack(() => cloneState(store.state))),
+    base = $state<DocumentState>(untrack(() => cloneState(store.state))),
+    baseSeq = $state(untrack(() => store.seq)),
+    revision = $state(0),
+    dirty = $state(false),
+    saving = $state(false),
+    saved = $state('All changes saved'),
+    error = $state(''),
+    blocked = $state(false);
+  let title = $state(untrack(() => store.detail?.title || '')),
+    panel = $state(''),
+    menu = $state(false),
+    selected = $state<string | null>(null),
+    busy = $state(false),
+    email = $state(''),
+    role = $state('author'),
+    members = $state<Member[]>([]),
+    versions = $state<Version[]>([]),
+    drafts = $state<Draft[]>([]),
+    events = $state<EventRow[]>([]),
+    uploads = $state<
+      {
+        id: string;
+        filename: string;
+        report: {
+          warnings?: string[];
+          research_source?: import('$lib/workspace/connectors').ResearchSource;
+        };
+      }[]
+    >([]),
+    comment = $state(''),
+    name = $state(''),
+    note = $state(''),
+    historyQuery = $state('');
+  let draftId = $state(''),
+    draftName = $state(''),
+    draftRevision = $state(0),
+    sync = $state<SyncPlan | null>(null),
+    resolutions = $state<Record<string, string>>({}),
+    included = $state<string[]>([]),
+    compare = $state<DocumentState | null>(null),
+    compareName = $state(''),
+    undoStack = $state<DocumentState[]>([]),
+    redoStack = $state<DocumentState[]>([]);
+  let suggestionValue = $state(''),
+    suggestionField = $state(
+      untrack(() => (documentKind(store.detail!) === 'spreadsheet' ? 'cell_0' : 'label'))
+    );
+  const suggestions = $derived(
+    Object.entries(store.state.suggestions).filter(
+      ([, s]) => !s.accepted && s.rejected_reason === null
+    )
+  );
+  async function propose() {
+    if (!selected) return;
+    await run(async () => {
+      let field = suggestionField,
+        value: unknown = suggestionValue;
+      if (kind === 'document') {
+        field = 'content';
+        const original = local.nodes[selected!]?.current_fields.content as JSONContent | undefined;
+        if (!original || !['paragraph', 'heading'].includes(original.type || ''))
+          throw new Error('Select a paragraph or heading to suggest replacement text.');
+        value = {
+          ...original,
+          content: suggestionValue ? [{ type: 'text', text: suggestionValue }] : []
+        };
+      }
+      const result = await request<{ events: EventRow[] }>(`${prefix}/batch`, {
+        base_seq: store.seq,
+        ops: [
+          {
+            type: 'SuggestionProposed',
+            suggestion_id: ulid(),
+            target_node_id: selected,
+            detail: { type: 'FieldEdited', node_id: selected, field, value }
+          }
+        ]
+      });
+      store.receive(result.events);
+      suggestionValue = '';
+    });
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  interface SyncPlan {
+    team_seq: number;
+    revision: number;
+    ops: EventPayload[];
+    conflicts: {
+      key: string;
+      node_id: string;
+      field: string;
+      ancestor: unknown;
+      team: unknown;
+      draft: unknown;
+    }[];
+  }
+  const editable = $derived(author || (!!draftId && store.detail?.role !== 'auditor'));
+  const content = $derived(richContent(local));
+  const prefix = $derived(`/documents/${store.documentId}`);
+  const delta = $derived(compare ? stateChanges(compare, local) : []);
+  const commentEvents = $derived(
+    events.filter((e) => e.type === 'CommentAdded' && (!selected || e.target_node_id === selected))
+  );
+  $effect(() => {
+    const seq = store.seq;
+    untrack(() => {
+      if (!draftId && !dirty && !saving) {
+        base = cloneState(store.state);
+        local = cloneState(store.state);
+        baseSeq = seq;
+        revision++;
+      }
+    });
+  });
+  $effect(() => {
+    if (dirty && !saving && !blocked) {
+      clearTimeout(timer);
+      timer = setTimeout(() => void save(), 1300);
+    }
+    return () => clearTimeout(timer);
+  });
+  beforeNavigate(({ cancel }) => {
+    if (dirty) {
+      cancel();
+      error = 'Save these changes or put them in a personal draft before leaving.';
+    }
+  });
+  onMount(() => {
+    const unload = (e: BeforeUnloadEvent) => {
+      if (dirty) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', unload);
+    void refreshPeople();
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('beforeunload', unload);
+    };
+  });
+  function change(ops: EventPayload[], record = true) {
+    if (!ops.length) return;
+    if (record) {
+      undoStack.push(cloneState(local));
+      if (undoStack.length > 50) undoStack.shift();
+      redoStack = [];
+    }
+    const next = cloneState(local);
+    for (const op of ops) applyPayload(next, op);
+    local = next;
+    dirty = stateChanges(base, local).length > 0;
+    saved = dirty ? 'Unsaved changes' : 'All changes saved';
+    revision++;
+  }
+  function changeRich(value: JSONContent) {
+    change(richChanges(local, value));
+  }
+  function undo() {
+    const prev = undoStack.pop();
+    if (prev) {
+      redoStack.push(cloneState(local));
+      local = prev;
+      dirty = stateChanges(base, local).length > 0;
+      revision++;
+    }
+  }
+  function redo() {
+    const next = redoStack.pop();
+    if (next) {
+      undoStack.push(cloneState(local));
+      local = next;
+      dirty = stateChanges(base, local).length > 0;
+      revision++;
+    }
+  }
+  async function save() {
+    if (saving || !dirty) return;
+    const sent = cloneState(local),
+      ops = stateChanges(base, sent);
+    if (!ops.length) {
+      dirty = false;
+      return;
+    }
+    saving = true;
+    error = '';
+    saved = 'Saving…';
+    try {
+      let canonical: DocumentState;
+      if (draftId) {
+        const result = await request<{ state: DocumentState; revision: number }>(
+          `${prefix}/drafts/${draftId}`,
+          { ops, revision: draftRevision }
+        );
+        canonical = result.state;
+        draftRevision = result.revision;
+      } else {
+        const result = await saveBatch(store.documentId, ops, baseSeq);
+        store.receive(result.events);
+        canonical = cloneState(store.state);
+        baseSeq = store.seq;
+      }
+      const later = stateChanges(sent, local);
+      base = cloneState(canonical);
+      local = cloneState(canonical);
+      for (const op of later) applyPayload(local, op);
+      dirty = later.length > 0;
+      revision++;
+      blocked = false;
+      saved = dirty ? 'Unsaved changes' : draftId ? 'Personal draft saved' : 'All changes saved';
+    } catch (e) {
+      error = message(e);
+      blocked = true;
+      saved = 'Changes need attention';
+    } finally {
+      saving = false;
+    }
+  }
+  const message = (e: unknown) =>
+    e instanceof Error ? e.message : 'Something went wrong. Please try again.';
+  async function run(fn: () => Promise<void>) {
+    busy = true;
+    error = '';
+    try {
+      await fn();
+    } catch (e) {
+      error = message(e);
+    } finally {
+      busy = false;
+    }
+  }
+  async function refreshPeople() {
+    try {
+      members = (await request<{ items: Member[] }>(`${prefix}/members`)).items;
+    } catch (e) {
+      error = message(e);
+    }
+  }
+  async function openPanel(next: string) {
+    panel = panel === next ? '' : next;
+    menu = false;
+    if (!panel) return;
+    await run(async () => {
+      if (panel === 'share') await refreshPeople();
+      if (panel === 'versions') {
+        versions = (await request<{ items: Version[] }>(`${prefix}/versions`)).items;
+      }
+      if (panel === 'drafts')
+        drafts = (await request<{ items: Draft[] }>(`${prefix}/drafts`)).items;
+      if (panel === 'comments' || panel === 'activity')
+        events = (
+          await listEvents(store.documentId, { from_seq: Math.max(1, store.seq - 499), limit: 500 })
+        ).items;
+      if (panel === 'files')
+        uploads = (await request<{ items: typeof uploads }>(`${prefix}/uploads`)).items;
+    });
+  }
+  async function saveTitle() {
+    if (!author || title === store.detail?.title) return;
+    await run(async () => {
+      await request(`${prefix}/metadata`, { title });
+      store.detail!.title = title;
+    });
+  }
+  async function share() {
+    await run(async () => {
+      await request(`${prefix}/members`, { email, role });
+      email = '';
+      await refreshPeople();
+    });
+  }
+  async function version() {
+    await save();
+    if (dirty || draftId) return;
+    await run(async () => {
+      await request(`${prefix}/versions`, { name, note });
+      name = '';
+      note = '';
+      versions = (await request<{ items: Version[] }>(`${prefix}/versions`)).items;
+    });
+  }
+  async function compareVersion(v: Version) {
+    await run(async () => {
+      const snapshot = await request<{ state: DocumentState }>(
+        `${prefix}/snapshot/${v.snapshot_id}`
+      );
+      compare = snapshot.state;
+      compareName = v.name;
+    });
+  }
+  async function restore(v: Version) {
+    if (dirty || draftId) {
+      error = 'Save your changes and switch to the team version before restoring.';
+      return;
+    }
+    await run(async () => {
+      const result = await request<{ events: EventRow[] }>(`${prefix}/versions/${v.id}/restore`, {
+        base_seq: store.seq
+      });
+      store.receive(result.events);
+      compare = null;
+    });
+  }
+  async function createDraft() {
+    await run(async () => {
+      const result = await request<{ id: string }>(`${prefix}/drafts`, {
+        name: name || 'My working draft',
+        base_seq: baseSeq
+      });
+      draftId = result.id;
+      draftName = name || 'My working draft';
+      draftRevision = 0;
+      name = '';
+      blocked = false;
+      if (dirty) await save();
+      drafts = (await request<{ items: Draft[] }>(`${prefix}/drafts`)).items;
+    });
+  }
+  async function switchDraft(id: string) {
+    await save();
+    if (dirty) return;
+    await run(async () => {
+      sync = null;
+      compare = null;
+      undoStack = [];
+      redoStack = [];
+      if (!id) {
+        draftId = '';
+        draftName = '';
+        base = cloneState(store.state);
+        local = cloneState(store.state);
+        baseSeq = store.seq;
+        saved = 'All changes saved';
+      } else {
+        const result = await request<{ draft: Draft & { revision: number }; state: DocumentState }>(
+          `${prefix}/drafts/${id}`
+        );
+        draftId = id;
+        draftName = result.draft.name;
+        draftRevision = result.draft.revision;
+        base = cloneState(result.state);
+        local = result.state;
+        baseSeq = result.draft.base_seq;
+        saved = 'Personal draft saved';
+      }
+      revision++;
+    });
+  }
+  async function previewSync() {
+    await save();
+    if (dirty) return;
+    await run(async () => {
+      sync = await request<SyncPlan>(`${prefix}/drafts/${draftId}/sync`, { action: 'preview' });
+      resolutions = {};
+      included = [
+        ...new Set([
+          ...sync.ops.flatMap((op) => ('node_id' in op && op.node_id ? [op.node_id] : [])),
+          ...sync.conflicts.map((c) => c.node_id)
+        ])
+      ];
+    });
+  }
+  async function synchronize(action: 'pull' | 'share') {
+    if (!sync) return;
+    await run(async () => {
+      const result = await request<{
+        state: DocumentState;
+        events: EventRow[];
+        revision: number;
+        completed: boolean;
+        team_seq: number;
+      }>(`${prefix}/drafts/${draftId}/sync`, {
+        action,
+        team_seq: sync!.team_seq,
+        revision: sync!.revision,
+        resolutions,
+        included_nodes: action === 'share' ? included : undefined
+      });
+      store.receive(result.events);
+      draftRevision = result.revision;
+      local = result.state;
+      base = cloneState(result.state);
+      baseSeq = result.team_seq;
+      revision++;
+      sync = null;
+      if (result.completed) await switchDraft('');
+      else saved = action === 'share' ? 'Selected changes shared' : 'Latest team changes added';
+    });
+  }
+  async function postComment() {
+    await run(async () => {
+      const result = await request<{ events: EventRow[] }>(`${prefix}/batch`, {
+        ops: [{ type: 'CommentAdded', node_id: selected, body: comment }],
+        base_seq: store.seq
+      });
+      store.receive(result.events);
+      comment = '';
+      events = (
+        await listEvents(store.documentId, { from_seq: Math.max(1, store.seq - 499), limit: 500 })
+      ).items;
+    });
+  }
+  async function archive() {
+    await save();
+    if (dirty) return;
+    await run(async () => {
+      const archived = store.detail?.status !== 'archived';
+      await request(`${prefix}/metadata`, { archived });
+      await goto('/workspace');
+    });
+  }
+  async function makeCopy() {
+    await save();
+    if (dirty) return;
+    await run(async () => {
+      const created = await createDocument({ title: `${title} — copy`, languages: ['en'] });
+      await request(`/documents/${created.id}/metadata`, { settings: { kind } });
+      const ids = new Map(Object.keys(local.nodes).map((id) => [id, ulid()]));
+      const empty = { nodes: {}, comments: [], suggestions: {}, removed_choices: [] };
+      const ops = stateChanges(empty, local).map((op) => {
+        if (op.type !== 'NodeCreated') return op;
+        const fields = JSON.parse(JSON.stringify(op.fields || {}));
+        if (fields.content)
+          fields.content.attrs = { ...fields.content.attrs, blockId: ids.get(op.node_id) };
+        return {
+          ...op,
+          node_id: ids.get(op.node_id)!,
+          parent_id: op.parent_id ? ids.get(op.parent_id) : null,
+          fields
+        };
+      });
+      await saveBatch(created.id, ops, 0);
+      await goto(`/documents/${created.id}`);
+    });
+  }
+  async function exportFile(format: string) {
+    menu = false;
+    await run(async () => {
+      if (format === 'docx') await exportDocument(local, title);
+      else if (format === 'csv' || format === 'xlsx') await exportSpreadsheet(local, title, format);
+      else if (format === 'json')
+        download(
+          JSON.stringify({ format: 'dynodoc-content-v1', title, kind, state: local }, null, 2),
+          title + '.dynodoc.json',
+          'application/json'
+        );
+      else if (format === 'history') {
+        const all: EventRow[] = [];
+        let seq = 1;
+        for (;;) {
+          const page = await listEvents(store.documentId, { from_seq: seq, limit: 1000 });
+          all.push(...page.items);
+          if (page.items.length < 1000) break;
+          seq = page.items.at(-1)!.seq + 1;
+        }
+        download(
+          JSON.stringify({ document_id: store.documentId, events: all }, null, 2),
+          title + '.history.json',
+          'application/json'
+        );
+      }
+    });
+  }
+  function describe(op: EventPayload) {
+    const n =
+      'node_id' in op && op.node_id ? local.nodes[op.node_id] || compare?.nodes[op.node_id] : null;
+    const label = String(n?.current_fields.label || n?.var_name || 'Block').slice(0, 70);
+    if (op.type === 'FieldEdited')
+      return `${label} · ${op.field.startsWith('cell_') ? 'cell ' + (Number(op.field.slice(5)) + 1) : op.field}`;
+    return `${op.type === 'NodeCreated' ? 'Add' : op.type === 'NodeDeleted' ? 'Remove' : op.type === 'NodeRestored' ? 'Restore' : 'Move'} ${label}`;
+  }
+  function readable(v: unknown): string {
+    if (typeof v === 'string') return v;
+    if (v && typeof v === 'object' && 'type' in v)
+      return textOf(v as TextBlock) || JSON.stringify(v);
+    return JSON.stringify(v) ?? 'Empty';
+  }
+  function person(id: string) {
+    const m = members.find((m) => m.id === id);
+    return m?.name || m?.email || 'Researcher';
+  }
+</script>
+
+<svelte:head><title>{title} · Dynodoc</title></svelte:head>
+<div class="workspace-editor">
+  <header>
+    <a class="back" href="/workspace" aria-label="Back to workspace"><ArrowLeft size={18} /></a>
+    <div class="file-icon" class:green={kind === 'spreadsheet'}>
+      {#if kind === 'spreadsheet'}<Table2
+          size={26}
+        />{:else if kind === 'questionnaire'}<ClipboardList size={26} />{:else}<FileText
+          size={26}
+        />{/if}
+    </div>
+    <div class="heading">
+      <div class="title-row">
+        <input
+          aria-label="Document title"
+          bind:value={title}
+          disabled={!author}
+          onblur={saveTitle}
+          onkeydown={(e) => {
+            if (e.key === 'Enter') e.currentTarget.blur();
+          }}
+        /><span class="cloud" title={saved}
+          >{#if saving}<LoaderCircle size={14} />{:else if blocked}<AlertCircle
+              size={14}
+            />{:else}<Cloud size={15} />{/if}</span
+        >
+      </div>
+      <nav>
+        <div class="file-menu">
+          <button onclick={() => (menu = !menu)}>File</button>{#if menu}<div class="dropdown">
+              <button onclick={() => void makeCopy()}><Copy size={14} /> Make a copy</button
+              >{#if kind === 'document'}<button onclick={() => void exportFile('docx')}
+                  ><Download size={14} /> Download Word (.docx)</button
+                >{/if}{#if kind === 'spreadsheet'}<button onclick={() => void exportFile('xlsx')}
+                  ><Download size={14} /> Download Excel (.xlsx)</button
+                ><button onclick={() => void exportFile('csv')}
+                  ><Download size={14} /> Download first sheet (.csv)</button
+                >{/if}<button onclick={() => void exportFile('json')}
+                ><Download size={14} /> Download Dynodoc content</button
+              ><button onclick={() => void exportFile('history')}
+                ><ShieldCheck size={14} /> Download audit history</button
+              ><button onclick={() => void openPanel('files')}
+                >Original uploads & import report</button
+              ><button onclick={() => window.print()}>Print</button>{#if author}<button
+                  onclick={() => void archive()}
+                  >{store.detail?.status === 'archived'
+                    ? 'Restore to workspace'
+                    : 'Move to archive'}</button
+                >{/if}
+            </div>{/if}
+        </div>
+        <button onclick={() => void openPanel('versions')}>Version history</button><button
+          onclick={() => void openPanel('drafts')}>Personal drafts</button
+        ><button onclick={() => void openPanel('activity')}>Who changed this?</button><button
+          onclick={() => void openPanel('suggestions')}
+          >Suggestions {suggestions.length || ''}</button
+        ><span class="save-state" aria-live="polite">{saved}</span>
+      </nav>
+    </div>
+    <div class="actions">
+      <button
+        class="round"
+        title="Comments"
+        aria-label="Comments"
+        onclick={() => void openPanel('comments')}><MessageSquare size={19} /></button
+      ><button
+        class="round"
+        title="Version history"
+        aria-label="Version history"
+        onclick={() => void openPanel('versions')}><History size={20} /></button
+      ><button class="share" onclick={() => void openPanel('share')}
+        ><Users size={15} /> Share</button
+      >
+    </div>
+  </header>
+  {#if draftId}<div class="draft-banner">
+      <GitBranch size={15} /><strong>{draftName}</strong><span>Only you can see this draft</span
+      ><button disabled={busy || saving} onclick={() => void previewSync()}
+        >Review & share changes</button
+      ><button disabled={busy || saving} onclick={() => void switchDraft('')}>Team version</button>
+    </div>{/if}
+  {#if error}<div class="error" role="alert">
+      <AlertCircle size={16} /><span>{error}</span>{#if dirty}<button
+          disabled={saving}
+          onclick={() => {
+            blocked = false;
+            void save();
+          }}>Retry save</button
+        ><button disabled={busy || saving || !!draftId} onclick={() => void createDraft()}
+          >Keep as personal draft</button
+        >{/if}<button aria-label="Dismiss message" onclick={() => (error = '')}
+        ><X size={14} /></button
+      >
+    </div>{/if}
+  <div class="body">
+    <main>
+      {#if kind === 'document'}<RichEditor
+          {content}
+          {editable}
+          onChange={changeRich}
+          onSelect={(id) => (selected = id)}
+          {revision}
+        />{:else if kind === 'spreadsheet'}<SheetEditor
+          documentState={local}
+          {editable}
+          onChange={change}
+          onSelect={(id) => (selected = id)}
+          onUndo={undo}
+          onRedo={redo}
+        />{:else}<QuestionnaireEditor
+          documentState={local}
+          {editable}
+          onChange={change}
+          onSelect={(id) => (selected = id)}
+        />{/if}
+    </main>
+    {#if panel}<aside>
+        <div class="panel-title">
+          <h2>
+            {(
+              {
+                share: 'Share with your team',
+                versions: 'Version history',
+                drafts: 'Personal drafts',
+                comments: 'Comments',
+                activity: 'Who changed this?',
+                files: 'Original files',
+                suggestions: 'Suggested changes'
+              } as Record<string, string>
+            )[panel]}
+          </h2>
+          <button
+            aria-label="Close panel"
+            onclick={() => {
+              panel = '';
+              compare = null;
+            }}><X size={18} /></button
+          >
+        </div>
+        {#if busy}<div class="loading">Working…</div>{/if}
+        {#if panel === 'share'}<p>
+            Only people listed here can open this document. Add your researchers by email, then
+            share the link.
+          </p>
+          {#if author}<form
+              onsubmit={(e) => {
+                e.preventDefault();
+                void share();
+              }}
+            >
+              <label
+                >Email address<input
+                  type="email"
+                  placeholder="researcher@university.edu"
+                  bind:value={email}
+                  required
+                /></label
+              ><label
+                >Access<select bind:value={role}
+                  ><option value="author">Can edit & share</option><option value="reviewer"
+                    >Can comment & suggest</option
+                  ><option value="auditor">Can view</option></select
+                ></label
+              ><button class="primary" disabled={busy}>Add person</button>
+            </form>{/if}
+          <div class="people">
+            {#each members as m}<div>
+                <span class="avatar">{(m.name || m.email).slice(0, 1).toUpperCase()}</span>
+                <div>
+                  <strong>{m.name || m.email.split('@')[0]}</strong><small>{m.email}</small>
+                </div>
+                <em
+                  >{m.role === 'author'
+                    ? 'Editor'
+                    : m.role === 'reviewer'
+                      ? 'Reviewer'
+                      : 'Viewer'}</em
+                >
+              </div>{/each}
+          </div>
+          <button
+            class="secondary"
+            onclick={() =>
+              void run(async () => {
+                await navigator.clipboard.writeText(location.href);
+                saved = 'Link copied';
+              })}><Copy size={14} /> Copy document link</button
+          >
+        {:else if panel === 'versions'}<p>
+            Name a milestone so everyone can find it later. Restoring adds new changes and keeps the
+            complete history.
+          </p>
+          {#if author && !draftId}<form
+              onsubmit={(e) => {
+                e.preventDefault();
+                void version();
+              }}
+            >
+              <label
+                >Version name<input
+                  bind:value={name}
+                  placeholder="Ready for field testing"
+                  required
+                  maxlength="200"
+                /></label
+              ><label
+                >What changed?<textarea bind:value={note} rows="2" placeholder="Optional note"
+                ></textarea></label
+              ><button class="primary" disabled={busy || saving}>Save named version</button>
+            </form>{/if}{#if compare}<div class="comparison">
+              <strong>Since {compareName}</strong><span>{delta.length} changes</span
+              >{#each delta.slice(0, 100) as op}<p>
+                  {describe(op)}{#if op.type === 'FieldEdited'}<small
+                      >{readable(op.value).slice(0, 200)}</small
+                    >{/if}
+                </p>{/each}
+            </div>{/if}{#each versions as v}<div class="version">
+              <span class="dot"></span><strong>{v.name}</strong><small
+                >{new Date(v.created_at).toLocaleString()} · {v.author || 'Researcher'}</small
+              >{#if v.note}<p>{v.note}</p>{/if}
+              <div>
+                <button onclick={() => void compareVersion(v)}>Compare</button
+                >{#if author && !draftId}<button onclick={() => void restore(v)}
+                    >Restore as new changes</button
+                  >{/if}
+              </div>
+            </div>{:else}<div class="empty">No named versions yet.</div>{/each}
+        {:else if panel === 'drafts'}<p>
+            Try a different direction without changing the team’s work. Compare and combine your
+            changes when you are ready.
+          </p>
+          {#if !draftId && store.detail?.role !== 'auditor'}<form
+              onsubmit={(e) => {
+                e.preventDefault();
+                void createDraft();
+              }}
+            >
+              <label
+                >Draft name<input
+                  bind:value={name}
+                  placeholder="Alternative interview guide"
+                  required
+                  maxlength="200"
+                /></label
+              ><button class="primary" disabled={busy || saving}
+                ><Plus size={14} /> Create personal draft</button
+              >
+            </form>{/if}<button class="draft-card" onclick={() => void switchDraft('')}
+            ><Cloud size={18} /><span>Team version<small>Shared with everyone listed</small></span
+            >{#if !draftId}<Check size={15} />{/if}</button
+          >{#each drafts.filter((d) => !d.merged_at) as d}<button
+              class="draft-card"
+              onclick={() => void switchDraft(d.id)}
+              ><GitBranch size={17} /><span
+                >{d.name}<small>{new Date(d.created_at).toLocaleDateString()}</small></span
+              >{#if draftId === d.id}<Check size={15} />{/if}</button
+            >{/each}{#if draftId}<button
+              class="primary"
+              onclick={() => void previewSync()}
+              disabled={busy || saving}>Compare with team version</button
+            >{/if}
+        {:else if panel === 'comments'}<p>
+            {selected ? 'Comments on the selected block or row.' : 'Document discussion.'}
+            <button class="text-button" onclick={() => (selected = null)}
+              >Show document comments</button
+            >
+          </p>
+          {#if store.detail?.role !== 'auditor'}<form
+              onsubmit={(e) => {
+                e.preventDefault();
+                void postComment();
+              }}
+            >
+              <textarea
+                aria-label="Comment"
+                bind:value={comment}
+                placeholder="Leave a note for your team…"
+                required
+                rows="3"
+              ></textarea><button class="primary" disabled={busy || !comment.trim()}
+                >Post comment</button
+              >
+            </form>{/if}{#each commentEvents as e}<div class="comment">
+              <strong>{person(e.actor_id)}</strong><small
+                >{new Date(e.created_at).toLocaleString()}</small
+              >
+              <p>{e.payload.type === 'CommentAdded' ? e.payload.body : ''}</p>
+            </div>{:else}<div class="empty">Start the conversation.</div>{/each}
+        {:else if panel === 'activity'}<p>
+            {selected ? 'History for the selected block or row.' : 'Recent document changes.'}
+            <button class="text-button" onclick={() => (selected = null)}>Show all</button>
+          </p>
+          <input
+            class="history-search"
+            aria-label="Search history"
+            bind:value={historyQuery}
+            placeholder="Find an edit or researcher"
+          />{#each events
+            .filter((e) => (!selected || e.target_node_id === selected) && (!historyQuery || `${JSON.stringify(e.payload)} ${person(e.actor_id)}`
+                    .toLowerCase()
+                    .includes(historyQuery.toLowerCase())))
+            .slice()
+            .reverse() as e}<div class="activity">
+              <strong>{person(e.actor_id)}</strong><small
+                >{new Date(e.created_at).toLocaleString()}</small
+              >
+              <p>{describe(e.payload)}</p>
+              {#if e.payload.type === 'FieldEdited'}<blockquote>
+                  {readable(e.payload.value).slice(0, 250)}
+                </blockquote>{/if}
+            </div>{:else}<div class="empty">No changes match this selection.</div>{/each}<small
+            class="footnote"
+            >Showing up to the latest 500 events. Download the audit history for the full record.</small
+          >
+        {:else if panel === 'suggestions'}
+          <p>
+            Propose a change for an editor to review. Select a paragraph, question or spreadsheet
+            row first.
+          </p>
+          {#if store.detail?.role !== 'auditor' && selected}<form
+              onsubmit={(e) => {
+                e.preventDefault();
+                void propose();
+              }}
+            >
+              {#if kind !== 'document'}<label
+                  >Field<select bind:value={suggestionField}
+                    >{#if kind === 'spreadsheet'}{#each Array.from({ length: Math.max(12, ...Object.keys(local.nodes[selected]?.current_fields || {})
+                                .filter((k) => k.startsWith('cell_'))
+                                .map((k) => Number(k.slice(5)) + 1)) }, (_, i) => i) as c}<option
+                          value={`cell_${c}`}>Column {c + 1}</option
+                        >{/each}{:else}<option value="label">Question label</option><option
+                        value="hint">Hint</option
+                      ><option value="relevance">Relevance</option><option value="constraint"
+                        >Validation</option
+                      >{/if}</select
+                  ></label
+                >{/if}
+              <label
+                >{kind === 'document' ? 'Suggested paragraph text' : 'Suggested value'}<textarea
+                  rows="4"
+                  bind:value={suggestionValue}
+                  required
+                ></textarea></label
+              ><button class="primary" disabled={busy}>Propose change</button>
+            </form>{/if}
+          {#each suggestions as [id, suggestion]}<div class="version">
+              <strong>{describe(suggestion.detail as EventPayload)}</strong>
+              <p>{readable((suggestion.detail as { value: unknown }).value)}</p>
+              {#if author}<div>
+                  <button onclick={() => void store.accept(id)}>Accept change</button><button
+                    onclick={() => void store.reject(id, 'Declined by editor')}>Decline</button
+                  >
+                </div>{/if}
+            </div>{:else}<div class="empty">No suggestions awaiting review.</div>{/each}
+        {:else if panel === 'files'}<p>
+            Original files are kept alongside the editable copy. Review conversion notes before
+            using an imported instrument.
+          </p>
+          {#each uploads as file}<div class="version">
+              <strong>{file.filename}</strong><a
+                class="secondary"
+                href={`/api/engine${prefix}/uploads/${file.id}`}
+                download>Download original</a
+              >{#if file.report?.research_source}<p>
+                  Fetched from {file.report.research_source.provider === 'odk'
+                    ? 'ODK Central'
+                    : 'KoboToolbox'} on {new Date(
+                    file.report.research_source.fetched_at
+                  ).toLocaleString()}.<br />{file.report.research_source.origin} · {file.report
+                    .research_source.form}
+                </p>{/if}{#each file.report?.warnings || [] as warning}<p>{warning}</p>{/each}
+            </div>{:else}<div class="empty">This document was created in Dynodoc.</div>{/each}{/if}
+      </aside>{/if}
+  </div>
+  <footer>
+    <span class:offline={store.connection !== 'connected'} class="connection-dot"
+    ></span>{store.connection === 'connected'
+      ? 'Connected to team'
+      : store.connection === 'reconnecting'
+        ? 'Reconnecting…'
+        : 'Connection paused'}<span class="foot-right"
+      >{draftId
+        ? 'Personal draft'
+        : store.detail?.role === 'auditor'
+          ? 'Viewing'
+          : store.detail?.role === 'reviewer'
+            ? 'Reviewing'
+            : 'Editing'} · {kind === 'document'
+        ? 'Document'
+        : kind === 'spreadsheet'
+          ? 'Spreadsheet'
+          : 'Questionnaire'}</span
+    >
+  </footer>
+</div>
+{#if sync}<div class="modal-shade">
+    <div class="sync-modal" role="dialog" aria-modal="true" aria-label="Review draft changes">
+      <div class="panel-title">
+        <h2>Bring your work together</h2>
+        <button aria-label="Close review" onclick={() => (sync = null)}><X size={20} /></button>
+      </div>
+      <p>Choose which overlapping changes to keep. Include the blocks or rows you want to share.</p>
+      {#each sync.conflicts as conflict}<div class="conflict">
+          <strong>{conflict.field === '$node' ? 'Block changed or removed' : conflict.field}</strong
+          >
+          <div class="ancestor">
+            <small>Before either edit</small>{readable(conflict.ancestor).slice(0, 350)}
+          </div>
+          <div class="choices">
+            {#each ['team', 'draft'] as side}<label
+                class:chosen={resolutions[conflict.key] === side}
+                ><input
+                  type="radio"
+                  name={conflict.key}
+                  value={side}
+                  bind:group={resolutions[conflict.key]}
+                /><strong>{side === 'team' ? 'Keep the team’s version' : 'Keep my draft'}</strong
+                ><span
+                  >{readable(side === 'team' ? conflict.team : conflict.draft).slice(0, 700)}</span
+                ></label
+              >{/each}
+          </div>
+        </div>{/each}{#if sync.conflicts.length === 0 && sync.ops.length === 0}<div class="empty">
+          Your draft matches the team version.
+        </div>{/if}
+      <div class="include-list">
+        {#each [...new Set( [...sync.ops.flatMap( (op) => ('node_id' in op && op.node_id ? [op.node_id] : []) ), ...sync.conflicts.map((c) => c.node_id)] )] as id}<label
+            ><input type="checkbox" value={id} bind:group={included} /><span
+              >{String(
+                local.nodes[id]?.current_fields.label || local.nodes[id]?.var_name || 'Block / row'
+              ).slice(0, 100)}</span
+            ></label
+          >{/each}
+      </div>
+      <div class="sync-actions">
+        <button
+          class="secondary"
+          disabled={busy || sync.conflicts.some((c) => !resolutions[c.key])}
+          onclick={() => void synchronize('pull')}
+          ><RefreshCw size={15} /> Get latest into my draft</button
+        >{#if author}<button
+            class="primary"
+            disabled={busy || sync.conflicts.some((c) => !resolutions[c.key])}
+            onclick={() => void synchronize('share')}
+            ><UploadCloud size={15} /> Share included changes</button
+          >{/if}
+      </div>
+      {#if !author}<p class="footnote">
+          An editor must grant you editing access before you can share this draft into the team
+          version.
+        </p>{/if}{#if error}<p class="error" role="alert">{error}</p>{/if}
+    </div>
+  </div>{/if}
+
+<style>
+  .workspace-editor {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    font-family: Arial, sans-serif;
+    background: #f8fafd;
+    color: #3a4757;
+  }
+  header {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    padding: 14px 22px 12px;
+    background: #f8fafd;
+    min-height: 82px;
+  }
+  .back {
+    color: #91a0af;
+    display: grid;
+    place-items: center;
+    padding: 8px;
+    border-radius: 5px;
+  }
+  .back:hover {
+    background: #eaf0f6;
+  }
+  .file-icon {
+    color: #5e8dd1;
+    display: grid;
+    place-items: center;
+  }
+  .file-icon.green {
+    color: #559572;
+  }
+  .heading {
+    min-width: 0;
+    flex: 1;
+  }
+  .title-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .title-row input {
+    color: #3c4958;
+    font-size: 18px;
+    font-weight: 400;
+    background: none;
+    border: 1px solid transparent;
+    padding: 0 3px;
+    min-width: 60px;
+    width: clamp(180px, 35vw, 580px);
+    text-overflow: ellipsis;
+    border-radius: 3px;
+  }
+  .title-row input:hover {
+    border-color: #d5dfeb;
+  }
+  .title-row input:focus {
+    outline: 1px solid #98b6a6;
+  }
+  .title-row input:disabled {
+    color: #3c4958;
+  }
+  .cloud {
+    display: grid;
+    place-items: center;
+    color: #899e91;
+  }
+  nav {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin-top: 4px;
+  }
+  nav button {
+    background: none;
+    border: 0;
+    border-radius: 4px;
+    padding: 3px 7px;
+    color: #798694;
+    font-size: 11px;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  nav button:hover {
+    background: #e7edf5;
+  }
+  .save-state {
+    color: #94a298;
+    font-size: 10px;
+    margin-left: 15px;
+  }
+  .actions {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+  }
+  .round {
+    display: grid;
+    place-items: center;
+    background: none;
+    border: 0;
+    color: #7d8da1;
+    width: 32px;
+    height: 32px;
+    cursor: pointer;
+  }
+  .share {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    border: 0;
+    background: #d2e5dc;
+    color: #345c47;
+    border-radius: 22px;
+    font-size: 12px;
+    padding: 11px 21px;
+    cursor: pointer;
+  }
+  .file-menu {
+    position: relative;
+  }
+  .dropdown {
+    position: absolute;
+    top: 28px;
+    left: 0;
+    width: 260px;
+    padding: 7px;
+    background: white;
+    box-shadow: 0 6px 24px #20364d20;
+    border: 1px solid #e2e7ec;
+    border-radius: 7px;
+    z-index: 40;
+  }
+  .dropdown button {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    text-align: left;
+    font-size: 12px;
+    padding: 10px;
+  }
+  .body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+  }
+  main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  aside {
+    background: white;
+    border-left: 1px solid #e3e9ee;
+    width: 330px;
+    min-width: 330px;
+    overflow: auto;
+    padding: 22px 22px 35px;
+  }
+  .panel-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .panel-title h2 {
+    font-size: 15px;
+    font-weight: 500;
+    margin: 0;
+    color: #4b596a;
+  }
+  .panel-title button {
+    border: 0;
+    background: none;
+    color: #8c99a7;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+  }
+  aside p,
+  .sync-modal > p {
+    font-size: 12px;
+    line-height: 1.8;
+    color: #8b98a5;
+    margin: 19px 0;
+  }
+  form {
+    display: grid;
+    gap: 13px;
+    margin: 22px 0;
+  }
+  form label {
+    display: grid;
+    gap: 7px;
+    color: #718194;
+    font-size: 11px;
+  }
+  form input,
+  form select,
+  form textarea,
+  .history-search {
+    width: 100%;
+    border: 1px solid #dce4ec;
+    border-radius: 5px;
+    padding: 9px 11px;
+    font: 12px Arial;
+    color: #4c5f70;
+    background: white;
+  }
+  .primary,
+  .secondary {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    border: 0;
+    border-radius: 5px;
+    background: #397258;
+    color: white;
+    padding: 10px 14px;
+    font: 12px Arial;
+    cursor: pointer;
+    text-decoration: none;
+  }
+  .primary:disabled,
+  .secondary:disabled {
+    opacity: 0.4;
+    cursor: wait;
+  }
+  .secondary {
+    background: #edf4f0;
+    color: #5c7e6c;
+    border: 1px solid #dce8e1;
+  }
+  .people {
+    display: grid;
+    gap: 19px;
+    margin: 28px 0;
+  }
+  .people > div {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+  }
+  .avatar {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: #edf1e4;
+    color: #839565;
+    font-size: 12px;
+  }
+  .people strong {
+    display: block;
+    font-size: 11px;
+    font-weight: 500;
+    color: #617184;
+    max-width: 145px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .people small {
+    display: block;
+    font-size: 9px;
+    color: #9ba7b1;
+    max-width: 145px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .people em {
+    font-style: normal;
+    margin-left: auto;
+    color: #9ba7b1;
+    font-size: 10px;
+  }
+  .version {
+    padding: 19px 0;
+    border-bottom: 1px solid #e8edf2;
+  }
+  .version strong,
+  .comment strong,
+  .activity strong {
+    display: block;
+    color: #63788a;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .version small,
+  .comment small,
+  .activity small {
+    display: block;
+    font-size: 9px;
+    color: #a0adba;
+    margin-top: 6px;
+  }
+  .version p {
+    font-size: 11px;
+    margin: 10px 0;
+  }
+  .version > div {
+    display: flex;
+    gap: 10px;
+    margin-top: 12px;
+  }
+  .version button,
+  .text-button {
+    background: none;
+    border: 0;
+    padding: 0;
+    color: #71957e;
+    font-size: 10px;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+  }
+  .version .secondary {
+    margin-top: 15px;
+  }
+  .empty {
+    padding: 36px 10px;
+    color: #a2aeb8;
+    font-size: 12px;
+    text-align: center;
+  }
+  .draft-card {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    background: none;
+    border: 1px solid #e3ebe5;
+    border-radius: 6px;
+    width: 100%;
+    padding: 16px;
+    margin: 12px 0;
+    text-align: left;
+    cursor: pointer;
+    color: #6c8777;
+  }
+  .draft-card span {
+    flex: 1;
+    font-size: 12px;
+  }
+  .draft-card small {
+    display: block;
+    color: #9cac9f;
+    font-size: 10px;
+    margin-top: 5px;
+  }
+  .draft-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: #eaf2ec;
+    color: #5b7d66;
+    padding: 9px 30px;
+    font-size: 11px;
+    border-block: 1px solid #e0ebe2;
+    margin-bottom: 7px;
+  }
+  .draft-banner span {
+    color: #90a594;
+  }
+  .draft-banner button {
+    background: #d8e8dd;
+    border: 0;
+    border-radius: 4px;
+    color: #54735f;
+    padding: 5px 11px;
+    font-size: 10px;
+    cursor: pointer;
+  }
+  .draft-banner button:first-of-type {
+    margin-left: auto;
+  }
+  .error {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 24px;
+    background: #fff3e9;
+    color: #a06d46;
+    font-size: 12px;
+  }
+  .error > span {
+    flex: 1;
+  }
+  .error button {
+    background: none;
+    border: 1px solid #ddbb9e;
+    border-radius: 4px;
+    color: inherit;
+    padding: 4px 9px;
+    font-size: 10px;
+    cursor: pointer;
+  }
+  .comment,
+  .activity {
+    padding: 18px 0;
+    border-bottom: 1px solid #e7edf1;
+  }
+  .comment p,
+  .activity p {
+    color: #738899;
+    font-size: 12px;
+    margin: 10px 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .activity blockquote {
+    padding: 8px 12px;
+    margin: 10px 0;
+    border-left: 2px solid #d5e5da;
+    color: #7d8f9c;
+    font-size: 11px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .footnote {
+    display: block;
+    font-size: 10px;
+    line-height: 1.8;
+    color: #99a7b2;
+    margin-top: 24px;
+  }
+  .comparison {
+    background: #f0f5f2;
+    padding: 15px;
+    border: 1px solid #e1eae4;
+    border-radius: 5px;
+    margin: 20px 0;
+  }
+  .comparison strong {
+    font-size: 12px;
+    color: #6a8a75;
+  }
+  .comparison > span {
+    display: block;
+    font-size: 10px;
+    color: #97ab9d;
+    margin-top: 4px;
+  }
+  .comparison p {
+    font-size: 11px;
+    border-top: 1px solid #e1e8e3;
+    padding-top: 10px;
+    margin: 10px 0;
+  }
+  .comparison small {
+    display: block;
+    font-size: 10px;
+    color: #839c8d;
+    overflow-wrap: anywhere;
+  }
+  .loading {
+    font-size: 11px;
+    color: #81a28a;
+    padding-top: 12px;
+  }
+  footer {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 22px;
+    background: #f8fafd;
+    border-top: 1px solid #e6edf1;
+    font-size: 9px;
+    color: #9aa9b6;
+    min-height: 26px;
+  }
+  .connection-dot {
+    width: 5px;
+    height: 5px;
+    background: #79a28a;
+    border-radius: 50%;
+  }
+  .connection-dot.offline {
+    background: #d1ac72;
+  }
+  .foot-right {
+    margin-left: auto;
+  }
+  .modal-shade {
+    position: fixed;
+    inset: 0;
+    background: #2639474d;
+    backdrop-filter: blur(4px);
+    z-index: 100;
+    display: grid;
+    place-items: center;
+    padding: 30px;
+  }
+  .sync-modal {
+    background: white;
+    width: 780px;
+    max-width: 100%;
+    max-height: 90vh;
+    overflow: auto;
+    padding: 30px;
+    border-radius: 12px;
+    box-shadow: 0 18px 80px #1d384533;
+    font-family: Arial, sans-serif;
+  }
+  .sync-modal .panel-title h2 {
+    font-size: 21px;
+  }
+  .conflict {
+    margin: 25px 0;
+    border: 1px solid #dfe7e1;
+    padding: 17px;
+    border-radius: 7px;
+  }
+  .conflict > strong {
+    font-size: 13px;
+    color: #576e60;
+  }
+  .ancestor {
+    background: #f6f8f6;
+    margin: 12px 0;
+    padding: 10px;
+    color: #a0aaa2;
+    font-size: 11px;
+    overflow-wrap: anywhere;
+  }
+  .ancestor small {
+    display: block;
+    color: #a7b2aa;
+    font-size: 9px;
+    margin-bottom: 4px;
+  }
+  .choices {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .choices label {
+    position: relative;
+    display: flex;
+    gap: 7px;
+    flex-wrap: wrap;
+    padding: 14px;
+    border: 1px solid #e2e8e2;
+    border-radius: 5px;
+    cursor: pointer;
+  }
+  .choices label.chosen {
+    border-color: #79a58c;
+    background: #f3f9f5;
+  }
+  .choices strong {
+    font-size: 12px;
+    color: #799080;
+  }
+  .choices span {
+    display: block;
+    width: 100%;
+    font-size: 11px;
+    color: #99a69c;
+    line-height: 1.8;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .include-list {
+    display: grid;
+    gap: 8px;
+    max-height: 250px;
+    overflow: auto;
+    margin: 24px 0;
+  }
+  .include-list label {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 12px;
+    color: #708a7a;
+    padding: 7px;
+    background: #f6f9f7;
+  }
+  .sync-actions {
+    display: flex;
+    align-items: center;
+    justify-content: end;
+    gap: 12px;
+    margin-top: 25px;
+  }
+  @media (max-width: 1000px) {
+    .save-state {
+      display: none;
+    }
+    nav button {
+      font-size: 10px;
+    }
+    .actions {
+      gap: 5px;
+    }
+    header {
+      gap: 8px;
+      padding: 12px;
+    }
+    .title-row input {
+      font-size: 16px;
+    }
+    aside {
+      width: 290px;
+      min-width: 290px;
+      padding: 18px;
+    }
+    .file-icon {
+      display: none;
+    }
+  }
+  @media (max-width: 700px) {
+    nav button {
+      font-size: 9px;
+      padding: 3px;
+    }
+    .actions .round {
+      display: none;
+    }
+    .share {
+      padding: 9px 13px;
+    }
+    .title-row input {
+      width: 180px;
+    }
+    .cloud {
+      display: none;
+    }
+    .back {
+      padding: 3px;
+    }
+    .heading {
+      overflow: visible;
+    }
+    aside {
+      position: fixed;
+      right: 0;
+      top: 82px;
+      bottom: 26px;
+      width: 300px;
+      z-index: 45;
+      box-shadow: -5px 0 25px #21354815;
+    }
+    .draft-banner {
+      padding: 8px 15px;
+      flex-wrap: wrap;
+    }
+    .draft-banner span {
+      display: none;
+    }
+    .sync-modal {
+      padding: 22px;
+    }
+    .modal-shade {
+      padding: 12px;
+    }
+    .choices {
+      grid-template-columns: 1fr;
+    }
+    .sync-actions {
+      flex-wrap: wrap;
+    }
+    .error {
+      flex-wrap: wrap;
+      padding: 9px 15px;
+    }
+  }
+  @media print {
+    header,
+    footer,
+    aside,
+    .draft-banner,
+    .error {
+      display: none;
+    }
+    .workspace-editor {
+      height: auto;
+    }
+    .body,
+    main {
+      display: block;
+    }
+  }
+</style>

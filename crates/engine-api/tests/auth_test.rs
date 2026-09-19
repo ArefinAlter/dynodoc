@@ -22,6 +22,7 @@ fn test_state(pool: PgPool) -> AppState {
         pool,
         AuthConfig {
             paseto_key: [7u8; 32],
+            service_key: None,
             token_ttl_seconds: 3600,
             public_base_url: "http://test.local".into(),
         },

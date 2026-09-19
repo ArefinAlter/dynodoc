@@ -191,7 +191,7 @@ pub(crate) async fn latest_snapshot(
     .await
 }
 
-pub(crate) fn merkle_root(state: &DocumentState) -> Result<[u8; 32], SnapshotError> {
+pub fn merkle_root(state: &DocumentState) -> Result<[u8; 32], SnapshotError> {
     if state.nodes.is_empty() {
         return Ok(ZERO_HASH);
     }

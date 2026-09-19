@@ -14,6 +14,7 @@ import { DocumentStream, type ConnectionStatus } from '$lib/api/sse';
 import {
   acceptProposal,
   getDocument,
+  listEvents,
   listConflicts,
   opComment,
   opFieldEdit,
@@ -23,7 +24,7 @@ import {
   opSuggest
 } from '$lib/api/client';
 import type { ConflictView, DocumentDetail, DocumentState, EventRow } from '$lib/api/types';
-import { emptyState, applyEvent, applyPayload } from '$lib/materializer';
+import { emptyState, applyEvent } from '$lib/materializer';
 import { session } from './session.svelte';
 import { pushToast } from './toast.svelte';
 
@@ -48,6 +49,8 @@ export class DocumentStore {
   private stream: DocumentStream | null = null;
   /** Highest seq we've folded — the dedupe watermark for SSE echoes. */
   private appliedSeq = 0;
+  private pending = new Map<number, EventRow>();
+  private catchingUp = false;
 
   constructor(public documentId: string) {}
 
@@ -84,15 +87,43 @@ export class DocumentStore {
 
   /** Apply a canonical event from the stream, deduping our own echoes by seq. */
   private ingest(event: EventRow): void {
-    if (event.seq <= this.appliedSeq) return; // already folded (our optimistic echo)
-    applyEvent(this.state, event);
-    this.appliedSeq = event.seq;
-    this.seq = event.seq;
-    // Suggestion/field events can create or clear a four-card conflict; refetch the
-    // derived set (cheap, and keeps the modal authoritative without re-deriving here).
-    if (CONFLICT_AFFECTING.has(event.type)) {
-      void this.loadConflicts();
+    if (event.seq <= this.appliedSeq) return;
+    this.pending.set(event.seq, event);
+    let changedConflicts = false;
+    for (;;) {
+      const next = this.pending.get(this.appliedSeq + 1);
+      if (!next) break;
+      this.pending.delete(next.seq);
+      applyEvent(this.state, next);
+      this.appliedSeq = next.seq;
+      this.seq = next.seq;
+      changedConflicts ||= CONFLICT_AFFECTING.has(next.type);
     }
+    if (changedConflicts) void this.loadConflicts();
+    if (this.pending.size) void this.catchUp();
+  }
+
+  private async catchUp(): Promise<void> {
+    if (this.catchingUp) return;
+    this.catchingUp = true;
+    try {
+      while (this.pending.size) {
+        const page = await listEvents(this.documentId, {
+          from_seq: this.appliedSeq + 1,
+          limit: 1000
+        });
+        if (!page.items.length) break;
+        for (const event of page.items) this.ingest(event);
+      }
+    } catch (e) {
+      this.toastError(e, 'Could not synchronize. Reopen this document to retry.');
+    } finally {
+      this.catchingUp = false;
+    }
+  }
+
+  receive(events: EventRow[]): void {
+    for (const event of events) this.ingest(event);
   }
 
   /** Refetch the live conflicts derived from current state. Best-effort (never throws). */
@@ -116,12 +147,7 @@ export class DocumentStore {
     try {
       const { events } = await resolveConflict(this.documentId, conflictId, body);
       // Fold the canonical events the server appended (the field edit + lifecycle).
-      for (const event of events) {
-        if (event.seq > this.appliedSeq) {
-          applyEvent(this.state, event);
-          this.markApplied(event.seq);
-        }
-      }
+      this.receive(events);
       await this.loadConflicts();
     } catch (e) {
       this.toastError(e, 'Resolve failed');
@@ -151,47 +177,24 @@ export class DocumentStore {
     if (mode === 'suggest') {
       return this.suggestFieldEdit(nodeId, field, value);
     }
-    const node = this.state.nodes[nodeId];
-    const previous = node ? node.current_fields[field] : undefined;
-    const had = node ? field in node.current_fields : false;
-    // optimistic
-    if (node) node.current_fields = { ...node.current_fields, [field]: value };
-
     try {
-      const { event } = await opFieldEdit(this.documentId, { node_id: nodeId, field, value });
-      this.markApplied(event.seq);
+      const { event } = await opFieldEdit(this.documentId, {
+        node_id: nodeId,
+        field,
+        value,
+        base_seq: this.seq
+      });
+      this.ingest(event);
     } catch (e) {
-      // rollback
-      if (node) {
-        const next = { ...node.current_fields };
-        if (had) next[field] = previous;
-        else delete next[field];
-        node.current_fields = next;
-      }
-      this.toastError(e, 'Edit failed');
+      this.toastError(e, 'Your edit was not saved.');
       throw e;
     }
   }
 
   private async suggestFieldEdit(nodeId: string, field: string, value: unknown): Promise<void> {
     const detail = { type: 'FieldEdited' as const, node_id: nodeId, field, value };
-    const tempId = `optimistic-${crypto.randomUUID()}`;
-    // optimistic: record a pending suggestion locally
-    this.state.suggestions[tempId] = {
-      target_node_id: nodeId,
-      detail,
-      accepted: false,
-      rejected_reason: null
-    };
-    try {
-      const { event } = await opSuggest(this.documentId, { target_node_id: nodeId, detail });
-      delete this.state.suggestions[tempId];
-      this.markApplied(event.seq);
-    } catch (e) {
-      delete this.state.suggestions[tempId];
-      this.toastError(e, 'Suggestion failed');
-      throw e;
-    }
+    const { event } = await opSuggest(this.documentId, { target_node_id: nodeId, detail });
+    this.ingest(event);
   }
 
   /** Create a node (section/item/choice). Optimistically folds the resulting event. */
@@ -204,8 +207,7 @@ export class DocumentStore {
   }): Promise<EventRow> {
     try {
       const { event } = await opNodeCreate(this.documentId, body);
-      applyEvent(this.state, event);
-      this.markApplied(event.seq);
+      this.ingest(event);
       return event;
     } catch (e) {
       this.toastError(e, 'Create failed');
@@ -215,59 +217,18 @@ export class DocumentStore {
 
   /** Add a comment, optionally anchored to a node. */
   async comment(body: string, nodeId?: string): Promise<void> {
-    // optimistic
-    applyPayload(this.state, { type: 'CommentAdded', node_id: nodeId ?? null, body });
-    try {
-      const { event } = await opComment(this.documentId, { node_id: nodeId, body });
-      this.markApplied(event.seq);
-    } catch (e) {
-      this.state.comments.pop();
-      this.toastError(e, 'Comment failed');
-      throw e;
-    }
+    const { event } = await opComment(this.documentId, { node_id: nodeId, body });
+    this.ingest(event);
   }
 
-  /** Accept a pending suggestion (author action). */
   async accept(suggestionId: string): Promise<void> {
-    try {
-      const { event } = await acceptProposal(this.documentId, suggestionId);
-      // The accept event applies the wrapped op; fold the returned canonical event and
-      // mark the suggestion accepted.
-      applyEvent(this.state, event);
-      const s = this.state.suggestions[suggestionId];
-      if (s) {
-        s.accepted = true;
-        s.rejected_reason = null;
-      }
-      this.markApplied(event.seq);
-    } catch (e) {
-      this.toastError(e, 'Accept failed');
-      throw e;
-    }
+    const { event } = await acceptProposal(this.documentId, suggestionId);
+    this.ingest(event);
   }
 
-  /** Reject a pending suggestion with an optional reason. */
   async reject(suggestionId: string, reason?: string): Promise<void> {
-    try {
-      const { event } = await rejectProposal(this.documentId, suggestionId, reason);
-      const s = this.state.suggestions[suggestionId];
-      if (s) {
-        s.accepted = false;
-        s.rejected_reason = reason ?? 'rejected';
-      }
-      this.markApplied(event.seq);
-    } catch (e) {
-      this.toastError(e, 'Reject failed');
-      throw e;
-    }
-  }
-
-  /** Advance the dedupe watermark so the SSE echo of our own write is a no-op. */
-  private markApplied(seq: number): void {
-    if (seq > this.appliedSeq) {
-      this.appliedSeq = seq;
-      this.seq = seq;
-    }
+    const { event } = await rejectProposal(this.documentId, suggestionId, reason);
+    this.ingest(event);
   }
 
   private toastError(e: unknown, fallback: string): void {

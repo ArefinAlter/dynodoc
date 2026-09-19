@@ -31,9 +31,12 @@ use ring::digest::{Context, SHA256};
 use serde::Serialize;
 use uuid::Uuid;
 
+use crate::auth::AuthContext;
 use crate::documents::store as doc_store;
 use crate::error::ApiError;
+use crate::ops::apply::require_role;
 use crate::AppState;
+use engine_shared::IdentityId;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -57,7 +60,7 @@ pub struct VerifyResult {
     pub detail: Option<String>,
 }
 
-/// Replay + verify the hash chain. `[public]`, cacheable 60s.
+/// Replay + verify the hash chain. `[document member]`, cacheable 60s.
 #[utoipa::path(
     get, path = "/documents/{id}/verify",
     params(("id" = Uuid, Path, description = "Document id")),
@@ -66,9 +69,11 @@ pub struct VerifyResult {
 )]
 pub async fn verify(
     State(state): State<AppState>,
+    auth: AuthContext,
     Path(id): Path<Uuid>,
 ) -> Result<Response, ApiError> {
     let document_id = DocumentId(id);
+    require_role(&state.pool, document_id, IdentityId(auth.identity_id)).await?;
     if !doc_store::document_exists(&state.pool, document_id).await? {
         return Err(ApiError::NotFound);
     }
@@ -91,14 +96,14 @@ pub async fn verify(
     // Cacheable for 60s (docs/18). The verdict only changes as the log grows.
     response.headers_mut().insert(
         header::CACHE_CONTROL,
-        header::HeaderValue::from_static("public, max-age=60"),
+        header::HeaderValue::from_static("private, no-store"),
     );
     Ok(response)
 }
 
 // --- snapshot -------------------------------------------------------------------
 
-/// A full snapshot, including its Merkle root and bound chain hash. `[public]`.
+/// A full snapshot, including its Merkle root and bound chain hash. `[document member]`.
 #[utoipa::path(
     get, path = "/documents/{id}/snapshot/{snapshot_id}",
     params(
@@ -113,8 +118,10 @@ pub async fn verify(
 )]
 pub async fn get_snapshot(
     State(state): State<AppState>,
+    auth: AuthContext,
     Path((id, snapshot_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<Snapshot>, ApiError> {
+    require_role(&state.pool, DocumentId(id), IdentityId(auth.identity_id)).await?;
     let snapshot =
         sqlx::query_as::<_, Snapshot>("select * from snapshot where id = $1 and document_id = $2")
             .bind(snapshot_id)
@@ -151,7 +158,7 @@ pub struct ProofStep {
     pub sibling_is_left: bool,
 }
 
-/// Inclusion proof for an event within the latest snapshot's covered range. `[public]`.
+/// Inclusion proof for an event within the latest snapshot's covered range. `[document member]`.
 #[utoipa::path(
     get, path = "/documents/{id}/merkle-proof/{event_id}",
     params(
@@ -166,9 +173,11 @@ pub struct ProofStep {
 )]
 pub async fn merkle_proof(
     State(state): State<AppState>,
+    auth: AuthContext,
     Path((id, event_id)): Path<(Uuid, String)>,
 ) -> Result<Json<MerkleProof>, ApiError> {
     let document_id = DocumentId(id);
+    require_role(&state.pool, document_id, IdentityId(auth.identity_id)).await?;
 
     // The latest snapshot pins the covered event range.
     let through_seq: Option<i64> = sqlx::query_scalar(

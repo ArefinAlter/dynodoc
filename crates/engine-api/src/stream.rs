@@ -112,9 +112,15 @@ async fn document_stream(
     State(state): State<AppState>,
     Path(document_id): Path<Uuid>,
     Query(params): Query<StreamParams>,
-    _auth: AuthContext,
+    auth: AuthContext,
 ) -> Result<Response, ApiError> {
     let document_id = DocumentId(document_id);
+    crate::ops::apply::require_role(
+        &state.pool,
+        document_id,
+        engine_shared::IdentityId(auth.identity_id),
+    )
+    .await?;
 
     // The document must exist (a stream to nothing is a 404, not an empty socket).
     if !doc_store::document_exists(&state.pool, document_id).await? {
@@ -142,15 +148,17 @@ async fn document_stream(
 
     // Live stream: drop events at or before the last backfilled seq (the subscribe
     // happened before the backfill read, so the first live events may overlap).
-    let live_stream = BroadcastStream::new(receiver).filter_map(move |result| {
-        let value = match result {
-            Ok(event) if event.seq > last_backfilled => Some(to_sse_event((*event).clone())),
-            // A lagged subscriber missed events; the SSE client reconnects with
-            // Last-Event-ID and catches up from the backfill. Drop, don't error.
-            _ => None,
-        };
-        async move { value }
-    });
+    let live_stream = BroadcastStream::new(receiver)
+        .take_while(|result| futures::future::ready(result.is_ok()))
+        .filter_map(move |result| {
+            let value = match result {
+                Ok(event) if event.seq > last_backfilled => Some(to_sse_event((*event).clone())),
+                // A lagged subscriber missed events; the SSE client reconnects with
+                // Last-Event-ID and catches up from the backfill. Drop, don't error.
+                _ => None,
+            };
+            async move { value }
+        });
 
     let stream = backfill_stream.chain(live_stream);
 

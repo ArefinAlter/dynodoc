@@ -56,6 +56,9 @@ export function applyPayload(state: DocumentState, payload: EventPayload): boole
       const node = state.nodes[payload.node_id];
       if (!node) return false;
       node.current_fields = { ...node.current_fields, [payload.field]: payload.value };
+      if (payload.field === 'var_name' || payload.field === 'varName') {
+        node.var_name = typeof payload.value === 'string' ? payload.value : null;
+      }
       return true;
     }
     case 'NodeMoved': {
@@ -63,6 +66,13 @@ export function applyPayload(state: DocumentState, payload: EventPayload): boole
       if (!node) return false;
       node.parent_id = payload.new_parent_id ?? null;
       node.pos = payload.new_pos;
+      return true;
+    }
+    case 'NodeRestored': {
+      const node = state.nodes[payload.node_id];
+      if (!node) return false;
+      node.deleted = false;
+      state.removed_choices = state.removed_choices.filter((id) => id !== payload.node_id);
       return true;
     }
     case 'NodeDeleted': {
@@ -117,7 +127,7 @@ export function applyPayload(state: DocumentState, payload: EventPayload): boole
       const s = state.suggestions[payload.suggestion_id];
       if (!s) return false;
       s.accepted = false;
-      s.rejected_reason = payload.reason ?? null;
+      s.rejected_reason = payload.reason ?? 'rejected';
       return true;
     }
     case 'Deployed':

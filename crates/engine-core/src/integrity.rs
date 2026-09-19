@@ -170,7 +170,7 @@ pub fn validate_integrity(state: &DocumentState) -> Vec<IntegrityViolation> {
         })
         .collect();
     for node in &live {
-        if node.node_type != "choice" {
+        if node.node_type != "choice" || state.removed_choices.contains(&node.id) {
             continue;
         }
         let Some(parent) = node.parent_id.as_ref() else {
