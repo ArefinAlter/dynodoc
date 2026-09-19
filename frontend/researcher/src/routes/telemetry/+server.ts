@@ -7,6 +7,21 @@ const origins = new Map([
   ['https://app.dynodoc.online', 'workspace'],
   ['https://admin.dynodoc.online', 'admin']
 ]);
+export const OPTIONS: RequestHandler = ({ request }) => {
+  const origin = request.headers.get('origin') || '';
+  if (!origins.has(origin) || request.headers.get('access-control-request-method') !== 'POST')
+    return new Response(null, { status: 403 });
+  return new Response(null, {
+    status: 204,
+    headers: {
+      'access-control-allow-origin': origin,
+      'access-control-allow-methods': 'POST',
+      'access-control-allow-headers': 'content-type',
+      'access-control-max-age': '600',
+      vary: 'Origin'
+    }
+  });
+};
 export const POST: RequestHandler = async ({ request }) => {
   const origin = request.headers.get('origin') || '';
   const host = origins.get(origin);

@@ -23,10 +23,15 @@ export async function observeVitals() {
           : 'other';
   const send = (metric: string, value: number) => {
     const body = JSON.stringify({ page_id, page, metric, value });
-    navigator.sendBeacon(
-      'https://app.dynodoc.online/telemetry',
-      new Blob([body], { type: 'text/plain' })
-    );
+    // JSON uses an explicit CORS preflight; omit authentication cookies on every host.
+    // Plain-text cross-origin POSTs are correctly rejected by SvelteKit's form CSRF guard.
+    void fetch('https://app.dynodoc.online/telemetry', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body,
+      credentials: 'omit',
+      keepalive: true
+    }).catch(() => {});
   };
   send('visit', 1);
   const { onLCP, onCLS, onINP, onFCP, onTTFB } = await import('web-vitals');
