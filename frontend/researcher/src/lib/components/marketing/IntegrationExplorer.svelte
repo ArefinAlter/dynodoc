@@ -1,4 +1,9 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
+  let ready = $state(false);
+  onMount(() => {
+    ready = true;
+  });
   import {
     ArrowRight,
     ArrowUpRight,
@@ -92,6 +97,7 @@
 <div class="integrations">
   <div class="logos" aria-label="Explore research integrations">
     {#each integrations as item, i}<button
+        disabled={!ready}
         aria-pressed={selected === i}
         aria-label={`Explore ${item.name} integration`}
         onclick={() => (selected = i)}

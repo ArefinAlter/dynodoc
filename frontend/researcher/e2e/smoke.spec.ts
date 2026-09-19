@@ -114,3 +114,31 @@ test('frontend healthz returns ok', async ({ request }) => {
   expect(res.ok()).toBeTruthy();
   expect(await res.json()).toMatchObject({ status: 'ok', service: 'researcher-frontend' });
 });
+
+test('homepage controls wait for hydration on a slow connection', async ({ page }) => {
+  let resumeScripts!: () => void;
+  const scriptsReady = new Promise<void>((resolve) => {
+    resumeScripts = resolve;
+  });
+  await page.route('**/*.js', async (route) => {
+    await scriptsReady;
+    await route.continue();
+  });
+  try {
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await expect(
+      page.getByRole('button', { name: 'Prepare the data', exact: true })
+    ).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Try this wording' })).toBeDisabled();
+    await expect(
+      page.getByRole('button', { name: 'Explore KoboToolbox integration' })
+    ).toBeDisabled();
+    resumeScripts();
+    await page.getByRole('button', { name: 'Prepare the data', exact: true }).click();
+    await expect(
+      page.getByRole('heading', { name: 'Keep the reasoning close to the dataset.' })
+    ).toBeVisible();
+  } finally {
+    resumeScripts();
+  }
+});

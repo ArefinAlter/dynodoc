@@ -1,4 +1,9 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
+  let ready = $state(false);
+  onMount(() => {
+    ready = true;
+  });
   import { env } from '$env/dynamic/public';
   import { ArrowUpRight, Layers2, Menu, X } from '@lucide/svelte';
   let open = $state(false);
@@ -21,6 +26,7 @@
   </nav>
   <a class="enter" href={workspace}>Open workspace <ArrowUpRight size={16} /></a>
   <button
+    disabled={!ready}
     class="menu"
     aria-label={open ? 'Close menu' : 'Open menu'}
     aria-expanded={open}

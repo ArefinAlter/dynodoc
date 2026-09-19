@@ -1,4 +1,9 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
+  let ready = $state(false);
+  onMount(() => {
+    ready = true;
+  });
   import { env } from '$env/dynamic/public';
   import {
     ArrowRight,
@@ -198,6 +203,7 @@
         <div class="case-list" aria-label="Explore research workflows">
           {#each cases as item, i}<div class="case-item" class:active={useCase === i}>
               <button
+                disabled={!ready}
                 aria-expanded={useCase === i}
                 aria-controls={`case-${i}`}
                 onclick={() => (useCase = i)}

@@ -1,4 +1,9 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
+  let ready = $state(false);
+  onMount(() => {
+    ready = true;
+  });
   import {
     FileText,
     Table2,
@@ -30,14 +35,18 @@
 
 <div class="explorer" class:sheet={mode === 'spreadsheet'}>
   <div class="switcher" aria-label="Explore the editors">
-    <button aria-pressed={mode === 'document'} onclick={() => (mode = 'document')}
+    <button disabled={!ready} aria-pressed={mode === 'document'} onclick={() => (mode = 'document')}
       ><FileText size={17} /> Documents</button
     >
-    <button aria-pressed={mode === 'spreadsheet'} onclick={() => (mode = 'spreadsheet')}
-      ><Table2 size={17} /> Spreadsheets</button
+    <button
+      disabled={!ready}
+      aria-pressed={mode === 'spreadsheet'}
+      onclick={() => (mode = 'spreadsheet')}><Table2 size={17} /> Spreadsheets</button
     >
-    <button aria-pressed={mode === 'questionnaire'} onclick={() => (mode = 'questionnaire')}
-      ><ListChecks size={17} /> Questionnaires</button
+    <button
+      disabled={!ready}
+      aria-pressed={mode === 'questionnaire'}
+      onclick={() => (mode = 'questionnaire')}><ListChecks size={17} /> Questionnaires</button
     >
     <span><MousePointer2 size={13} /> Try the example</span>
   </div>
@@ -65,6 +74,7 @@
         </div>
       </div>
       <button
+        disabled={!ready}
         class="history"
         aria-label="Show example version history"
         aria-pressed={showHistory}
@@ -104,7 +114,7 @@
             <span class="history-dot older"></span>
             <p><b>Original guide imported<small>Maya · Source file retained</small></b></p>
           </div>
-          <button onclick={() => (showHistory = false)}
+          <button disabled={!ready} onclick={() => (showHistory = false)}
             >Back to the example <ArrowUpRight size={14} /></button
           >
         </div>
@@ -142,7 +152,7 @@
             <p>
               Could we make this more open-ended? A recent experience might give us richer detail.
             </p>
-            <button onclick={() => (wording = !wording)}
+            <button disabled={!ready} onclick={() => (wording = !wording)}
               >{#if wording}<Check size={15} /> Suggestion applied{:else}Try this wording <ArrowUpRight
                   size={14}
                 />{/if}</button
@@ -170,6 +180,7 @@
                 ><tr
                   ><th>2</th><td>North district</td><td
                     ><input
+                      disabled={!ready}
                       type="number"
                       min="0"
                       max="999"
@@ -182,6 +193,7 @@
                 ><tr
                   ><th>3</th><td>South district</td><td
                     ><input
+                      disabled={!ready}
                       type="number"
                       min="0"
                       max="999"
@@ -194,6 +206,7 @@
                 ><tr
                   ><th>4</th><td>East district</td><td
                     ><input
+                      disabled={!ready}
                       type="number"
                       min="0"
                       max="999"
@@ -235,6 +248,7 @@
               >{#each [{ value: 'interview', label: 'An individual interview' }, { value: 'group', label: 'A group conversation' }, { value: 'written', label: 'A written response' }] as option}<label
                   class:selected={selection === option.value}
                   ><input
+                    disabled={!ready}
                     type="radio"
                     name="participation"
                     value={option.value}
@@ -259,7 +273,7 @@
     </div>
     <div class="app-status">
       <span><span class="status-dot"></span>Interactive example · edits stay on this page</span
-      ><button aria-pressed={reviewed} onclick={() => (reviewed = !reviewed)}
+      ><button disabled={!ready} aria-pressed={reviewed} onclick={() => (reviewed = !reviewed)}
         >{reviewed ? 'Marked as reviewed' : 'Mark as reviewed'} <Check size={13} /></button
       >
     </div>

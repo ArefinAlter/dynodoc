@@ -1,4 +1,9 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
+  let ready = $state(false);
+  onMount(() => {
+    ready = true;
+  });
   import {
     FileText,
     GitBranch,
@@ -49,6 +54,7 @@
     </div>
     <div class="drafts">
       <button
+        disabled={!ready}
         class:active={draft === 'maya'}
         aria-pressed={draft === 'maya'}
         onclick={() => {
@@ -59,6 +65,7 @@
           ><b>Maya’s draft</b><small>Refine the interview</small></span
         ></button
       ><button
+        disabled={!ready}
         class:active={draft === 'sam'}
         aria-pressed={draft === 'sam'}
         onclick={() => {
@@ -98,12 +105,12 @@
             remains in history.
           </p>
         </div>
-        <button onclick={reset}><RotateCcw size={14} /> Try again</button>
+        <button disabled={!ready} onclick={reset}><RotateCcw size={14} /> Try again</button>
       </div>
     {:else}
       <label class="change-row"
-        ><input type="checkbox" bind:checked={includeQuestion} /><span class="change-type"
-          >Question wording</span
+        ><input disabled={!ready} type="checkbox" bind:checked={includeQuestion} /><span
+          class="change-type">Question wording</span
         ><span class="diff"
           ><del>How often do you use local health services?</del><ins
             >{draft === 'maya'
@@ -113,8 +120,8 @@
         ></label
       >
       <label class="change-row note"
-        ><input type="checkbox" bind:checked={includeNote} /><span class="change-type"
-          >Fieldwork note</span
+        ><input disabled={!ready} type="checkbox" bind:checked={includeNote} /><span
+          class="change-type">Fieldwork note</span
         ><span class="diff"
           ><ins
             >{draft === 'maya'
@@ -125,7 +132,7 @@
       >
       <div class="review-bottom">
         <span><Check size={14} /> Unselected changes stay in your draft.</span><button
-          disabled={changes === 0}
+          disabled={!ready || changes === 0}
           onclick={() => (shared = true)}>Share selected changes <ArrowRight size={15} /></button
         >
       </div>
