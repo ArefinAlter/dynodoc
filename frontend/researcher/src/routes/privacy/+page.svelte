@@ -130,15 +130,23 @@
   <section id="collaboration">
     <h2>Who can see your work</h2>
     <p>
-      Document access is controlled by membership and assigned roles. Editors, reviewers and readers
-      have different capabilities. People with permission to manage membership can give others
-      access. A collaborator who is allowed to view or export content may retain a copy outside
-      Dynodoc; removing access cannot recall copies they already obtained.
+      Document access is controlled by direct membership and inherited organization, team and folder
+      roles. The strongest applicable grant wins; a narrower grant does not cancel inherited access.
+      Editors, reviewers and readers have different capabilities. People with permission to manage
+      membership can give others access. A collaborator who is allowed to view or export content may
+      retain a copy outside Dynodoc; removing access cannot recall copies they already obtained.
     </p>
     <p>
       Personal drafts are kept separate from the shared team version until you share changes. Saved
       versions and attribution may reveal earlier wording and contributor identities to people
       authorized to view the relevant document history.
+    </p>
+    <p>
+      Owners and managers can publish a frozen read-only copy with a separate link. Anyone who
+      obtains that link can read the published content without signing in. Comments, original
+      uploads and version history remain private. Revoking a link or moving the document to Trash
+      stops future access through the link, but cannot recall downloaded copies. Later edits are not
+      included until a new copy is published.
     </p>
     <p>
       Authorized service administrators may access stored information when needed to operate or
@@ -182,8 +190,25 @@
     </p>
     <p>
       Imports are snapshots. The pilot does not schedule background synchronization or write changes
-      back to the source platform. REDCap, SurveyCTO, SurveyMonkey and CSPro compatibility currently
-      uses uploaded files rather than direct account connections.
+      back to the source platform. REDCap, SurveyCTO and SurveyMonkey also support the documented
+      read-only API import paths using credentials supplied for the connection. CSPro compatibility
+      is limited to exported CSV or Excel files.
+    </p>
+    <h3>Optional Google Forms connection</h3>
+    <p>
+      Google Forms requires a separate authorization after sign-in. With your permission, Dynodoc
+      reads the form definition or responses for the form ID you choose. The connection requests
+      forms.body.readonly and forms.responses.readonly, does not modify the Google form, and does
+      not request access to all Drive files. A short-lived access token is encrypted in an HttpOnly
+      cookie for up to one hour; no refresh token is requested. Disconnecting or signing out clears
+      that connection. You can also revoke the grant in your Google Account permissions.
+    </p>
+    <p>
+      Imported questions, answers, respondent identifiers supplied by Google and source metadata
+      become workspace research content when you confirm import. They follow the document’s access,
+      history and retention rules. Disconnecting does not erase imported copies. This data is used
+      to provide the import and editing features you request; it is not sold, used for advertising
+      or sent to a model-training service by this application.
     </p>
     <h3>External content</h3>
     <p>
@@ -195,8 +220,12 @@
   <section id="cookies">
     <h2>Cookies and sign-in</h2>
     <p>
-      The application uses first-party cookies needed for authentication. No advertising or
-      analytics cookie system is included in the current pilot.
+      The application uses first-party cookies for authentication, the optional Forms connection and
+      your performance-measurement preference. There are no advertising cookies or persistent
+      visitor-tracking identifiers. The welcome-guide preference uses browser local storage. See the <a
+        href="https://dynodoc.online/cookies">cookie policy and browser preference control</a
+      >
+      for the complete list and lifetimes.
     </p>
     <!-- Scrollable data tables need keyboard access on narrow screens. -->
     <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -241,9 +270,12 @@
       </p>
     </div>
     <p>
-      Archiving a document changes its visibility in the working area; it does not erase its content
-      or history. The current pilot has no automatic expiry for research documents, original uploads
-      or account records, and no self-service permanent-erasure feature.
+      Archiving changes a document’s visibility. Trash blocks ordinary access and revokes public
+      links while preserving recoverable content and history. Administrators can disable accounts;
+      restoring an account requires fresh sign-in and does not restore old links or sessions. These
+      actions are recorded in an append-only operations log and do not permanently erase data. The
+      current pilot has no automatic expiry for research documents, original uploads or account
+      records, and no self-service permanent-erasure feature.
     </p>
     <p>
       The current hosted backup schedule keeps a rolling set of daily database backups for 14 days.

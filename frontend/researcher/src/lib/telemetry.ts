@@ -7,6 +7,7 @@ export async function observeVitals() {
       'app.dynodoc.online',
       'admin.dynodoc.online'
     ].includes(location.hostname) ||
+    document.cookie.split(';').some((value) => value.trim() === 'dynodoc_metrics=off') ||
     navigator.doNotTrack === '1' ||
     (navigator as Navigator & { globalPrivacyControl?: boolean }).globalPrivacyControl
   )

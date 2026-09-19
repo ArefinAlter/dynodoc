@@ -105,6 +105,8 @@ export const POST: RequestHandler = async ({ params, url, request, cookies }) =>
     return json({ error: 'Invalid origin' }, { status: 403 });
   if (params.action === 'logout') {
     clearSession(cookies);
+    cookies.delete('dynodoc_forms', { path: '/api/google-forms' });
+    cookies.delete('forms_pending', { path: '/integrations/google' });
     return json({ ok: true });
   }
   const body = await request.json().catch(() => null);

@@ -17,6 +17,8 @@ export interface TextBlock {
   marks?: { type: string; attrs?: Record<string, unknown> }[];
 }
 export function textOf(block: TextBlock): string {
+  if (block.type === 'inlineMath' || block.type === 'blockMath')
+    return String(block.attrs?.latex || '');
   return block.text ?? (block.content || []).map(textOf).join(block.type === 'doc' ? '\n' : '');
 }
 export function rootOp(id: string, label: string): EventPayload {
@@ -42,8 +44,16 @@ export function paragraph(text: string): TextBlock {
 }
 export async function importFile(file: File): Promise<ImportResult> {
   if (file.size > 10 * 1024 * 1024)
-    throw new Error('Please use a file smaller than 10 MB for this demo.');
+    throw new Error('Please use a file smaller than 10 MB per upload.');
   const ext = file.name.split('.').pop()?.toLowerCase();
+  if (ext === 'tex') {
+    const { importLatex } = await import('./latex');
+    return importLatex(await file.text(), file.name);
+  }
+  if (ext === 'zip') {
+    const { importOverleaf } = await import('./latex');
+    return importOverleaf(file);
+  }
   const rootId = ulid();
   const warnings: string[] = [];
   const ops: EventPayload[] = [rootOp(rootId, file.name.replace(/\.[^.]+$/, ''))];
@@ -221,12 +231,56 @@ export async function exportSpreadsheet(
   );
 }
 export async function exportDocument(state: DocumentState, name: string) {
-  const { Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell } =
-    await import('docx');
-  const nodes = Object.values(state.nodes)
-    .filter((n) => !n.deleted && n.type === 'item')
-    .sort((a, b) => (a.pos < b.pos ? -1 : a.pos > b.pos ? 1 : 0));
+  const {
+    Document,
+    Packer,
+    Paragraph,
+    TextRun,
+    HeadingLevel,
+    AlignmentType,
+    Table,
+    TableRow,
+    TableCell
+  } = await import('docx');
+  const live = Object.values(state.nodes).filter((n) => !n.deleted);
+  const tabs = live
+    .filter(
+      (n) => n.type === 'form' || (n.type === 'section' && n.current_fields.kind === 'document_tab')
+    )
+    .sort((a, b) => (a.type === 'form' ? -1 : b.type === 'form' ? 1 : a.pos.localeCompare(b.pos)));
+  const nodes = tabs.flatMap((tab) => [
+    ...(tab.type === 'section'
+      ? [
+          {
+            current_fields: {
+              label: String(tab.current_fields.label || 'Untitled tab'),
+              content: {
+                type: 'heading',
+                attrs: { level: 1 },
+                content: [
+                  { type: 'text', text: String(tab.current_fields.label || 'Untitled tab') }
+                ]
+              }
+            }
+          }
+        ]
+      : []),
+    ...live
+      .filter((n) => n.type === 'item' && n.parent_id === tab.id)
+      .sort((a, b) => a.pos.localeCompare(b.pos))
+  ]);
   function runs(block: TextBlock): InstanceType<typeof TextRun>[] {
+    // Preserve equation source in Word when native equation conversion is unavailable.
+    if (block.type === 'inlineMath' || block.type === 'blockMath')
+      return [new TextRun({ text: String(block.attrs?.latex || ''), font: 'Cambria Math' })];
+    if (block.type === 'hardBreak') return [new TextRun({ break: 1 })];
+    if (block.type === 'image')
+      return [
+        new TextRun({
+          text: `[Image: ${String(block.attrs?.alt || block.attrs?.src || '')}]`,
+          italics: true
+        })
+      ];
     if (block.text !== undefined) {
       const marks = block.marks || [];
       return [
@@ -235,7 +289,9 @@ export async function exportDocument(state: DocumentState, name: string) {
           bold: marks.some((m) => m.type === 'bold'),
           italics: marks.some((m) => m.type === 'italic'),
           underline: marks.some((m) => m.type === 'underline') ? {} : undefined,
-          strike: marks.some((m) => m.type === 'strike')
+          strike: marks.some((m) => m.type === 'strike'),
+          superScript: marks.some((m) => m.type === 'superscript'),
+          subScript: marks.some((m) => m.type === 'subscript')
         })
       ];
     }
@@ -257,7 +313,11 @@ export async function exportDocument(state: DocumentState, name: string) {
           )
         })
       ];
-    if (['bulletList', 'orderedList', 'listItem', 'blockquote'].includes(block.type))
+    if (
+      ['bulletList', 'orderedList', 'listItem', 'blockquote', 'taskList', 'taskItem'].includes(
+        block.type
+      )
+    )
       return (block.content || []).flatMap(blocks);
     const level = Number(block.attrs?.level) || 1;
     const heading =
@@ -271,7 +331,14 @@ export async function exportDocument(state: DocumentState, name: string) {
             HeadingLevel.HEADING_6
           ][level - 1]
         : undefined;
-    return [new Paragraph({ children: runs(block), heading })];
+    const align = String(block.attrs?.textAlign || 'left');
+    const alignment = {
+      left: AlignmentType.LEFT,
+      center: AlignmentType.CENTER,
+      right: AlignmentType.RIGHT,
+      justify: AlignmentType.JUSTIFIED
+    }[align as 'left'];
+    return [new Paragraph({ children: runs(block), heading, alignment })];
   }
   const doc = new Document({
     sections: [

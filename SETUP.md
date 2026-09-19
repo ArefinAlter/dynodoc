@@ -719,3 +719,49 @@ local-host SEO observation for the public release. It is one synthetic run; real
 performance depends on the visitor, connection and workload. The admin dashboard
 now receives actual samples from homepage, workspace and admin hosts.
 A fresh post-release database backup passed structure and checksum checks.
+
+### Product expansion verification — 19 September 2026
+
+The new hierarchy, Trash, account lifecycle and explicit public-snapshot contract is
+in `docs/PRODUCT-WORKFLOWS.md`; deployment adds migration 0015. Applied migrations
+remain immutable. No live database reset was used.
+
+- **152 Rust tests passed** in an isolated native Linux container and disposable
+  PostgreSQL database on the VPS, including the strict 100 ms event delivery test.
+  Three focused permission/public-copy regressions passed again after extending
+  coverage for deleted content, private comments and pre-removal credentials.
+  Windows-to-Docker local testing had failed the latency budget; the isolated native
+  run removed that environment overhead. This is not a production load guarantee.
+- **85 frontend unit tests passed**, including concurrent SEO work, formula reference
+  changes, tab isolation, LaTeX and Google Forms mappings. Type checking reports
+  zero errors/warnings. ESLint, formatting and Rust clippy passed. Existing generated
+  OpenAPI matches; new product routes are documented separately pending schema expansion.
+- Node and Vercel builds passed. A large editor bundle warning remains. Browser
+  checks cover public-copy privacy/revocation, Trash/restore, admin disable/restore,
+  document tabs/equations, structural formulas, replayable onboarding, inherited
+  organization access and XLSForm repeat/translation export.
+- Automated axe checks cover public pages, workspace, rich editor and administrator
+  views. Desktop screenshots and a 390 px mobile workspace were inspected. This
+  does not certify complete WCAG compliance or replace screen-reader/manual acceptance.
+- Google Forms API, callback and read scopes were confirmed configured by the owner.
+  Real provider consent and import remain unverified; Verification Center may require
+  further review. Scope justifications and a safe demonstration script are in
+  `docs/GOOGLE-AND-EMAIL-SETUP.md`.
+
+The previous Lighthouse numbers above describe the earlier release. They are not
+measurements of this expanded release. Pilot criteria remain **11/14**: external
+provider/study acceptance and the full ten-researcher exercise still require real
+accounts and study fixtures. Full Office parity, character-level CRDT collaboration,
+planned research/agent features, off-server backups and permanent erasure are not
+claimed by this release.
+
+All **26 browser scenarios passed** across the final suite and focused correction
+runs. The last full run passed 25/26; a welcome popup obstructed a review action.
+Restricting that popup to the workspace fixed it, and the reviewer/acceptance,
+onboarding/mobile and editor accessibility scenarios all passed on the final build.
+
+The live workspace/admin rollout applied migration **0015**. The pre/post migration
+checks retained **191 content events** and **4 original uploads / 3,013,141 bytes**;
+no public copies were created during deployment. Unrelated VPS services and the
+existing PostgreSQL/converter containers remained running. A fresh pre-release
+backup and previous API/web/admin image tags are retained for recovery.

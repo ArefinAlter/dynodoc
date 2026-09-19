@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { questionTypes, advancedColumns } from '$lib/workspace/question-types';
   import { ulid } from 'ulid';
   import SurveyPreview from './SurveyPreview.svelte';
   import {
@@ -37,20 +38,51 @@
       .sort((a, b) => (a.pos < b.pos ? -1 : a.pos > b.pos ? 1 : 0))
   );
   const current = $derived(documentState.nodes[selected]);
-  const types = [
-    'text',
-    'integer',
-    'decimal',
-    'date',
-    'select_one',
-    'select_multiple',
-    'note',
-    'calculate',
-    'geopoint',
-    'image',
-    'audio',
-    'barcode'
-  ];
+  const types = questionTypes.flatMap((group) => group.items.map(([type]) => type));
+  function column(n: MaterializedNode, key: string) {
+    return String(
+      n.current_fields[key] ??
+        (n.current_fields.xlsform as Record<string, unknown> | undefined)?.[key] ??
+        ''
+    );
+  }
+  function extra(n: MaterializedNode, text: string) {
+    try {
+      const value = JSON.parse(text);
+      if (
+        !value ||
+        Array.isArray(value) ||
+        typeof value !== 'object' ||
+        Object.values(value).some((x) => typeof x !== 'string')
+      )
+        throw new Error('Use an object with string values.');
+      edit(n, 'xlsform', value);
+      error = '';
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'Invalid JSON';
+    }
+  }
+  function nested(n: MaterializedNode, parent: string): boolean {
+    let p = n.parent_id;
+    const seen = new Set<string>();
+    while (p && !seen.has(p)) {
+      if (p === parent) return true;
+      seen.add(p);
+      p = documentState.nodes[p]?.parent_id || null;
+    }
+    return false;
+  }
+  function relocate(n: MaterializedNode, parent: string) {
+    if (parent === n.id || nested(documentState.nodes[parent], n.id)) return;
+    onChange([
+      {
+        type: 'NodeMoved',
+        node_id: n.id,
+        new_parent_id: parent,
+        new_pos: between(items.filter((x) => x.parent_id === parent).at(-1)?.pos || '')
+      }
+    ]);
+  }
   const field = (n: MaterializedNode, k: string) => String(n.current_fields[k] ?? '');
   function edit(n: MaterializedNode, k: string, v: unknown) {
     onChange([{ type: 'FieldEdited', node_id: n.id, field: k, value: v }]);
@@ -66,7 +98,7 @@
       )
       .sort((a, b) => (a.pos < b.pos ? -1 : 1));
   }
-  function add(section = false) {
+  function add(section = false, repeat = false) {
     if (!root) return;
     const id = ulid();
     onChange([
@@ -74,10 +106,14 @@
         type: 'NodeCreated',
         node_id: id,
         node_type: section ? 'section' : 'item',
-        parent_id: current?.type === 'section' ? current.id : root.id,
+        parent_id: current?.type === 'section' ? current.id : current?.parent_id || root.id,
         pos: between(items.at(-1)?.pos || ''),
-        fields: { label: section ? 'New section' : 'Untitled question', question_type: 'text' },
-        var_name: section ? null : `q_${id.slice(-6).toLowerCase()}`
+        fields: {
+          label: section ? (repeat ? 'Repeating group' : 'New section') : 'Untitled question',
+          question_type: 'text',
+          group_type: section ? (repeat ? 'repeat' : 'group') : null
+        },
+        var_name: `${section ? 'group' : 'q'}_${id.slice(-8).toLowerCase()}`
       }
     ]);
     selected = id;
@@ -149,7 +185,10 @@
             >{/if}{field(n, 'label') || 'Untitled'}</button
         >{/each}{#if editable && !preview}<button class="add" onclick={() => add()}
           ><Plus size={14} /> Add question</button
-        ><button class="add" onclick={() => add(true)}><Plus size={14} /> Add section</button>{/if}
+        ><button class="add" onclick={() => add(true)}><Plus size={14} /> Add section</button
+        ><button class="add" onclick={() => add(true, true)}
+          ><Plus size={14} />Add repeating group</button
+        >{/if}
     </nav>
     <div class="canvas">
       {#if preview}<SurveyPreview {documentState} />{:else}{#each items as n}<section
@@ -176,7 +215,49 @@
                 onSelect?.(n.id);
               }}
               onchange={(e) => edit(n, 'label', e.currentTarget.value)}
-            />{#if n.type === 'item'}<input
+            />
+            <details class="structure">
+              <summary>Location & grouping</summary><label
+                >Inside<select
+                  disabled={!editable}
+                  value={n.parent_id || root?.id}
+                  onchange={(e) => relocate(n, e.currentTarget.value)}
+                  ><option value={root?.id}>Top level</option
+                  >{#each items.filter((g) => g.type === 'section' && g.id !== n.id && !nested(g, n.id)) as g}<option
+                      value={g.id}>{field(g, 'label')}</option
+                    >{/each}</select
+                ></label
+              >{#if n.type === 'section'}<label
+                  >Group variable<input
+                    disabled={!editable}
+                    value={n.var_name || ''}
+                    pattern="[a-zA-Z_][a-zA-Z0-9_]*"
+                    onchange={(e) => edit(n, 'var_name', e.currentTarget.value)}
+                  /></label
+                ><label
+                  >Group behavior<select
+                    disabled={!editable}
+                    value={field(n, 'group_type') || 'group'}
+                    onchange={(e) => edit(n, 'group_type', e.currentTarget.value)}
+                    ><option value="group">Show once</option><option value="repeat"
+                      >Repeat for multiple records</option
+                    ></select
+                  ></label
+                ><label
+                  >Repeat count expression<input
+                    disabled={!editable}
+                    value={column(n, 'repeat_count')}
+                    onchange={(e) => edit(n, 'repeat_count', e.currentTarget.value)}
+                  /></label
+                ><label
+                  >Show group when<input
+                    disabled={!editable}
+                    value={field(n, 'relevance')}
+                    onchange={(e) => edit(n, 'relevance', e.currentTarget.value)}
+                  /></label
+                >{/if}
+            </details>
+            {#if n.type === 'item'}<input
                 class="hint"
                 aria-label="Question hint"
                 placeholder="Add a hint for the respondent"
@@ -190,7 +271,12 @@
                     disabled={!editable}
                     value={field(n, 'question_type') || 'text'}
                     onchange={(e) => edit(n, 'question_type', e.currentTarget.value)}
-                    >{#each types as type}<option value={type}>{type.replaceAll('_', ' ')}</option
+                    >{#if !types.includes(field(n, 'question_type')) && field(n, 'question_type')}<option
+                        value={field(n, 'question_type')}
+                        >{field(n, 'question_type')} · imported type</option
+                      >{/if}{#each questionTypes as group}<optgroup label={group.group}
+                        >{#each group.items as [type, label]}<option value={type}>{label}</option
+                          >{/each}</optgroup
                       >{/each}</select
                   ></label
                 ><label
@@ -209,7 +295,9 @@
                   /> Required</label
                 >
               </div>
-              {#if field(n, 'question_type').startsWith('select_')}<div class="choices">
+              {#if ['select_one', 'select_multiple', 'rank'].includes(field(n, 'question_type'))}<div
+                  class="choices"
+                >
                   {#each choices(n.id) as choice}<div>
                       <input
                         aria-label="Choice value"
@@ -242,6 +330,17 @@
                         ])}><Plus size={12} /> Add option</button
                     >{/if}
                 </div>{/if}
+              {#if field(n, 'question_type').endsWith('_from_file') || field(n, 'question_type') === 'xml-external'}<label
+                  >Dataset filename<input
+                    disabled={!editable}
+                    placeholder="choices.csv"
+                    value={field(n, 'external_file')}
+                    onchange={(e) => edit(n, 'external_file', e.currentTarget.value)}
+                  /></label
+                >
+                <p class="support-note">
+                  Attach this dataset to the form in ODK or Kobo before field use.
+                </p>{/if}
               <details>
                 <summary>Logic & validation</summary
                 >{#each [{ key: 'relevance', label: 'Show when (XLSForm expression)' }, { key: 'required_expression', label: 'Required when (XLSForm expression)' }, { key: 'constraint', label: 'Validation expression' }, { key: 'constraint_message', label: 'Validation message' }, { key: 'calculation', label: 'Calculation' }, { key: 'default', label: 'Default value' }] as f}<label
@@ -252,6 +351,31 @@
                     /></label
                   >{/each}
               </details>{/if}
+            <details>
+              <summary>Appearance, translations & advanced XLSForm</summary>
+              <p class="support-note">
+                These settings are written to the XLSForm. Device capture, repeats, external
+                datasets and advanced expressions need validation in your destination platform.
+              </p>
+              {#each advancedColumns.filter((key) => n.type !== 'section' || ['appearance', 'parameters', 'repeat_count', 'read_only'].includes(key)) as key}<label
+                  >{key}<input
+                    disabled={!editable}
+                    value={column(n, key)}
+                    onchange={(e) => edit(n, key, e.currentTarget.value)}
+                  /></label
+                >{/each}<label
+                >Additional XLSForm columns and translations (JSON)<textarea
+                  disabled={!editable}
+                  rows="5"
+                  value={JSON.stringify(n.current_fields.xlsform || {}, null, 2)}
+                  onchange={(e) => extra(n, e.currentTarget.value)}
+                ></textarea></label
+              >
+              <p class="support-note">
+                Use keys such as label::English (en), label::বাংলা (bn), hint::বাংলা (bn), or custom
+                bind columns. Keep values as strings.
+              </p>
+            </details>
           </section>{:else}<div class="empty">
             <ClipboardList size={35} />
             <h2>Your questions start here</h2>
@@ -263,6 +387,24 @@
 </div>
 
 <style>
+  .support-note {
+    font-size: 14px;
+    line-height: 1.7;
+    color: #48667c;
+  }
+  .structure {
+    margin: 12px 0;
+  }
+  textarea {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #b5c7d6;
+    border-radius: 5px;
+    color: #29465f;
+    background: #fff;
+    font: 13px monospace;
+  }
+
   .questionnaire {
     background: #f5f7f8;
     flex: 1;
@@ -285,10 +427,10 @@
     align-items: center;
     border: 0;
     background: none;
-    color: #7b8ca0;
+    color: #46617a;
     padding: 7px 12px;
     border-radius: 5px;
-    font-size: 11px;
+    font-size: 13px;
     cursor: pointer;
   }
   .tools button.active {
@@ -311,9 +453,9 @@
   }
   nav strong {
     display: block;
-    font-size: 9px;
+    font-size: 13px;
     letter-spacing: 1.5px;
-    color: #a0adba;
+    color: #46617a;
     padding: 0 10px 15px;
   }
   nav button {
@@ -323,8 +465,8 @@
     text-align: left;
     background: none;
     border: 0;
-    font-size: 11px;
-    color: #7e8ea0;
+    font-size: 13px;
+    color: #46617a;
     padding: 10px;
     border-radius: 5px;
     width: 100%;
@@ -333,15 +475,15 @@
     text-overflow: ellipsis;
   }
   nav button span {
-    font-size: 9px;
-    color: #a0adba;
+    font-size: 13px;
+    color: #46617a;
   }
   nav button.selected {
     background: #e7efe9;
     color: #577d65;
   }
   nav .add {
-    color: #6b977d;
+    color: #46617a;
     margin-top: 10px;
   }
   .canvas {
@@ -376,15 +518,15 @@
   }
   .question-heading span {
     flex: 1;
-    font-size: 9px;
+    font-size: 13px;
     letter-spacing: 1px;
-    color: #a3b1bd;
+    color: #46617a;
   }
   .question-heading button,
   .choices button {
     background: none;
     border: 0;
-    color: #9eafbb;
+    color: #46617a;
     cursor: pointer;
     padding: 3px;
   }
@@ -402,8 +544,8 @@
     border-color: #98b2a1;
   }
   .hint {
-    font-size: 12px;
-    color: #9aabb7;
+    font-size: 13px;
+    color: #46617a;
     border: 0;
     background: none;
     width: 100%;
@@ -421,8 +563,8 @@
   details label {
     display: grid;
     gap: 7px;
-    font-size: 10px;
-    color: #91a3b0;
+    font-size: 13px;
+    color: #46617a;
     flex: 1;
   }
   .settings select,
@@ -431,7 +573,7 @@
     padding: 8px 9px;
     border: 1px solid #e0e7ed;
     border-radius: 4px;
-    color: #6a8193;
+    color: #46617a;
     font: 11px Arial;
     width: 100%;
     background: white;
@@ -442,7 +584,7 @@
     white-space: nowrap;
     gap: 5px;
     padding-bottom: 10px;
-    font-size: 10px;
+    font-size: 13px;
     flex: 0;
   }
   .settings .check input {
@@ -450,8 +592,8 @@
   }
   details {
     margin-top: 22px;
-    color: #95a8b7;
-    font-size: 10px;
+    color: #46617a;
+    font-size: 13px;
   }
   summary {
     cursor: pointer;
@@ -472,8 +614,8 @@
     border: 1px solid #e6ecf0;
     border-radius: 4px;
     padding: 7px 9px;
-    font-size: 11px;
-    color: #7890a1;
+    font-size: 13px;
+    color: #46617a;
     width: 100%;
     min-width: 0;
   }
@@ -484,19 +626,19 @@
     display: flex;
     gap: 4px;
     align-items: center;
-    font-size: 10px;
-    color: #7ba389;
+    font-size: 13px;
+    color: #46617a;
     margin-top: 12px;
   }
   .empty {
     text-align: center;
     padding: 80px 40px;
-    color: #a7b8c3;
+    color: #46617a;
   }
   .empty h2 {
     font-size: 22px;
     font-weight: 400;
-    color: #6c8597;
+    color: #46617a;
   }
   .empty p {
     font-size: 13px;
@@ -507,13 +649,13 @@
     color: #538065;
     padding: 10px 18px;
     border-radius: 5px;
-    font-size: 12px;
+    font-size: 13px;
     cursor: pointer;
   }
   .error {
     padding: 10px 25px;
     background: #fff0e6;
-    color: #b28970;
+    color: #46617a;
   }
   @media (max-width: 1000px) {
     nav {

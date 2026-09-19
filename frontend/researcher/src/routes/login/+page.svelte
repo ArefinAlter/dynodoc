@@ -69,10 +69,10 @@
 
 <svelte:head><title>Sign in · Dynodoc</title><meta name="robots" content="noindex" /></svelte:head>
 <main class="auth-page">
-  <a href="/" class="back"><ArrowLeft size={16} /> Back to Dynodoc</a>
+  <a href="https://dynodoc.online" class="back"><ArrowLeft size={16} /> Back to Dynodoc</a>
   <section class="card">
     <a class="brand" href="https://dynodoc.online"
-      ><img src="/brand/mark.svg" width="52" height="52" alt="Dynodoc" /></a
+      ><img src="/brand/mark.svg?v=2" width="52" height="52" alt="Dynodoc" /></a
     >
     <p class="eyebrow">YOUR RESEARCH, TOGETHER</p>
     <h1>Welcome to your workspace.</h1>
@@ -177,7 +177,7 @@
     text-decoration: none;
   }
   .eyebrow {
-    font-size: 10px;
+    font-size: 13px;
     letter-spacing: 2px;
     color: #57728d;
     margin: 24px 0 12px;
@@ -213,7 +213,7 @@
   }
   .g {
     font: bold 20px Arial;
-    color: #4285f4;
+    color: #46617a;
   }
   .primary {
     background: #205bb0;
@@ -233,7 +233,7 @@
     align-items: center;
     gap: 12px;
     color: #677079;
-    font-size: 12px;
+    font-size: 13px;
     margin: 22px 0;
   }
   .divider span {
@@ -246,7 +246,7 @@
     gap: 16px;
   }
   label {
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 500;
     color: #3f4d5d;
     display: grid;
@@ -266,7 +266,7 @@
   }
   .fine,
   .setup {
-    font-size: 11px;
+    font-size: 13px;
     color: #66707a;
     line-height: 1.6;
   }
@@ -278,7 +278,7 @@
   }
   .footer {
     text-align: center;
-    font-size: 12px;
+    font-size: 13px;
     color: #626972;
   }
   .notice {
@@ -297,7 +297,7 @@
     background: none;
     color: #365f50;
     text-decoration: underline;
-    font-size: 12px;
+    font-size: 13px;
     margin: 16px 0;
     cursor: pointer;
   }

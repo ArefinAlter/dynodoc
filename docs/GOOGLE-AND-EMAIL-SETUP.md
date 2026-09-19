@@ -143,3 +143,76 @@ response to that read endpoint is expected and does not mean the key is invalid.
 Confirm domain verification in the Resend dashboard, then test actual delivery and
 Google login from your browser on both hosts. No real message was sent by the
 deployment checks, and provider-presence flags do not substitute for these tests.
+
+## Optional Google Forms connection
+
+Ordinary sign-in still requests only `openid email profile`. Importing private Forms
+uses a separate, explicit read-only consent flow with the existing OAuth client.
+The owner confirmed enabling Forms API and registering:
+
+```text
+https://app.dynodoc.online/integrations/google/callback
+```
+
+In **Google Auth Platform → Data Access**, declare:
+
+```text
+https://www.googleapis.com/auth/forms.body.readonly
+https://www.googleapis.com/auth/forms.responses.readonly
+```
+
+Keep **Audience → In production**. Check **Verification Center** for scope/brand
+review requirements. Publishing basic sign-in does not automatically verify new
+Forms permissions. Google may apply an unverified-app warning or user cap until
+required review is completed; Workspace administrators can also restrict access.
+The scopes are documented by Google's [form reader](https://developers.google.com/workspace/forms/api/reference/rest/v1/forms/get)
+and [response reader](https://developers.google.com/workspace/forms/api/reference/rest/v1/forms.responses/list).
+See [Google's verification instructions](https://developers.google.com/identity/protocols/oauth2/production-readiness/sensitive-scope-verification).
+
+`GOOGLE_FORMS_API` is not used: an API key cannot authorize reading a researcher's
+private forms. Keep the existing client secret private; no additional key is
+required by this implementation. Finalize the legal operator details and policy
+review before submitting the policy as final to Google.
+
+In the workspace, open **Google Forms**, connect, and paste the form's **editor**
+URL (`https://docs.google.com/forms/d/FORM_ID/edit`) or API form ID. A public
+respondent URL containing `/d/e/` is a different identifier and is rejected. Choose
+questionnaire or responses, review conversion notes, then confirm import. The
+connection is encrypted in an HttpOnly cookie, bound to the current Dynodoc account,
+and expires within one hour. No refresh token or background synchronization is
+requested. Disconnect/sign-out clears it; revoke the grant in Google Account
+permissions to remove provider authorization. Imported documents remain until
+handled through the workspace's retention process.
+
+Acceptance requires an owner-controlled real form: check single/multiple choice,
+grids, dates, validation, branching and response counts against the original.
+Grids flatten; branching, media, quiz grading and unsupported settings require
+review. Import retains the source form definition in the generated original XLSX.
+API reads are capped at 10 MiB, 2,000 questions, 2,999 response rows and 100 columns;
+large imports fail with a visible explanation instead of silently truncating.
+
+### Verification Center scope justifications
+
+The owner confirmed saving both Forms scopes on 19 September 2026. Use these
+implementation-specific explanations when Google requests justification:
+
+**forms.body.readonly:** Dynodoc lets signed-in researchers import a Google Form
+they can access into an editable research questionnaire. The user explicitly
+connects Google Forms and supplies a form ID. We read its questions, choices,
+settings and structure to create a separate workspace copy. We do not modify the
+original form or request Google Drive access.
+
+**forms.responses.readonly:** Dynodoc lets researchers import responses from a
+selected Google Form into a spreadsheet for review and analysis. The import starts
+only when the user requests it. We need read access to retrieve answers and response
+identifiers. We do not edit responses, synchronize in the background or use the data
+for advertising.
+
+For a requested demonstration video, use a synthetic form with non-sensitive sample
+answers: show workspace sign-in, the Google Forms connection button, Google's consent
+screen with the client identity/scopes, questionnaire import and its conversion notes,
+response import and resulting sheet, then disconnect. Show the published privacy
+policy. Never show client secrets, real participant records or private access tokens.
+Complete the operator/contact details and policy review before presenting the draft
+policy as adopted. Google decides whether the submitted demonstration and information
+satisfy its review; these explanations are not a guarantee of verification.

@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { accessToken } from '$lib/server/session';
+import { activeIdentity } from '$lib/server/session';
 import { researchRead, ResearchError } from '$lib/server/research';
 import type { ResearchRequest } from '$lib/workspace/connectors';
 import type { RequestHandler } from './$types';
@@ -7,7 +7,7 @@ let active = 0;
 export const POST: RequestHandler = async ({ request, url, cookies }) => {
   if (request.headers.get('origin') !== url.origin)
     return json({ error: 'Invalid origin' }, { status: 403 });
-  if (!(await accessToken(cookies, url.protocol === 'https:')))
+  if (!(await activeIdentity(cookies, url.protocol === 'https:')))
     return json({ error: 'Please sign in' }, { status: 401 });
   if (active >= 4)
     return json(

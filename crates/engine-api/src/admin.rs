@@ -1,7 +1,7 @@
 //! Read-only operations overview and bounded anonymous performance samples.
 use crate::{auth::AuthContext, error::ApiError, AppState};
 use axum::{
-    extract::State,
+    extract::{Query, State},
     http::HeaderMap,
     routing::{get, post},
     Json, Router,
@@ -15,6 +15,8 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/admin/overview", get(overview))
         .route("/telemetry", post(telemetry))
+        .route("/admin/records", get(records))
+        .route("/admin/actions", post(action))
 }
 pub fn is_admin(email: &str, configured: &str) -> bool {
     configured
@@ -105,4 +107,130 @@ mod tests {
             "owner@example.org"
         ));
     }
+}
+
+#[derive(Deserialize)]
+struct RecordsQuery {
+    kind: String,
+    #[serde(default)]
+    q: String,
+    #[serde(default)]
+    offset: i64,
+}
+async fn require_admin(state: &AppState, auth: &AuthContext) -> Result<(), ApiError> {
+    let email: String =
+        sqlx::query_scalar("select email from identity where id=$1 and disabled_at is null")
+            .bind(auth.identity_id)
+            .fetch_one(&state.pool)
+            .await?;
+    if !is_admin(&email, &state.admin_emails) {
+        return Err(ApiError::Forbidden);
+    }
+    Ok(())
+}
+async fn records(
+    State(state): State<AppState>,
+    auth: AuthContext,
+    Query(q): Query<RecordsQuery>,
+) -> Result<Json<Value>, ApiError> {
+    require_admin(&state, &auth).await?;
+    if q.q.len() > 200 || !(0..=100000).contains(&q.offset) {
+        return Err(ApiError::BadRequest {
+            reason: "Invalid search or page".into(),
+        });
+    }
+    let query=match q.kind.as_str(){
+ "users"=>"select jsonb_build_object('id',id,'label',email,'name',display_name,'created_at',created_at,'removed_at',disabled_at) from identity where strpos(lower(email),lower($1))>0 or strpos(lower(coalesce(display_name,'')),lower($1))>0 order by created_at desc,id limit 50 offset $2",
+ "documents"=>"select jsonb_build_object('id',d.id,'label',d.title,'owner',i.email,'created_at',d.created_at,'removed_at',d.deleted_at,'kind',d.settings->>'kind') from document d left join identity i on i.id=d.created_by where strpos(lower(d.title),lower($1))>0 order by d.created_at desc,d.id limit 50 offset $2",
+ "audit"=>"select jsonb_build_object('id',a.id,'label',a.action,'actor',i.email,'resource_id',a.resource_id,'created_at',a.created_at) from operation_audit a join identity i on i.id=a.actor_id where strpos(lower(a.action),lower($1))>0 order by a.id desc limit 50 offset $2",
+ _=>return Err(ApiError::BadRequest{reason:"Choose users, documents or audit".into()})};
+    let items: Vec<Value> = sqlx::query_scalar(query)
+        .bind(q.q.trim())
+        .bind(q.offset)
+        .fetch_all(&state.pool)
+        .await?;
+    Ok(Json(json!({"items":items})))
+}
+#[derive(Deserialize)]
+struct AdminAction {
+    kind: String,
+    id: Uuid,
+    removed: bool,
+    confirmation: String,
+}
+async fn action(
+    State(state): State<AppState>,
+    auth: AuthContext,
+    Json(input): Json<AdminAction>,
+) -> Result<Json<Value>, ApiError> {
+    require_admin(&state, &auth).await?;
+    let mut tx = state.pool.begin().await?;
+    let action = match input.kind.as_str() {
+        "users" => {
+            let email: Option<String> =
+                sqlx::query_scalar("select email from identity where id=$1 for update")
+                    .bind(input.id)
+                    .fetch_optional(&mut *tx)
+                    .await?;
+            let email = email.ok_or(ApiError::NotFound)?;
+            if input.confirmation != email {
+                return Err(ApiError::BadRequest {
+                    reason: "Type the account email to confirm".into(),
+                });
+            }
+            if input.removed
+                && (input.id == auth.identity_id || is_admin(&email, &state.admin_emails))
+            {
+                return Err(ApiError::BadRequest {
+                    reason: "Administrator accounts must be managed through the server allowlist"
+                        .into(),
+                });
+            }
+            sqlx::query(
+                "update identity set disabled_at=case when $2 then now() else null end, session_generation=session_generation+case when $2 then 1 else 0 end where id=$1",
+            )
+            .bind(input.id)
+            .bind(input.removed)
+            .execute(&mut *tx)
+            .await?;
+            if input.removed {
+                sqlx::query("update refresh_token set revoked_at=now() where identity_id=$1 and revoked_at is null").bind(input.id).execute(&mut *tx).await?;
+                sqlx::query("update public_document_view set revoked_at=now() where created_by=$1 and revoked_at is null").bind(input.id).execute(&mut *tx).await?;
+            }
+            if input.removed {
+                "account.removed"
+            } else {
+                "account.restored"
+            }
+        }
+        "documents" => {
+            let title: Option<String> =
+                sqlx::query_scalar("select title from document where id=$1 for update")
+                    .bind(input.id)
+                    .fetch_optional(&mut *tx)
+                    .await?;
+            if title.ok_or(ApiError::NotFound)? != input.confirmation {
+                return Err(ApiError::BadRequest {
+                    reason: "Type the document title to confirm".into(),
+                });
+            }
+            sqlx::query("update document set deleted_at=case when $2 then now() else null end,updated_at=now() where id=$1").bind(input.id).bind(input.removed).execute(&mut *tx).await?;
+            if input.removed {
+                sqlx::query("update public_document_view set revoked_at=now() where document_id=$1 and revoked_at is null").bind(input.id).execute(&mut *tx).await?;
+            }
+            if input.removed {
+                "document.trashed_by_admin"
+            } else {
+                "document.restored_by_admin"
+            }
+        }
+        _ => {
+            return Err(ApiError::BadRequest {
+                reason: "Choose a user or document".into(),
+            })
+        }
+    };
+    crate::product::audit(&mut tx, auth.identity_id, action, input.id, json!({})).await?;
+    tx.commit().await?;
+    Ok(Json(json!({"ok":true})))
 }

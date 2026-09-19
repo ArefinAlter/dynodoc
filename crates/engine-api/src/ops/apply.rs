@@ -332,13 +332,11 @@ pub(crate) async fn begin_write(
     if exists.is_none() {
         return Err(ApiError::NotFound);
     }
-    let role: Option<String> = sqlx::query_scalar(
-        "select role from document_access where document_id=$1 and identity_id=$2",
-    )
-    .bind(document_id.0)
-    .bind(actor.0)
-    .fetch_optional(&mut *tx)
-    .await?;
+    let role: Option<String> = sqlx::query_scalar("select effective_document_role($1,$2)")
+        .bind(document_id.0)
+        .bind(actor.0)
+        .fetch_one(&mut *tx)
+        .await?;
     let role = role
         .and_then(|r| r.parse().ok())
         .ok_or(ApiError::Forbidden)?;

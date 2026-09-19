@@ -11,7 +11,9 @@
   });
   import { goto } from '$app/navigation';
   import { setUnauthorizedHandler } from '$lib/api/client';
+  import HelpGuide from '$lib/components/product/HelpGuide.svelte';
   import ToastHost from '$lib/components/ToastHost.svelte';
+  import { CANONICAL_ORIGIN, SITE_IMAGE, canonicalUrl, isIndexablePath } from '$lib/seo';
 
   let { children } = $props();
 
@@ -23,18 +25,32 @@
 </script>
 
 <svelte:head>
-  {#if ['/', '/privacy', '/terms'].includes($page.url.pathname)}
-    <link rel="canonical" href={`https://dynodoc.online${$page.url.pathname}`} />
-    <meta property="og:url" content={`https://dynodoc.online${$page.url.pathname}`} />
+  {#if isIndexablePath($page.url.pathname)}
+    <link rel="canonical" href={canonicalUrl($page.url.pathname)} />
+    <!-- Allow full snippets and large image previews, so search and answer
+         engines can quote these pages properly rather than truncating them. -->
+    <meta
+      name="robots"
+      content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1"
+    />
+    <meta property="og:url" content={canonicalUrl($page.url.pathname)} />
     <meta property="og:site_name" content="Dynodoc" />
     <meta property="og:type" content="website" />
-    <meta property="og:image" content="https://dynodoc.online/brand/social.png" />
+    <meta property="og:locale" content="en" />
+    <meta property="og:image" content={SITE_IMAGE} />
     <meta property="og:image:width" content="1200" /><meta
       property="og:image:height"
       content="630"
     />
+    <meta property="og:image:alt" content="Dynodoc — a shared workspace for research" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:image" content="https://dynodoc.online/brand/social.png" />
+    <meta name="twitter:image" content={SITE_IMAGE} />
+    <link
+      rel="alternate"
+      type="text/plain"
+      href={`${CANONICAL_ORIGIN}/llms.txt`}
+      title="llms.txt"
+    />
     {#if env.PUBLIC_GOOGLE_SITE_VERIFICATION}<meta
         name="google-site-verification"
         content={env.PUBLIC_GOOGLE_SITE_VERIFICATION}
@@ -43,3 +59,4 @@
 </svelte:head>
 {@render children()}
 <ToastHost />
+<HelpGuide />

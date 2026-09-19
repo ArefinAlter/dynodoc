@@ -25,6 +25,7 @@ use crate::AppState;
 /// circuits with `401` before the handler body runs.
 pub struct AuthContext {
     pub identity_id: Uuid,
+    pub session_generation: i64,
 }
 
 #[axum::async_trait]
@@ -41,8 +42,12 @@ impl FromRequestParts<AppState> for AuthContext {
             .strip_prefix("Bearer ")
             .ok_or(AuthError::TokenInvalid)?
             .trim();
-        let identity_id = token::verify(&state.auth.paseto_key, raw)?;
-        Ok(AuthContext { identity_id })
+        let (identity_id, session_generation) = token::verify_session(&state.auth.paseto_key, raw)?;
+        store::ensure_session(&state.pool, identity_id, session_generation).await?;
+        Ok(AuthContext {
+            identity_id,
+            session_generation,
+        })
     }
 }
 
@@ -126,14 +131,23 @@ struct TokenResponse {
 }
 
 async fn mint_session(state: &AppState, identity_id: Uuid) -> Result<TokenResponse, AuthError> {
-    let access_token = token::mint(
+    let generation = store::session_generation(&state.pool, identity_id).await?;
+    let access_token = token::mint_generation(
         &state.auth.paseto_key,
         identity_id,
         state.auth.token_ttl_seconds,
+        generation,
     )?;
     let (refresh_plain, refresh_hash) = random_token()?;
     let refresh_expires = Utc::now() + Duration::seconds(REFRESH_TTL_SECONDS);
-    store::issue_refresh(&state.pool, identity_id, &refresh_hash, refresh_expires).await?;
+    store::issue_refresh_generation(
+        &state.pool,
+        identity_id,
+        &refresh_hash,
+        refresh_expires,
+        generation,
+    )
+    .await?;
     Ok(TokenResponse {
         access_token,
         token_type: "Bearer",
@@ -169,14 +183,15 @@ async fn refresh(
     let presented = sha256(req.refresh_token.as_bytes());
     let (new_plain, new_hash) = random_token()?;
     let refresh_expires = Utc::now() + Duration::seconds(REFRESH_TTL_SECONDS);
-    let identity_id =
-        store::rotate_refresh(&state.pool, &presented, &new_hash, refresh_expires).await?;
+    let (identity_id, generation) =
+        store::rotate_refresh_session(&state.pool, &presented, &new_hash, refresh_expires).await?;
 
-    // Reuse the just-issued successor token; mint only the access token here.
-    let access_token = token::mint(
+    // The successor keeps the session generation of the presented credential.
+    let access_token = token::mint_generation(
         &state.auth.paseto_key,
         identity_id,
         state.auth.token_ttl_seconds,
+        generation,
     )?;
     Ok(Json(TokenResponse {
         access_token,

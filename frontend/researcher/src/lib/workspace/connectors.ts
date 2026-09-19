@@ -1,6 +1,6 @@
 export type ResearchProvider = 'odk' | 'kobo' | 'redcap' | 'surveycto' | 'surveymonkey';
 export interface ResearchSource {
-  provider: ResearchProvider;
+  provider: ResearchProvider | 'google_forms';
   origin: string;
   project: string;
   form: string;

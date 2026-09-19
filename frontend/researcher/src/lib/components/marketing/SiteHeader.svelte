@@ -16,13 +16,14 @@
 
 <a class="skip" href="#main">Skip to content</a>
 <header>
-  <a class="brand" href="/" aria-label="Dynodoc home"
-    ><img src="/brand/mark.svg" width="35" height="37" alt="" />dynodoc<span class="dot">.</span></a
+  <a class="brand" href="https://dynodoc.online" aria-label="Dynodoc home"
+    ><img src="/brand/mark.svg?v=2" width="35" height="37" alt="" />dynodoc<span class="dot">.</span
+    ></a
   >
   <nav aria-label="Main navigation" class:open>
-    <a href="/#workspace" onclick={() => (open = false)}>The workspace</a>
-    <a href="/#collaboration" onclick={() => (open = false)}>How it works</a>
-    <a href="/#integrations" onclick={() => (open = false)}>Integrations</a>
+    <a href="https://dynodoc.online/features" onclick={() => (open = false)}>Features</a>
+    <a href="https://dynodoc.online/#collaboration" onclick={() => (open = false)}>How it works</a>
+    <a href="https://dynodoc.online/#integrations" onclick={() => (open = false)}>Integrations</a>
   </nav>
   <a class="enter" href={workspace}>Open workspace <ArrowUpRight size={16} /></a>
   <button
@@ -75,7 +76,7 @@
     margin-left: auto;
   }
   nav a {
-    font-size: 13px;
+    font-size: 15px;
     font-weight: 550;
     color: #405469;
     text-decoration: none;

@@ -289,9 +289,9 @@
     font: inherit;
   }
   .hint {
-    color: #738078;
+    color: #46617a;
     line-height: 1.6;
-    font-size: 12px;
+    font-size: 13px;
   }
   button {
     cursor: pointer;

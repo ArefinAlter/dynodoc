@@ -1,4 +1,5 @@
 <script lang="ts">
+  import AdminRecords from '$lib/components/product/AdminRecords.svelte';
   import { clearSession } from '$lib/stores/session.svelte';
   import { invalidateAll, goto } from '$app/navigation';
   import {
@@ -31,7 +32,7 @@
 <div class="ops">
   <header>
     <a href="https://dynodoc.online"
-      ><img src="/brand/logo.svg" width="165" height="36" alt="Dynodoc" /></a
+      ><img src="/brand/logo.svg?v=2" width="165" height="36" alt="Dynodoc" /></a
     ><span>Operations</span><a href="https://app.dynodoc.online/workspace"
       >Workspace <ExternalLink size={14} /></a
     >
@@ -57,6 +58,7 @@
           <span>{label}</span><strong>{Number(value).toLocaleString()}</strong>
         </article>{/each}
     </section>
+    <AdminRecords />
     <div class="columns">
       <section class="panel">
         <h2><Activity size={20} /> Services</h2>

@@ -21,9 +21,13 @@ test('canonical pages, sitemap, structured metadata and icons are available', as
     (await page.locator('script[type="application/ld+json"]').textContent()) || '{}'
   );
   expect(metadata['@graph'][0].name).toBe('Dynodoc');
-  const xml = await (await request.get('/sitemap.xml')).text();
-  expect(xml).toContain('https://dynodoc.online/privacy');
-  expect(xml).not.toContain('/workspace');
+  const sitemap = await request.get('/sitemap.xml');
+  if (['dynodoc.online', 'www.dynodoc.online'].includes(new URL(page.url()).hostname)) {
+    expect(sitemap.status()).toBe(200);
+    const xml = await sitemap.text();
+    expect(xml).toContain('https://dynodoc.online/privacy');
+    expect(xml).not.toContain('/workspace');
+  } else expect(sitemap.status()).toBe(404);
   for (const path of [
     '/favicon.svg',
     '/favicon.ico',
@@ -37,7 +41,17 @@ test('canonical pages, sitemap, structured metadata and icons are available', as
   expect(admin.headers()['x-robots-tag']).toContain('noindex');
 });
 test('public pages pass automated WCAG A and AA checks', async ({ page }) => {
-  for (const path of ['/', '/login', '/privacy', '/terms']) {
+  for (const path of [
+    '/',
+    '/login',
+    '/privacy',
+    '/terms',
+    '/features',
+    '/why-dynodoc',
+    '/roadmap',
+    '/help',
+    '/cookies'
+  ]) {
     await page.goto(path);
     await page.waitForLoadState('networkidle');
     const result = await new AxeBuilder({ page })

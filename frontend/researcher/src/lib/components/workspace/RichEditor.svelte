@@ -1,4 +1,12 @@
 <script lang="ts">
+  import ContextMenu from '$lib/components/product/ContextMenu.svelte';
+  import type { MenuAction } from '$lib/workspace/context-menu';
+  import Mathematics from '@tiptap/extension-mathematics';
+  import Superscript from '@tiptap/extension-superscript';
+  import Subscript from '@tiptap/extension-subscript';
+  import TaskList from '@tiptap/extension-task-list';
+  import TaskItem from '@tiptap/extension-task-item';
+  import 'katex/dist/katex.min.css';
   import { stableJson } from '$lib/workspace/equality';
   import { textOf, type TextBlock } from '$lib/workspace/files';
   import { onMount } from 'svelte';
@@ -43,8 +51,9 @@
     onChange: (content: JSONContent) => void;
     onSelect?: (id: string | null) => void;
     revision: number;
+    onComment?: () => void;
   }
-  let { content, editable, onChange, onSelect, revision }: Props = $props();
+  let { content, editable, onChange, onSelect, revision, onComment }: Props = $props();
   let host: HTMLDivElement;
   let editor = $state.raw<Editor | null>(null),
     tick = $state(0),
@@ -57,6 +66,160 @@
     linkUrl = $state(''),
     imageOpen = $state(false),
     imageUrl = $state('');
+  let context = $state<{ x: number; y: number; items: MenuAction[] } | null>(null),
+    feedback = $state('');
+  let mathDialog: HTMLDialogElement,
+    latex = $state(''),
+    mathBlock = $state(false),
+    mathPos = $state<number | null>(null);
+  function openMath(block = false, source = '', pos: number | null = null) {
+    if (!editable) return;
+    latex = source;
+    mathBlock = block;
+    mathPos = pos;
+    mathDialog.showModal();
+  }
+  function insertMath() {
+    if (!editor || !latex.trim()) return;
+    const value = { latex: latex.trim(), ...(mathPos === null ? {} : { pos: mathPos }) };
+    const chain = editor.chain().focus();
+    if (mathPos === null) {
+      if (mathBlock) chain.insertBlockMath(value).run();
+      else chain.insertInlineMath(value).run();
+    } else {
+      if (mathBlock) chain.updateBlockMath(value).run();
+      else chain.updateInlineMath(value).run();
+    }
+    mathDialog.close();
+  }
+  async function clipboard(action: string) {
+    if (!editor) return;
+    try {
+      if (action === 'paste') {
+        const text = await navigator.clipboard.readText();
+        editor.chain().focus().insertContent({ type: 'text', text }).run();
+      } else {
+        await navigator.clipboard.writeText(
+          editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, '\n')
+        );
+        if (action === 'cut' && editable) editor.chain().focus().deleteSelection().run();
+      }
+    } catch {
+      feedback =
+        'Your browser blocked clipboard access. Use Ctrl+C, Ctrl+X or Ctrl+V in the document.';
+    }
+  }
+  function contextMenu(event: MouseEvent) {
+    if (!editor) return false;
+    event.preventDefault();
+    const position = editor.view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
+    const selection = editor.state.selection;
+    if (
+      position !== undefined &&
+      (selection.empty || position < selection.from || position > selection.to)
+    )
+      editor.commands.setTextSelection(position);
+    const point =
+      event.clientX || event.clientY
+        ? { x: event.clientX, y: event.clientY }
+        : {
+            x: editor.view.coordsAtPos(editor.state.selection.from).left,
+            y: editor.view.coordsAtPos(editor.state.selection.from).bottom
+          };
+    const e = editor;
+    context = {
+      ...point,
+      items: [
+        {
+          label: 'Cut',
+          action: () => clipboard('cut'),
+          disabled: !editable || e.state.selection.empty
+        },
+        { label: 'Copy', action: () => clipboard('copy'), disabled: e.state.selection.empty },
+        { label: 'Paste plain text', action: () => clipboard('paste'), disabled: !editable },
+        ...(onComment
+          ? [{ label: 'Add comment', action: () => onComment?.(), separator: true }]
+          : []),
+        {
+          label: 'Select all',
+          action: () => {
+            e.chain().focus().selectAll().run();
+          }
+        },
+        {
+          label: 'Bold',
+          action: () => {
+            e.chain().focus().toggleBold().run();
+          },
+          disabled: !editable,
+          separator: true
+        },
+        {
+          label: 'Italic',
+          action: () => {
+            e.chain().focus().toggleItalic().run();
+          },
+          disabled: !editable
+        },
+        {
+          label: 'Insert or edit link',
+          action: () => {
+            linkOpen = true;
+            linkUrl = String(e.getAttributes('link').href || '');
+          },
+          disabled: !editable
+        },
+        {
+          label: 'Clear formatting',
+          action: () => {
+            e.chain().focus().unsetAllMarks().clearNodes().run();
+          },
+          disabled: !editable
+        },
+        ...(e.isActive('table')
+          ? [
+              {
+                label: 'Insert row below',
+                action: () => {
+                  e.chain().focus().addRowAfter().run();
+                },
+                disabled: !editable,
+                separator: true
+              },
+              {
+                label: 'Insert column right',
+                action: () => {
+                  e.chain().focus().addColumnAfter().run();
+                },
+                disabled: !editable
+              },
+              {
+                label: 'Merge / split cells',
+                action: () => {
+                  e.chain().focus().mergeOrSplit().run();
+                },
+                disabled: !editable
+              },
+              {
+                label: 'Delete row',
+                action: () => {
+                  e.chain().focus().deleteRow().run();
+                },
+                disabled: !editable
+              },
+              {
+                label: 'Delete column',
+                action: () => {
+                  e.chain().focus().deleteColumn().run();
+                },
+                disabled: !editable
+              }
+            ]
+          : [])
+      ]
+    };
+    return true;
+  }
   let applyingRemote = false;
   let appliedRevision = -1;
   onMount(() => {
@@ -68,6 +231,15 @@
         }),
         TableKit.configure({ table: { resizable: true } }),
         TextStyleKit,
+        Superscript,
+        Subscript,
+        TaskList,
+        TaskItem.configure({ nested: true }),
+        Mathematics.configure({
+          katexOptions: { trust: false, throwOnError: false, maxExpand: 1000 },
+          inlineOptions: { onClick: (node, pos) => openMath(false, String(node.attrs.latex), pos) },
+          blockOptions: { onClick: (node, pos) => openMath(true, String(node.attrs.latex), pos) }
+        }),
         TextAlign.configure({ types: ['heading', 'paragraph'] }),
         Highlight.configure({ multicolor: true }),
         Image.configure({ allowBase64: false }),
@@ -82,7 +254,9 @@
             'table',
             'image',
             'horizontalRule',
-            'codeBlock'
+            'codeBlock',
+            'taskList',
+            'blockMath'
           ],
           generateID: () => ulid()
         })
@@ -90,6 +264,7 @@
       content,
       editable,
       editorProps: {
+        handleDOMEvents: { contextmenu: (_view, event) => contextMenu(event) },
         attributes: {
           'aria-label': 'Document content',
           role: 'textbox',
@@ -189,7 +364,89 @@
 </script>
 
 <div class="rich-editor">
+  {#if feedback}<p class="feedback" role="status">
+      {feedback}<button onclick={() => (feedback = '')}>Dismiss</button>
+    </p>{/if}
   <div class="toolbar" aria-label="Formatting tools">
+    <button
+      aria-label="Superscript"
+      title="Superscript"
+      disabled={!editable}
+      class:active={active('superscript')}
+      onclick={() => editor?.chain().focus().toggleSuperscript().run()}>x²</button
+    >
+    <button
+      aria-label="Subscript"
+      title="Subscript"
+      disabled={!editable}
+      class:active={active('subscript')}
+      onclick={() => editor?.chain().focus().toggleSubscript().run()}>x₂</button
+    >
+    <button
+      aria-label="Checklist"
+      title="Checklist"
+      disabled={!editable}
+      onclick={() => editor?.chain().focus().toggleTaskList().run()}>☑</button
+    >
+    <button
+      aria-label="Insert LaTeX equation"
+      title="Insert LaTeX equation"
+      disabled={!editable}
+      onclick={() => openMath()}>∑</button
+    >
+    <select
+      aria-label="Line spacing"
+      disabled={!editable}
+      onchange={(e) => {
+        editor?.chain().focus().setLineHeight(e.currentTarget.value).run();
+      }}
+      ><option value="1.6">Line spacing</option><option value="1">Single</option><option
+        value="1.15">1.15</option
+      ><option value="1.5">1.5</option><option value="2">Double</option></select
+    >
+    <select
+      aria-label="More document tools"
+      disabled={!editable}
+      onchange={(e) => {
+        const c = editor?.chain().focus();
+        switch (e.currentTarget.value) {
+          case 'code':
+            c?.toggleCodeBlock().run();
+            break;
+          case 'row-before':
+            c?.addRowBefore().run();
+            break;
+          case 'column-before':
+            c?.addColumnBefore().run();
+            break;
+          case 'header':
+            c?.toggleHeaderRow().run();
+            break;
+          case 'merge':
+            c?.mergeCells().run();
+            break;
+          case 'split':
+            c?.splitCell().run();
+            break;
+          case 'table-delete':
+            c?.deleteTable().run();
+            break;
+          case 'unlink':
+            c?.unsetLink().run();
+            break;
+        }
+        e.currentTarget.value = '';
+      }}
+      ><option value="">More tools</option><option value="code">Code block</option><option
+        value="unlink">Remove link</option
+      ><option value="row-before">Table: row above</option><option value="column-before"
+        >Table: column left</option
+      ><option value="header">Table: header row</option><option value="merge"
+        >Table: merge cells</option
+      ><option value="split">Table: split cell</option><option value="table-delete"
+        >Delete table</option
+      ></select
+    >
     <button
       title="Undo (Ctrl+Z)"
       aria-label="Undo"
@@ -458,7 +715,102 @@
     </div>{/if}
 </div>
 
+{#if context}<ContextMenu
+    {...context}
+    onClose={() => {
+      context = null;
+    }}
+  />{/if}
+<dialog bind:this={mathDialog} aria-labelledby="math-title">
+  <form
+    onsubmit={(e) => {
+      e.preventDefault();
+      insertMath();
+    }}
+  >
+    <h2 id="math-title">LaTeX equation</h2>
+    <label
+      >Equation source<textarea
+        bind:value={latex}
+        required
+        maxlength="2000"
+        rows="4"
+        placeholder="E = mc^2"
+      ></textarea></label
+    ><label
+      ><input type="checkbox" bind:checked={mathBlock} disabled={mathPos !== null} />Display on its
+      own line</label
+    >
+    <p>KaTeX renders the equation. Click an equation in the document to edit its source.</p>
+    <button type="button" onclick={() => mathDialog.close()}>Cancel</button><button type="submit"
+      >{mathPos === null ? 'Insert equation' : 'Update equation'}</button
+    >
+  </form>
+</dialog>
+
 <style>
+  dialog {
+    border: 1px solid #b9cadc;
+    border-radius: 10px;
+    padding: 25px;
+    max-width: 520px;
+    width: calc(100% - 36px);
+    color: #29445f;
+  }
+  dialog::backdrop {
+    background: #1b355266;
+  }
+  dialog label {
+    display: block;
+    margin: 14px 0;
+    font-size: 14px;
+  }
+  dialog textarea {
+    display: block;
+    width: 100%;
+    font: 15px monospace;
+    border: 1px solid #adbed0;
+    border-radius: 5px;
+    padding: 10px;
+    margin-top: 7px;
+  }
+  dialog p {
+    font-size: 14px;
+    line-height: 1.6;
+    color: #4c647d;
+  }
+  dialog button,
+  .feedback button {
+    padding: 9px 14px;
+    border: 1px solid #b9cadc;
+    background: #e4eefe;
+    border-radius: 5px;
+    color: #254f86;
+    margin-right: 8px;
+    cursor: pointer;
+  }
+  .feedback {
+    padding: 12px 22px;
+    color: #315675;
+    font-size: 14px;
+  }
+  .rich-editor :global(ul[data-type='taskList']) {
+    list-style: none;
+    padding-left: 0;
+  }
+  .rich-editor :global(li[data-type='taskItem']) {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+  .rich-editor :global(li[data-type='taskItem'] > div) {
+    flex: 1;
+  }
+  .rich-editor :global(.tiptap-mathematics-render) {
+    max-width: 100%;
+    overflow: auto;
+  }
+
   .rich-editor {
     font-family: Arial, sans-serif;
     flex: 1;
@@ -502,7 +854,7 @@
     background: none;
     border: 0;
     color: #526172;
-    font-size: 11px;
+    font-size: 13px;
     max-width: 105px;
     padding: 5px 3px;
     height: 28px;
@@ -517,9 +869,9 @@
     margin: 0 5px;
   }
   .percent {
-    font-size: 10px;
+    font-size: 13px;
     margin-left: -3px;
-    color: #6f7a87;
+    color: #46617a;
   }
   .color {
     position: relative;
@@ -550,8 +902,8 @@
     margin: auto;
     display: flex;
     justify-content: space-between;
-    color: #a3abb6;
-    font-size: 8px;
+    color: #46617a;
+    font-size: 13px;
     border-bottom: 1px solid #d9dfe7;
     padding: 0 15px 4px;
     background: repeating-linear-gradient(90deg, transparent 0, transparent 9px, #d5dce6 10px);
@@ -665,8 +1017,8 @@
     margin: 22px 0;
   }
   .document-foot {
-    font-size: 10px;
-    color: #9ba5b0;
+    font-size: 13px;
+    color: #46617a;
     max-width: 794px;
     margin: 14px auto;
   }
@@ -681,15 +1033,15 @@
     padding: 10px 22px;
     background: white;
     border-bottom: 1px solid #e5e9ef;
-    color: #788693;
-    font-size: 11px;
+    color: #46617a;
+    font-size: 13px;
     flex-wrap: wrap;
   }
   .find-bar input {
     border: 1px solid #dbe2ec;
     padding: 6px 9px;
     border-radius: 4px;
-    font-size: 11px;
+    font-size: 13px;
     max-width: 170px;
   }
   .find-bar button,
@@ -699,12 +1051,12 @@
     color: #5c779d;
     border-radius: 4px;
     padding: 5px 9px;
-    font-size: 10px;
+    font-size: 13px;
     cursor: pointer;
   }
   .find-bar span {
-    font-size: 10px;
-    color: #9ba6b2;
+    font-size: 13px;
+    color: #46617a;
   }
   .context-tools {
     padding: 7px 20px;
@@ -712,7 +1064,7 @@
   }
   .context-tools > span {
     margin-right: 5px;
-    font-size: 10px;
+    font-size: 13px;
   }
   .popover {
     position: fixed;
@@ -738,8 +1090,8 @@
   .popover label {
     display: grid;
     gap: 7px;
-    font-size: 12px;
-    color: #6d7c90;
+    font-size: 13px;
+    color: #46617a;
   }
   .popover input {
     border: 1px solid #dbe2ea;
@@ -758,7 +1110,7 @@
     background: #f0f3f7;
     border-radius: 5px;
     padding: 8px 16px;
-    font-size: 12px;
+    font-size: 13px;
     color: #687789;
     cursor: pointer;
   }

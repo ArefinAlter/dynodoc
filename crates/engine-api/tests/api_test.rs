@@ -1185,3 +1185,363 @@ async fn allowlisted_admin_sees_aggregate_storage_and_no_research_content(pool: 
         .any(|t| t["name"] == "document_upload"));
     assert!(result.get("documents").is_none());
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn product_hierarchy_has_inherited_roles_and_manager_boundaries(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let owner = bearer(seed_identity(&pool, "owner@example.org").await);
+    let editor = bearer(seed_identity(&pool, "editor@example.org").await);
+    let stranger = bearer(seed_identity(&pool, "stranger@example.org").await);
+    let (status, org) = send(
+        &router,
+        auth_post(
+            "/spaces",
+            &owner,
+            &json!({"name":"University","kind":"organization"}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{org}");
+    let org = org["id"].as_str().unwrap();
+    let (_, team) = send(
+        &router,
+        auth_post(
+            "/spaces",
+            &owner,
+            &json!({"name":"Field team","kind":"team","parent_id":org}),
+        ),
+    )
+    .await;
+    let team = team["id"].as_str().unwrap();
+    let (_, folder) = send(
+        &router,
+        auth_post(
+            "/spaces",
+            &owner,
+            &json!({"name":"Study","kind":"folder","parent_id":team}),
+        ),
+    )
+    .await;
+    let folder = folder["id"].as_str().unwrap();
+    let (status, result) = send(
+        &router,
+        auth_post(
+            &format!("/spaces/{org}/members"),
+            &owner,
+            &json!({"email":"editor@example.org","role":"editor"}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{result}");
+    let doc = create_document(&router, &owner, "Protocol").await;
+    assert_eq!(
+        send(
+            &router,
+            auth_post(
+                &format!("/documents/{doc}/location"),
+                &owner,
+                &json!({"space_id":folder})
+            )
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let (status, body) = send(
+        &router,
+        auth_post_get(&format!("/documents/{doc}"), &editor),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["role"], "author");
+    assert_eq!(
+        send(
+            &router,
+            auth_post(
+                &format!("/documents/{doc}/trash"),
+                &editor,
+                &json!({"deleted":true})
+            )
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        send(
+            &router,
+            auth_post(
+                &format!("/documents/{doc}/members"),
+                &editor,
+                &json!({"email":"stranger@example.org","role":"author"})
+            )
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        send(
+            &router,
+            auth_post_get(&format!("/documents/{doc}"), &stranger)
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        send(
+            &router,
+            auth_post(
+                &format!("/spaces/{org}/members"),
+                &owner,
+                &json!({"email":"owner@example.org","role":"viewer"})
+            )
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        send(
+            &router,
+            auth_post(
+                &format!("/spaces/{org}/members"),
+                &owner,
+                &json!({"email":"editor@example.org","role":"remove"})
+            )
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        send(
+            &router,
+            auth_post_get(&format!("/documents/{doc}"), &editor)
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn product_public_copy_is_frozen_private_and_revocable(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let owner = bearer(seed_identity(&pool, "publisher@example.org").await);
+    let doc = create_document(&router, &owner, "Published protocol").await;
+    let root = "01J00000000000000000000000";
+    let item = "01J00000000000000000000001";
+    let hidden = "01J00000000000000000000002";
+    let child = "01J00000000000000000000003";
+    let ops = json!({"base_seq":0,"ops":[
+      {"type":"NodeCreated","node_id":root,"node_type":"form","pos":"a","fields":{}},
+      {"type":"NodeCreated","node_id":item,"node_type":"item","parent_id":root,"pos":"a","fields":{"label":"Original question","research_source":{"token":"private metadata"}}},
+      {"type":"NodeCreated","node_id":hidden,"node_type":"section","parent_id":root,"pos":"b","fields":{"label":"Removed private group"}},
+      {"type":"NodeCreated","node_id":child,"node_type":"item","parent_id":hidden,"pos":"a","fields":{"label":"Descendant private content"}},
+      {"type":"NodeDeleted","node_id":child},
+      {"type":"NodeDeleted","node_id":hidden},
+      {"type":"CommentAdded","node_id":item,"body":"Private reviewer conversation"}
+    ]});
+    let (status, body) = send(
+        &router,
+        auth_post(&format!("/documents/{doc}/batch"), &owner, &ops),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let seq: i64 = sqlx::query_scalar("select max(seq) from event where document_id=$1")
+        .bind(doc)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        send(
+            &router,
+            auth_post(
+                &format!("/documents/{doc}/public-links"),
+                &owner,
+                &json!({"base_seq":0})
+            )
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    let (status, link) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc}/public-links"),
+            &owner,
+            &json!({"base_seq":seq,"expires_days":30}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{link}");
+    let path = format!("/public/documents/{}", link["token"].as_str().unwrap());
+    let (status, public) = send(&router, get(&path)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        public["state"]["nodes"][item]["current_fields"]["label"],
+        "Original question"
+    );
+    assert!(public["state"]["nodes"][item]["current_fields"]
+        .get("research_source")
+        .is_none());
+    assert!(public["state"]["nodes"].get(hidden).is_none());
+    assert!(public["state"]["nodes"].get(child).is_none());
+    assert_eq!(public["state"]["comments"], json!([]));
+    let update = json!({"base_seq":seq,"ops":[{"type":"FieldEdited","node_id":item,"field":"label","value":"Private later edit"}]});
+    assert_eq!(
+        send(
+            &router,
+            auth_post(&format!("/documents/{doc}/batch"), &owner, &update)
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        send(
+            &router,
+            auth_post(
+                &format!("/documents/{doc}/metadata"),
+                &owner,
+                &json!({"title":"Private later title"})
+            )
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let (_, public) = send(&router, get(&path)).await;
+    assert_eq!(public["title"], "Published protocol");
+    assert_eq!(
+        public["state"]["nodes"][item]["current_fields"]["label"],
+        "Original question"
+    );
+    assert_eq!(
+        send(
+            &router,
+            auth_post(
+                &format!("/documents/{doc}/trash"),
+                &owner,
+                &json!({"deleted":true})
+            )
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(send(&router, get(&path)).await.0, StatusCode::NOT_FOUND);
+    assert_eq!(
+        send(&router, auth_post_get(&format!("/documents/{doc}"), &owner))
+            .await
+            .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        send(
+            &router,
+            auth_post(
+                &format!("/documents/{doc}/trash"),
+                &owner,
+                &json!({"deleted":false})
+            )
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(send(&router, get(&path)).await.0, StatusCode::NOT_FOUND);
+    assert_eq!(
+        send(&router, auth_post_get(&format!("/documents/{doc}"), &owner))
+            .await
+            .0,
+        StatusCode::OK
+    );
+    assert!(engine_core::log::verify_chain(&pool, DocumentId(doc))
+        .await
+        .is_ok());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn product_admin_removal_invalidates_existing_tokens_after_restoration(pool: PgPool) {
+    let admin_id = seed_identity(&pool, "admin@example.org").await;
+    let user = seed_identity(&pool, "person@example.org").await;
+    let mut state = test_state(pool.clone());
+    state.admin_emails = "admin@example.org".into();
+    let router = app(state);
+    let admin = bearer(admin_id);
+    let old = bearer(user);
+    assert_eq!(
+        send(&router, auth_post_get("/admin/records?kind=users", &old))
+            .await
+            .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        send(
+            &router,
+            auth_post(
+                "/admin/actions",
+                &admin,
+                &json!({"kind":"users","id":user,"removed":true,"confirmation":"wrong"})
+            )
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    use engine_api::auth::{sha256, store};
+    let expires = chrono::Utc::now() + chrono::Duration::hours(1);
+    store::issue_magic_link(
+        &pool,
+        engine_shared::IdentityId(user),
+        &sha256(b"pending-link"),
+        expires,
+    )
+    .await
+    .unwrap();
+    store::issue_refresh(&pool, user, &sha256(b"pending-refresh"), expires)
+        .await
+        .unwrap();
+    for removed in [true, false] {
+        let (status,body)=send(&router,auth_post("/admin/actions",&admin,&json!({"kind":"users","id":user,"removed":removed,"confirmation":"person@example.org"}))).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(
+            send(&router, auth_post_get("/auth/me", &old)).await.0,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+    assert!(
+        store::consume_magic_link(&pool, &sha256(b"pending-link"))
+            .await
+            .is_err(),
+        "A pre-removal email link cannot revive after restoration"
+    );
+    assert!(
+        store::rotate_refresh(
+            &pool,
+            &sha256(b"pending-refresh"),
+            &sha256(b"replacement"),
+            expires
+        )
+        .await
+        .is_err(),
+        "A pre-removal refresh token cannot revive after restoration"
+    );
+    let fresh = format!(
+        "Bearer {}",
+        token::mint_generation(&KEY, user, 3600, 1).unwrap()
+    );
+    assert_eq!(
+        send(&router, auth_post_get("/auth/me", &fresh)).await.0,
+        StatusCode::OK
+    );
+    assert_eq!(send(&router,auth_post("/admin/actions",&admin,&json!({"kind":"users","id":admin_id,"removed":true,"confirmation":"admin@example.org"}))).await.0,StatusCode::BAD_REQUEST);
+    let result = sqlx::query("delete from operation_audit")
+        .execute(&pool)
+        .await;
+    assert!(result.is_err(), "Operations audit must be append-only");
+}

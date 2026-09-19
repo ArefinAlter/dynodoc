@@ -3,6 +3,8 @@
   import { ArrowUpRight, FileText } from '@lucide/svelte';
   import SiteHeader from './SiteHeader.svelte';
   import SiteFooter from './SiteFooter.svelte';
+  import { page } from '$app/stores';
+  import { legalPageStructuredData } from '$lib/seo';
   let {
     title,
     description,
@@ -16,12 +18,17 @@
   } = $props();
 </script>
 
-<svelte:head
-  ><title>{title} · Dynodoc</title><meta name="description" content={description} /><meta
-    name="robots"
-    content="noindex"
-  /></svelte:head
->
+<svelte:head>
+  <title>{title} · Dynodoc</title>
+  <meta name="description" content={description} />
+  <meta property="og:title" content={`${title} · Dynodoc`} />
+  <meta property="og:description" content={description} />
+  <meta name="twitter:title" content={`${title} · Dynodoc`} />
+  <meta name="twitter:description" content={description} />
+  <!-- Static, first-party page metadata; no visitor or document value is used. -->
+  <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+  {@html legalPageStructuredData($page.url.pathname)}
+</svelte:head>
 <div class="legal-page">
   <SiteHeader />
   <main id="main">
@@ -74,7 +81,7 @@
     margin: auto;
   }
   .eyebrow {
-    font-size: 10px;
+    font-size: 13px;
     font-weight: 600;
     letter-spacing: 1.5px;
     color: #5b6e7f;
@@ -96,7 +103,7 @@
     margin: 0 0 20px;
   }
   .date {
-    font-size: 11px;
+    font-size: 13px;
     color: #5e6d7c;
     margin-bottom: 36px;
   }
@@ -119,7 +126,7 @@
     font-weight: 600;
   }
   .draft-notice p {
-    font-size: 12px;
+    font-size: 13px;
     line-height: 1.85;
     margin: 7px 0 0;
     max-width: 880px;
@@ -139,14 +146,14 @@
     gap: 12px;
   }
   nav > span {
-    font-size: 9px;
+    font-size: 13px;
     letter-spacing: 1.1px;
     font-weight: 650;
     color: #606d7a;
     margin-bottom: 7px;
   }
   nav > a {
-    font-size: 11px;
+    font-size: 13px;
     color: #586e84;
     text-decoration: none;
     line-height: 1.6;
@@ -164,7 +171,7 @@
     margin-top: 26px;
   }
   .related > a {
-    font-size: 11px;
+    font-size: 13px;
     color: #205bb0;
     display: flex;
     gap: 10px;
@@ -231,7 +238,7 @@
   article :global(table) {
     width: 100%;
     border-collapse: collapse;
-    font-size: 11px;
+    font-size: 13px;
     min-width: 470px;
   }
   article :global(th) {
@@ -239,7 +246,7 @@
     color: #345b85;
     text-align: left;
     padding: 14px;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 600;
     border-bottom: 1px solid #dbe4ed;
   }
@@ -274,7 +281,7 @@
     padding: 20px;
     border: 1px solid #dce3e9;
     border-radius: 4px;
-    font-size: 12px;
+    font-size: 13px;
   }
   article :global(dt) {
     color: #395b7b;
@@ -315,7 +322,7 @@
       line-height: 1.8;
     }
     .date {
-      font-size: 10px;
+      font-size: 13px;
       line-height: 1.8;
     }
     .draft-notice {
@@ -324,10 +331,10 @@
       margin-bottom: 30px;
     }
     .draft-notice strong {
-      font-size: 12px;
+      font-size: 13px;
     }
     .draft-notice p {
-      font-size: 11px;
+      font-size: 13px;
     }
     .legal-grid {
       grid-template-columns: 1fr;
@@ -346,7 +353,7 @@
       grid-column: 1/-1;
     }
     nav > a {
-      font-size: 10px;
+      font-size: 13px;
     }
     .related {
       display: flex;
@@ -355,14 +362,14 @@
       margin-top: 20px;
     }
     .related > a {
-      font-size: 10px;
+      font-size: 13px;
     }
     article :global(h2) {
       font-size: 22px;
     }
     article :global(p),
     article :global(li) {
-      font-size: 12px;
+      font-size: 13px;
     }
     article :global(.contact-details) {
       grid-template-columns: 1fr;

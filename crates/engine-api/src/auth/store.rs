@@ -26,18 +26,20 @@ pub async fn upsert_identity(
          values ($1, $2)
          on conflict (lower(email))
          do update set display_name = coalesce(excluded.display_name, identity.display_name)
+         where identity.disabled_at is null
          returning *",
     )
     .bind(email)
     .bind(display_name)
-    .fetch_one(pool)
-    .await?;
+    .fetch_optional(pool)
+    .await?
+    .ok_or(AuthError::TokenInvalid)?;
     Ok(identity)
 }
 
 /// Fetch an identity by id. A valid token for a missing identity is treated as invalid.
 pub async fn get_identity(pool: &PgPool, identity_id: Uuid) -> Result<Identity, AuthError> {
-    sqlx::query_as::<_, Identity>("select * from identity where id = $1")
+    sqlx::query_as::<_, Identity>("select * from identity where id = $1 and disabled_at is null")
         .bind(identity_id)
         .fetch_optional(pool)
         .await?
@@ -51,7 +53,7 @@ pub async fn issue_magic_link(
     token_hash: &[u8],
     expires_at: DateTime<Utc>,
 ) -> Result<(), AuthError> {
-    sqlx::query("insert into magic_link (identity_id, token_hash, expires_at) values ($1, $2, $3)")
+    sqlx::query("insert into magic_link (identity_id, token_hash, expires_at, session_generation) select id,$2,$3,session_generation from identity where id=$1 and disabled_at is null")
         .bind(identity_id.0)
         .bind(token_hash)
         .bind(expires_at)
@@ -68,6 +70,7 @@ pub async fn consume_magic_link(pool: &PgPool, token_hash: &[u8]) -> Result<Uuid
         "update magic_link
          set consumed_at = now()
          where token_hash = $1 and consumed_at is null and expires_at > now()
+           and exists(select 1 from identity i where i.id=magic_link.identity_id and i.disabled_at is null and i.session_generation=magic_link.session_generation)
          returning identity_id",
     )
     .bind(token_hash)
@@ -83,14 +86,20 @@ pub async fn issue_refresh(
     token_hash: &[u8],
     expires_at: DateTime<Utc>,
 ) -> Result<(), AuthError> {
-    sqlx::query(
-        "insert into refresh_token (identity_id, token_hash, expires_at) values ($1, $2, $3)",
-    )
-    .bind(identity_id)
-    .bind(token_hash)
-    .bind(expires_at)
-    .execute(pool)
-    .await?;
+    let generation = session_generation(pool, identity_id).await?;
+    issue_refresh_generation(pool, identity_id, token_hash, expires_at, generation).await
+}
+pub async fn issue_refresh_generation(
+    pool: &PgPool,
+    identity_id: Uuid,
+    token_hash: &[u8],
+    expires_at: DateTime<Utc>,
+    generation: i64,
+) -> Result<(), AuthError> {
+    let result = sqlx::query("insert into refresh_token(identity_id,token_hash,expires_at,session_generation) select id,$2,$3,$4 from identity where id=$1 and disabled_at is null and session_generation=$4").bind(identity_id).bind(token_hash).bind(expires_at).bind(generation).execute(pool).await?;
+    if result.rows_affected() != 1 {
+        return Err(AuthError::TokenInvalid);
+    }
     Ok(())
 }
 
@@ -104,35 +113,47 @@ pub async fn rotate_refresh(
     new_hash: &[u8],
     new_expires: DateTime<Utc>,
 ) -> Result<Uuid, AuthError> {
+    rotate_refresh_session(pool, presented_hash, new_hash, new_expires)
+        .await
+        .map(|(id, _)| id)
+}
+pub async fn rotate_refresh_session(
+    pool: &PgPool,
+    presented_hash: &[u8],
+    new_hash: &[u8],
+    new_expires: DateTime<Utc>,
+) -> Result<(Uuid, i64), AuthError> {
     let mut tx = pool.begin().await?;
 
-    let identity_id: Option<Uuid> = sqlx::query_scalar(
+    let identity: Option<(Uuid,i64)> = sqlx::query_as(
         "update refresh_token
          set rotated_at = now()
          where token_hash = $1
            and rotated_at is null and revoked_at is null and expires_at > now()
-         returning identity_id",
+           and exists(select 1 from identity i where i.id=refresh_token.identity_id and i.disabled_at is null and i.session_generation=refresh_token.session_generation)
+         returning identity_id,session_generation",
     )
     .bind(presented_hash)
     .fetch_optional(&mut *tx)
     .await?;
 
-    let Some(identity_id) = identity_id else {
+    let Some((identity_id, generation)) = identity else {
         // Nothing valid to rotate — roll back (the tx made no changes anyway).
         return Err(AuthError::RefreshInvalid);
     };
 
     sqlx::query(
-        "insert into refresh_token (identity_id, token_hash, expires_at) values ($1, $2, $3)",
+        "insert into refresh_token (identity_id, token_hash, expires_at,session_generation) values ($1, $2, $3,$4)",
     )
     .bind(identity_id)
     .bind(new_hash)
     .bind(new_expires)
+    .bind(generation)
     .execute(&mut *tx)
     .await?;
 
     tx.commit().await?;
-    Ok(identity_id)
+    Ok((identity_id, generation))
 }
 
 /// The role an identity holds on a document, if any (the access list). `None` means
@@ -142,13 +163,11 @@ pub async fn role_for(
     document_id: DocumentId,
     identity_id: Uuid,
 ) -> Result<Option<Role>, AuthError> {
-    let role: Option<String> = sqlx::query_scalar(
-        "select role from document_access where document_id = $1 and identity_id = $2",
-    )
-    .bind(document_id.0)
-    .bind(identity_id)
-    .fetch_optional(pool)
-    .await?;
+    let role: Option<String> = sqlx::query_scalar("select effective_document_role($1,$2)")
+        .bind(document_id.0)
+        .bind(identity_id)
+        .fetch_one(pool)
+        .await?;
     // The CHECK constraint guarantees a parseable role; a surprise value means "no role".
     Ok(role.and_then(|r| r.parse().ok()))
 }
@@ -172,4 +191,43 @@ pub async fn grant_access(
     .execute(pool)
     .await?;
     Ok(())
+}
+
+/// Consult revocation state on every authenticated request, not only at token mint.
+pub async fn ensure_active(pool: &PgPool, id: Uuid) -> Result<(), AuthError> {
+    let active: bool = sqlx::query_scalar(
+        "select exists(select 1 from identity where id=$1 and disabled_at is null)",
+    )
+    .bind(id)
+    .fetch_one(pool)
+    .await?;
+    if active {
+        Ok(())
+    } else {
+        Err(AuthError::TokenInvalid)
+    }
+}
+
+/// Restoration never reactivates a bearer token issued before an account removal.
+pub async fn ensure_session(
+    pool: &PgPool,
+    identity: Uuid,
+    generation: i64,
+) -> Result<(), AuthError> {
+    let active: bool = sqlx::query_scalar("select exists(select 1 from identity where id=$1 and disabled_at is null and session_generation=$2)").bind(identity).bind(generation).fetch_one(pool).await?;
+    if active {
+        Ok(())
+    } else {
+        Err(AuthError::TokenInvalid)
+    }
+}
+
+pub async fn session_generation(pool: &PgPool, identity: Uuid) -> Result<i64, AuthError> {
+    sqlx::query_scalar(
+        "select session_generation from identity where id=$1 and disabled_at is null",
+    )
+    .bind(identity)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(AuthError::TokenInvalid)
 }

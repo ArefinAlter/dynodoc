@@ -21,6 +21,7 @@ pub mod error;
 pub mod idempotency;
 pub mod ops;
 pub mod pagination;
+pub mod product;
 pub mod stream;
 pub mod workspace;
 
@@ -76,6 +77,7 @@ pub fn app(state: AppState) -> Router {
         .route("/openapi.json", get(openapi_json))
         .merge(auth::router())
         .merge(admin::router())
+        .merge(product::router())
         .merge(documents::router())
         .merge(ops::router())
         .merge(conflicts::router())

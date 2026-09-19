@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { structuredDataScript } from '$lib/seo';
+  import { FAQ, structuredDataScript } from '$lib/seo';
   let ready = $state(false);
   onMount(() => {
     ready = true;
@@ -24,6 +24,7 @@
     Search,
     FileCheck2
   } from '@lucide/svelte';
+  import ResearchJourney from '$lib/components/marketing/ResearchJourney.svelte';
   import SiteHeader from '$lib/components/marketing/SiteHeader.svelte';
   import SiteFooter from '$lib/components/marketing/SiteFooter.svelte';
   import WorkbenchDemo from '$lib/components/marketing/WorkbenchDemo.svelte';
@@ -127,6 +128,11 @@
   <meta property="og:title" content="Dynodoc — Your research, in good company." />
   <meta
     property="og:description"
+    content="Familiar editors for documents, spreadsheets and questionnaires. A clearer record of how the work takes shape."
+  />
+  <meta name="twitter:title" content="Dynodoc — Your research, in good company." />
+  <meta
+    name="twitter:description"
     content="Familiar editors for documents, spreadsheets and questionnaires. A clearer record of how the work takes shape."
   />
   <meta name="theme-color" content="#faf9f6" />
@@ -360,73 +366,63 @@
         <h2 id="faq-heading">Get to know<br />your workspace.</h2>
       </div>
       <div class="faq-list">
-        <details>
-          <summary>What makes Dynodoc useful for research teams?<ChevronDown size={18} /></summary>
-          <p>
-            Documents, spreadsheets and questionnaires share the same approach to drafts, review and
-            version history. You can improve an instrument or prepare a dataset while keeping a
-            record of the content changes. It is especially useful when several people need to
-            propose revisions before they become part of the team’s version.
-          </p>
-        </details>
-        <details>
-          <summary>Will the editors feel familiar?<ChevronDown size={18} /></summary>
-          <p>
-            The document editor provides common formatting, headings, lists, links, images, tables
-            and comments. The spreadsheet editor includes formulas, multiple sheets, cell formatting
-            and row and column tools. The pilot does not yet match every feature of Google Docs,
-            Google Sheets, Word or Excel; advanced charts, pivots and citation tools are not
-            included.
-          </p>
-        </details>
-        <details>
-          <summary>Can we work without learning Git?<ChevronDown size={18} /></summary>
-          <p>
-            Yes. You use actions such as “Save version,” “Create draft,” “Review changes” and “Share
-            changes.” Drafts let you try a direction; comparison lets you see the differences;
-            sharing brings selected changes into the team version. When edits overlap, the interface
-            asks you which content to keep.
-          </p>
-        </details>
-        <details>
-          <summary>Can everyone type in the same document at once?<ChevronDown size={18} /></summary
-          >
-          <p>
-            The current pilot centers on personal drafts and deliberate sharing. It does not provide
-            live character-by-character co-editing or live collaborator cursors. Get the latest
-            shared changes into your draft, resolve any overlaps and share back when ready.
-          </p>
-        </details>
-        <details>
-          <summary>How do imports and research integrations work?<ChevronDown size={18} /></summary>
-          <p>
-            Upload DOCX, legacy DOC, XLSX or CSV files. For ODK Central and KoboToolbox, you can
-            also connect to your server and import an available XLSForm or a response snapshot.
-            Other listed tools use compatible file exports. Imports are snapshots, with no scheduled
-            sync or writeback. Review conversion warnings, formulas and survey logic before relying
-            on imported material.
-          </p>
-        </details>
-        <details>
-          <summary>Is it ready for our next study?<ChevronDown size={18} /></summary>
-          <p>
-            Dynodoc is a research pilot being prepared for a small team. Start with sample or
-            de-identified materials and validate your workflow, import fidelity and access
-            arrangements. The current pilot is not a claim of institutional compliance, a
-            regulated-data hosting agreement or a full replacement for specialist collection and
-            analysis tools.
-          </p>
-        </details>
-        <details>
-          <summary>Can we take our work with us?<ChevronDown size={18} /></summary>
-          <p>
-            You can export supported documents and spreadsheets and retrieve retained original
-            uploads. Check the exported result when your files use complex formatting or formulas.
-            Dynodoc’s application code is open source under the AGPL; your private research content
-            does not become open source because you use the app.
-          </p>
-        </details>
+        {#each FAQ as entry (entry.question)}
+          <details>
+            <summary>{entry.question}<ChevronDown size={18} /></summary>
+            <p>{entry.answer}</p>
+          </details>
+        {/each}
       </div>
+    </section>
+    <section class="product-expansion wrap">
+      <div>
+        <p class="eyebrow">THE WORK BETWEEN THE FINDINGS</p>
+        <h2>Follow the question.<br />Keep the decisions.</h2>
+        <p>
+          A source file, a revised question, a team discussion, an approved instrument. Give each
+          part of the process a clear place in the record.
+        </p>
+      </div>
+      <ResearchJourney />
+      <div class="expansion-links">
+        <a href="/features">Explore every workspace <ArrowUpRight size={17} /></a><a href="/help"
+          >Learn the editing flow <ArrowUpRight size={17} /></a
+        >
+      </div>
+    </section>
+    <section class="evidence-expansion wrap">
+      <div>
+        <p class="eyebrow">DESIGNED FOR RESEARCH PRACTICE</p>
+        <h2>Good records make<br />the work easier to follow.</h2>
+        <p>
+          The FAIR framework describes four foundations for reusable research: findability,
+          accessibility, interoperability and reusability. Version-control guidance for researchers
+          recommends keeping changes and collaboration in a clear record.
+        </p>
+        <a href="/why-dynodoc">Read the evidence behind the design <ArrowRight size={17} /></a>
+      </div>
+      <div class="evidence-note">
+        <span>From methods to materials</span>
+        <h3>Keep the context<br />with the content.</h3>
+        <p>
+          Dynodoc is designed around these principles. We have not yet measured its effect on
+          research quality or team productivity.
+        </p>
+        <a href="https://www.nature.com/articles/sdata201618"
+          >Wilkinson et al. · Scientific Data, 2016</a
+        ><a href="https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1005510"
+          >Wilson et al. · PLOS, 2017</a
+        >
+      </div>
+    </section>
+    <section class="roadmap-expansion wrap">
+      <p class="eyebrow">A LONGER VIEW · PLANNED</p>
+      <h2>A workspace that grows<br />with the research.</h2>
+      <p>
+        Source-grounded learning. Research instrument validation. Statistical checks. Fieldwork and
+        geospatial tools. These are planned directions, with no promised release dates.
+      </p>
+      <a href="/roadmap">Explore what comes next <ArrowUpRight size={17} /></a>
     </section>
     <section class="closing">
       <div class="wrap">
@@ -445,6 +441,93 @@
 </div>
 
 <style>
+  .product-expansion,
+  .evidence-expansion,
+  .roadmap-expansion {
+    padding-top: 85px;
+    padding-bottom: 85px;
+  }
+  .product-expansion > div:first-child {
+    max-width: 710px;
+    margin-bottom: 35px;
+  }
+  .product-expansion h2,
+  .evidence-expansion h2,
+  .roadmap-expansion h2 {
+    font-size: clamp(33px, 4vw, 49px);
+    line-height: 1.12;
+    letter-spacing: -1.5px;
+    margin: 15px 0 24px;
+  }
+  .product-expansion > div > p:not(.eyebrow),
+  .evidence-expansion p:not(.eyebrow),
+  .roadmap-expansion > p:not(.eyebrow) {
+    font-size: 18px;
+    line-height: 1.85;
+    color: #445e77;
+  }
+  .expansion-links {
+    display: flex;
+    gap: 28px;
+    flex-wrap: wrap;
+    margin-top: 25px;
+  }
+  .expansion-links a,
+  .evidence-expansion > div > a,
+  .roadmap-expansion > a {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 16px;
+    color: #245cac;
+    text-decoration: none;
+  }
+  .evidence-expansion {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr;
+    gap: 80px;
+    border-top: 1px solid #d7e0e7;
+  }
+  .evidence-note {
+    background: #f1ecdf;
+    border: 1px solid #dfd6c1;
+    border-radius: 12px;
+    padding: 35px;
+  }
+  .evidence-note > span {
+    font-size: 13px;
+    color: #5d645f;
+  }
+  .evidence-note h3 {
+    font-size: 30px;
+    line-height: 1.25;
+    letter-spacing: -0.6px;
+  }
+  .evidence-note a {
+    display: block;
+    font-size: 13px;
+    margin-top: 12px;
+    color: #355873;
+  }
+  .roadmap-expansion {
+    border-top: 1px solid #d7e0e7;
+  }
+  .roadmap-expansion > p {
+    max-width: 740px;
+  }
+  @media (max-width: 720px) {
+    .evidence-expansion {
+      grid-template-columns: 1fr;
+      gap: 30px;
+    }
+    .product-expansion,
+    .evidence-expansion,
+    .roadmap-expansion {
+      padding-top: 50px;
+      padding-bottom: 50px;
+    }
+  }
+
   .marketing-page {
     background: #faf9f6;
     color: #243d54;
@@ -461,7 +544,7 @@
     scroll-margin-top: 30px;
   }
   .eyebrow {
-    font-size: 10px;
+    font-size: 13px;
     font-weight: 600;
     letter-spacing: 1.35px;
     line-height: 1.8;
@@ -533,7 +616,7 @@
     color: white;
     padding: 13px 19px;
     text-decoration: none;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 550;
     border-radius: 5px;
     border: 1px solid #205bb0;
@@ -547,7 +630,7 @@
     gap: 10px;
     color: #2059a0;
     text-decoration: none;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 550;
   }
   .text-link:hover {
@@ -555,7 +638,7 @@
     text-underline-offset: 5px;
   }
   .hero-actions .text-link {
-    font-size: 11px;
+    font-size: 13px;
   }
   .product-band {
     background: #e8f1fc;
@@ -574,7 +657,7 @@
     margin-top: 29px;
     padding: 25px 0;
     color: #426589;
-    font-size: 11px;
+    font-size: 13px;
   }
   .product-benefits > span {
     display: flex;
@@ -632,7 +715,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    font-size: 9px;
+    font-size: 13px;
     color: #686357;
     margin-bottom: 24px;
   }
@@ -646,7 +729,7 @@
     background: #faf6ee;
     border-radius: 3px;
     padding: 3px 7px;
-    font-size: 8px;
+    font-size: 13px;
   }
   .case-paper {
     background: #fffefa;
@@ -671,7 +754,7 @@
     color: #344c65;
   }
   .case-description {
-    font-size: 10px;
+    font-size: 13px;
     line-height: 1.8;
     color: #657078;
     max-width: 280px;
@@ -685,7 +768,7 @@
     display: flex;
     align-items: center;
     gap: 9px;
-    font-size: 10px;
+    font-size: 13px;
     padding: 10px 8px;
     border: 1px solid #e9e8e2;
     border-radius: 3px;
@@ -701,8 +784,8 @@
     border-color: #c8dfd0;
   }
   .block-handle {
-    color: #bac6d1;
-    font-size: 12px;
+    color: #46617a;
+    font-size: 13px;
     line-height: 1;
   }
   .case-blocks :global(svg) {
@@ -735,21 +818,21 @@
     display: grid;
     place-items: center;
     flex-shrink: 0;
-    font-size: 9px;
+    font-size: 13px;
   }
   .case-comment b {
-    font-size: 10px;
+    font-size: 13px;
     font-weight: 600;
     color: #37536e;
   }
   .case-comment b span {
-    font-size: 8px;
+    font-size: 13px;
     font-weight: 400;
     color: #63707c;
     margin-left: 10px;
   }
   .case-comment p {
-    font-size: 10px;
+    font-size: 13px;
     line-height: 1.8;
     margin: 7px 0 0;
     color: #647789;
@@ -759,7 +842,7 @@
     gap: 6px;
     align-items: center;
     color: #676256;
-    font-size: 8px;
+    font-size: 13px;
     margin: 20px 0 0;
   }
   .case-list {
@@ -785,7 +868,7 @@
   }
   .case-item > button > :global(svg:last-child) {
     margin-left: auto;
-    color: #9cabba;
+    color: #46617a;
   }
   .case-item.active > button {
     color: #205bb0;
@@ -833,7 +916,7 @@
     line-height: 1.5;
   }
   .collaboration-notes p {
-    font-size: 11px;
+    font-size: 13px;
     line-height: 1.9;
     color: #56687b;
     margin: 0;
@@ -869,7 +952,7 @@
     background: #eff4fc;
     border-radius: 4px;
     padding: 8px 11px;
-    font-size: 10px;
+    font-size: 13px;
     font-weight: 600;
     color: #285c9e;
   }
@@ -879,7 +962,7 @@
     background: #eff6f0;
   }
   .files-copy .file-detail {
-    font-size: 11px !important;
+    font-size: 13px !important;
     max-width: 345px !important;
   }
   .files-copy .text-link {
@@ -900,7 +983,7 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    font-size: 9px;
+    font-size: 13px;
     padding: 18px 13px;
     border: 1px solid #c3d6ee;
     background: #e6effd;
@@ -920,7 +1003,7 @@
     flex-direction: column;
     align-items: center;
     height: 90px;
-    color: #7997bd;
+    color: #46617a;
     padding: 8px 0;
   }
   .file-path > span {
@@ -943,7 +1026,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    font-size: 11px;
+    font-size: 13px;
     color: #396089;
     border-bottom: 1px solid #e4eaf1;
     padding: 18px 0 16px;
@@ -955,14 +1038,14 @@
     gap: 8px;
   }
   .import-heading > :global(svg) {
-    color: #558267;
+    color: #46617a;
   }
   .import-result > div:not(.import-heading) {
     display: flex;
     align-items: center;
     gap: 10px;
     padding: 12px 0;
-    font-size: 10px;
+    font-size: 13px;
     color: #597189;
   }
   .result-line {
@@ -972,7 +1055,7 @@
     margin-left: auto;
   }
   .files-visual > p {
-    font-size: 9px;
+    font-size: 13px;
     color: #5e6a76;
     text-align: center;
     line-height: 1.8;
@@ -1020,7 +1103,7 @@
   }
   .access-title small {
     display: block;
-    font-size: 9px;
+    font-size: 13px;
     color: #62707e;
     margin-top: 4px;
     font-weight: 400;
@@ -1038,7 +1121,7 @@
     display: grid;
     place-items: center;
     border-radius: 50%;
-    font-size: 11px;
+    font-size: 13px;
   }
   .person-icon.blue {
     background: #e2ebfc;
@@ -1046,7 +1129,7 @@
   }
   .person-icon.gold {
     background: #f6edda;
-    color: #997742;
+    color: #46617a;
   }
   .person-icon.green {
     background: #e3f0e8;
@@ -1054,17 +1137,17 @@
   }
   .access-person b {
     display: block;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 550;
   }
   .access-person small {
     display: block;
-    font-size: 9px;
+    font-size: 13px;
     color: #65707c;
     margin-top: 3px;
   }
   .role-label {
-    font-size: 10px;
+    font-size: 13px;
     margin-left: auto;
     background: #f7f9fc;
     border: 1px solid #e0e7ef;
@@ -1076,8 +1159,8 @@
     display: flex;
     align-items: center;
     gap: 7px;
-    color: #8899aa;
-    font-size: 9px;
+    color: #46617a;
+    font-size: 13px;
     margin: 20px 0 0;
   }
   .faq-section {
@@ -1116,7 +1199,7 @@
   }
   .faq-list summary :global(svg) {
     flex-shrink: 0;
-    color: #7c95b0;
+    color: #46617a;
   }
   .faq-list details[open] summary :global(svg) {
     transform: rotate(180deg);
@@ -1139,7 +1222,7 @@
     justify-content: center;
     align-items: center;
     margin-bottom: 23px;
-    color: #5280ba;
+    color: #46617a;
   }
   .closing-symbol > :global(svg:first-child) {
     color: #2860ac;
@@ -1150,7 +1233,7 @@
     transform: rotate(8deg);
   }
   .closing .eyebrow {
-    font-size: 9px;
+    font-size: 13px;
     color: #4d647e;
     margin-bottom: 16px;
   }
@@ -1167,7 +1250,7 @@
   }
   .closing-note {
     display: block;
-    font-size: 9px;
+    font-size: 13px;
     color: #4f647a;
     margin-top: 18px;
   }
@@ -1219,7 +1302,7 @@
       font-size: 17px;
     }
     .hero-intro .hero-detail {
-      font-size: 12px;
+      font-size: 13px;
     }
     .section-heading {
       gap: 50px;
@@ -1235,7 +1318,7 @@
     }
     .incoming-files > div {
       padding: 15px 9px;
-      font-size: 8px;
+      font-size: 13px;
       gap: 7px;
     }
     .trust-section {
@@ -1264,26 +1347,26 @@
       letter-spacing: -2px;
     }
     .hero .eyebrow {
-      font-size: 8px;
+      font-size: 13px;
       letter-spacing: 0.9px;
     }
     .hero-intro > p:first-child {
       font-size: 15px;
     }
     .hero-intro .hero-detail {
-      font-size: 11px;
+      font-size: 13px;
     }
     .primary-link {
-      font-size: 11px;
+      font-size: 13px;
       gap: 10px;
       padding: 12px 14px;
     }
     .hero-actions .text-link {
-      font-size: 10px;
+      font-size: 13px;
     }
     .product-benefits {
       gap: 20px;
-      font-size: 9px;
+      font-size: 13px;
     }
     .product-benefits :global(svg) {
       flex-shrink: 0;
@@ -1292,7 +1375,7 @@
       gap: 30px;
     }
     .section-heading > p {
-      font-size: 12px;
+      font-size: 13px;
     }
     h2 {
       font-size: 34px;
@@ -1309,11 +1392,11 @@
       padding: 18px 15px 15px;
     }
     .case-topline {
-      font-size: 8px;
+      font-size: 13px;
       gap: 5px;
     }
     .case-tag {
-      font-size: 7px;
+      font-size: 13px;
     }
     .case-paper {
       padding: 22px 17px;
@@ -1322,10 +1405,10 @@
       font-size: 15px;
     }
     .case-description {
-      font-size: 9px;
+      font-size: 13px;
     }
     .case-blocks > div {
-      font-size: 9px;
+      font-size: 13px;
       padding: 9px 5px;
     }
     .faint-rule {
@@ -1350,16 +1433,16 @@
       font-size: 17px;
     }
     .case-item p {
-      font-size: 11px;
+      font-size: 13px;
     }
     .collaboration-band {
       padding-top: 65px;
     }
     .collaboration-notes h3 {
-      font-size: 12px;
+      font-size: 13px;
     }
     .collaboration-notes p {
-      font-size: 10px;
+      font-size: 13px;
     }
     .files-section {
       gap: 30px;
@@ -1377,7 +1460,7 @@
     .incoming-files > div {
       width: 180px;
       padding: 13px 14px;
-      font-size: 9px;
+      font-size: 13px;
     }
     .file-path {
       height: 70px;
@@ -1386,18 +1469,18 @@
       height: 17px;
     }
     .files-copy > p:not(.eyebrow) {
-      font-size: 12px;
+      font-size: 13px;
     }
     .file-formats {
       gap: 9px;
     }
     .file-formats > span {
-      font-size: 9px;
+      font-size: 13px;
       padding: 7px 8px;
       gap: 5px;
     }
     .import-heading {
-      font-size: 9px;
+      font-size: 13px;
       gap: 5px;
     }
     .import-heading > span {
@@ -1407,7 +1490,7 @@
       padding: 0 12px 10px;
     }
     .import-result > div:not(.import-heading) {
-      font-size: 8px;
+      font-size: 13px;
       gap: 7px;
     }
     .result-line {
@@ -1422,20 +1505,20 @@
       padding-bottom: 70px;
     }
     .trust-section > div > p:not(.eyebrow) {
-      font-size: 12px;
+      font-size: 13px;
     }
     .access-visual {
       padding: 22px;
     }
     .role-label {
-      font-size: 8px;
+      font-size: 13px;
       padding: 4px 6px;
     }
     .access-person {
       gap: 9px;
     }
     .access-person small {
-      font-size: 8px;
+      font-size: 13px;
     }
     .faq-section {
       gap: 38px;
@@ -1445,10 +1528,10 @@
       font-size: 32px;
     }
     .faq-list summary {
-      font-size: 12px;
+      font-size: 13px;
     }
     .faq-list p {
-      font-size: 11px;
+      font-size: 13px;
     }
   }
   @media (max-width: 600px) {
@@ -1469,7 +1552,7 @@
       line-height: 1.08;
     }
     .hero .eyebrow {
-      font-size: 8px;
+      font-size: 13px;
       letter-spacing: 1px;
       margin-bottom: 23px;
     }
@@ -1483,7 +1566,7 @@
       line-height: 1.7;
     }
     .hero-intro .hero-detail {
-      font-size: 12px;
+      font-size: 13px;
       max-width: 340px;
       margin-bottom: 21px;
     }
@@ -1491,11 +1574,11 @@
       gap: 15px;
     }
     .primary-link {
-      font-size: 11px;
+      font-size: 13px;
       padding: 12px 15px;
     }
     .hero-actions .text-link {
-      font-size: 10px;
+      font-size: 13px;
     }
     .product-wrap {
       padding-top: 22px;
@@ -1507,7 +1590,7 @@
       display: grid;
       gap: 12px;
       padding: 20px 5px;
-      font-size: 10px;
+      font-size: 13px;
     }
     .research-section {
       padding-top: 58px;
@@ -1519,7 +1602,7 @@
       margin-bottom: 30px;
     }
     .eyebrow {
-      font-size: 9px;
+      font-size: 13px;
       letter-spacing: 1px;
       margin-bottom: 17px;
     }
@@ -1529,7 +1612,7 @@
       letter-spacing: -1.3px;
     }
     .section-heading > p {
-      font-size: 12px;
+      font-size: 13px;
       line-height: 1.9;
       max-width: 360px;
     }
@@ -1552,7 +1635,7 @@
       font-size: 18px;
     }
     .case-item p {
-      font-size: 12px;
+      font-size: 13px;
       margin-bottom: 20px;
       max-width: 340px;
     }
@@ -1561,7 +1644,7 @@
       padding: 23px 22px 16px;
     }
     .case-topline {
-      font-size: 9px;
+      font-size: 13px;
     }
     .case-paper {
       padding: 25px;
@@ -1571,10 +1654,10 @@
       font-size: 18px;
     }
     .case-description {
-      font-size: 10px;
+      font-size: 13px;
     }
     .case-blocks > div {
-      font-size: 10px;
+      font-size: 13px;
     }
     .case-comment {
       margin-left: 25px;
@@ -1583,10 +1666,10 @@
     .case-comment b span {
       display: inline;
       margin-left: 6px;
-      font-size: 7px;
+      font-size: 13px;
     }
     .case-comment p {
-      font-size: 10px;
+      font-size: 13px;
     }
     .collaboration-band {
       padding-top: 58px;
@@ -1615,7 +1698,7 @@
       align-self: center;
     }
     .collaboration-notes p {
-      font-size: 11px;
+      font-size: 13px;
       grid-column: 2;
       max-width: 330px;
     }
@@ -1626,10 +1709,10 @@
       padding-bottom: 60px;
     }
     .files-copy > p:not(.eyebrow) {
-      font-size: 12px;
+      font-size: 13px;
     }
     .file-formats > span {
-      font-size: 10px;
+      font-size: 13px;
       padding: 8px 11px;
     }
     .files-visual {
@@ -1641,7 +1724,7 @@
     }
     .incoming-files > div {
       width: auto;
-      font-size: 8px;
+      font-size: 13px;
       padding: 15px 9px;
       gap: 6px;
     }
@@ -1653,14 +1736,14 @@
       padding: 0 17px 12px;
     }
     .import-heading {
-      font-size: 10px;
+      font-size: 13px;
     }
     .import-result > div:not(.import-heading) {
-      font-size: 10px;
+      font-size: 13px;
       padding: 12px 0;
     }
     .files-visual > p {
-      font-size: 8px;
+      font-size: 13px;
     }
     .integration-band {
       padding-top: 57px;
@@ -1676,13 +1759,13 @@
       padding: 26px;
     }
     .access-person b {
-      font-size: 12px;
+      font-size: 13px;
     }
     .access-person small {
-      font-size: 9px;
+      font-size: 13px;
     }
     .role-label {
-      font-size: 9px;
+      font-size: 13px;
       padding: 5px 8px;
     }
     .faq-section {
@@ -1692,18 +1775,18 @@
     }
     .faq-section .eyebrow {
       max-width: none;
-      font-size: 8px;
+      font-size: 13px;
     }
     .faq-section h2 {
       font-size: 34px;
     }
     .faq-list summary {
-      font-size: 12px;
+      font-size: 13px;
       line-height: 1.6;
       padding: 19px 0;
     }
     .faq-list p {
-      font-size: 11px;
+      font-size: 13px;
     }
     .closing {
       padding: 50px 0;
@@ -1713,10 +1796,10 @@
       letter-spacing: -1.6px;
     }
     .closing p:not(.eyebrow) {
-      font-size: 12px;
+      font-size: 13px;
     }
     .closing-note {
-      font-size: 8px;
+      font-size: 13px;
       line-height: 1.6;
       max-width: 290px;
       margin: 17px auto 0;
@@ -1738,9 +1821,16 @@
       gap: 7px;
     }
     .incoming-files > div {
-      font-size: 7px;
+      font-size: 13px;
       padding: 13px 8px;
       gap: 4px;
     }
+  }
+  .hero-intro .hero-detail,
+  .section-heading > p,
+  .files-copy > p,
+  .faq-section p {
+    font-size: 17px;
+    line-height: 1.8;
   }
 </style>

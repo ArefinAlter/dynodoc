@@ -167,28 +167,50 @@ async fn share(
 ) -> Result<Json<Value>, ApiError> {
     let (mut tx, role, _) =
         apply::begin_write(&state, DocumentId(id), IdentityId(auth.identity_id)).await?;
-    if role != Role::Author {
+    if role != Role::Author
+        || !sqlx::query_scalar::<_, bool>("select can_manage_document($1,$2)")
+            .bind(id)
+            .bind(auth.identity_id)
+            .fetch_one(&mut *tx)
+            .await?
+    {
         return Err(ApiError::Forbidden);
     }
     let email = req.email.trim().to_lowercase();
     if !email.contains('@') || email.len() > 254 {
         return Err(bad("Enter a valid email address"));
     }
-    let granted: Role = req
-        .role
-        .parse()
-        .map_err(|_| bad("Choose author, reviewer or auditor"))?;
     let owner: Option<Uuid> = sqlx::query_scalar("select created_by from document where id=$1")
         .bind(id)
         .fetch_one(&mut *tx)
         .await?;
     let identity = store::upsert_identity(&state.pool, &email, None).await?;
-    if owner == Some(identity.id.0) && granted != Role::Author {
+    if owner == Some(identity.id.0) && req.role != "author" {
         return Err(bad("The document owner must remain an editor"));
     }
-    sqlx::query("insert into document_access(document_id,identity_id,role) values($1,$2,$3) on conflict(document_id,identity_id) do update set role=excluded.role").bind(id).bind(identity.id.0).bind(granted.as_str()).execute(&mut *tx).await?;
+    if req.role == "remove" {
+        sqlx::query("delete from document_access where document_id=$1 and identity_id=$2")
+            .bind(id)
+            .bind(identity.id.0)
+            .execute(&mut *tx)
+            .await?;
+    } else {
+        let granted: Role = req
+            .role
+            .parse()
+            .map_err(|_| bad("Choose author, reviewer, auditor or remove"))?;
+        sqlx::query("insert into document_access(document_id,identity_id,role) values($1,$2,$3) on conflict(document_id,identity_id) do update set role=excluded.role").bind(id).bind(identity.id.0).bind(granted.as_str()).execute(&mut *tx).await?;
+    }
+    crate::product::audit(
+        &mut tx,
+        auth.identity_id,
+        "document.access_changed",
+        id,
+        json!({"identity_id":identity.id,"role":req.role}),
+    )
+    .await?;
     tx.commit().await?;
-    Ok(Json(json!({"email":email,"role":granted.as_str()})))
+    Ok(Json(json!({"email":email,"role":req.role})))
 }
 
 #[derive(Deserialize)]
@@ -672,7 +694,7 @@ async fn search(
     if term.len() > 200 {
         return Err(bad("Search in 200 characters or fewer"));
     }
-    let items:Vec<Value>=sqlx::query_scalar("select jsonb_build_object('document_id',d.id,'title',d.title,'node_id',n.id,'text',left(n.current_fields::text,4000)) from document d join document_access a on a.document_id=d.id left join node n on n.document_id=d.id and not n.deleted where a.identity_id=$1 and d.status<>'archived' and (strpos(lower(d.title),lower($2))>0 or strpos(lower(n.current_fields::text),lower($2))>0) order by d.updated_at desc,n.pos limit 50").bind(auth.identity_id).bind(term).fetch_all(&state.pool).await?;
+    let items:Vec<Value>=sqlx::query_scalar("select jsonb_build_object('document_id',d.id,'title',d.title,'node_id',n.id,'text',left(n.current_fields::text,4000)) from document d left join node n on n.document_id=d.id and not n.deleted where effective_document_role(d.id,$1) is not null and d.status<>'archived' and (strpos(lower(d.title),lower($2))>0 or strpos(lower(n.current_fields::text),lower($2))>0) order by d.updated_at desc,n.pos limit 50").bind(auth.identity_id).bind(term).fetch_all(&state.pool).await?;
     Ok(Json(json!({"items":items})))
 }
 

@@ -160,7 +160,23 @@ async fn document_stream(
             async move { value }
         });
 
-    let stream = backfill_stream.chain(live_stream);
+    let pool = state.pool.clone();
+    let stream = backfill_stream.chain(live_stream).take_while(move |_| {
+        let pool = pool.clone();
+        async move {
+            if crate::auth::store::ensure_session(&pool, auth.identity_id, auth.session_generation)
+                .await
+                .is_err()
+            {
+                return false;
+            }
+            crate::auth::store::role_for(&pool, document_id, auth.identity_id)
+                .await
+                .ok()
+                .flatten()
+                .is_some()
+        }
+    });
 
     let sse = Sse::new(stream).keep_alive(
         KeepAlive::new()

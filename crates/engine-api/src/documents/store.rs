@@ -63,7 +63,7 @@ pub async fn list_documents(
     let rows = sqlx::query_as::<_, Document>(
         "select * from document
          where ($1::text = 'archived' or status <> 'archived')
-           and exists(select 1 from document_access a where a.document_id=document.id and a.identity_id=$5)
+           and deleted_at is null and effective_document_role(id,$5) is not null
            and ($1::text is null or status = $1)
            and (
                 $2::bigint is null

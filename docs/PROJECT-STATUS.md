@@ -13,18 +13,18 @@ The original immediate product was a questionnaire authoring tool. The owner's e
 | Area | Current behavior |
 |---|---|
 | Core | Append-only event log, hash verification, stable IDs, snapshots, role checks and serialized writes. |
-| Privacy | Document reads, audit endpoints, event streams and search require membership. |
+| Privacy | Direct and inherited organization/team/folder roles protect reads, writes, streams and search. Revocable public links expose explicit frozen copies only. |
 | Sessions | Encrypted HttpOnly cookies, same-origin API gateway, refresh rotation; Google authorization-code login and Resend email-link implementation. |
 | Homepage | Responsive cream/blue homepage, self-hosted sans serif typography, interactive editor/draft/integration examples, research workflow explainers, reduced-motion behavior, Node and Vercel builds. |
-| Legal pages | Detailed privacy and terms drafts at `/privacy` and `/terms`, linked from the footer and sign-in page; operator details and legal review remain open. |
-| Workspace | Create documents, spreadsheets and questionnaires; upload originals, see conversion reports, search content, share roles and make copies. |
-| Document editing | Common text and paragraph formatting, lists, alignment, links, URL images, tables, find/replace, undo/redo, comments and paragraph suggestions. |
-| Spreadsheet editing | Cell editing, ranges, paste, formatting, formulas, row/column operations, sheet tabs, find/filter, values-only sorting and CSV/XLSX export. |
+| Legal pages | Privacy, terms and cookie pages describe actual storage and sharing; browser measurement preference is available. Operator details and legal review remain open. |
+| Workspace | Create/import documents, organize them in a hierarchy, search, share roles, make copies, move to Trash and restore. |
+| Document editing | Document tabs, common formatting, checklists, super/subscript, equations, table/context actions, find/replace, comments and paragraph suggestions; LaTeX/Overleaf interchange. |
+| Spreadsheet editing | Cell editing, ranges, paste, formatting, formulas, formula-aware structural operations, sheet rename/duplicate/reorder/delete, find/filter, values-only sorting and CSV/XLSX export. |
 | Version workflows | Personal drafts, selected-block sharing, get latest, conflict choices, named versions, comparisons, attribution and restoration as new events. |
 | Research files | DOCX/DOC, CSV/XLSX, XLSForm and REDCap dictionary interchange; original files retained. |
-| Research connections | ODK/Kobo form and response imports; REDCap metadata/records, SurveyCTO wide responses and SurveyMonkey bulk responses. Credentials used for the current connection only; live study-account acceptance remains open. |
+| Research connections | ODK/Kobo form and response imports; REDCap metadata/records, SurveyCTO wide responses and SurveyMonkey bulk responses. Google Forms adds separate read-only OAuth definition/response imports. Live study-account acceptance remains open. |
 | Questionnaire preview | Supported XLSForm relevance, calculations, required rules and constraints; explicit unsupported-logic errors. Answers stay in browser memory. |
-| Administration | Allowlisted dashboard with aggregate database/storage/service/backup status, anonymous page loads and web vitals. |
+| Administration | Allowlisted dashboard with typed-confirmation account disable/restore and document Trash/restore, operations audit, database/storage/service/backup status, anonymous page loads and web vitals. |
 | Search and identity | Original SVG logo, favicons/social card, canonical metadata, structured data, sitemap and private-page noindex rules. |
 | Deployment | Isolated VPS containers and networks, HTTPS, private database, constrained Word converter, database backup and restore procedure. |
 
@@ -47,9 +47,9 @@ of the engineering effort left for the full product.
 - Broader document features: tracked-edit fidelity, footnotes, citations/bibliographies, headers/footers, page layout and high-fidelity image/document round trips.
 - Broader spreadsheet features: charts, pivots, data validation, protected ranges, advanced sort behavior with formulas, Excel formula compatibility and high-fidelity workbook formatting.
 - Survey execution beyond the supported preview subset: repeat instances, translations/media workflows, external datasets, advanced XPath/date functions and vendor-specific expression engines.
-- Research-platform synchronization: scheduled refresh, incremental reconciliation and writeback. All five implemented API import paths need real study-account verification. CSPro dictionary/form/logic support is not implemented; exported CSV/XLSX data can be edited.
-- Stronger review: comments with replies/resolution/mentions, richer tracked suggestions, granular permissions, notifications and shared review of another person's draft.
-- Versioning refinements: offline browser recovery, persistent exclusion rules, branch-to-branch review, more detailed side-by-side rich-content comparison, metadata/permission audit events and long-lived retry/idempotency handling for every new workspace endpoint.
+- Research-platform synchronization: scheduled refresh, incremental reconciliation and writeback. All six implemented API import paths need real study-account verification. CSPro dictionary/form/logic support is not implemented; exported CSV/XLSX data can be edited.
+- Stronger review: comments with replies/resolution/mentions, richer tracked suggestions, per-block/protected-range permissions, notifications and shared review of another person's draft.
+- Versioning refinements: offline browser recovery, persistent exclusion rules, branch-to-branch review, more detailed side-by-side rich-content comparison, cryptographically anchored metadata/permission audit and long-lived retry/idempotency handling for every new workspace endpoint.
 - Production operation: off-site backups, monitoring/alerts, recovery objectives, resource/load tests beyond ten synthetic concurrent edits, complete keyboard/screen-reader audit and an external security review.
 - Public consultation stages 22–31, civic identity, moderation, citizen frontend, deliberation and ML services remain future work. The CRDT live-typing layer is also deferred; overlapping block edits require review instead of character-level co-editing.
 
@@ -60,3 +60,5 @@ The development verification log is recorded in `SETUP.md`. Automated tests cove
 See [versioning conformance](VERSIONING-CONFORMANCE.md) for evidence against the mathematical design: the current system implements centralized semantic version control, not the full distributed/CRDT roadmap. See [admin and search setup](SEARCH-AND-ADMIN-SETUP.md) for access and indexing steps.
 
 See [format compatibility](research-compatibility.md) for specific import/export limits. No unsupported tool should be represented as a working live integration.
+
+The product expansion adds replayable onboarding, larger typography, research-cited explanations, features/help/roadmap pages and integrated concurrent SEO/IndexNow work. See [product workflows](PRODUCT-WORKFLOWS.md) for permissions, public sharing and exact limits. Automated accessibility checks are evidence for the tested views, not certification of complete WCAG conformance.

@@ -1,0 +1,45 @@
+{
+  "date": "2026-09-19",
+  "rust": {
+    "passed": 152,
+    "environment": "isolated Linux container and disposable PostgreSQL on VPS",
+    "sse_100ms_test": "passed",
+    "additional_product_regression_rerun": 3
+  },
+  "frontend": {
+    "unit_passed": 85,
+    "svelte_errors": 0,
+    "svelte_warnings": 0,
+    "eslint": "passed",
+    "node_build": "passed",
+    "vercel_build": "passed"
+  },
+  "browser": {
+    "scenarios_verified": 26,
+    "last_full_run": {
+      "passed": 25,
+      "failed": 1
+    },
+    "correction": "Welcome popup restricted to workspace so it cannot obscure a document review action",
+    "final_targeted_rerun": {
+      "passed": 3,
+      "failed": 0
+    }
+  },
+  "accessibility": "Automated axe rules passed for tested public/admin/workspace/rich-editor views; no claim of complete WCAG certification",
+  "pilot_criteria": {
+    "implemented": 11,
+    "total": 14,
+    "remaining": [
+      "real Google/Resend acceptance",
+      "external study-tool validation",
+      "full researcher/manual accessibility/load acceptance"
+    ]
+  },
+  "not_verified": [
+    "real Google Forms consent/import",
+    "all vendor runtimes and Office file fidelity",
+    "permanent erasure",
+    "off-server recovery"
+  ]
+}

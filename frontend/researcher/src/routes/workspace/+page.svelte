@@ -21,15 +21,27 @@
     ArrowRight,
     Check
   } from '@lucide/svelte';
+  import GoogleFormsConnector from '$lib/components/product/GoogleFormsConnector.svelte';
+  import SpaceManager from '$lib/components/product/SpaceManager.svelte';
+  import type { Space } from '$lib/workspace/access';
   import ResearchConnector from '$lib/components/workspace/ResearchConnector.svelte';
   import type { ResearchFile, ResearchSource } from '$lib/workspace/connectors';
-  import { listDocuments, createDocument } from '$lib/api/client';
+  import { createDocument } from '$lib/api/client';
   import type { Document } from '$lib/api/types';
   import { documentKind, saveBatch, workspaceRequest, type Kind } from '$lib/workspace/api';
   import { importFile, rootOp, itemOp, paragraph, type ImportResult } from '$lib/workspace/files';
   import { ulid } from 'ulid';
   import { clearSession } from '$lib/stores/session.svelte';
-  let documents = $state<Document[]>([]),
+  type WorkspaceDocument = Document & {
+    deleted_at?: string;
+    space_id?: string;
+    can_manage?: boolean;
+    role?: string;
+  };
+  let spaces = $state<Space[]>([]),
+    selectedSpace = $state(''),
+    trash = $state(false);
+  let documents = $state<WorkspaceDocument[]>([]),
     loading = $state(true),
     search = $state(''),
     filter = $state('all'),
@@ -43,6 +55,7 @@
   let importResult = $state<ImportResult | null>(null),
     originalFile = $state<File | null>(null),
     progress = $state('');
+  let sidebarOpen = $state(false);
   let connectorOpen = $state(false),
     importedSource = $state<ResearchSource | null>(null);
   async function researchImport(file: File, info: ResearchFile) {
@@ -87,8 +100,8 @@
       (doc) =>
         (doc.title.toLowerCase().includes(search.toLowerCase()) ||
           matches.some((m) => m.document_id === doc.id)) &&
-        (filter === 'archived'
-          ? doc.status === 'archived'
+        (trash || filter === 'archived'
+          ? trash || doc.status === 'archived'
           : doc.status !== 'archived' && (filter === 'all' || documentKind(doc) === filter))
     )
   );
@@ -96,24 +109,51 @@
   async function refresh() {
     loading = true;
     try {
-      const all: Document[] = [];
-      let cursor: string | undefined;
-      do {
-        const page = await listDocuments({ limit: 100, cursor });
+      const all: WorkspaceDocument[] = [];
+      let offset = 0;
+      for (;;) {
+        const query = new URLSearchParams({ trash: String(trash), offset: String(offset) });
+        if (selectedSpace) query.set('space_id', selectedSpace);
+        const page = await workspaceRequest<{ items: WorkspaceDocument[]; more: boolean }>(
+          `/workspace/index?${query}`
+        );
         all.push(...page.items);
-        cursor = page.next_cursor || undefined;
-      } while (cursor);
-      cursor = undefined;
-      do {
-        const page = await listDocuments({ limit: 100, cursor, status: 'archived' });
-        all.push(...page.items);
-        cursor = page.next_cursor || undefined;
-      } while (cursor);
+        if (!page.more) break;
+        offset += page.items.length;
+      }
       documents = all;
+      spaces = (await workspaceRequest<{ items: Space[] }>('/spaces')).items;
     } catch (e) {
       error = e instanceof Error ? e.message : 'Could not load documents.';
     } finally {
       loading = false;
+    }
+  }
+  async function setTrash(value: boolean) {
+    trash = value;
+    filter = 'all';
+    await refresh();
+  }
+  async function changeLocation(id: string) {
+    selectedSpace = id;
+    await refresh();
+  }
+  async function changeTrash(doc: WorkspaceDocument) {
+    if (
+      !trash &&
+      !confirm(
+        `Move “${doc.title}” to Trash? Public links will stop working. You can restore the document later.`
+      )
+    )
+      return;
+    busy = true;
+    try {
+      await workspaceRequest(`/documents/${doc.id}/trash`, { deleted: !trash });
+      await refresh();
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'Could not update document';
+    } finally {
+      busy = false;
     }
   }
   async function create() {
@@ -122,6 +162,8 @@
     error = '';
     try {
       const doc = await createDocument({ title: title.trim() });
+      if (selectedSpace)
+        await workspaceRequest(`/documents/${doc.id}/location`, { space_id: selectedSpace });
       await workspaceRequest(`/documents/${doc.id}/metadata`, { settings: { kind } });
       const root = ulid();
       let ops = [rootOp(root, title)];
@@ -189,6 +231,8 @@
     try {
       progress = 'Creating your document…';
       const doc = await createDocument({ title: title.trim() || importResult.filename });
+      if (selectedSpace)
+        await workspaceRequest(`/documents/${doc.id}/location`, { space_id: selectedSpace });
       await workspaceRequest(`/documents/${doc.id}/metadata`, {
         settings: {
           kind: importResult.kind,
@@ -234,8 +278,11 @@
   ><title>Your workspace · Dynodoc</title><meta name="robots" content="noindex" /></svelte:head
 >
 <div class="workspace">
-  <aside class="sidebar">
-    <a class="brand" href="/">d<span>.</span><b>dynodoc</b></a>
+  <aside class="sidebar" class:open={sidebarOpen}>
+    <button class="mobile-close" onclick={() => (sidebarOpen = false)}>Close navigation</button>
+    <a class="brand" href="https://dynodoc.online"
+      ><img src="/brand/mark.svg?v=2" alt="" width="32" height="32" /><b>dynodoc</b></a
+    >
     <div class="team">
       <span class="team-icon">R</span>
       <div><strong>Research workspace</strong><small>Your team’s shared home</small></div>
@@ -260,10 +307,20 @@
       <button class:active={filter === 'archived'} onclick={() => (filter = 'archived')}
         ><Archive size={17} /> Archived</button
       >
+      <button class:active={trash} onclick={() => void setTrash(!trash)}
+        ><Archive size={17} />{trash ? 'Back to documents' : 'Trash'}</button
+      >
     </nav>
+    <SpaceManager
+      {spaces}
+      selected={selectedSpace}
+      onSelect={(id) => void changeLocation(id)}
+      onRefresh={refresh}
+    />
     <button class="upload" onclick={() => (connectorOpen = true)} disabled={busy}
       >Import from research tool</button
     >
+    <GoogleFormsConnector onImport={researchImport} />
     <div class="side-bottom">
       <div class="workspace-tip">
         <Users size={18} />
@@ -275,6 +332,11 @@
   </aside>
   <main>
     <header class="top">
+      <button
+        class="mobile-nav"
+        aria-expanded={sidebarOpen}
+        onclick={() => (sidebarOpen = !sidebarOpen)}>Workspaces</button
+      >
       <div class="search">
         <Search size={17} /><input
           aria-label="Search documents"
@@ -282,7 +344,7 @@
           placeholder="Find a document, table, or questionnaire…"
         /><kbd>Search</kbd>
       </div>
-      <a href="/">About Dynodoc <ArrowUpRight size={14} /></a>
+      <a href="https://dynodoc.online">About Dynodoc <ArrowUpRight size={14} /></a>
     </header>
     <div class="content">
       <div class="heading">
@@ -297,7 +359,7 @@
           class="file-input"
           bind:this={fileInput}
           type="file"
-          accept=".docx,.doc,.xlsx,.csv,.txt,.md"
+          accept=".docx,.doc,.xlsx,.csv,.txt,.md,.tex,.zip"
           onchange={chooseFile}
         />
       </div>
@@ -352,13 +414,15 @@
       </div>
       <div class="list-heading">
         <h2>
-          {filter === 'all'
-            ? 'Your documents'
-            : filter === 'document'
-              ? 'Documents'
-              : filter === 'spreadsheet'
-                ? 'Spreadsheets'
-                : 'Questionnaires'} <span>{visible.length}</span>
+          {trash
+            ? 'Trash'
+            : filter === 'all'
+              ? 'Your documents'
+              : filter === 'document'
+                ? 'Documents'
+                : filter === 'spreadsheet'
+                  ? 'Spreadsheets'
+                  : 'Questionnaires'} <span>{visible.length}</span>
         </h2>
         <div>
           <span>Recently updated</span><button
@@ -394,47 +458,55 @@
               }}>Create your first document <ArrowRight size={15} /></button
             >{/if}
         </div>{:else}<div class:list={listView} class="document-grid">
-          {#each visible as doc}<a class="doc-card" href={`/documents/${doc.id}`}
-              ><div class="doc-preview" class:sheet={documentKind(doc) === 'spreadsheet'}>
-                <div class="preview-paper">
-                  {#if documentKind(doc) === 'spreadsheet'}<div class="preview-grid">
-                      {#each Array.from({ length: 35 }, (_, i) => i) as cell (cell)}<span
-                        ></span>{/each}
-                    </div>{:else}<div class="preview-line title"></div>
-                    <div class="preview-line"></div>
-                    <div class="preview-line"></div>
-                    <div class="preview-line half"></div>
-                    <div class="preview-gap"></div>
-                    <div class="preview-line"></div>
-                    <div class="preview-line"></div>
-                    <div class="preview-line half"></div>{/if}
+          {#each visible as doc}<article class="doc-entry">
+              <a class="doc-card" href={trash ? undefined : `/documents/${doc.id}`}
+                ><div class="doc-preview" class:sheet={documentKind(doc) === 'spreadsheet'}>
+                  <div class="preview-paper">
+                    {#if documentKind(doc) === 'spreadsheet'}<div class="preview-grid">
+                        {#each Array.from({ length: 35 }, (_, i) => i) as cell (cell)}<span
+                          ></span>{/each}
+                      </div>{:else}<div class="preview-line title"></div>
+                      <div class="preview-line"></div>
+                      <div class="preview-line"></div>
+                      <div class="preview-line half"></div>
+                      <div class="preview-gap"></div>
+                      <div class="preview-line"></div>
+                      <div class="preview-line"></div>
+                      <div class="preview-line half"></div>{/if}
+                  </div>
+                  <span class="type-badge">{documentKind(doc)}</span>
                 </div>
-                <span class="type-badge">{documentKind(doc)}</span>
-              </div>
-              <div class="doc-details">
-                <span class:green={documentKind(doc) === 'spreadsheet'} class="doc-icon"
-                  >{#if documentKind(doc) === 'spreadsheet'}<Table2
-                      size={19}
-                    />{:else if documentKind(doc) === 'questionnaire'}<ClipboardList
-                      size={19}
-                    />{:else}<FileText size={19} />{/if}</span
-                >
-                <div>
-                  <h3>{doc.title}</h3>
-                  <p>
-                    <Clock3 size={10} />
-                    {relative(doc.updated_at)}<span>·</span>{doc.status === 'deployed'
-                      ? 'Published version'
-                      : 'Team document'}
-                  </p>
-                </div>
-                <ArrowUpRight size={14} />
-              </div></a
-            >{/each}
+                <div class="doc-details">
+                  <span class:green={documentKind(doc) === 'spreadsheet'} class="doc-icon"
+                    >{#if documentKind(doc) === 'spreadsheet'}<Table2
+                        size={19}
+                      />{:else if documentKind(doc) === 'questionnaire'}<ClipboardList
+                        size={19}
+                      />{:else}<FileText size={19} />{/if}</span
+                  >
+                  <div>
+                    <h3>{doc.title}</h3>
+                    <p>
+                      <Clock3 size={10} />
+                      {relative(doc.updated_at)}<span>·</span>{doc.status === 'deployed'
+                        ? 'Published version'
+                        : 'Team document'}
+                    </p>
+                  </div>
+                  <ArrowUpRight size={14} />
+                </div></a
+              >
+              {#if doc.can_manage}<button
+                  class="trash-action"
+                  disabled={busy}
+                  onclick={() => void changeTrash(doc)}
+                  >{trash ? 'Restore document' : 'Move to Trash'}</button
+                >{/if}
+            </article>{/each}
         </div>{/if}
       <div class="workspace-footer">
         <span><Check size={12} /> Your document history stays with your work.</span><a
-          href="/#workflow">How Dynodoc works <ArrowUpRight size={12} /></a
+          href="https://dynodoc.online/#workflow">How Dynodoc works <ArrowUpRight size={12} /></a
         >
       </div>
     </div>
@@ -504,23 +576,52 @@
   </div>{/if}
 
 <style>
+  .doc-entry {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .doc-entry .doc-card {
+    flex: 1;
+  }
+  .trash-action {
+    background: #f7f8fa;
+    color: #354f68;
+    border: 1px solid #d4dfe8;
+    border-top: 0;
+    border-radius: 0 0 8px 8px;
+    padding: 9px;
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .doc-entry:has(.trash-action) .doc-card {
+    border-radius: 8px 8px 0 0;
+  }
+  .list .doc-entry {
+    display: block;
+  }
+  .list .trash-action {
+    width: 100%;
+  }
+
   .example-links {
     display: flex;
     align-items: center;
     gap: 14px;
     flex-wrap: wrap;
     margin: 18px 0 32px;
-    color: #9aabb4;
-    font-size: 11px;
+    color: #46617a;
+    font-size: 13px;
   }
   .example-links button {
     border: 0;
     background: none;
-    color: #4d79ae;
+    color: #32659b;
     padding: 0;
     text-decoration: underline;
     text-underline-offset: 4px;
-    font-size: 11px;
+    font-size: 13px;
     cursor: pointer;
   }
   .workspace {
@@ -550,10 +651,6 @@
     color: #20559b;
     margin: 0 9px 34px;
   }
-  .brand > span {
-    color: #7da9e4;
-    margin-left: -4px;
-  }
   .brand b {
     font: 600 23px var(--font-ui);
     letter-spacing: -1px;
@@ -579,12 +676,12 @@
   }
   .team strong {
     display: block;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 500;
   }
   .team small {
-    color: #9aa3ad;
-    font-size: 9px;
+    color: #46617a;
+    font-size: 13px;
     display: block;
     margin-top: 3px;
   }
@@ -598,7 +695,7 @@
     border-radius: 7px;
     background: #205bb0;
     color: #fff;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 500;
     cursor: pointer;
     margin-bottom: 22px;
@@ -616,8 +713,8 @@
     border: 0;
     border-radius: 6px;
     background: none;
-    color: #7c8994;
-    font-size: 11px;
+    color: #46617a;
+    font-size: 13px;
     text-align: left;
     cursor: pointer;
   }
@@ -627,8 +724,8 @@
   }
   nav button > span {
     margin-left: auto;
-    color: #77947c;
-    font-size: 10px;
+    color: #46617a;
+    font-size: 13px;
   }
   .side-bottom {
     margin-top: auto;
@@ -637,7 +734,7 @@
     padding: 17px 13px 22px;
     margin-bottom: 12px;
     border-bottom: 1px solid #edf0f2;
-    color: #849e89;
+    color: #46617a;
   }
   .workspace-tip p {
     font: 16px/1.5 var(--font-ui);
@@ -646,13 +743,13 @@
   }
   .workspace-tip small {
     display: block;
-    font-size: 10px;
+    font-size: 13px;
     line-height: 1.7;
-    color: #a0aaa2;
+    color: #46617a;
   }
   .side-bottom > button {
     width: 100%;
-    font-size: 11px;
+    font-size: 13px;
   }
   .workspace > main {
     margin-left: 240px;
@@ -675,13 +772,13 @@
     gap: 10px;
     max-width: 480px;
     width: 100%;
-    color: #a0aab2;
+    color: #46617a;
   }
   .search input {
     background: none;
     border: 0;
     outline: none;
-    font-size: 11px;
+    font-size: 13px;
     flex: 1;
     min-width: 0;
     color: #4e6171;
@@ -691,11 +788,11 @@
     border: 1px solid #e6eaef;
     border-radius: 4px;
     padding: 2px 5px;
-    color: #b0b9c0;
+    color: #46617a;
   }
   .top > a {
-    font-size: 10px;
-    color: #93a096;
+    font-size: 13px;
+    color: #46617a;
     display: flex;
     align-items: center;
     gap: 7px;
@@ -715,9 +812,9 @@
     margin-bottom: 30px;
   }
   .eyebrow {
-    font-size: 8px;
+    font-size: 13px;
     letter-spacing: 1.8px;
-    color: #94a294;
+    color: #46617a;
     margin: 0 0 9px;
   }
   h1 {
@@ -727,8 +824,8 @@
     color: #29445f;
   }
   .heading p:not(.eyebrow) {
-    font-size: 11px;
-    color: #929d9b;
+    font-size: 13px;
+    color: #46617a;
     margin: 0;
   }
   .upload {
@@ -739,7 +836,7 @@
     border: 1px solid #dfe5e0;
     border-radius: 6px;
     padding: 10px 14px;
-    font-size: 10px;
+    font-size: 13px;
     color: #607263;
     cursor: pointer;
     white-space: nowrap;
@@ -778,7 +875,7 @@
   }
   .blue {
     background: #edf3fa;
-    color: #729ac4;
+    color: #46617a;
   }
   .green {
     background: #edf4ed !important;
@@ -786,21 +883,21 @@
   }
   .amber {
     background: #faf4e9;
-    color: #bba675;
+    color: #46617a;
   }
   .starters b {
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 500;
     color: #536957;
   }
   .starters p {
-    font-size: 9px;
-    color: #a1a99d;
+    font-size: 13px;
+    color: #46617a;
     margin: 4px 0 0;
   }
   .starters > button > :global(svg) {
     margin-left: auto;
-    color: #bdc9bc;
+    color: #46617a;
     width: 14px;
   }
   .list-heading {
@@ -818,10 +915,10 @@
   .list-heading h2 > span {
     margin-left: 7px;
     background: #e9eee8;
-    color: #83927a;
+    color: #46617a;
     padding: 2px 6px;
     border-radius: 4px;
-    font-size: 9px;
+    font-size: 13px;
   }
   .list-heading > div {
     display: flex;
@@ -829,15 +926,15 @@
     gap: 4px;
   }
   .list-heading > div > span {
-    font-size: 9px;
-    color: #9da796;
+    font-size: 13px;
+    color: #46617a;
     margin-right: 14px;
   }
   .list-heading button {
     display: flex;
     background: none;
     border: 1px solid transparent;
-    color: #aab3a4;
+    color: #46617a;
     padding: 6px;
     border-radius: 4px;
     cursor: pointer;
@@ -845,7 +942,7 @@
   .list-heading button.chosen {
     background: white;
     border-color: #e0e6db;
-    color: #6f8561;
+    color: #46617a;
   }
   .document-grid {
     display: grid;
@@ -905,8 +1002,8 @@
     position: absolute;
     bottom: 10px;
     right: 10px;
-    font-size: 7px;
-    color: #94a28b;
+    font-size: 13px;
+    color: #46617a;
     background: #ffffffc9;
     border: 1px solid #e6eadf;
     border-radius: 4px;
@@ -926,7 +1023,7 @@
     width: 29px;
     height: 33px;
     background: #eef3f9;
-    color: #7e9fbe;
+    color: #46617a;
     border-radius: 5px;
     flex-shrink: 0;
   }
@@ -934,7 +1031,7 @@
     min-width: 0;
   }
   .doc-details h3 {
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 500;
     color: #5b6d54;
     margin: 0 0 5px;
@@ -946,14 +1043,14 @@
     display: flex;
     align-items: center;
     gap: 5px;
-    color: #a5ad9e;
-    font-size: 8px;
+    color: #46617a;
+    font-size: 13px;
     margin: 0;
   }
   .doc-details > :global(svg) {
     margin-left: auto;
     flex-shrink: 0;
-    color: #b1bcaa;
+    color: #46617a;
   }
   .doc-preview.sheet {
     background: #eef3ed;
@@ -980,10 +1077,10 @@
     padding: 16px 18px;
   }
   .document-grid.list .doc-details p {
-    font-size: 9px;
+    font-size: 13px;
   }
   .document-grid.list .doc-details h3 {
-    font-size: 12px;
+    font-size: 13px;
   }
   .empty {
     border: 1px dashed #dce5d8;
@@ -994,7 +1091,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    color: #9ca992;
+    color: #46617a;
     padding: 30px;
     text-align: center;
   }
@@ -1005,15 +1102,15 @@
     border-radius: 14px;
     display: grid;
     place-items: center;
-    color: #91ab7c;
+    color: #46617a;
   }
   .empty h3 {
     font: 25px var(--font-ui);
-    color: #6d855e;
+    color: #46617a;
     margin: 18px 0 10px;
   }
   .empty p {
-    font-size: 11px;
+    font-size: 13px;
     margin: 0;
   }
   .empty button {
@@ -1022,8 +1119,8 @@
     gap: 10px;
     background: none;
     border: 0;
-    color: #66864f;
-    font-size: 11px;
+    color: #46617a;
+    font-size: 13px;
     margin-top: 20px;
     cursor: pointer;
   }
@@ -1032,8 +1129,8 @@
     justify-content: space-between;
     gap: 15px;
     padding-top: 40px;
-    font-size: 9px;
-    color: #a4ae9b;
+    font-size: 13px;
+    color: #46617a;
   }
   .workspace-footer > span,
   .workspace-footer > a {
@@ -1042,7 +1139,7 @@
     align-items: center;
   }
   .workspace-footer > a {
-    color: #889c7a;
+    color: #46617a;
     text-decoration: none;
   }
   .error {
@@ -1054,7 +1151,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 12px;
+    font-size: 13px;
     margin-bottom: 16px;
   }
   .error > button {
@@ -1066,8 +1163,8 @@
     margin-left: auto;
   }
   .progress {
-    color: #668753;
-    font-size: 12px;
+    color: #46617a;
+    font-size: 13px;
   }
   .modal-backdrop {
     position: fixed;
@@ -1097,12 +1194,12 @@
     right: 18px;
     border: 0;
     background: none;
-    color: #9da79b;
+    color: #46617a;
     cursor: pointer;
   }
   .modal-icon {
     background: #edf4e9;
-    color: #759460;
+    color: #46617a;
     width: 46px;
     height: 46px;
     border-radius: 10px;
@@ -1116,8 +1213,8 @@
     margin: 0 0 10px;
   }
   .modal > p {
-    font-size: 12px;
-    color: #96a18b;
+    font-size: 13px;
+    color: #46617a;
     line-height: 1.7;
   }
   .modal form {
@@ -1128,8 +1225,8 @@
   .modal label {
     display: grid;
     gap: 7px;
-    font-size: 11px;
-    color: #758666;
+    font-size: 13px;
+    color: #46617a;
   }
   .modal input,
   .modal select {
@@ -1150,7 +1247,7 @@
     color: white;
     border: 0;
     border-radius: 7px;
-    font-size: 12px;
+    font-size: 13px;
     cursor: pointer;
     margin-top: 6px;
   }
@@ -1163,20 +1260,20 @@
     border: 1px solid #e6ecdd;
     padding: 14px;
     border-radius: 8px;
-    font-size: 12px;
-    color: #687e57;
+    font-size: 13px;
+    color: #46617a;
   }
   .import-report b {
-    font-size: 12px;
+    font-size: 13px;
   }
   .import-report p {
-    font-size: 11px;
+    font-size: 13px;
     line-height: 1.7;
   }
   .warning {
     display: flex;
     gap: 6px;
-    color: #927b4d;
+    color: #46617a;
   }
   .warning > :global(svg) {
     flex-shrink: 0;
@@ -1211,10 +1308,10 @@
       width: 20px;
     }
     .starters b {
-      font-size: 10px;
+      font-size: 13px;
     }
     .starters p {
-      font-size: 8px;
+      font-size: 13px;
     }
     .starters > button > :global(svg) {
       display: none;
@@ -1267,7 +1364,7 @@
       display: none;
     }
     .search input {
-      font-size: 10px;
+      font-size: 13px;
     }
     .heading {
       display: block;
@@ -1276,11 +1373,11 @@
       font-size: 26px;
     }
     .heading > div > p:not(.eyebrow) {
-      font-size: 10px;
+      font-size: 13px;
     }
     .upload {
       margin-top: 18px;
-      font-size: 10px;
+      font-size: 13px;
     }
     .starters {
       grid-template-columns: 1fr;
@@ -1290,10 +1387,10 @@
       padding: 13px;
     }
     .starters p {
-      font-size: 10px;
+      font-size: 13px;
     }
     .starters b {
-      font-size: 12px;
+      font-size: 13px;
     }
     .starters > button > :global(svg) {
       display: block;
@@ -1310,13 +1407,97 @@
     .workspace-footer {
       flex-direction: column;
       gap: 12px;
-      font-size: 8px;
+      font-size: 13px;
     }
     .modal {
       padding: 25px;
     }
     .modal h2 {
       font-size: 25px;
+    }
+  }
+  .sidebar {
+    overflow-y: auto;
+  }
+  .sidebar > * {
+    flex-shrink: 0;
+  }
+  .mobile-close,
+  .mobile-nav {
+    display: none;
+  }
+  @media (max-width: 760px) {
+    .sidebar {
+      display: none;
+      width: 280px;
+      padding: 22px;
+      box-shadow: 6px 0 28px #12375b30;
+    }
+    .sidebar.open {
+      display: flex;
+    }
+    .sidebar.open .brand b,
+    .sidebar.open .team,
+    .sidebar.open .new-button,
+    .sidebar.open .side-bottom {
+      display: flex;
+    }
+    .sidebar.open nav button {
+      font-size: 14px;
+      padding: 12px;
+      gap: 10px;
+    }
+    .sidebar.open nav button > span {
+      display: inline;
+    }
+    .mobile-nav,
+    .mobile-close {
+      display: block;
+      padding: 9px 10px;
+      border: 1px solid #b6cbe3;
+      background: #e9f1fb;
+      border-radius: 5px;
+      color: #25548c;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .mobile-close {
+      margin-bottom: 15px;
+    }
+    .workspace > main {
+      margin-left: 0;
+    }
+    .top {
+      padding: 12px 16px;
+      height: auto;
+      min-height: 76px;
+      gap: 12px;
+    }
+    .top > a {
+      display: none;
+    }
+    .top .search {
+      min-width: 0;
+      flex: 1;
+    }
+    .content {
+      padding: 25px 18px;
+    }
+    .heading {
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .starters {
+      grid-template-columns: 1fr;
+    }
+    .starters p {
+      font-size: 14px;
+    }
+    .starters b {
+      font-size: 16px;
+    }
+    .document-grid {
+      grid-template-columns: 1fr;
     }
   }
 </style>

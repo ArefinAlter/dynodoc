@@ -1,4 +1,7 @@
 <script lang="ts">
+  import ContextMenu from '$lib/components/product/ContextMenu.svelte';
+  import type { MenuAction } from '$lib/workspace/context-menu';
+  import { sheetStructure, type SheetOperation } from '$lib/workspace/sheet-structure';
   import { HyperFormula } from 'hyperformula';
   import { ulid } from 'ulid';
   import { tick } from 'svelte';
@@ -28,8 +31,9 @@
     onSelect?: (id: string | null) => void;
     onUndo: () => void;
     onRedo: () => void;
+    onComment?: () => void;
   }
-  let { documentState, editable, onChange, onSelect, onUndo, onRedo }: Props = $props();
+  let { documentState, editable, onChange, onSelect, onUndo, onRedo, onComment }: Props = $props();
   let grid: HTMLDivElement;
   let activeSheet = $state(''),
     selected = $state({ r: 0, c: 0 }),
@@ -220,6 +224,10 @@
     const text = e.clipboardData?.getData('text/plain');
     if (!text) return;
     e.preventDefault();
+    pasteText(text);
+  }
+  function pasteText(text: string) {
+    if (!editable || !text) return;
     const cells = text
       .replace(/\r/g, '')
       .replace(/\n$/, '')
@@ -337,63 +345,169 @@
   function removeRow() {
     resize('row');
   }
-  function resize(kind: 'row' | 'column') {
-    if (!sheet) return;
-    const target = shown[selected.r];
-    if (kind === 'row' && !target) return;
-    const input: Record<string, string[][]> = {};
-    for (const s of sheets)
-      input[String(s.current_fields.label || s.id)] = rowsForSheet(documentState, s.id).map((n) =>
-        Array.from({ length: Number(s.current_fields.columns) || 12 }, (_, c) =>
-          String(n.current_fields[`cell_${c}`] ?? '')
-        )
-      );
-    let hf: HyperFormula | undefined;
+  function structure(action: SheetOperation, index = 0, name = '') {
+    if (!sheet || !editable) return;
     try {
-      hf = HyperFormula.buildFromSheets(input, { licenseKey: 'gpl-v3' });
-      const sheetId = hf.getSheetId(String(sheet.current_fields.label || sheet.id))!;
-      if (kind === 'row') hf.removeRows(sheetId, [rows.findIndex((n) => n.id === target.id), 1]);
-      else hf.removeColumns(sheetId, [selected.c, 1]);
-      const ops: EventPayload[] =
-        kind === 'row'
-          ? [{ type: 'NodeDeleted', node_id: target.id }]
-          : [
-              {
-                type: 'FieldEdited',
-                node_id: sheet.id,
-                field: 'columns',
-                value: Math.max(1, columns - 1)
-              }
-            ];
-      for (const s of sheets) {
-        const serialized = hf.getSheetSerialized(
-          hf.getSheetId(String(s.current_fields.label || s.id))!
-        );
-        const remaining = rowsForSheet(documentState, s.id).filter(
-          (n) => kind !== 'row' || n.id !== target.id
-        );
-        remaining.forEach((n, r) => {
-          for (let c = 0; c < (Number(s.current_fields.columns) || 12); c++) {
-            const value = String(serialized[r]?.[c] ?? '');
-            if (value !== String(n.current_fields[`cell_${c}`] ?? ''))
-              ops.push({ type: 'FieldEdited', node_id: n.id, field: `cell_${c}`, value });
-            if (kind === 'column' && s.id === sheet.id && c >= selected.c)
-              ops.push({
-                type: 'FieldEdited',
-                node_id: n.id,
-                field: `format_${c}`,
-                value: n.current_fields[`format_${c + 1}`] || {}
-              });
-          }
-        });
-      }
-      onChange(ops);
-      choose(Math.min(selected.r, shown.length - 2), Math.min(selected.c, columns - 2));
+      onChange(sheetStructure(documentState, sheet.id, action, index, name));
+      if (action === 'delete-sheet') activeSheet = sheets.find((s) => s.id !== sheet.id)?.id || '';
+      choose(0, 0);
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Could not adjust the formulas for this change.';
-    } finally {
-      hf?.destroy();
+      error = e instanceof Error ? e.message : 'Could not update the sheet';
     }
+  }
+  function resize(kind: 'row' | 'column') {
+    structure(
+      kind === 'row' ? 'delete-row' : 'delete-column',
+      kind === 'row' ? rows.findIndex((n) => n.id === shown[selected.r]?.id) : selected.c
+    );
+  }
+  function insert(kind: 'row' | 'column', after = false) {
+    structure(
+      kind === 'row' ? 'insert-row' : 'insert-column',
+      (kind === 'row' ? rows.findIndex((n) => n.id === shown[selected.r]?.id) : selected.c) +
+        (after ? 1 : 0)
+    );
+  }
+  function renameSheet() {
+    if (!sheet) return;
+    const name = prompt('Rename sheet', String(sheet.current_fields.label));
+    if (name) structure('rename', 0, name);
+  }
+  function deleteSheet() {
+    if (
+      confirm(
+        'Delete this sheet? Formulas that reference it will show #REF!. Restore from version history if needed.'
+      )
+    )
+      structure('delete-sheet');
+  }
+  function duplicateSheet() {
+    if (!sheet || !editable) return;
+    const id = ulid();
+    let name = String(sheet.current_fields.label).slice(0, 23) + ' copy';
+    let i = 2;
+    while (sheets.some((s) => s.current_fields.label === name))
+      name = String(sheet.current_fields.label).slice(0, 20) + ` copy ${i++}`;
+    onChange([
+      {
+        type: 'NodeCreated',
+        node_id: id,
+        node_type: 'section',
+        parent_id: sheet.parent_id,
+        pos: between(sheets.at(-1)?.pos || ''),
+        fields: { ...sheet.current_fields, label: name }
+      },
+      ...rows.map(
+        (n) =>
+          ({
+            type: 'NodeCreated',
+            node_id: ulid(),
+            node_type: 'item',
+            parent_id: id,
+            pos: n.pos,
+            fields: structuredClone(n.current_fields)
+          }) as EventPayload
+      )
+    ]);
+    activeSheet = id;
+  }
+  function moveSheet(direction: number) {
+    if (!sheet || !editable) return;
+    const other = sheets[sheets.findIndex((s) => s.id === sheet.id) + direction];
+    if (!other) return;
+    onChange([
+      { type: 'NodeMoved', node_id: sheet.id, new_parent_id: sheet.parent_id, new_pos: other.pos },
+      { type: 'NodeMoved', node_id: other.id, new_parent_id: other.parent_id, new_pos: sheet.pos }
+    ]);
+  }
+  let context = $state<{ x: number; y: number; items: MenuAction[] } | null>(null);
+  async function menuClipboard(action: string) {
+    try {
+      if (action === 'paste') {
+        pasteText(await navigator.clipboard.readText());
+        return;
+      }
+      const x = range();
+      await navigator.clipboard.writeText(
+        shown
+          .slice(x.r1, x.r2 + 1)
+          .map((_, r) =>
+            Array.from({ length: x.c2 - x.c1 + 1 }, (_, c) => raw(x.r1 + r, x.c1 + c)).join('\t')
+          )
+          .join('\n')
+      );
+      if (action === 'cut' && editable) clear();
+    } catch {
+      error = 'Your browser blocked clipboard access. Use Ctrl+C, Ctrl+X or Ctrl+V in the sheet.';
+    }
+  }
+  function openCellMenu(e: MouseEvent, r: number, c: number) {
+    e.preventDefault();
+    if (!inRange(r, c)) choose(r, c);
+    onSelect?.(shown[r]?.id || null);
+    context = {
+      x: e.clientX,
+      y: e.clientY,
+      items: [
+        { label: 'Cut cells', action: () => menuClipboard('cut'), disabled: !editable },
+        { label: 'Copy cells', action: () => menuClipboard('copy') },
+        { label: 'Paste cells', action: () => menuClipboard('paste'), disabled: !editable },
+        ...(onComment
+          ? [{ label: 'Add comment', action: () => onComment?.(), separator: true }]
+          : []),
+        {
+          label: 'Insert row above',
+          action: () => insert('row'),
+          disabled: !editable,
+          separator: true
+        },
+        { label: 'Insert row below', action: () => insert('row', true), disabled: !editable },
+        { label: 'Insert column left', action: () => insert('column'), disabled: !editable },
+        { label: 'Insert column right', action: () => insert('column', true), disabled: !editable },
+        { label: 'Delete row', action: () => resize('row'), disabled: !editable },
+        { label: 'Delete column', action: () => resize('column'), disabled: !editable },
+        { label: 'Clear contents', action: clear, disabled: !editable, separator: true },
+        { label: 'Bold', action: () => toggleFormat('bold'), disabled: !editable },
+        {
+          label: 'Clear formatting',
+          action: () => {
+            const x = range();
+            const ops: EventPayload[] = [];
+            for (let rr = x.r1; rr <= x.r2; rr++)
+              for (let cc = x.c1; cc <= x.c2; cc++)
+                ops.push({
+                  type: 'FieldEdited',
+                  node_id: shown[rr].id,
+                  field: `format_${cc}`,
+                  value: {}
+                });
+            onChange(ops);
+          },
+          disabled: !editable
+        }
+      ]
+    };
+  }
+  function openSheetMenu(e: MouseEvent, id: string) {
+    e.preventDefault();
+    if (editing) commit();
+    activeSheet = id;
+    context = {
+      x: e.clientX,
+      y: e.clientY,
+      items: [
+        { label: 'Rename sheet', action: renameSheet, disabled: !editable },
+        { label: 'Duplicate sheet', action: duplicateSheet, disabled: !editable },
+        { label: 'Move left', action: () => moveSheet(-1), disabled: !editable },
+        { label: 'Move right', action: () => moveSheet(1), disabled: !editable },
+        {
+          label: 'Delete sheet',
+          action: deleteSheet,
+          disabled: !editable || sheets.length <= 1,
+          separator: true
+        }
+      ]
+    };
   }
 </script>
 
@@ -525,6 +639,7 @@
                     choose(r, c, e.shiftKey);
                     (e.currentTarget.closest('.sheet-editor') as HTMLElement)?.focus();
                   }}
+                  oncontextmenu={(e) => openCellMenu(e, r, c)}
                   ondblclick={() => void edit()}>{display(n, c)}</button
                 >{#if editing && r === selected.r && c === selected.c}<input
                     class="cell-entry"
@@ -572,6 +687,11 @@
     <button aria-label="Add sheet" disabled={!editable} onclick={addSheet}
       ><Plus size={18} /></button
     >{#each sheets as s}<button
+        oncontextmenu={(e) => openSheetMenu(e, s.id)}
+        ondblclick={() => {
+          activeSheet = s.id;
+          renameSheet();
+        }}
         class:active={sheet?.id === s.id}
         onclick={() => {
           if (editing) commit();
@@ -579,11 +699,55 @@
           selected = { r: 0, c: 0 };
           anchor = { r: 0, c: 0 };
         }}>{String(s.current_fields.label)}</button
-      >{/each}<span>{shown.length} rows · {columns} columns</span>
+      >{/each}<select
+      aria-label="Sheet actions"
+      disabled={!editable}
+      onchange={(e) => {
+        switch (e.currentTarget.value) {
+          case 'rename':
+            renameSheet();
+            break;
+          case 'duplicate':
+            duplicateSheet();
+            break;
+          case 'delete':
+            deleteSheet();
+            break;
+          case 'left':
+            moveSheet(-1);
+            break;
+          case 'right':
+            moveSheet(1);
+            break;
+        }
+        e.currentTarget.value = '';
+      }}
+      ><option value="">Sheet actions</option><option value="rename">Rename</option><option
+        value="duplicate">Duplicate</option
+      ><option value="left">Move left</option><option value="right">Move right</option><option
+        value="delete">Delete</option
+      ></select
+    ><span>{shown.length} rows · {columns} columns</span>
   </div>
 </div>
 
+{#if context}<ContextMenu
+    {...context}
+    onClose={() => {
+      context = null;
+    }}
+  />{/if}
+
 <style>
+  .sheet-tabs select {
+    padding: 7px;
+    border: 1px solid #b6d0c1;
+    background: #eff7f1;
+    color: #255841;
+    font-size: 13px;
+    border-radius: 4px;
+  }
+
   .sheet-editor {
     font:
       12px Arial,
@@ -636,7 +800,7 @@
     border: 0;
     background: none;
     color: #5a6f62;
-    font-size: 11px;
+    font-size: 13px;
     max-width: 130px;
   }
   .tools label {
@@ -662,12 +826,12 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    color: #7d9486;
+    color: #46617a;
   }
   .search input {
     background: none;
     border: 0;
-    font-size: 11px;
+    font-size: 13px;
     outline: 0;
     max-width: 130px;
   }
@@ -686,7 +850,7 @@
   }
   .formula b {
     font: italic 17px Georgia;
-    color: #879aaa;
+    color: #46617a;
     padding: 0 15px;
   }
   .formula input {
@@ -708,12 +872,12 @@
     border-collapse: separate;
     border-spacing: 0;
     table-layout: fixed;
-    font-size: 12px;
+    font-size: 13px;
   }
   .grid th {
     position: sticky;
     background: #f5f7f8;
-    color: #7b8994;
+    color: #46617a;
     font-weight: 400;
     height: 28px;
     border-right: 1px solid #dfe5ea;
@@ -804,8 +968,8 @@
     display: flex;
     align-items: center;
     gap: 5px;
-    font-size: 11px;
-    color: #6e8778;
+    font-size: 13px;
+    color: #46617a;
     background: #f1f6f3;
     border: 1px solid #dfebe4;
     border-radius: 4px;
@@ -826,7 +990,7 @@
   .sheet-tabs button {
     display: block;
     white-space: nowrap;
-    font-size: 12px;
+    font-size: 13px;
     padding: 4px 14px;
   }
   .sheet-tabs button.active {
@@ -836,14 +1000,14 @@
   .sheet-tabs span {
     margin-left: auto;
     white-space: nowrap;
-    font-size: 10px;
-    color: #8b9d93;
+    font-size: 13px;
+    color: #46617a;
   }
   .notice {
     padding: 9px 20px;
     background: #fff7e4;
     color: #95652e;
-    font-size: 12px;
+    font-size: 13px;
   }
   .notice button {
     float: right;

@@ -86,3 +86,30 @@ export async function enginePost(path: string, body: unknown) {
   if (!response.ok) throw new Error('The request could not be completed. Please try again.');
   return response.json();
 }
+
+/** Check the active account with the engine before calling a connected provider. */
+export async function activeIdentity(cookies: Cookies, secure: boolean): Promise<string | null> {
+  const token = await accessToken(cookies, secure);
+  if (!token) return null;
+  const response = await fetch(`${engineUrl()}/auth/me`, {
+    headers: { authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(10000)
+  });
+  if (!response.ok) return null;
+  return (await response.json()).identity_id as string;
+}
+export async function sealProvider(value: Record<string, unknown>, seconds: number) {
+  return new EncryptJWT(value)
+    .setProtectedHeader({ alg: 'dir', enc: 'A256GCM' })
+    .setIssuedAt()
+    .setExpirationTime(Math.floor(Date.now() / 1000) + seconds)
+    .encrypt(key());
+}
+export async function openProvider(value: string | undefined) {
+  if (!value) return null;
+  try {
+    return (await jwtDecrypt(value, key())).payload;
+  } catch {
+    return null;
+  }
+}

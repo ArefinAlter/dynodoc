@@ -7,30 +7,39 @@ import { textOf, type TextBlock } from './files';
 export function cloneState(state: DocumentState): DocumentState {
   return JSON.parse(JSON.stringify(state));
 }
-export function richContent(state: DocumentState): JSONContent {
+export function richContent(state: DocumentState, parentId?: string): JSONContent {
   return {
     type: 'doc',
-    content: documentNodes(state).map((n) => ({
-      ...((n.current_fields.content as JSONContent) || {
-        type: 'paragraph',
-        content: n.current_fields.label
-          ? [{ type: 'text', text: String(n.current_fields.label) }]
-          : []
-      }),
-      attrs: { ...((n.current_fields.content as JSONContent)?.attrs || {}), blockId: n.id }
-    }))
+    content: documentNodes(state)
+      .filter((n) => !parentId || n.parent_id === parentId)
+      .map((n) => ({
+        ...((n.current_fields.content as JSONContent) || {
+          type: 'paragraph',
+          content: n.current_fields.label
+            ? [{ type: 'text', text: String(n.current_fields.label) }]
+            : []
+        }),
+        attrs: { ...((n.current_fields.content as JSONContent)?.attrs || {}), blockId: n.id }
+      }))
   };
 }
-export function richChanges(state: DocumentState, content: JSONContent): EventPayload[] {
+export function richChanges(
+  state: DocumentState,
+  content: JSONContent,
+  parentId?: string
+): EventPayload[] {
   const ops: EventPayload[] = [];
-  const prior = documentNodes(state);
-  const root = Object.values(state.nodes).find((n) => !n.deleted && n.type === 'form');
+  const prior = documentNodes(state).filter((n) => !parentId || n.parent_id === parentId);
+  const root = parentId
+    ? state.nodes[parentId]
+    : Object.values(state.nodes).find((n) => !n.deleted && n.type === 'form');
   if (!root) return ops;
   const seen = new Set<string>();
   let left = '';
   for (let block of content.content || []) {
     let id = String(block.attrs?.blockId || ulid());
-    if (seen.has(id)) id = ulid();
+    if (seen.has(id) || (parentId && state.nodes[id] && state.nodes[id].parent_id !== parentId))
+      id = ulid();
     seen.add(id);
     block = { ...block, attrs: { ...block.attrs, blockId: id } };
     const node = state.nodes[id];

@@ -1,0 +1,161 @@
+import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { GET as robots } from '../../routes/robots.txt/+server';
+import { GET as sitemap } from '../../routes/sitemap.xml/+server';
+import { GET as llms } from '../../routes/llms.txt/+server';
+import { GET as llmsFull } from '../../routes/llms-full.txt/+server';
+import { buildPayload, describeStatus, readKey } from '../../../scripts/indexnow.mjs';
+import { FAQ } from './faq';
+import { INDEXNOW_KEY, INDEXNOW_KEY_PATH } from './indexnow';
+import { structuredDataScript } from './structured-data';
+import { CANONICAL_ORIGIN, DISALLOWED_PATHS, INDEXABLE_PAGES, canonicalUrl } from './site';
+
+// Vitest runs from the package root, so resolve the published assets from there.
+const staticDir = resolve(process.cwd(), 'static');
+// Each route's generated RequestHandler is typed to its own path, so call them
+// through the one thing they share: an event carrying a URL.
+type UrlHandler = (event: { url: URL }) => Response | Promise<Response>;
+const get = (handler: unknown, href: string) => (handler as UrlHandler)({ url: new URL(href) });
+const body = async (handler: unknown, href: string) => (await get(handler, href)).text();
+
+const PUBLIC = 'https://dynodoc.online';
+const PRIVATE_HOSTS = ['https://app.dynodoc.online', 'https://admin.dynodoc.online'];
+
+describe('robots.txt', () => {
+  it('opens the public host to crawlers but holds back private routes', async () => {
+    const text = await body(robots, `${PUBLIC}/robots.txt`);
+    expect(text).toMatch(/^User-agent: \*\nAllow: \/$/m);
+    for (const path of DISALLOWED_PATHS) expect(text).toContain(`Disallow: ${path}`);
+    expect(text).toContain(`Sitemap: ${CANONICAL_ORIGIN}/sitemap.xml`);
+  });
+
+  it('allows answer-engine crawlers, for retrieval and for training', async () => {
+    const text = await body(robots, `${PUBLIC}/robots.txt`);
+    for (const agent of [
+      'OAI-SearchBot',
+      'GPTBot',
+      'ClaudeBot',
+      'PerplexityBot',
+      'Google-Extended'
+    ])
+      expect(text).toContain(`User-agent: ${agent}\nAllow: /`);
+  });
+
+  it('closes the workspace and admin hosts entirely', async () => {
+    for (const host of PRIVATE_HOSTS)
+      expect(await body(robots, `${host}/robots.txt`)).toBe('User-agent: *\nDisallow: /\n');
+  });
+});
+
+describe('sitemap.xml', () => {
+  it('publishes every indexable page as a canonical URL with a lastmod', async () => {
+    const xml = await body(sitemap, `${PUBLIC}/sitemap.xml`);
+    for (const page of INDEXABLE_PAGES) {
+      expect(xml).toContain(`<loc>${canonicalUrl(page.path)}</loc>`);
+      expect(xml).toContain(`<lastmod>${page.lastmod}</lastmod>`);
+    }
+    // Private areas must never be advertised.
+    for (const path of DISALLOWED_PATHS) expect(xml).not.toContain(`<loc>${PUBLIC}${path}`);
+  });
+
+  it('advertises canonical URLs even when served from another host, and 404s there', async () => {
+    for (const host of PRIVATE_HOSTS)
+      expect((await get(sitemap, `${host}/sitemap.xml`)).status).toBe(404);
+  });
+});
+
+describe('llms.txt', () => {
+  it('states what the product is, and what the pilot does not do', async () => {
+    const text = await body(llms, `${PUBLIC}/llms.txt`);
+    expect(text.startsWith('# Dynodoc')).toBe(true);
+    expect(text).toContain('## What it does not do');
+    expect(text).toContain('no live collaborator cursors');
+    for (const page of INDEXABLE_PAGES) expect(text).toContain(canonicalUrl(page.path));
+  });
+
+  it('serves the full variant with every FAQ answer', async () => {
+    const text = await body(llmsFull, `${PUBLIC}/llms-full.txt`);
+    for (const entry of FAQ) {
+      expect(text).toContain(`### ${entry.question}`);
+      expect(text).toContain(entry.answer);
+    }
+  });
+
+  it('is not served from the private hosts', async () => {
+    for (const host of PRIVATE_HOSTS) {
+      expect((await get(llms, `${host}/llms.txt`)).status).toBe(404);
+      expect((await get(llmsFull, `${host}/llms-full.txt`)).status).toBe(404);
+    }
+  });
+});
+
+describe('structured data', () => {
+  const json = JSON.parse(
+    structuredDataScript
+      .replace(/^<script type="application\/ld\+json">/, '')
+      .replace(/<\/?script>$/, '')
+  );
+  const graph: Array<Record<string, unknown>> = json['@graph'];
+
+  it('describes the site, the organization and the application', () => {
+    expect(graph.map((node) => node['@type'])).toEqual([
+      'Organization',
+      'WebSite',
+      'SoftwareApplication',
+      'FAQPage'
+    ]);
+  });
+
+  it('marks up exactly the questions and answers the page renders', () => {
+    const faq = graph.find((node) => node['@type'] === 'FAQPage') as {
+      mainEntity: Array<{ name: string; acceptedAnswer: { text: string } }>;
+    };
+    expect(faq.mainEntity.map((q) => [q.name, q.acceptedAnswer.text])).toEqual(
+      FAQ.map((entry) => [entry.question, entry.answer])
+    );
+  });
+
+  it('escapes any sequence that could close the script element early', () => {
+    expect(structuredDataScript.slice(30, -9)).not.toContain('<');
+  });
+});
+
+describe('IndexNow', () => {
+  it('publishes a key file whose name and contents match the key', async () => {
+    const onDisk = readFileSync(`${staticDir}${INDEXNOW_KEY_PATH}`, 'utf8');
+    expect(onDisk).toBe(INDEXNOW_KEY);
+    // No BOM and no trailing newline: the file must contain the key, exactly.
+    expect(onDisk).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  it('reads the same key from disk as the app publishes', async () => {
+    const { key, fileName } = await readKey(staticDir);
+    expect(key).toBe(INDEXNOW_KEY);
+    expect(`/${fileName}`).toBe(INDEXNOW_KEY_PATH);
+  });
+
+  it('builds a payload pointing at the published key location', () => {
+    const payload = buildPayload(CANONICAL_ORIGIN, INDEXNOW_KEY, ['/privacy']);
+    expect(payload).toEqual({
+      host: 'dynodoc.online',
+      key: INDEXNOW_KEY,
+      keyLocation: `${CANONICAL_ORIGIN}${INDEXNOW_KEY_PATH}`,
+      urlList: [`${CANONICAL_ORIGIN}/privacy`]
+    });
+  });
+
+  it('refuses URLs on another host, which IndexNow would reject as 422', () => {
+    expect(() =>
+      buildPayload(CANONICAL_ORIGIN, INDEXNOW_KEY, ['https://app.dynodoc.online/workspace'])
+    ).toThrow(/outside dynodoc\.online/);
+    expect(() => buildPayload(CANONICAL_ORIGIN, INDEXNOW_KEY, [])).toThrow(/at least one URL/);
+  });
+
+  it('explains the response codes the endpoint documents', () => {
+    expect(describeStatus(200)).toMatch(/successfully/);
+    expect(describeStatus(403)).toMatch(/key not valid/);
+    expect(describeStatus(422)).toMatch(/not on this host/);
+    expect(describeStatus(418)).toMatch(/Unexpected status 418/);
+  });
+});

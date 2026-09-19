@@ -44,7 +44,7 @@ of overlapping edits. It is not the complete distributed protocol in the mathema
 - Selected blocks can be held back from sharing. Persistent exclusion rules, offline
   local repositories, portable clone/fetch protocols and arbitrary remotes are not
   implemented. Browser drafts are server-backed personal workspaces.
-- Membership, document metadata and operational samples do not all use the semantic
+- Membership/lifecycle changes now have a separate append-only operations audit. Document metadata and operational samples do not all use the semantic
   document event log. The cryptographic claim is specifically about recorded content
   operations, not every administrative action in the installation.
 - Formula/expression support is a documented subset. Neither successful parsing nor

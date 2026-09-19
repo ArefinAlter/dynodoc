@@ -34,7 +34,13 @@
     type Version,
     type Draft
   } from '$lib/workspace/api';
-  import { cloneState, richContent, richChanges, stateChanges } from '$lib/workspace/changes';
+  import {
+    cloneState,
+    richContent,
+    richChanges,
+    stateChanges,
+    between
+  } from '$lib/workspace/changes';
   import {
     download,
     exportDocument,
@@ -43,12 +49,14 @@
     type TextBlock
   } from '$lib/workspace/files';
   import { createDocument, listEvents } from '$lib/api/client';
+  import PublicLinkPanel from '$lib/components/product/PublicLinkPanel.svelte';
   import RichEditor from './RichEditor.svelte';
   import SheetEditor from './SheetEditor.svelte';
   import QuestionnaireEditor from './QuestionnaireEditor.svelte';
   import type { JSONContent } from '@tiptap/core';
   let { store }: { store: DocumentStore } = $props();
   const kind = $derived(documentKind(store.detail!));
+  let canManage = $state(false);
   const author = $derived(store.detail?.role === 'author');
   let local = $state<DocumentState>(untrack(() => cloneState(store.state))),
     base = $state<DocumentState>(untrack(() => cloneState(store.state))),
@@ -148,7 +156,69 @@
     }[];
   }
   const editable = $derived(author || (!!draftId && store.detail?.role !== 'auditor'));
-  const content = $derived(richContent(local));
+  let activeTab = $state('');
+  const textRoot = $derived(
+    Object.values(local.nodes).find((n) => !n.deleted && n.type === 'form')
+  );
+  const textTabs = $derived(
+    Object.values(local.nodes)
+      .filter((n) => !n.deleted && n.type === 'section' && n.current_fields.kind === 'document_tab')
+      .sort((a, b) => a.pos.localeCompare(b.pos))
+  );
+  const textParent = $derived(textTabs.some((t) => t.id === activeTab) ? activeTab : textRoot?.id);
+  const content = $derived(richContent(local, textParent));
+  function addTextTab() {
+    if (!textRoot) return;
+    const name = prompt('Name this document tab', 'New tab')?.trim();
+    if (!name) return;
+    const id = ulid();
+    change([
+      {
+        type: 'NodeCreated',
+        node_id: id,
+        node_type: 'section',
+        parent_id: textRoot.id,
+        pos: between(textTabs.at(-1)?.pos || ''),
+        fields: { label: name.slice(0, 160), kind: 'document_tab' }
+      },
+      {
+        type: 'NodeCreated',
+        node_id: ulid(),
+        node_type: 'item',
+        parent_id: id,
+        pos: 'a',
+        fields: { label: '', content: { type: 'paragraph', content: [] } }
+      }
+    ]);
+    activeTab = id;
+    revision++;
+  }
+  function renameTextTab() {
+    if (!activeTab) return;
+    const name = prompt(
+      'Rename tab',
+      String(local.nodes[activeTab]?.current_fields.label || '')
+    )?.trim();
+    if (name)
+      change([
+        { type: 'FieldEdited', node_id: activeTab, field: 'label', value: name.slice(0, 160) }
+      ]);
+  }
+  function removeTextTab() {
+    if (
+      !activeTab ||
+      !confirm('Remove this tab and its contents? You can restore it from version history.')
+    )
+      return;
+    change([
+      ...Object.values(local.nodes)
+        .filter((n) => !n.deleted && n.parent_id === activeTab)
+        .map((n) => ({ type: 'NodeDeleted', node_id: n.id }) as EventPayload),
+      { type: 'NodeDeleted', node_id: activeTab }
+    ]);
+    activeTab = '';
+    revision++;
+  }
   const prefix = $derived(`/documents/${store.documentId}`);
   const delta = $derived(compare ? stateChanges(compare, local) : []);
   const commentEvents = $derived(
@@ -187,6 +257,11 @@
     };
     window.addEventListener('beforeunload', unload);
     void refreshPeople();
+    void request<{ can_manage: boolean }>(`${prefix}/access`)
+      .then((a) => {
+        canManage = a.can_manage;
+      })
+      .catch(() => {});
     return () => {
       clearTimeout(timer);
       window.removeEventListener('beforeunload', unload);
@@ -207,7 +282,7 @@
     revision++;
   }
   function changeRich(value: JSONContent) {
-    change(richChanges(local, value));
+    change(richChanges(local, value, textParent));
   }
   function undo() {
     const prev = undoStack.pop();
@@ -489,7 +564,10 @@
   async function exportFile(format: string) {
     menu = false;
     await run(async () => {
-      if (format === 'docx') await exportDocument(local, title);
+      if (format === 'tex' || format === 'overleaf') {
+        const { exportLatex } = await import('$lib/workspace/latex');
+        await exportLatex(local, title, format === 'overleaf');
+      } else if (format === 'docx') await exportDocument(local, title);
       else if (format === 'csv' || format === 'xlsx') await exportSpreadsheet(local, title, format);
       else if (format === 'json')
         download(
@@ -567,7 +645,11 @@
               <button onclick={() => void makeCopy()}><Copy size={14} /> Make a copy</button
               >{#if kind === 'document'}<button onclick={() => void exportFile('docx')}
                   ><Download size={14} /> Download Word (.docx)</button
-                >{/if}{#if kind === 'spreadsheet'}<button onclick={() => void exportFile('xlsx')}
+                ><button onclick={() => void exportFile('tex')}>Download LaTeX (.tex)</button
+                ><button onclick={() => void exportFile('overleaf')}
+                  >Download Overleaf project (.zip)</button
+                >
+              {/if}{#if kind === 'spreadsheet'}<button onclick={() => void exportFile('xlsx')}
                   ><Download size={14} /> Download Excel (.xlsx)</button
                 ><button onclick={() => void exportFile('csv')}
                   ><Download size={14} /> Download first sheet (.csv)</button
@@ -630,9 +712,32 @@
     </div>{/if}
   <div class="body">
     <main>
-      {#if kind === 'document'}<RichEditor
+      {#if kind === 'document'}<nav class="document-tabs" aria-label="Document tabs">
+          <button
+            class:active={!activeTab}
+            onclick={() => {
+              activeTab = '';
+              revision++;
+            }}>Main document</button
+          >{#each textTabs as tab}<button
+              class:active={activeTab === tab.id}
+              onclick={() => {
+                activeTab = tab.id;
+                revision++;
+              }}>{String(tab.current_fields.label)}</button
+            >{/each}{#if editable}<button onclick={addTextTab}>+ Add tab</button
+            >{#if activeTab}<button onclick={renameTextTab}>Rename tab</button><button
+                onclick={removeTextTab}>Remove tab</button
+              >{/if}{/if}
+        </nav>
+        <RichEditor
           {content}
           {editable}
+          onComment={author || store.detail?.role === 'reviewer'
+            ? () => {
+                void openPanel('comments');
+              }
+            : undefined}
           onChange={changeRich}
           onSelect={(id) => (selected = id)}
           {revision}
@@ -641,6 +746,11 @@
           {editable}
           onChange={change}
           onSelect={(id) => (selected = id)}
+          onComment={author || store.detail?.role === 'reviewer'
+            ? () => {
+                void openPanel('comments');
+              }
+            : undefined}
           onUndo={undo}
           onRedo={redo}
         />{:else}<QuestionnaireEditor
@@ -675,10 +785,10 @@
         </div>
         {#if busy}<div class="loading">Working…</div>{/if}
         {#if panel === 'share'}<p>
-            Only people listed here can open this document. Add your researchers by email, then
-            share the link.
+            Direct invitations and inherited workspace roles control access. Owners and workspace
+            managers can invite people or publish a read-only copy.
           </p>
-          {#if author}<form
+          {#if canManage}<form
               onsubmit={(e) => {
                 e.preventDefault();
                 void share();
@@ -693,9 +803,11 @@
                 /></label
               ><label
                 >Access<select bind:value={role}
-                  ><option value="author">Can edit & share</option><option value="reviewer"
+                  ><option value="author">Can edit</option><option value="reviewer"
                     >Can comment & suggest</option
-                  ><option value="auditor">Can view</option></select
+                  ><option value="auditor">Can view</option><option value="remove"
+                    >Remove direct access</option
+                  ></select
                 ></label
               ><button class="primary" disabled={busy}>Add person</button>
             </form>{/if}
@@ -722,6 +834,17 @@
                 saved = 'Link copied';
               })}><Copy size={14} /> Copy document link</button
           >
+          <PublicLinkPanel
+            documentId={store.documentId}
+            prepare={async () => {
+              await save();
+              if (dirty || saving || draftId)
+                throw new Error(
+                  'Save the shared document before publishing. Personal drafts stay private.'
+                );
+              return baseSeq;
+            }}
+          />
         {:else if panel === 'versions'}<p>
             Name a milestone so everyone can find it later. Restoring adds new changes and keeps the
             complete history.
@@ -990,6 +1113,29 @@
   </div>{/if}
 
 <style>
+  .document-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 8px 16px;
+    overflow: auto;
+    min-height: 42px;
+  }
+  .document-tabs button {
+    white-space: nowrap;
+    border: 1px solid #c8d6e6;
+    border-radius: 6px;
+    background: #f7f9fc;
+    color: #315372;
+    padding: 7px 12px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .document-tabs button.active {
+    background: #dceafa;
+    color: #174e95;
+    border-color: #98b8e2;
+  }
+
   .workspace-editor {
     --editor-accent: #185abd;
     --editor-tint: #e5effd;
@@ -1015,7 +1161,7 @@
     min-height: 82px;
   }
   .back {
-    color: #91a0af;
+    color: #46617a;
     display: grid;
     place-items: center;
     padding: 8px;
@@ -1065,7 +1211,7 @@
   .cloud {
     display: grid;
     place-items: center;
-    color: #899e91;
+    color: #46617a;
   }
   nav {
     display: flex;
@@ -1078,8 +1224,8 @@
     border: 0;
     border-radius: 4px;
     padding: 3px 7px;
-    color: #798694;
-    font-size: 11px;
+    color: #46617a;
+    font-size: 13px;
     white-space: nowrap;
     cursor: pointer;
   }
@@ -1087,8 +1233,8 @@
     background: #e7edf5;
   }
   .save-state {
-    color: #94a298;
-    font-size: 10px;
+    color: #46617a;
+    font-size: 13px;
     margin-left: 15px;
   }
   .actions {
@@ -1101,7 +1247,7 @@
     place-items: center;
     background: none;
     border: 0;
-    color: #7d8da1;
+    color: #46617a;
     width: 32px;
     height: 32px;
     cursor: pointer;
@@ -1114,7 +1260,7 @@
     background: var(--editor-tint);
     color: var(--editor-accent);
     border-radius: 6px;
-    font-size: 12px;
+    font-size: 13px;
     padding: 11px 21px;
     cursor: pointer;
   }
@@ -1139,7 +1285,7 @@
     gap: 10px;
     width: 100%;
     text-align: left;
-    font-size: 12px;
+    font-size: 13px;
     padding: 10px;
   }
   .body {
@@ -1176,16 +1322,16 @@
   .panel-title button {
     border: 0;
     background: none;
-    color: #8c99a7;
+    color: #46617a;
     display: grid;
     place-items: center;
     cursor: pointer;
   }
   aside p,
   .sync-modal > p {
-    font-size: 12px;
+    font-size: 13px;
     line-height: 1.8;
-    color: #8b98a5;
+    color: #46617a;
     margin: 19px 0;
   }
   form {
@@ -1196,8 +1342,8 @@
   form label {
     display: grid;
     gap: 7px;
-    color: #718194;
-    font-size: 11px;
+    color: #46617a;
+    font-size: 13px;
   }
   form input,
   form select,
@@ -1253,12 +1399,12 @@
     height: 30px;
     border-radius: 50%;
     background: #edf1e4;
-    color: #839565;
-    font-size: 12px;
+    color: #46617a;
+    font-size: 13px;
   }
   .people strong {
     display: block;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 500;
     color: #617184;
     max-width: 145px;
@@ -1267,8 +1413,8 @@
   }
   .people small {
     display: block;
-    font-size: 9px;
-    color: #9ba7b1;
+    font-size: 13px;
+    color: #46617a;
     max-width: 145px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1276,8 +1422,8 @@
   .people em {
     font-style: normal;
     margin-left: auto;
-    color: #9ba7b1;
-    font-size: 10px;
+    color: #46617a;
+    font-size: 13px;
   }
   .version {
     padding: 19px 0;
@@ -1288,19 +1434,19 @@
   .activity strong {
     display: block;
     color: #63788a;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 500;
   }
   .version small,
   .comment small,
   .activity small {
     display: block;
-    font-size: 9px;
-    color: #a0adba;
+    font-size: 13px;
+    color: #46617a;
     margin-top: 6px;
   }
   .version p {
-    font-size: 11px;
+    font-size: 13px;
     margin: 10px 0;
   }
   .version > div {
@@ -1313,8 +1459,8 @@
     background: none;
     border: 0;
     padding: 0;
-    color: #71957e;
-    font-size: 10px;
+    color: #46617a;
+    font-size: 13px;
     text-decoration: underline;
     text-underline-offset: 3px;
     cursor: pointer;
@@ -1324,8 +1470,8 @@
   }
   .empty {
     padding: 36px 10px;
-    color: #a2aeb8;
-    font-size: 12px;
+    color: #46617a;
+    font-size: 13px;
     text-align: center;
   }
   .draft-card {
@@ -1340,16 +1486,16 @@
     margin: 12px 0;
     text-align: left;
     cursor: pointer;
-    color: #6c8777;
+    color: #46617a;
   }
   .draft-card span {
     flex: 1;
-    font-size: 12px;
+    font-size: 13px;
   }
   .draft-card small {
     display: block;
-    color: #9cac9f;
-    font-size: 10px;
+    color: #46617a;
+    font-size: 13px;
     margin-top: 5px;
   }
   .draft-banner {
@@ -1359,12 +1505,12 @@
     background: #eaf2ec;
     color: #5b7d66;
     padding: 9px 30px;
-    font-size: 11px;
+    font-size: 13px;
     border-block: 1px solid #e0ebe2;
     margin-bottom: 7px;
   }
   .draft-banner span {
-    color: #90a594;
+    color: #46617a;
   }
   .draft-banner button {
     background: #d8e8dd;
@@ -1372,7 +1518,7 @@
     border-radius: 4px;
     color: #54735f;
     padding: 5px 11px;
-    font-size: 10px;
+    font-size: 13px;
     cursor: pointer;
   }
   .draft-banner button:first-of-type {
@@ -1384,8 +1530,8 @@
     gap: 10px;
     padding: 11px 24px;
     background: #fff3e9;
-    color: #a06d46;
-    font-size: 12px;
+    color: #46617a;
+    font-size: 13px;
   }
   .error > span {
     flex: 1;
@@ -1396,7 +1542,7 @@
     border-radius: 4px;
     color: inherit;
     padding: 4px 9px;
-    font-size: 10px;
+    font-size: 13px;
     cursor: pointer;
   }
   .comment,
@@ -1406,8 +1552,8 @@
   }
   .comment p,
   .activity p {
-    color: #738899;
-    font-size: 12px;
+    color: #46617a;
+    font-size: 13px;
     margin: 10px 0;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
@@ -1416,16 +1562,16 @@
     padding: 8px 12px;
     margin: 10px 0;
     border-left: 2px solid #d5e5da;
-    color: #7d8f9c;
-    font-size: 11px;
+    color: #46617a;
+    font-size: 13px;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
   .footnote {
     display: block;
-    font-size: 10px;
+    font-size: 13px;
     line-height: 1.8;
-    color: #99a7b2;
+    color: #46617a;
     margin-top: 24px;
   }
   .comparison {
@@ -1436,30 +1582,30 @@
     margin: 20px 0;
   }
   .comparison strong {
-    font-size: 12px;
-    color: #6a8a75;
+    font-size: 13px;
+    color: #46617a;
   }
   .comparison > span {
     display: block;
-    font-size: 10px;
-    color: #97ab9d;
+    font-size: 13px;
+    color: #46617a;
     margin-top: 4px;
   }
   .comparison p {
-    font-size: 11px;
+    font-size: 13px;
     border-top: 1px solid #e1e8e3;
     padding-top: 10px;
     margin: 10px 0;
   }
   .comparison small {
     display: block;
-    font-size: 10px;
-    color: #839c8d;
+    font-size: 13px;
+    color: #46617a;
     overflow-wrap: anywhere;
   }
   .loading {
-    font-size: 11px;
-    color: #81a28a;
+    font-size: 13px;
+    color: #46617a;
     padding-top: 12px;
   }
   footer {
@@ -1469,8 +1615,8 @@
     padding: 6px 22px;
     background: var(--editor-chrome);
     border-top: 1px solid #e6edf1;
-    font-size: 9px;
-    color: #9aa9b6;
+    font-size: 13px;
+    color: #46617a;
     min-height: 26px;
   }
   .connection-dot {
@@ -1523,14 +1669,14 @@
     background: #f6f8f6;
     margin: 12px 0;
     padding: 10px;
-    color: #a0aaa2;
-    font-size: 11px;
+    color: #46617a;
+    font-size: 13px;
     overflow-wrap: anywhere;
   }
   .ancestor small {
     display: block;
-    color: #a7b2aa;
-    font-size: 9px;
+    color: #46617a;
+    font-size: 13px;
     margin-bottom: 4px;
   }
   .choices {
@@ -1553,14 +1699,14 @@
     background: #f3f9f5;
   }
   .choices strong {
-    font-size: 12px;
-    color: #799080;
+    font-size: 13px;
+    color: #46617a;
   }
   .choices span {
     display: block;
     width: 100%;
-    font-size: 11px;
-    color: #99a69c;
+    font-size: 13px;
+    color: #46617a;
     line-height: 1.8;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
@@ -1576,8 +1722,8 @@
     display: flex;
     align-items: center;
     gap: 9px;
-    font-size: 12px;
-    color: #708a7a;
+    font-size: 13px;
+    color: #46617a;
     padding: 7px;
     background: #f6f9f7;
   }
@@ -1593,7 +1739,7 @@
       display: none;
     }
     nav button {
-      font-size: 10px;
+      font-size: 13px;
     }
     .actions {
       gap: 5px;
@@ -1616,7 +1762,7 @@
   }
   @media (max-width: 700px) {
     nav button {
-      font-size: 9px;
+      font-size: 13px;
       padding: 3px;
     }
     .actions .round {

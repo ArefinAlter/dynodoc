@@ -61,6 +61,13 @@ export function importXlsForm(sheets: ResearchSheet[], filename: string): Import
         label: row[key] || row.name,
         hint: row.hint || row[Object.keys(row).find((k) => k.startsWith('hint::')) || ''] || '',
         question_type: questionType,
+        external_file: [
+          'select_one_from_file',
+          'select_multiple_from_file',
+          'xml-external'
+        ].includes(questionType)
+          ? list || ''
+          : '',
         group_type: group ? (type.includes('repeat') ? 'repeat' : 'group') : null,
         required: ['yes', 'true', '1'].includes(row.required),
         required_expression:
@@ -249,6 +256,21 @@ export async function exportXlsForm(state: DocumentState, title: string) {
     row.constraint_message = value(n, 'constraint_message');
     row.calculation = value(n, 'calculation');
     row.default = value(n, 'default');
+    for (const key of [
+      'appearance',
+      'parameters',
+      'choice_filter',
+      'repeat_count',
+      'read_only',
+      'trigger',
+      'bind::type',
+      'bind::odk:accuracyThreshold',
+      'bind::odk:unacceptableAccuracyThreshold',
+      'media::image',
+      'media::audio',
+      'media::video'
+    ])
+      if (n.current_fields[key] !== undefined) row[key] = n.current_fields[key];
     if (n.type === 'section') {
       const type = n.current_fields.group_type === 'repeat' ? 'repeat' : 'group';
       row.type = `begin_${type}`;
@@ -269,6 +291,17 @@ export async function exportXlsForm(state: DocumentState, title: string) {
           [String(choice.current_fields.label_column || 'label')]: value(choice, 'label')
         });
       }
+    }
+    if (['select_one_from_file', 'select_multiple_from_file', 'xml-external'].includes(type)) {
+      const filename =
+        value(n, 'external_file') ||
+        String((n.current_fields.xlsform as Record<string, string> | undefined)?.type || '').split(
+          /\s+/
+        )[1] ||
+        '';
+      if (!/^[A-Za-z0-9_.-]+\.(csv|xml|geojson)$/.test(filename))
+        throw new Error(`Choose a dataset filename for ${n.var_name}.`);
+      type += ' ' + filename;
     }
     row.type = type;
     survey.push(row);
