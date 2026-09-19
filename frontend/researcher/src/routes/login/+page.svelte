@@ -126,19 +126,20 @@
       {#if !options.email && !options.development}<p class="setup">
           Email sign-in is awaiting administrator setup.
         </p>{/if}
-      <p class="fine">
-        No password to remember. Your documents are only visible to the people you share them with.
-      </p>
+      <p class="fine">No password to remember. You choose who can collaborate on your documents.</p>
     {/if}
     {#if error}<p role="alert" class="error">{error}</p>{/if}
   </section>
-  <p class="footer">Made for the people behind the research.</p>
+  <p class="footer">
+    Made for the people behind the research.<br /><a href="/privacy">Privacy policy</a> ·
+    <a href="/terms">Terms &amp; conditions</a>
+  </p>
 </main>
 
 <style>
   .auth-page {
     min-height: 100vh;
-    background: #f5f7fb;
+    background: #f5f4ef;
     font-family: var(--font-ui);
     padding: 32px;
   }
@@ -160,23 +161,23 @@
     box-shadow: 0 16px 60px #22385c08;
   }
   .brand {
-    font: 700 42px Georgia;
-    color: #1b3d35;
+    font: 700 42px var(--font-ui);
+    color: #20559b;
     text-decoration: none;
   }
   .brand span {
-    color: #d0a163;
+    color: #79a2d9;
   }
   .eyebrow {
     font-size: 10px;
     letter-spacing: 2px;
-    color: #58706b;
+    color: #617f9d;
     margin: 24px 0 12px;
   }
   h1 {
-    font: 500 34px/1.15 Georgia;
+    font: 600 34px/1.15 var(--font-ui);
     letter-spacing: -1px;
-    color: #183a32;
+    color: #29445f;
     margin: 0 0 12px;
   }
   .intro {
@@ -207,9 +208,9 @@
     color: #4285f4;
   }
   .primary {
-    background: #244f44;
+    background: #205bb0;
     color: white;
-    border-color: #244f44;
+    border-color: #205bb0;
     margin-top: 10px;
     justify-content: space-between;
     padding: 0 16px;
@@ -252,7 +253,7 @@
     background: white;
   }
   input:focus {
-    outline: 2px solid #b4d2c6;
+    outline: 2px solid #b7d0f1;
     outline-offset: 2px;
   }
   .fine,

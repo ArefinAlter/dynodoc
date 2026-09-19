@@ -471,7 +471,7 @@
     flex-wrap: wrap;
     gap: 2px;
     padding: 6px 14px;
-    background: #edf2fa;
+    background: #edf3fc;
     border-radius: 8px;
     margin: 0 12px;
     border: 1px solid #e4eaf4;
@@ -491,7 +491,7 @@
   }
   .toolbar button:hover,
   .toolbar button[aria-pressed='true'] {
-    background: #d8e5f7;
+    background: #d8e8fd;
     color: #315476;
   }
   .toolbar button:disabled {
@@ -763,7 +763,7 @@
     cursor: pointer;
   }
   .popover button.apply {
-    background: #2e674d;
+    background: #185abd;
     color: white;
   }
   @media (max-width: 800px) {

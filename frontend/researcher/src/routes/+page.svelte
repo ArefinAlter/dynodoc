@@ -1,1975 +1,1736 @@
 <script lang="ts">
+  import { env } from '$env/dynamic/public';
   import {
     ArrowRight,
     ArrowUpRight,
-    Check,
-    CheckCheck,
     FileText,
     Table2,
-    GitCompareArrows,
-    History,
-    MessageSquare,
-    ShieldCheck,
+    ListChecks,
     Upload,
-    Users,
-    ChevronRight,
-    Sparkles,
-    Menu,
-    X,
-    Download,
-    Layers
+    History,
+    GitBranch,
+    ShieldCheck,
+    MessageSquare,
+    Check,
+    ChevronDown,
+    FolderOpen,
+    MoveUpRight,
+    Search,
+    FileCheck2
   } from '@lucide/svelte';
-  import { env } from '$env/dynamic/public';
+  import SiteHeader from '$lib/components/marketing/SiteHeader.svelte';
+  import SiteFooter from '$lib/components/marketing/SiteFooter.svelte';
+  import WorkbenchDemo from '$lib/components/marketing/WorkbenchDemo.svelte';
+  import VersionFlow from '$lib/components/marketing/VersionFlow.svelte';
+  import IntegrationExplorer from '$lib/components/marketing/IntegrationExplorer.svelte';
   const workspace = $derived(
     env.PUBLIC_WORKSPACE_URL
-      ? env.PUBLIC_WORKSPACE_URL.replace(/\/$/, '') + '/workspace'
+      ? `${env.PUBLIC_WORKSPACE_URL.replace(/\/$/, '')}/workspace`
       : '/workspace'
   );
-  let step = $state(1),
-    menu = $state(false);
-  const steps = [
+  let useCase = $state(0);
+  const cases = [
     {
-      title: 'Bring your work',
-      copy: 'Start with a document, a questionnaire, or a table. Give the team one place to work.'
+      label: 'Design the study',
+      title: 'Give the protocol a place to take shape.',
+      description:
+        'Bring your interview guides, questionnaires and codebooks into one workspace. Invite colleagues to improve the wording while you keep the shared version under control.',
+      file: 'Community health · Interview guide',
+      kind: 'Document',
+      icon: FileText,
+      items: ['Research aims', 'Participant experience', 'Questions for team review'],
+      note: 'The next revision starts with a conversation.',
+      action: 'Comment on the wording',
+      person: 'Sam',
+      text: 'Let’s leave room for an experience we haven’t anticipated.'
     },
     {
-      title: 'Think together',
-      copy: 'Write, leave comments, and suggest a better question. Keep discussion next to the work.'
+      label: 'Refine in the field',
+      title: 'Let fieldwork improve the instrument.',
+      description:
+        'Try a revised question in a personal draft. Compare it with the team’s version, work through competing edits and share just the changes that are ready.',
+      file: 'Community health · Fieldwork revision',
+      kind: 'Questionnaire',
+      icon: ListChecks,
+      items: ['Access to care', 'Travel and transport', 'Follow-up prompts'],
+      note: 'A new draft, with the earlier wording still in reach.',
+      action: 'Review a proposed question',
+      person: 'Maya',
+      text: 'This follow-up helped participants describe the travel barrier.'
     },
     {
-      title: 'See what changed',
-      copy: 'Compare versions, review overlapping edits, and keep the reasoning behind every decision.'
+      label: 'Prepare the data',
+      title: 'Keep the reasoning close to the dataset.',
+      description:
+        'Bring in a response snapshot or spreadsheet. Use formulas, organize the workbook and compare edits, so the team can follow how working data changed.',
+      file: 'Community health · Recruitment',
+      kind: 'Spreadsheet',
+      icon: Table2,
+      items: ['Recruitment overview', 'Field sites', 'Cleaning notes'],
+      note: 'A working dataset with a history you can inspect.',
+      action: 'Check the preparation notes',
+      person: 'Rafi',
+      text: 'The original response export is retained for reference.'
     },
     {
-      title: 'Keep moving',
-      copy: 'Save an agreed version and take your work back to the tools your study needs.'
+      label: 'Hand over with context',
+      title: 'Pass on the work and its history.',
+      description:
+        'Share access with the right role, review earlier versions and export files for the next stage. Give a new collaborator a way to understand how the current document took shape.',
+      file: 'Community health · Team handover',
+      kind: 'Document',
+      icon: FolderOpen,
+      items: ['Study materials', 'Reviewed changes', 'Source files'],
+      note: 'Less detective work for the next person on the project.',
+      action: 'Find the change in history',
+      person: 'Sam',
+      text: 'The latest guide includes the team’s reviewed wording.'
     }
   ];
+  const activeCase = $derived(cases[useCase]);
+  function reveal(node: HTMLElement) {
+    if (
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches ||
+      !('IntersectionObserver' in window)
+    )
+      return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries)
+          if (entry.isIntersecting) {
+            entry.target.classList.add('in-view');
+            observer.unobserve(entry.target);
+          }
+      },
+      { threshold: 0.08 }
+    );
+    node.querySelectorAll('[data-reveal]').forEach((el) => observer.observe(el));
+    return { destroy: () => observer.disconnect() };
+  }
 </script>
 
-<svelte:head
-  ><title>Dynodoc — Good research is a team effort.</title><meta
+<svelte:head>
+  <title>Dynodoc — A clearer way to work on research, together</title>
+  <meta
     name="description"
-    content="A shared workspace for research documents, questionnaires, and tables. Write together, review changes, and keep a clear history."
-  /></svelte:head
->
-<div class="landing">
-  <header class="nav-wrap">
-    <nav class="nav" aria-label="Main navigation">
-      <a href="/" class="wordmark"><span class="logo-mark">d<span></span></span>dynodoc</a>
-      <div class:mobile-open={menu} class="nav-links">
-        <a href="#why" onclick={() => (menu = false)}>Why Dynodoc</a><a
-          href="#workflow"
-          onclick={() => (menu = false)}>How it works</a
-        ><a href="#formats" onclick={() => (menu = false)}>Your tools</a>
-      </div>
-      <div class="nav-actions">
-        <a class="signin" href={workspace}>Sign in</a><a class="nav-cta" href={workspace}
-          >Open workspace <ArrowUpRight size={14} /></a
-        ><button class="mobile-toggle" aria-label="Toggle navigation" onclick={() => (menu = !menu)}
-          >{#if menu}<X size={20} />{:else}<Menu size={20} />{/if}</button
-        >
-      </div>
-    </nav>
-  </header>
-  <main>
-    <section class="hero">
+    content="Write research documents, work with spreadsheets and refine questionnaires in a shared workspace. Explore drafts, review changes and keep the history behind your work."
+  />
+  <meta property="og:title" content="Dynodoc — Your research, in good company." />
+  <meta
+    property="og:description"
+    content="Familiar editors for documents, spreadsheets and questionnaires. A clearer record of how the work takes shape."
+  />
+  <meta name="theme-color" content="#faf9f6" />
+</svelte:head>
+<div class="marketing-page">
+  <SiteHeader />
+  <main id="main" use:reveal>
+    <section class="hero wrap" aria-labelledby="hero-heading">
       <div class="hero-copy">
-        <div class="eyebrow"><span></span> A SHARED HOME FOR YOUR RESEARCH</div>
-        <h1>Good research.<br />Better <em>together.</em></h1>
+        <p class="eyebrow"><span></span> THE SHARED WORKSPACE FOR RESEARCH</p>
+        <h1 id="hero-heading">Your research,<br />in <span>good company.</span></h1>
+      </div>
+      <div class="hero-intro">
         <p>
-          The document. The questionnaire. The spreadsheet.<br class="desktop" /> Bring your team’s
-          work together—with every change<br class="desktop" /> understood, and every voice in the conversation.
+          From the first question to the next discovery, give your team a better place to work
+          together.
+        </p>
+        <p class="hero-detail">
+          Write documents. Work with data. Refine questionnaires. Keep the changes, conversations
+          and earlier versions within reach.
         </p>
         <div class="hero-actions">
-          <a class="button solid" href={workspace}>Start your workspace <ArrowRight size={18} /></a
-          ><a class="watch" href="#workflow">See how it works <span>↓</span></a>
-        </div>
-        <div class="hero-foot">
-          <span><Check size={14} /> Familiar editing</span><span
-            ><Check size={14} /> Clear version history</span
-          ><span><Check size={14} /> Your team, in sync</span>
-        </div>
-      </div>
-      <div class="hero-visual" aria-label="Illustration of a shared research document">
-        <div class="orbit orbit-one"></div>
-        <div class="orbit orbit-two"></div>
-        <div class="small-label">LESS “FINAL_FINAL_V3”. MORE PROGRESS.</div>
-        <div class="floating-note">
-          <span class="note-icon"><MessageSquare size={15} /></span>
-          <div><b>A clearer question?</b><small>Keep the conversation in context.</small></div>
-        </div>
-        <div class="mock-app">
-          <div class="mock-title">
-            <span class="file-icon"><FileText size={18} /></span>
-            <div>
-              <b>Understanding everyday livelihoods</b><small
-                >Team version <span>·</span> All changes saved</small
-              >
-            </div>
-            <div class="avatars"><i>AS</i><i>RM</i><i>+8</i></div>
-          </div>
-          <div class="mock-menu">
-            File <span>Edit</span><span>View</span><span>Insert</span><span>Format</span><span
-              class="mock-share"><Users size={11} /> Share</span
-            >
-          </div>
-          <div class="mock-toolbar">
-            <span>100%⌄</span><span>Normal text⌄</span><span class="font-name">Arial⌄</span><b>B</b
-            ><em>I</em><u>U</u><span class="toolbar-rule"></span><span>≡</span><span>☷</span>
-          </div>
-          <div class="mock-body">
-            <div class="mock-page">
-              <p class="paper-label">HOUSEHOLD WELLBEING STUDY</p>
-              <h3>A better picture<br />of everyday life.</h3>
-              <p class="paper-intro">
-                Understanding how households work, live, and make decisions helps us ask better
-                questions.
-              </p>
-              <h4>01 &nbsp; Livelihoods & resources</h4>
-              <p class="question">
-                What is your household’s <span class="suggestion">main source of income?</span>
-              </p>
-              <div class="answer-line"></div>
-              <p class="question">How has this changed over the past year?</p>
-              <div class="answer-line short"></div>
-              <div class="cursor-marker"><span></span>Rafi is editing</div>
-            </div>
-            <div class="mock-comment">
-              <div class="comment-top"><i>AS</i><b>Ayesha</b><span>just now</span></div>
-              <p>“Main source” might be clearer than “primary livelihood”.</p>
-              <div class="comment-actions">
-                <span><Check size={11} /> Accepted</span><small>View change</small>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="version-float">
-          <span><History size={17} /></span>
-          <div><b>Every version has a story.</b><small>And you can always find it.</small></div>
-          <CheckCheck size={17} />
+          <a class="primary-link" href={workspace}
+            >Bring your research together <ArrowUpRight size={17} /></a
+          ><a class="text-link" href="#workspace">Explore the workspace <ArrowRight size={15} /></a>
         </div>
       </div>
     </section>
-    <div class="research-strip">
-      <span>FOR THE WORK BEHIND THE FINDINGS</span>
-      <div>
-        <span>Social research</span><span>Field studies</span><span>Public health</span><span
-          >Policy research</span
-        ><span>Academic teams</span>
+    <section id="workspace" class="product-band" aria-label="Explore the Dynodoc workspace">
+      <div class="wrap product-wrap">
+        <WorkbenchDemo />
+        <div class="product-benefits">
+          <span><FileText size={16} /> Familiar document &amp; spreadsheet tools</span><span
+            ><GitBranch size={16} /> Personal drafts, shared progress</span
+          ><span><History size={16} /> A history you can return to</span>
+        </div>
       </div>
-    </div>
-    <section id="why" class="why section">
-      <div class="section-heading">
+    </section>
+    <section class="research-section wrap" aria-labelledby="research-heading">
+      <div class="section-heading" data-reveal>
         <div>
-          <p class="eyebrow">ROOM FOR THE WHOLE PROCESS</p>
-          <h2>Less chasing files.<br /><em>More finding answers.</em></h2>
+          <p class="eyebrow">BUILT AROUND THE WAY RESEARCH HAPPENS</p>
+          <h2 id="research-heading">The work evolves.<br />Keep the thinking with it.</h2>
         </div>
         <p>
-          Research is collaborative. Your workspace should be, too. Keep the writing, the questions,
-          and the decisions connected.
+          Good research takes revision. Dynodoc gives every question, paragraph and cell a place in
+          that story, so your team can move forward with the context intact.
         </p>
       </div>
-      <div class="feature-grid">
-        <article>
-          <div class="feature-icon"><FileText size={23} /></div>
-          <h3>Feels like the tools you know.</h3>
-          <p>
-            A document when you’re writing. A table when you’re organizing. Familiar controls keep
-            your attention on the research.
-          </p>
-          <div class="mini-format">
-            <span>Heading 1⌄</span><b>B</b><em>I</em><u>U</u><span class="mini-highlight">Aa</span>
-          </div>
-        </article>
-        <article>
-          <div class="feature-icon"><GitCompareArrows size={23} /></div>
-          <h3>Changes you can understand.</h3>
-          <p>
-            See what changed and who changed it. Try a new direction in a personal draft, then
-            review it with your team.
-          </p>
-          <div class="mini-diff">
-            <span class="deleted">primary livelihood</span><ArrowRight size={12} /><span
-              class="added">main source of income</span
+      <div class="research-grid" data-reveal>
+        <div class="case-visual" class:green={useCase === 2}>
+          <div class="case-topline">
+            <span class="small-folder"><FolderOpen size={14} /> Community health study</span><span
+              class="case-tag">{activeCase.kind}</span
             >
           </div>
-        </article>
-        <article>
-          <div class="feature-icon"><Users size={23} /></div>
-          <h3>One team. One shared picture.</h3>
+          <div class="case-paper">
+            <div class="case-file-icon"><activeCase.icon size={28} /></div>
+            <h3>{activeCase.file}</h3>
+            <p class="case-description">{activeCase.note}</p>
+            <div class="case-blocks">
+              {#each activeCase.items as item, i}<div class:highlighted={i === 1}>
+                  <span class="block-handle" aria-hidden="true">⠿</span><span>{item}</span
+                  >{#if i === 1}<MessageSquare size={14} />{:else}<span class="faint-rule"
+                    ></span>{/if}
+                </div>{/each}
+            </div>
+          </div>
+          <div class="case-comment">
+            <span class="case-person">{activeCase.person[0]}</span>
+            <div>
+              <b>{activeCase.person}<span>{activeCase.action}</span></b>
+              <p>{activeCase.text}</p>
+            </div>
+          </div>
+          <div class="visual-footer"><Check size={13} /> Illustrative research workflow</div>
+        </div>
+        <div class="case-list" aria-label="Explore research workflows">
+          {#each cases as item, i}<div class="case-item" class:active={useCase === i}>
+              <button
+                aria-expanded={useCase === i}
+                aria-controls={`case-${i}`}
+                onclick={() => (useCase = i)}
+                ><item.icon size={19} />{item.label}<ArrowUpRight size={17} /></button
+              >
+              <div id={`case-${i}`} hidden={useCase !== i}>
+                <h3>{item.title}</h3>
+                <p>{item.description}</p>
+              </div>
+            </div>{/each}
+        </div>
+      </div>
+    </section>
+    <section id="collaboration" class="collaboration-band" aria-labelledby="collab-heading">
+      <div class="wrap">
+        <div class="section-heading" data-reveal>
+          <div>
+            <p class="eyebrow">SPACE TO EXPLORE. A WAY BACK TOGETHER.</p>
+            <h2 id="collab-heading">Make it your own.<br />Make it better, together.</h2>
+          </div>
           <p>
-            Share with an editor, invite a reviewer, or give someone a read-only view. Suggestions
-            stay connected to the work.
+            Try an idea in your own draft. See exactly what changed. Bring selected edits into the
+            team version when they’re ready. Everyone gets room to think, and the shared work keeps
+            moving.
           </p>
-          <div class="mini-people">
-            <i>AS</i><i>RM</i><i>NK</i><span>Different perspectives. Better questions.</span>
-          </div>
-        </article>
-      </div>
-    </section>
-    <section id="workflow" class="workflow-wrap">
-      <div class="workflow section">
-        <div class="workflow-copy">
-          <p class="eyebrow">FROM FIRST DRAFT TO AGREED VERSION</p>
-          <h2>A natural flow.<br /><em>A clearer trail.</em></h2>
-          <p class="workflow-lede">
-            Explore an example of how a research team moves its work forward.
-          </p>
-          <div class="steps" role="tablist" aria-label="Research workflow">
-            {#each steps as item, i}<button
-                role="tab"
-                aria-selected={step === i}
-                aria-controls="workflow-demo"
-                class:active={step === i}
-                onclick={() => (step = i)}
-                ><span class="step-no">0{i + 1}</span>
-                <div>
-                  <b>{item.title}</b>{#if step === i}<p>{item.copy}</p>{/if}
-                </div>
-                <ChevronRight size={17} /></button
-              >{/each}
-          </div>
         </div>
-        <div class="workflow-demo" id="workflow-demo" role="tabpanel" tabindex="0">
-          <div class="demo-head">
-            <span class="status-dot"></span> Household wellbeing study
-            <span>Example workspace</span>
-          </div>
-          <div class="demo-content">
-            {#key step}{#if step === 0}<div class="demo-screen">
-                  <div class="drop-zone">
-                    <Upload size={34} />
-                    <h3>Your next study starts here.</h3>
-                    <p>Bring a document or table into the workspace.</p>
-                    <div class="file-chips">
-                      <span><FileText size={15} /> interview-guide.docx</span><span
-                        ><Table2 size={15} /> questionnaire.xlsx</span
-                      >
-                    </div>
-                  </div>
-                  <div class="demo-file">
-                    <FileText size={20} />
-                    <div><b>Interview guide</b><small>Ready for your team</small></div>
-                    <Check size={16} />
-                  </div>
-                </div>{:else if step === 1}<div class="demo-screen">
-                  <div class="draft-badge"><span></span> Team version</div>
-                  <h3>Let’s ask a better question.</h3>
-                  <p class="demo-prose">
-                    What challenges have you experienced<br />in accessing
-                    <mark>healthcare in your area</mark>?
-                  </p>
-                  <div class="suggest-card">
-                    <div><i>NK</i><b>Nadia suggested a change</b></div>
-                    <p>Could we add “in the past six months” to make the recall period clearer?</p>
-                    <div class="accepted">
-                      <Check size={14} /> A specific suggestion, ready for review
-                    </div>
-                  </div>
-                  <div class="demo-bottom">
-                    <Users size={15} /> The discussion stays with the question.
-                  </div>
-                </div>{:else if step === 2}<div class="demo-screen">
-                  <div class="draft-badge"><GitCompareArrows size={13} /> Compare versions</div>
-                  <h3>Small changes. Full context.</h3>
-                  <div class="compare">
-                    <div>
-                      <small>PREVIOUS VERSION</small>
-                      <p>How often do you use health services?</p>
-                    </div>
-                    <div class="after">
-                      <small>PROPOSED CHANGE</small>
-                      <p>In the past six months, how many times have you used health services?</p>
-                    </div>
-                  </div>
-                  <div class="demo-bottom">
-                    <ShieldCheck size={15} /> Your previous versions remain in the history.
-                  </div>
-                </div>{:else}<div class="demo-screen">
-                  <div class="finished"><CheckCheck size={30} /></div>
-                  <h3>A version everyone can stand behind.</h3>
-                  <p class="demo-prose">
-                    Name this milestone. Keep the decisions.<br />Take your work into the next part
-                    of the study.
-                  </p>
-                  <div class="version-row">
-                    <History size={20} />
-                    <div>
-                      <b>Ready for field review</b><small
-                        >Named version · Team-approved wording</small
-                      >
-                    </div>
-                    <Check size={17} />
-                  </div>
-                  <div class="demo-bottom">
-                    <Download size={15} /> Download a copy when you need it.
-                  </div>
-                </div>{/if}{/key}
-          </div>
-          <div class="demo-pagination">
-            {#each steps.map((_, i) => i) as i}<button
-                aria-label={`Show step ${i + 1}`}
-                class:chosen={step === i}
-                onclick={() => (step = i)}
-              ></button>{/each}
-          </div>
+        <div data-reveal><VersionFlow /></div>
+        <div class="collaboration-notes">
+          <article>
+            <GitBranch size={21} />
+            <h3>A draft for a different direction</h3>
+            <p>
+              Explore revised wording or another approach without changing the team’s current
+              version.
+            </p>
+          </article>
+          <article>
+            <Search size={21} />
+            <h3>Review the part that changed</h3>
+            <p>
+              Compare changes to individual paragraphs, questions and cells. Resolve competing edits
+              with the context in view.
+            </p>
+          </article>
+          <article>
+            <History size={21} />
+            <h3>Earlier thinking stays in reach</h3>
+            <p>
+              Inspect previous versions and restore content as a new change. See who contributed to
+              the work.
+            </p>
+          </article>
         </div>
       </div>
     </section>
-    <section id="formats" class="formats section">
-      <div class="format-copy">
-        <p class="eyebrow">PART OF YOUR RESEARCH TOOLKIT</p>
-        <h2>Your work goes<br /><em>where you need it.</em></h2>
+    <section class="files-section wrap" aria-labelledby="files-heading">
+      <div class="files-copy" data-reveal>
+        <p class="eyebrow">START WITH WHAT YOU ALREADY HAVE</p>
+        <h2 id="files-heading">Your files have<br />a next chapter.</h2>
         <p>
-          Start with the files your team already uses. Keep document editing, tables, and
-          questionnaire specifications close together.
+          That interview guide in Word. The workbook your team knows inside out. Bring them into a
+          workspace where the next edit has a history.
         </p>
-        <a href={workspace} class="inline-link">Explore the workspace <ArrowUpRight size={16} /></a>
+        <div class="file-formats">
+          <span class="word"><FileText size={15} /> DOCX · DOC</span><span class="excel"
+            ><Table2 size={15} /> XLSX · CSV</span
+          >
+        </div>
+        <p class="file-detail">
+          Upload, review the import and keep working. The original file is retained for reference.
+          Export documents and spreadsheets when you’re ready to take them elsewhere.
+        </p>
+        <a href={workspace} class="text-link">Start with a document <ArrowRight size={16} /></a>
       </div>
-      <div class="format-board">
-        <div class="format-row">
-          <span class="format-icon blue"><FileText size={23} /></span>
-          <div>
-            <b>Documents</b>
-            <p>Interview guides, protocols, field notes</p>
-          </div>
-          <span class="extensions">DOCX</span>
+      <div class="files-visual" data-reveal>
+        <div class="incoming-files">
+          <div class="incoming-word"><FileText size={23} /><span>interview-guide.docx</span></div>
+          <div class="incoming-excel"><Table2 size={23} /><span>fieldwork-data.xlsx</span></div>
         </div>
-        <div class="format-row">
-          <span class="format-icon green"><Table2 size={23} /></span>
-          <div>
-            <b>Spreadsheets & tables</b>
-            <p>Codebooks, question banks, study tables</p>
-          </div>
-          <span class="extensions">XLSX · CSV</span>
+        <div class="file-path" aria-hidden="true">
+          <span></span><Upload size={19} /><span></span>
         </div>
-        <div class="format-row">
-          <span class="format-icon amber"><Layers size={23} /></span>
-          <div>
-            <b>Research instruments</b>
-            <p>Structured questions, choices, and logic</p>
+        <div class="import-result">
+          <div class="import-heading">
+            <span><FileCheck2 size={18} /> Ready for your next revision</span><Check size={17} />
           </div>
-          <span class="extensions">XLSForm</span>
+          <div>
+            <FileText size={16} /><span>Editable paragraphs &amp; questions</span><span
+              class="result-line"
+            ></span>
+          </div>
+          <div>
+            <Table2 size={16} /><span>Working cells &amp; formulas</span><span class="result-line"
+            ></span>
+          </div>
+          <div>
+            <History size={16} /><span>The original, kept for reference</span><span
+              class="result-line"
+            ></span>
+          </div>
         </div>
-        <p class="format-note">
-          Conversion support varies by format. Review the import report before using a converted
-          instrument in the field.
-        </p>
+        <p>Review conversion warnings and complex formatting after import.</p>
       </div>
     </section>
-    <section class="closing section">
-      <div class="closing-grain"></div>
-      <span class="closing-icon"><Sparkles size={24} /></span>
-      <h2>Make room for<br />your team’s best thinking.</h2>
-      <p>A calmer place for the messy, meaningful work of research.</p>
-      <a class="button light" href={workspace}>Open your workspace <ArrowRight size={17} /></a>
-      <div class="closing-note">
-        <ShieldCheck size={13} /> Private documents. Thoughtful collaboration.
+    <section id="integrations" class="integration-band" aria-labelledby="integration-heading">
+      <div class="wrap">
+        <div class="section-heading" data-reveal>
+          <div>
+            <p class="eyebrow">PART OF YOUR RESEARCH TOOLKIT</p>
+            <h2 id="integration-heading">Connect the work<br />between your tools.</h2>
+          </div>
+          <p>
+            Keep collecting data where you already do. Bring instruments and response snapshots into
+            Dynodoc for the work that comes next: reviewing, refining and making sense of it
+            together.
+          </p>
+        </div>
+        <div data-reveal><IntegrationExplorer /></div>
+      </div>
+    </section>
+    <section class="trust-section wrap" aria-labelledby="trust-heading">
+      <div data-reveal>
+        <p class="eyebrow">THOUGHTFUL COLLABORATION</p>
+        <h2 id="trust-heading">Share the work.<br />Choose the access.</h2>
+        <p>
+          Invite collaborators as editors, reviewers or readers. Keep drafts separate until you’re
+          ready to share, and give the team a common place to review the work.
+        </p>
+        <a class="text-link" href="/privacy">How your data is handled <ArrowRight size={15} /></a>
+      </div>
+      <div class="access-visual" data-reveal>
+        <div class="access-title">
+          <ShieldCheck size={22} /><span
+            >Community health study<small>People with access</small></span
+          >
+        </div>
+        {#each [{ name: 'Maya', initial: 'M', role: 'Editor', desc: 'Edit and share changes', color: 'blue' }, { name: 'Sam', initial: 'S', role: 'Reviewer', desc: 'Review and discuss the work', color: 'gold' }, { name: 'Rafi', initial: 'R', role: 'Read only', desc: 'Read the shared document', color: 'green' }] as member}<div
+            class="access-person"
+          >
+            <span class="person-icon {member.color}">{member.initial}</span>
+            <div><b>{member.name}</b><small>{member.desc}</small></div>
+            <span class="role-label">{member.role}</span>
+          </div>{/each}
+        <p><ShieldCheck size={13} /> An example of document access roles</p>
+      </div>
+    </section>
+    <section class="faq-section wrap" aria-labelledby="faq-heading">
+      <div>
+        <p class="eyebrow">A FEW THINGS YOU MIGHT BE WONDERING</p>
+        <h2 id="faq-heading">Get to know<br />your workspace.</h2>
+      </div>
+      <div class="faq-list">
+        <details>
+          <summary>What makes Dynodoc useful for research teams?<ChevronDown size={18} /></summary>
+          <p>
+            Documents, spreadsheets and questionnaires share the same approach to drafts, review and
+            version history. You can improve an instrument or prepare a dataset while keeping a
+            record of the content changes. It is especially useful when several people need to
+            propose revisions before they become part of the team’s version.
+          </p>
+        </details>
+        <details>
+          <summary>Will the editors feel familiar?<ChevronDown size={18} /></summary>
+          <p>
+            The document editor provides common formatting, headings, lists, links, images, tables
+            and comments. The spreadsheet editor includes formulas, multiple sheets, cell formatting
+            and row and column tools. The pilot does not yet match every feature of Google Docs,
+            Google Sheets, Word or Excel; advanced charts, pivots and citation tools are not
+            included.
+          </p>
+        </details>
+        <details>
+          <summary>Can we work without learning Git?<ChevronDown size={18} /></summary>
+          <p>
+            Yes. You use actions such as “Save version,” “Create draft,” “Review changes” and “Share
+            changes.” Drafts let you try a direction; comparison lets you see the differences;
+            sharing brings selected changes into the team version. When edits overlap, the interface
+            asks you which content to keep.
+          </p>
+        </details>
+        <details>
+          <summary>Can everyone type in the same document at once?<ChevronDown size={18} /></summary
+          >
+          <p>
+            The current pilot centers on personal drafts and deliberate sharing. It does not provide
+            live character-by-character co-editing or live collaborator cursors. Get the latest
+            shared changes into your draft, resolve any overlaps and share back when ready.
+          </p>
+        </details>
+        <details>
+          <summary>How do imports and research integrations work?<ChevronDown size={18} /></summary>
+          <p>
+            Upload DOCX, legacy DOC, XLSX or CSV files. For ODK Central and KoboToolbox, you can
+            also connect to your server and import an available XLSForm or a response snapshot.
+            Other listed tools use compatible file exports. Imports are snapshots, with no scheduled
+            sync or writeback. Review conversion warnings, formulas and survey logic before relying
+            on imported material.
+          </p>
+        </details>
+        <details>
+          <summary>Is it ready for our next study?<ChevronDown size={18} /></summary>
+          <p>
+            Dynodoc is a research pilot being prepared for a small team. Start with sample or
+            de-identified materials and validate your workflow, import fidelity and access
+            arrangements. The current pilot is not a claim of institutional compliance, a
+            regulated-data hosting agreement or a full replacement for specialist collection and
+            analysis tools.
+          </p>
+        </details>
+        <details>
+          <summary>Can we take our work with us?<ChevronDown size={18} /></summary>
+          <p>
+            You can export supported documents and spreadsheets and retrieve retained original
+            uploads. Check the exported result when your files use complex formatting or formulas.
+            Dynodoc’s application code is open source under the AGPL; your private research content
+            does not become open source because you use the app.
+          </p>
+        </details>
+      </div>
+    </section>
+    <section class="closing">
+      <div class="wrap">
+        <div class="closing-symbol" aria-hidden="true">
+          <FileText size={32} /><MoveUpRight size={25} /><Table2 size={32} />
+        </div>
+        <p class="eyebrow">BRING THE TEAM. KEEP THE CONTEXT.</p>
+        <h2>Make room for<br />your next good idea.</h2>
+        <p>Give your research a shared place to grow.</p>
+        <a href={workspace} class="primary-link">Open your workspace <ArrowUpRight size={18} /></a
+        ><span class="closing-note">A research pilot for small teams</span>
       </div>
     </section>
   </main>
-  <footer class="footer section">
-    <a class="wordmark" href="/"><span class="logo-mark">d<span></span></span>dynodoc</a>
-    <p>Made for the people behind the research.</p>
-    <div>
-      <a href="#workflow">How it works</a><a href={workspace}
-        >Workspace <ArrowUpRight size={13} /></a
-      >
-    </div>
-    <small
-      >© {new Date().getFullYear()} Dynodoc · <a href="/source">Source code · AGPL-3.0</a></small
-    >
-  </footer>
+  <SiteFooter />
 </div>
 
 <style>
-  .landing {
-    --green: #224f43;
-    --ink: #1c332d;
-    --muted: #74817c;
-    background: #fdfdfa;
-    color: var(--ink);
+  .marketing-page {
+    background: #faf9f6;
+    color: #243d54;
     font-family: var(--font-ui);
-    font-size: 14px;
-    overflow: hidden;
+    --blue: #205bb0;
   }
-  .landing a {
-    text-decoration: none;
-    color: inherit;
-  }
-  .nav-wrap {
-    border-bottom: 1px solid #e7ebe3;
-    background: #fdfdfaea;
-    position: sticky;
-    top: 0;
-    z-index: 20;
-    backdrop-filter: blur(15px);
-  }
-  .nav {
-    max-width: 1240px;
+  .wrap {
+    max-width: 1220px;
+    padding-left: 48px;
+    padding-right: 48px;
     margin: auto;
-    height: 84px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 30px;
-    padding: 0 40px;
   }
-  .wordmark {
+  section[id] {
+    scroll-margin-top: 30px;
+  }
+  .eyebrow {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1.35px;
+    line-height: 1.8;
+    color: #667e94;
+    margin: 0 0 24px;
+  }
+  .hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+    gap: 50px;
+    padding-top: 65px;
+    padding-bottom: 57px;
+    align-items: center;
+  }
+  .hero .eyebrow {
     display: flex;
     align-items: center;
     gap: 9px;
-    font-size: 23px;
-    font-weight: 600;
-    letter-spacing: -0.9px;
+    margin-bottom: 28px;
   }
-  .logo-mark {
-    display: inline-flex;
-    position: relative;
-    font: bold 36px/1 Georgia;
-    align-items: center;
-    justify-content: center;
-    color: var(--green);
-    width: 28px;
-  }
-  .logo-mark span {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: #cfaa6d;
-    position: absolute;
-    right: -1px;
-    bottom: 2px;
-  }
-  .nav-links {
-    display: flex;
-    gap: 30px;
-    font-size: 12px;
-    color: #52645c;
-  }
-  .nav-actions {
-    display: flex;
-    align-items: center;
-    gap: 23px;
-    font-size: 12px;
-  }
-  .nav-cta {
-    display: flex;
-    gap: 15px;
-    align-items: center;
-    color: white !important;
-    background: var(--green);
-    padding: 11px 17px;
-    border-radius: 7px;
-  }
-  .nav a:hover {
-    opacity: 0.8;
-  }
-  .mobile-toggle {
-    display: none;
-    background: none;
-    border: 0;
-    color: inherit;
-  }
-  .hero {
-    max-width: 1320px;
-    margin: auto;
-    display: grid;
-    grid-template-columns: 0.96fr 1.04fr;
-    gap: 20px;
-    padding: 100px 70px 94px;
-    min-height: 650px;
-    align-items: center;
-  }
-  .eyebrow {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 9px;
-    font-weight: 600;
-    letter-spacing: 1.75px;
-    color: #708278;
-    margin: 0 0 24px;
-  }
-  .eyebrow > span,
-  .status-dot {
+  .eyebrow > span {
+    display: inline-block;
     width: 6px;
     height: 6px;
-    background: #61937a;
-    border-radius: 100%;
-    display: inline-block;
-    box-shadow: 0 0 0 4px #61937a10;
+    background: #2e71c4;
+    border-radius: 50%;
   }
   h1 {
-    font:
-      500 clamp(48px, 5vw, 70px)/1.09 Georgia,
-      serif;
-    letter-spacing: -2.8px;
-    margin: 0 0 28px;
+    font-size: clamp(44px, 4.6vw, 66px);
+    line-height: 1.06;
+    letter-spacing: -3.5px;
+    font-weight: 550;
+    margin: 0;
+    color: #22394e;
   }
-  h1 em,
-  h2 em {
-    font-weight: 400;
-    color: #69836e;
+  h1 > span {
+    color: #205bb0;
+    white-space: nowrap;
   }
-  h1 em {
-    color: #627d65;
+  .hero-intro {
+    padding-top: 26px;
   }
-  .hero-copy > p {
-    font-size: 14px;
+  .hero-intro > p:first-child {
+    font-size: 19px;
+    line-height: 1.65;
+    letter-spacing: -0.3px;
+    color: #3e566c;
+    margin: 0 0 16px;
+    max-width: 370px;
+  }
+  .hero-intro .hero-detail {
+    font-size: 13px;
     line-height: 1.9;
-    color: #78847d;
-    margin: 0 0 30px;
+    color: #6a7d8d;
+    margin: 0 0 25px;
+    max-width: 370px;
   }
   .hero-actions {
     display: flex;
-    align-items: center;
-    gap: 23px;
+    flex-wrap: wrap;
+    gap: 17px;
   }
-  .button {
+  .primary-link {
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    gap: 17px;
+    background: #205bb0;
+    color: white;
+    padding: 13px 19px;
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: 550;
+    border-radius: 5px;
+    border: 1px solid #205bb0;
+  }
+  .primary-link:hover {
+    background: #164b96;
+  }
+  .text-link {
     display: inline-flex;
     align-items: center;
-    gap: 20px;
-    border-radius: 7px;
-    padding: 14px 19px;
-    font-size: 12px;
-    font-weight: 500;
-    transition:
-      transform 0.2s,
-      box-shadow 0.2s;
-  }
-  .button:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px #193b2920;
-  }
-  .solid {
-    background: var(--green);
-    color: white !important;
-  }
-  .watch {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    font-size: 12px;
-    color: #52675a !important;
-  }
-  .watch > span {
-    width: 24px;
-    height: 24px;
-    display: grid;
-    place-items: center;
-    border: 1px solid #dfe6d9;
-    border-radius: 50%;
-  }
-  .hero-foot {
-    display: flex;
-    gap: 17px;
-    margin-top: 24px;
-    font-size: 9px;
-    color: #78897f;
-  }
-  .hero-foot > span {
-    display: flex;
-    gap: 5px;
-    align-items: center;
-  }
-  .hero-visual {
-    position: relative;
-    min-height: 405px;
-    display: flex;
-    align-items: center;
-  }
-  .orbit {
-    position: absolute;
-    z-index: 0;
-    border: 1px solid #d9e1d780;
-    border-radius: 50%;
-    width: 430px;
-    height: 430px;
-    top: -10px;
-    left: 50px;
-  }
-  .orbit-two {
-    width: 510px;
-    height: 510px;
-    top: -50px;
-    left: 10px;
-    border-style: dashed;
-    opacity: 0.5;
-  }
-  .small-label {
-    position: absolute;
-    top: -14px;
-    left: 92px;
-    font-size: 7px;
-    letter-spacing: 1.7px;
-    color: #91a28d;
-    transform: rotate(-3deg);
-  }
-  .mock-app {
-    position: relative;
-    width: 600px;
-    flex-shrink: 0;
-    height: 375px;
-    background: white;
-    border: 1px solid #dce3df;
-    border-radius: 10px;
-    box-shadow:
-      0 14px 60px #224f4310,
-      0 2px 5px #224f430a;
-    transform: rotate(-2deg);
-    overflow: hidden;
-  }
-  .mock-title {
-    height: 54px;
-    display: flex;
-    align-items: center;
     gap: 10px;
-    padding: 0 16px;
+    color: #2059a0;
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: 550;
   }
-  .file-icon {
-    color: #53846e;
+  .text-link:hover {
+    text-decoration: underline;
+    text-underline-offset: 5px;
   }
-  .mock-title b {
-    display: block;
-    font-size: 10px;
-    font-weight: 500;
+  .hero-actions .text-link {
+    font-size: 11px;
   }
-  .mock-title small {
-    display: block;
-    font-size: 7px;
-    color: #8d9a93;
-    margin-top: 3px;
+  .product-band {
+    background: #e8f1fc;
+    border-top: 1px solid #dde8f5;
+    border-bottom: 1px solid #dce7f4;
   }
-  .mock-title small span {
-    padding: 0 4px;
+  .product-wrap {
+    padding-top: 34px;
+    padding-bottom: 0;
   }
-  .avatars {
-    margin-left: auto;
-    display: flex;
-    padding-right: 2px;
-  }
-  .avatars i,
-  .mini-people i,
-  .comment-top i,
-  .suggest-card i {
-    display: grid;
-    place-items: center;
-    border-radius: 50%;
-    font-style: normal;
-    width: 26px;
-    height: 26px;
-    border: 2px solid white;
-    background: #e9daca;
-    font-size: 8px;
-    margin-left: -5px;
-    color: #78553a;
-  }
-  .avatars i:nth-child(2),
-  .mini-people i:nth-child(2) {
-    background: #dce6de;
-    color: #426854;
-  }
-  .avatars i:last-child,
-  .mini-people i:last-of-type {
-    background: #ebe7f1;
-    color: #77608d;
-  }
-  .mock-menu {
-    height: 21px;
-    font-size: 8px;
-    padding: 0 48px;
-    display: flex;
-    gap: 14px;
-    position: relative;
-  }
-  .mock-share {
-    position: absolute;
-    right: 20px;
-    top: -13px;
-    padding: 6px 10px;
-    background: #eaf1e7;
-    border-radius: 5px;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    color: #56704f;
-  }
-  .mock-toolbar {
-    height: 32px;
-    background: #f3f6f4;
-    display: flex;
-    align-items: center;
-    padding: 0 20px;
-    gap: 18px;
-    font: 8px Arial;
-    color: #61716a;
-    border-top: 1px solid #e9eeeb;
-    border-bottom: 1px solid #e9eeeb;
-  }
-  .toolbar-rule {
-    height: 16px;
-    width: 1px;
-    background: #dce4df;
-  }
-  .mock-body {
-    height: 268px;
-    background: #f5f7f5;
-    padding: 20px 95px 0 35px;
-    position: relative;
-  }
-  .mock-page {
-    background: white;
-    min-height: 310px;
-    max-width: 365px;
-    padding: 30px 34px;
-    position: relative;
-    border: 1px solid #e9ece8;
-    box-shadow: 0 2px 6px #102b1304;
-  }
-  .paper-label {
-    font: 6px Arial !important;
-    letter-spacing: 1px;
-    color: #a0aba2;
-    margin: 0 0 14px !important;
-  }
-  .mock-page h3 {
-    font: 21px/1.2 Georgia;
-    margin: 0 0 13px;
-    color: #314639;
-  }
-  .paper-intro {
-    font: 8px/1.8 Arial;
-    color: #839086;
-    max-width: 250px;
-  }
-  .mock-page h4 {
-    font: 600 8px Arial;
-    margin: 20px 0 14px;
-    color: #516958;
-  }
-  .question {
-    font: 8px/1.6 Arial;
-    color: #566358;
-    margin: 12px 0;
-  }
-  .suggestion {
-    background: #e7f2d5;
-    border-bottom: 1px solid #7eab68;
-    padding: 2px;
-  }
-  .answer-line {
-    height: 1px;
-    background: #e7eae5;
-    width: 92%;
-    margin-top: 18px;
-  }
-  .answer-line.short {
-    width: 70%;
-  }
-  .cursor-marker {
-    position: absolute;
-    right: 15px;
-    bottom: 47px;
-    background: #ba906b;
-    color: white;
-    font: 6px Arial;
-    padding: 3px 5px;
-    border-radius: 3px;
-  }
-  .cursor-marker span {
-    position: absolute;
-    left: -1px;
-    bottom: 0;
-    height: 22px;
-    border-left: 1px solid #ba906b;
-  }
-  .mock-comment {
-    position: absolute;
-    right: 16px;
-    top: 106px;
-    background: white;
-    border: 1px solid #dee5db;
-    box-shadow: 0 4px 15px #1e453808;
-    border-radius: 6px;
-    width: 164px;
-    padding: 11px;
-  }
-  .comment-top {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-  }
-  .comment-top i {
-    width: 19px;
-    height: 19px;
-    margin: 0;
-    font-size: 6px;
-  }
-  .comment-top b {
-    font-size: 7px;
-  }
-  .comment-top > span {
-    font-size: 6px;
-    color: #a1aaa5;
-    margin-left: auto;
-  }
-  .mock-comment p {
-    font: 8px/1.6 Arial;
-    color: #66796b;
-    margin: 8px 0;
-  }
-  .comment-actions {
+  .product-benefits {
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    gap: 25px;
+    border-top: 1px solid #cfdfef;
+    margin-top: 29px;
+    padding: 25px 0;
+    color: #426589;
+    font-size: 11px;
   }
-  .comment-actions > span {
+  .product-benefits > span {
     display: flex;
     align-items: center;
-    gap: 3px;
-    font-size: 6px;
-    color: #668154;
+    gap: 9px;
   }
-  .comment-actions small {
-    font-size: 6px;
-    color: #929c96;
-  }
-  .floating-note {
-    position: absolute;
-    top: -8px;
-    right: -35px;
-    z-index: 2;
-    background: white;
-    border: 1px solid #e7e6dc;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 12px 16px;
-    transform: rotate(3deg);
-    box-shadow: 0 8px 28px #28483009;
-    animation: float 7s ease-in-out infinite;
-  }
-  .floating-note b,
-  .version-float b {
-    display: block;
-    font-size: 9px;
-    font-weight: 500;
-  }
-  .floating-note small,
-  .version-float small {
-    font-size: 7px;
-    color: #87968a;
-  }
-  .note-icon {
-    background: #f4eedf;
-    color: #b59756;
-    display: grid;
-    place-items: center;
-    width: 29px;
-    height: 29px;
-    border-radius: 7px;
-  }
-  .version-float {
-    position: absolute;
-    bottom: -7px;
-    left: 65px;
-    z-index: 3;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    background: white;
-    padding: 13px 17px;
-    border: 1px solid #e0e7db;
-    border-radius: 8px;
-    box-shadow: 0 6px 20px #224f4310;
-    transform: rotate(2deg);
-    animation: float 7s ease-in-out infinite reverse;
-  }
-  .version-float > span {
-    color: #7e9a63;
-    background: #eff4e7;
-    padding: 7px;
-    border-radius: 7px;
-    display: flex;
-  }
-  .version-float > :global(svg) {
-    margin-left: 25px;
-    color: #8ca274;
-  }
-  .research-strip {
-    max-width: 1180px;
-    margin: 0 auto;
-    border-top: 1px solid #e6eae0;
-    border-bottom: 1px solid #e6eae0;
-    padding: 25px 0 28px;
-    text-align: center;
-  }
-  .research-strip > span {
-    font-size: 8px;
-    letter-spacing: 2px;
-    color: #9ba499;
-  }
-  .research-strip > div {
-    display: flex;
-    justify-content: center;
-    gap: 65px;
-    margin-top: 16px;
-    font: 17px Georgia;
-    color: #7d8a7a;
-  }
-  .section {
-    max-width: 1180px;
-    margin-left: auto;
-    margin-right: auto;
-  }
-  .why {
-    padding: 96px 0;
+  .research-section {
+    padding-top: 103px;
+    padding-bottom: 105px;
   }
   .section-heading {
-    display: flex;
+    display: grid;
+    grid-template-columns: 1.25fr 1fr;
+    gap: 80px;
     align-items: end;
-    justify-content: space-between;
-    gap: 50px;
-    margin-bottom: 42px;
-  }
-  h2 {
-    font: 400 42px/1.18 Georgia;
-    letter-spacing: -1.4px;
-    margin: 0;
-  }
-  .section-heading > p {
-    max-width: 310px;
-    color: #859081;
-    font-size: 12px;
-    line-height: 1.9;
-    margin: 0 0 4px;
+    margin-bottom: 47px;
   }
   .section-heading .eyebrow {
-    margin-bottom: 18px;
+    margin-bottom: 19px;
   }
-  .feature-grid {
+  h2 {
+    font-size: clamp(32px, 3.5vw, 45px);
+    line-height: 1.15;
+    font-weight: 550;
+    letter-spacing: -1.6px;
+    margin: 0;
+    color: #253e54;
+  }
+  .section-heading > p {
+    font-size: 15px;
+    line-height: 1.85;
+    color: #566f84;
+    margin: 0 0 3px;
+    max-width: 400px;
+  }
+  .research-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 20px;
+    grid-template-columns: 1.15fr 1fr;
+    gap: 75px;
+    align-items: center;
   }
-  .feature-grid article {
-    padding: 30px 27px 24px;
-    border: 1px solid #e5e9df;
-    border-radius: 10px;
-    background: #fff;
+  .case-visual {
+    background: #f1ecdf;
+    border: 1px solid #e1dacb;
+    border-radius: 7px;
+    padding: 24px 27px 18px;
+    position: relative;
+    --visual: #2c64b0;
   }
-  .feature-icon {
+  .case-visual.green {
+    --visual: #157c46;
+  }
+  .case-topline {
     display: flex;
     align-items: center;
-    justify-content: center;
-    width: 44px;
-    height: 44px;
-    border-radius: 10px;
-    background: #f0f4eb;
-    color: #739068;
-    margin-bottom: 21px;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 9px;
+    color: #827c6d;
+    margin-bottom: 24px;
   }
-  .feature-grid h3 {
-    font: 500 19px Georgia;
-    margin: 0 0 12px;
+  .small-folder {
+    display: flex;
+    gap: 7px;
+    align-items: center;
   }
-  .feature-grid p {
-    font-size: 11px;
-    line-height: 1.9;
-    color: #899183;
-    margin: 0 0 23px;
+  .case-tag {
+    border: 1px solid #d8d0c1;
+    background: #faf6ee;
+    border-radius: 3px;
+    padding: 3px 7px;
+    font-size: 8px;
   }
-  .mini-format,
-  .mini-diff,
-  .mini-people {
-    min-height: 37px;
-    border-top: 1px solid #eff0e9;
-    padding-top: 18px;
+  .case-paper {
+    background: #fffefa;
+    border: 1px solid #dfd9ce;
+    padding: 26px;
+    border-radius: 3px;
+    box-shadow: 0 10px 20px #7d6f4e08;
+    transform: rotate(-1deg);
+    min-height: 310px;
+  }
+  .case-file-icon {
+    color: var(--visual);
+    margin-bottom: 18px;
+  }
+  .case-paper h3 {
+    font-size: 17px;
+    line-height: 1.45;
+    max-width: 280px;
+    letter-spacing: -0.4px;
+    font-weight: 600;
+    margin: 0;
+    color: #344c65;
+  }
+  .case-description {
+    font-size: 10px;
+    line-height: 1.8;
+    color: #82909a;
+    max-width: 280px;
+    margin: 8px 0 23px;
+  }
+  .case-blocks {
+    display: grid;
+    gap: 8px;
+  }
+  .case-blocks > div {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 10px;
+    padding: 10px 8px;
+    border: 1px solid #e9e8e2;
+    border-radius: 3px;
+    color: #697d8e;
+  }
+  .case-blocks .highlighted {
+    color: var(--visual);
+    background: #edf3fb;
+    border-color: #d3e1f4;
+  }
+  .green .case-blocks .highlighted {
+    background: #edf5ee;
+    border-color: #c8dfd0;
+  }
+  .block-handle {
+    color: #bac6d1;
+    font-size: 12px;
+    line-height: 1;
+  }
+  .case-blocks :global(svg) {
+    margin-left: auto;
+  }
+  .faint-rule {
+    width: 36px;
+    height: 3px;
+    background: #ecece7;
+    margin-left: auto;
+  }
+  .case-comment {
+    display: flex;
+    gap: 12px;
+    padding: 15px 18px;
+    background: #fffefa;
+    border: 1px solid #d6dce4;
+    position: relative;
+    margin: -16px -8px 0 43px;
+    box-shadow: 0 5px 14px #695e4810;
+    border-radius: 4px;
+    transform: rotate(1deg);
+  }
+  .case-person {
+    background: #e2ebfb;
+    color: #3461a0;
+    border-radius: 50%;
+    width: 25px;
+    height: 25px;
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    font-size: 9px;
+  }
+  .case-comment b {
+    font-size: 10px;
+    font-weight: 600;
+    color: #37536e;
+  }
+  .case-comment b span {
+    font-size: 8px;
+    font-weight: 400;
+    color: #8192a1;
+    margin-left: 10px;
+  }
+  .case-comment p {
+    font-size: 10px;
+    line-height: 1.8;
+    margin: 7px 0 0;
+    color: #647789;
+  }
+  .visual-footer {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    color: #8a8373;
+    font-size: 8px;
+    margin: 20px 0 0;
+  }
+  .case-list {
+    border-top: 1px solid #dbe1e4;
+  }
+  .case-item {
+    border-bottom: 1px solid #dbe1e4;
+    padding: 5px 0;
+  }
+  .case-item > button {
     display: flex;
     align-items: center;
     gap: 13px;
-    font-size: 11px;
-    color: #72806f;
-  }
-  .mini-format > span:first-child {
-    font-size: 9px;
-    margin-right: 15px;
-  }
-  .mini-highlight {
-    background: #f4e5a6;
-    padding: 0 4px;
-    border-radius: 3px;
-  }
-  .mini-diff {
-    gap: 7px;
-    font-size: 8px;
-  }
-  .deleted {
-    color: #ad8581;
-    text-decoration: line-through;
-    background: #f7efed;
-    padding: 4px;
-  }
-  .added {
-    color: #628461;
-    background: #edf4e8;
-    padding: 4px;
-  }
-  .mini-people {
-    gap: 0;
-  }
-  .mini-people i {
-    width: 24px;
-    height: 24px;
-    font-size: 7px;
-  }
-  .mini-people i:first-child {
-    margin: 0;
-  }
-  .mini-people > span {
-    font-size: 8px;
-    margin-left: 9px;
-    color: #92998b;
-  }
-  .workflow-wrap {
-    background: #f1f4ec;
-    border-top: 1px solid #e9eddf;
-    border-bottom: 1px solid #e9eddf;
-  }
-  .workflow {
-    padding: 80px 0;
-    display: grid;
-    grid-template-columns: 1fr 1.12fr;
-    gap: 100px;
-    align-items: center;
-  }
-  .workflow-lede {
-    font-size: 12px;
-    color: #82927d;
-    line-height: 1.9;
-    max-width: 330px;
-    margin: 22px 0;
-  }
-  .steps {
-    display: grid;
-    gap: 5px;
-  }
-  .steps button {
-    display: flex;
-    align-items: flex-start;
-    width: 100%;
-    text-align: left;
+    padding: 21px 0;
     background: none;
     border: 0;
-    border-radius: 8px;
-    padding: 17px;
-    gap: 15px;
-    color: #89987e;
+    text-align: left;
+    width: 100%;
+    font-size: 15px;
+    font-weight: 550;
+    color: #6f8190;
     cursor: pointer;
   }
-  .step-no {
-    font-size: 10px;
-    letter-spacing: 1px;
-    line-height: 20px;
-    opacity: 0.7;
-  }
-  .steps b {
-    font-size: 12px;
-    font-weight: 500;
-  }
-  .steps button > :global(svg) {
+  .case-item > button > :global(svg:last-child) {
     margin-left: auto;
-    opacity: 0.5;
-    margin-top: 2px;
+    color: #9cabba;
   }
-  .steps p {
+  .case-item.active > button {
+    color: #205bb0;
+  }
+  .case-item.active > button > :global(svg:last-child) {
+    color: #205bb0;
+  }
+  .case-item h3 {
+    font-size: 19px;
+    font-weight: 550;
+    letter-spacing: -0.5px;
+    line-height: 1.4;
+    margin: 0 0 12px;
+  }
+  .case-item p {
+    font-size: 14px;
+    line-height: 1.85;
+    color: #566f84;
+    margin: 0 0 24px;
+    max-width: 360px;
+  }
+  .case-item > div {
+    padding-left: 32px;
+  }
+  .collaboration-band {
+    background: #edf3fa;
+    border-top: 1px solid #e0e8f0;
+    border-bottom: 1px solid #dde7f1;
+    padding: 90px 0 62px;
+  }
+  .collaboration-notes {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 50px;
+    padding-top: 37px;
+  }
+  .collaboration-notes article {
+    color: #4e76a3;
+  }
+  .collaboration-notes h3 {
+    color: #345778;
+    font-size: 14px;
+    font-weight: 600;
+    margin: 13px 0 9px;
+    line-height: 1.5;
+  }
+  .collaboration-notes p {
     font-size: 11px;
-    line-height: 1.8;
-    max-width: 250px;
-    margin: 7px 0 0;
-    color: #89987e;
+    line-height: 1.9;
+    color: #6a8198;
+    margin: 0;
+    max-width: 270px;
   }
-  .steps button.active {
-    background: #fff;
-    color: #46623d;
-    box-shadow: 0 3px 12px #30482703;
+  .files-section {
+    display: grid;
+    grid-template-columns: 1fr 1.1fr;
+    gap: 90px;
+    align-items: center;
+    padding-top: 100px;
+    padding-bottom: 100px;
   }
-  .workflow-demo {
-    border-radius: 12px;
-    border: 1px solid #dfe5d7;
-    background: #fff;
-    box-shadow: 0 18px 50px #264b2209;
-    min-height: 396px;
-    overflow: hidden;
+  .files-copy h2 {
+    margin-bottom: 25px;
   }
-  .demo-head {
-    height: 49px;
-    border-bottom: 1px solid #edf0e8;
+  .files-copy > p:not(.eyebrow) {
+    font-size: 15px;
+    color: #526b80;
+    line-height: 1.9;
+    max-width: 365px;
+  }
+  .file-formats {
+    display: flex;
+    gap: 13px;
+    margin: 23px 0;
+  }
+  .file-formats > span {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 0 19px;
-    font-size: 9px;
-    color: #60745c;
-  }
-  .demo-head > span:last-child {
-    margin-left: auto;
-    font-size: 8px;
-    color: #a3ad9d;
-  }
-  .demo-content {
-    padding: 30px;
-  }
-  .demo-screen {
-    animation: appear 0.4s ease;
-    min-height: 270px;
-  }
-  .draft-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 8px;
-    background: #f0f5e9;
-    color: #76915f;
-    padding: 5px 8px;
-    border-radius: 5px;
-    margin-bottom: 10px;
-  }
-  .draft-badge > span {
-    height: 4px;
-    width: 4px;
-    border-radius: 100%;
-    background: #7c9c67;
-  }
-  .demo-screen h3 {
-    font: 400 24px/1.3 Georgia;
-    margin: 9px 0 14px;
-    color: #3f5738;
-    letter-spacing: -0.4px;
-  }
-  .demo-prose {
-    font: 12px/1.9 Georgia;
-    color: #78856c;
-  }
-  .demo-prose mark {
-    background: #ecf2dd;
-    color: inherit;
-  }
-  .suggest-card {
-    margin-top: 21px;
-    background: #fcfdf9;
-    border: 1px solid #e5ebdb;
-    border-radius: 8px;
-    padding: 14px;
-  }
-  .suggest-card > div:first-child {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .suggest-card i {
-    margin: 0;
-    width: 22px;
-    height: 22px;
-    font-size: 7px;
-    background: #e9e4cf;
-    color: #8f7f46;
-  }
-  .suggest-card b {
-    font-size: 9px;
-    color: #6d7e5f;
-    font-weight: 500;
-  }
-  .suggest-card > p {
+    border: 1px solid #d8e2ec;
+    background: #eff4fc;
+    border-radius: 4px;
+    padding: 8px 11px;
     font-size: 10px;
-    line-height: 1.8;
-    color: #829374;
+    font-weight: 600;
+    color: #285c9e;
   }
-  .accepted {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    font-size: 8px;
-    color: #7c9866;
-    margin-top: 13px;
+  .file-formats > span.excel {
+    color: #22734a;
+    border-color: #d0e1d6;
+    background: #eff6f0;
   }
-  .demo-bottom {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    font-size: 8px;
-    color: #98a38c;
-    margin-top: 25px;
+  .files-copy .file-detail {
+    font-size: 11px !important;
+    max-width: 345px !important;
   }
-  .demo-pagination {
-    display: flex;
-    gap: 5px;
-    justify-content: center;
-    padding-bottom: 19px;
+  .files-copy .text-link {
+    margin-top: 15px;
   }
-  .demo-pagination button {
-    height: 5px;
-    width: 5px;
-    border: 0;
-    border-radius: 20px;
-    background: #dee5d6;
-    padding: 0;
-    cursor: pointer;
+  .files-visual {
+    background: #f1f5fa;
+    border: 1px solid #e1e7f0;
+    padding: 34px 30px 22px;
+    border-radius: 7px;
   }
-  .demo-pagination .chosen {
-    width: 18px;
-    background: #839d6e;
-  }
-  .drop-zone {
-    text-align: center;
-    border: 1px dashed #cbd9bf;
-    border-radius: 9px;
-    background: #f8faf4;
-    padding: 25px 10px;
-    color: #8ba777;
-  }
-  .drop-zone > :global(svg) {
-    margin: auto;
-  }
-  .drop-zone h3 {
-    font-size: 21px;
-  }
-  .drop-zone p {
-    font-size: 10px;
-    color: #9aa88d;
-  }
-  .file-chips {
+  .incoming-files {
     display: flex;
     justify-content: center;
-    gap: 7px;
-    margin-top: 20px;
+    gap: 15px;
   }
-  .file-chips > span {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    padding: 6px;
-    border: 1px solid #e2e9d8;
-    background: white;
-    border-radius: 5px;
-    font-size: 8px;
-  }
-  .demo-file,
-  .version-row {
+  .incoming-files > div {
     display: flex;
     align-items: center;
     gap: 10px;
-    margin-top: 18px;
-    border: 1px solid #e8eddf;
-    border-radius: 6px;
-    padding: 12px;
-    color: #7d9768;
+    font-size: 9px;
+    padding: 18px 13px;
+    border: 1px solid #c3d6ee;
+    background: #e6effd;
+    box-shadow: 0 6px 12px #2c4e7806;
+    color: #2a61ad;
+    border-radius: 4px;
+    transform: rotate(-5deg);
   }
-  .demo-file b,
-  .version-row b {
+  .incoming-files > div.incoming-excel {
+    background: #e6f2e9;
+    border-color: #c0decc;
+    color: #1f7950;
+    transform: rotate(5deg);
+  }
+  .file-path {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    height: 90px;
+    color: #7997bd;
+    padding: 8px 0;
+  }
+  .file-path > span {
+    height: 23px;
+    border-left: 1px dashed #aac1dc;
+  }
+  .file-path > :global(svg) {
+    transform: rotate(180deg);
+    padding: 2px;
+    box-sizing: content-box;
+  }
+  .import-result {
+    background: #fff;
+    border: 1px solid #d0deed;
+    border-radius: 5px;
+    padding: 0 19px 12px;
+    box-shadow: 0 6px 20px #324f7007;
+  }
+  .import-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11px;
+    color: #396089;
+    border-bottom: 1px solid #e4eaf1;
+    padding: 18px 0 16px;
+    margin-bottom: 6px;
+  }
+  .import-heading > span {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .import-heading > :global(svg) {
+    color: #558267;
+  }
+  .import-result > div:not(.import-heading) {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 0;
     font-size: 10px;
-    display: block;
-    color: #627c4f;
+    color: #617b95;
   }
-  .demo-file small,
-  .version-row small {
-    display: block;
-    font-size: 8px;
-    color: #9aa88e;
-  }
-  .demo-file > :global(svg):last-child,
-  .version-row > :global(svg):last-child {
+  .result-line {
+    height: 3px;
+    width: 30px;
+    background: #edf1f6;
     margin-left: auto;
   }
-  .compare {
+  .files-visual > p {
+    font-size: 9px;
+    color: #8495a6;
+    text-align: center;
+    line-height: 1.8;
+    margin: 22px 0 0;
+  }
+  .integration-band {
+    background: #f4f0e6;
+    padding: 90px 0 65px;
+    border-block: 1px solid #e5e0d4;
+  }
+  .integration-band .eyebrow {
+    color: #7b8079;
+  }
+  .trust-section {
+    padding-top: 100px;
+    padding-bottom: 95px;
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 10px;
-    margin-top: 23px;
-  }
-  .compare > div {
-    background: #f7f4ee;
-    border-radius: 7px;
-    padding: 17px;
-    min-height: 131px;
-  }
-  .compare .after {
-    background: #f0f5e8;
-  }
-  .compare small {
-    font-size: 7px;
-    letter-spacing: 0.8px;
-    color: #a49b87;
-  }
-  .compare p {
-    font: 13px/1.7 Georgia;
-    color: #827660;
-    margin-bottom: 0;
-  }
-  .compare .after p {
-    color: #6b8055;
-  }
-  .finished {
-    background: #f0f5e8;
-    color: #819d60;
-    display: grid;
-    place-items: center;
-    width: 51px;
-    height: 51px;
-    border-radius: 11px;
-    margin: 0 0 17px;
-  }
-  .formats {
-    padding: 90px 0;
-    display: grid;
-    grid-template-columns: 1fr 1.2fr;
     gap: 100px;
     align-items: center;
   }
-  .format-copy > p:not(.eyebrow) {
-    font-size: 12px;
-    line-height: 1.9;
-    color: #8a9483;
-    max-width: 335px;
+  .trust-section > div > p:not(.eyebrow) {
+    font-size: 15px;
+    line-height: 1.85;
+    color: #566f84;
+    max-width: 375px;
     margin: 24px 0;
   }
-  .inline-link {
-    font-size: 11px;
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    color: #597247 !important;
+  .access-visual {
+    background: white;
+    border: 1px solid #dce4ec;
+    border-radius: 7px;
+    box-shadow: 0 14px 34px #32496308;
+    padding: 29px;
   }
-  .format-board {
-    border: 1px solid #e4e8db;
-    border-radius: 12px;
-    background: #fff;
-    padding: 8px 25px 13px;
-  }
-  .format-row {
+  .access-title {
     display: flex;
     align-items: center;
-    gap: 16px;
-    padding: 24px 0;
-    border-bottom: 1px solid #eef0e8;
+    gap: 14px;
+    color: #426a99;
+    padding-bottom: 24px;
+    border-bottom: 1px solid #e4eaf0;
+    font-size: 13px;
+    font-weight: 550;
   }
-  .format-icon {
-    width: 43px;
-    height: 46px;
-    border-radius: 9px;
+  .access-title small {
+    display: block;
+    font-size: 9px;
+    color: #7e90a2;
+    margin-top: 4px;
+    font-weight: 400;
+  }
+  .access-person {
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    padding: 18px 0;
+    border-bottom: 1px solid #edf0f4;
+  }
+  .person-icon {
+    width: 30px;
+    height: 30px;
     display: grid;
     place-items: center;
+    border-radius: 50%;
+    font-size: 11px;
   }
-  .blue {
-    background: #edf2fa;
-    color: #7c9cbf;
+  .person-icon.blue {
+    background: #e2ebfc;
+    color: #3863a3;
   }
-  .green {
-    background: #ecf4e9;
-    color: #80a06d;
+  .person-icon.gold {
+    background: #f6edda;
+    color: #997742;
   }
-  .amber {
-    background: #f7f1e4;
-    color: #b5a064;
+  .person-icon.green {
+    background: #e3f0e8;
+    color: #478266;
   }
-  .format-row b {
+  .access-person b {
+    display: block;
     font-size: 12px;
-    font-weight: 500;
-    color: #657650;
+    font-weight: 550;
   }
-  .format-row p {
+  .access-person small {
+    display: block;
     font-size: 9px;
-    color: #9ca58e;
-    margin: 3px 0 0;
+    color: #8392a1;
+    margin-top: 3px;
   }
-  .extensions {
-    font-size: 8px;
-    letter-spacing: 0.5px;
+  .role-label {
+    font-size: 10px;
     margin-left: auto;
-    color: #9ca58e;
+    background: #f7f9fc;
+    border: 1px solid #e0e7ef;
+    border-radius: 4px;
+    padding: 5px 8px;
+    color: #65809a;
   }
-  .format-note {
-    font-size: 9px;
-    color: #a2a893;
-    line-height: 1.8;
-    margin: 16px 0 0;
-  }
-  .closing {
-    position: relative;
-    background: #244e40;
-    border-radius: 14px;
-    text-align: center;
-    padding: 56px 20px;
-    color: #fff;
-    overflow: hidden;
-  }
-  .closing-icon {
-    position: relative;
-    color: #b5c78e;
-  }
-  .closing h2 {
-    position: relative;
-    font-size: 45px;
-    letter-spacing: -1.5px;
-    margin: 16px 0;
-    color: #f7f5e7;
-  }
-  .closing > p {
-    position: relative;
-    font-size: 12px;
-    color: #a8bdae;
-    margin: 16px 0 26px;
-  }
-  .light {
-    position: relative;
-    background: #f8f7ee;
-    color: #3e5d43 !important;
-  }
-  .closing-note {
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    font-size: 9px;
-    color: #8ba990;
-    margin-top: 19px;
-  }
-  .closing-grain {
-    position: absolute;
-    width: 800px;
-    height: 800px;
-    top: -100px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: repeating-radial-gradient(
-      circle,
-      transparent 0px,
-      transparent 55px,
-      #9abc8410 56px,
-      #9abc8410 57px
-    );
-    opacity: 0.75;
-  }
-  .footer {
-    padding: 40px 0 35px;
-    display: grid;
-    grid-template-columns: 1fr auto;
-    align-items: center;
-    gap: 6px;
-  }
-  .footer .wordmark {
-    font-size: 21px;
-  }
-  .footer > p {
-    font-size: 10px;
-    color: #99a18d;
-    margin: 5px 0;
-    grid-row: 2;
-  }
-  .footer > div {
-    display: flex;
-    gap: 25px;
-    grid-column: 2;
-    grid-row: 1/3;
-    font-size: 10px;
-    color: #7d8f70;
-  }
-  .footer > div a {
+  .access-visual > p {
     display: flex;
     align-items: center;
     gap: 7px;
+    color: #8899aa;
+    font-size: 9px;
+    margin: 20px 0 0;
   }
-  .footer > small {
-    grid-column: 1/-1;
-    border-top: 1px solid #e8ebdf;
-    margin-top: 24px;
-    padding-top: 22px;
-    font-size: 8px;
-    color: #a7ad9b;
+  .faq-section {
+    display: grid;
+    grid-template-columns: 1fr 1.3fr;
+    gap: 80px;
+    padding-top: 15px;
+    padding-bottom: 100px;
   }
-  @keyframes float {
-    50% {
-      translate: 0 -7px;
+  .faq-section .eyebrow {
+    max-width: 210px;
+  }
+  .faq-section h2 {
+    font-size: 38px;
+  }
+  .faq-list {
+    border-top: 1px solid #dce3e8;
+  }
+  .faq-list details {
+    border-bottom: 1px solid #dce3e8;
+  }
+  .faq-list summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+    list-style: none;
+    font-size: 13px;
+    font-weight: 550;
+    color: #405c76;
+    padding: 21px 0;
+    cursor: pointer;
+  }
+  .faq-list summary::-webkit-details-marker {
+    display: none;
+  }
+  .faq-list summary :global(svg) {
+    flex-shrink: 0;
+    color: #7c95b0;
+  }
+  .faq-list details[open] summary :global(svg) {
+    transform: rotate(180deg);
+  }
+  .faq-list p {
+    font-size: 14px;
+    line-height: 1.85;
+    color: #566f84;
+    margin: 0 23px 25px 0;
+  }
+  .closing {
+    background: #dfebfb;
+    border-block: 1px solid #cedef3;
+    text-align: center;
+    padding: 65px 0 62px;
+  }
+  .closing-symbol {
+    display: flex;
+    gap: 17px;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 23px;
+    color: #5280ba;
+  }
+  .closing-symbol > :global(svg:first-child) {
+    color: #2860ac;
+    transform: rotate(-8deg);
+  }
+  .closing-symbol > :global(svg:last-child) {
+    color: #217b50;
+    transform: rotate(8deg);
+  }
+  .closing .eyebrow {
+    font-size: 9px;
+    color: #6380a2;
+    margin-bottom: 16px;
+  }
+  .closing h2 {
+    font-size: 49px;
+    letter-spacing: -2px;
+    color: #254d7e;
+    line-height: 1.12;
+  }
+  .closing p:not(.eyebrow) {
+    font-size: 13px;
+    color: #6684a5;
+    margin: 20px 0 25px;
+  }
+  .closing-note {
+    display: block;
+    font-size: 9px;
+    color: #6883a1;
+    margin-top: 18px;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .in-view {
+      animation: reveal 0.6s ease-out both;
+    }
+    .file-path > :global(svg) {
+      animation: arrive 1.6s ease-in-out 3;
+    }
+    .case-item button {
+      transition: color 0.2s;
+    }
+    .primary-link {
+      transition: background 0.2s;
+    }
+    @keyframes reveal {
+      from {
+        opacity: 0.3;
+        transform: translateY(16px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    @keyframes arrive {
+      50% {
+        translate: 0 5px;
+        opacity: 0.5;
+      }
     }
   }
-  @keyframes appear {
-    from {
-      opacity: 0;
-      transform: translateY(5px);
-    }
-    to {
-      opacity: 1;
-      transform: none;
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    * {
-      animation: none !important;
-      transition: none !important;
-      scroll-behavior: auto !important;
-    }
-  }
-  @media (min-width: 1400px) {
+  @media (min-width: 1450px) {
     .hero {
-      padding-left: 40px;
-      padding-right: 40px;
+      padding-top: 80px;
+      padding-bottom: 70px;
     }
   }
-  @media (max-width: 1250px) {
-    .section,
-    .research-strip {
-      margin-left: 50px;
-      margin-right: 50px;
-    }
+  @media (max-width: 1024px) {
     .hero {
-      padding: 85px 50px;
+      gap: 32px;
     }
-    .hero-visual {
-      transform: scale(0.86);
-      transform-origin: left center;
+    .hero h1 {
+      font-size: 52px;
+      letter-spacing: -2.5px;
     }
-    .hero {
-      gap: 0;
+    .hero-intro > p:first-child {
+      font-size: 17px;
     }
-    .research-strip > div {
-      gap: 35px;
-    }
-    .workflow,
-    .formats {
-      gap: 50px;
-    }
-  }
-  @media (max-width: 960px) {
-    .nav {
-      padding: 0 25px;
-      height: 72px;
-    }
-    .nav-links {
-      gap: 18px;
-    }
-    .nav-actions {
-      gap: 15px;
-    }
-    .hero {
-      padding: 70px 35px;
-      grid-template-columns: 1fr;
-      gap: 60px;
-    }
-    .hero-copy {
-      text-align: center;
-    }
-    .hero-copy .eyebrow,
-    .hero-actions,
-    .hero-foot {
-      justify-content: center;
-    }
-    .hero-visual {
-      transform: none;
-      max-width: 550px;
-      margin: auto;
-      min-height: 400px;
-      width: 100%;
-    }
-    .mock-app {
-      width: 100%;
-    }
-    .floating-note {
-      right: -12px;
-    }
-    .hero-copy > p {
-      font-size: 15px;
-    }
-    .research-strip > div {
-      gap: 24px;
-      flex-wrap: wrap;
-      font-size: 16px;
-    }
-    .section,
-    .research-strip {
-      margin-left: 35px;
-      margin-right: 35px;
-    }
-    .why {
-      padding: 70px 0;
-    }
-    .feature-grid {
-      gap: 12px;
-    }
-    .feature-grid article {
-      padding: 23px 18px;
-    }
-    .feature-grid h3 {
-      font-size: 18px;
-    }
-    .mini-diff {
-      flex-wrap: wrap;
-    }
-    .workflow {
-      gap: 35px;
-      grid-template-columns: 0.9fr 1.1fr;
-    }
-    .demo-content {
-      padding: 20px;
-    }
-    .formats {
-      gap: 35px;
-      grid-template-columns: 1fr 1.2fr;
-    }
-    .format-board {
-      padding: 8px 17px 13px;
-    }
-    .format-row {
-      gap: 10px;
-    }
-    .extensions {
-      font-size: 7px;
-    }
-    .format-row p {
-      font-size: 8px;
-    }
-    h2 {
-      font-size: 37px;
-    }
-  }
-  @media (max-width: 680px) {
-    .nav {
-      gap: 14px;
-      padding: 0 20px;
-      height: 65px;
-    }
-    .nav-links {
-      display: none;
-      position: absolute;
-      top: 65px;
-      left: 0;
-      right: 0;
-      background: #fdfdf9;
-      border-bottom: 1px solid #e5eadf;
-      padding: 22px;
-      flex-direction: column;
-    }
-    .nav-links.mobile-open {
-      display: flex;
-    }
-    .nav-cta {
-      display: none;
-    }
-    .mobile-toggle {
-      display: flex;
-    }
-    .nav-actions {
-      gap: 18px;
-    }
-    .wordmark {
-      font-size: 21px;
-    }
-    .hero {
-      padding: 55px 23px 48px;
-      gap: 42px;
-      min-height: 0;
-    }
-    .hero .eyebrow {
-      font-size: 7px;
-      letter-spacing: 1.3px;
-      margin-bottom: 21px;
-    }
-    h1 {
-      font-size: 51px;
-      letter-spacing: -2px;
-      margin-bottom: 22px;
-    }
-    .hero-copy > p {
+    .hero-intro .hero-detail {
       font-size: 12px;
-    }
-    .hero-actions {
-      gap: 19px;
-    }
-    .button {
-      font-size: 11px;
-      padding: 13px 16px;
-      gap: 12px;
-    }
-    .watch {
-      font-size: 11px;
-      gap: 7px;
-    }
-    .hero-foot {
-      font-size: 7px;
-      gap: 10px;
-      margin-top: 20px;
-    }
-    .hero-foot :global(svg) {
-      width: 11px;
-    }
-    .hero-visual {
-      min-height: 290px;
-      max-width: 400px;
-      padding-top: 15px;
-    }
-    .mock-app {
-      height: 280px;
-      transform: rotate(-2deg);
-    }
-    .mock-title {
-      height: 46px;
-      padding: 0 11px;
-      gap: 6px;
-    }
-    .mock-title b {
-      font-size: 8px;
-    }
-    .mock-title small {
-      font-size: 6px;
-    }
-    .avatars i {
-      width: 22px;
-      height: 22px;
-      font-size: 6px;
-    }
-    .mock-menu {
-      font-size: 7px;
-      padding-left: 34px;
-      gap: 12px;
-    }
-    .mock-toolbar {
-      font-size: 7px;
-      padding: 0 15px;
-      gap: 13px;
-      height: 28px;
-    }
-    .font-name {
-      display: none;
-    }
-    .mock-body {
-      padding: 15px 60px 0 15px;
-    }
-    .mock-page {
-      padding: 22px;
-      max-width: 280px;
-    }
-    .mock-page h3 {
-      font-size: 18px;
-    }
-    .mock-comment {
-      width: 120px;
-      right: 9px;
-      top: 85px;
-      padding: 9px;
-    }
-    .mock-comment p {
-      font-size: 6px;
-    }
-    .comment-top > span {
-      display: none;
-    }
-    .paper-intro {
-      font-size: 7px;
-    }
-    .mock-page h4,
-    .question {
-      font-size: 7px;
-    }
-    .floating-note {
-      top: 0;
-      right: -2px;
-      padding: 8px 10px;
-      gap: 6px;
-    }
-    .floating-note b,
-    .version-float b {
-      font-size: 7px;
-    }
-    .floating-note small,
-    .version-float small {
-      font-size: 6px;
-    }
-    .floating-note .note-icon {
-      width: 23px;
-      height: 23px;
-    }
-    .small-label {
-      display: none;
-    }
-    .version-float {
-      left: 20px;
-      bottom: -14px;
-      padding: 8px 12px;
-      gap: 7px;
-    }
-    .version-float > span {
-      padding: 5px;
-    }
-    .version-float > :global(svg) {
-      margin-left: 10px;
-    }
-    .orbit {
-      width: 300px;
-      height: 300px;
-      left: 20px;
-    }
-    .orbit-two {
-      width: 340px;
-      height: 340px;
-      left: 0;
-      top: -25px;
-    }
-    .research-strip {
-      padding: 20px 0;
-      margin: 0 23px;
-    }
-    .research-strip > span {
-      font-size: 6px;
-      letter-spacing: 1.3px;
-    }
-    .research-strip > div {
-      font-size: 12px;
-      gap: 12px 20px;
-      margin-top: 14px;
-    }
-    .section {
-      margin-left: 23px;
-      margin-right: 23px;
-    }
-    .why {
-      padding: 55px 0;
     }
     .section-heading {
-      display: block;
-      margin-bottom: 25px;
+      gap: 50px;
+    }
+    .research-grid {
+      gap: 40px;
+    }
+    .files-section {
+      gap: 55px;
+    }
+    .incoming-files {
+      gap: 10px;
+    }
+    .incoming-files > div {
+      padding: 15px 9px;
+      font-size: 8px;
+      gap: 7px;
+    }
+    .trust-section {
+      gap: 55px;
+    }
+    .faq-section {
+      gap: 45px;
+    }
+    .collaboration-notes {
+      gap: 30px;
+    }
+  }
+  @media (max-width: 800px) {
+    .wrap {
+      padding-left: 28px;
+      padding-right: 28px;
+    }
+    .hero {
+      gap: 30px;
+      padding-top: 45px;
+      padding-bottom: 40px;
+      grid-template-columns: 1.2fr 1fr;
+    }
+    .hero h1 {
+      font-size: 45px;
+      letter-spacing: -2px;
+    }
+    .hero .eyebrow {
+      font-size: 8px;
+      letter-spacing: 0.9px;
+    }
+    .hero-intro > p:first-child {
+      font-size: 15px;
+    }
+    .hero-intro .hero-detail {
+      font-size: 11px;
+    }
+    .primary-link {
+      font-size: 11px;
+      gap: 10px;
+      padding: 12px 14px;
+    }
+    .hero-actions .text-link {
+      font-size: 10px;
+    }
+    .product-benefits {
+      gap: 20px;
+      font-size: 9px;
+    }
+    .product-benefits :global(svg) {
+      flex-shrink: 0;
+    }
+    .section-heading {
+      gap: 30px;
+    }
+    .section-heading > p {
+      font-size: 12px;
     }
     h2 {
       font-size: 34px;
-      letter-spacing: -1px;
     }
-    .eyebrow {
-      font-size: 7px;
-      letter-spacing: 1.5px;
-      margin-bottom: 18px;
+    .research-section {
+      padding-top: 70px;
+      padding-bottom: 75px;
     }
-    .section-heading > p {
-      font-size: 11px;
-      margin-top: 20px;
-      max-width: none;
-    }
-    .feature-grid {
-      grid-template-columns: 1fr;
-      gap: 13px;
-    }
-    .feature-grid article {
-      padding: 23px;
-    }
-    .feature-icon {
-      width: 36px;
-      height: 36px;
-      margin-bottom: 15px;
-    }
-    .feature-grid h3 {
-      font-size: 21px;
-    }
-    .feature-grid p {
-      font-size: 12px;
-      margin-bottom: 18px;
-    }
-    .mini-format,
-    .mini-diff,
-    .mini-people {
-      padding-top: 13px;
-    }
-    .workflow {
-      padding: 50px 0;
-      grid-template-columns: 1fr;
-      gap: 28px;
-    }
-    .workflow-lede {
-      max-width: none;
-      font-size: 11px;
-    }
-    .steps {
+    .research-grid {
+      gap: 30px;
       grid-template-columns: 1fr 1fr;
+    }
+    .case-visual {
+      padding: 18px 15px 15px;
+    }
+    .case-topline {
+      font-size: 8px;
       gap: 5px;
     }
-    .steps button {
-      padding: 13px 10px;
-      gap: 8px;
-      align-items: center;
-    }
-    .steps button p {
-      display: none;
-    }
-    .steps b {
-      font-size: 10px;
-    }
-    .steps button > :global(svg) {
-      width: 13px;
-    }
-    .step-no {
-      font-size: 8px;
-    }
-    .workflow-demo {
-      min-height: 365px;
-    }
-    .demo-content {
-      padding: 25px;
-    }
-    .demo-screen h3 {
-      font-size: 24px;
-    }
-    .demo-head {
-      font-size: 8px;
-      padding: 0 15px;
-    }
-    .demo-head > span:last-child {
+    .case-tag {
       font-size: 7px;
     }
-    .formats {
-      padding: 50px 0;
+    .case-paper {
+      padding: 22px 17px;
+    }
+    .case-paper h3 {
+      font-size: 15px;
+    }
+    .case-description {
+      font-size: 9px;
+    }
+    .case-blocks > div {
+      font-size: 9px;
+      padding: 9px 5px;
+    }
+    .faint-rule {
+      width: 15px;
+    }
+    .case-comment {
+      margin-left: 15px;
+      margin-right: -5px;
+      padding: 12px;
+      gap: 8px;
+    }
+    .case-comment b span {
+      display: block;
+      margin: 2px 0;
+    }
+    .case-item > button {
+      font-size: 13px;
+      gap: 10px;
+      padding: 19px 0;
+    }
+    .case-item h3 {
+      font-size: 17px;
+    }
+    .case-item p {
+      font-size: 11px;
+    }
+    .collaboration-band {
+      padding-top: 65px;
+    }
+    .collaboration-notes h3 {
+      font-size: 12px;
+    }
+    .collaboration-notes p {
+      font-size: 10px;
+    }
+    .files-section {
+      gap: 30px;
+      padding-top: 75px;
+      padding-bottom: 75px;
+    }
+    .files-visual {
+      padding: 25px 18px 20px;
+    }
+    .incoming-files {
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+    }
+    .incoming-files > div {
+      width: 180px;
+      padding: 13px 14px;
+      font-size: 9px;
+    }
+    .file-path {
+      height: 70px;
+    }
+    .file-path > span {
+      height: 17px;
+    }
+    .files-copy > p:not(.eyebrow) {
+      font-size: 12px;
+    }
+    .file-formats {
+      gap: 9px;
+    }
+    .file-formats > span {
+      font-size: 9px;
+      padding: 7px 8px;
+      gap: 5px;
+    }
+    .import-heading {
+      font-size: 9px;
+      gap: 5px;
+    }
+    .import-heading > span {
+      gap: 5px;
+    }
+    .import-result {
+      padding: 0 12px 10px;
+    }
+    .import-result > div:not(.import-heading) {
+      font-size: 8px;
+      gap: 7px;
+    }
+    .result-line {
+      display: none;
+    }
+    .integration-band {
+      padding-top: 70px;
+    }
+    .trust-section {
+      gap: 40px;
+      padding-top: 75px;
+      padding-bottom: 70px;
+    }
+    .trust-section > div > p:not(.eyebrow) {
+      font-size: 12px;
+    }
+    .access-visual {
+      padding: 22px;
+    }
+    .role-label {
+      font-size: 8px;
+      padding: 4px 6px;
+    }
+    .access-person {
+      gap: 9px;
+    }
+    .access-person small {
+      font-size: 8px;
+    }
+    .faq-section {
+      gap: 38px;
+      grid-template-columns: 1fr 1.25fr;
+    }
+    .faq-section h2 {
+      font-size: 32px;
+    }
+    .faq-list summary {
+      font-size: 12px;
+    }
+    .faq-list p {
+      font-size: 11px;
+    }
+  }
+  @media (max-width: 600px) {
+    .wrap {
+      padding-left: 22px;
+      padding-right: 22px;
+    }
+    .hero {
+      grid-template-columns: 1fr;
+      gap: 23px;
+      padding-top: 36px;
+      padding-bottom: 36px;
+    }
+    .hero h1 {
+      font-size: clamp(32px, 9.4vw, 46px);
+      letter-spacing: -1.5px;
+      max-width: 390px;
+      line-height: 1.08;
+    }
+    .hero .eyebrow {
+      font-size: 8px;
+      letter-spacing: 1px;
+      margin-bottom: 23px;
+    }
+    .hero-intro {
+      padding: 0;
+    }
+    .hero-intro > p:first-child {
+      font-size: 16px;
+      max-width: 340px;
+      margin-bottom: 12px;
+      line-height: 1.7;
+    }
+    .hero-intro .hero-detail {
+      font-size: 12px;
+      max-width: 340px;
+      margin-bottom: 21px;
+    }
+    .hero-actions {
+      gap: 15px;
+    }
+    .primary-link {
+      font-size: 11px;
+      padding: 12px 15px;
+    }
+    .hero-actions .text-link {
+      font-size: 10px;
+    }
+    .product-wrap {
+      padding-top: 22px;
+      padding-left: 15px;
+      padding-right: 15px;
+    }
+    .product-benefits {
+      margin-top: 20px;
+      display: grid;
+      gap: 12px;
+      padding: 20px 5px;
+      font-size: 10px;
+    }
+    .research-section {
+      padding-top: 58px;
+      padding-bottom: 60px;
+    }
+    .section-heading {
+      grid-template-columns: 1fr;
+      gap: 22px;
+      margin-bottom: 30px;
+    }
+    .eyebrow {
+      font-size: 9px;
+      letter-spacing: 1px;
+      margin-bottom: 17px;
+    }
+    h2 {
+      font-size: 35px;
+      line-height: 1.17;
+      letter-spacing: -1.3px;
+    }
+    .section-heading > p {
+      font-size: 12px;
+      line-height: 1.9;
+      max-width: 360px;
+    }
+    .research-grid {
+      display: flex;
+      flex-direction: column-reverse;
+      gap: 28px;
+    }
+    .case-list {
+      width: 100%;
+    }
+    .case-item > button {
+      font-size: 14px;
+      padding: 17px 0;
+    }
+    .case-item > div {
+      padding-left: 32px;
+    }
+    .case-item h3 {
+      font-size: 18px;
+    }
+    .case-item p {
+      font-size: 12px;
+      margin-bottom: 20px;
+      max-width: 340px;
+    }
+    .case-visual {
+      width: 100%;
+      padding: 23px 22px 16px;
+    }
+    .case-topline {
+      font-size: 9px;
+    }
+    .case-paper {
+      padding: 25px;
+      min-height: 290px;
+    }
+    .case-paper h3 {
+      font-size: 18px;
+    }
+    .case-description {
+      font-size: 10px;
+    }
+    .case-blocks > div {
+      font-size: 10px;
+    }
+    .case-comment {
+      margin-left: 25px;
+      padding: 15px;
+    }
+    .case-comment b span {
+      display: inline;
+      margin-left: 6px;
+      font-size: 7px;
+    }
+    .case-comment p {
+      font-size: 10px;
+    }
+    .collaboration-band {
+      padding-top: 58px;
+      padding-bottom: 40px;
+    }
+    .collaboration-band .wrap {
+      padding-left: 18px;
+      padding-right: 18px;
+    }
+    .collaboration-band .section-heading {
+      padding: 0 4px;
+    }
+    .collaboration-notes {
       grid-template-columns: 1fr;
       gap: 25px;
+      padding: 28px 6px 0;
     }
-    .format-copy > p:not(.eyebrow) {
+    .collaboration-notes article {
+      display: grid;
+      grid-template-columns: 24px 1fr;
+      gap: 0 13px;
+    }
+    .collaboration-notes h3 {
+      font-size: 13px;
+      margin: 0 0 8px;
+      align-self: center;
+    }
+    .collaboration-notes p {
       font-size: 11px;
-      max-width: none;
-      margin: 20px 0;
+      grid-column: 2;
+      max-width: 330px;
     }
-    .format-row {
-      padding: 20px 0;
-      gap: 12px;
+    .files-section {
+      grid-template-columns: 1fr;
+      gap: 30px;
+      padding-top: 60px;
+      padding-bottom: 60px;
     }
-    .format-row p {
-      font-size: 9px;
+    .files-copy > p:not(.eyebrow) {
+      font-size: 12px;
     }
-    .extensions {
+    .file-formats > span {
+      font-size: 10px;
+      padding: 8px 11px;
+    }
+    .files-visual {
+      padding: 30px 20px 20px;
+    }
+    .incoming-files {
+      flex-direction: row;
+      gap: 11px;
+    }
+    .incoming-files > div {
+      width: auto;
       font-size: 8px;
+      padding: 15px 9px;
+      gap: 6px;
     }
-    .closing {
-      padding: 40px 20px;
+    .incoming-files :global(svg) {
+      width: 19px;
+      flex-shrink: 0;
     }
-    .closing h2 {
-      font-size: 35px;
+    .import-result {
+      padding: 0 17px 12px;
     }
-    .closing > p {
+    .import-heading {
       font-size: 10px;
     }
-    .footer {
-      padding: 30px 0;
+    .import-result > div:not(.import-heading) {
+      font-size: 10px;
+      padding: 12px 0;
     }
-    .footer > p {
+    .files-visual > p {
       font-size: 8px;
-      max-width: 175px;
     }
-    .footer > div {
+    .integration-band {
+      padding-top: 57px;
+      padding-bottom: 35px;
+    }
+    .trust-section {
+      grid-template-columns: 1fr;
+      gap: 30px;
+      padding-top: 58px;
+      padding-bottom: 62px;
+    }
+    .access-visual {
+      padding: 26px;
+    }
+    .access-person b {
+      font-size: 12px;
+    }
+    .access-person small {
       font-size: 9px;
-      gap: 12px;
     }
-    .footer > small {
+    .role-label {
+      font-size: 9px;
+      padding: 5px 8px;
+    }
+    .faq-section {
+      grid-template-columns: 1fr;
+      gap: 30px;
+      padding-bottom: 60px;
+    }
+    .faq-section .eyebrow {
+      max-width: none;
+      font-size: 8px;
+    }
+    .faq-section h2 {
+      font-size: 34px;
+    }
+    .faq-list summary {
+      font-size: 12px;
+      line-height: 1.6;
+      padding: 19px 0;
+    }
+    .faq-list p {
+      font-size: 11px;
+    }
+    .closing {
+      padding: 50px 0;
+    }
+    .closing h2 {
+      font-size: 41px;
+      letter-spacing: -1.6px;
+    }
+    .closing p:not(.eyebrow) {
+      font-size: 12px;
+    }
+    .closing-note {
+      font-size: 8px;
+      line-height: 1.6;
+      max-width: 290px;
+      margin: 17px auto 0;
+    }
+  }
+  @media (max-width: 360px) {
+    .hero h1 {
+      font-size: 32px;
+    }
+    .hero-actions {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    .case-comment b span {
+      display: block;
+      margin-left: 0;
+    }
+    .file-formats {
+      gap: 7px;
+    }
+    .incoming-files > div {
       font-size: 7px;
-    }
-    .desktop {
-      display: none;
+      padding: 13px 8px;
+      gap: 4px;
     }
   }
 </style>

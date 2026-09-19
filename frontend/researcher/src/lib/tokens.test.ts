@@ -2,24 +2,24 @@ import { describe, expect, it } from 'vitest';
 import { color, font, fontMono } from './tokens';
 
 describe('design tokens', () => {
-  it('exposes the parchment + terracotta palette', () => {
-    expect(color.parchment).toBe('#F4EFE6');
-    expect(color.terracotta).toBe('#B14B2C');
+  it('exposes the cream and blue palette', () => {
+    expect(color.parchment).toBe('#FAF9F6');
+    expect(color.terracotta).toBe('#205BB0');
   });
 
-  it('exposes the three type families', () => {
-    expect(font.display).toContain('Fraunces');
-    expect(font.body).toContain('Source Serif 4');
-    expect(font.ui).toContain('IBM Plex Sans');
+  it('exposes the sans serif interface families', () => {
+    expect(font.display).toContain('sans-serif');
+    expect(font.body).toContain('sans-serif');
+    expect(font.ui).toContain('sans-serif');
   });
 
   it('exposes editor surface and status colors', () => {
-    expect(color.surface).toBe('#FBF8F1');
-    expect(color.suggest).toBe('#7B8F50');
-    expect(color.warn).toBe('#C18A3F');
+    expect(color.surface).toBe('#FFFEFA');
+    expect(color.suggest).toBe('#107C41');
+    expect(color.warn).toBe('#A7792F');
   });
 
   it('exposes the mono family for logic and version labels', () => {
-    expect(fontMono).toContain('IBM Plex Mono');
+    expect(fontMono).toContain('monospace');
   });
 });

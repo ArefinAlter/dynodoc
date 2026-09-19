@@ -15,7 +15,8 @@ The original immediate product was a questionnaire authoring tool. The owner's e
 | Core | Append-only event log, hash verification, stable IDs, snapshots, role checks and serialized writes. |
 | Privacy | Document reads, audit endpoints, event streams and search require membership. |
 | Sessions | Encrypted HttpOnly cookies, same-origin API gateway, refresh rotation; Google authorization-code login and Resend email-link implementation. |
-| Homepage | Responsive one-page site, interactive workflow explanation, reduced-motion behavior, Node and Vercel builds. |
+| Homepage | Responsive cream/blue homepage, self-hosted sans serif typography, interactive editor/draft/integration examples, research workflow explainers, reduced-motion behavior, Node and Vercel builds. |
+| Legal pages | Detailed privacy and terms drafts at `/privacy` and `/terms`, linked from the footer and sign-in page; operator details and legal review remain open. |
 | Workspace | Create documents, spreadsheets and questionnaires; upload originals, see conversion reports, search content, share roles and make copies. |
 | Document editing | Common text and paragraph formatting, lists, alignment, links, URL images, tables, find/replace, undo/redo, comments and paragraph suggestions. |
 | Spreadsheet editing | Cell editing, ranges, paste, formatting, formulas, row/column operations, sheet tabs, find/filter, values-only sorting and CSV/XLSX export. |
@@ -33,6 +34,7 @@ of the engineering effort left for the full product.
 
 ## Owner configuration still needed
 
+- Supply the legal operator, public contact email, mailing address, governing jurisdiction, hosting/subprocessor locations and retention arrangements; complete review before adopting the privacy/terms drafts. [Drafting notes](LEGAL-PAGES.md).
 - Configure Google OAuth and Resend credentials, then complete real provider login and email delivery tests. [Instructions](GOOGLE-AND-EMAIL-SETUP.md).
 - Deploy the homepage in the owner's Vercel account. [Instructions](VERCEL-DEPLOYMENT.md).
 - Add the ten actual researchers and run a study-specific acceptance session using their files. The automated concurrency exercise uses synthetic researchers.

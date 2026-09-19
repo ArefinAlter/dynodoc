@@ -516,7 +516,7 @@
   .example-links button {
     border: 0;
     background: none;
-    color: #78947e;
+    color: #4d79ae;
     padding: 0;
     text-decoration: underline;
     text-underline-offset: 4px;
@@ -526,7 +526,7 @@
   .workspace {
     display: flex;
     min-height: 100vh;
-    background: #f7f8fa;
+    background: #faf9f6;
     font-family: var(--font-ui);
     color: #293846;
     font-size: 13px;
@@ -546,12 +546,12 @@
     text-decoration: none;
     display: flex;
     align-items: baseline;
-    font: bold 39px/1 Georgia;
-    color: #255147;
+    font: bold 39px/1 var(--font-ui);
+    color: #20559b;
     margin: 0 9px 34px;
   }
   .brand > span {
-    color: #c8a573;
+    color: #7da9e4;
     margin-left: -4px;
   }
   .brand b {
@@ -567,9 +567,9 @@
     margin-bottom: 20px;
   }
   .team-icon {
-    background: #ecf2ed;
-    color: #5a7865;
-    border: 1px solid #d9e6db;
+    background: #eaf1fb;
+    color: #486b97;
+    border: 1px solid #d1e0f3;
     border-radius: 8px;
     width: 33px;
     height: 33px;
@@ -596,7 +596,7 @@
     padding: 12px 14px;
     border: 0;
     border-radius: 7px;
-    background: #244f43;
+    background: #205bb0;
     color: #fff;
     font-size: 12px;
     font-weight: 500;
@@ -622,8 +622,8 @@
     cursor: pointer;
   }
   nav button.active {
-    background: #edf3ee;
-    color: #426a52;
+    background: #e8f1fc;
+    color: #285ca4;
   }
   nav button > span {
     margin-left: auto;
@@ -640,8 +640,8 @@
     color: #849e89;
   }
   .workspace-tip p {
-    font: 16px/1.5 Georgia;
-    color: #5e7762;
+    font: 16px/1.5 var(--font-ui);
+    color: #58718e;
     margin: 9px 0;
   }
   .workspace-tip small {
@@ -721,10 +721,10 @@
     margin: 0 0 9px;
   }
   h1 {
-    font: 400 33px/1.3 Georgia;
+    font: 550 33px/1.3 var(--font-ui);
     letter-spacing: -0.8px;
     margin: 0 0 9px;
-    color: #2c4637;
+    color: #29445f;
   }
   .heading p:not(.eyebrow) {
     font-size: 11px;
@@ -1008,7 +1008,7 @@
     color: #91ab7c;
   }
   .empty h3 {
-    font: 25px Georgia;
+    font: 25px var(--font-ui);
     color: #6d855e;
     margin: 18px 0 10px;
   }
@@ -1111,7 +1111,7 @@
     margin-bottom: 20px;
   }
   .modal h2 {
-    font: 29px Georgia;
+    font: 29px var(--font-ui);
     color: #48603e;
     margin: 0 0 10px;
   }

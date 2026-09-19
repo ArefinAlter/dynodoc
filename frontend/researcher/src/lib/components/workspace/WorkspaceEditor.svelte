@@ -535,7 +535,7 @@
 </script>
 
 <svelte:head><title>{title} · Dynodoc</title></svelte:head>
-<div class="workspace-editor">
+<div class="workspace-editor" class:sheet-theme={kind === 'spreadsheet'}>
   <header>
     <a class="back" href="/workspace" aria-label="Back to workspace"><ArrowLeft size={18} /></a>
     <div class="file-icon" class:green={kind === 'spreadsheet'}>
@@ -991,19 +991,27 @@
 
 <style>
   .workspace-editor {
+    --editor-accent: #185abd;
+    --editor-tint: #e5effd;
+    --editor-chrome: #f5f8fd;
     height: 100vh;
     display: flex;
     flex-direction: column;
-    font-family: Arial, sans-serif;
-    background: #f8fafd;
+    font-family: var(--font-ui);
+    background: var(--editor-chrome);
     color: #3a4757;
+  }
+  .workspace-editor.sheet-theme {
+    --editor-accent: #107c41;
+    --editor-tint: #e2f0e7;
+    --editor-chrome: #f3f8f5;
   }
   header {
     display: flex;
     gap: 12px;
     align-items: center;
     padding: 14px 22px 12px;
-    background: #f8fafd;
+    background: var(--editor-chrome);
     min-height: 82px;
   }
   .back {
@@ -1017,12 +1025,12 @@
     background: #eaf0f6;
   }
   .file-icon {
-    color: #5e8dd1;
+    color: #185abd;
     display: grid;
     place-items: center;
   }
   .file-icon.green {
-    color: #559572;
+    color: #107c41;
   }
   .heading {
     min-width: 0;
@@ -1049,7 +1057,7 @@
     border-color: #d5dfeb;
   }
   .title-row input:focus {
-    outline: 1px solid #98b6a6;
+    outline: 1px solid var(--editor-accent);
   }
   .title-row input:disabled {
     color: #3c4958;
@@ -1103,9 +1111,9 @@
     align-items: center;
     gap: 9px;
     border: 0;
-    background: #d2e5dc;
-    color: #345c47;
-    border-radius: 22px;
+    background: var(--editor-tint);
+    color: var(--editor-accent);
+    border-radius: 6px;
     font-size: 12px;
     padding: 11px 21px;
     cursor: pointer;
@@ -1211,7 +1219,7 @@
     gap: 7px;
     border: 0;
     border-radius: 5px;
-    background: #397258;
+    background: var(--editor-accent, #185abd);
     color: white;
     padding: 10px 14px;
     font: 12px Arial;
@@ -1459,7 +1467,7 @@
     align-items: center;
     gap: 7px;
     padding: 6px 22px;
-    background: #f8fafd;
+    background: var(--editor-chrome);
     border-top: 1px solid #e6edf1;
     font-size: 9px;
     color: #9aa9b6;
@@ -1496,7 +1504,7 @@
     padding: 30px;
     border-radius: 12px;
     box-shadow: 0 18px 80px #1d384533;
-    font-family: Arial, sans-serif;
+    font-family: var(--font-ui);
   }
   .sync-modal .panel-title h2 {
     font-size: 21px;

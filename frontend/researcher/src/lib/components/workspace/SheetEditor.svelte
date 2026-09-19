@@ -602,7 +602,7 @@
     align-items: center;
     gap: 3px;
     padding: 7px 14px;
-    background: #edf4f0;
+    background: #edf6f0;
     border-radius: 8px;
     margin: 0 12px;
     flex-wrap: wrap;
@@ -621,7 +621,7 @@
   }
   .tools button:hover,
   .tools button[aria-pressed='true'] {
-    background: #d7e7de;
+    background: #d7eddf;
   }
   .tools button:disabled {
     opacity: 0.4;
@@ -775,7 +775,7 @@
     pointer-events: none;
   }
   .grid td.selected {
-    outline: 2px solid #42845e;
+    outline: 2px solid #107c41;
     outline-offset: -2px;
     z-index: 1;
   }
@@ -786,7 +786,7 @@
     position: absolute;
     inset: 0;
     width: 100%;
-    border: 2px solid #42845e;
+    border: 2px solid #107c41;
     outline: none;
     padding: 3px 5px;
     font: 12px Arial;
