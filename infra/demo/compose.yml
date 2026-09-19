@@ -73,6 +73,7 @@ services:
     environment:
       ORIGIN: https://admin.dynodoc.online
       ADMIN_SITE: 'true'
+      PUBLIC_WORKSPACE_URL: https://app.dynodoc.online
       SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET}
       WEB_SERVICE_KEY: ${WEB_SERVICE_KEY:?Set WEB_SERVICE_KEY}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
