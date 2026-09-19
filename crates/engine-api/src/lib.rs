@@ -12,6 +12,7 @@
 //! [`error::ApiError`], opaque cursor [`pagination`], Postgres-backed [`idempotency`],
 //! and a generated [`ApiDoc`] OpenAPI document.
 
+pub mod admin;
 pub mod audit;
 pub mod auth;
 pub mod conflicts;
@@ -41,6 +42,7 @@ pub struct AppState {
     pub auth: AuthConfig,
     /// Per-document SSE broadcast registry (live event fan-out).
     pub subscriptions: Subscriptions,
+    pub admin_emails: String,
 }
 
 impl AppState {
@@ -50,6 +52,7 @@ impl AppState {
             pool,
             auth,
             subscriptions: Subscriptions::new(),
+            admin_emails: std::env::var("ADMIN_EMAILS").unwrap_or_default(),
         }
     }
 }
@@ -72,6 +75,7 @@ pub fn app(state: AppState) -> Router {
         .route("/healthz", get(healthz))
         .route("/openapi.json", get(openapi_json))
         .merge(auth::router())
+        .merge(admin::router())
         .merge(documents::router())
         .merge(ops::router())
         .merge(conflicts::router())

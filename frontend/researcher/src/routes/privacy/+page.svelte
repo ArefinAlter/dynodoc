@@ -3,6 +3,7 @@
   const sections = [
     { id: 'scope', title: 'Scope and responsibility' },
     { id: 'information', title: 'Information we handle' },
+    { id: 'performance', title: 'Anonymous visits and performance' },
     { id: 'purposes', title: 'How information is used' },
     { id: 'collaboration', title: 'Who can see your work' },
     { id: 'providers', title: 'Service providers and integrations' },
@@ -85,6 +86,23 @@
       does not require an account. The interactive homepage examples use sample information and keep
       their edits in the page’s memory; they do not create research records or submit example
       responses.
+    </p>
+  </section>
+  <section id="performance">
+    <h2>Anonymous visits and performance</h2>
+    <p>
+      We measure page loads and browser performance (LCP, INP, CLS, FCP and TTFB) to find slow or
+      unstable pages. Each page load gets a random identifier held only in page memory. Samples
+      include the site, a broad page category, a metric and its numeric value. They do not contain
+      your IP address, email, document identifier, full URL, query string, text you type or research
+      content. These measurements use no tracking cookies or persistent identifiers and are retained
+      for 30 days.
+    </p>
+    <p>
+      The administrator dashboard shows page-load counts and aggregate performance. Counts do not
+      identify unique visitors. Collection is skipped when your browser sends Do Not Track or Global
+      Privacy Control. Server access logs are separate operational records and may still contain IP
+      addresses as described above.
     </p>
   </section>
   <section id="purposes">

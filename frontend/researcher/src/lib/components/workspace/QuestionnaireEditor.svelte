@@ -1,5 +1,6 @@
 <script lang="ts">
   import { ulid } from 'ulid';
+  import SurveyPreview from './SurveyPreview.svelte';
   import {
     Plus,
     Trash2,
@@ -151,35 +152,7 @@
         ><button class="add" onclick={() => add(true)}><Plus size={14} /> Add section</button>{/if}
     </nav>
     <div class="canvas">
-      {#if preview}<div class="preview-note">
-          Preview of labels, hints and answer controls. Relevance, validation expressions,
-          calculations and media capture must be tested in the destination survey platform.
-        </div>{/if}{#each items as n}{#if preview}<section class:section={n.type === 'section'}>
-            <h3>
-              {field(n, 'label')}{#if n.current_fields.required}<sup>*</sup>{/if}
-            </h3>
-            {#if field(n, 'hint')}<p>
-                {field(n, 'hint')}
-              </p>{/if}{#if n.type === 'item'}{@const type =
-                field(n, 'question_type') ||
-                'text'}{#if type.startsWith('select_')}{#each choices(n.id) as choice}<label
-                    class="answer-choice"
-                    ><input
-                      type={type === 'select_multiple' ? 'checkbox' : 'radio'}
-                      name={n.id}
-                    />{field(choice, 'label')}</label
-                  >{/each}{:else if type === 'note'}{:else if ['integer', 'decimal', 'text', 'date'].includes(type)}<input
-                  aria-label={field(n, 'label')}
-                  type={type === 'date'
-                    ? 'date'
-                    : type === 'integer' || type === 'decimal'
-                      ? 'number'
-                      : 'text'}
-                  placeholder="Your answer"
-                />{:else}<p class="device">
-                  {type} is collected by the survey application.
-                </p>{/if}{/if}
-          </section>{:else}<section
+      {#if preview}<SurveyPreview {documentState} />{:else}{#each items as n}<section
             class:focused={selected === n.id}
             class:section={n.type === 'section'}
           >
@@ -271,7 +244,7 @@
                 </div>{/if}
               <details>
                 <summary>Logic & validation</summary
-                >{#each [{ key: 'relevance', label: 'Show when (XLSForm expression)' }, { key: 'constraint', label: 'Validation expression' }, { key: 'constraint_message', label: 'Validation message' }, { key: 'calculation', label: 'Calculation' }, { key: 'default', label: 'Default value' }] as f}<label
+                >{#each [{ key: 'relevance', label: 'Show when (XLSForm expression)' }, { key: 'required_expression', label: 'Required when (XLSForm expression)' }, { key: 'constraint', label: 'Validation expression' }, { key: 'constraint_message', label: 'Validation message' }, { key: 'calculation', label: 'Calculation' }, { key: 'default', label: 'Default value' }] as f}<label
                     >{f.label}<input
                       disabled={!editable}
                       value={field(n, f.key)}
@@ -279,12 +252,12 @@
                     /></label
                   >{/each}
               </details>{/if}
-          </section>{/if}{:else}<div class="empty">
-          <ClipboardList size={35} />
-          <h2>Your questions start here</h2>
-          <p>Add a question, or import an XLSForm from your workspace.</p>
-          {#if editable}<button onclick={() => add()}>Add first question</button>{/if}
-        </div>{/each}
+          </section>{:else}<div class="empty">
+            <ClipboardList size={35} />
+            <h2>Your questions start here</h2>
+            <p>Add a question, or import an XLSForm from your workspace.</p>
+            {#if editable}<button onclick={() => add()}>Add first question</button>{/if}
+          </div>{/each}{/if}
     </div>
   </div>
 </div>
@@ -514,48 +487,6 @@
     font-size: 10px;
     color: #7ba389;
     margin-top: 12px;
-  }
-  .preview-note {
-    font-size: 11px;
-    line-height: 1.8;
-    background: #fff8e9;
-    color: #a79775;
-    border: 1px solid #f2e8cf;
-    padding: 15px 20px;
-    margin-bottom: 24px;
-    border-radius: 6px;
-  }
-  section h3 {
-    font-size: 17px;
-    font-weight: 500;
-    color: #5d7384;
-    margin: 0 0 10px;
-  }
-  section > p {
-    font-size: 12px;
-    color: #95a7b4;
-    line-height: 1.7;
-  }
-  section > input:not(.label):not(.hint) {
-    border: 1px solid #dfe7ed;
-    border-radius: 5px;
-    padding: 10px 12px;
-    margin-top: 12px;
-    width: 100%;
-    font-size: 13px;
-    color: #768a9d;
-  }
-  sup {
-    color: #bf8673;
-    margin-left: 4px;
-  }
-  .answer-choice {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 8px 0;
-    font-size: 13px;
-    color: #7d91a1;
   }
   .empty {
     text-align: center;

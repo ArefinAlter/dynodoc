@@ -28,7 +28,7 @@ docker compose --env-file infra/demo/.env -f infra/demo/compose.yml logs --tail 
 ./infra/demo/backup.sh
 ```
 
-The project's containers, network and data volume use the `dynodoc-demo` prefix. Only the web service publishes a host port, `127.0.0.1:3088`. Nginx handles the dedicated HTTPS hostname. The database, API and conversion service are not publicly exposed. The workspace uses `https://app.dynodoc.online`, with a separate registrar A record pointing `app` to `103.191.50.32`. See [the domain and backend verification record](DOMAIN-AND-BACKEND.md).
+The project's containers, network and data volume use the `dynodoc-demo` prefix. The workspace publishes only `127.0.0.1:3088`; the separate admin web service publishes `127.0.0.1:3089`. Nginx handles their dedicated HTTPS hostnames. The database, API and conversion service are not publicly exposed. The workspace uses `https://app.dynodoc.online`, with a separate registrar A record pointing `app` to `103.191.50.32`. See [the domain and backend verification record](DOMAIN-AND-BACKEND.md).
 
 Backups are PostgreSQL custom archives containing documents, events, versions, identities and original uploaded files. The backup script validates the archive and keeps 14 days. Copy backups to another host or object storage before relying on this VPS for irreplaceable research data; off-site backup is not configured by this repository.
 
@@ -68,3 +68,9 @@ docker compose --env-file infra/demo/.env -f infra/demo/compose.yml up -d
 After an update, verify `/healthz`, anonymous document rejection, sign-in and a
 synthetic document edit. Check the existing VPS applications independently. Never
 use an unscoped stop/reset command on this shared host.
+
+The operations site is `https://admin.dynodoc.online`; its DNS A record points to
+the same VPS. See [administrator, telemetry and Search Console setup](SEARCH-AND-ADMIN-SETUP.md).
+After each release, verify the root sitemap, icons and canonical metadata on the
+Vercel hostname. Set `PUBLIC_GOOGLE_SITE_VERIFICATION` only if using Google's
+HTML-token verification method; Domain properties use registrar TXT verification.

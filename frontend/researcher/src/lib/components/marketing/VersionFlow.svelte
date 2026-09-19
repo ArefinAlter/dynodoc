@@ -165,7 +165,7 @@
   }
   .example-label {
     font-size: 10px;
-    color: #657d93;
+    color: #586d80;
   }
   .branch-map {
     position: relative;
@@ -225,7 +225,7 @@
   .map-node small {
     font-size: 9px;
     display: block;
-    color: #718399;
+    color: #606f82;
     margin-top: 4px;
   }
   .team.shared .map-icon {
@@ -286,7 +286,7 @@
   .drafts small {
     display: block;
     font-size: 9px;
-    color: #6b7e91;
+    color: #5a6a7a;
     margin-top: 2px;
   }
   .review {
@@ -312,7 +312,7 @@
   }
   .review-title > span:last-child {
     font-size: 10px;
-    color: #6c8095;
+    color: #5c6d7f;
   }
   .change-row {
     display: grid;
@@ -341,7 +341,7 @@
   }
   .diff del {
     background: #fcf0ee;
-    color: #946562;
+    color: #885d5a;
     text-decoration-thickness: 1px;
     padding: 3px 8px;
     width: fit-content;
@@ -365,7 +365,7 @@
     display: flex;
     align-items: center;
     gap: 7px;
-    color: #697e94;
+    color: #5e7185;
   }
   .review-bottom button,
   .success button {

@@ -2,13 +2,16 @@
 
 > A shared research workspace for documents, spreadsheets and questionnaires. Edit in familiar interfaces, try changes in personal drafts, review what changed, and keep an attributable history of your team's decisions.
 
-**Status:** Hosted researcher pilot under active development. Core editing and version workflows work; Google/Resend account configuration and broader editor/integration parity remain unfinished. The public-consultation platform is a future extension. **License:** [AGPL v3](LICENSE).
+**Status:** Hosted researcher pilot under active development. Core editing, version workflows, supported survey logic and the admin dashboard work. Google/Resend credentials are configured; real provider and study-account acceptance and broader editor/integration parity remain open. The public-consultation platform is a future extension. **License:** [AGPL v3](LICENSE).
 
 - [Current implementation and remaining work](docs/PROJECT-STATUS.md)
 - [Google and email setup](docs/GOOGLE-AND-EMAIL-SETUP.md)
 - [Vercel and VPS deployment](docs/VERCEL-DEPLOYMENT.md)
 - [Research file compatibility](docs/research-compatibility.md)
 - [ODK Central and KoboToolbox connection](docs/ODK-KOBO-SETUP.md)
+- [All research connections and supported preview logic](docs/RESEARCH-CONNECTIONS.md)
+- [Versioning conformance and mathematical limits](docs/VERSIONING-CONFORMANCE.md)
+- [Admin, branding and Search Console](docs/SEARCH-AND-ADMIN-SETUP.md)
 - [Expanded pilot scope](docs/decisions/001-research-team-demo.md)
 
 ---
@@ -60,7 +63,7 @@ The original prototype provides four questionnaire views. The hosted workspace n
 | **Document** | Prose-shaped rendering — reads like a printed methodology appendix. Default mode. |
 | **Outline** | Two-pane tree view for navigation and structural reorganization. |
 | **Spec** | The underlying XLSForm as an editable spreadsheet table. |
-| **Preview** | Respondent-style controls; execution of skip logic and validation is not yet implemented. |
+| **Preview** | Legacy control-only view. The hosted questionnaire editor executes the documented XLSForm logic subset. |
 
 On top of it sits the **suggesting workflow**: a reviewer proposes a change without applying it;
 it lives as a proposal in the author's queue until accepted or rejected. When two edits touch the

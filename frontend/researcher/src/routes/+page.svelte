@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { structuredDataScript } from '$lib/seo';
   let ready = $state(false);
   onMount(() => {
     ready = true;
@@ -115,6 +116,9 @@
 </script>
 
 <svelte:head>
+  <!-- Static application metadata, with no user-provided values. -->
+  <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+  {@html structuredDataScript}
   <title>Dynodoc — A clearer way to work on research, together</title>
   <meta
     name="description"
@@ -461,7 +465,7 @@
     font-weight: 600;
     letter-spacing: 1.35px;
     line-height: 1.8;
-    color: #667e94;
+    color: #566a7c;
     margin: 0 0 24px;
   }
   .hero {
@@ -511,7 +515,7 @@
   .hero-intro .hero-detail {
     font-size: 13px;
     line-height: 1.9;
-    color: #6a7d8d;
+    color: #5d6e7c;
     margin: 0 0 25px;
     max-width: 370px;
   }
@@ -629,7 +633,7 @@
     justify-content: space-between;
     gap: 12px;
     font-size: 9px;
-    color: #827c6d;
+    color: #686357;
     margin-bottom: 24px;
   }
   .small-folder {
@@ -669,7 +673,7 @@
   .case-description {
     font-size: 10px;
     line-height: 1.8;
-    color: #82909a;
+    color: #657078;
     max-width: 280px;
     margin: 8px 0 23px;
   }
@@ -685,7 +689,7 @@
     padding: 10px 8px;
     border: 1px solid #e9e8e2;
     border-radius: 3px;
-    color: #697d8e;
+    color: #5e7080;
   }
   .case-blocks .highlighted {
     color: var(--visual);
@@ -741,7 +745,7 @@
   .case-comment b span {
     font-size: 8px;
     font-weight: 400;
-    color: #8192a1;
+    color: #63707c;
     margin-left: 10px;
   }
   .case-comment p {
@@ -754,7 +758,7 @@
     display: flex;
     gap: 6px;
     align-items: center;
-    color: #8a8373;
+    color: #676256;
     font-size: 8px;
     margin: 20px 0 0;
   }
@@ -776,7 +780,7 @@
     width: 100%;
     font-size: 15px;
     font-weight: 550;
-    color: #6f8190;
+    color: #5e6e7a;
     cursor: pointer;
   }
   .case-item > button > :global(svg:last-child) {
@@ -831,7 +835,7 @@
   .collaboration-notes p {
     font-size: 11px;
     line-height: 1.9;
-    color: #6a8198;
+    color: #56687b;
     margin: 0;
     max-width: 270px;
   }
@@ -959,7 +963,7 @@
     gap: 10px;
     padding: 12px 0;
     font-size: 10px;
-    color: #617b95;
+    color: #597189;
   }
   .result-line {
     height: 3px;
@@ -969,7 +973,7 @@
   }
   .files-visual > p {
     font-size: 9px;
-    color: #8495a6;
+    color: #5e6a76;
     text-align: center;
     line-height: 1.8;
     margin: 22px 0 0;
@@ -980,7 +984,7 @@
     border-block: 1px solid #e5e0d4;
   }
   .integration-band .eyebrow {
-    color: #7b8079;
+    color: #626661;
   }
   .trust-section {
     padding-top: 100px;
@@ -1017,7 +1021,7 @@
   .access-title small {
     display: block;
     font-size: 9px;
-    color: #7e90a2;
+    color: #62707e;
     margin-top: 4px;
     font-weight: 400;
   }
@@ -1056,7 +1060,7 @@
   .access-person small {
     display: block;
     font-size: 9px;
-    color: #8392a1;
+    color: #65707c;
     margin-top: 3px;
   }
   .role-label {
@@ -1066,7 +1070,7 @@
     border: 1px solid #e0e7ef;
     border-radius: 4px;
     padding: 5px 8px;
-    color: #65809a;
+    color: #576e84;
   }
   .access-visual > p {
     display: flex;
@@ -1147,7 +1151,7 @@
   }
   .closing .eyebrow {
     font-size: 9px;
-    color: #6380a2;
+    color: #4d647e;
     margin-bottom: 16px;
   }
   .closing h2 {
@@ -1158,13 +1162,13 @@
   }
   .closing p:not(.eyebrow) {
     font-size: 13px;
-    color: #6684a5;
+    color: #4e647d;
     margin: 20px 0 25px;
   }
   .closing-note {
     display: block;
     font-size: 9px;
-    color: #6883a1;
+    color: #4f647a;
     margin-top: 18px;
   }
   @media (prefers-reduced-motion: no-preference) {

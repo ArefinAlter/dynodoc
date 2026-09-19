@@ -1,10 +1,12 @@
 <script lang="ts">
-  import { Layers2, ArrowUpRight } from '@lucide/svelte';
+  import { ArrowUpRight } from '@lucide/svelte';
 </script>
 
 <footer>
   <div class="top">
-    <a href="/" class="brand"><Layers2 size={24} /> dynodoc.</a>
+    <a href="/" class="brand"
+      ><img src="/brand/mark.svg" width="32" height="32" alt="" /> dynodoc.</a
+    >
     <p>Good research deserves a clear record.</p>
     <a class="source" href="/source">Open source, open possibilities <ArrowUpRight size={15} /></a>
   </div>

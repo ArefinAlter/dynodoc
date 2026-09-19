@@ -1,0 +1,123 @@
+{
+  "lighthouseVersion": "13.5.0",
+  "fetchTime": "2026-09-19T13:29:33.085Z",
+  "requestedUrl": "http://127.0.0.1:4173/",
+  "finalDisplayedUrl": "http://127.0.0.1:4173/",
+  "environment": {
+    "networkUserAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+    "hostUserAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+    "benchmarkIndex": 3126.5,
+    "credits": {
+      "axe-core": "4.13.0"
+    }
+  },
+  "configSettings": {
+    "output": [
+      "json",
+      "html"
+    ],
+    "maxWaitForFcp": 30000,
+    "maxWaitForLoad": 45000,
+    "pauseAfterFcpMs": 1000,
+    "pauseAfterLoadMs": 1000,
+    "networkQuietThresholdMs": 1000,
+    "cpuQuietThresholdMs": 1000,
+    "formFactor": "desktop",
+    "throttling": {
+      "rttMs": 40,
+      "throughputKbps": 10240,
+      "requestLatencyMs": 0,
+      "downloadThroughputKbps": 0,
+      "uploadThroughputKbps": 0,
+      "cpuSlowdownMultiplier": 1
+    },
+    "throttlingMethod": "simulate",
+    "screenEmulation": {
+      "mobile": false,
+      "width": 1350,
+      "height": 940,
+      "deviceScaleFactor": 1,
+      "disabled": false
+    },
+    "emulatedUserAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+    "auditMode": false,
+    "gatherMode": false,
+    "clearStorageTypes": [
+      "file_systems",
+      "shader_cache",
+      "service_workers",
+      "cache_storage"
+    ],
+    "disableStorageReset": false,
+    "debugNavigation": false,
+    "channel": "cli",
+    "usePassiveGathering": false,
+    "disableFullPageScreenshot": false,
+    "skipAboutBlank": false,
+    "blankPage": "about:blank",
+    "ignoreStatusCode": false,
+    "locale": "en-US",
+    "blockedUrlPatterns": null,
+    "additionalTraceCategories": null,
+    "extraHeaders": null,
+    "precomputedLanternData": null,
+    "onlyAudits": null,
+    "onlyCategories": null,
+    "skipAudits": null
+  },
+  "note": "Synthetic localhost desktop run; private-host noindex intentionally lowers SEO. Not production field data.",
+  "categories": {
+    "performance": {
+      "title": "Performance",
+      "score": 1
+    },
+    "accessibility": {
+      "title": "Accessibility",
+      "score": 1
+    },
+    "best-practices": {
+      "title": "Best Practices",
+      "score": 1
+    },
+    "seo": {
+      "title": "SEO",
+      "score": 0.69
+    },
+    "agentic-browsing": {
+      "title": "Agentic Browsing",
+      "score": 1
+    }
+  },
+  "metrics": {
+    "first-contentful-paint": {
+      "title": "First Contentful Paint",
+      "numericValue": 574.1854999999998,
+      "numericUnit": "millisecond",
+      "displayValue": "0.6\u00a0s"
+    },
+    "largest-contentful-paint": {
+      "title": "Largest Contentful Paint",
+      "numericValue": 576.2119999999999,
+      "numericUnit": "millisecond",
+      "displayValue": "0.6\u00a0s"
+    },
+    "total-blocking-time": {
+      "title": "Total Blocking Time",
+      "numericValue": 0,
+      "numericUnit": "millisecond",
+      "displayValue": "0\u00a0ms"
+    },
+    "cumulative-layout-shift": {
+      "title": "Cumulative Layout Shift",
+      "numericValue": 0.003827,
+      "numericUnit": "unitless",
+      "displayValue": "0.004"
+    },
+    "speed-index": {
+      "title": "Speed Index",
+      "numericValue": 574.1854999999998,
+      "numericUnit": "millisecond",
+      "displayValue": "0.6\u00a0s"
+    }
+  }
+}

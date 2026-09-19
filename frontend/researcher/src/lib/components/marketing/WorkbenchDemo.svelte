@@ -122,12 +122,12 @@
         <div class="document-scene">
           <div class="paper">
             <span class="paper-kicker">COMMUNITY HEALTH STUDY</span>
-            <h3>Start with their experience.</h3>
+            <h2>Start with their experience.</h2>
             <p class="paper-intro">
               Interview guide for understanding how people access care in their community.
             </p>
             <div class="paper-rule"></div>
-            <h4>Access to local services</h4>
+            <h3>Access to local services</h3>
             <p>
               Invite participants to describe a recent experience in their own words. Leave room for
               what matters to them.
@@ -241,7 +241,7 @@
         <div class="survey-scene">
           <div class="survey">
             <span class="paper-kicker">PARTICIPANT EXPERIENCE</span>
-            <h3>Make every question count.</h3>
+            <h2>Make every question count.</h2>
             <p>How would you prefer to take part?</p>
             <fieldset>
               <legend class="sr-only">Preferred participation format</legend
@@ -262,7 +262,7 @@
           </div>
           <div class="survey-note">
             <ListChecks size={26} />
-            <h4>The wording is part of the method.</h4>
+            <h3>The wording is part of the method.</h3>
             <p>
               Review question text, choices and notes together. Keep a record of what changed before
               the next round of fieldwork.
@@ -442,11 +442,11 @@
   .paper-kicker {
     font-size: 9px;
     letter-spacing: 1.4px;
-    color: #667b90;
+    color: #5e7184;
     font-weight: 600;
   }
-  .paper h3,
-  .survey h3 {
+  .paper h2,
+  .survey h2 {
     font-size: 24px;
     letter-spacing: -0.8px;
     font-weight: 600;
@@ -466,7 +466,7 @@
     background: #e7ecf1;
     margin: 23px 0;
   }
-  .paper h4 {
+  .paper h3 {
     font-size: 13px;
     margin: 0 0 9px;
     font-weight: 650;
@@ -541,7 +541,7 @@
   .comment-top small {
     display: block;
     font-size: 8px;
-    color: #718196;
+    color: #627082;
   }
   .comment-top > :global(svg) {
     margin-left: auto;
@@ -571,7 +571,7 @@
     display: block;
     font-size: 9px;
     line-height: 1.6;
-    color: #76899c;
+    color: #617080;
     margin-top: 10px;
   }
   .app-status {
@@ -773,7 +773,7 @@
     border: 1px solid #dfe5eb;
     border-radius: 4px;
   }
-  .survey h3 {
+  .survey h2 {
     font-size: 22px;
   }
   .survey p {
@@ -817,7 +817,7 @@
   .survey-note {
     color: #325983;
   }
-  .survey-note h4 {
+  .survey-note h3 {
     font-size: 22px;
     line-height: 1.3;
     font-weight: 550;
@@ -928,7 +928,7 @@
     .paper {
       padding: 28px 30px 18px;
     }
-    .paper h3 {
+    .paper h2 {
       font-size: 22px;
     }
     .comment {
@@ -1008,7 +1008,7 @@
     .paper {
       padding: 24px;
     }
-    .paper h3 {
+    .paper h2 {
       font-size: 23px;
       line-height: 1.2;
     }

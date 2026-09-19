@@ -16,7 +16,9 @@
   onMount(() => modal.showModal());
   let provider = $state<ResearchProvider>('kobo'),
     origin = $state('https://kf.kobotoolbox.org'),
-    token = $state('');
+    token = $state(''),
+    username = $state(''),
+    apiPath = $state('/api/');
   let projects = $state<ResearchChoice[]>([]),
     forms = $state<ResearchChoice[]>([]),
     project = $state(''),
@@ -28,7 +30,17 @@
     const response = await fetch('/api/research', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ provider, origin, token, project, form, action, kind })
+      body: JSON.stringify({
+        provider,
+        origin,
+        token,
+        project,
+        form,
+        action,
+        kind,
+        username,
+        api_path: apiPath
+      })
     });
     const data = await response.json();
     if (!response.ok)
@@ -97,7 +109,7 @@
     <span><Link2 size={20} /></span>
     <div>
       <h2 id="connector-title">Bring in your fieldwork</h2>
-      <p>Connect ODK Central or KoboToolbox.</p>
+      <p>Connect your research tools.</p>
     </div>
     <button
       aria-label="Close research connection"
@@ -118,8 +130,19 @@
       onchange={() => {
         reset();
         token = '';
-        origin = provider === 'kobo' ? 'https://kf.kobotoolbox.org' : '';
-      }}><option value="kobo">KoboToolbox</option><option value="odk">ODK Central</option></select
+        origin =
+          provider === 'kobo'
+            ? 'https://kf.kobotoolbox.org'
+            : provider === 'surveymonkey'
+              ? 'https://api.surveymonkey.com'
+              : '';
+        username = '';
+        kind = ['surveycto', 'surveymonkey'].includes(provider) ? 'submissions' : 'questionnaire';
+      }}
+      ><option value="kobo">KoboToolbox</option><option value="odk">ODK Central</option><option
+        value="redcap">REDCap</option
+      ><option value="surveycto">SurveyCTO</option><option value="surveymonkey">SurveyMonkey</option
+      ></select
     ></label
   >
   <label
@@ -134,7 +157,13 @@
     /></label
   >
   <label
-    >{provider === 'kobo' ? 'Kobo API key' : 'ODK session token'}<input
+    >{provider === 'kobo'
+      ? 'Kobo API key'
+      : provider === 'odk'
+        ? 'ODK session token'
+        : provider === 'surveycto'
+          ? 'API user password'
+          : 'API access token'}<input
       type="password"
       bind:value={token}
       autocomplete="off"
@@ -142,31 +171,46 @@
       oninput={reset}
     /></label
   >
+  {#if provider === 'redcap'}<label
+      >API path<input bind:value={apiPath} placeholder="/redcap/api/" disabled={busy} /></label
+    >{/if}
+  {#if provider === 'surveycto'}<label
+      >API username<input bind:value={username} autocomplete="off" disabled={busy} /></label
+    ><label>Form ID<input bind:value={form} disabled={busy} /></label>{/if}
   <p class="hint">
     {provider === 'kobo'
       ? 'Use the API key from your Kobo account settings. Choose eu.kobotoolbox.org for the European server.'
-      : 'Use a current Central Web User session token with permission to read the project. App User tokens do not provide this access.'}
+      : provider === 'odk'
+        ? 'Use a current Central Web User session token with permission to read the project. App User tokens do not provide this access.'
+        : 'Use an account with API export permission. Provider subscriptions and project permissions may restrict access.'}
     Your token is used for this connection and is not saved.
   </p>
-  <button class="connect" disabled={busy || !origin || !token} onclick={connect}
-    >{busy ? 'Connecting…' : forms.length ? 'Reload questionnaires' : 'Find questionnaires'}</button
-  >
-  {#if projects.length}<label
+  {#if provider !== 'surveycto'}<button
+      class="connect"
+      disabled={busy || !origin || !token}
+      onclick={connect}
+      >{busy
+        ? 'Connecting…'
+        : forms.length
+          ? 'Reload questionnaires'
+          : 'Find questionnaires'}</button
+    >
+  {/if}{#if projects.length}<label
       >Project<select bind:value={project} disabled={busy} onchange={() => void run(loadForms)}
         >{#each projects as item}<option value={item.id}>{item.name}</option>{/each}</select
       ></label
     >{/if}
-  {#if forms.length}
-    <label
-      >Questionnaire<select bind:value={form} disabled={busy}
-        >{#each forms as item}<option value={item.id}>{item.name}</option>{/each}</select
-      ></label
-    >
-    <label
+  {#if forms.length || (provider === 'surveycto' && form && username)}
+    {#if forms.length}<label
+        >Questionnaire<select bind:value={form} disabled={busy}
+          >{#each forms as item}<option value={item.id}>{item.name}</option>{/each}</select
+        ></label
+      >
+    {/if}<label
       >What would you like to bring in?<select bind:value={kind} disabled={busy}
-        ><option value="questionnaire">Questionnaire for editing</option><option value="submissions"
-          >Current responses as a spreadsheet</option
-        ></select
+        >{#if !['surveycto', 'surveymonkey'].includes(provider)}<option value="questionnaire"
+            >Questionnaire for editing</option
+          >{/if}<option value="submissions">Current responses as a spreadsheet</option></select
       ></label
     >
     <p class="hint">

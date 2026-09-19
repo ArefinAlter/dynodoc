@@ -29,6 +29,7 @@ services:
       API_HOST: 0.0.0.0
       API_PORT: 8080
       APP_ENV: production
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-}
       RUST_LOG: info
     depends_on:
       postgres:
@@ -60,6 +61,30 @@ services:
     ports: ['127.0.0.1:3088:3000']
     networks: [engine, conversion, web]
     depends_on: [api]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp:size=64m]
+  admin:
+    build:
+      context: ../..
+      dockerfile: infra/demo/Dockerfile.web
+    restart: unless-stopped
+    environment:
+      ORIGIN: https://admin.dynodoc.online
+      ADMIN_SITE: 'true'
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET}
+      WEB_SERVICE_KEY: ${WEB_SERVICE_KEY:?Set WEB_SERVICE_KEY}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      ENGINE_API_URL: http://api:8080
+      OPS_STATUS_PATH: /app/ops/status.json
+      DEV_AUTH: 'false'
+    ports: ['127.0.0.1:3089:3000']
+    volumes: ['../../ops:/app/ops:ro']
+    networks: [engine, web]
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]

@@ -1,0 +1,13 @@
+{
+  "name": "Dynodoc",
+  "short_name": "Dynodoc",
+  "description": "A shared workspace for research documents, spreadsheets and questionnaires.",
+  "start_url": "/",
+  "display": "browser",
+  "background_color": "#faf9f6",
+  "theme_color": "#2059b0",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

@@ -11,7 +11,12 @@
     busy = $state(false),
     sent = $state(false),
     devToken = $state('');
-  let options = $state({ google: false, email: false, development: false });
+  let options = $state({
+    google: false,
+    email: false,
+    development: false,
+    destination: '/workspace'
+  });
   onMount(async () => {
     const res = await fetch('/auth/options');
     if (res.ok) options = await res.json();
@@ -49,7 +54,11 @@
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       session.authenticated = true;
-      await goto('/workspace');
+      await goto(
+        $page.url.searchParams.get('next') === 'admin' || options.destination === '/admin'
+          ? '/admin'
+          : '/workspace'
+      );
     } catch (e) {
       error = e instanceof Error ? e.message : 'Please request another link.';
     } finally {
@@ -62,7 +71,9 @@
 <main class="auth-page">
   <a href="/" class="back"><ArrowLeft size={16} /> Back to Dynodoc</a>
   <section class="card">
-    <a class="brand" href="/">d<span>.</span></a>
+    <a class="brand" href="https://dynodoc.online"
+      ><img src="/brand/mark.svg" width="52" height="52" alt="Dynodoc" /></a
+    >
     <p class="eyebrow">YOUR RESEARCH, TOGETHER</p>
     <h1>Welcome to your workspace.</h1>
     <p class="intro">A little less file chaos.<br />A lot more room for good research.</p>
@@ -147,7 +158,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    color: #64748b;
+    color: #5b6a7e;
     text-decoration: none;
     font-size: 13px;
   }
@@ -165,13 +176,10 @@
     color: #20559b;
     text-decoration: none;
   }
-  .brand span {
-    color: #79a2d9;
-  }
   .eyebrow {
     font-size: 10px;
     letter-spacing: 2px;
-    color: #617f9d;
+    color: #57728d;
     margin: 24px 0 12px;
   }
   h1 {
@@ -224,7 +232,7 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    color: #88939f;
+    color: #677079;
     font-size: 12px;
     margin: 22px 0;
   }
@@ -259,7 +267,7 @@
   .fine,
   .setup {
     font-size: 11px;
-    color: #788490;
+    color: #66707a;
     line-height: 1.6;
   }
   .fine {
@@ -271,7 +279,7 @@
   .footer {
     text-align: center;
     font-size: 12px;
-    color: #8a94a0;
+    color: #626972;
   }
   .notice {
     display: flex;

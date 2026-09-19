@@ -1114,3 +1114,74 @@ async fn file_import_batches_can_exceed_the_framework_default_limit(pool: PgPool
     assert_eq!(status, StatusCode::OK, "{response}");
     assert_eq!(response["events"].as_array().unwrap().len(), 1);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn operations_dashboard_rejects_regular_members_and_anonymous_readers(pool: PgPool) {
+    let member = seed_identity(&pool, "ordinary-member@example.test").await;
+    let router = app(test_state(pool));
+    assert_eq!(
+        send(&router, get("/admin/overview")).await.0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        send(&router, auth_post_get("/admin/overview", &bearer(member)))
+            .await
+            .0,
+        StatusCode::FORBIDDEN
+    );
+}
+#[sqlx::test(migrations = "../../migrations")]
+async fn performance_samples_need_service_auth_and_are_idempotent(pool: PgPool) {
+    let mut state = test_state(pool.clone());
+    state.auth.service_key = Some("test-service-key".into());
+    let router = app(state);
+    let body = json!({"page_id":Uuid::new_v4(),"metric":"visit","host":"homepage","page":"home","value":1});
+    assert_eq!(
+        send(&router, auth_post("/telemetry", "invalid", &body))
+            .await
+            .0,
+        StatusCode::FORBIDDEN
+    );
+    for _ in 0..2 {
+        let req = Request::builder()
+            .method("POST")
+            .uri("/telemetry")
+            .header("content-type", "application/json")
+            .header("x-dynodoc-service-key", "test-service-key")
+            .body(Body::from(body.to_string()))
+            .unwrap();
+        assert_eq!(send(&router, req).await.0, StatusCode::OK);
+    }
+    let count: i64 = sqlx::query_scalar("select count(*) from web_metric")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 1);
+    let bad = json!({"page_id":Uuid::new_v4(),"metric":"visit","host":"homepage","page":"/documents/private-id","value":1});
+    let req = Request::builder()
+        .method("POST")
+        .uri("/telemetry")
+        .header("content-type", "application/json")
+        .header("x-dynodoc-service-key", "test-service-key")
+        .body(Body::from(bad.to_string()))
+        .unwrap();
+    assert_eq!(send(&router, req).await.0, StatusCode::BAD_REQUEST);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn allowlisted_admin_sees_aggregate_storage_and_no_research_content(pool: PgPool) {
+    let admin = seed_identity(&pool, "operator@example.test").await;
+    let mut state = test_state(pool);
+    state.admin_emails = "operator@example.test".into();
+    let router = app(state);
+    let (status, result) = send(&router, auth_post_get("/admin/overview", &bearer(admin))).await;
+    assert_eq!(status, StatusCode::OK, "{result}");
+    assert_eq!(result["counts"]["accounts"], 1);
+    assert!(result["counts"]["database_bytes"].as_i64().unwrap() > 0);
+    assert!(result["tables"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|t| t["name"] == "document_upload"));
+    assert!(result.get("documents").is_none());
+}

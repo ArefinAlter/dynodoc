@@ -7,7 +7,7 @@ restrictions in 000-initial.md for the researcher product. Existing append-only
 events, stable node identities, immutable migrations, and reproducible history remain
 mandatory. The initial hosted audience is ten researchers. Existing VPS applications
 must be preserved. The owner will deploy the public homepage to Vercel manually,
-initially using its assigned vercel.app domain. Google and email are the first login
+now using `dynodoc.online`. Google and email are the first login
 methods; LinkedIn and GitHub follow later.
 
 ## Product contract
@@ -56,7 +56,7 @@ These are acceptance criteria, not claims of completed work.
 - [x] DOCX, XLSX, CSV, and legacy DOC uploads with explicit conversion reports.
 - [ ] XLSForm interchange for ODK/Kobo/SurveyCTO; validated REDCap and CSPro mappings;
   SurveyMonkey interchange/API compatibility documented against tested capabilities.
-- [ ] Questionnaire authoring and respondent preview with supported logic validation.
+- [x] Questionnaire authoring and respondent preview with supported logic validation.
 - [x] Isolated VPS deployment, HTTPS, durable storage, backups and restore exercise.
 - [x] Vercel homepage build and exact deployment instructions.
 - [ ] Ten-user integration exercise, full browser workflows, accessibility and latency checks.
@@ -65,10 +65,12 @@ The broader public-consultation roadmap remains recorded in stages 22–31. Comp
 the researcher workflows and their acceptance checks before building those layers;
 do not label the full platform complete merely because the team demo is deployed.
 
-As of 19 September 2026, ten of the fourteen pilot criteria above are implemented
-within the documented format/editor limits. Four remain open: real provider login,
-external research-tool validation, executing questionnaire logic, and complete
-researcher/accessibility/load acceptance. Checked editor criteria describe common
+As of 19 September 2026, eleven of the fourteen pilot criteria above are implemented
+within the documented format/editor limits. Three remain open: real provider login and delivery, external research-tool
+validation, and complete researcher/accessibility/load acceptance. Google and
+Resend credentials are installed; the owner confirmed public Google publishing.
+The questionnaire preview executes the documented subset and reports unsupported
+constructs; it does not implement the complete runtime of every survey vendor. Checked editor criteria describe common
 working controls, not complete Google Docs/Sheets compatibility. See `SETUP.md`
 for verification evidence and `../research-compatibility.md` for limitations.
 

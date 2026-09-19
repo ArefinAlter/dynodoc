@@ -30,7 +30,7 @@ export function importXlsForm(sheets: ResearchSheet[], filename: string): Import
   };
   const parents = [rootId],
     warnings = [
-      'XLSForm structure, expressions, custom columns and translations are retained. Preview does not execute survey logic. Validate the exported form in ODK, KoboToolbox or SurveyCTO before deployment.'
+      'XLSForm structure, expressions, custom columns and translations are retained. Preview executes the documented expression subset and flags unsupported logic. Validate the exported form in ODK, KoboToolbox or SurveyCTO before deployment.'
     ];
   let index = 0;
   for (const row of records(survey.rows)) {
@@ -63,6 +63,10 @@ export function importXlsForm(sheets: ResearchSheet[], filename: string): Import
         question_type: questionType,
         group_type: group ? (type.includes('repeat') ? 'repeat' : 'group') : null,
         required: ['yes', 'true', '1'].includes(row.required),
+        required_expression:
+          row.required && !['yes', 'true', '1', 'no', 'false', '0'].includes(row.required)
+            ? row.required
+            : '',
         relevance: row.relevant || '',
         constraint: row.constraint || '',
         constraint_message: row.constraint_message || '',
@@ -234,7 +238,12 @@ export async function exportXlsForm(state: DocumentState, title: string) {
     row.name = n.var_name;
     row[String(n.current_fields.label_column || 'label')] = value(n, 'label');
     row.hint = value(n, 'hint');
-    row.required = n.current_fields.required ? 'yes' : '';
+    // Older imports kept conditional required only in the original XLSForm columns.
+    const originalRequired = String(row.required || '');
+    const requiredExpression =
+      n.current_fields.required_expression ??
+      (['yes', 'true', '1', 'no', 'false', '0'].includes(originalRequired) ? '' : originalRequired);
+    row.required = String(requiredExpression) || (n.current_fields.required ? 'yes' : '');
     row.relevant = value(n, 'relevance');
     row.constraint = value(n, 'constraint');
     row.constraint_message = value(n, 'constraint_message');

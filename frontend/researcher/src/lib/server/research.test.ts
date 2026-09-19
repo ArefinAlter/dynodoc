@@ -128,3 +128,93 @@ describe('research connections', () => {
     expect(kobo).toEqual({ items: [{ id: 'a1', name: 'Questions' }] });
   });
 });
+
+describe('additional research platforms', () => {
+  it('exports REDCap metadata without exposing the token or rewriting logic', async () => {
+    const transport = vi.fn<ResearchTransport>().mockResolvedValue(
+      reply([
+        {
+          field_name: 'age',
+          form_name: 'baseline',
+          field_type: 'text',
+          field_label: 'Age',
+          branching_logic: "[consent] = '1'",
+          required_field: 'y'
+        }
+      ])
+    );
+    const result = await researchRead(
+      {
+        ...base,
+        provider: 'redcap',
+        origin: 'https://research.example.org',
+        api_path: '/redcap/api/',
+        kind: 'questionnaire'
+      },
+      transport
+    );
+    expect(transport.mock.calls[0][0].pathname).toBe('/redcap/api/');
+    expect(transport.mock.calls[0][1]).toBe('');
+    expect(transport.mock.calls[0][2]?.body).toContain('content=metadata');
+    expect(JSON.stringify(result)).not.toContain('test-token');
+    expect(
+      'content_base64' in result && Buffer.from(result.content_base64, 'base64').toString()
+    ).toContain('[consent]');
+  });
+  it('uses SurveyCTO Basic auth only at the selected server and imports values', async () => {
+    const transport = vi
+      .fn<ResearchTransport>()
+      .mockResolvedValue(reply([{ KEY: 'id1', age: 22 }]));
+    const result = await researchRead(
+      { ...base, provider: 'surveycto', origin: 'https://study.surveycto.com', username: 'reader' },
+      transport
+    );
+    expect(transport.mock.calls[0][1]).toBe(
+      'Basic ' + Buffer.from('reader:test-token').toString('base64')
+    );
+    expect(transport.mock.calls[0][0].pathname).toBe('/api/v2/forms/data/wide/json/abc');
+    expect(JSON.stringify(result)).not.toContain('test-token');
+  });
+  it('follows SurveyMonkey pagination and preserves nested response records', async () => {
+    const transport = vi
+      .fn<ResearchTransport>()
+      .mockResolvedValueOnce(
+        reply({
+          data: [{ id: 'a', pages: [{ questions: [] }] }],
+          links: { next: 'https://api.surveymonkey.com/v3/surveys/12/responses/bulk?page=2' }
+        })
+      )
+      .mockResolvedValueOnce(reply({ data: [{ id: 'b', pages: [] }], links: {} }));
+    const result = await researchRead(
+      { ...base, provider: 'surveymonkey', origin: 'https://api.surveymonkey.com', form: '12' },
+      transport
+    );
+    expect(transport).toHaveBeenCalledTimes(2);
+    expect(transport.mock.calls[0][1]).toBe('Bearer test-token');
+    expect(
+      'content_base64' in result && Buffer.from(result.content_base64, 'base64').toString()
+    ).toContain('pages');
+  });
+  it('rejects REDCap path escapes, unexpected provider hosts, and cross-host pages', async () => {
+    const unused = vi.fn<ResearchTransport>();
+    await expect(
+      researchRead({ ...base, provider: 'redcap', api_path: '//attacker.example/api/' }, unused)
+    ).rejects.toThrow('API path');
+    await expect(
+      researchRead({ ...base, provider: 'surveycto', username: 'reader' }, unused)
+    ).rejects.toThrow('surveycto.com');
+    const transport = vi.fn<ResearchTransport>().mockResolvedValue(
+      reply({
+        data: [],
+        links: { next: 'https://attacker.example/v3/surveys/12/responses/bulk?page=2' }
+      })
+    );
+    await expect(
+      researchRead(
+        { ...base, provider: 'surveymonkey', origin: 'https://api.surveymonkey.com', form: '12' },
+        transport
+      )
+    ).rejects.toThrow('different host');
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
+});

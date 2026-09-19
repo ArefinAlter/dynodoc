@@ -1,4 +1,4 @@
-export type ResearchProvider = 'odk' | 'kobo';
+export type ResearchProvider = 'odk' | 'kobo' | 'redcap' | 'surveycto' | 'surveymonkey';
 export interface ResearchSource {
   provider: ResearchProvider;
   origin: string;
@@ -11,6 +11,8 @@ export interface ResearchRequest {
   provider: ResearchProvider;
   origin: string;
   token: string;
+  username?: string;
+  api_path?: string;
   action: 'projects' | 'forms' | 'import';
   project?: string;
   form?: string;

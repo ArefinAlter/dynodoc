@@ -44,38 +44,38 @@
       name: 'REDCap',
       logo: 'redcap.svg',
       url: 'https://projectredcap.org',
-      type: 'File import',
+      type: 'Direct import',
       headline: 'Review your data dictionary as a team.',
       description:
-        'Upload a REDCap data dictionary CSV to work with question text, field names, choices and survey metadata in Dynodoc.',
+        'Import a REDCap data dictionary or response snapshot through its API, or upload a dictionary CSV for team review.',
       value: 'Make instrument revisions easier to discuss before you update the study in REDCap.',
       format: 'Data dictionary CSV',
-      note: 'File compatibility only. Dynodoc does not connect to the REDCap API or execute REDCap branching logic.'
+      note: 'Read-only API imports and dictionary files. Validate branching and calculations in REDCap; changes here are not written back.'
     },
     {
       name: 'SurveyCTO',
       logo: 'surveycto.webp',
       url: 'https://www.surveycto.com',
-      type: 'File import',
+      type: 'Direct import',
       headline: 'Give the next field round a clearer starting point.',
       description:
         'Bring in a SurveyCTO-compatible XLSForm workbook to review its survey structure, question wording and choices together.',
       value:
         'Keep the team’s proposed wording changes in context before returning to your collection workflow.',
       format: 'XLSForm workbook',
-      note: 'File compatibility only. Advanced calculations and constraints need validation in your collection platform before deployment.'
+      note: 'Import response snapshots using an API-enabled SurveyCTO account. XLSForm files remain the questionnaire interchange path; validate advanced logic in SurveyCTO.'
     },
     {
       name: 'SurveyMonkey',
       logo: 'surveymonkey.svg',
       url: 'https://www.surveymonkey.com',
-      type: 'File import',
+      type: 'Direct import',
       headline: 'Make exported responses easier to work through.',
       description:
         'Upload a CSV or XLSX export to a spreadsheet workspace. Organize columns, use formulas and review changes with the rest of your team.',
       value: 'Keep data preparation decisions visible as responses move toward analysis.',
       format: 'CSV · XLSX',
-      note: 'Tabular response imports only. No direct SurveyMonkey API connection or recreation of hosted survey behavior.'
+      note: 'API response snapshots or CSV/XLSX exports. API access depends on your plan and permissions; nested answers retain their original IDs and JSON structure.'
     },
     {
       name: 'CSPro',
@@ -99,7 +99,6 @@
     {#each integrations as item, i}<button
         disabled={!ready}
         aria-pressed={selected === i}
-        aria-label={`Explore ${item.name} integration`}
         onclick={() => (selected = i)}
         ><div
           class="logo"
@@ -217,7 +216,7 @@
   }
   .logos small {
     font-size: 10px;
-    color: #6e7d88;
+    color: #5b6871;
     margin-top: 5px;
   }
   .integration-detail {
@@ -285,7 +284,7 @@
   .diagram-label {
     font-size: 8px;
     letter-spacing: 1px;
-    color: #698097;
+    color: #586c7f;
     margin-bottom: 25px;
   }
   .source-node,
@@ -309,7 +308,7 @@
   .destination-node small {
     display: block;
     font-size: 9px;
-    color: #6f859a;
+    color: #576878;
     margin-top: 3px;
   }
   .connector {
@@ -339,12 +338,12 @@
   .import-diagram > p {
     font-size: 10px;
     line-height: 1.8;
-    color: #647c93;
+    color: #576c80;
     margin: 22px 0 0;
   }
   .trademark-note {
     font-size: 10px;
-    color: #727d86;
+    color: #5d666e;
     line-height: 1.8;
     margin-top: 18px;
     max-width: 800px;

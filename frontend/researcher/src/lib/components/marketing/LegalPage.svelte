@@ -77,7 +77,7 @@
     font-size: 10px;
     font-weight: 600;
     letter-spacing: 1.5px;
-    color: #6e8499;
+    color: #5b6e7f;
     margin: 0 0 22px;
   }
   h1 {
@@ -92,12 +92,12 @@
     font-size: 17px;
     line-height: 1.8;
     max-width: 740px;
-    color: #697e91;
+    color: #5b6e7e;
     margin: 0 0 20px;
   }
   .date {
     font-size: 11px;
-    color: #738597;
+    color: #5e6d7c;
     margin-bottom: 36px;
   }
   .draft-notice {
@@ -108,7 +108,7 @@
     border: 1px solid #e2d8c3;
     border-radius: 6px;
     margin-bottom: 48px;
-    color: #786b4d;
+    color: #6e6247;
   }
   .draft-notice > :global(svg) {
     flex-shrink: 0;
@@ -142,12 +142,12 @@
     font-size: 9px;
     letter-spacing: 1.1px;
     font-weight: 650;
-    color: #8092a3;
+    color: #606d7a;
     margin-bottom: 7px;
   }
   nav > a {
     font-size: 11px;
-    color: #637c94;
+    color: #586e84;
     text-decoration: none;
     line-height: 1.6;
   }
@@ -201,7 +201,7 @@
   article :global(li) {
     font-size: 13px;
     line-height: 1.95;
-    color: #63798d;
+    color: #576a7c;
   }
   article :global(p) {
     margin: 12px 0;
@@ -247,7 +247,7 @@
     padding: 14px;
     border-bottom: 1px solid #e2e8ef;
     vertical-align: top;
-    color: #637b91;
+    color: #586d81;
     line-height: 1.9;
   }
   article :global(tr:last-child td) {
@@ -282,7 +282,7 @@
   }
   article :global(dd) {
     margin: 0;
-    color: #7c8891;
+    color: #636d74;
   }
   @media (max-width: 850px) {
     main {

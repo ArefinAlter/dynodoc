@@ -20,7 +20,7 @@
 //! ([`crate::merge`]) runs it on every proposed merged state — the §C.3.6 "silent
 //! semantic breakage" defense. The richer stage-21 checks parse expressions via
 //! [`crate::expr`]; the existing `${var}` scan ([`extract_var_refs`]) still backs the
-//! dangling/cycle logic, and an unparseable expression degrades gracefully.
+//! dangling/cycle logic, and expressions outside the supported grammar block deployment explicitly.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -33,7 +33,12 @@ use crate::materializer::{DocumentState, MaterializedNode};
 /// The `current_fields` keys whose string values are reference-bearing expressions
 /// (docs/21 item 2: relevance, constraint, calculation). All are scanned for `${var}`
 /// references and parsed for the richer type/choice checks.
-const EXPRESSION_FIELDS: [&str; 3] = ["relevance", "constraint", "calculation"];
+const EXPRESSION_FIELDS: [&str; 4] = [
+    "relevance",
+    "constraint",
+    "calculation",
+    "required_expression",
+];
 
 /// The set of `current_fields["type"]` values that are non-numeric — applying an
 /// arithmetic or ordering operator to a var of one of these types is a clear mismatch.
@@ -67,6 +72,11 @@ pub enum IntegrityViolation {
     /// (`text` / `select_one` / `select_multiple`). Equality (`= !=`) is never flagged
     /// — it is valid on any type — and a var whose type is absent/unknown is left
     /// alone, so the check is conservative and avoids false positives.
+    InvalidExpression {
+        node_id: NodeId,
+        field: String,
+        reason: String,
+    },
     TypeMismatch {
         node_id: NodeId,
         /// Which expression field carried the operation.
@@ -142,17 +152,19 @@ pub fn validate_integrity(state: &DocumentState) -> Vec<IntegrityViolation> {
     violations.extend(find_relevance_cycles(&live, &by_var));
 
     // Type-mismatch and choice-reference checks. These need expression *shape*, so we
-    // parse with the recursive-descent `expr` parser. An unparseable expression
-    // degrades gracefully: the existing `${var}` scan above already covered its
-    // dangling/cycle refs, and a parse failure here simply contributes no shape-based
-    // violation (we do not panic and we do not invent a violation). `node_var_type`
-    // maps each live var to its node's declared data type; `choices_by_node` indexes
+    // Parse supported expression syntax. Invalid/unsupported syntax must not be
+    // interpreted as a successful validation. Imported vendor extensions remain
+    // editable, but deployment requires validation in their destination platform.
+    // Build the variable type map and
     // live choice values under their parent select node.
     let mut node_var_type: BTreeMap<&str, &str> = BTreeMap::new();
     for node in &live {
         if let (Some(var), Some(ty)) = (
             node.var_name.as_deref().filter(|v| !v.is_empty()),
-            node.current_fields.get("type").and_then(|v| v.as_str()),
+            node.current_fields
+                .get("question_type")
+                .or_else(|| node.current_fields.get("type"))
+                .and_then(|v| v.as_str()),
         ) {
             node_var_type.insert(var, ty);
         }
@@ -189,8 +201,19 @@ pub fn validate_integrity(state: &DocumentState) -> Vec<IntegrityViolation> {
             let Some(text) = node.current_fields.get(field).and_then(|v| v.as_str()) else {
                 continue;
             };
-            let Ok(ast) = expr::parse(text) else {
-                continue; // unparseable -> no shape-based violation (graceful degrade)
+            if text.trim().is_empty() {
+                continue;
+            }
+            let ast = match expr::parse(text) {
+                Ok(ast) => ast,
+                Err(error) => {
+                    violations.push(IntegrityViolation::InvalidExpression {
+                        node_id: node.id.clone(),
+                        field: field.to_string(),
+                        reason: error.to_string(),
+                    });
+                    continue;
+                }
             };
 
             // Type mismatches: a numeric operator over a non-numeric var.
@@ -698,6 +721,27 @@ mod tests {
             .all(|v| !matches!(v, IntegrityViolation::UndefinedChoice { .. })));
     }
 
+    #[test]
+    fn malformed_logic_is_not_a_clean_instrument() {
+        let state = state_of(vec![node(
+            "01A",
+            Some("age"),
+            json!({"constraint":". > ("}),
+        )]);
+        assert!(validate_integrity(&state)
+            .iter()
+            .any(|v| matches!(v, IntegrityViolation::InvalidExpression { .. })));
+    }
+    #[test]
+    fn workspace_question_type_participates_in_validation() {
+        let state = state_of(vec![
+            node("01A", Some("name"), json!({"question_type":"text"})),
+            node("01B", Some("total"), json!({"calculation":"${name} + 2"})),
+        ]);
+        assert!(validate_integrity(&state)
+            .iter()
+            .any(|v| matches!(v, IntegrityViolation::TypeMismatch { .. })));
+    }
     #[test]
     fn calculation_field_is_scanned_for_dangling_refs() {
         let state = state_of(vec![node(

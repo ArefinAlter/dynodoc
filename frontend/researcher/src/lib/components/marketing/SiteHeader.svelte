@@ -5,7 +5,7 @@
     ready = true;
   });
   import { env } from '$env/dynamic/public';
-  import { ArrowUpRight, Layers2, Menu, X } from '@lucide/svelte';
+  import { ArrowUpRight, Menu, X } from '@lucide/svelte';
   let open = $state(false);
   const workspace = $derived(
     env.PUBLIC_WORKSPACE_URL
@@ -17,7 +17,7 @@
 <a class="skip" href="#main">Skip to content</a>
 <header>
   <a class="brand" href="/" aria-label="Dynodoc home"
-    ><span><Layers2 size={23} strokeWidth={2} /></span>dynodoc<span class="dot">.</span></a
+    ><img src="/brand/mark.svg" width="35" height="37" alt="" />dynodoc<span class="dot">.</span></a
   >
   <nav aria-label="Main navigation" class:open>
     <a href="/#workspace" onclick={() => (open = false)}>The workspace</a>
@@ -58,11 +58,9 @@
     color: #1a3045;
     text-decoration: none;
   }
-  .brand > span:first-child {
+  .brand > img {
     display: grid;
     place-items: center;
-    background: #2059b0;
-    color: white;
     width: 35px;
     height: 37px;
     border-radius: 7px;
@@ -139,7 +137,7 @@
       font-size: 23px;
       gap: 8px;
     }
-    .brand > span:first-child {
+    .brand > img {
       width: 30px;
       height: 32px;
     }

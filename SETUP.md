@@ -660,3 +660,47 @@ Outstanding: owner Google/Resend configuration and delivery tests, manual Vercel
 publication, study-specific acceptance with the ten real researchers, external
 research platform validation, a complete accessibility audit and broader load tests.
 See [the current assessment](docs/PROJECT-STATUS.md) for remaining product work.
+
+
+## Public identity, operations and research connections — 19 September 2026
+
+This verification supersedes the older counts and missing-feature notes above.
+
+- Rust workspace: **149 tests passed** against disposable PostgreSQL 16, including
+  admin allowlisting/denial, telemetry validation/deduplication, malformed survey
+  expressions and workspace question-type checks. Clippy with warnings denied and
+  Rust formatting passed. The final conditional-required field inclusion also
+  passed the 72-test core suite.
+- Frontend: **57 unit tests passed**, lint passed, Svelte reports zero errors and
+  warnings. Node and Vercel builds passed. A large editor chunk warning remains.
+- **18 browser scenarios passed** against the isolated local API/web stack.
+  The final public/admin changes passed the 10 relevant scenarios again, with
+  WCAG A/AA and accessibility best-practice rules enabled. New cases cover actual
+  conditional visibility/constraints/calculations, absence of persisted preview
+  answers, admin counters/member denial, sitemap/metadata/icons and legal pages.
+  These automated rules do not replace keyboard/screen-reader testing with researchers.
+- A local desktop Lighthouse run measured Performance **100**, Accessibility **100**,
+  Best Practices **100**, LCP **0.6 s**, total blocking time **0 ms**, CLS **0.004**.
+  This is one synthetic localhost run, not production field performance or a
+  ten-researcher latency guarantee. SEO scored 69 because localhost deliberately
+  returns noindex and Disallow; the public production host has different rules.
+  The report summary is in `docs/verification/2026-09-19-lighthouse.json`.
+- Connections now include REDCap metadata/records, SurveyCTO wide responses and
+  SurveyMonkey discovery/bulk responses, alongside ODK/Kobo. Fixture tests verify
+  request authentication, mapping, pagination and limits. No real study-account
+  acceptance is claimed. See `docs/RESEARCH-CONNECTIONS.md`.
+- Survey preview runs the explicitly documented XLSForm subset without eval and
+  reports unsupported constructs. Conditional required expressions are preserved
+  in new imports and older source columns. Vendor runtime parity remains outside
+  this verification.
+
+Local browser tests use synthetic admin `admin@example.test` in `ADMIN_EMAILS`.
+The live allowlist uses only the owner's configured address. Development sign-in
+is disabled on both public hosts. Google/Resend real sign-in, external study data,
+manual accessibility, load acceptance and off-server recovery remain open.
+
+Live release verification also passed for both HTTPS hosts, exact Google callback
+routing with S256 PKCE, public provider flags, admin denial for a synthetic member,
+anonymous data rejection, eleven applied migrations, a fresh collector/backup
+checksum, preserved original files/version/hash chain, and admin certificate renewal
+including its Nginx deploy hook. Existing unrelated container IDs were unchanged.

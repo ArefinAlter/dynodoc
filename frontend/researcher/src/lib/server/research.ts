@@ -8,7 +8,11 @@ export class ResearchError extends Error {}
 
 const maximumBytes = 10 * 1024 * 1024;
 type Reply = { status: number; body: Buffer };
-export type ResearchTransport = (url: URL, authorization: string) => Promise<Reply>;
+export type ResearchTransport = (
+  url: URL,
+  authorization: string,
+  init?: { method: 'POST'; body: string }
+) => Promise<Reply>;
 
 export function researchOrigin(input: string): URL {
   const url = new URL(input);
@@ -52,7 +56,7 @@ export function publicIPv4(address: string): boolean {
 
 // Resolve once, reject non-public addresses and pin the verified address to this TLS
 // connection. Redirects are not followed, so credentials cannot leave the selected host.
-export const researchGet: ResearchTransport = async (url, authorization) => {
+export const researchGet: ResearchTransport = async (url, authorization, init) => {
   const addresses = await lookup(url.hostname, { family: 4, all: true });
   if (!addresses.length || addresses.some(({ address }) => !publicIPv4(address)))
     throw new ResearchError('This connector requires a publicly reachable HTTPS research server.');
@@ -60,11 +64,21 @@ export const researchGet: ResearchTransport = async (url, authorization) => {
     const req = httpsRequest(
       url,
       {
-        method: 'GET',
+        method: init?.method || 'GET',
         agent: false,
         family: 4,
         servername: url.hostname,
-        headers: { authorization, accept: '*/*', 'accept-encoding': 'identity' },
+        headers: {
+          ...(authorization ? { authorization } : {}),
+          accept: '*/*',
+          'accept-encoding': 'identity',
+          ...(init
+            ? {
+                'content-type': 'application/x-www-form-urlencoded',
+                'content-length': Buffer.byteLength(init.body)
+              }
+            : {})
+        },
         lookup: (_hostname, _options, callback) => callback(null, addresses[0].address, 4),
         signal: AbortSignal.timeout(20_000)
       },
@@ -86,11 +100,11 @@ export const researchGet: ResearchTransport = async (url, authorization) => {
       }
     );
     req.on('error', reject);
-    req.end();
+    req.end(init?.body);
   });
 };
 
-function identifier(value: unknown, numeric = false): string {
+export function identifier(value: unknown, numeric = false): string {
   if (
     typeof value !== 'string' ||
     !value ||
@@ -155,17 +169,19 @@ export async function researchRead(
 ): Promise<{ items: ResearchChoice[] } | ResearchFile> {
   const base = researchOrigin(input.origin);
   if (
-    !['odk', 'kobo'].includes(input.provider) ||
+    !['odk', 'kobo', 'redcap', 'surveycto', 'surveymonkey'].includes(input.provider) ||
     !['projects', 'forms', 'import'].includes(input.action)
   )
-    throw new ResearchError('Choose ODK Central or KoboToolbox and a supported action.');
+    throw new ResearchError('Choose a supported research tool and action.');
   if (
     typeof input.token !== 'string' ||
     !input.token.trim() ||
     input.token.length > 4096 ||
-    /\s/.test(input.token)
+    (input.provider !== 'surveycto' && /\s/.test(input.token))
   )
     throw new ResearchError('Enter the API key or ODK session token without spaces.');
+  if (['redcap', 'surveycto', 'surveymonkey'].includes(input.provider))
+    return (await import('./research-vendors')).vendorRead(input, transport);
   const authorization = `${input.provider === 'odk' ? 'Bearer' : 'Token'} ${input.token}`;
   let downloaded = 0;
   const get = async (path: string) => {

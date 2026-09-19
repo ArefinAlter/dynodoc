@@ -42,15 +42,15 @@ test('research workflow and integration explanations reflect the selected tool',
   await expect(
     page.getByRole('heading', { name: 'Keep the reasoning close to the dataset.' })
   ).toBeVisible();
-  await page.getByRole('button', { name: 'Explore KoboToolbox integration' }).click();
+  await page.getByRole('button', { name: /KoboToolbox.*Connect & import/ }).click();
   await expect(
     page.getByRole('heading', { name: 'Give your Kobo project a shared working space.' })
   ).toBeVisible();
   await expect(
     page.getByText(/Repeat imports create new snapshots, without automatic synchronization./)
   ).toBeVisible();
-  await page.getByRole('button', { name: 'Explore REDCap integration' }).click();
-  await expect(page.getByText(/Dynodoc does not connect to the REDCap API/)).toBeVisible();
+  await page.getByRole('button', { name: /REDCap.*Connect & import/ }).click();
+  await expect(page.getByText(/Read-only API imports and dictionary files/)).toBeVisible();
 });
 
 test('legal pages are linked, readable on mobile and explicitly marked as drafts', async ({
@@ -131,7 +131,7 @@ test('homepage controls wait for hydration on a slow connection', async ({ page 
     ).toBeDisabled();
     await expect(page.getByRole('button', { name: 'Try this wording' })).toBeDisabled();
     await expect(
-      page.getByRole('button', { name: 'Explore KoboToolbox integration' })
+      page.getByRole('button', { name: /KoboToolbox.*Connect & import/ })
     ).toBeDisabled();
     resumeScripts();
     await page.getByRole('button', { name: 'Prepare the data', exact: true }).click();
