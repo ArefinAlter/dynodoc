@@ -11,10 +11,10 @@ your GitHub repository. The VPS deployment does not push code to GitHub.
 3. Add this environment variable for production and preview builds:
 
    ```dotenv
-   PUBLIC_WORKSPACE_URL=https://dynodoc.103.191.50.32.sslip.io
+   PUBLIC_WORKSPACE_URL=https://app.dynodoc.online
    ```
 
-4. Deploy. The default `*.vercel.app` address is enough. Check the navigation, document/sheet/questionnaire examples, draft comparison, integration explorer, mobile layout and reduced-motion preference. Workspace calls to action should lead to the HTTPS VPS workspace. The `/privacy` and `/terms` pages are available on both hosts; they are visibly marked as drafts until operator details and jurisdiction are confirmed.
+4. Deploy. The homepage is now live at `https://dynodoc.online`; keep its existing Vercel domain configuration. Check the navigation, document/sheet/questionnaire examples, draft comparison, integration explorer, mobile layout and reduced-motion preference. Workspace calls to action should lead to the HTTPS VPS workspace. The `/privacy` and `/terms` pages are available on both hosts; they are visibly marked as drafts until operator details and jurisdiction are confirmed.
 5. Configure Google and Resend on the VPS using [the sign-in guide](GOOGLE-AND-EMAIL-SETUP.md). Do not copy the database, signing or email secrets to the homepage project.
 
 Vercel deployment is intentionally left to the owner, as requested. A Vercel homepage deployment alone does not deploy the PostgreSQL database, Rust API or Word converter.
@@ -28,7 +28,7 @@ docker compose --env-file infra/demo/.env -f infra/demo/compose.yml logs --tail 
 ./infra/demo/backup.sh
 ```
 
-The project's containers, network and data volume use the `dynodoc-demo` prefix. Only the web service publishes a host port, `127.0.0.1:3088`. Nginx handles the dedicated HTTPS hostname. The database, API and conversion service are not publicly exposed.
+The project's containers, network and data volume use the `dynodoc-demo` prefix. Only the web service publishes a host port, `127.0.0.1:3088`. Nginx handles the dedicated HTTPS hostname. The database, API and conversion service are not publicly exposed. The workspace uses `https://app.dynodoc.online`, with a separate registrar A record pointing `app` to `103.191.50.32`. See [the domain and backend verification record](DOMAIN-AND-BACKEND.md).
 
 Backups are PostgreSQL custom archives containing documents, events, versions, identities and original uploaded files. The backup script validates the archive and keeps 14 days. Copy backups to another host or object storage before relying on this VPS for irreplaceable research data; off-site backup is not configured by this repository.
 
