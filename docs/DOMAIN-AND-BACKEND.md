@@ -100,8 +100,9 @@ converter containers were preserved.
 
 The owner still needs to:
 
-- Redeploy the updated Vercel homepage from main if its Git integration does not
-  deploy automatically; use `PUBLIC_WORKSPACE_URL=https://app.dynodoc.online`.
+- Keep `PUBLIC_WORKSPACE_URL=https://app.dynodoc.online` in Vercel. The Git
+  integration has now deployed this release automatically; the new SVG and sitemap
+  were verified on the public domain.
 - Confirm actual Google login and email-link delivery; check Resend domain
   verification and DNS in the provider dashboard if delivery fails.
 - Add the Search Console domain TXT verification and submit the sitemap after

@@ -671,7 +671,7 @@ This verification supersedes the older counts and missing-feature notes above.
   expressions and workspace question-type checks. Clippy with warnings denied and
   Rust formatting passed. The final conditional-required field inclusion also
   passed the 72-test core suite.
-- Frontend: **57 unit tests passed**, lint passed, Svelte reports zero errors and
+- Frontend: **59 unit tests passed**, lint passed, Svelte reports zero errors and
   warnings. Node and Vercel builds passed. A large editor chunk warning remains.
 - **18 browser scenarios passed** against the isolated local API/web stack.
   The final public/admin changes passed the 10 relevant scenarios again, with
@@ -704,3 +704,18 @@ routing with S256 PKCE, public provider flags, admin denial for a synthetic memb
 anonymous data rejection, eleven applied migrations, a fresh collector/backup
 checksum, preserved original files/version/hash chain, and admin certificate renewal
 including its Nginx deploy hook. Existing unrelated container IDs were unchanged.
+
+Cross-host telemetry uses JSON with explicit first-party CORS preflight and
+`credentials: omit`; SvelteKit's form CSRF protection remains enabled. Two added
+regressions verify origin/method restrictions and removal of unexpected identity
+fields. Live browser checks observed 204 responses from the public homepage and
+admin host, with samples stored under their respective host categories.
+
+The final desktop Lighthouse run against **https://dynodoc.online/** scored
+**100 Performance / 100 Accessibility / 100 Best Practices / 100 SEO**, with
+LCP **0.4 s**, TBT **0 ms**, CLS **0.004**, no console errors and public crawlability.
+See `docs/verification/2026-09-19-production-lighthouse.json`. This supersedes the
+local-host SEO observation for the public release. It is one synthetic run; real
+performance depends on the visitor, connection and workload. The admin dashboard
+now receives actual samples from homepage, workspace and admin hosts.
+A fresh post-release database backup passed structure and checksum checks.
