@@ -11,7 +11,8 @@ performed while writing this file. No secrets are included.
 
 ## Continuation: web product operations
 
-The subsequent working increment is described in
+The subsequent release `e73db39` is committed, pushed and live on Vercel and the VPS.
+Rust, frontend and authenticated browser CI pass. It is described in
 [decision 005](decisions/005-product-operations-and-recovery.md) and
 [release evidence](PRODUCT-OPERATIONS-RELEASE.md). Those records supersede the
 baseline descriptions below for admin erasure, threaded discussions, recovery,
