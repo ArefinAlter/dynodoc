@@ -104,6 +104,7 @@ string_enum!(
         NodeDeleted => "NodeDeleted",
         NodeRestored => "NodeRestored",
         FieldEdited => "FieldEdited",
+        RichTextPatched => "RichTextPatched",
         ChoiceAdded => "ChoiceAdded",
         ChoiceRemoved => "ChoiceRemoved",
         CommentAdded => "CommentAdded",

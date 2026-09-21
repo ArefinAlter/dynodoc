@@ -52,6 +52,11 @@ fn select(
     if team == base {
         return draft;
     }
+    if field == "content" {
+        if let Some(merged) = crate::richtext::merge(&base, &team, &draft) {
+            return merged;
+        }
+    }
     let key = format!("{}:{field}", id.0);
     match resolutions.get(&key).map(String::as_str) {
         Some("draft") => draft,
@@ -144,6 +149,13 @@ pub fn merge(
             )
             .collect();
         for key in keys {
+            if key == "label"
+                && b.current_fields["content"].is_object()
+                && t.current_fields["content"].is_object()
+                && d.current_fields["content"].is_object()
+            {
+                continue;
+            }
             let v = select(
                 id,
                 key,
@@ -156,6 +168,13 @@ pub fn merge(
             if !v.is_null() || n.current_fields.get(key).is_some() {
                 n.current_fields[key] = v;
             }
+        }
+        if b.current_fields["content"].is_object()
+            && t.current_fields["content"].is_object()
+            && d.current_fields["content"].is_object()
+        {
+            n.current_fields["label"] =
+                json!(crate::richtext::plain_text(&n.current_fields["content"]));
         }
         out.nodes.insert(id.clone(), n);
     }
@@ -226,13 +245,26 @@ pub fn diff(from: &DocumentState, to: &DocumentState) -> Vec<EventPayload> {
                     .flat_map(|o| o.keys()),
             )
             .collect();
+        let mut derived_label = None;
         for field in keys {
-            if p.current_fields[field] != n.current_fields[field] {
-                result.push(EventPayload::FieldEdited {
+            let before = if field == "label" {
+                derived_label.as_ref().unwrap_or(&p.current_fields[field])
+            } else {
+                &p.current_fields[field]
+            };
+            if *before != n.current_fields[field] {
+                let op = EventPayload::FieldEdited {
                     node_id: n.id.clone(),
                     field: field.clone(),
                     value: n.current_fields[field].clone(),
-                });
+                };
+                let compact = crate::richtext::compact_event(&from, &op);
+                if matches!(compact, EventPayload::RichTextPatched { .. }) {
+                    derived_label = Some(json!(crate::richtext::plain_text(
+                        &n.current_fields["content"]
+                    )));
+                }
+                result.push(compact);
             }
         }
         if p.var_name != n.var_name {

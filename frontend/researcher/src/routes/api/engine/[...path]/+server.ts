@@ -9,6 +9,22 @@ const proxy: RequestHandler = async ({ request, url, cookies, params }) => {
     return json({ error: 'Invalid origin' }, { status: 403 });
   const token = await accessToken(cookies, url.protocol === 'https:');
   if (!token) return json({ error: 'Please sign in' }, { status: 401 });
+  // New readers are deployed before the engine starts recording compact events.
+  // Old tabs must reload instead of silently skipping an unknown event variant.
+  const originalDownload =
+    request.method === 'GET' && /^documents\/[^/]+\/uploads\/[^/]+$/.test(params.path);
+  if (
+    params.path.startsWith('documents/') &&
+    !originalDownload &&
+    request.headers.get('x-dynodoc-editor') !== 'richtext-v1'
+  )
+    return json(
+      {
+        error:
+          'Dynodoc has updated its document history. Copy any unsaved text, then reload this tab before continuing.'
+      },
+      { status: 409 }
+    );
   const headers = new Headers({ authorization: `Bearer ${token}` });
   for (const name of ['content-type', 'idempotency-key', 'last-event-id']) {
     const value = request.headers.get(name);

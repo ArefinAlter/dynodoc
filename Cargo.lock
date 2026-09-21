@@ -568,6 +568,7 @@ dependencies = [
  "ring",
  "serde",
  "serde_json",
+ "similar",
  "sqlx",
  "thiserror 1.0.69",
  "tokio",

@@ -73,7 +73,8 @@ pub async fn apply_checked_op(
     {
         let changed: bool = sqlx::query_scalar(
             "select exists(select 1 from event where document_id=$1 and seq>$2
-             and target_node_id=$3 and type='FieldEdited' and payload->>'field'=$4)",
+             and target_node_id=$3 and ((type='FieldEdited' and payload->>'field'=$4)
+             or (type='RichTextPatched' and $4 in ('content','label'))))",
         )
         .bind(document_id.0)
         .bind(base)
@@ -89,6 +90,7 @@ pub async fn apply_checked_op(
             return Err(ApiError::Conflict { reason: "Another researcher changed this field. Review the latest version before saving your change.".into() });
         }
     }
+    let op = engine_core::richtext::compact_event(&current, &op);
     materialize_node_change(&mut tx, document_id, &op).await?;
     let inserted = log::append_in_tx(&mut tx, document_id, &op, actor)
         .await
@@ -121,6 +123,7 @@ pub async fn accept_proposal(
 
     // The wrapped op an accept must append, re-validated against current state.
     let wrapped = governance::plan_acceptance(role, &current, suggestion_id)?;
+    let wrapped = engine_core::richtext::compact_event(&current, &wrapped);
     let accepted = EventPayload::SuggestionAccepted {
         suggestion_id: suggestion_id.to_string(),
     };
@@ -171,6 +174,24 @@ pub(crate) async fn materialize_node_change(
     op: &EventPayload,
 ) -> Result<(), ApiError> {
     match op {
+        EventPayload::RichTextPatched { node_id, patch } => {
+            let fields: Value = sqlx::query_scalar(
+                "select current_fields from node where id=$1 and document_id=$2",
+            )
+            .bind(&node_id.0)
+            .bind(document_id.0)
+            .fetch_one(&mut **tx)
+            .await?;
+            let content =
+                engine_core::richtext::apply_patch(&fields["content"], patch).map_err(|e| {
+                    ApiError::BadRequest {
+                        reason: e.to_string(),
+                    }
+                })?;
+            let label = engine_core::richtext::plain_text(&content);
+            sqlx::query("update node set current_fields=current_fields || jsonb_build_object('content',$3::jsonb,'label',$4::text),updated_at=now() where id=$1 and document_id=$2")
+                .bind(&node_id.0).bind(document_id.0).bind(content).bind(label).execute(&mut **tx).await?;
+        }
         EventPayload::NodeCreated {
             node_id,
             node_type,

@@ -32,6 +32,7 @@ export type EventTypeName =
   | 'NodeDeleted'
   | 'NodeRestored'
   | 'FieldEdited'
+  | 'RichTextPatched'
   | 'ChoiceAdded'
   | 'ChoiceRemoved'
   | 'CommentAdded'
@@ -117,6 +118,11 @@ export type EventPayload =
   | { type: 'NodeDeleted'; node_id: string }
   | { type: 'NodeRestored'; node_id: string }
   | { type: 'FieldEdited'; node_id: string; field: string; value: unknown }
+  | {
+      type: 'RichTextPatched';
+      node_id: string;
+      patch: import('../workspace/richtext').RichTextPatch;
+    }
   | { type: 'ChoiceAdded'; node_id: string; choice_id: string; fields?: unknown }
   | { type: 'ChoiceRemoved'; node_id: string; choice_id: string }
   | { type: 'CommentAdded'; node_id?: string | null; body: string }

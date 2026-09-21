@@ -159,6 +159,11 @@ The original PoC stages have implementations, with verification limits recorded 
 [the current assessment](docs/PROJECT-STATUS.md). Public consultation, ML and civic
 identity remain future work.
 
+The rich-text engine now records compact formatting-aware changes and merges
+independent edits within text paragraphs. See [the research and implementation
+record](docs/RICH-TEXT-VERSIONING-RESEARCH.md) for the run model, prior art,
+benchmarks, current import limits, and the remaining storage/CRDT work.
+
 ## Getting started
 
 Full prerequisites and verified setup notes are in **[SETUP.md](SETUP.md)**. Quick start:

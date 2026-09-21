@@ -182,8 +182,31 @@ impl BranchDelta {
         let mut field_edits: BTreeMap<(NodeId, String), Value> = BTreeMap::new();
         let mut created: BTreeMap<NodeId, EventPayload> = BTreeMap::new();
         let mut structural: Vec<EventPayload> = Vec::new();
+        let mut current = ancestor.clone();
 
         for payload in branch {
+            // Compact canonical events carry the same field semantics as legacy
+            // full values. Expand against this branch's own sequential base.
+            let expanded;
+            let payload = if let EventPayload::RichTextPatched { node_id, .. } = payload {
+                match apply_payload(&mut current, payload) {
+                    Ok(()) => {
+                        expanded = EventPayload::FieldEdited {
+                            node_id: node_id.clone(),
+                            field: "content".into(),
+                            value: current.nodes[node_id].current_fields["content"].clone(),
+                        };
+                        &expanded
+                    }
+                    Err(_) => {
+                        structural.push(payload.clone());
+                        continue;
+                    }
+                }
+            } else {
+                let _ = apply_payload(&mut current, payload);
+                payload
+            };
             match payload {
                 EventPayload::FieldEdited {
                     node_id,
@@ -261,10 +284,16 @@ fn integrity_of_merged(
     auto_merged_events: &[EventPayload],
 ) -> Vec<IntegrityViolation> {
     let mut merged = ancestor.clone();
+    let mut failures = Vec::new();
     for payload in auto_merged_events {
-        let _ = apply_payload(&mut merged, payload);
+        if let Err(error) = apply_payload(&mut merged, payload) {
+            failures.push(IntegrityViolation::InvalidOperation {
+                reason: error.to_string(),
+            });
+        }
     }
-    validate_integrity(&merged)
+    failures.extend(validate_integrity(&merged));
+    failures
 }
 
 #[cfg(test)]

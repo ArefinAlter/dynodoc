@@ -30,6 +30,7 @@
   import WorkbenchDemo from '$lib/components/marketing/WorkbenchDemo.svelte';
   import VersionFlow from '$lib/components/marketing/VersionFlow.svelte';
   import IntegrationExplorer from '$lib/components/marketing/IntegrationExplorer.svelte';
+  import RichTextHistory from '$lib/components/marketing/RichTextHistory.svelte';
   const workspace = $derived(
     env.PUBLIC_WORKSPACE_URL
       ? `${env.PUBLIC_WORKSPACE_URL.replace(/\/$/, '')}/workspace`
@@ -120,20 +121,20 @@
   <!-- Static application metadata, with no user-provided values. -->
   <!-- eslint-disable-next-line svelte/no-at-html-tags -->
   {@html structuredDataScript}
-  <title>Dynodoc — A clearer way to work on research, together</title>
+  <title>Dynodoc — Version control for research documents</title>
   <meta
     name="description"
-    content="Write research documents, work with spreadsheets and refine questionnaires in a shared workspace. Explore drafts, review changes and keep the history behind your work."
+    content="Version control for rich-text research documents. Keep wording, formatting and authorship in view. Explore personal drafts, combine changes and return to earlier versions."
   />
-  <meta property="og:title" content="Dynodoc — Your research, in good company." />
+  <meta property="og:title" content="Dynodoc — Version control for research documents" />
   <meta
     property="og:description"
-    content="Familiar editors for documents, spreadsheets and questionnaires. A clearer record of how the work takes shape."
+    content="Keep wording, formatting and authorship in view. Personal drafts, shared changes and a document history you can return to."
   />
-  <meta name="twitter:title" content="Dynodoc — Your research, in good company." />
+  <meta name="twitter:title" content="Dynodoc — Version control for research documents" />
   <meta
     name="twitter:description"
-    content="Familiar editors for documents, spreadsheets and questionnaires. A clearer record of how the work takes shape."
+    content="Keep wording, formatting and authorship in view. Personal drafts, shared changes and a document history you can return to."
   />
   <meta name="theme-color" content="#faf9f6" />
 </svelte:head>
@@ -142,25 +143,26 @@
   <main id="main" use:reveal>
     <section class="hero wrap" aria-labelledby="hero-heading">
       <div class="hero-copy">
-        <p class="eyebrow"><span></span> THE SHARED WORKSPACE FOR RESEARCH</p>
-        <h1 id="hero-heading">Your research,<br />in <span>good company.</span></h1>
+        <p class="eyebrow"><span></span> VERSION CONTROL FOR RESEARCH DOCUMENTS</p>
+        <h1 id="hero-heading">Every edit.<br />Every version.<br /><span>Your document.</span></h1>
       </div>
       <div class="hero-intro">
         <p>
-          From the first question to the next discovery, give your team a better place to work
-          together.
+          Give your documents a history that understands the words, the formatting and the people
+          behind each change.
         </p>
         <p class="hero-detail">
-          Write documents. Work with data. Refine questionnaires. Keep the changes, conversations
-          and earlier versions within reach.
+          Write in a familiar editor. Explore a personal draft, combine your team’s changes and
+          return to an earlier version whenever you need. Research documents, spreadsheets and
+          questionnaires, together.
         </p>
         <div class="hero-actions">
-          <a class="primary-link" href={workspace}
-            >Bring your research together <ArrowUpRight size={17} /></a
+          <a class="primary-link" href={workspace}>Start your document <ArrowUpRight size={17} /></a
           ><a class="text-link" href="#workspace">Explore the workspace <ArrowRight size={15} /></a>
         </div>
       </div>
     </section>
+    <RichTextHistory />
     <section id="workspace" class="product-band" aria-label="Explore the Dynodoc workspace">
       <div class="wrap product-wrap">
         <WorkbenchDemo />

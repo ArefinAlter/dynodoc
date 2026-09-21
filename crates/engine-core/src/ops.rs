@@ -72,6 +72,12 @@ pub enum OpError {
 /// Validation is total over [`EventPayload`]: every variant is handled.
 pub fn validate_op(state: &DocumentState, op: &EventPayload) -> Result<(), OpError> {
     match op {
+        EventPayload::RichTextPatched { node_id, patch } => {
+            let node = require_live(state, node_id)?;
+            crate::richtext::apply_patch(&node.current_fields["content"], patch)
+                .map(|_| ())
+                .map_err(|e| OpError::InvalidWrappedOp(e.to_string()))
+        }
         EventPayload::NodeCreated {
             node_id,
             node_type,

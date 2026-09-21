@@ -53,6 +53,8 @@ pub struct DocumentState {
 /// Errors while folding or restoring materialized state.
 #[derive(Debug, thiserror::Error)]
 pub enum MaterializeError {
+    #[error("event seq {seq} has invalid rich text: {reason}")]
+    RichText { seq: i64, reason: String },
     #[error("snapshot state could not be deserialized: {0}")]
     Deserialize(#[from] serde_json::Error),
     #[error("event payload for seq {seq} is invalid: {source}")]
@@ -74,6 +76,8 @@ pub enum MaterializeError {
 /// branch's payloads onto a cloned ancestor state.
 #[derive(Debug, thiserror::Error)]
 pub enum ApplyError {
+    #[error("invalid rich text: {0}")]
+    RichText(String),
     #[error("payload referenced missing node {node_id}")]
     MissingNode { node_id: String },
     #[error("node {node_id} has non-object current_fields")]
@@ -88,6 +92,27 @@ pub enum ApplyError {
 /// onto a cloned ancestor without minting `Event` rows.
 pub fn apply_payload(state: &mut DocumentState, payload: &EventPayload) -> Result<(), ApplyError> {
     match payload {
+        EventPayload::RichTextPatched { node_id, patch } => {
+            let node = state
+                .nodes
+                .get_mut(node_id)
+                .ok_or_else(|| ApplyError::MissingNode {
+                    node_id: node_id.0.clone(),
+                })?;
+            let content = crate::richtext::apply_patch(&node.current_fields["content"], patch)
+                .map_err(|e| ApplyError::RichText(e.to_string()))?;
+            let fields =
+                node.current_fields
+                    .as_object_mut()
+                    .ok_or_else(|| ApplyError::NonObjectFields {
+                        node_id: node_id.0.clone(),
+                    })?;
+            fields.insert(
+                "label".into(),
+                Value::String(crate::richtext::plain_text(&content)),
+            );
+            fields.insert("content".into(), content);
+        }
         EventPayload::NodeCreated {
             node_id,
             node_type,
@@ -276,6 +301,7 @@ impl ApplyError {
     /// log `seq` (used when this is invoked from the snapshot fold path).
     fn with_seq(self, seq: i64) -> MaterializeError {
         match self {
+            ApplyError::RichText(reason) => MaterializeError::RichText { seq, reason },
             ApplyError::MissingNode { node_id } => MaterializeError::MissingNode { seq, node_id },
             ApplyError::NonObjectFields { node_id } => {
                 MaterializeError::NonObjectFields { seq, node_id }

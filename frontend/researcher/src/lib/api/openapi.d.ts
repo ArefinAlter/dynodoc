@@ -366,6 +366,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/documents/{id}/structure': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Derived ontology/provenance view, permissioned exactly like document content.
+     *     It is not an additional source of truth and does not require a graph database.
+     */
+    get: operations['structure'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/documents/{id}/uploads': {
     parameters: {
       query?: never;
@@ -1457,6 +1477,36 @@ export interface operations {
       };
       /** @description No such snapshot for this document */
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  structure: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Document identifier */
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Formatting-run classification and revision provenance */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Document membership required */
+      403: {
         headers: {
           [name: string]: unknown;
         };

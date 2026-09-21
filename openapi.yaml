@@ -758,6 +758,30 @@ paths:
               schema: {}
         '404':
           description: No such snapshot for this document
+  /documents/{id}/structure:
+    get:
+      tags:
+      - workspace
+      summary: |-
+        Derived ontology/provenance view, permissioned exactly like document content.
+        It is not an additional source of truth and does not require a graph database.
+      operationId: structure
+      parameters:
+      - name: id
+        in: path
+        description: Document identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Formatting-run classification and revision provenance
+          content:
+            application/json:
+              schema: {}
+        '403':
+          description: Document membership required
   /documents/{id}/uploads:
     get:
       tags:

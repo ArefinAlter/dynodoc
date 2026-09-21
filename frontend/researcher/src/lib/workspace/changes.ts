@@ -36,7 +36,15 @@ export function richChanges(
   if (!root) return ops;
   const seen = new Set<string>();
   let left = '';
-  for (let block of content.content || []) {
+  const blocks = content.content || [];
+  const nextPosition = positionSuccessor(
+    blocks.map((b) => {
+      const n = state.nodes[String(b.attrs?.blockId)];
+      return n && !n.deleted && n.parent_id === root.id ? n.pos : '';
+    })
+  );
+  for (let index = 0; index < blocks.length; index++) {
+    let block = blocks[index];
     let id = String(block.attrs?.blockId || ulid());
     if (seen.has(id) || (parentId && state.nodes[id] && state.nodes[id].parent_id !== parentId))
       id = ulid();
@@ -46,11 +54,7 @@ export function richChanges(
     let pos = node?.pos;
     // Keep existing keys when their relative order is unchanged. New blocks get a
     // dense lexical key between their neighbors without moving unrelated blocks.
-    const index = (content.content || []).findIndex((b) => b === block || b.attrs?.blockId === id);
-    const next = (content.content || [])
-      .slice(index + 1)
-      .map((b) => state.nodes[String(b.attrs?.blockId)])
-      .find((n) => n && !n.deleted && n.pos > left)?.pos;
+    const next = nextPosition(index + 1, left);
     if (!pos || pos <= left || (next && pos >= next)) pos = between(left, next);
     const label = textOf(block as TextBlock);
     if (!node)
@@ -66,7 +70,8 @@ export function richChanges(
       if (node.deleted) ops.push({ type: 'NodeRestored', node_id: id });
       if (stableJson(node.current_fields.content) !== stableJson(block)) {
         ops.push({ type: 'FieldEdited', node_id: id, field: 'content', value: block });
-        ops.push({ type: 'FieldEdited', node_id: id, field: 'label', value: label });
+        if (node.current_fields.label !== label)
+          ops.push({ type: 'FieldEdited', node_id: id, field: 'label', value: label });
       }
       if (node.pos !== pos)
         ops.push({ type: 'NodeMoved', node_id: id, new_parent_id: root.id, new_pos: pos });
@@ -149,4 +154,26 @@ export function stateChanges(from: DocumentState, to: DocumentState): EventPaylo
     if (!to.nodes[node.id] || to.nodes[node.id].deleted)
       ops.push({ type: 'NodeDeleted', node_id: node.id });
   return ops;
+}
+
+// Suffix successor query in O(log n), avoiding repeated slices/scans for large
+// documents while preserving the existing lexical position and move semantics.
+function positionSuccessor(positions: string[]) {
+  let size = 1;
+  while (size < positions.length) size *= 2;
+  const tree = Array<string>(size * 2).fill('');
+  positions.forEach((pos, i) => {
+    tree[size + i] = pos;
+  });
+  for (let i = size - 1; i > 0; i--)
+    tree[i] = tree[2 * i] > tree[2 * i + 1] ? tree[2 * i] : tree[2 * i + 1];
+  return (start: number, after: string): string | undefined => {
+    const find = (node: number, lo: number, hi: number): string | undefined => {
+      if (hi <= start || tree[node] <= after) return undefined;
+      if (hi - lo === 1) return tree[node] || undefined;
+      const mid = (lo + hi) / 2;
+      return find(node * 2, lo, mid) ?? find(node * 2 + 1, mid, hi);
+    };
+    return find(1, 0, size);
+  };
 }

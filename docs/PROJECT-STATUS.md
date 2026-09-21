@@ -57,6 +57,12 @@ of the engineering effort left for the full product.
 
 The development verification log is recorded in `SETUP.md`. Automated tests cover membership isolation, atomic batches, stale writes, ten simultaneous independent edits, draft revisions/conflicts, stable-ID restoration and hash integrity. Browser tests exercise real local API sessions, documents, spreadsheets, sharing, version history, draft merging and file imports. Google/Resend provider tests remain open until actual browser login and mail delivery succeed. Credentials are configured.
 
+The 21 September rich-text increment adds compact formatting-aware history,
+same-paragraph merging for compatible wording/formatting changes, and a
+permissioned structure/provenance view. Initial imports can contain up to 20,000
+creation operations within the existing byte limit. [Research and benchmarks](RICH-TEXT-VERSIONING-RESEARCH.md)
+distinguish the measured classifier speed from the unverified full-file import target.
+
 See [versioning conformance](VERSIONING-CONFORMANCE.md) for evidence against the mathematical design: the current system implements centralized semantic version control, not the full distributed/CRDT roadmap. See [admin and search setup](SEARCH-AND-ADMIN-SETUP.md) for access and indexing steps.
 
 See [format compatibility](research-compatibility.md) for specific import/export limits. No unsupported tool should be represented as a working live integration.

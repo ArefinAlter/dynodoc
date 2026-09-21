@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { describeRichTextPatch } from '$lib/workspace/richtext';
   import { onMount, untrack } from 'svelte';
   import { beforeNavigate, goto } from '$app/navigation';
   import {
@@ -593,6 +594,7 @@
     });
   }
   function describe(op: EventPayload) {
+    if (op.type === 'RichTextPatched') return describeRichTextPatch(op.patch);
     const n =
       'node_id' in op && op.node_id ? local.nodes[op.node_id] || compare?.nodes[op.node_id] : null;
     const label = String(n?.current_fields.label || n?.var_name || 'Block').slice(0, 70);

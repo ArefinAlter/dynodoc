@@ -10,7 +10,7 @@
  * last seq we saw. The caller is notified of connection state transitions so the UI can
  * show `connected | reconnecting | offline`.
  */
-import { API_BASE_URL } from './config';
+import { API_BASE_URL, EDITOR_HEADERS } from './config';
 import type { EventRow } from './types';
 
 export type ConnectionStatus = 'connected' | 'reconnecting' | 'offline';
@@ -50,7 +50,7 @@ export class DocumentStream {
     let lastSeq = sinceSeq;
     this.controller = new AbortController();
     const token = this.getToken();
-    const headers: Record<string, string> = { accept: 'text/event-stream' };
+    const headers: Record<string, string> = { ...EDITOR_HEADERS, accept: 'text/event-stream' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
     try {

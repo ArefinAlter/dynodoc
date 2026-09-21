@@ -1,0 +1,40 @@
+{
+  "analysis": {
+    "containers": 8001,
+    "distinct_styles": 3,
+    "formatting_runs": 24000,
+    "kinds": {
+      "doc": 1,
+      "heading": 400,
+      "paragraph": 7600,
+      "text": 24000
+    },
+    "schema": "dynodoc-richtext-analysis-v1",
+    "text_scalars": 3936000
+  },
+  "arch": "x86_64",
+  "debug_assertions": false,
+  "excludes": [
+    "DOCX unzip/OOXML conversion",
+    "upload/network",
+    "database/event writes",
+    "editor rendering",
+    "page layout",
+    "multiple concurrent requests"
+  ],
+  "fixture": "synthetic 8,000 paragraphs/headings; page analogy only (20 blocks/page)",
+  "json_bytes": 6030116,
+  "long_paragraph": {
+    "patch_json_bytes": 302,
+    "whole_content_json_bytes": 9924
+  },
+  "median_ms": {
+    "classify": 32.8582,
+    "format_patch": 0.1556,
+    "merge_paragraph": 0.018600000000000002,
+    "parse_json": 53.682,
+    "replay_patch": 0.0596
+  },
+  "os": "windows",
+  "samples": 9
+}

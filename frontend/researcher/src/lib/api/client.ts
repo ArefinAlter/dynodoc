@@ -14,7 +14,7 @@
 import createClient, { type Middleware } from 'openapi-fetch';
 
 import type { paths } from './openapi.d.ts';
-import { API_BASE_URL } from './config';
+import { API_BASE_URL, EDITOR_HEADERS } from './config';
 import type {
   ConflictList,
   Document,
@@ -45,7 +45,7 @@ const authMiddleware: Middleware = {
   }
 };
 
-export const client = createClient<paths>({ baseUrl: API_BASE_URL });
+export const client = createClient<paths>({ baseUrl: API_BASE_URL, headers: EDITOR_HEADERS });
 client.use(authMiddleware);
 
 /** Lift a token rotation done elsewhere into the client's view (used by tests). */

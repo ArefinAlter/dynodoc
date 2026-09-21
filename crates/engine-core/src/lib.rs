@@ -35,4 +35,5 @@ pub mod expr;
 /// surfacing, and a post-merge integrity gate. See docs/21 item 3.
 pub mod merge;
 
+pub mod richtext;
 pub mod workspace_merge;

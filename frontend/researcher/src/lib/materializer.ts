@@ -15,6 +15,7 @@
  *   server already validated ordering, so this only guards a corrupt/partial replay).
  */
 import type { DocumentState, EventPayload, EventRow, MaterializedNode } from './api/types';
+import { applyRichTextPatch, richTextLabel } from './workspace/richtext';
 
 /** A fresh, empty folded state. */
 export function emptyState(): DocumentState {
@@ -39,6 +40,13 @@ function objectOrValue(value: unknown): Record<string, unknown> {
  */
 export function applyPayload(state: DocumentState, payload: EventPayload): boolean {
   switch (payload.type) {
+    case 'RichTextPatched': {
+      const node = state.nodes[payload.node_id];
+      if (!node) throw new Error('Missing rich-text base. Reload the document.');
+      const content = applyRichTextPatch(node.current_fields.content, payload.patch);
+      node.current_fields = { ...node.current_fields, content, label: richTextLabel(content) };
+      return true;
+    }
     case 'NodeCreated': {
       const node: MaterializedNode = {
         id: payload.node_id,

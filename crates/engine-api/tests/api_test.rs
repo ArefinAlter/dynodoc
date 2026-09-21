@@ -20,6 +20,68 @@ use uuid::Uuid;
 
 const KEY: [u8; 32] = [7u8; 32];
 
+#[sqlx::test(migrations = "../../migrations")]
+async fn rich_text_history_replays_compact_edits_and_rejects_stale_patches(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let owner = seed_identity(&pool, "richtext@example.test").await;
+    let token = bearer(owner);
+    let doc = create_document(&router, &token, "Research protocol").await;
+    let node = ulid::Ulid::new().to_string();
+    let root = ulid::Ulid::new().to_string();
+    let content = json!({"type":"paragraph","content":[{"type":"text","text":"Research evidence. ".repeat(1200)}]});
+    let (status, _) = send(&router, auth_post(&format!("/documents/{doc}/batch"), &token, &json!({"base_seq":0,"ops":[{"type":"NodeCreated","node_id":root,"node_type":"form","pos":"a","fields":{}},{"type":"NodeCreated","node_id":node,"node_type":"item","parent_id":root,"pos":"a","fields":{"content":content,"label":engine_core::richtext::plain_text(&content)}}]}))).await;
+    assert_eq!(status, StatusCode::OK);
+    let mut after = content.clone();
+    after["content"][0]["marks"] = json!([{"type":"bold"}]);
+    let (status, saved) = send(&router, auth_post(&format!("/documents/{doc}/batch"), &token, &json!({"base_seq":2,"ops":[{"type":"FieldEdited","node_id":node,"field":"content","value":after}]}))).await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    assert_eq!(saved["events"][0]["type"], "RichTextPatched");
+    let patch = saved["events"][0]["payload"].clone();
+    let (status, _) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc}/batch"),
+            &token,
+            &json!({"base_seq":3,"ops":[patch]}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let replay = engine_core::snapshot::SnapshotEngine::new(pool.clone())
+        .read_current_state(DocumentId(doc))
+        .await
+        .unwrap();
+    assert_eq!(
+        replay.nodes[&engine_shared::NodeId(node.clone())].current_fields["content"],
+        after
+    );
+    let row: Value = sqlx::query_scalar("select current_fields from node where id=$1")
+        .bind(&node)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(row["content"], after);
+    engine_core::log::verify_chain(&pool, DocumentId(doc))
+        .await
+        .unwrap();
+    let request = Request::builder()
+        .uri(format!("/documents/{doc}/structure"))
+        .header(header::AUTHORIZATION, &token)
+        .body(Body::empty())
+        .unwrap();
+    let (status, analysis) = send(&router, request).await;
+    assert_eq!(status, StatusCode::OK, "{analysis}");
+    assert_eq!(analysis["through_seq"], 3);
+    assert_eq!(analysis["blocks"][0]["analysis"]["formatting_runs"], 1);
+    let stranger = bearer(seed_identity(&pool, "stranger@example.test").await);
+    let request = Request::builder()
+        .uri(format!("/documents/{doc}/structure"))
+        .header(header::AUTHORIZATION, stranger)
+        .body(Body::empty())
+        .unwrap();
+    assert_eq!(send(&router, request).await.0, StatusCode::FORBIDDEN);
+}
+
 fn test_state(pool: PgPool) -> AppState {
     AppState::new(
         pool,

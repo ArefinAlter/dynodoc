@@ -11,6 +11,7 @@
 pub mod enums;
 pub mod ids;
 pub mod payload;
+pub mod richtext;
 pub mod rows;
 
 pub use enums::{DocumentStatus, EventType, NodeType, ParseEnumError};

@@ -260,7 +260,13 @@ test('organization access reaches a folder document and can be removed centrally
       page.getByRole('dialog').locator('.member').filter({ hasText: email })
     ).toHaveCount(0);
     const id = new URL(documentUrl).pathname.split('/').at(-1);
-    expect((await colleague.request.get('/api/engine/documents/' + id)).status()).toBe(403);
+    expect(
+      (
+        await colleague.request.get('/api/engine/documents/' + id, {
+          headers: { 'x-dynodoc-editor': 'richtext-v1' }
+        })
+      ).status()
+    ).toBe(403);
   } finally {
     await guest.close();
   }

@@ -33,7 +33,8 @@ const CONFLICT_AFFECTING = new Set([
   'SuggestionProposed',
   'SuggestionAccepted',
   'SuggestionRejected',
-  'FieldEdited'
+  'FieldEdited',
+  'RichTextPatched'
 ]);
 
 export class DocumentStore {
@@ -94,7 +95,15 @@ export class DocumentStore {
       const next = this.pending.get(this.appliedSeq + 1);
       if (!next) break;
       this.pending.delete(next.seq);
-      applyEvent(this.state, next);
+      try {
+        applyEvent(this.state, next);
+      } catch (e) {
+        this.stream?.stop();
+        // Keep the editor mounted so unsaved local work can be copied or drafted.
+        this.connection = 'offline';
+        this.toastError(e, 'Could not replay this change. Reload the document.');
+        return;
+      }
       this.appliedSeq = next.seq;
       this.seq = next.seq;
       changedConflicts ||= CONFLICT_AFFECTING.has(next.type);

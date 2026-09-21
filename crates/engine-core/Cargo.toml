@@ -19,6 +19,7 @@ thiserror = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
+similar = "=2.7.0"
 
 [dev-dependencies]
 proptest = { workspace = true }

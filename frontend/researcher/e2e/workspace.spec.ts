@@ -229,7 +229,9 @@ test('research connections reject private servers and import a provider fixture 
   await page.getByRole('button', { name: 'Import into workspace' }).click();
   await expect(page.getByRole('button', { name: 'B2: Dhaka', exact: true })).toBeVisible();
   const id = page.url().split('/').pop();
-  const response = await page.request.get(`/api/engine/documents/${id}`);
+  const response = await page.request.get(`/api/engine/documents/${id}`, {
+    headers: { 'x-dynodoc-editor': 'richtext-v1' }
+  });
   const detail = await response.json();
   expect(detail.settings.research_source.form).toBe('study1');
   expect(JSON.stringify(detail)).not.toContain('fixture-private-token');

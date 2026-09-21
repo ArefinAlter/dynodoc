@@ -1,9 +1,12 @@
-import { API_BASE_URL } from '$lib/api/config';
+import { API_BASE_URL, EDITOR_HEADERS } from '$lib/api/config';
 import type { EventPayload, EventRow, DocumentDetail, DocumentState } from '$lib/api/types';
 export async function workspaceRequest<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(API_BASE_URL + path, {
     method: body === undefined ? 'GET' : 'POST',
-    headers: body === undefined ? {} : { 'content-type': 'application/json' },
+    headers:
+      body === undefined
+        ? EDITOR_HEADERS
+        : { ...EDITOR_HEADERS, 'content-type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body)
   });
   const data = await response.json().catch(() => ({

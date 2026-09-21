@@ -52,6 +52,8 @@ const SELECT_TYPES: [&str; 2] = ["select_one", "select_multiple"];
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum IntegrityViolation {
+    /// A branch operation could not be replayed against its proposed base.
+    InvalidOperation { reason: String },
     /// An expression on `node_id` references a `var_name` no live node defines.
     DanglingReference {
         node_id: NodeId,

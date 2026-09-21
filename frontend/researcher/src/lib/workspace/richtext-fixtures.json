@@ -1,0 +1,276 @@
+[
+  {
+    "after": {
+      "content": [
+        {
+          "marks": [
+            {
+              "type": "bold"
+            },
+            {
+              "attrs": {
+                "color": "#005bbb",
+                "fontFamily": "Noto Sans",
+                "unknown": true
+              },
+              "type": "textStyle"
+            }
+          ],
+          "text": "বাংলা 👩🏽‍🔬 revised é العربية",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    "before": {
+      "content": [
+        {
+          "text": "বাংলা 👩🏽‍🔬 é العربية",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    "patch": {
+      "after": "71b94f9dbb208c69ebfd83cdc5c5bf9ef990960b5e72b2a6e3f278c07a6cc3ba",
+      "before": "49b34fa6b166b9e746e5509e7ce887b9316db2f63561b6705cba855d7f4b6c45",
+      "edits": [
+        {
+          "kind": "text",
+          "ops": [
+            {
+              "count": 11,
+              "kind": "retain",
+              "style": 0
+            },
+            {
+              "kind": "insert",
+              "style": 0,
+              "text": "revised "
+            },
+            {
+              "count": 10,
+              "kind": "retain",
+              "style": 0
+            }
+          ],
+          "path": []
+        }
+      ],
+      "styles": [
+        {
+          "marks": [
+            {
+              "type": "bold"
+            },
+            {
+              "attrs": {
+                "color": "#005bbb",
+                "fontFamily": "Noto Sans",
+                "unknown": true
+              },
+              "type": "textStyle"
+            }
+          ],
+          "type": "text"
+        }
+      ],
+      "version": 1
+    }
+  },
+  {
+    "after": {
+      "content": [
+        {
+          "content": [
+            {
+              "content": [
+                {
+                  "content": [
+                    {
+                      "marks": [
+                        {
+                          "type": "bold"
+                        },
+                        {
+                          "attrs": {
+                            "color": "#005bbb",
+                            "fontFamily": "Noto Sans",
+                            "unknown": true
+                          },
+                          "type": "textStyle"
+                        }
+                      ],
+                      "text": "বাংলা 👩🏽‍🔬 revised é العربية",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "type": "tableCell"
+            }
+          ],
+          "type": "tableRow"
+        }
+      ],
+      "type": "table"
+    },
+    "before": {
+      "content": [
+        {
+          "content": [
+            {
+              "content": [
+                {
+                  "content": [
+                    {
+                      "text": "বাংলা 👩🏽‍🔬 é العربية",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "type": "tableCell"
+            }
+          ],
+          "type": "tableRow"
+        }
+      ],
+      "type": "table"
+    },
+    "patch": {
+      "after": "385ae65b5cd9e45735a9aaf296951d218a8dd46a862af3822d7d7e1e7cea1f7c",
+      "before": "e9a3d807adc90330eaf3fbeb9015784ba514f4296cf23513c201e1e2f11c01c2",
+      "edits": [
+        {
+          "kind": "text",
+          "ops": [
+            {
+              "count": 11,
+              "kind": "retain",
+              "style": 0
+            },
+            {
+              "kind": "insert",
+              "style": 0,
+              "text": "revised "
+            },
+            {
+              "count": 10,
+              "kind": "retain",
+              "style": 0
+            }
+          ],
+          "path": [0, 0, 0]
+        }
+      ],
+      "styles": [
+        {
+          "marks": [
+            {
+              "type": "bold"
+            },
+            {
+              "attrs": {
+                "color": "#005bbb",
+                "fontFamily": "Noto Sans",
+                "unknown": true
+              },
+              "type": "textStyle"
+            }
+          ],
+          "type": "text"
+        }
+      ],
+      "version": 1
+    }
+  },
+  {
+    "after": {
+      "attrs": {
+        "blockId": "stable",
+        "textAlign": "center"
+      },
+      "content": [
+        {
+          "text": "বাংলা 👩🏽‍🔬 é العربية",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    "before": {
+      "content": [
+        {
+          "text": "বাংলা 👩🏽‍🔬 é العربية",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    "patch": {
+      "after": "1512873dfaba1ccdb2b213d57436d125a99c91c3b79c39d51aae46892ce8dc4c",
+      "before": "49b34fa6b166b9e746e5509e7ce887b9316db2f63561b6705cba855d7f4b6c45",
+      "edits": [
+        {
+          "kind": "props",
+          "path": [],
+          "value": {
+            "attrs": {
+              "blockId": "stable",
+              "textAlign": "center"
+            },
+            "type": "paragraph"
+          }
+        },
+        {
+          "kind": "text",
+          "ops": [
+            {
+              "count": 21,
+              "kind": "retain"
+            }
+          ],
+          "path": []
+        }
+      ],
+      "styles": [],
+      "version": 1
+    }
+  },
+  {
+    "after": {
+      "content": [],
+      "type": "paragraph"
+    },
+    "before": {
+      "content": [
+        {
+          "text": "বাংলা 👩🏽‍🔬 é العربية",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    "patch": {
+      "after": "69240a6a9c8dec9f5f07ea93aa74b8ca4ac5fe9e0da53a418bb94ade20570a00",
+      "before": "49b34fa6b166b9e746e5509e7ce887b9316db2f63561b6705cba855d7f4b6c45",
+      "edits": [
+        {
+          "kind": "text",
+          "ops": [
+            {
+              "count": 21,
+              "kind": "delete"
+            }
+          ],
+          "path": []
+        }
+      ],
+      "styles": [],
+      "version": 1
+    }
+  }
+]

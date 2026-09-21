@@ -56,6 +56,11 @@ pub enum EventPayload {
         field: String,
         value: Value,
     },
+    /// Compact, base-checked changes to a node's rich-text `content` field.
+    RichTextPatched {
+        node_id: NodeId,
+        patch: crate::richtext::RichTextPatch,
+    },
     /// A choice was added under a (select-type) item.
     ChoiceAdded {
         node_id: NodeId,
@@ -104,6 +109,7 @@ impl EventPayload {
             EventPayload::NodeDeleted { .. } => EventType::NodeDeleted,
             EventPayload::NodeRestored { .. } => EventType::NodeRestored,
             EventPayload::FieldEdited { .. } => EventType::FieldEdited,
+            EventPayload::RichTextPatched { .. } => EventType::RichTextPatched,
             EventPayload::ChoiceAdded { .. } => EventType::ChoiceAdded,
             EventPayload::ChoiceRemoved { .. } => EventType::ChoiceRemoved,
             EventPayload::CommentAdded { .. } => EventType::CommentAdded,
@@ -124,6 +130,7 @@ impl EventPayload {
             | EventPayload::NodeDeleted { node_id }
             | EventPayload::NodeRestored { node_id }
             | EventPayload::FieldEdited { node_id, .. }
+            | EventPayload::RichTextPatched { node_id, .. }
             | EventPayload::ChoiceAdded { node_id, .. }
             | EventPayload::ChoiceRemoved { node_id, .. } => Some(node_id),
             EventPayload::CommentAdded { node_id, .. } => node_id.as_ref(),

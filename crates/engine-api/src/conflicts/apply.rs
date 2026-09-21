@@ -92,6 +92,7 @@ pub async fn resolve_conflict(
         }
     };
 
+    let field_edit = engine_core::richtext::compact_event(&current, &field_edit);
     // One transaction: materialize the field edit, append it, then append every
     // lifecycle event. All land or none does (mirrors apply::accept_proposal).
     apply::materialize_node_change(&mut tx, document_id, &field_edit).await?;

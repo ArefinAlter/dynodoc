@@ -32,6 +32,7 @@ pub fn router() -> Router<AppState> {
         )
         .route("/documents/:id/uploads/:upload_id", get(download_upload))
         .route("/documents/:id/batch", post(batch))
+        .route("/documents/:id/structure", get(structure))
         .route("/documents/:id/drafts/:draft_id/sync", post(sync_draft))
         .route(
             "/documents/:id/versions/:version_id/restore",
@@ -62,8 +63,10 @@ async fn batch(
     auth: AuthContext,
     Json(mut req): Json<BatchRequest>,
 ) -> Result<Json<Value>, ApiError> {
-    if req.ops.is_empty() || req.ops.len() > 5000 {
-        return Err(bad("A batch must contain 1–5000 changes"));
+    if req.ops.is_empty() || req.ops.len() > 20_000 {
+        return Err(bad(
+            "A batch must contain 1–5000 changes, or up to 20,000 initial import nodes",
+        ));
     }
     let doc = DocumentId(id);
     let actor = IdentityId(auth.identity_id);
@@ -73,6 +76,18 @@ async fn batch(
             .bind(id)
             .fetch_one(&mut *tx)
             .await?;
+    // Large documents can exceed 5,000 structural blocks. Permit one atomic
+    // initial import within the existing 16 MiB request bound, without raising
+    // the general editing limit or permitting partial multi-request imports.
+    if req.ops.len() > 5000
+        && (latest != 0
+            || req
+                .ops
+                .iter()
+                .any(|op| !matches!(op, EventPayload::NodeCreated { .. })))
+    {
+        return Err(bad("More than 5,000 changes are allowed only when importing new nodes into an empty document"));
+    }
     if let Some(base) = req.base_seq.filter(|base| *base != latest) {
         if base < 0 || base > latest {
             return Err(bad("Invalid starting version"));
@@ -113,6 +128,7 @@ async fn batch(
             op,
             EventPayload::NodeCreated { .. }
                 | EventPayload::FieldEdited { .. }
+                | EventPayload::RichTextPatched { .. }
                 | EventPayload::NodeMoved { .. }
                 | EventPayload::NodeDeleted { .. }
                 | EventPayload::NodeRestored { .. }
@@ -124,6 +140,11 @@ async fn batch(
             return Err(bad("This action uses a separate review endpoint"));
         }
         governance::authorize(role, op, &current)?;
+        if engine_core::richtext::redundant_label(&current, op) {
+            continue;
+        }
+        let compact = engine_core::richtext::compact_event(&current, op);
+        let op = &compact;
         apply::materialize_node_change(&mut tx, doc, op).await?;
         let event = log::append_in_tx(&mut tx, doc, op, actor).await?;
         apply_payload(&mut current, op).map_err(|e| ApiError::Internal(e.to_string()))?;
@@ -407,6 +428,7 @@ async fn edit_draft(
             op,
             EventPayload::NodeCreated { .. }
                 | EventPayload::FieldEdited { .. }
+                | EventPayload::RichTextPatched { .. }
                 | EventPayload::NodeMoved { .. }
                 | EventPayload::NodeDeleted { .. }
                 | EventPayload::NodeRestored { .. }
@@ -416,6 +438,10 @@ async fn edit_draft(
             return Err(bad("Drafts contain content changes only"));
         }
         governance::authorize(Role::Author, &op, &current)?;
+        if engine_core::richtext::redundant_label(&current, &op) {
+            continue;
+        }
+        let op = engine_core::richtext::compact_event(&current, &op);
         apply_payload(&mut current, &op).map_err(|e| ApiError::Internal(e.to_string()))?;
         sqlx::query("insert into draft_edit(draft_id,payload,actor_id) values($1,$2,$3)")
             .bind(draft)
@@ -435,6 +461,31 @@ fn bad(reason: &str) -> ApiError {
     ApiError::BadRequest {
         reason: reason.into(),
     }
+}
+
+/// Derived ontology/provenance view, permissioned exactly like document content.
+/// It is not an additional source of truth and does not require a graph database.
+#[utoipa::path(get, path="/documents/{id}/structure", tag="workspace", params(("id" = Uuid, Path, description = "Document identifier")), responses((status=200, description="Formatting-run classification and revision provenance", body=Value),(status=403, description="Document membership required")))]
+async fn structure(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    auth: AuthContext,
+) -> Result<Json<Value>, ApiError> {
+    let doc = DocumentId(id);
+    apply::require_role(&state.pool, doc, IdentityId(auth.identity_id)).await?;
+    let (current, through_seq) = engine_core::snapshot::SnapshotEngine::new(state.pool.clone())
+        .read_current_state_with_seq(doc)
+        .await
+        .map_err(|e| ApiError::Internal(e.to_string()))?;
+    let provenance: Vec<Value> = sqlx::query_scalar("select distinct on (target_node_id) jsonb_build_object('node_id',target_node_id,'activity',id,'agent',actor_id,'seq',seq,'at',created_at) from event where document_id=$1 and seq<=$2 and target_node_id is not null and type in ('NodeCreated','NodeMoved','NodeDeleted','NodeRestored','FieldEdited','RichTextPatched','ChoiceAdded','ChoiceRemoved') order by target_node_id,seq desc")
+        .bind(id).bind(through_seq).fetch_all(&state.pool).await?;
+    let blocks: Vec<_> = current.nodes.values().filter(|n| !n.deleted && n.current_fields["content"].is_object()).map(|n| {
+        let content = &n.current_fields["content"];
+        json!({"id":n.id,"parent_id":n.parent_id,"kind":content["type"],"revision_hash":engine_core::richtext::fingerprint(content),"analysis":engine_core::richtext::analyze(content)})
+    }).collect();
+    Ok(Json(
+        json!({"schema":"dynodoc-structure-v1","document_id":id,"through_seq":through_seq,"blocks":blocks,"provenance":provenance,"relations":{"parent_id":"contains (reverse direction)","activity":"wasGeneratedBy","agent":"wasAssociatedWith"}}),
+    ))
 }
 
 #[derive(Deserialize)]
@@ -599,6 +650,9 @@ async fn sync_draft(
                 .is_none_or(|ids| op.target_node_id().is_some_and(|id| ids.contains(id)))
         }) {
             governance::authorize(role, op, &team)?;
+            if engine_core::richtext::redundant_label(&team, op) {
+                continue;
+            }
             apply::materialize_node_change(&mut tx, doc, op).await?;
             events.push(log::append_in_tx(&mut tx, doc, op, actor).await?);
             apply_payload(&mut team, op).map_err(|e| ApiError::Internal(e.to_string()))?;
@@ -666,6 +720,11 @@ async fn restore_version(
     let mut events = Vec::new();
     for op in &ops {
         governance::authorize(role, op, &current)?;
+        if engine_core::richtext::redundant_label(&current, op) {
+            continue;
+        }
+        let compact = engine_core::richtext::compact_event(&current, op);
+        let op = &compact;
         apply::materialize_node_change(&mut tx, doc, op).await?;
         events.push(log::append_in_tx(&mut tx, doc, op, actor).await?);
         apply_payload(&mut current, op).map_err(|e| ApiError::Internal(e.to_string()))?;
@@ -715,6 +774,7 @@ async fn search(
     uploads,
     upload,
     download_upload,
-    search
+    search,
+    structure
 ))]
 pub struct WorkspaceApi;
