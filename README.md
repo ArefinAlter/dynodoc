@@ -1,8 +1,8 @@
-# Research IDE (codename **dynodoc**)
+# Dynodoc — version control for documents
 
-> A shared research workspace for documents, spreadsheets and questionnaires. Edit in familiar interfaces, try changes in personal drafts, review what changed, and keep an attributable history of your team's decisions.
+> A version-controlled workspace for rich-text documents and spreadsheets. Edit in familiar interfaces, try changes in personal drafts, review what changed, and keep an attributable history of your team's decisions.
 
-**Status:** Hosted researcher pilot under active development. Core editing, version workflows, supported survey logic and the admin dashboard work. Google/Resend credentials are configured; real provider and study-account acceptance and broader editor/integration parity remain open. The public-consultation platform is a future extension. **License:** [AGPL v3](LICENSE).
+**Status:** Hosted product under active development. Common office editing, document version workflows, supported survey logic and the admin dashboard work. Google/Resend credentials are configured; real provider and study-account acceptance and broader editor/integration parity remain open. The public-consultation platform is a future extension. **License:** [AGPL v3](LICENSE).
 
 - [Current implementation and remaining work](docs/PROJECT-STATUS.md)
 - [Google and email setup](docs/GOOGLE-AND-EMAIL-SETUP.md)
@@ -18,13 +18,17 @@
 
 ## The problem
 
-Research teams revise interview guides, questionnaires, codebooks and data tables together.
-A questionnaire also contains structure: variables, question types, choices, translations
-and logic. Comparing whole files makes it difficult to follow these changes and resolve
-different researchers' edits. Dynodoc aims to make that review understandable at the level
-of a paragraph, question or cell, while keeping a history across the team's research files.
+Teams revise proposals, policies, reports, contracts and spreadsheets together.
+Whole-file copies lose the relationship between wording, formatting and decisions.
+Dynodoc gives structural blocks permanent identities and records changes to text,
+formatting and position. Teams can explore personal drafts, review overlapping
+changes, share selected work and restore earlier versions without erasing history.
+Research instruments remain a supported use case, not the product's organizing principle.
 
-The Research IDE makes version control and the audit trail **part of the data model**. Every
+See [the product pivot](docs/decisions/004-document-version-control.md) and
+[office editor support and limits](docs/OFFICE-EDITOR-CAPABILITIES.md).
+
+Dynodoc makes version control and the audit trail **part of the data model**. Every
 content change is a typed semantic event, attributable, hash-linked, and replayable. Concurrent edits to
 different fields merge automatically; same-field edits surface as a structured conflict, not a
 textual one; a reviewer's suggestion is a first-class proposal the author accepts or rejects with
@@ -76,7 +80,7 @@ blocks a `Deployed` event when the instrument would break.
 
 The architectural commitment: **the engine never changes** between regimes.
 
-1. **Research IDE** (the immediate target) — a small expert team co-authoring an instrument.
+1. **Document version control** (the immediate target) — teams editing and reviewing rich text and spreadsheets; research instruments are one use case.
    This is the current implementation focus.
 2. **Public consultation at national scale** (a later extension) — thousands of public
    contributors on a government policy draft. New layers (identity tiers, moderation, Polis-style

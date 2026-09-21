@@ -217,14 +217,15 @@ capture is a follow-on optimization.
 
 The benchmark excludes DOCX unzip/OOXML conversion, browser work, upload bandwidth,
 database writes, hash-chain insertion, snapshots, rendering, and concurrent users.
-The existing importer uses Mammoth → HTML → Tiptap in the browser. [Mammoth's stated
-conversion approach](https://github.com/mwilliamson/mammoth.js/blob/master/README.md)
-favors semantic HTML rather than exact Word styling. Native conversion cannot be
-assumed to preserve all fonts, colors, tracked changes, page layouts or equations.
+The later office-editor increment replaces the Mammoth HTML route for DOCX with
+native OOXML parsing in a dedicated, cancellable browser worker, bounded ZIP
+expansion/XML depth and common style inheritance. This improves formatting and
+review metadata preservation but does not establish exact Word layout fidelity.
+See [office-editor evidence and limitations](OFFICE-EDITOR-CAPABILITIES.md).
 Original uploaded bytes remain available for reference.
 
-The current 10 MB file limit and 16 MiB batch request limit, synchronous conversion,
-repeated SQL appends and whole-document snapshots are real end-to-end constraints.
+The current 10 MB file limit and 16 MiB batch request limit, repeated SQL appends
+and whole-document snapshots remain real end-to-end constraints.
 This increment permits up to 20,000 creation operations in one atomic initial import
 into an empty document; ordinary editing retains the 5,000-operation limit. This
 removes the old operation-count rejection for an 8,000-block import, provided its
@@ -240,14 +241,15 @@ See [the precise capability map](VERSIONING-CONFORMANCE.md). Compact deltas impr
 those workflows; they do not implement Git's wire protocol, arbitrary remotes,
 offline clone/fetch, persistent ignore rules, nested stable IDs or signed heads.
 
-Required next increments, in dependency order:
+Remaining increments, in dependency order (updated after the office-editor work):
 
-1. **Import fidelity and throughput:** worker/server conversion with bounded ZIP
-   expansion, entry counts and XML depth; style inheritance resolution (defaults →
-   named styles → direct formatting); explicit unsupported-feature reports;
+1. **Import fidelity and throughput:** DOCX worker conversion, bounded ZIP/XML,
+   style inheritance and conversion reports are implemented. Still needed:
    resumable import jobs with progress, validation and an atomic publication step.
    Keep originals and source anchors. Add real, permissioned 300/400-page fixtures.
-2. **Incremental client edits:** capture ProseMirror transaction ranges and map
+2. **Incremental client edits:** unchanged ProseMirror nodes now reuse serialized
+   blocks, local state uses copy-on-write, and IME composition defers saves/remote
+   application. Still needed: capture compact transaction ranges and map
    UTF-16 positions to the versioned offset contract. Send small patches with an
    explicit client protocol version. Keep stale-base checks and draft recovery.
 3. **Shared storage:** immutable block/style objects and structurally shared
@@ -278,7 +280,7 @@ canonical events, history replay, hash-chain verification and access control.
 Migration 0016 extends the event type constraint and adds the provenance lookup
 index. Migrations 0001–0015 and existing payloads are unchanged. Deploy readers that
 understand the new event before enabling new writes, refresh active editor sessions,
-and retain a fresh backup. New browser clients send `x-dynodoc-editor: richtext-v1`;
+and retain a fresh backup. New browser clients send `x-dynodoc-editor: office-v2` (previously `richtext-v1`);
 the web gateway refuses document API requests from older tabs with a message to
 copy unsaved text and reload. Original-file download links are exempt. Deploy web
 and admin readers first, then the API, so no old stream remains when new events start. Once a compact event is recorded, rolling back to an old

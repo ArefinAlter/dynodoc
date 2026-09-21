@@ -133,7 +133,7 @@ test('a reviewer proposes a paragraph change and an editor accepts it', async ({
   const email = `reviewer-${Date.now()}@example.test`;
   await page.getByRole('button', { name: 'Share', exact: true }).click();
   await page.getByLabel('Email address', { exact: true }).fill(email);
-  await page.getByRole('complementary').getByRole('combobox').selectOption('reviewer');
+  await page.getByLabel('Access', { exact: true }).selectOption('reviewer');
   await page.getByRole('button', { name: 'Add person', exact: true }).click();
   await expect(page.getByText(email, { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Close panel' }).click();
@@ -230,7 +230,7 @@ test('research connections reject private servers and import a provider fixture 
   await expect(page.getByRole('button', { name: 'B2: Dhaka', exact: true })).toBeVisible();
   const id = page.url().split('/').pop();
   const response = await page.request.get(`/api/engine/documents/${id}`, {
-    headers: { 'x-dynodoc-editor': 'richtext-v1' }
+    headers: { 'x-dynodoc-editor': 'office-v2' }
   });
   const detail = await response.json();
   expect(detail.settings.research_source.form).toBe('study1');

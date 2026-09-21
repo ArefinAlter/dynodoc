@@ -7,12 +7,13 @@
     <a href="https://dynodoc.online" class="brand"
       ><img src="/brand/mark.svg?v=2" width="32" height="32" alt="" /> dynodoc.</a
     >
-    <p>Good research deserves a clear record.</p>
+    <p>Every document deserves a clear history.</p>
     <a class="source" href="/source">Open source, open possibilities <ArrowUpRight size={15} /></a>
   </div>
   <div class="bottom">
-    <span>A shared workspace for thoughtful research.</span>
+    <span>Document version control. Familiar editing.</span>
     <nav aria-label="Footer navigation">
+      <a href="https://dynodoc.online/compatibility">Compatibility</a>
       <a href="https://dynodoc.online/features">Features</a><a
         href="https://dynodoc.online/why-dynodoc">Why Dynodoc</a
       ><a href="https://dynodoc.online/roadmap">Roadmap</a><a href="https://dynodoc.online/help"

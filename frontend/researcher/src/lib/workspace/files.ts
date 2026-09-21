@@ -1,4 +1,6 @@
 import Papa from 'papaparse';
+import type { Worksheet } from 'exceljs';
+import { readCell, writeCell, readSheetLayout, sheetLayout, cellFormat } from './sheet-model';
 import { ulid } from 'ulid';
 import type { EventPayload, DocumentState } from '$lib/api/types';
 import type { Kind } from './api';
@@ -58,7 +60,7 @@ export async function importFile(file: File): Promise<ImportResult> {
   const warnings: string[] = [];
   const ops: EventPayload[] = [rootOp(rootId, file.name.replace(/\.[^.]+$/, ''))];
   if (ext === 'csv' || ext === 'xlsx') {
-    const sheets: { name: string; rows: string[][] }[] = [];
+    const sheets: { name: string; rows: string[][]; source?: Worksheet }[] = [];
     if (ext === 'csv') {
       const parsed = Papa.parse<string[]>(await file.text(), { skipEmptyLines: 'greedy' });
       if (parsed.errors.length) warnings.push(...parsed.errors.map((e) => e.message));
@@ -69,23 +71,28 @@ export async function importFile(file: File): Promise<ImportResult> {
     } else {
       const { default: ExcelJS } = await import('exceljs');
       const book = new ExcelJS.Workbook();
-      await book.xlsx.load(await file.arrayBuffer());
+      const data = await file.arrayBuffer();
+      const { readOfficeZip } = await import('./bounded-zip');
+      readOfficeZip(new Uint8Array(data), () => true);
+      await book.xlsx.load(data);
       for (const sheet of book.worksheets) {
         if (sheet.rowCount > 3001 || sheet.columnCount > 100)
-          throw new Error('This demo supports up to 3,000 rows and 100 columns per workbook.');
+          throw new Error('This workspace supports up to 3,000 rows and 100 columns per workbook.');
         const rows: string[][] = [];
         sheet.eachRow({ includeEmpty: true }, (row) => {
           const cells: string[] = [];
           for (let col = 1; col <= Math.min(sheet.columnCount, 100); col++) {
             const cell = row.getCell(col);
-            cells.push(cell.formula ? '=' + cell.formula : cell.text);
+            cells.push(
+              cell.isMerged && cell.master.address !== cell.address ? '' : readCell(cell).value
+            );
           }
           rows.push(cells);
         });
-        sheets.push({ name: sheet.name, rows });
+        sheets.push({ name: sheet.name, rows, source: sheet });
       }
       warnings.push(
-        'Cell values and formulas are imported. Charts, macros, external links, and workbook formatting are not preserved in the editable copy. The original upload remains available.'
+        'Values, formulas, common cell formats, notes, validation rules, merged cells, widths and frozen panes are imported. Charts, macros, pivot tables, conditional formatting and external data connections are not reproduced. Review theme colors, custom number formats and formulas; the original remains available.'
       );
     }
     const { importXlsForm } = await import('./research-files');
@@ -94,11 +101,11 @@ export async function importFile(file: File): Promise<ImportResult> {
     const total = sheets.reduce((sum, s) => sum + s.rows.length, 0);
     if (total > 3000)
       throw new Error(
-        'This demo supports up to 3,000 rows per import. Split this file into smaller tables.'
+        'This workspace supports up to 3,000 rows per import. Split this file into smaller tables.'
       );
     for (const sheet of sheets) {
       if (sheet.rows.some((r) => r.length > 100))
-        throw new Error('This demo supports up to 100 columns.');
+        throw new Error('This workspace supports up to 100 columns.');
       const sheetId = ulid();
       ops.push({
         type: 'NodeCreated',
@@ -112,11 +119,32 @@ export async function importFile(file: File): Promise<ImportResult> {
           columns: Math.max(12, ...sheet.rows.map((r) => r.length))
         }
       });
+      const rowIds: string[] = [];
       sheet.rows.forEach((row, i) => {
         const fields: Record<string, unknown> = {};
-        row.forEach((cell, c) => (fields[`cell_${c}`] = cell));
-        ops.push(itemOp(sheetId, i, fields));
+        row.forEach((cell, c) => {
+          fields[`cell_${c}`] = cell;
+          if (sheet.source)
+            fields[`format_${c}`] = readCell(sheet.source.getCell(i + 1, c + 1)).format;
+        });
+        if (sheet.source) {
+          fields.row_height = sheet.source.getRow(i + 1).height
+            ? (sheet.source.getRow(i + 1).height! * 4) / 3
+            : 28;
+          fields.hidden = sheet.source.getRow(i + 1).hidden || false;
+        }
+        const id = ulid();
+        rowIds.push(id);
+        ops.push(itemOp(sheetId, i, fields, id));
       });
+      if (sheet.source) {
+        const node = ops.find((op) => op.type === 'NodeCreated' && op.node_id === sheetId);
+        if (node?.type === 'NodeCreated')
+          node.fields = {
+            ...(node.fields as object),
+            sheet_layout: readSheetLayout(sheet.source, rowIds)
+          };
+      }
     }
     return { kind: 'spreadsheet', ops, warnings, filename: file.name, rootId };
   }
@@ -130,26 +158,13 @@ export async function importFile(file: File): Promise<ImportResult> {
         throw new Error((await response.json()).error || 'Legacy Word conversion is unavailable.');
       buffer = await response.arrayBuffer();
     }
-    const mammoth = await import('mammoth');
-    const result = await mammoth.convertToHtml(
-      { arrayBuffer: buffer },
-      { convertImage: mammoth.images.imgElement(async () => ({ src: '' })) }
-    );
-    warnings.push(...result.messages.map((m) => m.message));
-    warnings.push(
-      'Text, headings, lists, and tables are imported. Page layout, embedded objects, images, and tracked-change fidelity require review. The original upload remains available.'
-    );
-    const parsed = new DOMParser().parseFromString(result.value, 'text/html');
-    // Convert through the editor schema later; never inject unsanitized HTML into the DOM.
-    const { generateJSON } = await import('@tiptap/core');
-    const { default: StarterKit } = await import('@tiptap/starter-kit');
-    const { TableKit } = await import('@tiptap/extension-table');
-    parsed.querySelectorAll('script,style,iframe,object,img').forEach((el) => el.remove());
-    parsed.querySelectorAll('a').forEach((a) => {
-      if (!/^https?:\/\//i.test(a.getAttribute('href') || '')) a.removeAttribute('href');
-    });
-    const content = generateJSON(parsed.body.innerHTML, [StarterKit, TableKit]) as TextBlock;
-    for (const [i, block] of (content.content || []).entries()) {
+    const { convertDocx } = await import('./office-import');
+    const result = await convertDocx(buffer);
+    warnings.push(...result.warnings);
+    const root = ops[0];
+    if (root.type === 'NodeCreated')
+      root.fields = { ...(root.fields as object), page_setup: result.page };
+    for (const [i, block] of result.blocks.entries()) {
       const id = ulid();
       block.attrs = { ...block.attrs, blockId: id };
       ops.push(itemOp(rootId, i, { label: textOf(block), content: block }, id));
@@ -217,12 +232,34 @@ export async function exportSpreadsheet(
     } catch {
       worksheet = book.addWorksheet(`Sheet ${i + 1}`);
     }
-    worksheet.addRows(
-      grid(s.id).map((row) =>
-        row.map((value) => (value.startsWith('=') ? { formula: value.slice(1) } : value))
-      )
-    );
-    worksheet.columns.forEach((col) => (col.width = 22));
+    const rows = rowsForSheet(state, s.id),
+      layout = sheetLayout(s.current_fields.sheet_layout);
+    rows.forEach((row, r) => {
+      const count = Math.min(100, Number(s.current_fields.columns) || 12);
+      for (let c = 0; c < count; c++)
+        writeCell(
+          worksheet.getCell(r + 1, c + 1),
+          String(row.current_fields[`cell_${c}`] ?? ''),
+          cellFormat(row, c)
+        );
+      if (row.current_fields.row_height)
+        worksheet.getRow(r + 1).height = (Number(row.current_fields.row_height) * 3) / 4;
+      worksheet.getRow(r + 1).hidden = row.current_fields.hidden === true;
+    });
+    for (let c = 0; c < (Number(s.current_fields.columns) || 12); c++) {
+      worksheet.getColumn(c + 1).width = ((layout.widths[String(c)] || 118) - 5) / 7;
+      worksheet.getColumn(c + 1).hidden = layout.hiddenColumns.includes(c);
+    }
+    if (layout.frozenRows || layout.frozenColumns)
+      worksheet.views = [
+        { state: 'frozen', xSplit: layout.frozenColumns, ySplit: layout.frozenRows }
+      ];
+    for (const merge of layout.merges) {
+      const from = rows.findIndex((r) => r.id === merge.fromRow),
+        to = rows.findIndex((r) => r.id === merge.toRow);
+      if (from >= 0 && to >= from)
+        worksheet.mergeCells(from + 1, merge.fromCol + 1, to + 1, merge.toCol + 1);
+    }
   });
   download(
     (await book.xlsx.writeBuffer()) as ArrayBuffer,
@@ -231,129 +268,9 @@ export async function exportSpreadsheet(
   );
 }
 export async function exportDocument(state: DocumentState, name: string) {
-  const {
-    Document,
-    Packer,
-    Paragraph,
-    TextRun,
-    HeadingLevel,
-    AlignmentType,
-    Table,
-    TableRow,
-    TableCell
-  } = await import('docx');
-  const live = Object.values(state.nodes).filter((n) => !n.deleted);
-  const tabs = live
-    .filter(
-      (n) => n.type === 'form' || (n.type === 'section' && n.current_fields.kind === 'document_tab')
-    )
-    .sort((a, b) => (a.type === 'form' ? -1 : b.type === 'form' ? 1 : a.pos.localeCompare(b.pos)));
-  const nodes = tabs.flatMap((tab) => [
-    ...(tab.type === 'section'
-      ? [
-          {
-            current_fields: {
-              label: String(tab.current_fields.label || 'Untitled tab'),
-              content: {
-                type: 'heading',
-                attrs: { level: 1 },
-                content: [
-                  { type: 'text', text: String(tab.current_fields.label || 'Untitled tab') }
-                ]
-              }
-            }
-          }
-        ]
-      : []),
-    ...live
-      .filter((n) => n.type === 'item' && n.parent_id === tab.id)
-      .sort((a, b) => a.pos.localeCompare(b.pos))
-  ]);
-  function runs(block: TextBlock): InstanceType<typeof TextRun>[] {
-    // Preserve equation source in Word when native equation conversion is unavailable.
-    if (block.type === 'inlineMath' || block.type === 'blockMath')
-      return [new TextRun({ text: String(block.attrs?.latex || ''), font: 'Cambria Math' })];
-    if (block.type === 'hardBreak') return [new TextRun({ break: 1 })];
-    if (block.type === 'image')
-      return [
-        new TextRun({
-          text: `[Image: ${String(block.attrs?.alt || block.attrs?.src || '')}]`,
-          italics: true
-        })
-      ];
-    if (block.text !== undefined) {
-      const marks = block.marks || [];
-      return [
-        new TextRun({
-          text: block.text,
-          bold: marks.some((m) => m.type === 'bold'),
-          italics: marks.some((m) => m.type === 'italic'),
-          underline: marks.some((m) => m.type === 'underline') ? {} : undefined,
-          strike: marks.some((m) => m.type === 'strike'),
-          superScript: marks.some((m) => m.type === 'superscript'),
-          subScript: marks.some((m) => m.type === 'subscript')
-        })
-      ];
-    }
-    return (block.content || []).flatMap(runs);
-  }
-  function blocks(
-    block: TextBlock
-  ): (InstanceType<typeof Paragraph> | InstanceType<typeof Table>)[] {
-    if (block.type === 'table')
-      return [
-        new Table({
-          rows: (block.content || []).map(
-            (row) =>
-              new TableRow({
-                children: (row.content || []).map(
-                  (cell) => new TableCell({ children: (cell.content || []).flatMap(blocks) })
-                )
-              })
-          )
-        })
-      ];
-    if (
-      ['bulletList', 'orderedList', 'listItem', 'blockquote', 'taskList', 'taskItem'].includes(
-        block.type
-      )
-    )
-      return (block.content || []).flatMap(blocks);
-    const level = Number(block.attrs?.level) || 1;
-    const heading =
-      block.type === 'heading'
-        ? [
-            HeadingLevel.HEADING_1,
-            HeadingLevel.HEADING_2,
-            HeadingLevel.HEADING_3,
-            HeadingLevel.HEADING_4,
-            HeadingLevel.HEADING_5,
-            HeadingLevel.HEADING_6
-          ][level - 1]
-        : undefined;
-    const align = String(block.attrs?.textAlign || 'left');
-    const alignment = {
-      left: AlignmentType.LEFT,
-      center: AlignmentType.CENTER,
-      right: AlignmentType.RIGHT,
-      justify: AlignmentType.JUSTIFIED
-    }[align as 'left'];
-    return [new Paragraph({ children: runs(block), heading, alignment })];
-  }
-  const doc = new Document({
-    sections: [
-      {
-        children: nodes.flatMap((n) =>
-          blocks(
-            (n.current_fields.content as TextBlock) ||
-              paragraph(String(n.current_fields.label || ''))
-          )
-        )
-      }
-    ]
-  });
+  const { writeDocx } = await import('./docx-export');
   download(
-    await Packer.toBlob(doc),
+    await writeDocx(state, name),
     name + '.docx',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
   );

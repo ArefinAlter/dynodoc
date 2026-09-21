@@ -4,11 +4,11 @@
 </script>
 
 <ProductPage
-  title="The workspace behind the research"
-  description="Write the protocol, refine the instrument, review the data, and keep the decisions that connect them."
+  title="Familiar editing. A better way to handle change."
+  description="Write documents, work with spreadsheets, compare alternatives and keep the decisions behind each revision."
 >
   <section>
-    <h2>Follow a revision from draft to shared research</h2>
+    <h2>Follow a revision from personal draft to shared version</h2>
     <ResearchJourney />
   </section>
   <section class="cards">
@@ -16,18 +16,19 @@
       <span class="badge">Documents</span>
       <h2>Write with room to revise.</h2>
       <p>
-        Use a familiar formatting ribbon, document tabs, headings, lists, tables, links, images,
-        checklists and LaTeX equations. Add comments where the discussion belongs. Export Word or a
-        LaTeX project for Overleaf.
+        Use Home, Insert, Layout, Review and View ribbons. Set page size, margins, headers and
+        footers; preview printed pages. Work with headings, tables, right-to-left text, uploaded
+        fonts, comments, text revisions and LaTeX equations. Export the supported formatting to
+        Word.
       </p>
     </article>
     <article>
       <span class="badge">Spreadsheets</span>
       <h2>Keep data work connected.</h2>
       <p>
-        Work with multiple sheets, formulas, formatting, filtering and cell ranges. Insert or remove
-        rows and columns with formula references adjusted. Rename, duplicate and reorder sheets from
-        the tab controls.
+        Work with multiple sheets, formulas, formatting, filters and cell ranges. Fill formulas with
+        adjusted references, merge empty ranges, freeze panes and validate entries. Preserve common
+        formats, widths, notes and formulas when exchanging Excel workbooks.
       </p>
     </article>
     <article>
@@ -51,7 +52,7 @@
   <section>
     <h2>Access that follows your team</h2>
     <p>
-      Organize research into organizations, teams and folders. Owners and managers control sharing.
+      Organize documents into organizations, teams and folders. Owners and managers control sharing.
       Editors, reviewers and viewers get appropriate access. Publish a frozen read-only copy when
       you want to share outside the team, and revoke it later. Recover documents from Trash without
       rewriting their history.
@@ -110,11 +111,12 @@
   </section>
   <section class="callout">
     <h2>Know what is available today</h2>
+    <p><a href="/compatibility">Read the detailed Word and Excel compatibility guide.</a></p>
     <p>
       Dynodoc supports deliberate, versioned collaboration. Simultaneous character-level cursors,
       complete Office feature parity, pivot-table design, native chart creation and full vendor
       survey runtimes are still outside the current editor. <a href="/roadmap"
-        >See the planned research tools</a
+        >See the document platform roadmap</a
       >
       and <a href="/help">learn the current workflow</a>.
     </p>

@@ -5,7 +5,7 @@
   let {
     title,
     description,
-    eyebrow = 'Built around the research process',
+    eyebrow = 'VERSION CONTROL FOR DOCUMENTS',
     children
   }: { title: string; description: string; eyebrow?: string; children: Snippet } = $props();
 </script>

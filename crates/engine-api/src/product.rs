@@ -389,6 +389,17 @@ async fn publish(
             "Refresh and save your changes before publishing this copy",
         ));
     }
+    if current.nodes.values().any(|node| {
+        !node.deleted
+            && node
+                .current_fields
+                .get("content")
+                .is_some_and(has_text_revisions)
+    }) {
+        return Err(bad(
+            "Accept or reject tracked text changes before publishing a public copy",
+        ));
+    }
     let root = merkle_root(&current)?;
     let snapshot:Uuid=sqlx::query_scalar("insert into snapshot(document_id,through_seq,state,merkle_root,event_chain_hash) values($1,$2,$3,$4,$5) on conflict(document_id,through_seq) do update set through_seq=excluded.through_seq returning id").bind(id).bind(seq).bind(json!(current)).bind(root.as_slice()).bind(hash).fetch_one(&mut *tx).await?;
     let (token, hash) = random_token()?;
@@ -477,8 +488,85 @@ async fn public_document(
             {
                 fields.remove("import_report");
                 fields.remove("research_source");
+                fields.remove("fonts");
+                if let Some(rich) = fields.get_mut("content") {
+                    strip_private_review(rich);
+                    let label = engine_core::richtext::plain_text(rich);
+                    fields.insert("label".into(), json!(label));
+                }
+                for (key, value) in fields.iter_mut() {
+                    if key.starts_with("format_") {
+                        if let Some(format) = value.as_object_mut() {
+                            format.remove("note");
+                        }
+                    }
+                }
             }
         }
     }
     Ok(Json(json!({"title":title,"kind":kind,"state":content})))
+}
+
+fn has_text_revisions(value: &Value) -> bool {
+    match value {
+        Value::Object(object) => {
+            object.get("type").and_then(Value::as_str) == Some("trackedChange")
+                || object.values().any(has_text_revisions)
+        }
+        Value::Array(values) => values.iter().any(has_text_revisions),
+        _ => false,
+    }
+}
+
+// Native DOCX comments are embedded marks, unlike event-log comments. The public
+// projection must remove both, including their author/body attributes. Never mutate
+// the stored snapshot: this is a read-only projection of an explicitly published copy.
+fn strip_private_review(value: &mut Value) {
+    if let Some(object) = value.as_object_mut() {
+        if let Some(marks) = object.get_mut("marks").and_then(Value::as_array_mut) {
+            marks.retain(|mark| {
+                !matches!(
+                    mark.get("type").and_then(Value::as_str),
+                    Some("sourceComment" | "trackedChange")
+                )
+            });
+        }
+        if let Some(children) = object.get_mut("content").and_then(Value::as_array_mut) {
+            children.retain(|node| {
+                !node
+                    .get("marks")
+                    .and_then(Value::as_array)
+                    .is_some_and(|marks| {
+                        marks.iter().any(|mark| {
+                            mark.get("type").and_then(Value::as_str) == Some("trackedChange")
+                                && mark.pointer("/attrs/kind").and_then(Value::as_str)
+                                    == Some("delete")
+                        })
+                    })
+            });
+            for child in children {
+                strip_private_review(child);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod office_public_tests {
+    use super::*;
+
+    #[test]
+    fn embedded_review_metadata_stays_out_of_public_copies() {
+        let mut content = json!({"type":"paragraph","content":[
+            {"type":"text","text":"Visible","marks":[{"type":"bold"},{"type":"sourceComment","attrs":{"author":"Private reviewer","body":"Private note"}}]},
+            {"type":"text","text":"Deleted secret","marks":[{"type":"trackedChange","attrs":{"kind":"delete","author":"Private reviewer"}}]},
+            {"type":"text","text":" Added","marks":[{"type":"trackedChange","attrs":{"kind":"insert","author":"Private reviewer"}}]}
+        ]});
+        assert!(has_text_revisions(&content));
+        strip_private_review(&mut content);
+        assert_eq!(engine_core::richtext::plain_text(&content), "Visible Added");
+        assert!(!content.to_string().contains("Private"));
+        assert!(!has_text_revisions(&content));
+        assert_eq!(content["content"][0]["marks"][0]["type"], "bold");
+    }
 }

@@ -74,9 +74,9 @@
     <a class="brand" href="https://dynodoc.online"
       ><img src="/brand/mark.svg?v=2" width="52" height="52" alt="Dynodoc" /></a
     >
-    <p class="eyebrow">YOUR RESEARCH, TOGETHER</p>
+    <p class="eyebrow">YOUR DOCUMENTS, WITH A HISTORY</p>
     <h1>Welcome to your workspace.</h1>
-    <p class="intro">A little less file chaos.<br />A lot more room for good research.</p>
+    <p class="intro">A little less file chaos.<br />A clear history for every document.</p>
     {#if $page.url.searchParams.get('token')}
       <div class="notice">
         <Mail size={22} />
@@ -126,7 +126,7 @@
             type="email"
             autocomplete="email"
             bind:value={email}
-            placeholder="you@research.org"
+            placeholder="you@company.com"
             required
           /></label
         >
@@ -142,7 +142,7 @@
     {#if error}<p role="alert" class="error">{error}</p>{/if}
   </section>
   <p class="footer">
-    Made for the people behind the research.<br /><a href="/privacy">Privacy policy</a> ·
+    Made for the people behind every revision.<br /><a href="/privacy">Privacy policy</a> ·
     <a href="/terms">Terms &amp; conditions</a>
   </p>
 </main>

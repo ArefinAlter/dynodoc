@@ -140,7 +140,7 @@
           void share();
         }}
       >
-        <label>Researcher email<input type="email" bind:value={email} required /></label><label
+        <label>Collaborator email<input type="email" bind:value={email} required /></label><label
           >Role<select bind:value={role}
             >{#if current.role === 'owner'}<option value="owner">Owner</option>{/if}<option
               value="manager">Manager</option

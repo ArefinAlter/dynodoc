@@ -19,7 +19,7 @@
 
 <LegalPage
   title="Privacy policy"
-  description="How the Dynodoc research pilot handles account information, research materials, collaboration history and connected services."
+  description="How the Dynodoc document workspace handles account information, research materials, collaboration history and connected services."
   {sections}
 >
   <section id="scope">

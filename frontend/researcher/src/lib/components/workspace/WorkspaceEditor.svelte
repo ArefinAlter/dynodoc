@@ -1,5 +1,6 @@
 <script lang="ts">
   import { describeRichTextPatch } from '$lib/workspace/richtext';
+  import { documentFonts, safeFont, type PageSetup } from '$lib/workspace/office';
   import { onMount, untrack } from 'svelte';
   import { beforeNavigate, goto } from '$app/navigation';
   import {
@@ -37,6 +38,7 @@
   } from '$lib/workspace/api';
   import {
     cloneState,
+    applyLocalChanges,
     richContent,
     richChanges,
     stateChanges,
@@ -58,6 +60,8 @@
   let { store }: { store: DocumentStore } = $props();
   const kind = $derived(documentKind(store.detail!));
   let canManage = $state(false);
+  let identityId = $state('');
+  let composing = $state(false);
   const author = $derived(store.detail?.role === 'author');
   let local = $state<DocumentState>(untrack(() => cloneState(store.state))),
     base = $state<DocumentState>(untrack(() => cloneState(store.state))),
@@ -103,6 +107,11 @@
     compareName = $state(''),
     undoStack = $state<DocumentState[]>([]),
     redoStack = $state<DocumentState[]>([]);
+  const reviewerName = $derived(
+    members.find((m) => m.id === identityId)?.name ||
+      members.find((m) => m.id === identityId)?.email ||
+      'Editor'
+  );
   let suggestionValue = $state(''),
     suggestionField = $state(
       untrack(() => (documentKind(store.detail!) === 'spreadsheet' ? 'cell_0' : 'label'))
@@ -168,6 +177,43 @@
   );
   const textParent = $derived(textTabs.some((t) => t.id === activeTab) ? activeTab : textRoot?.id);
   const content = $derived(richContent(local, textParent));
+  function changePage(settings: PageSetup) {
+    if (textRoot)
+      change([{ type: 'FieldEdited', node_id: textRoot.id, field: 'page_setup', value: settings }]);
+  }
+  async function importFont(file: File, family: string) {
+    if (!author || !textRoot) throw new Error('An editor must upload shared document fonts.');
+    if (
+      safeFont(family) !== family ||
+      !/\.(woff2?|ttf|otf)$/i.test(file.name) ||
+      file.size > 2 * 1024 * 1024
+    )
+      throw new Error('Choose a WOFF2, WOFF, TTF or OTF font under 2 MB with a plain family name.');
+    const fonts = documentFonts(textRoot.current_fields.fonts);
+    if (fonts.length >= 16) throw new Error('A document supports up to 16 imported font families.');
+    if (fonts.some((f) => f.family === family))
+      throw new Error('That font family is already available in this document.');
+    const buffer = await file.arrayBuffer();
+    await new FontFace(family, buffer).load();
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 8192)
+      binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+    const uploaded = await request<{ id: string }>(`${prefix}/uploads`, {
+      filename: file.name,
+      content_type: file.type || 'application/octet-stream',
+      content: btoa(binary),
+      report: { kind: 'font', family }
+    });
+    change([
+      {
+        type: 'FieldEdited',
+        node_id: textRoot.id,
+        field: 'fonts',
+        value: [...fonts, { family, uploadId: uploaded.id }]
+      }
+    ]);
+  }
   function addTextTab() {
     if (!textRoot) return;
     const name = prompt('Name this document tab', 'New tab')?.trim();
@@ -228,7 +274,7 @@
   $effect(() => {
     const seq = store.seq;
     untrack(() => {
-      if (!draftId && !dirty && !saving) {
+      if (!draftId && !dirty && !saving && !composing) {
         base = cloneState(store.state);
         local = cloneState(store.state);
         baseSeq = seq;
@@ -237,27 +283,31 @@
     });
   });
   $effect(() => {
-    if (dirty && !saving && !blocked) {
+    if (dirty && !saving && !blocked && !composing) {
       clearTimeout(timer);
       timer = setTimeout(() => void save(), 1300);
     }
     return () => clearTimeout(timer);
   });
   beforeNavigate(({ cancel }) => {
-    if (dirty) {
+    if (dirty || composing) {
       cancel();
       error = 'Save these changes or put them in a personal draft before leaving.';
     }
   });
   onMount(() => {
     const unload = (e: BeforeUnloadEvent) => {
-      if (dirty) {
+      if (dirty || composing) {
         e.preventDefault();
         e.returnValue = '';
       }
     };
     window.addEventListener('beforeunload', unload);
     void refreshPeople();
+    void fetch('/auth/session')
+      .then((r) => r.json())
+      .then((s) => (identityId = s.identity_id || ''))
+      .catch(() => {});
     void request<{ can_manage: boolean }>(`${prefix}/access`)
       .then((a) => {
         canManage = a.can_manage;
@@ -268,22 +318,25 @@
       window.removeEventListener('beforeunload', unload);
     };
   });
-  function change(ops: EventPayload[], record = true) {
+  function change(ops: EventPayload[], record = true, reapply = true) {
     if (!ops.length) return;
+    if (ops.length > 5000) {
+      error = 'Change up to 5,000 fields at a time. Select a smaller range.';
+      return;
+    }
     if (record) {
-      undoStack.push(cloneState(local));
+      undoStack.push(local);
       if (undoStack.length > 50) undoStack.shift();
       redoStack = [];
     }
-    const next = cloneState(local);
-    for (const op of ops) applyPayload(next, op);
-    local = next;
-    dirty = stateChanges(base, local).length > 0;
+    local = applyLocalChanges(local, ops);
+    dirty = true;
     saved = dirty ? 'Unsaved changes' : 'All changes saved';
-    revision++;
+    if (reapply) revision++;
   }
-  function changeRich(value: JSONContent) {
-    change(richChanges(local, value, textParent));
+  function changeRich(value: JSONContent, changedIds?: Set<string>) {
+    // ProseMirror owns rich-text undo; do not keep a duplicate document snapshot per keystroke.
+    change(richChanges(local, value, textParent, changedIds), false, false);
   }
   function undo() {
     const prev = undoStack.pop();
@@ -304,11 +357,12 @@
     }
   }
   async function save() {
-    if (saving || !dirty) return;
+    if (saving || !dirty || composing) return;
     const sent = cloneState(local),
       ops = stateChanges(base, sent);
     if (!ops.length) {
       dirty = false;
+      saved = draftId ? 'Personal draft saved' : 'All changes saved';
       return;
     }
     saving = true;
@@ -544,11 +598,40 @@
     await run(async () => {
       const created = await createDocument({ title: `${title} — copy`, languages: ['en'] });
       await request(`/documents/${created.id}/metadata`, { settings: { kind } });
+      const copiedFonts = new Map<string, string>();
+      for (const font of documentFonts(textRoot?.current_fields.fonts)) {
+        const response = await fetch(`/api/engine${prefix}/uploads/${font.uploadId}`);
+        if (!response.ok) throw new Error('The document font could not be copied.');
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        let binary = '';
+        for (let i = 0; i < bytes.length; i += 8192)
+          binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+        const uploaded = await request<{ id: string }>(`/documents/${created.id}/uploads`, {
+          filename: `${font.family}.font`,
+          content_type: response.headers.get('content-type') || 'application/octet-stream',
+          content: btoa(binary),
+          report: { kind: 'font', family: font.family }
+        });
+        copiedFonts.set(font.uploadId, uploaded.id);
+      }
       const ids = new Map(Object.keys(local.nodes).map((id) => [id, ulid()]));
       const empty = { nodes: {}, comments: [], suggestions: {}, removed_choices: [] };
       const ops = stateChanges(empty, local).map((op) => {
         if (op.type !== 'NodeCreated') return op;
         const fields = JSON.parse(JSON.stringify(op.fields || {}));
+        if (fields.fonts)
+          fields.fonts = documentFonts(fields.fonts).map((f) => ({
+            ...f,
+            uploadId: copiedFonts.get(f.uploadId) || f.uploadId
+          }));
+        if (fields.sheet_layout?.merges)
+          fields.sheet_layout.merges = fields.sheet_layout.merges.map(
+            (m: { fromRow: string; toRow: string }) => ({
+              ...m,
+              fromRow: ids.get(m.fromRow),
+              toRow: ids.get(m.toRow)
+            })
+          );
         if (fields.content)
           fields.content.attrs = { ...fields.content.attrs, blockId: ids.get(op.node_id) };
         return {
@@ -610,7 +693,7 @@
   }
   function person(id: string) {
     const m = members.find((m) => m.id === id);
-    return m?.name || m?.email || 'Researcher';
+    return m?.name || m?.email || 'Collaborator';
   }
 </script>
 
@@ -661,8 +744,12 @@
                 ><ShieldCheck size={14} /> Download audit history</button
               ><button onclick={() => void openPanel('files')}
                 >Original uploads & import report</button
-              ><button onclick={() => window.print()}>Print</button>{#if author}<button
-                  onclick={() => void archive()}
+              ><button
+                onclick={() =>
+                  kind === 'questionnaire'
+                    ? window.print()
+                    : window.dispatchEvent(new Event('dynodoc-print'))}>Print</button
+              >{#if author}<button onclick={() => void archive()}
                   >{store.detail?.status === 'archived'
                     ? 'Restore to workspace'
                     : 'Move to archive'}</button
@@ -735,6 +822,21 @@
         <RichEditor
           {content}
           {editable}
+          {reviewerName}
+          onCompositionChange={(active) => {
+            composing = active;
+            if (!active && !dirty && !saving && !draftId) {
+              base = cloneState(store.state);
+              local = cloneState(store.state);
+              baseSeq = store.seq;
+              revision++;
+            }
+          }}
+          documentId={store.documentId}
+          pageSettings={textRoot?.current_fields.page_setup}
+          fonts={textRoot?.current_fields.fonts}
+          onPageChange={changePage}
+          onFont={author ? importFont : undefined}
           onComment={author || store.detail?.role === 'reviewer'
             ? () => {
                 void openPanel('comments');
@@ -746,6 +848,15 @@
         />{:else if kind === 'spreadsheet'}<SheetEditor
           documentState={local}
           {editable}
+          onEditingChange={(active) => {
+            composing = active;
+            if (!active && !dirty && !saving && !draftId) {
+              base = cloneState(store.state);
+              local = cloneState(store.state);
+              baseSeq = store.seq;
+              revision++;
+            }
+          }}
           onChange={change}
           onSelect={(id) => (selected = id)}
           onComment={author || store.detail?.role === 'reviewer'
@@ -804,7 +915,7 @@
                   required
                 /></label
               ><label
-                >Access<select bind:value={role}
+                >Access<select aria-label="Access" bind:value={role}
                   ><option value="author">Can edit</option><option value="reviewer"
                     >Can comment & suggest</option
                   ><option value="auditor">Can view</option><option value="remove"
@@ -860,7 +971,7 @@
               <label
                 >Version name<input
                   bind:value={name}
-                  placeholder="Ready for field testing"
+                  placeholder="Approved for release"
                   required
                   maxlength="200"
                 /></label
@@ -877,7 +988,7 @@
                 </p>{/each}
             </div>{/if}{#each versions as v}<div class="version">
               <span class="dot"></span><strong>{v.name}</strong><small
-                >{new Date(v.created_at).toLocaleString()} · {v.author || 'Researcher'}</small
+                >{new Date(v.created_at).toLocaleString()} · {v.author || 'Collaborator'}</small
               >{#if v.note}<p>{v.note}</p>{/if}
               <div>
                 <button onclick={() => void compareVersion(v)}>Compare</button
@@ -1150,7 +1261,7 @@
     color: #3a4757;
   }
   .workspace-editor.sheet-theme {
-    --editor-accent: #107c41;
+    --editor-accent: #176537;
     --editor-tint: #e2f0e7;
     --editor-chrome: #f3f8f5;
   }

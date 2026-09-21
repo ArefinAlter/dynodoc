@@ -9,15 +9,15 @@ export const CANONICAL_ORIGIN = 'https://dynodoc.online';
 
 /**
  * Only the public homepage host is indexable. `app.` and `admin.` serve the
- * same SvelteKit app but hold private research content, so they are excluded
+ * same SvelteKit app but hold private document content, so they are excluded
  * everywhere: robots.txt, the head tags and the x-robots-tag header.
  */
 export const INDEXABLE_HOSTS = ['dynodoc.online', 'www.dynodoc.online'];
 
 export const SITE_NAME = 'Dynodoc';
-export const SITE_TAGLINE = 'A clearer way to work on research, together';
+export const SITE_TAGLINE = 'Version control for documents';
 export const SITE_DESCRIPTION =
-  'Write research documents, work with spreadsheets and refine questionnaires in a shared workspace. Explore drafts, review changes and keep the history behind your work.';
+  'Version control for rich-text documents and spreadsheets. Write in a familiar editor, explore private drafts, review wording and formatting, and share selected changes.';
 export const SITE_IMAGE = `${CANONICAL_ORIGIN}/brand/social.png`;
 
 export type IndexablePage = {
@@ -33,10 +33,19 @@ export type IndexablePage = {
 
 export const INDEXABLE_PAGES: IndexablePage[] = [
   {
+    path: '/compatibility',
+    title: 'Document & spreadsheet compatibility · Dynodoc',
+    description:
+      'Current Word, Excel, DOCX, XLSX, pagination, review and accessibility support, with explicit limits.',
+    lastmod: '2026-09-21',
+    changefreq: 'monthly',
+    priority: '0.7'
+  },
+  {
     path: '/',
     title: `${SITE_NAME} — ${SITE_TAGLINE}`,
     description: SITE_DESCRIPTION,
-    lastmod: '2026-09-19',
+    lastmod: '2026-09-21',
     changefreq: 'weekly',
     priority: '1.0'
   },
@@ -44,8 +53,8 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     path: '/privacy',
     title: `Privacy policy · ${SITE_NAME}`,
     description:
-      'How the Dynodoc research pilot handles account information, research materials, collaboration history and connected services.',
-    lastmod: '2026-09-19',
+      'How Dynodoc handles account information, uploaded documents, collaboration history and connected services.',
+    lastmod: '2026-09-21',
     changefreq: 'monthly',
     priority: '0.5'
   },
@@ -53,8 +62,8 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     path: '/terms',
     title: `Terms & conditions · ${SITE_NAME}`,
     description:
-      'Proposed terms for using the Dynodoc research pilot, including accounts, collaboration, content ownership and responsible use.',
-    lastmod: '2026-09-19',
+      'Proposed terms for using Dynodoc, including accounts, collaboration, content ownership and responsible use.',
+    lastmod: '2026-09-21',
     changefreq: 'monthly',
     priority: '0.5'
   },
@@ -63,15 +72,16 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     title: 'Features · Dynodoc',
     description:
       'Current document, spreadsheet, questionnaire, integration and review capabilities.',
-    lastmod: '2026-09-19',
+    lastmod: '2026-09-21',
     changefreq: 'monthly',
     priority: '0.7'
   },
   {
     path: '/why-dynodoc',
     title: 'Why Dynodoc · Dynodoc',
-    description: 'Research practice, transparent revisions and the evidence behind the design.',
-    lastmod: '2026-09-19',
+    description:
+      'Document version control, transparent revisions and the evidence behind the design.',
+    lastmod: '2026-09-21',
     changefreq: 'monthly',
     priority: '0.7'
   },
@@ -79,8 +89,8 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     path: '/roadmap',
     title: 'Product roadmap · Dynodoc',
     description:
-      'Planned learning, validation, statistical, fieldwork and geospatial research tools.',
-    lastmod: '2026-09-19',
+      'The roadmap for document fidelity, efficient history, attribution, offline collaboration and additional use cases.',
+    lastmod: '2026-09-21',
     changefreq: 'monthly',
     priority: '0.7'
   },
@@ -88,7 +98,7 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     path: '/help',
     title: 'Help & tutorials · Dynodoc',
     description: 'Learn editing, team access, personal drafts, public sharing and version history.',
-    lastmod: '2026-09-19',
+    lastmod: '2026-09-21',
     changefreq: 'monthly',
     priority: '0.7'
   },
@@ -97,7 +107,7 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     title: 'Cookies & local storage · Dynodoc',
     description:
       'Sign-in cookies, local preferences and optional PostgreSQL performance measurements.',
-    lastmod: '2026-09-19',
+    lastmod: '2026-09-21',
     changefreq: 'monthly',
     priority: '0.7'
   }
@@ -114,6 +124,7 @@ export const PUBLIC_SEO_FILES = [
 
 /** Routes that must never be crawled, even on the public host. */
 export const DISALLOWED_PATHS = [
+  '/print',
   '/api/',
   '/auth/',
   '/admin',

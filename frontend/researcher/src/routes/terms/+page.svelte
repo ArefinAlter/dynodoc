@@ -3,7 +3,7 @@
   const sections = [
     { id: 'agreement', title: 'About these terms' },
     { id: 'accounts', title: 'Accounts and access' },
-    { id: 'service', title: 'The research pilot' },
+    { id: 'service', title: 'The document platform' },
     { id: 'content', title: 'Your content and ownership' },
     { id: 'collaboration', title: 'Collaboration and history' },
     { id: 'research', title: 'Research responsibilities' },
@@ -20,7 +20,7 @@
 
 <LegalPage
   title="Terms & conditions"
-  description="Proposed terms for using the Dynodoc research pilot, including accounts, collaboration, content ownership and responsible use."
+  description="Proposed terms for using the Dynodoc document workspace, including accounts, collaboration, content ownership and responsible use."
   {sections}
 >
   <section id="agreement">
@@ -58,8 +58,8 @@
       established below.
     </p>
     <p>
-      The pilot is intended for adult researchers and authorized collaborators who can enter a
-      binding agreement under applicable law. Participation by someone who cannot do so requires an
+      The service is intended for adults and authorized collaborators who can enter a binding
+      agreement under applicable law. Participation by someone who cannot do so requires an
       appropriate institutional or representative arrangement; the service is not directed at
       children.
     </p>
@@ -70,14 +70,15 @@
     </p>
   </section>
   <section id="service">
-    <h2>The research pilot</h2>
+    <h2>The document platform</h2>
     <p>
-      Dynodoc provides a web workspace for research documents, spreadsheets and questionnaires, with
-      imports, exports, personal drafts, selected-change sharing, review and content history.
-      Feature availability depends on the current release and deployment configuration.
+      Dynodoc provides a version-controlled web workspace for documents, spreadsheets and
+      questionnaires, with imports, exports, personal drafts, selected-change sharing, review and
+      content history. Feature availability depends on the current release and deployment
+      configuration.
     </p>
     <p>
-      This is a pilot for a small research team. It does not promise full feature or file-format
+      The service is under active development. It does not promise full feature or file-format
       parity with Microsoft Word, Excel, Google Docs or Google Sheets. It does not currently provide
       real-time character-by-character co-editing, all advanced spreadsheet functions or a complete
       survey execution platform.
@@ -95,9 +96,8 @@
   <section id="content">
     <h2>Your content and ownership</h2>
     <p>
-      You and the relevant rights holders retain ownership of the research materials, documents,
-      data and other content you submit. Using Dynodoc does not transfer that ownership to the
-      operator.
+      You and the relevant rights holders retain ownership of the materials, documents, data and
+      other content you submit. Using Dynodoc does not transfer that ownership to the operator.
     </p>
     <p>
       The proposed service permission is limited to hosting, storing, reproducing, transmitting,

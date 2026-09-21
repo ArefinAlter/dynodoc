@@ -6,8 +6,8 @@
       title: 'Capture the starting point',
       label: 'Bring it in',
       icon: FileText,
-      text: 'Import the questionnaire and its source file. Keep the original beside an editable copy, with conversion notes you can review.',
-      example: 'Community wellbeing · Original instrument',
+      text: 'Import the document and its source file. Keep the original beside an editable copy, with conversion notes you can review.',
+      example: 'Project proposal · Original document',
       tag: 'Source retained'
     },
     {
@@ -15,23 +15,23 @@
       label: 'Explore a draft',
       icon: GitBranch,
       text: 'Try revised wording in a personal draft. Your team can continue working while you prepare a proposal.',
-      example: '“How often did you feel supported?”',
+      example: '“Launch the first phase in September.”',
       tag: 'Personal draft'
     },
     {
       title: 'Review the change that matters',
       label: 'Review together',
       icon: MessageSquare,
-      text: 'Compare a question, paragraph or cell. Keep the conversation close to the edit and resolve competing changes before sharing.',
-      example: 'Recall period changed from one month to seven days.',
+      text: 'Compare a paragraph, table or cell. Keep the conversation close to the edit and resolve competing changes before sharing.',
+      example: 'Delivery date changed from August to September.',
       tag: 'Decision recorded'
     },
     {
       title: 'Know which version went forward',
       label: 'Share a milestone',
       icon: ShieldCheck,
-      text: 'Name the approved version, export it for fieldwork, or publish a read-only copy with a link you can revoke.',
-      example: 'Fieldwork approved · September revision',
+      text: 'Name the approved version, export it for delivery, or publish a read-only copy with a link you can revoke.',
+      example: 'Approved for release · September revision',
       tag: 'Saved version'
     }
   ];
@@ -39,7 +39,7 @@
 </script>
 
 <div class="journey">
-  <div class="path" aria-label="Explore a research revision">
+  <div class="path" aria-label="Explore a document revision">
     {#each steps as item, i}<button
         class:active={selected === i}
         aria-pressed={selected === i}

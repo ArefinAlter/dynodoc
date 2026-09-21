@@ -62,13 +62,13 @@
       <div>
         <strong
           >{mode === 'document'
-            ? 'Community voices · Interview guide'
+            ? 'Project launch · Working proposal'
             : mode === 'spreadsheet'
-              ? 'Fieldwork · Recruitment tracker'
+              ? 'Project launch · Delivery tracker'
               : 'Community voices · Survey'}</strong
         >
         <div class="app-meta">
-          <span>Community health study</span><span class="private"
+          <span>Shared team workspace</span><span class="private"
             ><LockKeyhole size={10} /> Personal draft</span
           >
         </div>
@@ -81,7 +81,7 @@
         onclick={() => (showHistory = !showHistory)}
         ><History size={17} /><span>History</span></button
       >
-      <span class="avatar" aria-label="Example researcher Maya">M</span>
+      <span class="avatar" aria-label="Example collaborator Maya">M</span>
     </div>
     <div class="toolbar" aria-hidden="true">
       <Undo2 size={14} /><Redo2 size={14} /><i></i><span>100% <ChevronDown size={11} /></span><i
@@ -100,7 +100,7 @@
             <span class="history-dot"></span>
             <p>
               <b
-                >{wording ? 'Interview question refined' : 'Working draft'}<small
+                >{wording ? 'Proposal wording refined' : 'Working draft'}<small
                   >Maya · Your current work</small
                 ></b
               >
@@ -112,7 +112,7 @@
           </div>
           <div>
             <span class="history-dot older"></span>
-            <p><b>Original guide imported<small>Maya · Source file retained</small></b></p>
+            <p><b>Original document imported<small>Maya · Source file retained</small></b></p>
           </div>
           <button disabled={!ready} onclick={() => (showHistory = false)}
             >Back to the example <ArrowUpRight size={14} /></button
@@ -121,36 +121,36 @@
       {:else if mode === 'document'}
         <div class="document-scene">
           <div class="paper">
-            <span class="paper-kicker">COMMUNITY HEALTH STUDY</span>
-            <h2>Start with their experience.</h2>
+            <span class="paper-kicker">PROJECT PROPOSAL</span>
+            <h2>A clear plan. A shared starting point.</h2>
             <p class="paper-intro">
-              Interview guide for understanding how people access care in their community.
+              A working proposal that keeps decisions, ownership and revisions together.
             </p>
             <div class="paper-rule"></div>
-            <h3>Access to local services</h3>
+            <h3>Delivery and review</h3>
             <p>
-              Invite participants to describe a recent experience in their own words. Leave room for
-              what matters to them.
+              Give each stage an owner and a review date. Keep a record of why the plan changes.
             </p>
             <div class="selected-paragraph" class:changed={wording}>
               <span class="block-mark"></span>{wording
-                ? 'Tell me about the last time you tried to get care. What was that experience like?'
-                : 'How often do you use local health services?'}
+                ? 'Deliver the first phase in September, following two weeks of review.'
+                : 'Deliver the complete project by the end of August.'}
             </div>
             <p class="prompt">
-              <b>Possible follow-up</b><br />Was there anything that made it easier or harder to get
-              support?
+              <b>Before approval</b><br />Confirm the budget, accessibility review and delivery
+              owners.
             </p>
             <div class="paper-lines" aria-hidden="true"><span></span><span></span></div>
           </div>
           <div class="comment">
             <div class="comment-top">
               <span class="comment-avatar">S</span>
-              <div><b>Sam</b><small>Reviewing the guide</small></div>
+              <div><b>Sam</b><small>Reviewing the proposal</small></div>
               <MessageSquare size={14} />
             </div>
             <p>
-              Could we make this more open-ended? A recent experience might give us richer detail.
+              Could we allow time for review? A phased delivery would make this commitment more
+              realistic.
             </p>
             <button disabled={!ready} onclick={() => (wording = !wording)}
               >{#if wording}<Check size={15} /> Suggestion applied{:else}Try this wording <ArrowUpRight
@@ -159,7 +159,7 @@
             ><span class="comment-note"
               >{wording
                 ? 'Click again to compare the original.'
-                : 'See how a small edit changes the question.'}</span
+                : 'See how a small edit changes the commitment.'}</span
             >
           </div>
         </div>
@@ -171,53 +171,53 @@
             >
           </div>
           <div class="sheet-scroll">
-            <table aria-label="Interactive recruitment tracker">
+            <table aria-label="Interactive delivery tracker">
               <thead><tr><th></th><th>A</th><th>B</th><th>C</th><th>D</th></tr></thead><tbody
                 ><tr
-                  ><th>1</th><td class="table-heading">Field site</td><td class="table-heading"
-                    >Interviews</td
+                  ><th>1</th><td class="table-heading">Workstream</td><td class="table-heading"
+                    >Tasks</td
                   ><td class="table-heading">Team lead</td><td class="table-heading">Status</td></tr
                 ><tr
-                  ><th>2</th><td>North district</td><td
+                  ><th>2</th><td>Design</td><td
                     ><input
                       disabled={!ready}
                       type="number"
                       min="0"
                       max="999"
-                      aria-label="North district interviews"
+                      aria-label="Design tasks"
                       value={north}
                       oninput={(e) =>
                         (north = Math.max(0, Math.min(999, Number(e.currentTarget.value) || 0)))}
                     /></td
                   ><td>Maya</td><td><span class="status-label">In progress</span></td></tr
                 ><tr
-                  ><th>3</th><td>South district</td><td
+                  ><th>3</th><td>Development</td><td
                     ><input
                       disabled={!ready}
                       type="number"
                       min="0"
                       max="999"
-                      aria-label="South district interviews"
+                      aria-label="Development tasks"
                       value={south}
                       oninput={(e) =>
                         (south = Math.max(0, Math.min(999, Number(e.currentTarget.value) || 0)))}
                     /></td
                   ><td>Sam</td><td><span class="status-label">In progress</span></td></tr
                 ><tr
-                  ><th>4</th><td>East district</td><td
+                  ><th>4</th><td>Review</td><td
                     ><input
                       disabled={!ready}
                       type="number"
                       min="0"
                       max="999"
-                      aria-label="East district interviews"
+                      aria-label="Review tasks"
                       value={east}
                       oninput={(e) =>
                         (east = Math.max(0, Math.min(999, Number(e.currentTarget.value) || 0)))}
                     /></td
                   ><td>Rafi</td><td><span class="status-label complete">Complete</span></td></tr
                 ><tr
-                  ><th>5</th><td class="total-label">Total interviews</td><td
+                  ><th>5</th><td class="total-label">Total tasks</td><td
                     class="total"
                     aria-live="polite">{total}</td
                   ><td></td><td></td></tr

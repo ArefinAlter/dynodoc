@@ -12,6 +12,21 @@
   } from '@lucide/svelte';
   const ideas = [
     {
+      icon: Waypoints,
+      title: 'Portable, efficient document histories',
+      body: 'Structurally shared snapshots, portable revision ancestry and incremental editor operations, measured against real document workloads.'
+    },
+    {
+      icon: ListChecks,
+      title: 'Higher-fidelity Word and Excel exchange',
+      body: 'Expand complex page layout, native equations, references, formatting revisions, charts and workbook compatibility, with published round-trip tests.'
+    },
+    {
+      icon: ClipboardCheck,
+      title: 'Precise attribution and offline collaboration',
+      body: 'Stable identities inside tables and nested content, attributed text ranges and an evaluated convergence layer for disconnected editing.'
+    },
+    {
       icon: BookOpen,
       title: 'Learning grounded in your sources',
       body: 'Retrieve relevant passages across a study’s materials, build reading guides and explore questions with source references. Inspired by source-based research notebooks.'
@@ -55,8 +70,8 @@
 </script>
 
 <ProductPage
-  title="A longer view of the research workspace"
-  description="The next chapter connects documents, instruments, datasets and learning. These are planned directions, with no promised release dates."
+  title="The document version-control roadmap"
+  description="The core priorities are faithful editing, efficient history and dependable collaboration. Research and learning tools build on that foundation. These are planned directions, with no promised release dates."
   eyebrow="Product direction · Planned features"
 >
   <section class="callout">
@@ -78,9 +93,10 @@
   <section>
     <h2>The principle that carries forward</h2>
     <p>
-      New tools should help researchers examine the work. Suggestions should have sources, edits
-      should be reviewable, and accepted changes should join the document’s history. Statistical or
-      AI assistance will need its own evaluation before it can support research decisions.
+      New tools should help people understand and review their work. Suggestions should have
+      sources, edits should be reviewable, and accepted changes should join the document’s history.
+      Statistical or AI assistance will need its own evaluation before it can support research
+      decisions.
     </p>
   </section>
 </ProductPage>

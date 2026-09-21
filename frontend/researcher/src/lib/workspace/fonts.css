@@ -1,0 +1,34 @@
+/* Self-hosted OFL fonts: no document text or font requests are sent to Google. */
+@font-face {
+  font-family: 'Noto Sans Bengali';
+  src: url('/fonts/notosansbengali.ttf') format('truetype');
+  font-weight: 100 900;
+  font-display: swap;
+  unicode-range: U+0980-09FF;
+}
+@font-face {
+  font-family: 'Noto Naskh Arabic';
+  src: url('/fonts/notonaskharabic.ttf') format('truetype');
+  font-weight: 400 700;
+  font-display: swap;
+  unicode-range: U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF;
+}
+@font-face {
+  font-family: 'Noto Sans Devanagari';
+  src: url('/fonts/notosansdevanagari.ttf') format('truetype');
+  font-weight: 100 900;
+  font-display: swap;
+  unicode-range: U+0900-097F;
+}
+@font-face {
+  font-family: 'Noto Sans Hebrew';
+  src: url('/fonts/notosanshebrew.ttf') format('truetype');
+  font-weight: 100 900;
+  font-display: swap;
+  unicode-range: U+0590-05FF, U+FB1D-FB4F;
+}
+.tiptap,
+.print-content {
+  --script-fonts:
+    'Noto Sans Bengali', 'Noto Naskh Arabic', 'Noto Sans Devanagari', 'Noto Sans Hebrew', sans-serif;
+}

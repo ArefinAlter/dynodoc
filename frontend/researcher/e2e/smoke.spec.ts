@@ -9,38 +9,36 @@ test('homepage examples demonstrate editing, formulas and selected-change sharin
   ).toBeVisible();
   await page.getByRole('button', { name: 'Try this wording' }).click();
   await expect(
-    page.getByText(
-      'Tell me about the last time you tried to get care. What was that experience like?'
-    )
+    page.getByText('Deliver the first phase in September, following two weeks of review.')
   ).toBeVisible();
   await page.getByRole('button', { name: 'Spreadsheets', exact: true }).click();
-  await page.getByLabel('North district interviews').fill('40');
+  await page.getByLabel('Design tasks').fill('40');
   await expect(page.getByRole('cell', { name: '93', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Questionnaires', exact: true }).click();
   await page.getByLabel('A group conversation', { exact: true }).check();
   await expect(page.getByLabel('A group conversation', { exact: true })).toBeChecked();
   await page.getByRole('button', { name: /Sam’s draft/ }).click();
   await expect(
-    page.getByText('What does getting the care you need look like for you?', { exact: true })
+    page.getByText('Launch in August, with a second phase in October.', { exact: true })
   ).toBeVisible();
-  await page.getByRole('checkbox', { name: /Question wording/ }).uncheck();
+  await page.getByRole('checkbox', { name: /Proposal wording/ }).uncheck();
   await expect(page.getByRole('button', { name: 'Share selected changes' })).toBeDisabled();
-  await page.getByRole('checkbox', { name: /Fieldwork note/ }).check();
+  await page.getByRole('checkbox', { name: /Review note/ }).check();
   await page.getByRole('button', { name: 'Share selected changes' }).click();
   await expect(
-    page.getByText(/The fieldwork note is shared. The question stays in your draft./)
+    page.getByText(/The review note is shared. The wording stays in your draft./)
   ).toBeVisible();
   await page.getByRole('button', { name: 'Try again', exact: true }).click();
-  await expect(page.getByRole('checkbox', { name: /Question wording/ })).toBeChecked();
+  await expect(page.getByRole('checkbox', { name: /Proposal wording/ })).toBeChecked();
 });
 
 test('research workflow and integration explanations reflect the selected tool', async ({
   page
 }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Prepare the data', exact: true }).click();
+  await page.getByRole('button', { name: 'Plan the numbers', exact: true }).click();
   await expect(
-    page.getByRole('heading', { name: 'Keep the reasoning close to the dataset.' })
+    page.getByRole('heading', { name: 'Keep the reasoning close to the numbers.' })
   ).toBeVisible();
   await page.getByRole('button', { name: /KoboToolbox.*Connect & import/ }).click();
   await expect(
@@ -127,16 +125,16 @@ test('homepage controls wait for hydration on a slow connection', async ({ page 
   try {
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await expect(
-      page.getByRole('button', { name: 'Prepare the data', exact: true })
+      page.getByRole('button', { name: 'Plan the numbers', exact: true })
     ).toBeDisabled();
     await expect(page.getByRole('button', { name: 'Try this wording' })).toBeDisabled();
     await expect(
       page.getByRole('button', { name: /KoboToolbox.*Connect & import/ })
     ).toBeDisabled();
     resumeScripts();
-    await page.getByRole('button', { name: 'Prepare the data', exact: true }).click();
+    await page.getByRole('button', { name: 'Plan the numbers', exact: true }).click();
     await expect(
-      page.getByRole('heading', { name: 'Keep the reasoning close to the dataset.' })
+      page.getByRole('heading', { name: 'Keep the reasoning close to the numbers.' })
     ).toBeVisible();
   } finally {
     resumeScripts();

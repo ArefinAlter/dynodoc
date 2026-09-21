@@ -54,7 +54,8 @@
     <h3>Publish a read-only copy</h3>
     <p>
       Anyone with the link can read this saved copy without an account. Comments, original uploads,
-      and history stay private. Later edits require a new link.
+      and history stay private. Later edits require a new link. Accept or reject tracked text
+      changes before publishing.
     </p>
     <label
       >Link expires<select bind:value={days}

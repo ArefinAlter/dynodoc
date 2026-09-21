@@ -30,7 +30,7 @@
   >
     <div class="paper original">
       <span><History size={16} /> Earlier version</span>
-      <p>The participants were interviewed in June.</p>
+      <p>The team will publish the plan in June.</p>
     </div>
     <div class="choices">
       <button
@@ -40,7 +40,7 @@
         onclick={() => (wording = !wording)}
       >
         <PencilLine size={19} /><span
-          ><strong>Sam refines the wording</strong><small>participants → respondents</small></span
+          ><strong>Sam refines the wording</strong><small>team → reviewers</small></span
         ><span class="check"
           >{#if wording}<Check size={15} />{/if}</span
         >
@@ -52,7 +52,7 @@
         onclick={() => (formatting = !formatting)}
       >
         <Bold size={19} /><span
-          ><strong>Maya adds emphasis</strong><small>Make the interview month bold</small></span
+          ><strong>Maya adds emphasis</strong><small>Make the delivery month bold</small></span
         ><span class="check"
           >{#if formatting}<Check size={15} />{/if}</span
         >
@@ -64,8 +64,8 @@
     <div class="paper result" aria-live="polite" aria-atomic="true">
       <span>Combined version</span>
       <p>
-        The <span class:changed={wording}>{wording ? 'respondents' : 'participants'}</span> were
-        interviewed in <span class:emphasis={formatting}>June</span>.
+        The <span class:changed={wording}>{wording ? 'reviewers' : 'team'}</span> will publish the
+        plan in <span class:emphasis={formatting}>June</span>.
       </p>
       <small
         >{wording && formatting

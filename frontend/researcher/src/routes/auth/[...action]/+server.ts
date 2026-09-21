@@ -2,7 +2,7 @@ import { env } from '$env/dynamic/private';
 import { json, redirect } from '@sveltejs/kit';
 import * as oidc from 'openid-client';
 import type { RequestHandler } from './$types';
-import { saveSession, clearSession, readSession, enginePost } from '$lib/server/session';
+import { saveSession, clearSession, accessToken, engineUrl, enginePost } from '$lib/server/session';
 
 let configuration: Promise<oidc.Configuration> | undefined;
 function google() {
@@ -28,8 +28,17 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
       development: env.DEV_AUTH === 'true',
       destination: env.ADMIN_SITE === 'true' ? '/admin' : '/workspace'
     });
-  if (params.action === 'session')
-    return json({ authenticated: Boolean(await readSession(cookies)) });
+  if (params.action === 'session') {
+    const token = await accessToken(cookies, secure);
+    if (!token) return json({ authenticated: false });
+    // The Rust authority verifies its PASETO token; only the display identity leaves the server.
+    const response = await fetch(`${engineUrl()}/auth/me`, {
+      headers: { authorization: `Bearer ${token}` }
+    });
+    if (!response.ok) return json({ authenticated: false }, { status: response.status });
+    const identity = await response.json();
+    return json({ authenticated: true, identity_id: identity.identity_id });
+  }
   if (params.action === 'google') {
     if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET)
       return json({ error: 'Google sign-in is not configured yet.' }, { status: 503 });

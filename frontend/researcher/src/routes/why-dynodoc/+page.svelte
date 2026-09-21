@@ -5,10 +5,10 @@
 
 <ProductPage
   title="The reasoning deserves a record."
-  description="A questionnaire is more than a file. It carries choices about wording, context, measurement and people. Dynodoc gives those choices somewhere to live."
+  description="A document carries choices about wording, structure, formatting and people. Dynodoc makes those choices reviewable through version control."
 >
   <section>
-    <h2>Research changes before it becomes a finding.</h2>
+    <h2>Documents change before they become decisions.</h2>
     <p>
       A fieldworker spots an ambiguous phrase. A colleague proposes a different recall period. The
       protocol changes after review. Dynodoc is designed to keep the document, the proposed revision
@@ -17,7 +17,7 @@
     <ResearchJourney />
   </section>
   <section>
-    <h2>Grounded in research practice</h2>
+    <h2>Research is one useful application</h2>
     <div class="cards">
       <article>
         <span class="badge">Scientific Data · 2016</span>
@@ -79,7 +79,7 @@
         </p>
       </article>
       <article>
-        <h3>Across a research team</h3>
+        <h3>Across a team</h3>
         <p>
           Give colleagues a role that fits their contribution. Review proposed changes before
           combining them with the shared document.
@@ -88,8 +88,8 @@
       <article>
         <h3>At a handover</h3>
         <p>
-          Pass on the source file, working copy and revision record. Let the next researcher recover
-          context from the work itself.
+          Pass on the source file, working copy and revision record. Let the next collaborator
+          recover context from the work itself.
         </p>
       </article>
       <article>

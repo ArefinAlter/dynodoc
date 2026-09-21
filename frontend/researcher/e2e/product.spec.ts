@@ -135,7 +135,10 @@ test('spreadsheet context actions preserve formulas through row insertion and sh
   await page.getByRole('button', { name: 'Add sheet', exact: true }).click();
   await cell(page, 'A1', '=Data!A2');
   await expect(page.getByRole('button', { name: 'A1: 7', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Data', exact: true }).click({ button: 'right' });
+  await page
+    .locator('.sheet-tabs')
+    .getByRole('button', { name: 'Data', exact: true })
+    .click({ button: 'right' });
   page.once('dialog', (d) => d.accept('Field observations'));
   await page.getByRole('menuitem', { name: 'Rename sheet', exact: true }).click();
   await saved(page);
@@ -151,7 +154,7 @@ test('the tutorial can be reopened and the mobile workspace stays within the vie
   await login(page);
   await page.getByRole('button', { name: 'Help & tutorials' }).click();
   await expect(
-    page.getByRole('heading', { name: 'Bring your research together', exact: true })
+    page.getByRole('heading', { name: 'Bring your documents together', exact: true })
   ).toBeVisible();
   await page.getByRole('button', { name: 'Next', exact: true }).click();
   await expect(
@@ -160,7 +163,7 @@ test('the tutorial can be reopened and the mobile workspace stays within the vie
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Help & tutorials' }).click();
   await expect(
-    page.getByRole('heading', { name: 'Bring your research together', exact: true })
+    page.getByRole('heading', { name: 'Bring your documents together', exact: true })
   ).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('link', { name: 'About Dynodoc' })).toHaveAttribute(
@@ -244,7 +247,7 @@ test('organization access reaches a folder document and can be removed centrally
     await page.goto('/workspace');
     await page.getByRole('button', { name: 'Research institute', exact: true }).click();
     await page.getByRole('button', { name: 'Manage team workspaces', exact: true }).click();
-    await page.getByLabel('Researcher email').fill(email);
+    await page.getByLabel('Collaborator email').fill(email);
     await page.getByRole('combobox', { name: 'Role', exact: true }).selectOption('viewer');
     await page.getByRole('button', { name: 'Update access', exact: true }).click();
     await expect(
@@ -253,7 +256,7 @@ test('organization access reaches a folder document and can be removed centrally
     await colleague.goto(documentUrl);
     await expect(colleague.getByLabel('Document title')).toHaveValue('Inherited protocol');
     await expect(colleague.locator('[contenteditable="true"]')).toHaveCount(0);
-    await page.getByLabel('Researcher email').fill(email);
+    await page.getByLabel('Collaborator email').fill(email);
     await page.getByRole('combobox', { name: 'Role', exact: true }).selectOption('remove');
     await page.getByRole('button', { name: 'Update access', exact: true }).click();
     await expect(
@@ -263,7 +266,7 @@ test('organization access reaches a folder document and can be removed centrally
     expect(
       (
         await colleague.request.get('/api/engine/documents/' + id, {
-          headers: { 'x-dynodoc-editor': 'richtext-v1' }
+          headers: { 'x-dynodoc-editor': 'office-v2' }
         })
       ).status()
     ).toBe(403);

@@ -49,6 +49,7 @@
     <div class="readonly-rich">
       <RichEditor
         content={richContent(data.state, activeTab?.id)}
+        pageSettings={tabs.find((n) => n.type === 'form')?.current_fields.page_setup}
         editable={false}
         revision={tabs.findIndex((n) => n.id === activeTab?.id)}
         onChange={() => {}}

@@ -28,13 +28,13 @@
 
 <div class="version-demo">
   <div class="demo-header">
-    <span><GitBranch size={16} /> A study, with room to explore</span><span class="example-label"
-      >Interactive example</span
+    <span><GitBranch size={16} /> One document, with room to explore</span><span
+      class="example-label">Interactive example</span
     >
   </div>
   <div
     class="branch-map"
-    aria-label="A shared guide splits into Maya and Sam’s drafts, which can be reviewed and shared back"
+    aria-label="A shared document splits into Maya and Sam’s drafts, which can be reviewed and shared back"
   >
     <svg class="connectors" viewBox="0 0 900 160" preserveAspectRatio="none" aria-hidden="true"
       ><path
@@ -48,7 +48,7 @@
       /></svg
     >
     <div class="map-node original">
-      <span class="map-icon"><FileText size={21} /></span><b>Shared guide</b><small
+      <span class="map-icon"><FileText size={21} /></span><b>Shared document</b><small
         >The team’s starting point</small
       >
     </div>
@@ -62,7 +62,7 @@
           shared = false;
         }}
         ><span class="person blue">M</span><span
-          ><b>Maya’s draft</b><small>Refine the interview</small></span
+          ><b>Maya’s draft</b><small>Refine the proposal</small></span
         ></button
       ><button
         disabled={!ready}
@@ -98,10 +98,10 @@
           <h3>The team has your {changes === 1 ? 'change' : 'changes'}.</h3>
           <p>
             {includeQuestion && includeNote
-              ? 'The question and fieldwork note are now included.'
+              ? 'The wording and review note are now included.'
               : includeQuestion
-                ? 'The question is shared. The fieldwork note stays in your draft.'
-                : 'The fieldwork note is shared. The question stays in your draft.'} The previous version
+                ? 'The wording is shared. The review note stays in your draft.'
+                : 'The review note is shared. The wording stays in your draft.'} The previous version
             remains in history.
           </p>
         </div>
@@ -110,23 +110,23 @@
     {:else}
       <label class="change-row"
         ><input disabled={!ready} type="checkbox" bind:checked={includeQuestion} /><span
-          class="change-type">Question wording</span
+          class="change-type">Proposal wording</span
         ><span class="diff"
-          ><del>How often do you use local health services?</del><ins
+          ><del>Deliver the project by the end of August.</del><ins
             >{draft === 'maya'
-              ? 'Tell me about the last time you tried to get care.'
-              : 'What does getting the care you need look like for you?'}</ins
+              ? 'Deliver the first phase in September after review.'
+              : 'Launch in August, with a second phase in October.'}</ins
           ></span
         ></label
       >
       <label class="change-row note"
         ><input disabled={!ready} type="checkbox" bind:checked={includeNote} /><span
-          class="change-type">Fieldwork note</span
+          class="change-type">Review note</span
         ><span class="diff"
           ><ins
             >{draft === 'maya'
-              ? 'Leave time for participants to add their own priorities.'
-              : 'Ask whether transport affected the experience.'}</ins
+              ? 'Allow two weeks for accessibility review.'
+              : 'Confirm the budget before approving phase two.'}</ins
           ></span
         ></label
       >

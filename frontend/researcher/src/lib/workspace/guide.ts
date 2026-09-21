@@ -1,6 +1,6 @@
 export const guide = [
   {
-    title: 'Bring your research together',
+    title: 'Bring your documents together',
     action: 'Start in the workspace',
     body: 'Create a document, spreadsheet or questionnaire. Upload Word, Excel, CSV or LaTeX files, or import from a connected research tool. Review the conversion notes before creating the editable copy. Your original upload remains downloadable.',
     icon: 'files'
@@ -20,13 +20,13 @@ export const guide = [
   {
     title: 'Explore without disturbing the team',
     action: 'Create a personal draft',
-    body: 'A personal draft is your own version of the document. Try a different question or edit a paragraph. Bring in the latest shared changes, compare your work and choose which changes to share. Review competing changes before merging.',
+    body: 'A personal draft is your own version of the document. Try a different structure or edit a paragraph. Bring in the latest shared changes, compare your work and choose which changes to share. Review competing changes before merging.',
     icon: 'draft'
   },
   {
     title: 'Keep the reason behind a revision',
     action: 'Save a named version',
-    body: 'Name milestones such as Ethics submission or Fieldwork approved. Open Who changed this? to inspect recorded edits. Restoring an earlier version adds new history; it does not erase the work that came after it.',
+    body: 'Name milestones such as Team review, Approved proposal or Published report. Open Who changed this? to inspect recorded edits. Restoring an earlier version adds new history; it does not erase the work that came after it.',
     icon: 'history'
   },
   {
@@ -38,7 +38,7 @@ export const guide = [
   {
     title: 'Return whenever you need',
     action: 'Open Help & tutorials',
-    body: 'Replay this guide from the help button. Documents in Trash can be restored. Use original-file downloads and exports to keep a copy outside Dynodoc. Test complex questionnaires in the collection platform before fieldwork.',
+    body: 'Replay this guide from the help button. Documents in Trash can be restored. Use original-file downloads and exports to keep a copy outside Dynodoc. Review the compatibility guide when your files use advanced Office features.',
     icon: 'help'
   }
 ];

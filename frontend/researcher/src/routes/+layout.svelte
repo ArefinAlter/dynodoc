@@ -6,6 +6,7 @@
   import { onMount } from 'svelte';
   import { loadSession } from '$lib/stores/session.svelte';
   onMount(() => {
+    if (window.location.pathname === '/print') return;
     void loadSession();
     void observeVitals().catch(() => {});
   });
@@ -42,7 +43,7 @@
       property="og:image:height"
       content="630"
     />
-    <meta property="og:image:alt" content="Dynodoc — a shared workspace for research" />
+    <meta property="og:image:alt" content="Dynodoc — version control for documents" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content={SITE_IMAGE} />
     <link
@@ -59,4 +60,4 @@
 </svelte:head>
 {@render children()}
 <ToastHost />
-<HelpGuide />
+{#if $page.url.pathname !== '/print'}<HelpGuide />{/if}

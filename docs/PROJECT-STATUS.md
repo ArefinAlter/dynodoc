@@ -1,25 +1,25 @@
 # Dynodoc: intent, current implementation and remaining work
 
-Assessment date: 19 September 2026. This distinguishes executable functionality from the longer design documents. The old README's “feature-complete” description was too broad.
+Assessment date: 21 September 2026. This distinguishes executable functionality from the longer design documents. The old README's “feature-complete” description was too broad.
 
 ## What this project is for
 
-Dynodoc helps a research team keep documents, spreadsheets and questionnaires together with an understandable record of changes. A paragraph, question, choice or spreadsheet row has a permanent identity. Edits are recorded as semantic events, attributed to their author and chained by hashes. Researchers can work in personal drafts, compare with the team version, resolve overlapping edits, include selected changes and restore previous content without deleting history.
+Dynodoc helps teams keep documents, spreadsheets and questionnaires together with an understandable record of changes. A paragraph, question, choice or spreadsheet row has a permanent identity. Edits are recorded as semantic events, attributed to their author and chained by hashes. Collaborators can work in personal drafts, compare with the team version, resolve overlapping edits, include selected changes and restore previous content without deleting history.
 
 The original immediate product was a questionnaire authoring tool. The owner's expanded brief adds document and spreadsheet editing and a hosted ten-person pilot. The public-consultation design in `05-public-consultation-part1.md` describes a later product: large-scale citizen input, moderation, identity tiers, deliberation and synthesis. Those services are not implemented by the current researcher workspace.
 
-## Implemented researcher workflows
+## Implemented document workflows
 
 | Area | Current behavior |
 |---|---|
 | Core | Append-only event log, hash verification, stable IDs, snapshots, role checks and serialized writes. |
 | Privacy | Direct and inherited organization/team/folder roles protect reads, writes, streams and search. Revocable public links expose explicit frozen copies only. |
 | Sessions | Encrypted HttpOnly cookies, same-origin API gateway, refresh rotation; Google authorization-code login and Resend email-link implementation. |
-| Homepage | Responsive cream/blue homepage, self-hosted sans serif typography, interactive editor/draft/integration examples, research workflow explainers, reduced-motion behavior, Node and Vercel builds. |
+| Homepage | Responsive cream/blue homepage, self-hosted sans serif typography, interactive editor/draft/integration examples, document version-control explainers, reduced-motion behavior, Node and Vercel builds. |
 | Legal pages | Privacy, terms and cookie pages describe actual storage and sharing; browser measurement preference is available. Operator details and legal review remain open. |
 | Workspace | Create/import documents, organize them in a hierarchy, search, share roles, make copies, move to Trash and restore. |
-| Document editing | Document tabs, common formatting, checklists, super/subscript, equations, table/context actions, find/replace, comments and paragraph suggestions; LaTeX/Overleaf interchange. |
-| Spreadsheet editing | Cell editing, ranges, paste, formatting, formulas, formula-aware structural operations, sheet rename/duplicate/reorder/delete, find/filter, values-only sorting and CSV/XLSX export. |
+| Document editing | Document tabs, common ribbons, paragraph styles/direction/spacing, shared font uploads, text tracking with accept/reject, comments, table/context actions, equations, versioned page setup and paginated print preview. Native DOCX import runs in a bounded worker; LaTeX/Overleaf interchange remains. |
+| Spreadsheet editing | Typed cells, ranges, relative formula fill, persistent calculation graph, formatting, validation subset, merges, freeze/hide/resize, sheet lifecycle, find/replace/filter, values-only sorting and styled XLSX exchange. |
 | Version workflows | Personal drafts, selected-block sharing, get latest, conflict choices, named versions, comparisons, attribution and restoration as new events. |
 | Research files | DOCX/DOC, CSV/XLSX, XLSForm and REDCap dictionary interchange; original files retained. |
 | Research connections | ODK/Kobo form and response imports; REDCap metadata/records, SurveyCTO wide responses and SurveyMonkey bulk responses. Google Forms adds separate read-only OAuth definition/response imports. Live study-account acceptance remains open. |
@@ -35,6 +35,8 @@ The narrower [pilot checklist](decisions/001-research-team-demo.md) currently ha
 acceptance, external study-tool validation and full researcher/accessibility/load acceptance; this count is not an estimate
 of the engineering effort left for the full product.
 
+The owner explicitly pivoted the product to document version control on 21 September. Research remains a supported use case. See [decision 004](decisions/004-document-version-control.md) and [office compatibility and verification](OFFICE-EDITOR-CAPABILITIES.md). The historical pilot count is not a product-completeness score.
+
 ## Owner configuration still needed
 
 - Supply the legal operator, public contact email, mailing address, governing jurisdiction, hosting/subprocessor locations and retention arrangements; complete review before adopting the privacy/terms drafts. [Drafting notes](LEGAL-PAGES.md).
@@ -44,8 +46,8 @@ of the engineering effort left for the full product.
 
 ## Remaining product and engineering work
 
-- Broader document features: tracked-edit fidelity, footnotes, citations/bibliographies, headers/footers, page layout and high-fidelity image/document round trips.
-- Broader spreadsheet features: charts, pivots, data validation, protected ranges, advanced sort behavior with formulas, Excel formula compatibility and high-fidelity workbook formatting.
+- Broader document features: live editable pagination, tracked moves/formatting and structural revisions, footnote/endnote bodies, citations/bibliographies, section-specific layouts and exact Office round trips.
+- Broader spreadsheet features: charts, pivots, formula-based validation, protected ranges, advanced sort behavior with formulas, Excel formula compatibility and high-fidelity workbook formatting.
 - Survey execution beyond the supported preview subset: repeat instances, translations/media workflows, external datasets, advanced XPath/date functions and vendor-specific expression engines.
 - Research-platform synchronization: scheduled refresh, incremental reconciliation and writeback. All six implemented API import paths need real study-account verification. CSPro dictionary/form/logic support is not implemented; exported CSV/XLSX data can be edited.
 - Stronger review: comments with replies/resolution/mentions, richer tracked suggestions, per-block/protected-range permissions, notifications and shared review of another person's draft.

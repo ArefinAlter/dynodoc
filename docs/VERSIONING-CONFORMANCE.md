@@ -53,7 +53,7 @@ of overlapping edits. It is not the complete distributed protocol in the mathema
 - Formula/expression support is a documented subset. Neither successful parsing nor
   a native preview proves arbitrary REDCap, SurveyCTO, CSPro or XLSForm runtime parity.
 
-## What the researcher workflow means
+## What the document workflow means
 
 | Git term | Dynodoc action | Scope |
 |---|---|---|
@@ -67,5 +67,15 @@ of overlapping edits. It is not the complete distributed protocol in the mathema
 | checkout / revert | View version / Restore as new changes | Previous records remain intact. |
 | blame / grep | Who changed this? / Find in workspace | Membership-scoped attribution and content search. |
 
-These are evidence-backed mappings for a research editor, not a claim to implement
+These are evidence-backed mappings for a document editor, not a claim to implement
 Git's wire protocol or every feature of the full theoretical roadmap.
+
+
+The office-editor increment keeps these guarantees unchanged. Page settings, shared
+font descriptors, spreadsheet layout and inline text-review marks are versioned
+fields. Accept/reject operations append content changes. Text-review marks are an
+editing affordance, not canonical authorship proof: authenticated event actors are
+the attribution authority. Imported Word comment/revision authors are source-file
+metadata, not verified Dynodoc identities. Public copies reject unresolved text
+revisions and strip embedded private comments, cell notes and private font references.
+See [the office capability record](OFFICE-EDITOR-CAPABILITIES.md).

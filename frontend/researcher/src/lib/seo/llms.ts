@@ -11,11 +11,11 @@ import { FAQ } from './faq';
 import { CANONICAL_ORIGIN, INDEXABLE_PAGES, SITE_NAME, canonicalUrl } from './site';
 
 const SUMMARY =
-  'A shared workspace where research teams write documents, work with spreadsheets and refine questionnaires, with block-level version history behind every change.';
+  'Version control for rich-text documents and spreadsheets, with familiar editing, personal drafts, reviewed merges and formatting-aware history.';
 
 const CAPABILITIES = [
-  'Document editing with headings, lists, links, images, tables and comments.',
-  'Spreadsheet editing with formulas, multiple sheets, cell formatting, and row and column tools.',
+  'Document editing with ribbon tabs, headings, lists, links, tables, comments, page setup, print preview, direction controls and text revisions.',
+  'Spreadsheet editing with formulas, multiple sheets, formatting, merged ranges, frozen panes, validation, fill operations and row and column tools.',
   'Questionnaire and XLSForm editing alongside documents and data.',
   'Personal drafts that can be compared against the team version before anything is shared.',
   'Block-level version history: paragraphs, questions and cells each carry their own record.',
@@ -29,15 +29,15 @@ const LIMITATIONS = [
   'No live character-by-character co-editing and no live collaborator cursors. Collaboration works through personal drafts and deliberate sharing.',
   'Not a feature-for-feature replacement for Google Docs, Google Sheets, Word or Excel. Advanced charts, pivot tables and citation tools are not included.',
   'Imports are one-time snapshots. There is no scheduled sync and no writeback to the source system.',
-  'A research pilot for small teams, not a claim of institutional compliance or a regulated-data hosting agreement.',
+  'An evolving document platform; no institutional compliance or regulated-data hosting agreement is claimed.',
   'The published privacy policy and terms are drafts pending confirmed operator details, and are not yet effective.'
 ];
 
 const FACTS = [
-  `Product: ${SITE_NAME}, a shared research workspace.`,
-  'Status: research pilot, prepared for small teams.',
-  'Hosting: a hosted pilot at dynodoc.online; the workspace runs at app.dynodoc.online.',
-  'Licence: application code is open source under the AGPL-3.0-or-later. Private research content placed in the app does not become open source.',
+  `Product: ${SITE_NAME}, a document version-control workspace.`,
+  'Status: hosted application under active development, with documented compatibility limits.',
+  'Hosting: a hosted application at dynodoc.online; the workspace runs at app.dynodoc.online.',
+  'Licence: application code is open source under the AGPL-3.0-or-later. Private document content placed in the app does not become open source.',
   'Source code: https://github.com/ArefinAlter/dynodoc'
 ];
 
@@ -57,7 +57,7 @@ export function llmsTxt(): string {
 
 > ${SUMMARY}
 
-${SITE_NAME} gives a research team one place to draft an interview guide, prepare a dataset and revise a questionnaire, while keeping a readable record of how each piece of content changed and who proposed it.
+${SITE_NAME} gives a team one place to revise documents, maintain spreadsheets and compare alternatives, while keeping a readable record of how each piece of content changed and who proposed it.
 
 ## Pages
 

@@ -6,18 +6,16 @@ test('the homepage explains independent wording and formatting changes', async (
     'Interactive example of combining wording and formatting changes'
   );
   await expect(example.locator('.result p')).toHaveText(
-    'The respondents were interviewed in June.'
+    'The reviewers will publish the plan in June.'
   );
   await expect(example.locator('.result .emphasis')).toHaveText('June');
   await example.getByRole('button', { name: /Maya adds emphasis/ }).click();
   await expect(example.locator('.result .emphasis')).toHaveCount(0);
   await expect(example.locator('.result p')).toHaveText(
-    'The respondents were interviewed in June.'
+    'The reviewers will publish the plan in June.'
   );
   await example.getByRole('button', { name: /Sam refines the wording/ }).click();
-  await expect(example.locator('.result p')).toHaveText(
-    'The participants were interviewed in June.'
-  );
+  await expect(example.locator('.result p')).toHaveText('The team will publish the plan in June.');
 });
 
 test('long formatted passages save compact history and replay after reload', async ({ page }) => {
@@ -35,9 +33,8 @@ test('long formatted passages save compact history and replay after reload', asy
   const text = 'Research evidence stays with its history. '.repeat(100);
   await editor.fill(text);
   await expect(page.locator('.save-state')).toHaveText('All changes saved', { timeout: 30_000 });
-  await editor.click();
-  await page.keyboard.press('Control+Home');
-  await page.keyboard.press('Control+Shift+End');
+  await editor.focus();
+  await page.keyboard.press('Control+a');
   await page.keyboard.press('Control+b');
   await expect(editor.locator('strong')).toContainText('Research evidence');
   await expect(page.locator('.save-state')).toHaveText('All changes saved', { timeout: 30_000 });
@@ -46,7 +43,7 @@ test('long formatted passages save compact history and replay after reload', asy
   expect(oldReader.status()).toBe(409);
   expect((await oldReader.json()).error).toContain('reload this tab');
   const response = await page.request.get(`/api/engine/documents/${id}/events?limit=200`, {
-    headers: { 'x-dynodoc-editor': 'richtext-v1' }
+    headers: { 'x-dynodoc-editor': 'office-v2' }
   });
   expect(response.ok()).toBeTruthy();
   const events = await response.json();

@@ -17,7 +17,8 @@
     "test": "pnpm test:unit -- --run && pnpm test:e2e",
     "test:unit": "vitest",
     "test:e2e": "playwright test",
-    "seo:indexnow": "node scripts/indexnow.mjs"
+    "seo:indexnow": "node scripts/indexnow.mjs",
+    "bench:office": "node scripts/benchmark-office-import.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
@@ -60,8 +61,10 @@
     "@tiptap/extension-unique-id": "^3.31.3",
     "@tiptap/pm": "^3.31.3",
     "@tiptap/starter-kit": "^3.31.3",
+    "@xmldom/xmldom": "0.9.12",
     "docx": "^9.7.1",
     "exceljs": "^4.4.0",
+    "fflate": "0.8.3",
     "hyperformula": "^3.4.0",
     "jose": "^6.2.12",
     "jszip": "^3.10.2",
@@ -69,6 +72,7 @@
     "mammoth": "^1.12.3",
     "openapi-fetch": "^0.13.8",
     "openid-client": "^6.8.8",
+    "pagedjs": "0.4.3",
     "papaparse": "^5.7.0",
     "ulid": "^3.0.2",
     "web-vitals": "^6.2.2"

@@ -1,4 +1,5 @@
 import { HyperFormula } from 'hyperformula';
+import { workbookInput, sheetLayout } from './sheet-model';
 import { ulid } from 'ulid';
 import type { DocumentState, EventPayload } from '$lib/api/types';
 import { rowsForSheet } from './files';
@@ -43,14 +44,7 @@ export function sheetStructure(
     throw new Error('A sheet supports up to 100 columns.');
   if (action === 'delete-column' && width <= 1) throw new Error('Keep at least one column.');
   if (action === 'delete-row' && rows.length <= 1) throw new Error('Keep at least one row.');
-  const input: Record<string, string[][]> = {};
-  for (const s of sheets)
-    input[String(s.current_fields.label || s.id)] = rowsForSheet(state, s.id).map((n) =>
-      Array.from({ length: Number(s.current_fields.columns) || 12 }, (_, c) =>
-        String(n.current_fields[`cell_${c}`] ?? '')
-      )
-    );
-  const hf = HyperFormula.buildFromSheets(input, { licenseKey: 'gpl-v3' });
+  const hf = HyperFormula.buildFromSheets(workbookInput(state), { licenseKey: 'gpl-v3' });
   const ids = new Map(
     sheets.map((s) => [s.id, hf.getSheetId(String(s.current_fields.label || s.id))!])
   );
@@ -116,7 +110,21 @@ export function sheetStructure(
             new_pos: String(r).padStart(8, '0')
           });
         for (let c = 0; c < columns; c++) {
-          const value = String(data[r]?.[c] ?? '');
+          const serialized = data[r]?.[c];
+          const sourceColumn =
+            s.id === targetId && c >= index
+              ? action === 'insert-column'
+                ? c - 1
+                : action === 'delete-column'
+                  ? c + 1
+                  : c
+              : c;
+          const original =
+            s.id === targetId && action === 'insert-column' && c === index
+              ? ''
+              : String(fields[`cell_${sourceColumn}`] ?? '');
+          const value =
+            original.startsWith('=') && typeof serialized === 'string' ? serialized : original;
           if (value !== String(fields[`cell_${c}`] ?? ''))
             ops.push({ type: 'FieldEdited', node_id: nodeId, field: `cell_${c}`, value });
           if (
@@ -135,6 +143,48 @@ export function sheetStructure(
             });
         }
       });
+    }
+    const layout = sheetLayout(target.current_fields.sheet_layout);
+    if (action === 'insert-column' || action === 'delete-column') {
+      const delta = action === 'insert-column' ? 1 : -1;
+      layout.widths = Object.fromEntries(
+        Object.entries(layout.widths).flatMap(([key, value]) => {
+          const c = Number(key);
+          if (delta === -1 && c === index) return [];
+          return [[String(c >= index ? c + delta : c), value]];
+        })
+      );
+      layout.hiddenColumns = layout.hiddenColumns
+        .filter((c) => !(delta === -1 && c === index))
+        .map((c) => (c >= index ? c + delta : c));
+      layout.merges = layout.merges
+        .flatMap((m) => {
+          if (delta === -1 && m.fromCol === m.toCol && m.fromCol === index) return [];
+          return [
+            {
+              ...m,
+              fromCol: m.fromCol >= index ? Math.max(index, m.fromCol + delta) : m.fromCol,
+              toCol: m.toCol >= index ? m.toCol + delta : m.toCol
+            }
+          ];
+        })
+        .filter((m) => m.toCol >= m.fromCol);
+      ops.push({ type: 'FieldEdited', node_id: targetId, field: 'sheet_layout', value: layout });
+    }
+    if (action === 'delete-row') {
+      layout.merges = layout.merges
+        .flatMap((m) => {
+          if (m.fromRow === rows[index]?.id && m.toRow === rows[index]?.id) return [];
+          return [
+            {
+              ...m,
+              fromRow: m.fromRow === rows[index]?.id ? rows[index + 1]?.id : m.fromRow,
+              toRow: m.toRow === rows[index]?.id ? rows[index - 1]?.id : m.toRow
+            }
+          ];
+        })
+        .filter((m) => m.fromRow && m.toRow);
+      ops.push({ type: 'FieldEdited', node_id: targetId, field: 'sheet_layout', value: layout });
     }
     return ops;
   } finally {

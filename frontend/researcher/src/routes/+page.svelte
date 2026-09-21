@@ -11,7 +11,6 @@
     ArrowUpRight,
     FileText,
     Table2,
-    ListChecks,
     Upload,
     History,
     GitBranch,
@@ -39,60 +38,60 @@
   let useCase = $state(0);
   const cases = [
     {
-      label: 'Design the study',
-      title: 'Give the protocol a place to take shape.',
+      label: 'Draft a proposal',
+      title: 'Give the first draft room to become the right draft.',
       description:
-        'Bring your interview guides, questionnaires and codebooks into one workspace. Invite colleagues to improve the wording while you keep the shared version under control.',
-      file: 'Community health · Interview guide',
+        'Bring proposals, reports and team documents into one workspace. Invite colleagues to improve the wording while you keep the shared version under control.',
+      file: 'Project launch · Proposal',
       kind: 'Document',
       icon: FileText,
-      items: ['Research aims', 'Participant experience', 'Questions for team review'],
+      items: ['Project goals', 'Delivery plan', 'Questions for team review'],
       note: 'The next revision starts with a conversation.',
       action: 'Comment on the wording',
       person: 'Sam',
-      text: 'Let’s leave room for an experience we haven’t anticipated.'
+      text: 'Let’s make the scope clearer before we share this with the team.'
     },
     {
-      label: 'Refine in the field',
-      title: 'Let fieldwork improve the instrument.',
+      label: 'Review a policy',
+      title: 'Give every change a clear reason.',
       description:
-        'Try a revised question in a personal draft. Compare it with the team’s version, work through competing edits and share just the changes that are ready.',
-      file: 'Community health · Fieldwork revision',
-      kind: 'Questionnaire',
-      icon: ListChecks,
-      items: ['Access to care', 'Travel and transport', 'Follow-up prompts'],
+        'Try a revised clause in a personal draft. Compare it with the team’s version, work through competing edits and share just the changes that are ready.',
+      file: 'Team handbook · Review draft',
+      kind: 'Document',
+      icon: FileText,
+      items: ['Responsibilities', 'Approval process', 'Open decisions'],
       note: 'A new draft, with the earlier wording still in reach.',
-      action: 'Review a proposed question',
+      action: 'Review a proposed change',
       person: 'Maya',
-      text: 'This follow-up helped participants describe the travel barrier.'
+      text: 'This wording makes the approval process easier to follow.'
     },
     {
-      label: 'Prepare the data',
-      title: 'Keep the reasoning close to the dataset.',
+      label: 'Plan the numbers',
+      title: 'Keep the reasoning close to the numbers.',
       description:
-        'Bring in a response snapshot or spreadsheet. Use formulas, organize the workbook and compare edits, so the team can follow how working data changed.',
-      file: 'Community health · Recruitment',
+        'Bring in a budget, forecast or spreadsheet. Use formulas, organize the workbook and compare edits, so the team can follow how the numbers changed.',
+      file: 'Project launch · Budget',
       kind: 'Spreadsheet',
       icon: Table2,
-      items: ['Recruitment overview', 'Field sites', 'Cleaning notes'],
+      items: ['Budget overview', 'Team estimates', 'Revision notes'],
       note: 'A working dataset with a history you can inspect.',
       action: 'Check the preparation notes',
       person: 'Rafi',
-      text: 'The original response export is retained for reference.'
+      text: 'The original workbook is retained for reference.'
     },
     {
       label: 'Hand over with context',
       title: 'Pass on the work and its history.',
       description:
         'Share access with the right role, review earlier versions and export files for the next stage. Give a new collaborator a way to understand how the current document took shape.',
-      file: 'Community health · Team handover',
+      file: 'Project launch · Team handover',
       kind: 'Document',
       icon: FolderOpen,
-      items: ['Study materials', 'Reviewed changes', 'Source files'],
+      items: ['Working documents', 'Reviewed changes', 'Source files'],
       note: 'Less detective work for the next person on the project.',
       action: 'Find the change in history',
       person: 'Sam',
-      text: 'The latest guide includes the team’s reviewed wording.'
+      text: 'The latest report includes the team’s reviewed wording.'
     }
   ];
   const activeCase = $derived(cases[useCase]);
@@ -121,17 +120,17 @@
   <!-- Static application metadata, with no user-provided values. -->
   <!-- eslint-disable-next-line svelte/no-at-html-tags -->
   {@html structuredDataScript}
-  <title>Dynodoc — Version control for research documents</title>
+  <title>Dynodoc — Version control for documents</title>
   <meta
     name="description"
-    content="Version control for rich-text research documents. Keep wording, formatting and authorship in view. Explore personal drafts, combine changes and return to earlier versions."
+    content="Version control for rich-text documents and spreadsheets. Keep wording, formatting and authorship in view. Explore personal drafts, combine changes and return to earlier versions."
   />
-  <meta property="og:title" content="Dynodoc — Version control for research documents" />
+  <meta property="og:title" content="Dynodoc — Version control for documents" />
   <meta
     property="og:description"
     content="Keep wording, formatting and authorship in view. Personal drafts, shared changes and a document history you can return to."
   />
-  <meta name="twitter:title" content="Dynodoc — Version control for research documents" />
+  <meta name="twitter:title" content="Dynodoc — Version control for documents" />
   <meta
     name="twitter:description"
     content="Keep wording, formatting and authorship in view. Personal drafts, shared changes and a document history you can return to."
@@ -143,7 +142,7 @@
   <main id="main" use:reveal>
     <section class="hero wrap" aria-labelledby="hero-heading">
       <div class="hero-copy">
-        <p class="eyebrow"><span></span> VERSION CONTROL FOR RESEARCH DOCUMENTS</p>
+        <p class="eyebrow"><span></span> VERSION CONTROL FOR DOCUMENTS</p>
         <h1 id="hero-heading">Every edit.<br />Every version.<br /><span>Your document.</span></h1>
       </div>
       <div class="hero-intro">
@@ -153,8 +152,8 @@
         </p>
         <p class="hero-detail">
           Write in a familiar editor. Explore a personal draft, combine your team’s changes and
-          return to an earlier version whenever you need. Research documents, spreadsheets and
-          questionnaires, together.
+          return to an earlier version whenever you need. From proposals and policies to plans,
+          budgets and research, keep the work and its history together.
         </p>
         <div class="hero-actions">
           <a class="primary-link" href={workspace}>Start your document <ArrowUpRight size={17} /></a
@@ -176,18 +175,18 @@
     <section class="research-section wrap" aria-labelledby="research-heading">
       <div class="section-heading" data-reveal>
         <div>
-          <p class="eyebrow">BUILT AROUND THE WAY RESEARCH HAPPENS</p>
+          <p class="eyebrow">BUILT AROUND THE WAY DOCUMENTS EVOLVE</p>
           <h2 id="research-heading">The work evolves.<br />Keep the thinking with it.</h2>
         </div>
         <p>
-          Good research takes revision. Dynodoc gives every question, paragraph and cell a place in
-          that story, so your team can move forward with the context intact.
+          Good work takes revision. Dynodoc gives every paragraph, table and cell a place in that
+          story, so your team can move forward with the context intact.
         </p>
       </div>
       <div class="research-grid" data-reveal>
         <div class="case-visual" class:green={useCase === 2}>
           <div class="case-topline">
-            <span class="small-folder"><FolderOpen size={14} /> Community health study</span><span
+            <span class="small-folder"><FolderOpen size={14} /> A shared project</span><span
               class="case-tag">{activeCase.kind}</span
             >
           </div>
@@ -210,9 +209,9 @@
               <p>{activeCase.text}</p>
             </div>
           </div>
-          <div class="visual-footer"><Check size={13} /> Illustrative research workflow</div>
+          <div class="visual-footer"><Check size={13} /> Illustrative document workflow</div>
         </div>
-        <div class="case-list" aria-label="Explore research workflows">
+        <div class="case-list" aria-label="Explore document workflows">
           {#each cases as item, i}<div class="case-item" class:active={useCase === i}>
               <button
                 disabled={!ready}
@@ -292,8 +291,8 @@
       </div>
       <div class="files-visual" data-reveal>
         <div class="incoming-files">
-          <div class="incoming-word"><FileText size={23} /><span>interview-guide.docx</span></div>
-          <div class="incoming-excel"><Table2 size={23} /><span>fieldwork-data.xlsx</span></div>
+          <div class="incoming-word"><FileText size={23} /><span>project-proposal.docx</span></div>
+          <div class="incoming-excel"><Table2 size={23} /><span>project-budget.xlsx</span></div>
         </div>
         <div class="file-path" aria-hidden="true">
           <span></span><Upload size={19} /><span></span>
@@ -303,7 +302,7 @@
             <span><FileCheck2 size={18} /> Ready for your next revision</span><Check size={17} />
           </div>
           <div>
-            <FileText size={16} /><span>Editable paragraphs &amp; questions</span><span
+            <FileText size={16} /><span>Editable text &amp; formatting</span><span
               class="result-line"
             ></span>
           </div>
@@ -324,7 +323,7 @@
       <div class="wrap">
         <div class="section-heading" data-reveal>
           <div>
-            <p class="eyebrow">PART OF YOUR RESEARCH TOOLKIT</p>
+            <p class="eyebrow">YOUR FILES. YOUR EXISTING TOOLS.</p>
             <h2 id="integration-heading">Connect the work<br />between your tools.</h2>
           </div>
           <p>
@@ -348,9 +347,7 @@
       </div>
       <div class="access-visual" data-reveal>
         <div class="access-title">
-          <ShieldCheck size={22} /><span
-            >Community health study<small>People with access</small></span
-          >
+          <ShieldCheck size={22} /><span>A shared project<small>People with access</small></span>
         </div>
         {#each [{ name: 'Maya', initial: 'M', role: 'Editor', desc: 'Edit and share changes', color: 'blue' }, { name: 'Sam', initial: 'S', role: 'Reviewer', desc: 'Review and discuss the work', color: 'gold' }, { name: 'Rafi', initial: 'R', role: 'Read only', desc: 'Read the shared document', color: 'green' }] as member}<div
             class="access-person"
@@ -378,11 +375,11 @@
     </section>
     <section class="product-expansion wrap">
       <div>
-        <p class="eyebrow">THE WORK BETWEEN THE FINDINGS</p>
-        <h2>Follow the question.<br />Keep the decisions.</h2>
+        <p class="eyebrow">FROM FIRST DRAFT TO FINAL DECISION</p>
+        <h2>Follow the changes.<br />Keep the decisions.</h2>
         <p>
-          A source file, a revised question, a team discussion, an approved instrument. Give each
-          part of the process a clear place in the record.
+          A source file, a revised paragraph, a team discussion, an approved version. Give each part
+          of the process a clear place in the record.
         </p>
       </div>
       <ResearchJourney />
@@ -394,7 +391,7 @@
     </section>
     <section class="evidence-expansion wrap">
       <div>
-        <p class="eyebrow">DESIGNED FOR RESEARCH PRACTICE</p>
+        <p class="eyebrow">ONE USE CASE: RESEARCH THAT CAN BE REVISITED</p>
         <h2>Good records make<br />the work easier to follow.</h2>
         <p>
           The FAIR framework describes four foundations for reusable research: findability,
@@ -419,10 +416,11 @@
     </section>
     <section class="roadmap-expansion wrap">
       <p class="eyebrow">A LONGER VIEW · PLANNED</p>
-      <h2>A workspace that grows<br />with the research.</h2>
+      <h2>A stronger foundation<br />for every revision.</h2>
       <p>
-        Source-grounded learning. Research instrument validation. Statistical checks. Fieldwork and
-        geospatial tools. These are planned directions, with no promised release dates.
+        Higher-fidelity file exchange. More precise attribution. Efficient storage and offline
+        collaboration. These are the next engineering priorities; learning and research tools remain
+        additional directions, with no promised release dates.
       </p>
       <a href="/roadmap">Explore what comes next <ArrowUpRight size={17} /></a>
     </section>
@@ -433,9 +431,9 @@
         </div>
         <p class="eyebrow">BRING THE TEAM. KEEP THE CONTEXT.</p>
         <h2>Make room for<br />your next good idea.</h2>
-        <p>Give your research a shared place to grow.</p>
+        <p>Give your documents a history you can work with.</p>
         <a href={workspace} class="primary-link">Open your workspace <ArrowUpRight size={18} /></a
-        ><span class="closing-note">A research pilot for small teams</span>
+        ><span class="closing-note">Documents, spreadsheets and a clear revision record</span>
       </div>
     </section>
   </main>

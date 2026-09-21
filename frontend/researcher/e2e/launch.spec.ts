@@ -47,6 +47,7 @@ test('public pages pass automated WCAG A and AA checks', async ({ page }) => {
     '/privacy',
     '/terms',
     '/features',
+    '/compatibility',
     '/why-dynodoc',
     '/roadmap',
     '/help',

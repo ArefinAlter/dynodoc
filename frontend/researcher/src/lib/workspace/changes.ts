@@ -4,8 +4,32 @@ import type { JSONContent } from '@tiptap/core';
 import type { DocumentState, EventPayload } from '$lib/api/types';
 import { documentNodes } from './api';
 import { textOf, type TextBlock } from './files';
+import { applyPayload } from '$lib/materializer';
 export function cloneState(state: DocumentState): DocumentState {
   return JSON.parse(JSON.stringify(state));
+}
+/** Copy only records an operation can mutate. Unchanged block contents are shared
+ * across undo states instead of copying a whole long document on every keypress. */
+export function applyLocalChanges(state: DocumentState, ops: EventPayload[]): DocumentState {
+  const next: DocumentState = {
+    ...state,
+    nodes: { ...state.nodes },
+    comments: [...state.comments],
+    suggestions: { ...state.suggestions },
+    removed_choices: [...state.removed_choices]
+  };
+  const copied = new Set<string>();
+  for (const op of ops) {
+    const id = 'node_id' in op ? op.node_id : undefined;
+    if (id && next.nodes[id] && !copied.has(id)) {
+      next.nodes[id] = { ...next.nodes[id], current_fields: { ...next.nodes[id].current_fields } };
+      copied.add(id);
+    }
+    if ('suggestion_id' in op && next.suggestions[op.suggestion_id])
+      next.suggestions[op.suggestion_id] = { ...next.suggestions[op.suggestion_id] };
+    applyPayload(next, op);
+  }
+  return next;
 }
 export function richContent(state: DocumentState, parentId?: string): JSONContent {
   return {
@@ -26,7 +50,8 @@ export function richContent(state: DocumentState, parentId?: string): JSONConten
 export function richChanges(
   state: DocumentState,
   content: JSONContent,
-  parentId?: string
+  parentId?: string,
+  changedIds?: Set<string>
 ): EventPayload[] {
   const ops: EventPayload[] = [];
   const prior = documentNodes(state).filter((n) => !parentId || n.parent_id === parentId);
@@ -68,7 +93,10 @@ export function richChanges(
       });
     else {
       if (node.deleted) ops.push({ type: 'NodeRestored', node_id: id });
-      if (stableJson(node.current_fields.content) !== stableJson(block)) {
+      if (
+        (!changedIds || changedIds.has(id)) &&
+        stableJson(node.current_fields.content) !== stableJson(block)
+      ) {
         ops.push({ type: 'FieldEdited', node_id: id, field: 'content', value: block });
         if (node.current_fields.label !== label)
           ops.push({ type: 'FieldEdited', node_id: id, field: 'label', value: label });

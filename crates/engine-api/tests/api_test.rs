@@ -1389,6 +1389,64 @@ async fn product_hierarchy_has_inherited_roles_and_manager_boundaries(pool: PgPo
 }
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn office_review_is_private_and_unresolved_changes_cannot_be_published(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let owner = bearer(seed_identity(&pool, "office-privacy@example.org").await);
+    let doc = create_document(&router, &owner, "Office review").await;
+    let root = ulid::Ulid::new().to_string();
+    let node = ulid::Ulid::new().to_string();
+    let content = json!({"type":"paragraph","content":[{"type":"text","text":"Public wording","marks":[{"type":"sourceComment","attrs":{"body":"Private Word comment","author":"Private author"}}]}]});
+    let (status, body) = send(&router, auth_post(&format!("/documents/{doc}/batch"), &owner, &json!({"base_seq":0,"ops":[
+      {"type":"NodeCreated","node_id":root,"node_type":"form","pos":"a","fields":{"fonts":[{"family":"Private font","uploadId":"secret-file"}]}},
+      {"type":"NodeCreated","node_id":node,"node_type":"item","parent_id":root,"pos":"a","fields":{"content":content,"format_0":{"note":"Private spreadsheet note","bold":true}}}
+    ]}))).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, link) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc}/public-links"),
+            &owner,
+            &json!({"base_seq":2}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{link}");
+    let (_, public) = send(
+        &router,
+        get(&format!(
+            "/public/documents/{}",
+            link["token"].as_str().unwrap()
+        )),
+    )
+    .await;
+    let encoded = public.to_string();
+    assert!(
+        !encoded.contains("Private") && !encoded.contains("secret-file"),
+        "{encoded}"
+    );
+    assert!(encoded.contains("Public wording"));
+    assert_eq!(
+        public["state"]["nodes"][node.as_str()]["current_fields"]["format_0"]["bold"],
+        true
+    );
+    let mut tracked = content.clone();
+    tracked["content"][0]["marks"] =
+        json!([{"type":"trackedChange","attrs":{"kind":"insert","id":"revision"}}]);
+    assert_eq!(send(&router, auth_post(&format!("/documents/{doc}/batch"), &owner, &json!({"base_seq":2,"ops":[{"type":"FieldEdited","node_id":node,"field":"content","value":tracked}]}))).await.0, StatusCode::OK);
+    let (status, body) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc}/public-links"),
+            &owner,
+            &json!({"base_seq":3}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(body.to_string().contains("Accept or reject"));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn product_public_copy_is_frozen_private_and_revocable(pool: PgPool) {
     let router = app(test_state(pool.clone()));
     let owner = bearer(seed_identity(&pool, "publisher@example.org").await);

@@ -44,7 +44,7 @@ const application = {
   applicationCategory: 'ProductivityApplication',
   operatingSystem: 'Web browser',
   description:
-    'A shared workspace for research documents, spreadsheets and questionnaires with block-based version history. Teams draft in private, compare revisions, resolve overlapping edits and share selected changes into the team version.',
+    'A document version-control workspace for rich text and spreadsheets with formatting-aware history. Teams draft in private, compare revisions, resolve overlapping edits and share selected changes into the team version.',
   image: SITE_IMAGE,
   license: 'https://www.gnu.org/licenses/agpl-3.0.html',
   isAccessibleForFree: true,
