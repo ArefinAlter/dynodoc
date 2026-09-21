@@ -113,6 +113,7 @@ pub fn can_perform(role: Role, op: &EventPayload) -> bool {
         (Role::Auditor, _) => false,
         // Reviewer may comment and propose; nothing else touches the log.
         (Role::Reviewer, CommentAdded { .. }) => true,
+        (Role::Reviewer, CommentReplied { .. }) => true,
         (Role::Reviewer, SuggestionProposed { .. }) => true,
         (Role::Reviewer, _) => false,
         // Author owns the instrument: the full PoC op vocabulary.

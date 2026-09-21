@@ -18,13 +18,13 @@ The original immediate product was a questionnaire authoring tool. The owner's e
 | Homepage | Responsive cream/blue homepage, self-hosted sans serif typography, interactive editor/draft/integration examples, document version-control explainers, reduced-motion behavior, Node and Vercel builds. |
 | Legal pages | Privacy, terms and cookie pages describe actual storage and sharing; browser measurement preference is available. Operator details and legal review remain open. |
 | Workspace | Create/import documents, organize them in a hierarchy, search, share roles, make copies, move to Trash and restore. |
-| Document editing | Document tabs, common ribbons, paragraph styles/direction/spacing, shared font uploads, text tracking with accept/reject, comments, table/context actions, equations, versioned page setup and paginated print preview. Native DOCX import runs in a bounded worker; LaTeX/Overleaf interchange remains. |
+| Document editing | Document tabs, common ribbons, paragraph styles/direction/spacing, shared font uploads, text tracking with accept/reject, threaded comments with resolve/reopen, table/context actions, equations, versioned page setup and paginated print preview. Native DOCX import runs in a bounded worker; LaTeX/Overleaf interchange remains. |
 | Spreadsheet editing | Typed cells, ranges, relative formula fill, persistent calculation graph, formatting, validation subset, merges, freeze/hide/resize, sheet lifecycle, find/replace/filter, values-only sorting and styled XLSX exchange. |
 | Version workflows | Personal drafts, selected-block sharing, get latest, conflict choices, named versions, comparisons, attribution and restoration as new events. |
 | Research files | DOCX/DOC, CSV/XLSX, XLSForm and REDCap dictionary interchange; original files retained. |
 | Research connections | ODK/Kobo form and response imports; REDCap metadata/records, SurveyCTO wide responses and SurveyMonkey bulk responses. Google Forms adds separate read-only OAuth definition/response imports. Live study-account acceptance remains open. |
 | Questionnaire preview | Supported XLSForm relevance, calculations, required rules and constraints; explicit unsupported-logic errors. Answers stay in browser memory. |
-| Administration | Allowlisted dashboard with typed-confirmation account disable/restore and document Trash/restore, operations audit, database/storage/service/backup status, anonymous page loads and web vitals. |
+| Administration | Allowlisted dashboard with typed confirmation, impact previews, whole-document/account erasure, disable/restore, ownership transfer, forced sign-out, link revocation, CSV export and immutable audit/receipts, database/storage/service/backup status, anonymous page loads and web vitals. |
 | Search and identity | Original SVG logo, favicons/social card, canonical metadata, structured data, sitemap and private-page noindex rules. |
 | Deployment | Isolated VPS containers and networks, HTTPS, private database, constrained Word converter, database backup and restore procedure. |
 
@@ -50,10 +50,20 @@ The owner explicitly pivoted the product to document version control on 21 Septe
 - Broader spreadsheet features: charts, pivots, formula-based validation, protected ranges, advanced sort behavior with formulas, Excel formula compatibility and high-fidelity workbook formatting.
 - Survey execution beyond the supported preview subset: repeat instances, translations/media workflows, external datasets, advanced XPath/date functions and vendor-specific expression engines.
 - Research-platform synchronization: scheduled refresh, incremental reconciliation and writeback. All six implemented API import paths need real study-account verification. CSPro dictionary/form/logic support is not implemented; exported CSV/XLSX data can be edited.
-- Stronger review: comments with replies/resolution/mentions, richer tracked suggestions, per-block/protected-range permissions, notifications and shared review of another person's draft.
-- Versioning refinements: offline browser recovery, persistent exclusion rules, branch-to-branch review, more detailed side-by-side rich-content comparison, cryptographically anchored metadata/permission audit and long-lived retry/idempotency handling for every new workspace endpoint.
-- Production operation: off-site backups, monitoring/alerts, recovery objectives, resource/load tests beyond ten synthetic concurrent edits, complete keyboard/screen-reader audit and an external security review.
+- Stronger review: mentions and notification delivery, richer tracked suggestions, per-block/protected-range permissions, notifications and shared review of another person's draft.
+- Versioning refinements: full offline synchronization, branch-to-branch review, more detailed side-by-side rich-content comparison, cryptographically anchored metadata/permission audit and long-lived retry/idempotency handling for every new workspace endpoint.
+- Production operation: off-site backups (explicitly deferred by the owner), monitoring/alerts, recovery objectives, resource/load tests beyond ten synthetic concurrent edits, complete keyboard/screen-reader audit and an external security review.
 - Public consultation stages 22–31, civic identity, moderation, citizen frontend, deliberation and ML services remain future work. The CRDT live-typing layer is also deferred; overlapping block edits require review instead of character-level co-editing.
+
+## Web operations increment
+
+Decision 005 implements the approved erasure policy, optional browser recovery,
+canonical discussion replies/resolution, persistent per-draft exclusions, expanded
+OpenAPI and authenticated browser CI. The homepage/workspace/admin receive a more
+spacious cream/blue interface. Off-site backups are deferred; this is web-only work.
+See [the release evidence](PRODUCT-OPERATIONS-RELEASE.md). No production user data
+is deleted by the release. Broader Office parity and real-provider acceptance below
+remain open; the release does not relabel the complete roadmap as finished.
 
 ## Verification evidence
 

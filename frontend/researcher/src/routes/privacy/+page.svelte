@@ -273,15 +273,28 @@
       Archiving changes a document’s visibility. Trash blocks ordinary access and revokes public
       links while preserving recoverable content and history. Administrators can disable accounts;
       restoring an account requires fresh sign-in and does not restore old links or sessions. These
-      actions are recorded in an append-only operations log and do not permanently erase data. The
-      current pilot has no automatic expiry for research documents, original uploads or account
-      records, and no self-service permanent-erasure feature.
+      actions are recorded in an append-only operations log and do not permanently erase data.
+      Administrators can separately permanently delete a trashed document after reviewing its impact
+      and typing its title. This removes its content history, uploads, versions, drafts and
+      published copies from the live database. A minimal receipt records the resource identifier,
+      administrator, reason category, counts and time, without retaining document content. Account
+      erasure removes the profile, credentials, personal drafts and access; a pseudonymous actor
+      identifier remains to preserve the integrity of contributions to other documents. Owned
+      documents and workspaces must first be transferred or separately handled.
     </p>
     <p>
       The current hosted backup schedule keeps a rolling set of daily database backups for 14 days.
       That backup rotation does not delete records from the live database, and restored backups may
       contain earlier copies. The operator must establish and publish retention rules for research
       projects, accounts, access logs, support records and any additional backups before wider use.
+    </p>
+    <p>
+      Optional browser recovery keeps unsaved content on your device only after you enable it from
+      the editor's File menu. Copies expire after seven days when the application next checks
+      recovery storage, and are cleared on sign-out or when you disable recovery. Up to 30 copies
+      may be retained, with a 10 MiB limit per copy. This is browser storage, not a server backup;
+      anyone with access to your browser profile may be able to inspect it. Do not enable it on a
+      shared or untrusted device.
     </p>
     <p>
       A deletion or correction request must be assessed by the operator and, where appropriate, the

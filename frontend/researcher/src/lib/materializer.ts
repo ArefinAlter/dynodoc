@@ -111,6 +111,9 @@ export function applyPayload(state: DocumentState, payload: EventPayload): boole
       }
       return true;
     }
+    case 'CommentReplied':
+    case 'CommentResolved':
+      return false;
     case 'CommentAdded': {
       state.comments.push({ node_id: payload.node_id ?? null, body: payload.body });
       return true;

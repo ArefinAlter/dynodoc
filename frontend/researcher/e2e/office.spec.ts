@@ -18,7 +18,7 @@ async function create(page: Page, kind = 'document') {
   await expect(page).toHaveURL(/\/workspace$/);
   await page.getByRole('button', { name: 'New document', exact: true }).click();
   await page.getByLabel('Document name', { exact: true }).fill('Office workflow');
-  await page.getByRole('combobox').selectOption(kind);
+  await page.getByRole('dialog').getByRole('combobox').selectOption(kind);
   await page.getByRole('button', { name: 'Create document', exact: true }).click();
   await expect(page.getByLabel('Document title')).toHaveValue('Office workflow');
 }
@@ -169,7 +169,7 @@ test('IME input survives a concurrent server edit without overwriting it', async
   await editor.fill('Shared text.');
   await saved(page);
   const id = new URL(page.url()).pathname.split('/').pop();
-  const headers = { 'x-dynodoc-editor': 'office-v2', origin: new URL(page.url()).origin };
+  const headers = { 'x-dynodoc-editor': 'office-v3', origin: new URL(page.url()).origin };
   const original = await (
     await page.request.get(`/api/engine/documents/${id}`, { headers })
   ).json();
@@ -211,7 +211,7 @@ test('IME input survives a concurrent server edit without overwriting it', async
 test('spreadsheet print includes rows outside the virtual viewport', async ({ page }) => {
   await create(page, 'spreadsheet');
   const id = new URL(page.url()).pathname.split('/').pop();
-  const headers = { 'x-dynodoc-editor': 'office-v2', origin: new URL(page.url()).origin };
+  const headers = { 'x-dynodoc-editor': 'office-v3', origin: new URL(page.url()).origin };
   const detail = await (await page.request.get(`/api/engine/documents/${id}`, { headers })).json();
   const nodes = Object.values(detail.state.nodes) as MaterializedNode[];
   const sheet = nodes.find((n) => n.current_fields.kind === 'sheet');
@@ -249,7 +249,7 @@ test('a cell being edited keeps its original save base when a colleague changes 
 }) => {
   await create(page, 'spreadsheet');
   const id = new URL(page.url()).pathname.split('/').pop();
-  const headers = { 'x-dynodoc-editor': 'office-v2', origin: new URL(page.url()).origin };
+  const headers = { 'x-dynodoc-editor': 'office-v3', origin: new URL(page.url()).origin };
   const detail = await (await page.request.get(`/api/engine/documents/${id}`, { headers })).json();
   const nodes = Object.values(detail.state.nodes) as MaterializedNode[];
   const sheet = nodes.find((n) => n.current_fields.kind === 'sheet')!;

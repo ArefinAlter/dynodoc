@@ -582,6 +582,8 @@ struct SyncRequest {
     #[serde(default)]
     resolutions: std::collections::BTreeMap<String, String>,
     included_nodes: Option<Vec<engine_shared::NodeId>>,
+    #[serde(default)]
+    remember_selection: bool,
 }
 #[utoipa::path(post, path="/documents/{id}/drafts/{draft_id}/sync", tag="workspace", request_body=Value, params(("id" = Uuid, Path, description = "Resource identifier"), ("draft_id" = Uuid, Path, description = "Resource identifier")), responses((status=200, description="Success; requires document membership", body=Value),(status=401, description="Sign in required"),(status=403, description="Insufficient access"),(status=409, description="Review a concurrent change before retrying")))]
 async fn sync_draft(
@@ -625,7 +627,7 @@ async fn sync_draft(
     let changes = plan.ops.clone();
     if req.action.is_empty() || req.action == "preview" {
         return Ok(Json(
-            json!({"conflicts":plan.conflicts,"ops":changes,"team_seq":seq,"revision":revision}),
+            json!({"conflicts":plan.conflicts,"ops":changes,"team_seq":seq,"revision":revision,"excluded_nodes":row["excluded_nodes"]}),
         ));
     }
     if req.team_seq != Some(seq) || req.revision != Some(revision) {
@@ -644,10 +646,49 @@ async fn sync_draft(
     }
     let mut events = Vec::new();
     if req.action == "share" {
+        let excluded: std::collections::BTreeSet<String> =
+            serde_json::from_value(row["excluded_nodes"].clone()).unwrap_or_default();
+        let included = req.included_nodes.as_ref().map(|ids| {
+            ids.iter()
+                .map(|id| id.0.as_str())
+                .collect::<std::collections::BTreeSet<_>>()
+        });
+        if req.remember_selection {
+            if let Some(included) = &included {
+                let held: std::collections::BTreeSet<String> = changes
+                    .iter()
+                    .filter_map(|op| op.target_node_id())
+                    .filter(|node| !included.contains(node.0.as_str()))
+                    .map(|node| node.0.clone())
+                    .collect();
+                // Keep earlier exclusions for unchanged nodes, too.
+                let mut keep: std::collections::BTreeSet<String> = excluded
+                    .iter()
+                    .filter(|id| !included.contains(id.as_str()))
+                    .cloned()
+                    .collect();
+                keep.extend(held);
+                if keep.len() > 20_000 {
+                    return Err(bad("A draft can keep up to 20,000 block exclusions. Share or separate this draft before adding more."));
+                }
+                sqlx::query("update workspace_draft set excluded_nodes=$2 where id=$1")
+                    .bind(draft)
+                    .bind(keep.into_iter().collect::<Vec<_>>())
+                    .execute(&mut *tx)
+                    .await?;
+            }
+        }
         for op in changes.iter().filter(|op| {
-            req.included_nodes
-                .as_ref()
-                .is_none_or(|ids| op.target_node_id().is_some_and(|id| ids.contains(id)))
+            included.as_ref().map_or_else(
+                || {
+                    op.target_node_id()
+                        .is_none_or(|id| !excluded.contains(&id.0))
+                },
+                |ids| {
+                    op.target_node_id()
+                        .is_some_and(|id| ids.contains(id.0.as_str()))
+                },
+            )
         }) {
             governance::authorize(role, op, &team)?;
             if engine_core::richtext::redundant_label(&team, op) {

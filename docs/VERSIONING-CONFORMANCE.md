@@ -10,7 +10,7 @@ of overlapping edits. It is not the complete distributed protocol in the mathema
 | Principle | Implementation and evidence |
 |---|---|
 | Identity independent of content and position | ULIDs identify nodes. Tiptap block IDs survive ordinary edits; spreadsheet cells are fields of stable row nodes. `changes.test.ts` checks unchanged IDs, insertion order and restoration. |
-| Append-only source of truth | PostgreSQL event UPDATE/DELETE triggers; `log::append_in_tx` locks the document row before allocating sequence numbers. Materialized state is replayed from events. DB-backed concurrent append and rollback tests cover the write boundary. |
+| Append-only source of truth | PostgreSQL event UPDATE/DELETE guards (whole-document erasure is the explicitly audited exception in decision 005); `log::append_in_tx` locks the document row before allocating sequence numbers. Materialized state is replayed from events. DB-backed concurrent append and rollback tests cover the write boundary. |
 | Hash-linked semantic history | Length-framed canonical event content and actor IDs feed SHA-256; each chain hash includes its predecessor. Verification catches changed payloads, actor/target edits and reordering. The genesis predecessor is 32 zero bytes, as specified by the build-stage contract. |
 | Derived snapshots and Merkle commitments | Snapshots store replayed state, an event-chain head and a Merkle root over ordered node hashes (including tombstones), with separate leaf/internal prefixes. Property tests compare full replay with snapshot-plus-tail replay. |
 | Independent edits combine | Three-way merge compares the ancestor, current team version and draft by stable node ID and field. Independent fields and cells combine; diverging same-field values require a choice. Delete/edit and divergent locations are conflicts in the workspace merge implementation. |
@@ -44,9 +44,10 @@ of overlapping edits. It is not the complete distributed protocol in the mathema
   its head. Externally signed/anchored heads remain unimplemented. Timestamps and
   transport metadata are not all included in the current content-hash preimage;
   do not interpret verification as an independent timestamping service.
-- Selected blocks can be held back from sharing. Persistent exclusion rules, offline
-  local repositories, portable clone/fetch protocols and arbitrary remotes are not
-  implemented. Browser drafts are server-backed personal workspaces.
+- Selected blocks can be held back from sharing. Per-draft exclusion preferences persist when selected sharing remembers them.
+  Opt-in browser recovery preserves a save base and unsaved state; offline local
+  repositories, portable clone/fetch protocols and arbitrary remotes are not
+  implemented. Drafts remain server-backed personal workspaces.
 - Membership/lifecycle changes now have a separate append-only operations audit. Document metadata and operational samples do not all use the semantic
   document event log. The cryptographic claim is specifically about recorded content
   operations, not every administrative action in the installation.
@@ -60,7 +61,7 @@ of overlapping edits. It is not the complete distributed protocol in the mathema
 | init / clone | New document / Make a copy | Copies start their own history. |
 | local / remote | Personal draft / Team version | Both live on the server. |
 | branch / switch | Create draft / Open draft | Author's own draft workspace. |
-| stage / ignore | Include in sharing / Keep for later | Block selection; no persistent ignore patterns. |
+| stage / ignore | Include in sharing / Keep for later | Block selection with remembered per-draft exclusions; no path/glob ignore patterns. |
 | commit | Save version | Named immutable snapshot of recorded work. |
 | push / pull | Share changes / Get latest | Three-way comparison with the stored base. |
 | merge / conflict | Combine changes / Review overlaps | Explicit choices before conflicting edits land. |
@@ -79,3 +80,9 @@ the attribution authority. Imported Word comment/revision authors are source-fil
 metadata, not verified Dynodoc identities. Public copies reject unresolved text
 revisions and strip embedded private comments, cell notes and private font references.
 See [the office capability record](OFFICE-EDITOR-CAPABILITIES.md).
+
+Discussion replies and resolution/reopening are canonical semantic events with
+thread revision checks. Discussion state is projected from event IDs, independently
+of the structural node projection. Complete document erasure removes the chain;
+it cannot be verified after erasure. A minimal administrative receipt survives,
+without pretending to be a retained cryptographic proof of deleted content.

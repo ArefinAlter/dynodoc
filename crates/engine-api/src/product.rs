@@ -76,6 +76,7 @@ async fn manage(tx: &mut Transaction<'_, Postgres>, id: Uuid, actor: Uuid) -> Re
     }
     Ok(())
 }
+#[utoipa::path(get, path="/spaces", tag="product", security(("paseto" = [])), responses((status=200, description="Successful operation", body=Value),(status=400, description="Validation or confirmation failed"),(status=401, description="Sign in required"),(status=403, description="Insufficient access"),(status=409, description="Refresh the current revision")))]
 async fn spaces(State(state): State<AppState>, auth: AuthContext) -> Result<Json<Value>, ApiError> {
     let items:Vec<Value> = sqlx::query_scalar("select to_jsonb(s)||jsonb_build_object('role',inherited_space_role(s.id,$1)) from access_space s where inherited_space_role(s.id,$1) is not null order by s.created_at limit 1000").bind(auth.identity_id).fetch_all(&state.pool).await?;
     Ok(Json(json!({"items":items})))
@@ -86,6 +87,7 @@ struct NewSpace {
     kind: String,
     parent_id: Option<Uuid>,
 }
+#[utoipa::path(post, path="/spaces", tag="product", request_body=Value, security(("paseto" = [])), responses((status=200, description="Successful operation", body=Value),(status=400, description="Validation or confirmation failed"),(status=401, description="Sign in required"),(status=403, description="Insufficient access"),(status=409, description="Refresh the current revision")))]
 async fn create_space(
     State(state): State<AppState>,
     auth: AuthContext,
@@ -158,6 +160,7 @@ async fn create_space(
     tx.commit().await?;
     Ok(Json(json!({"id":id})))
 }
+#[utoipa::path(get, path="/spaces/{id}/members", tag="product", params(("id" = String, Path, description = "Resource identifier")), security(("paseto" = [])), responses((status=200, description="Successful operation", body=Value),(status=400, description="Validation or confirmation failed"),(status=401, description="Sign in required"),(status=403, description="Insufficient access"),(status=409, description="Refresh the current revision")))]
 async fn space_members(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -179,6 +182,7 @@ struct MemberChange {
     email: String,
     role: String,
 }
+#[utoipa::path(post, path="/spaces/{id}/members", tag="product", request_body=Value, params(("id" = String, Path, description = "Resource identifier")), security(("paseto" = [])), responses((status=200, description="Successful operation", body=Value),(status=400, description="Validation or confirmation failed"),(status=401, description="Sign in required"),(status=403, description="Insufficient access"),(status=409, description="Refresh the current revision")))]
 async fn set_space_member(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -254,6 +258,7 @@ struct IndexQuery {
     #[serde(default)]
     trash: bool,
 }
+#[utoipa::path(get, path="/workspace/index", tag="product", security(("paseto" = [])), responses((status=200, description="Successful operation", body=Value),(status=400, description="Validation or confirmation failed"),(status=401, description="Sign in required"),(status=403, description="Insufficient access"),(status=409, description="Refresh the current revision")))]
 async fn index(
     State(state): State<AppState>,
     auth: AuthContext,
@@ -265,6 +270,7 @@ async fn index(
         json!({"items":items.into_iter().take(100).collect::<Vec<_>>(),"more":more}),
     ))
 }
+#[utoipa::path(get, path="/documents/{id}/access", tag="product", params(("id" = String, Path, description = "Resource identifier")), security(("paseto" = [])), responses((status=200, description="Successful operation", body=Value),(status=400, description="Validation or confirmation failed"),(status=401, description="Sign in required"),(status=403, description="Insufficient access"),(status=409, description="Refresh the current revision")))]
 async fn document_access(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -278,6 +284,7 @@ async fn document_access(
 struct Location {
     space_id: Option<Uuid>,
 }
+#[utoipa::path(post, path="/documents/{id}/location", tag="product", request_body=Value, params(("id" = String, Path, description = "Resource identifier")), security(("paseto" = [])), responses((status=200, description="Successful operation", body=Value),(status=400, description="Validation or confirmation failed"),(status=401, description="Sign in required"),(status=403, description="Insufficient access"),(status=409, description="Refresh the current revision")))]
 async fn move_document(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -316,6 +323,7 @@ async fn move_document(
 struct Trash {
     deleted: bool,
 }
+#[utoipa::path(post, path="/documents/{id}/trash", tag="product", request_body=Value, params(("id" = String, Path, description = "Resource identifier")), security(("paseto" = [])), responses((status=200, description="Successful operation", body=Value),(status=400, description="Validation or confirmation failed"),(status=401, description="Sign in required"),(status=403, description="Insufficient access"),(status=409, description="Refresh the current revision")))]
 async fn trash_document(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -343,6 +351,7 @@ async fn trash_document(
     tx.commit().await?;
     Ok(Json(json!({"ok":true})))
 }
+#[utoipa::path(get, path="/documents/{id}/public-links", tag="product", params(("id" = String, Path, description = "Resource identifier")), security(("paseto" = [])), responses((status=200, description="Successful operation", body=Value),(status=400, description="Validation or confirmation failed"),(status=401, description="Sign in required"),(status=403, description="Insufficient access"),(status=409, description="Refresh the current revision")))]
 async fn public_links(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -358,6 +367,7 @@ struct Publication {
     base_seq: i64,
     expires_days: Option<i32>,
 }
+#[utoipa::path(post, path="/documents/{id}/public-links", tag="product", request_body=Value, params(("id" = String, Path, description = "Resource identifier")), security(("paseto" = [])), responses((status=200, description="Successful operation", body=Value),(status=400, description="Validation or confirmation failed"),(status=401, description="Sign in required"),(status=403, description="Insufficient access"),(status=409, description="Refresh the current revision")))]
 async fn publish(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -415,6 +425,7 @@ async fn publish(
     tx.commit().await?;
     Ok(Json(json!({"id":link,"token":token})))
 }
+#[utoipa::path(post, path="/documents/{id}/public-links/{link}/revoke", tag="product", request_body=Value, params(("id" = String, Path, description = "Resource identifier"),("link" = String, Path, description = "Resource identifier")), security(("paseto" = [])), responses((status=200, description="Successful operation", body=Value),(status=400, description="Validation or confirmation failed"),(status=401, description="Sign in required"),(status=403, description="Insufficient access"),(status=409, description="Refresh the current revision")))]
 async fn revoke(
     State(state): State<AppState>,
     Path((id, link)): Path<(Uuid, Uuid)>,
@@ -438,6 +449,7 @@ async fn revoke(
     tx.commit().await?;
     Ok(Json(json!({"ok":true})))
 }
+#[utoipa::path(get, path="/public/documents/{token}", tag="product", params(("token" = String, Path, description = "Resource identifier")), responses((status=200, description="Successful operation", body=Value),(status=400, description="Validation or confirmation failed"),(status=401, description="Sign in required"),(status=403, description="Insufficient access"),(status=409, description="Refresh the current revision")))]
 async fn public_document(
     State(state): State<AppState>,
     Path(token): Path<String>,
@@ -570,3 +582,20 @@ mod office_public_tests {
         assert_eq!(content["content"][0]["marks"][0]["type"], "bold");
     }
 }
+
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(
+    spaces,
+    create_space,
+    space_members,
+    set_space_member,
+    index,
+    document_access,
+    move_document,
+    trash_document,
+    public_links,
+    publish,
+    revoke,
+    public_document
+))]
+pub struct ProductApi;

@@ -765,3 +765,18 @@ checks retained **191 content events** and **4 original uploads / 3,013,141 byte
 no public copies were created during deployment. Unrelated VPS services and the
 existing PostgreSQL/converter containers remained running. A fresh pre-release
 backup and previous API/web/admin image tags are retained for recovery.
+
+### 21 September 2026 — web operations continuation
+
+See [release evidence](docs/PRODUCT-OPERATIONS-RELEASE.md) and
+[decision 005](docs/decisions/005-product-operations-and-recovery.md). Migrations
+0017–0019 add the approved erasure path, canonical discussions and draft exclusions.
+Browser protocol is `office-v3`; roll out readers before writers. Verification used
+a disposable PostgreSQL 16 container at 127.0.0.1:55435, Windows Rust 1.96 and a
+separate Linux Node 22.22.0/pnpm 10.34.5 frontend copy. No private environment values
+were copied into the test frontend. 103 frontend unit tests and all 37 browser
+scenarios passed (including focused reruns); 171 Rust tests passed across suites.
+Strict Clippy, formatting, frontend lint/type checks and Node production build
+passed. Only the disposable database's fsync/synchronous_commit were disabled to
+avoid Docker Desktop test checkpoint delays; production durability was unchanged.
+CI now runs the authenticated browser suite on an isolated PostgreSQL/API stack.

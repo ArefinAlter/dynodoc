@@ -1,7 +1,7 @@
 # Product workflows and boundaries
 
-This release extends the hosted workspace contract in decision 002. All mutations
-below preserve the append-only semantic event log. Existing documents are neither
+This release extends the hosted workspace contract in decision 002. Ordinary editing preserves the append-only semantic event log.
+Explicit whole-resource erasure follows decision 005. Existing documents are neither
 published nor moved to Trash by deployment.
 
 ## Access and recoverable removal
@@ -29,8 +29,16 @@ documents and the operations log. Disable an account or move a document to Trash
 by typing its exact displayed email/title. Administrators cannot disable themselves
 or another configured administrator. Restored accounts need fresh sign-in: previous
 access tokens, refresh tokens and pending email links remain invalid. Content,
-contribution attribution and backups are retained. A permanent-erasure workflow
-requires a separately designed retention process; the UI does not claim to provide one.
+contribution attribution and backups are retained. Use **Manage → Permanently delete** after disabling an account or moving a document
+to Trash. Review the live impact, resolve ownership dependencies, type the exact
+label, choose a reason and acknowledge backup retention. Whole-document erasure
+removes content/history/files/public copies from the live database. Account erasure
+removes private drafts/profile/access but preserves shared contributions under a
+deleted-user identity. Minimal receipts remain; backups expire normally.
+
+**Manage** also offers forced sign-out, ownership transfer and revocation of every
+public link. Search organizations/folders as well as documents/accounts, and export
+the currently displayed page as CSV. See [decision 005](decisions/005-product-operations-and-recovery.md).
 
 ## Public copies
 
@@ -79,8 +87,25 @@ Authenticated routes use the existing session gateway at `/api/engine`:
 | GET `/public/documents/:token` | Anonymous frozen content, no private history |
 | GET `/admin/records?kind=&q=&offset=` | Accounts/documents/audit, 50 per page |
 | POST `/admin/actions` | `{kind,id,removed,confirmation}` with admin checks |
+| GET `/admin/impact?kind=&id=` | Counts, blockers and revision for permanent deletion |
+| POST `/admin/erase` | Confirmed, revision-checked whole-resource erasure |
+| POST `/admin/control` | Forced sign-out, ownership transfer or public-link revocation |
+| GET `/documents/:id/discussions?before=&node=` | Paginated discussion roots with replies and resolution |
+| POST `/documents/:id/discussions/:thread` | `{revision,body}` or `{revision,resolved}` |
 
-These additions are documented here; the generated OpenAPI currently covers the
-previous engine/workspace routes and does not yet describe these additional routes.
+These product, lifecycle, discussion and administration routes are included in the
+generated OpenAPI. Some request/response bodies retain generic JSON schemas.
 Operations audit rows are append-only, but are not part of the document's cryptographic
 content chain. Database/backup access remains an infrastructure-operator capability.
+
+## Recovery and review
+
+**File → Keep recovery copies on this browser** enables optional seven-day browser
+recovery on a trusted device. After interruption, choose **Review recovered work**
+and retry saving or preserve a personal draft. The original revision is kept so
+newer edits still undergo conflict checks. Sign-out clears local copies and turns
+recovery off. This is recovery, not a disconnected collaboration protocol.
+
+Comments support replies and author resolve/reopen actions. **Show resolved**
+returns completed discussions. Selected draft sharing can remember unchecked
+blocks for later comparisons; selecting those blocks again releases the exclusion.

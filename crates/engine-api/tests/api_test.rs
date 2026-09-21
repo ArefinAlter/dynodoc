@@ -21,6 +21,535 @@ use uuid::Uuid;
 const KEY: [u8; 32] = [7u8; 32];
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn draft_sharing_remembers_exclusions_until_explicitly_included(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let owner = bearer(seed_identity(&pool, "selection@example.test").await);
+    let doc = create_document(&router, &owner, "Selections").await;
+    let root = ulid::Ulid::new().to_string();
+    let child = ulid::Ulid::new().to_string();
+    let (status,result)=send(&router,auth_post(&format!("/documents/{doc}/batch"),&owner,&json!({"base_seq":0,"ops":[
+      {"type":"NodeCreated","node_id":root,"node_type":"form","pos":"a0","fields":{"label":"Original root"}},
+      {"type":"NodeCreated","node_id":child,"node_type":"item","parent_id":root,"pos":"a0","fields":{"label":"Original child","type":"text","name":"question"}}
+    ]}))).await;
+    assert_eq!(status, StatusCode::OK, "{result}");
+    let (_, draft) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc}/drafts"),
+            &owner,
+            &json!({"name":"Private options"}),
+        ),
+    )
+    .await;
+    let uri = format!("/documents/{doc}/drafts/{}", draft["id"].as_str().unwrap());
+    let (status, result) = send(
+        &router,
+        auth_post(
+            &uri,
+            &owner,
+            &json!({"revision":0,"ops":[
+              {"type":"FieldEdited","node_id":root,"field":"label","value":"Ready root"},
+              {"type":"FieldEdited","node_id":child,"field":"label","value":"Private child"}
+            ]}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{result}");
+    let sync = format!("{uri}/sync");
+    let (_, preview) = send(
+        &router,
+        auth_post(&sync, &owner, &json!({"action":"preview"})),
+    )
+    .await;
+    let(status,result)=send(&router,auth_post(&sync,&owner,&json!({"action":"share","team_seq":preview["team_seq"],"revision":preview["revision"],"included_nodes":[root],"remember_selection":true}))).await;
+    assert_eq!(status, StatusCode::OK, "{result}");
+    assert_eq!(result["completed"], false);
+    let (_, preview) = send(
+        &router,
+        auth_post(&sync, &owner, &json!({"action":"preview"})),
+    )
+    .await;
+    assert_eq!(preview["excluded_nodes"], json!([child]));
+    let(status,result)=send(&router,auth_post(&sync,&owner,&json!({"action":"share","team_seq":preview["team_seq"],"revision":preview["revision"]}))).await;
+    assert_eq!(status, StatusCode::OK, "{result}");
+    assert!(result["events"].as_array().unwrap().is_empty());
+    let (_, team) = send(&router, auth_post_get(&format!("/documents/{doc}"), &owner)).await;
+    assert_eq!(
+        team["state"]["nodes"][&child]["current_fields"]["label"],
+        "Original child"
+    );
+    let (_, preview) = send(
+        &router,
+        auth_post(&sync, &owner, &json!({"action":"preview"})),
+    )
+    .await;
+    let(status,result)=send(&router,auth_post(&sync,&owner,&json!({"action":"share","team_seq":preview["team_seq"],"revision":preview["revision"],"included_nodes":[child],"remember_selection":true}))).await;
+    assert_eq!(status, StatusCode::OK, "{result}");
+    assert_eq!(result["completed"], true);
+    let excluded: Vec<String> =
+        sqlx::query_scalar("select excluded_nodes from workspace_draft where id=$1")
+            .bind(Uuid::parse_str(draft["id"].as_str().unwrap()).unwrap())
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(excluded.is_empty());
+    let (_, verification) = send(
+        &router,
+        auth_post_get(&format!("/documents/{doc}/verify"), &owner),
+    )
+    .await;
+    assert_eq!(verification["ok"], true);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn discussion_replies_resolution_permissions_and_replay(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let owner_id = seed_identity(&pool, "discussion-owner@example.test").await;
+    let reviewer_id = seed_identity(&pool, "discussion-reviewer@example.test").await;
+    let outsider = seed_identity(&pool, "discussion-outsider@example.test").await;
+    let owner = bearer(owner_id);
+    let reviewer = bearer(reviewer_id);
+    let doc = create_document(&router, &owner, "Discussion").await;
+    sqlx::query(
+        "insert into document_access(document_id,identity_id,role) values($1,$2,'reviewer')",
+    )
+    .bind(doc)
+    .bind(reviewer_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let (status, root) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc}/ops/comment"),
+            &reviewer,
+            &json!({"body":"Clarify the wording?"}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{root}");
+    let thread = root["event"]["id"].as_str().unwrap();
+    let route = format!("/documents/{doc}/discussions/{thread}");
+    let list = format!("/documents/{doc}/discussions");
+    assert_eq!(
+        send(&router, auth_post_get(&list, &bearer(outsider)))
+            .await
+            .0,
+        StatusCode::FORBIDDEN
+    );
+    let (status, reply) = send(
+        &router,
+        auth_post(
+            &route,
+            &reviewer,
+            &json!({"revision":1,"body":"Here is my suggested explanation."}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{reply}");
+    assert_eq!(reply["events"][0]["type"], "CommentReplied");
+    assert_eq!(
+        send(
+            &router,
+            auth_post(
+                &route,
+                &reviewer,
+                &json!({"revision":1,"body":"Stale duplicate"})
+            )
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        send(
+            &router,
+            auth_post(&route, &reviewer, &json!({"revision":2,"resolved":true}))
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        send(
+            &router,
+            auth_post(&route, &owner, &json!({"revision":2,"resolved":true}))
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        send(
+            &router,
+            auth_post(
+                &route,
+                &reviewer,
+                &json!({"revision":3,"body":"Closed reply"})
+            )
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    let result = send(&router, auth_post_get(&list, &owner)).await.1;
+    assert_eq!(result["items"][0]["resolved"], true);
+    assert_eq!(
+        result["items"][0]["replies"][0]["body"],
+        "Here is my suggested explanation."
+    );
+    assert_eq!(
+        send(
+            &router,
+            auth_post(&route, &owner, &json!({"revision":3,"resolved":false}))
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let other = create_document(&router, &owner, "Other document").await;
+    assert_eq!(
+        send(
+            &router,
+            auth_post(
+                &format!("/documents/{other}/discussions/{thread}"),
+                &owner,
+                &json!({"revision":1,"body":"Cross-document attempt"})
+            )
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    engine_core::log::verify_chain(&pool, DocumentId(doc))
+        .await
+        .unwrap();
+    let replay = engine_core::snapshot::SnapshotEngine::new(pool.clone())
+        .read_current_state(DocumentId(doc))
+        .await
+        .unwrap();
+    assert_eq!(
+        replay.comments.len(),
+        1,
+        "Replies are projected from canonical event IDs, not duplicated as root comments"
+    );
+    let (_, public) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc}/public-links"),
+            &owner,
+            &json!({"base_seq":4}),
+        ),
+    )
+    .await;
+    let encoded = send(
+        &router,
+        get(&format!(
+            "/public/documents/{}",
+            public["token"].as_str().unwrap()
+        )),
+    )
+    .await
+    .1
+    .to_string();
+    assert!(!encoded.contains("Clarify") && !encoded.contains("suggested explanation"));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn admin_erasure_removes_whole_document_but_cannot_bypass_history_guards(pool: PgPool) {
+    let admin_id = seed_identity(&pool, "erase-admin@example.test").await;
+    let owner_id = seed_identity(&pool, "erase-owner@example.test").await;
+    let mut state = test_state(pool.clone());
+    state.admin_emails = "erase-admin@example.test".into();
+    let router = app(state);
+    let admin = bearer(admin_id);
+    let owner = bearer(owner_id);
+    let doc = create_document(&router, &owner, "Remove me").await;
+    let keep = create_document(&router, &owner, "Keep me").await;
+    let (_, created) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc}/ops/node-create"),
+            &owner,
+            &json!({"node_type":"form","pos":"a","fields":{"label":"Private original"}}),
+        ),
+    )
+    .await;
+    let node = created["event"]["target_node_id"].as_str().unwrap();
+    let (_, draft) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc}/drafts"),
+            &owner,
+            &json!({"name":"Private draft"}),
+        ),
+    )
+    .await;
+    let draft_id = draft["id"].as_str().unwrap();
+    assert_eq!(send(&router,auth_post(&format!("/documents/{doc}/drafts/{draft_id}"),&owner,&json!({"revision":0,"ops":[{"type":"FieldEdited","node_id":node,"field":"label","value":"Private draft edit"}]}))).await.0,StatusCode::OK);
+    assert_eq!(
+        send(
+            &router,
+            auth_post(
+                &format!("/documents/{doc}/versions"),
+                &owner,
+                &json!({"name":"Checkpoint"})
+            )
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let (_, public) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc}/public-links"),
+            &owner,
+            &json!({"base_seq":1}),
+        ),
+    )
+    .await;
+    sqlx::query("insert into document_upload(document_id,filename,content_type,content,created_by) values($1,'private.txt','text/plain',$2,$3)").bind(doc).bind(b"private bytes".as_slice()).bind(owner_id).execute(&pool).await.unwrap();
+    let preview_uri = format!("/admin/impact?kind=documents&id={doc}");
+    assert_eq!(
+        send(&router, auth_post_get(&preview_uri, &owner)).await.0,
+        StatusCode::FORBIDDEN
+    );
+    assert!(sqlx::query("delete from event where document_id=$1")
+        .bind(doc)
+        .execute(&pool)
+        .await
+        .is_err());
+    assert!(
+        sqlx::query("delete from document_version where document_id=$1")
+            .bind(doc)
+            .execute(&pool)
+            .await
+            .is_err()
+    );
+    assert!(sqlx::query("delete from draft_edit")
+        .execute(&pool)
+        .await
+        .is_err());
+    assert!(sqlx::query("delete from document where id=$1")
+        .bind(doc)
+        .execute(&pool)
+        .await
+        .is_err());
+    let (_, active_plan) = send(&router, auth_post_get(&preview_uri, &admin)).await;
+    assert!(!active_plan["blockers"].as_array().unwrap().is_empty());
+    assert_eq!(
+        send(
+            &router,
+            auth_post(
+                "/admin/actions",
+                &admin,
+                &json!({"kind":"documents","id":doc,"removed":true,"confirmation":"Remove me"})
+            )
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let (_, preview) = send(&router, auth_post_get(&preview_uri, &admin)).await;
+    assert_eq!(preview["counts"]["events"], 1);
+    let mut erase = json!({"kind":"documents","id":doc,"confirmation":"Remove me","revision":preview["revision"],"reason":"owner_request","acknowledge_backups":true});
+    erase["confirmation"] = json!("wrong");
+    assert_eq!(
+        send(&router, auth_post("/admin/erase", &admin, &erase))
+            .await
+            .0,
+        StatusCode::BAD_REQUEST
+    );
+    erase["confirmation"] = json!("Remove me");
+    // A direct history delete remains forbidden even with a same-transaction receipt.
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::query("insert into erasure_receipt(resource_id,kind,actor_id,reason,counts) values($1,'documents',$2,'other','{}')").bind(doc).bind(admin_id).execute(&mut *tx).await.unwrap();
+    assert!(sqlx::query("delete from event where document_id=$1")
+        .bind(doc)
+        .execute(&mut *tx)
+        .await
+        .is_err());
+    tx.rollback().await.unwrap();
+    sqlx::query("insert into document_upload(document_id,filename,content_type,content,created_by) values($1,'later.txt','text/plain',$2,$3)").bind(doc).bind(b"later".as_slice()).bind(owner_id).execute(&pool).await.unwrap();
+    assert_eq!(
+        send(&router, auth_post("/admin/erase", &admin, &erase))
+            .await
+            .0,
+        StatusCode::BAD_REQUEST,
+        "A stale impact must be rejected"
+    );
+    erase["revision"] =
+        send(&router, auth_post_get(&preview_uri, &admin)).await.1["revision"].clone();
+    let (status, result) = send(&router, auth_post("/admin/erase", &admin, &erase)).await;
+    assert_eq!(status, StatusCode::OK, "{result}");
+    for table in [
+        "document",
+        "event",
+        "node",
+        "snapshot",
+        "document_upload",
+        "document_version",
+        "workspace_draft",
+        "public_document_view",
+        "document_access",
+    ] {
+        let column = if table == "document" {
+            "id"
+        } else {
+            "document_id"
+        };
+        let count: i64 =
+            sqlx::query_scalar(&format!("select count(*) from {table} where {column}=$1"))
+                .bind(doc)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(count, 0, "{table} must be erased");
+    }
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("select count(*) from draft_edit")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        send(
+            &router,
+            get(&format!(
+                "/public/documents/{}",
+                public["token"].as_str().unwrap()
+            ))
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        send(
+            &router,
+            auth_post_get(&format!("/documents/{keep}"), &owner)
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("select count(*) from erasure_receipt where resource_id=$1")
+            .bind(doc)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        1
+    );
+    assert!(sqlx::query("delete from erasure_receipt")
+        .execute(&pool)
+        .await
+        .is_err());
+    assert!(sqlx::query("delete from operation_audit")
+        .execute(&pool)
+        .await
+        .is_err());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn admin_account_erasure_preserves_shared_chain_and_clears_private_drafts(pool: PgPool) {
+    let admin_id = seed_identity(&pool, "admin-erasure@example.test").await;
+    let user_id = seed_identity(&pool, "erased@example.test").await;
+    let receiver = seed_identity(&pool, "receiver@example.test").await;
+    let mut state = test_state(pool.clone());
+    state.admin_emails = "admin-erasure@example.test".into();
+    let router = app(state);
+    let admin = bearer(admin_id);
+    let user = bearer(user_id);
+    let doc = create_document(&router, &user, "Shared document").await;
+    let (_, created) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc}/ops/node-create"),
+            &user,
+            &json!({"node_type":"form","pos":"a","fields":{"label":"Retained contribution"}}),
+        ),
+    )
+    .await;
+    let node = created["event"]["target_node_id"].as_str().unwrap();
+    let (_, draft) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc}/drafts"),
+            &user,
+            &json!({"name":"Unshared private work"}),
+        ),
+    )
+    .await;
+    let draft_id = draft["id"].as_str().unwrap();
+    send(&router,auth_post(&format!("/documents/{doc}/drafts/{draft_id}"),&user,&json!({"revision":0,"ops":[{"type":"FieldEdited","node_id":node,"field":"label","value":"Private"}]}))).await;
+    assert_eq!(send(&router,auth_post("/admin/actions",&admin,&json!({"kind":"users","id":user_id,"removed":true,"confirmation":"erased@example.test"}))).await.0,StatusCode::OK);
+    let uri = format!("/admin/impact?kind=users&id={user_id}");
+    assert!(
+        !send(&router, auth_post_get(&uri, &admin)).await.1["blockers"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(send(&router,auth_post("/admin/control",&admin,&json!({"action":"transfer_document","id":doc,"confirmation":"Shared document","recipient":receiver}))).await.0,StatusCode::OK);
+    let preview = send(&router, auth_post_get(&uri, &admin)).await.1;
+    assert_eq!(preview["blockers"], json!([]));
+    let(status,result)=send(&router,auth_post("/admin/erase",&admin,&json!({"kind":"users","id":user_id,"confirmation":"erased@example.test","revision":preview["revision"],"reason":"owner_request","acknowledge_backups":true}))).await;
+    assert_eq!(status, StatusCode::OK, "{result}");
+    let name: String = sqlx::query_scalar("select display_name from identity where id=$1")
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(name, "Deleted account");
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("select count(*) from workspace_draft where created_by=$1")
+            .bind(user_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("select count(*) from draft_edit")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        0
+    );
+    engine_core::log::verify_chain(&pool, DocumentId(doc))
+        .await
+        .unwrap();
+    assert_eq!(
+        send(&router, auth_post_get("/auth/me", &user)).await.0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert!(
+        sqlx::query("update identity set disabled_at=null where id=$1")
+            .bind(user_id)
+            .execute(&pool)
+            .await
+            .is_err()
+    );
+    let recreated = seed_identity(&pool, "erased@example.test").await;
+    assert_ne!(
+        recreated, user_id,
+        "Signing up again must not recover the old identity"
+    );
+    assert_eq!(
+        send(
+            &router,
+            auth_post_get(&format!("/documents/{doc}"), &bearer(recreated))
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn rich_text_history_replays_compact_edits_and_rejects_stale_patches(pool: PgPool) {
     let router = app(test_state(pool.clone()));
     let owner = seed_identity(&pool, "richtext@example.test").await;

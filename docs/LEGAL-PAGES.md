@@ -39,3 +39,14 @@ Drafting references checked on 19 September 2026:
 
 The text is original and grounded in the application's current behavior. Provider
 policies are linked directly; Dynodoc does not make commitments on their behalf.
+
+## Approved live-data erasure policy (21 September 2026)
+
+The owner approved decision 005: administrator-confirmed whole-document erasure
+removes live content/history/files/drafts/public copies, retaining a minimal audit
+receipt. Account erasure removes the profile/access/private drafts and preserves
+shared contributions under a deleted-user identity. Existing backups expire under
+the current retention schedule. Off-site backup is deferred by the owner. The
+operator identity/address/jurisdiction remain missing; the public legal pages stay
+marked as drafts. This is a record of product behavior and owner direction, not
+legal approval of the policy.

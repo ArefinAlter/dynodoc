@@ -76,6 +76,10 @@ pub enum EventPayload {
         node_id: Option<NodeId>,
         body: String,
     },
+    /// Reply to a canonical CommentAdded event in this document.
+    CommentReplied { thread_id: String, body: String },
+    /// Resolve or reopen a canonical discussion; previous messages remain intact.
+    CommentResolved { thread_id: String, resolved: bool },
     /// A reviewer proposed a change without applying it (the suggesting workflow).
     SuggestionProposed {
         suggestion_id: String,
@@ -113,6 +117,8 @@ impl EventPayload {
             EventPayload::ChoiceAdded { .. } => EventType::ChoiceAdded,
             EventPayload::ChoiceRemoved { .. } => EventType::ChoiceRemoved,
             EventPayload::CommentAdded { .. } => EventType::CommentAdded,
+            EventPayload::CommentReplied { .. } => EventType::CommentReplied,
+            EventPayload::CommentResolved { .. } => EventType::CommentResolved,
             EventPayload::SuggestionProposed { .. } => EventType::SuggestionProposed,
             EventPayload::SuggestionAccepted { .. } => EventType::SuggestionAccepted,
             EventPayload::SuggestionRejected { .. } => EventType::SuggestionRejected,
@@ -136,6 +142,8 @@ impl EventPayload {
             EventPayload::CommentAdded { node_id, .. } => node_id.as_ref(),
             EventPayload::SuggestionProposed { target_node_id, .. } => target_node_id.as_ref(),
             EventPayload::SuggestionAccepted { .. }
+            | EventPayload::CommentReplied { .. }
+            | EventPayload::CommentResolved { .. }
             | EventPayload::SuggestionRejected { .. }
             | EventPayload::Deployed { .. } => None,
         }

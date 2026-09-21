@@ -292,6 +292,16 @@ pub(crate) async fn materialize_node_change(
         }
         // Comment/suggestion/deploy events carry no node-table mutation. (A comment may
         // target an existing node; its row already exists.)
+        EventPayload::CommentReplied { thread_id, .. }
+        | EventPayload::CommentResolved { thread_id, .. } => {
+            let exists: bool=sqlx::query_scalar("select exists(select 1 from event where id=$1 and document_id=$2 and type='CommentAdded')")
+                .bind(thread_id).bind(document_id.0).fetch_one(&mut **tx).await?;
+            if !exists {
+                return Err(ApiError::BadRequest {
+                    reason: "Discussion not found in this document".into(),
+                });
+            }
+        }
         EventPayload::CommentAdded { .. }
         | EventPayload::SuggestionProposed { .. }
         | EventPayload::SuggestionAccepted { .. }

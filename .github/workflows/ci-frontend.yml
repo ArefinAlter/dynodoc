@@ -4,10 +4,20 @@ on:
   push:
     paths:
       - "frontend/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "migrations/**"
       - ".github/workflows/ci-frontend.yml"
   pull_request:
     paths:
       - "frontend/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "migrations/**"
       - ".github/workflows/ci-frontend.yml"
 
 concurrency:
@@ -44,3 +54,81 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
       - name: E2E tests (playwright)
         run: pnpm test:e2e
+
+  authenticated-workflows:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: dynodoc
+          POSTGRES_PASSWORD: isolated-ci-only
+          POSTGRES_DB: dynodoc
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U dynodoc -d dynodoc"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      DATABASE_URL: postgres://dynodoc:isolated-ci-only@127.0.0.1:5432/dynodoc
+      PASETO_LOCAL_KEY: '0707070707070707070707070707070707070707070707070707070707070707'
+      WEB_SERVICE_KEY: isolated-ci-service-key-never-for-production
+      SESSION_SECRET: isolated-ci-session-key-never-for-production
+      ADMIN_EMAILS: admin@example.test
+      APP_ENV: test
+      DEV_AUTH: 'true'
+      API_HOST: 127.0.0.1
+      API_PORT: '8080'
+      ENGINE_API_URL: http://127.0.0.1:8080
+      ORIGIN: http://127.0.0.1:4173
+      HOST: 127.0.0.1
+      PORT: '4173'
+      BODY_SIZE_LIMIT: 16M
+      PILOT_E2E: 'true'
+      PLAYWRIGHT_BASE_URL: http://127.0.0.1:4173
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: frontend/researcher/pnpm-lock.yaml
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build -p engine-api
+        working-directory: .
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Start isolated authenticated stack
+        run: |
+          ../../target/debug/engine-api > /tmp/dynodoc-api.log 2>&1 &
+          echo $! > /tmp/dynodoc-api.pid
+          node build > /tmp/dynodoc-web.log 2>&1 &
+          echo $! > /tmp/dynodoc-web.pid
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8080/healthz >/dev/null && curl -fsS http://127.0.0.1:4173/healthz >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Browser workflows with real local sessions
+        run: pnpm test:e2e
+      - name: Retain failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: authenticated-workflow-failure
+          path: |
+            frontend/researcher/test-results
+            /tmp/dynodoc-api.log
+            /tmp/dynodoc-web.log
+          retention-days: 7
+      - name: Stop test processes
+        if: always()
+        run: |
+          for file in /tmp/dynodoc-api.pid /tmp/dynodoc-web.pid; do
+            if [ -f "$file" ]; then kill "$(cat "$file")" 2>/dev/null || true; fi
+          done

@@ -108,6 +108,8 @@ string_enum!(
         ChoiceAdded => "ChoiceAdded",
         ChoiceRemoved => "ChoiceRemoved",
         CommentAdded => "CommentAdded",
+        CommentReplied => "CommentReplied",
+        CommentResolved => "CommentResolved",
         SuggestionProposed => "SuggestionProposed",
         SuggestionAccepted => "SuggestionAccepted",
         SuggestionRejected => "SuggestionRejected",

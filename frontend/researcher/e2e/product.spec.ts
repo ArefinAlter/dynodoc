@@ -20,7 +20,7 @@ async function login(
 async function create(page: Page, title: string, kind = 'document') {
   await page.getByRole('button', { name: 'New document', exact: true }).click();
   await page.getByLabel('Document name', { exact: true }).fill(title);
-  await page.getByRole('combobox').selectOption(kind);
+  await page.getByRole('dialog').getByRole('combobox').selectOption(kind);
   await page.getByRole('button', { name: 'Create document', exact: true }).click();
   await expect(page.getByLabel('Document title')).toHaveValue(title);
 }
@@ -190,20 +190,25 @@ test('the administrator disables only a confirmed account and can restore it', a
     const email = await login(other);
     await login(page, 'admin@example.test');
     await page.goto('/admin');
-    await page.getByRole('combobox', { name: 'Records', exact: true }).selectOption('users');
+    await page.getByRole('combobox', { name: 'Browse', exact: true }).selectOption('users');
     await page.getByRole('textbox', { name: 'Search', exact: true }).fill(email);
     await page.getByRole('button', { name: 'Search', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Disable account', exact: true })).toHaveCount(1);
-    await page.getByRole('button', { name: 'Disable account', exact: true }).click();
+    const manage = page.getByRole('button', { name: `Manage ${email}`, exact: true });
+    await manage.click();
     await page.getByRole('dialog').getByRole('textbox').fill(email);
-    await page.getByRole('button', { name: 'Confirm', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Restore', exact: true })).toBeVisible();
-    expect((await other.request.get('/api/engine/auth/me')).status()).toBe(404);
+    await page
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Disable account', exact: true })
+      .click();
+    await expect(page.getByRole('dialog')).not.toBeVisible();
     expect((await other.request.get('/api/engine/workspace/index')).status()).toBe(401);
-    await page.getByRole('button', { name: 'Restore', exact: true }).click();
+    await manage.click();
     await page.getByRole('dialog').getByRole('textbox').fill(email);
-    await page.getByRole('button', { name: 'Confirm', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Disable account', exact: true })).toBeVisible();
+    await page
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Restore access', exact: true })
+      .click();
+    await expect(page.getByRole('dialog')).not.toBeVisible();
     expect((await other.request.get('/api/engine/workspace/index')).status()).toBe(401);
   } finally {
     await member.close();
@@ -266,7 +271,7 @@ test('organization access reaches a folder document and can be removed centrally
     expect(
       (
         await colleague.request.get('/api/engine/documents/' + id, {
-          headers: { 'x-dynodoc-editor': 'office-v2' }
+          headers: { 'x-dynodoc-editor': 'office-v3' }
         })
       ).status()
     ).toBe(403);
@@ -331,4 +336,151 @@ test('questionnaire repeats and translations survive XLSForm export', async ({ p
   expect(text).toContain('পছন্দের সেবা');
   await page.reload();
   await expect(page.getByLabel('Question label').last()).toHaveValue('Preferred services');
+});
+
+test('discussion replies and resolution survive reload without entering a public copy', async ({
+  page
+}) => {
+  await login(page);
+  await create(page, 'Review discussion');
+  await page.getByRole('button', { name: 'Comments', exact: true }).click();
+  await page.getByLabel('Comment', { exact: true }).fill('Please explain this decision.');
+  await page.getByRole('button', { name: 'Post comment', exact: true }).click();
+  const thread = page.locator('.thread').filter({ hasText: 'Please explain this decision.' });
+  await thread.getByRole('textbox').fill('Here is the context for the decision.');
+  await thread.getByRole('button', { name: 'Reply', exact: true }).click();
+  await expect(thread).toContainText('Here is the context for the decision.');
+  await thread.getByRole('button', { name: 'Resolve discussion', exact: true }).click();
+  await expect(thread).toHaveCount(0);
+  await page.getByLabel('Show resolved', { exact: true }).check();
+  await expect(thread).toContainText('Resolved');
+  await page.reload();
+  await page.getByRole('button', { name: 'Comments', exact: true }).click();
+  await page.getByLabel('Show resolved', { exact: true }).check();
+  await thread.getByRole('button', { name: 'Reopen', exact: true }).click();
+  await expect(
+    thread.getByRole('button', { name: 'Resolve discussion', exact: true })
+  ).toBeVisible();
+  const id = new URL(page.url()).pathname.split('/').at(-1);
+  const events = await (
+    await page.request.get(`/api/engine/documents/${id}/events?limit=500`, {
+      headers: { 'x-dynodoc-editor': 'office-v3' }
+    })
+  ).json();
+  const base_seq = events.items.at(-1)?.seq || 0;
+  const result = await page.request.post(`/api/engine/documents/${id}/public-links`, {
+    headers: { 'x-dynodoc-editor': 'office-v3', origin: new URL(page.url()).origin },
+    data: { base_seq }
+  });
+  expect(result.ok()).toBeTruthy();
+  const published = await result.json();
+  const guest = await page.request.get(`/api/engine/public/documents/${published.token}`);
+  expect(guest.ok()).toBeTruthy();
+  expect(await guest.text()).not.toContain('Here is the context');
+});
+
+test('administrator previews and permanently erases a trashed document', async ({ page }) => {
+  await login(page, 'admin@example.test');
+  const title = `Disposable erase check ${Date.now()}`;
+  await create(page, title);
+  await page.getByRole('textbox', { name: 'Document content' }).fill('Only isolated test data.');
+  await saved(page);
+  const id = new URL(page.url()).pathname.split('/').at(-1);
+  await page.goto('/admin');
+  await page.getByRole('combobox', { name: 'Browse', exact: true }).selectOption('documents');
+  await page.getByRole('textbox', { name: 'Search', exact: true }).fill(title);
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  const manage = page.getByRole('button', { name: `Manage ${title}`, exact: true });
+  await manage.click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('textbox').fill(title);
+  await dialog.getByRole('button', { name: 'Move to Trash', exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  await manage.click();
+  await dialog.getByRole('combobox', { name: 'Action', exact: true }).selectOption('erase');
+  await expect(dialog.locator('.impact')).toBeVisible();
+  const accessibility = await new AxeBuilder({ page })
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+    .analyze();
+  expect(
+    accessibility.violations.map((v) => ({ id: v.id, targets: v.nodes.map((n) => n.target) }))
+  ).toEqual([]);
+  const erase = dialog.getByRole('button', { name: 'Permanently delete', exact: true });
+  await expect(erase).toBeDisabled();
+  await dialog.getByRole('textbox').fill(title);
+  await dialog.getByRole('checkbox').check();
+  await erase.click();
+  await expect(dialog).not.toBeVisible();
+  await expect(manage).toHaveCount(0);
+  expect(
+    (
+      await page.request.get(`/api/engine/documents/${id}`, {
+        headers: { 'x-dynodoc-editor': 'office-v3' }
+      })
+    ).status()
+  ).toBe(403);
+  await page.getByRole('combobox', { name: 'Browse', exact: true }).selectOption('erasures');
+  await page.getByRole('textbox', { name: 'Search', exact: true }).fill('');
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await expect(
+    page.getByRole('region', { name: 'People, content & access' }).locator('tbody')
+  ).toContainText(id!);
+});
+
+test('opt-in recovery survives a failed save and sign-out disables recovery across tabs', async ({
+  page,
+  context
+}) => {
+  await login(page);
+  await create(page, 'Browser recovery test');
+  await page.getByRole('button', { name: 'File', exact: true }).click();
+  await page
+    .getByRole('button', { name: 'Keep recovery copies on this browser', exact: true })
+    .click();
+  const editor = page.getByRole('textbox', { name: 'Document content' });
+  await page.route('**/api/engine/documents/*/batch', (route) => route.abort('failed'));
+  await editor.fill('Unsaved wording from an interrupted session.');
+  await expect(page.locator('.save-state')).toHaveText('Changes need attention', {
+    timeout: 20000
+  });
+  await expect(
+    page.getByText('A recovery copy is kept on this browser.', { exact: true })
+  ).toBeVisible();
+  page.once('dialog', (d) => d.accept());
+  await page.reload();
+  await page.getByRole('button', { name: 'Review recovered work', exact: true }).click();
+  await expect(editor).toContainText('Unsaved wording from an interrupted session.');
+  await page.unroute('**/api/engine/documents/*/batch');
+  await page.getByRole('button', { name: 'Retry save', exact: true }).click();
+  await saved(page);
+  const other = await context.newPage();
+  await other.goto('/workspace');
+  await other.getByRole('button', { name: 'Sign out', exact: true }).click();
+  await expect(
+    page.getByText('You signed out in this browser. Sign in again to continue editing.', {
+      exact: true
+    })
+  ).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('dynodoc.browser-recovery'))).toBe(
+    'disabled'
+  );
+  const count = await page.evaluate(
+    () =>
+      new Promise<number>((resolve, reject) => {
+        const req = indexedDB.open('dynodoc-browser-recovery');
+        req.onsuccess = () => {
+          const db = req.result;
+          const tx = db.transaction('copies');
+          const count = tx.objectStore('copies').count();
+          tx.oncomplete = () => {
+            db.close();
+            resolve(count.result);
+          };
+          tx.onerror = () => reject(tx.error);
+        };
+        req.onerror = () => reject(req.error);
+      })
+  );
+  expect(count).toBe(0);
+  await other.close();
 });

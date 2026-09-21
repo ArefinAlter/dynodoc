@@ -72,9 +72,7 @@ test('administrator sees actual counters while a member is denied', async ({ pag
   test.skip(process.env.PILOT_E2E !== 'true', 'Requires an isolated local test stack');
   await login(page, 'admin@example.test');
   await page.goto('/admin');
-  await expect(
-    page.getByRole('heading', { name: 'A clear view of your workspace.' })
-  ).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Your workspace, under control.' })).toBeVisible();
   await expect(page.getByText('document_upload', { exact: true })).toBeVisible();
   const result = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'best-practice'])

@@ -57,6 +57,17 @@
               >Remember that you have seen or dismissed the welcome guide.</td
             ><td>Until cleared in your browser. You can replay the guide at any time.</td></tr
           ><tr
+            ><td
+              ><code>dynodoc-browser-recovery</code> (IndexedDB),
+              <code>dynodoc.browser-recovery</code> (preference)</td
+            ><td
+              >Optional recovery copies of unsaved edits, only when enabled through the editor File
+              menu. Contains document content; use only on a trusted browser.</td
+            ><td
+              >Copies expire after seven days on the next storage check, and clear on sign-out or
+              disabling recovery. Preference remains until cleared.</td
+            ></tr
+          ><tr
             ><td><code>dynodoc_metrics</code></td><td
               >Remember your performance-measurement preference across Dynodoc subdomains.</td
             ><td>Up to 180 days.</td></tr

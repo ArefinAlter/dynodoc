@@ -35,7 +35,7 @@
 
 /* Shared interface palette. User-authored document formatting remains independent. */
 :root {
-  --color-parchment: #faf9f6;
+  --color-parchment: #f8f9fc;
   --color-surface: #fffefa;
   --color-surface-muted: #f3eee3;
   --color-terracotta: #205bb0;
@@ -57,6 +57,10 @@
   --font-body: 'Public Sans', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
   --font-ui: 'Public Sans', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
   --font-mono: 'Cascadia Code', 'SFMono-Regular', Consolas, monospace;
+  --radius-control: 10px;
+  --radius-panel: 24px;
+  --shadow-panel: 0 12px 48px #18385808, 0 1px 3px #18385805;
+  --color-danger: #ad293a;
 }
 * {
   box-sizing: border-box;
@@ -86,6 +90,24 @@ select {
 :focus-visible {
   outline: 2px solid #2875cf;
   outline-offset: 4px;
+}
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+button:not(:disabled),
+a {
+  touch-action: manipulation;
+}
+::selection {
+  background: #cfe1ff;
+  color: #18395f;
+}
+dialog {
+  overscroll-behavior: contain;
 }
 .sr-only {
   position: absolute;

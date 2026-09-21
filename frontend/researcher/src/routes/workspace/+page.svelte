@@ -48,6 +48,7 @@
     error = $state(''),
     busy = $state(false),
     listView = $state(false),
+    sort = $state('updated'),
     createOpen = $state(false),
     title = $state(''),
     kind = $state<Kind>('document'),
@@ -56,6 +57,7 @@
     originalFile = $state<File | null>(null),
     progress = $state('');
   let sidebarOpen = $state(false);
+  let searchInput: HTMLInputElement;
   let connectorOpen = $state(false),
     importedSource = $state<ResearchSource | null>(null);
   async function researchImport(file: File, info: ResearchFile) {
@@ -96,16 +98,34 @@
     };
   });
   const visible = $derived(
-    documents.filter(
-      (doc) =>
-        (doc.title.toLowerCase().includes(search.toLowerCase()) ||
-          matches.some((m) => m.document_id === doc.id)) &&
-        (trash || filter === 'archived'
-          ? trash || doc.status === 'archived'
-          : doc.status !== 'archived' && (filter === 'all' || documentKind(doc) === filter))
-    )
+    documents
+      .filter(
+        (doc) =>
+          (doc.title.toLowerCase().includes(search.toLowerCase()) ||
+            matches.some((m) => m.document_id === doc.id)) &&
+          (trash || filter === 'archived'
+            ? trash || doc.status === 'archived'
+            : doc.status !== 'archived' && (filter === 'all' || documentKind(doc) === filter))
+      )
+      .sort((a, b) =>
+        sort === 'title'
+          ? a.title.localeCompare(b.title)
+          : new Date(sort === 'created' ? b.created_at : b.updated_at).getTime() -
+            new Date(sort === 'created' ? a.created_at : a.updated_at).getTime()
+      )
   );
   onMount(refresh);
+  onMount(() => {
+    const focusSearch = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        searchInput?.focus();
+      }
+      if (event.key === 'Escape') sidebarOpen = false;
+    };
+    window.addEventListener('keydown', focusSearch);
+    return () => window.removeEventListener('keydown', focusSearch);
+  });
   async function refresh() {
     loading = true;
     try {
@@ -284,8 +304,8 @@
       ><img src="/brand/mark.svg?v=2" alt="" width="32" height="32" /><b>dynodoc</b></a
     >
     <div class="team">
-      <span class="team-icon">R</span>
-      <div><strong>Research workspace</strong><small>Your team’s shared home</small></div>
+      <span class="team-icon">D</span>
+      <div><strong>Your workspace</strong><small>Your team’s shared home</small></div>
     </div>
     <button
       class="new-button"
@@ -324,7 +344,7 @@
     <div class="side-bottom">
       <div class="workspace-tip">
         <Users size={18} />
-        <p>Better questions start<br />with more perspectives.</p>
+        <p>One shared version.<br />Room for every idea.</p>
         <small>Open a document and select Share to invite your team.</small>
       </div>
       <button onclick={logout}><LogOut size={16} /> Sign out</button>
@@ -339,19 +359,20 @@
       >
       <div class="search">
         <Search size={17} /><input
+          bind:this={searchInput}
           aria-label="Search documents"
           bind:value={search}
-          placeholder="Find a document, table, or questionnaire…"
-        /><kbd>Search</kbd>
+          placeholder="Search your documents…"
+        /><kbd>Ctrl K</kbd>
       </div>
       <a href="https://dynodoc.online">About Dynodoc <ArrowUpRight size={14} /></a>
     </header>
     <div class="content">
       <div class="heading">
         <div>
-          <p class="eyebrow">A LITTLE LESS FILE CHAOS</p>
-          <h1>Your next finding starts here.</h1>
-          <p>A shared place for drafts, questions, and the decisions in between.</p>
+          <p class="eyebrow">YOUR WORKSPACE</p>
+          <h1>Good work keeps evolving.</h1>
+          <p>Your documents, personal drafts and shared decisions. All in one place.</p>
         </div>
         <button class="upload" onclick={() => fileInput.click()} disabled={busy}
           ><Upload size={16} /> Upload a file</button
@@ -373,7 +394,7 @@
           ><div class="starter-icon blue"><FileText size={25} /></div>
           <div>
             <b>Start writing</b>
-            <p>A guide, protocol, or field note</p>
+            <p>Make room for your next idea</p>
           </div>
           <Plus size={16} /></button
         ><button
@@ -385,7 +406,7 @@
           ><div class="starter-icon green"><Table2 size={25} /></div>
           <div>
             <b>Make a spreadsheet</b>
-            <p>Organize your questions and data</p>
+            <p>Put your numbers in perspective</p>
           </div>
           <Plus size={16} /></button
         ><button
@@ -425,7 +446,11 @@
                   : 'Questionnaires'} <span>{visible.length}</span>
         </h2>
         <div>
-          <span>Recently updated</span><button
+          <select class="sort" aria-label="Sort documents" bind:value={sort}
+            ><option value="updated">Recently edited</option><option value="created"
+              >Recently created</option
+            ><option value="title">Name A–Z</option></select
+          ><button
             aria-label="Grid view"
             class:chosen={!listView}
             onclick={() => (listView = false)}><Grid2X2 size={16} /></button
@@ -546,7 +571,7 @@
         <label
           >Document name<input
             bind:value={title}
-            placeholder="e.g. Household wellbeing study"
+            placeholder="e.g. Our next chapter"
             required
             maxlength="200"
           /></label
@@ -589,14 +614,14 @@
     color: #354f68;
     border: 1px solid #d4dfe8;
     border-top: 0;
-    border-radius: 0 0 8px 8px;
+    border-radius: 0 0 18px 18px;
     padding: 9px;
     font: inherit;
     font-size: 13px;
     cursor: pointer;
   }
   .doc-entry:has(.trash-action) .doc-card {
-    border-radius: 8px 8px 0 0;
+    border-radius: 18px 18px 0 0;
   }
   .list .doc-entry {
     display: block;
@@ -627,7 +652,7 @@
   .workspace {
     display: flex;
     min-height: 100vh;
-    background: #faf9f6;
+    background: #f8f9fc;
     font-family: var(--font-ui);
     color: #293846;
     font-size: 13px;
@@ -636,9 +661,10 @@
     width: 240px;
     position: fixed;
     inset: 0 auto 0 0;
-    padding: 28px 19px 18px;
-    background: #fff;
-    border-right: 1px solid #e8ebef;
+    padding: 28px 18px 18px;
+    overflow-y: auto;
+    background: #fbfbf8;
+    border-right: 1px solid #e9edf2;
     display: flex;
     flex-direction: column;
     z-index: 10;
@@ -692,7 +718,7 @@
     width: 100%;
     padding: 12px 14px;
     border: 0;
-    border-radius: 7px;
+    border-radius: 12px;
     background: #205bb0;
     color: #fff;
     font-size: 13px;
@@ -711,7 +737,7 @@
     gap: 12px;
     padding: 11px 12px;
     border: 0;
-    border-radius: 6px;
+    border-radius: 10px;
     background: none;
     color: #46617a;
     font-size: 13px;
@@ -757,9 +783,10 @@
     min-width: 0;
   }
   .top {
-    height: 80px;
-    background: #fff;
-    border-bottom: 1px solid #e8ebef;
+    height: 88px;
+    background: #f8f9fccf;
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid #e9edf2;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -767,12 +794,28 @@
     gap: 25px;
   }
   .search {
+    background: white;
+    border: 1px solid #e5eaf1;
+    border-radius: 14px;
+    padding: 12px 15px;
     display: flex;
     align-items: center;
     gap: 10px;
     max-width: 480px;
     width: 100%;
     color: #46617a;
+  }
+  .search:focus-within {
+    outline: 2px solid #9abbed;
+    outline-offset: 2px;
+  }
+  .sort {
+    border: 0;
+    background: transparent;
+    color: #4c637d;
+    padding: 8px;
+    font: inherit;
+    font-size: 12px;
   }
   .search input {
     background: none;
@@ -800,7 +843,7 @@
     white-space: nowrap;
   }
   .content {
-    padding: 42px;
+    padding: 46px 42px;
     max-width: 1500px;
     margin: auto;
   }
@@ -818,7 +861,7 @@
     margin: 0 0 9px;
   }
   h1 {
-    font: 550 33px/1.3 var(--font-ui);
+    font: 600 clamp(28px, 3vw, 38px)/1.2 var(--font-ui);
     letter-spacing: -0.8px;
     margin: 0 0 9px;
     color: #29445f;
@@ -834,7 +877,7 @@
     align-items: center;
     background: white;
     border: 1px solid #dfe5e0;
-    border-radius: 6px;
+    border-radius: 10px;
     padding: 10px 14px;
     font-size: 13px;
     color: #607263;
@@ -848,11 +891,11 @@
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 16px;
-    margin-bottom: 43px;
+    margin-bottom: 25px;
   }
   .starters > button {
-    border: 1px solid #e5e9e6;
-    border-radius: 9px;
+    border: 1px solid #e6ecf3;
+    border-radius: 18px;
     background: white;
     padding: 21px 17px;
     display: flex;
@@ -879,7 +922,7 @@
   }
   .green {
     background: #edf4ed !important;
-    color: #719b71 !important;
+    color: #237047 !important;
   }
   .amber {
     background: #faf4e9;
@@ -888,7 +931,7 @@
   .starters b {
     font-size: 13px;
     font-weight: 500;
-    color: #536957;
+    color: #233b56;
   }
   .starters p {
     font-size: 13px;
@@ -909,7 +952,7 @@
   .list-heading h2 {
     font-size: 13px;
     font-weight: 500;
-    color: #5a6b5b;
+    color: #233b56;
     margin: 0;
   }
   .list-heading h2 > span {
@@ -925,7 +968,7 @@
     align-items: center;
     gap: 4px;
   }
-  .list-heading > div > span {
+  .list-heading .sort {
     font-size: 13px;
     color: #46617a;
     margin-right: 14px;
@@ -952,8 +995,8 @@
   .doc-card {
     text-decoration: none;
     color: inherit;
-    border: 1px solid #e3e8df;
-    border-radius: 9px;
+    border: 1px solid #e6ecf3;
+    border-radius: 18px;
     background: white;
     overflow: hidden;
     transition:
@@ -961,11 +1004,11 @@
       transform 0.2s;
   }
   .doc-card:hover {
-    box-shadow: 0 8px 25px #2440270b;
+    box-shadow: 0 12px 35px #243f5810;
     transform: translateY(-2px);
   }
   .doc-preview {
-    background: #f1f3ef;
+    background: #edf3fc;
     height: 172px;
     padding: 24px 30px 0;
     overflow: hidden;
@@ -1033,7 +1076,7 @@
   .doc-details h3 {
     font-size: 13px;
     font-weight: 500;
-    color: #5b6d54;
+    color: #233b56;
     margin: 0 0 5px;
     white-space: nowrap;
     overflow: hidden;
@@ -1053,7 +1096,7 @@
     color: #46617a;
   }
   .doc-preview.sheet {
-    background: #eef3ed;
+    background: #eef7f2;
   }
   .preview-grid {
     display: grid;
@@ -1147,7 +1190,7 @@
     color: #a55849;
     border: 1px solid #f0dcd5;
     padding: 12px;
-    border-radius: 6px;
+    border-radius: 10px;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -1232,7 +1275,7 @@
   .modal select {
     padding: 11px;
     border: 1px solid #dde5d6;
-    border-radius: 6px;
+    border-radius: 10px;
     color: #54684a;
     background: white;
     font-size: 13px;
@@ -1246,7 +1289,7 @@
     background: #285440;
     color: white;
     border: 0;
-    border-radius: 7px;
+    border-radius: 12px;
     font-size: 13px;
     cursor: pointer;
     margin-top: 6px;
@@ -1363,6 +1406,18 @@
     .search kbd {
       display: none;
     }
+    .search:focus-within {
+      outline: 2px solid #9abbed;
+      outline-offset: 2px;
+    }
+    .sort {
+      border: 0;
+      background: transparent;
+      color: #4c637d;
+      padding: 8px;
+      font: inherit;
+      font-size: 12px;
+    }
     .search input {
       font-size: 13px;
     }
@@ -1401,7 +1456,7 @@
     .doc-preview {
       height: 150px;
     }
-    .list-heading > div > span {
+    .list-heading .sort {
       display: none;
     }
     .workspace-footer {
@@ -1477,6 +1532,10 @@
       display: none;
     }
     .top .search {
+      background: white;
+      border: 1px solid #e5eaf1;
+      border-radius: 14px;
+      padding: 12px 15px;
       min-width: 0;
       flex: 1;
     }

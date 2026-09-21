@@ -13,9 +13,11 @@
 //! and a generated [`ApiDoc`] OpenAPI document.
 
 pub mod admin;
+mod admin_controls;
 pub mod audit;
 pub mod auth;
 pub mod conflicts;
+mod discussions;
 pub mod documents;
 pub mod error;
 pub mod idempotency;
@@ -84,6 +86,7 @@ pub fn app(state: AppState) -> Router {
         .merge(stream::router())
         .merge(audit::router())
         .merge(workspace::router())
+        .merge(discussions::router())
         .with_state(state)
         .layer(cors)
         .layer(CompressionLayer::new())
@@ -107,7 +110,7 @@ async fn openapi_json() -> Json<Value> {
 #[openapi(
     info(
         title = "dynodoc engine API",
-        description = "Append-only, hash-chained questionnaire authoring engine (PoC).",
+        description = "Document version control, collaborative review and authorized administration. Canonical content history is append-only except explicit audited whole-document erasure.",
         version = "0.1.0"
     ),
     modifiers(&WorkspaceDocs),
@@ -154,5 +157,19 @@ struct WorkspaceDocs;
 impl utoipa::Modify for WorkspaceDocs {
     fn modify(&self, api: &mut utoipa::openapi::OpenApi) {
         api.merge(workspace::WorkspaceApi::openapi());
+        api.merge(product::ProductApi::openapi());
+        api.merge(admin::AdminApi::openapi());
+        api.merge(admin_controls::AdminControlsApi::openapi());
+        api.merge(discussions::DiscussionApi::openapi());
+        let components = api.components.get_or_insert_with(Default::default);
+        components.add_security_scheme(
+            "paseto",
+            utoipa::openapi::security::SecurityScheme::Http(
+                utoipa::openapi::security::HttpBuilder::new()
+                    .scheme(utoipa::openapi::security::HttpAuthScheme::Bearer)
+                    .bearer_format("PASETO v4.local")
+                    .build(),
+            ),
+        );
     }
 }

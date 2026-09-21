@@ -17,7 +17,7 @@ async function login(page: Page, email?: string) {
 async function create(page: Page, title: string, kind = 'document') {
   await page.getByRole('button', { name: 'New document', exact: true }).click();
   await page.getByLabel('Document name', { exact: true }).fill(title);
-  await page.getByRole('combobox').selectOption(kind);
+  await page.getByRole('dialog').getByRole('combobox').selectOption(kind);
   await page.getByRole('button', { name: 'Create document', exact: true }).click();
   await expect(page.getByLabel('Document title')).toHaveValue(title);
 }
@@ -230,7 +230,7 @@ test('research connections reject private servers and import a provider fixture 
   await expect(page.getByRole('button', { name: 'B2: Dhaka', exact: true })).toBeVisible();
   const id = page.url().split('/').pop();
   const response = await page.request.get(`/api/engine/documents/${id}`, {
-    headers: { 'x-dynodoc-editor': 'office-v2' }
+    headers: { 'x-dynodoc-editor': 'office-v3' }
   });
   const detail = await response.json();
   expect(detail.settings.research_source.form).toBe('study1');

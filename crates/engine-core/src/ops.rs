@@ -64,6 +64,8 @@ pub enum OpError {
     /// A `SuggestionProposed.detail` did not decode to a valid wrapped content op.
     #[error("suggestion wraps an invalid operation: {0}")]
     InvalidWrappedOp(String),
+    #[error("invalid discussion: {0}")]
+    InvalidDiscussion(String),
 }
 
 /// Validate one operation against the current materialized state.
@@ -163,7 +165,26 @@ pub fn validate_op(state: &DocumentState, op: &EventPayload) -> Result<(), OpErr
             Ok(())
         }
 
-        EventPayload::CommentAdded { node_id, .. } => {
+        EventPayload::CommentReplied { thread_id, body } => {
+            if thread_id.len() != 26 || body.trim().is_empty() || body.len() > 10_000 {
+                return Err(OpError::InvalidDiscussion(
+                    "Reply must contain 1–10,000 bytes and a valid thread ID".into(),
+                ));
+            }
+            Ok(())
+        }
+        EventPayload::CommentResolved { thread_id, .. } => {
+            if thread_id.len() != 26 {
+                return Err(OpError::InvalidDiscussion("Invalid thread ID".into()));
+            }
+            Ok(())
+        }
+        EventPayload::CommentAdded { node_id, body } => {
+            if body.trim().is_empty() || body.len() > 10_000 {
+                return Err(OpError::InvalidDiscussion(
+                    "Comment must contain 1–10,000 bytes".into(),
+                ));
+            }
             if let Some(node_id) = node_id {
                 require_present(state, node_id)?;
             }

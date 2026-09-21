@@ -1,12 +1,153 @@
 openapi: 3.1.0
 info:
   title: dynodoc engine API
-  description: Append-only, hash-chained questionnaire authoring engine (PoC).
+  description: Document version control, collaborative review and authorized administration. Canonical content history is append-only except explicit audited whole-document erasure.
   license:
     name: AGPL-3.0-or-later
     identifier: AGPL-3.0-or-later
   version: 0.1.0
 paths:
+  /admin/actions:
+    post:
+      tags:
+      - administration
+      operationId: action
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Validation or confirmation failed
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Refresh the current revision
+      security:
+      - paseto: []
+  /admin/control:
+    post:
+      tags:
+      - administration
+      operationId: control
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Validation or confirmation failed
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Refresh the current revision
+      security:
+      - paseto: []
+  /admin/erase:
+    post:
+      tags:
+      - administration
+      operationId: erase
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Validation or confirmation failed
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Refresh the current revision
+      security:
+      - paseto: []
+  /admin/impact:
+    get:
+      tags:
+      - administration
+      operationId: impact
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Validation or confirmation failed
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Refresh the current revision
+      security:
+      - paseto: []
+  /admin/overview:
+    get:
+      tags:
+      - administration
+      operationId: overview
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Validation or confirmation failed
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Refresh the current revision
+      security:
+      - paseto: []
+  /admin/records:
+    get:
+      tags:
+      - administration
+      operationId: records
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Validation or confirmation failed
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Refresh the current revision
+      security:
+      - paseto: []
   /documents:
     get:
       tags:
@@ -82,6 +223,34 @@ paths:
               schema: {}
         '404':
           description: No such document
+  /documents/{id}/access:
+    get:
+      tags:
+      - product
+      operationId: document_access
+      parameters:
+      - name: id
+        in: path
+        description: Resource identifier
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Validation or confirmation failed
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Refresh the current revision
+      security:
+      - paseto: []
   /documents/{id}/batch:
     post:
       tags:
@@ -202,6 +371,73 @@ paths:
           description: 'Deploy refused: referential-integrity violations'
       security:
       - bearer: []
+  /documents/{id}/discussions:
+    get:
+      tags:
+      - discussions
+      operationId: list
+      parameters:
+      - name: id
+        in: path
+        description: Resource identifier
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Validation or confirmation failed
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Refresh the current revision
+      security:
+      - paseto: []
+  /documents/{id}/discussions/{thread}:
+    post:
+      tags:
+      - discussions
+      operationId: change
+      parameters:
+      - name: id
+        in: path
+        description: Resource identifier
+        required: true
+        schema:
+          type: string
+      - name: thread
+        in: path
+        description: Resource identifier
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Validation or confirmation failed
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Refresh the current revision
+      security:
+      - paseto: []
   /documents/{id}/drafts:
     get:
       tags:
@@ -412,6 +648,39 @@ paths:
               schema: {}
       security:
       - bearer: []
+  /documents/{id}/location:
+    post:
+      tags:
+      - product
+      operationId: move_document
+      parameters:
+      - name: id
+        in: path
+        description: Resource identifier
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Validation or confirmation failed
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Refresh the current revision
+      security:
+      - paseto: []
   /documents/{id}/members:
     get:
       tags:
@@ -729,6 +998,105 @@ paths:
               schema: {}
       security:
       - bearer: []
+  /documents/{id}/public-links:
+    get:
+      tags:
+      - product
+      operationId: public_links
+      parameters:
+      - name: id
+        in: path
+        description: Resource identifier
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Validation or confirmation failed
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Refresh the current revision
+      security:
+      - paseto: []
+    post:
+      tags:
+      - product
+      operationId: publish
+      parameters:
+      - name: id
+        in: path
+        description: Resource identifier
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Validation or confirmation failed
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Refresh the current revision
+      security:
+      - paseto: []
+  /documents/{id}/public-links/{link}/revoke:
+    post:
+      tags:
+      - product
+      operationId: revoke
+      parameters:
+      - name: id
+        in: path
+        description: Resource identifier
+        required: true
+        schema:
+          type: string
+      - name: link
+        in: path
+        description: Resource identifier
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Validation or confirmation failed
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Refresh the current revision
+      security:
+      - paseto: []
   /documents/{id}/snapshot/{snapshot_id}:
     get:
       tags:
@@ -782,6 +1150,39 @@ paths:
               schema: {}
         '403':
           description: Document membership required
+  /documents/{id}/trash:
+    post:
+      tags:
+      - product
+      operationId: trash_document
+      parameters:
+      - name: id
+        in: path
+        description: Resource identifier
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Validation or confirmation failed
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Refresh the current revision
+      security:
+      - paseto: []
   /documents/{id}/uploads:
     get:
       tags:
@@ -979,6 +1380,32 @@ paths:
           description: Insufficient access
         '409':
           description: Review a concurrent change before retrying
+  /public/documents/{token}:
+    get:
+      tags:
+      - product
+      operationId: public_document
+      parameters:
+      - name: token
+        in: path
+        description: Resource identifier
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Validation or confirmation failed
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Refresh the current revision
   /search:
     get:
       tags:
@@ -1003,6 +1430,133 @@ paths:
           description: Insufficient access
         '409':
           description: Review a concurrent change before retrying
+  /spaces:
+    get:
+      tags:
+      - product
+      operationId: spaces
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Validation or confirmation failed
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Refresh the current revision
+      security:
+      - paseto: []
+    post:
+      tags:
+      - product
+      operationId: create_space
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Validation or confirmation failed
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Refresh the current revision
+      security:
+      - paseto: []
+  /spaces/{id}/members:
+    get:
+      tags:
+      - product
+      operationId: space_members
+      parameters:
+      - name: id
+        in: path
+        description: Resource identifier
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Validation or confirmation failed
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Refresh the current revision
+      security:
+      - paseto: []
+    post:
+      tags:
+      - product
+      operationId: set_space_member
+      parameters:
+      - name: id
+        in: path
+        description: Resource identifier
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Validation or confirmation failed
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Refresh the current revision
+      security:
+      - paseto: []
+  /workspace/index:
+    get:
+      tags:
+      - product
+      operationId: index
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Validation or confirmation failed
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+        '409':
+          description: Refresh the current revision
+      security:
+      - paseto: []
 components:
   schemas:
     CommentRequest:
@@ -1152,6 +1706,11 @@ components:
           type:
           - string
           - 'null'
+  securitySchemes:
+    paseto:
+      type: http
+      scheme: bearer
+      bearerFormat: PASETO v4.local
 tags:
 - name: documents
   description: Document read + create

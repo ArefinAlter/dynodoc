@@ -41,7 +41,7 @@
     <div class="heading">
       <div>
         <p class="eyebrow"><ShieldCheck size={15} /> ADMINISTRATOR ACCESS</p>
-        <h1>A clear view of your workspace.</h1>
+        <h1>Your workspace, under control.</h1>
         <p>
           Signed in as {data.overview.administrator}. Checked {new Date(
             data.overview.checked_at
@@ -52,13 +52,18 @@
         ><RefreshCw size={16} />{busy ? 'Refreshing…' : 'Refresh'}</button
       >
     </div>
-    <section class="stats" aria-label="Workspace totals">
+    <nav class="section-nav" aria-label="Administration sections">
+      <a href="#overview">Overview</a><a href="#manage">People & content</a><a href="#storage"
+        >Storage & recovery</a
+      ><a href="#performance">Performance</a><a href="#database">Database</a>
+    </nav>
+    <section id="overview" class="stats" aria-label="Workspace totals">
       {#each [['Accounts', data.overview.counts.accounts], ['Documents', data.overview.counts.documents], ['Recorded changes', data.overview.counts.events], ['Saved versions', data.overview.counts.versions]] as [label, value]}<article
         >
           <span>{label}</span><strong>{Number(value).toLocaleString()}</strong>
         </article>{/each}
     </section>
-    <AdminRecords />
+    <div id="manage"><AdminRecords /></div>
     <div class="columns">
       <section class="panel">
         <h2><Activity size={20} /> Services</h2>
@@ -81,7 +86,7 @@
         <p class="detail">Credential presence does not verify a successful provider sign-in.</p>
       </section>
       <section class="panel">
-        <h2><HardDrive size={20} /> Storage & recovery</h2>
+        <h2 id="storage"><HardDrive size={20} /> Storage & recovery</h2>
         <dl>
           <dt>PostgreSQL database</dt>
           <dd>{bytes(data.overview.counts.database_bytes)}</dd>
@@ -109,7 +114,7 @@
       </section>
     </div>
     <section class="panel">
-      <h2><Activity size={20} /> Visits & web vitals <span>Last 30 days</span></h2>
+      <h2 id="performance"><Activity size={20} /> Visits & web vitals <span>Last 30 days</span></h2>
       <p class="detail">
         Anonymous page loads, not unique people. No IP addresses, account IDs, document IDs, queries
         or research content are collected. Browser-reported samples may exclude blocked or
@@ -145,7 +150,7 @@
       </div>
     </section>
     <section class="panel">
-      <h2><Database size={20} /> Database tables</h2>
+      <h2 id="database"><Database size={20} /> Database tables</h2>
       <p class="detail">
         Storage and approximate row counts from PostgreSQL statistics. Research records are not
         exposed in this dashboard.
@@ -174,6 +179,33 @@
 </div>
 
 <style>
+  .section-nav {
+    display: flex;
+    gap: 6px;
+    overflow: auto;
+    margin: 0 0 28px;
+    padding: 6px;
+    background: white;
+    border: 1px solid #e7ecf2;
+    border-radius: 14px;
+    width: fit-content;
+    max-width: 100%;
+  }
+  .section-nav a {
+    padding: 9px 15px;
+    border-radius: 9px;
+    text-decoration: none;
+    white-space: nowrap;
+    font-size: 13px;
+    color: #496381;
+  }
+  .section-nav a:hover {
+    background: #eef4ff;
+    color: #235bb7;
+  }
+  [id] {
+    scroll-margin-top: 25px;
+  }
   footer {
     display: flex;
     justify-content: space-between;
@@ -186,7 +218,7 @@
   }
   .ops {
     min-height: 100vh;
-    background: #faf9f6;
+    background: #f7f9fc;
     color: #20374f;
     font-family: var(--font-ui);
   }
@@ -259,7 +291,7 @@
   .panel {
     border: 1px solid #dce4e9;
     background: #fffefb;
-    border-radius: 10px;
+    border-radius: 22px;
     padding: 24px;
   }
   .stats span {

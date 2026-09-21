@@ -142,18 +142,17 @@
   <main id="main" use:reveal>
     <section class="hero wrap" aria-labelledby="hero-heading">
       <div class="hero-copy">
-        <p class="eyebrow"><span></span> VERSION CONTROL FOR DOCUMENTS</p>
-        <h1 id="hero-heading">Every edit.<br />Every version.<br /><span>Your document.</span></h1>
+        <p class="eyebrow"><span></span> A NEW CHAPTER FOR DOCUMENTS</p>
+        <h1 id="hero-heading">Great work evolves.<br /><span>Keep every version.</span></h1>
       </div>
       <div class="hero-intro">
         <p>
-          Give your documents a history that understands the words, the formatting and the people
-          behind each change.
+          A familiar place to write. A better way to change your mind. Version control that
+          understands your words, formatting and team.
         </p>
         <p class="hero-detail">
-          Write in a familiar editor. Explore a personal draft, combine your team’s changes and
-          return to an earlier version whenever you need. From proposals and policies to plans,
-          budgets and research, keep the work and its history together.
+          Explore a private draft. Review what changed. Share the parts that are ready. Your team’s
+          next version starts here.
         </p>
         <div class="hero-actions">
           <a class="primary-link" href={workspace}>Start your document <ArrowUpRight size={17} /></a
@@ -161,7 +160,6 @@
         </div>
       </div>
     </section>
-    <RichTextHistory />
     <section id="workspace" class="product-band" aria-label="Explore the Dynodoc workspace">
       <div class="wrap product-wrap">
         <WorkbenchDemo />
@@ -172,6 +170,7 @@
         </div>
       </div>
     </section>
+    <RichTextHistory />
     <section class="research-section wrap" aria-labelledby="research-heading">
       <div class="section-heading" data-reveal>
         <div>
@@ -533,6 +532,7 @@
     color: #243d54;
     font-family: var(--font-ui);
     --blue: #205bb0;
+    padding-top: 1px;
   }
   .wrap {
     max-width: 1220px;
@@ -552,18 +552,22 @@
     margin: 0 0 24px;
   }
   .hero {
-    display: grid;
-    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
-    gap: 50px;
-    padding-top: 65px;
-    padding-bottom: 57px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    padding-top: 92px;
+    padding-bottom: 58px;
     align-items: center;
+    text-align: center;
   }
   .hero .eyebrow {
     display: flex;
     align-items: center;
     gap: 9px;
     margin-bottom: 28px;
+    justify-content: center;
+    font-size: 11px;
+    letter-spacing: 1.8px;
   }
   .eyebrow > span {
     display: inline-block;
@@ -573,10 +577,10 @@
     border-radius: 50%;
   }
   h1 {
-    font-size: clamp(44px, 4.6vw, 66px);
-    line-height: 1.06;
-    letter-spacing: -3.5px;
-    font-weight: 550;
+    font-size: clamp(44px, 5.4vw, 78px);
+    line-height: 1.09;
+    letter-spacing: -4px;
+    font-weight: 600;
     margin: 0;
     color: #22394e;
   }
@@ -585,27 +589,29 @@
     white-space: nowrap;
   }
   .hero-intro {
-    padding-top: 26px;
+    padding-top: 0;
+    max-width: 680px;
   }
   .hero-intro > p:first-child {
-    font-size: 19px;
+    font-size: 20px;
     line-height: 1.65;
     letter-spacing: -0.3px;
     color: #3e566c;
-    margin: 0 0 16px;
-    max-width: 370px;
+    margin: 0 auto 14px;
+    max-width: 620px;
   }
   .hero-intro .hero-detail {
-    font-size: 13px;
+    font-size: 16px;
     line-height: 1.9;
     color: #5d6e7c;
-    margin: 0 0 25px;
-    max-width: 370px;
+    margin: 0 auto 30px;
+    max-width: 580px;
   }
   .hero-actions {
     display: flex;
     flex-wrap: wrap;
     gap: 17px;
+    justify-content: center;
   }
   .primary-link {
     display: inline-flex;
@@ -614,11 +620,11 @@
     gap: 17px;
     background: #205bb0;
     color: white;
-    padding: 13px 19px;
+    padding: 15px 23px;
     text-decoration: none;
-    font-size: 13px;
+    font-size: 15px;
     font-weight: 550;
-    border-radius: 5px;
+    border-radius: 13px;
     border: 1px solid #205bb0;
   }
   .primary-link:hover {
@@ -641,9 +647,12 @@
     font-size: 13px;
   }
   .product-band {
-    background: #e8f1fc;
-    border-top: 1px solid #dde8f5;
-    border-bottom: 1px solid #dce7f4;
+    background: linear-gradient(160deg, #eaf2ff, #f3f7fe);
+    border: 1px solid #e1eafa;
+    border-radius: 30px;
+    max-width: 1260px;
+    margin: 0 auto;
+    overflow: hidden;
   }
   .product-wrap {
     padding-top: 34px;
@@ -1018,7 +1027,7 @@
   .import-result {
     background: #fff;
     border: 1px solid #d0deed;
-    border-radius: 5px;
+    border-radius: 14px;
     padding: 0 19px 12px;
     box-shadow: 0 6px 20px #324f7007;
   }

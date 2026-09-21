@@ -1,4 +1,13 @@
 <script lang="ts">
+  import {
+    recoveryCopies,
+    saveRecovery,
+    removeRecovery,
+    recoveryPreference,
+    setRecoveryPreference,
+    clearRecovery,
+    type RecoveryCopy
+  } from '$lib/workspace/recovery';
   import { describeRichTextPatch } from '$lib/workspace/richtext';
   import { documentFonts, safeFont, type PageSetup } from '$lib/workspace/office';
   import { onMount, untrack } from 'svelte';
@@ -54,6 +63,7 @@
   import { createDocument, listEvents } from '$lib/api/client';
   import PublicLinkPanel from '$lib/components/product/PublicLinkPanel.svelte';
   import RichEditor from './RichEditor.svelte';
+  import DiscussionThreads from './DiscussionThreads.svelte';
   import SheetEditor from './SheetEditor.svelte';
   import QuestionnaireEditor from './QuestionnaireEditor.svelte';
   import type { JSONContent } from '@tiptap/core';
@@ -61,6 +71,15 @@
   const kind = $derived(documentKind(store.detail!));
   let canManage = $state(false);
   let identityId = $state('');
+  let recoveryLoading = $state(true),
+    sessionEnded = $state(false);
+  let recoveryEnabled = $state(false),
+    recoveryOffer = $state<RecoveryCopy | null>(null),
+    recoveryMessage = $state('');
+  let recoveryOwner = '',
+    recoveryKey = '',
+    recoveryTimer: ReturnType<typeof setTimeout>;
+  let recoveryWrites = Promise.resolve();
   let composing = $state(false);
   const author = $derived(store.detail?.role === 'author');
   let local = $state<DocumentState>(untrack(() => cloneState(store.state))),
@@ -107,6 +126,7 @@
     compareName = $state(''),
     undoStack = $state<DocumentState[]>([]),
     redoStack = $state<DocumentState[]>([]);
+  let rememberSelection = $state(true);
   const reviewerName = $derived(
     members.find((m) => m.id === identityId)?.name ||
       members.find((m) => m.id === identityId)?.email ||
@@ -153,6 +173,7 @@
   }
   let timer: ReturnType<typeof setTimeout> | undefined;
   interface SyncPlan {
+    excluded_nodes?: string[];
     team_seq: number;
     revision: number;
     ops: EventPayload[];
@@ -165,7 +186,12 @@
       draft: unknown;
     }[];
   }
-  const editable = $derived(author || (!!draftId && store.detail?.role !== 'auditor'));
+  const editable = $derived(
+    !recoveryLoading &&
+      !sessionEnded &&
+      !recoveryOffer &&
+      (author || (!!draftId && store.detail?.role !== 'auditor'))
+  );
   let activeTab = $state('');
   const textRoot = $derived(
     Object.values(local.nodes).find((n) => !n.deleted && n.type === 'form')
@@ -268,9 +294,6 @@
   }
   const prefix = $derived(`/documents/${store.documentId}`);
   const delta = $derived(compare ? stateChanges(compare, local) : []);
-  const commentEvents = $derived(
-    events.filter((e) => e.type === 'CommentAdded' && (!selected || e.target_node_id === selected))
-  );
   $effect(() => {
     const seq = store.seq;
     untrack(() => {
@@ -283,7 +306,15 @@
     });
   });
   $effect(() => {
-    if (dirty && !saving && !blocked && !composing) {
+    if (
+      dirty &&
+      !saving &&
+      !blocked &&
+      !composing &&
+      !recoveryOffer &&
+      !recoveryLoading &&
+      !sessionEnded
+    ) {
       clearTimeout(timer);
       timer = setTimeout(() => void save(), 1300);
     }
@@ -296,18 +327,45 @@
     }
   });
   onMount(() => {
+    recoveryEnabled = recoveryPreference();
+    recoveryOwner = crypto.randomUUID();
     const unload = (e: BeforeUnloadEvent) => {
       if (dirty || composing) {
         e.preventDefault();
         e.returnValue = '';
       }
     };
+    const stopRecovery = () => {
+      recoveryEnabled = false;
+      recoveryOffer = null;
+      sessionEnded = true;
+      blocked = true;
+      clearTimeout(recoveryTimer);
+      clearTimeout(timer);
+      error = 'You signed out in this browser. Sign in again to continue editing.';
+    };
+    const storageChanged = (event: StorageEvent) => {
+      if (event.key === 'dynodoc.session-ended') stopRecovery();
+      if (event.key === 'dynodoc.browser-recovery') {
+        recoveryEnabled = recoveryPreference();
+        if (!recoveryEnabled) clearTimeout(recoveryTimer);
+      }
+    };
+    window.addEventListener('storage', storageChanged);
+    window.addEventListener('dynodoc:signout', stopRecovery);
     window.addEventListener('beforeunload', unload);
     void refreshPeople();
     void fetch('/auth/session')
       .then((r) => r.json())
-      .then((s) => (identityId = s.identity_id || ''))
-      .catch(() => {});
+      .then(async (s) => {
+        identityId = s.identity_id || '';
+        if (identityId && recoveryPreference())
+          recoveryOffer = (await recoveryCopies(identityId, store.documentId))[0] || null;
+      })
+      .catch(() => {})
+      .finally(() => {
+        recoveryLoading = false;
+      });
     void request<{ can_manage: boolean }>(`${prefix}/access`)
       .then((a) => {
         canManage = a.can_manage;
@@ -315,9 +373,113 @@
       .catch(() => {});
     return () => {
       clearTimeout(timer);
+      clearTimeout(recoveryTimer);
       window.removeEventListener('beforeunload', unload);
+      window.removeEventListener('storage', storageChanged);
+      window.removeEventListener('dynodoc:signout', stopRecovery);
     };
   });
+  $effect(() => {
+    const changed = local,
+      unsaved = dirty,
+      owner = identityId,
+      enabled = recoveryEnabled;
+    const currentBase = base,
+      seq = baseSeq,
+      draft = draftId,
+      draftRev = draftRevision,
+      draftLabel = draftName;
+    clearTimeout(recoveryTimer);
+    if (!owner || !enabled || recoveryOffer || sessionEnded) return;
+    if (unsaved) {
+      recoveryTimer = setTimeout(() => {
+        const key = `${owner}:${store.documentId}:${draft || 'team'}:${recoveryOwner}`;
+        const previousKey = recoveryKey;
+        recoveryKey = key;
+        const copy: RecoveryCopy = {
+          version: 1,
+          key,
+          identityId: owner,
+          documentId: store.documentId,
+          draftId: draft,
+          draftName: draftLabel,
+          draftRevision: draftRev,
+          baseSeq: seq,
+          base: cloneState(currentBase),
+          state: cloneState(changed),
+          updatedAt: Date.now()
+        };
+        recoveryWrites = recoveryWrites
+          .then(() => saveRecovery(copy))
+          .then(async () => {
+            if (previousKey && previousKey !== key) await removeRecovery(previousKey);
+            recoveryMessage = 'A recovery copy is kept on this browser.';
+          })
+          .catch((e) => {
+            recoveryMessage = message(e);
+          });
+      }, 700);
+    } else if (recoveryKey) {
+      const key = recoveryKey;
+      recoveryKey = '';
+      recoveryWrites = recoveryWrites.then(() => removeRecovery(key)).catch(() => {});
+    }
+    return () => clearTimeout(recoveryTimer);
+  });
+  async function toggleRecovery() {
+    try {
+      recoveryEnabled = !recoveryEnabled;
+      setRecoveryPreference(recoveryEnabled);
+      if (!recoveryEnabled) {
+        clearTimeout(recoveryTimer);
+        await recoveryWrites;
+        await clearRecovery();
+        recoveryOffer = null;
+      }
+      recoveryMessage = recoveryEnabled
+        ? 'Browser recovery enabled for this device. Copies expire after seven days and clear on sign-out.'
+        : 'Browser recovery disabled; local copies cleared.';
+      menu = false;
+    } catch (e) {
+      error = message(e);
+    }
+  }
+  async function recover() {
+    if (!recoveryOffer || dirty) return;
+    const copy = recoveryOffer;
+    // Access to a saved private draft must still be granted by the server.
+    if (copy.draftId) {
+      try {
+        await request(`${prefix}/drafts/${copy.draftId}`);
+      } catch (e) {
+        error = message(e);
+        return;
+      }
+    }
+    base = cloneState(copy.base);
+    local = cloneState(copy.state);
+    baseSeq = copy.baseSeq;
+    draftId = copy.draftId;
+    draftName = copy.draftName;
+    draftRevision = copy.draftRevision;
+    dirty = true;
+    blocked = true;
+    revision++;
+    recoveryKey = copy.key;
+    recoveryOffer = null;
+    saved = 'Recovered changes — review before saving';
+    error =
+      'Your unsaved work is recovered. Review it, then retry saving or keep it as a personal draft. Newer team edits will be checked for conflicts.';
+  }
+  async function discardRecovery() {
+    if (!recoveryOffer) return;
+    try {
+      await removeRecovery(recoveryOffer.key);
+      recoveryOffer = null;
+    } catch (e) {
+      error = message(e);
+    }
+  }
   function change(ops: EventPayload[], record = true, reapply = true) {
     if (!ops.length) return;
     if (ops.length > 5000) {
@@ -357,7 +519,7 @@
     }
   }
   async function save() {
-    if (saving || !dirty || composing) return;
+    if (saving || !dirty || composing || recoveryOffer || recoveryLoading || sessionEnded) return;
     const sent = cloneState(local),
       ops = stateChanges(base, sent);
     if (!ops.length) {
@@ -430,7 +592,7 @@
       }
       if (panel === 'drafts')
         drafts = (await request<{ items: Draft[] }>(`${prefix}/drafts`)).items;
-      if (panel === 'comments' || panel === 'activity')
+      if (panel === 'activity')
         events = (
           await listEvents(store.documentId, { from_seq: Math.max(1, store.seq - 499), limit: 500 })
         ).items;
@@ -540,7 +702,7 @@
           ...sync.ops.flatMap((op) => ('node_id' in op && op.node_id ? [op.node_id] : [])),
           ...sync.conflicts.map((c) => c.node_id)
         ])
-      ];
+      ].filter((id) => !sync?.excluded_nodes?.includes(id));
     });
   }
   async function synchronize(action: 'pull' | 'share') {
@@ -557,7 +719,8 @@
         team_seq: sync!.team_seq,
         revision: sync!.revision,
         resolutions,
-        included_nodes: action === 'share' ? included : undefined
+        included_nodes: action === 'share' ? included : undefined,
+        remember_selection: action === 'share' && rememberSelection
       });
       store.receive(result.events);
       draftRevision = result.revision;
@@ -578,9 +741,6 @@
       });
       store.receive(result.events);
       comment = '';
-      events = (
-        await listEvents(store.documentId, { from_seq: Math.max(1, store.seq - 499), limit: 500 })
-      ).items;
     });
   }
   async function archive() {
@@ -744,6 +904,10 @@
                 ><ShieldCheck size={14} /> Download audit history</button
               ><button onclick={() => void openPanel('files')}
                 >Original uploads & import report</button
+              ><button onclick={() => void toggleRecovery()}
+                >{recoveryEnabled
+                  ? 'Turn off browser recovery'
+                  : 'Keep recovery copies on this browser'}</button
               ><button
                 onclick={() =>
                   kind === 'questionnaire'
@@ -780,6 +944,21 @@
       >
     </div>
   </header>
+  {#if recoveryOffer}<div class="recovery-banner" role="status">
+      <History size={18} /><span
+        ><strong>Unsaved work is available.</strong> A browser copy from {new Date(
+          recoveryOffer.updatedAt
+        ).toLocaleString()}.</span
+      ><button disabled={dirty} onclick={() => void recover()}>Review recovered work</button><button
+        onclick={() => void discardRecovery()}>Discard copy</button
+      >
+    </div>{/if}
+  {#if recoveryMessage}<div class="recovery-note" role="status">
+      {recoveryMessage}<button
+        aria-label="Dismiss recovery message"
+        onclick={() => (recoveryMessage = '')}><X size={12} /></button
+      >
+    </div>{/if}
   {#if draftId}<div class="draft-banner">
       <GitBranch size={15} /><strong>{draftName}</strong><span>Only you can see this draft</span
       ><button disabled={busy || saving} onclick={() => void previewSync()}
@@ -910,7 +1089,7 @@
               <label
                 >Email address<input
                   type="email"
-                  placeholder="researcher@university.edu"
+                  placeholder="colleague@example.com"
                   bind:value={email}
                   required
                 /></label
@@ -1046,18 +1225,22 @@
               <textarea
                 aria-label="Comment"
                 bind:value={comment}
+                maxlength="10000"
                 placeholder="Leave a note for your team…"
                 required
                 rows="3"
               ></textarea><button class="primary" disabled={busy || !comment.trim()}
                 >Post comment</button
               >
-            </form>{/if}{#each commentEvents as e}<div class="comment">
-              <strong>{person(e.actor_id)}</strong><small
-                >{new Date(e.created_at).toLocaleString()}</small
-              >
-              <p>{e.payload.type === 'CommentAdded' ? e.payload.body : ''}</p>
-            </div>{:else}<div class="empty">Start the conversation.</div>{/each}
+            </form>{/if}
+          <DiscussionThreads
+            documentId={store.documentId}
+            refreshSeq={store.seq}
+            {selected}
+            {author}
+            canReply={store.detail?.role !== 'auditor'}
+            onEvents={(rows) => store.receive(rows)}
+          />
         {:else if panel === 'activity'}<p>
             {selected ? 'History for the selected block or row.' : 'Recent document changes.'}
             <button class="text-button" onclick={() => (selected = null)}>Show all</button>
@@ -1066,7 +1249,7 @@
             class="history-search"
             aria-label="Search history"
             bind:value={historyQuery}
-            placeholder="Find an edit or researcher"
+            placeholder="Find an edit or collaborator"
           />{#each events
             .filter((e) => (!selected || e.target_node_id === selected) && (!historyQuery || `${JSON.stringify(e.payload)} ${person(e.actor_id)}`
                     .toLowerCase()
@@ -1206,6 +1389,10 @@
           >{/each}
       </div>
       <div class="sync-actions">
+        <label class="remember-selection"
+          ><input type="checkbox" bind:checked={rememberSelection} /> Keep unchecked blocks private in
+          future comparisons</label
+        >
         <button
           class="secondary"
           disabled={busy || sync.conflicts.some((c) => !resolutions[c.key])}
@@ -1226,6 +1413,44 @@
   </div>{/if}
 
 <style>
+  .recovery-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 24px;
+    background: #edf4ff;
+    color: #284d7b;
+    font-size: 13px;
+    flex-wrap: wrap;
+  }
+  .recovery-banner > span {
+    flex: 1;
+  }
+  .recovery-banner button {
+    border: 1px solid #c4d8f2;
+    border-radius: 9px;
+    background: white;
+    color: #245bb0;
+    padding: 8px 12px;
+    cursor: pointer;
+  }
+  .recovery-note {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    align-items: center;
+    font-size: 11px;
+    color: #536981;
+    padding: 5px 15px;
+    background: #f0f5fc;
+  }
+  .recovery-note button {
+    border: 0;
+    background: none;
+    color: inherit;
+    cursor: pointer;
+    display: flex;
+  }
   .document-tabs {
     display: flex;
     gap: 4px;
@@ -1235,16 +1460,16 @@
   }
   .document-tabs button {
     white-space: nowrap;
-    border: 1px solid #c8d6e6;
-    border-radius: 6px;
-    background: #f7f9fc;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: #ffffff;
     color: #315372;
     padding: 7px 12px;
     font-size: 13px;
     cursor: pointer;
   }
   .document-tabs button.active {
-    background: #dceafa;
+    background: #e9f1ff;
     color: #174e95;
     border-color: #98b8e2;
   }
@@ -1253,7 +1478,7 @@
     --editor-accent: #185abd;
     --editor-tint: #e5effd;
     --editor-chrome: #f5f8fd;
-    height: 100vh;
+    height: 100dvh;
     display: flex;
     flex-direction: column;
     font-family: var(--font-ui);
@@ -1269,7 +1494,7 @@
     display: flex;
     gap: 12px;
     align-items: center;
-    padding: 14px 22px 12px;
+    padding: 16px 24px 14px;
     background: var(--editor-chrome);
     min-height: 82px;
   }
@@ -1278,7 +1503,7 @@
     display: grid;
     place-items: center;
     padding: 8px;
-    border-radius: 5px;
+    border-radius: 10px;
   }
   .back:hover {
     background: #eaf0f6;
@@ -1372,7 +1597,7 @@
     border: 0;
     background: var(--editor-tint);
     color: var(--editor-accent);
-    border-radius: 6px;
+    border-radius: 10px;
     font-size: 13px;
     padding: 11px 21px;
     cursor: pointer;
@@ -1464,7 +1689,7 @@
   .history-search {
     width: 100%;
     border: 1px solid #dce4ec;
-    border-radius: 5px;
+    border-radius: 10px;
     padding: 9px 11px;
     font: 12px Arial;
     color: #4c5f70;
@@ -1477,7 +1702,7 @@
     justify-content: center;
     gap: 7px;
     border: 0;
-    border-radius: 5px;
+    border-radius: 10px;
     background: var(--editor-accent, #185abd);
     color: white;
     padding: 10px 14px;
@@ -1543,7 +1768,6 @@
     border-bottom: 1px solid #e8edf2;
   }
   .version strong,
-  .comment strong,
   .activity strong {
     display: block;
     color: #63788a;
@@ -1551,7 +1775,6 @@
     font-weight: 500;
   }
   .version small,
-  .comment small,
   .activity small {
     display: block;
     font-size: 13px;
@@ -1593,7 +1816,7 @@
     align-items: center;
     background: none;
     border: 1px solid #e3ebe5;
-    border-radius: 6px;
+    border-radius: 10px;
     width: 100%;
     padding: 16px;
     margin: 12px 0;
@@ -1658,12 +1881,10 @@
     font-size: 13px;
     cursor: pointer;
   }
-  .comment,
   .activity {
     padding: 18px 0;
     border-bottom: 1px solid #e7edf1;
   }
-  .comment p,
   .activity p {
     color: #46617a;
     font-size: 13px;
@@ -1691,7 +1912,7 @@
     background: #f0f5f2;
     padding: 15px;
     border: 1px solid #e1eae4;
-    border-radius: 5px;
+    border-radius: 10px;
     margin: 20px 0;
   }
   .comparison strong {
@@ -1804,7 +2025,7 @@
     flex-wrap: wrap;
     padding: 14px;
     border: 1px solid #e2e8e2;
-    border-radius: 5px;
+    border-radius: 10px;
     cursor: pointer;
   }
   .choices label.chosen {

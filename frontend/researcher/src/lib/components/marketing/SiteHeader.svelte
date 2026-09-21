@@ -38,14 +38,20 @@
 
 <style>
   header {
-    max-width: 1360px;
-    margin: auto;
-    min-height: 94px;
-    padding: 20px 48px;
+    max-width: 1220px;
+    margin: 16px auto 0;
+    min-height: 76px;
+    padding: 16px 28px;
     display: flex;
     align-items: center;
     gap: 36px;
-    position: relative;
+    position: sticky;
+    top: 16px;
+    background: #fffffff0;
+    backdrop-filter: blur(18px);
+    border: 1px solid #e5eaf1;
+    border-radius: 22px;
+    box-shadow: 0 8px 32px #21395b06;
     z-index: 20;
     font-family: var(--font-ui);
   }
@@ -93,9 +99,9 @@
     background: #e4eefb;
     border: 1px solid #cedef3;
     padding: 11px 16px;
-    border-radius: 5px;
+    border-radius: 12px;
     text-decoration: none;
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 650;
     color: #184c96;
     white-space: nowrap;
@@ -119,6 +125,8 @@
   }
   @media (max-width: 900px) {
     header {
+      margin-left: 16px;
+      margin-right: 16px;
       padding: 18px 24px;
       gap: 18px;
     }
@@ -131,8 +139,8 @@
   }
   @media (max-width: 720px) {
     header {
-      min-height: 80px;
-      padding: 16px 20px;
+      min-height: 68px;
+      padding: 14px 18px;
     }
     .brand {
       font-size: 23px;
@@ -144,7 +152,7 @@
     }
     .enter {
       margin-left: auto;
-      font-size: 11px;
+      font-size: 12px;
       padding: 9px 10px;
     }
     .enter :global(svg) {
@@ -173,7 +181,7 @@
       border: 1px solid #d7e0e9;
       padding: 24px;
       box-shadow: 0 12px 24px #243b5312;
-      border-radius: 5px;
+      border-radius: 16px;
     }
   }
   @media (max-width: 360px) {

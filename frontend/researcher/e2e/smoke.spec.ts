@@ -5,7 +5,7 @@ test('homepage examples demonstrate editing, formulas and selected-change sharin
 }) => {
   await page.goto('/');
   await expect(
-    page.getByRole('heading', { name: 'Every edit. Every version. Your document.' })
+    page.getByRole('heading', { name: 'Great work evolves. Keep every version.' })
   ).toBeVisible();
   await page.getByRole('button', { name: 'Try this wording' }).click();
   await expect(

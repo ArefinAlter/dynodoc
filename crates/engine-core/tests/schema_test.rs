@@ -248,7 +248,10 @@ async fn event_table_is_append_only(pool: PgPool) -> sqlx::Result<()> {
         .bind(&s.event_id)
         .execute(&pool)
         .await;
-    assert!(del.unwrap_err().to_string().contains("append-only"));
+    assert!(del
+        .unwrap_err()
+        .to_string()
+        .contains("history is immutable"));
 
     Ok(())
 }

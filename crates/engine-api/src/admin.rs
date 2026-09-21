@@ -17,6 +17,7 @@ pub fn router() -> Router<AppState> {
         .route("/telemetry", post(telemetry))
         .route("/admin/records", get(records))
         .route("/admin/actions", post(action))
+        .merge(crate::admin_controls::router())
 }
 pub fn is_admin(email: &str, configured: &str) -> bool {
     configured
@@ -25,6 +26,7 @@ pub fn is_admin(email: &str, configured: &str) -> bool {
         .filter(|s| !s.is_empty())
         .any(|s| s.eq_ignore_ascii_case(email))
 }
+#[utoipa::path(get, path="/admin/overview", tag="administration", security(("paseto" = [])), responses((status=200, description="Successful operation", body=Value),(status=400, description="Validation or confirmation failed"),(status=401, description="Sign in required"),(status=403, description="Insufficient access"),(status=409, description="Refresh the current revision")))]
 async fn overview(
     State(state): State<AppState>,
     auth: AuthContext,
@@ -117,7 +119,7 @@ struct RecordsQuery {
     #[serde(default)]
     offset: i64,
 }
-async fn require_admin(state: &AppState, auth: &AuthContext) -> Result<(), ApiError> {
+pub(crate) async fn require_admin(state: &AppState, auth: &AuthContext) -> Result<(), ApiError> {
     let email: String =
         sqlx::query_scalar("select email from identity where id=$1 and disabled_at is null")
             .bind(auth.identity_id)
@@ -128,6 +130,7 @@ async fn require_admin(state: &AppState, auth: &AuthContext) -> Result<(), ApiEr
     }
     Ok(())
 }
+#[utoipa::path(get, path="/admin/records", tag="administration", security(("paseto" = [])), responses((status=200, description="Successful operation", body=Value),(status=400, description="Validation or confirmation failed"),(status=401, description="Sign in required"),(status=403, description="Insufficient access"),(status=409, description="Refresh the current revision")))]
 async fn records(
     State(state): State<AppState>,
     auth: AuthContext,
@@ -140,10 +143,12 @@ async fn records(
         });
     }
     let query=match q.kind.as_str(){
- "users"=>"select jsonb_build_object('id',id,'label',email,'name',display_name,'created_at',created_at,'removed_at',disabled_at) from identity where strpos(lower(email),lower($1))>0 or strpos(lower(coalesce(display_name,'')),lower($1))>0 order by created_at desc,id limit 50 offset $2",
+ "users"=>"select jsonb_build_object('id',id,'label',email,'name',display_name,'created_at',created_at,'removed_at',disabled_at,'erased_at',erased_at) from identity where erased_at is null and (strpos(lower(email),lower($1))>0 or strpos(lower(coalesce(display_name,'')),lower($1))>0) order by created_at desc,id limit 50 offset $2",
  "documents"=>"select jsonb_build_object('id',d.id,'label',d.title,'owner',i.email,'created_at',d.created_at,'removed_at',d.deleted_at,'kind',d.settings->>'kind') from document d left join identity i on i.id=d.created_by where strpos(lower(d.title),lower($1))>0 order by d.created_at desc,d.id limit 50 offset $2",
  "audit"=>"select jsonb_build_object('id',a.id,'label',a.action,'actor',i.email,'resource_id',a.resource_id,'created_at',a.created_at) from operation_audit a join identity i on i.id=a.actor_id where strpos(lower(a.action),lower($1))>0 order by a.id desc limit 50 offset $2",
- _=>return Err(ApiError::BadRequest{reason:"Choose users, documents or audit".into()})};
+ "spaces"=>"select jsonb_build_object('id',s.id,'label',s.name,'name',s.kind,'created_at',s.created_at) from access_space s where strpos(lower(s.name),lower($1))>0 order by s.created_at desc,s.id limit 50 offset $2",
+ "erasures"=>"select jsonb_build_object('id',resource_id,'label',kind||' erased','name',reason,'created_at',erased_at) from erasure_receipt where strpos(lower(kind||' '||reason),lower($1))>0 order by erased_at desc,resource_id limit 50 offset $2",
+ _=>return Err(ApiError::BadRequest{reason:"Choose users, documents, spaces, audit or erasures".into()})};
     let items: Vec<Value> = sqlx::query_scalar(query)
         .bind(q.q.trim())
         .bind(q.offset)
@@ -158,6 +163,7 @@ struct AdminAction {
     removed: bool,
     confirmation: String,
 }
+#[utoipa::path(post, path="/admin/actions", tag="administration", request_body=Value, security(("paseto" = [])), responses((status=200, description="Successful operation", body=Value),(status=400, description="Validation or confirmation failed"),(status=401, description="Sign in required"),(status=403, description="Insufficient access"),(status=409, description="Refresh the current revision")))]
 async fn action(
     State(state): State<AppState>,
     auth: AuthContext,
@@ -167,11 +173,12 @@ async fn action(
     let mut tx = state.pool.begin().await?;
     let action = match input.kind.as_str() {
         "users" => {
-            let email: Option<String> =
-                sqlx::query_scalar("select email from identity where id=$1 for update")
-                    .bind(input.id)
-                    .fetch_optional(&mut *tx)
-                    .await?;
+            let email: Option<String> = sqlx::query_scalar(
+                "select email from identity where id=$1 and erased_at is null for update",
+            )
+            .bind(input.id)
+            .fetch_optional(&mut *tx)
+            .await?;
             let email = email.ok_or(ApiError::NotFound)?;
             if input.confirmation != email {
                 return Err(ApiError::BadRequest {
@@ -234,3 +241,7 @@ async fn action(
     tx.commit().await?;
     Ok(Json(json!({"ok":true})))
 }
+
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(overview, records, action))]
+pub struct AdminApi;

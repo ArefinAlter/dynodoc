@@ -211,6 +211,9 @@ pub fn apply_payload(state: &mut DocumentState, payload: &EventPayload) -> Resul
         EventPayload::ChoiceRemoved { choice_id, .. } => {
             state.removed_choices.insert(choice_id.clone());
         }
+        // Thread topology and lifecycle are projected from canonical event IDs.
+        // These operations do not change structural state or its Merkle leaves.
+        EventPayload::CommentReplied { .. } | EventPayload::CommentResolved { .. } => {}
         EventPayload::CommentAdded { node_id, body } => {
             state.comments.push(CommentState {
                 node_id: node_id.clone(),

@@ -27,7 +27,7 @@ test('long formatted passages save compact history and replay after reload', asy
   await expect(page).toHaveURL(/\/workspace$/);
   await page.getByRole('button', { name: 'New document', exact: true }).click();
   await page.getByLabel('Document name', { exact: true }).fill('Rich-text history verification');
-  await page.getByRole('combobox').selectOption('document');
+  await page.getByRole('dialog').getByRole('combobox').selectOption('document');
   await page.getByRole('button', { name: 'Create document', exact: true }).click();
   const editor = page.getByRole('textbox', { name: 'Document content' });
   const text = 'Research evidence stays with its history. '.repeat(100);
@@ -43,7 +43,7 @@ test('long formatted passages save compact history and replay after reload', asy
   expect(oldReader.status()).toBe(409);
   expect((await oldReader.json()).error).toContain('reload this tab');
   const response = await page.request.get(`/api/engine/documents/${id}/events?limit=200`, {
-    headers: { 'x-dynodoc-editor': 'office-v2' }
+    headers: { 'x-dynodoc-editor': 'office-v3' }
   });
   expect(response.ok()).toBeTruthy();
   const events = await response.json();

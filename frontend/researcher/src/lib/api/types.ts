@@ -36,6 +36,8 @@ export type EventTypeName =
   | 'ChoiceAdded'
   | 'ChoiceRemoved'
   | 'CommentAdded'
+  | 'CommentReplied'
+  | 'CommentResolved'
   | 'SuggestionProposed'
   | 'SuggestionAccepted'
   | 'SuggestionRejected'
@@ -126,6 +128,8 @@ export type EventPayload =
   | { type: 'ChoiceAdded'; node_id: string; choice_id: string; fields?: unknown }
   | { type: 'ChoiceRemoved'; node_id: string; choice_id: string }
   | { type: 'CommentAdded'; node_id?: string | null; body: string }
+  | { type: 'CommentReplied'; thread_id: string; body: string }
+  | { type: 'CommentResolved'; thread_id: string; resolved: boolean }
   | {
       type: 'SuggestionProposed';
       suggestion_id: string;

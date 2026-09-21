@@ -5,7 +5,7 @@
 
 <ProductPage
   title="Make yourself at home."
-  description="A practical guide to editing, sharing and keeping a clear history of your research."
+  description="A practical guide to editing, sharing and keeping a clear history of your documents."
   eyebrow="Help & tutorials"
 >
   <section>
@@ -83,7 +83,31 @@
     <p>
       Trash preserves content, drafts, uploads and history. Restoring a document does not reactivate
       revoked public links. Administrators can disable accounts and restore them later; old sessions
-      remain invalid. Permanent erasure requires a separately reviewed retention process.
+      remain invalid. Administrators can permanently delete a trashed document after reviewing its
+      impact and confirming the exact title. This removes its content, files, drafts and history
+      from the live service. A minimal deletion receipt remains, and existing backups expire
+      normally. Permanent deletion cannot be undone.
+    </p>
+  </section>
+  <section>
+    <h2>Pick up where you left off</h2>
+    <p>
+      On a trusted device, choose File → Keep recovery copies on this browser. If a save is
+      interrupted, return to the document and choose Review recovered work. Check your recovered
+      wording, then retry saving or keep a personal draft. Dynodoc checks for newer team edits
+      before accepting the changes. Recovery is optional, limited to this browser, and cleared when
+      you sign out. It is not a substitute for a saved version or a downloaded copy.
+    </p>
+    <h2>Review together, share when ready</h2>
+    <p>
+      Open Comments to start a discussion or reply. An editor can resolve a discussion when the
+      decision is made; select Show resolved to find it and reopen it later. Discussions stay
+      private to collaborators and are excluded from published read-only copies.
+    </p>
+    <p>
+      When comparing a personal draft with the team version, select the blocks you want to share.
+      Keep unchecked blocks private in future comparisons remembers what you held back. Select a
+      held-back block in a later comparison when it is ready to join the team version.
     </p>
   </section>
   <section>
