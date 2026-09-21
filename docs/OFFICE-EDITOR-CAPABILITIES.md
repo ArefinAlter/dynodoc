@@ -156,6 +156,9 @@ validate the pagination or end-to-end import of a real 400-page file.
   its isolated rerun. Its threshold was not weakened. Functional SSE delivery is
   exercised by the passing concurrent-edit browser test; a 100 ms end-to-end SLO
   is not established by this release.
+- Full Linux Rust CI passed for release commit `470abbc`, including all workspace
+  tests and the strict 100 ms SSE check. This does not erase the Windows/Docker
+  timing failures above or establish a production latency guarantee.
 - Strict Rust clippy passed. No migrations or historical-event rewrites are added.
 
 Native desktop/mobile IMEs, screen readers, real Google/Resend/provider accounts,
