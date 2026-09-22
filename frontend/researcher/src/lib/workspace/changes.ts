@@ -181,7 +181,40 @@ export function stateChanges(from: DocumentState, to: DocumentState): EventPaylo
     .sort((a, b) => depth(b.id) - depth(a.id)))
     if (!to.nodes[node.id] || to.nodes[node.id].deleted)
       ops.push({ type: 'NodeDeleted', node_id: node.id });
-  return ops;
+  const unlocks: EventPayload[] = [],
+    content: EventPayload[] = [],
+    locks: EventPayload[] = [];
+  for (const op of ops) {
+    if (op.type === 'NodeCreated') {
+      const fields = op.fields as Record<string, unknown>;
+      if (fields?.kind === 'sheet' && fields.sheet_protected === true) {
+        content.push({ ...op, fields: { ...fields, sheet_protected: false } });
+        locks.push({
+          type: 'FieldEdited',
+          node_id: op.node_id,
+          field: 'sheet_protected',
+          value: true
+        });
+        continue;
+      }
+    }
+    if (op.type === 'FieldEdited' && op.field === 'sheet_protected') {
+      if (op.value === true) {
+        locks.push(op);
+        continue;
+      }
+      if (
+        (op.value === false || op.value === null) &&
+        from.nodes[op.node_id] &&
+        !from.nodes[op.node_id].deleted
+      ) {
+        unlocks.push(op);
+        continue;
+      }
+    }
+    content.push(op);
+  }
+  return [...unlocks, ...content, ...locks];
 }
 
 // Suffix successor query in O(log n), avoiding repeated slices/scans for large

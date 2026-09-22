@@ -7,7 +7,11 @@ export default defineConfig({
   webServer: external
     ? undefined
     : {
-        command: 'pnpm build && pnpm preview --port 4173',
+        // CI already builds in a separate checked step. Keep local runs self-contained.
+        command: process.env.CI
+          ? 'pnpm preview --host 127.0.0.1 --port 4173'
+          : 'pnpm build && pnpm preview --port 4173',
+        timeout: 180000,
         port: 4173,
         reuseExistingServer: !process.env.CI
       },

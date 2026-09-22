@@ -179,10 +179,10 @@ fn check_sheet_protection(state: &DocumentState, op: &EventPayload) -> Result<()
             let node = &state.nodes[node_id];
             if node.node_type != "section"
                 || node.current_fields["kind"] != "sheet"
-                || !value.is_boolean()
+                || !(value.is_boolean() || value.is_null())
             {
                 return Err(GovernanceError::SheetProtection(
-                    "use a boolean protection flag on a worksheet".into(),
+                    "use a boolean protection flag or clear it on a worksheet".into(),
                 ));
             }
             return Ok(());

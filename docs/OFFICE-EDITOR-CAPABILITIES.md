@@ -2,11 +2,12 @@
 
 Updated 22 September 2026. This records implemented behavior and explicit limits;
 it is not a Microsoft Office compatibility certification. The public equivalent
-is `/compatibility`. Decision 004 records the owner's expanded scope.
+is `/compatibility`. Decisions 004, 006 and 007 record the owner's expanded scope.
+See [the latest release evidence](OFFICE-EXPANSION-RELEASE.md) for verification and runtime status.
 
 ## Document editor
 
-- Home/Insert/Layout/Review/View ribbon; headings 1–6, font family/size, emphasis,
+- Home/Insert/Layout/References/Review/View ribbon; headings 1–6, font family/size, emphasis,
   colors/highlighting, lists/checklists, links, alignment, paragraph indentation,
   spacing, keep-with-next and direction. Existing table commands, equations,
   comments, document tabs, search/replace and context menus remain available.
@@ -36,6 +37,9 @@ is `/compatibility`. Decision 004 records the owner's expanded scope.
 - Labelled controls, keyboard ribbon navigation, document language and basic checks
   for heading order, image descriptions, table headers and empty links improve
   authoring accessibility. These checks do not certify accessible exported files.
+- Editable footnote/endnote text with sequential references and a notes panel.
+  Heading-based contents insertion and manual refresh. Native DOCX notes/TOC fields
+  export; browser print places note bodies after the text.
 
 ## DOCX conversion
 
@@ -54,7 +58,7 @@ Read the final section's page settings and plain header/footer text. Native expo
 writes supported content, text revisions and source comments using `docx`.
 
 Explicit limits: exact page layout, floating objects/wrap, multi-section settings,
-footnote/endnote bodies, bibliography/citation fields, tracked formatting/moves,
+rich note formatting, per-page note layout, bibliography/citation fields, tracked formatting/moves,
 native equation round trips, numbering restart/style fidelity and complete theme
 resolution. Floating images are placed after their paragraph; complex layout and
 unsupported constructs require original-file review. Source comments are imported
@@ -73,8 +77,10 @@ cells. Range navigation, selection summaries, inline list/number/text-length
 validation, find/replace, resize/hide/freeze and full-visible-sheet print preview
 are available. Printing derives all rows from state, not virtualized DOM rows.
 
-Sorting formula-containing workbooks or merged sheets is refused rather than
-silently corrupting references. Unsupported imported validation rules are retained
+Sorting adjusts relative formulas as rows move; external references stay attached
+to cell addresses. Merged sheets must be unmerged before sorting. Named ranges,
+text splitting, duplicate removal, chart/print/pivot source rebasing and data dialogs
+are supported. Unsupported imported validation rules are retained
 for export but not evaluated. Limits: 3,000 imported rows/workbook, 100 columns,
 10 MB source, 5,000 ordinary batch operations; UI operations use smaller guards.
 XLSX ZIP expansion and ExcelJS conversion run in a terminable worker with a
@@ -82,9 +88,13 @@ XLSX ZIP expansion and ExcelJS conversion run in a terminable worker with a
 conversion. Numeric greater-than, less-than, equal-to and between conditional
 formatting rules are saved, recalculated and exchanged through XLSX. Rule output
 is limited to RGB fill/text colors; formula-based rules, data bars, icon sets and
-complex priority/style composition remain unsupported. Charts, pivots, macros,
-protected ranges, external connections and full Excel function/format parity remain
-incomplete.
+complex priority/style composition remain unsupported. Column/bar/line/pie chart
+creation, resizing and supported rectangular same-sheet native XLSX exchange are
+implemented. Pivot summaries support grouping, aggregates and explicit refresh;
+their XLSX output is cells rather than native pivot caches. Whole-sheet protection
+runs through engine governance; authors may unprotect. Protected cell ranges,
+passwords, native pivot definitions, macros, external connections and full Excel
+function/format parity remain incomplete.
 
 ## Versioning, performance and privacy
 

@@ -47,3 +47,9 @@ Engine commit [`02a7aa7`](https://github.com/ArefinAlter/dynodoc-engine/commit/0
 adds whole-sheet protection and acceptance revalidation. The application's
 `engine-core/src/governance.rs` and `engine-api/src/error.rs` are byte-identical ports
 of those files. No migration changes; app licensing and packaging remain unchanged.
+
+Engine commit [`e2a719d`](https://github.com/ArefinAlter/dynodoc-engine/commit/e2a719d)
+orders snapshot protection changes around restored/merged content and accepts a
+cleared flag from older snapshots. `engine-core/src/governance.rs` and
+`engine-core/src/workspace_merge.rs` are byte-identical ports. Regression coverage
+applies each diff operation through authorization and replay.

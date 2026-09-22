@@ -130,3 +130,41 @@ describe('research imports', () => {
     expect(Object.values(state.nodes).filter((n) => n.type === 'choice')).toHaveLength(2);
   });
 });
+
+it('orders explicit sheet protection around restored content without silently unlocking', () => {
+  const from = emptyState();
+  applyPayload(from, rootOp('root', 'Workbook'));
+  const to = JSON.parse(JSON.stringify(from));
+  applyPayload(to, {
+    type: 'NodeCreated',
+    node_id: 'sheet',
+    node_type: 'section',
+    parent_id: 'root',
+    pos: '0',
+    fields: { kind: 'sheet', sheet_protected: true }
+  });
+  applyPayload(to, itemOp('sheet', 0, { cell_0: 'Saved' }, 'row'));
+  const create = stateChanges(from, to);
+  expect(create.at(-1)).toEqual({
+    type: 'FieldEdited',
+    node_id: 'sheet',
+    field: 'sheet_protected',
+    value: true
+  });
+  expect(create.find((op) => op.type === 'NodeCreated' && op.node_id === 'sheet')).toMatchObject({
+    fields: { sheet_protected: false }
+  });
+  const unlocked = JSON.parse(JSON.stringify(to));
+  delete unlocked.nodes.sheet.current_fields.sheet_protected;
+  unlocked.nodes.row.current_fields.cell_0 = 'Changed';
+  expect(stateChanges(to, unlocked)[0]).toEqual({
+    type: 'FieldEdited',
+    node_id: 'sheet',
+    field: 'sheet_protected',
+    value: null
+  });
+  expect(stateChanges(unlocked, to).at(-1)).toMatchObject({
+    field: 'sheet_protected',
+    value: true
+  });
+});

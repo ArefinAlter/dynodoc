@@ -286,7 +286,47 @@ pub fn diff(from: &DocumentState, to: &DocumentState) -> Vec<EventPayload> {
             node_id: n.id.clone(),
         });
     }
-    result
+    // A snapshot can enable protection together with content changes. Apply that
+    // flag last; explicit unprotection of an existing live sheet must happen first.
+    // Never implicitly unprotect an already-protected worksheet.
+    let mut unlocks = Vec::new();
+    let mut content = Vec::new();
+    let mut locks = Vec::new();
+    for mut op in result {
+        match &mut op {
+            EventPayload::NodeCreated {
+                node_id, fields, ..
+            } if fields["kind"] == "sheet" && fields["sheet_protected"] == true => {
+                fields["sheet_protected"] = json!(false);
+                locks.push(EventPayload::FieldEdited {
+                    node_id: node_id.clone(),
+                    field: "sheet_protected".into(),
+                    value: json!(true),
+                });
+            }
+            EventPayload::FieldEdited {
+                node_id,
+                field,
+                value,
+            } if field == "sheet_protected" => {
+                if *value == true {
+                    locks.push(op);
+                    continue;
+                }
+                if (value.is_null() || *value == false)
+                    && from.nodes.get(node_id).is_some_and(|n| !n.deleted)
+                {
+                    unlocks.push(op);
+                    continue;
+                }
+            }
+            _ => {}
+        }
+        content.push(op);
+    }
+    unlocks.extend(content);
+    unlocks.extend(locks);
+    unlocks
 }
 #[cfg(test)]
 mod tests {
@@ -307,6 +347,74 @@ mod tests {
         );
         s
     }
+    #[test]
+    fn protected_snapshot_diffs_apply_content_before_lock_and_explicit_unlock_before_edits() {
+        use crate::governance::{authorize, Role};
+        let base = state();
+        let mut target = base.clone();
+        target.nodes.insert(
+            NodeId("sheet".into()),
+            MaterializedNode {
+                id: NodeId("sheet".into()),
+                parent_id: Some(NodeId("root".into())),
+                node_type: "section".into(),
+                pos: "0".into(),
+                current_fields: json!({"kind":"sheet","sheet_protected":true,"label":"Old"}),
+                var_name: None,
+                deleted: false,
+            },
+        );
+        target.nodes.insert(
+            NodeId("row".into()),
+            MaterializedNode {
+                id: NodeId("row".into()),
+                parent_id: Some(NodeId("sheet".into())),
+                node_type: "item".into(),
+                pos: "0".into(),
+                current_fields: json!({"cell_0":"saved"}),
+                var_name: None,
+                deleted: false,
+            },
+        );
+        let apply = |from: &DocumentState, to: &DocumentState| {
+            let mut state = from.clone();
+            for op in diff(from, to) {
+                authorize(Role::Author, &op, &state).unwrap();
+                crate::materializer::apply_payload(&mut state, &op).unwrap();
+            }
+            state
+        };
+        let created = apply(&base, &target);
+        assert_eq!(
+            created.nodes[&NodeId("sheet".into())].current_fields["sheet_protected"],
+            true
+        );
+        let mut unprotected = target.clone();
+        unprotected
+            .nodes
+            .get_mut(&NodeId("sheet".into()))
+            .unwrap()
+            .current_fields = json!({"kind":"sheet","label":"New"});
+        unprotected
+            .nodes
+            .get_mut(&NodeId("row".into()))
+            .unwrap()
+            .current_fields["cell_0"] = json!("edited");
+        let unlocked = apply(&target, &unprotected);
+        assert!(
+            unlocked.nodes[&NodeId("sheet".into())].current_fields["sheet_protected"].is_null()
+        );
+        let restored = apply(&unlocked, &target);
+        assert_eq!(
+            restored.nodes[&NodeId("row".into())].current_fields["cell_0"],
+            "saved"
+        );
+        assert_eq!(
+            restored.nodes[&NodeId("sheet".into())].current_fields["sheet_protected"],
+            true
+        );
+    }
+
     #[test]
     fn separate_cells_merge_and_overlaps_require_a_choice() {
         let b = state();

@@ -35,17 +35,19 @@ Full Microsoft Office parity is not complete.
 
 ## Verification
 
-- Frontend: 120 unique unit tests pass (119-test full suite, followed by the additional note identity regression). ESLint and full Prettier checks pass; Svelte/TypeScript reports zero errors and warnings. Production build passes.
+- Frontend: 121 unique unit tests pass (120 in GitHub CI, plus the snapshot protection regression in the focused eight-test suite). ESLint and full Prettier checks pass; Svelte/TypeScript reports zero errors and warnings. Production build passes.
 - Browser: all 33 scenarios pass across the broad production-build run (31 passes) and the focused final rerun (3 passes, one overlapping). The final rerun verifies the relocated print command, duplicate removal on Svelte state, named formulas, charts, actual pivot refresh, protection and reload. Other coverage includes concurrent edits, live page geometry, undo/identity, imports, permissions, drafts, recovery and accessibility.
-- Standalone engine: all 173 tests pass locally. [Independent CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/35698213107) also passes Rust formatting, strict Clippy, build, tests, documentation and OpenAPI consistency for engine commit `02a7aa7`. The app contains byte-identical ports of the two changed Rust files. All 16 SQL migration files remain byte-identical between repositories.
+- Standalone engine: all 173 baseline tests pass locally; the additional protection-ordering test and all four snapshot/merge tests also pass (174 unique tests). [Independent CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/35698213107) also passes Rust formatting, strict Clippy, build, tests, documentation and OpenAPI consistency for engine commit `02a7aa7`. The follow-up engine commit `e2a719d` fixes protection ordering during snapshot restoration/merge; its two changed files are byte-identical in the app. All 16 SQL migration files remain byte-identical between repositories.
 - Verification uses Windows Node 22.22.2, pinned Rust 1.96, a disposable PostgreSQL 16 container on loopback 5549, test-only auth/API on 8088 and a production web build on 4188. No hosted data is used. The existing development database is unchanged.
 - Synthetic 1920-pixel captures: [Excel Home ribbon](review/excel-editor-2026-09-22.png), [workbook home](review/excel-home-2026-09-22.png), [chart](review/excel-chart-2026-09-22.png). Supplied screenshots are reference material, not repository instructions or app assets.
 
 The first broad browser run exposed an obsolete print selector and a Proxy cloning
 error in duplicate removal; both were corrected and the affected workflows rerun.
-The runtime on the VPS has not been replaced by this Git publication. It needs both
-the new web bundle and API governance change. Vercel and application CI status are
-recorded after the main push; publishing source does not certify a VPS rollout.
+The first main push passed authenticated CI browser workflows, frontend static/unit
+checks and the Vercel homepage deployment. The public browser job hit its startup
+timeout while duplicating the build; Playwright now reuses CI’s checked build.
+The owner subsequently authorized VPS access and rollout; deployment evidence is
+recorded below after live verification.
 
 ## Remaining gaps
 
