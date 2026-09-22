@@ -40,3 +40,10 @@ notes, CONTRIBUTING, CODE_OF_CONDUCT, SECURITY, GOVERNANCE, ROADMAP, CHANGELOG,
 CODEOWNERS, issue/PR templates, Dependabot and CI. GitHub recognizes MIT and private
 vulnerability reporting is enabled. No crates.io package or binary distribution is
 implied by the source release.
+
+## Synchronized governance fix
+
+Engine commit [`02a7aa7`](https://github.com/ArefinAlter/dynodoc-engine/commit/02a7aa7)
+adds whole-sheet protection and acceptance revalidation. The application's
+`engine-core/src/governance.rs` and `engine-api/src/error.rs` are byte-identical ports
+of those files. No migration changes; app licensing and packaging remain unchanged.

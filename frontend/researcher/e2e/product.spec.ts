@@ -273,7 +273,7 @@ test('organization access reaches a folder document and can be removed centrally
     expect(
       (
         await colleague.request.get('/api/engine/documents/' + id, {
-          headers: { 'x-dynodoc-editor': 'office-v3' }
+          headers: { 'x-dynodoc-editor': 'office-v4' }
         })
       ).status()
     ).toBe(403);
@@ -366,12 +366,12 @@ test('discussion replies and resolution survive reload without entering a public
   const id = new URL(page.url()).pathname.split('/').at(-1);
   const events = await (
     await page.request.get(`/api/engine/documents/${id}/events?limit=500`, {
-      headers: { 'x-dynodoc-editor': 'office-v3' }
+      headers: { 'x-dynodoc-editor': 'office-v4' }
     })
   ).json();
   const base_seq = events.items.at(-1)?.seq || 0;
   const result = await page.request.post(`/api/engine/documents/${id}/public-links`, {
-    headers: { 'x-dynodoc-editor': 'office-v3', origin: new URL(page.url()).origin },
+    headers: { 'x-dynodoc-editor': 'office-v4', origin: new URL(page.url()).origin },
     data: { base_seq }
   });
   expect(result.ok()).toBeTruthy();
@@ -417,7 +417,7 @@ test('administrator previews and permanently erases a trashed document', async (
   expect(
     (
       await page.request.get(`/api/engine/documents/${id}`, {
-        headers: { 'x-dynodoc-editor': 'office-v3' }
+        headers: { 'x-dynodoc-editor': 'office-v4' }
       })
     ).status()
   ).toBe(403);

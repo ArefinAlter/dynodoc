@@ -170,7 +170,7 @@ test('IME input survives a concurrent server edit without overwriting it', async
   await editor.fill('Shared text.');
   await saved(page);
   const id = new URL(page.url()).pathname.split('/').pop();
-  const headers = { 'x-dynodoc-editor': 'office-v3', origin: new URL(page.url()).origin };
+  const headers = { 'x-dynodoc-editor': 'office-v4', origin: new URL(page.url()).origin };
   const original = await (
     await page.request.get(`/api/engine/documents/${id}`, { headers })
   ).json();
@@ -212,7 +212,7 @@ test('IME input survives a concurrent server edit without overwriting it', async
 test('spreadsheet print includes rows outside the virtual viewport', async ({ page }) => {
   await create(page, 'spreadsheet');
   const id = new URL(page.url()).pathname.split('/').pop();
-  const headers = { 'x-dynodoc-editor': 'office-v3', origin: new URL(page.url()).origin };
+  const headers = { 'x-dynodoc-editor': 'office-v4', origin: new URL(page.url()).origin };
   const detail = await (await page.request.get(`/api/engine/documents/${id}`, { headers })).json();
   const nodes = Object.values(detail.state.nodes) as MaterializedNode[];
   const sheet = nodes.find((n) => n.current_fields.kind === 'sheet');
@@ -237,6 +237,7 @@ test('spreadsheet print includes rows outside the virtual viewport', async ({ pa
   expect(response.ok(), await response.text()).toBeTruthy();
   await page.reload();
   await expect(page.getByRole('button', { name: /Final offscreen row/ })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Page Layout', exact: true }).click();
   await page.getByRole('button', { name: 'Print spreadsheet', exact: true }).click();
   const preview = page.frameLocator('iframe[title="Document pages"]');
   await expect(preview.getByRole('button', { name: 'Print / Save as PDF' })).toBeEnabled({
@@ -250,7 +251,7 @@ test('a cell being edited keeps its original save base when a colleague changes 
 }) => {
   await create(page, 'spreadsheet');
   const id = new URL(page.url()).pathname.split('/').pop();
-  const headers = { 'x-dynodoc-editor': 'office-v3', origin: new URL(page.url()).origin };
+  const headers = { 'x-dynodoc-editor': 'office-v4', origin: new URL(page.url()).origin };
   const detail = await (await page.request.get(`/api/engine/documents/${id}`, { headers })).json();
   const nodes = Object.values(detail.state.nodes) as MaterializedNode[];
   const sheet = nodes.find((n) => n.current_fields.kind === 'sheet')!;
@@ -388,7 +389,7 @@ test('editable tables paginate between rows and reload without saving layout row
   const id = new URL(page.url()).pathname.split('/').pop();
   const response = await (
     await page.request.get(`/api/engine/documents/${id}`, {
-      headers: { 'x-dynodoc-editor': 'office-v3' }
+      headers: { 'x-dynodoc-editor': 'office-v4' }
     })
   ).json();
   const table = (Object.values(response.state.nodes) as MaterializedNode[]).find(
@@ -402,4 +403,175 @@ test('editable tables paginate between rows and reload without saving layout row
   await page.reload();
   await expect(editor).toContainText('Last row');
   await expect(editor.locator('tr:not(.pagination-gap)')).toHaveCount(30);
+});
+
+test('Excel analysis: named ranges, chart, pivot refresh and server-enforced protection', async ({
+  page
+}) => {
+  await page.setViewportSize({ width: 1920, height: 1030 });
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await create(page, 'spreadsheet');
+  async function select(range: string) {
+    await page.getByLabel('Go to cell or range').fill(range);
+    await page.getByLabel('Go to cell or range').press('Enter');
+  }
+  async function edit(address: string, value: string) {
+    await page.getByRole('button', { name: new RegExp(`^${address}:`) }).dblclick();
+    const input = page.getByRole('textbox', { name: `Edit ${address}`, exact: true });
+    await input.fill(value);
+    await input.press('Enter');
+  }
+  for (const [address, value] of [
+    ['A1', 'Region'],
+    ['B1', 'Sales'],
+    ['A2', 'East'],
+    ['B2', '10'],
+    ['A3', 'West'],
+    ['B3', '20'],
+    ['A4', 'East'],
+    ['B4', '30']
+  ])
+    await edit(address, value);
+  await saved(page);
+  await select('A1:B4');
+  await page.getByRole('button', { name: 'Insert', exact: true }).click();
+  await page.getByRole('button', { name: 'Insert column chart', exact: true }).click();
+  await page.getByLabel('Chart title').fill('Regional sales');
+  await page.getByRole('dialog').getByRole('button', { name: 'Insert chart' }).click();
+  await expect(page.getByRole('figure', { name: 'Regional sales' })).toBeVisible();
+  await saved(page);
+  await page.screenshot({ path: 'test-results/excel-workspace.png', fullPage: true });
+  await page.getByRole('button', { name: 'Formulas', exact: true }).click();
+  await page.getByRole('button', { name: 'Name Manager', exact: true }).click();
+  await page.getByLabel('Name', { exact: true }).fill('SalesTotal');
+  await page.getByLabel('Refers to', { exact: true }).fill("=SUM('Sheet 1'!$B$2:$B$4)");
+  await page.getByRole('dialog').getByRole('button', { name: 'Apply' }).click();
+  await edit('C1', '=SalesTotal');
+  await expect(page.getByRole('button', { name: 'C1: 60', exact: true })).toBeVisible();
+  await saved(page);
+  await select('A1:B4');
+  await page.getByRole('button', { name: 'Insert', exact: true }).click();
+  await page.getByRole('button', { name: 'PivotTable', exact: true }).click();
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Create PivotTable', exact: true })
+    .click();
+  await expect(page.getByRole('button', { name: 'B2: 40', exact: true })).toBeVisible();
+  await saved(page);
+  await page.locator('.sheet-tabs').getByRole('button', { name: 'Sheet 1', exact: true }).click();
+  await edit('B2', '15');
+  await saved(page);
+  await page
+    .locator('.sheet-tabs')
+    .getByRole('button', { name: 'PivotTable', exact: true })
+    .click();
+  await page.getByRole('button', { name: 'Data', exact: true }).click();
+  await page.getByRole('button', { name: 'Refresh PivotTable', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'B2: 45', exact: true })).toBeVisible();
+  await saved(page);
+  await page.getByRole('button', { name: 'Review', exact: true }).click();
+  await page.getByRole('button', { name: 'Protect sheet', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Protect', exact: true }).click();
+  await saved(page);
+  await expect(page.getByLabel('Formula bar')).toBeDisabled();
+  const id = new URL(page.url()).pathname.split('/').pop();
+  const headers = { 'x-dynodoc-editor': 'office-v4', origin: new URL(page.url()).origin };
+  const data = await (await page.request.get(`/api/engine/documents/${id}`, { headers })).json();
+  const sheet = Object.values(data.state.nodes as Record<string, MaterializedNode>).find(
+    (n) => n.current_fields.label === 'PivotTable'
+  )!;
+  const row = Object.values(data.state.nodes as Record<string, MaterializedNode>).find(
+    (n) => n.parent_id === sheet.id && !n.deleted
+  )!;
+  const rejected = await page.request.post(`/api/engine/documents/${id}/batch`, {
+    headers,
+    data: { ops: [{ type: 'FieldEdited', node_id: row.id, field: 'cell_0', value: 'bypass' }] }
+  });
+  expect(rejected.status()).toBe(409);
+  await page.getByRole('button', { name: 'Unprotect', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Unprotect', exact: true }).click();
+  await saved(page);
+  await expect(page.getByLabel('Formula bar')).toBeEnabled();
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'B2: 45', exact: true })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('Word References: note bodies and contents survive save and reload', async ({ page }) => {
+  await create(page);
+  const editor = page.getByRole('textbox', { name: 'Document content' });
+  await editor.fill('Methods');
+  await editor.click();
+  await page.getByLabel('Paragraph style').selectOption('1');
+  await page.keyboard.press('Control+End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('Evidence here.');
+  await page.getByRole('tab', { name: 'References', exact: true }).click();
+  await page.getByRole('button', { name: 'Insert footnote', exact: true }).click();
+  await page.getByLabel('Note text').fill('A real source note বাংলা.');
+  await page.getByRole('dialog').getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(editor.locator('[data-document-note]')).toHaveCount(1);
+  await saved(page);
+  await page.getByRole('button', { name: 'Insert table of contents', exact: true }).click();
+  await expect(editor.locator('[data-contents]')).toContainText('Methods');
+  await saved(page);
+  await page.reload();
+  await page.getByRole('tab', { name: 'References', exact: true }).click();
+  await page.getByRole('button', { name: 'Show notes', exact: true }).click();
+  await expect(page.getByRole('complementary', { name: 'Document notes' })).toContainText(
+    'A real source note বাংলা.'
+  );
+  await expect(editor.locator('[data-contents]')).toContainText('Methods');
+});
+
+test('Excel data tools split text, remove duplicate rows and sort formulas', async ({ page }) => {
+  await create(page, 'spreadsheet');
+  async function edit(address: string, value: string) {
+    await page.getByRole('button', { name: new RegExp(`^${address}:`) }).dblclick();
+    const input = page.getByRole('textbox', { name: `Edit ${address}`, exact: true });
+    await input.fill(value);
+    await input.press('Enter');
+  }
+  async function select(range: string) {
+    await page.getByLabel('Go to cell or range').fill(range);
+    await page.getByLabel('Go to cell or range').press('Enter');
+  }
+  for (const [a, v] of [
+    ['A1', 'Name'],
+    ['B1', 'Value'],
+    ['C1', 'Double'],
+    ['A2', 'West'],
+    ['B2', '20'],
+    ['C2', '=B2*2'],
+    ['A3', 'East'],
+    ['B3', '10'],
+    ['C3', '=B3*2'],
+    ['A4', 'East'],
+    ['B4', '10'],
+    ['C4', '=B4*2']
+  ])
+    await edit(a, v);
+  await saved(page);
+  await select('A1:C4');
+  await page.getByRole('button', { name: 'Data', exact: true }).click();
+  await page.getByRole('button', { name: 'Remove Duplicates', exact: true }).click();
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Remove duplicates', exact: true })
+    .click();
+  await saved(page);
+  await expect(page.getByRole('button', { name: 'A4: ', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Custom sort', exact: true }).click();
+  await page.getByLabel('My data has headers').check();
+  await page.getByRole('dialog').getByRole('button', { name: 'Apply', exact: true }).click();
+  await saved(page);
+  await expect(page.getByRole('button', { name: 'A2: East', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'C2: 20', exact: true })).toBeVisible();
+  await edit('D1', 'Ada,Lovelace');
+  await select('D1:D1');
+  await page.getByRole('button', { name: 'Text to Columns', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Apply', exact: true }).click();
+  await saved(page);
+  await expect(page.getByRole('button', { name: 'E1: Lovelace', exact: true })).toBeVisible();
 });

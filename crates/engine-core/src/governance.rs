@@ -102,6 +102,9 @@ pub enum GovernanceError {
     /// A `Deployed` was refused because the instrument has integrity violations.
     #[error("deploy refused: {} referential-integrity violation(s)", .0.len())]
     Integrity(Vec<IntegrityViolation>),
+    /// Worksheet protection prevents accidental edits; authors can explicitly unprotect.
+    #[error("worksheet protection: {0}")]
+    SheetProtection(String),
 }
 
 /// Whether `role` is permitted to perform `op` at all (capability matrix, docs/16
@@ -135,6 +138,7 @@ pub fn authorize(
         });
     }
     ops::validate_op(state, op)?;
+    check_sheet_protection(state, op)?;
     if matches!(op, EventPayload::Deployed { .. }) {
         let violations = validate_integrity(state);
         if !violations.is_empty() {
@@ -142,6 +146,76 @@ pub fn authorize(
         }
     }
     Ok(())
+}
+
+/// Checked at the same transaction/lock boundary as ordinary governance. Historical
+/// replay remains unchanged. This is an editing guard, not a password or access role.
+fn check_sheet_protection(state: &DocumentState, op: &EventPayload) -> Result<(), GovernanceError> {
+    use engine_shared::NodeId;
+    use EventPayload::*;
+    fn protected(state: &DocumentState, start: &NodeId) -> bool {
+        let mut id = Some(start);
+        // Existing validity guarantees a tree; the bound also makes corrupt input finite.
+        for _ in 0..=state.nodes.len() {
+            let Some(node) = id.and_then(|id| state.nodes.get(id)) else {
+                return false;
+            };
+            if node.current_fields["kind"] == "sheet"
+                && node.current_fields["sheet_protected"] == true
+            {
+                return true;
+            }
+            id = node.parent_id.as_ref();
+        }
+        true
+    }
+    if let FieldEdited {
+        node_id,
+        field,
+        value,
+    } = op
+    {
+        if field == "sheet_protected" {
+            let node = &state.nodes[node_id];
+            if node.node_type != "section"
+                || node.current_fields["kind"] != "sheet"
+                || !value.is_boolean()
+            {
+                return Err(GovernanceError::SheetProtection(
+                    "use a boolean protection flag on a worksheet".into(),
+                ));
+            }
+            return Ok(());
+        }
+    }
+    let blocked = match op {
+        NodeCreated { parent_id, .. } => parent_id.as_ref().is_some_and(|id| protected(state, id)),
+        NodeMoved {
+            node_id,
+            new_parent_id,
+            ..
+        } => {
+            protected(state, node_id)
+                || new_parent_id
+                    .as_ref()
+                    .is_some_and(|id| protected(state, id))
+        }
+        NodeDeleted { node_id }
+        | NodeRestored { node_id }
+        | FieldEdited { node_id, .. }
+        | RichTextPatched { node_id, .. }
+        | ChoiceAdded { node_id, .. }
+        | ChoiceRemoved { node_id, .. } => protected(state, node_id),
+        // Discussion and proposals remain possible; acceptance rechecks the wrapped op.
+        _ => false,
+    };
+    if blocked {
+        Err(GovernanceError::SheetProtection(
+            "unprotect the worksheet before editing it".into(),
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 /// Derive a proposal's lifecycle status from materialized state, if it exists.
@@ -186,7 +260,7 @@ pub fn plan_acceptance(
         .expect("authorize() confirmed the suggestion is pending, so it exists");
     let wrapped = ops::decode_wrapped_op(&suggestion.detail)?;
     // Re-validate the wrapped op against current state before it becomes canonical.
-    ops::validate_op(state, &wrapped)?;
+    authorize(role, &wrapped, state)?;
     Ok(wrapped)
 }
 
@@ -194,6 +268,7 @@ pub fn plan_acceptance(
 mod tests {
     use std::collections::{BTreeMap, HashSet};
 
+    use engine_shared::EventPayload::{FieldEdited, NodeCreated, NodeMoved};
     use engine_shared::{NodeId, NodeType};
     use serde_json::json;
 
@@ -239,6 +314,79 @@ mod tests {
             field: "title".into(),
             value: json!("x"),
         }
+    }
+
+    #[test]
+    fn protected_sheet_blocks_edits_moves_creates_and_acceptance_but_allows_discussion() {
+        let (events, wrapped) = proposed_field_edit();
+        let mut state = Materializer::fold(&events).unwrap();
+        // Turn the fixture root's child into a worksheet and create a row inside it.
+        let sheet = state.nodes.get_mut(&NodeId("01I".into())).unwrap();
+        sheet.node_type = "section".into();
+        sheet.current_fields = json!({"kind":"sheet", "sheet_protected":true});
+        let row = MaterializedNode {
+            id: NodeId("row".into()),
+            parent_id: Some(NodeId("01I".into())),
+            node_type: "item".into(),
+            pos: "0".into(),
+            current_fields: json!({}),
+            var_name: None,
+            deleted: false,
+        };
+        state.nodes.insert(row.id.clone(), row);
+        let edit = FieldEdited {
+            node_id: NodeId("row".into()),
+            field: "cell_0".into(),
+            value: json!(42),
+        };
+        let create = NodeCreated {
+            node_id: NodeId("new".into()),
+            node_type: NodeType::Item,
+            parent_id: Some(NodeId("01I".into())),
+            pos: "1".into(),
+            fields: json!({}),
+            var_name: None,
+        };
+        let move_out = NodeMoved {
+            node_id: NodeId("row".into()),
+            new_parent_id: Some(NodeId("01F".into())),
+            new_pos: "2".into(),
+        };
+        for op in [edit, create, move_out, wrapped] {
+            assert!(matches!(
+                authorize(Role::Author, &op, &state),
+                Err(GovernanceError::SheetProtection(_))
+            ));
+        }
+        assert!(matches!(
+            plan_acceptance(Role::Author, &state, "s1"),
+            Err(GovernanceError::SheetProtection(_))
+        ));
+        assert!(authorize(Role::Reviewer, &comment(), &state).is_ok());
+        let unlock = FieldEdited {
+            node_id: NodeId("01I".into()),
+            field: "sheet_protected".into(),
+            value: json!(false),
+        };
+        assert!(authorize(Role::Author, &unlock, &state).is_ok());
+        assert!(matches!(
+            authorize(Role::Reviewer, &unlock, &state),
+            Err(GovernanceError::Unauthorized { .. })
+        ));
+    }
+
+    #[test]
+    fn protection_flag_requires_a_worksheet_and_boolean() {
+        let state = form_state();
+        let op = FieldEdited {
+            node_id: NodeId("01F".into()),
+            field: "sheet_protected".into(),
+            value: json!("false"),
+        };
+        assert!(matches!(
+            authorize(Role::Author, &op, &state),
+            Err(GovernanceError::SheetProtection(_))
+        ));
     }
 
     #[test]

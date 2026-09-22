@@ -1,3 +1,7 @@
+import { readWorkbookCharts, readWorkbookNames } from './xlsx-charts';
+import type { SheetChart } from './sheet-analysis';
+import type { WorkbookName } from './workbook-names';
+import { pageSetup, type PageSetup } from './office';
 import ExcelJS from 'exceljs';
 import { readOfficeZip } from './bounded-zip';
 import {
@@ -9,6 +13,11 @@ import {
 } from './sheet-model';
 
 export interface ImportedSheet {
+  charts?: SheetChart[];
+  names?: WorkbookName[];
+  page?: PageSetup;
+  printArea?: string;
+  protected?: boolean;
   name: string;
   rows: string[][];
   formats?: CellFormat[][];
@@ -19,7 +28,7 @@ export interface ImportedSheet {
 
 /** Runs in a terminable worker in the browser; no workbook objects cross threads. */
 export async function readWorkbook(data: ArrayBuffer): Promise<ImportedSheet[]> {
-  readOfficeZip(new Uint8Array(data), () => true);
+  const parts = readOfficeZip(new Uint8Array(data), () => true);
   const book = new ExcelJS.Workbook();
   await book.xlsx.load(data);
   if (
@@ -27,7 +36,7 @@ export async function readWorkbook(data: ArrayBuffer): Promise<ImportedSheet[]> 
     book.worksheets.some((sheet) => sheet.columnCount > 100)
   )
     throw new Error('This workspace supports up to 3,000 rows and 100 columns per workbook.');
-  return book.worksheets.map((sheet) => {
+  return book.worksheets.map((sheet, index) => {
     const rows: string[][] = [],
       formats: CellFormat[][] = [],
       heights: number[] = [],
@@ -52,6 +61,23 @@ export async function readWorkbook(data: ArrayBuffer): Promise<ImportedSheet[]> 
     readConditionalFormats(sheet, formats);
     return {
       name: sheet.name,
+      charts: readWorkbookCharts(parts, sheet.name, index),
+      names: index === 0 ? readWorkbookNames(parts) : undefined,
+      page: pageSetup({
+        size: !sheet.pageSetup.paperSize
+          ? 'Letter'
+          : sheet.pageSetup.paperSize === 5
+            ? 'Legal'
+            : 'A4',
+        landscape: sheet.pageSetup.orientation === 'landscape',
+        margin: (sheet.pageSetup.margins?.top || 0.75) * 25.4,
+        header: sheet.headerFooter?.oddHeader || '',
+        footer: (sheet.headerFooter?.oddFooter || '').replace(/&P\s*\/\s*&N/g, ''),
+        pageNumbers: (sheet.headerFooter?.oddFooter || '').includes('&P')
+      }),
+      printArea: sheet.pageSetup.printArea,
+      protected: !!(sheet.model as unknown as { sheetProtection?: { sheet?: boolean } })
+        .sheetProtection?.sheet,
       rows,
       formats,
       heights,

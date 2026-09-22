@@ -9,6 +9,17 @@ owner-confirmed configuration and work that still needs acceptance. Live-service
 observations below are dated release records, not a new infrastructure audit
 performed while writing this file. No secrets are included.
 
+## Continuation: Office analysis and references
+
+The owner subsequently authorized broad Office implementation and a push to `main`.
+[Decision 007](decisions/007-office-analysis-and-references.md) and
+[release evidence](OFFICE-EXPANSION-RELEASE.md) supersede earlier local-only wording
+and the old charts/pivots/note-body deferrals. The new work adds the Excel reference
+UI, native supported charts, pivot summaries, named ranges, data tools, server-checked
+sheet protection, and Word note/contents editing. Full Office parity, native pivot
+caches and live per-page footnote layout remain unfinished. Publication and runtime
+status must be read from the release record, not inferred from a Git push.
+
 ## Continuation: web product operations
 
 The subsequent release `e73db39` is committed, pushed and live on Vercel and the VPS.

@@ -45,7 +45,7 @@ export interface DocxImport {
 }
 export function readDocx(bytes: Uint8Array): DocxImport {
   const parts = readOfficeZip(bytes, (name) =>
-    /^word\/(document\.xml|styles\.xml|numbering\.xml|comments\.xml|theme\/theme1\.xml|header\d+\.xml|footer\d+\.xml|_rels\/document\.xml\.rels|media\/[^/]+)$/.test(
+    /^word\/(document\.xml|styles\.xml|numbering\.xml|comments\.xml|footnotes\.xml|endnotes\.xml|theme\/theme1\.xml|header\d+\.xml|footer\d+\.xml|_rels\/document\.xml\.rels|media\/[^/]+)$/.test(
       name
     )
   );
@@ -81,6 +81,23 @@ export function readDocx(bytes: Uint8Array): DocxImport {
           .slice(0, 10000)
       }
     ])
+  );
+  const noteBodies = new Map(
+    ['footnote', 'endnote'].flatMap((kind) =>
+      children(parse(`word/${kind}s.xml`), kind)
+        .filter((n) => Number(attr(n, 'id')) > 0)
+        .map((n) => [
+          `${kind}:${attr(n, 'id')}`,
+          children(n, 'p')
+            .map((p) =>
+              descendants(p, 't')
+                .map((t) => t.textContent || '')
+                .join('')
+            )
+            .join('\n')
+            .slice(0, 10000)
+        ])
+    )
   );
   const activeComments = new Set<string>();
   const theme = parse('word/theme/theme1.xml');
@@ -323,12 +340,17 @@ export function readDocx(bytes: Uint8Array): DocxImport {
           break;
         }
         case 'footnoteReference':
-        case 'endnoteReference':
-          out.push({ type: 'text', text: `[${attr(n, 'id')}]`, marks: [{ type: 'superscript' }] });
+        case 'endnoteReference': {
+          const kind = n.localName === 'footnoteReference' ? 'footnote' : 'endnote';
+          out.push({
+            type: 'documentNote',
+            attrs: { id: ulid(), kind, body: noteBodies.get(`${kind}:${attr(n, 'id')}`) || '' }
+          });
           warnings.add(
-            'Footnote and endnote references are retained; their bodies remain in the original file.'
+            'Footnote and endnote bodies are imported as text. The browser shows them in the notes panel; DOCX export preserves native note references.'
           );
           break;
+        }
         case 'rPr':
         case 'pPr':
         case 'commentReference':

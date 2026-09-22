@@ -1,4 +1,73 @@
 <script lang="ts">
+  import {
+    DocumentNote,
+    DocumentContents,
+    documentNotes,
+    contentsEntries,
+    referencedHtml
+  } from '$lib/workspace/document-references';
+  import OfficeDialog, { type ToolDialog } from './OfficeDialog.svelte';
+  let referenceDialog = $state<ToolDialog | null>(null);
+  let notesOpen = $state(false);
+  const notes = $derived.by(() => {
+    void tick;
+    return editor ? documentNotes(editor.state.doc) : [];
+  });
+  function openReference(action: string, pos?: number) {
+    if (!editor) return;
+    if (action === 'notes') {
+      notesOpen = !notesOpen;
+      return;
+    }
+    if (!editable) return;
+    if (action === 'contents' || action === 'update-contents') {
+      const entries = contentsEntries(editor);
+      if (!entries.length) {
+        feedback = 'Apply heading styles before inserting a table of contents.';
+        return;
+      }
+      if (action === 'contents')
+        editor.chain().focus().insertContent({ type: 'tableOfContents', attrs: { entries } }).run();
+      else {
+        const tr = editor.state.tr;
+        editor.state.doc.descendants((node, p) => {
+          if (node.type.name === 'tableOfContents')
+            tr.setNodeMarkup(p, undefined, { ...node.attrs, entries });
+        });
+        editor.view.dispatch(tr);
+      }
+      return;
+    }
+    const existing = pos === undefined ? undefined : editor.state.doc.nodeAt(pos);
+    referenceDialog = {
+      title: existing ? 'Edit note' : `Insert ${action}`,
+      fields: [
+        {
+          key: 'body',
+          label: 'Note text',
+          type: 'textarea',
+          value: String(existing?.attrs.body || ''),
+          required: true
+        }
+      ],
+      submit: 'Save',
+      onSubmit: (v) => {
+        if (!editor) return;
+        const attrs = {
+          id: existing?.attrs.id || ulid(),
+          kind: existing?.attrs.kind || action,
+          body: v.body.slice(0, 10000)
+        };
+        if (pos !== undefined && existing) {
+          const current = documentNotes(editor.state.doc).find((n) => n.id === existing.attrs.id);
+          if (!current) throw new Error('This note was removed while the dialog was open.');
+          editor.view.dispatch(editor.state.tr.setNodeMarkup(current.pos, undefined, attrs));
+        } else editor.chain().focus().insertContent({ type: 'documentNote', attrs }).run();
+        notesOpen = true;
+      }
+    };
+  }
+
   import { LivePagination, PAGE_GAP, MM_TO_PX, type PageLayout } from '$lib/workspace/pagination';
   import OfficeRibbon from './OfficeRibbon.svelte';
   import PrintPreview from './PrintPreview.svelte';
@@ -347,6 +416,8 @@
           }
         }),
         PageBreak,
+        DocumentNote,
+        DocumentContents,
         SourceComment,
         TrackedChange.configure({ onNotice: (message) => (feedback = message) }),
         Superscript,
@@ -375,7 +446,8 @@
             'codeBlock',
             'taskList',
             'blockMath',
-            'pageBreak'
+            'pageBreak',
+            'tableOfContents'
           ],
           generateID: () => ulid()
         })
@@ -383,6 +455,33 @@
       content,
       editable,
       editorProps: {
+        handleClick: (_view, pos, event) => {
+          const target = event.target instanceof Element ? event.target : null;
+          const heading = target?.closest('[data-heading-id]')?.getAttribute('data-heading-id');
+          if (heading && editor) {
+            event.preventDefault();
+            editor.state.doc.descendants((node, p) => {
+              if (node.attrs.blockId === heading)
+                editor
+                  ?.chain()
+                  .focus()
+                  .setTextSelection(p + 1)
+                  .scrollIntoView()
+                  .run();
+            });
+            return true;
+          }
+          if (target?.closest('[data-document-note]')) {
+            const note = notes.find((n) => Math.abs(n.pos - pos) <= 1);
+            if (note) {
+              event.preventDefault();
+              notesOpen = true;
+              if (editable) openReference(note.kind, note.pos);
+              return true;
+            }
+          }
+          return false;
+        },
         handleDOMEvents: {
           contextmenu: (_view, event) => contextMenu(event),
           compositionstart: () => {
@@ -546,10 +645,21 @@
       linkOpen = true;
     }}
     onImage={() => (imageOpen = true)}
+    onReference={openReference}
     onMath={() => openMath()}
     onPrint={() => (preview = true)}
     onNotice={(message) => (feedback = message)}
   />
+  {#if notesOpen && notes.length}<aside class="reference-notes" aria-label="Document notes">
+      {#each notes as note}<button
+          onclick={() => {
+            editor?.chain().focus().setNodeSelection(note.pos).run();
+            if (editable) openReference(note.kind, note.pos);
+          }}
+          ><strong>{note.kind === 'footnote' ? 'Footnote' : 'Endnote'} {note.number}</strong>
+          {note.body}</button
+        >{/each}
+    </aside>{/if}
   {#if active('table') && editable}<div class="context-tools">
       <span>Table</span><button onclick={() => editor?.chain().focus().addRowAfter().run()}
         >Add row</button
@@ -731,14 +841,52 @@
 </dialog>
 
 {#if preview && editor}<PrintPreview
-    html={editor.getHTML()}
+    html={referencedHtml(editor)}
     {fonts}
     {documentId}
     {page}
     onClose={() => (preview = false)}
   />{/if}
 
+{#if referenceDialog}<OfficeDialog
+    config={referenceDialog}
+    onClose={() => (referenceDialog = null)}
+  />{/if}
+
 <style>
+  .reference-notes {
+    max-height: 150px;
+    overflow: auto;
+    background: #fff;
+    border-bottom: 1px solid #ddd;
+    padding: 8px 20px;
+  }
+  .reference-notes button {
+    display: block;
+    text-align: left;
+    border: 0;
+    background: transparent;
+    padding: 5px;
+    font-size: 12px;
+  }
+  :global(sup[data-document-note]) {
+    font-size: 0;
+    cursor: pointer;
+    color: #185abd;
+  }
+  :global(sup[data-document-note]::after) {
+    content: attr(data-note-number);
+    font-size: 10px;
+  }
+  :global(nav[data-contents]) {
+    border: 1px solid #ddd;
+    padding: 16px;
+  }
+  :global(nav[data-contents] strong) {
+    display: block;
+    margin-bottom: 10px;
+  }
+
   .paper :global([data-page-break]) {
     border-top: 2px dashed #7c9bc0;
     margin: 26px 0;

@@ -2,6 +2,17 @@
 
 Assessment date: 22 September 2026. This distinguishes executable functionality from the longer design documents. The old README's “feature-complete” description was too broad.
 
+## Continuation: Office analysis and references
+
+The owner subsequently authorized broad Office implementation and a push to `main`.
+[Decision 007](decisions/007-office-analysis-and-references.md) and
+[release evidence](OFFICE-EXPANSION-RELEASE.md) supersede earlier local-only wording
+and the old charts/pivots/note-body deferrals. The new work adds the Excel reference
+UI, native supported charts, pivot summaries, named ranges, data tools, server-checked
+sheet protection, and Word note/contents editing. Full Office parity, native pivot
+caches and live per-page footnote layout remain unfinished. Publication and runtime
+status must be read from the release record, not inferred from a Git push.
+
 ## What this project is for
 
 Dynodoc helps teams keep documents, spreadsheets and questionnaires together with an understandable record of changes. A paragraph, question, choice or spreadsheet row has a permanent identity. Edits are recorded as semantic events, attributed to their author and chained by hashes. Collaborators can work in personal drafts, compare with the team version, resolve overlapping edits, include selected changes and restore previous content without deleting history.

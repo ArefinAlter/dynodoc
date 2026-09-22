@@ -1,6 +1,8 @@
 # Editable Office workspace and standalone engine — 22 September 2026
 
-This records local implementation and verification. The application changes have
+This records the earlier local implementation and verification. The subsequent
+[Office expansion/main release](OFFICE-EXPANSION-RELEASE.md) supersedes its branch
+status and the charts/pivots/note-body gaps below. The application changes have
 not been deployed; they are on local branch `feat/editable-office-workspace`. The standalone engine is publicly published under MIT at
 https://github.com/ArefinAlter/dynodoc-engine; the application remains AGPL.
 

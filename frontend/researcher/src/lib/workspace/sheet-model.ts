@@ -9,6 +9,7 @@ import type { DocumentState, MaterializedNode } from '$lib/api/types';
 import { bounded, safeColor, safeFont } from './office';
 
 export interface CellFormat {
+  decimals?: number;
   conditional?: ConditionalRule[];
   bold?: boolean;
   italic?: boolean;
@@ -275,7 +276,8 @@ export function writeCell(cell: Cell, value: string, f: CellFormat) {
   else if (f.type === 'date' && Number.isFinite(Date.parse(value))) v = new Date(value);
   else if (f.type === 'boolean') v = value.toLowerCase() === 'true';
   else if (f.type !== 'text' && value.trim() && Number.isFinite(Number(value))) v = Number(value);
-  if (f.hyperlink && /^https?:\/\//i.test(f.hyperlink)) v = { text: value, hyperlink: f.hyperlink };
+  if (!value.startsWith('=') && f.hyperlink && /^(https?:\/\/|mailto:)/i.test(f.hyperlink))
+    v = { text: value, hyperlink: f.hyperlink };
   cell.value = v;
   cell.font = {
     bold: !!f.bold,
@@ -297,14 +299,16 @@ export function writeCell(cell: Cell, value: string, f: CellFormat) {
     vertical: ['top', 'middle', 'bottom'].includes(f.vertical || '') ? f.vertical : undefined,
     wrapText: !!f.wrap
   };
+  const decimal = Math.round(bounded(f.decimals, 0, 10, f.number === 'percent' ? 1 : 2));
+  const places = decimal ? '.' + '0'.repeat(decimal) : '';
   const numbers: Record<string, string> = {
-    decimal: '0.00',
-    percent: '0.0%',
-    currency: '$#,##0.00',
+    decimal: '0' + places,
+    percent: '0' + places + '%',
+    currency: '$#,##0' + places,
     date: 'yyyy-mm-dd',
     integer: '0',
-    thousands: '#,##0.00',
-    scientific: '0.00E+00',
+    thousands: '#,##0' + places,
+    scientific: '0' + places + 'E+00',
     text: '@'
   };
   cell.numFmt =

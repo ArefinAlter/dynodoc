@@ -43,7 +43,7 @@ test('long formatted passages save compact history and replay after reload', asy
   expect(oldReader.status()).toBe(409);
   expect((await oldReader.json()).error).toContain('reload this tab');
   const response = await page.request.get(`/api/engine/documents/${id}/events?limit=200`, {
-    headers: { 'x-dynodoc-editor': 'office-v3' }
+    headers: { 'x-dynodoc-editor': 'office-v4' }
   });
   expect(response.ok()).toBeTruthy();
   const events = await response.json();

@@ -1,7 +1,22 @@
 <script lang="ts">
   import PrintPreview from './PrintPreview.svelte';
-  import RibbonButton from './RibbonButton.svelte';
-  import { defaultPage } from '$lib/workspace/office';
+  import SheetRibbon from './SheetRibbon.svelte';
+  import SheetChart from './SheetChart.svelte';
+  import OfficeDialog, { type ToolDialog } from './OfficeDialog.svelte';
+  import { HyperFormula } from 'hyperformula';
+  import {
+    sortSheet,
+    sheetCharts,
+    workbookNames,
+    namedRangeOps,
+    checkRange,
+    pivotOps,
+    splitColumn,
+    removeDuplicateRows,
+    type SheetChart as SheetChartDefinition,
+    type PivotDefinition
+  } from '$lib/workspace/sheet-analysis';
+  import { defaultPage, pageSetup } from '$lib/workspace/office';
   import ContextMenu from '$lib/components/product/ContextMenu.svelte';
   import type { MenuAction } from '$lib/workspace/context-menu';
   import { sheetStructure, type SheetOperation } from '$lib/workspace/sheet-structure';
@@ -14,6 +29,7 @@
     validationError,
     conditionalStyle,
     type ConditionalRule,
+    type CellFormat,
     type SheetLayout
   } from '$lib/workspace/sheet-model';
   import {
@@ -22,41 +38,12 @@
     parseAddress,
     rangeAddress
   } from '$lib/workspace/sheet-operations';
-  import {
-    bounded,
-    safeColor,
-    safeFont,
-    officeFonts,
-    scriptFontStack
-  } from '$lib/workspace/office';
+  import { bounded, safeColor, safeFont, scriptFontStack } from '$lib/workspace/office';
   import '$lib/workspace/fonts.css';
   import { stableJson } from '$lib/workspace/equality';
   import { ulid } from 'ulid';
   import { tick } from 'svelte';
-  import {
-    Plus,
-    Undo2,
-    Redo2,
-    Bold,
-    Italic,
-    AlignLeft,
-    AlignCenter,
-    AlignRight,
-    Filter,
-    ArrowDownAZ,
-    ArrowUpAZ,
-    Search,
-    Trash2,
-    Printer,
-    Underline,
-    Strikethrough,
-    Grid2X2,
-    Merge,
-    Split,
-    ArrowDownToLine,
-    ArrowRightToLine,
-    PaintBucket
-  } from '@lucide/svelte';
+  import { Plus, Search, Trash2, LockKeyhole } from '@lucide/svelte';
   import type { DocumentState, EventPayload, MaterializedNode } from '$lib/api/types';
   import { rowsForSheet } from '$lib/workspace/files';
   import { between } from '$lib/workspace/changes';
@@ -72,7 +59,7 @@
   }
   let {
     documentState,
-    editable,
+    editable: canEdit,
     onChange,
     onSelect,
     onUndo,
@@ -82,6 +69,20 @@
   }: Props = $props();
   let printHtml = $state<string | null>(null);
   let grid: HTMLDivElement;
+  let preferencesReady = $state(false);
+  const preferenceKey = $derived(
+    'dynodoc:sheet:' +
+      Object.values(documentState.nodes).find((n) => n.type === 'form' && !n.deleted)?.id
+  );
+  $effect(() => {
+    if (preferencesReady && sheet) {
+      try {
+        localStorage.setItem(preferenceKey, sheet.id);
+      } catch {
+        /* Storage can be disabled. */
+      }
+    }
+  });
   let activeSheet = $state(''),
     selected = $state({ r: 0, c: 0 }),
     anchor = $state({ r: 0, c: 0 }),
@@ -102,6 +103,12 @@
     replacing = $state('');
   const calculator = new WorkbookCalculator();
   onMount(() => {
+    try {
+      activeSheet = localStorage.getItem(preferenceKey) || '';
+    } catch {
+      /* Storage can be disabled. */
+    }
+    preferencesReady = true;
     window.addEventListener('dynodoc-print', printSheet);
     return () => {
       calculator.destroy();
@@ -136,7 +143,7 @@
     )
   );
   const shownIndex = $derived(new Map(shown.map((n, i) => [n.id, i])));
-  const rowHeight = (n: MaterializedNode) => bounded(n.current_fields.row_height, 28, 160, 28);
+  const rowHeight = (n: MaterializedNode) => bounded(n.current_fields.row_height, 20, 160, 20);
   const offsets = $derived.by(() => {
     const result = [0];
     for (const n of shown) result.push(result.at(-1)! + rowHeight(n));
@@ -177,7 +184,7 @@
   const calculationInput = $derived(stableJson(workbookInput(documentState)));
   $effect(() => {
     try {
-      computed = calculator.calculate(JSON.parse(calculationInput));
+      computed = calculator.calculate(JSON.parse(calculationInput), names);
     } catch {
       computed = {};
     }
@@ -216,10 +223,10 @@
   }
   function left(c: number) {
     return (
-      46 +
+      32 +
       visibleColumns
         .filter((v) => v < c)
-        .reduce((sum, v) => sum + (layout.widths[String(v)] || 118), 0)
+        .reduce((sum, v) => sum + (layout.widths[String(v)] || 64), 0)
     );
   }
   function updateLayout(patch: Partial<SheetLayout>) {
@@ -252,7 +259,19 @@
       if (!sheet || filter || shown.length !== rows.length)
         throw new Error('Show all rows and clear the filter before merging cells.');
       const selectedRange = range();
-      onChange(mergeRange(documentState, sheet, selectedRange, split));
+      const ops = mergeRange(documentState, sheet, selectedRange, split);
+      if (!split)
+        ops.push({
+          type: 'FieldEdited',
+          node_id: shown[selectedRange.r1].id,
+          field: `format_${selectedRange.c1}`,
+          value: {
+            ...cellFormat(shown[selectedRange.r1], selectedRange.c1),
+            align: 'center',
+            vertical: 'middle'
+          }
+        });
+      onChange(ops);
       choose(selectedRange.r1, selectedRange.c1);
     });
   }
@@ -287,7 +306,20 @@
     ]);
   }
   function goToAddress() {
-    const x = parseAddress(address);
+    const named = names.find((n) => n.name.toLowerCase() === address.toLowerCase());
+    const reference = named?.expression.match(/^='((?:[^']|'')+)'!(.+)$/);
+    if (reference) {
+      const target = sheets.find(
+        (s) => s.current_fields.label === reference[1].replaceAll("''", "'")
+      );
+      if (target && target.id !== sheet?.id) {
+        activeSheet = target.id;
+        address = reference[2].replaceAll('$', '');
+        void tick().then(goToAddress);
+        return;
+      }
+    }
+    const x = parseAddress(reference ? reference[2].replaceAll('$', '') : address);
     if (!x || x.r2 >= rows.length || x.c2 >= columns) {
       error = 'Enter an existing cell or range, such as B2 or A1:C10.';
       return;
@@ -320,25 +352,6 @@
     }
     onChange(ops);
   }
-  function validation() {
-    const list = prompt('Allowed values, separated by commas. Leave empty to remove the rule.');
-    if (list === null) return;
-    if (list.length > 240 || list.includes('"')) {
-      error = 'Use up to 240 characters without quotation marks.';
-      return;
-    }
-    format({
-      validation: list
-        ? {
-            type: 'list',
-            allowBlank: true,
-            formulae: [`"${list}"`],
-            showErrorMessage: true,
-            error: 'Choose a value from the allowed list.'
-          }
-        : null
-    });
-  }
   function hideRows(hidden: boolean) {
     const x = range();
     onChange(
@@ -357,7 +370,7 @@
         type: 'FieldEdited',
         node_id: n.id,
         field: 'row_height',
-        value: bounded(height, 28, 160, 28)
+        value: bounded(height, 20, 160, 20)
       }))
     );
   }
@@ -374,18 +387,27 @@
     )
       return new Date(String(n.current_fields[`cell_${c}`])).toISOString().slice(0, 10);
     if (typeof result === 'number') {
+      const places = Math.max(0, Math.min(10, format.decimals ?? 2));
+      if (format.number === 'date')
+        return new Date((result - 25569) * 86400000).toISOString().slice(0, 10);
+      if (format.number === 'text') return String(result);
       if (format.number === 'percent' || (!format.number && format.numFmt?.includes('%')))
-        return (result * 100).toFixed(1) + '%';
+        return (result * 100).toFixed(format.decimals ?? 1) + '%';
       if (format.number === 'integer') return result.toFixed(0);
-      if (format.number === 'scientific') return result.toExponential(2);
+      if (format.number === 'scientific') return result.toExponential(places);
       if (format.number === 'thousands')
         return result.toLocaleString('en-US', {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2
+          minimumFractionDigits: places,
+          maximumFractionDigits: places
         });
-      if (format?.number === 'decimal') return result.toFixed(2);
+      if (format?.number === 'decimal') return result.toFixed(places);
       if (format?.number === 'currency')
-        return result.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+        return result.toLocaleString('en-US', {
+          style: 'currency',
+          currency: 'USD',
+          minimumFractionDigits: places,
+          maximumFractionDigits: places
+        });
     }
     return result === null || result === undefined
       ? String(n.current_fields[`cell_${c}`] ?? '')
@@ -422,14 +444,21 @@
       n.current_fields[`cell_${c}`];
     const f = conditionalStyle(value, cellFormat(n, c)),
       sticky = !printing && (r < frozen || c < layout.frozenColumns);
-    return `font-family:${safeFont(f.fontFamily)},${scriptFontStack};font-size:${bounded(f.fontSize, 6, 96, 11)}pt;font-weight:${f.bold ? '700' : '400'};font-style:${f.italic ? 'italic' : 'normal'};text-decoration:${[f.underline ? 'underline' : '', f.strike ? 'line-through' : ''].join(' ')};text-align:${['left', 'center', 'right'].includes(f.align || '') ? f.align : 'left'};vertical-align:${['top', 'middle', 'bottom'].includes(f.vertical || '') ? f.vertical : 'middle'};background:${safeColor(f.background, 'white')};color:${safeColor(f.color, '#303b47')};white-space:${f.wrap ? 'normal' : 'nowrap'};${f.border ? 'border:1px solid #718d7e;' : ''}${sticky ? `position:sticky;z-index:${r < frozen && c < layout.frozenColumns ? 5 : 4};${r < frozen ? `top:${28 + offsets[r]}px;` : ''}${c < layout.frozenColumns ? `left:${left(c)}px;` : ''}` : ''}`;
+    return `font-family:${safeFont(f.fontFamily)},${scriptFontStack};font-size:${bounded(f.fontSize, 6, 96, 11)}pt;font-weight:${f.bold ? '700' : '400'};font-style:${f.italic ? 'italic' : 'normal'};text-decoration:${[f.underline ? 'underline' : '', f.strike ? 'line-through' : ''].join(' ')};text-align:${['left', 'center', 'right'].includes(f.align || '') ? f.align : 'left'};vertical-align:${['top', 'middle', 'bottom'].includes(f.vertical || '') ? f.vertical : 'middle'};background:${safeColor(f.background, 'white')};color:${safeColor(f.color, '#303b47')};white-space:${f.wrap ? 'normal' : 'nowrap'};${f.border ? 'border:1px solid #718d7e;' : ''}${sticky ? `position:sticky;z-index:${r < frozen && c < layout.frozenColumns ? 5 : 4};${r < frozen ? `top:${20 + offsets[r]}px;` : ''}${c < layout.frozenColumns ? `left:${left(c)}px;` : ''}` : ''}`;
   }
   function printSheet() {
     // Generate all visible rows from state, never from the virtualized screen DOM.
     const table = document.createElement('table');
+    const area =
+      typeof sheet?.current_fields.print_area === 'string'
+        ? parseAddress(sheet.current_fields.print_area)
+        : null;
     for (let r = 0; r < shown.length; r++) {
+      const index = rowIndex.get(shown[r].id) ?? r;
+      if (area && (index < area.r1 || index > area.r2)) continue;
       const tr = table.insertRow();
       for (const c of visibleColumns) {
+        if (area && (c < area.c1 || c > area.c2)) continue;
         const merged = span(r, c);
         if (merged.hidden) continue;
         const td = tr.insertCell();
@@ -439,7 +468,21 @@
         td.setAttribute('style', style(shown[r], c, r, true) + ';white-space:pre-wrap');
       }
     }
-    printHtml = table.outerHTML;
+    const figures = [...grid.querySelectorAll('figure.chart')].map((figure, i) => {
+      const wrapper = document.createElement('section'),
+        title = document.createElement('h2');
+      title.textContent = charts[i]?.title || 'Chart';
+      wrapper.append(title);
+      const svg = figure.querySelector('svg')?.cloneNode(true) as SVGElement | undefined;
+      if (svg) {
+        svg.style.width = '100%';
+        svg.style.height = 'auto';
+        wrapper.append(svg);
+      }
+      wrapper.style.breakInside = 'avoid';
+      return wrapper.outerHTML;
+    });
+    printHtml = table.outerHTML + figures.join('');
   }
   function range() {
     return {
@@ -483,14 +526,19 @@
       }
     }
     if (!extend) anchor = { ...selected };
+    if (paintFormat && editable) {
+      format(paintFormat as Record<string, unknown>);
+      paintFormat = null;
+    }
     value = raw(selected.r, selected.c);
     onSelect?.(shown[selected.r]?.id || null);
     if (grid) {
-      const top = offsets[selected.r] || 0;
+      const scale = zoom / 100,
+        top = (offsets[selected.r] || 0) * scale;
       if (top < grid.scrollTop) grid.scrollTop = top;
-      else if (top + 56 > grid.scrollTop + grid.clientHeight)
-        grid.scrollTop = top + 56 - grid.clientHeight;
-      scrollTop = grid.scrollTop;
+      else if (top + 40 * scale > grid.scrollTop + grid.clientHeight)
+        grid.scrollTop = top + 40 * scale - grid.clientHeight;
+      scrollTop = grid.scrollTop / scale;
     }
   }
   async function edit(initial?: string) {
@@ -573,10 +621,31 @@
       fill(e.key === 'd' ? 'down' : 'right');
       return;
     }
-    if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+    if (editable && (e.ctrlKey || e.metaKey) && e.key === 'z') {
       e.preventDefault();
       if (e.shiftKey) onRedo();
       else onUndo();
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+      e.preventDefault();
+      anchor = { r: 0, c: 0 };
+      selected = { r: shown.length - 1, c: columns - 1 };
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+      e.preventDefault();
+      searchOpen = true;
+      return;
+    }
+    if (e.key === 'Home') {
+      e.preventDefault();
+      choose(e.ctrlKey ? 0 : selected.r, 0, e.shiftKey);
+      return;
+    }
+    if (e.key === 'End' && e.ctrlKey) {
+      e.preventDefault();
+      choose(shown.length - 1, columns - 1, e.shiftKey);
       return;
     }
     const moves: Record<string, [number, number]> = {
@@ -701,10 +770,10 @@
         node_type: 'section',
         parent_id: root.id,
         pos: between(sheets.at(-1)?.pos || ''),
-        fields: { label: name, kind: 'sheet', columns: 12 }
+        fields: { label: name, kind: 'sheet', columns: 30 }
       },
       ...Array.from(
-        { length: 30 },
+        { length: 100 },
         (_, i): EventPayload => ({
           type: 'NodeCreated',
           node_id: ulid(),
@@ -719,34 +788,11 @@
     choose(0, 0);
   }
   function sort(desc: boolean) {
-    if (!sheet) return;
-    if (layout.merges.length) {
-      error = 'Unmerge cells before sorting this sheet.';
-      return;
-    }
-    if (
-      Object.values(documentState.nodes).some((n) =>
-        Object.values(n.current_fields).some((v) => typeof v === 'string' && v.startsWith('='))
+    if (!sheet || !editable) return;
+    operation(() =>
+      onChange(
+        sortSheet(documentState, sheet, selected.c, desc, !!sheet.current_fields.table_range)
       )
-    ) {
-      error = 'Sorting formula rows is not supported yet. Make a values-only copy first.';
-      return;
-    }
-    const ordered = [...rows].sort(
-      (a, b) =>
-        String(a.current_fields[`cell_${selected.c}`] || '').localeCompare(
-          String(b.current_fields[`cell_${selected.c}`] || ''),
-          undefined,
-          { numeric: true }
-        ) * (desc ? -1 : 1)
-    );
-    onChange(
-      ordered.map((n, i) => ({
-        type: 'NodeMoved',
-        node_id: n.id,
-        new_parent_id: sheet.id,
-        new_pos: String(i).padStart(8, '0')
-      }))
     );
   }
   function removeRow() {
@@ -867,6 +913,16 @@
       items: [
         { label: 'Cut cells', action: () => menuClipboard('cut'), disabled: !editable },
         { label: 'Copy cells', action: () => menuClipboard('copy') },
+        ...(selectedFormat.hyperlink && /^(https?:\/\/|mailto:)/i.test(selectedFormat.hyperlink)
+          ? [
+              {
+                label: 'Open hyperlink',
+                action: () => {
+                  window.open(selectedFormat.hyperlink, '_blank', 'noopener,noreferrer');
+                }
+              }
+            ]
+          : []),
         { label: 'Paste cells', action: () => menuClipboard('paste'), disabled: !editable },
         ...(onComment
           ? [{ label: 'Add comment', action: () => onComment?.(), separator: true }]
@@ -925,249 +981,727 @@
       ]
     };
   }
+  let tool = $state<ToolDialog | null>(null),
+    searchOpen = $state(false),
+    zoom = $state(100),
+    gridlines = $state(true);
+  let paintFormat = $state<CellFormat | null>(null);
+  const protectedSheet = $derived(sheet?.current_fields.sheet_protected === true);
+  const editable = $derived(canEdit && !protectedSheet);
+  const charts = $derived(sheetCharts(sheet?.current_fields.charts));
+  const names = $derived(workbookNames(documentState));
+  const selectedFormat = $derived(
+    shown[selected.r] ? cellFormat(shown[selected.r], selected.c) : {}
+  );
+  const printPage = $derived(
+    pageSetup(sheet?.current_fields.page_setup || { ...defaultPage, landscape: true, margin: 15 })
+  );
+  const functionNames = HyperFormula.getRegisteredFunctionNames('enGB').sort();
+  function sheetField(field: string, value: unknown) {
+    if (sheet && canEdit) onChange([{ type: 'FieldEdited', node_id: sheet.id, field, value }]);
+  }
+  function updateChart(chart: SheetChartDefinition) {
+    if (editable)
+      sheetField(
+        'charts',
+        charts.map((c) => (c.id === chart.id ? chart : c))
+      );
+  }
+  function chartDialog(type = 'column', existing?: SheetChartDefinition) {
+    tool = {
+      title: existing ? 'Edit chart' : 'Insert chart',
+      submit: existing ? 'Update chart' : 'Insert chart',
+      fields: [
+        { key: 'title', label: 'Chart title', value: existing?.title || 'Chart', required: true },
+        {
+          key: 'range',
+          label: 'Chart data range',
+          value: existing?.range || rangeAddress(range()),
+          required: true
+        },
+        {
+          key: 'type',
+          label: 'Chart type',
+          type: 'select',
+          value: existing?.type || type,
+          options: ['column', 'bar', 'line', 'pie'].map((value) => ({
+            value,
+            label: value[0].toUpperCase() + value.slice(1)
+          }))
+        }
+      ],
+      note: 'The first row supplies series names; the first column supplies categories.',
+      onSubmit: (v) => {
+        if (!sheet) return;
+        const x = checkRange(documentState, sheet, v.range);
+        if (x.r2 <= x.r1 || x.c2 <= x.c1)
+          throw new Error('Select a header row, category column and numeric values.');
+        if (x.r2 - x.r1 > 200 || x.c2 - x.c1 > 8)
+          throw new Error('Charts support up to 200 categories and 8 series.');
+        if (!existing && charts.length >= 12) throw new Error('Use up to 12 charts per sheet.');
+        const chart: SheetChartDefinition = {
+          id: existing?.id || ulid(),
+          title: v.title,
+          type: v.type as SheetChartDefinition['type'],
+          range: rangeAddress(x),
+          x: existing?.x ?? 200,
+          y: existing?.y ?? 60,
+          width: existing?.width ?? 560,
+          height: existing?.height ?? 320
+        };
+        sheetField(
+          'charts',
+          existing ? charts.map((c) => (c.id === existing.id ? chart : c)) : [...charts, chart]
+        );
+      }
+    };
+  }
+  function refreshPivot() {
+    if (!sheet || !editable) return;
+    const def = sheet.current_fields.pivot_source as PivotDefinition | undefined;
+    const source = def && documentState.nodes[def.sheetId];
+    if (!def || !source || source.deleted) throw new Error('The source worksheet is unavailable.');
+    const result = pivotOps(
+      documentState,
+      def,
+      computed[String(source.current_fields.label || source.id)] || [],
+      sheet
+    );
+    onChange(result.ops);
+  }
+  function pivotDialog() {
+    const x = range();
+    const options = Array.from({ length: columns }, (_, i) => ({
+      value: String(i),
+      label: `${col(i)} · ${raw(x.r1, i) || 'Column ' + col(i)}`
+    }));
+    tool = {
+      title: 'Create PivotTable',
+      submit: 'Create PivotTable',
+      fields: [
+        { key: 'range', label: 'Pivot source range', value: rangeAddress(x), required: true },
+        { key: 'row', label: 'Rows field', type: 'select', value: String(x.c1), options },
+        {
+          key: 'column',
+          label: 'Columns field',
+          type: 'select',
+          value: '',
+          options: [{ value: '', label: 'None' }, ...options]
+        },
+        {
+          key: 'value',
+          label: 'Values field',
+          type: 'select',
+          value: String(Math.min(x.c1 + 1, columns - 1)),
+          options
+        },
+        {
+          key: 'aggregate',
+          label: 'Summarize values by',
+          type: 'select',
+          value: 'sum',
+          options: ['sum', 'count', 'average', 'min', 'max'].map((value) => ({
+            value,
+            label: value.toUpperCase()
+          }))
+        }
+      ],
+      note: 'Creates a worksheet from the source range. Use Data → Refresh PivotTable after source changes.',
+      onSubmit: (v) => {
+        if (!sheet) return;
+        checkRange(documentState, sheet, v.range);
+        const def: PivotDefinition = {
+          sheetId: sheet.id,
+          range: v.range,
+          row: Number(v.row),
+          column: v.column === '' ? null : Number(v.column),
+          value: Number(v.value),
+          aggregate: v.aggregate as PivotDefinition['aggregate']
+        };
+        const result = pivotOps(
+          documentState,
+          def,
+          computed[String(sheet.current_fields.label || sheet.id)] || []
+        );
+        onChange(result.ops);
+        activeSheet = result.id;
+        selected = { r: 0, c: 0 };
+        anchor = { r: 0, c: 0 };
+      }
+    };
+  }
+  function setStyle(name: string) {
+    const styles: Record<string, Partial<CellFormat>> = {
+      normal: { bold: false, background: '#ffffff', color: '#202124', border: false },
+      heading: { bold: true, background: '#107c41', color: '#ffffff' },
+      good: { background: '#c6efce', color: '#006100' },
+      bad: { background: '#ffc7ce', color: '#9c0006' },
+      input: { background: '#fff2cc', color: '#202124' },
+      total: { bold: true, border: true, background: '#e2f0d9', color: '#202124' }
+    };
+    format(styles[name] || styles.normal);
+  }
+  function asTable() {
+    if (!sheet || !editable) return;
+    const x = range(),
+      ops: EventPayload[] = [];
+    if ((x.r2 - x.r1 + 1) * (x.c2 - x.c1 + 1) > 4000)
+      throw new Error('Format up to 4,000 cells at a time.');
+    for (let r = x.r1; r <= x.r2; r++)
+      for (let c = x.c1; c <= x.c2; c++)
+        if (shown[r])
+          ops.push({
+            type: 'FieldEdited',
+            node_id: shown[r].id,
+            field: `format_${c}`,
+            value: {
+              ...cellFormat(shown[r], c),
+              background: r === x.r1 ? '#107c41' : (r - x.r1) % 2 ? '#e2f0d9' : '#ffffff',
+              color: r === x.r1 ? '#ffffff' : '#202124',
+              bold: r === x.r1
+            }
+          });
+    ops.push({
+      type: 'FieldEdited',
+      node_id: sheet.id,
+      field: 'table_range',
+      value: rangeAddress(x)
+    });
+    onChange(ops);
+  }
+  function ribbonAction(action: string, argument = '') {
+    operation(() => {
+      const viewActions = [
+        'copy',
+        'find',
+        'filter',
+        'formulas',
+        'hidden',
+        'gridlines',
+        'zoom-in',
+        'zoom-out',
+        'calculate',
+        'print',
+        'comment',
+        'protect'
+      ];
+      if (!editable && !viewActions.includes(action)) return;
+      if (
+        [
+          'chart',
+          'pivot',
+          'names',
+          'split',
+          'duplicates',
+          'table-style',
+          'print-area',
+          'sort-asc',
+          'sort-desc',
+          'sort'
+        ].includes(action) &&
+        (filter || shown.length !== rows.length)
+      )
+        throw new Error('Show all rows and clear the filter before using this range command.');
+      switch (action) {
+        case 'paste':
+        case 'cut':
+        case 'copy':
+          void menuClipboard(action);
+          break;
+        case 'undo':
+          onUndo();
+          break;
+        case 'redo':
+          onRedo();
+          break;
+        case 'fill-down':
+          fill('down');
+          break;
+        case 'fill-right':
+          fill('right');
+          break;
+        case 'merge':
+          merge();
+          break;
+        case 'unmerge':
+          merge(true);
+          break;
+        case 'clear':
+          clear();
+          break;
+        case 'conditional':
+          conditionalDialog.showModal();
+          break;
+        case 'new-sheet':
+          addSheet();
+          break;
+        case 'insert-row':
+          insert('row');
+          break;
+        case 'insert-column':
+          insert('column');
+          break;
+        case 'delete-row':
+          resize('row');
+          break;
+        case 'sort-asc':
+          sort(false);
+          break;
+        case 'sort-desc':
+          sort(true);
+          break;
+        case 'sum':
+          autoSum(argument);
+          break;
+        case 'filter':
+          filter = !filter;
+          searchOpen = filter;
+          break;
+        case 'find':
+          searchOpen = !searchOpen;
+          break;
+        case 'formulas':
+          showFormulas = !showFormulas;
+          break;
+        case 'hidden':
+          showHidden = !showHidden;
+          break;
+        case 'gridlines':
+          gridlines = !gridlines;
+          break;
+        case 'zoom-in':
+          zoom = Math.min(200, zoom + 10);
+          break;
+        case 'zoom-out':
+          zoom = Math.max(50, zoom - 10);
+          break;
+        case 'freeze-rows':
+          updateLayout({ frozenRows: Number(argument) });
+          break;
+        case 'freeze-columns':
+          updateLayout({ frozenColumns: Number(argument) });
+          break;
+        case 'print':
+          printSheet();
+          break;
+        case 'comment':
+          onComment?.();
+          break;
+        case 'calculate':
+          computed = calculator.calculate(JSON.parse(calculationInput), names);
+          break;
+        case 'chart':
+          chartDialog(argument);
+          break;
+        case 'pivot':
+          pivotDialog();
+          break;
+        case 'refresh-pivot':
+          refreshPivot();
+          break;
+        case 'format-painter':
+          paintFormat = JSON.parse(JSON.stringify(selectedFormat));
+          break;
+        case 'decimals':
+          format({
+            decimals: Math.max(0, Math.min(10, (selectedFormat.decimals ?? 2) + Number(argument))),
+            number:
+              selectedFormat.number === 'auto' ? 'decimal' : selectedFormat.number || 'decimal'
+          });
+          break;
+        case 'table-style':
+          asTable();
+          break;
+        case 'cell-style':
+          tool = {
+            title: 'Cell Styles',
+            fields: [
+              {
+                key: 'style',
+                label: 'Cell style',
+                type: 'select',
+                value: 'heading',
+                options: ['normal', 'heading', 'good', 'bad', 'input', 'total'].map((value) => ({
+                  value,
+                  label: value[0].toUpperCase() + value.slice(1)
+                }))
+              }
+            ],
+            onSubmit: (v) => setStyle(v.style)
+          };
+          break;
+        case 'sort':
+          tool = {
+            title: 'Sort worksheet',
+            fields: [
+              {
+                key: 'column',
+                label: 'Sort by column',
+                type: 'select',
+                value: String(selected.c),
+                options: Array.from({ length: columns }, (_, i) => ({
+                  value: String(i),
+                  label: col(i)
+                }))
+              },
+              {
+                key: 'order',
+                label: 'Sort order',
+                type: 'select',
+                value: 'ascending',
+                options: [
+                  { value: 'ascending', label: 'Smallest to largest' },
+                  { value: 'descending', label: 'Largest to smallest' }
+                ]
+              },
+              { key: 'header', label: 'My data has headers', type: 'checkbox', value: 'true' }
+            ],
+            onSubmit: (v) => {
+              if (sheet)
+                onChange(
+                  sortSheet(
+                    documentState,
+                    sheet,
+                    Number(v.column),
+                    v.order === 'descending',
+                    v.header === 'true'
+                  )
+                );
+            }
+          };
+          break;
+        case 'split':
+          tool = {
+            title: 'Text to Columns',
+            fields: [
+              {
+                key: 'delimiter',
+                label: 'Delimiter',
+                type: 'select',
+                value: ',',
+                options: [
+                  { value: ',', label: 'Comma' },
+                  { value: ';', label: 'Semicolon' },
+                  { value: '\t', label: 'Tab' },
+                  { value: ' ', label: 'Space' },
+                  { value: '|', label: 'Pipe' }
+                ]
+              }
+            ],
+            note: 'Splits the first selected column. Destination cells must be empty.',
+            onSubmit: (v) => {
+              if (!sheet) return;
+              if (filter || shown.length !== rows.length)
+                throw new Error('Show every row before splitting.');
+              onChange(splitColumn(documentState, sheet, range(), v.delimiter));
+            }
+          };
+          break;
+        case 'duplicates':
+          tool = {
+            title: 'Remove Duplicates',
+            submit: 'Remove duplicates',
+            fields: [
+              {
+                key: 'range',
+                label: 'Compare columns in range',
+                value: rangeAddress(range()),
+                required: true
+              },
+              { key: 'header', label: 'My data has headers', type: 'checkbox', value: 'true' }
+            ],
+            note: 'Removes duplicate whole rows, using the selected columns as the key. Undo restores removed rows.',
+            onSubmit: (v) => {
+              if (!sheet) return;
+              onChange(
+                removeDuplicateRows(
+                  documentState,
+                  sheet,
+                  checkRange(documentState, sheet, v.range),
+                  v.header === 'true'
+                )
+              );
+            }
+          };
+          break;
+        case 'function':
+          tool = {
+            title: 'Insert Function',
+            fields: [
+              { key: 'fn', label: 'Function', value: 'SUM', list: functionNames, required: true },
+              { key: 'args', label: 'Arguments', value: rangeAddress(range()) }
+            ],
+            onSubmit: (v) => {
+              const fn = v.fn.trim().toUpperCase();
+              if (!functionNames.includes(fn))
+                throw new Error('Choose a function supported by the calculation engine.');
+              void edit(`=${fn}(${v.args})`);
+            }
+          };
+          break;
+        case 'names':
+          tool = {
+            title: 'Name Manager',
+            fields: [
+              { key: 'name', label: 'Name', value: 'SelectedRange', required: true },
+              {
+                key: 'expression',
+                label: 'Refers to',
+                value: `='${String(sheet?.current_fields.label || '').replaceAll("'", "''")}'!$${col(range().c1)}$${range().r1 + 1}:$${col(range().c2)}$${range().r2 + 1}`,
+                required: true
+              }
+            ],
+            note: names.length
+              ? names.map((n) => `${n.name}: ${n.expression}`).join('\n')
+              : 'Workbook names can be used in formulas.',
+            onSubmit: (v) =>
+              onChange(namedRangeOps(documentState, v.name.trim(), v.expression.trim())),
+            actions: names.map((n) => ({
+              label: `Delete ${n.name}`,
+              run: () => onChange(namedRangeOps(documentState, n.name, ''))
+            }))
+          };
+          break;
+        case 'validation':
+          tool = {
+            title: 'Data Validation',
+            fields: [
+              {
+                key: 'type',
+                label: 'Allow',
+                type: 'select',
+                value: 'list',
+                options: [
+                  { value: 'list', label: 'List' },
+                  { value: 'whole', label: 'Whole number' },
+                  { value: 'decimal', label: 'Decimal' },
+                  { value: 'textLength', label: 'Text length' },
+                  { value: 'none', label: 'Any value' }
+                ]
+              },
+              { key: 'source', label: 'List values (comma separated)', value: '' },
+              { key: 'min', label: 'Minimum', type: 'number', value: '0', step: 'any' },
+              { key: 'max', label: 'Maximum', type: 'number', value: '100', step: 'any' },
+              { key: 'blank', label: 'Ignore blank', type: 'checkbox', value: 'true' }
+            ],
+            onSubmit: (v) => {
+              if (
+                v.type === 'list' &&
+                (!v.source || v.source.length > 240 || v.source.includes('"'))
+              )
+                throw new Error('Enter up to 240 characters without quotation marks.');
+              if (v.type !== 'list' && v.type !== 'none' && Number(v.max) < Number(v.min))
+                throw new Error('Maximum must not be less than minimum.');
+              format({
+                validation:
+                  v.type === 'none'
+                    ? null
+                    : {
+                        type: v.type,
+                        allowBlank: v.blank === 'true',
+                        operator: 'between',
+                        formulae:
+                          v.type === 'list' ? [`"${v.source}"`] : [Number(v.min), Number(v.max)],
+                        showErrorMessage: true,
+                        error: 'This value does not meet the cell validation rule.'
+                      }
+              });
+            }
+          };
+          break;
+        case 'note':
+          tool = {
+            title: 'Cell note',
+            fields: [
+              { key: 'note', label: 'Note', type: 'textarea', value: selectedFormat.note || '' }
+            ],
+            onSubmit: (v) => format({ note: v.note.slice(0, 5000) })
+          };
+          break;
+        case 'hyperlink':
+          tool = {
+            title: 'Insert hyperlink',
+            fields: [
+              {
+                key: 'url',
+                label: 'Link address',
+                value: selectedFormat.hyperlink || 'https://',
+                required: true
+              }
+            ],
+            onSubmit: (v) => {
+              if (!/^(https?:\/\/|mailto:)/i.test(v.url))
+                throw new Error('Use an https, http or mailto link.');
+              format({ hyperlink: v.url, color: '#0563c1', underline: true });
+            }
+          };
+          break;
+        case 'protect':
+          if (canEdit)
+            tool = {
+              title: protectedSheet ? 'Unprotect sheet' : 'Protect sheet',
+              submit: protectedSheet ? 'Unprotect' : 'Protect',
+              fields: [],
+              note: 'Prevents accidental worksheet edits until an editor unprotects it. Sharing permissions still control access.',
+              onSubmit: () => sheetField('sheet_protected', !protectedSheet)
+            };
+          break;
+        case 'dimensions':
+          tool = {
+            title: 'Cell dimensions',
+            fields: [
+              {
+                key: 'width',
+                label: 'Column width',
+                type: 'number',
+                value: String(layout.widths[String(selected.c)] || 64),
+                min: 40,
+                max: 500
+              },
+              {
+                key: 'height',
+                label: 'Row height',
+                type: 'number',
+                value: String(shown[selected.r] ? rowHeight(shown[selected.r]) : 20),
+                min: 20,
+                max: 160
+              }
+            ],
+            onSubmit: (v) => {
+              updateLayout({
+                widths: { ...layout.widths, [selected.c]: bounded(v.width, 40, 500, 64) }
+              });
+              sizeRows(Number(v.height));
+            },
+            actions: [
+              {
+                label: 'AutoFit column',
+                run: () => {
+                  const max = Math.max(...rows.map((n) => display(n, selected.c).length));
+                  updateLayout({
+                    widths: {
+                      ...layout.widths,
+                      [selected.c]: Math.min(500, Math.max(64, max * 8 + 14))
+                    }
+                  });
+                }
+              },
+              { label: 'Hide selected rows', run: () => hideRows(true) },
+              { label: 'Unhide rows', run: () => hideRows(false) },
+              {
+                label: 'Hide column',
+                run: () => updateLayout({ hiddenColumns: [...layout.hiddenColumns, selected.c] })
+              },
+              { label: 'Unhide columns', run: () => updateLayout({ hiddenColumns: [] }) }
+            ]
+          };
+          break;
+        case 'print-area':
+          sheetField('print_area', rangeAddress(range()));
+          break;
+        case 'clear-print-area':
+          sheetField('print_area', null);
+          break;
+        case 'page-setup':
+          tool = {
+            title: 'Sheet page setup',
+            fields: [
+              {
+                key: 'size',
+                label: 'Paper size',
+                type: 'select',
+                value: printPage.size,
+                options: ['A4', 'Letter', 'Legal'].map((value) => ({ value, label: value }))
+              },
+              {
+                key: 'orientation',
+                label: 'Orientation',
+                type: 'select',
+                value: printPage.landscape ? 'landscape' : 'portrait',
+                options: [
+                  { value: 'portrait', label: 'Portrait' },
+                  { value: 'landscape', label: 'Landscape' }
+                ]
+              },
+              {
+                key: 'margin',
+                label: 'Margins (mm)',
+                type: 'number',
+                min: 5,
+                max: 50,
+                value: String(printPage.margin)
+              },
+              { key: 'header', label: 'Header', value: printPage.header },
+              { key: 'footer', label: 'Footer', value: printPage.footer },
+              {
+                key: 'numbers',
+                label: 'Page numbers',
+                type: 'checkbox',
+                value: String(printPage.pageNumbers)
+              }
+            ],
+            onSubmit: (v) =>
+              sheetField(
+                'page_setup',
+                pageSetup({
+                  ...printPage,
+                  size: v.size,
+                  landscape: v.orientation === 'landscape',
+                  margin: Number(v.margin),
+                  header: v.header,
+                  footer: v.footer,
+                  pageNumbers: v.numbers === 'true'
+                })
+              )
+          };
+          break;
+      }
+    });
+  }
 </script>
 
 {#if printHtml !== null}<PrintPreview
     html={printHtml}
-    page={{
-      ...defaultPage,
-      landscape: true,
-      margin: 15,
-      header: String(sheet?.current_fields.label || '')
-    }}
+    page={printPage}
     description="Preview all visible rows in this sheet. Hidden and filtered rows are excluded."
     onClose={() => (printHtml = null)}
   />{/if}
 
 <div class="sheet-editor" role="region" aria-label="Spreadsheet editor">
-  <nav class="sheet-ribbon" aria-label="Spreadsheet ribbon">
-    {#each ['Home', 'Insert', 'Data', 'View'] as tab}<button
-        aria-pressed={ribbon === tab}
-        onclick={() => (ribbon = tab)}>{tab}</button
-      >{/each}
-  </nav>
-  {#if ribbon === 'Home'}<div class="extra-tools">
-      <label
-        >Font<select
-          aria-label="Cell font"
-          disabled={!editable}
-          onchange={(e) => format({ fontFamily: e.currentTarget.value })}
-          >{#each officeFonts as font}<option>{font}</option>{/each}</select
-        ></label
-      >
-      <label
-        >Size<input
-          aria-label="Cell font size"
-          type="number"
-          min="6"
-          max="96"
-          value="11"
-          disabled={!editable}
-          onchange={(e) => format({ fontSize: bounded(e.currentTarget.value, 6, 96, 11) })}
-        /></label
-      >
-      <RibbonButton
-        label="Underline"
-        icon={Underline}
-        disabled={!editable}
-        onclick={() => toggleFormat('underline')}
-      />
-      <RibbonButton
-        label="Strikethrough"
-        icon={Strikethrough}
-        disabled={!editable}
-        onclick={() => toggleFormat('strike')}
-      />
-      <RibbonButton
-        label="Borders"
-        icon={Grid2X2}
-        disabled={!editable}
-        onclick={() => toggleFormat('border')}
-      />
-      <RibbonButton label="Merge cells" icon={Merge} disabled={!editable} onclick={() => merge()} />
-      <RibbonButton label="Unmerge" icon={Split} disabled={!editable} onclick={() => merge(true)} />
-      <label
-        >Vertical<select
-          aria-label="Cell vertical alignment"
-          disabled={!editable}
-          onchange={(e) => format({ vertical: e.currentTarget.value })}
-          ><option value="middle">Middle</option><option value="top">Top</option><option
-            value="bottom">Bottom</option
-          ></select
-        ></label
-      >
-      <RibbonButton
-        label="Fill down"
-        icon={ArrowDownToLine}
-        disabled={!editable}
-        onclick={() => fill('down')}
-      />
-      <RibbonButton
-        label="Fill right"
-        icon={ArrowRightToLine}
-        disabled={!editable}
-        onclick={() => fill('right')}
-      />
-      <RibbonButton
-        label="Conditional formatting"
-        icon={PaintBucket}
-        large
-        disabled={!editable}
-        onclick={() => conditionalDialog.showModal()}
-      />
-    </div>{:else if ribbon === 'Insert'}<div class="extra-tools">
-      <button disabled={!editable} onclick={() => insert('row')}>Row above</button><button
-        disabled={!editable}
-        onclick={() => insert('row', true)}>Row below</button
-      ><button disabled={!editable} onclick={() => insert('column')}>Column left</button><button
-        disabled={!editable}
-        onclick={() => insert('column', true)}>Column right</button
-      ><button disabled={!editable} onclick={addSheet}>New sheet</button>{#if onComment}<button
-          onclick={onComment}>Comment</button
-        >{/if}<label
-        >Summary<select
-          aria-label="Insert summary formula"
-          disabled={!editable}
-          onchange={(e) => {
-            autoSum(e.currentTarget.value);
-            e.currentTarget.value = '';
-          }}
-          ><option value="">Choose function</option
-          >{#each ['SUM', 'AVERAGE', 'COUNT', 'MIN', 'MAX'] as fn}<option>{fn}</option
-            >{/each}</select
-        ></label
-      >
-    </div>
-  {:else if ribbon === 'Data'}<div class="extra-tools">
-      <button disabled={!editable} onclick={validation}>Data validation</button><label
-        >Replace with<input aria-label="Replace cell text with" bind:value={replacing} /></label
-      ><button disabled={!editable || !find} onclick={replaceCells}>Replace matching text</button
-      ><span>Uses Find below; formulas are excluded.</span>
-    </div>
-  {:else}<div class="extra-tools">
-      <label
-        >Freeze rows<select
-          aria-label="Freeze rows"
-          value={layout.frozenRows}
-          disabled={!editable}
-          onchange={(e) => updateLayout({ frozenRows: Number(e.currentTarget.value) })}
-          >{#each [0, 1, 2, 3, 5, 10] as n}<option value={n}>{n === 0 ? 'None' : n}</option
-            >{/each}</select
-        ></label
-      ><label
-        >Freeze columns<select
-          aria-label="Freeze columns"
-          value={layout.frozenColumns}
-          disabled={!editable}
-          onchange={(e) => updateLayout({ frozenColumns: Number(e.currentTarget.value) })}
-          >{#each [0, 1, 2, 3, 5] as n}<option value={n}>{n === 0 ? 'None' : n}</option
-            >{/each}</select
-        ></label
-      >
-      <label
-        >Column width<input
-          aria-label="Column width"
-          type="number"
-          min="40"
-          max="500"
-          value={layout.widths[String(selected.c)] || 118}
-          disabled={!editable}
-          onchange={(e) =>
-            updateLayout({
-              widths: {
-                ...layout.widths,
-                [selected.c]: bounded(e.currentTarget.value, 40, 500, 118)
-              }
-            })}
-        /></label
-      ><label
-        >Row height<input
-          aria-label="Row height"
-          type="number"
-          min="28"
-          max="160"
-          value={shown[selected.r] ? rowHeight(shown[selected.r]) : 28}
-          disabled={!editable}
-          onchange={(e) => sizeRows(Number(e.currentTarget.value))}
-        /></label
-      >
-      <button disabled={!editable} onclick={() => hideRows(true)}>Hide rows</button><button
-        disabled={!editable}
-        onclick={() => hideRows(false)}>Unhide rows</button
-      ><button
-        disabled={!editable}
-        onclick={() => updateLayout({ hiddenColumns: [...layout.hiddenColumns, selected.c] })}
-        >Hide column</button
-      ><button disabled={!editable} onclick={() => updateLayout({ hiddenColumns: [] })}
-        >Unhide columns</button
-      ><button aria-pressed={showHidden} onclick={() => (showHidden = !showHidden)}
-        >Show hidden data</button
-      ><button aria-pressed={showFormulas} onclick={() => (showFormulas = !showFormulas)}
-        >Show formulas</button
-      >
-    </div>{/if}
-  <div class="tools">
-    <button aria-label="Undo" onclick={onUndo} disabled={!editable}><Undo2 size={16} /></button
-    ><button aria-label="Redo" onclick={onRedo} disabled={!editable}><Redo2 size={16} /></button
-    ><button aria-label="Print spreadsheet" onclick={printSheet}><Printer size={16} /></button><i
-    ></i><select
-      aria-label="Number format"
-      disabled={!editable}
-      onchange={(e) => format({ number: e.currentTarget.value })}
-      ><option value="auto">Automatic</option><option value="decimal">Number · 0.00</option><option
-        value="percent">Percent · %</option
-      ><option value="currency">Currency · USD</option><option value="integer">Integer</option
-      ><option value="thousands">Thousands</option><option value="scientific">Scientific</option
-      ></select
-    ><i></i><button
-      aria-label="Bold cells"
-      disabled={!editable}
-      onclick={() => toggleFormat('bold')}><Bold size={16} /></button
-    ><button aria-label="Italic cells" disabled={!editable} onclick={() => toggleFormat('italic')}
-      ><Italic size={16} /></button
-    ><label title="Text color"
-      >A<input
-        type="color"
-        aria-label="Cell text color"
-        disabled={!editable}
-        onchange={(e) => format({ color: e.currentTarget.value })}
-      /></label
-    ><label title="Fill color" class="fill"
-      >▧<input
-        type="color"
-        aria-label="Cell fill color"
-        disabled={!editable}
-        value="#ffffff"
-        onchange={(e) => format({ background: e.currentTarget.value })}
-      /></label
-    ><i></i><button
-      aria-label="Align cells left"
-      disabled={!editable}
-      onclick={() => format({ align: 'left' })}><AlignLeft size={16} /></button
-    ><button
-      aria-label="Align cells center"
-      disabled={!editable}
-      onclick={() => format({ align: 'center' })}><AlignCenter size={16} /></button
-    ><button
-      aria-label="Align cells right"
-      disabled={!editable}
-      onclick={() => format({ align: 'right' })}><AlignRight size={16} /></button
-    ><button title="Wrap text" disabled={!editable} onclick={() => toggleFormat('wrap')}>↵</button
-    ><i></i><button aria-label="Sort ascending" disabled={!editable} onclick={() => sort(false)}
-      ><ArrowDownAZ size={16} /></button
-    ><button aria-label="Sort descending" disabled={!editable} onclick={() => sort(true)}
-      ><ArrowUpAZ size={16} /></button
-    ><button aria-label="Filter rows" aria-pressed={filter} onclick={() => (filter = !filter)}
-      ><Filter size={16} /></button
-    >
-    <div class="search">
-      <Search size={14} /><input
+  <SheetRibbon
+    bind:tab={ribbon}
+    {editable}
+    format={selectedFormat}
+    {layout}
+    onFormat={format}
+    onAction={ribbonAction}
+    {filter}
+    {showFormulas}
+    {gridlines}
+    {protectedSheet}
+    hasPivot={!!sheet?.current_fields.pivot_source}
+  />
+  {#if searchOpen}<div class="search-tools">
+      <Search size={15} /><input
         aria-label="Find cells"
         placeholder={filter ? 'Filter matching rows' : 'Find in sheet'}
         bind:value={find}
-      />
-    </div>
-  </div>
+      /><input
+        aria-label="Replace cell text with"
+        placeholder="Replace with"
+        bind:value={replacing}
+      /><button disabled={!editable || !find} onclick={replaceCells}>Replace matching text</button
+      ><button aria-label="Close find" onclick={() => (searchOpen = false)}>×</button>
+    </div>{/if}
+  {#if paintFormat}<div class="notice">
+      Select a cell to apply the copied formatting.<button onclick={() => (paintFormat = null)}
+        >Cancel</button
+      >
+    </div>{/if}
+  {#if protectedSheet}<div class="protection-notice">
+      <LockKeyhole size={13} />Protected sheet
+      <button disabled={!canEdit} onclick={() => ribbonAction('protect')}>Unprotect</button>
+    </div>{/if}
   <div class="formula">
     <input
       class="name-box"
@@ -1180,7 +1714,13 @@
           address = '';
         }
       }}
-    /><b>ƒx</b><input
+    /><button
+      class="fx"
+      aria-label="Insert function"
+      title="Insert function"
+      disabled={!editable}
+      onclick={() => ribbonAction('function')}>ƒx</button
+    ><input
       aria-label="Formula bar"
       value={editing ? value : raw(selected.r, selected.c)}
       disabled={!editable || !shown.length}
@@ -1206,116 +1746,135 @@
   {#if error}<div class="notice" role="alert">
       {error}<button onclick={() => (error = '')}>Dismiss</button>
     </div>{/if}
-  <div class="grid" bind:this={grid} onscroll={(e) => (scrollTop = e.currentTarget.scrollTop)}>
-    <table
-      role="grid"
-      tabindex="0"
-      aria-label={String(sheet?.current_fields.label || 'Sheet')}
-      aria-rowcount={rows.length + 1}
-      aria-colcount={columns + 1}
-      aria-activedescendant={`cell-${sheet?.id}-${shown[selected.r]?.id}-${selected.c}`}
-      onkeydown={key}
-      onpaste={paste}
-      oncopy={copy}
-    >
-      <colgroup
-        ><col style="width:46px" />{#each visibleColumns as c}<col
-            style={`width:${layout.widths[String(c)] || 118}px`}
-          />{/each}</colgroup
+  <div
+    class="grid"
+    class:no-gridlines={!gridlines}
+    bind:this={grid}
+    onscroll={(e) => (scrollTop = e.currentTarget.scrollTop / (zoom / 100))}
+  >
+    <div class="sheet-surface" style:zoom={`${zoom}%`}>
+      <table
+        role="grid"
+        tabindex="0"
+        aria-label={String(sheet?.current_fields.label || 'Sheet')}
+        aria-rowcount={rows.length + 1}
+        aria-colcount={columns + 1}
+        aria-activedescendant={`cell-${sheet?.id}-${shown[selected.r]?.id}-${selected.c}`}
+        onkeydown={key}
+        onpaste={paste}
+        oncopy={copy}
       >
-      <thead
-        ><tr
-          ><th class="corner"></th>{#each visibleColumns as c}<th
-              scope="col"
-              style={c < layout.frozenColumns ? `left:${left(c)}px;z-index:6` : ''}
-              class:chosen={c === selected.c}>{col(c)}</th
-            >{/each}</tr
-        ></thead
-      ><tbody>
-        {#each visible as { n, r }, i (n.id)}{#if i === frozen && renderStart > frozen}<tr
-              aria-hidden="true"
-              style={`height:${offsets[renderStart] - offsets[frozen]}px`}
-              ><td colspan={visibleColumns.length + 1}></td></tr
-            >{/if}<tr
-            aria-rowindex={(rowIndex.get(n.id) || 0) + 2}
-            style={`height:${rowHeight(n)}px`}
-          >
-            <th
-              scope="row"
-              class:chosen={r === selected.r}
-              style={r < frozen ? `top:${28 + offsets[r]}px;z-index:6` : ''}
-              >{(rowIndex.get(n.id) || 0) + 1}</th
+        <colgroup
+          ><col style="width:32px" />{#each visibleColumns as c}<col
+              style={`width:${layout.widths[String(c)] || 64}px`}
+            />{/each}</colgroup
+        >
+        <thead
+          ><tr
+            ><th class="corner"></th>{#each visibleColumns as c}<th
+                scope="col"
+                style={c < layout.frozenColumns ? `left:${left(c)}px;z-index:6` : ''}
+                class:chosen={c === selected.c}>{col(c)}</th
+              >{/each}</tr
+          ></thead
+        ><tbody>
+          {#each visible as { n, r }, i (n.id)}{#if i === frozen && renderStart > frozen}<tr
+                aria-hidden="true"
+                style={`height:${offsets[renderStart] - offsets[frozen]}px`}
+                ><td colspan={visibleColumns.length + 1}></td></tr
+              >{/if}<tr
+              aria-rowindex={(rowIndex.get(n.id) || 0) + 2}
+              style={`height:${rowHeight(n)}px`}
             >
-            {#each visibleColumns as c}{@const merged = span(r, c)}{#if !merged.hidden}<td
-                  role="gridcell"
-                  id={`cell-${sheet?.id}-${n.id}-${c}`}
-                  aria-colindex={c + 2}
-                  aria-selected={inRange(r, c)}
-                  rowspan={merged.rows}
-                  colspan={merged.columns}
-                  class:selected={r === selected.r && c === selected.c}
-                  class:range={inRange(r, c)}
-                  class:match={find &&
-                    !filter &&
-                    String(n.current_fields[`cell_${c}`] || '')
-                      .toLowerCase()
-                      .includes(find.toLowerCase())}
-                  style={style(n, c, r)}
-                  ><button
-                    class="cell"
-                    tabindex="-1"
-                    style={`height:${rowHeight(n) * merged.rows - 1}px;max-height:${rowHeight(n) * merged.rows - 1}px`}
-                    title={cellFormat(n, c).note || ''}
-                    aria-label={`${col(c)}${r + 1}: ${display(n, c)}`}
-                    onmousedown={(e) => {
-                      if (e.button !== 0) return;
-                      e.preventDefault();
-                      choose(r, c, e.shiftKey);
-                      (e.currentTarget.closest('table') as HTMLElement)?.focus();
-                    }}
-                    oncontextmenu={(e) => openCellMenu(e, r, c)}
-                    ondblclick={() => void edit()}>{display(n, c)}</button
-                  >{#if editing && r === selected.r && c === selected.c}<input
-                      class="cell-entry"
-                      aria-label={`Edit ${col(c)}${r + 1}`}
-                      bind:value
-                      onblur={commit}
-                      onkeydown={(e) => {
-                        if (e.isComposing || e.keyCode === 229) return;
-                        if (e.key === 'Enter' || e.key === 'Tab') {
-                          e.preventDefault();
-                          commit();
-                          choose(r + (e.key === 'Enter' ? 1 : 0), c + (e.key === 'Tab' ? 1 : 0));
-                          (e.currentTarget.closest('table') as HTMLElement)?.focus();
-                        }
-                        if (e.key === 'Escape') {
-                          editing = false;
-                        }
+              <th
+                scope="row"
+                class:chosen={r === selected.r}
+                style={r < frozen ? `top:${20 + offsets[r]}px;z-index:6` : ''}
+                >{(rowIndex.get(n.id) || 0) + 1}</th
+              >
+              {#each visibleColumns as c}{@const merged = span(r, c)}{#if !merged.hidden}<td
+                    role="gridcell"
+                    id={`cell-${sheet?.id}-${n.id}-${c}`}
+                    aria-colindex={c + 2}
+                    aria-selected={inRange(r, c)}
+                    rowspan={merged.rows}
+                    colspan={merged.columns}
+                    class:selected={r === selected.r && c === selected.c}
+                    class:range={inRange(r, c)}
+                    class:match={find &&
+                      !filter &&
+                      String(n.current_fields[`cell_${c}`] || '')
+                        .toLowerCase()
+                        .includes(find.toLowerCase())}
+                    style={style(n, c, r)}
+                    ><button
+                      class="cell"
+                      tabindex="-1"
+                      style={`height:${rowHeight(n) * merged.rows - 1}px;max-height:${rowHeight(n) * merged.rows - 1}px`}
+                      title={cellFormat(n, c).note || ''}
+                      aria-label={`${col(c)}${r + 1}: ${display(n, c)}`}
+                      onmousedown={(e) => {
+                        if (e.button !== 0) return;
+                        e.preventDefault();
+                        choose(r, c, e.shiftKey);
+                        (e.currentTarget.closest('table') as HTMLElement)?.focus();
                       }}
-                    />{/if}</td
-                >{/if}{/each}</tr
-          >{/each}{#if shown.length > start + 65}<tr
-            aria-hidden="true"
-            style={`height:${offsets[shown.length] - offsets[start + 65]}px`}
-            ><td colspan={columns + 1}></td></tr
-          >{/if}</tbody
-      >
-    </table>
-    <div class="add-rows">
-      <button disabled={!editable || rows.length >= 3000} onclick={() => addRows(20)}
-        >Add 20 rows</button
-      ><button
-        disabled={!editable || columns >= 100}
-        onclick={() =>
-          sheet &&
-          onChange([
-            { type: 'FieldEdited', node_id: sheet.id, field: 'columns', value: columns + 1 }
-          ])}>Add column</button
-      ><button disabled={!editable || !shown.length} onclick={removeRow}
-        ><Trash2 size={12} /> Delete selected row</button
-      ><button disabled={!editable || columns <= 1} onclick={() => resize('column')}
-        >Delete selected column</button
-      >
+                      oncontextmenu={(e) => openCellMenu(e, r, c)}
+                      ondblclick={() => void edit()}>{display(n, c)}</button
+                    >{#if editing && r === selected.r && c === selected.c}<input
+                        class="cell-entry"
+                        aria-label={`Edit ${col(c)}${r + 1}`}
+                        bind:value
+                        onblur={commit}
+                        onkeydown={(e) => {
+                          if (e.isComposing || e.keyCode === 229) return;
+                          if (e.key === 'Enter' || e.key === 'Tab') {
+                            e.preventDefault();
+                            commit();
+                            choose(r + (e.key === 'Enter' ? 1 : 0), c + (e.key === 'Tab' ? 1 : 0));
+                            (e.currentTarget.closest('table') as HTMLElement)?.focus();
+                          }
+                          if (e.key === 'Escape') {
+                            editing = false;
+                          }
+                        }}
+                      />{/if}</td
+                  >{/if}{/each}</tr
+            >{/each}{#if shown.length > start + 65}<tr
+              aria-hidden="true"
+              style={`height:${offsets[shown.length] - offsets[start + 65]}px`}
+              ><td colspan={columns + 1}></td></tr
+            >{/if}</tbody
+        >
+      </table>
+      {#each charts as chart (chart.id)}<SheetChart
+          {chart}
+          values={computed[String(sheet?.current_fields.label || sheet?.id)] || []}
+          {editable}
+          onChange={updateChart}
+          onEdit={() => chartDialog(chart.type, chart)}
+          onRemove={() =>
+            sheetField(
+              'charts',
+              charts.filter((c) => c.id !== chart.id)
+            )}
+        />{/each}
+      <div class="add-rows">
+        <button disabled={!editable || rows.length >= 3000} onclick={() => addRows(20)}
+          >Add 20 rows</button
+        ><button
+          disabled={!editable || columns >= 100}
+          onclick={() =>
+            sheet &&
+            onChange([
+              { type: 'FieldEdited', node_id: sheet.id, field: 'columns', value: columns + 1 }
+            ])}>Add column</button
+        ><button disabled={!editable || !shown.length} onclick={removeRow}
+          ><Trash2 size={12} /> Delete selected row</button
+        ><button disabled={!editable || columns <= 1} onclick={() => resize('column')}
+          >Delete selected column</button
+        >
+      </div>
     </div>
   </div>
   <div class="sheet-tabs">
@@ -1362,10 +1921,25 @@
       ><option value="left">Move left</option><option value="right">Move right</option><option
         value="delete">Delete</option
       ></select
-    ><span aria-live="polite">{summary} · {shown.length} rows · {columns} columns</span>
+    >
+  </div>
+  <div class="sheet-status" role="status" aria-label="Workbook status">
+    <span>{editing ? 'Enter' : protectedSheet ? 'Protected' : 'Ready'}</span><span
+      class="selection-summary">{summary}</span
+    ><button aria-label="Zoom out" onclick={() => ribbonAction('zoom-out')}>−</button><input
+      aria-label="Sheet zoom"
+      type="range"
+      min="50"
+      max="200"
+      step="10"
+      bind:value={zoom}
+    /><button aria-label="Zoom in" onclick={() => ribbonAction('zoom-in')}>+</button><span
+      >{zoom}%</span
+    >
   </div>
 </div>
 
+{#if tool}<OfficeDialog config={tool} onClose={() => (tool = null)} />{/if}
 {#if context}<ContextMenu
     {...context}
     onClose={() => {
@@ -1476,66 +2050,6 @@
   dialog button {
     cursor: pointer;
   }
-  .sheet-ribbon {
-    display: flex;
-    padding: 0 14px;
-    background: #edf6f0;
-    border-bottom: 1px solid #c5dbcd;
-  }
-  .sheet-ribbon button {
-    padding: 10px 18px;
-    border: 0;
-    border-bottom: 3px solid transparent;
-    background: none;
-    color: #255841;
-    font: 14px Arial;
-    cursor: pointer;
-  }
-  .sheet-ribbon button[aria-pressed='true'] {
-    border-bottom-color: #107c41;
-    font-weight: 600;
-  }
-  .extra-tools {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: end;
-    gap: 8px;
-    padding: 10px 16px;
-    background: #f3f8f4;
-    color: #255841;
-    font: 13px Arial;
-  }
-  .extra-tools label {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    font-size: 12px;
-  }
-  .extra-tools input,
-  .extra-tools select,
-  .extra-tools button {
-    border: 1px solid #aac9b7;
-    background: white;
-    border-radius: 4px;
-    padding: 7px;
-    min-height: 34px;
-    font: inherit;
-    color: inherit;
-  }
-  .extra-tools input {
-    max-width: 150px;
-  }
-  .extra-tools input[type='number'] {
-    max-width: 75px;
-  }
-  .extra-tools button {
-    cursor: pointer;
-  }
-  .extra-tools button:disabled,
-  .extra-tools select:disabled,
-  .extra-tools input:disabled {
-    opacity: 0.5;
-  }
   .formula input.name-box {
     width: 110px;
     flex: 0 0 110px;
@@ -1559,13 +2073,6 @@
     outline: 2px solid #256a44;
     outline-offset: -2px;
   }
-  @media print {
-    .sheet-ribbon,
-    .extra-tools {
-      display: none;
-    }
-  }
-
   .sheet-tabs select {
     padding: 7px;
     border: 1px solid #b6d0c1;
@@ -1588,80 +2095,6 @@
     overflow: hidden;
     color: #354455;
   }
-  .tools {
-    display: flex;
-    align-items: center;
-    gap: 3px;
-    padding: 7px 14px;
-    background: #edf6f0;
-    border-radius: 8px;
-    margin: 0 12px;
-    flex-wrap: wrap;
-  }
-  .tools button,
-  .sheet-tabs button {
-    display: grid;
-    place-items: center;
-    min-width: 28px;
-    height: 28px;
-    border: 0;
-    background: none;
-    color: #5c7064;
-    border-radius: 4px;
-    cursor: pointer;
-  }
-  .tools button:hover,
-  .tools button[aria-pressed='true'] {
-    background: #d7eddf;
-  }
-  .tools button:disabled {
-    opacity: 0.4;
-  }
-  .tools i {
-    height: 19px;
-    width: 1px;
-    background: #d3e0d8;
-    margin: 0 7px;
-  }
-  .tools select {
-    border: 0;
-    background: none;
-    color: #5a6f62;
-    font-size: 13px;
-    max-width: 130px;
-  }
-  .tools label {
-    position: relative;
-    display: grid;
-    place-items: center;
-    width: 26px;
-    height: 26px;
-    border-bottom: 3px solid #345d48;
-  }
-  .tools label input {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    opacity: 0;
-    cursor: pointer;
-  }
-  .tools .fill {
-    border-color: #e6be64;
-  }
-  .search {
-    margin-left: auto;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    color: #46617a;
-  }
-  .search input {
-    background: none;
-    border: 0;
-    font-size: 13px;
-    outline: 0;
-    max-width: 130px;
-  }
   .formula {
     display: flex;
     align-items: center;
@@ -1669,7 +2102,7 @@
     border-bottom: 1px solid #d7dfe7;
     margin-top: 6px;
   }
-  .formula b {
+  .formula .fx {
     font: italic 17px Georgia;
     color: #46617a;
     padding: 0 15px;
@@ -1809,6 +2242,10 @@
     overflow: auto;
   }
   .sheet-tabs button {
+    border: 0;
+    border-right: 1px solid #ddd;
+    background: transparent;
+    cursor: pointer;
     display: block;
     white-space: nowrap;
     font-size: 13px;
@@ -1818,12 +2255,7 @@
     background: #d8ebe0;
     color: #2d6948;
   }
-  .sheet-tabs span {
-    margin-left: auto;
-    white-space: nowrap;
-    font-size: 13px;
-    color: #46617a;
-  }
+
   .notice {
     padding: 9px 20px;
     background: #fff7e4;
@@ -1838,7 +2270,6 @@
     text-decoration: underline;
   }
   @media print {
-    .tools,
     .formula,
     .sheet-tabs,
     .add-rows {
@@ -1848,5 +2279,173 @@
       max-height: none;
       overflow: visible;
     }
+  }
+
+  .sheet-surface {
+    position: relative;
+    min-width: 100%;
+    min-height: 100%;
+  }
+  .sheet-editor {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: #f3f3f3;
+    color: #242424;
+  }
+  .formula {
+    margin: 0 7px 5px;
+    height: 30px;
+    border: 1px solid #d3d3d3;
+    border-radius: 3px;
+    background: white;
+    flex-shrink: 0;
+  }
+  .formula .fx {
+    border: 0;
+    background: white;
+    padding: 0 13px;
+    cursor: pointer;
+  }
+  .formula input.name-box {
+    flex-basis: 95px;
+    width: 95px;
+    color: #242424;
+  }
+  .grid {
+    max-height: none;
+    min-height: 100px;
+    background: white;
+  }
+  .grid th {
+    height: 20px;
+    min-width: 64px;
+    padding: 0 3px;
+    background: #efefef;
+    color: #333;
+    font-size: 11px;
+    border-color: #d4d4d4;
+  }
+  .grid tbody th,
+  .grid .corner {
+    width: 32px;
+    min-width: 32px;
+    background: #efefef;
+  }
+  .grid th.chosen {
+    background: #e0e0e0;
+    color: #107c41;
+  }
+  .grid td {
+    height: 20px;
+    min-width: 64px;
+    width: 64px;
+    max-width: 64px;
+    border-color: #dedede;
+  }
+  .cell {
+    min-height: 19px;
+    padding: 0 4px;
+    font-family: Arial, sans-serif;
+    line-height: 1.1;
+  }
+  .no-gridlines td {
+    border-color: transparent;
+  }
+  .sheet-tabs {
+    min-height: 30px;
+    padding: 0 12px;
+    gap: 3px;
+    background: #f2f2f2;
+  }
+  .sheet-tabs button {
+    height: 29px;
+    border-radius: 0;
+    padding: 4px 12px;
+    color: #242424;
+    font-size: 12px;
+  }
+  .sheet-tabs button.active {
+    background: white;
+    border-bottom: 2px solid #107c41;
+    font-weight: 600;
+    color: #107c41;
+  }
+  .sheet-tabs select {
+    margin-left: auto;
+    padding: 3px;
+    font-size: 11px;
+    max-width: 110px;
+    background: transparent;
+    border-color: transparent;
+  }
+  .add-rows {
+    padding: 12px 32px;
+    gap: 8px;
+  }
+  .add-rows button {
+    font-size: 11px;
+    padding: 4px 8px;
+    background: white;
+    color: #444;
+  }
+  .sheet-status {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 24px;
+    padding: 0 10px;
+    background: #f3f3f3;
+    border-top: 1px solid #ddd;
+    font-size: 11px;
+    flex-shrink: 0;
+  }
+  .selection-summary {
+    margin-left: auto;
+  }
+  .sheet-status button {
+    border: 0;
+    background: none;
+    color: #333;
+    cursor: pointer;
+  }
+  .sheet-status input {
+    width: 100px;
+    height: 16px;
+    accent-color: #666;
+  }
+  .search-tools {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 12px;
+    background: #f6f6f6;
+    flex-wrap: wrap;
+  }
+  .search-tools input,
+  .search-tools button {
+    border: 1px solid #bbb;
+    padding: 5px;
+    font:
+      12px 'Segoe UI',
+      Arial,
+      sans-serif;
+    background: white;
+    color: #333;
+    border-radius: 3px;
+  }
+  .protection-notice {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 12px;
+    font-size: 12px;
+    background: #fff2cc;
+    color: #654d00;
+  }
+  .protection-notice button {
+    margin-left: auto;
+    border: 0;
+    background: none;
+    text-decoration: underline;
+    cursor: pointer;
   }
 </style>

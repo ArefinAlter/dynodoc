@@ -1,3 +1,4 @@
+import { workbookNames } from './workbook-names';
 import { HyperFormula } from 'hyperformula';
 import type { DocumentState, EventPayload, MaterializedNode } from '$lib/api/types';
 import { rowsForSheet } from './files';
@@ -26,7 +27,11 @@ export function fillRange(
     ops: EventPayload[] = [];
   if ((range.r2 - range.r1 + 1) * (range.c2 - range.c1 + 1) > 2000)
     throw new Error('Fill up to 2,000 cells at a time.');
-  const hf = HyperFormula.buildFromSheets(workbookInput(state), { licenseKey: 'gpl-v3' });
+  const hf = HyperFormula.buildFromSheets(
+    workbookInput(state),
+    { licenseKey: 'gpl-v3' },
+    workbookNames(state)
+  );
   try {
     const id = hf.getSheetId(String(sheet.current_fields.label || sheet.id))!;
     for (let r = range.r1; r <= range.r2; r++)

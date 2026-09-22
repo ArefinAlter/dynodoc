@@ -9,11 +9,24 @@ export async function writeDocx(state: DocumentState, title: string): Promise<Bl
   const root = live.find((n) => n.type === 'form');
   const page = pageSetup(root?.current_fields.page_setup),
     [width, height] = pageDimensions(page);
+  const footnotes: Record<string, { children: w.Paragraph[] }> = {},
+    endnotes: Record<string, { children: w.Paragraph[] }> = {};
+  let noteId = 1;
   const comments: w.ICommentOptions[] = [];
   let revisionId = 0,
     listId = 0;
   const numbering: w.INumberingOptions['config'][number][] = [];
   function runs(block: TextBlock): w.ParagraphChild[] {
+    if (block.type === 'documentNote') {
+      const id = noteId++,
+        kind = block.attrs?.kind === 'endnote' ? 'endnote' : 'footnote';
+      (kind === 'footnote' ? footnotes : endnotes)[String(id)] = {
+        children: String(block.attrs?.body || '')
+          .split('\n')
+          .map((text) => new w.Paragraph(text))
+      };
+      return [kind === 'footnote' ? new w.FootnoteReferenceRun(id) : new w.EndnoteReferenceRun(id)];
+    }
     if (block.type === 'hardBreak') return [new w.TextRun({ break: 1 })];
     if (block.type === 'inlineMath' || block.type === 'blockMath')
       return [new w.TextRun({ text: String(block.attrs?.latex || ''), font: 'Cambria Math' })];
@@ -222,7 +235,7 @@ export async function writeDocx(state: DocumentState, title: string): Promise<Bl
       (n) => n.type === 'form' || (n.type === 'section' && n.current_fields.kind === 'document_tab')
     )
     .sort((a, b) => (a.type === 'form' ? -1 : b.type === 'form' ? 1 : a.pos.localeCompare(b.pos)));
-  const children: (w.Paragraph | w.Table)[] = [];
+  const children: (w.Paragraph | w.Table | w.TableOfContents)[] = [];
   for (const tab of tabs) {
     if (tab.type !== 'form')
       children.push(
@@ -235,6 +248,23 @@ export async function writeDocx(state: DocumentState, title: string): Promise<Bl
     for (const n of live
       .filter((n) => n.type === 'item' && n.parent_id === tab.id)
       .sort((a, b) => a.pos.localeCompare(b.pos))) {
+      const source = n.current_fields.content as TextBlock | undefined;
+      if (source?.type === 'tableOfContents') {
+        children.push(
+          new w.TableOfContents('Contents', {
+            hyperlink: true,
+            headingStyleRange: '1-3',
+            beginDirty: true,
+            contentChildren: [
+              new w.Paragraph('Contents'),
+              ...(Array.isArray(source.attrs?.entries) ? source.attrs.entries : []).map(
+                (entry: { text: string }) => new w.Paragraph(String(entry.text))
+              )
+            ]
+          })
+        );
+        continue;
+      }
       const content = blocks(
         (n.current_fields.content as TextBlock) || {
           type: 'paragraph',
@@ -259,6 +289,8 @@ export async function writeDocx(state: DocumentState, title: string): Promise<Bl
   const doc = new w.Document({
     title,
     creator: 'Dynodoc',
+    footnotes,
+    endnotes,
     numbering: { config: numbering },
     comments: { children: comments },
     sections: [

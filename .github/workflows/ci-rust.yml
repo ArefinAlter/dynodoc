@@ -40,6 +40,8 @@ jobs:
           --health-timeout 3s
           --health-retries 10
     env:
+      # Avoid concurrent database creation during the existing 100 ms SSE assertion.
+      RUST_TEST_THREADS: 1
       DATABASE_URL: postgres://dynodoc:dynodoc@127.0.0.1:5432/dynodoc
     steps:
       - uses: actions/checkout@v4

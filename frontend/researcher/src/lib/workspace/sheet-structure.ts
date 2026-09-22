@@ -1,3 +1,5 @@
+import { rebaseSheetMetadata } from './sheet-references';
+import { workbookNames } from './workbook-names';
 import { HyperFormula } from 'hyperformula';
 import { workbookInput, sheetLayout } from './sheet-model';
 import { ulid } from 'ulid';
@@ -44,7 +46,11 @@ export function sheetStructure(
     throw new Error('A sheet supports up to 100 columns.');
   if (action === 'delete-column' && width <= 1) throw new Error('Keep at least one column.');
   if (action === 'delete-row' && rows.length <= 1) throw new Error('Keep at least one row.');
-  const hf = HyperFormula.buildFromSheets(workbookInput(state), { licenseKey: 'gpl-v3' });
+  const hf = HyperFormula.buildFromSheets(
+    workbookInput(state),
+    { licenseKey: 'gpl-v3' },
+    workbookNames(state)
+  );
   const ids = new Map(
     sheets.map((s) => [s.id, hf.getSheetId(String(s.current_fields.label || s.id))!])
   );
@@ -186,6 +192,28 @@ export function sheetStructure(
         .filter((m) => m.fromRow && m.toRow);
       ops.push({ type: 'FieldEdited', node_id: targetId, field: 'sheet_layout', value: layout });
     }
+    if (['insert-row', 'delete-row', 'insert-column', 'delete-column'].includes(action))
+      ops.push(
+        ...rebaseSheetMetadata(
+          state,
+          targetId,
+          action.endsWith('row') ? 'row' : 'column',
+          index,
+          action.startsWith('insert') ? 1 : -1
+        )
+      );
+    const root = Object.values(state.nodes).find((n) => !n.deleted && n.type === 'form');
+    if (root && workbookNames(state).length)
+      ops.push({
+        type: 'FieldEdited',
+        node_id: root.id,
+        field: 'named_ranges',
+        value: hf
+          .getAllNamedExpressionsSerialized()
+          .map(({ name, expression }) => ({ name, expression }))
+      });
+    if (ops.length > 5000)
+      throw new Error('This operation changes more than 5,000 fields. Use a smaller workbook.');
     return ops;
   } finally {
     hf.destroy();

@@ -61,6 +61,7 @@
     onLink,
     onImage,
     onMath,
+    onReference,
     fonts = officeFonts,
     paginated = $bindable(true)
   }: {
@@ -80,6 +81,7 @@
     onLink: () => void;
     onImage: () => void;
     onMath: () => void;
+    onReference: (action: string) => void;
     fonts?: string[];
     paginated?: boolean;
   } = $props();
@@ -135,7 +137,7 @@
       if (!['trackedChange', 'sourceComment'].includes(name)) chain.unsetMark(name);
     chain.clearNodes().run();
   }
-  const tabs = ['Home', 'Insert', 'Layout', 'Review', 'View'];
+  const tabs = ['Home', 'Insert', 'Layout', 'References', 'Review', 'View'];
   let rows = $state(3),
     columns = $state(3),
     outline = $state(false),
@@ -679,6 +681,39 @@
             >{/each}</select
         ></label
       >
+    </div>
+  {:else if tab === 'References'}
+    <div class="group">
+      <div class="stack">
+        <RibbonButton
+          icon={ListTree}
+          label="Insert table of contents"
+          disabled={!editable}
+          onclick={() => onReference('contents')}
+        /><RibbonButton
+          icon={Redo2}
+          label="Update table of contents"
+          disabled={!editable}
+          onclick={() => onReference('update-contents')}
+        />
+      </div>
+      <span>Table of Contents</span>
+    </div>
+    <div class="group">
+      <div class="stack">
+        <RibbonButton
+          icon={FileText}
+          label="Insert footnote"
+          disabled={!editable}
+          onclick={() => onReference('footnote')}
+        /><RibbonButton
+          icon={FileText}
+          label="Insert endnote"
+          disabled={!editable}
+          onclick={() => onReference('endnote')}
+        /><RibbonButton icon={List} label="Show notes" onclick={() => onReference('notes')} />
+      </div>
+      <span>Footnotes</span>
     </div>
   {:else if tab === 'Review'}
     <div class="group">

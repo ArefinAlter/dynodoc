@@ -34,8 +34,12 @@
       'Native style inheritance, common run formatting, paragraph direction, lists, table spans, supported embedded images, text revisions and imported comments. Original files and conversion notes are retained.'
     ],
     [
+      'References',
+      'Editable footnote/endnote text, note navigation, and a heading-based table of contents with manual refresh. DOCX uses native note references and a TOC field. Browser note bodies appear in a panel and at the end of print output; per-page footnote placement and rich note formatting remain incomplete.'
+    ],
+    [
       'Advanced Word features',
-      'Floating layouts, native equation round trips, footnote/endnote bodies, mail merge, citations, full section layout, tracked moves and formatting revisions remain incomplete.'
+      'Floating layouts, native equation round trips, mail merge, citations, full section layout, tracked moves and formatting revisions remain incomplete.'
     ]
   ];
   const sheets = [
@@ -57,11 +61,19 @@
     ],
     [
       'XLSX exchange',
-      'Values and formulas, numeric/date/text types, common formatting, notes, validation metadata, merged ranges, widths/heights and freeze settings. XLSX conversion runs in a cancellable browser worker.'
+      'Values and formulas, numeric/date/text types, common formatting, notes, validation metadata, merged ranges, widths/heights, freeze settings, named ranges, supported charts and print settings. XLSX conversion runs in a cancellable browser worker.'
+    ],
+    [
+      'Analysis',
+      'Column, bar, line and pie charts with live data, movable/resizable charts, and rectangular same-sheet native XLSX chart exchange. Pivot summaries support row/column groups, sum/count/average/min/max and explicit refresh; XLSX exports the results as cells. Workbook names, relative-formula sorting, Text to Columns and duplicate removal are available.'
+    ],
+    [
+      'Protection and printing',
+      'Whole-sheet editing protection is checked by the engine; authors can unprotect it. This is not password security or a protected-range permission model. Print areas, paper/orientation/margins and XLSX sheet protection are supported.'
     ],
     [
       'Advanced Excel features',
-      'Pivot tables, native chart authoring, VBA/macros, external data connections, advanced conditional formatting and complete Excel function parity remain incomplete.'
+      'Native pivot caches, structured table references, password/range protection, VBA/macros, external data connections, advanced conditional formatting and complete Excel function parity remain incomplete.'
     ],
     [
       'Current limits',

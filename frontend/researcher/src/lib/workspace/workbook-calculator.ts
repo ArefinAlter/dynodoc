@@ -6,14 +6,16 @@ type Input = Record<string, (string | number | boolean)[][]>;
 export class WorkbookCalculator {
   private engine?: HyperFormula;
   private previous: Input = {};
-  calculate(input: Input) {
+  private names = '';
+  calculate(input: Input, names: { name: string; expression: string }[] = []) {
     const shape = (data: Input) =>
       Object.entries(data)
         .map(([k, v]) => `${k}:${v.length}:${v[0]?.length || 0}`)
         .join('|');
-    if (!this.engine || shape(input) !== shape(this.previous)) {
+    const serializedNames = JSON.stringify(names);
+    if (!this.engine || shape(input) !== shape(this.previous) || serializedNames !== this.names) {
       this.destroy();
-      this.engine = HyperFormula.buildFromSheets(input, { licenseKey: 'gpl-v3' });
+      this.engine = HyperFormula.buildFromSheets(input, { licenseKey: 'gpl-v3' }, names);
     } else {
       const engine = this.engine;
       engine.batch(() => {
@@ -29,6 +31,7 @@ export class WorkbookCalculator {
       });
     }
     this.previous = input;
+    this.names = serializedNames;
     return Object.fromEntries(
       Object.keys(input).map((name) => [
         name,
@@ -40,5 +43,6 @@ export class WorkbookCalculator {
     this.engine?.destroy();
     this.engine = undefined;
     this.previous = {};
+    this.names = '';
   }
 }

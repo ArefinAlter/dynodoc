@@ -161,9 +161,11 @@ impl From<GovernanceError> for ApiError {
             GovernanceError::Op(op) => ApiError::from(op),
             // A deploy refused on referential-integrity violations conflicts with the
             // current (broken) instrument state.
-            GovernanceError::Integrity(_) => ApiError::Conflict {
-                reason: err.to_string(),
-            },
+            GovernanceError::Integrity(_) | GovernanceError::SheetProtection(_) => {
+                ApiError::Conflict {
+                    reason: err.to_string(),
+                }
+            }
         }
     }
 }

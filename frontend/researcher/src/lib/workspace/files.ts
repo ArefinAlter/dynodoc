@@ -1,6 +1,5 @@
 import Papa from 'papaparse';
 import type { ImportedSheet } from './xlsx-import';
-import { writeCell, sheetLayout, cellFormat } from './sheet-model';
 import { ulid } from 'ulid';
 import type { EventPayload, DocumentState } from '$lib/api/types';
 import type { Kind } from './api';
@@ -78,12 +77,19 @@ export async function importFile(file: File, signal?: AbortSignal): Promise<Impo
         sheets.push(...(await readWorkbook(buffer)));
       }
       warnings.push(
-        'Values, formulas, common cell formats, notes, validation rules, merged cells, widths and frozen panes are imported. Numeric cell-value conditional formatting is imported. Charts, macros, pivot tables, formula-based conditional formatting and external data connections are not reproduced. Review theme colors, custom number formats and formulas; the original remains available.'
+        'Values, formulas, common cell formats, notes, validation rules, merged cells, widths and frozen panes are imported. Numeric cell-value conditional formatting is imported. Rectangular same-sheet column, bar, line and pie charts and workbook names are imported. Other charts, macros, native pivot definitions, formula-based conditional formatting and external data connections are not reproduced. Review theme colors, custom number formats and formulas; the original remains available.'
       );
     }
     const { importXlsForm } = await import('./research-files');
     const form = importXlsForm(sheets, file.name);
     if (form) return form;
+    if (sheets[0]?.names?.length)
+      ops.push({
+        type: 'FieldEdited',
+        node_id: rootId,
+        field: 'named_ranges',
+        value: sheets[0].names
+      });
     const total = sheets.reduce((sum, s) => sum + s.rows.length, 0);
     if (total > 3000)
       throw new Error(
@@ -102,6 +108,9 @@ export async function importFile(file: File, signal?: AbortSignal): Promise<Impo
         fields: {
           label: sheet.name,
           kind: 'sheet',
+          charts: sheet.charts || [],
+          page_setup: sheet.page,
+          print_area: sheet.printArea || '',
           columns: Math.max(12, ...sheet.rows.map((r) => r.length))
         }
       });
@@ -133,6 +142,8 @@ export async function importFile(file: File, signal?: AbortSignal): Promise<Impo
             }
           };
       }
+      if (sheet.protected)
+        ops.push({ type: 'FieldEdited', node_id: sheetId, field: 'sheet_protected', value: true });
     }
     return { kind: 'spreadsheet', ops, warnings, filename: file.name, rootId };
   }
@@ -208,53 +219,14 @@ export async function exportSpreadsheet(
     );
     return;
   }
-  const { default: ExcelJS } = await import('exceljs');
-  const book = new ExcelJS.Workbook();
-  sheets.forEach((s, i) => {
-    const label = String(s.current_fields.label || `Sheet ${i + 1}`)
-      .replace(/[\\/*?:[\]]/g, '')
-      .slice(0, 25);
-    let worksheet;
-    try {
-      worksheet = book.addWorksheet(label);
-    } catch {
-      worksheet = book.addWorksheet(`Sheet ${i + 1}`);
-    }
-    const rows = rowsForSheet(state, s.id),
-      layout = sheetLayout(s.current_fields.sheet_layout);
-    rows.forEach((row, r) => {
-      const count = Math.min(100, Number(s.current_fields.columns) || 12);
-      for (let c = 0; c < count; c++)
-        writeCell(
-          worksheet.getCell(r + 1, c + 1),
-          String(row.current_fields[`cell_${c}`] ?? ''),
-          cellFormat(row, c)
-        );
-      if (row.current_fields.row_height)
-        worksheet.getRow(r + 1).height = (Number(row.current_fields.row_height) * 3) / 4;
-      worksheet.getRow(r + 1).hidden = row.current_fields.hidden === true;
-    });
-    for (let c = 0; c < (Number(s.current_fields.columns) || 12); c++) {
-      worksheet.getColumn(c + 1).width = ((layout.widths[String(c)] || 118) - 5) / 7;
-      worksheet.getColumn(c + 1).hidden = layout.hiddenColumns.includes(c);
-    }
-    if (layout.frozenRows || layout.frozenColumns)
-      worksheet.views = [
-        { state: 'frozen', xSplit: layout.frozenColumns, ySplit: layout.frozenRows }
-      ];
-    for (const merge of layout.merges) {
-      const from = rows.findIndex((r) => r.id === merge.fromRow),
-        to = rows.findIndex((r) => r.id === merge.toRow);
-      if (from >= 0 && to >= from)
-        worksheet.mergeCells(from + 1, merge.fromCol + 1, to + 1, merge.toCol + 1);
-    }
-  });
+  const { writeWorkbook } = await import('./xlsx-export');
   download(
-    (await book.xlsx.writeBuffer()) as ArrayBuffer,
+    await writeWorkbook(state),
     name + '.xlsx',
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
   );
 }
+
 export async function exportDocument(state: DocumentState, name: string) {
   const { writeDocx } = await import('./docx-export');
   download(

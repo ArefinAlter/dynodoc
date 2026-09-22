@@ -16,7 +16,7 @@ const proxy: RequestHandler = async ({ request, url, cookies, params }) => {
   if (
     params.path.startsWith('documents/') &&
     !originalDownload &&
-    request.headers.get('x-dynodoc-editor') !== 'office-v3'
+    request.headers.get('x-dynodoc-editor') !== 'office-v4'
   )
     return json(
       {

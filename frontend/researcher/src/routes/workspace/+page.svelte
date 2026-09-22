@@ -198,9 +198,9 @@
           node_type: 'section',
           parent_id: root,
           pos: '00000000',
-          fields: { label: 'Sheet 1', kind: 'sheet', columns: 12 }
+          fields: { label: 'Sheet 1', kind: 'sheet', columns: 30 }
         });
-        for (let i = 0; i < 30; i++) ops.push(itemOp(sheet, i, {}));
+        for (let i = 0; i < 100; i++) ops.push(itemOp(sheet, i, {}));
       }
       await saveBatch(doc.id, ops, 0);
       await goto(`/documents/${doc.id}`);
@@ -301,7 +301,7 @@
 <svelte:head
   ><title>Your workspace · Dynodoc</title><meta name="robots" content="noindex" /></svelte:head
 >
-<div class="workspace">
+<div class="workspace" class:spreadsheet-home={filter === 'spreadsheet'}>
   <header class="app-title">
     <a href="https://dynodoc.online"
       ><img src="/brand/mark.svg?v=2" alt="" width="21" height="21" />Dynodoc</a
@@ -560,6 +560,10 @@
   </div>{/if}
 
 <style>
+  .spreadsheet-home {
+    --workspace-accent: #107c41;
+  }
+
   .workspace {
     min-height: 100dvh;
     background: #f5f5f5;
@@ -579,7 +583,7 @@
   }
   button:focus-visible,
   a:focus-visible {
-    outline: 2px solid #185abd;
+    outline: 2px solid var(--workspace-accent, #185abd);
     outline-offset: 3px;
   }
   .app-title {
@@ -638,8 +642,8 @@
     width: 100%;
   }
   .sidebar button.active {
-    border-left-color: #185abd;
-    color: #185abd;
+    border-left-color: var(--workspace-accent, #185abd);
+    color: var(--workspace-accent, #185abd);
   }
   .sidebar button:hover {
     background: #e4e4e4;
@@ -707,7 +711,7 @@
     height: 92px;
     background: white;
     border: 1px solid #c9c9c9;
-    color: #185abd;
+    color: var(--workspace-accent, #185abd);
   }
   .template-paper.workbook {
     color: #107c41;
@@ -751,8 +755,8 @@
     background: white;
   }
   .filters button.active {
-    background: #185abd;
-    border-color: #185abd;
+    background: var(--workspace-accent, #185abd);
+    border-color: var(--workspace-accent, #185abd);
     color: white;
   }
   .search {
@@ -774,7 +778,7 @@
     font-size: 12px;
   }
   .search:focus-within {
-    outline: 2px solid #185abd;
+    outline: 2px solid var(--workspace-accent, #185abd);
   }
   kbd {
     color: #666;
@@ -843,7 +847,7 @@
     flex-wrap: nowrap;
   }
   .doc-icon {
-    color: #185abd;
+    color: var(--workspace-accent, #185abd);
     flex-shrink: 0;
     display: flex;
   }
@@ -915,7 +919,7 @@
   }
   .empty button {
     border: 1px solid #b7c9e3;
-    color: #185abd;
+    color: var(--workspace-accent, #185abd);
     padding: 8px 12px;
     background: white;
     border-radius: 3px;
@@ -934,7 +938,7 @@
     background: transparent;
   }
   .progress {
-    color: #185abd;
+    color: var(--workspace-accent, #185abd);
   }
   .modal-backdrop {
     position: fixed;
