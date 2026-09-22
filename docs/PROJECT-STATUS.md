@@ -11,7 +11,8 @@ and the old charts/pivots/note-body deferrals. The new work adds the Excel refer
 UI, native supported charts, pivot summaries, named ranges, data tools, server-checked
 sheet protection, and Word note/contents editing. Full Office parity, native pivot
 caches and live per-page footnote layout remain unfinished. Publication and runtime
-status is recorded in the release record: `a413c20` is pushed to main and deployed
+status is recorded in the release record: `b0ab062` (including the `a413c20` UI
+release and the immediate stream acknowledgement) is pushed to main and deployed
 to the VPS workspace on 22 September, with passing frontend/authenticated/Rust CI
 and live synthetic browser checks. The MIT engine is published independently.
 

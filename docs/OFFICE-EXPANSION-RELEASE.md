@@ -37,7 +37,7 @@ Full Microsoft Office parity is not complete.
 
 - Frontend: all 121 unit tests pass in release CI. ESLint and full Prettier checks pass; Svelte/TypeScript reports zero errors and warnings. Production build passes.
 - Browser: all 33 scenarios pass across the broad production-build run (31 passes) and the focused final rerun (3 passes, one overlapping). The final rerun verifies the relocated print command, duplicate removal on Svelte state, named formulas, charts, actual pivot refresh, protection and reload. Other coverage includes concurrent edits, live page geometry, undo/identity, imports, permissions, drafts, recovery and accessibility.
-- Standalone engine: all 174 tests pass in [independent CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/35700632086), with Rust formatting, strict Clippy, build, documentation and OpenAPI consistency for engine commit `e2a719d`. This includes protection ordering during snapshot restoration/merge; its two changed files are byte-identical in the app. All 16 SQL migration files remain byte-identical between repositories.
+- Standalone engine: all 174 tests pass in [independent CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/35702827311), with Rust formatting, strict Clippy, build, documentation and OpenAPI consistency for engine commit `a22bf71`. This includes protection ordering during snapshot restoration/merge and immediate stream acknowledgement; all five synchronized Rust source/test files are byte-identical in the app. All 16 SQL migration files remain byte-identical between repositories.
 - Verification uses Windows Node 22.22.2, pinned Rust 1.96, a disposable PostgreSQL 16 container on loopback 5549, test-only auth/API on 8088 and a production web build on 4188. No hosted data is used. The existing development database is unchanged.
 - Synthetic 1920-pixel captures: [Excel Home ribbon](review/excel-editor-2026-09-22.png), [workbook home](review/excel-home-2026-09-22.png), [chart](review/excel-chart-2026-09-22.png). Supplied screenshots are reference material, not repository instructions or app assets.
 
@@ -87,6 +87,38 @@ preserving any unsaved text; the `office-v4` gate rejects obsolete editors.
 - Captures of the deployed UI: [Word](review/live-word-2026-09-22.png) and
   [Excel](review/live-excel-2026-09-22.png). Verification sessions use a separate
   synthetic account; screenshots contain only synthetic content.
+
+### Final stream correction
+
+Live multi-tab verification found that an idle stream could wait for its first
+30-second heartbeat before the browser received a response. Application commit
+[`b0ab062`](https://github.com/ArefinAlter/dynodoc/commit/b0ab062), ported from
+engine `a22bf71`, sends an authorized SSE comment immediately; it carries no event
+ID and does not advance replay. It is pushed to main and deployed as an API-only
+follow-up. The web bundle is unchanged from the verified Office build.
+
+The reviewed follow-up source archive SHA-256 is
+`430cad4824fb3e32f07159fb8d2e01506f35b8199361a4ab434c1b5cd53edd69`;
+all 398 files passed manifest verification. Source download now uses that archive.
+The second validated backup is `backups/dynodoc-20260922T080152Z.dump`; the previous
+API image is retained as `before-office-sse-20260922`. Event fingerprints matched
+across this rollout, and every other container retained its ID.
+
+The updated regression verifies acknowledgement before any write, followed by the
+existing 100 ms event-delivery assertion. The Windows run immediately after compilation
+missed the latter timing threshold; its focused rerun passed. Independent Linux CI
+passes the full suite. At 08:14 UTC, three live browser tabs received successful
+stream responses; a new edit in one spreadsheet tab appeared in the other. Navigation,
+connection, edit delivery and captures completed in about 5.1 seconds in this check;
+this is an observation, not a latency/load guarantee. Both editor captures above now
+show the connected state. Synthetic refresh sessions were revoked, temporary session
+files removed, and final workspace/admin HTTPS health passed.
+
+All final runtime checks pass: [Rust](https://github.com/ArefinAlter/dynodoc/actions/runs/35703185807),
+[frontend and authenticated workflows](https://github.com/ArefinAlter/dynodoc/actions/runs/35703185796),
+and [standalone engine](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/35702827311).
+Vercel reports successful deployment for `b0ab062`. Later documentation-only commits
+do not change the deployed runtime.
 
 ## Remaining gaps
 
