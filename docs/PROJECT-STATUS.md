@@ -1,6 +1,6 @@
 # Dynodoc: intent, current implementation and remaining work
 
-Assessment date: 21 September 2026. This distinguishes executable functionality from the longer design documents. The old README's “feature-complete” description was too broad.
+Assessment date: 22 September 2026. This distinguishes executable functionality from the longer design documents. The old README's “feature-complete” description was too broad.
 
 ## What this project is for
 
@@ -18,8 +18,8 @@ The original immediate product was a questionnaire authoring tool. The owner's e
 | Homepage | Responsive cream/blue homepage, self-hosted sans serif typography, interactive editor/draft/integration examples, document version-control explainers, reduced-motion behavior, Node and Vercel builds. |
 | Legal pages | Privacy, terms and cookie pages describe actual storage and sharing; browser measurement preference is available. Operator details and legal review remain open. |
 | Workspace | Create/import documents, organize them in a hierarchy, search, share roles, make copies, move to Trash and restore. |
-| Document editing | Document tabs, common ribbons, paragraph styles/direction/spacing, shared font uploads, text tracking with accept/reject, threaded comments with resolve/reopen, table/context actions, equations, versioned page setup and paginated print preview. Native DOCX import runs in a bounded worker; LaTeX/Overleaf interchange remains. |
-| Spreadsheet editing | Typed cells, ranges, relative formula fill, persistent calculation graph, formatting, validation subset, merges, freeze/hide/resize, sheet lifecycle, find/replace/filter, values-only sorting and styled XLSX exchange. |
+| Document editing | Document tabs, common ribbons, paragraph styles/direction/spacing, shared font uploads, text tracking with accept/reject, threaded comments with resolve/reopen, table/context actions, equations, versioned page setup, live editable pagination and paginated print preview. Native DOCX import runs in a bounded worker; LaTeX/Overleaf interchange remains. |
+| Spreadsheet editing | Typed cells, ranges, relative formula fill, persistent calculation graph, formatting, validation subset, merges, freeze/hide/resize, sheet lifecycle, find/replace/filter, values-only sorting, numeric conditional formatting, worker-based XLSX import and styled XLSX exchange. |
 | Version workflows | Personal drafts, selected-block sharing, get latest, conflict choices, named versions, comparisons, attribution and restoration as new events. |
 | Research files | DOCX/DOC, CSV/XLSX, XLSForm and REDCap dictionary interchange; original files retained. |
 | Research connections | ODK/Kobo form and response imports; REDCap metadata/records, SurveyCTO wide responses and SurveyMonkey bulk responses. Google Forms adds separate read-only OAuth definition/response imports. Live study-account acceptance remains open. |
@@ -46,7 +46,7 @@ The owner explicitly pivoted the product to document version control on 21 Septe
 
 ## Remaining product and engineering work
 
-- Broader document features: live editable pagination, tracked moves/formatting and structural revisions, footnote/endnote bodies, citations/bibliographies, section-specific layouts and exact Office round trips.
+- Broader document features: pagination refinements (oversized objects, repeated table headers, widow/orphan control), tracked moves/formatting and structural revisions, footnote/endnote bodies, citations/bibliographies, section-specific layouts and exact Office round trips.
 - Broader spreadsheet features: charts, pivots, formula-based validation, protected ranges, advanced sort behavior with formulas, Excel formula compatibility and high-fidelity workbook formatting.
 - Survey execution beyond the supported preview subset: repeat instances, translations/media workflows, external datasets, advanced XPath/date functions and vendor-specific expression engines.
 - Research-platform synchronization: scheduled refresh, incremental reconciliation and writeback. All six implemented API import paths need real study-account verification. CSPro dictionary/form/logic support is not implemented; exported CSV/XLSX data can be edited.
@@ -80,3 +80,18 @@ See [versioning conformance](VERSIONING-CONFORMANCE.md) for evidence against the
 See [format compatibility](research-compatibility.md) for specific import/export limits. No unsupported tool should be represented as a working live integration.
 
 The product expansion adds replayable onboarding, larger typography, research-cited explanations, features/help/roadmap pages and integrated concurrent SEO/IndexNow work. See [product workflows](PRODUCT-WORKFLOWS.md) for permissions, public sharing and exact limits. Automated accessibility checks are evidence for the tested views, not certification of complete WCAG conformance.
+
+## Office workspace and open engine increment
+
+[Decision 006](decisions/006-editable-pages-and-open-engine.md) prioritizes the
+owner's Word-style workspace and editable pagination. The workspace now uses an
+icon rail, template strip and recent-file rows. The editor uses compact icon ribbon
+groups, live page layout and a status/zoom bar. Numeric conditional formatting and
+bounded worker-based XLSX imports extend spreadsheet functionality. This increment
+is local application work until a separate runtime deployment is recorded.
+
+The [standalone engine](https://github.com/ArefinAlter/dynodoc-engine) is public under
+MIT, expressly authorized by the copyright owner. It includes independent builds,
+tests and community conventions. The application remains AGPL and retains its
+compatible engine copy; [dependency-boundary migration](ENGINE-EXTRACTION.md) remains
+open. See [verification and exact limits](EDITABLE-OFFICE-RELEASE.md).

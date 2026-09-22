@@ -14,7 +14,8 @@ import type { DocumentState } from '$lib/api/types';
 import { WorkbookCalculator } from './workbook-calculator';
 import { fillRange, mergeRange } from './sheet-operations';
 import { sheetStructure } from './sheet-structure';
-import { cellFormat, readCell, writeCell } from './sheet-model';
+import { cellFormat, readCell, writeCell, conditionalStyle } from './sheet-model';
+import { readWorkbook } from './xlsx-import';
 import ExcelJS from 'exceljs';
 
 const empty = (): DocumentState => ({
@@ -34,6 +35,26 @@ function blobBuffer(blob: Blob): Promise<ArrayBuffer> {
   });
 }
 describe('Office document interoperability', () => {
+  it('round-trips numeric conditional rules through XLSX and preserves empty row positions', async () => {
+    const book = new ExcelJS.Workbook(),
+      sheet = book.addWorksheet('Numbers');
+    writeCell(sheet.getCell('A1'), '12', {
+      conditional: [{ operator: 'greaterThan', value: 10, background: '#ffc7ce', color: '#9c0006' }]
+    });
+    sheet.getCell('A4').value = 'After blank rows';
+    sheet.mergeCells('B2:C3');
+    sheet.getRow(2).hidden = true;
+    const result = await readWorkbook((await book.xlsx.writeBuffer()) as ArrayBuffer);
+    expect(result[0].rows).toHaveLength(4);
+    expect(result[0].rows[3][0]).toBe('After blank rows');
+    expect(result[0].hidden?.[1]).toBe(true);
+    expect(result[0].layout?.merges[0]).toEqual({ fromRow: '1', toRow: '2', fromCol: 1, toCol: 2 });
+    const format = result[0].formats![0][0];
+    expect(conditionalStyle(12, format).background).toBe('#ffc7ce');
+    expect(conditionalStyle(9, format).background).toBeUndefined();
+    expect(conditionalStyle('', format).background).toBeUndefined();
+    expect(conditionalStyle('#VALUE!', format).background).toBeUndefined();
+  });
   it('imports inherited styles, Bengali/Arabic, direction, text revisions and real table spans', () => {
     const bytes = zipSync({
       'word/document.xml': strToU8(

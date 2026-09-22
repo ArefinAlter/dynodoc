@@ -13,8 +13,7 @@ async function login(
   await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
   await page.getByRole('button', { name: /Continue in local development/ }).click();
   await expect(page).toHaveURL(/\/workspace$/);
-  await expect(page.getByRole('button', { name: 'Not now', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Not now', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Help & tutorials', exact: true })).toBeVisible();
   return email;
 }
 async function create(page: Page, title: string, kind = 'document') {
@@ -80,7 +79,7 @@ test('published copies stay frozen, private comments stay private, and Trash rev
     await page.getByRole('button', { name: 'Trash', exact: true }).click();
     await page.getByRole('button', { name: 'Restore document', exact: true }).click();
     expect((await reader.goto(link))?.status()).toBe(404);
-    await page.getByRole('button', { name: 'Back to documents', exact: true }).click();
+    await page.getByRole('button', { name: 'Home', exact: true }).click();
     await page
       .getByRole('link')
       .filter({ has: page.getByRole('heading', { name: 'Public protocol', exact: true }) })
@@ -100,6 +99,7 @@ test('document tabs isolate content and LaTeX equations survive a reload', async
   await page.getByRole('button', { name: 'Add tab' }).click();
   await editor.fill('Methods text');
   await saved(page);
+  await page.getByRole('tab', { name: 'Insert', exact: true }).click();
   await page.getByRole('button', { name: 'Insert LaTeX equation', exact: true }).click();
   await page.getByLabel('Equation source').fill('\\frac{a}{b}');
   await page.getByRole('button', { name: 'Insert equation', exact: true }).click();
@@ -166,16 +166,16 @@ test('the tutorial can be reopened and the mobile workspace stays within the vie
     page.getByRole('heading', { name: 'Bring your documents together', exact: true })
   ).toBeVisible();
   await page.keyboard.press('Escape');
-  await expect(page.getByRole('link', { name: 'About Dynodoc' })).toHaveAttribute(
+  await expect(page.getByRole('link', { name: 'Dynodoc', exact: true })).toHaveAttribute(
     'href',
     'https://dynodoc.online'
   );
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole('button', { name: 'Workspaces', exact: true }).click();
+  await page.getByRole('button', { name: 'Workspace options', exact: true }).click();
   await expect(
     page.getByRole('button', { name: 'Manage team workspaces', exact: true })
   ).toBeVisible();
-  await page.getByRole('button', { name: 'Close navigation', exact: true }).click();
+  await page.getByRole('button', { name: 'Workspace options', exact: true }).click();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
     true
   );
@@ -240,6 +240,7 @@ test('organization access reaches a folder document and can be removed centrally
   try {
     const email = await login(colleague);
     await login(page);
+    await page.getByRole('button', { name: 'Workspace options', exact: true }).click();
     for (const name of ['Research institute', 'Field team', 'Pilot study']) {
       await page.getByRole('button', { name: 'Manage team workspaces', exact: true }).click();
       await page.getByRole('dialog').getByLabel('Name', { exact: true }).fill(name);
@@ -250,6 +251,7 @@ test('organization access reaches a folder document and can be removed centrally
     await create(page, 'Inherited protocol');
     const documentUrl = page.url();
     await page.goto('/workspace');
+    await page.getByRole('button', { name: 'Workspace options', exact: true }).click();
     await page.getByRole('button', { name: 'Research institute', exact: true }).click();
     await page.getByRole('button', { name: 'Manage team workspaces', exact: true }).click();
     await page.getByLabel('Collaborator email').fill(email);

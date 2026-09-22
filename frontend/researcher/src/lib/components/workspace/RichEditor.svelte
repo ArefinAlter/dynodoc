@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { LivePagination, PAGE_GAP, MM_TO_PX, type PageLayout } from '$lib/workspace/pagination';
   import OfficeRibbon from './OfficeRibbon.svelte';
   import PrintPreview from './PrintPreview.svelte';
   import {
@@ -38,32 +39,7 @@
   import Image from '@tiptap/extension-image';
   import UniqueID from '@tiptap/extension-unique-id';
   import { ulid } from 'ulid';
-  import {
-    Bold,
-    Italic,
-    Underline,
-    Strikethrough,
-    Undo2,
-    Redo2,
-    Printer,
-    List,
-    ListOrdered,
-    AlignLeft,
-    AlignCenter,
-    AlignRight,
-    AlignJustify,
-    Link,
-    Table2,
-    Highlighter,
-    Search,
-    ImagePlus,
-    Minus,
-    X,
-    RemoveFormatting,
-    Quote,
-    IndentIncrease,
-    IndentDecrease
-  } from '@lucide/svelte';
+  import { X, Minus, Plus, FileText, PanelTop, Search } from '@lucide/svelte';
   interface Props {
     content: JSONContent;
     editable: boolean;
@@ -96,7 +72,15 @@
   }: Props = $props();
   let ribbon = $state('Home'),
     tracking = $state(false),
-    preview = $state(false);
+    preview = $state(false),
+    paginated = $state(true),
+    layout = $state<PageLayout>({ pages: 1, current: 1, overflow: false });
+  $effect(() => {
+    void page;
+    void paginated;
+    void zoom;
+    editor?.view.dom.dispatchEvent(new Event('dynodoc-layout'));
+  });
   const page = $derived(pageSetup(pageSettings));
   const dimensions = $derived(pageDimensions(page));
   const fontChoices = $derived([
@@ -147,38 +131,6 @@
     imageOpen = $state(false),
     imageUrl = $state(''),
     imageAlt = $state('');
-  const selectedStyle = $derived.by(() => {
-    void tick;
-    return editor?.getAttributes('textStyle') || {};
-  });
-  const selectedHeading = $derived.by(() => {
-    void tick;
-    return editor?.isActive('heading')
-      ? String(editor.getAttributes('heading').level)
-      : 'paragraph';
-  });
-  const selectedSize = $derived(String(parseFloat(selectedStyle.fontSize) || 11));
-  const sizes = $derived(
-    [
-      ...new Set([
-        '8',
-        '9',
-        '10',
-        '11',
-        '12',
-        '14',
-        '16',
-        '18',
-        '20',
-        '24',
-        '28',
-        '36',
-        '48',
-        '72',
-        selectedSize
-      ])
-    ].sort((a, b) => Number(a) - Number(b))
-  );
   let context = $state<{ x: number; y: number; items: MenuAction[] } | null>(null),
     feedback = $state('');
   let mathDialog: HTMLDialogElement,
@@ -382,6 +334,18 @@
         TextStyleKit.configure({ fontFamily: false }),
         OfficeFontFamily,
         OfficeParagraph,
+        LivePagination.configure({
+          page: () => page,
+          enabled: () => paginated,
+          onLayout: (value) => {
+            if (
+              layout.pages !== value.pages ||
+              layout.current !== value.current ||
+              layout.overflow !== value.overflow
+            )
+              layout = value;
+          }
+        }),
         PageBreak,
         SourceComment,
         TrackedChange.configure({ onNotice: (message) => (feedback = message) }),
@@ -573,284 +537,19 @@
     {onPageChange}
     {onComment}
     {onFont}
+    fonts={fontChoices}
+    bind:paginated
+    onClipboard={(action) => void clipboard(action)}
+    onFind={() => (findOpen = !findOpen)}
+    onLink={() => {
+      linkUrl = editor?.getAttributes('link').href || '';
+      linkOpen = true;
+    }}
+    onImage={() => (imageOpen = true)}
+    onMath={() => openMath()}
     onPrint={() => (preview = true)}
     onNotice={(message) => (feedback = message)}
   />
-  {#if ribbon === 'Home' || ribbon === 'Insert'}
-    <div class="toolbar" aria-label="Formatting tools">
-      <button
-        aria-label="Superscript"
-        title="Superscript"
-        disabled={!editable}
-        class:active={active('superscript')}
-        onclick={() => editor?.chain().focus().toggleSuperscript().run()}>x²</button
-      >
-      <button
-        aria-label="Subscript"
-        title="Subscript"
-        disabled={!editable}
-        class:active={active('subscript')}
-        onclick={() => editor?.chain().focus().toggleSubscript().run()}>x₂</button
-      >
-      <button
-        aria-label="Checklist"
-        title="Checklist"
-        disabled={!editable}
-        onclick={() => editor?.chain().focus().toggleTaskList().run()}>☑</button
-      >
-      <button
-        aria-label="Insert LaTeX equation"
-        title="Insert LaTeX equation"
-        disabled={!editable}
-        onclick={() => openMath()}>∑</button
-      >
-      <select
-        aria-label="Line spacing"
-        disabled={!editable}
-        onchange={(e) => {
-          editor
-            ?.chain()
-            .focus()
-            .updateAttributes('paragraph', { lineHeight: e.currentTarget.value })
-            .updateAttributes('heading', { lineHeight: e.currentTarget.value })
-            .run();
-        }}
-        ><option value="1.6">Line spacing</option><option value="1">Single</option><option
-          value="1.15">1.15</option
-        ><option value="1.5">1.5</option><option value="2">Double</option></select
-      >
-      <select
-        aria-label="More document tools"
-        disabled={!editable}
-        onchange={(e) => {
-          const c = editor?.chain().focus();
-          switch (e.currentTarget.value) {
-            case 'code':
-              c?.toggleCodeBlock().run();
-              break;
-            case 'row-before':
-              c?.addRowBefore().run();
-              break;
-            case 'column-before':
-              c?.addColumnBefore().run();
-              break;
-            case 'header':
-              c?.toggleHeaderRow().run();
-              break;
-            case 'merge':
-              c?.mergeCells().run();
-              break;
-            case 'split':
-              c?.splitCell().run();
-              break;
-            case 'table-delete':
-              c?.deleteTable().run();
-              break;
-            case 'unlink':
-              c?.unsetLink().run();
-              break;
-          }
-          e.currentTarget.value = '';
-        }}
-        ><option value="">More tools</option><option value="code">Code block</option><option
-          value="unlink">Remove link</option
-        ><option value="row-before">Table: row above</option><option value="column-before"
-          >Table: column left</option
-        ><option value="header">Table: header row</option><option value="merge"
-          >Table: merge cells</option
-        ><option value="split">Table: split cell</option><option value="table-delete"
-          >Delete table</option
-        ></select
-      >
-      <button
-        title="Undo (Ctrl+Z)"
-        aria-label="Undo"
-        disabled={!editable}
-        onclick={() => editor?.chain().focus().undo().run()}><Undo2 size={16} /></button
-      ><button
-        title="Redo (Ctrl+Shift+Z)"
-        aria-label="Redo"
-        disabled={!editable}
-        onclick={() => editor?.chain().focus().redo().run()}><Redo2 size={16} /></button
-      ><button title="Print" aria-label="Print" onclick={() => (preview = true)}
-        ><Printer size={16} /></button
-      ><button
-        title="Find and replace"
-        aria-label="Find and replace"
-        onclick={() => (findOpen = !findOpen)}><Search size={16} /></button
-      ><span class="sep"></span>
-      <select aria-label="Zoom" bind:value={zoom}
-        ><option>75</option><option>90</option><option>100</option><option>125</option><option
-          >150</option
-        ></select
-      ><span class="percent">%</span><span class="sep"></span>
-      <select
-        aria-label="Paragraph style"
-        value={selectedHeading}
-        disabled={!editable}
-        onchange={(e) => {
-          const value = e.currentTarget.value;
-          if (value === 'paragraph') editor?.chain().focus().setParagraph().run();
-          else
-            editor
-              ?.chain()
-              .focus()
-              .toggleHeading({ level: Number(value) as 1 | 2 | 3 | 4 | 5 | 6 })
-              .run();
-        }}
-        ><option value="paragraph">Normal text</option><option value="1">Heading 1</option><option
-          value="2">Heading 2</option
-        ><option value="3">Heading 3</option><option value="4">Heading 4</option><option value="5"
-          >Heading 5</option
-        ><option value="6">Heading 6</option></select
-      ><span class="sep"></span>
-      <select
-        aria-label="Font family"
-        value={selectedStyle.fontFamily || 'Arial'}
-        disabled={!editable}
-        onchange={(e) => editor?.chain().focus().setFontFamily(e.currentTarget.value).run()}
-        >{#each fontChoices as font}<option value={font}>{font}</option>{/each}</select
-      ><select
-        class="size"
-        aria-label="Font size"
-        value={selectedSize}
-        disabled={!editable}
-        onchange={(e) =>
-          editor
-            ?.chain()
-            .focus()
-            .setFontSize(e.currentTarget.value + 'pt')
-            .run()}
-        >{#each sizes as size}<option value={size}>{size}</option>{/each}</select
-      ><span class="sep"></span>
-      <button
-        aria-label="Bold"
-        title="Bold (Ctrl+B)"
-        aria-pressed={active('bold')}
-        disabled={!editable}
-        onclick={() => editor?.chain().focus().toggleBold().run()}><Bold size={16} /></button
-      ><button
-        aria-label="Italic"
-        title="Italic (Ctrl+I)"
-        aria-pressed={active('italic')}
-        disabled={!editable}
-        onclick={() => editor?.chain().focus().toggleItalic().run()}><Italic size={16} /></button
-      ><button
-        aria-label="Underline"
-        title="Underline (Ctrl+U)"
-        aria-pressed={active('underline')}
-        disabled={!editable}
-        onclick={() => editor?.chain().focus().toggleUnderline().run()}
-        ><Underline size={16} /></button
-      ><button
-        aria-label="Strikethrough"
-        title="Strikethrough"
-        aria-pressed={active('strike')}
-        disabled={!editable}
-        onclick={() => editor?.chain().focus().toggleStrike().run()}
-        ><Strikethrough size={16} /></button
-      ><label class="color" title="Text color"
-        >A<input
-          aria-label="Text color"
-          type="color"
-          disabled={!editable}
-          value="#202124"
-          onchange={(e) => editor?.chain().focus().setColor(e.currentTarget.value).run()}
-        /></label
-      ><button
-        aria-label="Highlight"
-        title="Highlight text"
-        disabled={!editable}
-        onclick={() => editor?.chain().focus().toggleHighlight({ color: '#fff2a8' }).run()}
-        ><Highlighter size={16} /></button
-      ><span class="sep"></span>
-      <button
-        aria-label="Insert link"
-        title="Insert link"
-        disabled={!editable}
-        onclick={() => {
-          linkUrl = editor?.getAttributes('link').href || '';
-          linkOpen = true;
-        }}><Link size={16} /></button
-      ><button
-        aria-label="Insert image"
-        title="Insert image from URL"
-        disabled={!editable}
-        onclick={() => (imageOpen = true)}><ImagePlus size={16} /></button
-      ><button
-        aria-label="Insert table"
-        title="Insert a 3 × 3 table"
-        disabled={!editable}
-        onclick={() =>
-          editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
-        ><Table2 size={16} /></button
-      ><span class="sep"></span>
-      <button
-        aria-label="Align left"
-        title="Align left"
-        disabled={!editable}
-        onclick={() => editor?.chain().focus().setTextAlign('left').run()}
-        ><AlignLeft size={16} /></button
-      ><button
-        aria-label="Align center"
-        title="Align center"
-        disabled={!editable}
-        onclick={() => editor?.chain().focus().setTextAlign('center').run()}
-        ><AlignCenter size={16} /></button
-      ><button
-        aria-label="Align right"
-        title="Align right"
-        disabled={!editable}
-        onclick={() => editor?.chain().focus().setTextAlign('right').run()}
-        ><AlignRight size={16} /></button
-      ><button
-        aria-label="Justify"
-        title="Justify"
-        disabled={!editable}
-        onclick={() => editor?.chain().focus().setTextAlign('justify').run()}
-        ><AlignJustify size={16} /></button
-      ><button
-        aria-label="Bulleted list"
-        title="Bulleted list"
-        disabled={!editable}
-        onclick={() => editor?.chain().focus().toggleBulletList().run()}><List size={16} /></button
-      ><button
-        aria-label="Numbered list"
-        title="Numbered list"
-        disabled={!editable}
-        onclick={() => editor?.chain().focus().toggleOrderedList().run()}
-        ><ListOrdered size={16} /></button
-      ><button
-        aria-label="Increase indent"
-        title="Indent list item"
-        disabled={!editable}
-        onclick={() => editor?.chain().focus().sinkListItem('listItem').run()}
-        ><IndentIncrease size={16} /></button
-      ><button
-        aria-label="Decrease indent"
-        title="Outdent list item"
-        disabled={!editable}
-        onclick={() => editor?.chain().focus().liftListItem('listItem').run()}
-        ><IndentDecrease size={16} /></button
-      ><button
-        aria-label="Block quote"
-        title="Block quote"
-        disabled={!editable}
-        onclick={() => editor?.chain().focus().toggleBlockquote().run()}><Quote size={16} /></button
-      ><button
-        aria-label="Horizontal rule"
-        title="Insert divider"
-        disabled={!editable}
-        onclick={() => editor?.chain().focus().setHorizontalRule().run()}
-        ><Minus size={16} /></button
-      ><button
-        aria-label="Clear formatting"
-        title="Clear formatting"
-        disabled={!editable}
-        onclick={clearFormatting}><RemoveFormatting size={16} /></button
-      >
-    </div>
-  {/if}
   {#if active('table') && editable}<div class="context-tools">
       <span>Table</span><button onclick={() => editor?.chain().focus().addRowAfter().run()}
         >Add row</button
@@ -882,18 +581,72 @@
       >
     </div>{/if}
   <div class="paper-area">
-    <div class="ruler" aria-hidden="true">
-      {#each Array.from({ length: 9 }, (_, i) => i) as i}<span>{i}</span>{/each}
+    <div
+      class="ruler"
+      aria-hidden="true"
+      style={`width:${dimensions[0]}mm;zoom:${Number(zoom) / 100};padding-inline:${page.margin}mm`}
+    >
+      {#each Array.from({ length: 17 }, (_, i) => i) as i}<span>{i % 2 === 0 ? i : ''}</span>{/each}
     </div>
     <div
       class="paper"
+      class:paginated
       lang={page.language}
-      style={`zoom:${Number(zoom) / 100};width:${dimensions[0]}mm;min-height:${dimensions[1]}mm;padding:${page.margin}mm`}
+      style={`zoom:${Number(zoom) / 100};width:${dimensions[0]}mm;padding:${page.margin}mm;min-height:${paginated ? layout.pages * (dimensions[1] * MM_TO_PX + PAGE_GAP) - PAGE_GAP : dimensions[1] * MM_TO_PX}px;--page-height:${dimensions[1] * MM_TO_PX}px;--page-gap:${PAGE_GAP}px`}
     >
-      <div bind:this={host}></div>
+      {#if paginated}<div class="page-sheets" aria-hidden="true">
+          {#each Array.from({ length: layout.pages }, (_, i) => i) as i}<div
+              class="page-sheet"
+              style={`top:${i * (dimensions[1] * MM_TO_PX + PAGE_GAP)}px;height:${dimensions[1]}mm`}
+            >
+              <div
+                class="page-header"
+                style={`inset-inline:${page.margin}mm;top:${page.margin / 2}mm`}
+              >
+                {page.header}
+              </div>
+              <div
+                class="page-footer"
+                style={`inset-inline:${page.margin}mm;bottom:${page.margin / 2}mm`}
+              >
+                <span>{page.footer}</span>{#if page.pageNumbers}<span>{i + 1}</span>{/if}
+              </div>
+            </div>{/each}
+        </div>{/if}
+      <div class="editor-content" bind:this={host}></div>
     </div>
-    <div class="document-foot">
-      {words} words <span>·</span> Select text to format it. Use Ctrl+Z to undo.
+  </div>
+  <div class="document-foot" role="status" aria-label="Document status">
+    <span>Page {layout.current} of {layout.pages}</span><span>{words} words</span><span
+      >{page.language.toUpperCase()}</span
+    >
+    {#if layout.overflow}<span
+        title="An image, equation or joined table row exceeds the page body. Resize it or use continuous view."
+        >Oversized content</span
+      >{/if}
+    <div class="view-controls">
+      <button
+        aria-label="Print layout"
+        title="Print layout"
+        aria-pressed={paginated}
+        onclick={() => (paginated = true)}><FileText size={15} /></button
+      ><button
+        aria-label="Continuous view"
+        title="Continuous view"
+        aria-pressed={!paginated}
+        onclick={() => (paginated = false)}><PanelTop size={15} /></button
+      >
+      <button
+        aria-label="Zoom out"
+        title="Zoom out"
+        onclick={() => (zoom = String(Math.max(50, Number(zoom) - 10)))}><Minus size={13} /></button
+      >
+      <input aria-label="Zoom" type="range" min="50" max="200" step="10" bind:value={zoom} />
+      <button
+        aria-label="Zoom in"
+        title="Zoom in"
+        onclick={() => (zoom = String(Math.min(200, Number(zoom) + 10)))}><Plus size={13} /></button
+      ><span>{zoom}%</span>
     </div>
   </div>
   {#if linkOpen || imageOpen}<div
@@ -1103,120 +856,96 @@
       sans-serif;
     flex: 1;
     min-width: 0;
-    background: #f5f7fa;
-  }
-  .toolbar {
+    background: #f3f3f3;
     display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 2px;
-    padding: 6px 14px;
-    background: #edf3fc;
-    border-radius: 8px;
-    margin: 0 12px;
-    border: 1px solid #e4eaf4;
-    min-height: 40px;
-  }
-  .toolbar button {
-    width: 29px;
-    height: 29px;
-    padding: 6px;
-    display: grid;
-    place-items: center;
-    background: none;
-    border: 0;
-    border-radius: 4px;
-    color: #586473;
-    cursor: pointer;
-  }
-  .toolbar button:hover,
-  .toolbar button[aria-pressed='true'] {
-    background: #d8e8fd;
-    color: #315476;
-  }
-  .toolbar button:disabled {
-    opacity: 0.35;
-    cursor: not-allowed;
-  }
-  .toolbar select {
-    background: none;
-    border: 0;
-    color: #526172;
-    font-size: 13px;
-    max-width: 105px;
-    padding: 5px 3px;
-    height: 28px;
-  }
-  .toolbar select.size {
-    width: 39px;
-  }
-  .toolbar .sep {
-    height: 18px;
-    width: 1px;
-    background: #d8e1ed;
-    margin: 0 5px;
-  }
-  .percent {
-    font-size: 13px;
-    margin-left: -3px;
-    color: #46617a;
-  }
-  .color {
-    position: relative;
-    width: 27px;
-    height: 27px;
-    display: grid;
-    place-items: center;
-    color: #364e69;
-    font: 600 14px Arial;
-    cursor: pointer;
-    border-bottom: 3px solid #527bb2;
-  }
-  .color input {
-    position: absolute;
-    opacity: 0;
-    width: 100%;
-    height: 100%;
-    cursor: pointer;
+    flex-direction: column;
+    min-height: 0;
   }
   .paper-area {
-    padding: 15px 25px 40px;
+    padding: 0 24px 24px;
     overflow: auto;
-    max-height: calc(100vh - 165px);
+    flex: 1;
+    min-height: 0;
+    background: #ededed;
+    overflow-anchor: none;
   }
   .ruler {
-    width: 794px;
-    max-width: 100%;
-    margin: auto;
+    margin: 0 auto 18px;
+    height: 22px;
     display: flex;
     justify-content: space-between;
-    color: #46617a;
-    font-size: 13px;
-    border-bottom: 1px solid #d9dfe7;
-    padding: 0 15px 4px;
-    background: repeating-linear-gradient(90deg, transparent 0, transparent 9px, #d5dce6 10px);
-    background-size: 100% 3px;
-    background-position: bottom;
+    color: #5f5f5f;
+    font-size: 10px;
+    border-bottom: 1px solid #d5d5d5;
+    background: repeating-linear-gradient(90deg, transparent 0, transparent 9px, #b8b8b8 10px);
+    background-size: 100% 5px;
+    background-position: center bottom;
     background-repeat: no-repeat;
   }
   .paper {
+    position: relative;
     background: white;
-    border: 1px solid #e0e4ea;
-    box-shadow: 0 1px 5px #16273808;
-    min-height: 1050px;
-    width: 794px;
-    max-width: 100%;
-    padding: 75px 85px;
-    margin: 12px auto 0;
+    border: 0;
+    margin: 0 auto;
     color: #202124;
     line-height: 1.65;
     font-size: 11pt;
+    box-sizing: border-box;
+    flex-shrink: 0;
+  }
+  .paper.paginated {
+    background: transparent;
+  }
+  .page-sheets {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    user-select: none;
+  }
+  .page-sheet {
+    position: absolute;
+    width: 100%;
+    background: white;
+    border: 1px solid #c7c7c7;
+    box-shadow: 0 1px 2px #0000000c;
+    box-sizing: border-box;
+  }
+  .page-header,
+  .page-footer {
+    position: absolute;
+    font:
+      10pt/1.2 Arial,
+      sans-serif;
+    color: #666;
+    white-space: pre-wrap;
+  }
+  .page-footer {
+    display: flex;
+    justify-content: space-between;
+    gap: 15px;
+  }
+  .editor-content {
+    position: relative;
   }
   .paper :global(.tiptap) {
     outline: none;
-    min-height: 880px;
+    min-height: 24px;
     font-family: Arial, sans-serif;
     white-space: pre-wrap;
+    display: flow-root;
+  }
+  .paper :global(.pagination-gap) {
+    border: 0 !important;
+    background: transparent !important;
+  }
+  .paper.paginated :global([data-page-break]) {
+    height: 0;
+    min-height: 0;
+    margin: 0;
+    border: 0;
+  }
+  .paper.paginated :global([data-page-break]::after) {
+    display: none;
   }
   .paper :global(.tiptap p) {
     margin: 0.7em 0;
@@ -1305,13 +1034,42 @@
     margin: 22px 0;
   }
   .document-foot {
-    font-size: 13px;
-    color: #46617a;
-    max-width: 794px;
-    margin: 14px auto;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    min-height: 25px;
+    padding: 2px 12px;
+    background: #f5f5f5;
+    border-top: 1px solid #d9d9d9;
+    font:
+      11px 'Segoe UI',
+      Arial,
+      sans-serif;
+    color: #333;
   }
-  .document-foot span {
-    margin: 0 7px;
+  .view-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+  }
+  .view-controls button {
+    display: grid;
+    place-items: center;
+    border: 0;
+    padding: 3px;
+    color: #444;
+    background: transparent;
+    cursor: pointer;
+  }
+  .view-controls button[aria-pressed='true'] {
+    background: #d6d6d6;
+  }
+  .view-controls input {
+    width: 95px;
+    accent-color: #666;
+    height: 14px;
   }
   .find-bar,
   .context-tools {
@@ -1406,31 +1164,18 @@
     background: #185abd;
     color: white;
   }
-  @media (max-width: 800px) {
-    .paper {
-      padding: 35px 25px;
-      min-height: 850px;
-    }
+  @media (max-width: 600px) {
     .paper-area {
-      padding: 10px 12px;
+      padding: 0 12px 18px;
     }
-    .toolbar {
-      padding: 5px;
-      margin: 0 7px;
+    .document-foot {
+      gap: 10px;
     }
-    .toolbar button {
-      width: 27px;
-      height: 27px;
-    }
-    .toolbar .sep {
-      margin: 0 3px;
-    }
-    .toolbar select {
-      max-width: 90px;
+    .view-controls input {
+      width: 55px;
     }
   }
   @media print {
-    .toolbar,
     .context-tools,
     .find-bar,
     .ruler,

@@ -1,6 +1,6 @@
 import Papa from 'papaparse';
-import type { Worksheet } from 'exceljs';
-import { readCell, writeCell, readSheetLayout, sheetLayout, cellFormat } from './sheet-model';
+import type { ImportedSheet } from './xlsx-import';
+import { writeCell, sheetLayout, cellFormat } from './sheet-model';
 import { ulid } from 'ulid';
 import type { EventPayload, DocumentState } from '$lib/api/types';
 import type { Kind } from './api';
@@ -44,7 +44,7 @@ export function itemOp(
 export function paragraph(text: string): TextBlock {
   return { type: 'paragraph', content: text ? [{ type: 'text', text }] : [] };
 }
-export async function importFile(file: File): Promise<ImportResult> {
+export async function importFile(file: File, signal?: AbortSignal): Promise<ImportResult> {
   if (file.size > 10 * 1024 * 1024)
     throw new Error('Please use a file smaller than 10 MB per upload.');
   const ext = file.name.split('.').pop()?.toLowerCase();
@@ -60,7 +60,7 @@ export async function importFile(file: File): Promise<ImportResult> {
   const warnings: string[] = [];
   const ops: EventPayload[] = [rootOp(rootId, file.name.replace(/\.[^.]+$/, ''))];
   if (ext === 'csv' || ext === 'xlsx') {
-    const sheets: { name: string; rows: string[][]; source?: Worksheet }[] = [];
+    const sheets: ImportedSheet[] = [];
     if (ext === 'csv') {
       const parsed = Papa.parse<string[]>(await file.text(), { skipEmptyLines: 'greedy' });
       if (parsed.errors.length) warnings.push(...parsed.errors.map((e) => e.message));
@@ -69,30 +69,16 @@ export async function importFile(file: File): Promise<ImportResult> {
       if (dictionary) return dictionary;
       sheets.push({ name: 'Sheet 1', rows: parsed.data });
     } else {
-      const { default: ExcelJS } = await import('exceljs');
-      const book = new ExcelJS.Workbook();
-      const data = await file.arrayBuffer();
-      const { readOfficeZip } = await import('./bounded-zip');
-      readOfficeZip(new Uint8Array(data), () => true);
-      await book.xlsx.load(data);
-      for (const sheet of book.worksheets) {
-        if (sheet.rowCount > 3001 || sheet.columnCount > 100)
-          throw new Error('This workspace supports up to 3,000 rows and 100 columns per workbook.');
-        const rows: string[][] = [];
-        sheet.eachRow({ includeEmpty: true }, (row) => {
-          const cells: string[] = [];
-          for (let col = 1; col <= Math.min(sheet.columnCount, 100); col++) {
-            const cell = row.getCell(col);
-            cells.push(
-              cell.isMerged && cell.master.address !== cell.address ? '' : readCell(cell).value
-            );
-          }
-          rows.push(cells);
-        });
-        sheets.push({ name: sheet.name, rows, source: sheet });
+      const buffer = await file.arrayBuffer();
+      if (typeof Worker !== 'undefined' && typeof window !== 'undefined') {
+        const { convertWorkbook } = await import('./office-import');
+        sheets.push(...(await convertWorkbook(buffer, signal)));
+      } else {
+        const { readWorkbook } = await import('./xlsx-import');
+        sheets.push(...(await readWorkbook(buffer)));
       }
       warnings.push(
-        'Values, formulas, common cell formats, notes, validation rules, merged cells, widths and frozen panes are imported. Charts, macros, pivot tables, conditional formatting and external data connections are not reproduced. Review theme colors, custom number formats and formulas; the original remains available.'
+        'Values, formulas, common cell formats, notes, validation rules, merged cells, widths and frozen panes are imported. Numeric cell-value conditional formatting is imported. Charts, macros, pivot tables, formula-based conditional formatting and external data connections are not reproduced. Review theme colors, custom number formats and formulas; the original remains available.'
       );
     }
     const { importXlsForm } = await import('./research-files');
@@ -124,25 +110,27 @@ export async function importFile(file: File): Promise<ImportResult> {
         const fields: Record<string, unknown> = {};
         row.forEach((cell, c) => {
           fields[`cell_${c}`] = cell;
-          if (sheet.source)
-            fields[`format_${c}`] = readCell(sheet.source.getCell(i + 1, c + 1)).format;
+          if (sheet.formats) fields[`format_${c}`] = sheet.formats[i]?.[c] || {};
         });
-        if (sheet.source) {
-          fields.row_height = sheet.source.getRow(i + 1).height
-            ? (sheet.source.getRow(i + 1).height! * 4) / 3
-            : 28;
-          fields.hidden = sheet.source.getRow(i + 1).hidden || false;
-        }
+        if (sheet.heights) fields.row_height = sheet.heights[i] || 28;
+        if (sheet.hidden) fields.hidden = sheet.hidden[i] || false;
         const id = ulid();
         rowIds.push(id);
         ops.push(itemOp(sheetId, i, fields, id));
       });
-      if (sheet.source) {
+      if (sheet.layout) {
         const node = ops.find((op) => op.type === 'NodeCreated' && op.node_id === sheetId);
         if (node?.type === 'NodeCreated')
           node.fields = {
             ...(node.fields as object),
-            sheet_layout: readSheetLayout(sheet.source, rowIds)
+            sheet_layout: {
+              ...sheet.layout,
+              merges: sheet.layout.merges.map((merge) => ({
+                ...merge,
+                fromRow: rowIds[Number(merge.fromRow)],
+                toRow: rowIds[Number(merge.toRow)]
+              }))
+            }
           };
       }
     }
@@ -159,7 +147,7 @@ export async function importFile(file: File): Promise<ImportResult> {
       buffer = await response.arrayBuffer();
     }
     const { convertDocx } = await import('./office-import');
-    const result = await convertDocx(buffer);
+    const result = await convertDocx(buffer, signal);
     warnings.push(...result.warnings);
     const root = ops[0];
     if (root.type === 'NodeCreated')

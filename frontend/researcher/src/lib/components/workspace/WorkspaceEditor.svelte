@@ -31,7 +31,8 @@
     UploadCloud,
     RefreshCw,
     ShieldCheck,
-    LoaderCircle
+    LoaderCircle,
+    HelpCircle
   } from '@lucide/svelte';
   import { ulid } from 'ulid';
   import type { DocumentStore } from '$lib/stores/documentStore.svelte';
@@ -920,15 +921,32 @@
                 >{/if}
             </div>{/if}
         </div>
-        <button onclick={() => void openPanel('versions')}>Version history</button><button
-          onclick={() => void openPanel('drafts')}>Personal drafts</button
-        ><button onclick={() => void openPanel('activity')}>Who changed this?</button><button
+        <button
+          title="Personal drafts"
+          aria-label="Personal drafts"
+          onclick={() => void openPanel('drafts')}><GitBranch size={16} /></button
+        >
+        <button
+          title="Who changed this?"
+          aria-label="Who changed this?"
+          onclick={() => void openPanel('activity')}><ShieldCheck size={16} /></button
+        >
+        <button
+          title="Suggestions"
+          aria-label="Suggestions"
           onclick={() => void openPanel('suggestions')}
-          >Suggestions {suggestions.length || ''}</button
+          ><MessageSquare size={16} />{suggestions.length || ''}</button
         ><span class="save-state" aria-live="polite">{saved}</span>
       </nav>
     </div>
     <div class="actions">
+      <button
+        class="round"
+        title="Help & tutorials"
+        aria-label="Help & tutorials"
+        onclick={() => window.dispatchEvent(new Event('dynodoc:help'))}
+        ><HelpCircle size={18} /></button
+      >
       <button
         class="round"
         title="Comments"
@@ -993,7 +1011,8 @@
                 activeTab = tab.id;
                 revision++;
               }}>{String(tab.current_fields.label)}</button
-            >{/each}{#if editable}<button onclick={addTextTab}>+ Add tab</button
+            >{/each}{#if editable}<button onclick={addTextTab} aria-label="Add tab" title="Add tab"
+              ><Plus size={13} /></button
             >{#if activeTab}<button onclick={renameTextTab}>Rename tab</button><button
                 onclick={removeTextTab}>Remove tab</button
               >{/if}{/if}
@@ -2164,6 +2183,90 @@
     .body,
     main {
       display: block;
+    }
+  }
+  header {
+    padding: 5px 12px;
+    min-height: 44px;
+    height: 44px;
+    gap: 10px;
+    background: #f1f1f1;
+  }
+  .back {
+    padding: 5px;
+    border-radius: 3px;
+  }
+  .file-icon :global(svg) {
+    width: 20px;
+    height: 20px;
+  }
+  .heading {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+  }
+  .title-row {
+    gap: 6px;
+  }
+  .title-row input {
+    width: clamp(140px, 24vw, 370px);
+    font-size: 13px;
+  }
+  .heading nav {
+    margin: 0;
+    gap: 7px;
+  }
+  .heading nav > button {
+    display: flex;
+    align-items: center;
+    min-height: 28px;
+  }
+  .save-state {
+    font-size: 11px;
+    margin-left: 6px;
+    white-space: nowrap;
+  }
+  .actions {
+    gap: 8px;
+  }
+  .round {
+    width: 28px;
+    height: 28px;
+  }
+  .share {
+    padding: 5px 12px;
+    border-radius: 3px;
+    background: var(--editor-accent);
+    color: white;
+    gap: 6px;
+  }
+  .document-tabs {
+    order: 2;
+    background: #f3f3f3;
+    min-height: 24px;
+    padding: 0 12px;
+    margin: 0;
+  }
+  .document-tabs button {
+    font-size: 11px;
+    padding: 3px 9px;
+  }
+  @media (max-width: 850px) {
+    .heading {
+      gap: 4px;
+    }
+    .save-state {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
+    .title-row input {
+      width: clamp(100px, 25vw, 220px);
+    }
+    .heading nav {
+      gap: 0;
     }
   }
 </style>

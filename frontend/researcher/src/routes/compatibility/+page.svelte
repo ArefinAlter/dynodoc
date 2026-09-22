@@ -7,7 +7,7 @@
     ],
     [
       'Pages',
-      'A4, Letter and Legal; portrait or landscape; margins, plain-text headers/footers, page numbers and explicit page breaks. Paginated print/PDF preview; editing uses a continuous canvas.'
+      'A4, Letter and Legal; portrait or landscape; margins, plain-text headers/footers, page numbers and explicit page breaks. Editable pages reflow as you type, with a continuous-view option and a separate print/PDF preview.'
     ],
     [
       'Tables',
@@ -48,12 +48,16 @@
       'Fonts, emphasis, colors, common number formats, borders, wrapping, merged ranges, frozen panes, widths/heights and hidden rows/columns.'
     ],
     [
+      'Conditional formatting',
+      'Numeric greater-than, less-than, equality and between rules, including calculated values, with XLSX import and export. Formula rules, color scales, data bars and icon sets remain incomplete.'
+    ],
+    [
       'Validation',
       'Inline lists, whole/decimal number and text-length constraints. Other imported validation expressions are retained for Excel but are not fully evaluated here.'
     ],
     [
       'XLSX exchange',
-      'Values and formulas, numeric/date/text types, common formatting, notes, validation metadata, merged ranges, widths/heights and freeze settings.'
+      'Values and formulas, numeric/date/text types, common formatting, notes, validation metadata, merged ranges, widths/heights and freeze settings. XLSX conversion runs in a cancellable browser worker.'
     ],
     [
       'Advanced Excel features',
@@ -69,7 +73,7 @@
 <ProductPage
   title="Know what your files can do here"
   description="Dynodoc puts version control at the center of document and spreadsheet work. This is the current compatibility guide, not a claim of complete Microsoft Office parity."
-  eyebrow="Editor compatibility · Updated 21 September 2026"
+  eyebrow="Editor compatibility · Updated 22 September 2026"
 >
   <section>
     <h2>Documents</h2>

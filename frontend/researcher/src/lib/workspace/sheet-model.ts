@@ -1,8 +1,15 @@
-import type { Cell, Worksheet, CellValue, DataValidation } from 'exceljs';
+import type {
+  Cell,
+  Worksheet,
+  CellValue,
+  DataValidation,
+  ConditionalFormattingOptions
+} from 'exceljs';
 import type { DocumentState, MaterializedNode } from '$lib/api/types';
 import { bounded, safeColor, safeFont } from './office';
 
 export interface CellFormat {
+  conditional?: ConditionalRule[];
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
@@ -21,6 +28,97 @@ export interface CellFormat {
   hyperlink?: string;
   note?: string;
   validation?: DataValidation;
+}
+export interface ConditionalRule {
+  operator: 'greaterThan' | 'lessThan' | 'equal' | 'between';
+  value: number;
+  upper?: number;
+  background: string;
+  color: string;
+}
+export function conditionalRules(value: unknown): ConditionalRule[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter(
+      (rule): rule is ConditionalRule =>
+        !!rule &&
+        typeof rule === 'object' &&
+        ['greaterThan', 'lessThan', 'equal', 'between'].includes(rule.operator) &&
+        typeof rule.value === 'number' &&
+        Number.isFinite(rule.value) &&
+        (rule.operator !== 'between' ||
+          (typeof rule.upper === 'number' &&
+            Number.isFinite(rule.upper) &&
+            rule.upper >= rule.value)) &&
+        !!safeColor(rule.background) &&
+        !!safeColor(rule.color)
+    )
+    .slice(0, 8);
+}
+export function conditionalStyle(value: unknown, format: CellFormat): CellFormat {
+  if (
+    value === null ||
+    value === undefined ||
+    typeof value === 'boolean' ||
+    String(value).trim() === ''
+  )
+    return format;
+  const number = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(number)) return format;
+  const rule = conditionalRules(format.conditional).find((r) =>
+    r.operator === 'greaterThan'
+      ? number > r.value
+      : r.operator === 'lessThan'
+        ? number < r.value
+        : r.operator === 'equal'
+          ? number === r.value
+          : number >= r.value && number <= r.upper!
+  );
+  return rule ? { ...format, background: rule.background, color: rule.color } : format;
+}
+
+/** Import bounded numeric cell-is rules. Formulas and unsupported rule kinds are not evaluated. */
+export function readConditionalFormats(sheet: Worksheet, formats: CellFormat[][]) {
+  const entries =
+    (sheet.model as unknown as { conditionalFormattings?: ConditionalFormattingOptions[] })
+      .conditionalFormattings || [];
+  let assignments = 0;
+  for (const entry of entries.slice(0, 2000)) {
+    const rules = [...entry.rules]
+      .sort((a, b) => a.priority - b.priority)
+      .flatMap((rule) => {
+        if (rule.type !== 'cellIs' || !rule.formulae?.length) return [];
+        const fill = rule.style?.fill;
+        return conditionalRules([
+          {
+            operator: rule.operator,
+            value: Number(rule.formulae[0]),
+            upper: rule.formulae.length > 1 ? Number(rule.formulae[1]) : undefined,
+            background: fill?.type === 'pattern' ? rgb(fill.fgColor) : '#ffffff',
+            color: rgb(rule.style?.font?.color) || '#202124'
+          }
+        ]);
+      });
+    if (!rules.length) continue;
+    for (const ref of entry.ref.split(/\s+/).slice(0, 100)) {
+      const match = /^\$?([A-Z]{1,3})\$?(\d+)(?::\$?([A-Z]{1,3})\$?(\d+))?$/.exec(ref);
+      if (!match) continue;
+      const col = (s: string) => [...s].reduce((v, c) => v * 26 + c.charCodeAt(0) - 64, 0) - 1;
+      const r1 = Number(match[2]) - 1,
+        r2 = Math.min(formats.length - 1, Number(match[4] || match[2]) - 1);
+      const c1 = col(match[1]),
+        c2 = Math.min(99, col(match[3] || match[1]));
+      for (let r = r1; r <= r2; r++)
+        for (let c = c1; c <= c2; c++) {
+          if (++assignments > 300000)
+            throw new Error(
+              'This workbook has too many conditional formatting rules to import safely.'
+            );
+          const f = formats[r]?.[c];
+          if (f) f.conditional = [...(f.conditional || []), ...rules].slice(0, 8);
+        }
+    }
+  }
 }
 export interface MergeRange {
   fromRow: string;
@@ -108,7 +206,9 @@ export function readCell(cell: Cell): { value: string; format: CellFormat } {
       ? cell.value.toISOString()
       : typeof cell.value === 'boolean'
         ? String(cell.value)
-        : cell.text;
+        : cell.value === null || cell.value === undefined
+          ? ''
+          : cell.text;
   const font = cell.font || {},
     alignment = cell.alignment || {};
   const fill = cell.fill?.type === 'pattern' ? rgb(cell.fill.fgColor) : undefined;
@@ -151,6 +251,25 @@ export function readCell(cell: Cell): { value: string; format: CellFormat } {
   return { value, format: JSON.parse(JSON.stringify(format)) };
 }
 export function writeCell(cell: Cell, value: string, f: CellFormat) {
+  const conditional = conditionalRules(f.conditional);
+  if (conditional.length)
+    cell.worksheet.addConditionalFormatting({
+      ref: cell.address,
+      rules: conditional.map((rule, i) => ({
+        type: 'cellIs',
+        operator: rule.operator,
+        priority: i + 1,
+        formulae: rule.operator === 'between' ? [rule.value, rule.upper!] : [rule.value],
+        style: {
+          fill: {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FF' + rule.background.slice(1) }
+          },
+          font: { color: { argb: 'FF' + rule.color.slice(1) } }
+        }
+      }))
+    });
   let v: CellValue = value;
   if (value.startsWith('=') && f.type !== 'text') v = { formula: value.slice(1) };
   else if (f.type === 'date' && Number.isFinite(Date.parse(value))) v = new Date(value);

@@ -6,20 +6,20 @@
     FileText,
     Table2,
     ClipboardList,
-    Plus,
     Search,
     Upload,
-    ArrowUpRight,
     Grid2X2,
     List,
     FolderOpen,
-    Clock3,
-    Users,
+    Home,
+    Settings2,
+    Trash2,
+    RotateCcw,
+    CircleHelp,
     LogOut,
     X,
     AlertCircle,
-    ArrowRight,
-    Check
+    ArrowRight
   } from '@lucide/svelte';
   import GoogleFormsConnector from '$lib/components/product/GoogleFormsConnector.svelte';
   import SpaceManager from '$lib/components/product/SpaceManager.svelte';
@@ -47,7 +47,7 @@
     filter = $state('all'),
     error = $state(''),
     busy = $state(false),
-    listView = $state(false),
+    listView = $state(true),
     sort = $state('updated'),
     createOpen = $state(false),
     title = $state(''),
@@ -56,8 +56,10 @@
   let importResult = $state<ImportResult | null>(null),
     originalFile = $state<File | null>(null),
     progress = $state('');
-  let sidebarOpen = $state(false);
+  let sidebarOpen = $state(false),
+    toolsOpen = $state(false);
   let searchInput: HTMLInputElement;
+  let importAbort = $state<AbortController | null>(null);
   let connectorOpen = $state(false),
     importedSource = $state<ResearchSource | null>(null);
   async function researchImport(file: File, info: ResearchFile) {
@@ -215,8 +217,9 @@
     busy = true;
     error = '';
     progress = 'Reading your file…';
+    importAbort = new AbortController();
     try {
-      importResult = await importFile(file);
+      importResult = await importFile(file, importAbort?.signal);
       originalFile = file;
       title = file.name.replace(/\.[^.]+$/, '');
     } catch (e) {
@@ -224,6 +227,7 @@
     } finally {
       busy = false;
       progress = '';
+      importAbort = null;
       if (fileInput) fileInput.value = '';
     }
   }
@@ -298,242 +302,197 @@
   ><title>Your workspace · Dynodoc</title><meta name="robots" content="noindex" /></svelte:head
 >
 <div class="workspace">
-  <aside class="sidebar" class:open={sidebarOpen}>
-    <button class="mobile-close" onclick={() => (sidebarOpen = false)}>Close navigation</button>
-    <a class="brand" href="https://dynodoc.online"
-      ><img src="/brand/mark.svg?v=2" alt="" width="32" height="32" /><b>dynodoc</b></a
+  <header class="app-title">
+    <a href="https://dynodoc.online"
+      ><img src="/brand/mark.svg?v=2" alt="" width="21" height="21" />Dynodoc</a
     >
-    <div class="team">
-      <span class="team-icon">D</span>
-      <div><strong>Your workspace</strong><small>Your team’s shared home</small></div>
+    <div>
+      <button
+        aria-label="Help & tutorials"
+        title="Help & tutorials"
+        onclick={() => window.dispatchEvent(new Event('dynodoc:help'))}
+        ><CircleHelp size={17} /></button
+      ><button title="Sign out" aria-label="Sign out" onclick={logout}><LogOut size={17} /></button>
     </div>
-    <button
-      class="new-button"
-      onclick={() => {
-        createOpen = true;
-        title = '';
-      }}><Plus size={18} /> New document</button
-    >
+  </header>
+  <aside class="sidebar" class:open={sidebarOpen}>
     <nav aria-label="Workspace">
-      <button class:active={filter === 'all'} onclick={() => (filter = 'all')}
-        ><FolderOpen size={17} /> All documents <span>{documents.length}</span></button
-      ><button class:active={filter === 'document'} onclick={() => (filter = 'document')}
-        ><FileText size={17} /> Documents</button
-      ><button class:active={filter === 'spreadsheet'} onclick={() => (filter = 'spreadsheet')}
-        ><Table2 size={17} /> Spreadsheets</button
-      ><button class:active={filter === 'questionnaire'} onclick={() => (filter = 'questionnaire')}
-        ><ClipboardList size={17} /> Questionnaires</button
+      <button
+        class:active={!trash && filter === 'all'}
+        onclick={() => {
+          filter = 'all';
+          void setTrash(false);
+        }}><Home size={23} strokeWidth={1.3} /><span>Home</span></button
       >
-      <button class:active={filter === 'archived'} onclick={() => (filter = 'archived')}
-        ><Archive size={17} /> Archived</button
+      <button
+        aria-label="New document"
+        onclick={() => {
+          createOpen = true;
+          title = '';
+          kind = 'document';
+        }}><FileText size={23} strokeWidth={1.3} /><span>New</span></button
+      >
+      <button aria-label="Upload a file" disabled={busy} onclick={() => fileInput.click()}
+        ><FolderOpen size={24} strokeWidth={1.3} /><span>Open</span></button
       >
       <button class:active={trash} onclick={() => void setTrash(!trash)}
-        ><Archive size={17} />{trash ? 'Back to documents' : 'Trash'}</button
+        ><Trash2 size={22} strokeWidth={1.3} /><span>Trash</span></button
       >
     </nav>
-    <SpaceManager
-      {spaces}
-      selected={selectedSpace}
-      onSelect={(id) => void changeLocation(id)}
-      onRefresh={refresh}
-    />
-    <button class="upload" onclick={() => (connectorOpen = true)} disabled={busy}
-      >Import from research tool</button
+    <button
+      class="settings"
+      title="Workspace options"
+      aria-label="Workspace options"
+      aria-expanded={toolsOpen}
+      onclick={() => (toolsOpen = !toolsOpen)}
+      ><Settings2 size={22} strokeWidth={1.3} /><span>Options</span></button
     >
-    <GoogleFormsConnector onImport={researchImport} />
-    <div class="side-bottom">
-      <div class="workspace-tip">
-        <Users size={18} />
-        <p>One shared version.<br />Room for every idea.</p>
-        <small>Open a document and select Share to invite your team.</small>
-      </div>
-      <button onclick={logout}><LogOut size={16} /> Sign out</button>
-    </div>
   </aside>
   <main>
-    <header class="top">
-      <button
-        class="mobile-nav"
-        aria-expanded={sidebarOpen}
-        onclick={() => (sidebarOpen = !sidebarOpen)}>Workspaces</button
-      >
-      <div class="search">
-        <Search size={17} /><input
-          bind:this={searchInput}
-          aria-label="Search documents"
-          bind:value={search}
-          placeholder="Search your documents…"
-        /><kbd>Ctrl K</kbd>
-      </div>
-      <a href="https://dynodoc.online">About Dynodoc <ArrowUpRight size={14} /></a>
-    </header>
-    <div class="content">
-      <div class="heading">
-        <div>
-          <p class="eyebrow">YOUR WORKSPACE</p>
-          <h1>Good work keeps evolving.</h1>
-          <p>Your documents, personal drafts and shared decisions. All in one place.</p>
-        </div>
-        <button class="upload" onclick={() => fileInput.click()} disabled={busy}
-          ><Upload size={16} /> Upload a file</button
-        ><input
-          class="file-input"
-          bind:this={fileInput}
-          type="file"
-          accept=".docx,.doc,.xlsx,.csv,.txt,.md,.tex,.zip"
-          onchange={chooseFile}
+    {#if toolsOpen}<section class="workspace-tools" aria-label="Workspace options">
+        <SpaceManager
+          {spaces}
+          selected={selectedSpace}
+          onSelect={(id) => void changeLocation(id)}
+          onRefresh={refresh}
         />
-      </div>
-      <div class="starters">
-        <button
-          onclick={() => {
-            kind = 'document';
-            title = '';
-            createOpen = true;
-          }}
-          ><div class="starter-icon blue"><FileText size={25} /></div>
-          <div>
-            <b>Start writing</b>
-            <p>Make room for your next idea</p>
-          </div>
-          <Plus size={16} /></button
-        ><button
-          onclick={() => {
-            kind = 'spreadsheet';
-            title = '';
-            createOpen = true;
-          }}
-          ><div class="starter-icon green"><Table2 size={25} /></div>
-          <div>
-            <b>Make a spreadsheet</b>
-            <p>Put your numbers in perspective</p>
-          </div>
-          <Plus size={16} /></button
-        ><button
-          onclick={() => {
-            kind = 'questionnaire';
-            title = '';
-            createOpen = true;
-          }}
-          ><div class="starter-icon amber"><ClipboardList size={25} /></div>
-          <div>
-            <b>Build a questionnaire</b>
-            <p>Questions, choices, and logic</p>
-          </div>
-          <Plus size={16} /></button
-        >
-      </div>
-      <div class="example-links">
-        <span>Try an example</span><button
-          disabled={busy}
-          onclick={() => void example('community-interview-guide.docx')}>Interview guide</button
-        ><button disabled={busy} onclick={() => void example('fieldwork-tracker.xlsx')}
-          >Fieldwork tracker</button
-        ><button disabled={busy} onclick={() => void example('community-questionnaire.xlsx')}
-          >Questionnaire</button
-        >
-      </div>
-      <div class="list-heading">
-        <h2>
-          {trash
-            ? 'Trash'
-            : filter === 'all'
-              ? 'Your documents'
-              : filter === 'document'
-                ? 'Documents'
-                : filter === 'spreadsheet'
-                  ? 'Spreadsheets'
-                  : 'Questionnaires'} <span>{visible.length}</span>
-        </h2>
-        <div>
-          <select class="sort" aria-label="Sort documents" bind:value={sort}
-            ><option value="updated">Recently edited</option><option value="created"
-              >Recently created</option
-            ><option value="title">Name A–Z</option></select
-          ><button
-            aria-label="Grid view"
-            class:chosen={!listView}
-            onclick={() => (listView = false)}><Grid2X2 size={16} /></button
-          ><button aria-label="List view" class:chosen={listView} onclick={() => (listView = true)}
-            ><List size={16} /></button
+        <div class="import-tools">
+          <button onclick={() => (connectorOpen = true)} disabled={busy}
+            ><Upload size={15} />Import from research tool</button
+          ><GoogleFormsConnector onImport={researchImport} /><button
+            onclick={() => (filter = 'archived')}><Archive size={15} />Archived documents</button
           >
         </div>
+      </section>{/if}
+    <div class="content">
+      <h1>{trash ? 'Trash' : 'Home'}</h1>
+      <input
+        class="file-input"
+        bind:this={fileInput}
+        type="file"
+        accept=".docx,.doc,.xlsx,.csv,.txt,.md,.tex,.zip"
+        onchange={chooseFile}
+      />
+      {#if !trash}<section class="new-section" aria-labelledby="new-title">
+          <h2 id="new-title">New</h2>
+          <div class="starters">
+            {#each [{ kind: 'document', label: 'Blank document', icon: FileText }, { kind: 'spreadsheet', label: 'Blank workbook', icon: Table2 }, { kind: 'questionnaire', label: 'Blank questionnaire', icon: ClipboardList }] as item}
+              <button
+                class:sheet={item.kind === 'spreadsheet'}
+                disabled={busy}
+                onclick={() => {
+                  kind = item.kind as Kind;
+                  title = '';
+                  createOpen = true;
+                }}
+              >
+                <div class="template-paper" class:workbook={item.kind === 'spreadsheet'}>
+                  {#if item.kind !== 'document'}<item.icon size={33} strokeWidth={1} />{/if}
+                </div>
+                <span>{item.label}</span>
+              </button>
+            {/each}
+            {#each [{ file: 'community-interview-guide.docx', label: 'Interview guide', kind: 'document' }, { file: 'fieldwork-tracker.xlsx', label: 'Fieldwork tracker', kind: 'spreadsheet' }, { file: 'community-questionnaire.xlsx', label: 'Questionnaire', kind: 'questionnaire' }] as template}
+              <button
+                aria-label={template.label}
+                disabled={busy}
+                onclick={() => void example(template.file)}
+                ><div
+                  class="template-paper sample"
+                  class:workbook={template.kind === 'spreadsheet'}
+                >
+                  <strong>{template.label}</strong>{#each [1, 2, 3, 4, 5] as line}<i
+                      style:width={line === 5 ? '60%' : '100%'}
+                    ></i>{/each}
+                </div>
+                <span>{template.label}</span></button
+              >
+            {/each}
+          </div>
+        </section>{/if}
+      <div class="list-heading">
+        <div class="filters" aria-label="Document types">
+          {#each [{ value: 'all', label: 'Recent' }, { value: 'document', label: 'Documents' }, { value: 'spreadsheet', label: 'Spreadsheets' }, { value: 'questionnaire', label: 'Questionnaires' }] as item}<button
+              class:active={filter === item.value}
+              aria-pressed={filter === item.value}
+              onclick={() => (filter = item.value)}>{item.label}</button
+            >{/each}
+        </div>
+        <div class="search">
+          <Search size={17} /><input
+            bind:this={searchInput}
+            aria-label="Search documents"
+            bind:value={search}
+            placeholder="Search for a file"
+          /><kbd>Ctrl K</kbd>
+        </div>
+        <button
+          class="view-button"
+          aria-label={listView ? 'Grid view' : 'List view'}
+          title={listView ? 'Grid view' : 'List view'}
+          onclick={() => (listView = !listView)}
+          >{#if listView}<Grid2X2 size={17} />{:else}<List size={17} />{/if}</button
+        >
+      </div>
+      <div class="column-head">
+        <span>Name</span><select aria-label="Sort documents" bind:value={sort}
+          ><option value="updated">Date modified</option><option value="created"
+            >Date created</option
+          ><option value="title">Name A–Z</option></select
+        >
       </div>
       {#if error}<div class="error" role="alert">
           <AlertCircle size={17} />{error}<button
-            onclick={() => (error = '')}
-            aria-label="Dismiss error"><X size={14} /></button
+            aria-label="Dismiss error"
+            onclick={() => (error = '')}><X size={14} /></button
           >
         </div>{/if}
-      {#if busy}<p class="progress" role="status">{progress || 'Saving…'}</p>{/if}
-      {#if loading}<div class="empty">
-          Loading your workspace…
-        </div>{:else if visible.length === 0}<div class="empty">
-          <div><FolderOpen size={35} /></div>
-          <h3>{search ? 'No matching documents.' : 'A fresh page for your team.'}</h3>
-          <p>
-            {search
-              ? 'Try a different title.'
-              : 'Create a document or bring in a file to get started.'}
-          </p>
-          {#if !search}<button
+      {#if busy}<p class="progress" role="status">
+          {progress || 'Saving…'}{#if importAbort}<button onclick={() => importAbort?.abort()}
+              >Cancel import</button
+            >{/if}
+        </p>{/if}
+      {#if loading}<p class="empty">Loading…</p>
+      {:else if !visible.length}<div class="empty">
+          <FolderOpen size={30} strokeWidth={1} />
+          <h3>{search ? 'No matching files' : trash ? 'Trash is empty' : 'No recent files'}</h3>
+          {#if !search && !trash}<button
               onclick={() => {
                 title = '';
                 createOpen = true;
-              }}>Create your first document <ArrowRight size={15} /></button
+              }}>Create a document</button
             >{/if}
-        </div>{:else}<div class:list={listView} class="document-grid">
+        </div>
+      {:else}<div class:list={listView} class="document-grid">
           {#each visible as doc}<article class="doc-entry">
-              <a class="doc-card" href={trash ? undefined : `/documents/${doc.id}`}
-                ><div class="doc-preview" class:sheet={documentKind(doc) === 'spreadsheet'}>
-                  <div class="preview-paper">
-                    {#if documentKind(doc) === 'spreadsheet'}<div class="preview-grid">
-                        {#each Array.from({ length: 35 }, (_, i) => i) as cell (cell)}<span
-                          ></span>{/each}
-                      </div>{:else}<div class="preview-line title"></div>
-                      <div class="preview-line"></div>
-                      <div class="preview-line"></div>
-                      <div class="preview-line half"></div>
-                      <div class="preview-gap"></div>
-                      <div class="preview-line"></div>
-                      <div class="preview-line"></div>
-                      <div class="preview-line half"></div>{/if}
-                  </div>
-                  <span class="type-badge">{documentKind(doc)}</span>
-                </div>
+              <a class="doc-card" href={trash ? undefined : `/documents/${doc.id}`}>
+                <span class="doc-icon" class:green={documentKind(doc) === 'spreadsheet'}
+                  >{#if documentKind(doc) === 'spreadsheet'}<Table2
+                      size={26}
+                      strokeWidth={1.3}
+                    />{:else if documentKind(doc) === 'questionnaire'}<ClipboardList
+                      size={26}
+                      strokeWidth={1.3}
+                    />{:else}<FileText size={26} strokeWidth={1.3} />{/if}</span
+                >
                 <div class="doc-details">
-                  <span class:green={documentKind(doc) === 'spreadsheet'} class="doc-icon"
-                    >{#if documentKind(doc) === 'spreadsheet'}<Table2
-                        size={19}
-                      />{:else if documentKind(doc) === 'questionnaire'}<ClipboardList
-                        size={19}
-                      />{:else}<FileText size={19} />{/if}</span
-                  >
-                  <div>
-                    <h3>{doc.title}</h3>
-                    <p>
-                      <Clock3 size={10} />
-                      {relative(doc.updated_at)}<span>·</span>{doc.status === 'deployed'
-                        ? 'Published version'
-                        : 'Team document'}
-                    </p>
-                  </div>
-                  <ArrowUpRight size={14} />
-                </div></a
-              >
+                  <h3>{doc.title}</h3>
+                  <p>{spaces.find((space) => space.id === doc.space_id)?.name || 'My workspace'}</p>
+                </div>
+                <time datetime={doc.updated_at} title={new Date(doc.updated_at).toLocaleString()}
+                  >{relative(doc.updated_at)}</time
+                >
+              </a>
               {#if doc.can_manage}<button
                   class="trash-action"
                   disabled={busy}
+                  title={trash ? 'Restore document' : 'Move to Trash'}
+                  aria-label={trash ? 'Restore document' : 'Move to Trash'}
                   onclick={() => void changeTrash(doc)}
-                  >{trash ? 'Restore document' : 'Move to Trash'}</button
+                  >{#if trash}<RotateCcw size={16} />{:else}<Trash2 size={16} />{/if}</button
                 >{/if}
             </article>{/each}
         </div>{/if}
-      <div class="workspace-footer">
-        <span><Check size={12} /> Your document history stays with your work.</span><a
-          href="https://dynodoc.online/#workflow">How Dynodoc works <ArrowUpRight size={12} /></a
-        >
-      </div>
     </div>
   </main>
 </div>
@@ -601,613 +560,381 @@
   </div>{/if}
 
 <style>
-  .doc-entry {
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
+  .workspace {
+    min-height: 100dvh;
+    background: #f5f5f5;
+    color: #292929;
+    font:
+      13px 'Segoe UI',
+      Arial,
+      sans-serif;
   }
-  .doc-entry .doc-card {
-    flex: 1;
-  }
-  .trash-action {
-    background: #f7f8fa;
-    color: #354f68;
-    border: 1px solid #d4dfe8;
-    border-top: 0;
-    border-radius: 0 0 18px 18px;
-    padding: 9px;
+  button,
+  input,
+  select {
     font: inherit;
-    font-size: 13px;
+  }
+  button {
     cursor: pointer;
   }
-  .doc-entry:has(.trash-action) .doc-card {
-    border-radius: 18px 18px 0 0;
+  button:focus-visible,
+  a:focus-visible {
+    outline: 2px solid #185abd;
+    outline-offset: 3px;
   }
-  .list .doc-entry {
-    display: block;
-  }
-  .list .trash-action {
-    width: 100%;
-  }
-
-  .example-links {
+  .app-title {
+    height: 46px;
+    background: #eeeeee;
     display: flex;
     align-items: center;
-    gap: 14px;
-    flex-wrap: wrap;
-    margin: 18px 0 32px;
-    color: #46617a;
-    font-size: 13px;
+    justify-content: space-between;
+    padding: 0 18px;
+    border-bottom: 1px solid #e8e8e8;
   }
-  .example-links button {
-    border: 0;
-    background: none;
-    color: #32659b;
-    padding: 0;
-    text-decoration: underline;
-    text-underline-offset: 4px;
-    font-size: 13px;
-    cursor: pointer;
+  .app-title a {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    text-decoration: none;
+    color: inherit;
   }
-  .workspace {
+  .app-title > div {
     display: flex;
-    min-height: 100vh;
-    background: #f8f9fc;
-    font-family: var(--font-ui);
-    color: #293846;
-    font-size: 13px;
+    gap: 25px;
+    align-items: center;
+  }
+  .app-title button {
+    border: 0;
+    padding: 4px;
+    background: transparent;
   }
   .sidebar {
-    width: 240px;
     position: fixed;
-    inset: 0 auto 0 0;
-    padding: 28px 18px 18px;
-    overflow-y: auto;
-    background: #fbfbf8;
-    border-right: 1px solid #e9edf2;
+    inset: 46px auto 0 0;
+    width: 68px;
+    border-right: 1px solid #e3e3e3;
     display: flex;
     flex-direction: column;
-    z-index: 10;
+    padding: 5px 4px 12px;
+    background: #f0f0f0;
   }
-  .brand {
-    text-decoration: none;
+  .sidebar nav {
     display: flex;
-    align-items: baseline;
-    font: bold 39px/1 var(--font-ui);
-    color: #20559b;
-    margin: 0 9px 34px;
+    flex-direction: column;
+    gap: 6px;
   }
-  .brand b {
-    font: 600 23px var(--font-ui);
-    letter-spacing: -1px;
-    margin-left: 9px;
-  }
-  .team {
+  .sidebar button {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 10px;
-    padding: 13px 8px;
-    margin-bottom: 20px;
-  }
-  .team-icon {
-    background: #eaf1fb;
-    color: #486b97;
-    border: 1px solid #d1e0f3;
-    border-radius: 8px;
-    width: 33px;
-    height: 33px;
-    display: grid;
-    place-items: center;
-    font-weight: 600;
-  }
-  .team strong {
-    display: block;
-    font-size: 13px;
-    font-weight: 500;
-  }
-  .team small {
-    color: #46617a;
-    font-size: 13px;
-    display: block;
-    margin-top: 3px;
-  }
-  .new-button {
-    display: flex;
-    align-items: center;
-    gap: 12px;
+    gap: 4px;
+    padding: 8px 3px;
+    border: 0;
+    border-left: 2px solid transparent;
+    background: transparent;
+    color: #333;
+    font-size: 12px;
+    min-height: 57px;
     width: 100%;
-    padding: 12px 14px;
-    border: 0;
-    border-radius: 12px;
-    background: #205bb0;
-    color: #fff;
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-    margin-bottom: 22px;
   }
-  nav {
-    display: grid;
-    gap: 5px;
+  .sidebar button.active {
+    border-left-color: #185abd;
+    color: #185abd;
   }
-  nav button,
-  .side-bottom > button {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 11px 12px;
-    border: 0;
-    border-radius: 10px;
-    background: none;
-    color: #46617a;
-    font-size: 13px;
-    text-align: left;
-    cursor: pointer;
+  .sidebar button:hover {
+    background: #e4e4e4;
   }
-  nav button.active {
-    background: #e8f1fc;
-    color: #285ca4;
-  }
-  nav button > span {
-    margin-left: auto;
-    color: #46617a;
-    font-size: 13px;
-  }
-  .side-bottom {
+  .sidebar .settings {
     margin-top: auto;
   }
-  .workspace-tip {
-    padding: 17px 13px 22px;
-    margin-bottom: 12px;
-    border-bottom: 1px solid #edf0f2;
-    color: #46617a;
-  }
-  .workspace-tip p {
-    font: 16px/1.5 var(--font-ui);
-    color: #58718e;
-    margin: 9px 0;
-  }
-  .workspace-tip small {
-    display: block;
-    font-size: 13px;
-    line-height: 1.7;
-    color: #46617a;
-  }
-  .side-bottom > button {
-    width: 100%;
-    font-size: 13px;
-  }
-  .workspace > main {
-    margin-left: 240px;
-    flex: 1;
-    min-width: 0;
-  }
-  .top {
-    height: 88px;
-    background: #f8f9fccf;
-    backdrop-filter: blur(12px);
-    border-bottom: 1px solid #e9edf2;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 42px;
-    gap: 25px;
-  }
-  .search {
-    background: white;
-    border: 1px solid #e5eaf1;
-    border-radius: 14px;
-    padding: 12px 15px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    max-width: 480px;
-    width: 100%;
-    color: #46617a;
-  }
-  .search:focus-within {
-    outline: 2px solid #9abbed;
-    outline-offset: 2px;
-  }
-  .sort {
-    border: 0;
-    background: transparent;
-    color: #4c637d;
-    padding: 8px;
-    font: inherit;
-    font-size: 12px;
-  }
-  .search input {
-    background: none;
-    border: 0;
-    outline: none;
-    font-size: 13px;
-    flex: 1;
-    min-width: 0;
-    color: #4e6171;
-  }
-  .search kbd {
-    font: 9px var(--font-ui);
-    border: 1px solid #e6eaef;
-    border-radius: 4px;
-    padding: 2px 5px;
-    color: #46617a;
-  }
-  .top > a {
-    font-size: 13px;
-    color: #46617a;
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    text-decoration: none;
-    white-space: nowrap;
+  main {
+    margin-left: 68px;
   }
   .content {
-    padding: 46px 42px;
-    max-width: 1500px;
+    max-width: 1740px;
+    padding: 18px 48px 40px;
     margin: auto;
   }
-  .heading {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 20px;
-    margin-bottom: 30px;
-  }
-  .eyebrow {
-    font-size: 13px;
-    letter-spacing: 1.8px;
-    color: #46617a;
-    margin: 0 0 9px;
-  }
   h1 {
-    font: 600 clamp(28px, 3vw, 38px)/1.2 var(--font-ui);
-    letter-spacing: -0.8px;
-    margin: 0 0 9px;
-    color: #29445f;
+    font-size: 23px;
+    font-weight: 600;
+    margin: 0 0 23px;
   }
-  .heading p:not(.eyebrow) {
-    font-size: 13px;
-    color: #46617a;
-    margin: 0;
-  }
-  .upload {
-    display: flex;
-    gap: 9px;
-    align-items: center;
-    background: white;
-    border: 1px solid #dfe5e0;
-    border-radius: 10px;
-    padding: 10px 14px;
-    font-size: 13px;
-    color: #607263;
-    cursor: pointer;
-    white-space: nowrap;
+  h2 {
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0 0 13px;
   }
   .file-input {
     display: none;
   }
   .starters {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 16px;
-    margin-bottom: 25px;
+    display: flex;
+    gap: 20px;
+    overflow-x: auto;
+    padding: 2px 0 8px;
+    margin-bottom: 34px;
   }
   .starters > button {
-    border: 1px solid #e6ecf3;
-    border-radius: 18px;
-    background: white;
-    padding: 21px 17px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    text-align: left;
-    cursor: pointer;
-  }
-  .starters > button:hover {
-    border-color: #b6cbbb;
-    box-shadow: 0 5px 15px #28533005;
-  }
-  .starter-icon {
-    width: 43px;
-    height: 49px;
-    border-radius: 8px;
-    display: grid;
-    place-items: center;
-    flex-shrink: 0;
-  }
-  .blue {
-    background: #edf3fa;
-    color: #46617a;
-  }
-  .green {
-    background: #edf4ed !important;
-    color: #237047 !important;
-  }
-  .amber {
-    background: #faf4e9;
-    color: #46617a;
-  }
-  .starters b {
-    font-size: 13px;
-    font-weight: 500;
-    color: #233b56;
-  }
-  .starters p {
-    font-size: 13px;
-    color: #46617a;
-    margin: 4px 0 0;
-  }
-  .starters > button > :global(svg) {
-    margin-left: auto;
-    color: #46617a;
-    width: 14px;
-  }
-  .list-heading {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 17px;
-  }
-  .list-heading h2 {
-    font-size: 13px;
-    font-weight: 500;
-    color: #233b56;
-    margin: 0;
-  }
-  .list-heading h2 > span {
-    margin-left: 7px;
-    background: #e9eee8;
-    color: #46617a;
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: 13px;
-  }
-  .list-heading > div {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-  .list-heading .sort {
-    font-size: 13px;
-    color: #46617a;
-    margin-right: 14px;
-  }
-  .list-heading button {
-    display: flex;
-    background: none;
-    border: 1px solid transparent;
-    color: #46617a;
-    padding: 6px;
-    border-radius: 4px;
-    cursor: pointer;
-  }
-  .list-heading button.chosen {
-    background: white;
-    border-color: #e0e6db;
-    color: #46617a;
-  }
-  .document-grid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 20px;
-  }
-  .doc-card {
-    text-decoration: none;
-    color: inherit;
-    border: 1px solid #e6ecf3;
-    border-radius: 18px;
-    background: white;
-    overflow: hidden;
-    transition:
-      box-shadow 0.2s,
-      transform 0.2s;
-  }
-  .doc-card:hover {
-    box-shadow: 0 12px 35px #243f5810;
-    transform: translateY(-2px);
-  }
-  .doc-preview {
-    background: #edf3fc;
-    height: 172px;
-    padding: 24px 30px 0;
-    overflow: hidden;
-    position: relative;
-  }
-  .preview-paper {
-    max-width: 220px;
-    margin: auto;
-    padding: 22px 20px;
-    background: white;
-    min-height: 170px;
-    box-shadow: 0 0 0 1px #e5eae2;
-    border-radius: 2px;
-  }
-  .preview-line {
-    height: 3px;
-    background: #e9ece5;
-    margin: 8px 0;
-    border-radius: 2px;
-  }
-  .preview-line.title {
-    height: 5px;
-    width: 70%;
-    background: #c2cec0;
-    margin-bottom: 15px;
-  }
-  .preview-line.half {
-    width: 65%;
-  }
-  .preview-gap {
-    height: 13px;
-  }
-  .type-badge {
-    position: absolute;
-    bottom: 10px;
-    right: 10px;
-    font-size: 13px;
-    color: #46617a;
-    background: #ffffffc9;
-    border: 1px solid #e6eadf;
-    border-radius: 4px;
-    padding: 3px 6px;
-    text-transform: uppercase;
-    letter-spacing: 0.6px;
-  }
-  .doc-details {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 16px 14px;
-  }
-  .doc-icon {
-    display: grid;
-    place-items: center;
-    width: 29px;
-    height: 33px;
-    background: #eef3f9;
-    color: #46617a;
-    border-radius: 5px;
-    flex-shrink: 0;
-  }
-  .doc-details > div {
-    min-width: 0;
-  }
-  .doc-details h3 {
-    font-size: 13px;
-    font-weight: 500;
-    color: #233b56;
-    margin: 0 0 5px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .doc-details p {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    color: #46617a;
-    font-size: 13px;
-    margin: 0;
-  }
-  .doc-details > :global(svg) {
-    margin-left: auto;
-    flex-shrink: 0;
-    color: #46617a;
-  }
-  .doc-preview.sheet {
-    background: #eef7f2;
-  }
-  .preview-grid {
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-  }
-  .preview-grid > span {
-    height: 16px;
-    border: 1px solid #e9eee6;
-  }
-  .preview-grid > span:nth-child(-n + 5) {
-    background: #e7efdf;
-  }
-  .document-grid.list {
-    grid-template-columns: 1fr;
-    gap: 9px;
-  }
-  .document-grid.list .doc-preview {
-    display: none;
-  }
-  .document-grid.list .doc-details {
-    padding: 16px 18px;
-  }
-  .document-grid.list .doc-details p {
-    font-size: 13px;
-  }
-  .document-grid.list .doc-details h3 {
-    font-size: 13px;
-  }
-  .empty {
-    border: 1px dashed #dce5d8;
-    border-radius: 10px;
-    background: #fafcf7;
-    min-height: 280px;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    color: #46617a;
-    padding: 30px;
-    text-align: center;
+    gap: 15px;
+    min-width: 158px;
+    width: 180px;
+    height: 154px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 2px;
+    color: inherit;
+    flex-shrink: 0;
   }
-  .empty > div {
-    background: #edf3e7;
-    width: 62px;
-    height: 62px;
-    border-radius: 14px;
-    display: grid;
-    place-items: center;
-    color: #46617a;
+  .starters > button:first-child {
+    border-color: #444;
+    background: #ececec;
   }
-  .empty h3 {
-    font: 25px var(--font-ui);
-    color: #46617a;
-    margin: 18px 0 10px;
+  .starters > button:hover {
+    background: #e9e9e9;
+    border-color: #777;
   }
-  .empty p {
-    font-size: 13px;
-    margin: 0;
+  .template-paper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 71px;
+    height: 92px;
+    background: white;
+    border: 1px solid #c9c9c9;
+    color: #185abd;
   }
-  .empty button {
+  .template-paper.workbook {
+    color: #107c41;
+    background:
+      repeating-linear-gradient(0deg, transparent 0, transparent 8px, #dbe7df 9px),
+      repeating-linear-gradient(90deg, white 0, white 14px, #dbe7df 15px);
+  }
+  .template-paper.sample {
+    align-items: stretch;
+    padding: 9px 7px;
+    justify-content: start;
+    gap: 6px;
+  }
+  .template-paper strong {
+    font-size: 6px;
+    margin: 0 0 7px;
+  }
+  .template-paper i {
+    display: block;
+    height: 1px;
+    background: #ccd2d8;
+  }
+  .template-paper i:last-child {
+    width: 60%;
+  }
+  .list-heading {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+  }
+  .filters {
+    display: flex;
+    gap: 9px;
+  }
+  .filters button {
+    border: 1px solid #999;
+    border-radius: 18px;
+    padding: 7px 13px;
+    background: white;
+  }
+  .filters button.active {
+    background: #185abd;
+    border-color: #185abd;
+    color: white;
+  }
+  .search {
     display: flex;
     align-items: center;
     gap: 10px;
-    background: none;
-    border: 0;
-    color: #46617a;
-    font-size: 13px;
-    margin-top: 20px;
-    cursor: pointer;
+    width: min(450px, 40%);
+    margin-left: auto;
+    border: 1px solid #999;
+    background: white;
+    padding: 6px 10px;
+    border-radius: 3px;
   }
-  .workspace-footer {
+  .search input {
+    border: 0;
+    outline: none;
+    min-width: 0;
+    width: 100%;
+    font-size: 12px;
+  }
+  .search:focus-within {
+    outline: 2px solid #185abd;
+  }
+  kbd {
+    color: #666;
+    font-size: 10px;
+    white-space: nowrap;
+  }
+  .view-button {
+    background: transparent;
+    border: 0;
+    color: #444;
+    padding: 6px;
+  }
+  .column-head {
     display: flex;
     justify-content: space-between;
-    gap: 15px;
-    padding-top: 40px;
-    font-size: 13px;
-    color: #46617a;
+    font-size: 12px;
+    padding: 8px 35px 8px 0;
+    border-bottom: 1px solid #ccc;
   }
-  .workspace-footer > span,
-  .workspace-footer > a {
+  .column-head select {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    width: 185px;
+  }
+  .document-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 14px;
+    padding: 14px 0;
+  }
+  .document-grid.list {
+    display: block;
+    padding: 0;
+  }
+  .doc-entry {
     display: flex;
-    gap: 6px;
     align-items: center;
-  }
-  .workspace-footer > a {
-    color: #46617a;
-    text-decoration: none;
-  }
-  .error {
-    background: #fff2ef;
-    color: #a55849;
-    border: 1px solid #f0dcd5;
+    position: relative;
+    border: 1px solid #d0d0d0;
     padding: 12px;
-    border-radius: 10px;
+    background: #fafafa;
+    min-width: 0;
+  }
+  .list .doc-entry {
+    border: 0;
+    border-bottom: 1px solid #cfcfcf;
+    background: transparent;
+    padding: 0 0 0 8px;
+  }
+  .doc-entry:hover {
+    background: #eaeaea;
+  }
+  .doc-card {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    flex: 1;
+    color: inherit;
+    text-decoration: none;
+    gap: 16px;
+    padding: 12px 0;
+    flex-wrap: wrap;
+  }
+  .list .doc-card {
+    flex-wrap: nowrap;
+  }
+  .doc-icon {
+    color: #185abd;
+    flex-shrink: 0;
+    display: flex;
+  }
+  .doc-icon.green {
+    color: #107c41;
+  }
+  .doc-details {
+    min-width: 0;
+    flex: 1;
+  }
+  .doc-details h3 {
+    font-size: 14px;
+    font-weight: 400;
+    margin: 0 0 3px;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .doc-details p {
+    margin: 0;
+    font-size: 11px;
+  }
+  time {
+    font-size: 12px;
+    width: 185px;
+    flex-shrink: 0;
+  }
+  .trash-action {
+    display: grid;
+    place-items: center;
+    margin: 0 8px;
+    border: 0;
+    padding: 7px;
+    color: #555;
+    background: transparent;
+  }
+  .trash-action:hover {
+    background: #d6d6d6;
+  }
+  .workspace-tools {
+    display: flex;
+    gap: 35px;
+    padding: 20px 48px;
+    background: white;
+    border-bottom: 1px solid #ddd;
+  }
+  .import-tools {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    align-items: start;
+  }
+  .import-tools > button {
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 13px;
-    margin-bottom: 16px;
+    padding: 9px;
+    border: 1px solid #ccc;
+    background: #fafafa;
   }
-  .error > button {
-    background: none;
-    border: 0;
-    color: inherit;
+  .empty {
+    padding: 55px 10px;
+    color: #666;
+    text-align: center;
+  }
+  .empty h3 {
+    font-size: 16px;
+    font-weight: 400;
+  }
+  .empty button {
+    border: 1px solid #b7c9e3;
+    color: #185abd;
+    padding: 8px 12px;
+    background: white;
+    border-radius: 3px;
+  }
+  .error {
     display: flex;
-    cursor: pointer;
+    align-items: center;
+    gap: 10px;
+    padding: 12px;
+    background: #fff0ed;
+    color: #933b2a;
+  }
+  .error button {
     margin-left: auto;
+    border: 0;
+    background: transparent;
   }
   .progress {
-    color: #46617a;
-    font-size: 13px;
+    color: #185abd;
   }
   .modal-backdrop {
     position: fixed;
@@ -1322,241 +1049,47 @@
     flex-shrink: 0;
     margin-top: 3px;
   }
-  @media (max-width: 1100px) {
-    .sidebar {
-      width: 205px;
-      padding: 24px 14px;
-    }
-    .workspace > main {
-      margin-left: 205px;
-    }
+  @media (max-width: 900px) {
     .content {
-      padding: 30px;
+      padding: 20px 24px;
     }
-    .top {
-      padding: 0 30px;
+    .search {
+      width: 100%;
+      order: 3;
+    }
+    .filters {
+      flex-wrap: wrap;
+    }
+    time {
+      width: 125px;
+    }
+    .column-head select {
+      width: 130px;
+    }
+    .workspace-tools {
+      padding: 16px;
+      flex-direction: column;
+    }
+  }
+  @media (max-width: 600px) {
+    .content {
+      padding: 18px 14px;
     }
     .starters {
-      gap: 10px;
-    }
-    .starters > button {
-      padding: 16px 12px;
       gap: 8px;
     }
-    .starter-icon {
-      width: 32px;
-      height: 40px;
-    }
-    .starter-icon > :global(svg) {
-      width: 20px;
-    }
-    .starters b {
-      font-size: 13px;
-    }
-    .starters p {
-      font-size: 13px;
-    }
-    .starters > button > :global(svg) {
-      display: none;
-    }
-    .document-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-    .heading h1 {
-      font-size: 29px;
-    }
-  }
-  @media (max-width: 760px) {
-    .sidebar {
-      width: 66px;
-      padding: 22px 9px;
-    }
-    .brand {
-      margin: 0 5px 24px;
-      font-size: 35px;
-    }
-    .brand b,
-    .team,
-    .new-button,
-    nav button > span,
-    .workspace-tip,
-    .side-bottom {
-      display: none;
-    }
-    nav button {
-      font-size: 0;
-      padding: 12px 15px;
-      gap: 0;
-    }
-    nav button > :global(svg) {
-      flex-shrink: 0;
-      width: 18px;
-    }
-    .workspace > main {
-      margin-left: 66px;
-    }
-    .content {
-      padding: 25px 20px;
-    }
-    .top {
-      height: 66px;
-      padding: 0 20px;
-    }
-    .top > a,
-    .search kbd {
-      display: none;
-    }
-    .search:focus-within {
-      outline: 2px solid #9abbed;
-      outline-offset: 2px;
-    }
-    .sort {
-      border: 0;
-      background: transparent;
-      color: #4c637d;
-      padding: 8px;
-      font: inherit;
-      font-size: 12px;
-    }
-    .search input {
-      font-size: 13px;
-    }
-    .heading {
-      display: block;
-    }
-    .heading h1 {
-      font-size: 26px;
-    }
-    .heading > div > p:not(.eyebrow) {
-      font-size: 13px;
-    }
-    .upload {
-      margin-top: 18px;
-      font-size: 13px;
-    }
-    .starters {
-      grid-template-columns: 1fr;
-      margin-bottom: 30px;
-    }
     .starters > button {
-      padding: 13px;
+      min-width: 135px;
     }
-    .starters p {
-      font-size: 13px;
+    .list .doc-card {
+      gap: 9px;
     }
-    .starters b {
-      font-size: 13px;
-    }
-    .starters > button > :global(svg) {
-      display: block;
-    }
-    .document-grid {
-      grid-template-columns: 1fr;
-    }
-    .doc-preview {
-      height: 150px;
-    }
-    .list-heading .sort {
+    .list time {
       display: none;
     }
-    .workspace-footer {
-      flex-direction: column;
-      gap: 12px;
-      font-size: 13px;
-    }
-    .modal {
-      padding: 25px;
-    }
-    .modal h2 {
-      font-size: 25px;
-    }
-  }
-  .sidebar {
-    overflow-y: auto;
-  }
-  .sidebar > * {
-    flex-shrink: 0;
-  }
-  .mobile-close,
-  .mobile-nav {
-    display: none;
-  }
-  @media (max-width: 760px) {
-    .sidebar {
-      display: none;
-      width: 280px;
-      padding: 22px;
-      box-shadow: 6px 0 28px #12375b30;
-    }
-    .sidebar.open {
-      display: flex;
-    }
-    .sidebar.open .brand b,
-    .sidebar.open .team,
-    .sidebar.open .new-button,
-    .sidebar.open .side-bottom {
-      display: flex;
-    }
-    .sidebar.open nav button {
-      font-size: 14px;
-      padding: 12px;
-      gap: 10px;
-    }
-    .sidebar.open nav button > span {
-      display: inline;
-    }
-    .mobile-nav,
-    .mobile-close {
-      display: block;
-      padding: 9px 10px;
-      border: 1px solid #b6cbe3;
-      background: #e9f1fb;
-      border-radius: 5px;
-      color: #25548c;
-      font-size: 13px;
-      cursor: pointer;
-    }
-    .mobile-close {
-      margin-bottom: 15px;
-    }
-    .workspace > main {
-      margin-left: 0;
-    }
-    .top {
-      padding: 12px 16px;
-      height: auto;
-      min-height: 76px;
-      gap: 12px;
-    }
-    .top > a {
-      display: none;
-    }
-    .top .search {
-      background: white;
-      border: 1px solid #e5eaf1;
-      border-radius: 14px;
-      padding: 12px 15px;
-      min-width: 0;
-      flex: 1;
-    }
-    .content {
-      padding: 25px 18px;
-    }
-    .heading {
-      flex-wrap: wrap;
-      gap: 16px;
-    }
-    .starters {
-      grid-template-columns: 1fr;
-    }
-    .starters p {
-      font-size: 14px;
-    }
-    .starters b {
-      font-size: 16px;
-    }
-    .document-grid {
-      grid-template-columns: 1fr;
+    .filters button {
+      font-size: 11px;
+      padding: 5px 8px;
     }
   }
 </style>

@@ -176,7 +176,8 @@ test('a document can be archived and restored through the workspace', async ({ p
   await page.getByRole('button', { name: 'Move to archive', exact: true }).click();
   await expect(page).toHaveURL(/\/workspace$/);
   await expect(page.getByText('Archive workflow', { exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Archived', exact: true }).click();
+  await page.getByRole('button', { name: 'Workspace options', exact: true }).click();
+  await page.getByRole('button', { name: 'Archived documents', exact: true }).click();
   await page.getByText('Archive workflow', { exact: true }).click();
   await page.getByRole('button', { name: 'File', exact: true }).click();
   await page.getByRole('button', { name: 'Restore to workspace', exact: true }).click();
@@ -220,6 +221,7 @@ test('research connections reject private servers and import a provider fixture 
             }
     });
   });
+  await page.getByRole('button', { name: 'Workspace options', exact: true }).click();
   await page.getByRole('button', { name: 'Import from research tool' }).click();
   await page.getByLabel('Kobo API key').fill('fixture-private-token');
   await page.getByRole('button', { name: 'Find questionnaires' }).click();

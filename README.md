@@ -4,6 +4,7 @@
 
 **Status:** Hosted product under active development. Common office editing, document version workflows, supported survey logic and the admin dashboard work. Google/Resend credentials are configured; real provider and study-account acceptance and broader editor/integration parity remain open. The public-consultation platform is a future extension. **License:** [AGPL v3](LICENSE).
 
+- [Standalone engine — MIT](https://github.com/ArefinAlter/dynodoc-engine) · [extraction and integration notes](docs/ENGINE-EXTRACTION.md)
 - [Detailed engineering and product handoff](docs/HANDOFF.md)
 - [Current implementation and remaining work](docs/PROJECT-STATUS.md)
 - [Google and email setup](docs/GOOGLE-AND-EMAIL-SETUP.md)

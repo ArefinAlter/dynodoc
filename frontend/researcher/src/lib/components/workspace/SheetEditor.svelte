@@ -1,5 +1,6 @@
 <script lang="ts">
   import PrintPreview from './PrintPreview.svelte';
+  import RibbonButton from './RibbonButton.svelte';
   import { defaultPage } from '$lib/workspace/office';
   import ContextMenu from '$lib/components/product/ContextMenu.svelte';
   import type { MenuAction } from '$lib/workspace/context-menu';
@@ -11,6 +12,8 @@
     sheetLayout,
     workbookInput,
     validationError,
+    conditionalStyle,
+    type ConditionalRule,
     type SheetLayout
   } from '$lib/workspace/sheet-model';
   import {
@@ -44,7 +47,15 @@
     ArrowUpAZ,
     Search,
     Trash2,
-    Printer
+    Printer,
+    Underline,
+    Strikethrough,
+    Grid2X2,
+    Merge,
+    Split,
+    ArrowDownToLine,
+    ArrowRightToLine,
+    PaintBucket
   } from '@lucide/svelte';
   import type { DocumentState, EventPayload, MaterializedNode } from '$lib/api/types';
   import { rowsForSheet } from '$lib/workspace/files';
@@ -380,8 +391,36 @@
       ? String(n.current_fields[`cell_${c}`] ?? '')
       : String(result);
   }
+  let conditionalDialog: HTMLDialogElement;
+  let condition = $state<ConditionalRule['operator']>('greaterThan'),
+    threshold = $state(0),
+    upper = $state(100),
+    conditionalFill = $state('#ffc7ce'),
+    conditionalColor = $state('#9c0006');
+  function applyConditional() {
+    if (
+      !Number.isFinite(threshold) ||
+      (condition === 'between' && (!Number.isFinite(upper) || upper < threshold))
+    )
+      return;
+    format({
+      conditional: [
+        {
+          operator: condition,
+          value: threshold,
+          upper,
+          background: conditionalFill,
+          color: conditionalColor
+        }
+      ]
+    });
+    conditionalDialog.close();
+  }
   function style(n: MaterializedNode, c: number, r: number, printing = false) {
-    const f = cellFormat(n, c),
+    const value =
+      computed[String(sheet?.current_fields.label)]?.[rowIndex.get(n.id)!]?.[c] ??
+      n.current_fields[`cell_${c}`];
+    const f = conditionalStyle(value, cellFormat(n, c)),
       sticky = !printing && (r < frozen || c < layout.frozenColumns);
     return `font-family:${safeFont(f.fontFamily)},${scriptFontStack};font-size:${bounded(f.fontSize, 6, 96, 11)}pt;font-weight:${f.bold ? '700' : '400'};font-style:${f.italic ? 'italic' : 'normal'};text-decoration:${[f.underline ? 'underline' : '', f.strike ? 'line-through' : ''].join(' ')};text-align:${['left', 'center', 'right'].includes(f.align || '') ? f.align : 'left'};vertical-align:${['top', 'middle', 'bottom'].includes(f.vertical || '') ? f.vertical : 'middle'};background:${safeColor(f.background, 'white')};color:${safeColor(f.color, '#303b47')};white-space:${f.wrap ? 'normal' : 'nowrap'};${f.border ? 'border:1px solid #718d7e;' : ''}${sticky ? `position:sticky;z-index:${r < frozen && c < layout.frozenColumns ? 5 : 4};${r < frozen ? `top:${28 + offsets[r]}px;` : ''}${c < layout.frozenColumns ? `left:${left(c)}px;` : ''}` : ''}`;
   }
@@ -927,13 +966,26 @@
           onchange={(e) => format({ fontSize: bounded(e.currentTarget.value, 6, 96, 11) })}
         /></label
       >
-      <button disabled={!editable} onclick={() => toggleFormat('underline')}>Underline</button
-      ><button disabled={!editable} onclick={() => toggleFormat('strike')}>Strikethrough</button
-      ><button disabled={!editable} onclick={() => toggleFormat('border')}>Borders</button>
-      <button disabled={!editable} onclick={() => merge()}>Merge cells</button><button
+      <RibbonButton
+        label="Underline"
+        icon={Underline}
         disabled={!editable}
-        onclick={() => merge(true)}>Unmerge</button
-      >
+        onclick={() => toggleFormat('underline')}
+      />
+      <RibbonButton
+        label="Strikethrough"
+        icon={Strikethrough}
+        disabled={!editable}
+        onclick={() => toggleFormat('strike')}
+      />
+      <RibbonButton
+        label="Borders"
+        icon={Grid2X2}
+        disabled={!editable}
+        onclick={() => toggleFormat('border')}
+      />
+      <RibbonButton label="Merge cells" icon={Merge} disabled={!editable} onclick={() => merge()} />
+      <RibbonButton label="Unmerge" icon={Split} disabled={!editable} onclick={() => merge(true)} />
       <label
         >Vertical<select
           aria-label="Cell vertical alignment"
@@ -944,10 +996,25 @@
           ></select
         ></label
       >
-      <button disabled={!editable} onclick={() => fill('down')}>Fill down</button><button
+      <RibbonButton
+        label="Fill down"
+        icon={ArrowDownToLine}
         disabled={!editable}
-        onclick={() => fill('right')}>Fill right</button
-      >
+        onclick={() => fill('down')}
+      />
+      <RibbonButton
+        label="Fill right"
+        icon={ArrowRightToLine}
+        disabled={!editable}
+        onclick={() => fill('right')}
+      />
+      <RibbonButton
+        label="Conditional formatting"
+        icon={PaintBucket}
+        large
+        disabled={!editable}
+        onclick={() => conditionalDialog.showModal()}
+      />
     </div>{:else if ribbon === 'Insert'}<div class="extra-tools">
       <button disabled={!editable} onclick={() => insert('row')}>Row above</button><button
         disabled={!editable}
@@ -1306,7 +1373,109 @@
     }}
   />{/if}
 
+<dialog bind:this={conditionalDialog} aria-labelledby="conditional-title">
+  <form
+    onsubmit={(e) => {
+      e.preventDefault();
+      applyConditional();
+    }}
+  >
+    <h2 id="conditional-title">Conditional formatting</h2>
+    <label
+      >Format cells if<select aria-label="Condition" bind:value={condition}
+        ><option value="greaterThan">Greater than</option><option value="lessThan">Less than</option
+        ><option value="equal">Equal to</option><option value="between">Between</option></select
+      ></label
+    >
+    <label
+      >Value<input
+        aria-label="Condition value"
+        type="number"
+        step="any"
+        required
+        bind:value={threshold}
+      /></label
+    >
+    {#if condition === 'between'}<label
+        >Upper value<input
+          aria-label="Upper condition value"
+          type="number"
+          min={threshold}
+          step="any"
+          required
+          bind:value={upper}
+        /></label
+      >{/if}
+    <label
+      >Fill<input
+        aria-label="Conditional fill color"
+        type="color"
+        bind:value={conditionalFill}
+      /></label
+    >
+    <label
+      >Text<input
+        aria-label="Conditional text color"
+        type="color"
+        bind:value={conditionalColor}
+      /></label
+    >
+    <div>
+      <button type="button" onclick={() => conditionalDialog.close()}>Cancel</button><button
+        type="button"
+        onclick={() => {
+          format({ conditional: [] });
+          conditionalDialog.close();
+        }}>Clear rules</button
+      ><button type="submit">Apply rule</button>
+    </div>
+  </form>
+</dialog>
+
 <style>
+  dialog {
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    padding: 24px;
+    color: #333;
+    width: 360px;
+    max-width: calc(100vw - 32px);
+  }
+  dialog::backdrop {
+    background: #0004;
+  }
+  dialog form {
+    display: grid;
+    gap: 12px;
+  }
+  dialog h2 {
+    margin: 0 0 10px;
+    font-size: 18px;
+  }
+  dialog label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    font-size: 13px;
+  }
+  dialog input,
+  dialog select,
+  dialog button {
+    padding: 6px;
+    border: 1px solid #ccc;
+    background: white;
+    border-radius: 3px;
+    max-width: 170px;
+  }
+  dialog form > div {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  dialog button {
+    cursor: pointer;
+  }
   .sheet-ribbon {
     display: flex;
     padding: 0 14px;

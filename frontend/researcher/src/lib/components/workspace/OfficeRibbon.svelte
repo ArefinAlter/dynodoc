@@ -1,8 +1,39 @@
 <script lang="ts">
+  import RibbonButton from './RibbonButton.svelte';
   import type { Editor } from '@tiptap/core';
-  import { pageSetup, type PageSetup } from '$lib/workspace/office';
+  import { pageSetup, officeFonts, type PageSetup } from '$lib/workspace/office';
   import { reviewChanges, resolveReview } from '$lib/workspace/tracked-changes';
   import {
+    Bold,
+    Italic,
+    Underline,
+    Strikethrough,
+    Undo2,
+    Redo2,
+    ClipboardPaste,
+    Copy,
+    Scissors,
+    AlignLeft,
+    AlignCenter,
+    AlignRight,
+    AlignJustify,
+    List,
+    ListOrdered,
+    ListChecks,
+    IndentIncrease,
+    IndentDecrease,
+    RemoveFormatting,
+    Highlighter,
+    Superscript,
+    Subscript,
+    Search,
+    Link,
+    ImagePlus,
+    Sigma,
+    Quote,
+    Minus,
+    FileText,
+    PanelTop,
     FilePlus2,
     MessageSquare,
     ListTree,
@@ -24,7 +55,14 @@
     onComment,
     onFont,
     tracking = $bindable(false),
-    onNotice
+    onNotice,
+    onClipboard,
+    onFind,
+    onLink,
+    onImage,
+    onMath,
+    fonts = officeFonts,
+    paginated = $bindable(true)
   }: {
     editor: Editor | null;
     editable: boolean;
@@ -37,7 +75,66 @@
     onFont?: (file: File, family: string) => Promise<void>;
     tracking?: boolean;
     onNotice: (message: string) => void;
+    onClipboard: (action: string) => void;
+    onFind: () => void;
+    onLink: () => void;
+    onImage: () => void;
+    onMath: () => void;
+    fonts?: string[];
+    paginated?: boolean;
   } = $props();
+  function active(name: string) {
+    void tick;
+    return editor?.isActive(name) || false;
+  }
+  const style = $derived.by(() => {
+    void tick;
+    return editor?.getAttributes('textStyle') || {};
+  });
+  const heading = $derived.by(() => {
+    void tick;
+    return editor?.isActive('heading')
+      ? String(editor.getAttributes('heading').level)
+      : 'paragraph';
+  });
+  const size = $derived(String(parseFloat(style.fontSize) || 11));
+  const sizes = $derived(
+    [
+      ...new Set([
+        '8',
+        '9',
+        '10',
+        '11',
+        '12',
+        '14',
+        '16',
+        '18',
+        '20',
+        '24',
+        '28',
+        '36',
+        '48',
+        '72',
+        size
+      ])
+    ].sort((a, b) => Number(a) - Number(b))
+  );
+  function setHeading(value: string) {
+    if (value === 'paragraph') editor?.chain().focus().setParagraph().run();
+    else
+      editor
+        ?.chain()
+        .focus()
+        .setHeading({ level: Number(value) as 1 | 2 | 3 | 4 | 5 | 6 })
+        .run();
+  }
+  function clearFormatting() {
+    if (!editor) return;
+    const chain = editor.chain().focus();
+    for (const name of Object.keys(editor.schema.marks))
+      if (!['trackedChange', 'sourceComment'].includes(name)) chain.unsetMark(name);
+    chain.clearNodes().run();
+  }
   const tabs = ['Home', 'Insert', 'Layout', 'Review', 'View'];
   let rows = $state(3),
     columns = $state(3),
@@ -161,59 +258,265 @@
 </div>
 <div class="office-panel" id="office-panel" role="tabpanel" aria-labelledby={`ribbon-${tab}`}>
   {#if tab === 'Home'}
+    <div class="group clipboard">
+      <span>Clipboard</span>
+      <RibbonButton
+        label="Paste"
+        icon={ClipboardPaste}
+        large
+        disabled={!editable}
+        onclick={() => onClipboard('paste')}
+      />
+      <div class="stack">
+        <RibbonButton
+          label="Cut"
+          icon={Scissors}
+          disabled={!editable}
+          onclick={() => onClipboard('cut')}
+        /><RibbonButton label="Copy" icon={Copy} onclick={() => onClipboard('copy')} />
+      </div>
+    </div>
+    <div class="group font-group">
+      <span>Font</span>
+      <div class="stack">
+        <div class="row">
+          <select
+            aria-label="Font family"
+            value={style.fontFamily || 'Arial'}
+            disabled={!editable}
+            onchange={(e) => editor?.chain().focus().setFontFamily(e.currentTarget.value).run()}
+            >{#each fonts as font}<option>{font}</option>{/each}</select
+          >
+          <select
+            class="size"
+            aria-label="Font size"
+            value={size}
+            disabled={!editable}
+            onchange={(e) =>
+              editor
+                ?.chain()
+                .focus()
+                .setFontSize(e.currentTarget.value + 'pt')
+                .run()}
+            >{#each sizes as value}<option>{value}</option>{/each}</select
+          >
+          <RibbonButton
+            label="Clear formatting"
+            icon={RemoveFormatting}
+            disabled={!editable}
+            onclick={clearFormatting}
+          />
+        </div>
+        <div class="row">
+          <RibbonButton
+            label="Bold"
+            icon={Bold}
+            disabled={!editable}
+            active={active('bold')}
+            onclick={() => editor?.chain().focus().toggleBold().run()}
+          />
+          <RibbonButton
+            label="Italic"
+            icon={Italic}
+            disabled={!editable}
+            active={active('italic')}
+            onclick={() => editor?.chain().focus().toggleItalic().run()}
+          />
+          <RibbonButton
+            label="Underline"
+            icon={Underline}
+            disabled={!editable}
+            active={active('underline')}
+            onclick={() => editor?.chain().focus().toggleUnderline().run()}
+          />
+          <RibbonButton
+            label="Strikethrough"
+            icon={Strikethrough}
+            disabled={!editable}
+            active={active('strike')}
+            onclick={() => editor?.chain().focus().toggleStrike().run()}
+          />
+          <RibbonButton
+            label="Subscript"
+            icon={Subscript}
+            disabled={!editable}
+            active={active('subscript')}
+            onclick={() => editor?.chain().focus().toggleSubscript().run()}
+          />
+          <RibbonButton
+            label="Superscript"
+            icon={Superscript}
+            disabled={!editable}
+            active={active('superscript')}
+            onclick={() => editor?.chain().focus().toggleSuperscript().run()}
+          />
+          <RibbonButton
+            label="Highlight"
+            icon={Highlighter}
+            disabled={!editable}
+            onclick={() => editor?.chain().focus().toggleHighlight({ color: '#fff2a8' }).run()}
+          />
+          <label class="color" title="Text color"
+            >A<input
+              aria-label="Text color"
+              type="color"
+              value={style.color || '#202124'}
+              disabled={!editable}
+              onchange={(e) => editor?.chain().focus().setColor(e.currentTarget.value).run()}
+            /></label
+          >
+        </div>
+      </div>
+    </div>
     <div class="group">
       <span>Paragraph</span>
-      <label
-        >Direction<select
-          aria-label="Text direction"
-          value={currentParagraph.dir ?? 'auto'}
+      <div class="stack">
+        <div class="row">
+          <RibbonButton
+            label="Bulleted list"
+            icon={List}
+            disabled={!editable}
+            active={active('bulletList')}
+            onclick={() => editor?.chain().focus().toggleBulletList().run()}
+          />
+          <RibbonButton
+            label="Numbered list"
+            icon={ListOrdered}
+            disabled={!editable}
+            active={active('orderedList')}
+            onclick={() => editor?.chain().focus().toggleOrderedList().run()}
+          />
+          <RibbonButton
+            label="Checklist"
+            icon={ListChecks}
+            disabled={!editable}
+            active={active('taskList')}
+            onclick={() => editor?.chain().focus().toggleTaskList().run()}
+          />
+          <RibbonButton
+            label="Decrease indent"
+            icon={IndentDecrease}
+            disabled={!editable}
+            onclick={() =>
+              paragraph({ indent: Math.max(0, Number(currentParagraph.indent || 0) - 18) })}
+          />
+          <RibbonButton
+            label="Increase indent"
+            icon={IndentIncrease}
+            disabled={!editable}
+            onclick={() =>
+              paragraph({ indent: Math.min(144, Number(currentParagraph.indent || 0) + 18) })}
+          />
+          <select
+            class="direction"
+            title="Text direction"
+            aria-label="Text direction"
+            value={currentParagraph.dir ?? 'auto'}
+            disabled={!editable}
+            onchange={(e) => paragraph({ dir: e.currentTarget.value })}
+            ><option value="auto">Auto</option><option value="ltr">LTR</option><option value="rtl"
+              >RTL</option
+            ></select
+          >
+        </div>
+        <div class="row">
+          {#each [{ label: 'Align left', value: 'left', icon: AlignLeft }, { label: 'Align center', value: 'center', icon: AlignCenter }, { label: 'Align right', value: 'right', icon: AlignRight }, { label: 'Justify', value: 'justify', icon: AlignJustify }] as align}
+            <RibbonButton
+              label={align.label}
+              icon={align.icon}
+              disabled={!editable}
+              active={currentParagraph.textAlign === align.value}
+              onclick={() => editor?.chain().focus().setTextAlign(align.value).run()}
+            />
+          {/each}
+          <select
+            class="spacing"
+            aria-label="Line spacing"
+            title="Line spacing"
+            value={currentParagraph.lineHeight || '1.6'}
+            disabled={!editable}
+            onchange={(e) => paragraph({ lineHeight: e.currentTarget.value })}
+            ><option value="1">1.0</option><option value="1.15">1.15</option><option value="1.5"
+              >1.5</option
+            ><option value="1.6">1.6</option><option value="2">2.0</option></select
+          >
+          <RibbonButton
+            label="Block quote"
+            icon={Quote}
+            disabled={!editable}
+            onclick={() => editor?.chain().focus().toggleBlockquote().run()}
+          />
+        </div>
+      </div>
+    </div>
+    <div class="group styles">
+      <span>Styles</span>
+      {#each [{ value: 'paragraph', label: 'Normal' }, { value: '1', label: 'Heading 1' }, { value: '2', label: 'Heading 2' }] as item}
+        <button
+          class="style-card"
+          class:heading={item.value !== 'paragraph'}
+          aria-pressed={heading === item.value}
           disabled={!editable}
-          onchange={(e) => paragraph({ dir: e.currentTarget.value })}
-          ><option value="auto">Automatic</option><option value="ltr">Left to right</option><option
-            value="rtl">Right to left</option
-          ></select
-        ></label
-      >
-      <label
-        >Before<select
-          aria-label="Space before paragraph"
-          value={currentParagraph.spaceBefore ?? 0}
-          disabled={!editable}
-          onchange={(e) => paragraph({ spaceBefore: Number(e.currentTarget.value) })}
-          >{#each [0, 3, 6, 8, 12, 18, 24] as n}<option value={n}>{n} pt</option>{/each}</select
-        ></label
-      >
-      <label
-        >After<select
-          aria-label="Space after paragraph"
-          value={currentParagraph.spaceAfter ?? 0}
-          disabled={!editable}
-          onchange={(e) => paragraph({ spaceAfter: Number(e.currentTarget.value) })}
-          >{#each [0, 3, 6, 8, 12, 18, 24] as n}<option value={n}>{n} pt</option>{/each}</select
-        ></label
-      >
-      <label
-        >Indent<select
-          aria-label="Paragraph indent"
-          value={currentParagraph.indent ?? 0}
-          disabled={!editable}
-          onchange={(e) => paragraph({ indent: Number(e.currentTarget.value) })}
-          >{#each [0, 18, 36, 54, 72] as n}<option value={n}>{n} pt</option>{/each}</select
-        ></label
+          onmousedown={(e) => e.preventDefault()}
+          onclick={() => setHeading(item.value)}>{item.label}</button
+        >
+      {/each}
+      <select
+        class="style-picker"
+        aria-label="Paragraph style"
+        value={heading}
+        disabled={!editable}
+        onchange={(e) => setHeading(e.currentTarget.value)}
+        ><option value="paragraph">Normal</option>{#each [1, 2, 3, 4, 5, 6] as level}<option
+            value={level}>Heading {level}</option
+          >{/each}</select
       >
     </div>
-    {#if onFont}<div class="group">
-        <span>Fonts</span><button disabled={!editable} onclick={() => fontInput?.click()}
-          ><Type size={16} />Upload font</button
-        ><input
-          class="hidden"
-          type="file"
-          bind:this={fontInput}
-          accept=".woff2,.woff,.ttf,.otf"
-          onchange={fontFile}
-        />
-      </div>{/if}
+    <div class="group">
+      <span>Editing</span>
+      <div class="stack">
+        <RibbonButton label="Find and replace" icon={Search} onclick={onFind} />
+        <div class="row">
+          <RibbonButton
+            label="Undo"
+            icon={Undo2}
+            disabled={!editable}
+            onclick={() => editor?.chain().focus().undo().run()}
+          /><RibbonButton
+            label="Redo"
+            icon={Redo2}
+            disabled={!editable}
+            onclick={() => editor?.chain().focus().redo().run()}
+          />
+        </div>
+      </div>
+    </div>
   {:else if tab === 'Insert'}
+    <div class="group">
+      <span>Illustrations & links</span>
+      <RibbonButton
+        label="Insert image"
+        icon={ImagePlus}
+        large
+        disabled={!editable}
+        onclick={onImage}
+      />
+      <RibbonButton label="Insert link" icon={Link} large disabled={!editable} onclick={onLink} />
+      <RibbonButton
+        label="Insert LaTeX equation"
+        icon={Sigma}
+        large
+        disabled={!editable}
+        onclick={onMath}
+      />
+      <RibbonButton
+        label="Horizontal rule"
+        icon={Minus}
+        large
+        disabled={!editable}
+        onclick={() => editor?.chain().focus().setHorizontalRule().run()}
+      />
+    </div>
     <div class="group">
       <span>Pages & comments</span><button
         disabled={!editable}
@@ -266,7 +569,37 @@
     </div>
   {:else if tab === 'Layout'}
     <div class="group">
-      <span>Page setup · saved with this document</span><label
+      <span>Paragraph</span>
+      <label
+        >Before<select
+          aria-label="Space before paragraph"
+          value={currentParagraph.spaceBefore ?? 0}
+          disabled={!editable}
+          onchange={(e) => paragraph({ spaceBefore: Number(e.currentTarget.value) })}
+          >{#each [0, 3, 6, 8, 12, 18, 24] as n}<option value={n}>{n} pt</option>{/each}</select
+        ></label
+      >
+      <label
+        >After<select
+          aria-label="Space after paragraph"
+          value={currentParagraph.spaceAfter ?? 0}
+          disabled={!editable}
+          onchange={(e) => paragraph({ spaceAfter: Number(e.currentTarget.value) })}
+          >{#each [0, 3, 6, 8, 12, 18, 24] as n}<option value={n}>{n} pt</option>{/each}</select
+        ></label
+      >
+      <label
+        >Indent<select
+          aria-label="Paragraph indent"
+          value={currentParagraph.indent ?? 0}
+          disabled={!editable}
+          onchange={(e) => paragraph({ indent: Number(e.currentTarget.value) })}
+          >{#each [0, 18, 36, 54, 72] as n}<option value={n}>{n} pt</option>{/each}</select
+        ></label
+      >
+    </div>
+    <div class="group">
+      <span>Page setup</span><label
         >Paper<select
           aria-label="Paper size"
           value={page.size}
@@ -370,10 +703,6 @@
         ><Accessibility size={16} />Accessibility check</button
       >
     </div>
-    <p class="explain">
-      Track insertions and deletions within existing paragraphs. Formatting and structural changes
-      remain in version history. Use a personal draft to review a larger rewrite.
-    </p>
   {:else}<div class="group">
       <span>Navigate & print</span><button
         aria-pressed={outline}
@@ -382,10 +711,37 @@
         onclick={() => editor?.commands.focus()}>Return to document</button
       >
     </div>
-    <p class="explain">
-      Edit in the continuous canvas. Preview pages to check pagination, headers, footers and page
-      breaks.
-    </p>{/if}
+    <div class="group">
+      <span>Page view</span><RibbonButton
+        label="Print layout"
+        icon={FileText}
+        large
+        active={paginated}
+        onclick={() => (paginated = true)}
+      /><RibbonButton
+        label="Continuous view"
+        icon={PanelTop}
+        large
+        active={!paginated}
+        onclick={() => (paginated = false)}
+      />
+    </div>
+    {#if onFont}<div class="group">
+        <span>Fonts</span><RibbonButton
+          label="Upload font"
+          icon={Type}
+          large
+          disabled={!editable}
+          onclick={() => fontInput?.click()}
+        /><input
+          class="hidden"
+          type="file"
+          bind:this={fontInput}
+          accept=".woff2,.woff,.ttf,.otf"
+          onchange={fontFile}
+        />
+      </div>{/if}
+  {/if}
 </div>
 {#if tab === 'Review' && changes.length}<section
     class="review-list"
@@ -453,95 +809,118 @@
   .ribbon-tabs {
     display: flex;
     gap: 2px;
-    background: #f3f6fb;
-    padding: 0 14px;
-    border-bottom: 1px solid #cbd8e9;
+    background: #f3f3f3;
+    padding: 0 16px;
     overflow: auto;
+    flex-shrink: 0;
   }
   .ribbon-tabs button {
     border: 0;
-    border-bottom: 3px solid transparent;
-    padding: 10px 17px;
+    border-bottom: 2px solid transparent;
+    padding: 8px 13px 6px;
     background: none;
-    color: #294966;
-    font: 14px Arial;
+    color: #252525;
+    font:
+      13px 'Segoe UI',
+      Arial,
+      sans-serif;
     cursor: pointer;
   }
   .ribbon-tabs button[aria-selected='true'] {
-    border-bottom-color: #2766ad;
-    background: #e5effc;
+    border-bottom-color: #185abd;
     font-weight: 600;
   }
   .office-panel {
     display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    padding: 10px 16px;
-    background: #f2f6fc;
-    border-bottom: 1px solid #dce5f1;
-    font: 13px Arial;
-    color: #294966;
+    gap: 9px;
+    padding: 5px 12px 3px;
+    margin: 0 5px;
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 5px;
+    box-shadow: 0 2px 3px #0000000d;
+    font:
+      12px 'Segoe UI',
+      Arial,
+      sans-serif;
+    color: #303030;
+    min-height: 99px;
+    overflow-x: auto;
+    flex-shrink: 0;
   }
   .group {
     display: flex;
-    align-items: end;
-    flex-wrap: wrap;
-    gap: 7px;
-    border-inline-end: 1px solid #c8d8e9;
-    padding-inline-end: 12px;
+    align-items: center;
+    gap: 5px;
+    border-inline-end: 1px solid #d5d5d5;
+    padding: 0 10px 20px 0;
     position: relative;
-    padding-top: 22px;
+    flex-shrink: 0;
+  }
+  .group:last-child {
+    border: 0;
   }
   .group > span {
     position: absolute;
-    top: 0;
-    font-size: 12px;
-    color: #4f637b;
+    bottom: 2px;
+    inset-inline: 0 10px;
+    text-align: center;
+    font-size: 11px;
   }
   .group label {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    font-size: 12px;
+    gap: 3px;
+    font-size: 11px;
   }
   .group .check {
     flex-direction: row;
     align-items: center;
-    padding: 8px;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+  .stack {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
   }
   button,
   select,
   input {
     font: inherit;
     color: inherit;
-    border: 1px solid #b8c9dc;
-    border-radius: 4px;
+    border: 1px solid #c7c7c7;
+    border-radius: 2px;
     background: white;
-    padding: 7px;
-    min-height: 34px;
+    padding: 4px;
+    min-height: 27px;
   }
   button {
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
+    gap: 5px;
   }
   button:hover,
   button[aria-pressed='true'] {
-    background: #dceafa;
+    background: #e8eef7;
+    border-color: #185abd;
   }
   button:disabled,
   select:disabled,
   input:disabled {
-    opacity: 0.5;
+    opacity: 0.45;
     cursor: default;
   }
   input {
-    max-width: 155px;
+    max-width: 140px;
   }
   input[type='number'] {
-    max-width: 65px;
+    max-width: 48px;
   }
   input[type='checkbox'] {
     min-height: 0;
@@ -549,15 +928,59 @@
   input.hidden {
     display: none;
   }
-  .symbol {
-    min-width: 32px;
+  .font-group select {
+    width: 155px;
   }
-  .explain {
-    margin: 2px 0;
+  .font-group .size {
+    width: 48px;
+  }
+  .direction,
+  .spacing {
+    width: 58px;
+  }
+  .symbol {
+    min-width: 27px;
+  }
+  .styles {
+    gap: 4px;
+  }
+  .style-card {
+    min-width: 82px;
+    height: 56px;
+    font-size: 15px;
+    border: 1px solid transparent;
+  }
+  .style-card.heading {
+    color: #0f4761;
+    font-size: 17px;
+  }
+  .style-picker {
+    width: 25px;
+    max-width: 25px;
+    height: 56px;
+    font-size: 0;
+  }
+  .style-picker option {
     font-size: 13px;
-    line-height: 1.6;
+  }
+  .group .color {
+    position: relative;
+    width: 26px;
+    height: 26px;
+    display: grid;
+    place-items: center;
+    border-bottom: 3px solid #c62828;
+    font-weight: 600;
+    font-size: 15px;
+  }
+  .color input {
+    position: absolute;
+    opacity: 0;
+    inset: 0;
     width: 100%;
-    color: #4d637a;
+    height: 100%;
+    padding: 0;
+    cursor: pointer;
   }
   .review-list,
   .outline,

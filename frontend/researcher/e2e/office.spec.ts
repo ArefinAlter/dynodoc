@@ -3,6 +3,7 @@ import type { MaterializedNode } from '../src/lib/api/types';
 import type { JSONContent } from '@tiptap/core';
 import AxeBuilder from '@axe-core/playwright';
 import { zipSync, strToU8 } from 'fflate';
+import { ulid } from 'ulid';
 test.skip(
   process.env.PILOT_E2E !== 'true',
   'Uses the isolated local API and test-only authentication.'
@@ -225,7 +226,7 @@ test('spreadsheet print includes rows outside the virtual viewport', async ({ pa
       base_seq: detail.latest_seq,
       ops: Array.from({ length: 80 }, (_, i) => ({
         type: 'NodeCreated',
-        node_id: `01K00000000000000000${String(i).padStart(6, '0')}`,
+        node_id: ulid(),
         node_type: 'item',
         parent_id: sheet.id,
         pos: last!.pos + 'V' + String(i).padStart(3, '0'),
@@ -278,4 +279,127 @@ test('a cell being edited keeps its original save base when a colleague changes 
   ).toBeVisible();
   const current = await (await page.request.get(`/api/engine/documents/${id}`, { headers })).json();
   expect(current.state.nodes[row.id].current_fields.cell_0).toBe('Colleague value');
+});
+
+test('live pages reflow long editable paragraphs without changing content identity or undo', async ({
+  page
+}) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await create(page);
+  const editor = page.getByRole('textbox', { name: 'Document content' });
+  const text = 'Editable pagination keeps this paragraph intact. বাংলা العربية 🌍. '.repeat(110);
+  await editor.fill(text);
+  await saved(page);
+  await expect.poll(() => page.locator('.page-sheet').count()).toBeGreaterThan(1);
+  const blockId = await editor.locator('p').first().getAttribute('data-blockid');
+  await expect(editor.locator('.pagination-gap')).not.toHaveCount(0);
+  // Every visible text line must stay inside a page's content box, including a
+  // paragraph that spans several pages. Empty layout widgets are not document text.
+  const overflow = await editor.evaluate((el) => {
+    const origin = el.getBoundingClientRect().top;
+    const pitch = (297 * 96) / 25.4 + 24;
+    const body = ((297 - 2 * 25.4) * 96) / 25.4;
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    const bad: { top: number; bottom: number }[] = [];
+    let node: Node | null;
+    while ((node = walker.nextNode())) {
+      if (!node.textContent?.trim()) continue;
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      for (const rect of range.getClientRects()) {
+        if (!rect.width || !rect.height) continue;
+        const top = rect.top - origin;
+        const bottom = top + rect.height;
+        if (
+          bottom % pitch > body + 3 ||
+          Math.floor(top / pitch) !== Math.floor((bottom - 1) / pitch)
+        )
+          bad.push({ top, bottom });
+      }
+    }
+    return bad;
+  });
+  expect(overflow).toEqual([]);
+  await editor.click();
+  await page.keyboard.press('Control+End');
+  await page.keyboard.type(' END-OF-PAGES');
+  await expect(editor).toContainText('END-OF-PAGES');
+  await page.keyboard.press('Control+z');
+  await expect(editor).not.toContainText('END-OF-PAGES');
+  await saved(page);
+  await page.screenshot({ path: 'test-results/editable-pages.png', fullPage: true });
+  await page.getByRole('tab', { name: 'Layout', exact: true }).click();
+  await page.getByLabel('Page margins').selectOption('12.7');
+  await saved(page);
+  await expect(editor.locator('p').first()).toHaveAttribute('data-blockid', blockId!);
+  await page.reload();
+  await expect(editor).toContainText('Editable pagination');
+  await expect(editor.locator('p').first()).toHaveAttribute('data-blockid', blockId!);
+  await editor.fill('One page again.');
+  await saved(page);
+  await expect(page.locator('.page-sheet')).toHaveCount(1);
+  expect(errors).toEqual([]);
+});
+
+test('conditional formatting follows formula values and survives save, undo and reload', async ({
+  page
+}) => {
+  await create(page, 'spreadsheet');
+  async function edit(address: string, value: string) {
+    await page.getByRole('button', { name: new RegExp(`^${address}:`) }).dblclick();
+    const input = page.getByRole('textbox', { name: `Edit ${address}`, exact: true });
+    await input.fill(value);
+    await input.press('Enter');
+  }
+  await edit('A1', '12');
+  await edit('B1', '=A1*2');
+  await page.getByLabel('Go to cell or range').fill('B1:B1');
+  await page.getByLabel('Go to cell or range').press('Enter');
+  await page.getByRole('button', { name: 'Conditional formatting', exact: true }).click();
+  await page.getByLabel('Condition value', { exact: true }).fill('20');
+  await page.getByRole('button', { name: 'Apply rule', exact: true }).click();
+  const cell = page.getByRole('button', { name: /^B1:/ }).locator('..');
+  await expect(cell).toHaveCSS('background-color', 'rgb(255, 199, 206)');
+  await saved(page);
+  await page.reload();
+  await expect(cell).toHaveCSS('background-color', 'rgb(255, 199, 206)');
+  await edit('A1', '4');
+  await expect(cell).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+  await saved(page);
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(cell).toHaveCSS('background-color', 'rgb(255, 199, 206)');
+});
+
+test('editable tables paginate between rows and reload without saving layout rows', async ({
+  page
+}) => {
+  await create(page);
+  await page.getByRole('tab', { name: 'Insert', exact: true }).click();
+  await page.getByLabel('Table rows', { exact: true }).fill('30');
+  await page.getByLabel('Table columns', { exact: true }).fill('3');
+  await page.getByRole('button', { name: 'Insert table', exact: true }).click();
+  const editor = page.getByRole('textbox', { name: 'Document content' });
+  await saved(page);
+  await expect.poll(() => page.locator('.page-sheet').count()).toBeGreaterThan(1);
+  await expect(editor.locator('tr.pagination-gap')).not.toHaveCount(0);
+  await expect(editor.locator('tr:not(.pagination-gap)')).toHaveCount(30);
+  await expect(editor.locator('tr.pagination-gap td').first()).toHaveAttribute('colspan', '3');
+  const id = new URL(page.url()).pathname.split('/').pop();
+  const response = await (
+    await page.request.get(`/api/engine/documents/${id}`, {
+      headers: { 'x-dynodoc-editor': 'office-v3' }
+    })
+  ).json();
+  const table = (Object.values(response.state.nodes) as MaterializedNode[]).find(
+    (n) => (n.current_fields.content as JSONContent)?.type === 'table'
+  );
+  expect((table?.current_fields.content as JSONContent).content).toHaveLength(30);
+  expect(JSON.stringify(table)).not.toContain('pagination-gap');
+  await editor.locator('tr:not(.pagination-gap)').last().locator('td').first().click();
+  await page.keyboard.type('Last row');
+  await saved(page);
+  await page.reload();
+  await expect(editor).toContainText('Last row');
+  await expect(editor.locator('tr:not(.pagination-gap)')).toHaveCount(30);
 });

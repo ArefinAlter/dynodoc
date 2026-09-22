@@ -22,6 +22,22 @@ erasure, explicitly deferred off-site backups and limited the product to web-bas
 clients. Legal operator details are still missing. Baseline deployment/test counts
 below remain historical; consult the release record for current evidence.
 
+## Continuation: editable Office workspace and open engine
+
+On 22 September the owner explicitly prioritized editable pagination and a workspace
+close to the supplied Word screenshots. [Decision 006](decisions/006-editable-pages-and-open-engine.md)
+supersedes the older P2 deferral for this work. The implementation adds compact
+ribbons, a template/recent-files workspace, live editable pagination, numeric
+conditional formatting and bounded XLSX workers. [Release evidence](EDITABLE-OFFICE-RELEASE.md)
+distinguishes tested local changes from deployment and unresolved Office features.
+
+The owner also explicitly authorized MIT relicensing and publication of the engine
+as [ArefinAlter/dynodoc-engine](https://github.com/ArefinAlter/dynodoc-engine). The new
+repository is public and builds independently. The application license remains
+AGPL. [Extraction notes](ENGINE-EXTRACTION.md) document the retained compatible copy
+and remaining dependency-boundary migration. Historical sections below describe
+the earlier baseline and must not override this continuation.
+
 ## Contents
 
 - [Start here](#start-here)

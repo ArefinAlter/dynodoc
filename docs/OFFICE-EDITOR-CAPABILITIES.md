@@ -1,6 +1,6 @@
 # Office editing and the document-version-control pivot
 
-Updated 21 September 2026. This records implemented behavior and explicit limits;
+Updated 22 September 2026. This records implemented behavior and explicit limits;
 it is not a Microsoft Office compatibility certification. The public equivalent
 is `/compatibility`. Decision 004 records the owner's expanded scope.
 
@@ -12,8 +12,10 @@ is `/compatibility`. Decision 004 records the owner's expanded scope.
   comments, document tabs, search/replace and context menus remain available.
 - Page size (A4/Letter/Legal), orientation, uniform margins, plain headers/footers,
   page numbers, document language and explicit breaks are versioned root fields.
-  An isolated Paged.js iframe produces paginated preview/print/PDF; the editable
-  canvas is continuous. Oversized tables/blocks and browser print settings can
+  The editable canvas now reflows across visible pages using browser-measured
+  ProseMirror decorations; automatic layout preserves content IDs, undo and history.
+  A continuous view remains available. An isolated Paged.js iframe produces
+  preview/print/PDF independently of the live layout. Oversized tables/blocks and browser print settings can
   still affect output; this is not Word's layout engine.
 - Text insertions/deletions inside existing paragraphs can be tracked, inspected,
   accepted and rejected. Deleting a pending insertion cancels that insertion.
@@ -75,9 +77,14 @@ Sorting formula-containing workbooks or merged sheets is refused rather than
 silently corrupting references. Unsupported imported validation rules are retained
 for export but not evaluated. Limits: 3,000 imported rows/workbook, 100 columns,
 10 MB source, 5,000 ordinary batch operations; UI operations use smaller guards.
-XLSX ZIP expansion is preflighted but ExcelJS conversion still runs on the main
-thread. Charts, pivots, macros, protected ranges, external connections, conditional
-formatting and full Excel function/format parity remain incomplete.
+XLSX ZIP expansion and ExcelJS conversion run in a terminable worker with a
+45-second timeout and upload cancellation. Empty rows and merge anchors survive
+conversion. Numeric greater-than, less-than, equal-to and between conditional
+formatting rules are saved, recalculated and exchanged through XLSX. Rule output
+is limited to RGB fill/text colors; formula-based rules, data bars, icon sets and
+complex priority/style composition remain unsupported. Charts, pivots, macros,
+protected ranges, external connections and full Excel function/format parity remain
+incomplete.
 
 ## Versioning, performance and privacy
 
@@ -106,7 +113,9 @@ unsaved work and reload so they cannot strip marks/settings they do not understa
   transactions, composition handling and schema extensions already used in Dynodoc.
 - [Tiptap Pages](https://tiptap.dev/docs/pages/getting-started/overview) is a separate
   commercial product. No license has been assumed. [Paged.js](https://github.com/pagedjs/pagedjs)
-  supplies an open-source pagination preview, with different editing capabilities.
+  supplies an open-source pagination preview. The live editable layout is now an
+  in-repository ProseMirror decoration plugin; no commercial Pages dependency was
+  adopted. See [decision 006](decisions/006-editable-pages-and-open-engine.md).
 - [Tiptap's DOCX matrix](https://tiptap.dev/docs/conversion/getting-started/feature-support-matrix)
   illustrates that conversion requires feature-specific fidelity claims. Dynodoc
   implements its own documented OOXML subset rather than claiming converter parity.
@@ -141,7 +150,9 @@ storage cost. Memory profiling remains necessary before claiming lightweight lar
 support. The fixture has no images or complex tables; 400 page-start flags do not
 validate the pagination or end-to-end import of a real 400-page file.
 
-### Release verification
+### Historical release verification — 21 September 2026
+
+For the editable-page increment, see [22 September verification](EDITABLE-OFFICE-RELEASE.md).
 
 - 101 frontend unit tests passed; ESLint, formatting, Svelte/TypeScript checks and
   the production Node build passed.
@@ -165,3 +176,18 @@ Native desktop/mobile IMEs, screen readers, real Google/Resend/provider accounts
 representative complex Office documents and production load/recovery acceptance
 remain separate validation work. Automated browser composition events do not
 simulate every operating-system input method.
+
+## Editable-layout limits and acceptance
+
+Long paragraphs can cross pages without splitting their saved structural node.
+Tables paginate between rows; rows connected by rowspans are kept together.
+Oversized images, equations and indivisible table-row groups remain visible and
+show an oversized-content status. There is no repeated table-header, widow/orphan,
+section-local margin, footnote-layout or Word-identical line-breaking guarantee.
+Browser shaping and fonts affect layout. Native desktop/mobile IME, screen-reader
+and representative long-document performance acceptance remain open.
+
+The current tests exercise mixed Bengali/Arabic/Latin text across page boundaries,
+undo, margins, reload and stable block IDs, table rows across pages without saved
+layout nodes, and formula-driven conditional formatting across save/reload/undo.
+See [the release record](EDITABLE-OFFICE-RELEASE.md) for the verification status.

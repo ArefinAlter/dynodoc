@@ -14,56 +14,24 @@
   } from '@lucide/svelte';
   import { guide } from '$lib/workspace/guide';
   let dialog: HTMLDialogElement;
-  let index = $state(0),
-    welcome = $state(false);
-  const visible = $derived(
-    $page.url.pathname === '/workspace' ||
-      $page.url.pathname.startsWith('/documents/') ||
-      $page.url.pathname === '/admin'
-  );
+  let index = $state(0);
   const step = $derived(guide[index]);
   $effect(() => {
-    if ($page.url.pathname === '/workspace')
-      try {
-        welcome = !localStorage.getItem('dynodoc_guide_v1');
-      } catch {
-        welcome = true;
-      }
+    window.addEventListener('dynodoc:help', open);
+    return () => window.removeEventListener('dynodoc:help', open);
   });
-  function remember() {
-    welcome = false;
-    try {
-      localStorage.setItem('dynodoc_guide_v1', 'seen');
-    } catch {
-      /* The guide remains usable when local storage is blocked. */
-    }
-  }
   function open() {
-    remember();
     index = 0;
     dialog.showModal();
   }
 </script>
 
-{#if visible}<button
+{#if $page.url.pathname === '/admin'}<button
     class="help"
-    style:bottom={$page.url.pathname.startsWith('/documents/') ? '52px' : '22px'}
+    title="Help & tutorials"
+    aria-label="Help & tutorials"
     onclick={open}><HelpCircle size={18} /><span>Help & tutorials</span></button
-  >{#if welcome && $page.url.pathname === '/workspace'}<aside
-      class="welcome"
-      aria-labelledby="welcome-title"
-    >
-      <button class="dismiss" aria-label="Dismiss welcome" onclick={remember}
-        ><X size={16} /></button
-      >
-      <p id="welcome-title">Your research has a new home.</p>
-      <span>A short guide to editing, team access and document history.</span>
-      <div>
-        <button onclick={open}>Take a tour <ArrowRight size={15} /></button><button
-          onclick={remember}>Not now</button
-        >
-      </div>
-    </aside>{/if}{/if}
+  >{/if}
 <dialog bind:this={dialog} aria-labelledby="guide-title">
   <header>
     <a href="https://dynodoc.online"
@@ -132,35 +100,6 @@
     font: 13px var(--font-ui);
     cursor: pointer;
   }
-  .welcome {
-    position: fixed;
-    right: 20px;
-    bottom: 76px;
-    z-index: 85;
-    max-width: 340px;
-    width: calc(100vw - 40px);
-    background: #fffefb;
-    color: #29465e;
-    border: 1px solid #b9cde2;
-    border-radius: 10px;
-    padding: 22px;
-    box-shadow: 0 10px 28px #23456820;
-  }
-  .welcome > p {
-    font-weight: 650;
-    font-size: 18px;
-    margin: 4px 0 9px;
-  }
-  .welcome > span {
-    font-size: 14px;
-    line-height: 1.7;
-  }
-  .welcome > div {
-    display: flex;
-    gap: 10px;
-    margin-top: 17px;
-  }
-  .welcome button,
   dialog button {
     display: flex;
     align-items: center;
@@ -174,14 +113,6 @@
     background: #e8f1fd;
     color: #25568d;
     cursor: pointer;
-  }
-  .welcome .dismiss {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    background: none;
-    border: 0;
-    padding: 5px;
   }
   dialog {
     border: 1px solid #c3d2e1;
