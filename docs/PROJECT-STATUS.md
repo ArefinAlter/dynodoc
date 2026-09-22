@@ -11,7 +11,9 @@ and the old charts/pivots/note-body deferrals. The new work adds the Excel refer
 UI, native supported charts, pivot summaries, named ranges, data tools, server-checked
 sheet protection, and Word note/contents editing. Full Office parity, native pivot
 caches and live per-page footnote layout remain unfinished. Publication and runtime
-status must be read from the release record, not inferred from a Git push.
+status is recorded in the release record: `a413c20` is pushed to main and deployed
+to the VPS workspace on 22 September, with passing frontend/authenticated/Rust CI
+and live synthetic browser checks. The MIT engine is published independently.
 
 ## What this project is for
 
@@ -29,8 +31,8 @@ The original immediate product was a questionnaire authoring tool. The owner's e
 | Homepage | Responsive cream/blue homepage, self-hosted sans serif typography, interactive editor/draft/integration examples, document version-control explainers, reduced-motion behavior, Node and Vercel builds. |
 | Legal pages | Privacy, terms and cookie pages describe actual storage and sharing; browser measurement preference is available. Operator details and legal review remain open. |
 | Workspace | Create/import documents, organize them in a hierarchy, search, share roles, make copies, move to Trash and restore. |
-| Document editing | Document tabs, common ribbons, paragraph styles/direction/spacing, shared font uploads, text tracking with accept/reject, threaded comments with resolve/reopen, table/context actions, equations, versioned page setup, live editable pagination and paginated print preview. Native DOCX import runs in a bounded worker; LaTeX/Overleaf interchange remains. |
-| Spreadsheet editing | Typed cells, ranges, relative formula fill, persistent calculation graph, formatting, validation subset, merges, freeze/hide/resize, sheet lifecycle, find/replace/filter, values-only sorting, numeric conditional formatting, worker-based XLSX import and styled XLSX exchange. |
+| Document editing | Document tabs, common ribbons, paragraph styles/direction/spacing, shared font uploads, text tracking with accept/reject, threaded comments with resolve/reopen, table/context actions, equations, versioned page setup, live editable pagination and paginated print preview. Footnotes/endnotes have editable text and native DOCX parts; contents can be inserted/refreshed. Native DOCX import runs in a bounded worker; LaTeX/Overleaf interchange remains. |
+| Spreadsheet editing | Typed cells, ranges, relative formula fill, persistent calculation graph, formatting, validation subset, merges, freeze/hide/resize, sheet lifecycle, find/replace/filter, formula-aware row sorting, names, charts, pivot summaries, data tools, whole-sheet protection, numeric conditional formatting, worker-based XLSX import and styled XLSX exchange. |
 | Version workflows | Personal drafts, selected-block sharing, get latest, conflict choices, named versions, comparisons, attribution and restoration as new events. |
 | Research files | DOCX/DOC, CSV/XLSX, XLSForm and REDCap dictionary interchange; original files retained. |
 | Research connections | ODK/Kobo form and response imports; REDCap metadata/records, SurveyCTO wide responses and SurveyMonkey bulk responses. Google Forms adds separate read-only OAuth definition/response imports. Live study-account acceptance remains open. |
@@ -57,8 +59,8 @@ The owner explicitly pivoted the product to document version control on 21 Septe
 
 ## Remaining product and engineering work
 
-- Broader document features: pagination refinements (oversized objects, repeated table headers, widow/orphan control), tracked moves/formatting and structural revisions, footnote/endnote bodies, citations/bibliographies, section-specific layouts and exact Office round trips.
-- Broader spreadsheet features: charts, pivots, formula-based validation, protected ranges, advanced sort behavior with formulas, Excel formula compatibility and high-fidelity workbook formatting.
+- Broader document features: pagination refinements (oversized objects, repeated table headers, widow/orphan control), tracked moves/formatting and structural revisions, per-page footnote layout and rich notes, citations/bibliographies, section-specific layouts and exact Office round trips.
+- Broader spreadsheet features: advanced charts, native pivot caches, structured table formulas, full formula-based validation, protected cell ranges/passwords, full Excel formula/date/locale compatibility and higher-fidelity workbook formatting.
 - Survey execution beyond the supported preview subset: repeat instances, translations/media workflows, external datasets, advanced XPath/date functions and vendor-specific expression engines.
 - Research-platform synchronization: scheduled refresh, incremental reconciliation and writeback. All six implemented API import paths need real study-account verification. CSPro dictionary/form/logic support is not implemented; exported CSV/XLSX data can be edited.
 - Stronger review: mentions and notification delivery, richer tracked suggestions, per-block/protected-range permissions, notifications and shared review of another person's draft.

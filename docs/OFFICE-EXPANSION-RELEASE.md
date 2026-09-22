@@ -35,9 +35,9 @@ Full Microsoft Office parity is not complete.
 
 ## Verification
 
-- Frontend: 121 unique unit tests pass (120 in GitHub CI, plus the snapshot protection regression in the focused eight-test suite). ESLint and full Prettier checks pass; Svelte/TypeScript reports zero errors and warnings. Production build passes.
+- Frontend: all 121 unit tests pass in release CI. ESLint and full Prettier checks pass; Svelte/TypeScript reports zero errors and warnings. Production build passes.
 - Browser: all 33 scenarios pass across the broad production-build run (31 passes) and the focused final rerun (3 passes, one overlapping). The final rerun verifies the relocated print command, duplicate removal on Svelte state, named formulas, charts, actual pivot refresh, protection and reload. Other coverage includes concurrent edits, live page geometry, undo/identity, imports, permissions, drafts, recovery and accessibility.
-- Standalone engine: all 173 baseline tests pass locally; the additional protection-ordering test and all four snapshot/merge tests also pass (174 unique tests). [Independent CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/35698213107) also passes Rust formatting, strict Clippy, build, tests, documentation and OpenAPI consistency for engine commit `02a7aa7`. The follow-up engine commit `e2a719d` fixes protection ordering during snapshot restoration/merge; its two changed files are byte-identical in the app. All 16 SQL migration files remain byte-identical between repositories.
+- Standalone engine: all 174 tests pass in [independent CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/35700632086), with Rust formatting, strict Clippy, build, documentation and OpenAPI consistency for engine commit `e2a719d`. This includes protection ordering during snapshot restoration/merge; its two changed files are byte-identical in the app. All 16 SQL migration files remain byte-identical between repositories.
 - Verification uses Windows Node 22.22.2, pinned Rust 1.96, a disposable PostgreSQL 16 container on loopback 5549, test-only auth/API on 8088 and a production web build on 4188. No hosted data is used. The existing development database is unchanged.
 - Synthetic 1920-pixel captures: [Excel Home ribbon](review/excel-editor-2026-09-22.png), [workbook home](review/excel-home-2026-09-22.png), [chart](review/excel-chart-2026-09-22.png). Supplied screenshots are reference material, not repository instructions or app assets.
 
@@ -48,6 +48,45 @@ checks and the Vercel homepage deployment. The public browser job hit its startu
 timeout while duplicating the build; Playwright now reuses CI’s checked build.
 The owner subsequently authorized VPS access and rollout; deployment evidence is
 recorded below after live verification.
+
+## Publication and VPS rollout
+
+Application runtime commit [`a413c20`](https://github.com/ArefinAlter/dynodoc/commit/a413c20)
+is pushed to `main`, including the earlier `9d54443` and `0c23882` editor work.
+[Frontend CI](https://github.com/ArefinAlter/dynodoc/actions/runs/35700751699) passes
+both public-page and authenticated browser jobs;
+[Rust CI](https://github.com/ArefinAlter/dynodoc/actions/runs/35700751714) passes.
+The separate Vercel homepage deployment for this revision succeeded.
+
+The owner supplied VPS access and requested the visible UI. On 22 September 2026,
+the same runtime was built and deployed to `/opt/dynodoc-demo`: only `api`, `web`
+and `admin` containers were replaced. The workspace is
+[app.dynodoc.online/workspace](https://app.dynodoc.online/workspace).
+The previous UI persisted because a Git push deploys the Vercel homepage, while the
+VPS workspace requires its own release. Existing browser tabs need a reload after
+preserving any unsaved text; the `office-v4` gate rejects obsolete editors.
+
+- Reviewed source archive SHA-256: `b70c589b2409472e3b9a953494183e5ec68e5db322aabbe4acd1a8566d9fd38b`.
+  All 396 packaged source files passed manifest verification. Private environment
+  configuration retained the same checksum.
+- Validated pre-release PostgreSQL backup: `backups/dynodoc-20260922T073835Z.dump`.
+  Prior source and manifest remain in `releases/office-20260922-before`; prior app
+  images are tagged `before-office-20260922`. No schema migration was introduced.
+- Before synthetic browser checks, all 557 event IDs/chain hashes, five uploads
+  and their bytes, 12 document IDs, and 16 migration checksums matched their
+  pre-release fingerprints. PostgreSQL, converter and all four unrelated container
+  IDs were unchanged.
+- Workspace/admin HTTPS health passed. Anonymous document access returned 401.
+  Google/email configuration flags remained enabled and development auth disabled;
+  these checks do not prove external provider login or email delivery.
+- Chromium over public HTTPS verified a synthetic three-page editable Word document,
+  stable block identity, saved notes, Excel formula calculation, native UI chart,
+  table styling, protection/unprotection, save/reload, valid event chains for both
+  synthetic documents, old-client rejection (409), and non-admin denial (403).
+  No browser runtime errors were observed. No existing user document was edited.
+- Captures of the deployed UI: [Word](review/live-word-2026-09-22.png) and
+  [Excel](review/live-excel-2026-09-22.png). Verification sessions use a separate
+  synthetic account; screenshots contain only synthetic content.
 
 ## Remaining gaps
 

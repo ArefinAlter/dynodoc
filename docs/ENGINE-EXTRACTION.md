@@ -53,3 +53,10 @@ orders snapshot protection changes around restored/merged content and accepts a
 cleared flag from older snapshots. `engine-core/src/governance.rs` and
 `engine-core/src/workspace_merge.rs` are byte-identical ports. Regression coverage
 applies each diff operation through authorization and replay.
+
+Engine commit [`a22bf71`](https://github.com/ArefinAlter/dynodoc-engine/commit/a22bf71)
+adds an immediate SSE comment after subscription authorization, so an idle browser
+does not wait for the heartbeat to establish the connection. The comment carries
+no event ID and cannot advance replay. `engine-api/src/stream.rs` and
+`engine-api/tests/api_test.rs` are byte-identical ports. The existing delivery test
+now also checks idle acknowledgement before writing an event.

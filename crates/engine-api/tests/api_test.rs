@@ -1300,6 +1300,17 @@ async fn sse_delivers_a_new_event_within_100ms(pool: PgPool) {
     );
     let mut body = resp.into_body().into_data_stream();
 
+    // An idle subscription must flush immediately without waiting for a write or
+    // the 30-second heartbeat. The acknowledgement carries no event/cursor.
+    let ready = tokio::time::timeout(std::time::Duration::from_secs(1), body.next())
+        .await
+        .expect("idle SSE subscription must acknowledge immediately")
+        .expect("stream yielded an acknowledgement")
+        .expect("acknowledgement is not an error");
+    let ready = String::from_utf8_lossy(&ready);
+    assert!(ready.starts_with(": connected"));
+    assert!(!ready.contains("data:") && !ready.contains("id:"));
+
     // Append an event from "another connection".
     let writer = router.clone();
     let write_token = token.clone();

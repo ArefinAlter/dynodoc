@@ -161,22 +161,36 @@ async fn document_stream(
         });
 
     let pool = state.pool.clone();
-    let stream = backfill_stream.chain(live_stream).take_while(move |_| {
-        let pool = pool.clone();
-        async move {
-            if crate::auth::store::ensure_session(&pool, auth.identity_id, auth.session_generation)
+    // Flush an idle subscription immediately through HTTP proxies. Otherwise a
+    // caught-up browser can wait for the 30-second heartbeat before seeing headers;
+    // concurrent requests for the same URL can wait behind that first response.
+    // This is an SSE comment, so it cannot advance the replay cursor.
+    let ready = stream::iter([Ok::<_, Infallible>(
+        SseEvent::default().comment("connected"),
+    )]);
+    let stream = ready
+        .chain(backfill_stream)
+        .chain(live_stream)
+        .take_while(move |_| {
+            let pool = pool.clone();
+            async move {
+                if crate::auth::store::ensure_session(
+                    &pool,
+                    auth.identity_id,
+                    auth.session_generation,
+                )
                 .await
                 .is_err()
-            {
-                return false;
+                {
+                    return false;
+                }
+                crate::auth::store::role_for(&pool, document_id, auth.identity_id)
+                    .await
+                    .ok()
+                    .flatten()
+                    .is_some()
             }
-            crate::auth::store::role_for(&pool, document_id, auth.identity_id)
-                .await
-                .ok()
-                .flatten()
-                .is_some()
-        }
-    });
+        });
 
     let sse = Sse::new(stream).keep_alive(
         KeepAlive::new()
