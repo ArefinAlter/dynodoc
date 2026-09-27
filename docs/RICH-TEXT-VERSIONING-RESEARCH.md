@@ -8,6 +8,10 @@ work with documents, personal drafts, selected changes and named versions.
 This is an engineering design and implementation record, not a claim that all
 rich-text versioning algorithms are novel or that the full platform is finished.
 
+For the prior-art check on the block model, segmentation, compression and the
+machine-learning question, see the
+[algorithm and architecture research review](RICH-TEXT-ALGORITHM-RESEARCH-REVIEW.md).
+
 ## What we already researched, and what was missing
 
 `02-versioning-design-vol1.md` already discusses stable identities, semantic events,
