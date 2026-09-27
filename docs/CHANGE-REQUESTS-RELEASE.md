@@ -1,6 +1,8 @@
 # File push, change requests, presentations and workspace fixes — 27 September 2026
 
-Local, uncommitted work on top of `4db90f3`. Not pushed or deployed. See
+Released as [`9c1ec9d`](https://github.com/ArefinAlter/dynodoc/commit/9c1ec9d) on `main`
+(on top of the owner's `90a759e`) and deployed to the VPS workspace on 27 September
+2026; see [publication and rollout](#publication-and-vps-rollout). See
 [decision 008](decisions/008-change-requests-presentations-and-ux.md) for design and
 boundaries and the [plain-language guide](GIT-STYLE-WORKFLOW.md) for users.
 
@@ -56,5 +58,45 @@ hosted service or the developer database was used.
   not reproduce it; watch for it in manual testing.
 - `pnpm install` under pnpm 11 reports `ERR_PNPM_IGNORED_BUILDS` because of the
   existing `allowBuilds` placeholder in `pnpm-workspace.yaml`; unchanged here.
-- Not done: deployment, real-account acceptance, desktop Word/PowerPoint opening of
-  exported files, and the owner's walkthrough session.
+- Not done: real-account acceptance, desktop Word/PowerPoint opening of exported
+  files, and the owner's walkthrough session.
+
+## Publication and VPS rollout
+
+The owner authorized commit, push and deployment on 27 September 2026.
+
+- [Rust CI](https://github.com/ArefinAlter/dynodoc/actions/runs/36310645115) and
+  [frontend CI](https://github.com/ArefinAlter/dynodoc/actions/runs/36310645101)
+  pass for `9c1ec9d`, including the authenticated browser job with the new
+  change-request, UX, presentation and typing specs, and the strict SSE test on Linux.
+  The lockfile was also checked with pnpm 10 `--frozen-lockfile` before pushing.
+- Vercel deployed the homepage automatically; `https://dynodoc.online/workspace` now
+  redirects to the workspace host.
+- VPS (`/opt/dynodoc-demo`): reviewed source archive SHA-256
+  `a5844df978407ec2366b109aec7405283597cd0d429ed41e4c38066e38927178`; all 431 files
+  passed manifest verification; private environment file checksum unchanged.
+  Validated backup `backups/dynodoc-20260927T095509Z.dump`. Prior source and manifest
+  are in `releases/changes-20260927-before`; prior images are tagged
+  `before-changes-20260927` (api `5ab6fd9fc7e2`, web `fa534f6a7bce`, admin
+  `de88ea54725e`). New images: api `ed47a2101fc5`, web `e781abaa5970`, admin
+  `d20bd725ce52`. Only `api`, then `web` and `admin`, were recreated; PostgreSQL and the
+  converter were not.
+- Migration `0020` applied on API start (17 migrations, latest 20). All 1,029
+  pre-release events and chain hashes, 20 documents, 7 uploads with content hashes and
+  6 accounts matched their pre-release fingerprints. All 13 unrelated containers
+  (`server-*`, `verne-marketing-*`, `chakma-*`) kept their IDs. Two new documents
+  created by an existing account at 10:03 UTC, after the web rollout, account for the
+  only other new events.
+- Live checks: workspace/admin health 200; provider flags unchanged (Google and email
+  enabled, development sign-in disabled); signed-out `/workspace` and document URLs
+  return 303 to `/login?next=…`; anonymous API access returns 401; admin sign-in is
+  unaffected. A synthetic account ran 14 API checks inside the private network
+  (history points, push from an older revision, listing, comparison, merge that keeps
+  the newer team edit, rebase with a dropped change, submit/withdraw, chain
+  verification) on one synthetic document, which was then moved to Trash; the
+  synthetic account was then disabled with its sessions revoked. No existing document
+  was edited.
+- Rollback: recreate `api`, `web` and `admin` from the `before-changes-20260927` tags.
+  The older API ignores the new nullable/defaulted review columns, but old editors
+  would open presentations as questionnaires, so prefer a forward fix. Open tabs
+  must reload for `office-v5`.

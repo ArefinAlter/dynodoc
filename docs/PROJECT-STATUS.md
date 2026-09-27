@@ -10,8 +10,9 @@ UX fixes and a plain-language walkthrough. [Decision 008](decisions/008-change-r
 records the design; [release notes](CHANGE-REQUESTS-RELEASE.md) record exactly what
 was verified on an isolated local stack; [the user guide](GIT-STYLE-WORKFLOW.md)
 explains the workflow without Git terms. Migration `0020` is new; no applied
-migration changed. The editor header is now `office-v5`. This work is local and
-uncommitted until the owner approves a commit, push or deployment.
+migration changed. The editor header is now `office-v5`. This work was
+released as `9c1ec9d` and deployed to the VPS on 27 September with passing CI;
+the release record lists the backup, rollback tags and live checks.
 
 ## Continuation: Office analysis and references
 
