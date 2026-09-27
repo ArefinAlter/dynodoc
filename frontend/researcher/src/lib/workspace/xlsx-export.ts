@@ -1,3 +1,4 @@
+import { byPosition } from './api';
 import type { DocumentState } from '$lib/api/types';
 import { rowsForSheet } from './files';
 import { writeCell, sheetLayout, cellFormat, workbookInput } from './sheet-model';
@@ -13,7 +14,7 @@ export async function writeWorkbook(state: DocumentState) {
   book.calcProperties.fullCalcOnLoad = true;
   const sheets = Object.values(state.nodes)
     .filter((n) => !n.deleted && n.current_fields.kind === 'sheet')
-    .sort((a, b) => a.pos.localeCompare(b.pos));
+    .sort((a, b) => byPosition(a, b));
   const calculator = new WorkbookCalculator();
   const computed = calculator.calculate(workbookInput(state), workbookNames(state));
   calculator.destroy();

@@ -24,6 +24,7 @@ pub mod idempotency;
 pub mod ops;
 pub mod pagination;
 pub mod product;
+pub mod reviews;
 pub mod stream;
 pub mod workspace;
 
@@ -86,6 +87,7 @@ pub fn app(state: AppState) -> Router {
         .merge(stream::router())
         .merge(audit::router())
         .merge(workspace::router())
+        .merge(reviews::router())
         .merge(discussions::router())
         .with_state(state)
         .layer(cors)
@@ -157,6 +159,7 @@ struct WorkspaceDocs;
 impl utoipa::Modify for WorkspaceDocs {
     fn modify(&self, api: &mut utoipa::openapi::OpenApi) {
         api.merge(workspace::WorkspaceApi::openapi());
+        api.merge(reviews::ReviewApi::openapi());
         api.merge(product::ProductApi::openapi());
         api.merge(admin::AdminApi::openapi());
         api.merge(admin_controls::AdminControlsApi::openapi());

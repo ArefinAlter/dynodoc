@@ -17,6 +17,7 @@
     FileText,
     Table2,
     ClipboardList,
+    Presentation,
     Check,
     Cloud,
     Users,
@@ -32,7 +33,9 @@
     RefreshCw,
     ShieldCheck,
     LoaderCircle,
-    HelpCircle
+    HelpCircle,
+    GitPullRequest,
+    FileUp
   } from '@lucide/svelte';
   import { ulid } from 'ulid';
   import type { DocumentStore } from '$lib/stores/documentStore.svelte';
@@ -44,7 +47,8 @@
     saveBatch,
     type Member,
     type Version,
-    type Draft
+    type Draft,
+    byPosition
   } from '$lib/workspace/api';
   import {
     cloneState,
@@ -58,6 +62,7 @@
     download,
     exportDocument,
     exportSpreadsheet,
+    exportPresentation,
     textOf,
     type TextBlock
   } from '$lib/workspace/files';
@@ -67,6 +72,13 @@
   import DiscussionThreads from './DiscussionThreads.svelte';
   import SheetEditor from './SheetEditor.svelte';
   import QuestionnaireEditor from './QuestionnaireEditor.svelte';
+  import PushFileDialog from './PushFileDialog.svelte';
+  import ChangeRequestReview from './ChangeRequestReview.svelte';
+  import RebaseDialog from './RebaseDialog.svelte';
+  import { listRequests, submitDraft, type ChangeRequest } from '$lib/workspace/reviews';
+  import { takePush } from '$lib/workspace/pending-push';
+  import { dismissable } from '$lib/actions/dismissable';
+  import PresentationEditor from './PresentationEditor.svelte';
   import type { JSONContent } from '@tiptap/core';
   let { store }: { store: DocumentStore } = $props();
   const kind = $derived(documentKind(store.detail!));
@@ -128,6 +140,65 @@
     undoStack = $state<DocumentState[]>([]),
     redoStack = $state<DocumentState[]>([]);
   let rememberSelection = $state(true);
+  // Change requests: pushed files and drafts submitted for review.
+  let requests = $state<ChangeRequest[]>([]),
+    reviewing = $state<string | null>(null),
+    pushOpen = $state(false),
+    pushFile = $state<File | null>(null),
+    rebaseOpen = $state(false),
+    reviewNote = $state(''),
+    fileButton = $state<HTMLButtonElement | null>(null);
+  const openRequests = $derived(requests.filter((r) => r.status === 'open'));
+  const draftRequest = $derived(requests.find((r) => r.id === draftId));
+  async function refreshRequests() {
+    try {
+      requests = (await listRequests(store.documentId)).items;
+    } catch {
+      requests = [];
+    }
+  }
+  function menuKey(event: KeyboardEvent) {
+    const items = [
+      ...(event.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>(
+        'button:not(:disabled)'
+      )
+    ];
+    const at = items.indexOf(document.activeElement as HTMLButtonElement);
+    const next =
+      event.key === 'ArrowDown'
+        ? (at + 1) % items.length
+        : event.key === 'ArrowUp'
+          ? (at - 1 + items.length) % items.length
+          : event.key === 'Home'
+            ? 0
+            : event.key === 'End'
+              ? items.length - 1
+              : -1;
+    if (next >= 0) {
+      event.preventDefault();
+      items[next]?.focus();
+    }
+  }
+  async function pushed(result: { id: string; submitted: boolean }) {
+    pushOpen = false;
+    pushFile = null;
+    await refreshRequests();
+    if (result.submitted) {
+      saved = 'Changes sent for review';
+      panel = 'requests';
+    } else await switchDraft(result.id);
+  }
+  async function askReview() {
+    if (!draftId) return;
+    await save();
+    if (dirty) return;
+    await run(async () => {
+      await submitDraft(store.documentId, draftId, reviewNote.trim());
+      reviewNote = '';
+      await refreshRequests();
+      saved = 'Draft sent for review';
+    });
+  }
   const reviewerName = $derived(
     members.find((m) => m.id === identityId)?.name ||
       members.find((m) => m.id === identityId)?.email ||
@@ -200,7 +271,7 @@
   const textTabs = $derived(
     Object.values(local.nodes)
       .filter((n) => !n.deleted && n.type === 'section' && n.current_fields.kind === 'document_tab')
-      .sort((a, b) => a.pos.localeCompare(b.pos))
+      .sort((a, b) => byPosition(a, b))
   );
   const textParent = $derived(textTabs.some((t) => t.id === activeTab) ? activeTab : textRoot?.id);
   const content = $derived(richContent(local, textParent));
@@ -356,6 +427,12 @@
     window.addEventListener('dynodoc:signout', stopRecovery);
     window.addEventListener('beforeunload', unload);
     void refreshPeople();
+    void refreshRequests();
+    const queued = takePush(store.documentId);
+    if (queued) {
+      pushFile = queued;
+      pushOpen = true;
+    }
     void fetch('/auth/session')
       .then((r) => r.json())
       .then(async (s) => {
@@ -599,6 +676,7 @@
         ).items;
       if (panel === 'files')
         uploads = (await request<{ items: typeof uploads }>(`${prefix}/uploads`)).items;
+      if (panel === 'requests' || panel === 'drafts') await refreshRequests();
     });
   }
   async function saveTitle() {
@@ -812,8 +890,15 @@
       if (format === 'tex' || format === 'overleaf') {
         const { exportLatex } = await import('$lib/workspace/latex');
         await exportLatex(local, title, format === 'overleaf');
-      } else if (format === 'docx') await exportDocument(local, title);
-      else if (format === 'csv' || format === 'xlsx') await exportSpreadsheet(local, title, format);
+      } else if (format === 'docx') {
+        // Team-version downloads remember their revision so edits can be uploaded back.
+        await save();
+        const origin =
+          !draftId && !dirty ? { documentId: store.documentId, seq: store.seq } : undefined;
+        await exportDocument(origin ? store.state : local, title, origin);
+      } else if (format === 'csv' || format === 'xlsx')
+        await exportSpreadsheet(local, title, format);
+      else if (format === 'pptx') await exportPresentation(local, title);
       else if (format === 'json')
         download(
           JSON.stringify({ format: 'dynodoc-content-v1', title, kind, state: local }, null, 2),
@@ -859,11 +944,21 @@
 </script>
 
 <svelte:head><title>{title} · Dynodoc</title></svelte:head>
-<div class="workspace-editor" class:sheet-theme={kind === 'spreadsheet'}>
+<div
+  class="workspace-editor"
+  class:sheet-theme={kind === 'spreadsheet'}
+  class:slides-theme={kind === 'presentation'}
+>
   <header>
     <a class="back" href="/workspace" aria-label="Back to workspace"><ArrowLeft size={18} /></a>
-    <div class="file-icon" class:green={kind === 'spreadsheet'}>
+    <div
+      class="file-icon"
+      class:green={kind === 'spreadsheet'}
+      class:orange={kind === 'presentation'}
+    >
       {#if kind === 'spreadsheet'}<Table2
+          size={26}
+        />{:else if kind === 'presentation'}<Presentation
           size={26}
         />{:else if kind === 'questionnaire'}<ClipboardList size={26} />{:else}<FileText
           size={26}
@@ -886,12 +981,48 @@
         >
       </div>
       <nav>
-        <div class="file-menu">
-          <button onclick={() => (menu = !menu)}>File</button>{#if menu}<div class="dropdown">
+        <div
+          class="file-menu"
+          use:dismissable={{
+            open: menu,
+            onDismiss: () => (menu = false),
+            returnFocus: () => fileButton
+          }}
+        >
+          <button
+            bind:this={fileButton}
+            aria-haspopup="menu"
+            aria-expanded={menu}
+            onclick={() => (menu = !menu)}
+            onkeydown={(e) => {
+              if (e.key === 'ArrowDown' && !menu) {
+                e.preventDefault();
+                menu = true;
+                setTimeout(() =>
+                  document.querySelector<HTMLButtonElement>('.dropdown button')?.focus()
+                );
+              }
+            }}>File</button
+          >{#if menu}<!-- Choosing any command closes the menu, like desktop applications. -->
+            <div
+              class="dropdown"
+              role="menu"
+              tabindex="-1"
+              aria-label="File"
+              onkeydown={menuKey}
+              onclick={(e) => {
+                if ((e.target as HTMLElement).closest('button')) menu = false;
+              }}
+            >
               <button onclick={() => void makeCopy()}><Copy size={14} /> Make a copy</button
               >{#if kind === 'document'}<button onclick={() => void exportFile('docx')}
                   ><Download size={14} /> Download Word (.docx)</button
-                ><button onclick={() => void exportFile('tex')}>Download LaTeX (.tex)</button
+                >{#if store.detail?.role !== 'auditor'}<button
+                    onclick={() => {
+                      pushFile = null;
+                      pushOpen = true;
+                    }}><FileUp size={14} /> Upload edited Word file…</button
+                  >{/if}<button onclick={() => void exportFile('tex')}>Download LaTeX (.tex)</button
                 ><button onclick={() => void exportFile('overleaf')}
                   >Download Overleaf project (.zip)</button
                 >
@@ -899,6 +1030,8 @@
                   ><Download size={14} /> Download Excel (.xlsx)</button
                 ><button onclick={() => void exportFile('csv')}
                   ><Download size={14} /> Download first sheet (.csv)</button
+                >{/if}{#if kind === 'presentation'}<button onclick={() => void exportFile('pptx')}
+                  ><Download size={14} /> Download PowerPoint (.pptx)</button
                 >{/if}<button onclick={() => void exportFile('json')}
                 ><Download size={14} /> Download Dynodoc content</button
               ><button onclick={() => void exportFile('history')}
@@ -925,6 +1058,17 @@
           title="Personal drafts"
           aria-label="Personal drafts"
           onclick={() => void openPanel('drafts')}><GitBranch size={16} /></button
+        >
+        <button
+          class="requests-button"
+          title="Change requests"
+          aria-label={openRequests.length
+            ? `Change requests, ${openRequests.length} open`
+            : 'Change requests'}
+          onclick={() => void openPanel('requests')}
+          ><GitPullRequest size={16} />{#if openRequests.length}<span class="count"
+              >{openRequests.length}</span
+            >{/if}</button
         >
         <button
           title="Who changed this?"
@@ -978,8 +1122,19 @@
       >
     </div>{/if}
   {#if draftId}<div class="draft-banner">
-      <GitBranch size={15} /><strong>{draftName}</strong><span>Only you can see this draft</span
-      ><button disabled={busy || saving} onclick={() => void previewSync()}
+      <GitBranch size={15} /><strong>{draftName}</strong><span
+        >{draftRequest?.status === 'open'
+          ? 'Sent for review: your team can see these changes'
+          : 'Only you can see this draft'}{store.seq > baseSeq
+          ? ` · the team version has ${store.seq - baseSeq} newer change${store.seq - baseSeq === 1 ? '' : 's'}`
+          : ''}</span
+      >{#if store.seq > baseSeq}<button
+          disabled={busy || saving}
+          onclick={async () => {
+            await save();
+            if (!dirty) rebaseOpen = true;
+          }}>Rebase onto latest</button
+        >{/if}<button disabled={busy || saving} onclick={() => void previewSync()}
         >Review & share changes</button
       ><button disabled={busy || saving} onclick={() => void switchDraft('')}>Team version</button>
     </div>{/if}
@@ -1064,6 +1219,18 @@
             : undefined}
           onUndo={undo}
           onRedo={redo}
+        />{:else if kind === 'presentation'}<PresentationEditor
+          documentState={local}
+          {editable}
+          onChange={change}
+          onSelect={(id) => (selected = id)}
+          onComment={author || store.detail?.role === 'reviewer'
+            ? () => {
+                void openPanel('comments');
+              }
+            : undefined}
+          onUndo={undo}
+          onRedo={redo}
         />{:else}<QuestionnaireEditor
           documentState={local}
           {editable}
@@ -1082,7 +1249,8 @@
                 comments: 'Comments',
                 activity: 'Who changed this?',
                 files: 'Original files',
-                suggestions: 'Suggested changes'
+                suggestions: 'Suggested changes',
+                requests: 'Change requests'
               } as Record<string, string>
             )[panel]}
           </h2>
@@ -1222,13 +1390,46 @@
               class="draft-card"
               onclick={() => void switchDraft(d.id)}
               ><GitBranch size={17} /><span
-                >{d.name}<small>{new Date(d.created_at).toLocaleDateString()}</small></span
+                >{d.name}<small
+                  >{new Date(d.created_at).toLocaleDateString()}{requests.some(
+                    (r) => r.id === d.id && r.status === 'open'
+                  )
+                    ? ' · in review'
+                    : ''}</small
+                ></span
               >{#if draftId === d.id}<Check size={15} />{/if}</button
             >{/each}{#if draftId}<button
               class="primary"
               onclick={() => void previewSync()}
               disabled={busy || saving}>Compare with team version</button
-            >{/if}
+            >{#if store.seq > baseSeq}<button
+                class="secondary rebase"
+                disabled={busy || saving}
+                onclick={async () => {
+                  await save();
+                  if (!dirty) rebaseOpen = true;
+                }}><GitBranch size={14} /> Rebase onto latest team version</button
+              >{/if}
+            <form
+              onsubmit={(e) => {
+                e.preventDefault();
+                void askReview();
+              }}
+            >
+              <label
+                >{draftRequest?.status === 'open'
+                  ? 'Update the note on your review request'
+                  : 'Ask your team to review this draft'}<textarea
+                  bind:value={reviewNote}
+                  rows="2"
+                  maxlength="4000"
+                  placeholder="What did you change and why?"
+                ></textarea></label
+              ><button class="primary" disabled={busy || saving}
+                ><GitPullRequest size={14} />
+                {draftRequest?.status === 'open' ? 'Update request' : 'Send for review'}</button
+              >
+            </form>{/if}
         {:else if panel === 'comments'}<p>
             {selected ? 'Comments on the selected block or row.' : 'Document discussion.'}
             <button class="text-button" onclick={() => (selected = null)}
@@ -1327,6 +1528,35 @@
                   >
                 </div>{/if}
             </div>{:else}<div class="empty">No suggestions awaiting review.</div>{/each}
+        {:else if panel === 'requests'}<p>
+            Like pull requests: teammates upload an edited copy or send a draft, and editors review
+            and merge the changes. Nothing reaches the team version until it is merged.
+          </p>
+          {#if kind === 'document' && store.detail?.role !== 'auditor'}<button
+              class="primary"
+              onclick={() => {
+                pushFile = null;
+                pushOpen = true;
+              }}><FileUp size={14} /> Upload edited Word file</button
+            >{/if}
+          {#each requests as r (r.id)}<button
+              class="request-card"
+              onclick={() => (reviewing = r.id)}
+            >
+              <span class={`status ${r.status}`}>{r.status}</span>
+              <strong>{r.name}</strong>
+              <small
+                >{r.author.name || r.author.email.split('@')[0]} · {new Date(
+                  r.submitted_at || r.created_at
+                ).toLocaleDateString()}{r.source.filename ? ` · ${r.source.filename}` : ''}</small
+              >
+              {#if r.source.summary}<small class="summary"
+                  >{r.source.summary.edited || 0} edited · {r.source.summary.added || 0} added · {r
+                    .source.summary.removed || 0} removed</small
+                >{/if}
+            </button>{:else}<div class="empty">
+              No change requests yet. Download the Word file, edit it anywhere, then upload it here.
+            </div>{/each}
         {:else if panel === 'files'}<p>
             Original files are kept alongside the editable copy. Review conversion notes before
             using an imported instrument.
@@ -1364,10 +1594,53 @@
         ? 'Document'
         : kind === 'spreadsheet'
           ? 'Spreadsheet'
-          : 'Questionnaire'}</span
+          : kind === 'presentation'
+            ? 'Presentation'
+            : 'Questionnaire'}</span
     >
   </footer>
 </div>
+{#if pushOpen}<PushFileDialog
+    documentId={store.documentId}
+    {title}
+    initialFile={pushFile}
+    onClose={() => {
+      pushOpen = false;
+      pushFile = null;
+    }}
+    onCreated={(result) => void pushed(result)}
+  />{/if}
+{#if reviewing}<ChangeRequestReview
+    documentId={store.documentId}
+    requestId={reviewing}
+    team={store.state}
+    teamSeq={store.seq}
+    canMerge={author}
+    onClose={() => (reviewing = null)}
+    onChanged={() => void refreshRequests()}
+    onOpenDraft={(id) => {
+      reviewing = null;
+      void switchDraft(id);
+    }}
+  />{/if}
+{#if rebaseOpen && draftId}<RebaseDialog
+    documentId={store.documentId}
+    {draftId}
+    draft={local}
+    team={store.state}
+    onClose={() => (rebaseOpen = false)}
+    onDone={(result) => {
+      rebaseOpen = false;
+      draftRevision = result.revision;
+      local = result.state;
+      base = cloneState(result.state);
+      baseSeq = result.team_seq;
+      undoStack = [];
+      redoStack = [];
+      revision++;
+      saved = 'Draft rebased onto the latest team version';
+    }}
+  />{/if}
 {#if sync}<div class="modal-shade">
     <div class="sync-modal" role="dialog" aria-modal="true" aria-label="Review draft changes">
       <div class="panel-title">
@@ -1509,6 +1782,11 @@
     --editor-tint: #e2f0e7;
     --editor-chrome: #f3f8f5;
   }
+  .workspace-editor.slides-theme {
+    --editor-accent: #c43e1c;
+    --editor-tint: #fbe9e4;
+    --editor-chrome: #fbf6f4;
+  }
   header {
     display: flex;
     gap: 12px;
@@ -1534,6 +1812,9 @@
   }
   .file-icon.green {
     color: #107c41;
+  }
+  .file-icon.orange {
+    color: #c43e1c;
   }
   .heading {
     min-width: 0;
@@ -1644,6 +1925,75 @@
     text-align: left;
     font-size: 13px;
     padding: 10px;
+  }
+  .dropdown button:focus-visible {
+    outline: 2px solid var(--editor-accent);
+    outline-offset: -2px;
+  }
+  .requests-button {
+    position: relative;
+  }
+  .requests-button .count {
+    position: absolute;
+    top: -3px;
+    right: -4px;
+    min-width: 15px;
+    height: 15px;
+    padding: 0 4px;
+    border-radius: 8px;
+    background: var(--editor-accent);
+    color: white;
+    font-size: 10px;
+    line-height: 15px;
+  }
+  .secondary.rebase {
+    margin-top: 10px;
+    width: 100%;
+  }
+  .request-card {
+    display: grid;
+    gap: 4px;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: 1px solid #e3e9ef;
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin: 12px 0 0;
+    cursor: pointer;
+    color: #34495c;
+    font: inherit;
+  }
+  .request-card:hover {
+    border-color: #9db5d6;
+  }
+  .request-card strong {
+    font-size: 13px;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .request-card small {
+    font-size: 12px;
+    color: #4c6275;
+    overflow-wrap: anywhere;
+  }
+  .request-card .status {
+    justify-self: start;
+    font-size: 11px;
+    text-transform: capitalize;
+    padding: 1px 8px;
+    border-radius: 10px;
+    background: #e8f0fb;
+    color: #174e95;
+  }
+  .request-card .status.merged {
+    background: #ece5fb;
+    color: #5b3aa8;
+  }
+  .request-card .status.declined,
+  .request-card .status.withdrawn {
+    background: #eef1f4;
+    color: #4c6275;
   }
   .body {
     display: flex;

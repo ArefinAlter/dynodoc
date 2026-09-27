@@ -74,6 +74,7 @@
     "openid-client": "^6.8.8",
     "pagedjs": "0.4.3",
     "papaparse": "^5.7.0",
+    "pptxgenjs": "^4.0.1",
     "ulid": "^3.0.2",
     "web-vitals": "^6.2.2"
   }

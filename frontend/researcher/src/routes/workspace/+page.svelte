@@ -6,6 +6,7 @@
     FileText,
     Table2,
     ClipboardList,
+    Presentation,
     Search,
     Upload,
     Grid2X2,
@@ -30,8 +31,10 @@
   import type { Document } from '$lib/api/types';
   import { documentKind, saveBatch, workspaceRequest, type Kind } from '$lib/workspace/api';
   import { importFile, rootOp, itemOp, paragraph, type ImportResult } from '$lib/workspace/files';
+  import { initialPresentationOps } from '$lib/workspace/presentation';
   import { ulid } from 'ulid';
   import { clearSession } from '$lib/stores/session.svelte';
+  import { queuePush } from '$lib/workspace/pending-push';
   type WorkspaceDocument = Document & {
     deleted_at?: string;
     space_id?: string;
@@ -118,6 +121,13 @@
   );
   onMount(refresh);
   onMount(() => {
+    try {
+      listView = localStorage.getItem('dynodoc.workspace-view') !== 'grid';
+    } catch {
+      /* The layout preference is optional. */
+    }
+  });
+  onMount(() => {
     const focusSearch = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
@@ -146,6 +156,11 @@
       documents = all;
       spaces = (await workspaceRequest<{ items: Space[] }>('/spaces')).items;
     } catch (e) {
+      // An expired session returns to sign-in instead of showing an empty workspace.
+      if ((e as { status?: number }).status === 401) {
+        await goto('/login?next=%2Fworkspace');
+        return;
+      }
       error = e instanceof Error ? e.message : 'Could not load documents.';
     } finally {
       loading = false;
@@ -202,6 +217,7 @@
         });
         for (let i = 0; i < 100; i++) ops.push(itemOp(sheet, i, {}));
       }
+      if (kind === 'presentation') ops = initialPresentationOps(title, root);
       await saveBatch(doc.id, ops, 0);
       await goto(`/documents/${doc.id}`);
     } catch (e) {
@@ -209,6 +225,30 @@
     } finally {
       busy = false;
     }
+  }
+  // A Word file downloaded from (or named after) an existing document is probably an
+  // edited copy: offer to send it to that document as reviewable changes.
+  let existing = $state<WorkspaceDocument | null>(null);
+  async function findExisting(file: File) {
+    if (!/\.docx$/i.test(file.name)) return null;
+    const { readOrigin, titleFromName } = await import('$lib/workspace/file-push');
+    const origin = readOrigin(new Uint8Array(await file.arrayBuffer()));
+    const name = titleFromName(file.name).toLowerCase();
+    return (
+      documents.find((d) => d.id === origin.documentId) ||
+      documents.find(
+        (d) => documentKind(d) === 'document' && name && d.title.trim().toLowerCase() === name
+      ) ||
+      null
+    );
+  }
+  async function pushToExisting() {
+    if (!existing || !originalFile) return;
+    queuePush(existing.id, originalFile);
+    const id = existing.id;
+    importResult = null;
+    existing = null;
+    await goto(`/documents/${id}`);
   }
   async function chooseFile(event: Event) {
     const file = (event.target as HTMLInputElement).files?.[0];
@@ -219,6 +259,7 @@
     progress = 'Reading your file…';
     importAbort = new AbortController();
     try {
+      existing = await findExisting(file).catch(() => null);
       importResult = await importFile(file, importAbort?.signal);
       originalFile = file;
       title = file.name.replace(/\.[^.]+$/, '');
@@ -301,7 +342,11 @@
 <svelte:head
   ><title>Your workspace · Dynodoc</title><meta name="robots" content="noindex" /></svelte:head
 >
-<div class="workspace" class:spreadsheet-home={filter === 'spreadsheet'}>
+<div
+  class="workspace"
+  class:spreadsheet-home={filter === 'spreadsheet'}
+  class:presentation-home={filter === 'presentation'}
+>
   <header class="app-title">
     <a href="https://dynodoc.online"
       ><img src="/brand/mark.svg?v=2" alt="" width="21" height="21" />Dynodoc</a
@@ -370,13 +415,13 @@
         class="file-input"
         bind:this={fileInput}
         type="file"
-        accept=".docx,.doc,.xlsx,.csv,.txt,.md,.tex,.zip"
+        accept=".docx,.doc,.xlsx,.csv,.pptx,.txt,.md,.tex,.zip"
         onchange={chooseFile}
       />
       {#if !trash}<section class="new-section" aria-labelledby="new-title">
           <h2 id="new-title">New</h2>
           <div class="starters">
-            {#each [{ kind: 'document', label: 'Blank document', icon: FileText }, { kind: 'spreadsheet', label: 'Blank workbook', icon: Table2 }, { kind: 'questionnaire', label: 'Blank questionnaire', icon: ClipboardList }] as item}
+            {#each [{ kind: 'document', label: 'Blank document', icon: FileText }, { kind: 'spreadsheet', label: 'Blank workbook', icon: Table2 }, { kind: 'questionnaire', label: 'Blank questionnaire', icon: ClipboardList }, { kind: 'presentation', label: 'Blank presentation', icon: Presentation }] as item}
               <button
                 class:sheet={item.kind === 'spreadsheet'}
                 disabled={busy}
@@ -386,7 +431,11 @@
                   createOpen = true;
                 }}
               >
-                <div class="template-paper" class:workbook={item.kind === 'spreadsheet'}>
+                <div
+                  class="template-paper"
+                  class:workbook={item.kind === 'spreadsheet'}
+                  class:deck={item.kind === 'presentation'}
+                >
                   {#if item.kind !== 'document'}<item.icon size={33} strokeWidth={1} />{/if}
                 </div>
                 <span>{item.label}</span>
@@ -412,7 +461,7 @@
         </section>{/if}
       <div class="list-heading">
         <div class="filters" aria-label="Document types">
-          {#each [{ value: 'all', label: 'Recent' }, { value: 'document', label: 'Documents' }, { value: 'spreadsheet', label: 'Spreadsheets' }, { value: 'questionnaire', label: 'Questionnaires' }] as item}<button
+          {#each [{ value: 'all', label: 'Recent' }, { value: 'document', label: 'Documents' }, { value: 'spreadsheet', label: 'Spreadsheets' }, { value: 'questionnaire', label: 'Questionnaires' }, { value: 'presentation', label: 'Presentations' }] as item}<button
               class:active={filter === item.value}
               aria-pressed={filter === item.value}
               onclick={() => (filter = item.value)}>{item.label}</button
@@ -430,7 +479,14 @@
           class="view-button"
           aria-label={listView ? 'Grid view' : 'List view'}
           title={listView ? 'Grid view' : 'List view'}
-          onclick={() => (listView = !listView)}
+          onclick={() => {
+            listView = !listView;
+            try {
+              localStorage.setItem('dynodoc.workspace-view', listView ? 'list' : 'grid');
+            } catch {
+              /* The layout preference is optional. */
+            }
+          }}
           >{#if listView}<Grid2X2 size={17} />{:else}<List size={17} />{/if}</button
         >
       </div>
@@ -466,17 +522,23 @@
       {:else}<div class:list={listView} class="document-grid">
           {#each visible as doc}<article class="doc-entry">
               <a class="doc-card" href={trash ? undefined : `/documents/${doc.id}`}>
-                <span class="doc-icon" class:green={documentKind(doc) === 'spreadsheet'}
+                <span
+                  class="doc-icon"
+                  class:green={documentKind(doc) === 'spreadsheet'}
+                  class:orange={documentKind(doc) === 'presentation'}
                   >{#if documentKind(doc) === 'spreadsheet'}<Table2
-                      size={26}
+                      size={listView ? 26 : 38}
+                      strokeWidth={1.3}
+                    />{:else if documentKind(doc) === 'presentation'}<Presentation
+                      size={listView ? 26 : 38}
                       strokeWidth={1.3}
                     />{:else if documentKind(doc) === 'questionnaire'}<ClipboardList
-                      size={26}
+                      size={listView ? 26 : 38}
                       strokeWidth={1.3}
-                    />{:else}<FileText size={26} strokeWidth={1.3} />{/if}</span
+                    />{:else}<FileText size={listView ? 26 : 38} strokeWidth={1.3} />{/if}</span
                 >
                 <div class="doc-details">
-                  <h3>{doc.title}</h3>
+                  <h3 title={doc.title}>{doc.title}</h3>
                   <p>{spaces.find((space) => space.id === doc.space_id)?.name || 'My workspace'}</p>
                 </div>
                 <time datetime={doc.updated_at} title={new Date(doc.updated_at).toLocaleString()}
@@ -510,6 +572,7 @@
           createOpen = false;
           importResult = null;
           originalFile = null;
+          existing = null;
         }}><X size={20} /></button
       >
       <div class="modal-icon">
@@ -538,9 +601,21 @@
             >Document type<select aria-label="Document type" bind:value={kind}
               ><option value="document">Document</option><option value="spreadsheet"
                 >Spreadsheet</option
-              ><option value="questionnaire">Questionnaire</option></select
+              ><option value="questionnaire">Questionnaire</option><option value="presentation"
+                >Presentation</option
+              ></select
             ></label
-          >{:else}<div class="import-report">
+          >{:else}{#if existing}<div class="existing-copy" role="note">
+              <strong>This looks like an edited copy of “{existing.title}”.</strong>
+              <p>
+                Send your edits to that document for review instead of creating a separate copy.
+                Nothing changes there until an editor merges them.
+              </p>
+              <button type="button" disabled={busy} onclick={() => void pushToExisting()}
+                >Upload as changes to “{existing.title}”</button
+              >
+            </div>{/if}
+          <div class="import-report">
             <b>{importResult.filename}</b>
             <p>{importResult.ops.length - 1} blocks prepared. Your original file will be kept.</p>
             {#each importResult.warnings as warning}<p class="warning">
@@ -562,6 +637,9 @@
 <style>
   .spreadsheet-home {
     --workspace-accent: #107c41;
+  }
+  .presentation-home {
+    --workspace-accent: #c43e1c;
   }
 
   .workspace {
@@ -719,6 +797,9 @@
       repeating-linear-gradient(0deg, transparent 0, transparent 8px, #dbe7df 9px),
       repeating-linear-gradient(90deg, white 0, white 14px, #dbe7df 15px);
   }
+  .template-paper.deck {
+    color: #c43e1c;
+  }
   .template-paper.sample {
     align-items: stretch;
     padding: 9px 7px;
@@ -806,7 +887,7 @@
   }
   .document-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
     gap: 14px;
     padding: 14px 0;
   }
@@ -854,6 +935,9 @@
   .doc-icon.green {
     color: #107c41;
   }
+  .doc-icon.orange {
+    color: #c43e1c;
+  }
   .doc-details {
     min-width: 0;
     flex: 1;
@@ -886,6 +970,71 @@
   }
   .trash-action:hover {
     background: #d6d6d6;
+  }
+  /* Grid tiles stack preview, name and details so a long name can never squeeze out. */
+  .document-grid:not(.list) .doc-entry {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 0;
+    background: white;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .document-grid:not(.list) .doc-entry:hover {
+    border-color: #9a9a9a;
+    background: white;
+  }
+  .document-grid:not(.list) .doc-card {
+    flex-direction: column;
+    align-items: stretch;
+    flex-wrap: nowrap;
+    gap: 0;
+    padding: 0;
+  }
+  .document-grid:not(.list) .doc-icon {
+    height: 112px;
+    align-items: center;
+    justify-content: center;
+    background: #eef3fb;
+    border-bottom: 1px solid #e1e1e1;
+  }
+  .document-grid:not(.list) .doc-icon.green {
+    background: #edf5ef;
+  }
+  .document-grid:not(.list) .doc-icon.orange {
+    background: #fbefeb;
+  }
+  .document-grid:not(.list) .doc-details {
+    padding: 11px 12px 3px;
+  }
+  .document-grid:not(.list) .doc-details h3 {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.35;
+    min-height: 2.7em;
+  }
+  .document-grid:not(.list) .doc-details p {
+    color: #555;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .document-grid:not(.list) time {
+    width: auto;
+    padding: 0 12px 11px;
+    font-size: 11px;
+    color: #555;
+  }
+  .document-grid:not(.list) .trash-action {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    margin: 0;
+    background: #ffffffd9;
   }
   .workspace-tools {
     display: flex;
@@ -1028,6 +1177,30 @@
   button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+  .existing-copy {
+    display: grid;
+    gap: 6px;
+    background: #eef4fd;
+    border: 1px solid #c9dbf5;
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 13px;
+    color: #23456f;
+  }
+  .existing-copy p {
+    margin: 0;
+    line-height: 1.6;
+  }
+  .existing-copy button {
+    justify-self: start;
+    border: 0;
+    border-radius: 8px;
+    background: #185abd;
+    color: white;
+    padding: 8px 12px;
+    font: inherit;
+    cursor: pointer;
   }
   .import-report {
     background: #f7f9f3;

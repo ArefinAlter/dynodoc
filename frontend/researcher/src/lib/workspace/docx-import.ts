@@ -42,6 +42,10 @@ export interface DocxImport {
   blocks: TextBlock[];
   warnings: string[];
   page: PageSetup;
+  /** Dynodoc bookmark name found in each top-level block, when the file carries one. */
+  anchors?: (string | undefined)[];
+  /** Formatting every paragraph inherits from document defaults and the Normal style. */
+  defaults?: { run: Record<string, unknown>; para: Record<string, unknown> };
 }
 export function readDocx(bytes: Uint8Array): DocxImport {
   const parts = readOfficeZip(bytes, (name) =>
@@ -100,6 +104,9 @@ export function readDocx(bytes: Uint8Array): DocxImport {
     )
   );
   const activeComments = new Set<string>();
+  // Hidden `_dd…` bookmarks written by Dynodoc identify the block a paragraph came from.
+  const anchored = new Map<TextBlock, string>();
+  let paragraphAnchors: string[] = [];
   const theme = parse('word/theme/theme1.xml');
   const fonts = new Map(
     theme
@@ -316,6 +323,9 @@ export function readDocx(bytes: Uint8Array): DocxImport {
         case 'commentRangeStart':
           activeComments.add(attr(n, 'id'));
           break;
+        case 'bookmarkStart':
+          if (attr(n, 'name').startsWith('_dd')) paragraphAnchors.push(attr(n, 'name'));
+          break;
         case 'commentRangeEnd':
           activeComments.delete(attr(n, 'id'));
           break;
@@ -354,7 +364,6 @@ export function readDocx(bytes: Uint8Array): DocxImport {
         case 'rPr':
         case 'pPr':
         case 'commentReference':
-        case 'bookmarkStart':
         case 'bookmarkEnd':
         case 'proofErr':
         case 'lastRenderedPageBreak':
@@ -368,6 +377,7 @@ export function readDocx(bytes: Uint8Array): DocxImport {
     return out;
   }
   function paragraph(e: X): TextBlock[] {
+    paragraphAnchors = [];
     const p = child(e, 'pPr'),
       id = val(p, 'pStyle'),
       inherited = style(id);
@@ -412,6 +422,11 @@ export function readDocx(bytes: Uint8Array): DocxImport {
         'Images are positioned after their containing paragraph; floating placement requires review.'
       );
     }
+    if (paragraphAnchors.length) {
+      // An image-only paragraph becomes an empty paragraph plus the image block.
+      const target = blocks.find((b) => b.type !== 'paragraph' || b.content?.length) || blocks[0];
+      anchored.set(target, paragraphAnchors[0]);
+    }
     return blocks;
   }
   function listInfo(e: X) {
@@ -435,11 +450,46 @@ export function readDocx(bytes: Uint8Array): DocxImport {
       start: Number(val(definition, 'start')) || 1
     };
   }
+  function contents(e: X): TextBlock | undefined {
+    const gallery = descendants(child(e, 'sdtPr') || e, 'docPartGallery')[0];
+    if (!/table of contents/i.test(attr(gallery))) return;
+    const lines = descendants(child(e, 'sdtContent') || e, 'p').map((p) =>
+      descendants(p, 't')
+        .map((t) => t.textContent || '')
+        .join('')
+    );
+    const block: TextBlock = {
+      type: 'tableOfContents',
+      attrs: {
+        entries: lines
+          .slice(1)
+          .filter(Boolean)
+          .slice(0, 300)
+          .map((text) => ({ text: text.replace(/\t\s*\d+\s*$/, ''), level: 1, id: '' }))
+      }
+    };
+    const name = descendants(e, 'bookmarkStart')
+      .map((b) => attr(b, 'name'))
+      .find((n) => n.startsWith('_dd'));
+    if (name) anchored.set(block, name);
+    return block;
+  }
   function blocks(e: X): TextBlock[] {
     const out: TextBlock[] = [];
     let stack: { id: string; list: TextBlock }[] = [];
+    let bodyAnchor = '';
     for (const n of children(e)) {
-      if (n.localName === 'p') {
+      if (n.localName === 'bookmarkStart' || n.localName === 'bookmarkEnd') {
+        if (n.localName === 'bookmarkStart' && attr(n, 'name').startsWith('_dd'))
+          bodyAnchor = attr(n, 'name');
+        continue;
+      }
+      const before = out.length,
+        toc = n.localName === 'sdt' ? contents(n) : undefined;
+      if (toc) {
+        stack = [];
+        out.push(toc);
+      } else if (n.localName === 'p') {
         const parsed = paragraph(n),
           info = listInfo(n);
         if (!info) {
@@ -502,8 +552,19 @@ export function readDocx(bytes: Uint8Array): DocxImport {
         stack = [];
         out.push(...blocks(n));
       }
+      if (bodyAnchor && out.length > before) {
+        if (!anchored.has(out[before])) anchored.set(out[before], bodyAnchor);
+        bodyAnchor = '';
+      }
     }
     return out;
+  }
+  function anchorOf(block: TextBlock, depth = 0): string | undefined {
+    if (anchored.has(block) || depth > 64) return anchored.get(block);
+    for (const c of block.content || []) {
+      const found = anchorOf(c, depth + 1);
+      if (found) return found;
+    }
   }
   const body = child(doc, 'body');
   if (!body) throw new Error('DOCX has no document body.');
@@ -559,6 +620,11 @@ export function readDocx(bytes: Uint8Array): DocxImport {
   return {
     blocks: result.length ? result : [{ type: 'paragraph' }],
     warnings: [...warnings],
-    page
+    page,
+    anchors: result.map((b) => anchorOf(b)),
+    defaults: {
+      run: { ...defaultRun, ...defaultStyle.run },
+      para: { ...defaultPara, ...defaultStyle.para }
+    }
   };
 }

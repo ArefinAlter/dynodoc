@@ -55,6 +55,10 @@ export async function importFile(file: File, signal?: AbortSignal): Promise<Impo
     const { importOverleaf } = await import('./latex');
     return importOverleaf(file);
   }
+  if (ext === 'pptx') {
+    const { importPptx } = await import('./pptx-import');
+    return importPptx(new Uint8Array(await file.arrayBuffer()), file.name);
+  }
   const rootId = ulid();
   const warnings: string[] = [];
   const ops: EventPayload[] = [rootOp(rootId, file.name.replace(/\.[^.]+$/, ''))];
@@ -176,7 +180,7 @@ export async function importFile(file: File, signal?: AbortSignal): Promise<Impo
       .forEach((text, i) => ops.push(itemOp(rootId, i, { label: text, content: paragraph(text) })));
     return { kind: 'document', ops, warnings, filename: file.name, rootId };
   }
-  throw new Error('Choose a DOCX, DOC, XLSX, CSV, TXT, or Markdown file.');
+  throw new Error('Choose a DOCX, DOC, XLSX, CSV, PPTX, TXT, or Markdown file.');
 }
 export function download(data: BlobPart, name: string, type: string) {
   const url = URL.createObjectURL(new Blob([data], { type }));
@@ -227,11 +231,26 @@ export async function exportSpreadsheet(
   );
 }
 
-export async function exportDocument(state: DocumentState, name: string) {
+/** A download that records its origin can later be uploaded back as reviewable changes. */
+export async function exportDocument(
+  state: DocumentState,
+  name: string,
+  origin?: { documentId: string; seq: number }
+) {
   const { writeDocx } = await import('./docx-export');
+  const { downloadName } = await import('./file-push');
   download(
-    await writeDocx(state, name),
-    name + '.docx',
+    await writeDocx(state, name, origin),
+    origin ? downloadName(name, origin.seq) : name + '.docx',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  );
+}
+
+export async function exportPresentation(state: DocumentState, name: string) {
+  const { writePptx } = await import('./pptx-export');
+  download(
+    await writePptx(state, name),
+    name + '.pptx',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation'
   );
 }

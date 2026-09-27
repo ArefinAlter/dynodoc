@@ -1,3 +1,4 @@
+import { byPosition } from './api';
 import type { JSONContent } from '@tiptap/core';
 import type { DocumentState } from '$lib/api/types';
 import { download, rootOp, itemOp, paragraph, type ImportResult } from './files';
@@ -86,7 +87,7 @@ export function latexDocument(state: DocumentState, title: string) {
   const root = live.find((n) => n.type === 'form');
   const tabs = live
     .filter((n) => n.type === 'section' && n.current_fields.kind === 'document_tab')
-    .sort((a, b) => a.pos.localeCompare(b.pos));
+    .sort((a, b) => byPosition(a, b));
   const body = [root, ...tabs]
     .filter((n) => !!n)
     .map(
@@ -96,7 +97,7 @@ export function latexDocument(state: DocumentState, title: string) {
           : '') +
         live
           .filter((n) => n.type === 'item' && n.parent_id === parent!.id)
-          .sort((a, b) => a.pos.localeCompare(b.pos))
+          .sort((a, b) => byPosition(a, b))
           .map((n) =>
             toLatex(
               (n.current_fields.content as JSONContent) ||

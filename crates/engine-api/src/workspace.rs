@@ -505,7 +505,9 @@ async fn upload(
     use base64::Engine;
     let role =
         apply::require_role(&state.pool, DocumentId(id), IdentityId(auth.identity_id)).await?;
-    if role != Role::Author {
+    // Reviewers may attach the original file of a change request they push.
+    let change_request = req.report["kind"] == "change_request";
+    if role != Role::Author && !(change_request && role == Role::Reviewer) {
         return Err(ApiError::Forbidden);
     }
     let content = base64::engine::general_purpose::STANDARD
@@ -584,18 +586,28 @@ struct SyncRequest {
     included_nodes: Option<Vec<engine_shared::NodeId>>,
     #[serde(default)]
     remember_selection: bool,
+    /// Rebase only: draft changes to discard while moving onto the team version.
+    #[serde(default)]
+    dropped_nodes: Vec<engine_shared::NodeId>,
 }
-#[utoipa::path(post, path="/documents/{id}/drafts/{draft_id}/sync", tag="workspace", request_body=Value, params(("id" = Uuid, Path, description = "Resource identifier"), ("draft_id" = Uuid, Path, description = "Resource identifier")), responses((status=200, description="Success; requires document membership", body=Value),(status=401, description="Sign in required"),(status=403, description="Insufficient access"),(status=409, description="Review a concurrent change before retrying")))]
-async fn sync_draft(
-    State(state): State<AppState>,
-    Path((id, draft)): Path<(Uuid, Uuid)>,
-    auth: AuthContext,
-    Json(req): Json<SyncRequest>,
-) -> Result<Json<Value>, ApiError> {
-    let doc = DocumentId(id);
-    let actor = IdentityId(auth.identity_id);
-    let (mut tx, role, mut team) = apply::begin_write(&state, doc, actor).await?;
-    let row:Value=sqlx::query_scalar("select to_jsonb(d) from workspace_draft d where id=$1 and document_id=$2 and created_by=$3 and merged_at is null for update").bind(draft).bind(id).bind(auth.identity_id).fetch_optional(&mut *tx).await?.ok_or(ApiError::NotFound)?;
+
+/// A draft's ancestor, current personal state and optimistic revision.
+pub(crate) struct DraftContext {
+    pub row: Value,
+    pub base: DocumentState,
+    pub local: DocumentState,
+    pub revision: i64,
+}
+
+/// Lock and replay an unmerged draft. `creator` restricts it to one owner; reviewers of
+/// a submitted change request load any creator's draft after their own access check.
+pub(crate) async fn load_draft(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    id: Uuid,
+    draft: Uuid,
+    creator: Option<Uuid>,
+) -> Result<DraftContext, ApiError> {
+    let row:Value=sqlx::query_scalar("select to_jsonb(d) from workspace_draft d where id=$1 and document_id=$2 and ($3::uuid is null or created_by=$3) and merged_at is null for update").bind(draft).bind(id).bind(creator).fetch_optional(&mut **tx).await?.ok_or(ApiError::NotFound)?;
     let decode = |v: Value| {
         serde_json::from_value::<DocumentState>(v).map_err(|e| ApiError::Internal(e.to_string()))
     };
@@ -608,7 +620,7 @@ async fn sync_draft(
     let edits: Vec<Value> =
         sqlx::query_scalar("select payload from draft_edit where draft_id=$1 order by id")
             .bind(draft)
-            .fetch_all(&mut *tx)
+            .fetch_all(&mut **tx)
             .await?;
     for edit in edits {
         apply_payload(
@@ -617,23 +629,122 @@ async fn sync_draft(
         )
         .map_err(|e| ApiError::Internal(e.to_string()))?;
     }
+    let revision = row["revision"].as_i64().unwrap_or(0);
+    Ok(DraftContext {
+        row,
+        base,
+        local,
+        revision,
+    })
+}
+
+/// Append the chosen merged operations to the canonical team history.
+pub(crate) async fn append_to_team(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    doc: DocumentId,
+    actor: IdentityId,
+    role: Role,
+    team: &mut DocumentState,
+    ops: &[EventPayload],
+) -> Result<Vec<Event>, ApiError> {
+    let mut events = Vec::new();
+    for op in ops {
+        governance::authorize(role, op, team)?;
+        if engine_core::richtext::redundant_label(team, op) {
+            continue;
+        }
+        apply::materialize_node_change(tx, doc, op).await?;
+        events.push(log::append_in_tx(tx, doc, op, actor).await?);
+        apply_payload(team, op).map_err(|e| ApiError::Internal(e.to_string()))?;
+    }
+    let issues = engine_core::integrity::validate_integrity(team);
+    if !issues.is_empty() {
+        return Err(ApiError::Conflict{reason:format!("The combined document has {} validation issue(s). Include the related changes or fix the draft first.",issues.len())});
+    }
+    Ok(events)
+}
+
+/// Move a draft onto `target` by appending draft edits, never rewriting earlier ones.
+pub(crate) async fn carry_into_draft(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    draft: Uuid,
+    actor: Uuid,
+    local: &mut DocumentState,
+    target: &DocumentState,
+) -> Result<(), ApiError> {
+    for op in engine_core::workspace_merge::diff(local, target) {
+        governance::authorize(Role::Author, &op, local)?;
+        apply_payload(local, &op).map_err(|e| ApiError::Internal(e.to_string()))?;
+        sqlx::query("insert into draft_edit(draft_id,payload,actor_id) values($1,$2,$3)")
+            .bind(draft)
+            .bind(json!(op))
+            .bind(actor)
+            .execute(&mut **tx)
+            .await?;
+    }
+    Ok(())
+}
+
+/// Rebased draft state: the merge result, except that dropped nodes follow the team.
+fn without_dropped(
+    mut merged: DocumentState,
+    team: &DocumentState,
+    dropped: &[engine_shared::NodeId],
+) -> DocumentState {
+    for id in dropped {
+        match team.nodes.get(id) {
+            Some(node) => {
+                merged.nodes.insert(id.clone(), node.clone());
+            }
+            None => {
+                merged.nodes.remove(id);
+            }
+        }
+    }
+    merged
+}
+
+#[utoipa::path(post, path="/documents/{id}/drafts/{draft_id}/sync", tag="workspace", request_body=Value, params(("id" = Uuid, Path, description = "Resource identifier"), ("draft_id" = Uuid, Path, description = "Resource identifier")), responses((status=200, description="Preview, pull, rebase (optionally dropping draft changes) or share a personal draft", body=Value),(status=401, description="Sign in required"),(status=403, description="Insufficient access"),(status=409, description="Review a concurrent change before retrying")))]
+async fn sync_draft(
+    State(state): State<AppState>,
+    Path((id, draft)): Path<(Uuid, Uuid)>,
+    auth: AuthContext,
+    Json(req): Json<SyncRequest>,
+) -> Result<Json<Value>, ApiError> {
+    let doc = DocumentId(id);
+    let actor = IdentityId(auth.identity_id);
+    let (mut tx, role, mut team) = apply::begin_write(&state, doc, actor).await?;
+    let DraftContext {
+        row,
+        base,
+        mut local,
+        revision,
+    } = load_draft(&mut tx, id, draft, Some(auth.identity_id)).await?;
     let seq: i64 =
         sqlx::query_scalar("select coalesce(max(seq),0) from event where document_id=$1")
             .bind(id)
             .fetch_one(&mut *tx)
             .await?;
-    let revision = row["revision"].as_i64().unwrap_or(0);
     let plan = engine_core::workspace_merge::merge(&base, &team, &local, &req.resolutions);
     let changes = plan.ops.clone();
     if req.action.is_empty() || req.action == "preview" {
+        // The draft's own changes relative to its ancestor let a rebase list what moves.
+        let own = engine_core::workspace_merge::diff(&base, &local);
         return Ok(Json(
-            json!({"conflicts":plan.conflicts,"ops":changes,"team_seq":seq,"revision":revision,"excluded_nodes":row["excluded_nodes"]}),
+            json!({"conflicts":plan.conflicts,"ops":changes,"own":own,"team_seq":seq,"base_seq":row["base_seq"],"revision":revision,"excluded_nodes":row["excluded_nodes"]}),
         ));
     }
     if req.team_seq != Some(seq) || req.revision != Some(revision) {
         return Err(ApiError::Conflict{reason:"The team version or this draft changed. Review the updated comparison before continuing.".into()});
     }
-    if !plan.conflicts.is_empty() {
+    let dropped: std::collections::BTreeSet<&str> =
+        req.dropped_nodes.iter().map(|n| n.0.as_str()).collect();
+    // A rebase may discard a draft change instead of resolving its overlap.
+    if plan
+        .conflicts
+        .iter()
+        .any(|c| !(req.action == "rebase" && dropped.contains(c.node_id.0.as_str())))
+    {
         return Err(ApiError::Conflict {
             reason: "Choose which value to keep for each overlapping change.".into(),
         });
@@ -641,8 +752,11 @@ async fn sync_draft(
     if role == Role::Auditor || (req.action == "share" && role != Role::Author) {
         return Err(ApiError::Forbidden);
     }
-    if req.action != "share" && req.action != "pull" {
-        return Err(bad("Choose preview, pull or share"));
+    if !["share", "pull", "rebase"].contains(&req.action.as_str()) {
+        return Err(bad("Choose preview, pull, rebase or share"));
+    }
+    if req.dropped_nodes.len() > 20_000 {
+        return Err(bad("Drop up to 20,000 changed blocks at a time"));
     }
     let mut events = Vec::new();
     if req.action == "share" {
@@ -678,47 +792,38 @@ async fn sync_draft(
                     .await?;
             }
         }
-        for op in changes.iter().filter(|op| {
-            included.as_ref().map_or_else(
-                || {
-                    op.target_node_id()
-                        .is_none_or(|id| !excluded.contains(&id.0))
-                },
-                |ids| {
-                    op.target_node_id()
-                        .is_some_and(|id| ids.contains(id.0.as_str()))
-                },
-            )
-        }) {
-            governance::authorize(role, op, &team)?;
-            if engine_core::richtext::redundant_label(&team, op) {
-                continue;
-            }
-            apply::materialize_node_change(&mut tx, doc, op).await?;
-            events.push(log::append_in_tx(&mut tx, doc, op, actor).await?);
-            apply_payload(&mut team, op).map_err(|e| ApiError::Internal(e.to_string()))?;
-        }
-        let issues = engine_core::integrity::validate_integrity(&team);
-        if !issues.is_empty() {
-            return Err(ApiError::Conflict{reason:format!("The combined document has {} validation issue(s). Include the related changes or fix the draft first.",issues.len())});
-        }
+        let chosen: Vec<EventPayload> = changes
+            .iter()
+            .filter(|op| {
+                included.as_ref().map_or_else(
+                    || {
+                        op.target_node_id()
+                            .is_none_or(|id| !excluded.contains(&id.0))
+                    },
+                    |ids| {
+                        op.target_node_id()
+                            .is_some_and(|id| ids.contains(id.0.as_str()))
+                    },
+                )
+            })
+            .cloned()
+            .collect();
+        events = append_to_team(&mut tx, doc, actor, role, &mut team, &chosen).await?;
     }
     // Carry new team work into this personal draft without replaying or rewriting
-    // canonical history. The new base makes the next comparison incremental.
-    for op in engine_core::workspace_merge::diff(&local, &plan.state) {
-        governance::authorize(Role::Author, &op, &local)?;
-        apply_payload(&mut local, &op).map_err(|e| ApiError::Internal(e.to_string()))?;
-        sqlx::query("insert into draft_edit(draft_id,payload,actor_id) values($1,$2,$3)")
-            .bind(draft)
-            .bind(json!(op))
-            .bind(auth.identity_id)
-            .execute(&mut *tx)
-            .await?;
-    }
+    // canonical history. The new base makes the next comparison incremental. A rebase
+    // additionally returns dropped blocks to the team's current content.
+    let target = if req.action == "rebase" {
+        without_dropped(plan.state, &team, &req.dropped_nodes)
+    } else {
+        plan.state
+    };
+    carry_into_draft(&mut tx, draft, auth.identity_id, &mut local, &target).await?;
     let completed =
         req.action == "share" && engine_core::workspace_merge::diff(&team, &local).is_empty();
     let next_seq = events.last().map_or(seq, |e| e.seq);
-    sqlx::query("update workspace_draft set merge_base_state=$2,base_seq=$3,revision=revision+1,merged_at=case when $4 then now() else merged_at end where id=$1").bind(draft).bind(json!(team)).bind(next_seq).bind(completed).execute(&mut *tx).await?;
+    // Sharing every change of a submitted draft yourself also closes its review request.
+    sqlx::query("update workspace_draft set merge_base_state=$2,base_seq=$3,revision=revision+1,merged_at=case when $4 then now() else merged_at end,review_outcome=case when $4 and submitted_at is not null then 'merged' else review_outcome end,reviewed_by=case when $4 and submitted_at is not null then $5 else reviewed_by end,reviewed_at=case when $4 and submitted_at is not null then now() else reviewed_at end where id=$1").bind(draft).bind(json!(team)).bind(next_seq).bind(completed).bind(auth.identity_id).execute(&mut *tx).await?;
     tx.commit().await?;
     for event in &events {
         state.subscriptions.publish(doc, event.clone());

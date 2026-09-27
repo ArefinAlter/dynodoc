@@ -2,6 +2,17 @@
 
 Assessment date: 22 September 2026. This distinguishes executable functionality from the longer design documents. The old README's “feature-complete” description was too broad.
 
+## Continuation: file push, change requests, presentations and UX fixes
+
+On 27 September the owner asked for a GUI-testable Git-like workflow with real
+local Word files from several people, a rebase feature, a PowerPoint-style editor,
+UX fixes and a plain-language walkthrough. [Decision 008](decisions/008-change-requests-presentations-and-ux.md)
+records the design; [release notes](CHANGE-REQUESTS-RELEASE.md) record exactly what
+was verified on an isolated local stack; [the user guide](GIT-STYLE-WORKFLOW.md)
+explains the workflow without Git terms. Migration `0020` is new; no applied
+migration changed. The editor header is now `office-v5`. This work is local and
+uncommitted until the owner approves a commit, push or deployment.
+
 ## Continuation: Office analysis and references
 
 The owner subsequently authorized broad Office implementation and a push to `main`.

@@ -12,6 +12,7 @@
   });
   import { goto } from '$app/navigation';
   import { setUnauthorizedHandler } from '$lib/api/client';
+  import { requiresSignIn } from '$lib/auth-next';
   import HelpGuide from '$lib/components/product/HelpGuide.svelte';
   import ToastHost from '$lib/components/ToastHost.svelte';
   import { CANONICAL_ORIGIN, SITE_IMAGE, canonicalUrl, isIndexablePath } from '$lib/seo';
@@ -21,7 +22,12 @@
   // When a 401 can't be recovered (refresh failed), the API client clears the session
   // and calls this handler; route the user to login.
   setUnauthorizedHandler(() => {
-    void goto('/login');
+    const here = window.location.pathname + window.location.search;
+    void goto(
+      requiresSignIn(window.location.pathname)
+        ? `/login?next=${encodeURIComponent(here)}`
+        : '/login'
+    );
   });
 </script>
 

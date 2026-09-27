@@ -47,13 +47,20 @@ export interface Draft {
   created_at: string;
   merged_at: string | null;
 }
-export type Kind = 'document' | 'spreadsheet' | 'questionnaire';
+export type Kind = 'document' | 'spreadsheet' | 'questionnaire' | 'presentation';
 export function documentKind(document: DocumentDetail | { settings: unknown }): Kind {
   const settings = document.settings as { kind?: Kind } | null;
   return settings?.kind || 'questionnaire';
 }
+/**
+ * Order siblings by position key. Keys are compared by code unit, the order `between()`
+ * generates them in; locale-aware comparison would reorder keys such as "W" and "j".
+ */
+export function byPosition(a: { pos: string }, b: { pos: string }) {
+  return a.pos < b.pos ? -1 : a.pos > b.pos ? 1 : 0;
+}
 export function documentNodes(state: DocumentState) {
   return Object.values(state.nodes)
     .filter((n) => !n.deleted && n.type === 'item')
-    .sort((a, b) => (a.pos < b.pos ? -1 : a.pos > b.pos ? 1 : 0));
+    .sort(byPosition);
 }

@@ -1,3 +1,4 @@
+import { byPosition } from './api';
 import { applyPayload } from '$lib/materializer';
 import { rebaseSheetMetadata } from './sheet-references';
 import { HyperFormula } from 'hyperformula';
@@ -241,7 +242,7 @@ export function pivotOps(
           node_id: id,
           node_type: 'section',
           parent_id: root.id,
-          pos: (sheets.sort((a, b) => a.pos.localeCompare(b.pos)).at(-1)?.pos || '') + 'V',
+          pos: (sheets.sort((a, b) => byPosition(a, b)).at(-1)?.pos || '') + 'V',
           fields: { kind: 'sheet', label: name }
         }
       ];

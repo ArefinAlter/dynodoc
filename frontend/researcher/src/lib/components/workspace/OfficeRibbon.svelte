@@ -42,7 +42,15 @@
     X,
     Table2,
     Type,
-    Printer
+    Printer,
+    MessageSquarePlus,
+    RefreshCw,
+    ArrowDownToLine,
+    NotebookText,
+    FilePenLine,
+    ChevronsDown,
+    Pilcrow,
+    TextCursor
   } from '@lucide/svelte';
   let {
     editor,
@@ -261,520 +269,647 @@
 <div class="office-panel" id="office-panel" role="tabpanel" aria-labelledby={`ribbon-${tab}`}>
   {#if tab === 'Home'}
     <div class="group clipboard">
-      <span>Clipboard</span>
-      <RibbonButton
-        label="Paste"
-        icon={ClipboardPaste}
-        large
-        disabled={!editable}
-        onclick={() => onClipboard('paste')}
-      />
-      <div class="stack">
+      <span class="group-label">Clipboard</span>
+      <div class="group-body">
         <RibbonButton
-          label="Cut"
-          icon={Scissors}
+          label="Paste"
+          icon={ClipboardPaste}
+          large
           disabled={!editable}
-          onclick={() => onClipboard('cut')}
-        /><RibbonButton label="Copy" icon={Copy} onclick={() => onClipboard('copy')} />
+          onclick={() => onClipboard('paste')}
+        />
+        <div class="stack">
+          <RibbonButton
+            label="Cut"
+            icon={Scissors}
+            disabled={!editable}
+            onclick={() => onClipboard('cut')}
+          /><RibbonButton label="Copy" icon={Copy} onclick={() => onClipboard('copy')} />
+        </div>
       </div>
     </div>
     <div class="group font-group">
-      <span>Font</span>
-      <div class="stack">
-        <div class="row">
-          <select
-            aria-label="Font family"
-            value={style.fontFamily || 'Arial'}
-            disabled={!editable}
-            onchange={(e) => editor?.chain().focus().setFontFamily(e.currentTarget.value).run()}
-            >{#each fonts as font}<option>{font}</option>{/each}</select
-          >
-          <select
-            class="size"
-            aria-label="Font size"
-            value={size}
-            disabled={!editable}
-            onchange={(e) =>
-              editor
-                ?.chain()
-                .focus()
-                .setFontSize(e.currentTarget.value + 'pt')
-                .run()}
-            >{#each sizes as value}<option>{value}</option>{/each}</select
-          >
-          <RibbonButton
-            label="Clear formatting"
-            icon={RemoveFormatting}
-            disabled={!editable}
-            onclick={clearFormatting}
-          />
-        </div>
-        <div class="row">
-          <RibbonButton
-            label="Bold"
-            icon={Bold}
-            disabled={!editable}
-            active={active('bold')}
-            onclick={() => editor?.chain().focus().toggleBold().run()}
-          />
-          <RibbonButton
-            label="Italic"
-            icon={Italic}
-            disabled={!editable}
-            active={active('italic')}
-            onclick={() => editor?.chain().focus().toggleItalic().run()}
-          />
-          <RibbonButton
-            label="Underline"
-            icon={Underline}
-            disabled={!editable}
-            active={active('underline')}
-            onclick={() => editor?.chain().focus().toggleUnderline().run()}
-          />
-          <RibbonButton
-            label="Strikethrough"
-            icon={Strikethrough}
-            disabled={!editable}
-            active={active('strike')}
-            onclick={() => editor?.chain().focus().toggleStrike().run()}
-          />
-          <RibbonButton
-            label="Subscript"
-            icon={Subscript}
-            disabled={!editable}
-            active={active('subscript')}
-            onclick={() => editor?.chain().focus().toggleSubscript().run()}
-          />
-          <RibbonButton
-            label="Superscript"
-            icon={Superscript}
-            disabled={!editable}
-            active={active('superscript')}
-            onclick={() => editor?.chain().focus().toggleSuperscript().run()}
-          />
-          <RibbonButton
-            label="Highlight"
-            icon={Highlighter}
-            disabled={!editable}
-            onclick={() => editor?.chain().focus().toggleHighlight({ color: '#fff2a8' }).run()}
-          />
-          <label class="color" title="Text color"
-            >A<input
-              aria-label="Text color"
-              type="color"
-              value={style.color || '#202124'}
+      <span class="group-label">Font</span>
+      <div class="group-body">
+        <div class="stack">
+          <div class="row">
+            <select
+              aria-label="Font family"
+              value={style.fontFamily || 'Arial'}
               disabled={!editable}
-              onchange={(e) => editor?.chain().focus().setColor(e.currentTarget.value).run()}
-            /></label
-          >
+              onchange={(e) => editor?.chain().focus().setFontFamily(e.currentTarget.value).run()}
+              >{#each fonts as font}<option>{font}</option>{/each}</select
+            >
+            <select
+              class="size"
+              aria-label="Font size"
+              value={size}
+              disabled={!editable}
+              onchange={(e) =>
+                editor
+                  ?.chain()
+                  .focus()
+                  .setFontSize(e.currentTarget.value + 'pt')
+                  .run()}
+              >{#each sizes as value}<option>{value}</option>{/each}</select
+            >
+            <RibbonButton
+              label="Clear formatting"
+              icon={RemoveFormatting}
+              disabled={!editable}
+              onclick={clearFormatting}
+            />
+          </div>
+          <div class="row">
+            <RibbonButton
+              label="Bold"
+              icon={Bold}
+              disabled={!editable}
+              active={active('bold')}
+              onclick={() => editor?.chain().focus().toggleBold().run()}
+            />
+            <RibbonButton
+              label="Italic"
+              icon={Italic}
+              disabled={!editable}
+              active={active('italic')}
+              onclick={() => editor?.chain().focus().toggleItalic().run()}
+            />
+            <RibbonButton
+              label="Underline"
+              icon={Underline}
+              disabled={!editable}
+              active={active('underline')}
+              onclick={() => editor?.chain().focus().toggleUnderline().run()}
+            />
+            <RibbonButton
+              label="Strikethrough"
+              icon={Strikethrough}
+              disabled={!editable}
+              active={active('strike')}
+              onclick={() => editor?.chain().focus().toggleStrike().run()}
+            />
+            <RibbonButton
+              label="Subscript"
+              icon={Subscript}
+              disabled={!editable}
+              active={active('subscript')}
+              onclick={() => editor?.chain().focus().toggleSubscript().run()}
+            />
+            <RibbonButton
+              label="Superscript"
+              icon={Superscript}
+              disabled={!editable}
+              active={active('superscript')}
+              onclick={() => editor?.chain().focus().toggleSuperscript().run()}
+            />
+            <RibbonButton
+              label="Highlight"
+              icon={Highlighter}
+              disabled={!editable}
+              onclick={() => editor?.chain().focus().toggleHighlight({ color: '#fff2a8' }).run()}
+            />
+            <label class="color" title="Text color"
+              >A<input
+                aria-label="Text color"
+                type="color"
+                value={style.color || '#202124'}
+                disabled={!editable}
+                onchange={(e) => editor?.chain().focus().setColor(e.currentTarget.value).run()}
+              /></label
+            >
+          </div>
         </div>
       </div>
     </div>
     <div class="group">
-      <span>Paragraph</span>
-      <div class="stack">
-        <div class="row">
-          <RibbonButton
-            label="Bulleted list"
-            icon={List}
-            disabled={!editable}
-            active={active('bulletList')}
-            onclick={() => editor?.chain().focus().toggleBulletList().run()}
-          />
-          <RibbonButton
-            label="Numbered list"
-            icon={ListOrdered}
-            disabled={!editable}
-            active={active('orderedList')}
-            onclick={() => editor?.chain().focus().toggleOrderedList().run()}
-          />
-          <RibbonButton
-            label="Checklist"
-            icon={ListChecks}
-            disabled={!editable}
-            active={active('taskList')}
-            onclick={() => editor?.chain().focus().toggleTaskList().run()}
-          />
-          <RibbonButton
-            label="Decrease indent"
-            icon={IndentDecrease}
-            disabled={!editable}
-            onclick={() =>
-              paragraph({ indent: Math.max(0, Number(currentParagraph.indent || 0) - 18) })}
-          />
-          <RibbonButton
-            label="Increase indent"
-            icon={IndentIncrease}
-            disabled={!editable}
-            onclick={() =>
-              paragraph({ indent: Math.min(144, Number(currentParagraph.indent || 0) + 18) })}
-          />
-          <select
-            class="direction"
-            title="Text direction"
-            aria-label="Text direction"
-            value={currentParagraph.dir ?? 'auto'}
-            disabled={!editable}
-            onchange={(e) => paragraph({ dir: e.currentTarget.value })}
-            ><option value="auto">Auto</option><option value="ltr">LTR</option><option value="rtl"
-              >RTL</option
-            ></select
-          >
-        </div>
-        <div class="row">
-          {#each [{ label: 'Align left', value: 'left', icon: AlignLeft }, { label: 'Align center', value: 'center', icon: AlignCenter }, { label: 'Align right', value: 'right', icon: AlignRight }, { label: 'Justify', value: 'justify', icon: AlignJustify }] as align}
+      <span class="group-label">Paragraph</span>
+      <div class="group-body">
+        <div class="stack">
+          <div class="row">
             <RibbonButton
-              label={align.label}
-              icon={align.icon}
+              label="Bulleted list"
+              icon={List}
               disabled={!editable}
-              active={currentParagraph.textAlign === align.value}
-              onclick={() => editor?.chain().focus().setTextAlign(align.value).run()}
+              active={active('bulletList')}
+              onclick={() => editor?.chain().focus().toggleBulletList().run()}
             />
-          {/each}
-          <select
-            class="spacing"
-            aria-label="Line spacing"
-            title="Line spacing"
-            value={currentParagraph.lineHeight || '1.6'}
-            disabled={!editable}
-            onchange={(e) => paragraph({ lineHeight: e.currentTarget.value })}
-            ><option value="1">1.0</option><option value="1.15">1.15</option><option value="1.5"
-              >1.5</option
-            ><option value="1.6">1.6</option><option value="2">2.0</option></select
-          >
-          <RibbonButton
-            label="Block quote"
-            icon={Quote}
-            disabled={!editable}
-            onclick={() => editor?.chain().focus().toggleBlockquote().run()}
-          />
+            <RibbonButton
+              label="Numbered list"
+              icon={ListOrdered}
+              disabled={!editable}
+              active={active('orderedList')}
+              onclick={() => editor?.chain().focus().toggleOrderedList().run()}
+            />
+            <RibbonButton
+              label="Checklist"
+              icon={ListChecks}
+              disabled={!editable}
+              active={active('taskList')}
+              onclick={() => editor?.chain().focus().toggleTaskList().run()}
+            />
+            <RibbonButton
+              label="Decrease indent"
+              icon={IndentDecrease}
+              disabled={!editable}
+              onclick={() =>
+                paragraph({ indent: Math.max(0, Number(currentParagraph.indent || 0) - 18) })}
+            />
+            <RibbonButton
+              label="Increase indent"
+              icon={IndentIncrease}
+              disabled={!editable}
+              onclick={() =>
+                paragraph({ indent: Math.min(144, Number(currentParagraph.indent || 0) + 18) })}
+            />
+            <select
+              class="direction"
+              title="Text direction"
+              aria-label="Text direction"
+              value={currentParagraph.dir ?? 'auto'}
+              disabled={!editable}
+              onchange={(e) => paragraph({ dir: e.currentTarget.value })}
+              ><option value="auto">Auto</option><option value="ltr">LTR</option><option value="rtl"
+                >RTL</option
+              ></select
+            >
+          </div>
+          <div class="row">
+            {#each [{ label: 'Align left', value: 'left', icon: AlignLeft }, { label: 'Align center', value: 'center', icon: AlignCenter }, { label: 'Align right', value: 'right', icon: AlignRight }, { label: 'Justify', value: 'justify', icon: AlignJustify }] as align}
+              <RibbonButton
+                label={align.label}
+                icon={align.icon}
+                disabled={!editable}
+                active={currentParagraph.textAlign === align.value}
+                onclick={() => editor?.chain().focus().setTextAlign(align.value).run()}
+              />
+            {/each}
+            <select
+              class="spacing"
+              aria-label="Line spacing"
+              title="Line spacing"
+              value={currentParagraph.lineHeight || '1.6'}
+              disabled={!editable}
+              onchange={(e) => paragraph({ lineHeight: e.currentTarget.value })}
+              ><option value="1">1.0</option><option value="1.15">1.15</option><option value="1.5"
+                >1.5</option
+              ><option value="1.6">1.6</option><option value="2">2.0</option></select
+            >
+            <RibbonButton
+              label="Block quote"
+              icon={Quote}
+              disabled={!editable}
+              onclick={() => editor?.chain().focus().toggleBlockquote().run()}
+            />
+          </div>
         </div>
       </div>
     </div>
     <div class="group styles">
-      <span>Styles</span>
-      {#each [{ value: 'paragraph', label: 'Normal' }, { value: '1', label: 'Heading 1' }, { value: '2', label: 'Heading 2' }] as item}
-        <button
-          class="style-card"
-          class:heading={item.value !== 'paragraph'}
-          aria-pressed={heading === item.value}
+      <span class="group-label">Styles</span>
+      <div class="group-body">
+        {#each [{ value: 'paragraph', label: 'Normal' }, { value: '1', label: 'Heading 1' }, { value: '2', label: 'Heading 2' }] as item}
+          <button
+            class="style-card"
+            class:heading={item.value !== 'paragraph'}
+            aria-pressed={heading === item.value}
+            disabled={!editable}
+            onmousedown={(e) => e.preventDefault()}
+            onclick={() => setHeading(item.value)}>{item.label}</button
+          >
+        {/each}
+        <select
+          class="style-picker"
+          aria-label="Paragraph style"
+          value={heading}
           disabled={!editable}
-          onmousedown={(e) => e.preventDefault()}
-          onclick={() => setHeading(item.value)}>{item.label}</button
+          onchange={(e) => setHeading(e.currentTarget.value)}
+          ><option value="paragraph">Normal</option>{#each [1, 2, 3, 4, 5, 6] as level}<option
+              value={level}>Heading {level}</option
+            >{/each}</select
         >
-      {/each}
-      <select
-        class="style-picker"
-        aria-label="Paragraph style"
-        value={heading}
-        disabled={!editable}
-        onchange={(e) => setHeading(e.currentTarget.value)}
-        ><option value="paragraph">Normal</option>{#each [1, 2, 3, 4, 5, 6] as level}<option
-            value={level}>Heading {level}</option
-          >{/each}</select
-      >
+      </div>
     </div>
     <div class="group">
-      <span>Editing</span>
-      <div class="stack">
-        <RibbonButton label="Find and replace" icon={Search} onclick={onFind} />
-        <div class="row">
-          <RibbonButton
-            label="Undo"
-            icon={Undo2}
-            disabled={!editable}
-            onclick={() => editor?.chain().focus().undo().run()}
-          /><RibbonButton
-            label="Redo"
-            icon={Redo2}
-            disabled={!editable}
-            onclick={() => editor?.chain().focus().redo().run()}
-          />
+      <span class="group-label">Editing</span>
+      <div class="group-body">
+        <div class="stack">
+          <RibbonButton label="Find and replace" icon={Search} onclick={onFind} />
+          <div class="row">
+            <RibbonButton
+              label="Undo"
+              icon={Undo2}
+              disabled={!editable}
+              onclick={() => editor?.chain().focus().undo().run()}
+            /><RibbonButton
+              label="Redo"
+              icon={Redo2}
+              disabled={!editable}
+              onclick={() => editor?.chain().focus().redo().run()}
+            />
+          </div>
         </div>
       </div>
     </div>
   {:else if tab === 'Insert'}
     <div class="group">
-      <span>Illustrations & links</span>
-      <RibbonButton
-        label="Insert image"
-        icon={ImagePlus}
-        large
-        disabled={!editable}
-        onclick={onImage}
-      />
-      <RibbonButton label="Insert link" icon={Link} large disabled={!editable} onclick={onLink} />
-      <RibbonButton
-        label="Insert LaTeX equation"
-        icon={Sigma}
-        large
-        disabled={!editable}
-        onclick={onMath}
-      />
-      <RibbonButton
-        label="Horizontal rule"
-        icon={Minus}
-        large
-        disabled={!editable}
-        onclick={() => editor?.chain().focus().setHorizontalRule().run()}
-      />
+      <span class="group-label">Illustrations & links</span>
+      <div class="group-body">
+        <RibbonButton
+          label="Insert image"
+          text="Picture"
+          icon={ImagePlus}
+          large
+          disabled={!editable}
+          onclick={onImage}
+        /><RibbonButton
+          label="Insert link"
+          text="Link"
+          icon={Link}
+          large
+          disabled={!editable}
+          onclick={onLink}
+        /><RibbonButton
+          label="Insert LaTeX equation"
+          text="Equation"
+          icon={Sigma}
+          large
+          disabled={!editable}
+          onclick={onMath}
+        /><RibbonButton
+          label="Horizontal rule"
+          text="Horizontal line"
+          icon={Minus}
+          large
+          disabled={!editable}
+          onclick={() => editor?.chain().focus().setHorizontalRule().run()}
+        />
+      </div>
     </div>
     <div class="group">
-      <span>Pages & comments</span><button
-        disabled={!editable}
-        onclick={() => editor?.chain().focus().insertContent({ type: 'pageBreak' }).run()}
-        ><FilePlus2 size={16} />Page break</button
-      >
-      {#if onComment}<button onclick={onComment}><MessageSquare size={16} />Comment</button>{/if}
+      <span class="group-label">Pages & comments</span>
+      <div class="group-body">
+        <RibbonButton
+          label="Page break"
+          icon={FilePlus2}
+          large
+          disabled={!editable}
+          onclick={() => editor?.chain().focus().insertContent({ type: 'pageBreak' }).run()}
+        />{#if onComment}<RibbonButton
+            label="Comment"
+            icon={MessageSquarePlus}
+            large
+            onclick={onComment}
+          />{/if}
+      </div>
     </div>
     <div class="group">
-      <span>Table</span><label
-        >Rows<input
-          aria-label="Table rows"
-          type="number"
-          min="1"
-          max="30"
-          bind:value={rows}
-        /></label
-      ><label
-        >Columns<input
-          aria-label="Table columns"
-          type="number"
-          min="1"
-          max="12"
-          bind:value={columns}
-        /></label
-      ><button
-        disabled={!editable}
-        onclick={() =>
-          editor
-            ?.chain()
-            .focus()
-            .insertTable({
-              rows: Math.max(1, Math.min(30, rows)),
-              cols: Math.max(1, Math.min(12, columns)),
-              withHeaderRow: true
-            })
-            .run()}><Table2 size={16} />Insert table</button
-      >
-    </div>
-    <div class="group">
-      <span>Symbols</span
-      >{#each ['©', '®', '™', '°', '±', '×', '÷', '—', '…', ' '] as symbol}<button
-          class="symbol"
-          aria-label={symbol === ' ' ? 'Nonbreaking space' : `Insert ${symbol}`}
+      <span class="group-label">Table</span>
+      <div class="group-body">
+        <div class="stack fields">
+          <label class="inline"
+            >Rows<input
+              aria-label="Table rows"
+              type="number"
+              min="1"
+              max="30"
+              bind:value={rows}
+            /></label
+          ><label class="inline"
+            >Columns<input
+              aria-label="Table columns"
+              type="number"
+              min="1"
+              max="12"
+              bind:value={columns}
+            /></label
+          >
+        </div>
+        <RibbonButton
+          label="Insert table"
+          text="Table"
+          icon={Table2}
+          large
           disabled={!editable}
           onclick={() =>
-            editor?.chain().focus().insertContent({ type: 'text', text: symbol }).run()}
-          >{symbol === ' ' ? '␣' : symbol}</button
-        >{/each}
+            editor
+              ?.chain()
+              .focus()
+              .insertTable({
+                rows: Math.max(1, Math.min(30, rows)),
+                cols: Math.max(1, Math.min(12, columns)),
+                withHeaderRow: true
+              })
+              .run()}
+        />
+      </div>
+    </div>
+    <div class="group">
+      <span class="group-label">Symbols</span>
+      <div class="group-body">
+        <div class="symbols">
+          {#each ['©', '®', '™', '°', '±', '×', '÷', '—', '…', ' '] as symbol}<button
+              class="symbol"
+              title={symbol === ' ' ? 'Nonbreaking space' : `Insert ${symbol}`}
+              aria-label={symbol === ' ' ? 'Nonbreaking space' : `Insert ${symbol}`}
+              disabled={!editable}
+              onmousedown={(e) => e.preventDefault()}
+              onclick={() =>
+                editor?.chain().focus().insertContent({ type: 'text', text: symbol }).run()}
+              >{symbol === ' ' ? '␣' : symbol}</button
+            >{/each}
+        </div>
+      </div>
     </div>
   {:else if tab === 'Layout'}
     <div class="group">
-      <span>Paragraph</span>
-      <label
-        >Before<select
-          aria-label="Space before paragraph"
-          value={currentParagraph.spaceBefore ?? 0}
-          disabled={!editable}
-          onchange={(e) => paragraph({ spaceBefore: Number(e.currentTarget.value) })}
-          >{#each [0, 3, 6, 8, 12, 18, 24] as n}<option value={n}>{n} pt</option>{/each}</select
-        ></label
-      >
-      <label
-        >After<select
-          aria-label="Space after paragraph"
-          value={currentParagraph.spaceAfter ?? 0}
-          disabled={!editable}
-          onchange={(e) => paragraph({ spaceAfter: Number(e.currentTarget.value) })}
-          >{#each [0, 3, 6, 8, 12, 18, 24] as n}<option value={n}>{n} pt</option>{/each}</select
-        ></label
-      >
-      <label
-        >Indent<select
-          aria-label="Paragraph indent"
-          value={currentParagraph.indent ?? 0}
-          disabled={!editable}
-          onchange={(e) => paragraph({ indent: Number(e.currentTarget.value) })}
-          >{#each [0, 18, 36, 54, 72] as n}<option value={n}>{n} pt</option>{/each}</select
-        ></label
-      >
+      <span class="group-label">Paragraph</span>
+      <div class="group-body">
+        <label
+          >Before<select
+            aria-label="Space before paragraph"
+            value={currentParagraph.spaceBefore ?? 0}
+            disabled={!editable}
+            onchange={(e) => paragraph({ spaceBefore: Number(e.currentTarget.value) })}
+            >{#each [0, 3, 6, 8, 12, 18, 24] as n}<option value={n}>{n} pt</option>{/each}</select
+          ></label
+        ><label
+          >After<select
+            aria-label="Space after paragraph"
+            value={currentParagraph.spaceAfter ?? 0}
+            disabled={!editable}
+            onchange={(e) => paragraph({ spaceAfter: Number(e.currentTarget.value) })}
+            >{#each [0, 3, 6, 8, 12, 18, 24] as n}<option value={n}>{n} pt</option>{/each}</select
+          ></label
+        ><label
+          >Indent<select
+            aria-label="Paragraph indent"
+            value={currentParagraph.indent ?? 0}
+            disabled={!editable}
+            onchange={(e) => paragraph({ indent: Number(e.currentTarget.value) })}
+            >{#each [0, 18, 36, 54, 72] as n}<option value={n}>{n} pt</option>{/each}</select
+          ></label
+        >
+      </div>
     </div>
     <div class="group">
-      <span>Page setup</span><label
-        >Paper<select
-          aria-label="Paper size"
-          value={page.size}
-          disabled={!editable || !onPageChange}
-          onchange={(e) => updatePage({ size: e.currentTarget.value as PageSetup['size'] })}
-          ><option>A4</option><option>Letter</option><option>Legal</option></select
-        ></label
-      >
-      <label
-        >Orientation<select
-          aria-label="Page orientation"
-          value={page.landscape ? 'landscape' : 'portrait'}
-          disabled={!editable || !onPageChange}
-          onchange={(e) => updatePage({ landscape: e.currentTarget.value === 'landscape' })}
-          ><option value="portrait">Portrait</option><option value="landscape">Landscape</option
-          ></select
-        ></label
-      >
-      <label
-        >Margins<select
-          aria-label="Page margins"
-          value={page.margin}
-          disabled={!editable || !onPageChange}
-          onchange={(e) => updatePage({ margin: Number(e.currentTarget.value) })}
-          ><option value={12.7}>Narrow · ½ inch</option><option value={25.4}>Normal · 1 inch</option
-          ><option value={38.1}>Wide · 1½ inches</option
-          >{#if ![12.7, 25.4, 38.1].includes(page.margin)}<option value={page.margin}
-              >{page.margin.toFixed(1)} mm</option
-            >{/if}</select
-        ></label
-      >
-      <button onclick={onPrint}><Printer size={16} />Preview pages</button>
+      <span class="group-label">Page setup</span>
+      <div class="group-body">
+        <label
+          >Paper<select
+            aria-label="Paper size"
+            value={page.size}
+            disabled={!editable || !onPageChange}
+            onchange={(e) => updatePage({ size: e.currentTarget.value as PageSetup['size'] })}
+            ><option>A4</option><option>Letter</option><option>Legal</option></select
+          ></label
+        ><label
+          >Orientation<select
+            aria-label="Page orientation"
+            value={page.landscape ? 'landscape' : 'portrait'}
+            disabled={!editable || !onPageChange}
+            onchange={(e) => updatePage({ landscape: e.currentTarget.value === 'landscape' })}
+            ><option value="portrait">Portrait</option><option value="landscape">Landscape</option
+            ></select
+          ></label
+        ><label
+          >Margins<select
+            aria-label="Page margins"
+            value={page.margin}
+            disabled={!editable || !onPageChange}
+            onchange={(e) => updatePage({ margin: Number(e.currentTarget.value) })}
+            ><option value={12.7}>Narrow · ½ inch</option><option value={25.4}
+              >Normal · 1 inch</option
+            ><option value={38.1}>Wide · 1½ inches</option
+            >{#if ![12.7, 25.4, 38.1].includes(page.margin)}<option value={page.margin}
+                >{page.margin.toFixed(1)} mm</option
+              >{/if}</select
+          ></label
+        ><RibbonButton label="Preview pages" icon={Printer} large onclick={onPrint} />
+      </div>
     </div>
     <div class="group">
-      <span>Header & footer</span><label
-        >Header<input
-          aria-label="Page header"
-          value={page.header}
-          maxlength="200"
-          disabled={!editable || !onPageChange}
-          onchange={(e) => updatePage({ header: e.currentTarget.value })}
-        /></label
-      ><label
-        >Footer<input
-          aria-label="Page footer"
-          value={page.footer}
-          maxlength="200"
-          disabled={!editable || !onPageChange}
-          onchange={(e) => updatePage({ footer: e.currentTarget.value })}
-        /></label
-      ><label class="check"
-        ><input
-          type="checkbox"
-          checked={page.pageNumbers}
-          disabled={!editable || !onPageChange}
-          onchange={(e) => updatePage({ pageNumbers: e.currentTarget.checked })}
-        />Page numbers</label
-      >
+      <span class="group-label">Header & footer</span>
+      <div class="group-body">
+        <label
+          >Header<input
+            aria-label="Page header"
+            value={page.header}
+            maxlength="200"
+            disabled={!editable || !onPageChange}
+            onchange={(e) => updatePage({ header: e.currentTarget.value })}
+          /></label
+        ><label
+          >Footer<input
+            aria-label="Page footer"
+            value={page.footer}
+            maxlength="200"
+            disabled={!editable || !onPageChange}
+            onchange={(e) => updatePage({ footer: e.currentTarget.value })}
+          /></label
+        ><label class="check"
+          ><input
+            type="checkbox"
+            checked={page.pageNumbers}
+            disabled={!editable || !onPageChange}
+            onchange={(e) => updatePage({ pageNumbers: e.currentTarget.checked })}
+          />Page numbers</label
+        >
+      </div>
     </div>
     <div class="group">
-      <span>Text flow</span><button
-        disabled={!editable}
-        onclick={() => paragraph({ keepWithNext: true })}>Keep with next</button
-      ><button
-        disabled={!editable}
-        onclick={() => paragraph({ keepWithNext: false, pageBreakBefore: false })}
-        >Normal flow</button
-      >
-      <label
-        >Language<select
-          aria-label="Document language"
-          value={page.language}
-          disabled={!editable || !onPageChange}
-          onchange={(e) => updatePage({ language: e.currentTarget.value })}
-          >{#each [['en', 'English'], ['bn', 'বাংলা'], ['ar', 'العربية'], ['he', 'עברית'], ['hi', 'हिन्दी'], ['zh', '中文'], ['ja', '日本語'], ['fr', 'Français'], ['es', 'Español'], ['de', 'Deutsch']] as [code, name]}<option
-              value={code}>{name}</option
-            >{/each}</select
-        ></label
-      >
+      <span class="group-label">Text flow</span>
+      <div class="group-body">
+        <div class="stack">
+          <RibbonButton
+            label="Keep with next"
+            icon={ChevronsDown}
+            size="small"
+            disabled={!editable}
+            onclick={() => paragraph({ keepWithNext: true })}
+          /><RibbonButton
+            label="Normal flow"
+            icon={Pilcrow}
+            size="small"
+            disabled={!editable}
+            onclick={() => paragraph({ keepWithNext: false, pageBreakBefore: false })}
+          />
+        </div>
+        <label
+          >Language<select
+            aria-label="Document language"
+            value={page.language}
+            disabled={!editable || !onPageChange}
+            onchange={(e) => updatePage({ language: e.currentTarget.value })}
+            >{#each [['en', 'English'], ['bn', 'বাংলা'], ['ar', 'العربية'], ['he', 'עברית'], ['hi', 'हिन्दी'], ['zh', '中文'], ['ja', '日本語'], ['fr', 'Français'], ['es', 'Español'], ['de', 'Deutsch']] as [code, name]}<option
+                value={code}>{name}</option
+              >{/each}</select
+          ></label
+        >
+      </div>
     </div>
   {:else if tab === 'References'}
     <div class="group">
-      <div class="stack">
+      <span class="group-label">Table of Contents</span>
+      <div class="group-body">
         <RibbonButton
           icon={ListTree}
           label="Insert table of contents"
+          text="Table of Contents"
+          large
           disabled={!editable}
           onclick={() => onReference('contents')}
         /><RibbonButton
-          icon={Redo2}
+          icon={RefreshCw}
           label="Update table of contents"
+          text="Update Table"
+          size="small"
           disabled={!editable}
           onclick={() => onReference('update-contents')}
         />
       </div>
-      <span>Table of Contents</span>
     </div>
     <div class="group">
-      <div class="stack">
+      <span class="group-label">Footnotes</span>
+      <div class="group-body">
         <RibbonButton
-          icon={FileText}
+          icon={Superscript}
           label="Insert footnote"
+          text="Insert Footnote"
+          large
           disabled={!editable}
           onclick={() => onReference('footnote')}
-        /><RibbonButton
-          icon={FileText}
-          label="Insert endnote"
-          disabled={!editable}
-          onclick={() => onReference('endnote')}
-        /><RibbonButton icon={List} label="Show notes" onclick={() => onReference('notes')} />
+        />
+        <div class="stack">
+          <RibbonButton
+            icon={ArrowDownToLine}
+            label="Insert endnote"
+            text="Insert Endnote"
+            size="small"
+            disabled={!editable}
+            onclick={() => onReference('endnote')}
+          /><RibbonButton
+            icon={NotebookText}
+            label="Show notes"
+            text="Show Notes"
+            size="small"
+            onclick={() => onReference('notes')}
+          />
+        </div>
       </div>
-      <span>Footnotes</span>
     </div>
   {:else if tab === 'Review'}
     <div class="group">
-      <span>Text revisions</span><button
-        aria-pressed={tracking}
-        disabled={!editable}
-        onclick={() => (tracking = !tracking)}>Track text edits</button
-      ><button
-        disabled={!editable || !changes.length}
-        onclick={() => editor && resolveReview(editor, true)}
-        ><Check size={16} />Accept all text changes</button
-      ><button
-        disabled={!editable || !changes.length}
-        onclick={() => editor && resolveReview(editor, false)}
-        ><X size={16} />Reject all text changes</button
-      >
+      <span class="group-label">Tracking</span>
+      <div class="group-body">
+        <RibbonButton
+          label="Track text edits"
+          text="Track Changes"
+          icon={FilePenLine}
+          large
+          active={tracking}
+          disabled={!editable}
+          onclick={() => (tracking = !tracking)}
+        />
+        <div class="stack">
+          <RibbonButton
+            label="Accept all text changes"
+            text="Accept all"
+            icon={Check}
+            size="small"
+            disabled={!editable || !changes.length}
+            onclick={() => editor && resolveReview(editor, true)}
+          /><RibbonButton
+            label="Reject all text changes"
+            text="Reject all"
+            icon={X}
+            size="small"
+            disabled={!editable || !changes.length}
+            onclick={() => editor && resolveReview(editor, false)}
+          />
+        </div>
+      </div>
     </div>
     <div class="group">
-      <span>Review</span>{#if onComment}<button onclick={onComment}
-          ><MessageSquare size={16} />Comments</button
-        >{/if}<button aria-pressed={audit} onclick={() => (audit = !audit)}
-        ><Accessibility size={16} />Accessibility check</button
-      >
+      <span class="group-label">Comments & checks</span>
+      <div class="group-body">
+        {#if onComment}<RibbonButton
+            label="Comments"
+            icon={MessageSquare}
+            large
+            onclick={onComment}
+          />{/if}<RibbonButton
+          label="Accessibility check"
+          text="Check Accessibility"
+          icon={Accessibility}
+          large
+          active={audit}
+          onclick={() => (audit = !audit)}
+        />
+      </div>
     </div>
   {:else}<div class="group">
-      <span>Navigate & print</span><button
-        aria-pressed={outline}
-        onclick={() => (outline = !outline)}><ListTree size={16} />Document outline</button
-      ><button onclick={onPrint}><Printer size={16} />Print preview / PDF</button><button
-        onclick={() => editor?.commands.focus()}>Return to document</button
-      >
+      <span class="group-label">Views</span>
+      <div class="group-body">
+        <RibbonButton
+          label="Print layout"
+          icon={FileText}
+          large
+          active={paginated}
+          onclick={() => (paginated = true)}
+        /><RibbonButton
+          label="Continuous view"
+          text="Continuous"
+          icon={PanelTop}
+          large
+          active={!paginated}
+          onclick={() => (paginated = false)}
+        />
+      </div>
     </div>
     <div class="group">
-      <span>Page view</span><RibbonButton
-        label="Print layout"
-        icon={FileText}
-        large
-        active={paginated}
-        onclick={() => (paginated = true)}
-      /><RibbonButton
-        label="Continuous view"
-        icon={PanelTop}
-        large
-        active={!paginated}
-        onclick={() => (paginated = false)}
-      />
+      <span class="group-label">Navigate & print</span>
+      <div class="group-body">
+        <RibbonButton
+          label="Print preview / PDF"
+          text="Print Preview"
+          icon={Printer}
+          large
+          onclick={onPrint}
+        />
+        <div class="stack">
+          <RibbonButton
+            label="Document outline"
+            icon={ListTree}
+            size="small"
+            active={outline}
+            onclick={() => (outline = !outline)}
+          /><RibbonButton
+            label="Return to document"
+            icon={TextCursor}
+            size="small"
+            onclick={() => editor?.commands.focus()}
+          />
+        </div>
+      </div>
     </div>
     {#if onFont}<div class="group">
-        <span>Fonts</span><RibbonButton
-          label="Upload font"
-          icon={Type}
-          large
-          disabled={!editable}
-          onclick={() => fontInput?.click()}
-        /><input
-          class="hidden"
-          type="file"
-          bind:this={fontInput}
-          accept=".woff2,.woff,.ttf,.otf"
-          onchange={fontFile}
-        />
+        <span class="group-label">Fonts</span>
+        <div class="group-body">
+          <RibbonButton
+            label="Upload font"
+            icon={Type}
+            large
+            disabled={!editable}
+            onclick={() => fontInput?.click()}
+          /><input
+            class="hidden"
+            type="file"
+            bind:this={fontInput}
+            accept=".woff2,.woff,.ttf,.otf"
+            onchange={fontFile}
+          />
+        </div>
       </div>{/if}
   {/if}
 </div>
@@ -879,28 +1014,41 @@
       Arial,
       sans-serif;
     color: #303030;
-    min-height: 99px;
+    min-height: 96px;
     overflow-x: auto;
     flex-shrink: 0;
   }
+  /* Each group is its commands above a one-line caption; the group is as wide as the
+     wider of the two, so captions never wrap over or overlap the commands. */
   .group {
     display: flex;
-    align-items: center;
-    gap: 5px;
+    flex-direction: column;
+    gap: 2px;
     border-inline-end: 1px solid #d5d5d5;
-    padding: 0 10px 20px 0;
-    position: relative;
+    padding: 0 10px 0 6px;
     flex-shrink: 0;
+  }
+  .group:first-child {
+    padding-inline-start: 0;
   }
   .group:last-child {
     border: 0;
   }
-  .group > span {
-    position: absolute;
-    bottom: 2px;
-    inset-inline: 0 10px;
+  .group-body {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex: 1;
+    min-height: 70px;
+  }
+  .group-label {
+    order: 1;
     text-align: center;
     font-size: 11px;
+    line-height: 14px;
+    color: #505050;
+    white-space: nowrap;
+    padding-bottom: 2px;
   }
   .group label {
     display: flex;
@@ -973,10 +1121,28 @@
   .spacing {
     width: 58px;
   }
-  .symbol {
-    min-width: 27px;
+  .symbols {
+    display: grid;
+    grid-template-columns: repeat(5, 26px);
+    gap: 3px;
   }
-  .styles {
+  .symbol {
+    min-width: 26px;
+    min-height: 26px;
+    padding: 0;
+    border-color: transparent;
+    font-size: 14px;
+  }
+  .stack.fields {
+    gap: 5px;
+  }
+  .group label.inline {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .styles .group-body {
     gap: 4px;
   }
   .style-card {

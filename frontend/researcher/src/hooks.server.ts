@@ -1,11 +1,26 @@
 import { env } from '$env/dynamic/private';
+import { env as publicEnv } from '$env/dynamic/public';
 import { redirect, type Handle } from '@sveltejs/kit';
 import { isIndexableHost, isPublicPath } from '$lib/seo';
+import { requiresSignIn } from '$lib/auth-next';
+import { accessToken } from '$lib/server/session';
 export const handle: Handle = async ({ event, resolve }) => {
-  if (env.ADMIN_SITE === 'true' && ['/', '/workspace'].includes(event.url.pathname))
-    redirect(303, '/admin');
-  if (event.url.hostname === 'app.dynodoc.online' && event.url.pathname === '/')
+  const { pathname, search } = event.url;
+  if (env.ADMIN_SITE === 'true' && ['/', '/workspace'].includes(pathname)) redirect(303, '/admin');
+  if (event.url.hostname === 'app.dynodoc.online' && pathname === '/')
     redirect(303, 'https://dynodoc.online');
+  if (env.ADMIN_SITE !== 'true' && (requiresSignIn(pathname) || pathname === '/login')) {
+    // The public homepage host has no sessions; send workspace visits to the workspace host.
+    const workspace = publicEnv.PUBLIC_WORKSPACE_URL?.replace(/\/$/, '');
+    if (workspace && URL.canParse(workspace) && new URL(workspace).host !== event.url.host)
+      redirect(303, `${workspace}${pathname}${search}`);
+    // Sign in before the workspace renders, then return to the requested page.
+    if (
+      requiresSignIn(pathname) &&
+      !(await accessToken(event.cookies, event.url.protocol === 'https:'))
+    )
+      redirect(303, `/login?next=${encodeURIComponent(pathname + search)}`);
+  }
   const response = await resolve(event);
   // Indexable only on the public host, and only for the public pages and the
   // SEO files (robots, sitemap, llms.txt, the IndexNow key). Everything else —

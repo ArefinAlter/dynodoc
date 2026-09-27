@@ -1,3 +1,4 @@
+import { byPosition } from './api';
 import type {
   Cell,
   Worksheet,
@@ -185,12 +186,12 @@ export function formulaInput(raw: unknown, f: CellFormat = {}): string | number 
 export function workbookInput(state: DocumentState) {
   const sheets = Object.values(state.nodes)
     .filter((n) => !n.deleted && n.current_fields.kind === 'sheet')
-    .sort((a, b) => a.pos.localeCompare(b.pos));
+    .sort((a, b) => byPosition(a, b));
   const input: Record<string, (string | number | boolean)[][]> = {};
   for (const sheet of sheets)
     input[String(sheet.current_fields.label || sheet.id)] = Object.values(state.nodes)
       .filter((n) => !n.deleted && n.parent_id === sheet.id)
-      .sort((a, b) => a.pos.localeCompare(b.pos))
+      .sort((a, b) => byPosition(a, b))
       .map((n) =>
         Array.from({ length: Math.min(100, Number(sheet.current_fields.columns) || 12) }, (_, c) =>
           formulaInput(n.current_fields[`cell_${c}`], cellFormat(n, c))

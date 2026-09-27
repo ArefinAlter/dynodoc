@@ -96,6 +96,25 @@ runs through engine governance; authors may unprotect. Protected cell ranges,
 passwords, native pivot definitions, macros, external connections and full Excel
 function/format parity remain incomplete.
 
+## Presentation editor
+
+Slides are `section` nodes and shapes are `item` nodes (text, geometry in percent,
+one style field, optional image data up to 1 MB), so separate slides and shapes
+merge independently. The editor has a slide rail with live thumbnails, canvas
+select/drag/resize/in-place text editing, layouts, themes, backgrounds, speaker
+notes, hidden slides and a full-screen slide show. PPTX export uses `pptxgenjs`;
+import reads slide order and size, placeholders, text with basic formatting and
+bullets, rectangles, pictures, backgrounds, notes and hidden slides. Not reproduced:
+mixed formatting within one text box, rotation, tables, charts, SmartArt,
+connectors, animations, transitions and custom masters.
+
+## Word file push
+
+Downloads write `DynodocDocument`/`DynodocRevision` custom properties, a
+`Title (vN).docx` name and hidden `_dd…` block bookmarks. Uploading an edited copy
+aligns it with the starting revision and creates reviewable draft changes; see
+[decision 008](decisions/008-change-requests-presentations-and-ux.md).
+
 ## Versioning, performance and privacy
 
 The semantic event schema is unchanged. Supported formatting and review metadata

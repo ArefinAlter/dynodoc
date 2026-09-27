@@ -281,6 +281,156 @@ paths:
           description: Insufficient access
         '409':
           description: Review a concurrent change before retrying
+  /documents/{id}/change-requests:
+    get:
+      tags:
+      - reviews
+      summary: Submitted change requests are visible to every member; unsubmitted drafts stay private.
+      operationId: list
+      parameters:
+      - name: id
+        in: path
+        description: Document identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Open and recently closed change requests
+          content:
+            application/json:
+              schema: {}
+        '403':
+          description: Document membership required
+    post:
+      tags:
+      - reviews
+      summary: Create a draft from an earlier revision plus the pushed file's changes, atomically.
+      operationId: create
+      parameters:
+      - name: id
+        in: path
+        description: Document identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Draft created and optionally submitted for review
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Invalid starting revision or changes
+        '403':
+          description: Viewers cannot propose changes
+  /documents/{id}/change-requests/{draft_id}:
+    get:
+      tags:
+      - reviews
+      summary: The request, the contributor's own changes and what merging would change now.
+      operationId: detail
+      parameters:
+      - name: id
+        in: path
+        description: Document identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: draft_id
+        in: path
+        description: Change request identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Review comparison against the current team version
+          content:
+            application/json:
+              schema: {}
+        '403':
+          description: Document membership required
+        '404':
+          description: Not submitted or not visible
+  /documents/{id}/change-requests/{draft_id}/decline:
+    post:
+      tags:
+      - reviews
+      operationId: decline
+      parameters:
+      - name: id
+        in: path
+        description: Document identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: draft_id
+        in: path
+        description: Change request identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Declined; the contributor keeps their draft
+          content:
+            application/json:
+              schema: {}
+        '403':
+          description: Editors decline change requests
+  /documents/{id}/change-requests/{draft_id}/merge:
+    post:
+      tags:
+      - reviews
+      summary: An editor merges selected changes. Unselected changes stay open in the request.
+      operationId: merge
+      parameters:
+      - name: id
+        in: path
+        description: Document identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: draft_id
+        in: path
+        description: Change request identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Selected changes appended to the team version
+          content:
+            application/json:
+              schema: {}
+        '403':
+          description: Editors merge change requests
+        '409':
+          description: Resolve overlaps or review newer changes first
   /documents/{id}/conflicts:
     get:
       tags:
@@ -560,6 +710,42 @@ paths:
           description: Insufficient access
         '409':
           description: Review a concurrent change before retrying
+  /documents/{id}/drafts/{draft_id}/submit:
+    post:
+      tags:
+      - reviews
+      summary: Ask the document's editors to review an existing personal draft.
+      operationId: submit
+      parameters:
+      - name: id
+        in: path
+        description: Document identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: draft_id
+        in: path
+        description: Draft identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Submitted for review
+          content:
+            application/json:
+              schema: {}
+        '403':
+          description: Viewers cannot propose changes
+        '404':
+          description: Not your open draft
   /documents/{id}/drafts/{draft_id}/sync:
     post:
       tags:
@@ -587,7 +773,7 @@ paths:
         required: true
       responses:
         '200':
-          description: Success; requires document membership
+          description: Preview, pull, rebase (optionally dropping draft changes) or share a personal draft
           content:
             application/json:
               schema: {}
@@ -597,6 +783,39 @@ paths:
           description: Insufficient access
         '409':
           description: Review a concurrent change before retrying
+  /documents/{id}/drafts/{draft_id}/withdraw:
+    post:
+      tags:
+      - reviews
+      operationId: withdraw
+      parameters:
+      - name: id
+        in: path
+        description: Document identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: draft_id
+        in: path
+        description: Draft identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: The contributor withdrew their request
+          content:
+            application/json:
+              schema: {}
+        '403':
+          description: Only the contributor can withdraw
   /documents/{id}/events:
     get:
       tags:
@@ -648,6 +867,30 @@ paths:
               schema: {}
       security:
       - bearer: []
+  /documents/{id}/history-points:
+    get:
+      tags:
+      - reviews
+      summary: |-
+        Revisions a pushed file may have started from: the latest team version, the first
+        saved state (normally the original upload) and named versions.
+      operationId: history_points
+      parameters:
+      - name: id
+        in: path
+        description: Document identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Latest, initial and named-version revisions
+          content:
+            application/json:
+              schema: {}
+        '403':
+          description: Document membership required
   /documents/{id}/location:
     post:
       tags:
@@ -1126,6 +1369,36 @@ paths:
               schema: {}
         '404':
           description: No such snapshot for this document
+  /documents/{id}/state:
+    get:
+      tags:
+      - reviews
+      operationId: state_at
+      parameters:
+      - name: id
+        in: path
+        description: Document identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: through_seq
+        in: query
+        description: Revision to materialize
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        '200':
+          description: Canonical state at an earlier revision
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Unknown revision
+        '403':
+          description: Document membership required
   /documents/{id}/structure:
     get:
       tags:

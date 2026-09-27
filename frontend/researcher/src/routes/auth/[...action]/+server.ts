@@ -3,6 +3,7 @@ import { json, redirect } from '@sveltejs/kit';
 import * as oidc from 'openid-client';
 import type { RequestHandler } from './$types';
 import { saveSession, clearSession, accessToken, engineUrl, enginePost } from '$lib/server/session';
+import { safeNext } from '$lib/auth-next';
 
 let configuration: Promise<oidc.Configuration> | undefined;
 function google() {
@@ -58,6 +59,16 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
       sameSite: 'lax',
       maxAge: 600
     });
+    const next = safeNext(url.searchParams.get('next'));
+    if (next)
+      cookies.set('oauth_next', next, {
+        path: '/auth',
+        httpOnly: true,
+        secure,
+        sameSite: 'lax',
+        maxAge: 600
+      });
+    else cookies.delete('oauth_next', { path: '/auth' });
     redirect(
       302,
       oidc
@@ -76,8 +87,10 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
       state = url.searchParams.get('state'),
       verifier = cookies.get('oauth_verifier');
     const expected = cookies.get('oauth_state');
+    const next = safeNext(cookies.get('oauth_next'));
     cookies.delete('oauth_state', { path: '/auth' });
     cookies.delete('oauth_verifier', { path: '/auth' });
+    cookies.delete('oauth_next', { path: '/auth' });
     if (!code || !state || !expected || state !== expected || !verifier)
       return json({ error: 'This sign-in link expired. Please try again.' }, { status: 400 });
     try {
@@ -101,7 +114,7 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
     } catch {
       return json({ error: 'Google sign-in failed. Please start again.' }, { status: 401 });
     }
-    redirect(303, env.ADMIN_SITE === 'true' ? '/admin' : '/workspace');
+    redirect(303, env.ADMIN_SITE === 'true' ? '/admin' : next || '/workspace');
   }
   if (params.action === 'verify') {
     // Confirmation is POSTed by the page so email link scanners cannot consume it.

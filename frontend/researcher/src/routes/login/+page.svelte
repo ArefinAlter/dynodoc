@@ -3,7 +3,10 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { session } from '$lib/stores/session.svelte';
+  import { rememberNext, safeNext, takeRememberedNext } from '$lib/auth-next';
   import { ArrowRight, ArrowLeft, Mail, CheckCircle2 } from '@lucide/svelte';
+  // A protected page sent the visitor here; return there once they have signed in.
+  const next = $derived(safeNext($page.url.searchParams.get('next')));
   let email = $state(''),
     name = $state(''),
     message = $state(''),
@@ -18,9 +21,16 @@
     destination: '/workspace'
   });
   onMount(async () => {
+    if (next) rememberNext(next);
     const res = await fetch('/auth/options');
     if (res.ok) options = await res.json();
   });
+  function destination() {
+    if ($page.url.searchParams.get('next') === 'admin' || options.destination === '/admin')
+      return '/admin';
+    const remembered = takeRememberedNext();
+    return next || remembered || '/workspace';
+  }
   async function requestLink(event: SubmitEvent) {
     event.preventDefault();
     busy = true;
@@ -54,11 +64,7 @@
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       session.authenticated = true;
-      await goto(
-        $page.url.searchParams.get('next') === 'admin' || options.destination === '/admin'
-          ? '/admin'
-          : '/workspace'
-      );
+      await goto(destination());
     } catch (e) {
       error = e instanceof Error ? e.message : 'Please request another link.';
     } finally {
@@ -104,10 +110,13 @@
         }}>Use a different email</button
       >
     {:else}
+      {#if next}<p class="setup">Sign in to open your workspace.</p>{/if}
       <a
         class:disabled={!options.google}
         class="google"
-        href={options.google ? '/auth/google' : undefined}
+        href={options.google
+          ? `/auth/google${next ? `?next=${encodeURIComponent(next)}` : ''}`
+          : undefined}
         aria-disabled={!options.google}><span class="g">G</span> Continue with Google</a
       >
       {#if !options.google}<p class="setup">Google sign-in is awaiting administrator setup.</p>{/if}

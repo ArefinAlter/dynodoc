@@ -92,6 +92,14 @@ Authenticated routes use the existing session gateway at `/api/engine`:
 | POST `/admin/control` | Forced sign-out, ownership transfer or public-link revocation |
 | GET `/documents/:id/discussions?before=&node=` | Paginated discussion roots with replies and resolution |
 | POST `/documents/:id/discussions/:thread` | `{revision,body}` or `{revision,resolved}` |
+| GET `/documents/:id/history-points` | Latest, first-save and named-version revisions a pushed file may start from |
+| GET `/documents/:id/state?through_seq=` | Canonical state at an earlier revision |
+| GET/POST `/documents/:id/change-requests` | Submitted requests (all members) / create a draft from `{name,note,base_seq,ops,source,submit}` |
+| GET `/documents/:id/change-requests/:draft` | Request plus live comparison: `ops`, `conflicts`, contributor's `own` changes, touched `nodes`, `behind` |
+| POST `/documents/:id/change-requests/:draft/merge` | Editors: `{team_seq,revision,resolutions,included_nodes,note}` |
+| POST `/documents/:id/change-requests/:draft/decline` | Editors: `{note}` |
+| POST `/documents/:id/drafts/:draft/submit` / `withdraw` | Contributor asks for review / withdraws |
+| POST `/documents/:id/drafts/:draft/sync` | Adds `action: "rebase"` with optional `dropped_nodes` |
 
 These product, lifecycle, discussion and administration routes are included in the
 generated OpenAPI. Some request/response bodies retain generic JSON schemas.

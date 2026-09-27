@@ -1,6 +1,8 @@
 <script lang="ts">
+  import { byPosition } from '$lib/workspace/api';
   import RichEditor from '$lib/components/workspace/RichEditor.svelte';
   import SheetEditor from '$lib/components/workspace/SheetEditor.svelte';
+  import PresentationEditor from '$lib/components/workspace/PresentationEditor.svelte';
   import { richContent } from '$lib/workspace/changes';
   import type { PageData } from './$types';
   let { data }: { data: PageData } = $props();
@@ -12,13 +14,13 @@
           !n.deleted &&
           (n.type === 'form' || (n.type === 'section' && n.current_fields.kind === 'document_tab'))
       )
-      .sort((a, b) => (a.type === 'form' ? -1 : b.type === 'form' ? 1 : a.pos.localeCompare(b.pos)))
+      .sort((a, b) => (a.type === 'form' ? -1 : b.type === 'form' ? 1 : byPosition(a, b)))
   );
   const activeTab = $derived(tabs.find((n) => n.id === selectedTab) || tabs[0]);
   const nodes = $derived(
     Object.values(data.state.nodes)
       .filter((n) => !n.deleted)
-      .sort((a, b) => a.pos.localeCompare(b.pos))
+      .sort((a, b) => byPosition(a, b))
   );
 </script>
 
@@ -61,7 +63,9 @@
       onSelect={() => {}}
       onUndo={() => {}}
       onRedo={() => {}}
-    />{:else}<div class="questions">
+    />{:else if data.kind === 'presentation'}<div class="readonly-deck">
+      <PresentationEditor documentState={data.state} editable={false} onChange={() => {}} />
+    </div>{:else}<div class="questions">
       {#each nodes as node}{#if node.type !== 'form' && node.type !== 'choice'}<article>
             <h2>{String(node.current_fields.label || node.current_fields.name || 'Untitled')}</h2>
             {#if node.current_fields.hint}<p>{String(node.current_fields.hint)}</p>{/if}<small
@@ -126,6 +130,16 @@
   .document-tabs button[aria-pressed='true'] {
     background: #dbeaff;
     border-color: #3267b0;
+  }
+  .readonly-deck {
+    display: flex;
+    flex-direction: column;
+    height: min(760px, 82vh);
+    max-width: 1180px;
+    margin: auto;
+    border: 1px solid #d3dfeb;
+    border-radius: 8px;
+    overflow: hidden;
   }
   .questions {
     max-width: 850px;

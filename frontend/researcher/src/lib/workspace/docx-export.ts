@@ -1,11 +1,40 @@
+import { byPosition } from './api';
 import * as w from 'docx';
 import type { DocumentState } from '$lib/api/types';
 import type { TextBlock } from './files';
 import { bounded, pageSetup, pageDimensions, safeColor, safeFont } from './office';
 
+/** Identifies the Dynodoc document and revision a downloaded file started from. */
+export interface ExportOrigin {
+  documentId: string;
+  seq: number;
+}
+/** Hidden bookmark prefixes carrying stable block and tab identity through Word edits. */
+export const BLOCK_ANCHOR = '_dd',
+  TAB_ANCHOR = '_ddt',
+  COMMENTS_ANCHOR = '_ddcomments';
+const stableId = /^[0-9A-HJKMNP-TV-Z]{26}$/;
+
 /** Export the supported OOXML subset directly, retaining text review metadata. */
-export async function writeDocx(state: DocumentState, title: string): Promise<Blob> {
+export async function writeDocx(
+  state: DocumentState,
+  title: string,
+  origin?: ExportOrigin
+): Promise<Blob> {
   const live = Object.values(state.nodes).filter((n) => !n.deleted);
+  // docx gives every Bookmark the same numeric id, so emit uniquely numbered markers.
+  let bookmarkId = 1000,
+    pendingAnchor = '';
+  function anchor(): w.ParagraphChild[] {
+    if (!pendingAnchor) return [];
+    const id = bookmarkId++,
+      name = pendingAnchor;
+    pendingAnchor = '';
+    return [
+      new w.BookmarkStart(name, id) as unknown as w.ParagraphChild,
+      new w.BookmarkEnd(id) as unknown as w.ParagraphChild
+    ];
+  }
   const root = live.find((n) => n.type === 'form');
   const page = pageSetup(root?.current_fields.page_setup),
     [width, height] = pageDimensions(page);
@@ -118,7 +147,8 @@ export async function writeDocx(state: DocumentState, title: string): Promise<Bl
     block: TextBlock,
     list?: { reference: string; level: number }
   ): (w.Paragraph | w.Table)[] {
-    if (block.type === 'pageBreak') return [new w.Paragraph({ children: [new w.PageBreak()] })];
+    if (block.type === 'pageBreak')
+      return [new w.Paragraph({ children: [...anchor(), new w.PageBreak()] })];
     if (block.type === 'table')
       return [
         new w.Table({
@@ -185,7 +215,7 @@ export async function writeDocx(state: DocumentState, title: string): Promise<Bl
     const spacing = attrs.lineHeight ? String(attrs.lineHeight) : '';
     return [
       new w.Paragraph({
-        children: runs(block),
+        children: [...anchor(), ...runs(block)],
         heading:
           block.type === 'heading'
             ? [
@@ -234,21 +264,24 @@ export async function writeDocx(state: DocumentState, title: string): Promise<Bl
     .filter(
       (n) => n.type === 'form' || (n.type === 'section' && n.current_fields.kind === 'document_tab')
     )
-    .sort((a, b) => (a.type === 'form' ? -1 : b.type === 'form' ? 1 : a.pos.localeCompare(b.pos)));
+    .sort((a, b) => (a.type === 'form' ? -1 : b.type === 'form' ? 1 : byPosition(a, b)));
   const children: (w.Paragraph | w.Table | w.TableOfContents)[] = [];
   for (const tab of tabs) {
-    if (tab.type !== 'form')
+    if (tab.type !== 'form') {
+      if (stableId.test(tab.id)) pendingAnchor = TAB_ANCHOR + tab.id;
       children.push(
         new w.Paragraph({
-          text: String(tab.current_fields.label || 'Tab'),
+          children: [...anchor(), new w.TextRun(String(tab.current_fields.label || 'Tab'))],
           heading: w.HeadingLevel.HEADING_1,
           pageBreakBefore: true
         })
       );
+    }
     for (const n of live
       .filter((n) => n.type === 'item' && n.parent_id === tab.id)
-      .sort((a, b) => a.pos.localeCompare(b.pos))) {
+      .sort((a, b) => byPosition(a, b))) {
       const source = n.current_fields.content as TextBlock | undefined;
+      pendingAnchor = stableId.test(n.id) ? BLOCK_ANCHOR + n.id : '';
       if (source?.type === 'tableOfContents') {
         children.push(
           new w.TableOfContents('Contents', {
@@ -256,7 +289,7 @@ export async function writeDocx(state: DocumentState, title: string): Promise<Bl
             headingStyleRange: '1-3',
             beginDirty: true,
             contentChildren: [
-              new w.Paragraph('Contents'),
+              new w.Paragraph({ children: [...anchor(), new w.TextRun('Contents')] }),
               ...(Array.isArray(source.attrs?.entries) ? source.attrs.entries : []).map(
                 (entry: { text: string }) => new w.Paragraph(String(entry.text))
               )
@@ -276,8 +309,12 @@ export async function writeDocx(state: DocumentState, title: string): Promise<Bl
   }
   // Block comments are exported in a separate notes section: never fabricate precise text anchors.
   if (state.comments.length) {
+    pendingAnchor = COMMENTS_ANCHOR;
     children.push(
-      new w.Paragraph({ text: 'Document comments', heading: w.HeadingLevel.HEADING_1 })
+      new w.Paragraph({
+        children: [...anchor(), new w.TextRun('Document comments')],
+        heading: w.HeadingLevel.HEADING_1
+      })
     );
     for (const c of state.comments) children.push(new w.Paragraph(c.body));
   }
@@ -289,6 +326,14 @@ export async function writeDocx(state: DocumentState, title: string): Promise<Bl
   const doc = new w.Document({
     title,
     creator: 'Dynodoc',
+    // Lets a later upload of this file be compared with the revision it started from.
+    customProperties: origin
+      ? [
+          { name: 'DynodocDocument', value: origin.documentId },
+          { name: 'DynodocRevision', value: String(origin.seq) },
+          { name: 'DynodocExported', value: new Date().toISOString() }
+        ]
+      : [],
     footnotes,
     endnotes,
     numbering: { config: numbering },

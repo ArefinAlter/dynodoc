@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { byPosition } from '$lib/workspace/api';
   import type { DocumentState, MaterializedNode } from '$lib/api/types';
   import { previewSurvey, type Answer } from '$lib/workspace/survey-logic';
   let { documentState }: { documentState: DocumentState } = $props();
@@ -8,7 +9,7 @@
   const items = $derived(
     Object.values(documentState.nodes)
       .filter((n) => !n.deleted && ['item', 'section'].includes(n.type))
-      .sort((a, b) => a.pos.localeCompare(b.pos))
+      .sort((a, b) => byPosition(a, b))
   );
   const field = (n: MaterializedNode, k: string) => String(n.current_fields[k] || '');
   const choices = (n: MaterializedNode) =>
@@ -20,7 +21,7 @@
           !c.deleted &&
           !documentState.removed_choices.includes(c.id)
       )
-      .sort((a, b) => a.pos.localeCompare(b.pos));
+      .sort((a, b) => byPosition(a, b));
   function multiple(id: string, option: string, selected: boolean) {
     const old = Array.isArray(answers[id]) ? (answers[id] as string[]) : [];
     answers[id] = selected ? [...old, option] : old.filter((v) => v !== option);

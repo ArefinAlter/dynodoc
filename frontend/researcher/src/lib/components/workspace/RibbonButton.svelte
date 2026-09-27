@@ -2,19 +2,27 @@
   import type { Bold } from '@lucide/svelte';
   let {
     label,
+    text,
     icon: Icon,
     onclick,
     disabled = false,
     active,
-    large = false
+    large = false,
+    size
   }: {
+    /** Accessible name and tooltip. */
     label: string;
+    /** Shorter visible caption; defaults to the accessible name. */
+    text?: string;
     icon: typeof Bold;
     onclick: () => unknown;
     disabled?: boolean;
     active?: boolean;
     large?: boolean;
+    /** icon: compact icon only · small: icon with caption beside it · large: icon above caption. */
+    size?: 'icon' | 'small' | 'large';
   } = $props();
+  const kind = $derived(size || (large ? 'large' : 'icon'));
 </script>
 
 <button
@@ -23,12 +31,12 @@
   aria-label={label}
   aria-pressed={active}
   {disabled}
-  class:large
+  class={kind}
   onmousedown={(event) => event.preventDefault()}
   {onclick}
 >
-  <Icon size={large ? 25 : 16} strokeWidth={1.5} />
-  {#if large}<span>{label}</span>{/if}
+  <Icon size={kind === 'large' ? 24 : 16} strokeWidth={1.5} />
+  {#if kind !== 'icon'}<span>{text || label}</span>{/if}
 </button>
 
 <style>
@@ -36,6 +44,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
     width: 28px;
     height: 28px;
     padding: 4px;
@@ -44,8 +53,12 @@
     color: #303030;
     background: transparent;
     cursor: pointer;
+    font:
+      12px/1.2 'Segoe UI',
+      Arial,
+      sans-serif;
   }
-  button:hover,
+  button:hover:not(:disabled),
   button[aria-pressed='true'] {
     background: #e5e5e5;
     border-color: #c6c6c6;
@@ -58,19 +71,36 @@
     opacity: 0.4;
     cursor: default;
   }
+  button :global(svg) {
+    flex-shrink: 0;
+  }
+  /* Small: icon and caption on one line, like Word's stacked commands. */
+  button.small {
+    width: auto;
+    height: 26px;
+    gap: 6px;
+    padding: 3px 7px 3px 5px;
+    justify-content: flex-start;
+    white-space: nowrap;
+  }
+  /* Large: every icon sits at the same height, whether the caption has one line or two. */
   button.large {
     flex-direction: column;
-    gap: 5px;
+    justify-content: flex-start;
+    gap: 4px;
     width: auto;
-    min-width: 52px;
-    height: 62px;
-    padding: 5px 8px;
+    min-width: 54px;
+    max-width: 88px;
+    height: 68px;
+    padding: 6px 6px 3px;
   }
-  span {
-    font:
-      12px/1.15 'Segoe UI',
-      Arial,
-      sans-serif;
-    max-width: 78px;
+  button.large span {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    max-width: 80px;
+    text-align: center;
   }
 </style>
