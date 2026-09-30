@@ -31,6 +31,15 @@ export function pageSetup(value: unknown): PageSetup {
     language: /^[a-z]{2,3}(-[a-zA-Z]{2,8})?$/.test(v.language || '') ? v.language! : 'en'
   };
 }
+/**
+ * Downloaded workbooks and decks record the document and revision they came from in the
+ * standard Subject property, which exceljs and pptxgenjs write and Office keeps on save.
+ */
+export function originSubject(origin: { documentId: string; seq: number }, exported = new Date()) {
+  return `dynodoc:document=${origin.documentId};revision=${origin.seq};exported=${exported.toISOString()}`;
+}
+export const originPattern =
+  /dynodoc:document=([0-9a-f-]{36});revision=(\d{1,12})(?:;exported=([0-9T:.Z-]{10,30}))?/i;
 export function pageDimensions(page: PageSetup) {
   const dimensions = { A4: [210, 297], Letter: [215.9, 279.4], Legal: [215.9, 355.6] }[page.size];
   return page.landscape ? [...dimensions].reverse() : dimensions;

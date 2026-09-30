@@ -195,11 +195,13 @@ export function rowsForSheet(state: DocumentState, sheetId: string) {
     .filter((n) => n.parent_id === sheetId && !n.deleted)
     .sort((a, b) => (a.pos < b.pos ? -1 : a.pos > b.pos ? 1 : 0));
 }
+/** An XLSX download that records its origin can later be uploaded back as changes. */
 export async function exportSpreadsheet(
   state: DocumentState,
   name: string,
   format: 'csv' | 'xlsx',
-  activeSheet?: string
+  activeSheet?: string,
+  origin?: { documentId: string; seq: number }
 ) {
   const sheets = Object.values(state.nodes)
     .filter((n) => !n.deleted && n.type === 'section' && n.current_fields.kind === 'sheet')
@@ -224,9 +226,10 @@ export async function exportSpreadsheet(
     return;
   }
   const { writeWorkbook } = await import('./xlsx-export');
+  const { downloadName } = await import('./file-push');
   download(
-    await writeWorkbook(state),
-    name + '.xlsx',
+    await writeWorkbook(state, origin),
+    origin ? downloadName(name, origin.seq, 'xlsx') : name + '.xlsx',
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
   );
 }
@@ -246,11 +249,16 @@ export async function exportDocument(
   );
 }
 
-export async function exportPresentation(state: DocumentState, name: string) {
+export async function exportPresentation(
+  state: DocumentState,
+  name: string,
+  origin?: { documentId: string; seq: number }
+) {
   const { writePptx } = await import('./pptx-export');
+  const { downloadName } = await import('./file-push');
   download(
-    await writePptx(state, name),
-    name + '.pptx',
+    await writePptx(state, name, origin),
+    origin ? downloadName(name, origin.seq, 'pptx') : name + '.pptx',
     'application/vnd.openxmlformats-officedocument.presentationml.presentation'
   );
 }

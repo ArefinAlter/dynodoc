@@ -1,4 +1,5 @@
 import type { DocumentState } from '$lib/api/types';
+import { originSubject } from './office';
 import { readDeck, resolvedStyle, slideSizes, themes, type SlideShape } from './presentation';
 
 const hex = (color: string) => color.replace('#', '').toUpperCase();
@@ -15,10 +16,14 @@ function objectName(shape: SlideShape, index: number) {
   return `${base} ${index + 1}`;
 }
 
-/** Writes a PowerPoint file with pptxgenjs (loaded only when a deck is exported). */
+/**
+ * Writes a PowerPoint file with pptxgenjs (loaded only when a deck is exported).
+ * `origin` marks a team-version download so edits can later be uploaded back.
+ */
 export async function writePptx(
   state: DocumentState,
-  title: string
+  title: string,
+  origin?: { documentId: string; seq: number }
 ): Promise<Uint8Array<ArrayBuffer>> {
   const { default: PptxGenJS } = await import('pptxgenjs');
   const deck = readDeck(state);
@@ -29,6 +34,7 @@ export async function writePptx(
   pptx.layout = 'DYNODOC';
   pptx.title = title;
   pptx.company = 'Dynodoc';
+  if (origin) pptx.subject = originSubject(origin);
   for (const slide of deck.slides) {
     const out = pptx.addSlide();
     out.background = { color: hex(slide.background || theme.background) };

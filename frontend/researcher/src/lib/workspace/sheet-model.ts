@@ -252,6 +252,30 @@ export function readCell(cell: Cell): { value: string; format: CellFormat } {
   };
   return { value, format: JSON.parse(JSON.stringify(format)) };
 }
+/** The typed value Excel stores for a cell's text; file push compares values this way. */
+export function typedValue(value: string, f: CellFormat): CellValue {
+  if (value.startsWith('=') && f.type !== 'text') return { formula: value.slice(1) } as CellValue;
+  if (f.type === 'date' && Number.isFinite(Date.parse(value))) return new Date(value);
+  if (f.type === 'boolean') return value.toLowerCase() === 'true';
+  if (f.type !== 'text' && value.trim() && Number.isFinite(Number(value))) return Number(value);
+  return value;
+}
+/** The Excel number format written for a cell: presets first, then a stored custom format. */
+export function numberFormat(f: CellFormat) {
+  const decimal = Math.round(bounded(f.decimals, 0, 10, f.number === 'percent' ? 1 : 2));
+  const places = decimal ? '.' + '0'.repeat(decimal) : '';
+  const numbers: Record<string, string> = {
+    decimal: '0' + places,
+    percent: '0' + places + '%',
+    currency: '$#,##0' + places,
+    date: 'yyyy-mm-dd',
+    integer: '0',
+    thousands: '#,##0' + places,
+    scientific: '0' + places + 'E+00',
+    text: '@'
+  };
+  return numbers[f.number || ''] || f.numFmt || (f.type === 'date' ? 'yyyy-mm-dd' : 'General');
+}
 export function writeCell(cell: Cell, value: string, f: CellFormat) {
   const conditional = conditionalRules(f.conditional);
   if (conditional.length)
@@ -272,11 +296,7 @@ export function writeCell(cell: Cell, value: string, f: CellFormat) {
         }
       }))
     });
-  let v: CellValue = value;
-  if (value.startsWith('=') && f.type !== 'text') v = { formula: value.slice(1) };
-  else if (f.type === 'date' && Number.isFinite(Date.parse(value))) v = new Date(value);
-  else if (f.type === 'boolean') v = value.toLowerCase() === 'true';
-  else if (f.type !== 'text' && value.trim() && Number.isFinite(Number(value))) v = Number(value);
+  let v = typedValue(value, f);
   if (!value.startsWith('=') && f.hyperlink && /^(https?:\/\/|mailto:)/i.test(f.hyperlink))
     v = { text: value, hyperlink: f.hyperlink };
   cell.value = v;
@@ -300,20 +320,7 @@ export function writeCell(cell: Cell, value: string, f: CellFormat) {
     vertical: ['top', 'middle', 'bottom'].includes(f.vertical || '') ? f.vertical : undefined,
     wrapText: !!f.wrap
   };
-  const decimal = Math.round(bounded(f.decimals, 0, 10, f.number === 'percent' ? 1 : 2));
-  const places = decimal ? '.' + '0'.repeat(decimal) : '';
-  const numbers: Record<string, string> = {
-    decimal: '0' + places,
-    percent: '0' + places + '%',
-    currency: '$#,##0' + places,
-    date: 'yyyy-mm-dd',
-    integer: '0',
-    thousands: '#,##0' + places,
-    scientific: '0' + places + 'E+00',
-    text: '@'
-  };
-  cell.numFmt =
-    numbers[f.number || ''] || f.numFmt || (f.type === 'date' ? 'yyyy-mm-dd' : 'General');
+  cell.numFmt = numberFormat(f);
   if (f.border) {
     const line = { style: 'thin' as const, color: { argb: 'FF8DA89B' } };
     cell.border = { top: line, bottom: line, left: line, right: line };
