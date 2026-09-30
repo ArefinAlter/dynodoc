@@ -1,0 +1,43 @@
+{
+  "arch": "x86_64",
+  "copy": {
+    "coverage_new": 0.8571428656578064,
+    "coverage_old": 0.8999999761581421,
+    "jaccard": 0.7578125,
+    "relation": "edited_copy",
+    "score": 0.8999999761581421,
+    "shared_blocks": 7200,
+    "title_match": false
+  },
+  "copy_shared_bands": 9,
+  "debug_assertions": false,
+  "excludes": [
+    "file parsing",
+    "upload/network",
+    "database lookups",
+    "notification writes"
+  ],
+  "fixture": "synthetic 8,000 paragraphs of 24 words; renamed copy with 10% rewritten and 5% added",
+  "median_ms": {
+    "compare_pair": 0.0229,
+    "fingerprint_8000_blocks": 6.2629
+  },
+  "os": "windows",
+  "samples": 9,
+  "shingles": 176000,
+  "stored_bytes": {
+    "bands": 256,
+    "block_hashes": 64000,
+    "signature": 512
+  },
+  "unrelated": {
+    "coverage_new": 0.0,
+    "coverage_old": 0.0,
+    "jaccard": 0.0,
+    "relation": "unrelated",
+    "score": 0.0,
+    "shared_blocks": 0,
+    "title_match": false
+  },
+  "words": 192000
+}

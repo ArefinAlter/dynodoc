@@ -9,6 +9,19 @@ owner-confirmed configuration and work that still needs acceptance. Live-service
 observations below are dated release records, not a new infrastructure audit
 performed while writing this file. No secrets are included.
 
+## Continuation: copy detection, roles, review rules, notifications and night mode
+
+On 30 September the owner asked for renamed-file recognition with owner
+notifications, a clearly defined owner/editor/reviewer ladder, fast similarity
+detection, conflicts for same-name files with different content, day and night mode
+everywhere, and permanent deletion from the admin panel, followed by a push to
+`main` and deployment. [Decision 009](decisions/009-copies-roles-and-notifications.md)
+records the design and limits; [release notes](COPIES-AND-ROLES-RELEASE.md) record
+verification and rollout; [the user guide](GIT-STYLE-WORKFLOW.md) now covers roles,
+review rules, notifications, copies, Excel/PowerPoint uploads, night mode and a
+2–3-person test plan. Migration `0021` is new; no applied migration changed; no new
+event variants, so `office-v5` editors remain compatible.
+
 ## Continuation: file push, change requests, presentations and UX fixes
 
 On 27 September the owner asked for a GUI-testable Git-like workflow with real

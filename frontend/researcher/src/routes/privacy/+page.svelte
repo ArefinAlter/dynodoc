@@ -142,6 +142,14 @@
       authorized to view the relevant document history.
     </p>
     <p>
+      To recognise renamed or edited copies, Dynodoc compares the text of every document with other
+      documents in the service, using fingerprints derived from the content. When a document you
+      upload or create closely matches a document owned by someone else, that owner is told your
+      name, email address, the file name and how similar the two are, even if you cannot open their
+      document. They are not shown your content. Before uploading, you are only shown matches in
+      documents you can already open.
+    </p>
+    <p>
       Owners and managers can publish a frozen read-only copy with a separate link. Anyone who
       obtains that link can read the published content without signing in. Comments, original
       uploads and version history remain private. Revoking a link or moving the document to Trash

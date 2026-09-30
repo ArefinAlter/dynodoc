@@ -2,6 +2,19 @@
 
 Assessment date: 22 September 2026. This distinguishes executable functionality from the longer design documents. The old README's “feature-complete” description was too broad.
 
+## Continuation: copy detection, roles, review rules, notifications and night mode
+
+On 30 September the owner asked for renamed-file recognition with owner
+notifications, a clearly defined owner/editor/reviewer ladder, fast similarity
+detection, conflicts for same-name files with different content, day and night mode
+everywhere, and permanent deletion from the admin panel, followed by a push to
+`main` and deployment. [Decision 009](decisions/009-copies-roles-and-notifications.md)
+records the design and limits; [release notes](COPIES-AND-ROLES-RELEASE.md) record
+verification and rollout; [the user guide](GIT-STYLE-WORKFLOW.md) now covers roles,
+review rules, notifications, copies, Excel/PowerPoint uploads, night mode and a
+2–3-person test plan. Migration `0021` is new; no applied migration changed; no new
+event variants, so `office-v5` editors remain compatible.
+
 ## Continuation: file push, change requests, presentations and UX fixes
 
 On 27 September the owner asked for a GUI-testable Git-like workflow with real
@@ -46,11 +59,13 @@ The original immediate product was a questionnaire authoring tool. The owner's e
 | Workspace | Create/import documents, organize them in a hierarchy, search, share roles, make copies, move to Trash and restore. |
 | Document editing | Document tabs, common ribbons, paragraph styles/direction/spacing, shared font uploads, text tracking with accept/reject, threaded comments with resolve/reopen, table/context actions, equations, versioned page setup, live editable pagination and paginated print preview. Footnotes/endnotes have editable text and native DOCX parts; contents can be inserted/refreshed. Native DOCX import runs in a bounded worker; LaTeX/Overleaf interchange remains. |
 | Spreadsheet editing | Typed cells, ranges, relative formula fill, persistent calculation graph, formatting, validation subset, merges, freeze/hide/resize, sheet lifecycle, find/replace/filter, formula-aware row sorting, names, charts, pivot summaries, data tools, whole-sheet protection, numeric conditional formatting, worker-based XLSX import and styled XLSX exchange. |
-| Version workflows | Personal drafts, selected-block sharing, get latest, conflict choices, named versions, comparisons, attribution and restoration as new events. |
+| Version workflows | Personal drafts, selected-block sharing, get latest, conflict choices, named versions, comparisons, attribution and restoration as new events. Change requests from Word, Excel and PowerPoint files, approvals and review rules. |
+| Copies and roles | Renamed/edited copies recognised by content fingerprints; owners notified in an in-app inbox; Owner/Manager/Editor/Reviewer/Contributor/Viewer roles; same-name unrelated uploads need explicit choices. |
+| Themes | Day, night and system modes across the website, workspace, editors and admin site. |
 | Research files | DOCX/DOC, CSV/XLSX, XLSForm and REDCap dictionary interchange; original files retained. |
 | Research connections | ODK/Kobo form and response imports; REDCap metadata/records, SurveyCTO wide responses and SurveyMonkey bulk responses. Google Forms adds separate read-only OAuth definition/response imports. Live study-account acceptance remains open. |
 | Questionnaire preview | Supported XLSForm relevance, calculations, required rules and constraints; explicit unsupported-logic errors. Answers stay in browser memory. |
-| Administration | Allowlisted dashboard with typed confirmation, impact previews, whole-document/account erasure, disable/restore, ownership transfer, forced sign-out, link revocation, CSV export and immutable audit/receipts, database/storage/service/backup status, anonymous page loads and web vitals. |
+| Administration | Allowlisted dashboard with typed confirmation, impact previews, one-step and batch permanent document deletion, whole-document/account erasure, disable/restore, ownership transfer, forced sign-out, link revocation, CSV export and immutable audit/receipts, database/storage/service/backup status, anonymous page loads and web vitals. |
 | Search and identity | Original SVG logo, favicons/social card, canonical metadata, structured data, sitemap and private-page noindex rules. |
 | Deployment | Isolated VPS containers and networks, HTTPS, private database, constrained Word converter, database backup and restore procedure. |
 
@@ -76,7 +91,7 @@ The owner explicitly pivoted the product to document version control on 21 Septe
 - Broader spreadsheet features: advanced charts, native pivot caches, structured table formulas, full formula-based validation, protected cell ranges/passwords, full Excel formula/date/locale compatibility and higher-fidelity workbook formatting.
 - Survey execution beyond the supported preview subset: repeat instances, translations/media workflows, external datasets, advanced XPath/date functions and vendor-specific expression engines.
 - Research-platform synchronization: scheduled refresh, incremental reconciliation and writeback. All six implemented API import paths need real study-account verification. CSPro dictionary/form/logic support is not implemented; exported CSV/XLSX data can be edited.
-- Stronger review: mentions and notification delivery, richer tracked suggestions, per-block/protected-range permissions, notifications and shared review of another person's draft.
+- Stronger review: e-mail delivery of notifications and mentions, richer tracked suggestions, per-block/protected-range permissions and shared review of another person's draft. In-app notifications, approvals, per-change comments and review rules shipped in decision 009.
 - Versioning refinements: full offline synchronization, branch-to-branch review, more detailed side-by-side rich-content comparison, cryptographically anchored metadata/permission audit and long-lived retry/idempotency handling for every new workspace endpoint.
 - Production operation: off-site backups (explicitly deferred by the owner), monitoring/alerts, recovery objectives, resource/load tests beyond ten synthetic concurrent edits, complete keyboard/screen-reader audit and an external security review.
 - Public consultation stages 22–31, civic identity, moderation, citizen frontend, deliberation and ML services remain future work. The CRDT live-typing layer is also deferred; overlapping block edits require review instead of character-level co-editing.
