@@ -1,4 +1,14 @@
 <script lang="ts">
+  // Stored workspace roles keep their historical names; show the product names.
+  const ROLE_NAMES: Record<string, string> = {
+    owner: 'Owner',
+    manager: 'Manager',
+    editor: 'Editor',
+    approver: 'Reviewer',
+    reviewer: 'Contributor',
+    viewer: 'Viewer'
+  };
+  const roleLabel = (role?: string) => (role ? ROLE_NAMES[role] || role : '');
   import { Plus, Folder, Building2, Users, X } from '@lucide/svelte';
   import { workspaceRequest as request } from '$lib/workspace/api';
   import type { Space } from '$lib/workspace/access';
@@ -97,7 +107,7 @@
         />{:else}<Folder size={15} />{/if}<span>{s.name}</span></button
     >{/each}
   {#if current}<button class="manage" onclick={() => void open()}
-      >Access & folders · {current.role}</button
+      >Access & folders · {roleLabel(current.role)}</button
     >{/if}
 </div>
 <dialog bind:this={dialog} aria-labelledby="space-title">
@@ -132,7 +142,7 @@
         <span
           >{m.email}<small>{m.inherited ? `Inherited from ${m.space_name}` : 'Direct member'}</small
           ></span
-        ><b>{m.role}</b>
+        ><b>{roleLabel(m.role)}</b>
       </div>{/each}
     {#if manager}<form
         onsubmit={(e) => {
@@ -144,7 +154,9 @@
           >Role<select bind:value={role}
             >{#if current.role === 'owner'}<option value="owner">Owner</option>{/if}<option
               value="manager">Manager</option
-            ><option value="editor">Editor</option><option value="reviewer">Reviewer</option><option
+            ><option value="editor">Editor</option><option value="approver"
+              >Reviewer (approves requests)</option
+            ><option value="reviewer">Contributor (comments & suggests)</option><option
               value="viewer">Viewer</option
             ><option value="remove">Remove direct access</option></select
           ></label

@@ -97,18 +97,51 @@ export interface BaseCandidate {
   seq: number;
   reason: 'file' | 'name' | 'original' | 'version' | 'latest';
   label: string;
+  /** Word: matching paragraphs. Excel and PowerPoint: share of rows or shapes (0–1). */
   score?: number;
 }
+export type PushKind = 'document' | 'spreadsheet' | 'presentation';
 export interface PushPreparation {
+  kind: PushKind;
   filename: string;
   bytes: Uint8Array;
-  incoming: DocxImport;
+  /** Word files as read by the DOCX importer; workbooks and decks as a folded state. */
+  incoming: DocxImport | DocumentState;
   candidates: BaseCandidate[];
   chosen: BaseCandidate;
   plan: PushPlan;
   base: DocumentState;
   /** The file names another Dynodoc document; pushing here is probably a mistake. */
   otherDocument?: string;
+  /** How much of the file's content this document shares, from the server's check. */
+  relation?: { score: number; unrelated: boolean; relation: string };
+}
+const MIME: Record<PushKind, string> = {
+  document: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  spreadsheet: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  presentation: 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+};
+export const PUSH_FILES: Record<PushKind, { accept: string; name: string; unit: string }> = {
+  document: { accept: '.docx,.doc', name: 'Word', unit: 'paragraphs' },
+  spreadsheet: { accept: '.xlsx', name: 'Excel', unit: 'rows' },
+  presentation: { accept: '.pptx', name: 'PowerPoint', unit: 'slides and text boxes' }
+};
+
+async function readOfficeFile(file: File, kind: 'spreadsheet' | 'presentation') {
+  const ext = file.name.split('.').pop()?.toLowerCase();
+  if (file.size > 20 * 1024 * 1024) throw new Error('Please use a file smaller than 20 MB.');
+  if (ext !== (kind === 'spreadsheet' ? 'xlsx' : 'pptx'))
+    throw new Error(
+      kind === 'spreadsheet'
+        ? 'Choose the Excel workbook (.xlsx) you edited on your computer.'
+        : 'Choose the PowerPoint file (.pptx) you edited on your computer.'
+    );
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const [{ importFile }, { pushState }] = await Promise.all([
+    import('./files'),
+    import('./structured-push')
+  ]);
+  return { bytes, incoming: pushState(await importFile(file), kind) };
 }
 
 async function readWordFile(file: File) {
@@ -137,19 +170,34 @@ async function stateAt(documentId: string, seq: number) {
     await workspaceRequest<{ state: DocumentState }>(`${base(documentId)}/state?through_seq=${seq}`)
   ).state;
 }
-/** Plan a push against one starting revision, including its Word round trip. */
+/** Plan a push against one starting revision (for Word, including its round trip). */
 export async function planAgainst(
   documentId: string,
   title: string,
-  incoming: DocxImport,
+  incoming: DocxImport | DocumentState,
   seq: number,
   known?: DocumentState
 ) {
   const state = known || (await stateAt(documentId, seq));
+  if ('nodes' in incoming) {
+    const { planSheetPush, planSlidePush } = await import('./structured-push');
+    const deck = Object.values(state.nodes).some((n) => n.current_fields.kind === 'slide');
+    return { state, plan: (deck ? planSlidePush : planSheetPush)(state, incoming) };
+  }
   const { writeDocx } = await import('./docx-export'),
     { readDocx } = await import('./docx-import');
   const exported = new Uint8Array(await (await writeDocx(state, title)).arrayBuffer());
   return { state, plan: planPush(state, incoming, readDocx(exported)) };
+}
+
+/** The text of what the file contains, for the server's similarity check. */
+async function fileTexts(incoming: DocxImport | DocumentState) {
+  if ('nodes' in incoming) {
+    const { stateBlockTexts } = await import('./upload-check');
+    return stateBlockTexts(incoming);
+  }
+  const { textOf } = await import('./files');
+  return incoming.blocks.map((b) => textOf(b)).filter((t) => t.trim());
 }
 
 /**
@@ -159,9 +207,11 @@ export async function planAgainst(
 export async function preparePush(
   documentId: string,
   title: string,
-  file: File
+  file: File,
+  kind: PushKind = 'document'
 ): Promise<PushPreparation> {
-  const { bytes, incoming } = await readWordFile(file);
+  const { bytes, incoming } =
+    kind === 'document' ? await readWordFile(file) : await readOfficeFile(file, kind);
   const origin = readOrigin(bytes);
   const points = await workspaceRequest<{
     latest_seq: number;
@@ -190,11 +240,18 @@ export async function preparePush(
   let chosen = candidates.find((c) => c.reason === 'file');
   const states = new Map<number, DocumentState>();
   if (!chosen) {
-    // Score each candidate by how many of the file's paragraphs it already contains.
+    // Score each candidate by how much of the file it already contains.
+    const structured =
+      'nodes' in incoming
+        ? await import('./structured-push').then((m) =>
+            kind === 'presentation' ? m.slideMatchScore : m.sheetMatchScore
+          )
+        : null;
     for (const candidate of candidates.slice(0, 10)) {
       const state = await stateAt(documentId, candidate.seq);
       states.set(candidate.seq, state);
-      candidate.score = matchScore(state, incoming);
+      candidate.score =
+        'nodes' in incoming ? structured!(state, incoming) : matchScore(state, incoming);
     }
     const priority = { file: 5, name: 4, original: 3, version: 2, latest: 1 };
     chosen = [...candidates].sort(
@@ -209,7 +266,23 @@ export async function preparePush(
     chosen.seq,
     states.get(chosen.seq)
   );
+  // The server decides; this only warns before sending a file that may be the wrong one.
+  let relation: PushPreparation['relation'];
+  try {
+    const { checkSimilarity } = await import('./collaboration');
+    const { matches } = await checkSimilarity(await fileTexts(incoming), file.name);
+    const here = matches.find((m) => m.document_id === documentId);
+    const score = here?.comparison.score ?? 0;
+    relation = {
+      score,
+      relation: here?.comparison.relation || 'unrelated',
+      unrelated: score < 0.3 && plan.unchanged < Math.max(1, plan.changes.length)
+    };
+  } catch {
+    relation = undefined;
+  }
   return {
+    kind,
     filename: file.name,
     bytes,
     incoming,
@@ -217,6 +290,7 @@ export async function preparePush(
     chosen,
     plan,
     base: state,
+    relation,
     otherDocument:
       origin.documentId && origin.documentId !== documentId ? origin.documentId : undefined
   };
@@ -237,7 +311,7 @@ export async function sendPush(
       upload_id = (
         await workspaceRequest<{ id: string }>(`${base(documentId)}/uploads`, {
           filename: prepared.filename,
-          content_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          content_type: MIME[prepared.kind],
           content: btoa(binary),
           report: { kind: 'change_request', warnings: prepared.plan.warnings }
         })
@@ -248,22 +322,24 @@ export async function sendPush(
   }
   const summary = { added: 0, edited: 0, removed: 0, moved: 0 };
   for (const change of prepared.plan.changes) summary[change.kind]++;
-  return workspaceRequest<{ id: string; revision: number; submitted: boolean }>(
-    `${base(documentId)}/change-requests`,
-    {
-      name: options.name,
-      note: options.note,
-      base_seq: prepared.chosen.seq,
-      ops: prepared.plan.ops,
-      submit: options.submit,
-      source: {
-        kind: 'file',
-        filename: prepared.filename.slice(0, 255),
-        base_reason: prepared.chosen.reason,
-        upload_id,
-        anchored: prepared.plan.anchored,
-        summary
-      }
+  return workspaceRequest<{
+    id: string;
+    revision: number;
+    submitted: boolean;
+    relation?: { unrelated: boolean; similarity: number };
+  }>(`${base(documentId)}/change-requests`, {
+    name: options.name,
+    note: options.note,
+    base_seq: prepared.chosen.seq,
+    ops: prepared.plan.ops,
+    submit: options.submit,
+    source: {
+      kind: 'file',
+      filename: prepared.filename.slice(0, 255),
+      base_reason: prepared.chosen.reason,
+      upload_id,
+      anchored: prepared.plan.anchored,
+      summary
     }
-  );
+  });
 }

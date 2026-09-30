@@ -8,7 +8,8 @@
     X,
     AlertTriangle,
     ShieldCheck,
-    ArrowRight
+    ArrowRight,
+    Trash2
   } from '@lucide/svelte';
   import { workspaceRequest as request } from '$lib/workspace/api';
   type RecordRow = {
@@ -20,11 +21,27 @@
     resource_id?: string;
     created_at: string;
     removed_at?: string | null;
+    kind?: string;
   };
-  type Impact = { revision: string; counts: Record<string, number>; blockers: string[] };
-  let kind = $state('users'),
+  type Impact = {
+    revision: string;
+    counts: Record<string, number>;
+    blockers: string[];
+    in_trash?: boolean | null;
+  };
+  // Documents come first: permanent deletion is the most common administrative task.
+  let kind = $state('documents'),
+    status = $state(''),
     q = $state(''),
     offset = $state(0);
+  // Documents ticked for deletion, kept across pages until the list changes.
+  let picked = $state<RecordRow[]>([]),
+    bulkConfirmation = $state(''),
+    bulkReason = $state('duplicate'),
+    bulkAcknowledged = $state(false),
+    bulkResult = $state(''),
+    bulkDialog: HTMLDialogElement;
+  const bulkPhrase = $derived(`DELETE ${picked.length} DOCUMENT${picked.length === 1 ? '' : 'S'}`);
   let items = $state<RecordRow[]>([]),
     busy = $state(false),
     error = $state('');
@@ -64,7 +81,12 @@
     try {
       const result = (
         await request<{ items: RecordRow[] }>(
-          `/admin/records?${new URLSearchParams({ kind, q, offset: String(offset) })}`
+          `/admin/records?${new URLSearchParams({
+            kind,
+            q,
+            offset: String(offset),
+            ...(kind === 'documents' ? { status } : {})
+          })}`
         )
       ).items;
       if (current === listSequence) items = result;
@@ -78,9 +100,9 @@
   onMount(() => {
     void refresh();
   });
-  function open(row: RecordRow) {
+  function open(row: RecordRow, preset = '') {
     selected = row;
-    action = kind === 'spaces' ? 'transfer_workspace' : 'lifecycle';
+    action = preset || (kind === 'spaces' ? 'transfer_workspace' : 'lifecycle');
     confirmation = '';
     error = '';
     impact = null;
@@ -88,6 +110,45 @@
     recipient = '';
     recipients = [];
     dialog.showModal();
+    if (preset === 'erase') void changeAction();
+  }
+  function toggle(row: RecordRow, on: boolean) {
+    picked = on
+      ? [...picked.filter((p) => p.id !== row.id), row]
+      : picked.filter((p) => p.id !== row.id);
+  }
+  function openBulk() {
+    bulkConfirmation = '';
+    bulkAcknowledged = false;
+    bulkResult = '';
+    error = '';
+    bulkDialog.showModal();
+  }
+  async function eraseBulk() {
+    if (busy || bulkConfirmation !== bulkPhrase || !bulkAcknowledged) return;
+    busy = true;
+    error = '';
+    try {
+      const result = await request<{
+        erased: number;
+        results: { id: string; ok: boolean; error?: string }[];
+      }>('/admin/erase-batch', {
+        ids: picked.map((p) => p.id),
+        confirmation: bulkConfirmation,
+        reason: bulkReason,
+        acknowledge_backups: bulkAcknowledged
+      });
+      const failed = result.results.filter((r) => !r.ok);
+      bulkResult = `Permanently deleted ${result.erased} document${result.erased === 1 ? '' : 's'}.${failed.length ? ` ${failed.length} could not be deleted.` : ''}`;
+      picked = picked.filter((p) => failed.some((f) => f.id === p.id));
+      await refresh();
+      await invalidateAll();
+      if (!failed.length) bulkDialog.close();
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'Could not delete these documents';
+    } finally {
+      busy = false;
+    }
   }
   async function changeAction() {
     const current = ++sequence;
@@ -211,15 +272,28 @@
         bind:value={kind}
         onchange={() => {
           offset = 0;
+          picked = [];
           void refresh();
         }}
-        ><option value="users">Accounts</option><option value="documents">Documents</option><option
+        ><option value="documents">Documents</option><option value="users">Accounts</option><option
           value="spaces">Organizations & folders</option
         ><option value="audit">Operations log</option><option value="erasures"
           >Deletion receipts</option
         ></select
       ></label
     >
+    {#if kind === 'documents'}<label
+        >Show<select
+          bind:value={status}
+          onchange={() => {
+            offset = 0;
+            void refresh();
+          }}
+          ><option value="">All documents</option><option value="active">Active</option><option
+            value="trash">In Trash</option
+          ></select
+        ></label
+      >{/if}
     <label class="search"
       >Search
       <div>
@@ -232,18 +306,46 @@
     ><button class="primary" disabled={busy}>Search</button>
   </form>
   {#if error && !selected}<p class="error" role="alert">{error}</p>{/if}
+  {#if kind === 'documents'}<div class="bulk-bar">
+      <span
+        >{picked.length
+          ? `${picked.length} document${picked.length === 1 ? '' : 's'} selected`
+          : 'Tick documents to delete several at once.'}</span
+      >{#if picked.length}<button class="quiet" onclick={() => (picked = [])}>Clear</button><button
+          class="primary danger"
+          disabled={busy}
+          onclick={openBulk}><Trash2 size={15} /> Delete permanently…</button
+        >{/if}
+    </div>{/if}
   <div class="table" aria-busy={busy}>
     <table>
       <thead
         ><tr
-          ><th>{readOnly ? 'Record' : 'Name'}</th><th>{kind === 'audit' ? 'Actor' : 'Details'}</th
+          >{#if kind === 'documents'}<th class="pick"
+              ><input
+                type="checkbox"
+                aria-label="Select every document on this page"
+                checked={items.length > 0 && items.every((r) => picked.some((p) => p.id === r.id))}
+                onchange={(e) => {
+                  for (const row of items) toggle(row, e.currentTarget.checked);
+                }}
+              /></th
+            >{/if}<th>{readOnly ? 'Record' : 'Name'}</th><th
+            >{kind === 'audit' ? 'Actor' : 'Details'}</th
           ><th>Created</th><th>{readOnly ? 'Record status' : 'Access'}</th><th
             ><span class="sr-only">Actions</span></th
           ></tr
         ></thead
       ><tbody>
         {#each items as row}<tr
-            ><td><strong>{row.label}</strong><small>{row.id}</small></td><td
+            >{#if kind === 'documents'}<td class="pick"
+                ><input
+                  type="checkbox"
+                  aria-label={`Select ${row.label}`}
+                  checked={picked.some((p) => p.id === row.id)}
+                  onchange={(e) => toggle(row, e.currentTarget.checked)}
+                /></td
+              >{/if}<td><strong>{row.label}</strong><small>{row.id}</small></td><td
               >{row.name || row.owner || row.actor || '—'}{#if row.resource_id}<small
                   >{row.resource_id}</small
                 >{/if}</td
@@ -257,11 +359,17 @@
                   disabled={busy}
                   onclick={() => open(row)}
                   aria-label={`Manage ${row.label}`}><Settings2 size={15} /> Manage</button
-                >{/if}</td
+                >{#if kind === 'documents'}<button
+                    class="quiet manage delete"
+                    disabled={busy}
+                    onclick={() => open(row, 'erase')}
+                    aria-label={`Permanently delete ${row.label}`}
+                    ><Trash2 size={15} /> Delete</button
+                  >{/if}{/if}</td
             ></tr
           >{/each}
         {#if !items.length}<tr
-            ><td colspan="5" class="empty"
+            ><td colspan={kind === 'documents' ? 6 : 5} class="empty"
               >{busy ? 'Loading records…' : 'No matching records. Try a different search.'}</td
             ></tr
           >{/if}
@@ -336,6 +444,10 @@
             : 'Removes the account profile, credentials, personal drafts and access. Shared contributions retain a deleted-user identity so other documents remain verifiable.'}
         </p>
       </div>
+      {#if impact?.in_trash === false}<p class="note">
+          This document is not in Trash. Deleting moves it to Trash and removes it permanently in
+          one step, and its public links stop working.
+        </p>{/if}
       {#if previewing}<p role="status">Calculating deletion impact…</p>{/if}
       {#if impact}<dl class="impact">
           {#each Object.entries(impact.counts) as [key, value]}<div>
@@ -410,6 +522,71 @@
     </div>
   </form>
 </dialog>
+<dialog bind:this={bulkDialog} aria-labelledby="bulk-title">
+  <div class="dialog-top">
+    <span class="dialog-icon"><Trash2 size={22} /></span><button
+      type="button"
+      class="quiet"
+      aria-label="Close deletion dialog"
+      disabled={busy}
+      onclick={() => bulkDialog.close()}><X size={20} /></button
+    >
+  </div>
+  <p class="eyebrow">{picked.length} SELECTED</p>
+  <h2 id="bulk-title">Permanently delete documents</h2>
+  <form
+    onsubmit={(e) => {
+      e.preventDefault();
+      void eraseBulk();
+    }}
+  >
+    <div class="warning">
+      <AlertTriangle size={20} />
+      <p>
+        Each document, with its history, files, versions, drafts, change requests and public copies,
+        is removed from the live database, and each gets its own deletion receipt. Documents outside
+        Trash are moved there first. This cannot be undone.
+      </p>
+    </div>
+    <ul class="picked">
+      {#each picked.slice(0, 50) as row (row.id)}<li>
+          {row.label}{#if !row.removed_at}<small> · active</small>{/if}
+        </li>{/each}
+      {#if picked.length > 50}<li>…and {picked.length - 50} more</li>{/if}
+    </ul>
+    <label
+      >Reason<select bind:value={bulkReason}
+        ><option value="owner_request">Owner request</option><option value="duplicate"
+          >Duplicate content</option
+        ><option value="policy">Retention or policy decision</option><option value="other"
+          >Other administrative decision</option
+        ></select
+      ></label
+    >
+    <label class="ack"
+      ><input type="checkbox" bind:checked={bulkAcknowledged} /> I understand existing backups may retain
+      this data until they expire. A minimal deletion receipt remains.</label
+    >
+    <label
+      >Type “{bulkPhrase}” to confirm<input
+        bind:value={bulkConfirmation}
+        autocomplete="off"
+        required
+      /></label
+    >
+    {#if bulkResult}<p class="note" role="status">{bulkResult}</p>{/if}
+    {#if error}<p class="error" role="alert">{error}</p>{/if}
+    <div class="dialog-actions">
+      <button class="quiet" type="button" disabled={busy} onclick={() => bulkDialog.close()}
+        >Cancel</button
+      ><button
+        class="primary danger"
+        disabled={busy || bulkConfirmation !== bulkPhrase || !bulkAcknowledged || !picked.length}
+        >{busy ? 'Deleting…' : `Delete ${picked.length} permanently`}</button
+      >
+    </div>
+  </form>
+</dialog>
 
 <style>
   .records {
@@ -475,12 +652,11 @@
     background: var(--color-accent-solid-hover);
   }
   .danger {
-    background: var(--color-danger);
-    /* White fails on the light night-mode red; the pale danger tint reads in both modes. */
-    color: var(--color-danger-bg);
+    background: var(--color-danger-solid);
+    color: var(--color-on-solid);
   }
   .danger:hover {
-    background: color-mix(in srgb, var(--color-danger) 85%, var(--color-ink-strong));
+    background: color-mix(in srgb, var(--color-danger-solid) 85%, black);
   }
   button:disabled {
     opacity: 0.5;
@@ -713,5 +889,42 @@
     .impact {
       grid-template-columns: repeat(2, 1fr);
     }
+  }
+  .bulk-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin: 0 0 12px;
+    font-size: 14px;
+    color: var(--color-ink-soft);
+  }
+  .bulk-bar span {
+    margin-right: auto;
+  }
+  .pick {
+    width: 36px;
+  }
+  .manage.delete {
+    color: var(--color-danger);
+  }
+  .note {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--color-ink-soft);
+  }
+  .picked {
+    max-height: 180px;
+    overflow: auto;
+    margin: 0;
+    padding: 8px 12px 8px 28px;
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    background: var(--color-surface-sunken);
+    font-size: 14px;
+  }
+  .picked small {
+    color: var(--color-warn-ink);
   }
 </style>

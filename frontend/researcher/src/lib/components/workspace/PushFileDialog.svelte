@@ -3,22 +3,27 @@
   import { FileUp, X, AlertCircle, GitPullRequest, GitBranch, LoaderCircle } from '@lucide/svelte';
   import DiffText from './DiffText.svelte';
   import {
+    PUSH_FILES,
     planAgainst,
     preparePush,
     sendPush,
     type BaseCandidate,
+    type PushKind,
     type PushPreparation
   } from '$lib/workspace/reviews';
+  import { percent } from '$lib/workspace/collaboration';
   import { titleFromName } from '$lib/workspace/file-push';
   let {
     documentId,
     title,
+    kind = 'document',
     initialFile = null,
     onClose,
     onCreated
   }: {
     documentId: string;
     title: string;
+    kind?: PushKind;
     initialFile?: File | null;
     onClose: () => void;
     onCreated: (result: { id: string; submitted: boolean }) => void;
@@ -46,7 +51,7 @@
     error = '';
     prepared = null;
     try {
-      prepared = await preparePush(documentId, title, file);
+      prepared = await preparePush(documentId, title, file, kind);
       baseSeq = prepared.chosen.seq;
       name = `Changes from ${titleFromName(file.name) || 'my copy'}`.slice(0, 200);
     } catch (e) {
@@ -89,10 +94,13 @@
       busy = '';
     }
   }
+  const files = $derived(PUSH_FILES[kind]);
   function describe(candidate: BaseCandidate) {
     return candidate.score === undefined
       ? candidate.label
-      : `${candidate.label} · ${candidate.score} matching paragraphs`;
+      : kind === 'document'
+        ? `${candidate.label} · ${candidate.score} matching paragraphs`
+        : `${candidate.label} · ${percent(candidate.score)} of ${files.unit} match`;
   }
 </script>
 
@@ -103,9 +111,9 @@
       <div>
         <h2 id="push-title">Upload your edited copy</h2>
         <p>
-          Edited the Word file on your computer? Dynodoc compares it with the version you started
-          from and turns your edits into changes your team can review. Nothing in the team version
-          changes until an editor merges them.
+          Edited the {files.name} file on your computer? Dynodoc compares it with the version you started
+          from and turns your edits into changes your team can review. Nothing in the team version changes
+          until someone merges them.
         </p>
       </div>
       <button class="close" aria-label="Close" disabled={!!busy} onclick={onClose}
@@ -128,19 +136,24 @@
         }}
       >
         <FileUp size={28} strokeWidth={1.3} />
-        <strong>Choose your edited Word file</strong>
-        <span>or drop it here · .docx or .doc, up to 10 MB</span>
+        <strong>Choose your edited {files.name} file</strong>
+        <span
+          >or drop it here · {files.accept.replaceAll(',', ' or ')}, up to {kind === 'document'
+            ? 10
+            : 20} MB</span
+        >
         <input
           bind:this={input}
           type="file"
-          accept=".docx,.doc"
+          accept={files.accept}
           disabled={!!busy}
           onchange={(e) => void choose(e.currentTarget.files?.[0])}
         />
       </label>
       <p class="hint">
         Tip: files downloaded from Dynodoc remember which version they came from, and are named like
-        “{title} (v12).docx”. Files from elsewhere are matched by their wording.
+        “{title} (v12){files.accept.split(',')[0]}”. Files from elsewhere are matched by their
+        content, even when renamed.
       </p>
     {:else}
       <section class="summary" aria-live="polite">
@@ -161,7 +174,9 @@
         <p class="how">
           {prepared.plan.anchored
             ? 'Paragraphs were matched exactly using hidden markers saved in your download.'
-            : 'Paragraphs were matched by their wording.'}
+            : kind === 'document'
+              ? 'Paragraphs were matched by their wording.'
+              : `${files.unit[0].toUpperCase()}${files.unit.slice(1)} were matched by their content.`}
           {prepared.chosen.reason === 'file'
             ? ' The version was read from the file itself.'
             : prepared.chosen.reason === 'name'
@@ -175,6 +190,15 @@
               class="chip">{counts.moved} moved</span
             >{/if}<span class="chip">{prepared.plan.unchanged} unchanged</span>
         </div>
+        {#if prepared.relation?.unrelated}<p class="warning">
+            <AlertCircle size={15} />This file shares only {percent(prepared.relation.score)} of its content
+            with “{title}”. It may be a different file with the same name. If you send it, the
+            person who merges must choose, for every existing {kind === 'document'
+              ? 'paragraph'
+              : kind === 'spreadsheet'
+                ? 'row'
+                : 'text box'} it changes or removes, between the team's version and yours.
+          </p>{/if}
         {#if prepared.otherDocument}<p class="warning">
             <AlertCircle size={15} />This file was downloaded from a different Dynodoc document.
             Check that you chose the right file.

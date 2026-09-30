@@ -4,7 +4,7 @@
  * fingerprints stored documents (engine_core::similarity), so a renamed or edited
  * copy is recognised by content rather than by its file name.
  */
-import type { EventPayload } from '$lib/api/types';
+import type { DocumentState, EventPayload } from '$lib/api/types';
 import { checkSimilarity, type Relation, type SimilarDocument } from './collaboration';
 import { textOf, type TextBlock } from './files';
 
@@ -29,6 +29,25 @@ export function blockTexts(ops: EventPayload[]): string[] {
     if (typeof fields.notes === 'string' && fields.notes.trim()) out.push(fields.notes);
   }
   return out;
+}
+
+/** The same texts for a document state, e.g. a workbook folded from an upload. */
+export function stateBlockTexts(state: DocumentState): string[] {
+  return blockTexts(
+    Object.values(state.nodes)
+      .filter((n) => !n.deleted)
+      .map(
+        (n) =>
+          ({
+            type: 'NodeCreated',
+            node_id: n.id,
+            node_type: n.type,
+            parent_id: n.parent_id,
+            pos: n.pos,
+            fields: n.current_fields
+          }) as EventPayload
+      )
+  );
 }
 
 const COPIES: Relation[] = ['identical', 'copy', 'edited_copy', 'excerpt', 'extended'];

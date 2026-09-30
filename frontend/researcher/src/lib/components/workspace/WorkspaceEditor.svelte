@@ -86,7 +86,6 @@
   import type { JSONContent } from '@tiptap/core';
   let { store }: { store: DocumentStore } = $props();
   const kind = $derived(documentKind(store.detail!));
-  let canManage = $state(false);
   let identityId = $state('');
   let recoveryLoading = $state(true),
     sessionEnded = $state(false);
@@ -456,11 +455,6 @@
       .finally(() => {
         recoveryLoading = false;
       });
-    void request<{ can_manage: boolean }>(`${prefix}/access`)
-      .then((a) => {
-        canManage = a.can_manage;
-      })
-      .catch(() => {});
     return () => {
       clearTimeout(timer);
       clearTimeout(recoveryTimer);
@@ -941,10 +935,17 @@
         const origin =
           !draftId && !dirty ? { documentId: store.documentId, seq: store.seq } : undefined;
         await exportDocument(origin ? store.state : local, title, origin);
-      } else if (format === 'csv' || format === 'xlsx')
-        await exportSpreadsheet(local, title, format);
-      else if (format === 'pptx') await exportPresentation(local, title);
-      else if (format === 'json')
+      } else if (format === 'csv' || format === 'xlsx' || format === 'pptx') {
+        // Workbook and deck downloads also remember their revision for uploading back.
+        await save();
+        const origin =
+          !draftId && !dirty && format !== 'csv'
+            ? { documentId: store.documentId, seq: store.seq }
+            : undefined;
+        const state = origin ? store.state : local;
+        if (format === 'pptx') await exportPresentation(state, title, origin);
+        else await exportSpreadsheet(state, title, format, undefined, origin);
+      } else if (format === 'json')
         download(
           JSON.stringify({ format: 'dynodoc-content-v1', title, kind, state: local }, null, 2),
           title + '.dynodoc.json',
@@ -1077,6 +1078,14 @@
                   ><Download size={14} /> Download first sheet (.csv)</button
                 >{/if}{#if kind === 'presentation'}<button onclick={() => void exportFile('pptx')}
                   ><Download size={14} /> Download PowerPoint (.pptx)</button
+                >{/if}{#if (kind === 'spreadsheet' || kind === 'presentation') && store.detail?.role !== 'auditor'}<button
+                  onclick={() => {
+                    pushFile = null;
+                    pushOpen = true;
+                  }}
+                  ><FileUp size={14} /> Upload edited {kind === 'spreadsheet'
+                    ? 'Excel'
+                    : 'PowerPoint'} file…</button
                 >{/if}<button onclick={() => void exportFile('json')}
                 ><Download size={14} /> Download Dynodoc content</button
               ><button onclick={() => void exportFile('history')}
@@ -1321,7 +1330,6 @@
             focus={peopleFocus}
             onChanged={(p) => {
               peopleInfo = p;
-              canManage = p.you.can.share;
               void refreshPeople();
             }}
           />
@@ -1623,6 +1631,7 @@
 {#if pushOpen}<PushFileDialog
     documentId={store.documentId}
     {title}
+    kind={kind === 'questionnaire' ? 'document' : kind}
     initialFile={pushFile}
     onClose={() => {
       pushOpen = false;
