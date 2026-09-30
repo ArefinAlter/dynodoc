@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ThemeToggle from '$lib/components/ThemeToggle.svelte';
   import AdminRecords from '$lib/components/product/AdminRecords.svelte';
   import { clearSession } from '$lib/stores/session.svelte';
   import { invalidateAll, goto } from '$app/navigation';
@@ -35,7 +36,7 @@
       ><img src="/brand/logo.svg?v=2" width="165" height="36" alt="Dynodoc" /></a
     ><span>Operations</span><a href="https://app.dynodoc.online/workspace"
       >Workspace <ExternalLink size={14} /></a
-    >
+    ><ThemeToggle />
   </header>
   <main>
     <div class="heading">
@@ -229,7 +230,7 @@
     padding: 24px 5%;
     border-bottom: 1px solid #dce4e9;
   }
-  header > a:last-child {
+  header > a:last-of-type {
     margin-left: auto;
     display: flex;
     gap: 8px;

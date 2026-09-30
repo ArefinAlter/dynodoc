@@ -35,6 +35,7 @@
   import { ulid } from 'ulid';
   import { clearSession } from '$lib/stores/session.svelte';
   import { queuePush } from '$lib/workspace/pending-push';
+  import ThemeToggle from '$lib/components/ThemeToggle.svelte';
   type WorkspaceDocument = Document & {
     deleted_at?: string;
     space_id?: string;
@@ -352,6 +353,7 @@
       ><img src="/brand/mark.svg?v=2" alt="" width="21" height="21" />Dynodoc</a
     >
     <div>
+      <ThemeToggle size={17} />
       <button
         aria-label="Help & tutorials"
         title="Help & tutorials"

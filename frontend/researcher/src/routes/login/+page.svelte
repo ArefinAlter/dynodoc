@@ -5,6 +5,7 @@
   import { session } from '$lib/stores/session.svelte';
   import { rememberNext, safeNext, takeRememberedNext } from '$lib/auth-next';
   import { ArrowRight, ArrowLeft, Mail, CheckCircle2 } from '@lucide/svelte';
+  import ThemeToggle from '$lib/components/ThemeToggle.svelte';
   // A protected page sent the visitor here; return there once they have signed in.
   const next = $derived(safeNext($page.url.searchParams.get('next')));
   let email = $state(''),
@@ -76,6 +77,7 @@
 <svelte:head><title>Sign in · Dynodoc</title><meta name="robots" content="noindex" /></svelte:head>
 <main class="auth-page">
   <a href="https://dynodoc.online" class="back"><ArrowLeft size={16} /> Back to Dynodoc</a>
+  <div class="theme-corner"><ThemeToggle /></div>
   <section class="card">
     <a class="brand" href="https://dynodoc.online"
       ><img src="/brand/mark.svg?v=2" width="52" height="52" alt="Dynodoc" /></a
@@ -325,5 +327,10 @@
       padding: 28px 22px;
       margin-top: 28px;
     }
+  }
+  .theme-corner {
+    position: absolute;
+    top: 18px;
+    right: 18px;
   }
 </style>

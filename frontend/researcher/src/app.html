@@ -8,6 +8,25 @@
     <link rel="shortcut icon" href="/favicon.ico" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
+    <script>
+      // Apply the saved day/night preference before first paint (see src/lib/theme.ts).
+      (function () {
+        var root = document.documentElement,
+          pref = 'system';
+        try {
+          var saved = document.cookie.match(/(?:^|; )dynodoc_theme=(light|dark|system)/);
+          pref = (saved && saved[1]) || localStorage.getItem('dynodoc.theme') || 'system';
+        } catch (e) {}
+        if (pref !== 'light' && pref !== 'dark') pref = 'system';
+        var dark =
+          pref === 'dark' ||
+          (pref === 'system' &&
+            !!window.matchMedia &&
+            window.matchMedia('(prefers-color-scheme: dark)').matches);
+        root.setAttribute('data-theme', dark ? 'dark' : 'light');
+        root.setAttribute('data-theme-preference', pref);
+      })();
+    </script>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">

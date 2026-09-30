@@ -6,6 +6,7 @@
   });
   import { env } from '$env/dynamic/public';
   import { ArrowUpRight, Menu, X } from '@lucide/svelte';
+  import ThemeToggle from '$lib/components/ThemeToggle.svelte';
   let open = $state(false);
   const workspace = $derived(
     env.PUBLIC_WORKSPACE_URL
@@ -26,6 +27,7 @@
     <a href="https://dynodoc.online/#integrations" onclick={() => (open = false)}>Integrations</a>
   </nav>
   <a class="enter" href={workspace}>Open workspace <ArrowUpRight size={16} /></a>
+  <ThemeToggle />
   <button
     disabled={!ready}
     class="menu"

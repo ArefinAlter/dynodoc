@@ -33,26 +33,82 @@
     U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
-/* Shared interface palette. User-authored document formatting remains independent. */
+/*
+ * Shared interface palette. Components use these tokens instead of literal colours
+ * so day and night mode switch together. `data-theme` on <html> is set before first
+ * paint by the script in app.html and changed by $lib/theme. Printing always uses
+ * the day palette. User-authored document formatting (text colour, fills, slide
+ * themes) is content and stays as written.
+ */
 :root {
+  color-scheme: light;
   --color-parchment: #f8f9fc;
   --color-surface: #fffefa;
+  --color-surface-raised: #ffffff;
   --color-surface-muted: #f3eee3;
+  --color-surface-sunken: #f3f6f9;
+  --color-surface-hover: #eef3f9;
+  --color-surface-selected: #e8f0fb;
+  --color-overlay: rgb(20 32 46 / 0.42);
   --color-terracotta: #205bb0;
   --color-accent: #205bb0;
+  --color-accent-strong: #174e95;
+  --color-accent-solid: #205bb0;
+  --color-accent-solid-hover: #174e95;
   --color-accent-bg: #e8f1fc;
+  --color-accent-border: #b9d0ee;
+  --color-on-accent: #ffffff;
   --color-ink: #263e53;
+  --color-ink-strong: #1d2f40;
+  --color-ink-soft: #46617a;
   --color-muted: #64788b;
   --color-subtle: #77899a;
   --color-rule: #dce3e8;
   --color-border: #dce3e8;
+  --color-border-soft: #e7ecf2;
   --color-border-strong: #b8c9db;
   --color-suggest: #107c41;
   --color-suggest-bg: #eaf4ed;
+  --color-success: #107c41;
+  --color-success-bg: #eaf4ed;
+  --color-success-border: #cfe5d6;
   --color-warn: #a7792f;
+  --color-warn-ink: #7a5412;
+  --color-warn-bg: #fff6e5;
+  --color-warn-border: #ecd3a6;
+  --color-danger: #ad293a;
+  --color-danger-bg: #fbe9ea;
+  --color-danger-border: #efc3c8;
+  --color-purple: #5b3aa8;
+  --color-purple-bg: #ece5fb;
   --color-agent: #21734a;
+  --color-diff-add-bg: #dcf3e3;
+  --color-diff-add-ink: #1d5a33;
+  --color-diff-del-bg: #fbe3e1;
+  --color-diff-del-ink: #8a2f25;
   --color-word: #185abd;
+  --color-word-bg: #e5effd;
   --color-excel: #107c41;
+  --color-excel-bg: #e2f0e7;
+  --color-powerpoint: #c43e1c;
+  --color-powerpoint-bg: #fbe9e4;
+  /* Editor chrome and the content surfaces inside it. */
+  --color-chrome: #f5f8fd;
+  --color-canvas: #eef1f4;
+  --color-page: #ffffff;
+  --color-page-ink: #202124;
+  --color-page-border: #dadce0;
+  --color-grid-bg: #ffffff;
+  --color-grid-ink: #202124;
+  --color-grid-line: #e2e3e3;
+  --color-grid-header-bg: #f3f3f3;
+  --color-grid-header-ink: #444444;
+  --color-grid-header-active: #d3e3fd;
+  --color-grid-selection: rgb(32 91 176 / 0.12);
+  --color-grid-selection-border: #1a73e8;
+  --color-focus: #2875cf;
+  --color-selection-bg: #cfe1ff;
+  --color-selection-ink: #18395f;
   --font-display: 'Public Sans', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
   --font-body: 'Public Sans', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
   --font-ui: 'Public Sans', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
@@ -60,7 +116,82 @@
   --radius-control: 10px;
   --radius-panel: 24px;
   --shadow-panel: 0 12px 48px #18385808, 0 1px 3px #18385805;
-  --color-danger: #ad293a;
+  --shadow-menu: 0 8px 28px #20364d24, 0 1px 3px #20364d14;
+  --shadow-dialog: 0 24px 80px #13243a33;
+}
+@media screen {
+  :root[data-theme='dark'] {
+    color-scheme: dark;
+    --color-parchment: #0e141b;
+    --color-surface: #141c25;
+    --color-surface-raised: #1a2430;
+    --color-surface-muted: #1b2530;
+    --color-surface-sunken: #111821;
+    --color-surface-hover: #1f2b38;
+    --color-surface-selected: #1d3150;
+    --color-overlay: rgb(2 6 12 / 0.66);
+    --color-terracotta: #7ab0ff;
+    --color-accent: #7ab0ff;
+    --color-accent-strong: #9cc3ff;
+    --color-accent-solid: #2f6fd6;
+    --color-accent-solid-hover: #3b7ce6;
+    --color-accent-bg: #172a45;
+    --color-accent-border: #2c4d7a;
+    --color-on-accent: #ffffff;
+    --color-ink: #dde6ef;
+    --color-ink-strong: #f1f5f9;
+    --color-ink-soft: #b3c2d1;
+    --color-muted: #93a5b7;
+    --color-subtle: #8295a8;
+    --color-rule: #2a3746;
+    --color-border: #2a3746;
+    --color-border-soft: #222e3b;
+    --color-border-strong: #3c4f63;
+    --color-suggest: #5fd08e;
+    --color-suggest-bg: #13301f;
+    --color-success: #5fd08e;
+    --color-success-bg: #13301f;
+    --color-success-border: #245236;
+    --color-warn: #e6b460;
+    --color-warn-ink: #f0c67c;
+    --color-warn-bg: #33270f;
+    --color-warn-border: #5d4719;
+    --color-danger: #ff8a95;
+    --color-danger-bg: #3a1a20;
+    --color-danger-border: #6b2a35;
+    --color-purple: #b9a0f5;
+    --color-purple-bg: #2a2142;
+    --color-agent: #5fd08e;
+    --color-diff-add-bg: #173a25;
+    --color-diff-add-ink: #8fe0ad;
+    --color-diff-del-bg: #43201d;
+    --color-diff-del-ink: #ffab9f;
+    --color-word: #6aa0f5;
+    --color-word-bg: #172a45;
+    --color-excel: #4cc27f;
+    --color-excel-bg: #132f20;
+    --color-powerpoint: #f0845f;
+    --color-powerpoint-bg: #3a1f16;
+    --color-chrome: #16202b;
+    --color-canvas: #0b1117;
+    --color-page: #1b232d;
+    --color-page-ink: #e3e8ee;
+    --color-page-border: #2c3845;
+    --color-grid-bg: #141b23;
+    --color-grid-ink: #e3e8ee;
+    --color-grid-line: #2a3440;
+    --color-grid-header-bg: #1b242e;
+    --color-grid-header-ink: #a9b8c7;
+    --color-grid-header-active: #1f3a5f;
+    --color-grid-selection: rgb(122 176 255 / 0.18);
+    --color-grid-selection-border: #7ab0ff;
+    --color-focus: #7ab0ff;
+    --color-selection-bg: #2c4d7a;
+    --color-selection-ink: #f1f5f9;
+    --shadow-panel: 0 12px 48px #00000059, 0 1px 3px #00000040;
+    --shadow-menu: 0 8px 28px #0000007a, 0 1px 3px #00000059;
+    --shadow-dialog: 0 24px 80px #00000099;
+  }
 }
 * {
   box-sizing: border-box;
@@ -88,7 +219,7 @@ select {
   font: inherit;
 }
 :focus-visible {
-  outline: 2px solid #2875cf;
+  outline: 2px solid var(--color-focus);
   outline-offset: 4px;
 }
 button,
@@ -103,8 +234,8 @@ a {
   touch-action: manipulation;
 }
 ::selection {
-  background: #cfe1ff;
-  color: #18395f;
+  background: var(--color-selection-bg);
+  color: var(--color-selection-ink);
 }
 dialog {
   overscroll-behavior: contain;

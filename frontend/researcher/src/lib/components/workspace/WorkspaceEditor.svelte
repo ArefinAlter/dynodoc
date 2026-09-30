@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ThemeToggle from '$lib/components/ThemeToggle.svelte';
   import {
     recoveryCopies,
     saveRecovery,
@@ -1084,6 +1085,7 @@
       </nav>
     </div>
     <div class="actions">
+      <ThemeToggle />
       <button
         class="round"
         title="Help & tutorials"
