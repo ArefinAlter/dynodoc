@@ -31,18 +31,18 @@
     color: var(--color-ink);
     font-family: var(--font-ui);
     font-size: 0.88rem;
-    box-shadow: 0 12px 28px rgba(25, 18, 10, 0.16);
+    box-shadow: var(--shadow-menu);
     cursor: pointer;
   }
 
   .toast.error {
-    border-color: color-mix(in srgb, var(--color-terracotta) 55%, white);
+    border-color: color-mix(in srgb, var(--color-terracotta) 55%, var(--color-surface));
     background: color-mix(in srgb, var(--color-terracotta) 8%, var(--color-surface));
     color: var(--color-terracotta);
   }
 
   .toast.success {
-    border-color: color-mix(in srgb, var(--color-suggest) 55%, white);
+    border-color: color-mix(in srgb, var(--color-suggest) 55%, var(--color-surface));
     background: var(--color-suggest-bg);
     color: var(--color-suggest);
   }

@@ -33,7 +33,13 @@
 <div class="ops">
   <header>
     <a href="https://dynodoc.online"
-      ><img src="/brand/logo.svg?v=2" width="165" height="36" alt="Dynodoc" /></a
+      ><img class="logo-day" src="/brand/logo.svg?v=2" width="165" height="36" alt="Dynodoc" /><img
+        class="logo-night"
+        src="/brand/logo-dark.svg?v=2"
+        width="165"
+        height="36"
+        alt="Dynodoc"
+      /></a
     ><span>Operations</span><a href="https://app.dynodoc.online/workspace"
       >Workspace <ExternalLink size={14} /></a
     ><ThemeToggle />
@@ -186,8 +192,8 @@
     overflow: auto;
     margin: 0 0 28px;
     padding: 6px;
-    background: white;
-    border: 1px solid #e7ecf2;
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border-soft);
     border-radius: 14px;
     width: fit-content;
     max-width: 100%;
@@ -198,11 +204,11 @@
     text-decoration: none;
     white-space: nowrap;
     font-size: 13px;
-    color: #496381;
+    color: var(--color-ink-soft);
   }
   .section-nav a:hover {
-    background: #eef4ff;
-    color: #235bb7;
+    background: var(--color-accent-bg);
+    color: var(--color-accent);
   }
   [id] {
     scroll-margin-top: 25px;
@@ -215,12 +221,12 @@
     margin-top: 24px;
   }
   footer a {
-    color: #2059b0;
+    color: var(--color-accent);
   }
   .ops {
     min-height: 100vh;
-    background: #f7f9fc;
-    color: #20374f;
+    background: var(--color-parchment);
+    color: var(--color-ink);
     font-family: var(--font-ui);
   }
   header {
@@ -228,17 +234,17 @@
     align-items: center;
     gap: 22px;
     padding: 24px 5%;
-    border-bottom: 1px solid #dce4e9;
+    border-bottom: 1px solid var(--color-border);
   }
   header > a:last-of-type {
     margin-left: auto;
     display: flex;
     gap: 8px;
-    color: #2059b0;
+    color: var(--color-accent);
     text-decoration: none;
   }
   header > span {
-    border-left: 1px solid #ccd7e0;
+    border-left: 1px solid var(--color-border);
     padding-left: 22px;
   }
   main {
@@ -260,7 +266,7 @@
   }
   .heading p,
   .detail {
-    color: #55697b;
+    color: var(--color-ink-soft);
     font-size: 13px;
     line-height: 1.7;
   }
@@ -275,10 +281,10 @@
     display: flex;
     gap: 8px;
     align-items: center;
-    background: #e4eefb;
-    color: #184c96;
+    background: var(--color-accent-bg);
+    color: var(--color-accent-strong);
     padding: 11px 16px;
-    border: 1px solid #c9dcf2;
+    border: 1px solid var(--color-accent-border);
     border-radius: 6px;
     cursor: pointer;
   }
@@ -290,14 +296,14 @@
   }
   .stats article,
   .panel {
-    border: 1px solid #dce4e9;
-    background: #fffefb;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
     border-radius: 22px;
     padding: 24px;
   }
   .stats span {
     font-size: 13px;
-    color: #55697b;
+    color: var(--color-ink-soft);
   }
   .stats strong {
     display: block;
@@ -334,14 +340,14 @@
     justify-content: space-between;
     gap: 20px;
     padding: 12px 0;
-    border-bottom: 1px solid #e7ecf0;
+    border-bottom: 1px solid var(--color-border-soft);
     font-size: 13px;
   }
   .line b {
     font-weight: 500;
   }
   .healthy {
-    color: #217346;
+    color: var(--color-success);
   }
   dl {
     display: grid;
@@ -362,21 +368,21 @@
   th,
   td {
     padding: 12px;
-    border-bottom: 1px solid #e7ecf0;
+    border-bottom: 1px solid var(--color-border-soft);
   }
   th {
     font-weight: 600;
-    background: #edf4fc;
+    background: var(--color-surface-sunken);
   }
   td:last-child,
   th:last-child {
     text-align: right;
   }
   .notice {
-    background: #fff2cf;
+    background: var(--color-warn-bg);
     padding: 14px;
     line-height: 1.6;
-    color: #71551a;
+    color: var(--color-warn-ink);
   }
   .scroll {
     overflow: auto;
@@ -406,6 +412,18 @@
     }
     .panel {
       padding: 18px;
+    }
+  }
+  /* Wordmark with light lettering for night mode (printing keeps the day logo). */
+  .logo-night {
+    display: none;
+  }
+  @media screen {
+    :global([data-theme='dark']) .logo-day {
+      display: none;
+    }
+    :global([data-theme='dark']) .logo-night {
+      display: inline;
     }
   }
 </style>

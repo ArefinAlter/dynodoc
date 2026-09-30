@@ -35,7 +35,13 @@
 <dialog bind:this={dialog} aria-labelledby="guide-title">
   <header>
     <a href="https://dynodoc.online"
-      ><img src="/brand/logo.svg?v=2" alt="Dynodoc" width="145" height="32" /></a
+      ><img class="logo-day" src="/brand/logo.svg?v=2" alt="Dynodoc" width="145" height="32" /><img
+        class="logo-night"
+        src="/brand/logo-dark.svg?v=2"
+        alt="Dynodoc"
+        width="145"
+        height="32"
+      /></a
     ><button aria-label="Close tutorial" onclick={() => dialog.close()}><X size={20} /></button>
   </header>
   <div class="guide-body">
@@ -92,11 +98,11 @@
     align-items: center;
     gap: 8px;
     padding: 10px 14px;
-    border: 1px solid #b9cde2;
+    border: 1px solid var(--color-border-strong);
     border-radius: 24px;
-    background: #fffefb;
-    color: #245696;
-    box-shadow: 0 3px 14px #183e6415;
+    background: var(--color-surface-raised);
+    color: var(--color-accent);
+    box-shadow: var(--shadow-menu);
     font: 13px var(--font-ui);
     cursor: pointer;
   }
@@ -108,24 +114,24 @@
     font: inherit;
     font-size: 14px;
     padding: 9px 12px;
-    border: 1px solid #b9cde2;
+    border: 1px solid var(--color-border-strong);
     border-radius: 5px;
-    background: #e8f1fd;
-    color: #25568d;
+    background: var(--color-accent-bg);
+    color: var(--color-accent-strong);
     cursor: pointer;
   }
   dialog {
-    border: 1px solid #c3d2e1;
+    border: 1px solid var(--color-border-strong);
     border-radius: 14px;
     padding: 0;
     max-width: 610px;
     width: calc(100% - 32px);
     max-height: 90vh;
-    color: #28465f;
-    background: #fcfbf7;
+    color: var(--color-ink);
+    background: var(--color-surface-raised);
   }
   dialog::backdrop {
-    background: #173b5c66;
+    background: var(--color-overlay);
     backdrop-filter: blur(3px);
   }
   header,
@@ -145,7 +151,7 @@
   }
   .visual {
     border-radius: 10px;
-    background: #e7f0fd;
+    background: var(--color-accent-bg);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -158,33 +164,33 @@
     align-items: center;
     gap: 18px;
     padding: 23px 18px;
-    background: white;
-    border: 1px solid #bacee6;
-    box-shadow: 0 5px 0 #ccdef2;
-    color: #2460ae;
+    background: var(--color-page);
+    border: 1px solid var(--color-accent-border);
+    box-shadow: 0 5px 0 var(--color-accent-border);
+    color: var(--color-accent);
   }
   .lines i {
     display: block;
     height: 5px;
     width: 55px;
     margin: 9px 0;
-    background: #c3d7ef;
+    background: var(--color-accent-border);
     border-radius: 3px;
   }
   .connections {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 20px;
-    color: #4e7093;
+    color: var(--color-ink-soft);
   }
   .connections :global(.active) {
-    color: #107c41;
+    color: var(--color-success);
     animation: pulse 2s ease-in-out infinite;
   }
   .action {
     font-size: 13px;
     font-weight: 650;
-    color: #275c9d;
+    color: var(--color-accent);
     margin: 24px 0 7px;
   }
   h2 {
@@ -197,7 +203,7 @@
     font-size: 16px;
     line-height: 1.8;
     margin: 0;
-    color: #456079;
+    color: var(--color-ink-soft);
   }
   nav {
     display: flex;
@@ -218,22 +224,22 @@
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: #b5c9df;
+    background: var(--color-border-strong);
   }
   nav button.current::after {
-    background: #2861ac;
+    background: var(--color-accent);
     width: 18px;
     border-radius: 6px;
   }
   footer {
-    border-top: 1px solid #d9e2ec;
+    border-top: 1px solid var(--color-border);
   }
   footer a {
     font-size: 13px;
   }
   footer .next {
-    background: #245baa;
-    color: white;
+    background: var(--color-accent-solid);
+    color: var(--color-on-accent);
   }
   button:disabled {
     opacity: 0.5;
@@ -266,6 +272,18 @@
     }
     h2 {
       font-size: 25px;
+    }
+  }
+  /* Wordmark with light lettering for night mode (printing keeps the day logo). */
+  .logo-night {
+    display: none;
+  }
+  @media screen {
+    :global([data-theme='dark']) .logo-day {
+      display: none;
+    }
+    :global([data-theme='dark']) .logo-night {
+      display: inline;
     }
   }
 </style>

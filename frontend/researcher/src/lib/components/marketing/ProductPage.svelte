@@ -31,8 +31,8 @@
 
 <style>
   .product-page {
-    background: #faf9f6;
-    color: #233f59;
+    background: var(--color-parchment);
+    color: var(--color-ink);
   }
   main {
     max-width: 1190px;
@@ -46,7 +46,7 @@
   .eyebrow {
     font-size: 14px;
     font-weight: 650;
-    color: #235da7;
+    color: var(--color-accent);
     letter-spacing: 0.035em;
   }
   h1 {
@@ -58,7 +58,7 @@
   .intro {
     font-size: 21px;
     line-height: 1.7;
-    color: #48647c;
+    color: var(--color-ink-soft);
   }
   .page-body :global(h2) {
     font-size: 30px;
@@ -74,7 +74,7 @@
   .page-body :global(li) {
     font-size: 17px;
     line-height: 1.85;
-    color: #435e76;
+    color: var(--color-ink-soft);
   }
   .page-body :global(section) {
     margin: 35px 0 55px;
@@ -88,8 +88,8 @@
     gap: 22px;
   }
   .page-body :global(.cards article) {
-    background: #fffefb;
-    border: 1px solid #cedce8;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
     border-radius: 12px;
     padding: 27px;
   }
@@ -99,14 +99,14 @@
   .page-body :global(.callout) {
     padding: 30px;
     border-radius: 12px;
-    border: 1px solid #bed3ed;
-    background: #eaf2fd;
+    border: 1px solid var(--color-accent-border);
+    background: var(--color-accent-bg);
   }
   .page-body :global(.table-wrap) {
     overflow: auto;
-    border: 1px solid #cbdbe8;
+    border: 1px solid var(--color-border);
     border-radius: 10px;
-    background: white;
+    background: var(--color-surface-raised);
   }
   .page-body :global(table) {
     width: 100%;
@@ -118,19 +118,19 @@
   .page-body :global(td),
   .page-body :global(th) {
     padding: 17px;
-    border-bottom: 1px solid #dbe4ed;
+    border-bottom: 1px solid var(--color-border);
     vertical-align: top;
   }
   .page-body :global(th) {
-    background: #eaf2fd;
-    color: #254e78;
+    background: var(--color-accent-bg);
+    color: var(--color-accent-strong);
   }
   .page-body :global(.badge) {
     display: inline-block;
     padding: 3px 9px;
-    border: 1px solid #bdd1e8;
-    background: #eaf2fd;
-    color: #245790;
+    border: 1px solid var(--color-accent-border);
+    background: var(--color-accent-bg);
+    color: var(--color-accent-strong);
     border-radius: 4px;
     font-size: 12px;
     font-weight: 650;
@@ -138,21 +138,21 @@
   .page-body :global(.cta) {
     display: inline-flex;
     padding: 12px 19px;
-    background: #245cac;
-    color: white;
+    background: var(--color-accent-solid);
+    color: var(--color-on-accent);
     text-decoration: none;
     border-radius: 6px;
     font-size: 16px;
   }
   .page-body :global(details) {
     padding: 21px 0;
-    border-bottom: 1px solid #cfdae4;
+    border-bottom: 1px solid var(--color-border);
   }
   .page-body :global(summary) {
     font-size: 19px;
     font-weight: 600;
     cursor: pointer;
-    color: #294d6e;
+    color: var(--color-ink);
   }
   .page-body :global(code) {
     font-size: 0.88em;

@@ -119,7 +119,7 @@
 
 <style>
   .public-links {
-    border-top: 1px solid #d1dce8;
+    border-top: 1px solid var(--color-border);
     margin-top: 22px;
     padding-top: 12px;
   }
@@ -130,7 +130,7 @@
   small {
     font-size: 13px;
     line-height: 1.65;
-    color: #456078;
+    color: var(--color-ink-soft);
   }
   label {
     display: grid;
@@ -144,16 +144,16 @@
     max-width: 100%;
     padding: 9px;
     font: inherit;
-    background: white;
-    color: #29455e;
-    border: 1px solid #b4c5d5;
+    background: var(--color-surface-raised);
+    color: var(--color-ink);
+    border: 1px solid var(--color-border-strong);
     border-radius: 5px;
   }
   button {
     padding: 8px 12px;
-    background: #e7effa;
-    color: #1c4d8d;
-    border: 1px solid #bfd2ec;
+    background: var(--color-accent-bg);
+    color: var(--color-accent-strong);
+    border: 1px solid var(--color-accent-border);
     border-radius: 5px;
     font: inherit;
     font-size: 13px;
