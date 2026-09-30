@@ -2,6 +2,17 @@
 
 Assessment date: 22 September 2026. This distinguishes executable functionality from the longer design documents. The old README's “feature-complete” description was too broad.
 
+## Continuation: production reset and future directions (30 September)
+
+The owner decided to permanently delete every document in production while keeping
+all accounts and sign-ins; it was done through the audited erasure path after a
+validated backup ([operations record](operations/2026-09-30-document-reset.md)).
+Production now has no documents and no workspaces. Planned next work is documented,
+not built: a GitHub-style [Projects workspace](proposals/PROJECTS-WORKSPACE-HANDOFF.md),
+[agents that edit documents with provenance](proposals/AGENT-PROVENANCE-PROPOSAL.md) and
+[assessing how students use AI](proposals/AI-ASSESSMENT-PROPOSAL.md); see
+[proposals/README.md](proposals/README.md) for the index and research.
+
 ## Continuation: copy detection, roles, review rules, notifications and night mode
 
 On 30 September the owner asked for renamed-file recognition with owner
