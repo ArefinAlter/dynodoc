@@ -44,6 +44,14 @@ access and how they got it, and what *you* can do.
 The owner and managers add people with **Add people** (email + role), change a
 person's role from the list, and move ownership with **Transfer ownership** (the
 new owner must already have access; the previous owner stays an editor).
+Adding someone also emails them an invitation (untick **Send an email invitation
+with a link** to skip it; add an optional message). The email names who shared
+what, the role, a link to the file and how to sign in with that address; replies
+go to the person who shared. The message under the form says whether it was sent.
+The same person is emailed at most once every 10 minutes for the same file, and one
+person can send at most 30 invitations an hour. Changing a role in the list does not
+send an email. Sharing a workspace (Home → Options → Access & folders) works the same
+way.
 Workspace roles (Home → Options → Access & folders) offer the same ladder:
 Owner, Manager, Editor, Reviewer, Contributor, Viewer.
 
@@ -74,8 +82,8 @@ notices. You are told when:
 - someone gives you access, or makes you the owner.
 
 Click a notice to open the right file, request or list. **Mark all read** clears
-the number. Notices appear within a few seconds; e-mail delivery is not switched on
-yet.
+the number. Notices appear within a few seconds. Only invitations are also sent by
+email; every other notice is in the bell only.
 
 ## 1. The owner creates or uploads the file
 

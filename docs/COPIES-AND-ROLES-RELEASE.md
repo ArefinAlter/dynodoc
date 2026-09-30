@@ -65,7 +65,8 @@ first save instead of the team version.
   not compared. Pasting a newer document's text into an older document makes the
   older one look like the original.
 - Heavily rewritten paragraphs, rows or slides can show as remove + add.
-- Notifications are in-app; e-mail delivery is not implemented.
+- Notifications are in-app; e-mail delivery is not implemented. (Invitations are
+  emailed since `b70f048`; see below.)
 - The uploader's identity and file name are shown to owners of matching documents;
   the privacy page now says so, but the legal review in LEGAL-PAGES.md is still open.
 - Not done: real-account acceptance with the pilot group, desktop Office opening of
@@ -112,3 +113,51 @@ The owner authorized the push to `main` and deployment to Vercel and the VPS on
   maps the new Reviewer (`approver`) rows to the engine's reviewer role, so access
   keeps working, but the older sharing panel would label those people "Viewer" and
   review rules would stop being enforced. Prefer a forward fix.
+
+## Follow-up releases
+
+Both on 30 September 2026, web and admin only: the API, database, migrations and
+converter were not touched, so each rolls back by recreating `web` and `admin` from
+its tag.
+
+**Upload is visible on Home (`eed4cd5`).** The owner reported not finding an upload
+option. Home now has an **Upload** tile first under New, an **Upload** label on the
+side rail, an **Upload a file** button when the list is empty, and drag-and-drop of a
+file anywhere on Home. Each upload runs the similarity check first and offers **Upload
+as changes** for a copy of an existing file. Frontend CI passed
+([run](https://github.com/ArefinAlter/dynodoc/actions/runs/36685178822)). VPS: backup
+`backups/dynodoc-20260930T074227Z.dump`; prior images tagged `before-upload-20260930`
+(web `9aabf2301797`, admin `1740b1cdcf2c`); new web `da006398f20a`, admin
+`4e425fbbd277`.
+
+**Invitation emails (`b70f048`).** The owner reported that people added by email
+received nothing: sharing only created an in-app notice. The web server now has
+`POST /api/invite`. It checks the origin and the session, asks the engine to grant
+access (the engine alone decides who may share), and only if that succeeded sends an
+invitation through Resend. The invitation says who shared which document or
+workspace, the role in plain words, an optional note of up to 500 characters, the
+link and how to sign in; reply-to is the person who shared. Names and notes are
+stripped of control characters and escaped in HTML. No email is sent to yourself or
+for removals, the same address is emailed at most once per item every 10 minutes, and
+one person can send at most 30 an hour (in memory, so a restart resets the counts).
+The sharing panel and the workspace access page have a **Send an email invitation
+with a link** checkbox (on by default) and say afterwards whether the email was sent,
+skipped, rate-limited, failed or not configured. A failed send never undoes the
+access. Changing a role from the list does not email.
+
+- Tests: 5 unit tests for the email content, escaping, cleaning and limits; 6 route
+  tests (share-then-send with reply-to and link, nothing sent when sharing is
+  refused, opt-out/removal/self, delivery failure keeps access, not configured,
+  cross-site and bad input). Frontend CI passed, including the authenticated browser
+  job ([run](https://github.com/ArefinAlter/dynodoc/actions/runs/36691331772)).
+- VPS: backup `backups/dynodoc-20260930T084232Z.dump` (checksum OK); reviewed source
+  archive SHA-256 `3215bc28a601c9b25c6f650c9653a4df5426bde6f4b8861fa9768c8d7fc91490`,
+  all 468 files passed manifest verification; private environment file unchanged;
+  prior images tagged `before-invite-20260930` (web `da006398f20a`, admin
+  `4e425fbbd277`); new web `ef3d0e955e90`, admin `eca99bbb2e83`. Health 200 for both;
+  signed-out `/workspace` → 303 to login; the built server contains the invite route
+  and Resend settings are present in the web container. No invitation was sent from
+  production during rollout; the first real delivery is the owner's own test.
+- Limits: other notices (copies, reviews, merges) are still in-app only. Delivery
+  depends on the Resend sending domain; invitations may land in spam until the
+  domain has a sending history.

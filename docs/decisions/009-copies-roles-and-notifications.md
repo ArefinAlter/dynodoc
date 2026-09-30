@@ -141,6 +141,12 @@ never notified of their own actions. Delivery is in-app (a bell with an unread c
 refreshed each minute and on focus); e-mail delivery through the web server's
 Resend integration is future work.
 
+*Update, 30 September 2026:* invitations are now also emailed. The web server's
+`POST /api/invite` asks the engine to grant access first and sends through Resend
+only if that succeeded (never to yourself, never for removals, rate-limited in
+memory). The other notice types remain in-app only. See
+[the release record](../COPIES-AND-ROLES-RELEASE.md#follow-up-releases).
+
 ## Excel and PowerPoint push
 
 `structured-push.ts` aligns an uploaded workbook or deck with the revision it started
