@@ -526,6 +526,38 @@ describe('pushing an edited PowerPoint file', () => {
     expect(slideMatchScore(base, incoming)).toBe(1);
   });
 
+  it('leaves pictures the importer cannot bring back where they are', async () => {
+    const base = deck();
+    build(
+      [
+        {
+          type: 'NodeCreated',
+          node_id: 'poster',
+          node_type: 'item',
+          parent_id: slideId(base, 'Method'),
+          pos: 'z',
+          fields: {
+            kind: 'image',
+            text: '',
+            x: 60,
+            y: 30,
+            w: 30,
+            h: 40,
+            style: {},
+            src: 'data:image/png;base64,' + 'A'.repeat(1_500_000),
+            alt: 'Poster'
+          }
+        }
+      ],
+      base
+    );
+    const incoming = await readPptx(base);
+    expect(incoming.warnings.join(' ')).toContain('Pictures over 1 MB');
+    const plan = planSlidePush(base, incoming);
+    expect(plan.changes).toEqual([]);
+    expect(plan.ops).toEqual([]);
+  });
+
   it('edits the text of the matching shape and follows a new title', async () => {
     const base = deck();
     const edited = cloneState(base);

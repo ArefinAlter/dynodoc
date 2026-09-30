@@ -27,6 +27,7 @@ import type { ImportResult } from './files';
 import { bounded, pageSetup, safeColor, safeFont } from './office';
 import {
   inferLayout,
+  MAX_IMAGE_BYTES,
   readDeck,
   resolvedStyle,
   shapeLabel,
@@ -34,6 +35,7 @@ import {
   themeName,
   themes,
   titleOf,
+  type Deck,
   type ShapeStyle,
   type Slide,
   type SlideShape,
@@ -977,9 +979,32 @@ export function sheetMatchScore(state: DocumentState, incoming: PushSource) {
 // ---------------------------------------------------------------------------------
 // Presentations
 
-/** Shapes the PPTX export writes: it drops empty plain text boxes and pictures without data. */
-const exported = (s: SlideShape) =>
-  s.kind === 'image' ? !!s.src : s.kind === 'shape' || !!s.role || !!s.text.trim();
+/**
+ * Pictures a deck's download brings back: the importer leaves out pictures over 1 MB
+ * and any beyond 5 MB in total, in slide order.
+ */
+function importedPictures(deck: Deck) {
+  const kept = new Set<string>();
+  let total = 0;
+  for (const slide of deck.slides)
+    for (const s of slide.shapes) {
+      if (s.kind !== 'image' || !s.src) continue;
+      const data = s.src.slice(s.src.indexOf(',') + 1);
+      const size = Math.floor((data.length * 3) / 4) - (data.match(/=+$/)?.[0].length || 0);
+      if (size > MAX_IMAGE_BYTES || total + size > 5 * 1024 * 1024) continue;
+      total += size;
+      kept.add(s.id);
+    }
+  return kept;
+}
+/**
+ * Shapes that survive a download and upload: the PPTX export drops empty plain text
+ * boxes, and `pictures` are the pictures the importer brings back.
+ */
+const exported = (s: SlideShape, pictures?: Set<string>) =>
+  s.kind === 'image'
+    ? !!s.src && (!pictures || pictures.has(s.id))
+    : s.kind === 'shape' || !!s.role || !!s.text.trim();
 const meaningful = (s: SlideShape) => (s.kind === 'image' ? !!s.src : !!s.text.trim());
 const normal = (text: string) => text.replace(/\r\n?/g, '\n');
 /** Short content fingerprint so image data never becomes part of a comparison key. */
@@ -1115,8 +1140,8 @@ interface SlideUnit extends Unit {
   shapes: SlideShape[];
   text: string;
 }
-function readSlide(slide: Slide): SlideUnit {
-  const shapes = slide.shapes.filter(exported);
+function readSlide(slide: Slide, pictures?: Set<string>): SlideUnit {
+  const shapes = slide.shapes.filter((s) => exported(s, pictures));
   const text = [...shapes.map((s) => (s.kind === 'image' ? s.alt || '' : s.text)), slide.notes]
     .filter((t) => t.trim())
     .join('\n');
@@ -1154,8 +1179,10 @@ export function planSlidePush(base: DocumentState, incoming: PushSource): PushPl
   const changes: BlockChange[] = [];
   let unchanged = 0;
 
-  const baseSlides = deck.slides.map(readSlide),
-    fileSlides = other.slides.map(readSlide);
+  // Pictures the importer cannot bring back are left alone rather than removed.
+  const pictures = importedPictures(deck);
+  const baseSlides = deck.slides.map((slide) => readSlide(slide, pictures)),
+    fileSlides = other.slides.map((slide) => readSlide(slide));
   const score = (f: number, b: number) => similarity(fileSlides[f].text, baseSlides[b].text);
   const roles = (u: SlideUnit) => u.shapes.map((s) => s.role || s.kind).join(',');
   const { pairs, moved: movedSlides } = align(baseSlides, fileSlides, score, (f, b) => {
@@ -1226,7 +1253,7 @@ export function planSlidePush(base: DocumentState, incoming: PushSource): PushPl
     const paired = shapePairs.map((_, j) => j).filter((j) => shapePairs[j] >= 0);
     const order = increasing(paired.map((j) => shapePairs[j]));
     const steady = new Set(paired.filter((_, i) => order.has(i)));
-    const kept = baseSlide.shapes.filter((s) => !exported(s));
+    const kept = baseSlide.shapes.filter((s) => !exported(s, pictures));
     const shapeSlots = place(
       shapePairs.map((i) => (i >= 0 ? state.nodes[baseUnit.shapes[i].id] : undefined)),
       (j) => steady.has(j),
