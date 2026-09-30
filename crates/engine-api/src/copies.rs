@@ -318,6 +318,10 @@ async fn detect(
     }
     let mut found = candidates(&mut db, Some(id), fingerprint, &title_key, None, None).await?;
     found.sort_by(|a, b| b.comparison.score.total_cmp(&a.comparison.score));
+    let baseline: Option<chrono::DateTime<chrono::Utc>> =
+        sqlx::query_scalar("select started_at from copy_detection_baseline")
+            .fetch_optional(&mut *db)
+            .await?;
     let mut recorded = Vec::new();
     // Widely copied content (a shared template, say) can match many documents: record
     // every pair, but tell each owner once per pass.
@@ -379,7 +383,10 @@ async fn detect(
         .fetch_optional(&mut *db)
         .await?;
         let Some(match_id) = inserted else { continue };
-        if !in_app_copy && told.len() < 25 && told.insert(original.owner) {
+        // Both documents predate copy detection: list the copy, don't announce it.
+        let historical =
+            baseline.is_some_and(|t| copy_side.created_at < t && original.created_at < t);
+        if !in_app_copy && !historical && told.len() < 25 && told.insert(original.owner) {
             notifications::notify(
                 &mut db,
                 original.owner,

@@ -403,6 +403,25 @@ async fn widely_copied_content_still_reaches_every_owner_once(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn copies_that_predate_detection_are_listed_not_announced(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let (owner, _) = identity(&pool, "owner-history@example.test").await;
+    let (tariq, _) = identity(&pool, "tariq-history@example.test").await;
+    let (original, _) = document(&router, &owner, "Old report", &REPORT, None).await;
+    document(&router, &tariq, "old copy", &REPORT, Some("old copy.docx")).await;
+    // Both documents existed before detection was installed.
+    sqlx::query("update copy_detection_baseline set started_at=now()+interval '1 minute'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    copies::run_once(&pool).await.unwrap();
+    assert!(inbox(&router, &owner).await.is_empty());
+    let (_, listed) = get(&router, &format!("/documents/{original}/copies"), &owner).await;
+    assert_eq!(listed["items"].as_array().unwrap().len(), 1, "{listed}");
+    assert_eq!(listed["items"][0]["status"], "open");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn roles_rules_and_approvals_govern_merging(pool: PgPool) {
     let router = app(test_state(pool.clone()));
     let (owner, _) = identity(&pool, "owner-rules@example.test").await;

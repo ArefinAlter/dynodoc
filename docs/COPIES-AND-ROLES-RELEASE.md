@@ -12,7 +12,8 @@ test plan for 2–3 people. Publication and rollout are recorded at the end.
   the edit path; `document_match` pairs; owner notifications with the uploader and
   file name but never the content; `POST /similarity/check` for documents the uploader
   can open; owner actions invite / known / dismiss; **Share → Copies and similar
-  files**; in-app copies recorded as linked.
+  files**; in-app copies recorded as linked; copies among documents that predate the
+  release are listed but not announced.
 - **Same name, different content**: server-decided `unrelated` change requests merge
   through `merge_strict`, where every change to an existing block is a `$block`
   choice; bulk **Keep all team paragraphs** / **Use all of theirs**; Home and the
@@ -46,7 +47,7 @@ hosted service or developer database was used.
 | Check | Result |
 | --- | --- |
 | Rust | `cargo fmt --check` and `clippy -D warnings` clean; `cargo test --workspace` with `RUST_TEST_THREADS=1` (as CI): 194 passed, including the 100 ms SSE test |
-| New Rust tests | 9 similarity unit tests (renamed/edited/unrelated, excerpts, bands, Bengali, stability, title keys, block extraction), strict-merge test, access tests, 6 API integration tests: renamed copy reaches the owner without revealing the original, original still being typed, widely copied content reaches every owner once, roles/rules/approvals/override/transfer, unrelated same-name push, administrator one-step and batch deletion |
+| New Rust tests | 9 similarity unit tests (renamed/edited/unrelated, excerpts, bands, Bengali, stability, title keys, block extraction), strict-merge test, access tests, 7 API integration tests: renamed copy reaches the owner without revealing the original, original still being typed, widely copied content reaches every owner once, copies predating detection are listed not announced, roles/rules/approvals/override/transfer, unrelated same-name push, administrator one-step and batch deletion |
 | Benchmark | 8,000 paragraphs / 192,000 words: 6.3 ms to fingerprint, 0.02 ms to compare ([raw](benchmarks/similarity-2026-09-30.json)) |
 | Frontend | Prettier, ESLint, svelte-check 0 errors / 0 warnings; 186 unit tests in 23 files (16 night-colour helper tests, 24 Excel/PowerPoint push tests with real exceljs/pptxgenjs round trips, 4 upload-text/notification tests) |
 | Browser, new | `e2e/copies.spec.ts`: renamed copy → owner notified → invite → **Send my copy as changes** → required approval → owner override merge → same-name unrelated file → **Replaces a team paragraph** → keep team → merge; protected team version sends an editor to a draft. Both pass, also on a database holding earlier runs' data |

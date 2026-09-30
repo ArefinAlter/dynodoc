@@ -64,7 +64,11 @@ identity, the uploaded file name and the similarity — never the content. A fil
 uploaded under the same name with different content produces `same_name_detected`,
 but only when the uploader already collaborates on that document (ordinary names are
 reused by strangers). "Make a copy" by someone with access is recorded as `linked`
-without a notice; the client stores `copied_from` for this.
+without a notice; the client stores `copied_from` for this. Copies between two
+documents that both existed before detection was installed
+(`copy_detection_baseline`, set by migration `0021`) are listed on each document but
+not announced, so the first index of an existing workspace does not notify owners
+about every historical copy at once.
 
 **Before uploading**, `POST /similarity/check` compares the file's text (extracted
 in the browser exactly as the server extracts blocks) with documents the caller can

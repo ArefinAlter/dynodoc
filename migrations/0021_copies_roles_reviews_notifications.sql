@@ -151,3 +151,12 @@ create unique index document_match_pair_idx on document_match(
     least(source_document_id, target_document_id), greatest(source_document_id, target_document_id));
 create index document_match_target_idx on document_match(target_document_id, detected_at desc);
 create index document_match_source_idx on document_match(source_document_id);
+
+-- Copies among documents that already existed when detection was installed are
+-- listed on each document but not announced, so the first index does not notify
+-- owners about every historical copy at once.
+create table copy_detection_baseline (
+    id boolean primary key default true check (id),
+    started_at timestamptz not null default now()
+);
+insert into copy_detection_baseline default values;
