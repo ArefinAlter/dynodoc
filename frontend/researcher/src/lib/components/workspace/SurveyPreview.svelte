@@ -109,32 +109,32 @@
 
 <style>
   .preview-note {
-    background: #eaf2fc;
-    border: 1px solid #c9dcef;
-    color: #315270;
+    background: var(--color-accent-bg);
+    border: 1px solid var(--color-accent-border);
+    color: var(--color-accent-strong);
     padding: 18px;
     line-height: 1.7;
     margin-bottom: 24px;
     border-radius: 6px;
   }
   section {
-    background: #fff;
-    border: 1px solid #d7e1e8;
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border);
     padding: 24px;
     margin-bottom: 18px;
     border-radius: 7px;
   }
   .group {
-    background: #edf3ef;
+    background: var(--color-success-bg);
   }
   h3 {
     font-size: 17px;
-    color: #29465c;
+    color: var(--color-ink);
     margin: 0 0 12px;
   }
   p {
     line-height: 1.6;
-    color: #526b7f;
+    color: var(--color-ink-soft);
   }
   fieldset {
     border: 0;
@@ -153,26 +153,26 @@
     gap: 12px;
     align-items: center;
     padding: 10px 0;
-    color: #344f64;
+    color: var(--color-ink);
   }
   .answer input {
     padding: 12px;
-    border: 1px solid #a6bacb;
+    border: 1px solid var(--color-border-strong);
     border-radius: 5px;
     width: 100%;
-    background: white;
-    color: #20374f;
+    background: var(--color-surface-raised);
+    color: var(--color-ink-strong);
   }
   .problem {
-    color: #993b27;
-    background: #fff1e8;
+    color: var(--color-danger);
+    background: var(--color-danger-bg);
     padding: 12px;
     border-radius: 5px;
   }
   output {
     display: block;
     font-size: 22px;
-    color: #217346;
+    color: var(--color-success);
   }
   .actions {
     display: flex;
@@ -180,9 +180,9 @@
   }
   button {
     padding: 12px 18px;
-    background: #e4eefb;
-    color: #184c96;
-    border: 1px solid #b9d1ec;
+    background: var(--color-accent-bg);
+    color: var(--color-accent-strong);
+    border: 1px solid var(--color-accent-border);
     border-radius: 6px;
     cursor: pointer;
   }

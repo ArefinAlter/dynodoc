@@ -23,19 +23,19 @@
     margin: 0;
     font-size: 13px;
     line-height: 1.75;
-    color: #34495c;
+    color: var(--color-ink);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
   ins {
-    background: #dcf3e3;
-    color: #1d5a33;
+    background: var(--color-diff-add-bg);
+    color: var(--color-diff-add-ink);
     text-decoration: none;
-    border-bottom: 1px solid #83c29a;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-success) 45%, var(--color-diff-add-bg));
   }
   del {
-    background: #fbe3e1;
-    color: #8a2f25;
+    background: var(--color-diff-del-bg);
+    color: var(--color-diff-del-ink);
     text-decoration: line-through;
   }
 </style>

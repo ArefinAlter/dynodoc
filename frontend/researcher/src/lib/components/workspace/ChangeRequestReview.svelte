@@ -343,7 +343,7 @@
   .shade {
     position: fixed;
     inset: 0;
-    background: #2639474d;
+    background: var(--color-overlay);
     backdrop-filter: blur(4px);
     z-index: 100;
     display: grid;
@@ -351,16 +351,16 @@
     padding: 24px;
   }
   .dialog {
-    background: white;
+    background: var(--color-surface-raised);
     width: 900px;
     max-width: 100%;
     max-height: 92vh;
     overflow: auto;
     padding: 24px 28px;
     border-radius: 12px;
-    box-shadow: 0 18px 80px #1d384533;
+    box-shadow: var(--shadow-dialog);
     font-family: var(--font-ui);
-    color: #34495c;
+    color: var(--color-ink);
   }
   header {
     display: flex;
@@ -374,13 +374,13 @@
     margin: 2px 0 6px;
     font-size: 19px;
     font-weight: 600;
-    color: #23384b;
+    color: var(--color-ink-strong);
     overflow-wrap: anywhere;
   }
   header p {
     margin: 0;
     font-size: 13px;
-    color: #4c6275;
+    color: var(--color-ink-soft);
     line-height: 1.6;
   }
   .icon {
@@ -390,14 +390,14 @@
     width: 40px;
     height: 40px;
     border-radius: 10px;
-    background: #e8f0fb;
-    color: #185abd;
+    background: var(--color-accent-bg);
+    color: var(--color-accent);
   }
   .close {
     margin-left: auto;
     border: 0;
     background: none;
-    color: #4c6275;
+    color: var(--color-ink-soft);
     cursor: pointer;
     padding: 4px;
   }
@@ -408,23 +408,23 @@
     padding: 1px 8px;
     border-radius: 10px;
     margin-right: 4px;
-    background: #e8f0fb;
-    color: #174e95;
+    background: var(--color-accent-bg);
+    color: var(--color-accent-strong);
   }
   .status.merged {
-    background: #ece5fb;
-    color: #5b3aa8;
+    background: var(--color-purple-bg);
+    color: var(--color-purple);
   }
   .status.declined,
   .status.withdrawn {
-    background: #eef1f4;
-    color: #4c6275;
+    background: var(--color-surface-sunken);
+    color: var(--color-ink-soft);
   }
   blockquote {
     margin: 16px 0 0;
     padding: 10px 14px;
-    border-left: 3px solid #b8cbe4;
-    background: #f7faff;
+    border-left: 3px solid var(--color-accent-border);
+    background: var(--color-surface-sunken);
     font-size: 13px;
     white-space: pre-wrap;
   }
@@ -433,10 +433,10 @@
   .hint {
     font-size: 13px;
     line-height: 1.65;
-    color: #4c6275;
+    color: var(--color-ink-soft);
   }
   .info {
-    background: #f4f7fa;
+    background: var(--color-surface-sunken);
     padding: 10px 12px;
     border-radius: 8px;
   }
@@ -454,7 +454,7 @@
     border: 0;
     background: none;
     padding: 0;
-    color: #185abd;
+    color: var(--color-accent);
     font: inherit;
     font-size: 13px;
     text-decoration: underline;
@@ -465,12 +465,12 @@
     list-style: none;
     margin: 0;
     padding: 0;
-    border: 1px solid #e3e9ef;
+    border: 1px solid var(--color-border);
     border-radius: 10px;
   }
   .rows li {
     padding: 12px 14px;
-    border-bottom: 1px solid #edf1f5;
+    border-bottom: 1px solid var(--color-border-soft);
     display: grid;
     gap: 8px;
   }
@@ -478,7 +478,7 @@
     border-bottom: 0;
   }
   .rows li.conflict {
-    background: #fffaf2;
+    background: var(--color-warn-bg);
   }
   .row-head {
     display: flex;
@@ -490,20 +490,20 @@
     text-transform: capitalize;
     padding: 2px 8px;
     border-radius: 10px;
-    background: #e8f0fb;
-    color: #174e95;
+    background: var(--color-accent-bg);
+    color: var(--color-accent-strong);
   }
   .badge.added {
-    background: #dcf3e3;
-    color: #1d5a33;
+    background: var(--color-diff-add-bg);
+    color: var(--color-diff-add-ink);
   }
   .badge.removed {
-    background: #fbe3e1;
-    color: #8a2f25;
+    background: var(--color-diff-del-bg);
+    color: var(--color-diff-del-ink);
   }
   .badge.overlap {
-    background: #fdecc8;
-    color: #7a5413;
+    background: color-mix(in srgb, var(--color-warn-border) 50%, var(--color-warn-bg));
+    color: var(--color-warn-ink);
     text-transform: none;
   }
   .text {
@@ -514,13 +514,14 @@
     overflow-wrap: anywhere;
   }
   .added-text {
-    background: #f1faf4;
+    background: var(--color-diff-add-bg);
+    color: var(--color-diff-add-ink);
     padding: 6px 8px;
     border-radius: 6px;
   }
   .removed-text {
-    background: #fdf3f2;
-    color: #8a2f25;
+    background: var(--color-diff-del-bg);
+    color: var(--color-diff-del-ink);
     text-decoration: line-through;
     padding: 6px 8px;
     border-radius: 6px;
@@ -532,25 +533,25 @@
   }
   .three > div,
   .three label {
-    border: 1px solid #e6dcc9;
+    border: 1px solid var(--color-warn-border);
     border-radius: 8px;
     padding: 9px 10px;
     font-size: 13px;
-    background: white;
+    background: var(--color-surface-raised);
   }
   .three > div {
-    background: #f7f7f5;
+    background: var(--color-surface-sunken);
   }
   .three label {
     cursor: pointer;
   }
   .three label.chosen {
-    border-color: #185abd;
-    background: #f2f7ff;
+    border-color: var(--color-accent);
+    background: var(--color-surface-selected);
   }
   .three small {
     font-size: 12px;
-    color: #4c6275;
+    color: var(--color-ink-soft);
   }
   .three p {
     margin: 6px 0 0;
@@ -572,8 +573,10 @@
     font: inherit;
     font-size: 13px;
     padding: 8px 10px;
-    border: 1px solid #cfdbe8;
+    border: 1px solid var(--color-border-strong);
     border-radius: 8px;
+    color: var(--color-ink-strong);
+    background: var(--color-surface-raised);
     resize: vertical;
   }
   .primary,
@@ -590,17 +593,17 @@
   }
   .primary {
     border: 0;
-    background: #185abd;
-    color: white;
+    background: var(--color-accent-solid);
+    color: var(--color-on-accent);
   }
   .secondary {
-    border: 1px solid #c9d7e8;
-    background: white;
-    color: #174e95;
+    border: 1px solid var(--color-border-strong);
+    background: var(--color-surface-raised);
+    color: var(--color-accent-strong);
   }
   .secondary.danger {
-    color: #9b2f22;
-    border-color: #ecc7c1;
+    color: var(--color-danger);
+    border-color: var(--color-danger-border);
   }
   button:disabled {
     opacity: 0.5;
@@ -616,16 +619,16 @@
     margin: 12px 0 0;
   }
   .busy {
-    color: #185abd;
+    color: var(--color-accent);
   }
   .notice {
-    color: #1d5a33;
-    background: #eef8f1;
+    color: var(--color-success);
+    background: var(--color-success-bg);
     padding: 9px 12px;
     border-radius: 8px;
   }
   .error {
-    color: #9b2f22;
+    color: var(--color-danger);
   }
   @media (max-width: 700px) {
     .dialog {

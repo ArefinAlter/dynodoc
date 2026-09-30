@@ -390,7 +390,7 @@
   .support-note {
     font-size: 14px;
     line-height: 1.7;
-    color: #48667c;
+    color: var(--color-ink-soft);
   }
   .structure {
     margin: 12px 0;
@@ -398,26 +398,26 @@
   textarea {
     width: 100%;
     padding: 12px;
-    border: 1px solid #b5c7d6;
+    border: 1px solid var(--color-border-strong);
     border-radius: 5px;
-    color: #29465f;
-    background: #fff;
+    color: var(--color-ink);
+    background: var(--color-surface-raised);
     font: 13px monospace;
   }
 
   .questionnaire {
-    background: #f5f7f8;
+    background: var(--color-surface-sunken);
     flex: 1;
     overflow: auto;
     font: 13px Arial;
-    color: #536577;
+    color: var(--color-ink-soft);
   }
   .tools {
     display: flex;
     gap: 6px;
     align-items: center;
     padding: 8px 18px;
-    background: #edf2f7;
+    background: var(--color-surface-hover);
     margin: 0 12px;
     border-radius: 8px;
   }
@@ -427,16 +427,16 @@
     align-items: center;
     border: 0;
     background: none;
-    color: #46617a;
+    color: var(--color-ink-soft);
     padding: 7px 12px;
     border-radius: 5px;
     font-size: 13px;
     cursor: pointer;
   }
   .tools button.active {
-    background: white;
-    color: #51718e;
-    box-shadow: 0 1px 3px #38587212;
+    background: var(--color-surface-raised);
+    color: var(--color-ink-soft);
+    box-shadow: var(--shadow-panel);
   }
   .tools span {
     flex: 1;
@@ -449,13 +449,13 @@
     width: 220px;
     min-width: 220px;
     padding: 25px 14px;
-    border-right: 1px solid #e3e9ef;
+    border-right: 1px solid var(--color-border);
   }
   nav strong {
     display: block;
     font-size: 13px;
     letter-spacing: 1.5px;
-    color: #46617a;
+    color: var(--color-ink-soft);
     padding: 0 10px 15px;
   }
   nav button {
@@ -466,7 +466,7 @@
     background: none;
     border: 0;
     font-size: 13px;
-    color: #46617a;
+    color: var(--color-ink-soft);
     padding: 10px;
     border-radius: 5px;
     width: 100%;
@@ -476,14 +476,14 @@
   }
   nav button span {
     font-size: 13px;
-    color: #46617a;
+    color: var(--color-ink-soft);
   }
   nav button.selected {
-    background: #e7efe9;
-    color: #577d65;
+    background: var(--color-success-bg);
+    color: var(--color-success);
   }
   nav .add {
-    color: #46617a;
+    color: var(--color-ink-soft);
     margin-top: 10px;
   }
   .canvas {
@@ -495,20 +495,20 @@
     align-self: start;
   }
   section {
-    background: white;
-    border: 1px solid #e2e8ed;
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border);
     border-radius: 8px;
     padding: 23px 26px;
     margin-bottom: 20px;
-    box-shadow: 0 2px 7px #1a3f6204;
+    box-shadow: var(--shadow-panel);
   }
   section.focused {
-    border-left: 3px solid #719d82;
+    border-left: 3px solid var(--color-success);
     padding-left: 24px;
   }
   section.section {
-    background: #edf3ef;
-    border-color: #e0e9e3;
+    background: var(--color-success-bg);
+    border-color: var(--color-success-border);
   }
   .question-heading {
     display: flex;
@@ -520,19 +520,19 @@
     flex: 1;
     font-size: 13px;
     letter-spacing: 1px;
-    color: #46617a;
+    color: var(--color-ink-soft);
   }
   .question-heading button,
   .choices button {
     background: none;
     border: 0;
-    color: #46617a;
+    color: var(--color-ink-soft);
     cursor: pointer;
     padding: 3px;
   }
   .label {
     font-size: 17px;
-    color: #5b7081;
+    color: var(--color-ink-soft);
     border: 0;
     border-bottom: 1px solid transparent;
     padding: 4px 0;
@@ -541,11 +541,11 @@
   }
   .label:focus {
     outline: none;
-    border-color: #98b2a1;
+    border-color: color-mix(in srgb, var(--color-success) 45%, var(--color-surface-raised));
   }
   .hint {
     font-size: 13px;
-    color: #46617a;
+    color: var(--color-ink-soft);
     border: 0;
     background: none;
     width: 100%;
@@ -557,26 +557,26 @@
     gap: 18px;
     align-items: end;
     padding-top: 15px;
-    border-top: 1px solid #eff2f5;
+    border-top: 1px solid var(--color-border-soft);
   }
   .settings label,
   details label {
     display: grid;
     gap: 7px;
     font-size: 13px;
-    color: #46617a;
+    color: var(--color-ink-soft);
     flex: 1;
   }
   .settings select,
   .settings input,
   details input {
     padding: 8px 9px;
-    border: 1px solid #e0e7ed;
+    border: 1px solid var(--color-border);
     border-radius: 4px;
-    color: #46617a;
+    color: var(--color-ink-soft);
     font: 11px Arial;
     width: 100%;
-    background: white;
+    background: var(--color-surface-raised);
   }
   .settings label.check {
     display: flex;
@@ -592,7 +592,7 @@
   }
   details {
     margin-top: 22px;
-    color: #46617a;
+    color: var(--color-ink-soft);
     font-size: 13px;
   }
   summary {
@@ -611,11 +611,12 @@
     margin: 7px 0;
   }
   .choices input {
-    border: 1px solid #e6ecf0;
+    border: 1px solid var(--color-border-soft);
     border-radius: 4px;
     padding: 7px 9px;
     font-size: 13px;
-    color: #46617a;
+    color: var(--color-ink-soft);
+    background: var(--color-surface-raised);
     width: 100%;
     min-width: 0;
   }
@@ -627,26 +628,26 @@
     gap: 4px;
     align-items: center;
     font-size: 13px;
-    color: #46617a;
+    color: var(--color-ink-soft);
     margin-top: 12px;
   }
   .empty {
     text-align: center;
     padding: 80px 40px;
-    color: #46617a;
+    color: var(--color-ink-soft);
   }
   .empty h2 {
     font-size: 22px;
     font-weight: 400;
-    color: #46617a;
+    color: var(--color-ink-soft);
   }
   .empty p {
     font-size: 13px;
   }
   .empty button {
     border: 0;
-    background: #d8e9df;
-    color: #538065;
+    background: var(--color-success-bg);
+    color: var(--color-success);
     padding: 10px 18px;
     border-radius: 5px;
     font-size: 13px;
@@ -654,8 +655,8 @@
   }
   .error {
     padding: 10px 25px;
-    background: #fff0e6;
-    color: #46617a;
+    background: var(--color-danger-bg);
+    color: var(--color-ink-soft);
   }
   @media (max-width: 1000px) {
     nav {

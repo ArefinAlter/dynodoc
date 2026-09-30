@@ -227,7 +227,7 @@
 
 <style>
   dialog::backdrop {
-    background: #10251d80;
+    background: var(--color-overlay);
   }
   dialog {
     border: 0;
@@ -235,9 +235,10 @@
     max-height: 90vh;
     overflow: auto;
     padding: 28px;
-    background: white;
+    background: var(--color-surface-raised);
     border-radius: 18px;
-    box-shadow: 0 24px 100px #10251d33;
+    box-shadow: var(--shadow-dialog);
+    --connector-solid: #285a43;
   }
   header {
     display: flex;
@@ -245,8 +246,8 @@
     align-items: flex-start;
   }
   header > span {
-    background: #eaf2ec;
-    color: #285a43;
+    background: var(--color-success-bg);
+    color: var(--color-success);
     padding: 10px;
     border-radius: 12px;
   }
@@ -263,13 +264,13 @@
   header p {
     font-size: 13px;
     margin: 0;
-    color: #6d7770;
+    color: var(--color-muted);
   }
   .intro {
     font-size: 14px;
     line-height: 1.6;
     margin: 22px 0;
-    color: #536358;
+    color: var(--color-ink-soft);
   }
   label {
     display: block;
@@ -281,15 +282,15 @@
   select {
     width: 100%;
     box-sizing: border-box;
-    border: 1px solid #dce2dc;
+    border: 1px solid var(--color-border);
     border-radius: 8px;
     padding: 11px;
     margin-top: 7px;
-    background: #fff;
+    background: var(--color-surface-raised);
     font: inherit;
   }
   .hint {
-    color: #46617a;
+    color: var(--color-ink-soft);
     line-height: 1.6;
     font-size: 13px;
   }
@@ -306,25 +307,30 @@
     padding: 11px;
     border-radius: 8px;
     font-weight: 600;
-    border: 1px solid #cedbd0;
-    background: #f4f7f4;
-    color: #24513d;
+    border: 1px solid var(--color-success-border);
+    background: var(--color-success-bg);
+    color: var(--color-success);
   }
   .primary {
     display: flex;
     justify-content: center;
     gap: 8px;
     align-items: center;
-    background: #285a43;
-    color: white;
+    background: var(--connector-solid);
+    color: var(--color-on-accent);
     margin-top: 18px;
   }
   .error {
-    color: #9d3835;
-    background: #fff3ef;
+    color: var(--color-danger);
+    background: var(--color-danger-bg);
     padding: 12px;
     font-size: 13px;
     border-radius: 8px;
     line-height: 1.5;
+  }
+  @media screen {
+    :global([data-theme='dark']) dialog {
+      --connector-solid: #178548;
+    }
   }
 </style>

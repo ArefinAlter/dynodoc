@@ -66,7 +66,7 @@
     align-items: center;
     gap: 1rem;
     padding: 1rem 1.5rem;
-    background: color-mix(in srgb, var(--color-surface) 92%, white);
+    background: color-mix(in srgb, var(--color-surface) 92%, var(--color-surface-raised));
     border-bottom: 1px solid var(--color-border);
     backdrop-filter: blur(14px);
   }
@@ -150,7 +150,7 @@
   .actions button.suggesting {
     background: var(--color-suggest-bg);
     color: var(--color-suggest);
-    border-color: color-mix(in srgb, var(--color-suggest) 55%, white);
+    border-color: color-mix(in srgb, var(--color-suggest) 55%, var(--color-surface-raised));
   }
 
   .dot {

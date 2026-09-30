@@ -98,7 +98,7 @@
   .section-row td {
     font-family: var(--font-ui);
     color: var(--color-subtle);
-    background: color-mix(in srgb, var(--color-accent-bg) 28%, white);
+    background: color-mix(in srgb, var(--color-accent-bg) 28%, var(--color-surface-raised));
     text-transform: uppercase;
     letter-spacing: 0.08em;
     font-size: 0.76rem;

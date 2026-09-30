@@ -144,7 +144,7 @@
     align-items: center;
     padding: 8px 0 18px;
     font-size: 12px;
-    color: #56708a;
+    color: var(--color-ink-soft);
   }
   .discussion-tools label {
     display: flex;
@@ -160,12 +160,12 @@
     font-size: 12px;
     border: 0;
     background: none;
-    color: #3667a4;
+    color: var(--color-accent);
     padding: 7px 9px;
     border-radius: 8px;
   }
   button:hover {
-    background: #edf3fc;
+    background: var(--color-surface-hover);
   }
   button:disabled {
     opacity: 0.5;
@@ -173,14 +173,14 @@
   }
   .thread {
     padding: 18px;
-    border: 1px solid #e5ebf3;
+    border: 1px solid var(--color-border-soft);
     border-radius: 16px;
-    background: white;
+    background: var(--color-surface-raised);
     margin: 0 0 14px;
-    box-shadow: 0 3px 12px #18385804;
+    box-shadow: var(--shadow-panel);
   }
   .thread.resolved {
-    background: #f7faf8;
+    background: var(--color-surface-sunken);
   }
   .thread header {
     display: flex;
@@ -192,8 +192,8 @@
     place-items: center;
     width: 28px;
     height: 28px;
-    background: #e6effc;
-    color: #3867a5;
+    background: var(--color-accent-bg);
+    color: var(--color-accent);
     border-radius: 50%;
     font-size: 12px;
     flex-shrink: 0;
@@ -205,19 +205,19 @@
   time {
     display: block;
     font-size: 10px;
-    color: #637c94;
+    color: var(--color-ink-soft);
     margin-top: 3px;
   }
   .message {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-    color: #334d66;
+    color: var(--color-ink);
     font-size: 13px;
     line-height: 1.7;
     margin: 12px 0;
   }
   .reply {
-    border-left: 2px solid #dfe9f6;
+    border-left: 2px solid var(--color-border);
     padding: 8px 0 8px 13px;
     margin: 14px 0;
   }
@@ -227,17 +227,17 @@
   textarea {
     resize: vertical;
     width: 100%;
-    border: 1px solid #dbe5f0;
-    background: #fafcfe;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface-sunken);
     border-radius: 10px;
     padding: 11px;
     font: inherit;
     font-size: 13px;
-    color: #294563;
+    color: var(--color-ink);
     min-height: 64px;
   }
   .send {
-    background: #eaf1fd;
+    background: var(--color-accent-bg);
     margin-top: 8px;
   }
   .resolve {
@@ -247,21 +247,21 @@
     margin-left: auto;
     display: flex;
     gap: 4px;
-    color: #24754e;
+    color: var(--color-success);
     font-size: 10px;
   }
   .error {
-    color: #a12c3b;
+    color: var(--color-danger);
     font-size: 13px;
   }
   .empty {
-    color: #5e748b;
+    color: var(--color-muted);
     font-size: 13px;
     line-height: 1.7;
   }
   .more {
     width: 100%;
     justify-content: center;
-    background: #f1f5fb;
+    background: var(--color-surface-sunken);
   }
 </style>

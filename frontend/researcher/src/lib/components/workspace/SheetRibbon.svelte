@@ -825,7 +825,7 @@
     gap: 2px;
     padding: 0 16px;
     height: 34px;
-    background: #f3f3f3;
+    background: var(--color-chrome);
     flex-shrink: 0;
     overflow-x: auto;
     white-space: nowrap;
@@ -843,11 +843,11 @@
       13px 'Segoe UI',
       Arial,
       sans-serif;
-    color: #242424;
+    color: var(--color-ink-strong);
     cursor: pointer;
   }
   .ribbon-tabs button[aria-selected='true'] {
-    border-color: #107c41;
+    border-color: var(--color-excel);
     font-weight: 600;
   }
   .help {
@@ -862,11 +862,11 @@
     flex-shrink: 0;
     margin: 0 7px 5px;
     padding: 5px 2px 3px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--color-border);
     border-radius: 7px;
-    background: white;
+    background: var(--color-surface-raised);
     overflow-x: auto;
-    color: #222;
+    color: var(--color-ink-strong);
     font:
       12px 'Segoe UI',
       Arial,
@@ -878,7 +878,7 @@
     flex-direction: column;
     gap: 2px;
     padding: 2px 10px 0;
-    border-right: 1px solid #d3d3d3;
+    border-right: 1px solid var(--color-border);
     flex-shrink: 0;
   }
   .group-body {
@@ -893,7 +893,7 @@
     text-align: center;
     font-size: 11px;
     line-height: 14px;
-    color: #505050;
+    color: var(--color-ink-soft);
     white-space: nowrap;
     padding-bottom: 2px;
   }
@@ -920,9 +920,9 @@
       12px 'Segoe UI',
       Arial,
       sans-serif;
-    color: #242424;
-    border: 1px solid #c7c7c7;
-    background: white;
+    color: var(--color-ink-strong);
+    border: 1px solid var(--color-border-strong);
+    background: var(--color-surface-raised);
     border-radius: 2px;
     padding: 4px;
     max-width: 145px;
@@ -949,19 +949,19 @@
       12px 'Segoe UI',
       Arial,
       sans-serif;
-    color: #222;
+    color: var(--color-ink-strong);
     cursor: pointer;
     white-space: nowrap;
   }
   .group button:hover,
   .group button.active {
-    border-color: #c6c6c6;
-    background: #e7e7e7;
+    border-color: var(--color-border-strong);
+    background: var(--color-surface-selected);
   }
   button:focus-visible,
   select:focus-visible,
   input:focus-visible {
-    outline: 2px solid #107c41;
+    outline: 2px solid var(--color-excel);
     outline-offset: 1px;
   }
   button:disabled,
@@ -976,7 +976,7 @@
     display: grid;
     place-items: center;
     position: relative;
-    border-bottom: 3px solid #107c41;
+    border-bottom: 3px solid var(--color-excel);
   }
   .color input {
     position: absolute;
