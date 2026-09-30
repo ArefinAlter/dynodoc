@@ -74,6 +74,9 @@
   import SheetEditor from './SheetEditor.svelte';
   import QuestionnaireEditor from './QuestionnaireEditor.svelte';
   import PushFileDialog from './PushFileDialog.svelte';
+  import PeoplePanel from './PeoplePanel.svelte';
+  import NotificationBell from './NotificationBell.svelte';
+  import { people as loadPeople, type People } from '$lib/workspace/collaboration';
   import ChangeRequestReview from './ChangeRequestReview.svelte';
   import RebaseDialog from './RebaseDialog.svelte';
   import { listRequests, submitDraft, type ChangeRequest } from '$lib/workspace/reviews';
@@ -96,6 +99,12 @@
   let recoveryWrites = Promise.resolve();
   let composing = $state(false);
   const author = $derived(store.detail?.role === 'author');
+  // Roles and review rules for this person. A protected team version is edited only
+  // by the owner and managers; editors then work in drafts like everyone else.
+  let peopleInfo = $state<People | null>(null),
+    peopleFocus = $state('');
+  const teamEditable = $derived(author && (peopleInfo?.you.can.edit_team ?? true));
+  const protectedTeam = $derived(author && peopleInfo?.you.can.edit_team === false);
   let local = $state<DocumentState>(untrack(() => cloneState(store.state))),
     base = $state<DocumentState>(untrack(() => cloneState(store.state))),
     baseSeq = $state(untrack(() => store.seq)),
@@ -110,8 +119,6 @@
     menu = $state(false),
     selected = $state<string | null>(null),
     busy = $state(false),
-    email = $state(''),
-    role = $state('author'),
     members = $state<Member[]>([]),
     versions = $state<Version[]>([]),
     drafts = $state<Draft[]>([]),
@@ -263,7 +270,7 @@
     !recoveryLoading &&
       !sessionEnded &&
       !recoveryOffer &&
-      (author || (!!draftId && store.detail?.role !== 'auditor'))
+      (draftId ? store.detail?.role !== 'auditor' : teamEditable)
   );
   let activeTab = $state('');
   const textRoot = $derived(
@@ -429,11 +436,15 @@
     window.addEventListener('beforeunload', unload);
     void refreshPeople();
     void refreshRequests();
+    void loadPeople(store.documentId)
+      .then((p) => (peopleInfo = p))
+      .catch(() => {});
     const queued = takePush(store.documentId);
     if (queued) {
       pushFile = queued;
       pushOpen = true;
     }
+    void openLink(new URL(location.href).searchParams);
     void fetch('/auth/session')
       .then((r) => r.json())
       .then(async (s) => {
@@ -687,13 +698,6 @@
       store.detail!.title = title;
     });
   }
-  async function share() {
-    await run(async () => {
-      await request(`${prefix}/members`, { email, role });
-      email = '';
-      await refreshPeople();
-    });
-  }
   async function version() {
     await save();
     if (dirty || draftId) return;
@@ -725,6 +729,43 @@
       store.receive(result.events);
       compare = null;
     });
+  }
+  /** Links from notifications: open a request, the copies list, or send a copy. */
+  async function openLink(params: URLSearchParams) {
+    const request = params.get('request'),
+      linkedPanel = params.get('panel'),
+      source = params.get('push_from');
+    if (request || linkedPanel || source)
+      history.replaceState(history.state, '', location.pathname);
+    if (request) reviewing = request;
+    if (linkedPanel === 'copies' || linkedPanel === 'share') {
+      peopleFocus = linkedPanel === 'copies' ? 'copies' : '';
+      await openPanel('share');
+    }
+    if (source && /^[0-9a-f-]{36}$/i.test(source))
+      await run(async () => {
+        pushFile = await copyAsFile(source);
+        pushOpen = true;
+      });
+  }
+  /** The current content of your own copy, as a file the upload dialog can compare. */
+  async function copyAsFile(source: string) {
+    const doc = await request<{ title: string; settings: unknown; state: typeof local }>(
+      `/documents/${source}`
+    );
+    const sourceKind = documentKind(doc);
+    if (sourceKind !== kind)
+      throw new Error('Your copy is a different kind of file from this document.');
+    if (sourceKind === 'spreadsheet') {
+      const { writeWorkbook } = await import('$lib/workspace/xlsx-export');
+      return new File([await writeWorkbook(doc.state)], `${doc.title}.xlsx`);
+    }
+    if (sourceKind === 'presentation') {
+      const { writePptx } = await import('$lib/workspace/pptx-export');
+      return new File([await writePptx(doc.state, doc.title)], `${doc.title}.pptx`);
+    }
+    const { writeDocx } = await import('$lib/workspace/docx-export');
+    return new File([await writeDocx(doc.state, doc.title)], `${doc.title}.docx`);
   }
   async function createDraft() {
     await run(async () => {
@@ -837,7 +878,10 @@
     if (dirty) return;
     await run(async () => {
       const created = await createDocument({ title: `${title} — copy`, languages: ['en'] });
-      await request(`/documents/${created.id}/metadata`, { settings: { kind } });
+      // Recorded so copy detection knows this was an in-app copy, not an upload.
+      await request(`/documents/${created.id}/metadata`, {
+        settings: { kind, copied_from: store.documentId }
+      });
       const copiedFonts = new Map<string, string>();
       for (const font of documentFonts(textRoot?.current_fields.fonts)) {
         const response = await fetch(`/api/engine${prefix}/uploads/${font.uploadId}`);
@@ -1085,6 +1129,7 @@
       </nav>
     </div>
     <div class="actions">
+      <NotificationBell />
       <ThemeToggle />
       <button
         class="round"
@@ -1122,6 +1167,12 @@
         aria-label="Dismiss recovery message"
         onclick={() => (recoveryMessage = '')}><X size={12} /></button
       >
+    </div>{/if}
+  {#if protectedTeam && !draftId}<div class="draft-banner protected-banner" role="status">
+      <ShieldCheck size={15} /><span
+        ><strong>The team version is protected.</strong> Make your changes in a personal draft and send
+        it for review.</span
+      ><button disabled={busy} onclick={() => void createDraft()}>Start a draft</button>
     </div>{/if}
   {#if draftId}<div class="draft-banner">
       <GitBranch size={15} /><strong>{draftName}</strong><span
@@ -1265,48 +1316,15 @@
           >
         </div>
         {#if busy}<div class="loading">Working…</div>{/if}
-        {#if panel === 'share'}<p>
-            Direct invitations and inherited workspace roles control access. Owners and workspace
-            managers can invite people or publish a read-only copy.
-          </p>
-          {#if canManage}<form
-              onsubmit={(e) => {
-                e.preventDefault();
-                void share();
-              }}
-            >
-              <label
-                >Email address<input
-                  type="email"
-                  placeholder="colleague@example.com"
-                  bind:value={email}
-                  required
-                /></label
-              ><label
-                >Access<select aria-label="Access" bind:value={role}
-                  ><option value="author">Can edit</option><option value="reviewer"
-                    >Can comment & suggest</option
-                  ><option value="auditor">Can view</option><option value="remove"
-                    >Remove direct access</option
-                  ></select
-                ></label
-              ><button class="primary" disabled={busy}>Add person</button>
-            </form>{/if}
-          <div class="people">
-            {#each members as m}<div>
-                <span class="avatar">{(m.name || m.email).slice(0, 1).toUpperCase()}</span>
-                <div>
-                  <strong>{m.name || m.email.split('@')[0]}</strong><small>{m.email}</small>
-                </div>
-                <em
-                  >{m.role === 'author'
-                    ? 'Editor'
-                    : m.role === 'reviewer'
-                      ? 'Reviewer'
-                      : 'Viewer'}</em
-                >
-              </div>{/each}
-          </div>
+        {#if panel === 'share'}<PeoplePanel
+            documentId={store.documentId}
+            focus={peopleFocus}
+            onChanged={(p) => {
+              peopleInfo = p;
+              canManage = p.you.can.share;
+              void refreshPeople();
+            }}
+          />
           <button
             class="secondary"
             onclick={() =>
@@ -1617,7 +1635,7 @@
     requestId={reviewing}
     team={store.state}
     teamSeq={store.seq}
-    canMerge={author}
+    canMerge={author && (peopleInfo?.you.can.merge ?? true)}
     onClose={() => (reviewing = null)}
     onChanged={() => void refreshRequests()}
     onOpenDraft={(id) => {
@@ -1692,14 +1710,16 @@
           disabled={busy || sync.conflicts.some((c) => !resolutions[c.key])}
           onclick={() => void synchronize('pull')}
           ><RefreshCw size={15} /> Get latest into my draft</button
-        >{#if author}<button
+        >{#if teamEditable}<button
             class="primary"
             disabled={busy || sync.conflicts.some((c) => !resolutions[c.key])}
             onclick={() => void synchronize('share')}
             ><UploadCloud size={15} /> Share included changes</button
           >{/if}
       </div>
-      {#if !author}<p class="footnote">
+      {#if protectedTeam}<p class="footnote">
+          This document's team version is protected. Send the draft for review instead.
+        </p>{:else if !author}<p class="footnote">
           An editor must grant you editing access before you can share this draft into the team
           version.
         </p>{/if}{#if error}<p class="error" role="alert">{error}</p>{/if}
@@ -2108,16 +2128,6 @@
     color: var(--color-success);
     border: 1px solid var(--color-success-border);
   }
-  .people {
-    display: grid;
-    gap: 19px;
-    margin: 28px 0;
-  }
-  .people > div {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-  }
   .avatar {
     display: grid;
     place-items: center;
@@ -2125,29 +2135,6 @@
     height: 30px;
     border-radius: 50%;
     background: var(--color-surface-muted);
-    color: var(--color-ink-soft);
-    font-size: 13px;
-  }
-  .people strong {
-    display: block;
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--color-muted);
-    max-width: 145px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .people small {
-    display: block;
-    font-size: 13px;
-    color: var(--color-ink-soft);
-    max-width: 145px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .people em {
-    font-style: normal;
-    margin-left: auto;
     color: var(--color-ink-soft);
     font-size: 13px;
   }
