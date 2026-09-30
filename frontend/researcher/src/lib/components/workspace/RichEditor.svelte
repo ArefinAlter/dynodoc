@@ -104,7 +104,7 @@
   import 'katex/dist/katex.min.css';
   import { stableJson } from '$lib/workspace/equality';
   import { textOf, type TextBlock } from '$lib/workspace/files';
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { Editor, type JSONContent } from '@tiptap/core';
   import type { Node as PMNode } from '@tiptap/pm/model';
   import StarterKit from '@tiptap/starter-kit';
@@ -157,10 +157,14 @@
   $effect(() => {
     void theme.resolved;
     void lightPages;
-    if (editor && !editor.isDestroyed)
-      editor.view.dispatch(
-        editor.state.tr.setMeta(themeInkKey, true).setMeta('addToHistory', false)
-      );
+    // Untracked: the transaction updates editor state this effect must not depend on,
+    // or every dispatch would schedule another one.
+    untrack(() => {
+      if (editor && !editor.isDestroyed)
+        editor.view.dispatch(
+          editor.state.tr.setMeta(themeInkKey, true).setMeta('addToHistory', false)
+        );
+    });
   });
   $effect(() => {
     void page;

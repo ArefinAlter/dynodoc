@@ -284,7 +284,8 @@ async fn create(
         return Err(bad("The file description is too large"));
     }
     let doc = DocumentId(id);
-    let (mut tx, role, _) = apply::begin_write(&state, doc, IdentityId(auth.identity_id)).await?;
+    let (mut tx, role, team) =
+        apply::begin_write(&state, doc, IdentityId(auth.identity_id)).await?;
     if role == Role::Auditor {
         return Err(ApiError::Forbidden);
     }
@@ -327,7 +328,18 @@ async fn create(
     }
     // The server decides whether the file shares history with the document; the
     // client cannot mark unrelated content as related.
-    let related = relatedness(&base, &current);
+    let mut related = relatedness(&base, &current);
+    // A file pushed onto an almost empty starting point is also unrelated when it
+    // shares nothing with what the team has written since.
+    let team_fp = similarity::fingerprint_state(&team);
+    if related["unrelated"] == false
+        && similarity::fingerprint_state(&base).is_trivial()
+        && !team_fp.is_trivial()
+        && similarity::compare(&similarity::fingerprint_state(&current), &team_fp, false).score
+            < 0.3
+    {
+        related["unrelated"] = json!(true);
+    }
     for key in ["relation", "similarity", "retention", "unrelated"] {
         source[key] = related[key].clone();
     }

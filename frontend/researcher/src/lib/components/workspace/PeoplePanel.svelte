@@ -36,7 +36,8 @@
     error = $state(''),
     notice = $state(''),
     email = $state(''),
-    role = $state<MemberRole>('contributor'),
+    // Like Google Docs, invitations default to editing; choose a narrower role as needed.
+    role = $state<MemberRole>('editor'),
     rules = $state<Policy>({
       protect_team_version: false,
       required_approvals: 0,
@@ -175,7 +176,7 @@
           /></label
         >
         <label
-          >Role<select bind:value={role} aria-describedby="role-help"
+          >Role<select bind:value={role} aria-label="Role" aria-describedby="role-help"
             >{#each grantable as r}<option value={r.role}>{r.name}</option>{/each}</select
           ></label
         >
@@ -496,9 +497,23 @@
     min-width: 0;
     flex: 1;
   }
+  .who strong,
+  .who small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .who small {
     color: var(--color-ink-soft);
+  }
+  .copy .who strong,
+  .copy .who small {
+    white-space: normal;
     overflow-wrap: anywhere;
+  }
+  .list li select {
+    flex-shrink: 0;
+    max-width: 46%;
   }
   em {
     font-style: normal;

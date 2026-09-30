@@ -328,6 +328,81 @@ async fn renamed_copies_notify_the_owner_without_revealing_the_original(pool: Pg
 }
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn an_original_still_being_typed_stays_the_original(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let (owner, _) = identity(&pool, "owner-typing@example.test").await;
+    let (tariq, _) = identity(&pool, "tariq-typing@example.test").await;
+    // Indexed while the owner has typed only the first sentence.
+    let (original, ids) = document(&router, &owner, "Group report", &REPORT[..1], None).await;
+    copies::run_once(&pool).await.unwrap();
+    // Tariq uploads a full copy that arrived by email.
+    document(&router, &tariq, "report", &REPORT, Some("report.docx")).await;
+    copies::run_once(&pool).await.unwrap();
+    // The owner finishes typing; re-indexing finds the copy from the other side.
+    let root: String = sqlx::query_scalar("select parent_id from node where id=$1")
+        .bind(&ids[0])
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let ops: Vec<Value> = REPORT[1..]
+        .iter()
+        .enumerate()
+        .map(|(i, text)| json!({"type":"NodeCreated","node_id":ulid::Ulid::new().to_string(),"node_type":"item","parent_id":root,"pos":format!("0001{i:04}"),"fields":{"label":text,"content":para(text)}}))
+        .collect();
+    let (status, body) = post(
+        &router,
+        &format!("/documents/{original}/batch"),
+        &owner,
+        json!({"ops":ops}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    sqlx::query("update document_fingerprint set updated_at=now()-interval '1 minute'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    copies::run_once(&pool).await.unwrap();
+    let notes = inbox(&router, &owner).await;
+    assert!(
+        notes.iter().any(|n| n["kind"] == "copy_detected"),
+        "the owner hears about the upload: {notes:?}"
+    );
+    assert!(inbox(&router, &tariq).await.is_empty(), "not the uploader");
+    let target: Uuid = sqlx::query_scalar("select target_document_id from document_match")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(target, original);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn widely_copied_content_still_reaches_every_owner_once(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let mut owners = Vec::new();
+    for i in 0..7 {
+        let (token, _) = identity(&pool, &format!("owner{i}-wide@example.test")).await;
+        document(&router, &token, &format!("Consent form {i}"), &REPORT, None).await;
+        owners.push(token);
+    }
+    copies::run_once(&pool).await.unwrap();
+    for token in &owners {
+        let before = inbox(&router, token).await.len();
+        assert!(before <= 7);
+    }
+    let (tariq, _) = identity(&pool, "tariq-wide@example.test").await;
+    document(&router, &tariq, "form", &REPORT, Some("form.docx")).await;
+    copies::run_once(&pool).await.unwrap();
+    for token in &owners {
+        let notes = inbox(&router, token).await;
+        let about_tariq = notes
+            .iter()
+            .filter(|n| n["actor"]["email"] == "tariq-wide@example.test")
+            .count();
+        assert_eq!(about_tariq, 1, "{notes:?}");
+    }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn roles_rules_and_approvals_govern_merging(pool: PgPool) {
     let router = app(test_state(pool.clone()));
     let (owner, _) = identity(&pool, "owner-rules@example.test").await;

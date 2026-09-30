@@ -873,6 +873,9 @@
       padding: 20px;
       flex-wrap: wrap;
     }
+    .bulk-bar {
+      padding: 0 20px 14px;
+    }
     .section-heading {
       align-items: flex-start;
     }
@@ -895,7 +898,8 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 10px;
-    margin: 0 0 12px;
+    margin: 0;
+    padding: 0 30px 14px;
     font-size: 14px;
     color: var(--color-ink-soft);
   }

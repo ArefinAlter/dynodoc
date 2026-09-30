@@ -133,7 +133,7 @@ test('a reviewer proposes a paragraph change and an editor accepts it', async ({
   const email = `reviewer-${Date.now()}@example.test`;
   await page.getByRole('button', { name: 'Share', exact: true }).click();
   await page.getByLabel('Email address', { exact: true }).fill(email);
-  await page.getByLabel('Access', { exact: true }).selectOption('reviewer');
+  await page.getByLabel('Role', { exact: true }).selectOption('contributor');
   await page.getByRole('button', { name: 'Add person', exact: true }).click();
   await expect(page.getByText(email, { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Close panel' }).click();

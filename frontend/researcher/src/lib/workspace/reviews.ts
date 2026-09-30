@@ -258,6 +258,11 @@ export async function preparePush(
       (a, b) =>
         (b.score ?? 0) - (a.score ?? 0) || priority[b.reason] - priority[a.reason] || b.seq - a.seq
     )[0];
+    // Nothing in the file matches any saved revision: it is different content, so
+    // compare it with the current team version, where every paragraph it would replace
+    // becomes a choice for the reviewer.
+    if (candidates.every((c) => !c.score))
+      chosen = candidates.find((c) => c.reason === 'latest') || chosen;
   }
   const { state, plan } = await planAgainst(
     documentId,

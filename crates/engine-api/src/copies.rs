@@ -161,7 +161,45 @@ struct Candidate {
     title: String,
     kind: String,
     owner: Uuid,
+    created_at: chrono::DateTime<chrono::Utc>,
+    uploaded: bool,
+    copied_from: Option<Uuid>,
     comparison: Comparison,
+}
+
+/// One side of a detected pair.
+#[derive(Clone, Copy)]
+struct Side {
+    id: Uuid,
+    owner: Uuid,
+    created_at: chrono::DateTime<chrono::Utc>,
+    uploaded: bool,
+    copied_from: Option<Uuid>,
+}
+
+/// Which of two resembling documents is the copy: the one created later. Indexing
+/// order is not used, because an original may still be being typed when a copy is
+/// uploaded. Returns (copy, original).
+fn orient(a: Side, b: Side) -> (Side, Side) {
+    if (a.created_at, a.id) >= (b.created_at, b.id) {
+        (a, b)
+    } else {
+        (b, a)
+    }
+}
+
+/// The comparison seen from the other document.
+fn flipped(c: Comparison) -> Comparison {
+    Comparison {
+        relation: match c.relation {
+            Relation::Excerpt => Relation::Extended,
+            Relation::Extended => Relation::Excerpt,
+            other => other,
+        },
+        coverage_new: c.coverage_old,
+        coverage_old: c.coverage_new,
+        ..c
+    }
 }
 
 /// Documents sharing a locality-sensitive key, several substantive blocks, the exact
@@ -187,7 +225,9 @@ async fn candidates(
            union (select document_id from document_fingerprint where $5<>0 and content_hash=$5 limit 100)
            union (select document_id from document_fingerprint where $6<>'' and title_key=$6 limit 100)
            union (select $9::uuid where $9::uuid is not null))
-         select d.id,d.title,d.created_by,coalesce(d.settings->>'kind','questionnaire') as kind,
+         select d.id,d.title,d.created_by,d.created_at,d.settings->>'copied_from' as copied_from,
+           exists(select 1 from document_upload u where u.document_id=d.id and coalesce(u.report->>'kind','')<>'font') as uploaded,
+           coalesce(d.settings->>'kind','questionnaire') as kind,
            f.signature,f.shingle_count,f.substantive_count,f.content_hash,f.title_key,
            (select count(*) from document_block_hash h where h.document_id=d.id and h.hash=any($4)) as shared
          from found c join document d on d.id=c.document_id and d.deleted_at is null
@@ -229,6 +269,11 @@ async fn candidates(
                 title: row.get("title"),
                 kind: row.get("kind"),
                 owner: row.get("created_by"),
+                created_at: row.get("created_at"),
+                uploaded: row.get("uploaded"),
+                copied_from: row
+                    .get::<Option<String>, _>("copied_from")
+                    .and_then(|v| v.parse().ok()),
                 comparison,
             }
         })
@@ -239,9 +284,8 @@ fn comparison_json(c: &Comparison) -> Value {
     json!({"relation":c.relation.as_str(),"score":c.score,"jaccard":c.jaccard,"coverage_new":c.coverage_new,"coverage_old":c.coverage_old,"shared_blocks":c.shared_blocks,"title_match":c.title_match})
 }
 
-/// Record and announce copies that newly indexed content resembles. The document
-/// just indexed is treated as the newcomer: its content arrived after the documents
-/// already indexed. Each pair is recorded once, in either direction.
+/// Record and announce copies involving newly indexed content. Each pair is recorded
+/// once, in either direction, and the owner of the original is notified.
 async fn detect(
     pool: &PgPool,
     id: Uuid,
@@ -249,7 +293,7 @@ async fn detect(
 ) -> Result<Vec<Value>, ApiError> {
     let mut db = pool.acquire().await?;
     let Some(row) = sqlx::query(
-        "select d.title,d.created_by,d.settings->>'copied_from' as copied_from,
+        "select d.title,d.created_by,d.created_at,d.settings->>'copied_from' as copied_from,
            exists(select 1 from document_upload u where u.document_id=d.id and coalesce(u.report->>'kind','')<>'font') as uploaded
          from document d where d.id=$1 and d.deleted_at is null",
     )
@@ -259,35 +303,55 @@ async fn detect(
     else {
         return Ok(Vec::new());
     };
-    let creator: Uuid = row.get("created_by");
-    let uploaded: bool = row.get("uploaded");
-    let copied_from = row
-        .get::<Option<String>, _>("copied_from")
-        .and_then(|v| v.parse::<Uuid>().ok());
+    let me = Side {
+        id,
+        owner: row.get("created_by"),
+        created_at: row.get("created_at"),
+        uploaded: row.get("uploaded"),
+        copied_from: row
+            .get::<Option<String>, _>("copied_from")
+            .and_then(|v| v.parse().ok()),
+    };
     let title_key = similarity::title_key(&row.get::<String, _>("title"));
-    if fingerprint.is_trivial() && !uploaded {
+    if fingerprint.is_trivial() && !me.uploaded {
         return Ok(Vec::new());
     }
     let mut found = candidates(&mut db, Some(id), fingerprint, &title_key, None, None).await?;
     found.sort_by(|a, b| b.comparison.score.total_cmp(&a.comparison.score));
     let mut recorded = Vec::new();
+    // Widely copied content (a shared template, say) can match many documents: record
+    // every pair, but tell each owner once per pass.
+    let mut told = std::collections::HashSet::new();
     for candidate in found {
-        let c = candidate.comparison;
+        let other = Side {
+            id: candidate.id,
+            owner: candidate.owner,
+            created_at: candidate.created_at,
+            uploaded: candidate.uploaded,
+            copied_from: candidate.copied_from,
+        };
+        let (copy_side, original) = orient(me, other);
+        // Comparisons are computed with this document as the new content.
+        let c = if copy_side.id == me.id {
+            candidate.comparison
+        } else {
+            flipped(candidate.comparison)
+        };
         let copy = c.relation.is_copy();
         // A file uploaded under the name of another document is worth a note too,
         // but only among collaborators: unrelated people reuse ordinary names.
-        let same_name = c.title_match && uploaded && !copy;
-        if (!copy && !same_name) || candidate.owner == creator {
+        let same_name = c.title_match && copy_side.uploaded && !copy;
+        if (!copy && !same_name) || copy_side.owner == original.owner {
             continue;
         }
-        let collaborator = access::member_role(&mut db, candidate.id, creator)
+        let collaborator = access::member_role(&mut db, original.id, copy_side.owner)
             .await?
             .is_some();
         if same_name && !collaborator {
             continue;
         }
         // "Make a copy" inside Dynodoc by someone with access is recorded, not announced.
-        let in_app_copy = copied_from == Some(candidate.id) && collaborator;
+        let in_app_copy = copy_side.copied_from == Some(original.id) && collaborator;
         let method = if in_app_copy {
             "in_app_copy"
         } else if c.relation == Relation::Identical {
@@ -301,8 +365,8 @@ async fn detect(
             "insert into document_match(source_document_id,target_document_id,relation,method,score,jaccard,coverage_source,coverage_target,shared_blocks,title_match,status)
              values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) on conflict do nothing returning id",
         )
-        .bind(id)
-        .bind(candidate.id)
+        .bind(copy_side.id)
+        .bind(original.id)
         .bind(c.relation.as_str())
         .bind(method)
         .bind(c.score)
@@ -315,20 +379,20 @@ async fn detect(
         .fetch_optional(&mut *db)
         .await?;
         let Some(match_id) = inserted else { continue };
-        if !in_app_copy {
+        if !in_app_copy && told.len() < 25 && told.insert(original.owner) {
             notifications::notify(
                 &mut db,
-                candidate.owner,
+                original.owner,
                 if copy { "copy_detected" } else { "same_name_detected" },
-                Some(candidate.id),
-                Some(creator),
+                Some(original.id),
+                Some(copy_side.owner),
                 Some(match_id),
-                json!({"source_document_id":id,"relation":c.relation.as_str(),"score":c.score,"coverage_source":c.coverage_new,"coverage_target":c.coverage_old,"method":method,"uploader_has_access":collaborator}),
+                json!({"source_document_id":copy_side.id,"relation":c.relation.as_str(),"score":c.score,"coverage_source":c.coverage_new,"coverage_target":c.coverage_old,"method":method,"uploader_has_access":collaborator}),
             )
             .await?;
         }
-        recorded.push(json!({"match_id":match_id,"target":candidate.id,"method":method,"comparison":comparison_json(&c)}));
-        if recorded.len() >= 5 {
+        recorded.push(json!({"match_id":match_id,"copy":copy_side.id,"original":original.id,"method":method,"comparison":comparison_json(&c)}));
+        if recorded.len() >= 50 {
             break;
         }
     }
