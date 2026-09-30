@@ -68,12 +68,12 @@
     width: 235px;
     max-height: calc(100vh - 16px);
     overflow: auto;
-    background: #fffefb;
-    border: 1px solid #b8c9db;
-    box-shadow: 0 8px 28px #24416430;
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border-strong);
+    box-shadow: var(--shadow-menu);
     border-radius: 7px;
     padding: 5px;
-    color: #29455f;
+    color: var(--color-ink);
   }
   .context-menu button {
     display: block;
@@ -91,16 +91,16 @@
   }
   .context-menu button:hover,
   .context-menu button:focus-visible {
-    background: #e4eefc;
-    outline: 2px solid #3267b0;
+    background: var(--color-surface-selected);
+    outline: 2px solid var(--color-focus);
     outline-offset: -2px;
   }
   .context-menu button:disabled {
-    color: #77899b;
+    color: var(--color-subtle);
     cursor: default;
   }
   .context-menu .separator {
-    border-top: 1px solid #dde5ed;
+    border-top: 1px solid var(--color-border);
     border-radius: 0;
     margin-top: 4px;
   }

@@ -292,14 +292,14 @@
 
 <style>
   .explorer {
-    --editor: #185abd;
-    --tint: #edf3fc;
+    --editor: var(--color-word);
+    --tint: var(--color-word-bg);
     width: 100%;
     text-align: left;
   }
   .explorer.sheet {
-    --editor: #107c41;
-    --tint: #edf6f0;
+    --editor: var(--color-excel);
+    --tint: var(--color-excel-bg);
   }
   .switcher {
     display: flex;
@@ -317,14 +317,14 @@
     padding: 10px 17px;
     border-radius: 5px;
     font-size: 13px;
-    color: #526579;
+    color: var(--color-ink-soft);
     cursor: pointer;
   }
   .switcher > button[aria-pressed='true'] {
-    background: white;
-    border-color: #c6d5e7;
+    background: var(--color-surface-raised);
+    border-color: var(--color-border-strong);
     color: var(--editor);
-    box-shadow: 0 2px 3px #1a3c6406;
+    box-shadow: var(--shadow-panel);
     font-weight: 650;
   }
   .switcher > span {
@@ -333,21 +333,21 @@
     gap: 7px;
     margin-left: auto;
     font-size: 11px;
-    color: #546b82;
+    color: var(--color-ink-soft);
   }
   .app-window {
-    background: #fff;
-    border: 1px solid #bfcfe0;
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border-strong);
     border-radius: 9px;
     overflow: hidden;
-    box-shadow: 0 24px 60px -25px #25456640;
+    box-shadow: var(--shadow-dialog);
   }
   .app-heading {
     display: flex;
     align-items: center;
     gap: 13px;
     padding: 20px 24px;
-    background: #fff;
+    background: var(--color-surface-raised);
   }
   .file-icon {
     color: var(--editor);
@@ -357,13 +357,13 @@
     line-height: 1.5;
     display: block;
     font-weight: 600;
-    color: #29425a;
+    color: var(--color-ink);
   }
   .app-meta {
     display: flex;
     gap: 18px;
     align-items: center;
-    color: #64758a;
+    color: var(--color-ink-soft);
     font-size: 10px;
     margin-top: 4px;
   }
@@ -379,7 +379,7 @@
     gap: 7px;
     background: none;
     border: 0;
-    color: #567089;
+    color: var(--color-ink-soft);
     font-size: 11px;
     cursor: pointer;
     padding: 8px;
@@ -395,8 +395,8 @@
     display: grid;
     place-items: center;
     border-radius: 50%;
-    background: #e4edfc;
-    color: #285ba0;
+    background: var(--color-accent-bg);
+    color: var(--color-accent);
     font-size: 11px;
     font-weight: 600;
   }
@@ -408,12 +408,12 @@
     background: var(--tint);
     border-radius: 5px;
     padding: 12px 18px;
-    color: #49617a;
+    color: var(--color-ink-soft);
   }
   .toolbar i {
     width: 1px;
     height: 16px;
-    background: #d3dfec;
+    background: var(--color-border);
   }
   .toolbar > span {
     font-size: 10px;
@@ -423,7 +423,7 @@
   }
   .canvas {
     min-height: 440px;
-    background: #f4f6f8;
+    background: var(--color-canvas);
   }
   .document-scene {
     padding: 30px 40px 0;
@@ -434,15 +434,15 @@
   }
   .paper {
     padding: 35px 44px 25px;
-    background: white;
-    border: 1px solid #e1e6ec;
-    box-shadow: 0 2px 5px #34445808;
+    background: var(--color-page);
+    border: 1px solid var(--color-page-border);
+    box-shadow: var(--shadow-panel);
     align-self: stretch;
   }
   .paper-kicker {
     font-size: 9px;
     letter-spacing: 1.4px;
-    color: #5e7184;
+    color: var(--color-ink-soft);
     font-weight: 600;
   }
   .paper h2,
@@ -451,19 +451,19 @@
     letter-spacing: -0.8px;
     font-weight: 600;
     margin: 16px 0 12px;
-    color: #213e5a;
+    color: var(--color-ink-strong);
   }
   .paper p {
     font-size: 11px;
     line-height: 1.85;
-    color: #5e7184;
+    color: var(--color-ink-soft);
   }
   .paper .paper-intro {
     max-width: 340px;
   }
   .paper-rule {
     height: 1px;
-    background: #e7ecf1;
+    background: var(--color-border-soft);
     margin: 23px 0;
   }
   .paper h3 {
@@ -473,18 +473,18 @@
   }
   .selected-paragraph {
     position: relative;
-    background: #eaf2ff;
-    border: 1px solid #c7daff;
+    background: var(--color-accent-bg);
+    border: 1px solid var(--color-accent-border);
     padding: 12px 16px;
     font-size: 12px;
     line-height: 1.7;
-    color: #2a5188;
+    color: var(--color-accent-strong);
     margin: 17px -16px;
   }
   .selected-paragraph.changed {
-    background: #edf7f0;
-    border-color: #b8dbc5;
-    color: #1a613d;
+    background: var(--color-success-bg);
+    border-color: var(--color-success-border);
+    color: var(--color-diff-add-ink);
   }
   .block-mark {
     position: absolute;
@@ -493,7 +493,7 @@
     background: var(--editor);
   }
   .changed .block-mark {
-    background: #107c41;
+    background: var(--color-success);
   }
   .prompt b {
     font-weight: 600;
@@ -501,7 +501,7 @@
   .paper-lines span {
     display: block;
     height: 5px;
-    background: #f0f2f5;
+    background: var(--color-border-soft);
     margin: 10px 0;
     width: 95%;
   }
@@ -510,13 +510,13 @@
   }
   .comment {
     align-self: start;
-    background: white;
+    background: var(--color-surface-raised);
     padding: 17px;
-    border: 1px solid #d9e3ee;
-    border-left: 3px solid #5489d7;
+    border: 1px solid var(--color-border);
+    border-left: 3px solid var(--color-accent);
     margin-top: 122px;
     border-radius: 4px;
-    box-shadow: 0 6px 14px #294a6510;
+    box-shadow: var(--shadow-panel);
   }
   .comment-top {
     display: flex;
@@ -530,8 +530,8 @@
     height: 27px;
     border-radius: 50%;
     font-size: 11px;
-    background: #f6e9ce;
-    color: #87632d;
+    background: var(--color-warn-bg);
+    color: var(--color-warn-ink);
   }
   .comment-top b {
     display: block;
@@ -541,25 +541,25 @@
   .comment-top small {
     display: block;
     font-size: 8px;
-    color: #627082;
+    color: var(--color-ink-soft);
   }
   .comment-top > :global(svg) {
     margin-left: auto;
-    color: #7192c2;
+    color: var(--color-accent);
   }
   .comment p {
     font-size: 11px;
     line-height: 1.8;
-    color: #52647a;
+    color: var(--color-ink-soft);
   }
   .comment button {
     display: flex;
     gap: 7px;
     align-items: center;
     justify-content: center;
-    border: 1px solid #bed0e9;
-    background: #edf4ff;
-    color: #2059a3;
+    border: 1px solid var(--color-accent-border);
+    background: var(--color-accent-bg);
+    color: var(--color-accent);
     width: 100%;
     font-size: 10px;
     font-weight: 600;
@@ -571,18 +571,18 @@
     display: block;
     font-size: 9px;
     line-height: 1.6;
-    color: #617080;
+    color: var(--color-ink-soft);
     margin-top: 10px;
   }
   .app-status {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background: white;
+    background: var(--color-surface-raised);
     padding: 11px 20px;
-    border-top: 1px solid #dde6ef;
+    border-top: 1px solid var(--color-border);
     font-size: 9px;
-    color: #60768b;
+    color: var(--color-ink-soft);
     gap: 12px;
   }
   .app-status > span {
@@ -591,7 +591,7 @@
     align-items: center;
   }
   .status-dot {
-    background: #68a87b;
+    background: var(--color-success);
     width: 5px;
     height: 5px;
     border-radius: 50%;
@@ -613,7 +613,7 @@
     justify-content: space-between;
     gap: 24px;
     font-size: 11px;
-    color: #526b85;
+    color: var(--color-ink-soft);
     padding-top: 16px;
   }
   .explorer-caption p {
@@ -621,34 +621,34 @@
   }
   .explorer-caption > span {
     white-space: nowrap;
-    color: #255895;
+    color: var(--color-accent);
     font-weight: 550;
   }
   .formula {
     display: flex;
     gap: 18px;
     align-items: center;
-    background: white;
+    background: var(--color-surface-raised);
     font-size: 12px;
-    border-bottom: 1px solid #d9e4dc;
+    border-bottom: 1px solid var(--color-border);
     height: 40px;
   }
   .formula > span:first-child {
     padding: 5px 35px;
-    border-right: 1px solid #d9e4dc;
+    border-right: 1px solid var(--color-border);
   }
   .formula i {
-    color: #718277;
+    color: var(--color-ink-soft);
     font-size: 16px;
   }
   .formula code {
     font-size: 11px;
-    color: #2b543a;
+    color: var(--color-excel);
   }
   .formula-hint {
     margin-left: auto;
     margin-right: 24px;
-    color: #567364;
+    color: var(--color-ink-soft);
     font-size: 10px;
   }
   .sheet-scroll {
@@ -658,28 +658,28 @@
     border-collapse: collapse;
     width: 100%;
     min-width: 580px;
-    background: white;
+    background: var(--color-grid-bg);
     font-size: 11px;
   }
   .sheet-scene th {
-    background: #f4f7f5;
+    background: var(--color-grid-header-bg);
     font-size: 10px;
     font-weight: 400;
-    color: #728278;
+    color: var(--color-grid-header-ink);
     height: 26px;
     text-align: center;
-    border: 1px solid #dfe7e2;
+    border: 1px solid var(--color-grid-line);
   }
   .sheet-scene td {
-    border: 1px solid #e2e9e5;
+    border: 1px solid var(--color-grid-line);
     height: 39px;
     padding: 7px 17px;
-    color: #42574b;
+    color: var(--color-grid-ink);
     width: 23%;
   }
   .sheet-scene td.table-heading {
-    background: #eaf3ed;
-    color: #286044;
+    background: var(--color-excel-bg);
+    color: var(--color-diff-add-ink);
     font-weight: 650;
   }
   .sheet-scene td:first-of-type {
@@ -691,30 +691,30 @@
     background: none;
     border: 0;
     font-size: 12px;
-    color: #275d3d;
+    color: var(--color-excel);
     padding: 2px;
     text-align: left;
-    border-bottom: 1px dashed #89b399;
+    border-bottom: 1px dashed color-mix(in srgb, var(--color-excel) 50%, transparent);
     border-radius: 0;
   }
   .status-label {
-    background: #faf1d8;
+    background: var(--color-warn-bg);
     font-size: 9px;
     border-radius: 3px;
     padding: 4px 8px;
-    color: #7a662a;
+    color: var(--color-warn-ink);
     white-space: nowrap;
   }
   .status-label.complete {
-    background: #e4f2e8;
-    color: #25623b;
+    background: var(--color-success-bg);
+    color: var(--color-success);
   }
   .sheet-scene .total {
-    outline: 2px solid #107c41;
+    outline: 2px solid var(--color-excel);
     outline-offset: -2px;
     font-weight: 700;
-    color: #107c41;
-    background: #f5fcf7;
+    color: var(--color-excel);
+    background: var(--color-success-bg);
     font-size: 13px;
   }
   .total-label {
@@ -728,11 +728,11 @@
     gap: 30px;
     font-size: 11px;
     align-items: center;
-    border-top: 1px solid #d9e4dc;
+    border-top: 1px solid var(--color-border);
     padding: 0 25px;
-    background: #f5f8f6;
+    background: var(--color-grid-header-bg);
     height: 38px;
-    color: #53785f;
+    color: var(--color-ink-soft);
   }
   .sheet-tabs strong {
     display: flex;
@@ -740,9 +740,9 @@
     gap: 18px;
     height: 38px;
     padding: 0 18px;
-    background: #e4f1e9;
-    color: #146938;
-    border-bottom: 2px solid #107c41;
+    background: var(--color-excel-bg);
+    color: var(--color-diff-add-ink);
+    border-bottom: 2px solid var(--color-excel);
     font-weight: 500;
   }
   .sheet-callout {
@@ -753,7 +753,7 @@
     font-size: 10px;
     margin: 0;
     line-height: 1.8;
-    color: #537460;
+    color: var(--color-ink-soft);
   }
   .sheet-callout b {
     display: block;
@@ -769,8 +769,8 @@
   }
   .survey {
     padding: 28px;
-    background: white;
-    border: 1px solid #dfe5eb;
+    background: var(--color-page);
+    border: 1px solid var(--color-page-border);
     border-radius: 4px;
   }
   .survey h2 {
@@ -778,7 +778,7 @@
   }
   .survey p {
     font-size: 12px;
-    color: #3c536b;
+    color: var(--color-ink);
     margin: 23px 0 15px;
   }
   .survey fieldset {
@@ -791,20 +791,20 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    border: 1px solid #dbe3ed;
+    border: 1px solid var(--color-border);
     padding: 11px 10px;
     border-radius: 4px;
     font-size: 11px;
-    color: #586c80;
+    color: var(--color-ink-soft);
     cursor: pointer;
   }
   .survey label.selected {
-    background: #eef5ff;
-    border-color: #82a9df;
-    color: #185abd;
+    background: var(--color-accent-bg);
+    border-color: color-mix(in srgb, var(--color-accent) 50%, transparent);
+    color: var(--color-word);
   }
   .survey input {
-    accent-color: #185abd;
+    accent-color: var(--color-accent);
   }
   .survey-foot {
     display: flex;
@@ -812,10 +812,10 @@
     align-items: center;
     margin-top: 20px;
     font-size: 8px;
-    color: #74859a;
+    color: var(--color-ink-soft);
   }
   .survey-note {
-    color: #325983;
+    color: var(--color-accent-strong);
   }
   .survey-note h3 {
     font-size: 22px;
@@ -827,7 +827,7 @@
   .survey-note p {
     font-size: 12px;
     line-height: 1.9;
-    color: #62778b;
+    color: var(--color-ink-soft);
     max-width: 250px;
   }
   .history-panel {
@@ -838,7 +838,7 @@
   }
   .eyebrow {
     display: block;
-    color: #627b95;
+    color: var(--color-ink-soft);
     font-size: 10px;
     letter-spacing: 0.5px;
     margin-bottom: 10px;
@@ -859,14 +859,14 @@
   .history-dot {
     width: 11px;
     height: 11px;
-    background: #3878cd;
-    outline: 4px solid #e2ecfa;
+    background: var(--color-accent);
+    outline: 4px solid var(--color-accent-bg);
     border-radius: 50%;
     flex-shrink: 0;
   }
   .history-dot.older {
-    background: white;
-    border: 2px solid #a7b8cf;
+    background: var(--color-surface-raised);
+    border: 2px solid var(--color-border-strong);
   }
   .history-panel p {
     font-size: 12px;
@@ -877,7 +877,7 @@
   .history-panel small {
     display: block;
     font-size: 10px;
-    color: #6b7e94;
+    color: var(--color-ink-soft);
     font-weight: 400;
     margin-top: 3px;
   }
@@ -888,7 +888,7 @@
     align-items: center;
     gap: 8px;
     padding: 15px 0;
-    color: #185abd;
+    color: var(--color-accent);
     font-size: 11px;
     cursor: pointer;
   }

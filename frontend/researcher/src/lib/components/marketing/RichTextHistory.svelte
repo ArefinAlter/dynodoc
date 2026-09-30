@@ -96,26 +96,26 @@
     font-size: 0.75rem;
     font-weight: 750;
     letter-spacing: 0.09em;
-    color: #315c8a;
+    color: var(--color-accent-strong);
   }
   h2 {
     font-size: clamp(2rem, 3.6vw, 3.3rem);
     line-height: 1.12;
     letter-spacing: -0.035em;
     margin: 1rem 0 1.5rem;
-    color: #203546;
+    color: var(--color-ink-strong);
   }
   .story-copy > p:not(.eyebrow) {
     font-size: 1.08rem;
     line-height: 1.75;
-    color: #455a69;
+    color: var(--color-ink-soft);
     margin: 0 0 1rem;
   }
   a {
     display: inline-flex;
     gap: 0.6rem;
     align-items: center;
-    color: #214f80;
+    color: var(--color-accent);
     font-weight: 650;
     text-underline-offset: 0.25em;
     margin-top: 0.5rem;
@@ -123,15 +123,15 @@
   .example {
     border-radius: 1.25rem;
     padding: clamp(1rem, 3vw, 2rem);
-    background: #eaf2fa;
-    border: 1px solid #ceddeb;
+    background: var(--color-accent-bg);
+    border: 1px solid var(--color-accent-border);
   }
   .paper {
     padding: 1.3rem;
-    border: 1px solid #d9e0e6;
+    border: 1px solid var(--color-page-border);
     border-radius: 0.65rem;
-    background: #fffdfa;
-    box-shadow: 0 3px 0 #dfe8ef;
+    background: var(--color-page);
+    box-shadow: 0 3px 0 var(--color-border);
   }
   .paper > span {
     display: flex;
@@ -139,13 +139,13 @@
     align-items: center;
     font-size: 0.8rem;
     font-weight: 650;
-    color: #4f6274;
+    color: var(--color-ink-soft);
   }
   .paper p {
     line-height: 1.7;
     font-size: 1.13rem;
     margin: 1rem 0 0.25rem;
-    color: #24394c;
+    color: var(--color-ink);
   }
   .choices {
     display: grid;
@@ -160,19 +160,19 @@
     width: 100%;
     padding: 1rem;
     text-align: left;
-    border: 1px solid #bccddd;
+    border: 1px solid var(--color-border-strong);
     border-radius: 0.6rem;
-    background: #f6f9fc;
-    color: #38566c;
+    background: var(--color-surface-raised);
+    color: var(--color-ink-soft);
     font: inherit;
     transition:
       background 0.2s,
       border-color 0.2s;
   }
   button[aria-pressed='true'] {
-    background: #dceafa;
-    border-color: #739bc5;
-    color: #1d466e;
+    background: color-mix(in srgb, var(--color-accent) 15%, var(--color-surface-raised));
+    border-color: color-mix(in srgb, var(--color-accent) 60%, transparent);
+    color: var(--color-accent-strong);
   }
   button > span:nth-child(2) {
     flex: 1;
@@ -192,34 +192,34 @@
     width: 1.15rem;
     display: grid;
     place-items: center;
-    border: 1px solid #7c96b0;
+    border: 1px solid var(--color-subtle);
     border-radius: 0.25rem;
   }
   button[aria-pressed='true'] .check {
-    background: #245887;
-    color: white;
+    background: var(--color-accent-solid);
+    color: var(--color-on-accent);
   }
   .merge-line {
     display: flex;
     gap: 0.6rem;
     align-items: center;
     font-size: 0.8rem;
-    color: #355d7e;
+    color: var(--color-ink-soft);
     margin-bottom: 1rem;
   }
   .result {
-    border-color: #96b5d2;
+    border-color: var(--color-accent-border);
   }
   .result small {
     display: block;
     font-size: 0.78rem;
-    color: #4d6374;
+    color: var(--color-ink-soft);
     line-height: 1.6;
     margin-top: 1rem;
   }
   .changed {
-    background: #dcecf8;
-    border-bottom: 2px solid #7ca8cb;
+    background: var(--color-accent-bg);
+    border-bottom: 2px solid color-mix(in srgb, var(--color-accent) 55%, transparent);
   }
   .emphasis {
     font-weight: 750;
@@ -227,12 +227,12 @@
   .caption {
     font-size: 0.76rem;
     line-height: 1.6;
-    color: #4d6579;
+    color: var(--color-ink-soft);
     margin: 1rem 0 0;
   }
   button:focus-visible,
   a:focus-visible {
-    outline: 3px solid #245887;
+    outline: 3px solid var(--color-focus);
     outline-offset: 4px;
   }
   @media (max-width: 760px) {

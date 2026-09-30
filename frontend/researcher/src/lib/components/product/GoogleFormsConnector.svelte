@@ -99,9 +99,9 @@
   .primary {
     display: inline-block;
     padding: 10px 12px;
-    border: 1px solid #b8cbe0;
-    background: #edf3fc;
-    color: #244d80;
+    border: 1px solid var(--color-accent-border);
+    background: var(--color-accent-bg);
+    color: var(--color-accent-strong);
     border-radius: 5px;
     font: inherit;
     font-size: 14px;
@@ -112,12 +112,13 @@
     max-width: 560px;
     width: calc(100% - 36px);
     padding: 26px;
-    border: 1px solid #c5d3e2;
+    border: 1px solid var(--color-border-strong);
     border-radius: 12px;
-    color: #29455f;
+    background: var(--color-surface-raised);
+    color: var(--color-ink);
   }
   dialog::backdrop {
-    background: #132e4b66;
+    background: var(--color-overlay);
   }
   h2 {
     font-size: 25px;
@@ -126,7 +127,7 @@
   p {
     line-height: 1.7;
     font-size: 15px;
-    color: #4e6680;
+    color: var(--color-ink-soft);
   }
   form,
   label {
@@ -137,15 +138,15 @@
   input,
   select {
     font: inherit;
-    color: #29455f;
+    color: var(--color-ink);
     padding: 11px;
-    border: 1px solid #b8cbe0;
+    border: 1px solid var(--color-border-strong);
     border-radius: 5px;
-    background: white;
+    background: var(--color-surface-raised);
   }
   .primary {
-    background: #245baa;
-    color: white;
+    background: var(--color-accent-solid);
+    color: var(--color-on-accent);
   }
   dialog > button {
     margin-top: 14px;

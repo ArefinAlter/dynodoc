@@ -161,7 +161,7 @@
 <style>
   .auth-page {
     min-height: 100vh;
-    background: #f5f4ef;
+    background: var(--color-parchment);
     font-family: var(--font-ui);
     padding: 32px;
   }
@@ -169,39 +169,39 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    color: #5b6a7e;
+    color: var(--color-ink-soft);
     text-decoration: none;
     font-size: 13px;
   }
   .card {
     margin: 40px auto 24px;
     max-width: 460px;
-    background: white;
+    background: var(--color-surface-raised);
     padding: 40px;
-    border: 1px solid #e5e9f0;
+    border: 1px solid var(--color-border-soft);
     border-radius: 20px;
-    box-shadow: 0 16px 60px #22385c08;
+    box-shadow: var(--shadow-panel);
   }
   .brand {
     font: 700 42px var(--font-ui);
-    color: #20559b;
+    color: var(--color-accent-strong);
     text-decoration: none;
   }
   .eyebrow {
     font-size: 13px;
     letter-spacing: 2px;
-    color: #57728d;
+    color: var(--color-ink-soft);
     margin: 24px 0 12px;
   }
   h1 {
     font: 600 34px/1.15 var(--font-ui);
     letter-spacing: -1px;
-    color: #29445f;
+    color: var(--color-ink-strong);
     margin: 0 0 12px;
   }
   .intro {
     font-size: 14px;
-    color: #6c7784;
+    color: var(--color-ink-soft);
     line-height: 1.7;
     margin-bottom: 28px;
   }
@@ -213,23 +213,23 @@
     gap: 12px;
     width: 100%;
     min-height: 46px;
-    border: 1px solid #dce1e7;
+    border: 1px solid var(--color-border);
     border-radius: 8px;
     text-decoration: none;
     font-size: 14px;
     font-weight: 500;
-    color: #28374a;
-    background: white;
+    color: var(--color-ink);
+    background: var(--color-surface-raised);
     cursor: pointer;
   }
   .g {
     font: bold 20px Arial;
-    color: #46617a;
+    color: var(--color-ink-soft);
   }
   .primary {
-    background: #205bb0;
-    color: white;
-    border-color: #205bb0;
+    background: var(--color-accent-solid);
+    color: var(--color-on-accent);
+    border-color: var(--color-accent-solid);
     margin-top: 10px;
     justify-content: space-between;
     padding: 0 16px;
@@ -243,13 +243,13 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    color: #677079;
+    color: var(--color-ink-soft);
     font-size: 13px;
     margin: 22px 0;
   }
   .divider span {
     height: 1px;
-    background: #e7ebf0;
+    background: var(--color-border-soft);
     flex: 1;
   }
   form {
@@ -259,26 +259,27 @@
   label {
     font-size: 13px;
     font-weight: 500;
-    color: #3f4d5d;
+    color: var(--color-ink);
     display: grid;
     gap: 6px;
   }
   input {
-    border: 1px solid #dce1e7;
+    border: 1px solid var(--color-border);
     border-radius: 7px;
     padding: 11px 12px;
     font-size: 14px;
     width: 100%;
-    background: white;
+    background: var(--color-surface-raised);
+    color: var(--color-ink);
   }
   input:focus {
-    outline: 2px solid #b7d0f1;
+    outline: 2px solid var(--color-accent-border);
     outline-offset: 2px;
   }
   .fine,
   .setup {
     font-size: 13px;
-    color: #66707a;
+    color: var(--color-ink-soft);
     line-height: 1.6;
   }
   .fine {
@@ -290,14 +291,14 @@
   .footer {
     text-align: center;
     font-size: 13px;
-    color: #626972;
+    color: var(--color-ink-soft);
   }
   .notice {
     display: flex;
     gap: 12px;
     align-items: center;
-    color: #285b46;
-    background: #eff7f1;
+    color: var(--color-success);
+    background: var(--color-success-bg);
     border-radius: 10px;
     padding: 14px;
     font-size: 14px;
@@ -306,15 +307,15 @@
   .text-button {
     border: 0;
     background: none;
-    color: #365f50;
+    color: var(--color-success);
     text-decoration: underline;
     font-size: 13px;
     margin: 16px 0;
     cursor: pointer;
   }
   .error {
-    color: #a73434;
-    background: #fff1f1;
+    color: var(--color-danger);
+    background: var(--color-danger-bg);
     padding: 12px;
     border-radius: 8px;
     font-size: 13px;

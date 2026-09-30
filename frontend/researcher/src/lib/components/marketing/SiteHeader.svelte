@@ -49,11 +49,11 @@
     gap: 36px;
     position: sticky;
     top: 16px;
-    background: #fffffff0;
+    background: color-mix(in srgb, var(--color-surface-raised) 94%, transparent);
     backdrop-filter: blur(18px);
-    border: 1px solid #e5eaf1;
+    border: 1px solid var(--color-border-soft);
     border-radius: 22px;
-    box-shadow: 0 8px 32px #21395b06;
+    box-shadow: var(--shadow-panel);
     z-index: 20;
     font-family: var(--font-ui);
   }
@@ -64,7 +64,7 @@
     font-size: 27px;
     font-weight: 750;
     letter-spacing: -1.2px;
-    color: #1a3045;
+    color: var(--color-ink-strong);
     text-decoration: none;
   }
   .brand > img {
@@ -75,7 +75,7 @@
     border-radius: 7px;
   }
   .brand .dot {
-    color: #2059b0;
+    color: var(--color-accent);
     margin-left: -9px;
   }
   nav {
@@ -86,11 +86,11 @@
   nav a {
     font-size: 15px;
     font-weight: 550;
-    color: #405469;
+    color: var(--color-ink-soft);
     text-decoration: none;
   }
   nav a:hover {
-    color: #185abd;
+    color: var(--color-accent);
     text-decoration: underline;
     text-underline-offset: 6px;
   }
@@ -98,18 +98,18 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    background: #e4eefb;
-    border: 1px solid #cedef3;
+    background: var(--color-accent-bg);
+    border: 1px solid var(--color-accent-border);
     padding: 11px 16px;
     border-radius: 12px;
     text-decoration: none;
     font-size: 14px;
     font-weight: 650;
-    color: #184c96;
+    color: var(--color-accent-strong);
     white-space: nowrap;
   }
   .enter:hover {
-    background: #d7e7fb;
+    background: color-mix(in srgb, var(--color-accent) 10%, var(--color-accent-bg));
   }
   .menu {
     display: none;
@@ -119,7 +119,7 @@
     top: -100px;
     left: 20px;
     z-index: 100;
-    background: white;
+    background: var(--color-surface-raised);
     padding: 12px;
   }
   .skip:focus {
@@ -165,7 +165,7 @@
       place-items: center;
       border: 0;
       background: none;
-      color: #273b52;
+      color: var(--color-ink);
       padding: 4px;
       cursor: pointer;
     }
@@ -179,10 +179,10 @@
       top: 76px;
       left: 16px;
       right: 16px;
-      background: #fffefb;
-      border: 1px solid #d7e0e9;
+      background: var(--color-surface-raised);
+      border: 1px solid var(--color-border);
       padding: 24px;
-      box-shadow: 0 12px 24px #243b5312;
+      box-shadow: var(--shadow-menu);
       border-radius: 16px;
     }
   }

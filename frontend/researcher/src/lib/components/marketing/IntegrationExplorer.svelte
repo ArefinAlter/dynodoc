@@ -154,8 +154,8 @@
   .logos {
     display: grid;
     grid-template-columns: repeat(6, 1fr);
-    border-top: 1px solid #dddcd6;
-    border-bottom: 1px solid #dddcd6;
+    border-top: 1px solid var(--color-border);
+    border-bottom: 1px solid var(--color-border);
   }
   .logos button {
     border: 0;
@@ -166,15 +166,15 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    color: #314b63;
+    color: var(--color-ink);
     min-width: 0;
   }
   .logos button:hover {
-    background: #f2f5f5;
+    background: var(--color-surface-hover);
   }
   .logos button[aria-pressed='true'] {
-    background: #ecf3fc;
-    border-bottom-color: #2864b7;
+    background: var(--color-accent-bg);
+    border-bottom-color: var(--color-accent);
   }
   .logo {
     height: 44px;
@@ -185,13 +185,23 @@
     gap: 9px;
     margin-bottom: 14px;
     max-width: 100%;
-    color: #2e5680;
+    color: var(--color-accent-strong);
   }
   .logo img {
     width: 110px;
     height: 40px;
     object-fit: contain;
     max-width: 100%;
+  }
+  /* Third-party logos keep their own colours; at night they sit on a light plate
+     (background plus a same-colour outline, so the layout does not move). */
+  @media screen {
+    :global([data-theme='dark']) .logo img {
+      --logo-plate: #e6ebf0;
+      background: var(--logo-plate);
+      outline: 5px solid var(--logo-plate);
+      border-radius: 2px;
+    }
   }
   .logo.odk img {
     height: 45px;
@@ -216,7 +226,7 @@
   }
   .logos small {
     font-size: 10px;
-    color: #5b6871;
+    color: var(--color-ink-soft);
     margin-top: 5px;
   }
   .integration-detail {
@@ -224,8 +234,8 @@
     grid-template-columns: 1.15fr 1fr;
     gap: 65px;
     padding: 46px 35px 35px;
-    background: #fffefa;
-    border: 1px solid #e2e1db;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
     border-top: 0;
     border-radius: 0 0 6px 6px;
     min-height: 385px;
@@ -235,27 +245,27 @@
     align-items: center;
     gap: 7px;
     font-size: 11px;
-    color: #2862a7;
+    color: var(--color-accent);
   }
   .detail-copy h3 {
     font-size: 29px;
     font-weight: 550;
     letter-spacing: -1px;
     line-height: 1.2;
-    color: #263f58;
+    color: var(--color-ink-strong);
     max-width: 390px;
     margin: 19px 0;
   }
   .detail-copy p {
     font-size: 12px;
     line-height: 1.9;
-    color: #617284;
+    color: var(--color-ink-soft);
   }
   .detail-copy .value {
     display: flex;
     align-items: flex-start;
     gap: 9px;
-    color: #375a7f;
+    color: var(--color-ink-soft);
     font-size: 11px;
     margin: 20px 0;
   }
@@ -268,7 +278,7 @@
     display: inline-flex;
     gap: 6px;
     align-items: center;
-    color: #245ba4;
+    color: var(--color-accent);
     text-decoration: none;
   }
   .detail-copy a:hover {
@@ -276,15 +286,15 @@
   }
   .import-diagram {
     align-self: center;
-    background: #f2f6fb;
-    border: 1px solid #dbe5f0;
+    background: var(--color-surface-sunken);
+    border: 1px solid var(--color-border);
     border-radius: 6px;
     padding: 25px 28px;
   }
   .diagram-label {
     font-size: 8px;
     letter-spacing: 1px;
-    color: #586c7f;
+    color: var(--color-ink-soft);
     margin-bottom: 25px;
   }
   .source-node,
@@ -293,10 +303,10 @@
     align-items: center;
     gap: 14px;
     padding: 18px 20px;
-    background: white;
-    border: 1px solid #d3e0f0;
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border);
     border-radius: 5px;
-    color: #2961a3;
+    color: var(--color-accent);
   }
   .source-node b,
   .destination-node b {
@@ -308,7 +318,7 @@
   .destination-node small {
     display: block;
     font-size: 9px;
-    color: #576878;
+    color: var(--color-ink-soft);
     margin-top: 3px;
   }
   .connector {
@@ -317,33 +327,33 @@
     display: flex;
     align-items: center;
     margin-left: 30px;
-    color: #91b3dd;
+    color: color-mix(in srgb, var(--color-accent) 55%, transparent);
   }
   .connector > span {
     display: block;
     width: 1px;
     height: 37px;
-    border-left: 1px dashed #8aafd9;
+    border-left: 1px dashed color-mix(in srgb, var(--color-accent) 55%, transparent);
   }
   .connector > :global(svg) {
     position: absolute;
     transform: rotate(90deg);
     left: -8px;
-    background: #f2f6fb;
+    background: var(--color-surface-sunken);
   }
   .destination-node {
-    background: #e8f1ff;
-    border-color: #c3d7f4;
+    background: var(--color-accent-bg);
+    border-color: var(--color-accent-border);
   }
   .import-diagram > p {
     font-size: 10px;
     line-height: 1.8;
-    color: #576c80;
+    color: var(--color-ink-soft);
     margin: 22px 0 0;
   }
   .trademark-note {
     font-size: 10px;
-    color: #5d666e;
+    color: var(--color-ink-soft);
     line-height: 1.8;
     margin-top: 18px;
     max-width: 800px;

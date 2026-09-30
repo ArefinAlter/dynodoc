@@ -33,7 +33,7 @@
     max-width: 1360px;
     padding: 50px 48px 28px;
     margin: auto;
-    color: #526275;
+    color: var(--color-ink-soft);
   }
   .top {
     display: flex;
@@ -48,7 +48,7 @@
     font-size: 24px;
     font-weight: 750;
     letter-spacing: -1px;
-    color: #1b3b62;
+    color: var(--color-ink-strong);
     text-decoration: none;
   }
   .top p {
@@ -61,13 +61,13 @@
     align-items: center;
     gap: 8px;
     text-decoration: none;
-    color: #2059a3;
+    color: var(--color-accent);
   }
   .bottom {
     display: flex;
     justify-content: space-between;
     gap: 24px;
-    border-top: 1px solid #dce0df;
+    border-top: 1px solid var(--color-border);
     padding-top: 24px;
     font-size: 13px;
   }
@@ -80,7 +80,7 @@
     display: flex;
     gap: 5px;
     align-items: center;
-    color: #526275;
+    color: var(--color-ink-soft);
     text-decoration: none;
   }
   nav a:hover,

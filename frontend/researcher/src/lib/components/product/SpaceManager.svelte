@@ -154,7 +154,7 @@
 
 <style>
   .spaces {
-    border-top: 1px solid #d8e0e8;
+    border-top: 1px solid var(--color-border);
     margin-top: 16px;
     padding-top: 12px;
   }
@@ -180,7 +180,7 @@
     border: 0;
     border-radius: 5px;
     background: transparent;
-    color: #314f6b;
+    color: var(--color-ink-soft);
     font-size: 13px;
   }
   .spaces > button span {
@@ -188,8 +188,8 @@
     text-overflow: ellipsis;
   }
   .spaces > button.active {
-    background: #deebfb;
-    color: #164f9d;
+    background: var(--color-surface-selected);
+    color: var(--color-accent-strong);
   }
   .spaces > .manage {
     font-size: 12px;
@@ -204,20 +204,20 @@
     background: none;
     min-width: 32px;
     min-height: 32px;
-    color: #25466c;
+    color: var(--color-ink);
   }
   dialog {
-    border: 1px solid #ccd9e5;
+    border: 1px solid var(--color-border);
     border-radius: 12px;
     max-width: 570px;
     width: calc(100% - 40px);
     max-height: 85vh;
     padding: 24px;
-    color: #233b51;
-    background: #faf9f6;
+    color: var(--color-ink);
+    background: var(--color-surface-raised);
   }
   dialog::backdrop {
-    background: #102b4866;
+    background: var(--color-overlay);
   }
   h2 {
     font-size: 23px;
@@ -229,12 +229,12 @@
   p {
     font-size: 15px;
     line-height: 1.7;
-    color: #506579;
+    color: var(--color-ink-soft);
   }
   form {
     display: grid;
     gap: 12px;
-    border-top: 1px solid #d7e0e8;
+    border-top: 1px solid var(--color-border);
     margin-top: 18px;
     padding-top: 14px;
   }
@@ -246,33 +246,33 @@
   input,
   select {
     padding: 10px;
-    border: 1px solid #aebfd0;
+    border: 1px solid var(--color-border-strong);
     border-radius: 5px;
-    background: white;
-    color: #233b51;
+    background: var(--color-surface-raised);
+    color: var(--color-ink);
     font: inherit;
   }
   .primary {
     padding: 11px;
-    background: #2059ab;
-    color: white;
+    background: var(--color-accent-solid);
+    color: var(--color-on-accent);
     border: 0;
     border-radius: 5px;
   }
   .member {
     font-size: 14px;
     padding: 10px 0;
-    border-bottom: 1px solid #dbe3ea;
+    border-bottom: 1px solid var(--color-border);
   }
   .member small {
     display: block;
-    color: #506579;
+    color: var(--color-ink-soft);
     margin-top: 4px;
   }
   .member b {
     font-size: 12px;
   }
   .error {
-    color: #9d3434;
+    color: var(--color-danger);
   }
 </style>

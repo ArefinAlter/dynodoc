@@ -144,14 +144,14 @@
     font: inherit;
     font-size: 15px;
     padding: 12px 17px;
-    border: 1px solid #9db8db;
+    border: 1px solid var(--color-accent-border);
     border-radius: 6px;
-    background: white;
-    color: #24548e;
+    background: var(--color-surface-raised);
+    color: var(--color-accent-strong);
     cursor: pointer;
   }
   .preferences button[aria-pressed='true'] {
-    background: #225baa;
-    color: white;
+    background: var(--color-accent-solid);
+    color: var(--color-on-accent);
   }
 </style>

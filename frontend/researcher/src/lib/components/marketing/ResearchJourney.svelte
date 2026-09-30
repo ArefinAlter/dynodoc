@@ -64,11 +64,11 @@
 
 <style>
   .journey {
-    background: #edf4fd;
-    border: 1px solid #c5d8ef;
+    background: var(--color-accent-bg);
+    border: 1px solid var(--color-accent-border);
     border-radius: 14px;
     padding: 32px;
-    color: #284963;
+    color: var(--color-ink);
   }
   .path {
     display: flex;
@@ -82,22 +82,22 @@
     justify-content: center;
     gap: 10px;
     min-height: 72px;
-    border: 1px solid #c8d8eb;
+    border: 1px solid var(--color-accent-border);
     border-radius: 8px;
-    background: #fafcff;
-    color: #325575;
+    background: var(--color-surface-raised);
+    color: var(--color-ink-soft);
     font: 15px var(--font-ui);
     padding: 12px;
     cursor: pointer;
   }
   .path button.active {
-    background: #215cad;
-    color: white;
-    border-color: #215cad;
-    box-shadow: 0 4px 0 #b5cdeb;
+    background: var(--color-accent-solid);
+    color: var(--color-on-accent);
+    border-color: var(--color-accent-solid);
+    box-shadow: 0 4px 0 var(--color-accent-border);
   }
   .path :global(.connector) {
-    color: #7c9abd;
+    color: var(--color-subtle);
     flex-shrink: 0;
   }
   .explanation {
@@ -116,16 +116,16 @@
   .explanation p {
     font-size: 17px;
     line-height: 1.85;
-    color: #3b5b77;
+    color: var(--color-ink-soft);
     margin: 0;
   }
   .example {
-    background: #fffefb;
-    border: 1px solid #c0d4e9;
+    background: var(--color-page);
+    border: 1px solid var(--color-accent-border);
     padding: 23px;
     border-radius: 7px;
     min-height: 190px;
-    box-shadow: 7px 7px 0 #d8e7f8;
+    box-shadow: 7px 7px 0 color-mix(in srgb, var(--color-accent-border) 55%, transparent);
   }
   .example > p {
     font-size: 16px;
@@ -137,19 +137,19 @@
     align-items: center;
     gap: 7px;
     font-size: 12px;
-    color: #266442;
+    color: var(--color-success);
     margin-bottom: 15px;
   }
   .status i {
     width: 6px;
     height: 6px;
-    background: #20834e;
+    background: var(--color-success);
     border-radius: 50%;
   }
   .lines i {
     display: block;
     height: 5px;
-    background: #dce6ed;
+    background: var(--color-border);
     border-radius: 3px;
     margin-top: 8px;
   }
@@ -158,7 +158,7 @@
   }
   .caption {
     font-size: 13px;
-    color: #4e6d88;
+    color: var(--color-ink-soft);
     margin: 23px 10px 0;
   }
   @media (max-width: 720px) {

@@ -32,7 +32,13 @@
 >
 <header>
   <a href="https://dynodoc.online"
-    ><img src="/brand/logo.svg?v=2" width="145" height="32" alt="Dynodoc" /></a
+    ><img class="logo-day" src="/brand/logo.svg?v=2" width="145" height="32" alt="Dynodoc" /><img
+      class="logo-night"
+      src="/brand/logo-dark.svg?v=2"
+      width="145"
+      height="32"
+      alt="Dynodoc"
+    /></a
   ><span>Published copy · View only</span>
 </header>
 <main>
@@ -85,14 +91,14 @@
     align-items: center;
     gap: 16px;
     padding: 18px 5vw;
-    border-bottom: 1px solid #d3dfeb;
-    background: #faf9f6;
-    color: #425f7b;
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-ink-soft);
     font-size: 14px;
   }
   main {
     padding: 30px 3vw;
-    background: #eef3f8;
+    background: var(--color-canvas);
     min-height: 100vh;
   }
   h1,
@@ -104,7 +110,7 @@
     font-size: 30px;
   }
   .notice {
-    color: #526a7f;
+    color: var(--color-ink-soft);
     line-height: 1.6;
   }
   .readonly-rich :global(.toolbar),
@@ -119,17 +125,17 @@
     margin: 0 auto 18px;
   }
   .document-tabs button {
-    border: 1px solid #b8c9db;
+    border: 1px solid var(--color-border-strong);
     border-radius: 6px;
     padding: 10px 16px;
-    background: white;
-    color: #29455f;
+    background: var(--color-surface-raised);
+    color: var(--color-ink);
     font: inherit;
     cursor: pointer;
   }
   .document-tabs button[aria-pressed='true'] {
-    background: #dbeaff;
-    border-color: #3267b0;
+    background: var(--color-surface-selected);
+    border-color: var(--color-accent);
   }
   .readonly-deck {
     display: flex;
@@ -137,7 +143,7 @@
     height: min(760px, 82vh);
     max-width: 1180px;
     margin: auto;
-    border: 1px solid #d3dfeb;
+    border: 1px solid var(--color-border);
     border-radius: 8px;
     overflow: hidden;
   }
@@ -147,8 +153,8 @@
   }
   .questions article {
     padding: 22px;
-    background: white;
-    border: 1px solid #d3dfeb;
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border);
     border-radius: 8px;
     margin: 12px 0;
   }
@@ -156,6 +162,18 @@
     font-size: 20px;
   }
   .questions small {
-    color: #526a7f;
+    color: var(--color-ink-soft);
+  }
+  /* Wordmark with light lettering for night mode (printing keeps the day logo). */
+  .logo-night {
+    display: none;
+  }
+  @media screen {
+    :global([data-theme='dark']) .logo-day {
+      display: none;
+    }
+    :global([data-theme='dark']) .logo-night {
+      display: inline;
+    }
   }
 </style>

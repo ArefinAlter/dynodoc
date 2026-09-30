@@ -92,7 +92,13 @@
       break-after: page;
     }
   }
-  :global(body) {
+  /* The print preview stays in day colours whatever the interface mode: it shows
+     paper as it will print, so these literals intentionally do not use the theme tokens. */
+  :global(html) {
+    color-scheme: light;
+  }
+  /* `html body` outranks the themed `body` background from app.css in any load order. */
+  :global(html body) {
     margin: 0;
     background: #e8edf3;
   }
