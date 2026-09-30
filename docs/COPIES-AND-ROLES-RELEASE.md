@@ -108,6 +108,7 @@ The owner authorized the push to `main` and deployment to Vercel and the VPS on
   theme script. No synthetic account or document was created in production this time,
   so signed-in workflows were verified on the isolated stack and in CI, not live.
 - Rollback: recreate `api`, `web` and `admin` from the `before-copies-20260930` tags.
-  The older API ignores the new tables and the widened role constraints, but an
-  `approver` access row would not parse as an old engine role (that person would lose
-  access until a forward fix), so prefer a forward fix.
+  The older API ignores the new tables; the migrated `effective_document_role` still
+  maps the new Reviewer (`approver`) rows to the engine's reviewer role, so access
+  keeps working, but the older sharing panel would label those people "Viewer" and
+  review rules would stop being enforced. Prefer a forward fix.
