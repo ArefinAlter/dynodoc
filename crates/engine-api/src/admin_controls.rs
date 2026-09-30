@@ -19,6 +19,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/admin/impact", get(impact))
         .route("/admin/erase", post(erase))
+        .route("/admin/erase-batch", post(erase_batch))
         .route("/admin/control", post(control))
 }
 fn bad(message: &str) -> ApiError {
@@ -40,6 +41,7 @@ async fn plan(
     actor: Uuid,
 ) -> Result<Value, ApiError> {
     let mut blockers = Vec::<String>::new();
+    let mut in_trash = None;
     let (label, counts) = match target.kind.as_str() {
         "documents" => {
             let row = sqlx::query(
@@ -49,9 +51,9 @@ async fn plan(
             .fetch_optional(&mut *db)
             .await?
             .ok_or(ApiError::NotFound)?;
-            if !row.get::<bool, _>("removed") {
-                blockers.push("Move this document to Trash first.".into());
-            }
+            // A document outside Trash is moved there within the same transaction, so
+            // its public links stop before its history is removed.
+            in_trash = Some(row.get::<bool, _>("removed"));
             let counts: Value = sqlx::query_scalar("select jsonb_build_object('events',(select count(*) from event where document_id=$1),'last_event',(select coalesce(max(seq),0) from event where document_id=$1),'blocks',(select count(*) from node where document_id=$1),'versions',(select count(*) from document_version where document_id=$1),'snapshots',(select count(*) from snapshot where document_id=$1),'drafts',(select count(*) from workspace_draft where document_id=$1),'draft_edits',(select count(*) from draft_edit e join workspace_draft d on d.id=e.draft_id where d.document_id=$1),'files',(select count(*) from document_upload where document_id=$1),'file_bytes',(select coalesce(sum(octet_length(content)),0) from document_upload where document_id=$1),'public_links',(select count(*) from public_document_view where document_id=$1))")
                 .bind(target.id).fetch_one(&mut *db).await?;
             (row.get::<String, _>("title"), counts)
@@ -83,7 +85,7 @@ async fn plan(
         }
         _ => return Err(bad("Choose users or documents.")),
     };
-    let mut result = json!({"kind":target.kind,"id":target.id,"label":label,"counts":counts,"blockers":blockers});
+    let mut result = json!({"kind":target.kind,"id":target.id,"label":label,"counts":counts,"blockers":blockers,"in_trash":in_trash});
     let revision = hex::encode(sha256(result.to_string().as_bytes()));
     result["revision"] = json!(revision);
     Ok(result)
@@ -129,6 +131,26 @@ async fn erase(
         kind: input.kind,
         id: input.id,
     };
+    erase_one(
+        &state,
+        auth.identity_id,
+        &target,
+        &input.reason,
+        Some((&input.revision, &input.confirmation)),
+    )
+    .await?;
+    Ok(Json(json!({"ok":true,"receipt_id":target.id})))
+}
+
+/// Erase one resource in its own transaction. `expected` holds the preview revision
+/// and typed label for a single erasure; batch erasure confirms the count instead.
+async fn erase_one(
+    state: &AppState,
+    actor: Uuid,
+    target: &Target,
+    reason: &str,
+    expected: Option<(&str, &str)>,
+) -> Result<(), ApiError> {
     let mut tx = state.pool.begin().await?;
     let lock = match target.kind.as_str() {
         "documents" => "select id from document where id=$1 for update",
@@ -146,19 +168,39 @@ async fn erase(
             .fetch_all(&mut *tx)
             .await?;
     }
-    let current = plan(&mut tx, &target, &state.admin_emails, auth.identity_id).await?;
+    let current = plan(&mut tx, target, &state.admin_emails, actor).await?;
     if !current["blockers"].as_array().is_some_and(Vec::is_empty) {
         return Err(bad(
             "Resolve the listed dependencies before permanently deleting this resource.",
         ));
     }
-    if current["revision"] != input.revision || current["label"] != input.confirmation {
-        return Err(bad(
-            "The resource changed or confirmation does not match. Review a fresh deletion preview.",
-        ));
+    if let Some((revision, confirmation)) = expected {
+        if current["revision"] != revision || current["label"] != confirmation {
+            return Err(bad(
+                "The resource changed or confirmation does not match. Review a fresh deletion preview.",
+            ));
+        }
+    }
+    if current["in_trash"] == false {
+        sqlx::query("update document set deleted_at=now(),updated_at=now() where id=$1")
+            .bind(target.id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("update public_document_view set revoked_at=now() where document_id=$1 and revoked_at is null")
+            .bind(target.id)
+            .execute(&mut *tx)
+            .await?;
+        crate::product::audit(
+            &mut tx,
+            actor,
+            "document.trashed_by_admin",
+            target.id,
+            json!({"for":"erasure"}),
+        )
+        .await?;
     }
     sqlx::query("insert into erasure_receipt(resource_id,kind,actor_id,reason,counts) values($1,$2,$3,$4,$5)")
-        .bind(target.id).bind(&target.kind).bind(auth.identity_id).bind(&input.reason).bind(&current["counts"]).execute(&mut *tx).await?;
+        .bind(target.id).bind(&target.kind).bind(actor).bind(reason).bind(&current["counts"]).execute(&mut *tx).await?;
     if target.kind == "documents" {
         sqlx::query("delete from document where id=$1")
             .bind(target.id)
@@ -181,19 +223,81 @@ async fn erase(
                 .execute(&mut *tx)
                 .await?;
         }
+        sqlx::query("delete from notification where recipient_id=$1")
+            .bind(target.id)
+            .execute(&mut *tx)
+            .await?;
         sqlx::query("update identity set email=$2,display_name='Deleted account',erased_at=now(),disabled_at=now(),session_generation=session_generation+1 where id=$1")
             .bind(target.id).bind(format!("deleted-{}@removed.invalid",target.id)).execute(&mut *tx).await?;
     }
     crate::product::audit(
         &mut tx,
-        auth.identity_id,
+        actor,
         &format!("{}.erased", target.kind),
         target.id,
-        json!({"reason":input.reason,"counts":current["counts"]}),
+        json!({"reason":reason,"counts":current["counts"]}),
     )
     .await?;
     tx.commit().await?;
-    Ok(Json(json!({"ok":true,"receipt_id":target.id})))
+    Ok(())
+}
+
+#[derive(Deserialize)]
+struct EraseBatch {
+    ids: Vec<Uuid>,
+    /// `DELETE 3 DOCUMENTS` (or `DELETE 1 DOCUMENT`).
+    confirmation: String,
+    reason: String,
+    acknowledge_backups: bool,
+}
+/// Permanently delete up to 100 documents, each in its own audited transaction with
+/// its own receipt. One failure does not stop the others.
+#[utoipa::path(post, path="/admin/erase-batch", tag="administration", request_body=Value, security(("paseto" = [])), responses((status=200, description="Per-document results", body=Value),(status=400, description="Validation or confirmation failed"),(status=401, description="Sign in required"),(status=403, description="Insufficient access")))]
+async fn erase_batch(
+    State(state): State<AppState>,
+    auth: AuthContext,
+    Json(input): Json<EraseBatch>,
+) -> Result<Json<Value>, ApiError> {
+    require_admin(&state, &auth).await?;
+    let mut ids = input.ids.clone();
+    ids.sort();
+    ids.dedup();
+    if ids.is_empty() || ids.len() > 100 {
+        return Err(bad("Choose 1–100 documents"));
+    }
+    let expected = format!(
+        "DELETE {} DOCUMENT{}",
+        ids.len(),
+        if ids.len() == 1 { "" } else { "S" }
+    );
+    if input.confirmation.trim() != expected {
+        return Err(bad(&format!("Type {expected} to confirm.")));
+    }
+    if !input.acknowledge_backups
+        || !["owner_request", "duplicate", "policy", "other"].contains(&input.reason.as_str())
+    {
+        return Err(bad(
+            "Choose a reason and acknowledge the backup retention policy.",
+        ));
+    }
+    let mut results = Vec::new();
+    for id in ids {
+        let target = Target {
+            kind: "documents".into(),
+            id,
+        };
+        let outcome = erase_one(&state, auth.identity_id, &target, &input.reason, None).await;
+        results.push(match outcome {
+            Ok(()) => json!({"id":id,"ok":true}),
+            Err(ApiError::NotFound) => json!({"id":id,"ok":false,"error":"Already deleted"}),
+            Err(e) => {
+                tracing::warn!(%id, error = %e, "batch erasure failed");
+                json!({"id":id,"ok":false,"error":"Could not delete this document"})
+            }
+        });
+    }
+    let erased = results.iter().filter(|r| r["ok"] == true).count();
+    Ok(Json(json!({"erased":erased,"results":results})))
 }
 
 #[derive(Deserialize)]
@@ -294,5 +398,5 @@ async fn control(
 }
 
 #[derive(utoipa::OpenApi)]
-#[openapi(paths(impact, erase, control))]
+#[openapi(paths(impact, erase, erase_batch, control))]
 pub struct AdminControlsApi;

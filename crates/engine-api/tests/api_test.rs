@@ -336,8 +336,11 @@ async fn admin_erasure_removes_whole_document_but_cannot_bypass_history_guards(p
         .execute(&pool)
         .await
         .is_err());
+    // An active document can be deleted directly: erasure moves it to Trash in the
+    // same transaction, so the preview reports that rather than a blocker.
     let (_, active_plan) = send(&router, auth_post_get(&preview_uri, &admin)).await;
-    assert!(!active_plan["blockers"].as_array().unwrap().is_empty());
+    assert!(active_plan["blockers"].as_array().unwrap().is_empty());
+    assert_eq!(active_plan["in_trash"], false);
     assert_eq!(
         send(
             &router,

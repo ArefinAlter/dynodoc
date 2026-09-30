@@ -118,6 +118,9 @@ struct RecordsQuery {
     q: String,
     #[serde(default)]
     offset: i64,
+    /// Documents only: `active`, `trash`, or empty for both.
+    #[serde(default)]
+    status: String,
 }
 pub(crate) async fn require_admin(state: &AppState, auth: &AuthContext) -> Result<(), ApiError> {
     let email: String =
@@ -144,16 +147,21 @@ async fn records(
     }
     let query=match q.kind.as_str(){
  "users"=>"select jsonb_build_object('id',id,'label',email,'name',display_name,'created_at',created_at,'removed_at',disabled_at,'erased_at',erased_at) from identity where erased_at is null and (strpos(lower(email),lower($1))>0 or strpos(lower(coalesce(display_name,'')),lower($1))>0) order by created_at desc,id limit 50 offset $2",
- "documents"=>"select jsonb_build_object('id',d.id,'label',d.title,'owner',i.email,'created_at',d.created_at,'removed_at',d.deleted_at,'kind',d.settings->>'kind') from document d left join identity i on i.id=d.created_by where strpos(lower(d.title),lower($1))>0 order by d.created_at desc,d.id limit 50 offset $2",
+ "documents"=>"select jsonb_build_object('id',d.id,'label',d.title,'owner',i.email,'created_at',d.created_at,'updated_at',d.updated_at,'removed_at',d.deleted_at,'kind',coalesce(d.settings->>'kind','questionnaire')) from document d left join identity i on i.id=d.created_by where strpos(lower(d.title),lower($1))>0 and ($3='' or ($3='trash')=(d.deleted_at is not null)) order by d.created_at desc,d.id limit 50 offset $2",
  "audit"=>"select jsonb_build_object('id',a.id,'label',a.action,'actor',i.email,'resource_id',a.resource_id,'created_at',a.created_at) from operation_audit a join identity i on i.id=a.actor_id where strpos(lower(a.action),lower($1))>0 order by a.id desc limit 50 offset $2",
  "spaces"=>"select jsonb_build_object('id',s.id,'label',s.name,'name',s.kind,'created_at',s.created_at) from access_space s where strpos(lower(s.name),lower($1))>0 order by s.created_at desc,s.id limit 50 offset $2",
  "erasures"=>"select jsonb_build_object('id',resource_id,'label',kind||' erased','name',reason,'created_at',erased_at) from erasure_receipt where strpos(lower(kind||' '||reason),lower($1))>0 order by erased_at desc,resource_id limit 50 offset $2",
  _=>return Err(ApiError::BadRequest{reason:"Choose users, documents, spaces, audit or erasures".into()})};
-    let items: Vec<Value> = sqlx::query_scalar(query)
-        .bind(q.q.trim())
-        .bind(q.offset)
-        .fetch_all(&state.pool)
-        .await?;
+    if !["", "active", "trash"].contains(&q.status.as_str()) {
+        return Err(ApiError::BadRequest {
+            reason: "Filter documents by active or trash".into(),
+        });
+    }
+    let mut query = sqlx::query_scalar(query).bind(q.q.trim()).bind(q.offset);
+    if q.kind == "documents" {
+        query = query.bind(q.status.as_str());
+    }
+    let items: Vec<Value> = query.fetch_all(&state.pool).await?;
     Ok(Json(json!({"items":items})))
 }
 #[derive(Deserialize)]

@@ -71,6 +71,9 @@ async fn batch(
     let doc = DocumentId(id);
     let actor = IdentityId(auth.identity_id);
     let (mut tx, role, mut current) = apply::begin_write(&state, doc, actor).await?;
+    if role == Role::Author && req.ops.iter().any(crate::access::changes_content) {
+        crate::access::ensure_team_edit(&mut tx, id, auth.identity_id).await?;
+    }
     let latest: i64 =
         sqlx::query_scalar("select coalesce(max(seq),0) from event where document_id=$1")
             .bind(id)
@@ -159,6 +162,10 @@ async fn batch(
     for event in &events {
         state.subscriptions.publish(doc, event.clone());
     }
+    // A first import is checked for copies right away rather than on the next pass.
+    if latest == 0 && !events.is_empty() {
+        state.copy_index.wake();
+    }
     Ok(Json(json!({"events":events})))
 }
 
@@ -169,10 +176,9 @@ async fn members(
     auth: AuthContext,
 ) -> Result<Json<Value>, ApiError> {
     apply::require_role(&state.pool, DocumentId(id), IdentityId(auth.identity_id)).await?;
-    let rows: Vec<(Uuid,String,Option<String>,String)>=sqlx::query_as("select i.id,i.email,i.display_name,a.role from document_access a join identity i on i.id=a.identity_id where a.document_id=$1 order by i.email").bind(id).fetch_all(&state.pool).await?;
-    Ok(Json(
-        json!({"items": rows.into_iter().map(|(id,email,name,role)| json!({"id":id,"email":email,"name":name,"role":role})).collect::<Vec<_>>()}),
-    ))
+    // `role` is the stored access value; `member_role` the product role it grants.
+    let items: Vec<Value> = sqlx::query_scalar("select jsonb_build_object('id',i.id,'email',i.email,'name',i.display_name,'role',a.role,'member_role',document_member_role($1,i.id)) from document_access a join identity i on i.id=a.identity_id where a.document_id=$1 order by i.email").bind(id).fetch_all(&state.pool).await?;
+    Ok(Json(json!({ "items": items })))
 }
 #[derive(Deserialize)]
 struct ShareRequest {
@@ -205,22 +211,42 @@ async fn share(
         .bind(id)
         .fetch_one(&mut *tx)
         .await?;
-    let identity = store::upsert_identity(&state.pool, &email, None).await?;
-    if owner == Some(identity.id.0) && req.role != "author" {
-        return Err(bad("The document owner must remain an editor"));
-    }
-    if req.role == "remove" {
-        sqlx::query("delete from document_access where document_id=$1 and identity_id=$2")
-            .bind(id)
-            .bind(identity.id.0)
-            .execute(&mut *tx)
-            .await?;
+    let granted = if req.role == "remove" {
+        None
     } else {
-        let granted: Role = req
-            .role
-            .parse()
-            .map_err(|_| bad("Choose author, reviewer, auditor or remove"))?;
-        sqlx::query("insert into document_access(document_id,identity_id,role) values($1,$2,$3) on conflict(document_id,identity_id) do update set role=excluded.role").bind(id).bind(identity.id.0).bind(granted.as_str()).execute(&mut *tx).await?;
+        Some(
+            crate::access::MemberRole::from_request(&req.role)
+                .and_then(|r| r.stored())
+                .ok_or_else(|| bad("Choose editor, reviewer, contributor, viewer or remove"))?,
+        )
+    };
+    let identity = store::upsert_identity(&state.pool, &email, None).await?;
+    if owner == Some(identity.id.0) && granted != Some("author") {
+        return Err(bad(
+            "The owner always keeps full access. Transfer ownership before changing their role.",
+        ));
+    }
+    match granted {
+        None => {
+            sqlx::query("delete from document_access where document_id=$1 and identity_id=$2")
+                .bind(id)
+                .bind(identity.id.0)
+                .execute(&mut *tx)
+                .await?;
+        }
+        Some(stored) => {
+            sqlx::query("insert into document_access(document_id,identity_id,role) values($1,$2,$3) on conflict(document_id,identity_id) do update set role=excluded.role").bind(id).bind(identity.id.0).bind(stored).execute(&mut *tx).await?;
+            crate::notifications::notify(
+                &mut tx,
+                identity.id.0,
+                "access_granted",
+                Some(id),
+                Some(auth.identity_id),
+                None,
+                json!({"role":crate::access::MemberRole::from_request(&req.role).map(|r| r.as_str())}),
+            )
+            .await?;
+        }
     }
     crate::product::audit(
         &mut tx,
@@ -450,10 +476,13 @@ async fn edit_draft(
             .execute(&mut *tx)
             .await?;
     }
-    sqlx::query("update workspace_draft set revision=revision+1 where id=$1")
-        .bind(draft)
-        .execute(&mut *tx)
-        .await?;
+    // New content makes earlier approvals of this draft's change request stale.
+    sqlx::query(
+        "update workspace_draft set revision=revision+1,content_changed_at=now() where id=$1",
+    )
+    .bind(draft)
+    .execute(&mut *tx)
+    .await?;
     tx.commit().await?;
     Ok(Json(json!({"state":current,"revision":revision+1})))
 }
@@ -752,6 +781,9 @@ async fn sync_draft(
     if role == Role::Auditor || (req.action == "share" && role != Role::Author) {
         return Err(ApiError::Forbidden);
     }
+    if req.action == "share" {
+        crate::access::ensure_team_edit(&mut tx, id, auth.identity_id).await?;
+    }
     if !["share", "pull", "rebase"].contains(&req.action.as_str()) {
         return Err(bad("Choose preview, pull, rebase or share"));
     }
@@ -823,7 +855,7 @@ async fn sync_draft(
         req.action == "share" && engine_core::workspace_merge::diff(&team, &local).is_empty();
     let next_seq = events.last().map_or(seq, |e| e.seq);
     // Sharing every change of a submitted draft yourself also closes its review request.
-    sqlx::query("update workspace_draft set merge_base_state=$2,base_seq=$3,revision=revision+1,merged_at=case when $4 then now() else merged_at end,review_outcome=case when $4 and submitted_at is not null then 'merged' else review_outcome end,reviewed_by=case when $4 and submitted_at is not null then $5 else reviewed_by end,reviewed_at=case when $4 and submitted_at is not null then now() else reviewed_at end where id=$1").bind(draft).bind(json!(team)).bind(next_seq).bind(completed).bind(auth.identity_id).execute(&mut *tx).await?;
+    sqlx::query("update workspace_draft set content_changed_at=case when $6 then now() else content_changed_at end,merge_base_state=$2,base_seq=$3,revision=revision+1,merged_at=case when $4 then now() else merged_at end,review_outcome=case when $4 and submitted_at is not null then 'merged' else review_outcome end,reviewed_by=case when $4 and submitted_at is not null then $5 else reviewed_by end,reviewed_at=case when $4 and submitted_at is not null then now() else reviewed_at end where id=$1").bind(draft).bind(json!(team)).bind(next_seq).bind(completed).bind(auth.identity_id).bind(req.action != "share").execute(&mut *tx).await?;
     tx.commit().await?;
     for event in &events {
         state.subscriptions.publish(doc, event.clone());
@@ -849,6 +881,7 @@ async fn restore_version(
     if role != Role::Author {
         return Err(ApiError::Forbidden);
     }
+    crate::access::ensure_team_edit(&mut tx, id, auth.identity_id).await?;
     let seq: i64 =
         sqlx::query_scalar("select coalesce(max(seq),0) from event where document_id=$1")
             .bind(id)

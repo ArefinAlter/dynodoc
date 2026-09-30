@@ -36,4 +36,8 @@ pub mod expr;
 pub mod merge;
 
 pub mod richtext;
+
+/// Content fingerprints (MinHash, locality-sensitive bands, block containment) for
+/// recognising renamed or edited copies of a document.
+pub mod similarity;
 pub mod workspace_merge;

@@ -62,6 +62,9 @@ pub async fn apply_checked_op(
 ) -> Result<Event, ApiError> {
     let (mut tx, role, current) = begin_write(state, document_id, actor).await?;
     governance::authorize(role, &op, &current).map_err(ApiError::from)?;
+    if crate::access::changes_content(&op) {
+        crate::access::ensure_team_edit(&mut tx, document_id.0, actor.0).await?;
+    }
     if let (
         Some(base),
         EventPayload::FieldEdited {
@@ -123,6 +126,8 @@ pub async fn accept_proposal(
 
     // The wrapped op an accept must append, re-validated against current state.
     let wrapped = governance::plan_acceptance(role, &current, suggestion_id)?;
+    // Accepting a suggestion changes the team version, like merging.
+    crate::access::ensure_team_edit(&mut tx, document_id.0, actor.0).await?;
     let wrapped = engine_core::richtext::compact_event(&current, &wrapped);
     let accepted = EventPayload::SuggestionAccepted {
         suggestion_id: suggestion_id.to_string(),

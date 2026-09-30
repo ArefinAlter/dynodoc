@@ -187,6 +187,57 @@ pub fn merge(
         ops,
     }
 }
+/// Merge for content that does not share history with the team version, such as a
+/// different file uploaded under the same name. Besides ordinary overlaps, every
+/// change to a block that already exists in the team version needs an explicit
+/// choice (`"<node>:$block"` → `"team"` or `"draft"`), as Git asks for both sides of
+/// an add/add conflict. New blocks merge without a choice.
+pub fn merge_strict(
+    base: &DocumentState,
+    team: &DocumentState,
+    draft: &DocumentState,
+    resolutions: &BTreeMap<String, String>,
+) -> MergePlan {
+    let mut plan = merge(base, team, draft, resolutions);
+    let canonical_team = canonical(team);
+    let canonical_draft = canonical(draft);
+    let touched: BTreeSet<NodeId> = diff(base, draft)
+        .iter()
+        .filter_map(|op| op.target_node_id().cloned())
+        .collect();
+    let already: BTreeSet<NodeId> = plan.conflicts.iter().map(|c| c.node_id.clone()).collect();
+    for id in touched.difference(&already) {
+        let Some(t) = canonical_team.nodes.get(id).filter(|t| !t.deleted) else {
+            continue;
+        };
+        let d = canonical_draft.nodes.get(id);
+        if d == Some(t) || t.parent_id.is_none() {
+            continue;
+        }
+        let key = format!("{}:$block", id.0);
+        match resolutions.get(&key).map(String::as_str) {
+            Some("draft") => {}
+            choice => {
+                if choice != Some("team") {
+                    plan.conflicts.push(Conflict {
+                        key,
+                        node_id: id.clone(),
+                        field: "$block".into(),
+                        ancestor: value(base.nodes.get(id)),
+                        team: value(Some(t)),
+                        draft: value(d),
+                    });
+                }
+                plan.state.nodes.insert(id.clone(), t.clone());
+            }
+        }
+    }
+    plan.state
+        .removed_choices
+        .retain(|id| plan.state.nodes.get(id).is_some_and(|n| n.deleted));
+    plan.ops = diff(team, &plan.state);
+    plan
+}
 fn depth(state: &DocumentState, n: &MaterializedNode) -> usize {
     let mut d = 0;
     let mut p = n.parent_id.as_ref();
@@ -457,6 +508,56 @@ mod tests {
             .unwrap()
             .current_fields["a"] = json!(2);
         assert_eq!(merge(&b, &t, &d, &BTreeMap::new()).conflicts.len(), 1);
+    }
+    #[test]
+    fn unrelated_content_needs_a_choice_for_every_existing_block() {
+        let b = state();
+        let mut para = b.nodes[&NodeId("root".into())].clone();
+        para.id = NodeId("p1".into());
+        para.parent_id = Some(NodeId("root".into()));
+        para.current_fields = json!({"label":"Team paragraph"});
+        let mut base = b.clone();
+        base.nodes.insert(para.id.clone(), para.clone());
+        let team = base.clone();
+        let mut draft = base.clone();
+        draft
+            .nodes
+            .get_mut(&NodeId("p1".into()))
+            .unwrap()
+            .current_fields = json!({"label":"Their unrelated paragraph"});
+        let mut added = para.clone();
+        added.id = NodeId("p2".into());
+        added.current_fields = json!({"label":"Their new paragraph"});
+        draft.nodes.insert(added.id.clone(), added);
+        // The ordinary merge would take the edit silently; the strict merge asks.
+        assert!(merge(&base, &team, &draft, &BTreeMap::new())
+            .conflicts
+            .is_empty());
+        let plan = merge_strict(&base, &team, &draft, &BTreeMap::new());
+        assert_eq!(plan.conflicts.len(), 1);
+        assert_eq!(plan.conflicts[0].key, "p1:$block");
+        // Until chosen, the team's paragraph stays and the new one is still offered.
+        assert_eq!(plan.ops.len(), 1);
+        let keep = merge_strict(
+            &base,
+            &team,
+            &draft,
+            &BTreeMap::from([("p1:$block".into(), "team".into())]),
+        );
+        assert!(keep.conflicts.is_empty());
+        assert_eq!(keep.ops.len(), 1);
+        let take = merge_strict(
+            &base,
+            &team,
+            &draft,
+            &BTreeMap::from([("p1:$block".into(), "draft".into())]),
+        );
+        assert!(take.conflicts.is_empty());
+        assert_eq!(
+            take.state.nodes[&NodeId("p1".into())].current_fields["label"],
+            "Their unrelated paragraph"
+        );
+        assert_eq!(take.ops.len(), 2);
     }
     #[test]
     fn restoration_keeps_the_id() {

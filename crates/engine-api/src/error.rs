@@ -33,6 +33,9 @@ pub enum ApiError {
     /// Authenticated but lacking the capability/role for this action → 403.
     #[error("forbidden")]
     Forbidden,
+    /// Like [`ApiError::Forbidden`], with a reason the person can act on → 403.
+    #[error("forbidden: {reason}")]
+    Denied { reason: String },
     /// The request was structurally or semantically invalid → 400.
     #[error("bad request: {reason}")]
     BadRequest { reason: String },
@@ -54,7 +57,7 @@ impl ApiError {
         match self {
             ApiError::NotFound => StatusCode::NOT_FOUND,
             ApiError::Unauthorized => StatusCode::UNAUTHORIZED,
-            ApiError::Forbidden => StatusCode::FORBIDDEN,
+            ApiError::Forbidden | ApiError::Denied { .. } => StatusCode::FORBIDDEN,
             ApiError::BadRequest { .. } => StatusCode::BAD_REQUEST,
             ApiError::Conflict { .. } => StatusCode::CONFLICT,
             ApiError::RateLimited { .. } => StatusCode::TOO_MANY_REQUESTS,
@@ -67,7 +70,7 @@ impl ApiError {
         match self {
             ApiError::NotFound => "not_found",
             ApiError::Unauthorized => "unauthorized",
-            ApiError::Forbidden => "forbidden",
+            ApiError::Forbidden | ApiError::Denied { .. } => "forbidden",
             ApiError::BadRequest { .. } => "bad_request",
             ApiError::Conflict { .. } => "conflict",
             ApiError::RateLimited { .. } => "rate_limited",
@@ -78,7 +81,9 @@ impl ApiError {
     /// Structured detail returned to the client. Never includes internal text.
     fn details(&self) -> Value {
         match self {
-            ApiError::BadRequest { reason } | ApiError::Conflict { reason } => {
+            ApiError::BadRequest { reason }
+            | ApiError::Conflict { reason }
+            | ApiError::Denied { reason } => {
                 json!({ "reason": reason })
             }
             ApiError::RateLimited { retry_after } => json!({ "retry_after": retry_after }),

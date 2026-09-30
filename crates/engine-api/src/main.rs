@@ -42,6 +42,8 @@ async fn main() -> anyhow::Result<()> {
         anyhow::bail!("Production requires WEB_SERVICE_KEY of at least 32 characters");
     }
     let state = AppState::new(pool, config);
+    // Copy detection runs beside the edit path, never inside it.
+    engine_api::copies::spawn(state.clone());
 
     let host = std::env::var("API_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
     let port: u16 = std::env::var("API_PORT")

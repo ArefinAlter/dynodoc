@@ -52,6 +52,7 @@ pub async fn resolve_conflict(
     if role != Role::Author {
         return Err(ApiError::Forbidden);
     }
+    crate::access::ensure_team_edit(&mut tx, document_id.0, actor.0).await?;
 
     // Re-derive the conflict; a stale id (already resolved) is a 404.
     let conflict = derive::find_conflict(&current, conflict_id).ok_or(ApiError::NotFound)?;

@@ -189,8 +189,10 @@ async fn set_space_member(
     auth: AuthContext,
     Json(input): Json<MemberChange>,
 ) -> Result<Json<Value>, ApiError> {
-    if !["owner", "manager", "editor", "reviewer", "viewer", "remove"]
-        .contains(&input.role.as_str())
+    if ![
+        "owner", "manager", "editor", "approver", "reviewer", "viewer", "remove",
+    ]
+    .contains(&input.role.as_str())
         || input.email.len() > 254
         || !input.email.contains('@')
     {
@@ -264,7 +266,7 @@ async fn index(
     auth: AuthContext,
     Query(q): Query<IndexQuery>,
 ) -> Result<Json<Value>, ApiError> {
-    let items:Vec<Value>=sqlx::query_scalar("select to_jsonb(d)||jsonb_build_object('role',effective_document_role(d.id,$1,true),'can_manage',can_manage_document(d.id,$1)) from document d where effective_document_role(d.id,$1,true) is not null and (d.deleted_at is not null)=$2 and ($3::uuid is null or d.space_id=$3) order by d.updated_at desc,d.id limit 101 offset $4").bind(auth.identity_id).bind(q.trash).bind(q.space_id).bind(q.offset.clamp(0,100000)).fetch_all(&state.pool).await?;
+    let items:Vec<Value>=sqlx::query_scalar("select to_jsonb(d)||jsonb_build_object('role',effective_document_role(d.id,$1,true),'member_role',document_member_role(d.id,$1,true),'can_manage',can_manage_document(d.id,$1)) from document d where effective_document_role(d.id,$1,true) is not null and (d.deleted_at is not null)=$2 and ($3::uuid is null or d.space_id=$3) order by d.updated_at desc,d.id limit 101 offset $4").bind(auth.identity_id).bind(q.trash).bind(q.space_id).bind(q.offset.clamp(0,100000)).fetch_all(&state.pool).await?;
     let more = items.len() > 100;
     Ok(Json(
         json!({"items":items.into_iter().take(100).collect::<Vec<_>>(),"more":more}),
