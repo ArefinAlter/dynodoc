@@ -92,6 +92,43 @@ export const transferOwnership = (documentId: string, email: string) =>
 export const shareDocument = (documentId: string, email: string, role: MemberRole | 'remove') =>
   workspaceRequest(`/documents/${documentId}/members`, { email, role });
 
+export type EmailStatus = 'sent' | 'skipped' | 'not_configured' | 'rate_limited' | 'failed';
+/** Share, then email an invitation (sent by the web server; access is granted first). */
+export async function inviteByEmail(
+  target: { document_id: string } | { space_id: string },
+  email: string,
+  role: string,
+  options: { notify: boolean; note?: string }
+): Promise<{ email_status: EmailStatus }> {
+  const response = await fetch('/api/invite', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ...target, email, role, notify: options.notify, note: options.note })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(data.error || `Request failed (${response.status})`);
+    Object.assign(error, { status: response.status });
+    throw error;
+  }
+  return data;
+}
+/** What happened to the invitation email, in plain words. */
+export function invitationNotice(status: EmailStatus, email: string) {
+  switch (status) {
+    case 'sent':
+      return `Access updated. We emailed ${email} an invitation with a link.`;
+    case 'rate_limited':
+      return `Access updated. No email was sent because ${email} was invited a few minutes ago.`;
+    case 'failed':
+      return `Access updated, but the invitation email could not be sent. Copy the document link and send it to ${email} yourself.`;
+    case 'not_configured':
+      return `Access updated. Email is not set up on this server, so send ${email} the link yourself.`;
+    default:
+      return 'Access updated. They will see it in their workspace when they sign in.';
+  }
+}
+
 export type Relation =
   | 'identical'
   | 'copy'

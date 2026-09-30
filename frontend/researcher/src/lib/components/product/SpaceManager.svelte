@@ -11,6 +11,7 @@
   const roleLabel = (role?: string) => (role ? ROLE_NAMES[role] || role : '');
   import { Plus, Folder, Building2, Users, X } from '@lucide/svelte';
   import { workspaceRequest as request } from '$lib/workspace/api';
+  import { inviteByEmail, invitationNotice } from '$lib/workspace/collaboration';
   import type { Space } from '$lib/workspace/access';
   let {
     spaces,
@@ -79,9 +80,16 @@
       dialog.close();
     });
   }
+  let notify = $state(true),
+    notice = $state('');
   async function share() {
+    notice = '';
     await run(async () => {
-      await request(`/spaces/${selected}/members`, { email, role });
+      const address = email.trim();
+      const { email_status } = await inviteByEmail({ space_id: selected }, address, role, {
+        notify
+      });
+      notice = invitationNotice(email_status, address);
       email = '';
       await people();
     });
@@ -160,7 +168,10 @@
               value="viewer">Viewer</option
             ><option value="remove">Remove direct access</option></select
           ></label
+        ><label class="notify"
+          ><input type="checkbox" bind:checked={notify} /> Send an email invitation</label
         ><button class="primary" disabled={busy}>Update access</button>
+        {#if notice}<p role="status" class="notice">{notice}</p>{/if}
       </form>{/if}{/if}
 </dialog>
 
@@ -286,5 +297,15 @@
   }
   .error {
     color: var(--color-danger);
+  }
+  .notify {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .notice {
+    margin: 0;
+    font-size: 13px;
+    color: var(--color-success);
   }
 </style>

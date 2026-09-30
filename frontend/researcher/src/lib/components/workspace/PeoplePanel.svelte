@@ -9,6 +9,8 @@
     percent,
     respondToCopy,
     roleName,
+    inviteByEmail,
+    invitationNotice,
     setPolicy,
     shareDocument,
     transferOwnership,
@@ -44,6 +46,8 @@
       merge_roles: 'editors'
     }),
     newOwner = $state(''),
+    notify = $state(true),
+    note = $state(''),
     guideOpen = $state(false),
     copiesSection = $state<HTMLElement | null>(null);
 
@@ -87,15 +91,21 @@
       busy = '';
     }
   }
-  const invite = () =>
-    run(
-      'Sharing…',
-      async () => {
-        await shareDocument(documentId, email.trim(), role);
-        email = '';
-      },
-      'Access updated. They’ll see a notification in their workspace.'
-    );
+  async function invite() {
+    const address = email.trim();
+    let status: Awaited<ReturnType<typeof inviteByEmail>>['email_status'] = 'skipped';
+    await run('Sharing…', async () => {
+      status = (
+        await inviteByEmail({ document_id: documentId }, address, role, {
+          notify,
+          note: note.trim()
+        })
+      ).email_status;
+      email = '';
+      note = '';
+    });
+    if (!error) notice = invitationNotice(status, address);
+  }
   const change = (address: string, next: MemberRole | 'remove') =>
     run('Updating access…', () => shareDocument(documentId, address, next), 'Access updated.');
   const saveRules = () =>
@@ -181,6 +191,17 @@
           ></label
         >
         <p id="role-help" class="help">{describeRole}</p>
+        <label class="check"
+          ><input type="checkbox" bind:checked={notify} /> Send an email invitation with a link</label
+        >
+        {#if notify}<label
+            >Message (optional)<textarea
+              bind:value={note}
+              rows="2"
+              maxlength="500"
+              placeholder="e.g. Please review section 2 by Friday"
+            ></textarea></label
+          >{/if}
         <button class="primary" disabled={!!busy}>Add person</button>
       </form>{/if}
 
@@ -424,6 +445,7 @@
     color: var(--color-ink-soft);
   }
   input[type='email'],
+  textarea,
   select {
     font: inherit;
     font-size: 13.5px;
