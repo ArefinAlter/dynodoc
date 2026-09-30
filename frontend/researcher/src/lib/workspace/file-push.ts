@@ -14,21 +14,31 @@ import { readOfficeZip, xmlText } from './bounded-zip';
 import { between, cloneState, stateChanges } from './changes';
 import type { DocxImport } from './docx-import';
 import { textOf, type TextBlock } from './files';
+import { originPattern } from './office';
 
 export interface FileOrigin {
   documentId?: string;
   seq?: number;
   exportedAt?: string;
 }
-/** Read the document and revision Dynodoc recorded in a downloaded Word file. */
+/**
+ * Read the document and revision Dynodoc recorded in a downloaded file: custom
+ * properties in Word files, a marker in the Subject of Excel and PowerPoint files.
+ */
 export function readOrigin(bytes: Uint8Array): FileOrigin {
   try {
-    const parts = readOfficeZip(bytes, (name) => name === 'docProps/custom.xml');
-    const source = xmlText(parts.get('docProps/custom.xml'));
-    if (!source) return {};
-    const root = new DOMParser().parseFromString(source, 'application/xml').documentElement;
+    const parts = readOfficeZip(
+      bytes,
+      (name) => name === 'docProps/custom.xml' || name === 'docProps/core.xml'
+    );
+    const elements = (name: string) => {
+      const source = xmlText(parts.get(name));
+      if (!source) return [];
+      const root = new DOMParser().parseFromString(source, 'application/xml').documentElement;
+      return Array.from(root?.getElementsByTagName('*') || []);
+    };
     const origin: FileOrigin = {};
-    for (const property of Array.from(root?.getElementsByTagName('*') || []).filter(
+    for (const property of elements('docProps/custom.xml').filter(
       (e) => e.localName === 'property'
     )) {
       const value = (property.textContent || '').trim().slice(0, 100);
@@ -36,6 +46,17 @@ export function readOrigin(bytes: Uint8Array): FileOrigin {
       if (name === 'DynodocDocument' && /^[0-9a-f-]{36}$/i.test(value)) origin.documentId = value;
       if (name === 'DynodocRevision' && /^\d{1,12}$/.test(value)) origin.seq = Number(value);
       if (name === 'DynodocExported') origin.exportedAt = value;
+    }
+    if (origin.documentId || origin.seq !== undefined) return origin;
+    for (const e of elements('docProps/core.xml')) {
+      if (!['subject', 'keywords', 'description'].includes(e.localName || '')) continue;
+      const match = originPattern.exec((e.textContent || '').slice(0, 300));
+      if (match)
+        return {
+          documentId: match[1],
+          seq: Number(match[2]),
+          ...(match[3] ? { exportedAt: match[3] } : {})
+        };
     }
     return origin;
   } catch {
@@ -199,7 +220,7 @@ function myers(a: string[], b: string[], maxD = 4000): [number, number][] | null
   return null;
 }
 /** Longest increasing subsequence of values, returning the kept indices. */
-function increasing(values: number[]): Set<number> {
+export function increasing(values: number[]): Set<number> {
   const tails: number[] = [],
     links = new Array<number>(values.length);
   values.forEach((value, i) => {
@@ -218,7 +239,7 @@ function increasing(values: number[]): Set<number> {
   return kept;
 }
 /** Match equal keys: Myers for similar sequences, unique keys when very different. */
-function matchEqual(a: string[], b: string[]): [number, number][] {
+export function matchEqual(a: string[], b: string[]): [number, number][] {
   const exact = myers(a, b);
   if (exact) return exact;
   const count = (list: string[]) => {
@@ -256,16 +277,53 @@ function bigrams(text: string) {
   const s = [...text.toLowerCase().replace(/\s+/g, ' ').trim()];
   return s.slice(1).map((c, i) => s[i] + c);
 }
+/** `dice` for token lists sorted in advance: a merge walk, without allocating. */
+function diceSorted(x: string[], y: string[]) {
+  if (!x.length || !y.length) return 0;
+  let i = 0,
+    j = 0,
+    common = 0;
+  while (i < x.length && j < y.length)
+    if (x[i] === y[j]) {
+      common++;
+      i++;
+      j++;
+    } else if (x[i] < y[j]) i++;
+    else j++;
+  return (2 * common) / (x.length + y.length);
+}
+function compare(
+  a: string,
+  b: string,
+  split: (text: string, pairs: boolean) => string[],
+  measure = dice
+) {
+  if (!a.trim() && !b.trim()) return 1;
+  const byWords = measure(split(a, false), split(b, false));
+  if (a.length + b.length > 4000) return byWords;
+  return Math.max(byWords, measure(split(a, true), split(b, true)));
+}
 /**
  * How alike two paragraphs are (0–1), used to recognise an edited paragraph. Word
  * overlap handles rewording; character pairs handle small edits such as "change" →
  * "changed" in short sentences, where one word is a large share of the text.
  */
 export function similarity(a: string, b: string) {
-  if (!a.trim() && !b.trim()) return 1;
-  const byWords = dice(words(a), words(b));
-  if (a.length + b.length > 4000) return byWords;
-  return Math.max(byWords, dice(bigrams(a), bigrams(b)));
+  return compare(a, b, (text, pairs) => (pairs ? bigrams(text) : words(text)));
+}
+/**
+ * `similarity` for many comparisons among the same texts (the cells of a sheet): each
+ * text is split and sorted once.
+ */
+export function cachedSimilarity() {
+  const known = [new Map<string, string[]>(), new Map<string, string[]>()];
+  const split = (text: string, pairs: boolean) => {
+    const cache = known[pairs ? 1 : 0];
+    let tokens = cache.get(text);
+    if (!tokens) cache.set(text, (tokens = (pairs ? bigrams(text) : words(text)).sort()));
+    return tokens;
+  };
+  return (a: string, b: string) => compare(a, b, split, diceSorted);
 }
 
 /** Inline word-level difference for side-by-side review. */

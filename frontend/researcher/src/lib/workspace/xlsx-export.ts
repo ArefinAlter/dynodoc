@@ -5,13 +5,18 @@ import { writeCell, sheetLayout, cellFormat, workbookInput } from './sheet-model
 import { sheetCharts, type SheetChart } from './sheet-analysis';
 import { workbookNames } from './workbook-names';
 import { WorkbookCalculator } from './workbook-calculator';
-import { pageSetup } from './office';
+import { originSubject, pageSetup } from './office';
 import { parseAddress } from './sheet-operations';
 import { addWorkbookParts } from './xlsx-charts';
-export async function writeWorkbook(state: DocumentState) {
+/** `origin` marks a team-version download so edits can later be uploaded back. */
+export async function writeWorkbook(
+  state: DocumentState,
+  origin?: { documentId: string; seq: number }
+) {
   const { default: ExcelJS } = await import('exceljs');
   const book = new ExcelJS.Workbook();
   book.calcProperties.fullCalcOnLoad = true;
+  if (origin) book.subject = originSubject(origin);
   const sheets = Object.values(state.nodes)
     .filter((n) => !n.deleted && n.current_fields.kind === 'sheet')
     .sort((a, b) => byPosition(a, b));
