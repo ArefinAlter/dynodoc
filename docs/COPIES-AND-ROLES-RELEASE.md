@@ -73,4 +73,41 @@ first save instead of the team version.
 
 ## Publication and VPS rollout
 
-Recorded below after the owner-authorized push and deployment.
+The owner authorized the push to `main` and deployment to Vercel and the VPS on
+30 September 2026.
+
+- `main` at `b0b9abb`, then `377152e` (adds the detection baseline). [Rust
+  CI](https://github.com/ArefinAlter/dynodoc/actions/runs/36679131659) and [frontend
+  CI](https://github.com/ArefinAlter/dynodoc/actions/runs/36679131728) pass for
+  `377152e`, including the authenticated browser job with the new copy and protected
+  draft specs. The earlier frontend run for `b0b9abb` was cancelled by the newer push.
+- Vercel deployed the homepage automatically; `https://dynodoc.online` serves the
+  theme script and the night logo.
+- VPS (`/opt/dynodoc-demo`, SSH key access): validated backup
+  `backups/dynodoc-20260930T063321Z.dump` (checksum OK, 21 tables listed). Prior source
+  and manifest saved in `releases/copies-20260930-before`; prior images tagged
+  `before-copies-20260930` (api `ed47a2101fc5`, web `e781abaa5970`, admin
+  `d20bd725ce52`). Reviewed source archive SHA-256
+  `645cd09c5e0292f451bd51c425d2311685fb87f86c265d271680093b4d346088`; all 455 files
+  passed manifest verification; private environment file checksum unchanged. New
+  images: api `8e7b68708aab`, web `9aabf2301797`, admin `1740b1cdcf2c`. The API was
+  recreated first (migration `0021` applied on start; latest migration 21), then
+  `web` and `admin` after frontend CI passed. PostgreSQL and the converter were not
+  recreated.
+- Data preserved: 1,258 events, 26 documents, 8 uploads, 7 accounts and 3 drafts,
+  with identical event-chain (`13e56f7a…`), uploaded-file (`fd67b539…`) and access-list
+  (`1477d285…`) digests before and after. The indexer fingerprinted all 13 live
+  documents with content within seconds; 0 matches and 0 notifications, as the
+  baseline intends for existing documents. All 13 unrelated containers kept their IDs.
+- Live checks: workspace and admin health 200; provider flags unchanged (Google and
+  email on, development sign-in off); signed-out `/workspace` → 303 to
+  `/login?next=/workspace`; signed-out admin → 303 to login; anonymous API and
+  similarity check → 401; the new routes (`/notifications/count`,
+  `/similarity/check`, `/documents/{id}/people`, `/admin/erase-batch`) answer 401 inside
+  the private network while an unknown route answers 404; the workspace serves the
+  theme script. No synthetic account or document was created in production this time,
+  so signed-in workflows were verified on the isolated stack and in CI, not live.
+- Rollback: recreate `api`, `web` and `admin` from the `before-copies-20260930` tags.
+  The older API ignores the new tables and the widened role constraints, but an
+  `approver` access row would not parse as an old engine role (that person would lose
+  access until a forward fix), so prefer a forward fix.

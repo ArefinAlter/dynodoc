@@ -20,7 +20,9 @@ records the design and limits; [release notes](COPIES-AND-ROLES-RELEASE.md) reco
 verification and rollout; [the user guide](GIT-STYLE-WORKFLOW.md) now covers roles,
 review rules, notifications, copies, Excel/PowerPoint uploads, night mode and a
 2–3-person test plan. Migration `0021` is new; no applied migration changed; no new
-event variants, so `office-v5` editors remain compatible.
+event variants, so `office-v5` editors remain compatible. Released as `377152e` with
+passing CI, deployed to Vercel and to the VPS on 30 September (rollback tags
+`before-copies-20260930`); see the release record.
 
 ## Continuation: file push, change requests, presentations and UX fixes
 
