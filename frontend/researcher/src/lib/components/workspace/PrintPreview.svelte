@@ -61,19 +61,20 @@
     max-width: 1180px;
     height: calc(100vh - 32px);
     padding: 0;
-    border: 1px solid #bacbde;
+    border: 1px solid var(--color-border-strong);
     border-radius: 10px;
-    color: #27435f;
+    color: var(--color-ink);
+    background: var(--color-surface-raised);
   }
   dialog::backdrop {
-    background: #1b355288;
+    background: var(--color-overlay);
   }
   header {
     display: flex;
     align-items: center;
     gap: 18px;
     padding: 14px 20px;
-    background: #faf9f6;
+    background: var(--color-surface);
   }
   header span {
     font-size: 13px;
@@ -81,9 +82,9 @@
   }
   button {
     padding: 9px 13px;
-    border: 1px solid #a9bdd2;
+    border: 1px solid var(--color-border-strong);
     border-radius: 5px;
-    background: white;
+    background: var(--color-surface-raised);
     color: inherit;
     cursor: pointer;
   }

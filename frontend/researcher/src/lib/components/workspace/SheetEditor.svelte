@@ -39,6 +39,8 @@
     rangeAddress
   } from '$lib/workspace/sheet-operations';
   import { bounded, safeColor, safeFont, scriptFontStack } from '$lib/workspace/office';
+  import { cellColors } from '$lib/workspace/theme-colors';
+  import { theme } from '$lib/theme.svelte';
   import '$lib/workspace/fonts.css';
   import { stableJson } from '$lib/workspace/equality';
   import { ulid } from 'ulid';
@@ -444,7 +446,15 @@
       n.current_fields[`cell_${c}`];
     const f = conditionalStyle(value, cellFormat(n, c)),
       sticky = !printing && (r < frozen || c < layout.frozenColumns);
-    return `font-family:${safeFont(f.fontFamily)},${scriptFontStack};font-size:${bounded(f.fontSize, 6, 96, 11)}pt;font-weight:${f.bold ? '700' : '400'};font-style:${f.italic ? 'italic' : 'normal'};text-decoration:${[f.underline ? 'underline' : '', f.strike ? 'line-through' : ''].join(' ')};text-align:${['left', 'center', 'right'].includes(f.align || '') ? f.align : 'left'};vertical-align:${['top', 'middle', 'bottom'].includes(f.vertical || '') ? f.vertical : 'middle'};background:${safeColor(f.background, 'white')};color:${safeColor(f.color, '#303b47')};white-space:${f.wrap ? 'normal' : 'nowrap'};${f.border ? 'border:1px solid #718d7e;' : ''}${sticky ? `position:sticky;z-index:${r < frozen && c < layout.frozenColumns ? 5 : 4};${r < frozen ? `top:${20 + offsets[r]}px;` : ''}${c < layout.frozenColumns ? `left:${left(c)}px;` : ''}` : ''}`;
+    // Print keeps the day defaults; on screen, unformatted cells use the grid tokens and
+    // authored fills and fonts stay as written (see cellColors).
+    const paint = printing
+      ? { background: safeColor(f.background, 'white'), color: safeColor(f.color, '#303b47') }
+      : cellColors(
+          { fill: safeColor(f.background), color: safeColor(f.color) },
+          theme.resolved === 'dark'
+        );
+    return `font-family:${safeFont(f.fontFamily)},${scriptFontStack};font-size:${bounded(f.fontSize, 6, 96, 11)}pt;font-weight:${f.bold ? '700' : '400'};font-style:${f.italic ? 'italic' : 'normal'};text-decoration:${[f.underline ? 'underline' : '', f.strike ? 'line-through' : ''].join(' ')};text-align:${['left', 'center', 'right'].includes(f.align || '') ? f.align : 'left'};vertical-align:${['top', 'middle', 'bottom'].includes(f.vertical || '') ? f.vertical : 'middle'};background:${paint.background ?? 'var(--color-grid-bg)'};color:${paint.color ?? 'var(--color-grid-ink)'};white-space:${f.wrap ? 'normal' : 'nowrap'};${f.border ? 'border:1px solid #718d7e;' : ''}${sticky ? `position:sticky;z-index:${r < frozen && c < layout.frozenColumns ? 5 : 4};${r < frozen ? `top:${20 + offsets[r]}px;` : ''}${c < layout.frozenColumns ? `left:${left(c)}px;` : ''}` : ''}`;
   }
   function printSheet() {
     // Generate all visible rows from state, never from the virtualized screen DOM.
@@ -2008,15 +2018,16 @@
 
 <style>
   dialog {
-    border: 1px solid #ccc;
+    border: 1px solid var(--color-border-strong);
     border-radius: 6px;
     padding: 24px;
-    color: #333;
+    color: var(--color-ink);
+    background: var(--color-surface-raised);
     width: 360px;
     max-width: calc(100vw - 32px);
   }
   dialog::backdrop {
-    background: #0004;
+    background: var(--color-overlay);
   }
   dialog form {
     display: grid;
@@ -2037,8 +2048,8 @@
   dialog select,
   dialog button {
     padding: 6px;
-    border: 1px solid #ccc;
-    background: white;
+    border: 1px solid var(--color-border-strong);
+    background: var(--color-surface-raised);
     border-radius: 3px;
     max-width: 170px;
   }
@@ -2053,9 +2064,9 @@
   .formula input.name-box {
     width: 110px;
     flex: 0 0 110px;
-    border-right: 1px solid #d2dfd7;
+    border-right: 1px solid var(--color-border);
     padding: 7px;
-    color: #345c46;
+    color: var(--color-ink);
   }
   .grid td {
     min-width: 0 !important;
@@ -2070,14 +2081,14 @@
     overflow: hidden;
   }
   .grid table:focus-visible {
-    outline: 2px solid #256a44;
+    outline: 2px solid var(--color-excel);
     outline-offset: -2px;
   }
   .sheet-tabs select {
     padding: 7px;
-    border: 1px solid #b6d0c1;
-    background: #eff7f1;
-    color: #255841;
+    border: 1px solid var(--color-success-border);
+    background: var(--color-success-bg);
+    color: var(--color-success);
     font-size: 13px;
     border-radius: 4px;
   }
@@ -2086,25 +2097,44 @@
     font:
       12px Arial,
       sans-serif;
-    background: white;
+    background: var(--color-grid-bg);
     flex: 1;
     min-width: 0;
     outline: none;
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    color: #354455;
+    color: var(--color-ink);
+    /* Excel-green selection over the neutral grid tokens. */
+    --sheet-selection: color-mix(in srgb, var(--color-excel) 9%, transparent);
+    --sheet-accent-ink: #0b5c30;
+    --sheet-header-active: color-mix(
+      in srgb,
+      var(--color-grid-header-ink) 14%,
+      var(--color-grid-header-bg)
+    );
+    --sheet-header-line: color-mix(
+      in srgb,
+      var(--color-grid-header-ink) 22%,
+      var(--color-grid-header-bg)
+    );
+  }
+  @media screen {
+    :global([data-theme='dark']) .sheet-editor {
+      --sheet-selection: color-mix(in srgb, var(--color-excel) 18%, transparent);
+      --sheet-accent-ink: var(--color-excel);
+    }
   }
   .formula {
     display: flex;
     align-items: center;
     height: 33px;
-    border-bottom: 1px solid #d7dfe7;
+    border-bottom: 1px solid var(--color-border);
     margin-top: 6px;
   }
   .formula .fx {
     font: italic 17px Georgia;
-    color: #46617a;
+    color: var(--color-ink-soft);
     padding: 0 15px;
   }
   .formula input {
@@ -2112,9 +2142,9 @@
     min-width: 0;
     border: 0;
     outline: 0;
-    background: white;
+    background: var(--color-surface-raised);
     font: 12px Arial;
-    color: #364b5b;
+    color: var(--color-ink);
   }
   .grid {
     flex: 1;
@@ -2130,12 +2160,12 @@
   }
   .grid th {
     position: sticky;
-    background: #f5f7f8;
-    color: #46617a;
+    background: var(--color-grid-header-bg);
+    color: var(--color-grid-header-ink);
     font-weight: 400;
     height: 28px;
-    border-right: 1px solid #dfe5ea;
-    border-bottom: 1px solid #dfe5ea;
+    border-right: 1px solid var(--color-grid-line);
+    border-bottom: 1px solid var(--color-grid-line);
     padding: 0 8px;
     min-width: 118px;
   }
@@ -2150,22 +2180,22 @@
     width: 46px;
     text-align: center;
     z-index: 2;
-    background: #f4f7f9;
+    background: var(--color-grid-header-bg);
   }
   .grid .corner {
     z-index: 4;
   }
   .grid th.chosen {
-    background: #d5e9dc;
-    color: #235e3b;
+    background: var(--sheet-header-active);
+    color: var(--sheet-accent-ink);
   }
   .grid td {
     height: 28px;
     min-width: 118px;
     width: 118px;
     max-width: 118px;
-    border-right: 1px solid #e2e7ec;
-    border-bottom: 1px solid #e2e7ec;
+    border-right: 1px solid var(--color-grid-line);
+    border-bottom: 1px solid var(--color-grid-line);
     position: relative;
     padding: 0;
     line-height: 1.25;
@@ -2189,28 +2219,28 @@
     content: '';
     position: absolute;
     inset: 0;
-    background: #39825615;
+    background: var(--sheet-selection);
     pointer-events: none;
   }
   .grid td.selected {
-    outline: 2px solid #107c41;
+    outline: 2px solid var(--color-excel);
     outline-offset: -2px;
     z-index: 1;
   }
   .grid td.match {
-    box-shadow: inset 0 0 0 2px #edc263;
+    box-shadow: inset 0 0 0 2px var(--color-warn);
   }
   .cell-entry {
     position: absolute;
     inset: 0;
     width: 100%;
-    border: 2px solid #107c41;
+    border: 2px solid var(--color-excel);
     outline: none;
     padding: 3px 5px;
     font: 12px Arial;
     z-index: 4;
-    color: #243c2d;
-    background: white;
+    color: var(--color-grid-ink);
+    background: var(--color-grid-bg);
   }
   .add-rows {
     display: flex;
@@ -2223,9 +2253,9 @@
     align-items: center;
     gap: 5px;
     font-size: 13px;
-    color: #46617a;
-    background: #f1f6f3;
-    border: 1px solid #dfebe4;
+    color: var(--color-ink-soft);
+    background: var(--color-surface-sunken);
+    border: 1px solid var(--color-border);
     border-radius: 4px;
     padding: 7px 12px;
     cursor: pointer;
@@ -2236,14 +2266,14 @@
     gap: 8px;
     align-items: center;
     padding: 7px 20px;
-    background: #f6f9f7;
-    border-top: 1px solid #e0e8e3;
+    background: var(--color-chrome);
+    border-top: 1px solid var(--color-border);
     min-height: 44px;
     overflow: auto;
   }
   .sheet-tabs button {
     border: 0;
-    border-right: 1px solid #ddd;
+    border-right: 1px solid var(--color-border);
     background: transparent;
     cursor: pointer;
     display: block;
@@ -2252,14 +2282,14 @@
     padding: 4px 14px;
   }
   .sheet-tabs button.active {
-    background: #d8ebe0;
-    color: #2d6948;
+    background: var(--color-grid-bg);
+    color: var(--color-excel);
   }
 
   .notice {
     padding: 9px 20px;
-    background: #fff7e4;
-    color: #95652e;
+    background: var(--color-warn-bg);
+    color: var(--color-warn-ink);
     font-size: 13px;
   }
   .notice button {
@@ -2288,58 +2318,58 @@
   }
   .sheet-editor {
     font-family: 'Segoe UI', Arial, sans-serif;
-    background: #f3f3f3;
-    color: #242424;
+    background: var(--color-chrome);
+    color: var(--color-ink-strong);
   }
   .formula {
     margin: 0 7px 5px;
     height: 30px;
-    border: 1px solid #d3d3d3;
+    border: 1px solid var(--color-border);
     border-radius: 3px;
-    background: white;
+    background: var(--color-surface-raised);
     flex-shrink: 0;
   }
   .formula .fx {
     border: 0;
-    background: white;
+    background: var(--color-surface-raised);
     padding: 0 13px;
     cursor: pointer;
   }
   .formula input.name-box {
     flex-basis: 95px;
     width: 95px;
-    color: #242424;
+    color: var(--color-ink-strong);
   }
   .grid {
     max-height: none;
     min-height: 100px;
-    background: white;
+    background: var(--color-grid-bg);
   }
   .grid th {
     height: 20px;
     min-width: 64px;
     padding: 0 3px;
-    background: #efefef;
-    color: #333;
+    background: var(--color-grid-header-bg);
+    color: var(--color-grid-header-ink);
     font-size: 11px;
-    border-color: #d4d4d4;
+    border-color: var(--sheet-header-line);
   }
   .grid tbody th,
   .grid .corner {
     width: 32px;
     min-width: 32px;
-    background: #efefef;
+    background: var(--color-grid-header-bg);
   }
   .grid th.chosen {
-    background: #e0e0e0;
-    color: #107c41;
+    background: var(--sheet-header-active);
+    color: var(--sheet-accent-ink);
   }
   .grid td {
     height: 20px;
     min-width: 64px;
     width: 64px;
     max-width: 64px;
-    border-color: #dedede;
+    border-color: var(--color-grid-line);
   }
   .cell {
     min-height: 19px;
@@ -2354,20 +2384,20 @@
     min-height: 30px;
     padding: 0 12px;
     gap: 3px;
-    background: #f2f2f2;
+    background: var(--color-chrome);
   }
   .sheet-tabs button {
     height: 29px;
     border-radius: 0;
     padding: 4px 12px;
-    color: #242424;
+    color: var(--color-ink-strong);
     font-size: 12px;
   }
   .sheet-tabs button.active {
-    background: white;
-    border-bottom: 2px solid #107c41;
+    background: var(--color-grid-bg);
+    border-bottom: 2px solid var(--color-excel);
     font-weight: 600;
-    color: #107c41;
+    color: var(--color-excel);
   }
   .sheet-tabs select {
     margin-left: auto;
@@ -2384,8 +2414,8 @@
   .add-rows button {
     font-size: 11px;
     padding: 4px 8px;
-    background: white;
-    color: #444;
+    background: var(--color-surface-raised);
+    color: var(--color-ink-soft);
   }
   .sheet-status {
     display: flex;
@@ -2393,8 +2423,8 @@
     gap: 12px;
     min-height: 24px;
     padding: 0 10px;
-    background: #f3f3f3;
-    border-top: 1px solid #ddd;
+    background: var(--color-chrome);
+    border-top: 1px solid var(--color-border);
     font-size: 11px;
     flex-shrink: 0;
   }
@@ -2404,32 +2434,32 @@
   .sheet-status button {
     border: 0;
     background: none;
-    color: #333;
+    color: var(--color-ink);
     cursor: pointer;
   }
   .sheet-status input {
     width: 100px;
     height: 16px;
-    accent-color: #666;
+    accent-color: var(--color-muted);
   }
   .search-tools {
     display: flex;
     align-items: center;
     gap: 8px;
     padding: 5px 12px;
-    background: #f6f6f6;
+    background: var(--color-chrome);
     flex-wrap: wrap;
   }
   .search-tools input,
   .search-tools button {
-    border: 1px solid #bbb;
+    border: 1px solid var(--color-border-strong);
     padding: 5px;
     font:
       12px 'Segoe UI',
       Arial,
       sans-serif;
-    background: white;
-    color: #333;
+    background: var(--color-surface-raised);
+    color: var(--color-ink);
     border-radius: 3px;
   }
   .protection-notice {
@@ -2438,8 +2468,8 @@
     gap: 8px;
     padding: 4px 12px;
     font-size: 12px;
-    background: #fff2cc;
-    color: #654d00;
+    background: var(--color-warn-bg);
+    color: var(--color-warn-ink);
   }
   .protection-notice button {
     margin-left: auto;

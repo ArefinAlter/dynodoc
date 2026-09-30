@@ -123,6 +123,7 @@
       {#if total > 0}{#each data.series[0]?.values || [] as value, i}{#if value > 0}<path
               d={slice(i)}
               fill={colors[i % colors.length]}
+              class="slice"
               stroke="white"
               stroke-width="1"><title>{data.labels[i]}: {value}</title></path
             >{/if}{/each}{:else}<text x="50" y="100"
@@ -157,13 +158,14 @@
           y1={42 + tick * 45}
           x2="535"
           y2={42 + tick * 45}
+          class="gridline"
           stroke="#e5e5e5"
         /><text x="46" y={46 + tick * 45} text-anchor="end"
           >{(max - ((max - min) * tick) / 4).toLocaleString(undefined, {
             maximumFractionDigits: 1
           })}</text
         >{/each}
-      <line x1="52" y1={y(0)} x2="535" y2={y(0)} stroke="#888" />
+      <line x1="52" y1={y(0)} x2="535" y2={y(0)} class="axis" stroke="#888" />
       {#each data.series as series, j}
         {#if chart.type === 'line'}<polyline
             points={series.values.map((v, i) => `${x(i)},${y(v)}`).join(' ')}
@@ -219,13 +221,13 @@
   .chart {
     position: absolute;
     z-index: 8;
-    background: white;
-    border: 1px solid #b8b8b8;
-    box-shadow: 0 2px 7px #0002;
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border-strong);
+    box-shadow: var(--shadow-panel);
     margin: 0;
     display: flex;
     flex-direction: column;
-    color: #333;
+    color: var(--color-ink);
     min-width: 360px;
     min-height: 240px;
   }
@@ -253,11 +255,11 @@
     padding: 4px;
     display: grid;
     place-items: center;
-    color: #555;
+    color: var(--color-ink-soft);
     cursor: pointer;
   }
   button:hover {
-    background: #eee;
+    background: var(--color-surface-hover);
   }
   .drag {
     cursor: move;
@@ -280,6 +282,17 @@
       10px 'Segoe UI',
       Arial,
       sans-serif;
-    fill: #444;
+    fill: var(--color-ink-soft);
+  }
+  /* The stroke attributes keep day colours for the printed copy of the chart; on screen
+     the chart frame follows the theme. Series colours are the chart's own. */
+  .gridline {
+    stroke: var(--color-grid-line);
+  }
+  .axis {
+    stroke: var(--color-subtle);
+  }
+  .slice {
+    stroke: var(--color-surface-raised);
   }
 </style>

@@ -441,7 +441,7 @@
     gap: 2px;
     padding: 0 16px;
     height: 34px;
-    background: #f3f3f3;
+    background: var(--color-chrome);
     flex-shrink: 0;
     overflow-x: auto;
     white-space: nowrap;
@@ -455,11 +455,11 @@
       13px 'Segoe UI',
       Arial,
       sans-serif;
-    color: #242424;
+    color: var(--color-ink-strong);
     cursor: pointer;
   }
   .ribbon-tabs button[aria-pressed='true'] {
-    border-color: #c43e1c;
+    border-color: var(--color-powerpoint);
     font-weight: 600;
   }
   .ribbon {
@@ -469,11 +469,11 @@
     flex-shrink: 0;
     margin: 0 7px 5px;
     padding: 5px 2px 3px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--color-border);
     border-radius: 7px;
-    background: white;
+    background: var(--color-surface-raised);
     overflow-x: auto;
-    color: #222;
+    color: var(--color-ink-strong);
     font:
       12px 'Segoe UI',
       Arial,
@@ -485,7 +485,7 @@
     flex-direction: column;
     flex-shrink: 0;
     padding: 2px 10px 1px;
-    border-right: 1px solid #d3d3d3;
+    border-right: 1px solid var(--color-border);
   }
   .group:last-child {
     border-right: 0;
@@ -502,7 +502,7 @@
     text-align: center;
     white-space: nowrap;
     font-size: 11px;
-    color: #555;
+    color: var(--color-ink-soft);
   }
   .row {
     display: flex;
@@ -524,9 +524,9 @@
   select,
   input:not([type='color']) {
     font: inherit;
-    color: #242424;
-    border: 1px solid #c7c7c7;
-    background: white;
+    color: var(--color-ink-strong);
+    border: 1px solid var(--color-border-strong);
+    background: var(--color-surface-raised);
     border-radius: 2px;
     padding: 3px 4px;
     min-height: 26px;
@@ -542,7 +542,7 @@
     border: 1px solid transparent;
     background: none;
     border-radius: 3px;
-    color: #222;
+    color: var(--color-ink-strong);
     font: inherit;
     cursor: pointer;
     white-space: nowrap;
@@ -560,8 +560,8 @@
   button.large:hover,
   button.text:hover,
   button.large[aria-expanded='true'] {
-    background: #e7e7e7;
-    border-color: #c6c6c6;
+    background: var(--color-surface-selected);
+    border-color: var(--color-border-strong);
   }
   .menu-anchor {
     position: relative;
@@ -575,10 +575,10 @@
     flex-direction: column;
     min-width: 170px;
     padding: 5px;
-    background: white;
-    border: 1px solid #d6d6d6;
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border);
     border-radius: 6px;
-    box-shadow: 0 6px 20px #0002;
+    box-shadow: var(--shadow-menu);
   }
   .menu button {
     border: 0;
@@ -590,7 +590,7 @@
     cursor: pointer;
   }
   .menu button:hover {
-    background: #fbe9e4;
+    background: var(--color-powerpoint-bg);
   }
   .themes {
     gap: 6px;
@@ -599,7 +599,7 @@
     position: relative;
     width: 58px;
     height: 44px;
-    border: 1px solid #c9c9c9;
+    border: 1px solid var(--color-border-strong);
     border-radius: 3px;
     cursor: pointer;
     font-size: 16px;
@@ -613,7 +613,7 @@
     height: 3px;
   }
   .theme[aria-pressed='true'] {
-    outline: 2px solid #c43e1c;
+    outline: 2px solid var(--color-powerpoint);
     outline-offset: 1px;
   }
   .color {
@@ -622,7 +622,7 @@
     display: grid;
     place-items: center;
     position: relative;
-    border-bottom: 3px solid #c43e1c;
+    border-bottom: 3px solid var(--color-powerpoint);
     cursor: pointer;
   }
   .color.wide {
@@ -646,7 +646,7 @@
   button:focus-visible,
   select:focus-visible,
   input:focus-visible {
-    outline: 2px solid #c43e1c;
+    outline: 2px solid var(--color-powerpoint);
     outline-offset: 1px;
   }
   button:disabled,

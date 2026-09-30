@@ -40,7 +40,7 @@
     border: 1px solid var(--color-border);
     border-radius: 1rem;
     background: var(--color-surface);
-    box-shadow: 0 20px 40px rgba(25, 18, 10, 0.12);
+    box-shadow: var(--shadow-menu);
     overflow: hidden;
   }
 

@@ -122,7 +122,7 @@
     display: grid;
     place-items: center;
     padding: 1rem;
-    background: rgba(21, 16, 11, 0.35);
+    background: var(--color-overlay);
     backdrop-filter: blur(6px);
     z-index: 40;
   }
@@ -132,7 +132,7 @@
     padding: 1.3rem;
     border-radius: 1.2rem;
     background: var(--color-surface);
-    box-shadow: 0 24px 60px rgba(20, 13, 8, 0.2);
+    box-shadow: var(--shadow-dialog);
   }
 
   .overline,

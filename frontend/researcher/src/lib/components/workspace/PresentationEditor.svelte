@@ -752,12 +752,12 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-    background: #f3f3f3;
+    background: var(--color-chrome);
     font:
       13px 'Segoe UI',
       Arial,
       sans-serif;
-    color: #242424;
+    color: var(--color-ink-strong);
   }
   .file {
     display: none;
@@ -768,8 +768,8 @@
     gap: 10px;
     margin: 0 8px 5px;
     padding: 6px 10px;
-    background: #fbe9e4;
-    border: 1px solid #f0c4b7;
+    background: var(--color-powerpoint-bg);
+    border: 1px solid color-mix(in srgb, var(--color-powerpoint) 30%, var(--color-powerpoint-bg));
     border-radius: 5px;
   }
   .notice button {
@@ -789,14 +789,14 @@
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    border-right: 1px solid #ddd;
-    background: #fafafa;
+    border-right: 1px solid var(--color-border);
+    background: var(--color-chrome);
   }
   .rail-tools {
     display: flex;
     justify-content: space-between;
     padding: 5px 8px;
-    border-bottom: 1px solid #e3e3e3;
+    border-bottom: 1px solid var(--color-border);
   }
   .rail-tools button,
   .status button {
@@ -807,14 +807,14 @@
     background: none;
     border-radius: 3px;
     padding: 4px;
-    color: #333;
+    color: var(--color-ink);
     cursor: pointer;
     font: inherit;
   }
   .rail-tools button:hover,
   .status button:hover,
   .status button[aria-pressed='true'] {
-    background: #e7e7e7;
+    background: var(--color-surface-selected);
   }
   .rail-tools button:disabled {
     opacity: 0.4;
@@ -837,7 +837,7 @@
     width: 18px;
     text-align: right;
     font-size: 12px;
-    color: #555;
+    color: var(--color-ink-soft);
     padding-top: 2px;
   }
   .thumb {
@@ -849,14 +849,14 @@
     border-radius: 4px;
     background: none;
     cursor: pointer;
-    box-shadow: 0 0 0 1px #d0d0d0;
+    box-shadow: 0 0 0 1px var(--color-border-strong);
   }
   .thumb :global(.slide) {
     pointer-events: none;
     border-radius: 2px;
   }
   .thumb.active {
-    border-color: #c43e1c;
+    border-color: var(--color-powerpoint);
     box-shadow: none;
   }
   .thumb.hidden-slide :global(.slide) {
@@ -868,7 +868,7 @@
     bottom: 4px;
     display: grid;
     padding: 2px;
-    background: #fffc;
+    background: color-mix(in srgb, var(--color-surface-raised) 80%, transparent);
     border-radius: 3px;
   }
   .center {
@@ -884,6 +884,7 @@
     display: grid;
     place-items: center;
     overflow: hidden;
+    background: var(--color-canvas);
   }
   .canvas {
     position: relative;
@@ -891,7 +892,7 @@
     container-type: size;
     box-shadow:
       0 1px 3px #0003,
-      0 0 0 1px #0000000d;
+      0 0 0 1px var(--color-border);
     overflow: visible;
     touch-action: none;
     user-select: none;
@@ -900,7 +901,7 @@
   .rail-tools button:focus-visible,
   .status button:focus-visible,
   .notes textarea:focus-visible {
-    outline: 2px solid #185abd;
+    outline: 2px solid var(--color-focus);
     outline-offset: 2px;
   }
   .canvas :global(.shape[role='button']) {
@@ -915,6 +916,7 @@
     margin: 0;
     padding: inherit;
     border: 0;
+    /* Drawn on the slide itself, so it keeps the day colours in both modes. */
     outline: 2px solid #c43e1c;
     resize: none;
     background: #ffffffe6;
@@ -931,7 +933,8 @@
     bottom: -6px;
     width: 11px;
     height: 11px;
-    background: white;
+    background: var(--color-surface-raised);
+    /* Sits on the slide: the day brand shade stays visible on white slides in night mode. */
     border: 1.5px solid #c43e1c;
     border-radius: 2px;
     cursor: nwse-resize;
@@ -940,12 +943,12 @@
     display: grid;
     justify-items: center;
     gap: 10px;
-    color: #555;
+    color: var(--color-ink-soft);
   }
   .empty button {
-    border: 1px solid #c43e1c;
-    background: white;
-    color: #c43e1c;
+    border: 1px solid var(--color-powerpoint);
+    background: var(--color-surface-raised);
+    color: var(--color-powerpoint);
     border-radius: 4px;
     padding: 7px 14px;
     cursor: pointer;
@@ -957,20 +960,20 @@
     gap: 3px;
     margin: 0 12px 8px;
     font-size: 12px;
-    color: #555;
+    color: var(--color-ink-soft);
   }
   .notes textarea {
     height: 76px;
     resize: vertical;
-    border: 1px solid #d6d6d6;
+    border: 1px solid var(--color-border);
     border-radius: 4px;
     padding: 7px 9px;
     font:
       13px 'Segoe UI',
       Arial,
       sans-serif;
-    color: #242424;
-    background: white;
+    color: var(--color-ink-strong);
+    background: var(--color-surface-raised);
   }
   .status {
     display: flex;
@@ -979,9 +982,9 @@
     gap: 10px;
     padding: 2px 12px;
     font-size: 12px;
-    color: #444;
-    border-top: 1px solid #e0e0e0;
-    background: #f7f7f7;
+    color: var(--color-ink-soft);
+    border-top: 1px solid var(--color-border);
+    background: var(--color-chrome);
   }
   .print-deck {
     display: none;
@@ -1045,7 +1048,7 @@
     .rail {
       width: auto;
       border-right: 0;
-      border-bottom: 1px solid #ddd;
+      border-bottom: 1px solid var(--color-border);
     }
     ol {
       display: flex;

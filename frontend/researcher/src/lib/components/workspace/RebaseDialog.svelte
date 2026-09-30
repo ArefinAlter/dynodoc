@@ -155,24 +155,25 @@
   .shade {
     position: fixed;
     inset: 0;
-    background: #2639474d;
+    background: var(--color-overlay);
     backdrop-filter: blur(4px);
     z-index: 100;
     display: grid;
     place-items: center;
     padding: 24px;
+    --rebase-solid: #3d6b4d;
   }
   .dialog {
-    background: white;
+    background: var(--color-surface-raised);
     width: 760px;
     max-width: 100%;
     max-height: 92vh;
     overflow: auto;
     padding: 24px 28px;
     border-radius: 12px;
-    box-shadow: 0 18px 80px #1d384533;
+    box-shadow: var(--shadow-dialog);
     font-family: var(--font-ui);
-    color: #34495c;
+    color: var(--color-ink);
   }
   header {
     display: flex;
@@ -183,14 +184,14 @@
     margin: 2px 0 6px;
     font-size: 19px;
     font-weight: 600;
-    color: #23384b;
+    color: var(--color-ink-strong);
   }
   header p,
   .meta {
     margin: 0;
     font-size: 13px;
     line-height: 1.65;
-    color: #4c6275;
+    color: var(--color-ink-soft);
   }
   .meta {
     margin: 16px 0 10px;
@@ -202,14 +203,14 @@
     width: 40px;
     height: 40px;
     border-radius: 10px;
-    background: #eaf2ec;
-    color: #3d6b4d;
+    background: var(--color-success-bg);
+    color: var(--color-success);
   }
   .close {
     margin-left: auto;
     border: 0;
     background: none;
-    color: #4c6275;
+    color: var(--color-ink-soft);
     cursor: pointer;
     padding: 4px;
   }
@@ -217,7 +218,7 @@
     list-style: none;
     margin: 0;
     padding: 0;
-    border: 1px solid #e3e9ef;
+    border: 1px solid var(--color-border);
     border-radius: 10px;
     max-height: 380px;
     overflow: auto;
@@ -226,13 +227,13 @@
     display: flex;
     gap: 14px;
     padding: 12px 14px;
-    border-bottom: 1px solid #edf1f5;
+    border-bottom: 1px solid var(--color-border-soft);
   }
   .rows li:last-child {
     border-bottom: 0;
   }
   .rows li.overlap {
-    background: #fffaf2;
+    background: var(--color-warn-bg);
   }
   .texts {
     flex: 1;
@@ -242,7 +243,7 @@
   }
   small {
     font-size: 12px;
-    color: #4c6275;
+    color: var(--color-ink-soft);
   }
   .texts p {
     margin: 3px 0 0;
@@ -277,13 +278,13 @@
   }
   .primary {
     border: 0;
-    background: #3d6b4d;
-    color: white;
+    background: var(--rebase-solid);
+    color: var(--color-on-accent);
   }
   .secondary {
-    border: 1px solid #c9d7e8;
-    background: white;
-    color: #34495c;
+    border: 1px solid var(--color-border-strong);
+    background: var(--color-surface-raised);
+    color: var(--color-ink);
   }
   button:disabled {
     opacity: 0.5;
@@ -297,10 +298,10 @@
     margin: 12px 0 0;
   }
   .busy {
-    color: #3d6b4d;
+    color: var(--color-success);
   }
   .error {
-    color: #9b2f22;
+    color: var(--color-danger);
   }
   @media (max-width: 600px) {
     .rows li {
@@ -309,6 +310,11 @@
     .choice {
       display: flex;
       gap: 14px;
+    }
+  }
+  @media screen {
+    :global([data-theme='dark']) .shade {
+      --rebase-solid: #178548;
     }
   }
 </style>

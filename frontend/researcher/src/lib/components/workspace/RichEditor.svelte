@@ -80,6 +80,13 @@
   import '$lib/workspace/fonts.css';
   import { TrackedChange } from '$lib/workspace/tracked-changes';
   import {
+    ThemeInk,
+    themeInkKey,
+    readLightPages,
+    writeLightPages
+  } from '$lib/workspace/theme-colors';
+  import { theme } from '$lib/theme.svelte';
+  import {
     pageSetup,
     pageDimensions,
     officeFonts,
@@ -143,7 +150,18 @@
     tracking = $state(false),
     preview = $state(false),
     paginated = $state(true),
+    lightPages = $state(readLightPages()),
     layout = $state<PageLayout>({ pages: 1, current: 1, overflow: false });
+  $effect(() => writeLightPages(lightPages));
+  // Night-mode ink for authored colours follows the mode and the white-pages option.
+  $effect(() => {
+    void theme.resolved;
+    void lightPages;
+    if (editor && !editor.isDestroyed)
+      editor.view.dispatch(
+        editor.state.tr.setMeta(themeInkKey, true).setMeta('addToHistory', false)
+      );
+  });
   $effect(() => {
     void page;
     void paginated;
@@ -431,6 +449,7 @@
         }),
         TextAlign.configure({ types: ['heading', 'paragraph'] }),
         Highlight.configure({ multicolor: true }),
+        ThemeInk.configure({ active: () => theme.resolved === 'dark' && !lightPages }),
         Image.configure({ allowBase64: true }),
         UniqueID.configure({
           attributeName: 'blockId',
@@ -638,6 +657,7 @@
     {onFont}
     fonts={fontChoices}
     bind:paginated
+    bind:lightPages
     onClipboard={(action) => void clipboard(action)}
     onFind={() => (findOpen = !findOpen)}
     onLink={() => {
@@ -701,6 +721,7 @@
     <div
       class="paper"
       class:paginated
+      class:light-pages={lightPages}
       lang={page.language}
       style={`zoom:${Number(zoom) / 100};width:${dimensions[0]}mm;padding:${page.margin}mm;min-height:${paginated ? layout.pages * (dimensions[1] * MM_TO_PX + PAGE_GAP) - PAGE_GAP : dimensions[1] * MM_TO_PX}px;--page-height:${dimensions[1] * MM_TO_PX}px;--page-gap:${PAGE_GAP}px`}
     >
@@ -857,8 +878,8 @@
   .reference-notes {
     max-height: 150px;
     overflow: auto;
-    background: #fff;
-    border-bottom: 1px solid #ddd;
+    background: var(--color-surface-raised);
+    border-bottom: 1px solid var(--color-border);
     padding: 8px 20px;
   }
   .reference-notes button {
@@ -872,14 +893,14 @@
   :global(sup[data-document-note]) {
     font-size: 0;
     cursor: pointer;
-    color: #185abd;
+    color: var(--page-link);
   }
   :global(sup[data-document-note]::after) {
     content: attr(data-note-number);
     font-size: 10px;
   }
   :global(nav[data-contents]) {
-    border: 1px solid #ddd;
+    border: 1px solid color-mix(in srgb, var(--color-page-ink) 16%, var(--color-page));
     padding: 16px;
   }
   :global(nav[data-contents] strong) {
@@ -888,7 +909,7 @@
   }
 
   .paper :global([data-page-break]) {
-    border-top: 2px dashed #7c9bc0;
+    border-top: 2px dashed var(--color-subtle);
     margin: 26px 0;
     position: relative;
     min-height: 20px;
@@ -896,26 +917,26 @@
   .paper :global([data-page-break]::after) {
     content: 'Page break';
     font: 12px Arial;
-    color: #456688;
-    background: white;
+    color: color-mix(in srgb, var(--color-page-ink) 70%, var(--color-page));
+    background: var(--color-page);
     padding: 3px 8px;
     position: absolute;
     inset-inline-start: 40%;
     top: -10px;
   }
   .paper :global(.review-insert) {
-    background: #e1f4e9;
-    color: #15633a;
+    background: var(--color-diff-add-bg);
+    color: var(--color-diff-add-ink);
     text-decoration: underline;
   }
   .paper :global(.review-delete) {
-    background: #fce7e7;
-    color: #a02a32;
+    background: var(--color-diff-del-bg);
+    color: var(--color-diff-del-ink);
     text-decoration: line-through;
   }
   .paper :global(.source-comment) {
-    border-bottom: 2px solid #b88b24;
-    background: #fff4c8;
+    border-bottom: 2px solid var(--color-warn);
+    background: var(--color-warn-bg);
   }
   .paper :global(.tiptap [dir='rtl']) {
     text-align: start;
@@ -937,15 +958,16 @@
     }
   }
   dialog {
-    border: 1px solid #b9cadc;
+    border: 1px solid var(--color-border-strong);
     border-radius: 10px;
     padding: 25px;
     max-width: 520px;
     width: calc(100% - 36px);
-    color: #29445f;
+    color: var(--color-ink);
+    background: var(--color-surface-raised);
   }
   dialog::backdrop {
-    background: #1b355266;
+    background: var(--color-overlay);
   }
   dialog label {
     display: block;
@@ -956,29 +978,31 @@
     display: block;
     width: 100%;
     font: 15px monospace;
-    border: 1px solid #adbed0;
+    border: 1px solid var(--color-border-strong);
     border-radius: 5px;
     padding: 10px;
     margin-top: 7px;
+    background: var(--color-surface-raised);
+    color: inherit;
   }
   dialog p {
     font-size: 14px;
     line-height: 1.6;
-    color: #4c647d;
+    color: var(--color-ink-soft);
   }
   dialog button,
   .feedback button {
     padding: 9px 14px;
-    border: 1px solid #b9cadc;
-    background: #e4eefe;
+    border: 1px solid var(--color-accent-border);
+    background: var(--color-accent-bg);
     border-radius: 5px;
-    color: #254f86;
+    color: var(--color-accent-strong);
     margin-right: 8px;
     cursor: pointer;
   }
   .feedback {
     padding: 12px 22px;
-    color: #315675;
+    color: var(--color-ink);
     font-size: 14px;
   }
   .rich-editor :global(ul[data-type='taskList']) {
@@ -1004,17 +1028,23 @@
       sans-serif;
     flex: 1;
     min-width: 0;
-    background: #f3f3f3;
+    background: var(--color-chrome);
     display: flex;
     flex-direction: column;
     min-height: 0;
+    --page-link: #1a73e8;
+  }
+  @media screen {
+    :global([data-theme='dark']) .rich-editor {
+      --page-link: var(--color-accent);
+    }
   }
   .paper-area {
     padding: 0 24px 24px;
     overflow: auto;
     flex: 1;
     min-height: 0;
-    background: #ededed;
+    background: var(--color-canvas);
     overflow-anchor: none;
   }
   .ruler {
@@ -1022,20 +1052,25 @@
     height: 22px;
     display: flex;
     justify-content: space-between;
-    color: #5f5f5f;
+    color: var(--color-ink-soft);
     font-size: 10px;
-    border-bottom: 1px solid #d5d5d5;
-    background: repeating-linear-gradient(90deg, transparent 0, transparent 9px, #b8b8b8 10px);
+    border-bottom: 1px solid var(--color-border);
+    background: repeating-linear-gradient(
+      90deg,
+      transparent 0,
+      transparent 9px,
+      var(--color-border-strong) 10px
+    );
     background-size: 100% 5px;
     background-position: center bottom;
     background-repeat: no-repeat;
   }
   .paper {
     position: relative;
-    background: white;
+    background: var(--color-page);
     border: 0;
     margin: 0 auto;
-    color: #202124;
+    color: var(--color-page-ink);
     line-height: 1.65;
     font-size: 11pt;
     box-sizing: border-box;
@@ -1043,6 +1078,20 @@
   }
   .paper.paginated {
     background: transparent;
+  }
+  /* View > White pages: the page keeps its day colours in night mode, to check print. */
+  .paper.light-pages {
+    color-scheme: light;
+    --color-page: #ffffff;
+    --color-page-ink: #202124;
+    --color-page-border: #dadce0;
+    --page-link: #1a73e8;
+    --color-diff-add-bg: #dcf3e3;
+    --color-diff-add-ink: #1d5a33;
+    --color-diff-del-bg: #fbe3e1;
+    --color-diff-del-ink: #8a2f25;
+    --color-warn: #a7792f;
+    --color-warn-bg: #fff6e5;
   }
   .page-sheets {
     position: absolute;
@@ -1053,8 +1102,8 @@
   .page-sheet {
     position: absolute;
     width: 100%;
-    background: white;
-    border: 1px solid #c7c7c7;
+    background: var(--color-page);
+    border: 1px solid var(--color-page-border);
     box-shadow: 0 1px 2px #0000000c;
     box-sizing: border-box;
   }
@@ -1064,7 +1113,7 @@
     font:
       10pt/1.2 Arial,
       sans-serif;
-    color: #666;
+    color: color-mix(in srgb, var(--color-page-ink) 70%, var(--color-page));
     white-space: pre-wrap;
   }
   .page-footer {
@@ -1113,14 +1162,14 @@
     margin: 1em 0 0.5em;
   }
   .paper :global(.tiptap a) {
-    color: #1a73e8;
+    color: var(--page-link);
     text-decoration: underline;
   }
   .paper :global(.tiptap blockquote) {
-    border-left: 3px solid #cbd8d1;
+    border-left: 3px solid color-mix(in srgb, var(--color-page-ink) 22%, var(--color-page));
     margin: 18px 0;
     padding-left: 18px;
-    color: #617069;
+    color: color-mix(in srgb, var(--color-page-ink) 70%, var(--color-page));
   }
   .paper :global(.tiptap img) {
     max-width: 100%;
@@ -1135,13 +1184,13 @@
   .paper :global(.tiptap td),
   .paper :global(.tiptap th) {
     min-width: 1em;
-    border: 1px solid #cbd2da;
+    border: 1px solid color-mix(in srgb, var(--color-page-ink) 22%, var(--color-page));
     padding: 6px 8px;
     vertical-align: top;
     position: relative;
   }
   .paper :global(.tiptap th) {
-    background: #f2f5f7;
+    background: color-mix(in srgb, var(--color-page-ink) 5%, var(--color-page));
     font-weight: 600;
   }
   .paper :global(.selectedCell:after) {
@@ -1149,7 +1198,7 @@
     content: '';
     position: absolute;
     inset: 0;
-    background: #6699ff25;
+    background: color-mix(in srgb, var(--color-focus) 15%, transparent);
     pointer-events: none;
   }
   .paper :global(.column-resize-handle) {
@@ -1158,7 +1207,7 @@
     top: 0;
     bottom: -2px;
     width: 4px;
-    background: #73a0e5;
+    background: var(--color-focus);
     pointer-events: none;
   }
   .paper :global(.tiptap ul),
@@ -1167,18 +1216,18 @@
   }
   .paper :global(.tiptap code) {
     font-family: monospace;
-    background: #f3f5f7;
+    background: color-mix(in srgb, var(--color-page-ink) 5%, var(--color-page));
     padding: 1px 4px;
     border-radius: 3px;
   }
   .paper :global(.tiptap pre) {
-    background: #f3f5f7;
+    background: color-mix(in srgb, var(--color-page-ink) 5%, var(--color-page));
     padding: 15px;
     white-space: pre-wrap;
   }
   .paper :global(.tiptap hr) {
     border: 0;
-    border-top: 1px solid #cbd5df;
+    border-top: 1px solid color-mix(in srgb, var(--color-page-ink) 20%, var(--color-page));
     margin: 22px 0;
   }
   .document-foot {
@@ -1188,13 +1237,13 @@
     gap: 20px;
     min-height: 25px;
     padding: 2px 12px;
-    background: #f5f5f5;
-    border-top: 1px solid #d9d9d9;
+    background: var(--color-chrome);
+    border-top: 1px solid var(--color-border);
     font:
       11px 'Segoe UI',
       Arial,
       sans-serif;
-    color: #333;
+    color: var(--color-ink);
   }
   .view-controls {
     display: flex;
@@ -1207,16 +1256,16 @@
     place-items: center;
     border: 0;
     padding: 3px;
-    color: #444;
+    color: var(--color-ink-soft);
     background: transparent;
     cursor: pointer;
   }
   .view-controls button[aria-pressed='true'] {
-    background: #d6d6d6;
+    background: var(--color-surface-selected);
   }
   .view-controls input {
     width: 95px;
-    accent-color: #666;
+    accent-color: var(--color-muted);
     height: 14px;
   }
   .find-bar,
@@ -1225,24 +1274,26 @@
     align-items: center;
     gap: 10px;
     padding: 10px 22px;
-    background: white;
-    border-bottom: 1px solid #e5e9ef;
-    color: #46617a;
+    background: var(--color-surface-raised);
+    border-bottom: 1px solid var(--color-border);
+    color: var(--color-ink-soft);
     font-size: 13px;
     flex-wrap: wrap;
   }
   .find-bar input {
-    border: 1px solid #dbe2ec;
+    border: 1px solid var(--color-border);
     padding: 6px 9px;
     border-radius: 4px;
     font-size: 13px;
     max-width: 170px;
+    background: var(--color-surface-raised);
+    color: var(--color-ink);
   }
   .find-bar button,
   .context-tools button {
-    background: #f0f4fa;
-    border: 1px solid #e1e7f0;
-    color: #5c779d;
+    background: var(--color-surface-hover);
+    border: 1px solid var(--color-border);
+    color: var(--color-ink-soft);
     border-radius: 4px;
     padding: 5px 9px;
     font-size: 13px;
@@ -1250,7 +1301,7 @@
   }
   .find-bar span {
     font-size: 13px;
-    color: #46617a;
+    color: var(--color-ink-soft);
   }
   .context-tools {
     padding: 7px 20px;
@@ -1263,7 +1314,7 @@
   .popover {
     position: fixed;
     inset: 0;
-    background: #26334540;
+    background: var(--color-overlay);
     display: grid;
     place-items: center;
     z-index: 100;
@@ -1271,10 +1322,10 @@
   }
   .popover form {
     width: 350px;
-    background: white;
+    background: var(--color-surface-raised);
     padding: 26px;
     border-radius: 12px;
-    box-shadow: 0 10px 50px #16273020;
+    box-shadow: var(--shadow-dialog);
   }
   .popover h3 {
     font-size: 18px;
@@ -1285,13 +1336,15 @@
     display: grid;
     gap: 7px;
     font-size: 13px;
-    color: #46617a;
+    color: var(--color-ink-soft);
   }
   .popover input {
-    border: 1px solid #dbe2ea;
+    border: 1px solid var(--color-border);
     border-radius: 5px;
     padding: 10px;
     font-size: 13px;
+    background: var(--color-surface-raised);
+    color: var(--color-ink);
   }
   .popover form > div {
     display: flex;
@@ -1301,16 +1354,16 @@
   }
   .popover button {
     border: 0;
-    background: #f0f3f7;
+    background: var(--color-surface-sunken);
     border-radius: 5px;
     padding: 8px 16px;
     font-size: 13px;
-    color: #687789;
+    color: var(--color-ink-soft);
     cursor: pointer;
   }
   .popover button.apply {
-    background: #185abd;
-    color: white;
+    background: var(--color-accent-solid);
+    color: var(--color-on-accent);
   }
   @media (max-width: 600px) {
     .paper-area {

@@ -637,17 +637,24 @@
   </div>{/if}
 
 <style>
+  /* Filled brand controls keep the day brand shade in both themes so on-accent text stays readable. */
+  .workspace {
+    --workspace-accent: var(--color-word);
+    --workspace-accent-solid: #185abd;
+  }
   .spreadsheet-home {
-    --workspace-accent: #107c41;
+    --workspace-accent: var(--color-excel);
+    --workspace-accent-solid: #107c41;
   }
   .presentation-home {
-    --workspace-accent: #c43e1c;
+    --workspace-accent: var(--color-powerpoint);
+    --workspace-accent-solid: #c43e1c;
   }
 
   .workspace {
     min-height: 100dvh;
-    background: #f5f5f5;
-    color: #292929;
+    background: var(--color-parchment);
+    color: var(--color-ink-strong);
     font:
       13px 'Segoe UI',
       Arial,
@@ -663,17 +670,17 @@
   }
   button:focus-visible,
   a:focus-visible {
-    outline: 2px solid var(--workspace-accent, #185abd);
+    outline: 2px solid var(--workspace-accent);
     outline-offset: 3px;
   }
   .app-title {
     height: 46px;
-    background: #eeeeee;
+    background: var(--color-surface-sunken);
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 0 18px;
-    border-bottom: 1px solid #e8e8e8;
+    border-bottom: 1px solid var(--color-border-soft);
   }
   .app-title a {
     display: inline-flex;
@@ -696,11 +703,11 @@
     position: fixed;
     inset: 46px auto 0 0;
     width: 68px;
-    border-right: 1px solid #e3e3e3;
+    border-right: 1px solid var(--color-border);
     display: flex;
     flex-direction: column;
     padding: 5px 4px 12px;
-    background: #f0f0f0;
+    background: var(--color-surface-sunken);
   }
   .sidebar nav {
     display: flex;
@@ -716,17 +723,17 @@
     border: 0;
     border-left: 2px solid transparent;
     background: transparent;
-    color: #333;
+    color: var(--color-ink);
     font-size: 12px;
     min-height: 57px;
     width: 100%;
   }
   .sidebar button.active {
-    border-left-color: var(--workspace-accent, #185abd);
-    color: var(--workspace-accent, #185abd);
+    border-left-color: var(--workspace-accent);
+    color: var(--workspace-accent);
   }
   .sidebar button:hover {
-    background: #e4e4e4;
+    background: var(--color-surface-hover);
   }
   .sidebar .settings {
     margin-top: auto;
@@ -775,12 +782,12 @@
     flex-shrink: 0;
   }
   .starters > button:first-child {
-    border-color: #444;
-    background: #ececec;
+    border-color: var(--color-ink-soft);
+    background: var(--color-surface-hover);
   }
   .starters > button:hover {
-    background: #e9e9e9;
-    border-color: #777;
+    background: var(--color-surface-hover);
+    border-color: var(--color-muted);
   }
   .template-paper {
     display: flex;
@@ -789,18 +796,24 @@
     justify-content: center;
     width: 71px;
     height: 92px;
-    background: white;
-    border: 1px solid #c9c9c9;
-    color: var(--workspace-accent, #185abd);
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border-strong);
+    color: var(--workspace-accent);
   }
   .template-paper.workbook {
-    color: #107c41;
+    --workbook-line: color-mix(in srgb, var(--color-excel) 15%, var(--color-surface-raised));
+    color: var(--color-excel);
     background:
-      repeating-linear-gradient(0deg, transparent 0, transparent 8px, #dbe7df 9px),
-      repeating-linear-gradient(90deg, white 0, white 14px, #dbe7df 15px);
+      repeating-linear-gradient(0deg, transparent 0, transparent 8px, var(--workbook-line) 9px),
+      repeating-linear-gradient(
+        90deg,
+        var(--color-surface-raised) 0,
+        var(--color-surface-raised) 14px,
+        var(--workbook-line) 15px
+      );
   }
   .template-paper.deck {
-    color: #c43e1c;
+    color: var(--color-powerpoint);
   }
   .template-paper.sample {
     align-items: stretch;
@@ -815,7 +828,7 @@
   .template-paper i {
     display: block;
     height: 1px;
-    background: #ccd2d8;
+    background: var(--color-border-strong);
   }
   .template-paper i:last-child {
     width: 60%;
@@ -832,15 +845,16 @@
     gap: 9px;
   }
   .filters button {
-    border: 1px solid #999;
+    border: 1px solid var(--color-subtle);
     border-radius: 18px;
     padding: 7px 13px;
-    background: white;
+    background: var(--color-surface-raised);
+    color: inherit;
   }
   .filters button.active {
-    background: var(--workspace-accent, #185abd);
-    border-color: var(--workspace-accent, #185abd);
-    color: white;
+    background: var(--workspace-accent-solid);
+    border-color: var(--workspace-accent-solid);
+    color: var(--color-on-accent);
   }
   .search {
     display: flex;
@@ -848,8 +862,8 @@
     gap: 10px;
     width: min(450px, 40%);
     margin-left: auto;
-    border: 1px solid #999;
-    background: white;
+    border: 1px solid var(--color-subtle);
+    background: var(--color-surface-raised);
     padding: 6px 10px;
     border-radius: 3px;
   }
@@ -859,19 +873,21 @@
     min-width: 0;
     width: 100%;
     font-size: 12px;
+    background: transparent;
+    color: inherit;
   }
   .search:focus-within {
-    outline: 2px solid var(--workspace-accent, #185abd);
+    outline: 2px solid var(--workspace-accent);
   }
   kbd {
-    color: #666;
+    color: var(--color-muted);
     font-size: 10px;
     white-space: nowrap;
   }
   .view-button {
     background: transparent;
     border: 0;
-    color: #444;
+    color: var(--color-ink-soft);
     padding: 6px;
   }
   .column-head {
@@ -879,7 +895,7 @@
     justify-content: space-between;
     font-size: 12px;
     padding: 8px 35px 8px 0;
-    border-bottom: 1px solid #ccc;
+    border-bottom: 1px solid var(--color-border-strong);
   }
   .column-head select {
     border: 0;
@@ -901,19 +917,19 @@
     display: flex;
     align-items: center;
     position: relative;
-    border: 1px solid #d0d0d0;
+    border: 1px solid var(--color-border-strong);
     padding: 12px;
-    background: #fafafa;
+    background: var(--color-surface-sunken);
     min-width: 0;
   }
   .list .doc-entry {
     border: 0;
-    border-bottom: 1px solid #cfcfcf;
+    border-bottom: 1px solid var(--color-border-strong);
     background: transparent;
     padding: 0 0 0 8px;
   }
   .doc-entry:hover {
-    background: #eaeaea;
+    background: var(--color-surface-hover);
   }
   .doc-card {
     display: flex;
@@ -930,15 +946,15 @@
     flex-wrap: nowrap;
   }
   .doc-icon {
-    color: var(--workspace-accent, #185abd);
+    color: var(--workspace-accent);
     flex-shrink: 0;
     display: flex;
   }
   .doc-icon.green {
-    color: #107c41;
+    color: var(--color-excel);
   }
   .doc-icon.orange {
-    color: #c43e1c;
+    color: var(--color-powerpoint);
   }
   .doc-details {
     min-width: 0;
@@ -967,24 +983,24 @@
     margin: 0 8px;
     border: 0;
     padding: 7px;
-    color: #555;
+    color: var(--color-ink-soft);
     background: transparent;
   }
   .trash-action:hover {
-    background: #d6d6d6;
+    background: var(--color-border);
   }
   /* Grid tiles stack preview, name and details so a long name can never squeeze out. */
   .document-grid:not(.list) .doc-entry {
     flex-direction: column;
     align-items: stretch;
     padding: 0;
-    background: white;
+    background: var(--color-surface-raised);
     border-radius: 4px;
     overflow: hidden;
   }
   .document-grid:not(.list) .doc-entry:hover {
-    border-color: #9a9a9a;
-    background: white;
+    border-color: var(--color-subtle);
+    background: var(--color-surface-raised);
   }
   .document-grid:not(.list) .doc-card {
     flex-direction: column;
@@ -997,14 +1013,14 @@
     height: 112px;
     align-items: center;
     justify-content: center;
-    background: #eef3fb;
-    border-bottom: 1px solid #e1e1e1;
+    background: var(--color-word-bg);
+    border-bottom: 1px solid var(--color-border);
   }
   .document-grid:not(.list) .doc-icon.green {
-    background: #edf5ef;
+    background: var(--color-excel-bg);
   }
   .document-grid:not(.list) .doc-icon.orange {
-    background: #fbefeb;
+    background: var(--color-powerpoint-bg);
   }
   .document-grid:not(.list) .doc-details {
     padding: 11px 12px 3px;
@@ -1020,7 +1036,7 @@
     min-height: 2.7em;
   }
   .document-grid:not(.list) .doc-details p {
-    color: #555;
+    color: var(--color-ink-soft);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1029,21 +1045,21 @@
     width: auto;
     padding: 0 12px 11px;
     font-size: 11px;
-    color: #555;
+    color: var(--color-ink-soft);
   }
   .document-grid:not(.list) .trash-action {
     position: absolute;
     top: 6px;
     right: 6px;
     margin: 0;
-    background: #ffffffd9;
+    background: color-mix(in srgb, var(--color-surface-raised) 85%, transparent);
   }
   .workspace-tools {
     display: flex;
     gap: 35px;
     padding: 20px 48px;
-    background: white;
-    border-bottom: 1px solid #ddd;
+    background: var(--color-surface-raised);
+    border-bottom: 1px solid var(--color-border);
   }
   .import-tools {
     display: flex;
@@ -1056,12 +1072,12 @@
     align-items: center;
     gap: 8px;
     padding: 9px;
-    border: 1px solid #ccc;
-    background: #fafafa;
+    border: 1px solid var(--color-border-strong);
+    background: var(--color-surface-sunken);
   }
   .empty {
     padding: 55px 10px;
-    color: #666;
+    color: var(--color-ink-soft);
     text-align: center;
   }
   .empty h3 {
@@ -1069,10 +1085,10 @@
     font-weight: 400;
   }
   .empty button {
-    border: 1px solid #b7c9e3;
-    color: var(--workspace-accent, #185abd);
+    border: 1px solid var(--color-accent-border);
+    color: var(--workspace-accent);
     padding: 8px 12px;
-    background: white;
+    background: var(--color-surface-raised);
     border-radius: 3px;
   }
   .error {
@@ -1080,8 +1096,8 @@
     align-items: center;
     gap: 10px;
     padding: 12px;
-    background: #fff0ed;
-    color: #933b2a;
+    background: var(--color-danger-bg);
+    color: var(--color-danger);
   }
   .error button {
     margin-left: auto;
@@ -1089,12 +1105,12 @@
     background: transparent;
   }
   .progress {
-    color: var(--workspace-accent, #185abd);
+    color: var(--workspace-accent);
   }
   .modal-backdrop {
     position: fixed;
     inset: 0;
-    background: #16251d55;
+    background: var(--color-overlay);
     z-index: 50;
     display: grid;
     place-items: center;
@@ -1105,13 +1121,13 @@
   .modal {
     max-width: 500px;
     width: 100%;
-    background: white;
+    background: var(--color-surface-raised);
     border-radius: 14px;
     padding: 30px;
     position: relative;
     max-height: 90vh;
     overflow: auto;
-    box-shadow: 0 20px 100px #12251822;
+    box-shadow: var(--shadow-dialog);
   }
   .close {
     position: absolute;
@@ -1119,12 +1135,12 @@
     right: 18px;
     border: 0;
     background: none;
-    color: #46617a;
+    color: var(--color-ink-soft);
     cursor: pointer;
   }
   .modal-icon {
-    background: #edf4e9;
-    color: #46617a;
+    background: var(--color-success-bg);
+    color: var(--color-ink-soft);
     width: 46px;
     height: 46px;
     border-radius: 10px;
@@ -1134,12 +1150,12 @@
   }
   .modal h2 {
     font: 29px var(--font-ui);
-    color: #48603e;
+    color: var(--color-ink-soft);
     margin: 0 0 10px;
   }
   .modal > p {
     font-size: 13px;
-    color: #46617a;
+    color: var(--color-ink-soft);
     line-height: 1.7;
   }
   .modal form {
@@ -1151,15 +1167,15 @@
     display: grid;
     gap: 7px;
     font-size: 13px;
-    color: #46617a;
+    color: var(--color-ink-soft);
   }
   .modal input,
   .modal select {
     padding: 11px;
-    border: 1px solid #dde5d6;
+    border: 1px solid var(--color-border);
     border-radius: 10px;
-    color: #54684a;
-    background: white;
+    color: var(--color-ink-soft);
+    background: var(--color-surface-raised);
     font-size: 13px;
     width: 100%;
   }
@@ -1169,7 +1185,7 @@
     align-items: center;
     padding: 12px 16px;
     background: #285440;
-    color: white;
+    color: var(--color-on-accent);
     border: 0;
     border-radius: 12px;
     font-size: 13px;
@@ -1183,12 +1199,12 @@
   .existing-copy {
     display: grid;
     gap: 6px;
-    background: #eef4fd;
-    border: 1px solid #c9dbf5;
+    background: var(--color-accent-bg);
+    border: 1px solid var(--color-accent-border);
     border-radius: 8px;
     padding: 12px 14px;
     font-size: 13px;
-    color: #23456f;
+    color: var(--color-accent-strong);
   }
   .existing-copy p {
     margin: 0;
@@ -1198,19 +1214,19 @@
     justify-self: start;
     border: 0;
     border-radius: 8px;
-    background: #185abd;
-    color: white;
+    background: var(--color-accent-solid);
+    color: var(--color-on-accent);
     padding: 8px 12px;
     font: inherit;
     cursor: pointer;
   }
   .import-report {
-    background: #f7f9f3;
-    border: 1px solid #e6ecdd;
+    background: var(--color-surface-sunken);
+    border: 1px solid var(--color-border-soft);
     padding: 14px;
     border-radius: 8px;
     font-size: 13px;
-    color: #46617a;
+    color: var(--color-ink-soft);
   }
   .import-report b {
     font-size: 13px;
@@ -1222,7 +1238,7 @@
   .warning {
     display: flex;
     gap: 6px;
-    color: #46617a;
+    color: var(--color-ink-soft);
   }
   .warning > :global(svg) {
     flex-shrink: 0;

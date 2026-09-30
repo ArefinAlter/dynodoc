@@ -120,11 +120,19 @@
     border: 1px solid var(--color-border);
     border-radius: 1rem;
     background: var(--color-surface);
-    box-shadow: 0 20px 40px rgba(25, 18, 10, 0.12);
+    box-shadow: var(--shadow-menu);
     display: flex;
     flex-direction: column;
     overflow: hidden;
     z-index: 30;
+    --proposal-accept: var(--color-suggest);
+  }
+
+  /* The night suggest green is too light behind on-accent text, so the filled button keeps the day shade. */
+  @media screen {
+    :global([data-theme='dark']) .proposals {
+      --proposal-accept: #107c41;
+    }
   }
 
   .proposals.open {
@@ -240,9 +248,9 @@
   }
 
   .actions .accept {
-    background: var(--color-suggest);
-    color: white;
-    border-color: var(--color-suggest);
+    background: var(--proposal-accept);
+    color: var(--color-on-accent);
+    border-color: var(--proposal-accept);
   }
 
   .actions button:disabled {

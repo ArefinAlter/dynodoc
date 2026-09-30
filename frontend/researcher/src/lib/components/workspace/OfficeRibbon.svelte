@@ -50,7 +50,8 @@
     FilePenLine,
     ChevronsDown,
     Pilcrow,
-    TextCursor
+    TextCursor,
+    Sun
   } from '@lucide/svelte';
   let {
     editor,
@@ -71,7 +72,8 @@
     onMath,
     onReference,
     fonts = officeFonts,
-    paginated = $bindable(true)
+    paginated = $bindable(true),
+    lightPages = $bindable(false)
   }: {
     editor: Editor | null;
     editable: boolean;
@@ -92,6 +94,8 @@
     onReference: (action: string) => void;
     fonts?: string[];
     paginated?: boolean;
+    /** Keep document pages white in night mode (a per-browser option). */
+    lightPages?: boolean;
   } = $props();
   function active(name: string) {
     void tick;
@@ -864,6 +868,13 @@
           large
           active={!paginated}
           onclick={() => (paginated = false)}
+        /><RibbonButton
+          label="Always show white pages"
+          text="White pages"
+          icon={Sun}
+          large
+          active={lightPages}
+          onclick={() => (lightPages = !lightPages)}
         />
       </div>
     </div>
@@ -979,7 +990,7 @@
   .ribbon-tabs {
     display: flex;
     gap: 2px;
-    background: #f3f3f3;
+    background: var(--color-chrome);
     padding: 0 16px;
     overflow: auto;
     flex-shrink: 0;
@@ -989,7 +1000,7 @@
     border-bottom: 2px solid transparent;
     padding: 8px 13px 6px;
     background: none;
-    color: #252525;
+    color: var(--color-ink-strong);
     font:
       13px 'Segoe UI',
       Arial,
@@ -997,7 +1008,7 @@
     cursor: pointer;
   }
   .ribbon-tabs button[aria-selected='true'] {
-    border-bottom-color: #185abd;
+    border-bottom-color: var(--color-word);
     font-weight: 600;
   }
   .office-panel {
@@ -1005,15 +1016,15 @@
     gap: 9px;
     padding: 5px 12px 3px;
     margin: 0 5px;
-    background: white;
-    border: 1px solid #e0e0e0;
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border);
     border-radius: 5px;
-    box-shadow: 0 2px 3px #0000000d;
+    box-shadow: var(--shadow-panel);
     font:
       12px 'Segoe UI',
       Arial,
       sans-serif;
-    color: #303030;
+    color: var(--color-ink-strong);
     min-height: 96px;
     overflow-x: auto;
     flex-shrink: 0;
@@ -1024,7 +1035,7 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
-    border-inline-end: 1px solid #d5d5d5;
+    border-inline-end: 1px solid var(--color-border);
     padding: 0 10px 0 6px;
     flex-shrink: 0;
   }
@@ -1046,7 +1057,7 @@
     text-align: center;
     font-size: 11px;
     line-height: 14px;
-    color: #505050;
+    color: var(--color-ink-soft);
     white-space: nowrap;
     padding-bottom: 2px;
   }
@@ -1075,9 +1086,9 @@
   input {
     font: inherit;
     color: inherit;
-    border: 1px solid #c7c7c7;
+    border: 1px solid var(--color-border-strong);
     border-radius: 2px;
-    background: white;
+    background: var(--color-surface-raised);
     padding: 4px;
     min-height: 27px;
   }
@@ -1090,8 +1101,8 @@
   }
   button:hover,
   button[aria-pressed='true'] {
-    background: #e8eef7;
-    border-color: #185abd;
+    background: var(--color-surface-selected);
+    border-color: var(--color-word);
   }
   button:disabled,
   select:disabled,
@@ -1152,7 +1163,7 @@
     border: 1px solid transparent;
   }
   .style-card.heading {
-    color: #0f4761;
+    color: var(--color-accent-strong);
     font-size: 17px;
   }
   .style-picker {
@@ -1170,7 +1181,7 @@
     height: 26px;
     display: grid;
     place-items: center;
-    border-bottom: 3px solid #c62828;
+    border-bottom: 3px solid var(--color-danger);
     font-weight: 600;
     font-size: 15px;
   }
@@ -1188,14 +1199,14 @@
   .audit {
     max-height: 250px;
     overflow: auto;
-    background: #fffdf7;
+    background: var(--color-surface);
     padding: 14px 22px;
-    border-bottom: 1px solid #cfdaea;
+    border-bottom: 1px solid var(--color-border);
     font: 14px/1.6 Arial;
-    color: #284865;
+    color: var(--color-ink);
   }
   .review-list > div {
-    border-bottom: 1px solid #d3dfeb;
+    border-bottom: 1px solid var(--color-border);
     padding: 10px 0;
   }
   .review-list p {

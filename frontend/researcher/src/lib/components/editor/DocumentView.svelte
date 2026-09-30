@@ -195,8 +195,8 @@
   .module-tag {
     padding: 0.2rem 0.45rem;
     border-radius: 0.3rem;
-    background: var(--color-accent);
-    color: white;
+    background: var(--color-accent-solid);
+    color: var(--color-on-accent);
     font-size: 0.72rem;
     letter-spacing: 0.04em;
   }
@@ -227,7 +227,7 @@
     background: var(--color-surface);
     box-shadow:
       inset 4px 0 0 var(--color-accent),
-      0 1px 2px rgba(0, 0, 0, 0.05);
+      var(--shadow-panel);
   }
 
   .number {

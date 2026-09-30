@@ -120,19 +120,20 @@
     width: 430px;
     max-width: calc(100vw - 32px);
     max-height: 85vh;
-    border: 1px solid #aaa;
+    border: 1px solid var(--color-border-strong);
     border-radius: 7px;
     padding: 20px;
-    background: #fff;
-    color: #242424;
-    box-shadow: 0 12px 40px #0003;
+    background: var(--color-surface-raised);
+    color: var(--color-ink-strong);
+    box-shadow: var(--shadow-dialog);
+    --office-dialog-solid: #107c41;
     font:
       13px 'Segoe UI',
       Arial,
       sans-serif;
   }
   dialog::backdrop {
-    background: #0004;
+    background: var(--color-overlay);
   }
   form {
     display: flex;
@@ -172,16 +173,16 @@
   button {
     font: inherit;
     color: inherit;
-    border: 1px solid #aaa;
+    border: 1px solid var(--color-border-strong);
     border-radius: 3px;
     padding: 7px;
-    background: white;
+    background: var(--color-surface-raised);
     min-width: 0;
   }
   input[type='checkbox'] {
     width: 16px;
     height: 16px;
-    accent-color: #107c41;
+    accent-color: var(--office-dialog-solid);
   }
   input[type='color'] {
     width: 60px;
@@ -197,18 +198,18 @@
     cursor: pointer;
   }
   .primary {
-    background: #107c41;
-    border-color: #107c41;
-    color: white;
+    background: var(--office-dialog-solid);
+    border-color: var(--office-dialog-solid);
+    color: var(--color-on-accent);
     min-width: 80px;
   }
   p {
     margin: 0;
     line-height: 1.5;
-    color: #555;
+    color: var(--color-ink-soft);
   }
   .error {
-    color: #a12616;
+    color: var(--color-danger);
   }
   .extras {
     display: flex;
@@ -222,7 +223,12 @@
   input:focus-visible,
   select:focus-visible,
   textarea:focus-visible {
-    outline: 2px solid #107c41;
+    outline: 2px solid var(--color-focus);
     outline-offset: 2px;
+  }
+  @media screen {
+    :global([data-theme='dark']) dialog {
+      --office-dialog-solid: #178548;
+    }
   }
 </style>

@@ -126,9 +126,10 @@
     padding: 0;
   }
   .shape.outline {
-    outline: 1px dashed #9aa4ae;
+    outline: 1px dashed var(--color-subtle);
   }
   .shape.selected {
+    /* Drawn on the slide (authored colours), so it keeps one shade in both modes. */
     outline: 1.5px solid #c43e1c;
     outline-offset: 1px;
   }
@@ -147,7 +148,7 @@
     list-style: none;
   }
   .prompt {
-    color: #8a8f96;
+    color: var(--color-subtle);
   }
   img {
     width: 100%;

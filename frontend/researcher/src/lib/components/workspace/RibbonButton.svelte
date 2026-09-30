@@ -50,7 +50,7 @@
     padding: 4px;
     border: 1px solid transparent;
     border-radius: 3px;
-    color: #303030;
+    color: var(--color-ink-strong);
     background: transparent;
     cursor: pointer;
     font:
@@ -60,11 +60,11 @@
   }
   button:hover:not(:disabled),
   button[aria-pressed='true'] {
-    background: #e5e5e5;
-    border-color: #c6c6c6;
+    background: var(--color-surface-selected);
+    border-color: var(--color-border-strong);
   }
   button:focus-visible {
-    outline: 2px solid #185abd;
+    outline: 2px solid var(--color-focus);
     outline-offset: 1px;
   }
   button:disabled {

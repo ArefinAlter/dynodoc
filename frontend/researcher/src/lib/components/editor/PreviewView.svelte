@@ -47,7 +47,7 @@
     border: 1px solid var(--color-border);
     border-radius: 1.2rem;
     background: var(--color-surface);
-    box-shadow: 0 18px 40px rgba(41, 31, 20, 0.08);
+    box-shadow: var(--shadow-panel);
   }
 
   .frame-head {
