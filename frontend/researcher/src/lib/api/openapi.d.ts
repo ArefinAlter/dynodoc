@@ -52,6 +52,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/admin/erase-batch': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Permanently delete up to 100 documents, each in its own audited transaction with
+     *     its own receipt. One failure does not stop the others.
+     */
+    post: operations['erase_batch'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/admin/impact': {
     parameters: {
       query?: never;
@@ -94,6 +114,23 @@ export interface paths {
     get: operations['records'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/copies/{match_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** The owner answers a detected copy. */
+    post: operations['respond'];
     delete?: never;
     options?: never;
     head?: never;
@@ -167,6 +204,94 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/documents/{id}/change-requests': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Submitted change requests are visible to every member; unsubmitted drafts stay private. */
+    get: operations['list'];
+    put?: never;
+    /** Create a draft from an earlier revision plus the pushed file's changes, atomically. */
+    post: operations['create'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/documents/{id}/change-requests/{draft_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** The request, the contributor's own changes and what merging would change now. */
+    get: operations['detail'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/documents/{id}/change-requests/{draft_id}/decline': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations['decline'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/documents/{id}/change-requests/{draft_id}/merge': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** An editor merges selected changes. Unselected changes stay open in the request. */
+    post: operations['merge'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/documents/{id}/change-requests/{draft_id}/reviews': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Approve, request changes or comment. Reviewers and above approve or request
+     *     changes on other people's requests; any contributor can comment.
+     */
+    post: operations['review'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/documents/{id}/conflicts': {
     parameters: {
       query?: never;
@@ -195,6 +320,26 @@ export interface paths {
     put?: never;
     /** Resolve one conflict. `[Author]`. */
     post: operations['resolve'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/documents/{id}/copies': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Copies of this document found elsewhere, and documents this one resembles that
+     *     the viewer can open. Editors and above see them; the owner and managers act on them.
+     */
+    get: operations['copies'];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -285,6 +430,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/documents/{id}/drafts/{draft_id}/submit': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Ask the document's editors to review an existing personal draft. */
+    post: operations['submit'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/documents/{id}/drafts/{draft_id}/sync': {
     parameters: {
       query?: never;
@@ -295,6 +457,22 @@ export interface paths {
     get?: never;
     put?: never;
     post: operations['sync_draft'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/documents/{id}/drafts/{draft_id}/withdraw': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations['withdraw'];
     delete?: never;
     options?: never;
     head?: never;
@@ -313,6 +491,26 @@ export interface paths {
      *     authenticated participants, not the public read path.
      */
     get: operations['list_events'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/documents/{id}/history-points': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Revisions a pushed file may have started from: the latest team version, the first
+     *     saved state (normally the original upload) and named versions.
+     */
+    get: operations['history_points'];
     put?: never;
     post?: never;
     delete?: never;
@@ -471,6 +669,60 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/documents/{id}/owner': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Make another person the owner. The previous owner stays an editor. */
+    post: operations['transfer'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/documents/{id}/people': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * The owner, everyone with access and how, the review rules, and what the caller
+     *     may do. Any member can see this, as in a shared Google Doc.
+     */
+    get: operations['people'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/documents/{id}/policy': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Change the review rules. The owner and managers only. */
+    post: operations['set_policy'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/documents/{id}/proposals/{event_id}/accept': {
     parameters: {
       query?: never;
@@ -550,6 +802,22 @@ export interface paths {
     };
     /** A full snapshot, including its Merkle root and bound chain hash. `[document member]`. */
     get: operations['get_snapshot'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/documents/{id}/state': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations['state_at'];
     put?: never;
     post?: never;
     delete?: never;
@@ -675,6 +943,54 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/notifications': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations['list'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/notifications/count': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations['count'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/notifications/read': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations['mark_read'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/public/documents/{token}': {
     parameters: {
       query?: never;
@@ -701,6 +1017,23 @@ export interface paths {
     get: operations['search'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/similarity/check': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Compare a file with the documents the caller can open. Never reveals others. */
+    post: operations['check'];
     delete?: never;
     options?: never;
     head?: never;
@@ -998,6 +1331,51 @@ export interface operations {
       };
     };
   };
+  erase_batch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': unknown;
+      };
+    };
+    responses: {
+      /** @description Per-document results */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation or confirmation failed */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Sign in required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Insufficient access */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
   impact: {
     parameters: {
       query?: never;
@@ -1135,6 +1513,40 @@ export interface operations {
       };
       /** @description Refresh the current revision */
       409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  respond: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Detected copy */
+        match_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': unknown;
+      };
+    };
+    responses: {
+      /** @description Updated */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description The owner or a manager of the original document */
+      403: {
         headers: {
           [name: string]: unknown;
         };
@@ -1329,6 +1741,238 @@ export interface operations {
       };
     };
   };
+  list: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Document identifier */
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Open and recently closed change requests */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Document membership required */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  create: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Document identifier */
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': unknown;
+      };
+    };
+    responses: {
+      /** @description Draft created and optionally submitted for review */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Invalid starting revision or changes */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Viewers cannot propose changes */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  detail: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Document identifier */
+        id: string;
+        /** @description Change request identifier */
+        draft_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Review comparison against the current team version */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Document membership required */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Not submitted or not visible */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  decline: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Document identifier */
+        id: string;
+        /** @description Change request identifier */
+        draft_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': unknown;
+      };
+    };
+    responses: {
+      /** @description Declined; the contributor keeps their draft */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Editors decline change requests */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  merge: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Document identifier */
+        id: string;
+        /** @description Change request identifier */
+        draft_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': unknown;
+      };
+    };
+    responses: {
+      /** @description Selected changes appended to the team version */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Editors merge change requests */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Resolve overlaps or review newer changes first */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  review: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Document identifier */
+        id: string;
+        /** @description Change request identifier */
+        draft_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': unknown;
+      };
+    };
+    responses: {
+      /** @description Review recorded */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Role cannot give this review */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The request is closed */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
   list_conflicts: {
     parameters: {
       query?: never;
@@ -1402,6 +2046,36 @@ export interface operations {
       };
       /** @description No such document or live conflict */
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  copies: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Document identifier */
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Detected copies and similar documents */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Editors and above */
+      403: {
         headers: {
           [name: string]: unknown;
         };
@@ -1735,6 +2409,49 @@ export interface operations {
       };
     };
   };
+  submit: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Document identifier */
+        id: string;
+        /** @description Draft identifier */
+        draft_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': unknown;
+      };
+    };
+    responses: {
+      /** @description Submitted for review */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Viewers cannot propose changes */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Not your open draft */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
   sync_draft: {
     parameters: {
       query?: never;
@@ -1753,7 +2470,7 @@ export interface operations {
       };
     };
     responses: {
-      /** @description Success; requires document membership */
+      /** @description Preview, pull, rebase (optionally dropping draft changes) or share a personal draft */
       200: {
         headers: {
           [name: string]: unknown;
@@ -1778,6 +2495,42 @@ export interface operations {
       };
       /** @description Review a concurrent change before retrying */
       409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  withdraw: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Document identifier */
+        id: string;
+        /** @description Draft identifier */
+        draft_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': unknown;
+      };
+    };
+    responses: {
+      /** @description The contributor withdrew their request */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Only the contributor can withdraw */
+      403: {
         headers: {
           [name: string]: unknown;
         };
@@ -1814,6 +2567,36 @@ export interface operations {
         content: {
           'application/json': unknown;
         };
+      };
+    };
+  };
+  history_points: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Document identifier */
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Latest, initial and named-version revisions */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Document membership required */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
     };
   };
@@ -2184,6 +2967,118 @@ export interface operations {
       };
     };
   };
+  transfer: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Document identifier */
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': unknown;
+      };
+    };
+    responses: {
+      /** @description Ownership transferred */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Unknown or inactive account */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The owner or a manager */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  people: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Document identifier */
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Owner, members, review rules and the caller's capabilities */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Document membership required */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  set_policy: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Document identifier */
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': unknown;
+      };
+    };
+    responses: {
+      /** @description Saved review rules */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Invalid rules */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The owner or a manager */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
   accept: {
     parameters: {
       query?: never;
@@ -2426,6 +3321,46 @@ export interface operations {
       };
       /** @description No such snapshot for this document */
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  state_at: {
+    parameters: {
+      query: {
+        /** @description Revision to materialize */
+        through_seq: number;
+      };
+      header?: never;
+      path: {
+        /** @description Document identifier */
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Canonical state at an earlier revision */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Unknown revision */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Document membership required */
+      403: {
         headers: {
           [name: string]: unknown;
         };
@@ -2821,6 +3756,96 @@ export interface operations {
       };
     };
   };
+  list: {
+    parameters: {
+      query?: {
+        /** @description Page before this time */
+        before?: string;
+        /** @description Only unread */
+        unread?: boolean;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Newest notifications first, 50 per page */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Sign in required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  count: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Unread notification count */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Sign in required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  mark_read: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': unknown;
+      };
+    };
+    responses: {
+      /** @description Marked as read */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Sign in required */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
   public_document: {
     parameters: {
       query?: never;
@@ -2909,6 +3934,44 @@ export interface operations {
       };
       /** @description Review a concurrent change before retrying */
       409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  check: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': unknown;
+      };
+    };
+    responses: {
+      /** @description Visible documents that resemble the file, strongest first */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Too many blocks */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Sign in required */
+      401: {
         headers: {
           [name: string]: unknown;
         };

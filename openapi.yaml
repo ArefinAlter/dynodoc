@@ -85,6 +85,33 @@ paths:
           description: Refresh the current revision
       security:
       - paseto: []
+  /admin/erase-batch:
+    post:
+      tags:
+      - administration
+      summary: |-
+        Permanently delete up to 100 documents, each in its own audited transaction with
+        its own receipt. One failure does not stop the others.
+      operationId: erase_batch
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Per-document results
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Validation or confirmation failed
+        '401':
+          description: Sign in required
+        '403':
+          description: Insufficient access
+      security:
+      - paseto: []
   /admin/impact:
     get:
       tags:
@@ -146,6 +173,35 @@ paths:
           description: Insufficient access
         '409':
           description: Refresh the current revision
+      security:
+      - paseto: []
+  /copies/{match_id}:
+    post:
+      tags:
+      - copies
+      summary: The owner answers a detected copy.
+      operationId: respond
+      parameters:
+      - name: match_id
+        in: path
+        description: Detected copy
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: {}
+        '403':
+          description: The owner or a manager of the original document
       security:
       - paseto: []
   /documents:
@@ -431,6 +487,44 @@ paths:
           description: Editors merge change requests
         '409':
           description: Resolve overlaps or review newer changes first
+  /documents/{id}/change-requests/{draft_id}/reviews:
+    post:
+      tags:
+      - reviews
+      summary: |-
+        Approve, request changes or comment. Reviewers and above approve or request
+        changes on other people's requests; any contributor can comment.
+      operationId: review
+      parameters:
+      - name: id
+        in: path
+        description: Document identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: draft_id
+        in: path
+        description: Change request identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Review recorded
+          content:
+            application/json:
+              schema: {}
+        '403':
+          description: Role cannot give this review
+        '409':
+          description: The request is closed
   /documents/{id}/conflicts:
     get:
       tags:
@@ -495,6 +589,32 @@ paths:
           description: No such document or live conflict
       security:
       - bearer: []
+  /documents/{id}/copies:
+    get:
+      tags:
+      - copies
+      summary: |-
+        Copies of this document found elsewhere, and documents this one resembles that
+        the viewer can open. Editors and above see them; the owner and managers act on them.
+      operationId: copies
+      parameters:
+      - name: id
+        in: path
+        description: Document identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Detected copies and similar documents
+          content:
+            application/json:
+              schema: {}
+        '403':
+          description: Editors and above
+      security:
+      - paseto: []
   /documents/{id}/deploy:
     post:
       tags:
@@ -1176,6 +1296,94 @@ paths:
               schema: {}
       security:
       - bearer: []
+  /documents/{id}/owner:
+    post:
+      tags:
+      - people
+      summary: Make another person the owner. The previous owner stays an editor.
+      operationId: transfer
+      parameters:
+      - name: id
+        in: path
+        description: Document identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Ownership transferred
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Unknown or inactive account
+        '403':
+          description: The owner or a manager
+      security:
+      - paseto: []
+  /documents/{id}/people:
+    get:
+      tags:
+      - people
+      summary: |-
+        The owner, everyone with access and how, the review rules, and what the caller
+        may do. Any member can see this, as in a shared Google Doc.
+      operationId: people
+      parameters:
+      - name: id
+        in: path
+        description: Document identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Owner, members, review rules and the caller's capabilities
+          content:
+            application/json:
+              schema: {}
+        '403':
+          description: Document membership required
+      security:
+      - paseto: []
+  /documents/{id}/policy:
+    post:
+      tags:
+      - people
+      summary: Change the review rules. The owner and managers only.
+      operationId: set_policy
+      parameters:
+      - name: id
+        in: path
+        description: Document identifier
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Saved review rules
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Invalid rules
+        '403':
+          description: The owner or a manager
+      security:
+      - paseto: []
   /documents/{id}/proposals/{event_id}/accept:
     post:
       tags:
@@ -1653,6 +1861,69 @@ paths:
           description: Insufficient access
         '409':
           description: Review a concurrent change before retrying
+  /notifications:
+    get:
+      tags:
+      - notifications
+      operationId: list
+      parameters:
+      - name: before
+        in: query
+        description: Page before this time
+        required: false
+        schema:
+          type: string
+      - name: unread
+        in: query
+        description: Only unread
+        required: false
+        schema:
+          type: boolean
+      responses:
+        '200':
+          description: Newest notifications first, 50 per page
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Sign in required
+      security:
+      - paseto: []
+  /notifications/count:
+    get:
+      tags:
+      - notifications
+      operationId: count
+      responses:
+        '200':
+          description: Unread notification count
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Sign in required
+      security:
+      - paseto: []
+  /notifications/read:
+    post:
+      tags:
+      - notifications
+      operationId: mark_read
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Marked as read
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Sign in required
+      security:
+      - paseto: []
   /public/documents/{token}:
     get:
       tags:
@@ -1703,6 +1974,29 @@ paths:
           description: Insufficient access
         '409':
           description: Review a concurrent change before retrying
+  /similarity/check:
+    post:
+      tags:
+      - copies
+      summary: Compare a file with the documents the caller can open. Never reveals others.
+      operationId: check
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Visible documents that resemble the file, strongest first
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Too many blocks
+        '401':
+          description: Sign in required
+      security:
+      - paseto: []
   /spaces:
     get:
       tags:
