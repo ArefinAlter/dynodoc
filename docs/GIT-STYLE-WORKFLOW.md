@@ -79,8 +79,9 @@ yet.
 
 ## 1. The owner creates or uploads the file
 
-On **Home**, choose **Blank document** / **workbook** / **presentation**, or **Open**
-to upload an existing Word, Excel or PowerPoint file. Share it with the group from
+On **Home**, choose **Blank document** / **workbook** / **presentation**, or **Upload a
+file** (the first tile, the **Upload** button in the left bar, or drop a file anywhere
+on Home) to bring in an existing Word, Excel or PowerPoint file. Share it with the group from
 **Share** and pick each person's role.
 
 ## 2. Everyone downloads a copy
@@ -98,7 +99,7 @@ their own copies at the same time.
 ## 4. Upload your edited copy
 
 Open the file in Dynodoc → **File → Upload edited Word / Excel / PowerPoint file…**
-→ choose your file. You can also drop it on **Home → Open**: Dynodoc compares its
+→ choose your file. You can also drop it on **Home** or use **Home → Upload**: Dynodoc compares its
 *content* with every file you can open, so it recognises your copy even if you
 renamed it, and offers **Upload as changes** next to the matching file.
 
@@ -139,7 +140,7 @@ If someone uploads a *different* file under the same name — for example their 
 `report.docx` that has nothing to do with yours — Dynodoc does not quietly treat it
 as an edit:
 
-- On **Home → Open** they see *“A document named … already exists, but its content
+- On **Home → Upload** they see *“A document named … already exists, but its content
   is different.”*
 - If they still upload it as changes, the request is marked **This file shares
   little with this document**, and every existing paragraph (row, text box) it would
@@ -222,7 +223,7 @@ each person has their own sign-in.
 
 1. **Renamed copy reaches the owner.** Olivia creates *Group report* with five
    paragraphs and downloads it. Tariq (no access) renames his copy `report -
-   Tariq.docx`, edits a sentence and uploads it on **Home → Open** as a new
+   Tariq.docx`, edits a sentence and uploads it on **Home → Upload** as a new
    document. Within a few seconds Olivia's bell shows the notice; she presses
    **Invite them to send changes**. Tariq's bell offers **Send my copy as changes**;
    he sends it for review; Olivia merges.

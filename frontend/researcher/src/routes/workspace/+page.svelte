@@ -261,7 +261,29 @@
   }
   async function chooseFile(event: Event) {
     const file = (event.target as HTMLInputElement).files?.[0];
-    if (!file) return;
+    if (file) await openFile(file);
+  }
+  // Dropping a file anywhere on Home opens the same import dialog as Upload.
+  let dragging = $state(false);
+  const hasFiles = (event: DragEvent) =>
+    !!event.dataTransfer && Array.from(event.dataTransfer.types).includes('Files');
+  function dragOver(event: DragEvent) {
+    if (!hasFiles(event) || trash) return;
+    event.preventDefault();
+    dragging = true;
+  }
+  function dragLeave(event: DragEvent) {
+    const next = event.relatedTarget as Node | null;
+    if (!next || !(event.currentTarget as HTMLElement).contains(next)) dragging = false;
+  }
+  function drop(event: DragEvent) {
+    if (!hasFiles(event) || trash) return;
+    event.preventDefault();
+    dragging = false;
+    const file = event.dataTransfer?.files[0];
+    if (file && !busy) void openFile(file);
+  }
+  async function openFile(file: File) {
     importedSource = null;
     busy = true;
     error = '';
@@ -390,7 +412,7 @@
         }}><FileText size={23} strokeWidth={1.3} /><span>New</span></button
       >
       <button aria-label="Upload a file" disabled={busy} onclick={() => fileInput.click()}
-        ><FolderOpen size={24} strokeWidth={1.3} /><span>Open</span></button
+        ><Upload size={23} strokeWidth={1.3} /><span>Upload</span></button
       >
       <button class:active={trash} onclick={() => void setTrash(!trash)}
         ><Trash2 size={22} strokeWidth={1.3} /><span>Trash</span></button
@@ -421,7 +443,20 @@
           >
         </div>
       </section>{/if}
-    <div class="content">
+    <div
+      class="content"
+      class:dragging
+      role="region"
+      aria-label={trash ? 'Trash' : 'Home'}
+      ondragover={dragOver}
+      ondragleave={dragLeave}
+      ondrop={drop}
+    >
+      {#if dragging}<div class="drop-overlay" aria-hidden="true">
+          <Upload size={34} strokeWidth={1.3} />
+          <strong>Drop to upload</strong>
+          <span>Word, Excel, PowerPoint, CSV, text or LaTeX files</span>
+        </div>{/if}
       <h1>{trash ? 'Trash' : 'Home'}</h1>
       <input
         class="file-input"
@@ -433,9 +468,17 @@
       {#if !trash}<section class="new-section" aria-labelledby="new-title">
           <h2 id="new-title">New</h2>
           <div class="starters">
+            <button class="upload-tile" disabled={busy} onclick={() => fileInput.click()}>
+              <div class="template-paper upload-paper">
+                <Upload size={30} strokeWidth={1.2} />
+              </div>
+              <span>Upload a file</span>
+              <small>Word, Excel, PowerPoint, CSV… or drop it here</small>
+            </button>
             {#each [{ kind: 'document', label: 'Blank document', icon: FileText }, { kind: 'spreadsheet', label: 'Blank workbook', icon: Table2 }, { kind: 'questionnaire', label: 'Blank questionnaire', icon: ClipboardList }, { kind: 'presentation', label: 'Blank presentation', icon: Presentation }] as item}
               <button
                 class:sheet={item.kind === 'spreadsheet'}
+                class:featured={item.kind === 'document'}
                 disabled={busy}
                 onclick={() => {
                   kind = item.kind as Kind;
@@ -524,12 +567,17 @@
       {:else if !visible.length}<div class="empty">
           <FolderOpen size={30} strokeWidth={1} />
           <h3>{search ? 'No matching files' : trash ? 'Trash is empty' : 'No recent files'}</h3>
-          {#if !search && !trash}<button
-              onclick={() => {
-                title = '';
-                createOpen = true;
-              }}>Create a document</button
-            >{/if}
+          {#if !search && !trash}<p>Upload a file, drop one here, or start from a blank page.</p>
+            <div class="empty-actions">
+              <button class="upload-now" onclick={() => fileInput.click()}
+                ><Upload size={16} /> Upload a file</button
+              ><button
+                onclick={() => {
+                  title = '';
+                  createOpen = true;
+                }}>Create a document</button
+              >
+            </div>{/if}
         </div>
       {:else}<div class:list={listView} class="document-grid">
           {#each visible as doc}<article class="doc-entry">
@@ -821,9 +869,51 @@
     color: inherit;
     flex-shrink: 0;
   }
-  .starters > button:first-child {
+  .starters > button.featured {
     border-color: var(--color-ink-soft);
     background: var(--color-surface-hover);
+  }
+  .starters > button.upload-tile {
+    gap: 8px;
+    border: 1px dashed var(--color-accent-border);
+    border-radius: 8px;
+    background: var(--color-accent-bg);
+  }
+  .upload-tile small {
+    max-width: 150px;
+    font-size: 11px;
+    line-height: 1.35;
+    color: var(--color-ink-soft);
+    text-align: center;
+  }
+  .template-paper.upload-paper {
+    width: 58px;
+    height: 58px;
+    border-radius: 50%;
+    border-color: var(--color-accent-border);
+    color: var(--color-accent);
+  }
+  .content {
+    position: relative;
+  }
+  .drop-overlay {
+    position: absolute;
+    inset: 8px;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border: 2px dashed var(--color-accent);
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--color-accent-bg) 92%, transparent);
+    color: var(--color-accent-strong);
+    pointer-events: none;
+  }
+  .drop-overlay span {
+    color: var(--color-ink-soft);
+    font-size: 14px;
   }
   .starters > button:hover {
     background: var(--color-surface-hover);
@@ -1119,6 +1209,20 @@
     padding: 55px 10px;
     color: var(--color-ink-soft);
     text-align: center;
+  }
+  .empty-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+  }
+  .empty .upload-now {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--color-accent-solid);
+    border-color: var(--color-accent-solid);
+    color: var(--color-on-accent);
   }
   .empty h3 {
     font-size: 16px;
