@@ -20,7 +20,8 @@
     LogOut,
     X,
     AlertCircle,
-    ArrowRight
+    ArrowRight,
+    LoaderCircle
   } from '@lucide/svelte';
   import GoogleFormsConnector from '$lib/components/product/GoogleFormsConnector.svelte';
   import SpaceManager from '$lib/components/product/SpaceManager.svelte';
@@ -36,6 +37,9 @@
   import { clearSession } from '$lib/stores/session.svelte';
   import { queuePush } from '$lib/workspace/pending-push';
   import ThemeToggle from '$lib/components/ThemeToggle.svelte';
+  import NotificationBell from '$lib/components/workspace/NotificationBell.svelte';
+  import { RELATION_TEXT, percent, type SimilarDocument } from '$lib/workspace/collaboration';
+  import { isCopy, isSameName, similarDocuments } from '$lib/workspace/upload-check';
   type WorkspaceDocument = Document & {
     deleted_at?: string;
     space_id?: string;
@@ -227,28 +231,32 @@
       busy = false;
     }
   }
-  // A Word file downloaded from (or named after) an existing document is probably an
-  // edited copy: offer to send it to that document as reviewable changes.
-  let existing = $state<WorkspaceDocument | null>(null);
-  async function findExisting(file: File) {
-    if (!/\.docx$/i.test(file.name)) return null;
-    const { readOrigin, titleFromName } = await import('$lib/workspace/file-push');
-    const origin = readOrigin(new Uint8Array(await file.arrayBuffer()));
-    const name = titleFromName(file.name).toLowerCase();
-    return (
-      documents.find((d) => d.id === origin.documentId) ||
-      documents.find(
-        (d) => documentKind(d) === 'document' && name && d.title.trim().toLowerCase() === name
-      ) ||
-      null
-    );
+  // A file that resembles a document you can open is probably an edited copy: offer
+  // to send it there as reviewable changes instead of creating a separate document.
+  // The server compares content, so renamed files are recognised too.
+  let similar = $state<SimilarDocument[]>([]),
+    checking = $state(false);
+  const PUSHABLE: Kind[] = ['document', 'spreadsheet', 'presentation'];
+  const pushable = (m: SimilarDocument) =>
+    m.can_push && m.kind === importResult?.kind && PUSHABLE.includes(m.kind as Kind);
+  async function checkFile(file: File, result: ImportResult) {
+    similar = [];
+    checking = true;
+    try {
+      similar = await similarDocuments(file, result.ops);
+    } catch {
+      // The check only helps; importing still works, and owners are still told
+      // about copies after the import.
+      similar = [];
+    } finally {
+      checking = false;
+    }
   }
-  async function pushToExisting() {
-    if (!existing || !originalFile) return;
-    queuePush(existing.id, originalFile);
-    const id = existing.id;
+  async function pushTo(id: string) {
+    if (!originalFile) return;
+    queuePush(id, originalFile);
     importResult = null;
-    existing = null;
+    similar = [];
     await goto(`/documents/${id}`);
   }
   async function chooseFile(event: Event) {
@@ -260,10 +268,11 @@
     progress = 'Reading your file…';
     importAbort = new AbortController();
     try {
-      existing = await findExisting(file).catch(() => null);
+      similar = [];
       importResult = await importFile(file, importAbort?.signal);
       originalFile = file;
       title = file.name.replace(/\.[^.]+$/, '');
+      void checkFile(file, importResult);
     } catch (e) {
       error = e instanceof Error ? e.message : 'Could not read this file.';
     } finally {
@@ -353,6 +362,7 @@
       ><img src="/brand/mark.svg?v=2" alt="" width="21" height="21" />Dynodoc</a
     >
     <div>
+      <NotificationBell size={17} />
       <ThemeToggle size={17} />
       <button
         aria-label="Help & tutorials"
@@ -574,7 +584,7 @@
           createOpen = false;
           importResult = null;
           originalFile = null;
-          existing = null;
+          similar = [];
         }}><X size={20} /></button
       >
       <div class="modal-icon">
@@ -607,16 +617,46 @@
                 >Presentation</option
               ></select
             ></label
-          >{:else}{#if existing}<div class="existing-copy" role="note">
-              <strong>This looks like an edited copy of “{existing.title}”.</strong>
-              <p>
-                Send your edits to that document for review instead of creating a separate copy.
-                Nothing changes there until an editor merges them.
-              </p>
-              <button type="button" disabled={busy} onclick={() => void pushToExisting()}
-                >Upload as changes to “{existing.title}”</button
+          >{:else}{#if checking}<p class="checking" role="status">
+              <LoaderCircle size={14} /> Checking for documents like this file…
+            </p>{/if}{#if similar.length}{@const top = similar[0]}
+            <div class="existing-copy" role="note">
+              <strong
+                >{isCopy(top)
+                  ? `This file looks like ${RELATION_TEXT[top.comparison.relation].toLowerCase()} of “${top.title}”.`
+                  : isSameName(top)
+                    ? `A document named “${top.title}” already exists, but its content is different.`
+                    : `Parts of this file already appear in “${top.title}”.`}</strong
               >
+              <p>
+                {pushable(top)
+                  ? isSameName(top)
+                    ? 'If you upload it as changes, the owner chooses, paragraph by paragraph, between their content and yours. Nothing changes until then.'
+                    : 'Send your edits to that document for review instead of creating a separate copy. Nothing changes there until someone merges them.'
+                  : 'You can open it, but your role there doesn’t allow sending changes. You can still import a separate copy.'}
+              </p>
+              <ul class="matches">
+                {#each similar.slice(0, 3) as m (m.document_id)}<li>
+                    <span
+                      ><b>{m.title}</b><small
+                        >{RELATION_TEXT[m.comparison.relation]} · {percent(m.comparison.score)} match
+                        · {m.owner.is_you
+                          ? 'yours'
+                          : `owner ${m.owner.name || m.owner.email}`}</small
+                      ></span
+                    >{#if pushable(m)}<button
+                        type="button"
+                        disabled={busy}
+                        onclick={() => void pushTo(m.document_id)}>Upload as changes</button
+                      >{:else}<a href={`/documents/${m.document_id}`}>Open</a>{/if}
+                  </li>{/each}
+              </ul>
             </div>{/if}
+          <p class="privacy-note">
+            Uploads are compared with existing documents by content. If this file closely matches a
+            document you can’t open, its owner is told who uploaded it and the file name — never its
+            content.
+          </p>
           <div class="import-report">
             <b>{importResult.filename}</b>
             <p>{importResult.ops.length - 1} blocks prepared. Your original file will be kept.</p>
@@ -1195,6 +1235,39 @@
   button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+  .checking,
+  .privacy-note {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin: 0;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--color-ink-soft);
+  }
+  .matches {
+    list-style: none;
+    margin: 8px 0 0;
+    padding: 0;
+    display: grid;
+    gap: 6px;
+  }
+  .matches li {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .matches span {
+    display: grid;
+    min-width: 0;
+  }
+  .matches b {
+    overflow-wrap: anywhere;
+  }
+  .matches small {
+    color: var(--color-ink-soft);
   }
   .existing-copy {
     display: grid;

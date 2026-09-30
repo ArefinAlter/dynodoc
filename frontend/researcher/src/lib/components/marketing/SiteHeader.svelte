@@ -25,9 +25,10 @@
     <a href="https://dynodoc.online/features" onclick={() => (open = false)}>Features</a>
     <a href="https://dynodoc.online/#collaboration" onclick={() => (open = false)}>How it works</a>
     <a href="https://dynodoc.online/#integrations" onclick={() => (open = false)}>Integrations</a>
+    <span class="theme-narrow"><ThemeToggle variant="label" /></span>
   </nav>
   <a class="enter" href={workspace}>Open workspace <ArrowUpRight size={16} /></a>
-  <ThemeToggle />
+  <span class="theme-wide"><ThemeToggle /></span>
   <button
     disabled={!ready}
     class="menu"
@@ -111,6 +112,9 @@
   .enter:hover {
     background: color-mix(in srgb, var(--color-accent) 10%, var(--color-accent-bg));
   }
+  .theme-narrow {
+    display: none;
+  }
   .menu {
     display: none;
   }
@@ -140,6 +144,14 @@
     }
   }
   @media (max-width: 720px) {
+    /* Phones keep the header to brand, workspace link and menu; the mode switch
+       moves into the menu. */
+    .theme-wide {
+      display: none;
+    }
+    nav.open .theme-narrow {
+      display: block;
+    }
     header {
       min-height: 68px;
       padding: 14px 18px;

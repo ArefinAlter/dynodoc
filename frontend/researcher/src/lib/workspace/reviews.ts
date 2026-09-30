@@ -19,6 +19,11 @@ export interface ChangeRequest {
     upload_id?: string;
     summary?: Record<string, number>;
     start_seq?: number;
+    /** Set by the server when the file shares little with the revision it started from. */
+    unrelated?: boolean;
+    similarity?: number;
+    retention?: number;
+    relation?: string;
   };
   base_seq: number;
   created_at: string;
@@ -58,6 +63,7 @@ export interface RequestDetail {
     }
   >;
   behind?: number;
+  review?: import('./collaboration').ReviewState;
 }
 const base = (documentId: string) => `/documents/${documentId}`;
 export const listRequests = (documentId: string) =>
@@ -73,6 +79,7 @@ export const mergeRequest = (
     resolutions: Record<string, string>;
     included_nodes: string[];
     note?: string;
+    override_rules?: boolean;
   }
 ) =>
   workspaceRequest<{ completed: boolean; remaining: number; team_seq: number; events: unknown[] }>(
