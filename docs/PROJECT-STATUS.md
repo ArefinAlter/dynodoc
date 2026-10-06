@@ -35,11 +35,12 @@ not exercised during rollout, so the owner's own second-address invitation test
 is still an acceptance check, not a reason to reinstall credentials. See
 [release evidence](COPIES-AND-ROLES-RELEASE.md#follow-up-releases).
 
-The standalone engine is synchronized at `c79d940` with the application's Rust
-review, roles/rules, copies and notification APIs; its new
+The standalone engine is synchronized at `e73e4ba` from application `2a289ce`,
+including Projects, inherited rules, scoped connector keys and immutable
+provenance bundles alongside review, roles, copies and notification APIs. Its
 [capability inventory](https://github.com/ArefinAlter/dynodoc-engine/blob/main/docs/CAPABILITIES.md)
-separates implemented service behavior from Projects, invitation delivery and
-other future work. [Synchronization evidence](ENGINE-EXTRACTION.md#current-capability-synchronization-6-october-2026).
+separates implemented service behavior from native-host acceptance, invitation
+delivery and future work. [Synchronization evidence](ENGINE-EXTRACTION.md#projects-and-provenance-synchronization-6-october-2026).
 
 ## Continuation: production reset and future directions (30 September)
 
@@ -136,7 +137,11 @@ The owner explicitly pivoted the product to document version control on 21 Septe
 - Complete Search Console domain ownership verification and submit the sitemap. Vercel deployed this release automatically. [Instructions](SEARCH-AND-ADMIN-SETUP.md).
 - Add the ten actual researchers and run a study-specific acceptance session using their files. The automated concurrency exercise uses synthetic researchers.
 
-## Remaining product and engineering work
+## Other remaining work and deferred editor features
+
+The external-editor and Projects order above controls implementation. The Office
+features below record known compatibility limits; they are not the current build
+priority. Existing web editors remain supported.
 
 - Broader document features: pagination refinements (oversized objects, repeated table headers, widow/orphan control), tracked moves/formatting and structural revisions, per-page footnote layout and rich notes, citations/bibliographies, section-specific layouts and exact Office round trips.
 - Broader spreadsheet features: advanced charts, native pivot caches, structured table formulas, full formula-based validation, protected cell ranges/passwords, full Excel formula/date/locale compatibility and higher-fidelity workbook formatting.

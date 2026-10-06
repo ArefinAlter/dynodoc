@@ -55,9 +55,25 @@ An initial parallel frontend run exceeded the existing five-second Excel test
 timeout during concurrent compilation; the serial full rerun passed unchanged.
 The browser test was corrected to use the combobox's accessible name and the
 existing review panel's split diff text/selected-change button; no UI check was
-removed. Linux CI references follow once the committed revision is verified.
-Native Windows retains the previously recorded 100 ms SSE test timing failure;
-that assertion is unchanged and remains enabled in Linux CI.
+removed. Application [`2a289ce`](https://github.com/ArefinAlter/dynodoc/commit/2a289ce2fe5fc0071fc45596fdf39b66aca10af7)
+is pushed to main. [Rust CI](https://github.com/ArefinAlter/dynodoc/actions/runs/37418104202)
+passed formatting, Clippy, build and all 198 tests, including the SSE assertion.
+[Frontend and authenticated browser CI](https://github.com/ArefinAlter/dynodoc/actions/runs/37418104196)
+passed lint/format, connector artifact consistency, production build, all 216
+unit tests, nine public browser tests and all 55 signed-in browser tests.
+The public-only job intentionally skips authenticated cases; the separate
+signed-in job runs the complete set without skips.
+The MIT engine is synchronized and pushed as
+[`e73e4ba`](https://github.com/ArefinAlter/dynodoc-engine/commit/e73e4ba96c088ca08957250b9d29ec14976e5455);
+its [independent CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/37418637525)
+passed all 198 tests, lint, build, documentation and OpenAPI consistency. Engine
+local checks also passed all 198 tests without filtering.
+Earlier native Windows application runs recorded an intermittent 100 ms SSE
+timeout; the assertion is unchanged and passes in the current engine run and Linux CI.
+
+The isolated local API/web servers are stopped, the disposable PostgreSQL
+container/database is removed and temporary synchronization files are deleted.
+These checks used synthetic accounts and did not send production invitations.
 
 No VPS rollout, live editor acceptance or marketplace publication has been
 performed for these changes. Source availability is not installed-host support.

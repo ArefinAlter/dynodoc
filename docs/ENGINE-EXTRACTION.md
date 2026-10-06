@@ -61,7 +61,7 @@ no event ID and cannot advance replay. `engine-api/src/stream.rs` and
 `engine-api/tests/api_test.rs` are byte-identical ports. The existing delivery test
 now also checks idle acknowledgement before writing an event.
 
-## Current capability synchronization (6 October 2026)
+## Earlier capability synchronization (6 October 2026)
 
 Engine commit [`c79d940`](https://github.com/ArefinAlter/dynodoc-engine/commit/c79d940)
 synchronizes the current application Rust service from `52c2447`, including the
@@ -94,7 +94,37 @@ unchanged SSE check: [run 37412783835](https://github.com/ArefinAlter/dynodoc-en
 verified formatting, Clippy, build, all 195 tests, documentation and OpenAPI
 consistency for `c79d940`. The disposable local database/container was removed.
 
-Projects is still unimplemented. Invitation email (`b70f048`) belongs to the
+At this earlier synchronization Projects was unimplemented. Invitation email (`b70f048`) belongs to the
 application web gateway after an engine grant, not to the standalone sender/API.
 No production deployment was performed for this synchronization. Replacing the
 duplicated Rust sources with a pinned dependency/subtree remains separate work.
+
+## Projects and provenance synchronization (6 October 2026)
+
+Engine commit [`e73e4ba`](https://github.com/ArefinAlter/dynodoc-engine/commit/e73e4ba96c088ca08957250b9d29ec14976e5455)
+synchronizes application [`2a289ce`](https://github.com/ArefinAlter/dynodoc/commit/2a289ce2fe5fc0071fc45596fdf39b66aca10af7).
+It adds invite-only Projects, aggregate files/requests/private own drafts,
+inherited review defaults, revision-checked settings and submission Watch.
+Portable bundles retain immutable normalized envelopes/digests, authenticated
+uploader/reception facts, exact base-chain anchors and atomic proposal/retry receipts.
+Seven-day revocable Word/Google Docs credentials authorize read/propose on one
+file; current access, account/session generation, expiry and host scope are checked.
+
+Only migrations `0022` and `0023` are new. Historical migrations, event variants,
+MIT metadata, Rust 1.96 and the local replay fixture are retained. Synchronized
+service sources match the application; standalone OpenAPI is generated with MIT
+metadata. No frontend, private files, credentials or production data were copied.
+README, architecture/API notes, changelog, roadmap and capability inventory record
+the engine's current behavior and limits. Native clients remain application code.
+
+Local Windows checks passed `task lint`, all 198 tests through `task test`,
+`task docs` and OpenAPI generation. This run passed the unchanged 100 ms SSE
+assertion; earlier runs' intermittent timeout remains recorded above. Documentation
+retains existing Rustdoc link warnings. Independent
+[Linux CI run 37418637525](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/37418637525)
+passed formatting, Clippy, build, all 198 tests, documentation and OpenAPI
+consistency for `e73e4ba`.
+
+No production deployment, binary/crates.io release, actual editor-host acceptance
+or marketplace publication was performed. Invitation email remains a web-gateway
+responsibility. Source deduplication remains a separate build-boundary change.

@@ -20,6 +20,13 @@ for existing paragraph text. Actual host acceptance and marketplace publication
 remain open. [Release evidence](PROJECTS-PROVENANCE-RELEASE.md), [protocol](PROVENANCE-SYNC.md),
 [installation](../extensions/README.md). No VPS rollout for this work.
 
+Application implementation is pushed as `2a289ce`; the independently buildable
+MIT engine is synchronized and pushed as `e73e4ba`. Engine capabilities and roadmap
+now cover Projects, scoped connector keys and immutable portable bundles. Historical
+migration bytes and event serialization are unchanged; local engine checks pass
+all 198 tests. Application CI passes 216 unit tests and all 55 signed-in browser
+tests; both Linux Rust runs pass 198 tests. [Synchronization evidence](ENGINE-EXTRACTION.md#projects-and-provenance-synchronization-6-october-2026).
+
 ## Earlier priority review and engine synchronization (6 October)
 
 Reviewed application `52c2447`, standalone engine `a22bf71`, September release
@@ -35,7 +42,7 @@ not email; other notices remain in-app. CI and rollout evidence is in
 No real production invitation was sent during rollout; delivery acceptance
 remains the owner's second-address test. This review did not inspect production.
 
-The standalone MIT engine is synchronized at `c79d940` with the current Rust service:
+The earlier standalone MIT synchronization at `c79d940` brought in the Rust service's
 change requests, strict unrelated-content review, copy fingerprints/detection,
 role ladder, review rules/approvals and notification APIs. Invitation delivery and
 Office file conversion/editors remain in the application. See
@@ -1025,9 +1032,9 @@ The tables below preserve the earlier review's detail. Projects phase 1 now has
 a first implementation; its evidence belongs in the [new release record](PROJECTS-PROVENANCE-RELEASE.md).
 This current order controls future implementation.
 
-Updated 6 October 2026. This is the proposed sequence, not a new implementation
-or release promise. Projects is the next coding milestone. Acceptance checks run
-alongside it; do not repeat completed setup or pull deferred work ahead of it.
+The following tables preserve the earlier 6 October assessment before the
+Projects/provenance implementation. Their former priority labels are historical;
+the current order above controls. Acceptance checks continue alongside development.
 
 ### P0 — Establish trustworthy public operation
 
@@ -1042,7 +1049,7 @@ alongside it; do not repeat completed setup or pull deferred work ahead of it.
 | Monitoring/security            | Actionable service/backup/certificate alerts; permission and upload threat review; browser error visibility without private content/token leakage.                                                                                                                                                                       |
 | Continuous acceptance          | Authenticated browser CI already runs and passed for the invitation release. Extend it for Projects while preserving concurrency, review and privacy regressions.                                                                                                                                                        |
 
-### P1 — Build the GitHub-style Projects workspace next
+### Earlier P1 — Projects workspace plan
 
 | Sequence            | Deliverable                                                                                                                                        | Acceptance                                                                                                                                                                                                                                                             |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
