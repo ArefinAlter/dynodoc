@@ -122,6 +122,7 @@ pid ${scratch}/nginx.pid;
 error_log stderr error;
 events { worker_connections 64; }
 http {
+access_log off;
 client_body_temp_path ${scratch}/body;
 proxy_temp_path ${scratch}/proxy;
 fastcgi_temp_path ${scratch}/fastcgi;
