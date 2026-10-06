@@ -131,13 +131,9 @@ for (const host of ['google-sheets', 'google-slides'] as const) {
     const c = checkpoint(host),
       base = projectCheckpoint(c),
       sheet = host === 'google-sheets';
-    await page.route('https://appsforoffice.microsoft.com/lib/1/hosted/office.js', (r) =>
-      r.fulfill({
-        contentType: 'text/javascript',
-        body: "const HOST='Excel';" + officeBase + excel
-      })
-    );
-    await page.goto('/connectors/excel');
+    // Establish a secure localhost origin without starting another host adapter.
+    // A late Office.js response could otherwise replace this bridge's edit hook.
+    await page.goto('/privacy');
     await page.evaluate(
       ({ c, base, host, request, actor }) => {
         let generation: string | null = null,
