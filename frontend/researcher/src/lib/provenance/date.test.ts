@@ -3,7 +3,13 @@ import { webcrypto } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { runInNewContext } from 'node:vm';
-import { dateText, readExcelDates, writeExcelDates, type DateFunctions } from './date';
+import {
+  assertDateFormat,
+  dateText,
+  readExcelDates,
+  writeExcelDates,
+  type DateFunctions
+} from './date';
 import { ExcelAdapter, type ExcelRuntime } from './office-structured';
 import {
   CaptureSession,
@@ -86,6 +92,7 @@ function nativeFunctions(epoch: 1900 | 1904) {
 function excel(epoch: 1900 | 1904) {
   const f = nativeFunctions(epoch);
   const cells: (string | number | boolean)[] = [f.serial(day), 2];
+  const formats = ['yyyy-mm-dd', 'General'];
   let merged = false;
   const writes = vi.fn();
   type Ctx = Parameters<Parameters<ExcelRuntime['run']>[0]>[0];
@@ -112,6 +119,9 @@ function excel(epoch: 1900 | 1904) {
         });
       },
       rowIndex: 0,
+      get numberFormat() {
+        return [formats.slice(column, column + count)];
+      },
       columnIndex: column,
       rowCount: 1,
       columnCount: count,
@@ -161,6 +171,7 @@ function excel(epoch: 1900 | 1904) {
     cells,
     writes,
     named,
+    formats,
     merge: () => {
       merged = true;
     },
@@ -170,6 +181,7 @@ function excel(epoch: 1900 | 1904) {
 function google(zone: string) {
   const named = new Map<string, ReturnType<typeof range>>();
   const cells: (string | number | Date)[] = [];
+  const formats = ['yyyy-mm-dd', 'General'];
   let currentZone = zone;
   const formatDate = vi.fn((value: Date, timeZone: string) => {
     const parts = new Intl.DateTimeFormat('en-US', {
@@ -210,6 +222,7 @@ function google(zone: string) {
       getNumRows: () => 1,
       getNumColumns: () => 2,
       getMergedRanges: () => [],
+      getNumberFormats: () => [formats],
       getValues: () => [cells],
       getFormulas: () => [cells.map((v) => (typeof v === 'string' && v.startsWith('=') ? v : ''))],
       getCell: (_r: number, c: number) => range(c - 1),
@@ -245,6 +258,7 @@ function google(zone: string) {
   return {
     g: context as Record<string, (...args: unknown[]) => unknown>,
     cells,
+    formats,
     writes,
     parseDate,
     formatDate,
@@ -254,6 +268,42 @@ function google(zone: string) {
   };
 }
 describe('civil date contract', () => {
+  it('accepts common date masks and refuses number/text/time or ambiguous custom masks', () => {
+    for (const format of [
+      'yyyy-mm-dd',
+      'm/d/yy;@',
+      '[$-409]dddd, mmmm dd, yyyy',
+      'dd "day" mmm yyyy'
+    ])
+      expect(() => assertDateFormat(format)).not.toThrow();
+    for (const format of [
+      'General',
+      '@',
+      '0.00',
+      'yyyy-mm-dd hh:mm:ss',
+      '[h]:mm',
+      '[>=100]yyyy-mm-dd'
+    ])
+      expect(() => assertDateFormat(format)).toThrow('date format');
+  });
+  it('stops native date-format/type changes in both hosts before writes', async () => {
+    const c = checkpoint(),
+      base = projectCheckpoint(c),
+      x = excel(1900);
+    x.adapter.configure(c);
+    await x.adapter.bind(base);
+    x.formats[0] = 'General';
+    await expect(x.adapter.read()).rejects.toThrow('date format');
+    await expect(x.adapter.apply(base, base)).rejects.toThrow('date format');
+    expect(x.writes).not.toHaveBeenCalled();
+    const g = google('Asia/Dhaka'),
+      config = structuredBinding(c);
+    g.g.bindDynodoc(base, config, 'dynodoc.calendar');
+    g.formats[0] = 'yyyy-mm-dd hh:mm:ss';
+    expect(() => g.g.readDynodoc(config, 'dynodoc.calendar')).toThrow('date format');
+    expect(() => g.g.applyDynodoc(base, base, config, 'dynodoc.calendar')).toThrow('date format');
+    expect(g.writes).not.toHaveBeenCalled();
+  });
   it('accepts real calendar days, blanks and formula source without locale guessing', () => {
     expect(dateText('2024-02-29')).toBe('2024-02-29T00:00:00.000Z');
     expect(dateText('')).toBe('');

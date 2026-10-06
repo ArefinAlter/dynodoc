@@ -119,10 +119,10 @@ exportable; reopen the pane and explicitly restore into the saved copy. It uses
 
 ## Next work in order
 
-1. Real Word Desktop/Web and Google Docs acceptance in the same test project;
+1. Real Word/Docs, Excel/Sheets and PowerPoint/Slides acceptance in the same test project;
    fix host-specific anchor behaviour before promising a supported connector.
 2. Stable structural block operations, richer formatting and transport/rebase
-   recovery; import identity manifests from existing DOCX metadata where possible.
+   recovery; import identity manifests from existing native-file metadata where possible.
 3. A local/background capture agent and offline sidecar interchange: capture must
    survive pane closure, file copies/renames and switching devices/editors.
 4. Secure installation/pairing, signed distributions, operator/privacy details,
@@ -167,7 +167,10 @@ The connector never guesses a 1900/1904 epoch or uses the machine timezone.
 Sheets converts native Date objects using the spreadsheet timezone, checks local
 midnight, then parses and verifies that same local midnight before writing. It
 rechecks timezone and native values after preflight. Invalid days, hidden times,
-type changes and unrepresentable local midnight stop sync. Dates must be real
+type changes and unrepresentable local midnight stop sync. Native date cells must
+retain a recognized date-only number format; General/text/time/ambiguous custom
+masks require file push. Formatting changes between supported date masks are not
+captured or synchronized. Dates must be real
 days from 1900 through 9999 and representable by the host's workbook/calendar.
 
 The version-1 string `FieldEdited` envelope, immutable receipts, schema and event

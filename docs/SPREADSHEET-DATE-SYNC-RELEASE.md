@@ -10,6 +10,8 @@ provenance platform around native editors.
 - Canonical civil-day values use ISO midnight UTC; blanks and formula source stay
   distinct. Calendar validation rejects invalid leap days, locale strings and
   timestamps. Recovery checks every date observation, including superseded ones.
+  Native General/text/time and ambiguous custom date masks require file push;
+  changing between recognized date masks does not capture a formatting operation.
 - Excel uses native YEAR/MONTH/DAY/DATE functions and verifies both conversions
   before writing. No epoch/timezone is guessed. Sheets uses its spreadsheet
   timezone and verifies local midnight before writing; timezone changes stop apply.
@@ -24,7 +26,7 @@ provenance platform around native editors.
 
 ## Verification status
 
-Local provenance regression tests pass all 67 cases, including 16 date cases with
+Local provenance regression tests pass all 69 cases, including 18 date cases with
 synthetic native services. ESLint/Svelte, formatting, generated-artifact checks
 and the production build pass. All six existing connector browser flows passed;
 the added date retry/pull/apply-safety test passed three repetitions after fixing

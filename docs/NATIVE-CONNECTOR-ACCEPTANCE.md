@@ -66,6 +66,9 @@ midnight cannot round-trip, rather than silently change the day.
 
 Invalid dates, Excel's fictional 1900-02-29, hidden hours/minutes/milliseconds,
 date-to-text/type changes and locale strings such as `06/10/2026` must stop sync.
+Change native date formatting to General, text, a time mask or an ambiguous custom
+mask: sync must stop. Common date-only masks are supported; changing between them
+does not record or synchronize formatting.
 Original files and file push retain unsupported timestamps/format changes.
 Formula source must survive without claiming matching calculation results across
 the two formula engines. Change a cell or spreadsheet timezone during date

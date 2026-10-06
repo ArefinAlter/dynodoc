@@ -164,6 +164,7 @@ describe('native Office adapter boundaries', () => {
           next[0].forEach((v, i) => (values[0][column + i] = v));
         },
         rowIndex: 0,
+        numberFormat: [['General', 'General']],
         columnIndex: column,
         rowCount: 1,
         columnCount: count,
@@ -344,6 +345,7 @@ describe('Google native adapters (mock Apps Script services)', () => {
         getNumRows: () => 1,
         getNumColumns: () => 2,
         getMergedRanges: () => [],
+        getNumberFormats: () => [['General', 'General']],
         getValues: () => [values.map((v) => (typeof v === 'string' && v.startsWith('=') ? 4 : v))],
         getFormulas: () => [
           values.map((v) => (typeof v === 'string' && v.startsWith('=') ? v : ''))

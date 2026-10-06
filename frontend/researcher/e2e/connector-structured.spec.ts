@@ -142,6 +142,7 @@ test('Excel date pane freezes retries and preflights calendar pulls before writi
   const serial = (day: string) =>
     (Date.parse(day) - Date.parse('1904-01-01T00:00:00.000Z')) / 86400000;
   const native = excel
+    .replace('rowIndex:0,', 'numberFormat:[Array(count).fill("yyyy-mm-dd")],rowIndex:0,')
     .replace(
       "let cells=[2,'=A1*2'];",
       `let cells=[${serial('2026-10-06')},${serial('2026-11-05')}];`

@@ -18,7 +18,7 @@ function rows_(config,scopeKey,binding){
     if(range.getMergedRanges().length)throw new Error('Merged cells require file push.');
     if(anchor&&(anchor.getSheet().getSheetId()!==sheet.getSheetId()||anchor.getRow()!==t.index+1||anchor.getColumn()!==1||anchor.getNumRows()!==1||anchor.getNumColumns()!==columns))throw new Error('A row identity moved or changed. Use file push.');
     if(!binding&&!anchor)throw new Error('A row identity is missing. Use file push.');
-    return {t:t,range:range,name:name,anchor:anchor,values:range.getValues()[0],formulas:range.getFormulas()[0]};
+    return {t:t,range:range,name:name,anchor:anchor,values:range.getValues()[0],formulas:range.getFormulas()[0],formats:range.getNumberFormats()[0]};
   });
 }
 function dateZone_(targets,scopeKey){return targets.some(t=>t.cellType==='date')?scope_(scopeKey).doc.getSpreadsheetTimeZone():null;}
@@ -38,7 +38,7 @@ function dateCellValue_(text,zone){
   return value;
 }
 function cellText_(value,formula,type,zone){if(formula){if(type==='text')throw new Error('A text cell became a formula. Use file push.');return formula;}if(type==='date')return dateCellText_(value,zone);if(value instanceof Date)throw new Error('A cell became a date. Use file push to include its format.');if(!['string','number','boolean'].includes(typeof value)||typeof value==='string'&&value.startsWith('='))throw new Error('Unsupported cell value. Use file push.');if(value!==''&&((type==='text'&&typeof value!=='string')||(type==='number'&&typeof value!=='number')||(type==='boolean'&&typeof value!=='boolean')))throw new Error('A cell type changed. Use file push.');return String(value);}
-function blocks_(rows,targets,zone){return targets.map(t=>{const r=rows.find(r=>r.t.id===t.id);return {id:t.id,field:t.field,text:cellText_(r.values[t.column],r.formulas[t.column],t.cellType,zone)};});}
+function blocks_(rows,targets,zone){return targets.map(t=>{const r=rows.find(r=>r.t.id===t.id);if(t.cellType==='date')DynodocCalendar.assertDateFormat(r.formats[t.column]);return {id:t.id,field:t.field,text:cellText_(r.values[t.column],r.formulas[t.column],t.cellType,zone)};});}
 function bindDynodoc(blocks,config,scopeKey){const targets=config.targets,zone=dateZone_(targets,scopeKey);const rows=rows_(config,scopeKey,true),actual=blocks_(rows,targets,zone);if(!sameBlocks_(actual,blocks))throw new Error('This spreadsheet differs from the chosen revision. Use file push.');const s=scope_(scopeKey);assertZone_(targets,scopeKey,zone);rows.forEach(r=>{if(!r.anchor)s.doc.setNamedRange(r.name,r.range);});return readDynodoc(config,scopeKey);}
 function readDynodoc(config,scopeKey){const targets=config.targets,zone=dateZone_(targets,scopeKey),actual=blocks_(rows_(config,scopeKey,false),targets,zone);assertZone_(targets,scopeKey,zone);return actual;}
 function cellValue_(text,type){if(text===''||text.startsWith('='))return text;if(type==='number'){const n=Number(text);if(!Number.isFinite(n))throw new Error('This update changes a numeric cell type. Use file push.');return n;}if(type==='boolean'){if(!['true','false'].includes(text))throw new Error('This update changes a boolean cell type. Use file push.');return text==='true';}if(!type&&text.trim()&&Number.isFinite(Number(text)))return Number(text);if(!type&&['true','false'].includes(text))return text==='true';return text;}

@@ -10,6 +10,11 @@ var DynodocCalendar = function(exports) {
       throw new Error("Invalid calendar date. Use a date from 1900 through 9999.");
     return iso;
   }
+  function assertDateFormat(format) {
+    const mask = format.split(";")[0].replace(/"[^"]*"/g, "").replace(/\\.|_.|\*./g, "").replace(/\[\$-[a-z0-9-]+\]/gi, "").toLowerCase();
+    if (!/[yd]/.test(mask) || /[^ymd\s/.,()-]/.test(mask))
+      throw new Error("This date format changed type or includes a time/custom mask. Use file push.");
+  }
   function result(r) {
     if (r.error || !Number.isSafeInteger(r.value))
       throw new Error("Excel could not round-trip this calendar date. Use file push.");
@@ -65,6 +70,7 @@ var DynodocCalendar = function(exports) {
       throw new Error("Excel could not round-trip this calendar date. Use file push.");
     return serials;
   }
+  exports.assertDateFormat = assertDateFormat;
   exports.dateText = dateText;
   exports.readExcelDates = readExcelDates;
   exports.writeExcelDates = writeExcelDates;

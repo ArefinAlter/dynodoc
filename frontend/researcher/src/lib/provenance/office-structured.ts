@@ -10,7 +10,7 @@ import {
   type Checkpoint,
   type StructuredTarget
 } from './protocol';
-import { readExcelDates, writeExcelDates, type DateFunctions } from './date';
+import { assertDateFormat, readExcelDates, writeExcelDates, type DateFunctions } from './date';
 interface Collection<T> {
   items: T[];
   load: (fields: string) => void;
@@ -18,6 +18,7 @@ interface Collection<T> {
 interface Range {
   values: (string | number | boolean)[][];
   formulas: (string | number | boolean)[][];
+  numberFormat: string[][];
   rowIndex: number;
   columnIndex: number;
   rowCount: number;
@@ -155,7 +156,7 @@ export class ExcelAdapter implements StructuredAdapter {
       const columns = this.targets.filter((x) => x.id === t.id).length;
       const range = sheet.getRangeByIndexes(t.index, 0, 1, columns),
         name = ctx.workbook.names.getItemOrNullObject('dynodoc_' + t.id);
-      range.load('values,formulas,rowIndex,columnIndex,rowCount,columnCount');
+      range.load('values,formulas,numberFormat,rowIndex,columnIndex,rowCount,columnCount');
       name.load('name,isNullObject');
       const merged = range.getMergedAreasOrNullObject();
       merged.load('isNullObject');
@@ -201,6 +202,9 @@ export class ExcelAdapter implements StructuredAdapter {
     return rows;
   }
   private async readRows(ctx: ExcelContext, rows: Awaited<ReturnType<ExcelAdapter['rows']>>) {
+    for (const t of this.targets)
+      if (t.cellType === 'date')
+        assertDateFormat(rows.find((r) => r.t.id === t.id)!.range.numberFormat[0][t.column!]);
     const dateTargets = this.targets.filter((t) => {
       const r = rows.find((r) => r.t.id === t.id)!.range;
       const formula = r.formulas[0][t.column!];

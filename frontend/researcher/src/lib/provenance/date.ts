@@ -15,6 +15,18 @@ export function dateText(value: string): string {
     throw new Error('Invalid calendar date. Use a date from 1900 through 9999.');
   return iso;
 }
+/** Recognize common date-only masks, not localized display text. Unsupported
+ * custom masks use file push; hours/minutes/seconds must never be hidden. */
+export function assertDateFormat(format: string) {
+  const mask = format
+    .split(';')[0]
+    .replace(/"[^"]*"/g, '')
+    .replace(/\\.|_.|\*./g, '')
+    .replace(/\[\$-[a-z0-9-]+\]/gi, '')
+    .toLowerCase();
+  if (!/[yd]/.test(mask) || /[^ymd\s/.,()-]/.test(mask))
+    throw new Error('This date format changed type or includes a time/custom mask. Use file push.');
+}
 
 export interface DateResult {
   value: number;
