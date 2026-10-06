@@ -40,6 +40,9 @@ document, event, email, credential, database or API change was made.
 The application containers still run `8c7461d`, schema 24, as recorded in the
 [date-only release](SPREADSHEET-DATE-SYNC-RELEASE.md); this repair is a Nginx
 configuration overlay and does not require rebuilding them or the engine.
+The deployed source manifest was backed up and updated for those two config
+entries only; full manifest verification passed. The published runtime source
+archive remains the matching `8c7461d` application build.
 
 ## Verification and rollback
 
@@ -48,7 +51,9 @@ email/Google option flags with development authentication disabled, anonymous
 workspace/Projects redirects and engine API rejection. Office panes retained
 their scoped frame policy, while login/workspace responses retained `SAMEORIGIN`.
 No new workspace header-overflow error was present after the reload at the final
-check. Completing a real Google/email sign-in in the owner's browser remains an
+check. Synthetic Projects, project-detail and document page shells also passed
+through HTTPS; the document shell has 5,067 direct response-header bytes and
+would also exceed the old limit. Completing a real Google/email sign-in in the owner's browser remains an
 acceptance check; this repair did not sign in as a production user.
 
 Backups and comparison evidence are under
@@ -56,9 +61,14 @@ Backups and comparison evidence are under
 the before/after site configs, container inventory, unrelated-site hashes,
 successful syntax check and reload time. To undo this overlay, restore the two
 `nginx-*.before.conf` files to their corresponding site paths, restore the
-`source-*.before.conf` files to the source templates, run `nginx -t`, then
+`source-*.before.conf` files to the source templates and
+`source-manifest.before.sha256` to `SOURCE_MANIFEST.sha256`, run `nginx -t`, then
 `systemctl reload nginx`. The previous buffer limit will reproduce the failure;
 no container or database rollback is needed.
+
+The reload was at **09:23:50 UTC**; final HTTPS/error-log checks at **09:42:57 UTC**
+passed with zero new workspace header-overflow errors. All **19** original
+containers and all **529** source-manifest entries passed the preservation checks.
 
 ## Regression coverage
 
@@ -79,3 +89,18 @@ removed at completion.
 Frontend CI now watches both Nginx templates and runs this regression before the
 signed-in browser workflows. Earlier CI exercised the built application directly,
 so its browser results did not cover Nginx's header-buffer limit.
+
+The committed fix is `8bbab0b`, with the isolated log-permission correction in
+`616da1c`. The final regression also passed as an unprivileged user on this VPS,
+against a temporary copy of the deployed image configured with an isolated
+session secret and no engine connection. It exercised the old-buffer failure,
+actual workspace/Projects rendering and **9,601-byte** preload/cookie responses
+on both templates. The temporary container/files were removed and the original
+container inventory still matched. The resulting log is retained with the
+release evidence as `proxy-regression.live-isolated.log`.
+
+[Final frontend CI](https://github.com/ArefinAlter/dynodoc/actions/runs/37444087423)
+passed at `616da1c`: formatting/lint/types/build, 271 unit tests, 16 public browser
+tests, the production proxy regression and all 62 signed-in browser tests. The
+earlier run's new-fixture log permission failure was corrected before this final
+passing run; the deployed Nginx repair itself was unchanged.
