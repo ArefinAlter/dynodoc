@@ -32,9 +32,12 @@ Projects/provenance integration tests pass in both application and standalone
 engine, including the new historical-read test: exact previous hash/text, initial
 state, out-of-range rejection, current access, cross-file scope and revocation.
 Frontend formatting/lint, zero Svelte diagnostics and production build pass. All
-239 frontend unit tests pass. Recovery tests cover frozen retries/late typing,
+239 frontend unit tests passed in the full local run; an added observation-limit
+boundary test also passes (240 total tests). Recovery tests cover frozen retries/late typing,
 acknowledged requests/archives, invalid/inconsistent inputs, original-base
 verification, existing-queue preservation and storage failures.
+The 20,000-change upload limit applies to frozen bundles, while later observations
+remain recoverable within the sidecar byte limit.
 
 Two production-build browser tests exercise the real Word pane and Google Docs
 sidebar/shared artifact with mocked host bridges. They cover restore, opt-in,

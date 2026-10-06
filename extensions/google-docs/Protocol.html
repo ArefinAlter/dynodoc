@@ -363,9 +363,9 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
     diff(base, result);
     return result;
   }
-  function changes(value, base) {
+  function changes(value, base, limit = 2e4) {
     const known = new Set(base.map((b) => b.id)), ids = /* @__PURE__ */ new Set();
-    return array(value, 2e4).map((value2) => {
+    return array(value, limit).map((value2) => {
       const c = object(value2, ["id", "observed_at", "operation"]), id = string(c.id, uuid);
       if (ids.has(id)) invalid();
       ids.add(id);
@@ -427,12 +427,12 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
     ]);
     if (l.version !== 1) invalid();
     string(l.client_id, uuid);
-    const c = checkpoint(l.checkpoint), base = projectCheckpoint(c), seen = blocks(l.seen, base), observed = changes(l.changes, base);
+    const c = checkpoint(l.checkpoint), base = projectCheckpoint(c), seen = blocks(l.seen, base), observed = changes(l.changes, base, Number.MAX_SAFE_INTEGER);
     if (!equal(replay(base, observed), seen)) invalid();
     for (const value of array(l.archives, 1e3)) {
       const archive = object(value, ["checkpoint", "changes"]), previous = checkpoint(archive.checkpoint);
       if (previous.document_id !== c.document_id || previous.through_seq > c.through_seq) invalid();
-      changes(archive.changes, projectCheckpoint(previous));
+      changes(archive.changes, projectCheckpoint(previous), Number.MAX_SAFE_INTEGER);
     }
     if (l.pending !== null) {
       const p = object(l.pending, ["name", "note", "submit", "bundle"]), b = object(p.bundle, [

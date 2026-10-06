@@ -275,6 +275,16 @@ describe('portable provenance recovery', () => {
     );
     expect(await s.prepare('Next', '', false)).toEqual(push);
   });
+  it('keeps observations after a frozen upload when total history exceeds the per-upload limit', async () => {
+    const { sidecar, push } = await source();
+    const late = sidecar.ledger.changes[1];
+    sidecar.ledger.changes.push(
+      ...Array.from({ length: 20000 }, () => ({ ...late, id: crypto.randomUUID() }))
+    );
+    const decoded = parseSidecar(JSON.stringify(sidecar));
+    expect(decoded.ledger.changes).toHaveLength(20002);
+    expect(decoded.ledger.pending).toEqual(push);
+  });
   it('rejects unsupported and incomplete files with a recoverable error', () => {
     for (const text of [
       '{',

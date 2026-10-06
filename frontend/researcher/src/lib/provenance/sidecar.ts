@@ -98,10 +98,10 @@ function blocks(value: unknown, base: Block[]): Block[] {
   diff(base, result);
   return result;
 }
-function changes(value: unknown, base: Block[]): Change[] {
+function changes(value: unknown, base: Block[], limit = 20000): Change[] {
   const known = new Set(base.map((b) => b.id)),
     ids = new Set<string>();
-  return array(value, 20000).map((value) => {
+  return array(value, limit).map((value) => {
     const c = object(value, ['id', 'observed_at', 'operation']),
       id = string(c.id, uuid);
     if (ids.has(id)) invalid();
@@ -179,13 +179,15 @@ export function parseSidecar(text: string): Sidecar {
   const c = checkpoint(l.checkpoint),
     base = projectCheckpoint(c),
     seen = blocks(l.seen, base),
-    observed = changes(l.changes, base);
+    // The 20,000 server limit applies to a frozen upload, not all later typing.
+    // The sidecar byte cap bounds the complete recoverable observation history.
+    observed = changes(l.changes, base, Number.MAX_SAFE_INTEGER);
   if (!equal(replay(base, observed), seen)) invalid();
   for (const value of array(l.archives, 1000)) {
     const archive = object(value, ['checkpoint', 'changes']),
       previous = checkpoint(archive.checkpoint);
     if (previous.document_id !== c.document_id || previous.through_seq > c.through_seq) invalid();
-    changes(archive.changes, projectCheckpoint(previous));
+    changes(archive.changes, projectCheckpoint(previous), Number.MAX_SAFE_INTEGER);
   }
   if (l.pending !== null) {
     const p = object(l.pending, ['name', 'note', 'submit', 'bundle']),
