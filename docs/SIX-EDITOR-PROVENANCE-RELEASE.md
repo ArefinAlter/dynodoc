@@ -1,5 +1,8 @@
 # Six-editor provenance continuation — 6 October 2026
 
+Later same-day [date-only follow-up](SPREADSHEET-DATE-SYNC-RELEASE.md) is now live
+at `8c7461d`. The evidence below records the preceding six-editor rollout.
+
 This release extends the primary external-editor workflow to Excel/Google Sheets
 and PowerPoint/Google Slides alongside Word/Google Docs. The web editors stay;
 building a competing Office suite is not the product priority.

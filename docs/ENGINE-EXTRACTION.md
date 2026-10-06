@@ -164,3 +164,23 @@ passed all required checks. Native adapters/recovery UI are application code;
 source publication does not establish complete format support or native acceptance.
 The app is deployed on the VPS with Projects/provenance/schema 24; see the
 [six-editor release](SIX-EDITOR-PROVENANCE-RELEASE.md) for separate runtime evidence.
+
+## Date-only client follow-up (6 October 2026)
+
+Application `7cc58e3` / `8c7461d` adds checked date-only Excel/Sheets capture and
+pull, strict native date-mask/calendar/timezone validation and retained retry/
+recovery IDs. This reuses the existing string `FieldEdited` contract. There are
+no Rust, migration, event-variant or OpenAPI changes in this increment.
+
+Engine main [`67060cf`](https://github.com/ArefinAlter/dynodoc-engine/commit/67060cf5950ba020d1d0a1665b0b0fcdf24b27a3)
+updates README, capabilities, roadmap, contract and changelog. Service source
+remains `d6666a2` from application `348bef9`; clients stay application code.
+All 21 migration files and the provenance service/test files match byte-for-byte
+as committed Git blobs. Windows working-tree line endings differ, so comparison
+uses Git blobs rather than rewriting already-applied SQL.
+
+[Final independent CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/37439824200)
+passes all 200 tests, format, Clippy, build, docs and OpenAPI consistency. Source
+publication does not sign off real Microsoft/Google hosts or marketplaces.
+[Application release evidence](SPREADSHEET-DATE-SYNC-RELEASE.md) records separate
+271-unit/62-signed-in-browser verification and the web/admin-only VPS activation.

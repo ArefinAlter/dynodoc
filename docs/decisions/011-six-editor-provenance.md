@@ -45,3 +45,9 @@ Priority order:
 
 Source/tests are development evidence, not installed-host acceptance or marketplace
 publication. See [release evidence](../SIX-EDITOR-PROVENANCE-RELEASE.md).
+
+The subsequent [date-only increment](../SPREADSHEET-DATE-SYNC-RELEASE.md) narrows
+the spreadsheet boundary to permit checked civil days through native calendar
+functions/timezones. Excel now requires API 1.13 for local merged-area checks.
+Timestamps, formatting/type changes, full formula/date/locale compatibility and
+installed-host acceptance remain open. The priority order above still applies.

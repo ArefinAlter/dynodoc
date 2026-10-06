@@ -9,7 +9,34 @@ owner-confirmed configuration and work that still needs acceptance. Live-service
 observations below are dated release records, not a new infrastructure audit
 performed while writing this file. No secrets are included.
 
-## Continuation: all six editor hosts and VPS (6 October)
+## Continuation: date-only sync and current VPS (6 October)
+
+Application `7cc58e3` and the native-mask guard `8c7461d` add checked date-only
+Excel/Sheets observations, retry/recovery and pull. Excel uses native calendar
+functions; Sheets uses its spreadsheet timezone. Invalid dates, hidden times,
+General/text/time/ambiguous custom masks and changes during preflight stop writes. Common
+date masks stay local; timestamps and formatting/type changes still use file push.
+Excel now requires API 1.13 for local merged-cell checks. Existing Google Sheets
+installations must add generated `Date.gs`. Word/Docs and PowerPoint/Slides retain
+their existing exchange scope. [Date release](SPREADSHEET-DATE-SYNC-RELEASE.md)
+records verification and the current deployment; [native acceptance](NATIVE-CONNECTOR-ACCEPTANCE.md)
+is still open for all six hosts.
+
+**Current VPS source: 8c7461d / schema 24**, verified 09:09:11 UTC. Recreated only
+web/admin after a validated backup; API, database, converter, other containers,
+Nginx, accounts/history and access digests were preserved. Final CI passes 271
+unit tests and all 62 signed-in browser tests; seven live connector browser checks
+also pass using synthetic host/API bridges. No production document, key, account
+or email was created. Engine capability records are pushed at `67060cf`, with
+all 200 engine tests/docs/OpenAPI checks passing; Rust/migrations remain unchanged.
+
+Next: run the installed-host checklist for all three pairs, then stable-ID
+structural/formatting capture, richer formula/slide content support, durable
+background capture and secure pairing/distribution. Project Compare/Activity/search
+and coordinated releases follow. Filename/content matching remains a
+permission-aware suggestion, never automatic provenance attachment.
+
+## Continuation: all six editor hosts and prior VPS rollout (6 October)
 
 The owner supplied VPS access and expanded the primary workflow to Word/Docs,
 Excel/Sheets and PowerPoint/Slides. Shared capture now targets node/field pairs;
@@ -17,8 +44,9 @@ new development adapters exchange cells/formula source and slide shape text with
 stable identity, private queues, exact retries and checked pulls. Migration 0024
 extends key hosts and creation checks file kind. [Decision 011](decisions/011-six-editor-provenance.md)
 sets the remaining priorities; [release evidence](SIX-EDITOR-PROVENANCE-RELEASE.md)
-records current verification and deployment. **VPS source f8fd6a0 / schema 24 is
-live**; engine main is `4c067f3` (service synchronization `d6666a2`). Final frontend
+records verification and deployment for that increment. **VPS source f8fd6a0 /
+schema 24 was activated in the preceding rollout**; engine main was `4c067f3`
+(service synchronization `d6666a2`). That frontend
 CI passes 253 unit tests and all 61 signed-in browser workflows; both Rust suites
 pass 200 tests. Backup, unchanged data digests, rollback images and framing checks
 are recorded in that release. Earlier no-rollout statements below are dated

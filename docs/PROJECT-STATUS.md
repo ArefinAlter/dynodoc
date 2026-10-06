@@ -1,6 +1,6 @@
 # Dynodoc: intent, current implementation and remaining work
 
-Assessment updated: 6 October 2026, including decisions 010/011, the six-editor increment and verified VPS rollout. This distinguishes executable functionality from longer design documents and real-host/production acceptance.
+Assessment updated: 6 October 2026, including decisions 010/011, date-only provenance and the verified VPS rollout. This distinguishes executable functionality from longer design documents and real-host/production acceptance.
 
 ## Current priority: external-editor provenance and Projects
 
@@ -32,12 +32,19 @@ agent or a complete keystroke/authorship attestation.
 
 Excel/Sheets and PowerPoint/Slides now have development connectors using the same
 field-level queue, retry/recovery and checked pull flow. Spreadsheet cells/formula
-source and slide shape text are supported; structural/formatting/date/media sync
+source, date-only values and slide shape text are supported; structural/formatting/timestamp/media sync
 remains open. Migration 0024 extends file/host-scoped keys with file-kind checks.
 See [six-editor release](SIX-EDITOR-PROVENANCE-RELEASE.md).
 
-Projects and all six host scopes are deployed on the VPS at `f8fd6a0`, schema 24.
-All 61 signed-in browser tests, 253 unit tests and 200 Rust tests passed. Existing
+The date follow-up uses checked native calendar/timezone conversions, rejects
+invalid days/hidden times and unsupported date masks, and preserves exact retry
+and recovery IDs. Excel now needs API 1.13 for merged-cell checks; existing Sheets
+installations must add generated `Date.gs`. Dates encode civil days rather than
+instants. [Date release](SPREADSHEET-DATE-SYNC-RELEASE.md),
+[native acceptance checklist](NATIVE-CONNECTOR-ACCEPTANCE.md).
+
+Projects and all six host scopes are deployed on the VPS at `8c7461d`, schema 24.
+All 62 signed-in browser tests, 271 unit tests and 200 engine tests passed. Existing
 accounts/history and unrelated services were preserved. Native connectors remain
 development installations, not marketplace releases.
 
@@ -46,7 +53,7 @@ formatting block sync; add durable background capture and secure pairing/publica
 then Project Compare/Activity/search/releases.
 See [release evidence](PROJECTS-PROVENANCE-RELEASE.md), [sync contract](PROVENANCE-SYNC.md)
 and [installation](../extensions/README.md). The current VPS rollout is recorded
-in the six-editor release; earlier increments were verified locally and in CI.
+in the date release; earlier increments retain their dated evidence.
 
 Invitation emails shipped in `b70f048`; release documentation followed in
 `52c2447`. Document/workspace invitations are sent by the web gateway after the
@@ -55,14 +62,15 @@ not exercised during rollout, so the owner's own second-address invitation test
 is still an acceptance check, not a reason to reinstall credentials. See
 [release evidence](COPIES-AND-ROLES-RELEASE.md#follow-up-releases).
 
-The standalone engine is synchronized at `4c067f3` (service code `d6666a2`) from
+The standalone engine capability records are current at `67060cf` (service code `d6666a2`) from
 application `348bef9`,
 including Projects, inherited rules, scoped connector keys and immutable
 provenance bundles and historical checkpoints alongside review, roles, copies
-and notification APIs, plus all six editor key hosts and file-kind checks. Its
+and notification APIs, plus all six editor key hosts and file-kind checks. The
+date clients at application `8c7461d` reuse that unchanged service contract. Its
 [capability inventory](https://github.com/ArefinAlter/dynodoc-engine/blob/main/docs/CAPABILITIES.md)
 separates implemented service behavior from native-host acceptance, invitation
-delivery and future work. [Synchronization evidence](ENGINE-EXTRACTION.md#six-editor-host-follow-up-6-october-2026).
+delivery and future work. [Synchronization evidence](ENGINE-EXTRACTION.md#date-only-client-follow-up-6-october-2026).
 
 ## Continuation: production reset and future directions (30 September)
 

@@ -5,7 +5,7 @@
 Dynodoc's priority is collecting and reviewing changes from your existing editors.
 Word/Docs, Excel/Sheets and PowerPoint/Slides development connectors share the
 workflow; the web editors remain available. Native host acceptance and marketplace
-publication are separate checks. See [current release status](SIX-EDITOR-PROVENANCE-RELEASE.md).
+publication are separate checks. See [current release status](SPREADSHEET-DATE-SYNC-RELEASE.md).
 
 On a matching development installation, open **Home → Projects**, create a
 project and add/move your files. **Files** collects them, **Change requests** lists
@@ -17,10 +17,16 @@ in-app notices when someone submits work; invitation email remains optional.
 **Sync & connections** lets you download the team checkpoint, upload a portable
 change bundle, create an editor-specific seven-day connection key and revoke it.
 The development panes/sidebars can opt into capture of existing paragraph text,
-spreadsheet cells/formulas or slide shape text, retain observations privately,
+spreadsheet cells, date-only values/formulas or slide shape text, retain observations privately,
 push them for review and preview team fields before applying them in the editor. Use the ordinary file
 push workflow for formatting, inserted/deleted paragraphs and other unsupported
 structures. [Installation and real-host acceptance](../extensions/README.md).
+
+Date-only cells keep the same calendar day in Excel and Google Sheets. Invalid
+dates, hidden times and unsupported date formats stop sync before writing. Date
+format changes and timestamps use file push. Existing Sheets sidebar installations
+need the new `Date.gs` file; Excel needs API 1.13. Preview and apply team changes
+explicitly, just as for other supported cells.
 
 Capturing a snapshot does not prove who typed its text or record every keystroke.
 An upload receipt identifies the authenticated uploader; merging identifies the
