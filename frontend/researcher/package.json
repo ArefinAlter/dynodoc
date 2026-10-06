@@ -10,6 +10,7 @@
     "build": "vite build",
     "build:connectors": "node scripts/build-connectors.mjs",
     "check:connectors": "node scripts/build-connectors.mjs --check",
+    "check:proxy": "node scripts/check-proxy-headers.mjs",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",

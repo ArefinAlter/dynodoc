@@ -1,6 +1,12 @@
 # Dynodoc: intent, current implementation and remaining work
 
-Assessment updated: 6 October 2026, including decisions 010/011, date-only provenance and the verified VPS rollout. This distinguishes executable functionality from longer design documents and real-host/production acceptance.
+Assessment updated: 6 October 2026, including decisions 010/011, date-only provenance, the verified VPS rollout and the workspace 502 repair. This distinguishes executable functionality from longer design documents and real-host/production acceptance.
+
+Production workspace 502 was traced to asset preload response headers exceeding
+Nginx's 4 KiB default buffer. Both app/admin HTTPS proxies now allow 16 KiB headers;
+the identical failing workspace request passes after a validated graceful reload.
+Containers remain at `8c7461d`, schema 24. CI now includes the actual proxy
+templates. [Incident and verification](WORKSPACE-502-FIX.md).
 
 ## Current priority: external-editor provenance and Projects
 

@@ -30,6 +30,13 @@ docker compose --env-file infra/demo/.env -f infra/demo/compose.yml logs --tail 
 
 The project's containers, network and data volume use the `dynodoc-demo` prefix. The workspace publishes only `127.0.0.1:3088`; the separate admin web service publishes `127.0.0.1:3089`. Nginx handles their dedicated HTTPS hostnames. The database, API and conversion service are not publicly exposed. The workspace uses `https://app.dynodoc.online`, with a separate registrar A record pointing `app` to `103.191.50.32`. See [the domain and backend verification record](DOMAIN-AND-BACKEND.md).
 
+Install the current app/admin Nginx templates, including their server-level
+16 KiB proxy header buffers. Signed-in pages send asset preload links that can
+exceed Nginx's default 4 KiB buffer; `proxy_buffering off` does not remove this
+header limit. After site edits, run `nginx -t` before gracefully reloading. The
+[workspace 502 repair](WORKSPACE-502-FIX.md) records the failure, fix and isolated
+proxy regression; a direct web-container health check alone cannot detect it.
+
 Backups are PostgreSQL custom archives containing documents, events, versions, identities and original uploaded files. The backup script validates the archive and keeps 14 days. Copy backups to another host or object storage before relying on this VPS for irreplaceable research data; off-site backup is not configured by this repository.
 
 Restore into a new database for an exercise, never over the live database:

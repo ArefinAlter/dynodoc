@@ -9,6 +9,21 @@ owner-confirmed configuration and work that still needs acceptance. Live-service
 observations below are dated release records, not a new infrastructure audit
 performed while writing this file. No secrets are included.
 
+## Continuation: production workspace 502 repair (6 October)
+
+The signed-in workspace's 4,262-byte response headers exceeded Nginx's default
+4,096-byte buffer; its 3,955-byte asset preload Link header was the main contributor.
+The same synthetic request returned 200 directly and 502 through Nginx. Both
+app/admin HTTPS templates now allow 16 KiB headers with compatible body/busy
+buffers. Backed up the configs, passed `nginx -t`, gracefully reloaded and verified
+the identical request now returns 200 over HTTPS. All containers and unrelated
+site configs are preserved; application source remains `8c7461d`, schema 24.
+
+The actual proxy templates now participate in frontend CI, including a regression
+which reproduces the default-buffer failure and checks rendered pages, large auth
+headers, anonymous redirects and Office framing. [Repair evidence and rollback](WORKSPACE-502-FIX.md).
+The owner's real Google/email browser sign-in is still the final acceptance check.
+
 ## Continuation: date-only sync and current VPS (6 October)
 
 Application `7cc58e3` and the native-mask guard `8c7461d` add checked date-only

@@ -10,6 +10,8 @@ on:
       - "Cargo.lock"
       - "rust-toolchain.toml"
       - "migrations/**"
+      - "infra/demo/nginx-app.conf"
+      - "infra/demo/nginx-admin.conf"
       - ".github/workflows/ci-frontend.yml"
   pull_request:
     paths:
@@ -20,6 +22,8 @@ on:
       - "Cargo.lock"
       - "rust-toolchain.toml"
       - "migrations/**"
+      - "infra/demo/nginx-app.conf"
+      - "infra/demo/nginx-admin.conf"
       - ".github/workflows/ci-frontend.yml"
 
 concurrency:
@@ -118,6 +122,12 @@ jobs:
             sleep 1
           done
           exit 1
+      - name: Install Nginx for production proxy regression
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nginx
+      - name: Production proxy header regression
+        run: node scripts/check-proxy-headers.mjs
       - name: Browser workflows with real local sessions
         run: pnpm test:e2e
       - name: Retain failure diagnostics
