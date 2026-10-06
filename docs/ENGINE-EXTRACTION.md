@@ -2,7 +2,7 @@
 
 22 September 2026. Public repository:
 [ArefinAlter/dynodoc-engine](https://github.com/ArefinAlter/dynodoc-engine).
-Local checkout: `B:\dynodoc-engine` (`/mnt/b/dynodoc-engine` in WSL).
+Current local checkout: `D:\dynodoc-engine` (the original release used `B:`).
 Initial commit: `6015014`. [v0.1.0 source prerelease](https://github.com/ArefinAlter/dynodoc-engine/releases/tag/v0.1.0): `5cd3a1b`.
 
 The engine was extracted from application commit
@@ -60,3 +60,41 @@ does not wait for the heartbeat to establish the connection. The comment carries
 no event ID and cannot advance replay. `engine-api/src/stream.rs` and
 `engine-api/tests/api_test.rs` are byte-identical ports. The existing delivery test
 now also checks idle acknowledgement before writing an event.
+
+## Current capability synchronization (6 October 2026)
+
+Engine commit [`c79d940`](https://github.com/ArefinAlter/dynodoc-engine/commit/c79d940)
+synchronizes the current application Rust service from `52c2447`, including the
+27/30 September change-request and copies/roles releases. It adds:
+
+- Change-request lifecycle, historical starting points, approvals/per-block review
+  comments and strict merge choices for unrelated content.
+- Owner/Manager/Editor/Reviewer/Contributor/Viewer mapping, protected team versions,
+  approval counts, merge restrictions and ownership operations.
+- Core deterministic similarity fingerprints and service copy detection, owner
+  responses, permission-filtered results and historical-notice suppression.
+- Per-person in-app notification APIs and expanded administrative erasure handling.
+- Existing regression tests, a similarity benchmark, generated MIT OpenAPI,
+  [current capabilities](https://github.com/ArefinAlter/dynodoc-engine/blob/main/docs/CAPABILITIES.md)
+  and updated architecture/API/roadmap/changelog documentation.
+
+Only migrations `0020` and `0021` were added. Historical migration bytes in the
+engine checkout were preserved; committed blobs match the application. Event
+serialization and shared types are unchanged. MIT package metadata, Rust 1.96,
+independent CI and the local replay fixture are retained. Rust sources match the
+application except the existing Rust 1.96 parity method and fixture-path adaptation;
+the golden fixtures match. The application remains AGPL.
+
+Local Windows verification: format/Clippy passed; 194 tests passed against a
+disposable PostgreSQL 16 container on loopback port 5549. The unchanged 100 ms
+SSE check timed out in both the full run and an isolated retry; it was filtered
+only for the remaining local checks. Documentation built with Rustdoc link
+warnings, and OpenAPI was regenerated. Full Linux CI passed, including the
+unchanged SSE check: [run 37412783835](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/37412783835)
+verified formatting, Clippy, build, all 195 tests, documentation and OpenAPI
+consistency for `c79d940`. The disposable local database/container was removed.
+
+Projects is still unimplemented. Invitation email (`b70f048`) belongs to the
+application web gateway after an engine grant, not to the standalone sender/API.
+No production deployment was performed for this synchronization. Replacing the
+duplicated Rust sources with a pinned dependency/subtree remains separate work.

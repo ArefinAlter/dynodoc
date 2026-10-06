@@ -1,13 +1,38 @@
 # Dynodoc: intent, current implementation and remaining work
 
-Assessment date: 22 September 2026. This distinguishes executable functionality from the longer design documents. The old README's “feature-complete” description was too broad.
+Assessment updated: 6 October 2026, against application `52c2447` and the recorded September releases. This distinguishes executable functionality from the longer design documents. The old README's “feature-complete” description was too broad.
+
+## Next work: Projects workspace
+
+The GitHub-style **Projects workspace is still unimplemented**. File-level drafts,
+change requests, approvals, merges, named versions and copy detection already work;
+the missing layer groups these across a project's files. Build phase 1 first:
+project creation/listing, Files, Change requests, your private Drafts, Settings,
+inherited review rules, Watch and editor breadcrumbs. Then add Compare/Activity,
+followed by project releases and discussions. See the updated
+[prioritized handoff](HANDOFF.md#prioritized-remaining-work) and
+[implementation plan](proposals/PROJECTS-WORKSPACE-HANDOFF.md).
+
+Invitation emails shipped in `b70f048`; release documentation followed in
+`52c2447`. Document/workspace invitations are sent by the web gateway after the
+engine grants access. Other notifications remain in-app. Production delivery was
+not exercised during rollout, so the owner's own second-address invitation test
+is still an acceptance check, not a reason to reinstall credentials. See
+[release evidence](COPIES-AND-ROLES-RELEASE.md#follow-up-releases).
+
+The standalone engine is synchronized at `c79d940` with the application's Rust
+review, roles/rules, copies and notification APIs; its new
+[capability inventory](https://github.com/ArefinAlter/dynodoc-engine/blob/main/docs/CAPABILITIES.md)
+separates implemented service behavior from Projects, invitation delivery and
+other future work. [Synchronization evidence](ENGINE-EXTRACTION.md#current-capability-synchronization-6-october-2026).
 
 ## Continuation: production reset and future directions (30 September)
 
 The owner decided to permanently delete every document in production while keeping
 all accounts and sign-ins; it was done through the audited erasure path after a
 validated backup ([operations record](operations/2026-09-30-document-reset.md)).
-Production now has no documents and no workspaces. Planned next work is documented,
+The reset left no documents or workspaces on 30 September; current live counts
+have not been rechecked. Planned next work is documented,
 not built: a GitHub-style [Projects workspace](proposals/PROJECTS-WORKSPACE-HANDOFF.md),
 [agents that edit documents with provenance](proposals/AGENT-PROVENANCE-PROPOSAL.md) and
 [assessing how students use AI](proposals/AI-ASSESSMENT-PROPOSAL.md); see
@@ -102,7 +127,8 @@ The owner explicitly pivoted the product to document version control on 21 Septe
 - Broader spreadsheet features: advanced charts, native pivot caches, structured table formulas, full formula-based validation, protected cell ranges/passwords, full Excel formula/date/locale compatibility and higher-fidelity workbook formatting.
 - Survey execution beyond the supported preview subset: repeat instances, translations/media workflows, external datasets, advanced XPath/date functions and vendor-specific expression engines.
 - Research-platform synchronization: scheduled refresh, incremental reconciliation and writeback. All six implemented API import paths need real study-account verification. CSPro dictionary/form/logic support is not implemented; exported CSV/XLSX data can be edited.
-- Stronger review: e-mail delivery of notifications and mentions, richer tracked suggestions, per-block/protected-range permissions and shared review of another person's draft. In-app notifications, approvals, per-change comments and review rules shipped in decision 009.
+- Project-level workflow: creation, file grouping, aggregate requests, private-draft listing, inherited review rules, watch, compare and activity; see the Projects handoff. File-level review is already implemented.
+- Stronger review: optional e-mail for notices beyond invitations and mentions, richer tracked suggestions and per-block/protected-range permissions. In-app notifications, approvals, per-change comments and review rules shipped in decision 009; invitation email shipped in `b70f048`. Other people's unsubmitted drafts must remain private.
 - Versioning refinements: full offline synchronization, branch-to-branch review, more detailed side-by-side rich-content comparison, cryptographically anchored metadata/permission audit and long-lived retry/idempotency handling for every new workspace endpoint.
 - Production operation: off-site backups (explicitly deferred by the owner), monitoring/alerts, recovery objectives, resource/load tests beyond ten synthetic concurrent edits, complete keyboard/screen-reader audit and an external security review.
 - Public consultation stages 22–31, civic identity, moderation, citizen frontend, deliberation and ML services remain future work. The CRDT live-typing layer is also deferred; overlapping block edits require review instead of character-level co-editing.

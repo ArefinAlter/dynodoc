@@ -9,12 +9,34 @@ owner-confirmed configuration and work that still needs acceptance. Live-service
 observations below are dated release records, not a new infrastructure audit
 performed while writing this file. No secrets are included.
 
+## Continuation: priority review and engine synchronization (6 October)
+
+Reviewed application `52c2447`, standalone engine `a22bf71`, September release
+records and the Projects proposal. **Projects phase 1 is the next product build**;
+it is still unimplemented. File-level version control and review already exist.
+The [updated priorities](#prioritized-remaining-work) supersede the original
+21 September backlog, which still included several features released later.
+
+Invitation email shipped in `b70f048`, documented in `52c2447`: the web gateway
+grants access through the engine before sending through Resend. Roles/removals do
+not email; other notices remain in-app. CI and rollout evidence is in
+[COPIES-AND-ROLES-RELEASE.md](COPIES-AND-ROLES-RELEASE.md#follow-up-releases).
+No real production invitation was sent during rollout; delivery acceptance
+remains the owner's second-address test. This review did not inspect production.
+
+The standalone MIT engine is synchronized at `c79d940` with the current Rust service:
+change requests, strict unrelated-content review, copy fingerprints/detection,
+role ladder, review rules/approvals and notification APIs. Invitation delivery and
+Office file conversion/editors remain in the application. See
+[engine extraction and synchronization](ENGINE-EXTRACTION.md).
+
 ## Continuation: production reset and future directions (30 September)
 
 The owner decided to permanently delete every document in production while keeping
 all accounts and sign-ins; it was done through the audited erasure path after a
 validated backup ([operations record](operations/2026-09-30-document-reset.md)).
-Production now has no documents and no workspaces. Planned next work is documented,
+The reset left no documents or workspaces on 30 September; current live counts
+have not been rechecked. Planned next work is documented,
 not built: a GitHub-style [Projects workspace](proposals/PROJECTS-WORKSPACE-HANDOFF.md),
 [agents that edit documents with provenance](proposals/AGENT-PROVENANCE-PROPOSAL.md) and
 [assessing how students use AI](proposals/AI-ASSESSMENT-PROPOSAL.md); see
@@ -182,7 +204,7 @@ Repository: [ArefinAlter/dynodoc](https://github.com/ArefinAlter/dynodoc).
 
 | Commit | Meaning |
 | --- | --- |
-| `915b2ab` | Latest baseline: font-attribution formatting correction and release validation record. |
+| `915b2ab` | Original 21 September baseline: font-attribution formatting correction and release validation record. |
 | `470abbc` | Document-version-control positioning and expanded office editing; no new migration. |
 | `1408074` | Formatting-aware rich-text patches, merge improvements, provenance projection, research and benchmarks; migration 0016. |
 | `60fb7ef` | Expanded access, public sharing, lifecycle, onboarding and editing. |
@@ -752,6 +774,7 @@ flags confirm service/config presence, not complete workflow or provider success
    keys, dumps, dependencies and build artifacts, with `SOURCE_MANIFEST.sha256`.
    Consequently it can include uncommitted files: inspect the package, not only
    the current commit. An exclusion filter is not a replacement for secret review.
+
 4. Transfer to a temporary server path, wait for transfer completion, compare the
    archive checksum, inspect entries and retain the existing source archive.
    Extract reviewed source into `/opt/dynodoc-demo`; preserve `infra/demo/.env`.
@@ -777,6 +800,7 @@ flags confirm service/config presence, not complete workflow or provider success
 
    Rebuild/recreate the converter only if required by its own change. PostgreSQL
    does not need recreation for frontend, auth-provider or hostname changes.
+
 8. Check health, auth options, anonymous document rejection, ordinary-user admin
    denial, public-copy privacy and intended user workflows. Compare existing
    data counts/hash evidence and check unrelated applications independently.
@@ -785,7 +809,7 @@ flags confirm service/config presence, not complete workflow or provider success
    imply the homepage deployed, or vice versa.
 10. Record release evidence, remaining acceptance and the actual rollback target.
 
-`office-v2` gates old cached editors. Tell users with unsaved text to preserve it
+`office-v5` gates old cached editors. Tell users with unsaved text to preserve it
 before reloading. Do not remove the guard merely to make an obsolete tab work.
 
 ### Backups and restore exercise
@@ -812,9 +836,10 @@ created exercise database after inspection; never overwrite live data for a dril
 The CLI's `verify DOCUMENT_UUID` checks a chain; `replay` prints private document
 content and should not be used in public/shared diagnostic output.
 
-Off-site backup, tested recovery objectives and external failure alerts remain open.
-Same-host archives do not cover host loss. Define destinations/access/retention and
-perform a restore before claiming these operational requirements are satisfied.
+Off-site backup remains explicitly deferred by the owner. Tested recovery
+objectives and external failure alerts remain open. Same-host archives do not
+cover host loss; if the decision changes, define destinations/access/retention and
+perform a restore before claiming that requirement is satisfied.
 
 ### Rollback
 
@@ -872,7 +897,7 @@ PILOT_E2E=true PLAYWRIGHT_BASE_URL=http://localhost:4173 pnpm test:e2e
 Playwright otherwise builds/starts a preview at 4173; that alone does not supply
 the authenticated backend stack. The configuration uses one worker and 60-second
 test timeouts. Direct browser-test POST requests need the matching `Origin` and
-document requests need `x-dynodoc-editor: office-v2`. Do not weaken CSRF checks
+document requests need `x-dynodoc-editor: office-v5`. Do not weaken CSRF checks
 to accommodate a test helper.
 
 ### Recorded release checks
@@ -971,57 +996,67 @@ permission and recovery tests as well as throughput numbers.
 
 ## Prioritized remaining work
 
-The priorities below are proposed sequencing, not new promises or evidence of
-completion. Each item should become a bounded change with its own validation.
+Updated 6 October 2026. This is the proposed sequence, not a new implementation
+or release promise. Projects is the next coding milestone. Acceptance checks run
+alongside it; do not repeat completed setup or pull deferred work ahead of it.
 
 ### P0 — Establish trustworthy public operation
 
-| Work | Acceptance criterion |
-| --- | --- |
-| Real auth/email | Ordinary Google account signs into workspace; designated admin signs into admin; nonadmin denied; real Resend link arrives, works once and expires; no development bypass. |
-| Real Forms/provider import | Owner-controlled synthetic Forms and ODK/Kobo examples pass consent/import; counts, choices, translations, repeats and unsupported settings checked against source. Extend to other vendors before promising them accepted. |
-| Off-site backup/recovery | Encrypted/access-controlled external backup destination, observable failures, agreed recovery objectives and successful isolated restore including files, versions and chain verification. |
-| Manual accessibility/input | Keyboard and screen-reader sessions; native desktop/mobile IMEs; Bengali/Arabic/Hebrew mixed-direction examples; focus, tables, dialogs and export issues recorded and corrected. |
-| File acceptance corpus | Representative DOCX/XLSX files across Office/LibreOffice/Google export; loss reports, round-trip comparisons and large-file memory/latency results. |
-| Legal and retention | Owner supplies details and reviews policies; real removal/backup retention behavior matches adopted language. |
-| Monitoring/security | Actionable service/backup/certificate alerts; permission and upload threat review; browser error visibility without private content/token leakage. |
-| Continuous acceptance | Run authenticated isolated-stack tests in CI, beyond the currently skipped default; preserve deterministic concurrency/privacy regressions. |
+| Work                           | Acceptance criterion                                                                                                                                                                                                                                                                                                     |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Real auth/email and invitation | Ordinary Google account signs in; designated admin succeeds and nonadmin is denied; real sign-in link works once/expires; add a second owned address to a file and workspace, verify invitation/link/role, opt-out and failed-send feedback. Credentials are already configured; rollout did not send a real invitation. |
+| Real Forms/provider import     | Owner-controlled synthetic Forms and ODK/Kobo examples pass consent/import; counts, choices, translations, repeats and unsupported settings checked against source. Extend to other vendors before promising them accepted.                                                                                              |
+| Backup/recovery                | Maintain existing backups and isolated restore checks. Off-site backups remain explicitly deferred by the owner; implement them only if that decision changes. Agree recovery objectives and monitor backup failures.                                                                                                    |
+| Manual accessibility/input     | Keyboard and screen-reader sessions; native desktop/mobile IMEs; Bengali/Arabic/Hebrew mixed-direction examples; focus, tables, dialogs and export issues recorded and corrected.                                                                                                                                        |
+| File acceptance corpus         | Representative DOCX/XLSX files across Office/LibreOffice/Google export; loss reports, round-trip comparisons and large-file memory/latency results.                                                                                                                                                                      |
+| Legal and retention            | Owner supplies details and reviews policies; real removal/backup retention behavior matches adopted language.                                                                                                                                                                                                            |
+| Monitoring/security            | Actionable service/backup/certificate alerts; permission and upload threat review; browser error visibility without private content/token leakage.                                                                                                                                                                       |
+| Continuous acceptance          | Authenticated browser CI already runs and passed for the invitation release. Extend it for Projects while preserving concurrency, review and privacy regressions.                                                                                                                                                        |
 
-### P1 — Strengthen the central version-control product
+### P1 — Build the GitHub-style Projects workspace next
 
-- Persist/recover unsaved browser work and design safe offline reconciliation;
-  distinguish recovery from full live CRDT collaboration.
-- Add shared draft/branch review, persistent inclusion/exclusion rules and richer
-  side-by-side text/format/structure comparison with accessible conflict controls.
-- Extend provenance to useful range-level history without treating offsets or run
-  boundaries as permanent identity. Keep imported labels distinct from verified actors.
-- Profile and reduce full-state serialization/materialization and duplicated
-  snapshots. Compare incremental client patches and content-addressed storage using
-  measured workloads; preserve replay and old-reader compatibility.
-- Strengthen metadata/permission audit, durable idempotency/retry behavior and
-  optional independently retained/signed chain heads.
-- Add comments with replies, resolution, mentions and notifications with precise
-  access and anchoring behavior.
-- Expand generated OpenAPI to the product/lifecycle/admin routes documented in
-  `PRODUCT-WORKFLOWS.md`; matching the old generated spec does not cover new routes.
+| Sequence            | Deliverable                                                                                                                                        | Acceptance                                                                                                                                                                                                                                                             |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Projects phase 1 | New `project` space kind; creation/listing; Files, Change requests, your Drafts, Settings/members/default review rules; Watch; editor breadcrumbs. | Create a project, add files, invite collaborators, submit/approve/merge a request from the project; inherited rules enforced; no private drafts or inaccessible titles leak. New migration only; regenerate OpenAPI/client; isolated Rust and signed-in browser tests. |
+| 2. Projects phase 2 | Compare files/versions, Activity/counts, latest named versions, project search.                                                                    | Both compare sources permission-checked; readable word/format/structure changes; deterministic activity pagination; measured project load with 200 files/2,000 events.                                                                                                 |
+| 3. Projects phase 3 | Project releases across files, discussions, templates, copy report, ZIP/provenance export.                                                         | Define multi-file snapshot consistency and permissions first. Per-document named versions must not be presented as atomic project releases.                                                                                                                            |
+
+Use [PROJECTS-WORKSPACE-HANDOFF.md](proposals/PROJECTS-WORKSPACE-HANDOFF.md).
+Personal drafts stay private until submission. Shared project-wide branches, Issues,
+AI summaries and email digests are not phase 1. The handoff's visibility question
+must be reconciled with inherited organization/team permissions before coding.
+
+### P2 — Strengthen engine reliability and richer review
+
+- Keep the standalone engine current; replace duplicate Rust sources with a pinned
+  dependency or subtree in a separate change spanning builds, migrations and CI.
+- Strengthen metadata/permission audit, durable idempotency and optionally
+  independently retained/signed chain heads; profile snapshots/materialization
+  before choosing storage changes.
+- Improve range attribution, rich-content comparisons and unsaved-work recovery;
+  browser recovery already exists, while full offline synchronization does not.
+- Add mentions and optional email delivery/digests for other notices after choosing
+  preferences and durable scheduling. Replies/resolution, per-draft exclusions,
+  approvals and review notifications already shipped.
+- Maintain generated API coverage for every added route; the September releases
+  already expanded product/review/copy/notification schemas.
 
 For each versioning change, demonstrate concurrent wording/format/structural edits,
 review of genuine overlap, stable identity, deterministic replay, append-only
 restoration and privacy across old/new readers and public snapshots.
 
-### P2 — Broaden office editing deliberately
+### P3 — Broaden office editing deliberately
 
-- Live editable pagination and multi-section layouts, with an explicit engine and
-  licensing choice. Paged.js preview is not that engine; paid Tiptap products have
-  not been licensed or adopted.
-- Footnotes/endnotes, citations/bibliography, tracked formatting/moves/structural
-  changes, richer styles/themes and more faithful numbering/floating objects.
+- Refine existing live editable pagination: oversized objects, repeated table
+  headers, widow/orphan control and section-specific layouts.
+- Extend existing editable footnotes/endnotes with per-page layout and rich notes;
+  add citations/bibliography, tracked moves/formatting/structure and fuller styles.
 - Better DOCX equations/comments and accessible exports with a documented
   supported subset and reviewable loss reporting.
-- Charts, pivots, conditional formatting, protected ranges, richer validation,
-  formula-aware sort and broader Excel compatibility.
-- Move expensive XLSX conversion off the main thread or to an appropriately
-  isolated job path, with cancellation and resource limits.
+- Extend shipped charts, pivot summaries, numeric conditional formatting,
+  formula-aware sorting and whole-sheet protection with advanced charts/native
+  pivot caches, structured formulas, protected ranges and broader Excel fidelity.
+- Improve cancellation/resource limits for existing worker-based Office imports.
 
 Do not add inert ribbon controls merely to resemble Office. Every visible command
 needs saved/reloaded behavior, undo/review semantics, file interoperability rules
@@ -1043,7 +1078,7 @@ Do not let these displace the document-version-control product without a new dec
 
 | Symptom or tempting change | Check / required behavior |
 | --- | --- |
-| Old tab receives 409 | Preserve unsaved content, reload into `office-v2`; do not bypass the compatibility header. Original-file GET exemptions are intentional. |
+| Old tab receives 409 | Preserve unsaved content, reload into `office-v5`; do not bypass the compatibility header. Original-file GET exemptions are intentional. |
 | Concurrent remote edit silently overwrites local input | Keep the original save base while dirty/composing or editing a sheet cell; defer remote replacement and require stale-write review. |
 | Svelte reactive loop after cell editing change | `SheetEditor` editing callbacks use `untrack`; avoid pulling parent dirty/revision dependencies into a reactive effect. |
 | Undo appears locally but does not persist | Cached ProseMirror JSON still needs change detection against previous node membership; a WeakMap cache alone is insufficient. |

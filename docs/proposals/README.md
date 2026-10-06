@@ -1,9 +1,9 @@
 # Proposals and research for future releases
 
-Nothing in this folder is implemented. Each proposal lists the decisions the owner
-needs to make before work starts. Production was reset on 30 September 2026 (all
-documents deleted, accounts kept — [operations record](../operations/2026-09-30-document-reset.md)),
-so none of these needs a data migration of existing documents.
+Reviewed 6 October 2026: nothing in this folder is implemented. Projects phase 1
+is the next build; each proposal records the outstanding choices. Production was
+reset on 30 September (accounts kept — [operations record](../operations/2026-09-30-document-reset.md)).
+That is a dated observation: recheck current data and preserve it in new migrations.
 
 | Document | What it is | Status |
 | --- | --- | --- |

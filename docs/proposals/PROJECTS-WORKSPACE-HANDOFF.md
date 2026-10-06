@@ -6,10 +6,17 @@ handoff for whoever builds it. Read with [decision 008](../decisions/008-change-
 [decision 009](../decisions/009-copies-roles-and-notifications.md) and the user guide
 [GIT-STYLE-WORKFLOW.md](../GIT-STYLE-WORKFLOW.md).
 
+Reviewed 6 October against application `52c2447`: still the next product build.
+The existing file workflow is implemented; phase 1 below supplies the missing
+project-level interface. Invitation email is now available through the web
+gateway; project sharing should reuse it after a successful engine access grant.
+
 Starting point: on 30 September the owner reset production — every document was
 permanently deleted (accounts kept; see
 [operations record](../operations/2026-09-30-document-reset.md)). Production has **0
-documents and 0 workspaces**, so no data migration is needed for existing projects.
+documents and 0 workspaces** at that time. Recheck current data before implementing;
+do not assume the database is still empty. Preserve existing folders/documents
+and add a new migration; the reset does not authorize another deletion.
 
 ## 1. What the owner asked for
 
@@ -185,6 +192,7 @@ requests tab → reviewer approves → owner merges → Files tab shows the merg
 Activity shows the sequence → Compare two versions → night mode screenshot.
 
 Acceptance criteria:
+
 1. A person with no organization can create a project from Home in ≤ 3 clicks.
 2. Every tab loads in < 1 s with 200 files and 2,000 events on the VPS.
 3. No endpoint returns a title, email or content from a document the caller cannot open.
@@ -210,3 +218,24 @@ Acceptance criteria:
 4. Is "Issues" wanted in phase 1?
 5. Should the agentic/AI provenance work ([proposal](AGENT-PROVENANCE-PROPOSAL.md)) show
    per-project AI-usage summaries in Activity from the start?
+
+## 12. Preparation for phase 1
+
+- Recommended initial scope: private projects, one document location, personal
+  drafts private, no Issues or AI summaries. These are recommendations pending
+  the remaining product choices, not evidence that phase 1 is implemented.
+- Resolve the visibility mismatch before implementing: §3 proposes inherited
+  organization/team membership, while §11 recommends invited-only projects.
+  Top-level invite-only projects fit the existing model. For nested projects,
+  explicitly choose parent-member inheritance or an access boundary and test it;
+  a Private badge alone cannot change effective permissions.
+- Use migration `0022` only if still unused in both repositories; `0020` and
+  `0021` now belong to change requests and copies/roles/reviews/notifications.
+- Preserve `office-v5` compatibility, private draft ownership, existing direct
+  grants and immutable history. Regenerate API/client schemas and extend the
+  already-running authenticated browser CI.
+- Notification Watch in phase 1 means in-app delivery. Email invitation is already
+  implemented in the web app; watcher email/digests are a separate later feature.
+- A project owner/manager erasure or ownership transfer needs explicit supported
+  behavior, audit and tests; reuse current safeguards rather than deleting content
+  to implement project navigation.
