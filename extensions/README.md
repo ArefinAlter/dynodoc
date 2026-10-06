@@ -1,12 +1,12 @@
 # Microsoft and Google provenance connectors
 
-Both development connectors use the same protocol and capture queue. They are
-not yet published or accepted in either host. Dynodoc is the review/sync platform;
+All six development connectors use the same protocol and capture queue. Native
+acceptance and marketplace publication remain open. Dynodoc is the review/sync platform;
 Microsoft and Google remain the editors. [Contract and remaining work](../docs/PROVENANCE-SYNC.md).
 
 ## Prepare a test project
 
-Run/deploy the matching engine (migrations 0022 and 0023) and web build. Open
+Run/deploy the matching engine (migrations through 0024) and web build. Open
 `/projects`, create an invite-only project, and add a plain-paragraph DOCX or move
 an existing plain document here. Keep a local editor copy with exactly the same
 paragraph text and order. In Files → Sync & connections, create a **Word** or
@@ -105,9 +105,9 @@ these host tests. No production email is required for this development acceptanc
 ## Excel/Sheets and PowerPoint/Slides development installation
 
 All six editors use the same bundle/review/merge/pull and recovery contract. This
-increment supports existing cells/formula source and existing slide shape text,
+increment supports existing cells, date-only values/formula source and existing slide shape text,
 with a maximum of 2,000 projected cells/shapes. It does not capture structural or
-formatting changes, date cells, merged cells, charts, grouped/table slide shapes,
+formatting changes, timestamps, merged cells, charts, grouped/table slide shapes,
 media or animations. Formula dialects/layout differences require real-host checks.
 Remote structural/formatting changes stop incremental pull. Use file push for
 unsupported edits; keep original files.
@@ -119,11 +119,12 @@ The development panes and scoped APIs are now deployed at `https://app.dynodoc.o
    under Sync & connections. The key must match both editor and file format.
 3. For Microsoft hosts, sideload `excel/manifest.xml` or `powerpoint/manifest.xml`
    through the supported development/catalog workflow. The pane requires stable
-   ExcelApi 1.4 or PowerPointApi 1.4 and a saved working-copy URL. Enter the file ID
+   ExcelApi 1.13 or PowerPointApi 1.4 and a saved working-copy URL. Enter the file ID
    and key; connect. Excel named rows and PowerPoint slide/shape tags retain IDs.
 4. For Google hosts, create a container-bound Apps Script project in the matching
    spreadsheet/presentation. Install that host directory's `Code.gs`, `Common.gs`,
-   `Sidebar.html`, `Protocol.html` and `appsscript.json`. Authorize the documented
+   `Sidebar.html`, `Protocol.html` and `appsscript.json`.
+   For Sheets, include the generated `Date.gs` as well. Authorize only the
    current-file scopes and reopen the file to use the **Open provenance** menu.
    Credentials/queues are private to your Google user and file. Slides mappings
    use native IDs in private properties and preserve accessibility descriptions.
@@ -135,14 +136,26 @@ The development panes and scoped APIs are now deployed at `https://app.dynodoc.o
 
 Build/check all three Google protocol artifacts with `pnpm build:connectors` /
 `pnpm check:connectors` from `frontend/researcher`. Those commands also synchronize
-Sheets/Slides `Common.gs` from `google-common/Common.gs`; edit the shared source.
+Sheets/Slides `Common.gs` from `google-common/Common.gs` and generate Sheets
+`Date.gs` from the shared calendar module; edit the shared sources.
+
+Date-only cells retain the calendar day across hosts. Excel evaluates native
+calendar functions in the workbook; Sheets uses its spreadsheet timezone. The
+queue stores ISO midnight UTC as a civil-day representation, not an instant to
+shift into the user's timezone. Existing date formats remain in place. Invalid
+dates, hidden times, type changes, unrepresentable local midnight and changes during
+preflight stop the update. Blank dates stay blank; formula source stays a formula.
+Changing a date format/type still requires file push. Excel requires API 1.13 to
+check native merged cells before binding or writing. Native acceptance must check
+both Excel date systems and Sheets timezone/DST boundaries.
 
 Acceptance still required for each pair: desktop and cloud Microsoft hosts;
 Google host reopen/permissions/private accounts; saved identity retention;
 offline exact retry; late typing; explicit recovery into a fresh copy; independent
 and competing cell/shape edits; review/merge/pull across Microsoft and Google;
 and rejection of unsupported structures. Marketplace publication is separate.
-See [release evidence](../docs/SIX-EDITOR-PROVENANCE-RELEASE.md).
+See [release evidence](../docs/SIX-EDITOR-PROVENANCE-RELEASE.md) and the
+[native acceptance checklist](../docs/NATIVE-CONNECTOR-ACCEPTANCE.md).
 
 Snapshot limitation: sorting or pasting complete spreadsheet rows can appear as
 multiple cell-value changes when the host retains named range coordinates.

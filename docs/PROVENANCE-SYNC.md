@@ -151,4 +151,30 @@ exchange uses reviewed checkpoints; sidecars restore into their original host.
 The shared pull planner rejects remote format/structure changes for structured
 files. Native bindings check row ranges or shape/slide IDs, recheck preview values
 before writes, and confirm the applied projection before advancing the ledger.
-Formatting/structural capture, dates, media and native acceptance remain open.
+Formatting/structural capture, timestamps, media and native acceptance remain open.
+
+## Date-only spreadsheet observations (6 October)
+
+Existing `format_N.type = "date"` cells can exchange a civil calendar day. The
+projected value is `YYYY-MM-DDT00:00:00.000Z`, matching the engine's imported-XLSX
+representation; this encodes a day rather than an instant to timezone-convert.
+Checkpoints also accept strict `YYYY-MM-DD` and normalize the projection. Blank
+values remain blank and leading-`=` formula source remains unchanged.
+
+Excel converts serial values using stable native YEAR/MONTH/DAY/DATE functions
+inside the current workbook and checks both directions before any cell write.
+The connector never guesses a 1900/1904 epoch or uses the machine timezone.
+Sheets converts native Date objects using the spreadsheet timezone, checks local
+midnight, then parses and verifies that same local midnight before writing. It
+rechecks timezone and native values after preflight. Invalid days, hidden times,
+type changes and unrepresentable local midnight stop sync. Dates must be real
+days from 1900 through 9999 and representable by the host's workbook/calendar.
+
+The version-1 string `FieldEdited` envelope, immutable receipts, schema and event
+variants are unchanged. Date observations and superseded sidecar changes are
+validated against the original checkpoint's field types. Formula calculation,
+date formatting/type changes and timestamps remain outside incremental exchange.
+Excel now requires API 1.13 for local merged-area checks before binding/writing;
+PowerPoint remains API 1.4. Google Sheets adds generated `Date.gs`; regenerate and
+install it with the other sidebar files. Native date-system/timezone behavior
+still needs [installed-host acceptance](NATIVE-CONNECTOR-ACCEPTANCE.md).

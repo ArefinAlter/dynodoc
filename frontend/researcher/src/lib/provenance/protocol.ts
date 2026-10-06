@@ -1,5 +1,6 @@
-/** Shared by the Word task pane and the Google Docs sidebar. No editor credentials
+/** Shared by all six native connectors. No editor credentials
  * are part of a checkpoint, ledger or portable bundle. Capture is opt-in. */
+import { dateText } from './date';
 export interface Node {
   id: string;
   type: string;
@@ -173,17 +174,13 @@ function projectStructured(c: Checkpoint, nodes: Node[], root: Node, targets = f
         for (let column = 0; column < columns; column++) {
           const field = `cell_${column}`,
             format = n.current_fields[`format_${column}`] as { type?: string } | undefined;
-          if (format?.type === 'date')
-            throw new Error(
-              'Date cells require file push until date/locale exchange is supported.'
-            );
           const value = n.current_fields[field] ?? '';
           if (!['string', 'number', 'boolean'].includes(typeof value))
             throw new Error('Unsupported cell value. Use file push.');
           result.push({
             id: n.id,
             field,
-            text: String(value),
+            text: format?.type === 'date' ? dateText(String(value)) : String(value),
             group: String(g.current_fields.label),
             groupIndex,
             index,
@@ -307,6 +304,19 @@ export function pullPlan(base: Block[], local: Block[], remote: Block[]) {
     text: local[i].text === b.text ? remote[i].text : local[i].text
   }));
 }
+/** Adapters and recovery files must keep date observations in the same canonical
+ * representation. Validate every observation, including superseded ones. */
+export function validateBlockValues(checkpoint: Checkpoint, blocks: Block[]) {
+  if (checkpoint.kind !== 'spreadsheet') return;
+  const dates = new Set(
+    structuredTargets(checkpoint)
+      .filter((t) => t.cellType === 'date')
+      .map(blockKey)
+  );
+  for (const b of blocks)
+    if (dates.has(blockKey(b)) && dateText(b.text) !== b.text)
+      throw new Error('Date observations must use the canonical ISO date representation.');
+}
 export class CaptureSession {
   private tail: Promise<unknown> = Promise.resolve();
   private serial<T>(work: () => Promise<T>): Promise<T> {
@@ -351,6 +361,7 @@ export class CaptureSession {
     return this.serial(() => this.captureNow(snapshot));
   }
   private async captureNow(local: Block[]) {
+    validateBlockValues(this.ledger.checkpoint, local);
     const changes = diff(this.ledger.seen, local);
     if (!changes.length) return;
     const next = copy(this.ledger);
@@ -414,6 +425,7 @@ export class CaptureSession {
     await this.persist(next);
   }
   plan(checkpoint: Checkpoint, local: Block[]) {
+    validateBlockValues(this.ledger.checkpoint, local);
     if (
       checkpoint.document_id !== this.ledger.checkpoint.document_id ||
       checkpoint.through_seq < this.ledger.checkpoint.through_seq ||
@@ -469,6 +481,7 @@ export class CaptureSession {
     return this.serial(() => this.acceptPullNow(checkpoint, actual));
   }
   private async acceptPullNow(checkpoint: Checkpoint, actual: Block[]) {
+    validateBlockValues(checkpoint, actual);
     if (this.ledger.pending)
       throw new Error(
         'An upload has no receipt yet. Retry it before advancing its starting revision.'

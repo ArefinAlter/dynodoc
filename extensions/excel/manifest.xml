@@ -9,7 +9,7 @@
   <SupportUrl DefaultValue="https://dynodoc.online" />
   <AppDomains><AppDomain>https://app.dynodoc.online</AppDomain></AppDomains>
   <Hosts><Host Name="Workbook" /></Hosts>
-  <Requirements><Sets DefaultMinVersion="1.4"><Set Name="ExcelApi" /></Sets></Requirements>
+  <Requirements><Sets DefaultMinVersion="1.13"><Set Name="ExcelApi" /></Sets></Requirements>
   <DefaultSettings><SourceLocation DefaultValue="https://app.dynodoc.online/connectors/excel" /></DefaultSettings>
   <Permissions>ReadWriteDocument</Permissions>
 </OfficeApp>

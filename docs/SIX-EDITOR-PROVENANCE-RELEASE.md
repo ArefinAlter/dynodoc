@@ -17,7 +17,7 @@ building a competing Office suite is not the product priority.
 - All six key options, file-kind validation and migration 0024; existing scopes,
   retry receipts, revocation and append-only history stay in place.
 - Existing Project creation, files/requests/own drafts, members, inherited review
-  rules and watchers are included in the pending VPS rollout.
+  rules and watchers are included in the verified VPS rollout below.
 
 ## Verification and rollout
 

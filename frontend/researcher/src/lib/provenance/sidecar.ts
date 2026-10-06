@@ -7,6 +7,7 @@ import {
   blockKey,
   operationText,
   assertHostKind,
+  validateBlockValues,
   type Host,
   type Block,
   type Checkpoint,
@@ -202,12 +203,29 @@ export function parseSidecar(text: string): Sidecar {
     // The sidecar byte cap bounds the complete recoverable observation history.
     observed = changes(l.changes, base, Number.MAX_SAFE_INTEGER);
   assertHostKind(s.host as Host, c.kind);
+  validateBlockValues(c, seen);
+  validateBlockValues(
+    c,
+    observed.map(({ operation: op }) => ({
+      id: op.node_id,
+      field: op.field,
+      text: operationText(op)
+    }))
+  );
   if (!equal(replay(base, observed), seen)) invalid();
   for (const value of array(l.archives, 1000)) {
     const archive = object(value, ['checkpoint', 'changes']),
       previous = checkpoint(archive.checkpoint);
     if (previous.document_id !== c.document_id || previous.through_seq > c.through_seq) invalid();
-    changes(archive.changes, projectCheckpoint(previous), Number.MAX_SAFE_INTEGER);
+    const history = changes(archive.changes, projectCheckpoint(previous), Number.MAX_SAFE_INTEGER);
+    validateBlockValues(
+      previous,
+      history.map(({ operation: op }) => ({
+        id: op.node_id,
+        field: op.field,
+        text: operationText(op)
+      }))
+    );
   }
   if (l.pending !== null) {
     const p = object(l.pending, ['name', 'note', 'submit', 'bundle']),

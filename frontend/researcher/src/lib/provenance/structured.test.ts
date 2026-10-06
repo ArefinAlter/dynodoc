@@ -128,7 +128,7 @@ describe('structured capture uses the same durable contract', () => {
     expect(() => session.plan(remote, base)).toThrow('formatting');
     await expect(CaptureSession.connect(store(), c, base, 'excel')).rejects.toThrow('format');
   });
-  it('rejects forged sidecar fields, date cells and merged ranges', async () => {
+  it('rejects forged sidecar fields, timestamp cells and merged ranges', async () => {
     const c = checkpoint(),
       session = await CaptureSession.connect(store(), c, projectCheckpoint(c), 'excel');
     await session.capture(projectCheckpoint(c).map((b, i) => ({ ...b, text: i ? '=A1*4' : '2' })));
@@ -136,7 +136,8 @@ describe('structured capture uses the same durable contract', () => {
     s.ledger.changes[0].operation.field = 'cell_99';
     expect(() => parseSidecar(JSON.stringify(s))).toThrow('Invalid');
     c.state.nodes[item].current_fields.format_0 = { type: 'date' };
-    expect(() => projectCheckpoint(c)).toThrow('Date');
+    c.state.nodes[item].current_fields.cell_0 = '2026-10-06T12:00:00.000Z';
+    expect(() => projectCheckpoint(c)).toThrow('time');
     c.state.nodes[item].current_fields.format_0 = {};
     c.state.nodes[group].current_fields.sheet_layout = { merges: [{}] };
     expect(() => projectCheckpoint(c)).toThrow('Merged');
@@ -169,12 +170,27 @@ describe('native Office adapter boundaries', () => {
         isNullObject: false,
         worksheet: { name: 'Sheet1', load: () => {} },
         load: () => {},
-        getCell: (_r: number, c: number) => range(c, 1)
+        getCell: (_r: number, c: number) => range(c, 1),
+        getMergedAreasOrNullObject: () => ({ isNullObject: true, load: () => {} })
       };
     }
     const ctx: Ctx = {
       sync: async () => {},
       workbook: {
+        functions: {
+          year: () => {
+            throw new Error('Unexpected date call');
+          },
+          month: () => {
+            throw new Error('Unexpected date call');
+          },
+          day: () => {
+            throw new Error('Unexpected date call');
+          },
+          date: () => {
+            throw new Error('Unexpected date call');
+          }
+        },
         worksheets: {
           items: [
             {

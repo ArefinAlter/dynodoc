@@ -36,3 +36,20 @@ for (const host of ['google-docs', 'google-sheets', 'google-slides']) {
       await readFile(extensions + 'google-common/Common.gs', 'utf8')
     );
 }
+// Apps Script's native Sheets adapter uses the same strict calendar validator.
+const calendar = await build({
+  configFile: false,
+  root,
+  logLevel: 'warn',
+  build: {
+    write: false,
+    minify: false,
+    lib: { entry: root + 'src/lib/provenance/date.ts', name: 'DynodocCalendar', formats: ['iife'] }
+  }
+});
+const calendarOutput = Array.isArray(calendar) ? calendar[0] : calendar;
+await artifact(
+  extensions + 'google-sheets/Date.gs',
+  '// Generated from the shared calendar validator. Run pnpm build:connectors.\n' +
+    calendarOutput.output.find((x) => x.type === 'chunk').code
+);

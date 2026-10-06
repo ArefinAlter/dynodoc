@@ -1,5 +1,5 @@
 /** Native Office adapters for existing cells/formulas and slide shape text.
- * Read/write APIs are stable ExcelApi 1.4 / PowerPointApi 1.4 subsets. */
+ * Read/write APIs are stable ExcelApi 1.13 / PowerPointApi 1.4 subsets. */
 import {
   bindIdentical,
   sameBlocks,
@@ -10,6 +10,7 @@ import {
   type Checkpoint,
   type StructuredTarget
 } from './protocol';
+import { readExcelDates, writeExcelDates, type DateFunctions } from './date';
 interface Collection<T> {
   items: T[];
   load: (fields: string) => void;
@@ -25,6 +26,7 @@ interface Range {
   load: (fields: string) => void;
   worksheet: { name: string; load: (fields: string) => void };
   getCell: (row: number, column: number) => Range;
+  getMergedAreasOrNullObject: () => { isNullObject: boolean; load: (fields: string) => void };
 }
 interface NamedItem {
   name: string;
@@ -42,7 +44,7 @@ interface Worksheet {
   getRangeByIndexes: (r: number, c: number, rows: number, cols: number) => Range;
 }
 interface ExcelContext {
-  workbook: { worksheets: Collection<Worksheet>; names: Names };
+  workbook: { worksheets: Collection<Worksheet>; names: Names; functions: DateFunctions };
   sync: () => Promise<void>;
 }
 export interface ExcelRuntime {
@@ -155,7 +157,9 @@ export class ExcelAdapter implements StructuredAdapter {
         name = ctx.workbook.names.getItemOrNullObject('dynodoc_' + t.id);
       range.load('values,formulas,rowIndex,columnIndex,rowCount,columnCount');
       name.load('name,isNullObject');
-      return { t, range, name };
+      const merged = range.getMergedAreasOrNullObject();
+      merged.load('isNullObject');
+      return { t, range, name, merged };
     });
     const used = ctx.workbook.worksheets.items.map((s) => {
       const r = s.getUsedRangeOrNullObject(true);
@@ -163,12 +167,14 @@ export class ExcelAdapter implements StructuredAdapter {
       return { s, r };
     });
     await ctx.sync();
+    if (rows.some((r) => !r.merged.isNullObject))
+      throw new Error('Merged cells require file push.');
     for (const { s, r } of used) {
       const ts = this.targets.filter((t) => t.group === s.name);
       if (
         !r.isNullObject &&
-        (r.rowIndex + r.rowCount > Math.max(...ts.map((t) => t.index)) + 1 ||
-          r.columnIndex + r.columnCount > Math.max(...ts.map((t) => t.column!)) + 1)
+        (r.rowIndex + r.rowCount > Math.max(0, ...ts.map((t) => t.index + 1)) ||
+          r.columnIndex + r.columnCount > Math.max(0, ...ts.map((t) => t.column! + 1)))
       )
         throw new Error('New rows or columns require file push.');
     }
@@ -194,23 +200,50 @@ export class ExcelAdapter implements StructuredAdapter {
       throw new Error('A row identity is missing. Use file push.');
     return rows;
   }
-  private readRows(rows: Awaited<ReturnType<ExcelAdapter['rows']>>): Block[] {
+  private async readRows(ctx: ExcelContext, rows: Awaited<ReturnType<ExcelAdapter['rows']>>) {
+    const dateTargets = this.targets.filter((t) => {
+      const r = rows.find((r) => r.t.id === t.id)!.range;
+      const formula = r.formulas[0][t.column!];
+      return t.cellType === 'date' && !(typeof formula === 'string' && formula.startsWith('='));
+    });
+    const dates = await readExcelDates(
+      ctx,
+      dateTargets.map((t) => rows.find((r) => r.t.id === t.id)!.range.values[0][t.column!])
+    );
+    const byKey = new Map(dateTargets.map((t, i) => [blockKey(t), dates[i]]));
     return this.targets.map((t) => {
       const r = rows.find((r) => r.t.id === t.id)!.range;
       return {
         id: t.id,
         field: t.field,
-        text: cellText(r.values[0][t.column!], r.formulas[0][t.column!], t.cellType)
+        text:
+          byKey.get(blockKey(t)) ??
+          cellText(r.values[0][t.column!], r.formulas[0][t.column!], t.cellType)
       };
     });
+  }
+  private snapshot(rows: Awaited<ReturnType<ExcelAdapter['rows']>>) {
+    return JSON.stringify(
+      this.targets.map((t) => {
+        const r = rows.find((r) => r.t.id === t.id)!.range;
+        const formula = r.formulas[0][t.column!];
+        return typeof formula === 'string' && formula.startsWith('=')
+          ? formula
+          : r.values[0][t.column!];
+      })
+    );
   }
   async bind(blocks: Block[]) {
     await this.guard();
     return this.runtime.run(async (ctx) => {
       const rows = await this.rows(ctx, true);
-      bindIdentical(this.readRows(rows), blocks);
+      const before = this.snapshot(rows);
+      bindIdentical(await this.readRows(ctx, rows), blocks);
+      const checked = await this.rows(ctx, true);
+      if (this.snapshot(checked) !== before)
+        throw new Error('The local file changed while checking dates. Connect again.');
       await this.guard();
-      for (const r of rows)
+      for (const r of checked)
         if (r.name.isNullObject) ctx.workbook.names.add('dynodoc_' + r.t.id, r.range);
       await ctx.sync();
     });
@@ -219,25 +252,41 @@ export class ExcelAdapter implements StructuredAdapter {
     await this.guard();
     return this.runtime.run(async (ctx) => {
       const rows = await this.rows(ctx, false);
+      const actual = await this.readRows(ctx, rows);
       await this.guard();
-      return this.readRows(rows);
+      return actual;
     });
   }
   async apply(expected: Block[], next: Block[]) {
     await this.guard();
     return this.runtime.run(async (ctx) => {
       const rows = await this.rows(ctx, false);
-      validateNext(this.readRows(rows), expected, next);
+      const before = this.snapshot(rows);
+      validateNext(await this.readRows(ctx, rows), expected, next);
+      const dateWrites = next.filter(
+        (b, i) =>
+          b.text !== expected[i].text &&
+          this.targets[i].cellType === 'date' &&
+          !b.text.startsWith('=')
+      );
+      const dates = await writeExcelDates(
+        ctx,
+        dateWrites.map((b) => b.text)
+      );
+      const byKey = new Map(dateWrites.map((b, i) => [blockKey(b), dates[i]]));
       const writes = next.map((b, i) => ({
         b,
         i,
-        value: cellValue(b.text, this.targets[i].cellType)
+        value: byKey.get(blockKey(b)) ?? cellValue(b.text, this.targets[i].cellType)
       }));
+      const checked = await this.rows(ctx, false);
+      if (this.snapshot(checked) !== before)
+        throw new Error('The local file changed after preview. Capture again before applying.');
       await this.guard();
       for (const { b, i, value } of writes)
         if (b.text !== expected[i].text) {
           const t = this.targets[i],
-            cell = rows.find((r) => r.t.id === t.id)!.range.getCell(0, t.column!);
+            cell = checked.find((r) => r.t.id === t.id)!.range.getCell(0, t.column!);
           if (b.text.startsWith('=')) cell.formulas = [[b.text]];
           else cell.values = [[value]];
         }

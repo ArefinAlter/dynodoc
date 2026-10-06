@@ -20,6 +20,7 @@
   } from '$lib/provenance/office-structured';
   let { host }: { host: 'excel' | 'powerpoint' } = $props();
   const label = $derived(host === 'excel' ? 'Excel' : 'PowerPoint');
+  const apiVersion = $derived(host === 'excel' ? '1.13' : '1.4');
   import {
     exportSidecar,
     parseSidecar,
@@ -64,9 +65,9 @@
       office.Office.onReady((info) => {
         if (
           info.host !== label ||
-          !office.Office.context.requirements.isSetSupported(label + 'Api', '1.4')
+          !office.Office.context.requirements.isSetSupported(label + 'Api', apiVersion)
         ) {
-          error = `Open this task pane in ${label} with ${label}Api 1.4 support.`;
+          error = `Open this task pane in ${label} with ${label}Api ${apiVersion} support.`;
           return;
         }
         officeDocument = office.Office.context.document;
@@ -226,9 +227,9 @@
 <main>
   <h1>Dynodoc for {label}</h1>
   <p>
-    Development connector for existing spreadsheet cells and formulas, or slide shape text. Save the
-    file to retain identities. Capture runs while this pane is open. Structural and formatting
-    changes require file push.
+    Development connector for existing spreadsheet cells, dates and formulas, or slide shape text.
+    Save the file to retain identities. Capture runs while this pane is open. Structural and
+    formatting changes require file push.
   </p>
   {#if error}<p role="alert">{error}</p>{/if}{#if notice}<p role="status">{notice}</p>{/if}
   <label>Dynodoc address<input bind:value={origin} disabled={!!session} /></label><label

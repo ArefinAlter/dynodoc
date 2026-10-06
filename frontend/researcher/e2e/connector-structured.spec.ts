@@ -53,7 +53,7 @@ function checkpoint(host: Host): Checkpoint {
 const officeBase = `window.workingCopyUrl='file:///native-copy';window.Office={onReady:callback=>callback({host:HOST}),context:{requirements:{isSetSupported:()=>true},document:{getFilePropertiesAsync:callback=>callback({status:'succeeded',value:{url:window.workingCopyUrl}})}}};`;
 const excel = `
 let cells=[2,'=A1*2'];const named=new Map();
-function range(col=0,count=2){return {get values(){return [cells.slice(col,col+count)]},set values(v){v[0].forEach((x,i)=>cells[col+i]=x)},get formulas(){return [cells.slice(col,col+count)]},set formulas(v){v[0].forEach((x,i)=>cells[col+i]=x)},rowIndex:0,columnIndex:col,rowCount:1,columnCount:count,isNullObject:false,worksheet:{name:'Sheet1',load(){}},load(){},getCell(r,c){return range(c,1)}};}
+function range(col=0,count=2){return {get values(){return [cells.slice(col,col+count)]},set values(v){v[0].forEach((x,i)=>cells[col+i]=x)},get formulas(){return [cells.slice(col,col+count)]},set formulas(v){v[0].forEach((x,i)=>cells[col+i]=x)},rowIndex:0,columnIndex:col,rowCount:1,columnCount:count,isNullObject:false,worksheet:{name:'Sheet1',load(){}},load(){},getCell(r,c){return range(c,1)},getMergedAreasOrNullObject:()=>({isNullObject:true,load(){}})};}
 const sheet={name:'Sheet1',getUsedRangeOrNullObject:()=>range(),getRangeByIndexes:()=>range()};
 window.Excel={run:async callback=>callback({sync:async()=>{},workbook:{worksheets:{items:[sheet],load(){}},names:{get items(){return [...named.keys()].map(name=>({name}))},load(){},getItemOrNullObject:name=>({name,isNullObject:!named.has(name),load(){},getRange:()=>named.get(name)}),add:(name,r)=>named.set(name,r)}}})};
 window.editNative=()=>cells[0]=7;window.nativeBlocks=()=>cells;`;
@@ -126,6 +126,100 @@ for (const host of ['excel', 'powerpoint'] as const) {
     ).toEqual(host === 'excel' ? [7, '=A1*3'] : ['Edited']);
   });
 }
+test('Excel date pane freezes retries and preflights calendar pulls before writing', async ({
+  page,
+  context
+}) => {
+  const c = checkpoint('excel'),
+    uploads: unknown[] = [];
+  c.state.nodes[ITEM].current_fields = {
+    cell_0: '2026-10-06T00:00:00.000Z',
+    cell_1: '2026-11-05T00:00:00.000Z',
+    format_0: { type: 'date' },
+    format_1: { type: 'date' }
+  };
+  let team = c;
+  const serial = (day: string) =>
+    (Date.parse(day) - Date.parse('1904-01-01T00:00:00.000Z')) / 86400000;
+  const native = excel
+    .replace(
+      "let cells=[2,'=A1*2'];",
+      `let cells=[${serial('2026-10-06')},${serial('2026-11-05')}];`
+    )
+    .replace(
+      'workbook:{worksheets:',
+      `workbook:{functions:{
+      year:n=>result(new Date(origin+n*86400000).getUTCFullYear()),
+      month:n=>result(new Date(origin+n*86400000).getUTCMonth()+1),
+      day:n=>result(new Date(origin+n*86400000).getUTCDate()),
+      date:(y,m,d)=>result((Date.UTC(y,m-1,d)-origin)/86400000)
+    },worksheets:`
+    )
+    .replace(
+      'window.editNative=()=>cells[0]=7;',
+      `window.editNative=()=>cells[0]=${serial('2026-10-07')};window.hiddenTime=()=>cells[0]+=.25;window.clearTime=()=>cells[0]=Math.floor(cells[0]);`
+    );
+  await context.route('https://appsforoffice.microsoft.com/lib/1/hosted/office.js', (r) =>
+    r.fulfill({
+      contentType: 'text/javascript',
+      body:
+        "const HOST='Excel',origin=Date.parse('1904-01-01T00:00:00.000Z'),result=value=>({value,error:null,load(){}});" +
+        officeBase +
+        native
+    })
+  );
+  await context.route(`**/api/connectors/documents/${DOC}/checkpoint*`, (r) =>
+    r.fulfill({ json: team })
+  );
+  await context.route(`**/api/connectors/documents/${DOC}/bundles`, (r) => {
+    const push = r.request().postDataJSON();
+    uploads.push(push);
+    if (uploads.length === 1)
+      return r.fulfill({ status: 503, json: { error: 'Offline transport' } });
+    team = structuredClone(c);
+    team.through_seq += 2;
+    team.chain_hash = 'b'.repeat(64);
+    team.proposals = [{ id: REQUEST, status: 'merged' }];
+    team.state.nodes[ITEM].current_fields.cell_0 = '2026-10-07T00:00:00.000Z';
+    team.state.nodes[ITEM].current_fields.cell_1 = '2026-11-06T00:00:00.000Z';
+    return r.fulfill({
+      json: {
+        id: REQUEST,
+        bundle_id: push.bundle.bundle_id,
+        digest: 'c'.repeat(64),
+        uploaded_by: ACTOR,
+        submitted: true
+      }
+    });
+  });
+  await page.goto('/connectors/excel');
+  await page.getByLabel('File ID', { exact: true }).fill(DOC);
+  await page.getByLabel('File connection key').fill('a'.repeat(64));
+  await page.getByRole('button', { name: 'Connect this file' }).click();
+  await expect(page.getByRole('status')).toContainText('Connected');
+  await page.evaluate(() => (window as unknown as { editNative: () => void }).editNative());
+  await page.getByRole('button', { name: 'Push changes for review' }).click();
+  await expect(page.getByRole('alert')).toContainText('Offline transport');
+  await page.getByRole('button', { name: 'Push changes for review' }).click();
+  await expect(page.getByRole('status')).toContainText('sent for review');
+  expect(uploads[1]).toEqual(uploads[0]);
+  expect(
+    (uploads[0] as { bundle: { changes: { operation: { value: string } }[] } }).bundle.changes[0]
+      .operation.value
+  ).toBe('2026-10-07T00:00:00.000Z');
+  await page.getByRole('button', { name: 'Preview team changes' }).click();
+  await expect(page.getByRole('button', { name: /Apply preview to/ })).toBeVisible();
+  await page.evaluate(() => (window as unknown as { hiddenTime: () => void }).hiddenTime());
+  await page.getByRole('button', { name: /Apply preview to/ }).click();
+  await expect(page.getByRole('alert')).toContainText('time');
+  await page.evaluate(() => (window as unknown as { clearTime: () => void }).clearTime());
+  await page.getByRole('button', { name: 'Preview team changes' }).click();
+  await page.getByRole('button', { name: /Apply preview to/ }).click();
+  await expect(page.getByRole('status')).toContainText('Team changes applied');
+  expect(
+    await page.evaluate(() => (window as unknown as { nativeBlocks: () => unknown }).nativeBlocks())
+  ).toEqual([serial('2026-10-07'), serial('2026-11-06')]);
+});
 for (const host of ['google-sheets', 'google-slides'] as const) {
   test(`${host} sidebar uses the shared field queue and scoped host bridge`, async ({ page }) => {
     const c = checkpoint(host),

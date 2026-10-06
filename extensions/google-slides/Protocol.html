@@ -5,6 +5,15 @@ var DynodocProvenance = function(exports) {
 var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
 var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 
+  function dateText(value) {
+    if (value === "" || value.startsWith("=")) return value;
+    if (!/^\d{4}-\d{2}-\d{2}(T00:00:00\.000Z)?$/.test(value))
+      throw new Error("Date cells need an ISO date without a time. Use file push for timestamps.");
+    const day = value.slice(0, 10), iso = day + "T00:00:00.000Z", parsed = new Date(iso);
+    if (Number(day.slice(0, 4)) < 1900 || !Number.isFinite(parsed.getTime()) || parsed.toISOString() !== iso)
+      throw new Error("Invalid calendar date. Use a date from 1900 through 9999.");
+    return iso;
+  }
   const hosts = [
     "word",
     "google-docs",
@@ -69,17 +78,13 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
         items.forEach((n, index) => {
           for (let column = 0; column < columns; column++) {
             const field = `cell_${column}`, format = n.current_fields[`format_${column}`];
-            if ((format == null ? void 0 : format.type) === "date")
-              throw new Error(
-                "Date cells require file push until date/locale exchange is supported."
-              );
             const value = n.current_fields[field] ?? "";
             if (!["string", "number", "boolean"].includes(typeof value))
               throw new Error("Unsupported cell value. Use file push.");
             result.push({
               id: n.id,
               field,
-              text: String(value),
+              text: (format == null ? void 0 : format.type) === "date" ? dateText(String(value)) : String(value),
               group: String(g.current_fields.label),
               groupIndex,
               index,
@@ -169,6 +174,15 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
       text: local[i].text === b.text ? remote[i].text : local[i].text
     }));
   }
+  function validateBlockValues(checkpoint2, blocks2) {
+    if (checkpoint2.kind !== "spreadsheet") return;
+    const dates = new Set(
+      structuredTargets(checkpoint2).filter((t) => t.cellType === "date").map(blockKey)
+    );
+    for (const b of blocks2)
+      if (dates.has(blockKey(b)) && dateText(b.text) !== b.text)
+        throw new Error("Date observations must use the canonical ISO date representation.");
+  }
   class CaptureSession {
     constructor(ledger, store, host) {
       __publicField(this, "tail", Promise.resolve());
@@ -213,6 +227,7 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
       return this.serial(() => this.captureNow(snapshot));
     }
     async captureNow(local) {
+      validateBlockValues(this.ledger.checkpoint, local);
       const changes2 = diff(this.ledger.seen, local);
       if (!changes2.length) return;
       const next = copy(this.ledger);
@@ -269,6 +284,7 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
       await this.persist(next);
     }
     plan(checkpoint2, local) {
+      validateBlockValues(this.ledger.checkpoint, local);
       if (checkpoint2.document_id !== this.ledger.checkpoint.document_id || checkpoint2.through_seq < this.ledger.checkpoint.through_seq || checkpoint2.through_seq === this.ledger.checkpoint.through_seq && checkpoint2.chain_hash !== this.ledger.checkpoint.chain_hash)
         throw new Error("Checkpoint belongs to another history.");
       if (checkpoint2.kind !== this.ledger.checkpoint.kind)
@@ -303,6 +319,7 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
     }
     async acceptPullNow(checkpoint2, actual) {
       var _a, _b;
+      validateBlockValues(checkpoint2, actual);
       if (this.ledger.pending)
         throw new Error(
           "An upload has no receipt yet. Retry it before advancing its starting revision."
@@ -568,11 +585,28 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
     string(l.client_id, uuid);
     const c = checkpoint(l.checkpoint), base = projectCheckpoint(c), seen = blocks(l.seen, base), observed = changes(l.changes, base, Number.MAX_SAFE_INTEGER);
     assertHostKind(s.host, c.kind);
+    validateBlockValues(c, seen);
+    validateBlockValues(
+      c,
+      observed.map(({ operation: op }) => ({
+        id: op.node_id,
+        field: op.field,
+        text: operationText(op)
+      }))
+    );
     if (!equal(replay(base, observed), seen)) invalid();
     for (const value of array(l.archives, 1e3)) {
       const archive = object(value, ["checkpoint", "changes"]), previous = checkpoint(archive.checkpoint);
       if (previous.document_id !== c.document_id || previous.through_seq > c.through_seq) invalid();
-      changes(archive.changes, projectCheckpoint(previous), Number.MAX_SAFE_INTEGER);
+      const history = changes(archive.changes, projectCheckpoint(previous), Number.MAX_SAFE_INTEGER);
+      validateBlockValues(
+        previous,
+        history.map(({ operation: op }) => ({
+          id: op.node_id,
+          field: op.field,
+          text: operationText(op)
+        }))
+      );
     }
     if (l.pending !== null) {
       const p = object(l.pending, ["name", "note", "submit", "bundle"]), b = object(p.bundle, [
@@ -720,6 +754,7 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
   exports.structuredBinding = structuredBinding;
   exports.structuredGroups = structuredGroups;
   exports.structuredTargets = structuredTargets;
+  exports.validateBlockValues = validateBlockValues;
   Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
   return exports;
 }({});
