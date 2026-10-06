@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { webcrypto } from 'node:crypto';
 import {
   CaptureSession,
+  type ParagraphValue,
   projectCheckpoint,
   bindIdentical,
   pullPlan,
@@ -151,7 +152,9 @@ describe('shared Word / Google Docs capture contract', () => {
     word.canApply(merged);
     await word.acceptPull(merged, changed('Word edit'));
     expect(word.ledger.changes).toHaveLength(0);
-    expect(word.ledger.archives[0].changes[0].operation.value.content[0].text).toBe('Word edit');
+    expect(
+      (word.ledger.archives[0].changes[0].operation.value as ParagraphValue).content[0].text
+    ).toBe('Word edit');
     const gm = memory(),
       docs = await CaptureSession.connect(
         gm.store,

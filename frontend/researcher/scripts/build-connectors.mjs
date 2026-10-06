@@ -2,7 +2,7 @@ import { build } from 'vite';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../', import.meta.url));
-const out = fileURLToPath(new URL('../../../extensions/google-docs/', import.meta.url));
+const extensions = fileURLToPath(new URL('../../../extensions/', import.meta.url));
 const result = await build({
   configFile: false,
   root,
@@ -19,10 +19,20 @@ const result = await build({
 });
 const output = Array.isArray(result) ? result[0] : result;
 const source = output.output.find((x) => x.type === 'chunk').code;
-await mkdir(out, { recursive: true });
 const rendered = `<!-- Generated from the shared protocol. Run pnpm build:connectors. -->\n<script>\n${source.replaceAll('</script', '<\\/script')}\n</script>\n`;
-const path = out + 'Protocol.html';
-if (process.argv.includes('--check')) {
-  if ((await readFile(path, 'utf8')) !== rendered)
-    throw new Error('Google Docs protocol build is stale');
-} else await writeFile(path, rendered);
+async function artifact(path, content) {
+  if (process.argv.includes('--check')) {
+    if ((await readFile(path, 'utf8')) !== content)
+      throw new Error(`Connector build is stale: ${path}`);
+  } else await writeFile(path, content);
+}
+for (const host of ['google-docs', 'google-sheets', 'google-slides']) {
+  const out = extensions + host + '/';
+  await mkdir(out, { recursive: true });
+  await artifact(out + 'Protocol.html', rendered);
+  if (host !== 'google-docs')
+    await artifact(
+      out + 'Common.gs',
+      await readFile(extensions + 'google-common/Common.gs', 'utf8')
+    );
+}

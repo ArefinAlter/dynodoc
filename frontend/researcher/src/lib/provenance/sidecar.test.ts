@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { webcrypto } from 'node:crypto';
 import {
   CaptureSession,
+  type ParagraphValue,
   projectCheckpoint,
   type Checkpoint,
   type Ledger,
@@ -131,7 +132,9 @@ describe('portable provenance recovery', () => {
     await restored.acceptPull(remote, edited('Later typing'));
     const saved = parseSidecar(JSON.stringify(exportSidecar(restored)));
     expect(saved.ledger.archives[0].changes).toEqual(s.ledger.changes);
-    expect(saved.ledger.changes[0].operation.value.content[0].text).toBe('Later typing');
+    expect((saved.ledger.changes[0].operation.value as ParagraphValue).content[0].text).toBe(
+      'Later typing'
+    );
   });
   it('never overwrites an existing queue, including an empty connected ledger', async () => {
     const { sidecar } = await source(),
@@ -201,7 +204,8 @@ describe('portable provenance recovery', () => {
     [
       'altered frozen intent',
       (s: Sidecar) => {
-        s.ledger.pending!.bundle.changes[0].operation.value.content[0].text = 'Forged';
+        (s.ledger.pending!.bundle.changes[0].operation.value as ParagraphValue).content[0].text =
+          'Forged';
       }
     ],
     [

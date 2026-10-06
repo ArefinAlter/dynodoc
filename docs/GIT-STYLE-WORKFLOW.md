@@ -3,9 +3,9 @@
 ## Projects and external editors (development increment, 6 October)
 
 Dynodoc's priority is collecting and reviewing changes from your existing editors.
-Word and Google Docs connectors are being developed together; the web editors
-remain available. This increment is source code, not a recorded VPS rollout or
-marketplace publication. See [release status](PROJECTS-PROVENANCE-RELEASE.md).
+Word/Docs, Excel/Sheets and PowerPoint/Slides development connectors share the
+workflow; the web editors remain available. Native host acceptance and marketplace
+publication are separate checks. See [current release status](SIX-EDITOR-PROVENANCE-RELEASE.md).
 
 On a matching development installation, open **Home → Projects**, create a
 project and add/move your files. **Files** collects them, **Change requests** lists
@@ -16,9 +16,9 @@ in-app notices when someone submits work; invitation email remains optional.
 
 **Sync & connections** lets you download the team checkpoint, upload a portable
 change bundle, create an editor-specific seven-day connection key and revoke it.
-The development Word pane / Google Docs sidebar can opt into capture of existing
-paragraph text, retain observations privately, push them for review and preview
-team changes before applying them in the original editor. Use the ordinary file
+The development panes/sidebars can opt into capture of existing paragraph text,
+spreadsheet cells/formulas or slide shape text, retain observations privately,
+push them for review and preview team fields before applying them in the editor. Use the ordinary file
 push workflow for formatting, inserted/deleted paragraphs and other unsupported
 structures. [Installation and real-host acceptance](../extensions/README.md).
 

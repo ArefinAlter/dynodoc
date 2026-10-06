@@ -68,8 +68,8 @@
 <section>
   <h2>Sync {title}</h2>
   <p>
-    Keep editing in Word or Google Docs. Changes arrive as a draft or a review request; merging
-    records them in the team history.
+    Keep editing in Microsoft Word, Excel or PowerPoint, or Google Docs, Sheets or Slides. Changes
+    arrive as a draft or a review request; merging records them in the team history.
   </p>
   {#if error}<p role="alert">{error}</p>{/if}{#if notice}<p role="status">{notice}</p>{/if}
   <button
@@ -96,12 +96,16 @@
     >
     <h3>Connect an editor</h3>
     <p>
-      Development connectors currently exchange existing plain-text paragraphs. Installation and
-      real-host acceptance are still required.
+      Development connectors exchange existing paragraph text, spreadsheet cells/formulas and slide
+      shape text. Installation and real-host acceptance are still required.
     </p>
     <label
       >Editor<select bind:value={host}
         ><option value="word">Microsoft Word</option><option value="google-docs">Google Docs</option
+        ><option value="excel">Microsoft Excel</option><option value="google-sheets"
+          >Google Sheets</option
+        ><option value="powerpoint">Microsoft PowerPoint</option><option value="google-slides"
+          >Google Slides</option
         ></select
       ></label
     >
@@ -119,7 +123,9 @@
         }}>Hide key</button
       >{/if}
     <p>
-      <a href="/connectors/word">Word connector task pane</a> ·
+      <a href="/connectors/word">Word task pane</a> ·
+      <a href="/connectors/excel">Excel task pane</a> ·
+      <a href="/connectors/powerpoint">PowerPoint task pane</a> ·
       <a href="https://github.com/ArefinAlter/dynodoc/tree/main/extensions"
         >Connector installation instructions</a
       >

@@ -9,6 +9,23 @@ owner-confirmed configuration and work that still needs acceptance. Live-service
 observations below are dated release records, not a new infrastructure audit
 performed while writing this file. No secrets are included.
 
+## Continuation: all six editor hosts and VPS (6 October)
+
+The owner supplied VPS access and expanded the primary workflow to Word/Docs,
+Excel/Sheets and PowerPoint/Slides. Shared capture now targets node/field pairs;
+new development adapters exchange cells/formula source and slide shape text with
+stable identity, private queues, exact retries and checked pulls. Migration 0024
+extends key hosts and creation checks file kind. [Decision 011](decisions/011-six-editor-provenance.md)
+sets the remaining priorities; [release evidence](SIX-EDITOR-PROVENANCE-RELEASE.md)
+records current verification and deployment. Earlier no-rollout statements below
+are dated evidence for the preceding increments.
+
+Next: accept all three pairs in real native hosts; extend structural/formatting,
+date/formula and slide content support; durable background capture and secure
+pairing/publication; then richer Projects Compare/Activity/search/releases.
+Existing filename/content matching must remain permission-aware suggestions,
+not silent identity attachment. Preserve the original files for unsupported edits.
+
 ## Continuation: external-editor provenance and Projects (6 October)
 
 Dynodoc should collect, store, review and synchronize block changes from existing

@@ -1,0 +1,11 @@
+{
+  "timeZone": "UTC",
+  "dependencies": {},
+  "runtimeVersion": "V8",
+  "oauthScopes": [
+    "https://www.googleapis.com/auth/presentations.currentonly",
+    "https://www.googleapis.com/auth/script.container.ui",
+    "https://www.googleapis.com/auth/script.external_request"
+  ],
+  "urlFetchWhitelist": ["https://app.dynodoc.online/api/connectors/"]
+}

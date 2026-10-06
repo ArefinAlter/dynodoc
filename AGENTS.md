@@ -5,8 +5,9 @@ Monorepo for an append-only, hash-chained questionnaire authoring engine (Rust +
 ## Current owner direction (6 October 2026)
 
 Dynodoc is a GitHub-style provenance/review/sync platform around existing editors.
-Prioritize Word and Google Docs together; retain the basic web editors without
-prioritizing Office parity. Read decision 010, PROJECT-STATUS.md and
+Support Word/Docs, Excel/Sheets and PowerPoint/Slides through shared provenance;
+retain the basic web editors without prioritizing Office parity. Read decisions
+010 and 011, PROJECT-STATUS.md and
 PROJECTS-PROVENANCE-RELEASE.md before continuing. Projects and portable bundles
 are authorized post-PoC increments; the original scope below remains the baseline
 for unrelated civic/CRDT/ML work. Development connector sources are not proof of

@@ -22,12 +22,39 @@ export interface Checkpoint {
 export interface Block {
   id: string;
   text: string;
+  field?: string;
+}
+export type Host =
+  | 'word'
+  | 'google-docs'
+  | 'excel'
+  | 'google-sheets'
+  | 'powerpoint'
+  | 'google-slides';
+export const hosts: Host[] = [
+  'word',
+  'google-docs',
+  'excel',
+  'google-sheets',
+  'powerpoint',
+  'google-slides'
+];
+export const blockKey = (b: Pick<Block, 'id' | 'field'>) => `${b.id}:${b.field || 'content'}`;
+export function sameBlocks(a: Block[], b: Block[]) {
+  return (
+    a.length === b.length &&
+    a.every((x, i) => blockKey(x) === blockKey(b[i]) && x.text === b[i].text)
+  );
+}
+export interface ParagraphValue {
+  type: 'paragraph';
+  content: { type: 'text'; text: string }[];
 }
 export interface Operation {
   type: 'FieldEdited';
   node_id: string;
-  field: 'content';
-  value: { type: 'paragraph'; content: { type: 'text'; text: string }[] };
+  field: string;
+  value: ParagraphValue | string;
 }
 export interface Change {
   id: string;
@@ -46,7 +73,7 @@ export interface Push {
     document_id: string;
     base_seq: number;
     base_chain_hash: string;
-    capture: { host: 'word' | 'google-docs'; mode: 'observed_snapshot'; document_name: string };
+    capture: { host: Host; mode: 'observed_snapshot'; document_name: string };
     changes: Change[];
   };
 }
@@ -77,15 +104,129 @@ function operation(block: Block): Operation {
   return {
     type: 'FieldEdited',
     node_id: block.id,
-    field: 'content',
-    value: { type: 'paragraph', content: block.text ? [{ type: 'text', text: block.text }] : [] }
+    field: block.field || 'content',
+    value: block.field
+      ? block.text
+      : { type: 'paragraph', content: block.text ? [{ type: 'text', text: block.text }] : [] }
   };
+}
+export function operationText(op: Operation): string {
+  return typeof op.value === 'string' ? op.value : op.value.content.map((t) => t.text).join('');
+}
+export function assertHostKind(host: Host, kind: string) {
+  const expected =
+    host === 'word' || host === 'google-docs'
+      ? 'document'
+      : host === 'excel' || host === 'google-sheets'
+        ? 'spreadsheet'
+        : 'presentation';
+  if (kind !== expected) throw new Error('Choose a connection for this file format.');
+}
+export interface StructuredTarget extends Block {
+  group: string;
+  groupIndex: number;
+  index: number;
+  column?: number;
+  cellType?: string;
+}
+export function structuredGroups(c: Checkpoint) {
+  return Object.values(c.state.nodes)
+    .filter((n) => !n.deleted && n.type === 'section')
+    .sort((a, b) => (a.pos < b.pos ? -1 : a.pos > b.pos ? 1 : a.id.localeCompare(b.id)))
+    .map((n) => ({ id: n.id, name: String(n.current_fields.label || n.id) }));
+}
+export function structuredBinding(c: Checkpoint) {
+  return { targets: structuredTargets(c), groups: structuredGroups(c) };
+}
+export function structuredTargets(c: Checkpoint): StructuredTarget[] {
+  const nodes = Object.values(c.state.nodes).filter((n) => !n.deleted);
+  const roots = nodes.filter((n) => n.type === 'form');
+  if (roots.length !== 1) throw new Error('Use a checkpoint with one root.');
+  return projectStructured(c, nodes, roots[0], true) as StructuredTarget[];
+}
+function projectStructured(c: Checkpoint, nodes: Node[], root: Node, targets = false): Block[] {
+  if (!['spreadsheet', 'presentation'].includes(c.kind))
+    throw new Error('Use a spreadsheet or presentation checkpoint.');
+  const sort = (a: Node, b: Node) =>
+    a.pos < b.pos ? -1 : a.pos > b.pos ? 1 : a.id.localeCompare(b.id);
+  const groups = nodes.filter((n) => n.parent_id === root.id).sort(sort);
+  const result: StructuredTarget[] = [];
+  if (
+    groups.some(
+      (n) =>
+        n.type !== 'section' ||
+        n.current_fields.kind !== (c.kind === 'spreadsheet' ? 'sheet' : 'slide')
+    )
+  )
+    throw new Error('Unsupported workbook or slide structure. Use file push.');
+  groups.forEach((g, groupIndex) => {
+    const items = nodes.filter((n) => n.parent_id === g.id).sort(sort);
+    if (items.some((n) => n.type !== 'item' || nodes.some((child) => child.parent_id === n.id)))
+      throw new Error('Nested blocks require file push.');
+    if (c.kind === 'spreadsheet') {
+      const columns = Number(g.current_fields.columns);
+      if (!Number.isInteger(columns) || columns < 1 || columns > 100 || !g.current_fields.label)
+        throw new Error('Use a named sheet with up to 100 columns.');
+      if ((g.current_fields.sheet_layout as { merges?: unknown[] } | undefined)?.merges?.length)
+        throw new Error('Merged cells require file push.');
+      items.forEach((n, index) => {
+        for (let column = 0; column < columns; column++) {
+          const field = `cell_${column}`,
+            format = n.current_fields[`format_${column}`] as { type?: string } | undefined;
+          if (format?.type === 'date')
+            throw new Error(
+              'Date cells require file push until date/locale exchange is supported.'
+            );
+          const value = n.current_fields[field] ?? '';
+          if (!['string', 'number', 'boolean'].includes(typeof value))
+            throw new Error('Unsupported cell value. Use file push.');
+          result.push({
+            id: n.id,
+            field,
+            text: String(value),
+            group: String(g.current_fields.label),
+            groupIndex,
+            index,
+            column,
+            cellType: format?.type
+          });
+        }
+      });
+    } else {
+      items
+        .filter((n) => n.current_fields.kind !== 'image')
+        .forEach((n, index) => {
+          if (
+            !['text', 'shape'].includes(String(n.current_fields.kind)) ||
+            typeof n.current_fields.text !== 'string'
+          )
+            throw new Error('Unsupported slide shape. Use file push.');
+          result.push({
+            id: n.id,
+            field: 'text',
+            text: n.current_fields.text,
+            group: g.id,
+            groupIndex,
+            index
+          });
+        });
+    }
+  });
+  if (
+    nodes.some(
+      (n) => n.id !== root.id && !groups.includes(n) && !groups.some((g) => n.parent_id === g.id)
+    )
+  )
+    throw new Error('Unsupported nested structure. Use file push.');
+  if (result.length > 2000)
+    throw new Error('This development connector supports up to 2,000 cells or shapes.');
+  return targets ? result : result.map(({ id, text, field }) => ({ id, text, field }));
 }
 export function projectCheckpoint(c: Checkpoint): Block[] {
   if (
     c.format !== 'dynodoc.checkpoint' ||
     c.version !== 1 ||
-    c.kind !== 'document' ||
+    !['document', 'spreadsheet', 'presentation'].includes(c.kind) ||
     !Number.isSafeInteger(c.through_seq) ||
     c.through_seq < 0 ||
     !/^[0-9a-f]{64}$/.test(c.chain_hash)
@@ -94,6 +235,7 @@ export function projectCheckpoint(c: Checkpoint): Block[] {
   const nodes = Object.values(c.state.nodes).filter((n) => !n.deleted),
     roots = nodes.filter((n) => n.type === 'form');
   if (roots.length !== 1) throw new Error('This connector needs a document with one root.');
+  if (c.kind !== 'document') return projectStructured(c, nodes, roots[0]);
   const items = nodes.filter((n) => n.type !== 'form');
   if (items.length > 2000)
     throw new Error('This development connector supports up to 2,000 paragraphs.');
@@ -130,24 +272,33 @@ export function bindIdentical(local: { text: string }[], remote: Block[]): Block
     );
   return copy(remote);
 }
-export function diff(base: Block[], local: Block[]): { id: string; base: string; local: string }[] {
+export function diff(
+  base: Block[],
+  local: Block[]
+): { id: string; field?: string; base: string; local: string }[] {
   if (
     base.length !== local.length ||
-    local.some((x, i) => x.id !== base[i].id) ||
-    new Set(local.map((x) => x.id)).size !== local.length
+    local.some((x, i) => blockKey(x) !== blockKey(base[i])) ||
+    new Set(local.map(blockKey)).size !== local.length
   )
     throw new Error(
       'Paragraphs were inserted, deleted, moved or duplicated. Structural sync is not supported yet; export your ledger and use file push.'
     );
   return local
     .filter((x, i) => x.text !== base[i].text)
-    .map((x) => ({ id: x.id, base: base.find((b) => b.id === x.id)!.text, local: x.text }));
+    .map((x) => ({
+      id: x.id,
+      ...(x.field ? { field: x.field } : {}),
+      base: base.find((b) => blockKey(b) === blockKey(x))!.text,
+      local: x.text
+    }));
 }
 export function pullPlan(base: Block[], local: Block[], remote: Block[]) {
   diff(base, local);
   diff(base, remote);
   return base.map((b, i) => ({
     id: b.id,
+    ...(b.field ? { field: b.field } : {}),
     base: b.text,
     local: local[i].text,
     remote: remote[i].text,
@@ -166,14 +317,10 @@ export class CaptureSession {
   private constructor(
     public ledger: Ledger,
     private store: Store,
-    readonly host: 'word' | 'google-docs'
+    readonly host: Host
   ) {}
-  static async connect(
-    store: Store,
-    checkpoint: Checkpoint,
-    local: Block[],
-    host: 'word' | 'google-docs'
-  ) {
+  static async connect(store: Store, checkpoint: Checkpoint, local: Block[], host: Host) {
+    assertHostKind(host, checkpoint.kind);
     const existing = await store.load();
     if (existing) {
       if (existing.version !== 1 || existing.checkpoint.document_id !== checkpoint.document_id)
@@ -212,7 +359,7 @@ export class CaptureSession {
       next.changes.push({
         id: crypto.randomUUID(),
         observed_at,
-        operation: operation({ id: change.id, text: change.local })
+        operation: operation({ id: change.id, field: change.field, text: change.local })
       });
     next.seen = copy(local);
     await this.persist(next);
@@ -274,6 +421,45 @@ export class CaptureSession {
         checkpoint.chain_hash !== this.ledger.checkpoint.chain_hash)
     )
       throw new Error('Checkpoint belongs to another history.');
+    if (checkpoint.kind !== this.ledger.checkpoint.kind)
+      throw new Error('The team file format changed. Use file push.');
+    if (checkpoint.kind !== 'document') {
+      const metadata = (c: Checkpoint) =>
+        Object.values(c.state.nodes)
+          .filter((n) => !n.deleted)
+          .sort((a, b) => a.id.localeCompare(b.id))
+          .map((n) => ({
+            id: n.id,
+            type: n.type,
+            pos: n.pos,
+            parent: n.parent_id,
+            fields: Object.fromEntries(
+              Object.entries(n.current_fields).filter(
+                ([field]) =>
+                  field !== 'label' &&
+                  !(c.kind === 'spreadsheet' && /^cell_\d+$/.test(field)) &&
+                  !(c.kind === 'presentation' && field === 'text')
+              )
+            )
+          }));
+      const canonical = (value: unknown): unknown =>
+        Array.isArray(value)
+          ? value.map(canonical)
+          : value && typeof value === 'object'
+            ? Object.fromEntries(
+                Object.entries(value)
+                  .sort(([a], [b]) => a.localeCompare(b))
+                  .map(([key, value]) => [key, canonical(value)])
+              )
+            : value;
+      if (
+        JSON.stringify(canonical(metadata(checkpoint))) !==
+        JSON.stringify(canonical(metadata(this.ledger.checkpoint)))
+      )
+        throw new Error(
+          'Team structure or formatting changed. Use file push to update the complete file.'
+        );
+    }
     const remote = projectCheckpoint(checkpoint);
     return pullPlan(projectCheckpoint(this.ledger.checkpoint), local, remote);
   }
@@ -306,7 +492,7 @@ export class CaptureSession {
     next.changes = diff(remote, actual).map((d) => ({
       id: crypto.randomUUID(),
       observed_at,
-      operation: operation({ id: d.id, text: d.local })
+      operation: operation({ id: d.id, field: d.field, text: d.local })
     }));
     await this.persist(next);
   }

@@ -1,0 +1,727 @@
+<!-- Generated from the shared protocol. Run pnpm build:connectors. -->
+<script>
+var DynodocProvenance = function(exports) {
+  "use strict";var __defProp = Object.defineProperty;
+var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
+
+  const hosts = [
+    "word",
+    "google-docs",
+    "excel",
+    "google-sheets",
+    "powerpoint",
+    "google-slides"
+  ];
+  const blockKey = (b) => `${b.id}:${b.field || "content"}`;
+  function sameBlocks(a, b) {
+    return a.length === b.length && a.every((x, i) => blockKey(x) === blockKey(b[i]) && x.text === b[i].text);
+  }
+  const copy = (x) => JSON.parse(JSON.stringify(x));
+  function operation(block) {
+    return {
+      type: "FieldEdited",
+      node_id: block.id,
+      field: block.field || "content",
+      value: block.field ? block.text : { type: "paragraph", content: block.text ? [{ type: "text", text: block.text }] : [] }
+    };
+  }
+  function operationText(op) {
+    return typeof op.value === "string" ? op.value : op.value.content.map((t) => t.text).join("");
+  }
+  function assertHostKind(host, kind) {
+    const expected = host === "word" || host === "google-docs" ? "document" : host === "excel" || host === "google-sheets" ? "spreadsheet" : "presentation";
+    if (kind !== expected) throw new Error("Choose a connection for this file format.");
+  }
+  function structuredGroups(c) {
+    return Object.values(c.state.nodes).filter((n) => !n.deleted && n.type === "section").sort((a, b) => a.pos < b.pos ? -1 : a.pos > b.pos ? 1 : a.id.localeCompare(b.id)).map((n) => ({ id: n.id, name: String(n.current_fields.label || n.id) }));
+  }
+  function structuredBinding(c) {
+    return { targets: structuredTargets(c), groups: structuredGroups(c) };
+  }
+  function structuredTargets(c) {
+    const nodes = Object.values(c.state.nodes).filter((n) => !n.deleted);
+    const roots = nodes.filter((n) => n.type === "form");
+    if (roots.length !== 1) throw new Error("Use a checkpoint with one root.");
+    return projectStructured(c, nodes, roots[0], true);
+  }
+  function projectStructured(c, nodes, root, targets = false) {
+    if (!["spreadsheet", "presentation"].includes(c.kind))
+      throw new Error("Use a spreadsheet or presentation checkpoint.");
+    const sort = (a, b) => a.pos < b.pos ? -1 : a.pos > b.pos ? 1 : a.id.localeCompare(b.id);
+    const groups = nodes.filter((n) => n.parent_id === root.id).sort(sort);
+    const result = [];
+    if (groups.some(
+      (n) => n.type !== "section" || n.current_fields.kind !== (c.kind === "spreadsheet" ? "sheet" : "slide")
+    ))
+      throw new Error("Unsupported workbook or slide structure. Use file push.");
+    groups.forEach((g, groupIndex) => {
+      var _a, _b;
+      const items = nodes.filter((n) => n.parent_id === g.id).sort(sort);
+      if (items.some((n) => n.type !== "item" || nodes.some((child) => child.parent_id === n.id)))
+        throw new Error("Nested blocks require file push.");
+      if (c.kind === "spreadsheet") {
+        const columns = Number(g.current_fields.columns);
+        if (!Number.isInteger(columns) || columns < 1 || columns > 100 || !g.current_fields.label)
+          throw new Error("Use a named sheet with up to 100 columns.");
+        if ((_b = (_a = g.current_fields.sheet_layout) == null ? void 0 : _a.merges) == null ? void 0 : _b.length)
+          throw new Error("Merged cells require file push.");
+        items.forEach((n, index) => {
+          for (let column = 0; column < columns; column++) {
+            const field = `cell_${column}`, format = n.current_fields[`format_${column}`];
+            if ((format == null ? void 0 : format.type) === "date")
+              throw new Error(
+                "Date cells require file push until date/locale exchange is supported."
+              );
+            const value = n.current_fields[field] ?? "";
+            if (!["string", "number", "boolean"].includes(typeof value))
+              throw new Error("Unsupported cell value. Use file push.");
+            result.push({
+              id: n.id,
+              field,
+              text: String(value),
+              group: String(g.current_fields.label),
+              groupIndex,
+              index,
+              column,
+              cellType: format == null ? void 0 : format.type
+            });
+          }
+        });
+      } else {
+        items.filter((n) => n.current_fields.kind !== "image").forEach((n, index) => {
+          if (!["text", "shape"].includes(String(n.current_fields.kind)) || typeof n.current_fields.text !== "string")
+            throw new Error("Unsupported slide shape. Use file push.");
+          result.push({
+            id: n.id,
+            field: "text",
+            text: n.current_fields.text,
+            group: g.id,
+            groupIndex,
+            index
+          });
+        });
+      }
+    });
+    if (nodes.some(
+      (n) => n.id !== root.id && !groups.includes(n) && !groups.some((g) => n.parent_id === g.id)
+    ))
+      throw new Error("Unsupported nested structure. Use file push.");
+    if (result.length > 2e3)
+      throw new Error("This development connector supports up to 2,000 cells or shapes.");
+    return targets ? result : result.map(({ id, text, field }) => ({ id, text, field }));
+  }
+  function projectCheckpoint(c) {
+    if (c.format !== "dynodoc.checkpoint" || c.version !== 1 || !["document", "spreadsheet", "presentation"].includes(c.kind) || !Number.isSafeInteger(c.through_seq) || c.through_seq < 0 || !/^[0-9a-f]{64}$/.test(c.chain_hash))
+      throw new Error("Use a valid document checkpoint from Dynodoc.");
+    const nodes = Object.values(c.state.nodes).filter((n) => !n.deleted), roots = nodes.filter((n) => n.type === "form");
+    if (roots.length !== 1) throw new Error("This connector needs a document with one root.");
+    if (c.kind !== "document") return projectStructured(c, nodes, roots[0]);
+    const items = nodes.filter((n) => n.type !== "form");
+    if (items.length > 2e3)
+      throw new Error("This development connector supports up to 2,000 paragraphs.");
+    const sorted = items.sort(
+      (a, b) => a.pos < b.pos ? -1 : a.pos > b.pos ? 1 : a.id.localeCompare(b.id)
+    );
+    return sorted.map((n) => {
+      const content = n.current_fields.content;
+      if (n.type !== "item" || n.parent_id !== roots[0].id || (content == null ? void 0 : content.type) !== "paragraph" || Object.keys(content.attrs || {}).length || (content.content || []).some(
+        (x) => {
+          var _a;
+          return x.type !== "text" || typeof x.text !== "string" || ((_a = x.marks) == null ? void 0 : _a.length);
+        }
+      ))
+        throw new Error(
+          "This first connector supports plain paragraphs only. Use file push for tables, lists, images or formatted blocks."
+        );
+      return { id: n.id, text: (content.content || []).map((x) => x.text).join("") };
+    });
+  }
+  function bindIdentical(local, remote) {
+    if (local.length !== remote.length || local.some((x, i) => x.text !== remote[i].text))
+      throw new Error(
+        "The local file differs from this revision. Use file push to choose its starting version before connecting."
+      );
+    return copy(remote);
+  }
+  function diff(base, local) {
+    if (base.length !== local.length || local.some((x, i) => blockKey(x) !== blockKey(base[i])) || new Set(local.map(blockKey)).size !== local.length)
+      throw new Error(
+        "Paragraphs were inserted, deleted, moved or duplicated. Structural sync is not supported yet; export your ledger and use file push."
+      );
+    return local.filter((x, i) => x.text !== base[i].text).map((x) => ({
+      id: x.id,
+      ...x.field ? { field: x.field } : {},
+      base: base.find((b) => blockKey(b) === blockKey(x)).text,
+      local: x.text
+    }));
+  }
+  function pullPlan(base, local, remote) {
+    diff(base, local);
+    diff(base, remote);
+    return base.map((b, i) => ({
+      id: b.id,
+      ...b.field ? { field: b.field } : {},
+      base: b.text,
+      local: local[i].text,
+      remote: remote[i].text,
+      conflict: local[i].text !== b.text && remote[i].text !== b.text && local[i].text !== remote[i].text,
+      text: local[i].text === b.text ? remote[i].text : local[i].text
+    }));
+  }
+  class CaptureSession {
+    constructor(ledger, store, host) {
+      __publicField(this, "tail", Promise.resolve());
+      this.ledger = ledger;
+      this.store = store;
+      this.host = host;
+    }
+    serial(work) {
+      const next = this.tail.then(work);
+      this.tail = next.catch(() => void 0);
+      return next;
+    }
+    static async connect(store, checkpoint2, local, host) {
+      assertHostKind(host, checkpoint2.kind);
+      const existing = await store.load();
+      if (existing) {
+        if (existing.version !== 1 || existing.checkpoint.document_id !== checkpoint2.document_id)
+          throw new Error("Saved capture belongs to another file. Export it before reconnecting.");
+        return new CaptureSession(existing, store, host);
+      }
+      bindIdentical(local, projectCheckpoint(checkpoint2));
+      const ledger = {
+        version: 1,
+        client_id: crypto.randomUUID(),
+        checkpoint: copy(checkpoint2),
+        seen: copy(local),
+        changes: [],
+        pending: null,
+        awaiting: null,
+        sentBlocks: null,
+        archives: []
+      };
+      await store.save(ledger);
+      return new CaptureSession(ledger, store, host);
+    }
+    async persist(next) {
+      await this.store.save(copy(next));
+      this.ledger = next;
+    }
+    capture(local) {
+      const snapshot = copy(local);
+      return this.serial(() => this.captureNow(snapshot));
+    }
+    async captureNow(local) {
+      const changes2 = diff(this.ledger.seen, local);
+      if (!changes2.length) return;
+      const next = copy(this.ledger);
+      const observed_at = (/* @__PURE__ */ new Date()).toISOString();
+      for (const change of changes2)
+        next.changes.push({
+          id: crypto.randomUUID(),
+          observed_at,
+          operation: operation({ id: change.id, field: change.field, text: change.local })
+        });
+      next.seen = copy(local);
+      await this.persist(next);
+    }
+    prepare(name, note, submit) {
+      return this.serial(() => this.prepareNow(name, note, submit));
+    }
+    async prepareNow(name, note, submit) {
+      if (this.ledger.pending) return copy(this.ledger.pending);
+      if (this.ledger.awaiting)
+        throw new Error(
+          "A previous upload is awaiting review. Pull its merged result before sending another request."
+        );
+      if (!this.ledger.changes.length) throw new Error("No captured changes to send.");
+      const next = copy(this.ledger), c = next.checkpoint;
+      next.pending = {
+        name,
+        note,
+        submit,
+        bundle: {
+          format: "dynodoc.change-bundle",
+          version: 1,
+          bundle_id: crypto.randomUUID(),
+          client_id: next.client_id,
+          document_id: c.document_id,
+          base_seq: c.through_seq,
+          base_chain_hash: c.chain_hash,
+          capture: { host: this.host, mode: "observed_snapshot", document_name: c.title },
+          changes: copy(next.changes)
+        }
+      };
+      next.sentBlocks = copy(next.seen);
+      await this.persist(next);
+      return copy(next.pending);
+    }
+    acknowledge(receipt) {
+      return this.serial(() => this.acknowledgeNow(receipt));
+    }
+    async acknowledgeNow(receipt) {
+      if (!this.ledger.pending || receipt.bundle_id !== this.ledger.pending.bundle.bundle_id || !/^[0-9a-f]{64}$/.test(receipt.digest) || !receipt.id || !receipt.uploaded_by)
+        throw new Error("The server receipt does not match the queued upload. Keep it for retry.");
+      const next = copy(this.ledger);
+      next.awaiting = copy(receipt);
+      next.pending = null;
+      await this.persist(next);
+    }
+    plan(checkpoint2, local) {
+      if (checkpoint2.document_id !== this.ledger.checkpoint.document_id || checkpoint2.through_seq < this.ledger.checkpoint.through_seq || checkpoint2.through_seq === this.ledger.checkpoint.through_seq && checkpoint2.chain_hash !== this.ledger.checkpoint.chain_hash)
+        throw new Error("Checkpoint belongs to another history.");
+      if (checkpoint2.kind !== this.ledger.checkpoint.kind)
+        throw new Error("The team file format changed. Use file push.");
+      if (checkpoint2.kind !== "document") {
+        const metadata = (c) => Object.values(c.state.nodes).filter((n) => !n.deleted).sort((a, b) => a.id.localeCompare(b.id)).map((n) => ({
+          id: n.id,
+          type: n.type,
+          pos: n.pos,
+          parent: n.parent_id,
+          fields: Object.fromEntries(
+            Object.entries(n.current_fields).filter(
+              ([field]) => field !== "label" && !(c.kind === "spreadsheet" && /^cell_\d+$/.test(field)) && !(c.kind === "presentation" && field === "text")
+            )
+          )
+        }));
+        const canonical = (value) => Array.isArray(value) ? value.map(canonical) : value && typeof value === "object" ? Object.fromEntries(
+          Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, value2]) => [key, canonical(value2)])
+        ) : value;
+        if (JSON.stringify(canonical(metadata(checkpoint2))) !== JSON.stringify(canonical(metadata(this.ledger.checkpoint))))
+          throw new Error(
+            "Team structure or formatting changed. Use file push to update the complete file."
+          );
+      }
+      const remote = projectCheckpoint(checkpoint2);
+      return pullPlan(projectCheckpoint(this.ledger.checkpoint), local, remote);
+    }
+    /** Hosts call only after reading again and applying the previewed text. A failed
+     * host write leaves the previous checkpoint and observations intact. */
+    acceptPull(checkpoint2, actual) {
+      return this.serial(() => this.acceptPullNow(checkpoint2, actual));
+    }
+    async acceptPullNow(checkpoint2, actual) {
+      var _a, _b;
+      if (this.ledger.pending)
+        throw new Error(
+          "An upload has no receipt yet. Retry it before advancing its starting revision."
+        );
+      this.plan(checkpoint2, actual);
+      const remote = projectCheckpoint(checkpoint2);
+      if (this.ledger.awaiting) {
+        const status = (_b = (_a = checkpoint2.proposals) == null ? void 0 : _a.find((p) => p.id === this.ledger.awaiting.id)) == null ? void 0 : _b.status;
+        if (!status || status === "open" || status === "draft")
+          throw new Error("The uploaded request is still awaiting review.");
+      }
+      const next = copy(this.ledger);
+      next.archives.push({ checkpoint: copy(next.checkpoint), changes: copy(next.changes) });
+      next.checkpoint = copy(checkpoint2);
+      next.awaiting = null;
+      next.sentBlocks = null;
+      next.seen = copy(actual);
+      const observed_at = (/* @__PURE__ */ new Date()).toISOString();
+      next.changes = diff(remote, actual).map((d) => ({
+        id: crypto.randomUUID(),
+        observed_at,
+        operation: operation({ id: d.id, field: d.field, text: d.local })
+      }));
+      await this.persist(next);
+    }
+    canApply(checkpoint2) {
+      var _a, _b;
+      if (this.ledger.pending) throw new Error("Retry the upload before pulling.");
+      if (this.ledger.awaiting) {
+        const status = (_b = (_a = checkpoint2.proposals) == null ? void 0 : _a.find((p) => p.id === this.ledger.awaiting.id)) == null ? void 0 : _b.status;
+        if (!status || status === "open" || status === "draft")
+          throw new Error("The uploaded request is still awaiting review.");
+      }
+    }
+    export() {
+      return copy(this.ledger);
+    }
+  }
+  function browserStore(key) {
+    let previous = null;
+    const database = new Promise((resolve, reject) => {
+      const req = indexedDB.open("dynodoc-provenance", 1);
+      req.onupgradeneeded = () => req.result.createObjectStore("ledgers");
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    return {
+      load: async () => {
+        const db = await database;
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction("ledgers", "readonly"), req = tx.objectStore("ledgers").get(key);
+          req.onsuccess = () => {
+            previous = req.result ?? null;
+            resolve(previous ? JSON.parse(previous) : null);
+          };
+          req.onerror = () => reject(req.error);
+        });
+      },
+      save: async (value) => {
+        const db = await database;
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction("ledgers", "readwrite"), store = tx.objectStore("ledgers"), req = store.get(key), next = JSON.stringify(value);
+          let failure = null;
+          req.onsuccess = () => {
+            if ((req.result ?? null) !== previous) {
+              failure = new Error(
+                "Another pane changed the capture queue. Reconnect before continuing."
+              );
+              tx.abort();
+              return;
+            }
+            store.put(next, key);
+          };
+          tx.oncomplete = () => {
+            previous = next;
+            resolve();
+          };
+          tx.onabort = () => reject(failure || tx.error || new Error("Could not save capture locally"));
+          tx.onerror = () => reject(tx.error);
+        });
+      }
+    };
+  }
+  async function connectorRequest(origin, documentId, token, action, body, throughSeq) {
+    const url = new URL(origin);
+    if (url.protocol !== "https:" && !(url.protocol === "http:" && ["localhost", "127.0.0.1"].includes(url.hostname)))
+      throw new Error("Use an HTTPS Dynodoc address.");
+    if (throughSeq !== void 0 && (action !== "checkpoint" || !Number.isSafeInteger(throughSeq) || throughSeq < 0))
+      throw new Error("Use a valid historical checkpoint revision.");
+    const search = throughSeq !== void 0 ? `?through_seq=${throughSeq}` : "";
+    const response = await fetch(
+      `${url.origin}/api/connectors/documents/${documentId}/${action}${search}`,
+      {
+        method: body ? "POST" : "GET",
+        credentials: "omit",
+        headers: {
+          authorization: `Bearer ${token}`,
+          ...body ? { "content-type": "application/json" } : {}
+        },
+        body: body ? JSON.stringify(body) : void 0
+      }
+    );
+    const value = await response.json();
+    if (!response.ok) throw new Error(value.error || `Request failed (${response.status})`);
+    return value;
+  }
+  const SIDECAR_MAX_BYTES = 16 * 1024 * 1024;
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const ulid = /^[0-7][0-9A-HJKMNP-TV-Z]{25}$/;
+  const hash = /^[0-9a-f]{64}$/;
+  const clone = (value) => JSON.parse(JSON.stringify(value));
+  function invalid() {
+    throw new Error(
+      "Invalid provenance sidecar. Keep the original export and do not overwrite your queue."
+    );
+  }
+  function object(value, keys) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) invalid();
+    const result = value;
+    if (keys && Object.keys(result).some((key) => !keys.includes(key))) invalid();
+    return result;
+  }
+  function string(value, pattern) {
+    if (typeof value !== "string" || pattern && !pattern.test(value)) invalid();
+    return value;
+  }
+  function array(value, limit) {
+    if (!Array.isArray(value) || value.length > limit) invalid();
+    return value;
+  }
+  function checkpoint(value) {
+    const c = object(value, [
+      "format",
+      "version",
+      "document_id",
+      "title",
+      "kind",
+      "through_seq",
+      "chain_hash",
+      "state",
+      "proposals"
+    ]);
+    string(c.document_id, uuid);
+    string(c.title);
+    const state = object(c.state, ["nodes", "comments", "suggestions", "removed_choices"]);
+    const nodes = object(state.nodes);
+    if (state.comments !== void 0) array(state.comments, 2e4);
+    if (state.suggestions !== void 0) object(state.suggestions);
+    if (state.removed_choices !== void 0)
+      for (const id of array(state.removed_choices, 1e4)) string(id, ulid);
+    if (Object.keys(nodes).length > 1e4) invalid();
+    for (const [id, value2] of Object.entries(nodes)) {
+      const node = object(value2, [
+        "id",
+        "type",
+        "deleted",
+        "pos",
+        "parent_id",
+        "current_fields",
+        "var_name"
+      ]);
+      if (string(node.id, ulid) !== id || typeof node.deleted !== "boolean") invalid();
+      string(node.type);
+      string(node.pos);
+      if (node.parent_id !== null) string(node.parent_id, ulid);
+      if (node.var_name !== void 0 && node.var_name !== null) string(node.var_name);
+      object(node.current_fields);
+    }
+    if (c.proposals !== void 0)
+      for (const value2 of array(c.proposals, 100)) {
+        const proposal = object(value2, ["id", "status"]);
+        string(proposal.id, uuid);
+        if (!["draft", "open", "merged", "declined", "withdrawn"].includes(string(proposal.status)))
+          invalid();
+      }
+    const result = c;
+    projectCheckpoint(result);
+    return result;
+  }
+  function blocks(value, base) {
+    const result = array(value, 2e3).map((value2) => {
+      const b = object(value2, ["id", "text", "field"]);
+      return {
+        id: string(b.id, ulid),
+        text: string(b.text),
+        ...b.field !== void 0 ? { field: string(b.field) } : {}
+      };
+    });
+    diff(base, result);
+    return result;
+  }
+  function changes(value, base, limit = 2e4) {
+    const known = new Set(base.map(blockKey)), ids = /* @__PURE__ */ new Set();
+    return array(value, limit).map((value2) => {
+      const c = object(value2, ["id", "observed_at", "operation"]), id = string(c.id, uuid);
+      if (ids.has(id)) invalid();
+      ids.add(id);
+      const time = string(c.observed_at);
+      if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/.test(time) || !Number.isFinite(Date.parse(time)))
+        invalid();
+      const op = object(c.operation, ["type", "node_id", "field", "value"]);
+      if (op.type !== "FieldEdited" || !known.has(blockKey({ id: string(op.node_id, ulid), field: string(op.field) })))
+        invalid();
+      if (op.field !== "content") {
+        if (!(op.field === "text" || /^cell_\d{1,2}$/.test(string(op.field)))) invalid();
+        string(op.value);
+        return c;
+      }
+      const paragraph = object(op.value, ["type", "content"]);
+      if (paragraph.type !== "paragraph") invalid();
+      for (const value3 of array(paragraph.content, 2e4)) {
+        const text = object(value3, ["type", "text"]);
+        if (text.type !== "text") invalid();
+        string(text.text);
+      }
+      return c;
+    });
+  }
+  function replay(base, changes2) {
+    const text = new Map(base.map((b) => [blockKey(b), b.text]));
+    for (const change of changes2)
+      text.set(
+        blockKey({ id: change.operation.node_id, field: change.operation.field }),
+        operationText(change.operation)
+      );
+    return base.map((b) => ({ ...b, text: text.get(blockKey(b)) }));
+  }
+  function equal(a, b) {
+    if (Array.isArray(a) && Array.isArray(b))
+      return a.length === b.length && a.every((v, i) => equal(v, b[i]));
+    if (a && b && typeof a === "object" && typeof b === "object") {
+      const left = Object.entries(a), right = Object.keys(b);
+      return left.length === right.length && left.every(
+        ([key, value]) => Object.hasOwn(b, key) && equal(value, b[key])
+      );
+    }
+    return a === b;
+  }
+  function parseSidecar(text) {
+    if (new TextEncoder().encode(text).length > SIDECAR_MAX_BYTES)
+      throw new Error("Provenance recovery files must be at most 16 MiB.");
+    let raw;
+    try {
+      raw = JSON.parse(text);
+    } catch {
+      invalid();
+    }
+    const s = object(raw, ["format", "version", "host", "ledger"]);
+    if (s.format !== "dynodoc.provenance-sidecar" || s.version !== 1 || !hosts.includes(string(s.host)))
+      invalid();
+    const l = object(s.ledger, [
+      "version",
+      "client_id",
+      "checkpoint",
+      "seen",
+      "changes",
+      "pending",
+      "awaiting",
+      "sentBlocks",
+      "archives"
+    ]);
+    if (l.version !== 1) invalid();
+    string(l.client_id, uuid);
+    const c = checkpoint(l.checkpoint), base = projectCheckpoint(c), seen = blocks(l.seen, base), observed = changes(l.changes, base, Number.MAX_SAFE_INTEGER);
+    assertHostKind(s.host, c.kind);
+    if (!equal(replay(base, observed), seen)) invalid();
+    for (const value of array(l.archives, 1e3)) {
+      const archive = object(value, ["checkpoint", "changes"]), previous = checkpoint(archive.checkpoint);
+      if (previous.document_id !== c.document_id || previous.through_seq > c.through_seq) invalid();
+      changes(archive.changes, projectCheckpoint(previous), Number.MAX_SAFE_INTEGER);
+    }
+    if (l.pending !== null) {
+      const p = object(l.pending, ["name", "note", "submit", "bundle"]), b = object(p.bundle, [
+        "format",
+        "version",
+        "bundle_id",
+        "client_id",
+        "document_id",
+        "base_seq",
+        "base_chain_hash",
+        "capture",
+        "changes"
+      ]);
+      if (!string(p.name).trim() || string(p.name).length > 200 || string(p.note).length > 4e3 || typeof p.submit !== "boolean")
+        invalid();
+      string(b.bundle_id, uuid);
+      if (b.format !== "dynodoc.change-bundle" || b.version !== 1 || b.client_id !== l.client_id || b.document_id !== c.document_id || b.base_seq !== c.through_seq || b.base_chain_hash !== c.chain_hash)
+        invalid();
+      const capture = object(b.capture, ["host", "mode", "document_name"]);
+      if (capture.host !== s.host || capture.mode !== "observed_snapshot") invalid();
+      string(capture.document_name);
+      const sent = changes(b.changes, base);
+      if (!sent.length || !equal(sent, observed.slice(0, sent.length)) || !equal(replay(base, sent), blocks(l.sentBlocks, base)) || l.awaiting !== null)
+        invalid();
+    } else if (l.awaiting !== null) {
+      const receipt = object(l.awaiting, [
+        "id",
+        "bundle_id",
+        "digest",
+        "uploaded_by",
+        "submitted",
+        "revision",
+        "edits",
+        "relation"
+      ]);
+      string(receipt.id, uuid);
+      string(receipt.bundle_id, uuid);
+      string(receipt.digest, hash);
+      string(receipt.uploaded_by, uuid);
+      if (typeof receipt.submitted !== "boolean" || !observed.length) invalid();
+      for (const key of ["revision", "edits"])
+        if (receipt[key] !== void 0 && (!Number.isSafeInteger(receipt[key]) || receipt[key] < 0))
+          invalid();
+      if (receipt.relation !== void 0) object(receipt.relation);
+      const sent = blocks(l.sentBlocks, base);
+      const current = clone(base);
+      let matches = false;
+      const index = new Map(current.map((b, i) => [blockKey(b), i]));
+      for (const change of observed) {
+        current[index.get(blockKey({ id: change.operation.node_id, field: change.operation.field }))].text = operationText(change.operation);
+        if (equal(current, sent)) {
+          matches = true;
+          break;
+        }
+      }
+      if (!matches) invalid();
+    } else if (l.sentBlocks !== null) invalid();
+    return clone(s);
+  }
+  function exportSidecar(session) {
+    return {
+      format: "dynodoc.provenance-sidecar",
+      version: 1,
+      host: session.host,
+      ledger: session.export()
+    };
+  }
+  function recoveryLedger(sidecar, remote, host, verifiedBase = remote) {
+    const s = parseSidecar(JSON.stringify(sidecar)), c = s.ledger.checkpoint;
+    projectCheckpoint(remote);
+    if (s.host !== host)
+      throw new Error(
+        "Restore this queue in its original editor. Use reviewed team checkpoints to exchange changes between Word and Google Docs."
+      );
+    if (c.document_id !== remote.document_id || c.through_seq > remote.through_seq || c.through_seq === remote.through_seq && c.chain_hash !== remote.chain_hash)
+      throw new Error("Recovery belongs to another document or history.");
+    if (verifiedBase.document_id !== c.document_id || verifiedBase.through_seq !== c.through_seq || verifiedBase.chain_hash !== c.chain_hash || !equal(projectCheckpoint(verifiedBase), projectCheckpoint(c)))
+      throw new Error(
+        "The saved starting revision must match a checkpoint retrieved from Dynodoc before recovery."
+      );
+    diff(projectCheckpoint(c), projectCheckpoint(remote));
+    return s.ledger;
+  }
+  async function restoreCapture(store, sidecar, remote, local, host, verifiedBase = remote) {
+    const ledger = recoveryLedger(sidecar, remote, host, verifiedBase);
+    if (await store.load())
+      throw new Error(
+        "This working copy already has a saved queue. Export it and use a fresh copy; recovery cannot replace it."
+      );
+    diff(ledger.seen, local);
+    await store.save(ledger);
+    return CaptureSession.connect(store, remote, local, host);
+  }
+  function cellText(value, formula, type) {
+    if (typeof formula === "string" && formula.startsWith("=")) {
+      if (type === "text")
+        throw new Error("A text cell became a formula. Use file push to record its type.");
+      return formula;
+    }
+    if (!["string", "number", "boolean"].includes(typeof value))
+      throw new Error("Unsupported cell type. Use file push.");
+    if (typeof value === "string" && value.startsWith("="))
+      throw new Error("Literal formula-like text requires file push.");
+    if (value !== "" && (type === "text" && typeof value !== "string" || type === "number" && typeof value !== "number" || type === "boolean" && typeof value !== "boolean"))
+      throw new Error("A cell type changed. Use file push to include its format and value together.");
+    return String(value);
+  }
+  function cellValue(text, type) {
+    if (text.startsWith("=")) return text;
+    if (text === "") return "";
+    if (type === "number") {
+      const n = Number(text);
+      if (!Number.isFinite(n))
+        throw new Error("This update changes a numeric cell type. Use file push.");
+      return n;
+    }
+    if (type === "boolean") {
+      if (!["true", "false"].includes(text))
+        throw new Error("This update changes a boolean cell type. Use file push.");
+      return text === "true";
+    }
+    if (!type && text.trim() && Number.isFinite(Number(text))) return Number(text);
+    if (!type && ["true", "false"].includes(text)) return text === "true";
+    return text;
+  }
+  exports.CaptureSession = CaptureSession;
+  exports.SIDECAR_MAX_BYTES = SIDECAR_MAX_BYTES;
+  exports.assertHostKind = assertHostKind;
+  exports.bindIdentical = bindIdentical;
+  exports.blockKey = blockKey;
+  exports.browserStore = browserStore;
+  exports.cellText = cellText;
+  exports.cellValue = cellValue;
+  exports.connectorRequest = connectorRequest;
+  exports.diff = diff;
+  exports.exportSidecar = exportSidecar;
+  exports.hosts = hosts;
+  exports.operationText = operationText;
+  exports.parseSidecar = parseSidecar;
+  exports.projectCheckpoint = projectCheckpoint;
+  exports.pullPlan = pullPlan;
+  exports.recoveryLedger = recoveryLedger;
+  exports.restoreCapture = restoreCapture;
+  exports.sameBlocks = sameBlocks;
+  exports.structuredBinding = structuredBinding;
+  exports.structuredGroups = structuredGroups;
+  exports.structuredTargets = structuredTargets;
+  Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
+  return exports;
+}({});
+
+</script>

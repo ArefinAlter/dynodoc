@@ -3,6 +3,11 @@ import {
   CaptureSession,
   projectCheckpoint,
   diff,
+  hosts,
+  blockKey,
+  operationText,
+  assertHostKind,
+  type Host,
   type Block,
   type Checkpoint,
   type Change,
@@ -10,7 +15,6 @@ import {
   type Store
 } from './protocol';
 
-type Host = 'word' | 'google-docs';
 export interface Sidecar {
   format: 'dynodoc.provenance-sidecar';
   version: 1;
@@ -92,14 +96,18 @@ function checkpoint(value: unknown): Checkpoint {
 }
 function blocks(value: unknown, base: Block[]): Block[] {
   const result = array(value, 2000).map((value) => {
-    const b = object(value, ['id', 'text']);
-    return { id: string(b.id, ulid), text: string(b.text) };
+    const b = object(value, ['id', 'text', 'field']);
+    return {
+      id: string(b.id, ulid),
+      text: string(b.text),
+      ...(b.field !== undefined ? { field: string(b.field) } : {})
+    };
   });
   diff(base, result);
   return result;
 }
 function changes(value: unknown, base: Block[], limit = 20000): Change[] {
-  const known = new Set(base.map((b) => b.id)),
+  const known = new Set(base.map(blockKey)),
     ids = new Set<string>();
   return array(value, limit).map((value) => {
     const c = object(value, ['id', 'observed_at', 'operation']),
@@ -113,8 +121,16 @@ function changes(value: unknown, base: Block[], limit = 20000): Change[] {
     )
       invalid();
     const op = object(c.operation, ['type', 'node_id', 'field', 'value']);
-    if (op.type !== 'FieldEdited' || op.field !== 'content' || !known.has(string(op.node_id, ulid)))
+    if (
+      op.type !== 'FieldEdited' ||
+      !known.has(blockKey({ id: string(op.node_id, ulid), field: string(op.field) }))
+    )
       invalid();
+    if (op.field !== 'content') {
+      if (!(op.field === 'text' || /^cell_\d{1,2}$/.test(string(op.field)))) invalid();
+      string(op.value);
+      return c as unknown as Change;
+    }
     const paragraph = object(op.value, ['type', 'content']);
     if (paragraph.type !== 'paragraph') invalid();
     for (const value of array(paragraph.content, 20000)) {
@@ -126,10 +142,13 @@ function changes(value: unknown, base: Block[], limit = 20000): Change[] {
   });
 }
 function replay(base: Block[], changes: Change[]): Block[] {
-  const text = new Map(base.map((b) => [b.id, b.text]));
+  const text = new Map(base.map((b) => [blockKey(b), b.text]));
   for (const change of changes)
-    text.set(change.operation.node_id, change.operation.value.content.map((t) => t.text).join(''));
-  return base.map((b) => ({ id: b.id, text: text.get(b.id)! }));
+    text.set(
+      blockKey({ id: change.operation.node_id, field: change.operation.field }),
+      operationText(change.operation)
+    );
+  return base.map((b) => ({ ...b, text: text.get(blockKey(b))! }));
 }
 function equal(a: unknown, b: unknown): boolean {
   // All compared values here are projected/typed, with object-key order normalized below.
@@ -160,7 +179,7 @@ export function parseSidecar(text: string): Sidecar {
   if (
     s.format !== 'dynodoc.provenance-sidecar' ||
     s.version !== 1 ||
-    !['word', 'google-docs'].includes(string(s.host))
+    !hosts.includes(string(s.host) as Host)
   )
     invalid();
   const l = object(s.ledger, [
@@ -182,6 +201,7 @@ export function parseSidecar(text: string): Sidecar {
     // The 20,000 server limit applies to a frozen upload, not all later typing.
     // The sidecar byte cap bounds the complete recoverable observation history.
     observed = changes(l.changes, base, Number.MAX_SAFE_INTEGER);
+  assertHostKind(s.host as Host, c.kind);
   if (!equal(replay(base, observed), seen)) invalid();
   for (const value of array(l.archives, 1000)) {
     const archive = object(value, ['checkpoint', 'changes']),
@@ -257,11 +277,11 @@ export function parseSidecar(text: string): Sidecar {
     // Acknowledged uploads are a prefix of observations; late typing stays separate.
     const current = clone(base);
     let matches = false;
-    const index = new Map(current.map((b, i) => [b.id, i]));
+    const index = new Map(current.map((b, i) => [blockKey(b), i]));
     for (const change of observed) {
-      current[index.get(change.operation.node_id)!].text = change.operation.value.content
-        .map((t) => t.text)
-        .join('');
+      current[
+        index.get(blockKey({ id: change.operation.node_id, field: change.operation.field }))!
+      ].text = operationText(change.operation);
       if (equal(current, sent)) {
         matches = true;
         break;

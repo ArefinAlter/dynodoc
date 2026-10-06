@@ -106,7 +106,16 @@ pub(crate) async fn prepare(
         || b.version != 1
         || b.document_id != id
         || b.base_seq < 0
-        || !["word", "google-docs", "portable"].contains(&b.capture.host.as_str())
+        || ![
+            "word",
+            "google-docs",
+            "excel",
+            "google-sheets",
+            "powerpoint",
+            "google-slides",
+            "portable",
+        ]
+        .contains(&b.capture.host.as_str())
         || !["observed_snapshot", "imported"].contains(&b.capture.mode.as_str())
         || b.capture.document_name.chars().count() > 500
         || b.changes.is_empty()
@@ -256,18 +265,37 @@ async fn grant(
     a: AuthContext,
     Json(p): Json<GrantInput>,
 ) -> Result<Json<Value>, ApiError> {
-    if !["word", "google-docs"].contains(&p.host.as_str()) {
-        return Err(bad("Choose Word or Google Docs"));
+    if ![
+        "word",
+        "google-docs",
+        "excel",
+        "google-sheets",
+        "powerpoint",
+        "google-slides",
+    ]
+    .contains(&p.host.as_str())
+    {
+        return Err(bad("Choose a supported Microsoft or Google editor"));
     }
     let mut tx = s.pool.begin().await?;
-    sqlx::query("select id from document where id=$1 for update")
-        .bind(id)
-        .fetch_optional(&mut *tx)
-        .await?
-        .ok_or(ApiError::NotFound)?;
+    let kind: String = sqlx::query_scalar(
+        "select coalesce(settings->>'kind','questionnaire') from document where id=$1 for update",
+    )
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(ApiError::NotFound)?;
     crate::projects::lock_document_project(&mut tx, id).await?;
     if access::require_member(&mut tx, id, a.identity_id).await? < MemberRole::Contributor {
         return Err(ApiError::Forbidden);
+    }
+    let expected = match p.host.as_str() {
+        "word" | "google-docs" => "document",
+        "excel" | "google-sheets" => "spreadsheet",
+        _ => "presentation",
+    };
+    if kind != expected {
+        return Err(bad("Choose a connection for this file format"));
     }
     let active:i64=sqlx::query_scalar("select count(*) from connector_grant where document_id=$1 and identity_id=$2 and revoked_at is null and expires_at>now()").bind(id).bind(a.identity_id).fetch_one(&mut *tx).await?;
     if active >= 10 {

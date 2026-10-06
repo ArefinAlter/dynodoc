@@ -107,6 +107,118 @@ fn upload(doc: Uuid, checkpoint: &Value, block: &str, host: &str, submit: bool) 
 }
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn structured_editors_keep_host_file_kind_and_retry_scope(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let owner = identity(&pool, "structured-connectors@example.test").await;
+    for (kind, hosts, field) in [
+        ("spreadsheet", ["excel", "google-sheets"], "cell_0"),
+        ("presentation", ["powerpoint", "google-slides"], "text"),
+    ] {
+        let (doc, block) = document(&router, &owner).await;
+        assert_eq!(
+            post(
+                &router,
+                &format!("/documents/{doc}/metadata"),
+                &owner,
+                json!({"settings":{"kind":kind}})
+            )
+            .await
+            .0,
+            StatusCode::OK
+        );
+        assert_eq!(
+            post(
+                &router,
+                &format!("/documents/{doc}/connectors"),
+                &owner,
+                json!({"host":"word"})
+            )
+            .await
+            .0,
+            StatusCode::BAD_REQUEST
+        );
+        let checkpoint = get(&router, &format!("/documents/{doc}/provenance"), &owner)
+            .await
+            .1;
+        for (i, host) in hosts.iter().enumerate() {
+            let (status, grant) = post(
+                &router,
+                &format!("/documents/{doc}/connectors"),
+                &owner,
+                json!({"host":host}),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{grant}");
+            let key = format!("Bearer {}", grant["token"].as_str().unwrap());
+            let mut bundle = upload(doc, &checkpoint, &block, host, true);
+            bundle["bundle"]["changes"][0]["operation"] = json!({"type":"FieldEdited","node_id":block,"field":field,"value":if kind=="spreadsheet" {"=SUM(A1:A2)"} else {"Edited slide text"}});
+            let mut wrong_host = bundle.clone();
+            wrong_host["bundle"]["capture"]["host"] = json!(hosts[1 - i]);
+            assert_eq!(
+                post(
+                    &router,
+                    &format!("/connector/documents/{doc}/bundles"),
+                    &key,
+                    wrong_host
+                )
+                .await
+                .0,
+                StatusCode::FORBIDDEN
+            );
+            let (status, receipt) = post(
+                &router,
+                &format!("/connector/documents/{doc}/bundles"),
+                &key,
+                bundle.clone(),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{receipt}");
+            let retry = post(
+                &router,
+                &format!("/connector/documents/{doc}/bundles"),
+                &key,
+                bundle,
+            )
+            .await;
+            assert_eq!(retry.0, StatusCode::OK);
+            assert_eq!(retry.1, receipt);
+            let current = get(
+                &router,
+                &format!("/connector/documents/{doc}/checkpoint"),
+                &key,
+            )
+            .await
+            .1;
+            assert_eq!(current["through_seq"], checkpoint["through_seq"]);
+            assert_eq!(
+                post(
+                    &router,
+                    &format!(
+                        "/documents/{doc}/connectors/{}/revoke",
+                        grant["grant"]["id"].as_str().unwrap()
+                    ),
+                    &owner,
+                    json!({})
+                )
+                .await
+                .0,
+                StatusCode::OK
+            );
+            assert_eq!(
+                get(
+                    &router,
+                    &format!("/connector/documents/{doc}/checkpoint"),
+                    &key
+                )
+                .await
+                .0,
+                StatusCode::UNAUTHORIZED
+            );
+        }
+    }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn historical_checkpoints_retain_exact_anchors_and_current_access(pool: PgPool) {
     let router = app(test_state(pool.clone()));
     let owner = identity(&pool, "historical-owner@example.test").await;

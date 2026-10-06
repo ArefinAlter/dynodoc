@@ -1,4 +1,4 @@
-# Word and Google Docs provenance connectors
+# Microsoft and Google provenance connectors
 
 Both development connectors use the same protocol and capture queue. They are
 not yet published or accepted in either host. Dynodoc is the review/sync platform;
@@ -101,3 +101,43 @@ Reopen the task pane in the saved copy and select the sidecar before reconnectin
 
 Automated protocol/storage and signed-in platform tests cannot substitute for
 these host tests. No production email is required for this development acceptance.
+
+## Excel/Sheets and PowerPoint/Slides development installation
+
+All six editors use the same bundle/review/merge/pull and recovery contract. This
+increment supports existing cells/formula source and existing slide shape text,
+with a maximum of 2,000 projected cells/shapes. It does not capture structural or
+formatting changes, date cells, merged cells, charts, grouped/table slide shapes,
+media or animations. Formula dialects/layout differences require real-host checks.
+Remote structural/formatting changes stop incremental pull. Use file push for
+unsupported edits; keep original files.
+
+1. Import the XLSX/PPTX into a Project and keep a matching native working copy.
+2. Create an **Excel**, **Google Sheets**, **PowerPoint** or **Google Slides** key
+   under Sync & connections. The key must match both editor and file format.
+3. For Microsoft hosts, sideload `excel/manifest.xml` or `powerpoint/manifest.xml`
+   through the supported development/catalog workflow. The pane requires stable
+   ExcelApi 1.4 or PowerPointApi 1.4 and a saved working-copy URL. Enter the file ID
+   and key; connect. Excel named rows and PowerPoint slide/shape tags retain IDs.
+4. For Google hosts, create a container-bound Apps Script project in the matching
+   spreadsheet/presentation. Install that host directory's `Code.gs`, `Common.gs`,
+   `Sidebar.html`, `Protocol.html` and `appsscript.json`. Authorize the documented
+   current-file scopes and reopen the file to use the **Open provenance** menu.
+   Credentials/queues are private to your Google user and file. Slides mappings
+   use native IDs in private properties and preserve accessibility descriptions.
+5. Enable capture explicitly, edit supported values, push for review in Projects,
+   review/merge, preview the latest team fields and apply explicitly. Preserve a
+   sidecar before a rename, copy, device switch or failed upload. Restore only in
+   the original editor with matching text/values and a fresh queue; original base
+   checkpoints are verified and frozen upload IDs are retained.
+
+Build/check all three Google protocol artifacts with `pnpm build:connectors` /
+`pnpm check:connectors` from `frontend/researcher`. Those commands also synchronize
+Sheets/Slides `Common.gs` from `google-common/Common.gs`; edit the shared source.
+
+Acceptance still required for each pair: desktop and cloud Microsoft hosts;
+Google host reopen/permissions/private accounts; saved identity retention;
+offline exact retry; late typing; explicit recovery into a fresh copy; independent
+and competing cell/shape edits; review/merge/pull across Microsoft and Google;
+and rejection of unsupported structures. Marketplace publication is separate.
+See [release evidence](../docs/SIX-EDITOR-PROVENANCE-RELEASE.md).

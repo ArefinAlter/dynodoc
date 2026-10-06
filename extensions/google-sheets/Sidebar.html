@@ -1,0 +1,47 @@
+<!doctype html><html><head><base target="_top"><style>body{font:14px system-ui;padding:12px;color:#222}label{display:block;margin:10px 0}input:not([type=checkbox]),textarea{width:95%;padding:6px}button{padding:7px;margin:4px}#message{white-space:pre-wrap}button:disabled{opacity:.5}</style></head><body>
+<h2>Dynodoc provenance</h2><p>Development connector for existing cells/formulas in this file. Capture works while this sidebar is open. Formatting changes and structural edits require file push.</p>
+<label>File ID<input id="documentId"></label><label>Google Sheets connection key<input id="token" type="password" autocomplete="off"></label>
+<label>Restore provenance from this editor (optional)<input id="recovery" type="file" accept=".json,application/json"></label><p>Restore into a fresh copy with matching block text, using the same Dynodoc account. Existing queues are preserved.</p><button id="connect">Connect</button>
+<label><input id="enabled" type="checkbox" disabled> Enable block capture</label><button id="capture" disabled>Capture now</button>
+<label>Change request name<input id="name" value="Google Sheets changes" maxlength="200"></label><label>Message<textarea id="note" maxlength="4000"></textarea></label>
+<button id="push" disabled>Push for review</button><button id="pull" disabled>Preview team changes</button><button id="apply" disabled>Apply preview</button><button id="export" disabled>Export local provenance</button><button id="exportPush" disabled>Export queued upload</button>
+<p id="message" role="status"></p><p>Capture records observations, not every keystroke or proof of who typed them. Paragraph replacements may inherit Google Sheets formatting. Your connection key and queue are private to your Google account.</p>
+<?!= include('Protocol'); ?>
+<script>
+const $=id=>document.getElementById(id),api=(method,...args)=>new Promise((resolve,reject)=>google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[method](...args, ...(['bindDynodoc','readDynodoc','applyDynodoc'].includes(method) ? [DynodocProvenance.structuredBinding(model)] : []), boundScope));
+let session=null,generation=null,busy=false,preview=null,boundScope=null,recovery=null,model=null;
+const store={load:async()=>{const saved=await api('loadLedger');generation=saved.generation;return saved.payload;},save:async(payload)=>{generation=await api('saveLedger',payload,generation);}};
+function message(text){$('message').textContent=text;}
+async function run(work){if(busy)return;busy=true;try{await work();}catch(e){$('enabled').checked=false;message(e.message||String(e));}finally{busy=false;}}
+function download(value,filename){const url=URL.createObjectURL(new Blob([JSON.stringify(value,null,2)],{type:'application/json'})),link=document.createElement('a');link.href=url;link.download=filename;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+$('recovery').onchange=()=>run(async()=>{
+  recovery=null;const file=$('recovery').files[0];if(!file)return;
+  if(file.size>DynodocProvenance.SIDECAR_MAX_BYTES)throw new Error('Use a provenance recovery file up to 16 MiB.');
+  recovery=DynodocProvenance.parseSidecar(await file.text());message('Recovery selected. Connect to the original Dynodoc file. Paragraph text will not be replaced.');
+});
+$('connect').onclick=()=>run(async()=>{
+  const connected=await api('connectDynodoc',$('documentId').value,$('token').value);boundScope=connected.scope;const c=connected.checkpoint,saved=await store.load();model=saved?saved.checkpoint:c;
+  if(recovery){
+    if(saved)throw new Error('This working copy already has a saved queue. Export it and use a fresh copy; recovery cannot replace it.');
+    const verifiedBase=await api('historicalCheckpointDynodoc',recovery.ledger.checkpoint.through_seq);
+    const ledger=DynodocProvenance.recoveryLedger(recovery,c,'google-sheets',verifiedBase);model=ledger.checkpoint;const blocks=await api('bindDynodoc',ledger.seen);
+    session=await DynodocProvenance.restoreCapture(store,recovery,c,blocks,'google-sheets',verifiedBase);
+  }else{
+    const blocks=saved?await api('readDynodoc'):await api('bindDynodoc',DynodocProvenance.projectCheckpoint(c));
+    session=await DynodocProvenance.CaptureSession.connect(store,c,blocks,'google-sheets');await session.capture(blocks);
+  }
+  ['enabled','capture','push','pull','export','exportPush'].forEach(id=>$(id).disabled=false);$('connect').disabled=true;$('documentId').disabled=true;$('recovery').disabled=true;$('token').value='';
+  message(recovery?'Provenance restored. Queued upload IDs and observations are retained. Enable capture explicitly to continue.':'Connected. Enable capture to keep observations while this sidebar is open.');recovery=null;
+});
+$('capture').onclick=()=>run(async()=>{await session.capture(await api('readDynodoc'));message(session.ledger.changes.length+' block observations saved privately.');});
+setInterval(()=>{if($('enabled').checked&&session&&!busy)$('capture').click();},5000);
+$('push').onclick=()=>run(async()=>{await session.capture(await api('readDynodoc'));const bundle=await session.prepare($('name').value,$('note').value,true);await session.acknowledge(await api('pushDynodoc',bundle));message('Sent for review. Keep editing; pull after the request is merged.');});
+$('pull').onclick=()=>run(async()=>{
+  await session.capture(await api('readDynodoc'));const c=await api('checkpointDynodoc');session.canApply(c);const expected=await api('readDynodoc'),rows=session.plan(c,expected);
+  if(rows.some(r=>r.conflict))throw new Error('Local and team edits overlap. Export the queue and resolve through a change request.');
+  preview={checkpoint:c,expected:expected,next:rows.map(r=>({id:r.id,field:r.field,text:r.text}))};$('apply').disabled=false;message(rows.filter(r=>r.local!==r.text).length+' blocks will change. Apply explicitly to update Google Sheets.');
+});
+$('apply').onclick=()=>run(async()=>{session.canApply(preview.checkpoint);const actual=await api('applyDynodoc',preview.expected,preview.next);if(!DynodocProvenance.sameBlocks(actual,preview.next))throw new Error('The editor did not apply the complete preview. The saved starting revision is unchanged; inspect the file and export provenance.');await session.acceptPull(preview.checkpoint,actual);model=session.ledger.checkpoint;preview=null;$('apply').disabled=true;message('Team changes applied. Prior observations remain in your exported ledger.');});
+$('export').onclick=()=>download(DynodocProvenance.exportSidecar(session),'google-sheets.provenance.json');
+$('exportPush').onclick=()=>{if(session.ledger.pending)download(session.ledger.pending,'google-sheets.changes.json');else message('No queued upload. Capture and push first; failed uploads remain exportable.');};
+</script></body></html>

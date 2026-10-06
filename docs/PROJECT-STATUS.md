@@ -5,10 +5,10 @@ Assessment updated: 6 October 2026, including decision 010's Projects/provenance
 ## Current priority: external-editor provenance and Projects
 
 The owner clarified on 6 October that Dynodoc is a GitHub-style provenance and
-change-sync platform around existing editors. **Word and Google Docs have equal
-priority.** Further Office-parity work is deprioritized; the existing basic web
+change-sync platform around existing editors. **Word/Docs, Excel/Sheets and
+PowerPoint/Slides are all primary targets.** Further Office-parity work is deprioritized; the existing basic web
 editors stay. [Decision 010](decisions/010-external-editor-provenance-and-projects.md)
-supersedes the earlier editor-expansion backlog.
+supersedes the earlier editor-expansion backlog; [decision 011](decisions/011-six-editor-provenance.md) extends the workflow to all six editors.
 
 The first Projects implementation includes creation/listing, Files, cross-file
 requests, private own Drafts, Settings/members, inherited rules, new-request Watch
@@ -30,10 +30,18 @@ paragraph text is the initial supported exchange; formatting and structural
 changes require file push. Capture is pane-dependent, not a background local
 agent or a complete keystroke/authorship attestation.
 
-Next: real cross-host acceptance, structural block sync and durable background
-capture, secure pairing/publication, then project Compare/Activity/releases.
+Excel/Sheets and PowerPoint/Slides now have development connectors using the same
+field-level queue, retry/recovery and checked pull flow. Spreadsheet cells/formula
+source and slide shape text are supported; structural/formatting/date/media sync
+remains open. Migration 0024 extends file/host-scoped keys with file-kind checks.
+See [six-editor release](SIX-EDITOR-PROVENANCE-RELEASE.md).
+
+Next: deploy and accept all three pairs in real hosts; extend structural and
+formatting block sync; add durable background capture and secure pairing/publication;
+then Project Compare/Activity/search/releases.
 See [release evidence](PROJECTS-PROVENANCE-RELEASE.md), [sync contract](PROVENANCE-SYNC.md)
-and [installation](../extensions/README.md). No VPS rollout for this iteration.
+and [installation](../extensions/README.md). The current VPS rollout is recorded
+in the six-editor release; earlier increments were verified locally and in CI.
 
 Invitation emails shipped in `b70f048`; release documentation followed in
 `52c2447`. Document/workspace invitations are sent by the web gateway after the
