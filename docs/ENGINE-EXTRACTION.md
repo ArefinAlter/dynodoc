@@ -148,3 +148,19 @@ passed all 199 tests, formatting, Clippy, build, documentation and OpenAPI consi
 The [application Rust run](https://github.com/ArefinAlter/dynodoc/actions/runs/37424245115)
 also passed all 199 tests. Final client/browser evidence is recorded in the
 [recovery release](PROVENANCE-RECOVERY-RELEASE.md).
+
+## Six-editor host follow-up (6 October 2026)
+
+Engine service [`d6666a2`](https://github.com/ArefinAlter/dynodoc-engine/commit/d6666a23e83a6b2a31f52d96d0866dda88a46a64)
+synchronizes application [`348bef9`](https://github.com/ArefinAlter/dynodoc/commit/348bef9da0be3a72e1f3eeca57225d60aef71420).
+Engine main [`4c067f3`](https://github.com/ArefinAlter/dynodoc-engine/commit/4c067f3f45a152e4baffaed15f681f4c09ec3d1d)
+adds verified capabilities/priorities. All six editor host keys and file-kind checks
+share the anchored retry/review service. Migration 0024 is new; earlier migrations
+and event formats remain unchanged. Service/test/migration files match the app.
+
+Local task lint, all 200 tests via task test, task docs and task openapi passed;
+generated OpenAPI is unchanged. [Final independent CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/37430925686)
+passed all required checks. Native adapters/recovery UI are application code;
+source publication does not establish complete format support or native acceptance.
+The app is deployed on the VPS with Projects/provenance/schema 24; see the
+[six-editor release](SIX-EDITOR-PROVENANCE-RELEASE.md) for separate runtime evidence.

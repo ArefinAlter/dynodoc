@@ -17,8 +17,12 @@ new development adapters exchange cells/formula source and slide shape text with
 stable identity, private queues, exact retries and checked pulls. Migration 0024
 extends key hosts and creation checks file kind. [Decision 011](decisions/011-six-editor-provenance.md)
 sets the remaining priorities; [release evidence](SIX-EDITOR-PROVENANCE-RELEASE.md)
-records current verification and deployment. Earlier no-rollout statements below
-are dated evidence for the preceding increments.
+records current verification and deployment. **VPS source f8fd6a0 / schema 24 is
+live**; engine main is `4c067f3` (service synchronization `d6666a2`). Final frontend
+CI passes 253 unit tests and all 61 signed-in browser workflows; both Rust suites
+pass 200 tests. Backup, unchanged data digests, rollback images and framing checks
+are recorded in that release. Earlier no-rollout statements below are dated
+evidence for the preceding increments.
 
 Next: accept all three pairs in real native hosts; extend structural/formatting,
 date/formula and slide content support; durable background capture and secure

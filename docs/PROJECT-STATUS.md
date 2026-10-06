@@ -1,13 +1,13 @@
 # Dynodoc: intent, current implementation and remaining work
 
-Assessment updated: 6 October 2026, including decision 010's Projects/provenance increment and the recorded September releases. This distinguishes executable functionality from longer design documents and real-host/production acceptance.
+Assessment updated: 6 October 2026, including decisions 010/011, the six-editor increment and verified VPS rollout. This distinguishes executable functionality from longer design documents and real-host/production acceptance.
 
 ## Current priority: external-editor provenance and Projects
 
 The owner clarified on 6 October that Dynodoc is a GitHub-style provenance and
 change-sync platform around existing editors. **Word/Docs, Excel/Sheets and
-PowerPoint/Slides are all primary targets.** Further Office-parity work is deprioritized; the existing basic web
-editors stay. [Decision 010](decisions/010-external-editor-provenance-and-projects.md)
+PowerPoint/Slides are all primary targets.** Further Office-parity work is
+deprioritized; the existing basic web editors stay. [Decision 010](decisions/010-external-editor-provenance-and-projects.md)
 supersedes the earlier editor-expansion backlog; [decision 011](decisions/011-six-editor-provenance.md) extends the workflow to all six editors.
 
 The first Projects implementation includes creation/listing, Files, cross-file
@@ -36,7 +36,12 @@ source and slide shape text are supported; structural/formatting/date/media sync
 remains open. Migration 0024 extends file/host-scoped keys with file-kind checks.
 See [six-editor release](SIX-EDITOR-PROVENANCE-RELEASE.md).
 
-Next: deploy and accept all three pairs in real hosts; extend structural and
+Projects and all six host scopes are deployed on the VPS at `f8fd6a0`, schema 24.
+All 61 signed-in browser tests, 253 unit tests and 200 Rust tests passed. Existing
+accounts/history and unrelated services were preserved. Native connectors remain
+development installations, not marketplace releases.
+
+Next: accept all three pairs in real hosts; extend structural and
 formatting block sync; add durable background capture and secure pairing/publication;
 then Project Compare/Activity/search/releases.
 See [release evidence](PROJECTS-PROVENANCE-RELEASE.md), [sync contract](PROVENANCE-SYNC.md)
@@ -50,25 +55,28 @@ not exercised during rollout, so the owner's own second-address invitation test
 is still an acceptance check, not a reason to reinstall credentials. See
 [release evidence](COPIES-AND-ROLES-RELEASE.md#follow-up-releases).
 
-The standalone engine is synchronized at `8e60c59` from application `a286aee`,
+The standalone engine is synchronized at `4c067f3` (service code `d6666a2`) from
+application `348bef9`,
 including Projects, inherited rules, scoped connector keys and immutable
 provenance bundles and historical checkpoints alongside review, roles, copies
-and notification APIs. Its
+and notification APIs, plus all six editor key hosts and file-kind checks. Its
 [capability inventory](https://github.com/ArefinAlter/dynodoc-engine/blob/main/docs/CAPABILITIES.md)
 separates implemented service behavior from native-host acceptance, invitation
-delivery and future work. [Synchronization evidence](ENGINE-EXTRACTION.md#historical-checkpoint-follow-up-6-october-2026).
+delivery and future work. [Synchronization evidence](ENGINE-EXTRACTION.md#six-editor-host-follow-up-6-october-2026).
 
 ## Continuation: production reset and future directions (30 September)
 
 The owner decided to permanently delete every document in production while keeping
 all accounts and sign-ins; it was done through the audited erasure path after a
 validated backup ([operations record](operations/2026-09-30-document-reset.md)).
-The reset left no documents or workspaces on 30 September; current live counts
-have not been rechecked. Planned next work is documented,
-not built: a GitHub-style [Projects workspace](proposals/PROJECTS-WORKSPACE-HANDOFF.md),
+The reset left no documents or workspaces on 30 September; the six-editor release
+records the latest live aggregate counts. At that handoff, planned work included
+a GitHub-style [Projects workspace](proposals/PROJECTS-WORKSPACE-HANDOFF.md),
 [agents that edit documents with provenance](proposals/AGENT-PROVENANCE-PROPOSAL.md) and
 [assessing how students use AI](proposals/AI-ASSESSMENT-PROPOSAL.md); see
-[proposals/README.md](proposals/README.md) for the index and research.
+[proposals/README.md](proposals/README.md) for the index and research. The first
+Projects increment is now implemented and deployed; agent/assessment proposals
+remain future work.
 
 ## Continuation: copy detection, roles, review rules, notifications and night mode
 
@@ -113,7 +121,7 @@ and live synthetic browser checks. The MIT engine is published independently.
 
 Dynodoc helps teams keep documents, spreadsheets and questionnaires together with an understandable record of changes. A paragraph, question, choice or spreadsheet row has a permanent identity. Edits are recorded as semantic events, attributed to their author and chained by hashes. Collaborators can work in personal drafts, compare with the team version, resolve overlapping edits, include selected changes and restore previous content without deleting history.
 
-The original immediate product was a questionnaire authoring tool. The owner's expanded brief adds document and spreadsheet editing and a hosted ten-person pilot. The public-consultation design in `05-public-consultation-part1.md` describes a later product: large-scale citizen input, moderation, identity tiers, deliberation and synthesis. Those services are not implemented by the current researcher workspace.
+The original immediate product was a questionnaire authoring tool. The current product direction is provenance/review/sync around Microsoft and Google editors, with the existing basic web editors retained as secondary tools. The public-consultation design in `05-public-consultation-part1.md` describes a later product: large-scale citizen input, moderation, identity tiers, deliberation and synthesis. Those services are not implemented by the current researcher workspace.
 
 ## Implemented document workflows
 

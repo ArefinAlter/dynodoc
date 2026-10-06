@@ -112,6 +112,8 @@ media or animations. Formula dialects/layout differences require real-host check
 Remote structural/formatting changes stop incremental pull. Use file push for
 unsupported edits; keep original files.
 
+The development panes and scoped APIs are now deployed at `https://app.dynodoc.online`. Installation in the native hosts and marketplace publication remain open.
+
 1. Import the XLSX/PPTX into a Project and keep a matching native working copy.
 2. Create an **Excel**, **Google Sheets**, **PowerPoint** or **Google Slides** key
    under Sync & connections. The key must match both editor and file format.
@@ -141,3 +143,8 @@ offline exact retry; late typing; explicit recovery into a fresh copy; independe
 and competing cell/shape edits; review/merge/pull across Microsoft and Google;
 and rejection of unsupported structures. Marketplace publication is separate.
 See [release evidence](../docs/SIX-EDITOR-PROVENANCE-RELEASE.md).
+
+Snapshot limitation: sorting or pasting complete spreadsheet rows can appear as
+multiple cell-value changes when the host retains named range coordinates.
+This increment does not reconstruct the original edit command or guarantee
+recognition of every structural action; use file push for those operations.
