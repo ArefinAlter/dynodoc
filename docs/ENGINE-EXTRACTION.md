@@ -128,3 +128,23 @@ consistency for `e73e4ba`.
 No production deployment, binary/crates.io release, actual editor-host acceptance
 or marketplace publication was performed. Invitation email remains a web-gateway
 responsibility. Source deduplication remains a separate build-boundary change.
+
+## Historical checkpoint follow-up (6 October 2026)
+
+Engine [`8e60c59`](https://github.com/ArefinAlter/dynodoc-engine/commit/8e60c59c30446fad1ad54fb839c7345ef3d20e14)
+synchronizes application [`a286aee`](https://github.com/ArefinAlter/dynodoc/commit/a286aee276dff03f01c529485566115cc7024658).
+Both checkpoint GET endpoints accept optional `through_seq`: exact historical
+canonical state/hash with current membership/key/account/session checks. Invalid
+or future sequences return 400; omitted returns head. Review statuses stay current.
+Native sidecar recovery uses the verified original checkpoint before identity
+binding. Its UI/shared clients remain application code.
+
+Service source/test files match; OpenAPI is generated independently with MIT
+metadata. No migration or event-format changes. Local engine lint and all four
+Projects/provenance integration tests pass, including exact historical hashes/text,
+initial state, out-of-range rejection, scope/access and revocation.
+[Independent engine CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/37424321559)
+passed all 199 tests, formatting, Clippy, build, documentation and OpenAPI consistency.
+The [application Rust run](https://github.com/ArefinAlter/dynodoc/actions/runs/37424245115)
+also passed all 199 tests. Final client/browser evidence is recorded in the
+[recovery release](PROVENANCE-RECOVERY-RELEASE.md).

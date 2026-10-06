@@ -42,12 +42,13 @@ not exercised during rollout, so the owner's own second-address invitation test
 is still an acceptance check, not a reason to reinstall credentials. See
 [release evidence](COPIES-AND-ROLES-RELEASE.md#follow-up-releases).
 
-The standalone engine is synchronized at `e73e4ba` from application `2a289ce`,
+The standalone engine is synchronized at `8e60c59` from application `a286aee`,
 including Projects, inherited rules, scoped connector keys and immutable
-provenance bundles alongside review, roles, copies and notification APIs. Its
+provenance bundles and historical checkpoints alongside review, roles, copies
+and notification APIs. Its
 [capability inventory](https://github.com/ArefinAlter/dynodoc-engine/blob/main/docs/CAPABILITIES.md)
 separates implemented service behavior from native-host acceptance, invitation
-delivery and future work. [Synchronization evidence](ENGINE-EXTRACTION.md#projects-and-provenance-synchronization-6-october-2026).
+delivery and future work. [Synchronization evidence](ENGINE-EXTRACTION.md#historical-checkpoint-follow-up-6-october-2026).
 
 ## Continuation: production reset and future directions (30 September)
 

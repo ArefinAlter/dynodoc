@@ -39,6 +39,14 @@ browser test exposed and fixed a request-helper runtime error missed by types.
 Real editor-host acceptance, structural/background capture and publication remain
 open. This recovery increment does not implement automatic filename/content binding.
 
+Recovery code is pushed as `a286aee` with the later-observation fix in `05fc37c`;
+the standalone historical-checkpoint API,
+test and capability/contract documentation are synchronized at `8e60c59`. The
+earlier implementation/evidence paragraphs above remain dated release records.
+Both Rust CI runs pass all 199 tests. Final frontend CI passes 240 unit tests and
+all 57 signed-in browser tests, including recovery and historical gateway reads.
+The local preview/database are removed; no production rollout was performed.
+
 ## Earlier priority review and engine synchronization (6 October)
 
 Reviewed application `52c2447`, standalone engine `a22bf71`, September release

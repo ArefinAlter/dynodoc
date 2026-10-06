@@ -45,7 +45,27 @@ exact retry after transport failure, receipt-preserving exports, Word working-co
 changes and refusal to overwrite a saved Word queue. These are host-contract tests,
 not acceptance inside Microsoft Word or Google Docs. The signed-in Projects
 workflow now checks historical reads through the real gateway after merge.
-Committed CI evidence follows once verified.
+Application implementation is pushed as
+[`a286aee`](https://github.com/ArefinAlter/dynodoc/commit/a286aee276dff03f01c529485566115cc7024658),
+with the later-observation correction in
+[`05fc37c`](https://github.com/ArefinAlter/dynodoc/commit/05fc37cb09c86d97d8e370da7effa8f03a69da08).
+[Application Rust CI](https://github.com/ArefinAlter/dynodoc/actions/runs/37424245115)
+passed all 199 tests, formatting, Clippy and build. The corresponding engine API,
+test and capability documentation are synchronized and pushed as
+[`8e60c59`](https://github.com/ArefinAlter/dynodoc-engine/commit/8e60c59c30446fad1ad54fb839c7345ef3d20e14);
+[independent engine CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/37424321559)
+passed all 199 tests, lint, build, documentation and OpenAPI consistency. This
+correction changes client recovery only; the Rust revision remains identical.
+[Final frontend/signed-in browser CI](https://github.com/ArefinAlter/dynodoc/actions/runs/37424678744)
+passed lint/format, connector artifact consistency, production build, all 240
+unit tests, 11 public browser tests and all 57 signed-in browser tests for
+`05fc37c`. The public-only job intentionally skips 46 signed-in cases; the
+authenticated job runs all 57 without skips. The previous authenticated run was
+canceled by the client correction; this final run supplies the complete evidence.
+
+The owned local preview server is stopped, the isolated PostgreSQL container and
+test databases are removed, and the temporary build log is deleted. Test credentials
+and accounts were synthetic; no production email was sent.
 
 ## Remaining boundaries and priorities
 
