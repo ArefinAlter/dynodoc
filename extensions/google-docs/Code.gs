@@ -27,11 +27,13 @@ function paragraphs_(scope) {
   if(paragraphs.length>2000)throw new Error('Use up to 2,000 paragraphs in this development connector.');
   return paragraphs;
 }
-function request_(action,body,scopeKey) {
+function request_(action,body,scopeKey,throughSeq) {
   const s=scope_(scopeKey), raw=PropertiesService.getUserProperties().getProperty(s.key+'.credential');
   if(!raw)throw new Error('Connect this Google document first.');
   const credential=JSON.parse(raw);
-  const response=UrlFetchApp.fetch(DYNODOC_ORIGIN+'/api/connectors/documents/'+credential.documentId+'/'+action,{
+  if(throughSeq!==undefined && (action!=='checkpoint'||!Number.isSafeInteger(throughSeq)||throughSeq<0))throw new Error('Use a valid historical checkpoint revision.');
+  const search=throughSeq!==undefined?'?through_seq='+throughSeq:'';
+  const response=UrlFetchApp.fetch(DYNODOC_ORIGIN+'/api/connectors/documents/'+credential.documentId+'/'+action+search,{
     method:body?'post':'get',headers:{Authorization:'Bearer '+credential.token},contentType:'application/json',payload:body?JSON.stringify(body):undefined,muteHttpExceptions:true,followRedirects:false
   });
   const value=JSON.parse(response.getContentText());
@@ -46,6 +48,7 @@ function connectDynodoc(documentId,token,scopeKey) {
   try{return {checkpoint:request_('checkpoint',undefined,scopeKey),scope:s.key};}catch(e){if(previous)props.setProperty(key,previous);else props.deleteProperty(key);throw e;}
 }
 function checkpointDynodoc(scopeKey) { return request_('checkpoint',undefined,scopeKey); }
+function historicalCheckpointDynodoc(throughSeq,scopeKey) { return request_('checkpoint',undefined,scopeKey,throughSeq); }
 function pushDynodoc(body,scopeKey) {
   if(body.bundle.capture.host!=='google-docs')throw new Error('Use a Google Docs change bundle.');
   return request_('bundles',body,scopeKey);

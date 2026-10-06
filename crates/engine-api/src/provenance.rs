@@ -7,7 +7,7 @@ use crate::{
     reviews, AppState,
 };
 use axum::{
-    extract::{FromRequestParts, Path, State},
+    extract::{FromRequestParts, Path, Query, State},
     http::{header, request::Parts},
     routing::{get, post},
     Json, Router,
@@ -168,11 +168,16 @@ async fn propose(
     };
     reviews::create(State(state), Path(id), auth, Json(req)).await
 }
+#[derive(Deserialize)]
+struct CheckpointQuery {
+    through_seq: Option<i64>,
+}
 async fn read_checkpoint(
     s: &AppState,
     id: Uuid,
     actor: Uuid,
     credential: Option<Uuid>,
+    through_seq: Option<i64>,
 ) -> Result<Json<Value>, ApiError> {
     let mut tx = s.pool.begin().await?;
     sqlx::query("select id from document where id=$1 for share")
@@ -191,11 +196,17 @@ async fn read_checkpoint(
     .bind(id)
     .fetch_one(&mut *tx)
     .await?;
-    let seq: i64 =
+    let head: i64 =
         sqlx::query_scalar("select coalesce(max(seq),0) from event where document_id=$1")
             .bind(id)
             .fetch_one(&mut *tx)
             .await?;
+    let seq = through_seq.unwrap_or(head);
+    if seq < 0 || seq > head {
+        return Err(bad(
+            "The requested checkpoint is outside this document's history",
+        ));
+    }
     let hash = anchor(&mut tx, id, seq).await?;
     let state = reviews::state_through(&mut tx, id, seq).await?;
     let proposals: Vec<Value> = sqlx::query_scalar("select jsonb_build_object('id',d.id,'status',case when d.merged_at is not null then 'merged' when d.review_outcome is not null then d.review_outcome when d.submitted_at is null then 'draft' else 'open' end) from workspace_draft d where d.document_id=$1 and d.created_by=$2 and d.source->>'kind'='provenance' order by d.created_at desc limit 100")
@@ -204,13 +215,14 @@ async fn read_checkpoint(
         json!({"format":"dynodoc.checkpoint","version":1,"document_id":id,"title":title,"kind":kind,"through_seq":seq,"chain_hash":hash,"state":state,"proposals":proposals}),
     ))
 }
-#[utoipa::path(get,path="/documents/{id}/provenance",params(("id"=Uuid,Path)),security(("paseto"=[])),responses((status=200,description="Consistent full checkpoint with stable block IDs",body=Value)))]
+#[utoipa::path(get,path="/documents/{id}/provenance",params(("id"=Uuid,Path),("through_seq"=Option<i64>,Query,description="Historical canonical revision; omitted means current head")),security(("paseto"=[])),responses((status=200,description="Consistent full checkpoint with stable block IDs",body=Value),(status=400,description="Revision outside history")))]
 async fn checkpoint(
     State(s): State<AppState>,
     Path(id): Path<Uuid>,
     a: AuthContext,
+    Query(query): Query<CheckpointQuery>,
 ) -> Result<Json<Value>, ApiError> {
-    read_checkpoint(&s, id, a.identity_id, None).await
+    read_checkpoint(&s, id, a.identity_id, None, query.through_seq).await
 }
 #[utoipa::path(post,path="/documents/{id}/provenance",params(("id"=Uuid,Path)),request_body=Value,security(("paseto"=[])),responses((status=200,description="Durable idempotent review receipt",body=Value),(status=409,description="Wrong base or reused bundle ID")))]
 async fn push(
@@ -354,16 +366,17 @@ impl FromRequestParts<AppState> for Connector {
         })
     }
 }
-#[utoipa::path(get,path="/connector/documents/{id}/checkpoint",params(("id"=Uuid,Path)),security(("connector_key"=[])),responses((status=200,description="File-scoped credential checkpoint",body=Value)))]
+#[utoipa::path(get,path="/connector/documents/{id}/checkpoint",params(("id"=Uuid,Path),("through_seq"=Option<i64>,Query,description="Historical canonical revision; omitted means current head")),security(("connector_key"=[])),responses((status=200,description="File-scoped credential checkpoint",body=Value),(status=400,description="Revision outside history")))]
 async fn connector_checkpoint(
     State(s): State<AppState>,
     Path(id): Path<Uuid>,
     c: Connector,
+    Query(query): Query<CheckpointQuery>,
 ) -> Result<Json<Value>, ApiError> {
     if c.document != id {
         return Err(ApiError::Forbidden);
     }
-    read_checkpoint(&s, id, c.auth.identity_id, Some(c.grant)).await
+    read_checkpoint(&s, id, c.auth.identity_id, Some(c.grant), query.through_seq).await
 }
 #[utoipa::path(post,path="/connector/documents/{id}/bundles",params(("id"=Uuid,Path)),request_body=Value,security(("connector_key"=[])),responses((status=200,description="Scoped proposal; canonical history unchanged",body=Value)))]
 async fn connector_push(

@@ -16,6 +16,13 @@ and breadcrumbs. The engine stores/retrieves immutable change bundles, checks
 exact base hashes and returns durable retry receipts. File-scoped, revocable
 keys let connectors read/propose without account-wide access or merge permission.
 
+The recovery follow-up adds versioned sidecar export/import to both connectors,
+with original-base verification through scoped historical checkpoints, unchanged
+retry IDs and refusal to replace an existing queue. Word stops the connection
+after Save As/rename and keeps the queue exportable. This provides explicit
+working-copy/device recovery; background capture remains open. See
+[recovery release evidence](PROVENANCE-RECOVERY-RELEASE.md).
+
 Word task-pane and Google Docs sidebar development sources share an opt-in,
 durable paragraph-observation queue and checked pull previews. **Actual Word/Docs
 host acceptance and marketplace publication are not complete.** Existing

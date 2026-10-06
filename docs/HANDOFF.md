@@ -27,6 +27,18 @@ migration bytes and event serialization are unchanged; local engine checks pass
 all 198 tests. Application CI passes 216 unit tests and all 55 signed-in browser
 tests; both Linux Rust runs pass 198 tests. [Synchronization evidence](ENGINE-EXTRACTION.md#projects-and-provenance-synchronization-6-october-2026).
 
+## Continuation: portable provenance recovery (6 October)
+
+Both editor connectors now export/import versioned sidecars into fresh matching
+working copies/tabs. Preserve frozen upload intent/IDs, receipts and observations;
+never overwrite an existing queue. Historical checkpoints verify the original
+base under current permissions before host binding. Word rechecks current file
+properties and stops after Save As/rename, retaining export access. The production
+browser test exposed and fixed a request-helper runtime error missed by types.
+[Release evidence](PROVENANCE-RECOVERY-RELEASE.md), [recovery instructions](../extensions/README.md#recover-a-queue-after-a-rename-or-device-change).
+Real editor-host acceptance, structural/background capture and publication remain
+open. This recovery increment does not implement automatic filename/content binding.
+
 ## Earlier priority review and engine synchronization (6 October)
 
 Reviewed application `52c2447`, standalone engine `a22bf71`, September release

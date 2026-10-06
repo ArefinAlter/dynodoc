@@ -2,7 +2,7 @@ import { json } from '@sveltejs/kit';
 import { engineUrl } from '$lib/server/session';
 import type { RequestHandler } from './$types';
 /** Dedicated bearer-only gateway. Never exchanges a browser session or service key. */
-const proxy: RequestHandler = async ({ request, params }) => {
+const proxy: RequestHandler = async ({ request, params, url }) => {
   const path = params.path || '';
   if (
     !/^documents\/[0-9a-f-]{36}\/(checkpoint|bundles)$/i.test(path) ||
@@ -13,8 +13,19 @@ const proxy: RequestHandler = async ({ request, params }) => {
   const auth = request.headers.get('authorization');
   if (!auth || !/^Bearer [0-9a-f]{64}$/.test(auth))
     return json({ error: 'A file connection key is required' }, { status: 401 });
+  const values = url.searchParams.getAll('through_seq');
+  if (
+    [...url.searchParams.keys()].some((key) => key !== 'through_seq') ||
+    values.length > 1 ||
+    (values.length &&
+      (request.method !== 'GET' ||
+        !/^\d+$/.test(values[0]) ||
+        !Number.isSafeInteger(Number(values[0]))))
+  )
+    return json({ error: 'Use one nonnegative through_seq for a checkpoint' }, { status: 400 });
+  const search = values.length ? `?through_seq=${Number(values[0])}` : '';
   // Apps Script uses server-side UrlFetch. The Word pane is served on this origin.
-  const upstream = await fetch(`${engineUrl()}/connector/${path}`, {
+  const upstream = await fetch(`${engineUrl()}/connector/${path}${search}`, {
     method: request.method,
     headers: { authorization: auth, 'content-type': 'application/json' },
     body: request.method === 'POST' ? await request.arrayBuffer() : undefined,

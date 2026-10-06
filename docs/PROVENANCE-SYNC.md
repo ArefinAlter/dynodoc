@@ -15,6 +15,12 @@ No production rollout or marketplace publication is implied by source availabili
 | `GET /connector/documents/{id}/checkpoint` | Read with a file-scoped connection key. |
 | `POST /connector/documents/{id}/bundles` | Propose with that key; capture host must match its Word/Docs scope. |
 
+Both checkpoint GET endpoints accept optional `through_seq` for an exact canonical
+historical revision. Omitted means current head; zero returns the empty initial
+state/zero hash. Negative or future revisions return 400. Current permissions and
+credential checks apply to historical reads; proposal statuses describe their
+current review state. The dedicated gateway forwards only this validated selector.
+
 The web session gateway remains `/api/engine`. Editor keys use the separate
 bearer-only `/api/connectors/documents/{id}/checkpoint|bundles` gateway. Neither
 browser cookies nor a web service key are exchanged there. Google Apps Script
@@ -63,7 +69,8 @@ local observations.
 
 ## Shared clients
 
-`frontend/researcher/src/lib/provenance/protocol.ts` builds into both the Word pane
+`frontend/researcher/src/lib/provenance/connector.ts` exports the shared protocol
+and recovery module into both the Word pane
 and Google Docs `Protocol.html`; `pnpm build:connectors` regenerates that artifact,
 and `pnpm check:connectors` checks drift. Client queues contain no credentials.
 Word uses transactional IndexedDB; Google Docs uses user properties, Unicode-safe
@@ -81,6 +88,34 @@ changes, refuses overlaps and rechecks the host text before applying. Rebase
 archives earlier local observations and retains remaining edits against the new
 checkpoint. Host operations are not assumed to be atomic: on a partial write,
 the checkpoint stays old, and the next capture detects the changed local text.
+
+## Portable recovery sidecars
+
+Both connectors export `dynodoc.provenance-sidecar`, version 1, containing their
+host and complete credential-free ledger. Select it before connecting a fresh
+working copy/tab. Use the original editor and Dynodoc account, original file ID
+and a valid host-scoped key. Restore requires matching paragraph text/IDs and
+the exact original checkpoint retrieved from the server, including its hash and
+projected paragraph content. It preserves observations, client/change/bundle IDs,
+frozen submission intent, review receipts and archives. It does not update the
+canonical head or replace paragraph text. Capture remains opt-in after recovery.
+
+An existing queue, including an empty connected ledger, cannot be replaced.
+Storage generation checks still prevent another pane/sidebars overwriting it.
+Malformed/inconsistent data is rejected before host binding; storage failures keep
+the source export available for retry. Sidecars are at most 16 MiB and Google
+storage retains its 100 KB ledger cap. Original unwrapped ledger exports remain
+evidence; the import control accepts the new versioned sidecar format only.
+
+Moving a queue between editor kinds would change frozen capture intent, so use
+reviewed team checkpoints for Word/Docs exchange. Restore is explicit portability,
+not background observation or automatic copy recognition. Filename/content
+matching still requires the existing ambiguity/access checks.
+
+Word queries current Office file properties before capture/binding, remote calls
+and pull writes. A Save As/rename stops the active connection and keeps its queue
+exportable; reopen the pane and explicitly restore into the saved copy. It uses
+[Microsoft's current file-properties API](https://learn.microsoft.com/en-us/javascript/api/office/office.document#office-office-document-getfilepropertiesasync-member(1)).
 
 ## Next work in order
 

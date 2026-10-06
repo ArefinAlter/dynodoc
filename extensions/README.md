@@ -65,6 +65,27 @@ This is an Editor add-on prototype, not a Workspace card-based extension; its
 publication requirements differ. Named range anchors are documented by
 [Google](https://developers.google.com/apps-script/reference/document/named-range).
 
+## Recover a queue after a rename or device change
+
+Use **Export local provenance** in either connector to save a versioned recovery
+sidecar. Keep it with the document; it contains document text/history and no
+connection key. In a fresh copy/tab with matching paragraph text, choose that
+file before connecting. Use the same editor, Dynodoc account and remote file ID,
+with a valid scoped key. The connector verifies the exact historical starting
+checkpoint, binds paragraph identities and restores observations/receipts and
+the frozen upload without changing its IDs or message. Enable capture explicitly
+afterward. Paragraph text is not replaced by restoration.
+
+Existing queues cannot be replaced. If storage fails, retain the export and retry;
+Google's 100 KB ledger cap still applies. Previous unwrapped ledger exports are
+evidence; recovery accepts the new `dynodoc.provenance-sidecar` format. To exchange
+Word and Docs work, review/merge and pull a team checkpoint rather than importing
+a queue into a different editor. This does not add background capture.
+
+Word rechecks its current saved-file URL using the Office file-properties API.
+After Save As/rename, the active connection stops and its queue remains exportable.
+Reopen the task pane in the saved copy and select the sidecar before reconnecting.
+
 ## Acceptance before supported/public installation
 
 - Word Desktop and Word Web: bind, save/reopen, edit, disconnect/retry, duplicate

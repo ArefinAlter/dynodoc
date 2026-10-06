@@ -159,6 +159,23 @@ test('Projects collects external edits, hides private drafts, reviews a bundle a
     expect(latest.state.nodes[block].current_fields.content.content[0].text).toBe(
       'Edited in Google Docs'
     );
+    const historical = await contributorContext.request.get(
+      `/api/connectors/documents/${doc.id}/checkpoint?through_seq=${base.through_seq}`,
+      { headers: { authorization: `Bearer ${key}` } }
+    );
+    expect(historical.status()).toBe(200);
+    const starting = await historical.json();
+    expect(starting.chain_hash).toBe(base.chain_hash);
+    expect(starting.state).toEqual(base.state);
+    expect(starting.proposals[0].status).toBe('merged');
+    expect(
+      (
+        await contributorContext.request.get(
+          `/api/connectors/documents/${doc.id}/checkpoint?through_seq=${latest.through_seq + 1}`,
+          { headers: { authorization: `Bearer ${key}` } }
+        )
+      ).status()
+    ).toBe(400);
     await contributor.getByRole('button', { name: 'Revoke', exact: true }).click();
     await expect(contributor.getByText('· revoked', { exact: false })).toBeVisible();
     expect(

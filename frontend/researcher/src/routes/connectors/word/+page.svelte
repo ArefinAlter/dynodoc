@@ -9,7 +9,20 @@
     type Receipt,
     type Block
   } from '$lib/provenance/protocol';
-  import { WordAdapter, type WordRuntime } from '$lib/provenance/word';
+  import {
+    WordAdapter,
+    wordFileUrl,
+    type WordRuntime,
+    type OfficeDocument
+  } from '$lib/provenance/word';
+  import {
+    exportSidecar,
+    parseSidecar,
+    recoveryLedger,
+    restoreCapture,
+    SIDECAR_MAX_BYTES,
+    type Sidecar
+  } from '$lib/provenance/sidecar';
   import { downloadJson } from '$lib/workspace/projects';
   let origin = $state(''),
     documentId = $state(''),
@@ -22,7 +35,9 @@
     error = $state(''),
     notice = $state('');
   let session = $state<CaptureSession | null>(null),
+    recovery = $state<Sidecar | null>(null),
     localFile = '',
+    officeDocument: OfficeDocument | null = null,
     adapter: WordAdapter | null = null,
     preview = $state<{ checkpoint: Checkpoint; expected: Block[]; next: Block[] } | null>(null);
   onMount(() => {
@@ -34,7 +49,7 @@
         Office: {
           onReady: (callback: (info: { host: string }) => void) => void;
           context: {
-            document: { url: string };
+            document: OfficeDocument;
             requirements: { isSetSupported: (api: string, version: string) => boolean };
           };
         };
@@ -48,12 +63,8 @@
           error = 'Open this task pane in Word with WordApi 1.3 support.';
           return;
         }
-        adapter = new WordAdapter(office.Word);
-        localFile = office.Office.context.document.url;
-        if (!localFile) {
-          error = 'Save this Word file before connecting so its working copy has a durable queue.';
-          return;
-        }
+        officeDocument = office.Office.context.document;
+        adapter = new WordAdapter(office.Word, assertWorkingCopy);
         ready = true;
       });
     };
@@ -86,12 +97,33 @@
       busy = false;
     }
   }
-  const request = <T,>(
+  async function assertWorkingCopy() {
+    if (localFile && officeDocument && (await wordFileUrl(officeDocument)) !== localFile)
+      throw new Error(
+        'The Word working copy changed. Export this queue, reopen the pane in the saved copy and restore its provenance before continuing.'
+      );
+  }
+  async function request<T>(
     action: 'checkpoint' | 'bundles',
-    body?: Parameters<typeof connectorRequest>[4]
-  ) => connectorRequest<T>(origin, documentId, token, action, body);
+    body?: Parameters<typeof connectorRequest>[4],
+    throughSeq?: number
+  ) {
+    await assertWorkingCopy();
+    return connectorRequest<T>(origin, documentId, token, action, body, throughSeq);
+  }
+  async function chooseRecovery(event: Event) {
+    recovery = null;
+    const file = (event.currentTarget as HTMLInputElement).files?.[0];
+    if (!file) return;
+    if (file.size > SIDECAR_MAX_BYTES)
+      throw new Error('Use a provenance recovery file up to 16 MiB.');
+    recovery = parseSidecar(await file.text());
+    notice =
+      'Recovery selected. Connect to the original Dynodoc file using the same account. Paragraph text will not be replaced.';
+  }
   async function connect() {
-    if (!adapter) return;
+    if (!adapter || !officeDocument) return;
+    localFile = await wordFileUrl(officeDocument);
     const checkpoint = await request<Checkpoint>('checkpoint'),
       fileKey = Array.from(
         new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(localFile)))
@@ -100,7 +132,30 @@
         .join(''),
       store = browserStore(`dynodoc.word.ledger.${origin}.${documentId}.${fileKey}`),
       saved = await store.load();
-    if (saved) {
+    if (recovery) {
+      if (saved)
+        throw new Error(
+          'This working copy already has a saved queue. Export it and use a fresh copy; recovery cannot replace it.'
+        );
+      const verifiedBase = await request<Checkpoint>(
+        'checkpoint',
+        undefined,
+        recovery.ledger.checkpoint.through_seq
+      );
+      const ledger = recoveryLedger(recovery, checkpoint, 'word', verifiedBase);
+      await adapter.bind(ledger.seen);
+      session = await restoreCapture(
+        store,
+        recovery,
+        checkpoint,
+        await adapter.read(),
+        'word',
+        verifiedBase
+      );
+      notice =
+        'Provenance restored. Queued upload IDs and earlier observations are retained. Enable capture explicitly to continue.';
+      recovery = null;
+    } else if (saved) {
       session = await CaptureSession.connect(store, checkpoint, [], 'word');
       await session.capture(await adapter.read());
     } else {
@@ -109,7 +164,9 @@
       session = await CaptureSession.connect(store, checkpoint, await adapter.read(), 'word');
     }
     ready = true;
-    notice = 'Connected. Enable capture to record paragraph text changes while this pane is open.';
+    if (!notice.startsWith('Provenance restored'))
+      notice =
+        'Connected. Enable capture to record paragraph text changes while this pane is open.';
   }
   async function send() {
     if (!session || !adapter) return;
@@ -155,6 +212,20 @@
   <label>Dynodoc address<input bind:value={origin} disabled={!!session} /></label><label
     >File ID<input bind:value={documentId} disabled={!!session} /></label
   ><label>File connection key<input type="password" bind:value={token} autocomplete="off" /></label>
+  {#if !session}
+    <label
+      >Restore provenance from this editor (optional)<input
+        type="file"
+        accept=".json,application/json"
+        disabled={busy}
+        onchange={(event) => run(() => chooseRecovery(event))}
+      /></label
+    >
+    <p>
+      Use an exported recovery file in a saved copy with matching paragraph text. Existing queues
+      are preserved.
+    </p>
+  {/if}
   <button disabled={busy || !ready || !!session} onclick={() => run(connect)}
     >Connect this file</button
   >
@@ -192,7 +263,7 @@
       >{/if}
     <button
       disabled={busy}
-      onclick={() => downloadJson(session!.export(), `${documentId}.word-ledger.json`)}
+      onclick={() => downloadJson(exportSidecar(session!), `${documentId}.word-provenance.json`)}
       >Export local provenance</button
     >
     {#if session.ledger.pending}<button

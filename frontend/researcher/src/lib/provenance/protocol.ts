@@ -378,7 +378,8 @@ export async function connectorRequest<T>(
   documentId: string,
   token: string,
   action: 'checkpoint' | 'bundles',
-  body?: Push
+  body?: Push,
+  throughSeq?: number
 ): Promise<T> {
   const url = new URL(origin);
   if (
@@ -386,15 +387,24 @@ export async function connectorRequest<T>(
     !(url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname))
   )
     throw new Error('Use an HTTPS Dynodoc address.');
-  const response = await fetch(`${url.origin}/api/connectors/documents/${documentId}/${action}`, {
-    method: body ? 'POST' : 'GET',
-    credentials: 'omit',
-    headers: {
-      authorization: `Bearer ${token}`,
-      ...(body ? { 'content-type': 'application/json' } : {})
-    },
-    body: body ? JSON.stringify(body) : undefined
-  });
+  if (
+    throughSeq !== undefined &&
+    (action !== 'checkpoint' || !Number.isSafeInteger(throughSeq) || throughSeq < 0)
+  )
+    throw new Error('Use a valid historical checkpoint revision.');
+  const search = throughSeq !== undefined ? `?through_seq=${throughSeq}` : '';
+  const response = await fetch(
+    `${url.origin}/api/connectors/documents/${documentId}/${action}${search}`,
+    {
+      method: body ? 'POST' : 'GET',
+      credentials: 'omit',
+      headers: {
+        authorization: `Bearer ${token}`,
+        ...(body ? { 'content-type': 'application/json' } : {})
+      },
+      body: body ? JSON.stringify(body) : undefined
+    }
+  );
   const value = await response.json();
   if (!response.ok) throw new Error(value.error || `Request failed (${response.status})`);
   return value;

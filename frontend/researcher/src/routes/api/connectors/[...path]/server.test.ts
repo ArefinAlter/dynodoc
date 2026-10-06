@@ -12,8 +12,8 @@ beforeEach(() => {
   upstream = vi.fn(async () => new Response('{"through_seq":4}', { status: 200 }));
   vi.stubGlobal('fetch', upstream);
 });
-async function call(path: string, method = 'GET', auth?: string) {
-  const request = new Request(`https://app.test/api/connectors/${path}`, {
+async function call(path: string, method = 'GET', auth?: string, search = '') {
+  const request = new Request(`https://app.test/api/connectors/${path}${search}`, {
     method,
     headers: auth
       ? { authorization: auth, cookie: 'dynodoc_session=ignored' }
@@ -22,11 +22,36 @@ async function call(path: string, method = 'GET', auth?: string) {
   });
   return (method === 'GET' ? GET : POST)({
     request,
-    params: { path }
+    params: { path },
+    url: new URL(request.url)
   } as never) as Promise<Response>;
 }
 it('requires the file-scoped bearer even if a session cookie exists', async () => {
   expect((await call(`documents/${DOC}/checkpoint`)).status).toBe(401);
+  expect(upstream).not.toHaveBeenCalled();
+});
+it('forwards only a single valid historical checkpoint selector', async () => {
+  const token = `Bearer ${'a'.repeat(64)}`;
+  expect((await call(`documents/${DOC}/checkpoint`, 'GET', token, '?through_seq=2')).status).toBe(
+    200
+  );
+  expect(upstream.mock.calls[0][0]).toBe(
+    `http://engine.test/connector/documents/${DOC}/checkpoint?through_seq=2`
+  );
+  upstream.mockClear();
+  for (const search of [
+    '?through_seq=-1',
+    '?through_seq=1.5',
+    '?through_seq=2&through_seq=3',
+    '?through_seq=9007199254740992',
+    '?path=auth/me',
+    '?through_seq='
+  ]) {
+    expect((await call(`documents/${DOC}/checkpoint`, 'GET', token, search)).status).toBe(400);
+  }
+  expect((await call(`documents/${DOC}/bundles`, 'POST', token, '?through_seq=2')).status).toBe(
+    400
+  );
   expect(upstream).not.toHaveBeenCalled();
 });
 it('cannot proxy merges, credential management, auth, traversal or a method mismatch', async () => {

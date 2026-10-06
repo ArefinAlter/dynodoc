@@ -1772,7 +1772,10 @@ export interface operations {
   };
   connector_checkpoint: {
     parameters: {
-      query?: never;
+      query?: {
+        /** @description Historical canonical revision; omitted means current head */
+        through_seq?: number;
+      };
       header?: never;
       path: {
         id: string;
@@ -1789,6 +1792,13 @@ export interface operations {
         content: {
           'application/json': unknown;
         };
+      };
+      /** @description Revision outside history */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
     };
   };
@@ -3500,7 +3510,10 @@ export interface operations {
   };
   checkpoint: {
     parameters: {
-      query?: never;
+      query?: {
+        /** @description Historical canonical revision; omitted means current head */
+        through_seq?: number;
+      };
       header?: never;
       path: {
         id: string;
@@ -3517,6 +3530,13 @@ export interface operations {
         content: {
           'application/json': unknown;
         };
+      };
+      /** @description Revision outside history */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
     };
   };

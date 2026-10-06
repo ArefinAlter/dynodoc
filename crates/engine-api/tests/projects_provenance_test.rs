@@ -107,6 +107,110 @@ fn upload(doc: Uuid, checkpoint: &Value, block: &str, host: &str, submit: bool) 
 }
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn historical_checkpoints_retain_exact_anchors_and_current_access(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let owner = identity(&pool, "historical-owner@example.test").await;
+    let stranger = identity(&pool, "historical-outsider@example.test").await;
+    let (doc, block) = document(&router, &owner).await;
+    let (other, _) = document(&router, &owner).await;
+    let original = get(&router, &format!("/documents/{doc}/provenance"), &owner)
+        .await
+        .1;
+    let grant = post(
+        &router,
+        &format!("/documents/{doc}/connectors"),
+        &owner,
+        json!({"host":"word"}),
+    )
+    .await
+    .1;
+    let key = format!("Bearer {}", grant["token"].as_str().unwrap());
+    let old_seq = original["through_seq"].as_i64().unwrap();
+    let (status, _) = post(&router, &format!("/documents/{doc}/batch"), &owner, json!({"base_seq":old_seq,"ops":[{"type":"FieldEdited","node_id":block,"field":"content","value":{"type":"paragraph","content":[{"type":"text","text":"New team text"}]}}]})).await;
+    assert_eq!(status, StatusCode::OK);
+    let endpoint = format!("/connector/documents/{doc}/checkpoint");
+    let (status, historical) =
+        get(&router, &format!("{endpoint}?through_seq={old_seq}"), &key).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(historical, original);
+    let current = get(&router, &endpoint, &key).await.1;
+    assert_eq!(current["through_seq"], old_seq + 1);
+    assert_ne!(current["chain_hash"], historical["chain_hash"]);
+    assert_eq!(
+        current["state"]["nodes"][&block]["current_fields"]["content"]["content"][0]["text"],
+        "New team text"
+    );
+    let zero = get(&router, &format!("{endpoint}?through_seq=0"), &key)
+        .await
+        .1;
+    assert_eq!(zero["chain_hash"], "0".repeat(64));
+    assert_eq!(zero["state"]["nodes"], json!({}));
+    assert_eq!(
+        get(
+            &router,
+            &format!("/documents/{doc}/provenance?through_seq={old_seq}"),
+            &owner
+        )
+        .await
+        .1,
+        historical
+    );
+    for seq in [
+        "-1".to_owned(),
+        (old_seq + 2).to_string(),
+        "1.5".to_owned(),
+        "invalid".to_owned(),
+    ] {
+        assert_eq!(
+            get(&router, &format!("{endpoint}?through_seq={seq}"), &key)
+                .await
+                .0,
+            StatusCode::BAD_REQUEST
+        );
+    }
+    assert_eq!(
+        get(
+            &router,
+            &format!("/documents/{doc}/provenance?through_seq={old_seq}"),
+            &stranger
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        get(
+            &router,
+            &format!("/connector/documents/{other}/checkpoint?through_seq={old_seq}"),
+            &key
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        get(&router, &endpoint, &key).await.1["through_seq"],
+        current["through_seq"]
+    );
+    post(
+        &router,
+        &format!(
+            "/documents/{doc}/connectors/{}/revoke",
+            grant["grant"]["id"].as_str().unwrap()
+        ),
+        &owner,
+        json!({}),
+    )
+    .await;
+    assert_eq!(
+        get(&router, &format!("{endpoint}?through_seq={old_seq}"), &key)
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn projects_inherit_rules_collect_requests_and_hide_private_drafts(pool: PgPool) {
     let router = app(test_state(pool.clone()));
     let owner = identity(&pool, "project-owner@example.test").await;

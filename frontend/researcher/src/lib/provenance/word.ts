@@ -25,9 +25,39 @@ interface Context {
 export interface WordRuntime {
   run: <T>(callback: (context: Context) => Promise<T>) => Promise<T>;
 }
+export interface OfficeDocument {
+  getFilePropertiesAsync: (
+    callback: (result: {
+      status: string;
+      value?: { url: string };
+      error?: { message: string };
+    }) => void
+  ) => void;
+}
+/** Query current properties rather than the URL captured when the pane opened. */
+export function wordFileUrl(document: OfficeDocument): Promise<string> {
+  return new Promise((resolve, reject) => {
+    document.getFilePropertiesAsync((result) => {
+      if (result.status !== 'succeeded') {
+        reject(
+          new Error(result.error?.message || 'Could not identify the current Word working copy.')
+        );
+      } else if (!result.value?.url) {
+        reject(
+          new Error(
+            'Save this Word file before connecting so its working copy has a durable queue.'
+          )
+        );
+      } else resolve(result.value.url);
+    });
+  });
+}
 const prefix = 'dynodoc.block.';
 export class WordAdapter {
-  constructor(private word: WordRuntime) {}
+  constructor(
+    private word: WordRuntime,
+    private guard: () => Promise<void> = async () => {}
+  ) {}
   private async paragraphs(ctx: Context) {
     const { paragraphs, tables } = ctx.document.body;
     paragraphs.load('items/text,items/isListItem');
@@ -42,19 +72,24 @@ export class WordAdapter {
     return paragraphs.items;
   }
   async bind(remote: Block[]) {
+    await this.guard();
     return this.word.run(async (ctx) => {
       const paragraphs = await this.paragraphs(ctx);
       bindIdentical(
         paragraphs.map((p) => ({ text: p.text.replace(/\r$/, '') })),
         remote
       );
-      paragraphs.forEach((p, i) => {
+      const tagged = paragraphs.map((p, i) => {
         const tagged = p.contentControls.items.filter((c) => c.tag.startsWith(prefix));
         if (tagged.length && (tagged.length !== 1 || tagged[0].tag !== prefix + remote[i].id))
           throw new Error(
             'This file already has different block identities. Do not remap it by position.'
           );
-        if (!tagged.length) {
+        return tagged;
+      });
+      await this.guard();
+      paragraphs.forEach((p, i) => {
+        if (!tagged[i].length) {
           const c = p.getRange('Content').insertContentControl();
           c.tag = prefix + remote[i].id;
           c.title = 'Dynodoc paragraph';
@@ -65,8 +100,10 @@ export class WordAdapter {
     });
   }
   async read() {
+    await this.guard();
     return this.word.run(async (ctx) => {
       const paragraphs = await this.paragraphs(ctx);
+      await this.guard();
       return paragraphs.map((p) => {
         const controls = p.contentControls.items.filter((c) => c.tag.startsWith(prefix));
         if (controls.length !== 1)
@@ -78,6 +115,7 @@ export class WordAdapter {
     });
   }
   async apply(expected: Block[], next: Block[]) {
+    await this.guard();
     return this.word.run(async (ctx) => {
       const paragraphs = await this.paragraphs(ctx);
       if (paragraphs.length !== expected.length || next.length !== expected.length)
@@ -96,6 +134,7 @@ export class WordAdapter {
           );
         return controls[0];
       });
+      await this.guard();
       controls.forEach((c, i) => {
         if (expected[i].text !== next[i].text) c.insertText(next[i].text, 'Replace');
       });

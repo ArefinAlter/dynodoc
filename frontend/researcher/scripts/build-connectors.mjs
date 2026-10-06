@@ -11,7 +11,7 @@ const result = await build({
     write: false,
     minify: false,
     lib: {
-      entry: root + 'src/lib/provenance/protocol.ts',
+      entry: root + 'src/lib/provenance/connector.ts',
       name: 'DynodocProvenance',
       formats: ['iife']
     }
