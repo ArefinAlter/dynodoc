@@ -12,6 +12,7 @@
     inviteByEmail,
     invitationNotice,
     setPolicy,
+    inheritPolicy,
     shareDocument,
     transferOwnership,
     type CopyRow,
@@ -247,6 +248,21 @@
 
     <section class="rules">
       <h3><ShieldCheck size={16} /> Review rules</h3>
+      {#if data?.policy_source?.kind === 'project'}<p>
+          Inherited from <a href={`/projects/${data.policy_source.id}`}>{data.policy_source.name}</a
+          >. Saving rules here creates a file override.
+        </p>{:else if data?.policy_source?.kind === 'file'}<p>
+          This file has its own review rules.
+        </p>
+        {#if you.can.manage_rules}<button
+            disabled={!!busy}
+            onclick={() =>
+              run(
+                'Restoring inherited rules…',
+                () => inheritPolicy(documentId),
+                'Inherited rules restored.'
+              )}>Use project or default rules</button
+          >{/if}{/if}
       <label class="check"
         ><input
           type="checkbox"

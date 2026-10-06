@@ -1,12 +1,19 @@
 # Projects — a GitHub-style workspace: implementation handoff
 
-Status: **approved direction, not started.** Product-owner decision, 30 September 2026:
+Status: **first phase implemented as development code on 6 October.** See
+[decision 010](../decisions/010-external-editor-provenance-and-projects.md) and
+[release evidence](../PROJECTS-PROVENANCE-RELEASE.md). Initial projects are
+independent invite-only roots; Watch covers new submissions, not every activity.
+Word/Google Docs provenance, structural sync and background capture precede
+phase 2/3 below. Earlier phase descriptions remain design references.
+
+Original product-owner decision, 30 September 2026:
 build a repository-style "Project" workspace in a later release; this file is the
 handoff for whoever builds it. Read with [decision 008](../decisions/008-change-requests-presentations-and-ux.md),
 [decision 009](../decisions/009-copies-roles-and-notifications.md) and the user guide
 [GIT-STYLE-WORKFLOW.md](../GIT-STYLE-WORKFLOW.md).
 
-Reviewed 6 October against application `52c2447`: still the next product build.
+Initial review against application `52c2447` identified this as the next build.
 The existing file workflow is implemented; phase 1 below supplies the missing
 project-level interface. Invitation email is now available through the web
 gateway; project sharing should reuse it after a successful engine access grant.

@@ -175,6 +175,49 @@ paths:
           description: Refresh the current revision
       security:
       - paseto: []
+  /connector/documents/{id}/bundles:
+    post:
+      tags: []
+      operationId: connector_push
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Scoped proposal; canonical history unchanged
+          content:
+            application/json:
+              schema: {}
+      security:
+      - connector_key: []
+  /connector/documents/{id}/checkpoint:
+    get:
+      tags: []
+      operationId: connector_checkpoint
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: File-scoped credential checkpoint
+          content:
+            application/json:
+              schema: {}
+      security:
+      - connector_key: []
   /copies/{match_id}:
     post:
       tags:
@@ -589,6 +632,73 @@ paths:
           description: No such document or live conflict
       security:
       - bearer: []
+  /documents/{id}/connectors:
+    get:
+      tags: []
+      operationId: grants
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Caller connections; no credentials
+          content:
+            application/json:
+              schema: {}
+      security:
+      - paseto: []
+    post:
+      tags: []
+      operationId: grant
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Seven-day file-scoped credential, returned once
+          content:
+            application/json:
+              schema: {}
+      security:
+      - paseto: []
+  /documents/{id}/connectors/{grant}/revoke:
+    post:
+      tags: []
+      operationId: revoke
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: grant
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Own connection revoked
+          content:
+            application/json:
+              schema: {}
+      security:
+      - paseto: []
   /documents/{id}/copies:
     get:
       tags:
@@ -1384,6 +1494,25 @@ paths:
           description: The owner or a manager
       security:
       - paseto: []
+  /documents/{id}/policy/inherit:
+    post:
+      tags: []
+      operationId: inherit_policy
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: File uses project or default rules again
+          content:
+            application/json:
+              schema: {}
+      security:
+      - paseto: []
   /documents/{id}/proposals/{event_id}/accept:
     post:
       tags:
@@ -1449,6 +1578,75 @@ paths:
               schema: {}
       security:
       - bearer: []
+  /documents/{id}/provenance:
+    get:
+      tags: []
+      operationId: checkpoint
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Consistent full checkpoint with stable block IDs
+          content:
+            application/json:
+              schema: {}
+      security:
+      - paseto: []
+    post:
+      tags: []
+      operationId: push
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Durable idempotent review receipt
+          content:
+            application/json:
+              schema: {}
+        '409':
+          description: Wrong base or reused bundle ID
+      security:
+      - paseto: []
+  /documents/{id}/provenance/bundles/{bundle}:
+    get:
+      tags: []
+      operationId: bundle
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: bundle
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Preserved upload and server attribution; private until submitted
+          content:
+            application/json:
+              schema: {}
+      security:
+      - paseto: []
   /documents/{id}/public-links:
     get:
       tags:
@@ -1924,6 +2122,178 @@ paths:
           description: Sign in required
       security:
       - paseto: []
+  /projects:
+    get:
+      tags: []
+      operationId: list
+      responses:
+        '200':
+          description: Invited projects
+          content:
+            application/json:
+              schema: {}
+      security:
+      - paseto: []
+    post:
+      tags: []
+      operationId: create
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Project created
+          content:
+            application/json:
+              schema: {}
+      security:
+      - paseto: []
+  /projects/{id}:
+    get:
+      tags: []
+      operationId: detail
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Project and rules
+          content:
+            application/json:
+              schema: {}
+      security:
+      - paseto: []
+  /projects/{id}/change-requests:
+    get:
+      tags: []
+      operationId: requests
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+      responses:
+        '200':
+          description: Submitted requests across files
+          content:
+            application/json:
+              schema: {}
+      security:
+      - paseto: []
+  /projects/{id}/drafts:
+    get:
+      tags: []
+      operationId: drafts
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+      responses:
+        '200':
+          description: Only caller's private drafts
+          content:
+            application/json:
+              schema: {}
+      security:
+      - paseto: []
+  /projects/{id}/files:
+    get:
+      tags: []
+      operationId: files
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+      responses:
+        '200':
+          description: Accessible project files
+          content:
+            application/json:
+              schema: {}
+      security:
+      - paseto: []
+  /projects/{id}/settings:
+    post:
+      tags: []
+      operationId: settings
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Rules saved
+          content:
+            application/json:
+              schema: {}
+        '409':
+          description: Concurrent change
+      security:
+      - paseto: []
+  /projects/{id}/watch:
+    post:
+      tags: []
+      operationId: watch
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Submission notification preference saved
+          content:
+            application/json:
+              schema: {}
+      security:
+      - paseto: []
   /public/documents/{token}:
     get:
       tags:
@@ -2274,6 +2644,10 @@ components:
           - string
           - 'null'
   securitySchemes:
+    connector_key:
+      type: http
+      scheme: bearer
+      bearerFormat: 64 hexadecimal characters; file-scoped editor key
     paseto:
       type: http
       scheme: bearer

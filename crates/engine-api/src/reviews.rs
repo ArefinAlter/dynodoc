@@ -79,7 +79,7 @@ async fn latest_seq(
 }
 
 /// Canonical state after `through_seq`, from the nearest earlier snapshot plus its tail.
-async fn state_through(
+pub(crate) async fn state_through(
     executor: &mut sqlx::PgConnection,
     id: Uuid,
     through_seq: i64,
@@ -245,20 +245,24 @@ async fn state_at(
 }
 
 #[derive(Deserialize)]
-struct CreateRequest {
-    name: String,
+pub(crate) struct CreateRequest {
+    pub(crate) name: String,
     #[serde(default)]
-    note: String,
-    base_seq: i64,
-    ops: Vec<EventPayload>,
+    pub(crate) note: String,
+    pub(crate) base_seq: i64,
+    pub(crate) ops: Vec<EventPayload>,
     #[serde(default)]
-    source: Value,
+    pub(crate) source: Value,
     #[serde(default)]
-    submit: bool,
+    pub(crate) submit: bool,
+    #[serde(skip)]
+    pub(crate) provenance: Option<crate::provenance::Push>,
+    #[serde(skip)]
+    pub(crate) connector_grant: Option<Uuid>,
 }
 /// Create a draft from an earlier revision plus the pushed file's changes, atomically.
 #[utoipa::path(post, path="/documents/{id}/change-requests", tag="reviews", request_body=Value, params(("id" = Uuid, Path, description = "Document identifier")), responses((status=200, description="Draft created and optionally submitted for review", body=Value),(status=400, description="Invalid starting revision or changes"),(status=403, description="Viewers cannot propose changes")))]
-async fn create(
+pub(crate) async fn create(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     auth: AuthContext,
@@ -289,6 +293,19 @@ async fn create(
     if role == Role::Auditor {
         return Err(ApiError::Forbidden);
     }
+    if let Some(grant) = req.connector_grant {
+        crate::provenance::check_grant(&mut tx, grant, id, auth.identity_id).await?;
+    }
+    let digest = if let Some(input) = &req.provenance {
+        let (digest, receipt) =
+            crate::provenance::prepare(&mut tx, id, auth.identity_id, input).await?;
+        if let Some(receipt) = receipt {
+            return Ok(Json(receipt));
+        }
+        Some(digest)
+    } else {
+        None
+    };
     let latest = latest_seq(&mut tx, id).await?;
     if req.base_seq < 0 || req.base_seq > latest {
         return Err(bad(
@@ -371,13 +388,28 @@ async fn create(
         json!({"draft_id":draft,"base_seq":req.base_seq,"edits":edits,"source":source}),
     )
     .await?;
+    let mut receipt =
+        json!({"id":draft,"revision":1,"edits":edits,"submitted":req.submit,"relation":related});
+    if let (Some(input), Some(digest)) = (&req.provenance, digest) {
+        receipt["bundle_id"] = json!(input.bundle.bundle_id);
+        receipt["digest"] = json!(hex::encode(&digest));
+        receipt["uploaded_by"] = json!(auth.identity_id);
+        crate::provenance::record(
+            &mut tx,
+            id,
+            auth.identity_id,
+            draft,
+            input,
+            &digest,
+            &receipt,
+        )
+        .await?;
+    }
     tx.commit().await?;
-    Ok(Json(
-        json!({"id":draft,"revision":1,"edits":edits,"submitted":req.submit,"relation":related}),
-    ))
+    Ok(Json(receipt))
 }
 
-const REQUEST_JSON: &str = "jsonb_build_object('id',d.id,'name',d.name,'note',d.submission_note,'source',d.source,'base_seq',d.base_seq,'created_at',d.created_at,'submitted_at',d.submitted_at,'merged_at',d.merged_at,'review_outcome',d.review_outcome,'reviewed_at',d.reviewed_at,'review_note',d.review_note,'revision',d.revision,'author',jsonb_build_object('id',a.id,'name',a.display_name,'email',a.email),'reviewer',case when r.id is null then null else jsonb_build_object('id',r.id,'name',r.display_name,'email',r.email) end,'edits',(select count(*) from draft_edit e where e.draft_id=d.id),'status',case when d.merged_at is not null then 'merged' when d.review_outcome is not null then d.review_outcome else 'open' end)";
+pub(crate) const REQUEST_JSON: &str = "jsonb_build_object('id',d.id,'name',d.name,'note',d.submission_note,'source',d.source,'base_seq',d.base_seq,'created_at',d.created_at,'submitted_at',d.submitted_at,'merged_at',d.merged_at,'review_outcome',d.review_outcome,'reviewed_at',d.reviewed_at,'review_note',d.review_note,'revision',d.revision,'author',jsonb_build_object('id',a.id,'name',a.display_name,'email',a.email),'reviewer',case when r.id is null then null else jsonb_build_object('id',r.id,'name',r.display_name,'email',r.email) end,'edits',(select count(*) from draft_edit e where e.draft_id=d.id),'status',case when d.merged_at is not null then 'merged' when d.review_outcome is not null then d.review_outcome else 'open' end)";
 
 /// Submitted change requests are visible to every member; unsubmitted drafts stay private.
 #[utoipa::path(get, path="/documents/{id}/change-requests", tag="reviews", params(("id" = Uuid, Path, description = "Document identifier")), responses((status=200, description="Open and recently closed change requests", body=Value),(status=403, description="Document membership required")))]

@@ -1,13 +1,15 @@
 # Proposals and research for future releases
 
-Reviewed 6 October 2026: nothing in this folder is implemented. Projects phase 1
-is the next build; each proposal records the outstanding choices. Production was
+Updated 6 October 2026: Projects phase 1 now has a first development implementation;
+[decision 010](../decisions/010-external-editor-provenance-and-projects.md) prioritizes
+Word/Google Docs provenance capture and sync. The AI proposals remain unimplemented
+and deprioritized. Each proposal records outstanding choices. Production was
 reset on 30 September (accounts kept — [operations record](../operations/2026-09-30-document-reset.md)).
 That is a dated observation: recheck current data and preserve it in new migrations.
 
 | Document | What it is | Status |
 | --- | --- | --- |
-| [PROJECTS-WORKSPACE-HANDOFF.md](PROJECTS-WORKSPACE-HANDOFF.md) | GitHub-style Projects: files, change requests, drafts, compare, activity, settings, watch — pages, data model, API, tests, phases | Approved direction; build next |
+| [PROJECTS-WORKSPACE-HANDOFF.md](PROJECTS-WORKSPACE-HANDOFF.md) | GitHub-style Projects: files, requests, private drafts, review rules, settings and watch | First phase implemented; Compare/Activity/releases remain |
 | [AGENT-PROVENANCE-PROPOSAL.md](AGENT-PROVENANCE-PROPOSAL.md) | AI agents edit documents through an MCP server; sessions recorded; character-level origin (human / AI / pasted / imported) that can never drift towards "human"; tamper-evident sealing; C2PA/PROV exports | Proposal |
 | [AI-ASSESSMENT-PROPOSAL.md](AI-ASSESSMENT-PROPOSAL.md) | Students use AI inside Dynodoc; teachers grade *how* (decisions, judgement) with evidence-linked rubrics; assignment modes; privacy and legal requirements; Bangladesh fit; pilot | Proposal |
 | [AI-COLLABORATION-RUBRIC.md](AI-COLLABORATION-RUBRIC.md) | Five-criterion rubric with evidence rules tied to what the record contains | Draft for pilot |

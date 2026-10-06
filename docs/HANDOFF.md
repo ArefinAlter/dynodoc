@@ -9,11 +9,22 @@ owner-confirmed configuration and work that still needs acceptance. Live-service
 observations below are dated release records, not a new infrastructure audit
 performed while writing this file. No secrets are included.
 
-## Continuation: priority review and engine synchronization (6 October)
+## Continuation: external-editor provenance and Projects (6 October)
+
+Dynodoc should collect, store, review and synchronize block changes from existing
+editors. Word and Google Docs receive equal priority. [Decision 010](decisions/010-external-editor-provenance-and-projects.md)
+supersedes the editor-parity backlog. The first Projects UI/API, inherited rules,
+scoped editor keys and anchored, retry-safe bundle service are implemented. Both
+connector prototypes share a durable queue and checked pull previews, initially
+for existing paragraph text. Actual host acceptance and marketplace publication
+remain open. [Release evidence](PROJECTS-PROVENANCE-RELEASE.md), [protocol](PROVENANCE-SYNC.md),
+[installation](../extensions/README.md). No VPS rollout for this work.
+
+## Earlier priority review and engine synchronization (6 October)
 
 Reviewed application `52c2447`, standalone engine `a22bf71`, September release
-records and the Projects proposal. **Projects phase 1 is the next product build**;
-it is still unimplemented. File-level version control and review already exist.
+records and the Projects proposal. At that review Projects was unimplemented;
+the continuation above records its first implementation. File-level review existed.
 The [updated priorities](#prioritized-remaining-work) supersede the original
 21 September backlog, which still included several features released later.
 
@@ -995,6 +1006,24 @@ content-addressed snapshots, client patches or asynchronous jobs need replay,
 permission and recovery tests as well as throughput numbers.
 
 ## Prioritized remaining work
+
+Current order after the owner's external-editor clarification:
+
+1. Accept both development connectors in real Word and Google Docs, including
+   reopen/retry, active-tab safety, overlaps/partial writes and cross-host round
+   trips. Extend stable-ID structural sync and format-specific adapters.
+2. Durable local/background capture and sidecar portability across saved copies,
+   renames, devices and offline work. The pane-dependent prototype is not this.
+3. Secure pairing/installations, signed distributions, legal/privacy details and
+   both marketplace reviews/publications. Do not invent publication acceptance.
+4. Projects Compare/Activity/search, then consistent multi-file releases. Phase 1
+   now groups files/requests/private drafts/settings; Watch covers submissions.
+5. Provider acceptance and pilot usability/accessibility/load checks in parallel.
+   Further web-editor parity and AI-assessment work are deprioritized.
+
+The tables below preserve the earlier review's detail. Projects phase 1 now has
+a first implementation; its evidence belongs in the [new release record](PROJECTS-PROVENANCE-RELEASE.md).
+This current order controls future implementation.
 
 Updated 6 October 2026. This is the proposed sequence, not a new implementation
 or release promise. Projects is the next coding milestone. Acceptance checks run

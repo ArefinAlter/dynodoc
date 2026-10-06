@@ -28,6 +28,8 @@ pub mod ops;
 pub mod pagination;
 pub mod people;
 pub mod product;
+pub mod projects;
+pub mod provenance;
 pub mod reviews;
 pub mod stream;
 pub mod workspace;
@@ -88,6 +90,8 @@ pub fn app(state: AppState) -> Router {
         .merge(auth::router())
         .merge(admin::router())
         .merge(product::router())
+        .merge(projects::router())
+        .merge(provenance::router())
         .merge(documents::router())
         .merge(ops::router())
         .merge(conflicts::router())
@@ -171,6 +175,8 @@ impl utoipa::Modify for WorkspaceDocs {
         api.merge(workspace::WorkspaceApi::openapi());
         api.merge(reviews::ReviewApi::openapi());
         api.merge(product::ProductApi::openapi());
+        api.merge(projects::ProjectsApi::openapi());
+        api.merge(provenance::ProvenanceApi::openapi());
         api.merge(admin::AdminApi::openapi());
         api.merge(admin_controls::AdminControlsApi::openapi());
         api.merge(discussions::DiscussionApi::openapi());
@@ -178,6 +184,15 @@ impl utoipa::Modify for WorkspaceDocs {
         api.merge(copies::CopiesApi::openapi());
         api.merge(people::PeopleApi::openapi());
         let components = api.components.get_or_insert_with(Default::default);
+        components.add_security_scheme(
+            "connector_key",
+            utoipa::openapi::security::SecurityScheme::Http(
+                utoipa::openapi::security::HttpBuilder::new()
+                    .scheme(utoipa::openapi::security::HttpAuthScheme::Bearer)
+                    .bearer_format("64 hexadecimal characters; file-scoped editor key")
+                    .build(),
+            ),
+        );
         components.add_security_scheme(
             "paseto",
             utoipa::openapi::security::SecurityScheme::Http(

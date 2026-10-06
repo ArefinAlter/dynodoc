@@ -59,7 +59,8 @@ export const POST: RequestHandler = async ({ request, url, cookies }) => {
     else if (!allowInvitation(me.identity_id, `${target}:${email}`)) email_status = 'rate_limited';
     else {
       try {
-        let itemName = 'Dynodoc';
+        let itemName = 'Dynodoc',
+          project = false;
         if (uuid.test(documentId)) {
           const doc = await engine(`/documents/${documentId}`).then((r) =>
             r.ok ? r.json() : null
@@ -69,10 +70,13 @@ export const POST: RequestHandler = async ({ request, url, cookies }) => {
           const spaces = await engine('/spaces').then((r) => (r.ok ? r.json() : null));
           const space = (spaces?.items || []).find((s: { id: string }) => s.id === spaceId);
           itemName = clean(String(space?.name || 'team'), 160);
+          project = space?.kind === 'project';
         }
         const link = uuid.test(documentId)
           ? `${url.origin}/documents/${documentId}`
-          : `${url.origin}/workspace`;
+          : project
+            ? `${url.origin}/projects/${spaceId}`
+            : `${url.origin}/workspace`;
         const message = invitationEmail({
           to: email,
           inviterName: clean(String(me.display_name || ''), 120),

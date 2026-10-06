@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - "frontend/**"
+      - "extensions/**"
       - "crates/**"
       - "Cargo.toml"
       - "Cargo.lock"
@@ -13,6 +14,7 @@ on:
   pull_request:
     paths:
       - "frontend/**"
+      - "extensions/**"
       - "crates/**"
       - "Cargo.toml"
       - "Cargo.lock"
@@ -44,6 +46,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Lint (eslint + svelte-check)
         run: pnpm lint
+      - name: Verify shared Google Docs connector build
+        run: pnpm check:connectors
       - name: Format check
         run: pnpm format:check
       - name: Build

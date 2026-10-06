@@ -8,6 +8,8 @@
     "dev": "vite dev --port 5173",
     "gen:api": "openapi-typescript ../../openapi.yaml -o src/lib/api/openapi.d.ts && prettier --write src/lib/api/openapi.d.ts",
     "build": "vite build",
+    "build:connectors": "node scripts/build-connectors.mjs",
+    "check:connectors": "node scripts/build-connectors.mjs --check",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",

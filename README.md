@@ -1,6 +1,13 @@
 # Dynodoc — version control for documents
 
-> A version-controlled workspace for rich-text documents and spreadsheets. Edit in familiar interfaces, try changes in personal drafts, review what changed, and keep an attributable history of your team's decisions.
+> Version control and provenance for documents edited in your own tools. Collect block changes in Projects, review and merge them, and pull a shared history into another working copy.
+
+**Current direction:** Word and Google Docs connectors have equal priority;
+further web-editor parity is deprioritized. Projects, scoped editor keys and the
+portable bundle service have a first implementation. Both connector prototypes
+support existing paragraph text; live host acceptance and marketplace publication
+remain open. [Release and limits](docs/PROJECTS-PROVENANCE-RELEASE.md) ·
+[Connector setup](extensions/README.md).
 
 **Status:** Hosted product under active development. Common office editing, document version workflows, supported survey logic and the admin dashboard work. Google/Resend credentials are configured; real provider and study-account acceptance and broader editor/integration parity remain open. The public-consultation platform is a future extension. **License:** [AGPL v3](LICENSE).
 

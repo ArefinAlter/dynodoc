@@ -83,8 +83,7 @@ test('teammates push edited Word files, the owner reviews and merges, and a draf
   const original = readFileSync((await download.path())!);
 
   // 2. Meanwhile the owner keeps editing the team version (paragraph 1).
-  await editor.click();
-  await owner.keyboard.press('Control+Home');
+  await editor.getByText('Introduction to our study.', { exact: true }).click();
   await owner.keyboard.press('End');
   await owner.keyboard.type(' Draft two.');
   await typedAndSaved(owner);

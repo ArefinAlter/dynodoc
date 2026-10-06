@@ -19,6 +19,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/documents/:id/people", get(people))
         .route("/documents/:id/policy", post(set_policy))
+        .route("/documents/:id/policy/inherit", post(inherit_policy))
         .route("/documents/:id/owner", post(transfer))
 }
 
@@ -38,7 +39,7 @@ async fn people(
 ) -> Result<Json<Value>, ApiError> {
     let mut db = state.pool.acquire().await?;
     let role = access::require_member(&mut db, id, auth.identity_id).await?;
-    let rules = access::policy(&mut db, id).await?;
+    let (rules, policy_source) = access::policy_with_source(&mut db, id).await?;
     let owner: Value = sqlx::query_scalar("select jsonb_build_object('id',i.id,'email',case when i.erased_at is null then i.email end,'name',i.display_name) from document d join identity i on i.id=d.created_by where d.id=$1")
         .bind(id)
         .fetch_one(&mut *db)
@@ -69,6 +70,7 @@ async fn people(
         "you": {"id": auth.identity_id, "role": role.as_str(), "can": access::capabilities(role, &rules)},
         "members": members,
         "policy": rules,
+        "policy_source": policy_source,
     })))
 }
 
@@ -124,6 +126,41 @@ async fn set_policy(
     .await?;
     tx.commit().await?;
     Ok(Json(json!(rules)))
+}
+
+#[utoipa::path(post,path="/documents/{id}/policy/inherit",params(("id"=Uuid,Path)),security(("paseto"=[])),responses((status=200,description="File uses project or default rules again",body=Value)))]
+async fn inherit_policy(
+    State(s): State<AppState>,
+    Path(id): Path<Uuid>,
+    a: AuthContext,
+) -> Result<Json<Value>, ApiError> {
+    let mut tx = s.pool.begin().await?;
+    sqlx::query("select id from document where id=$1 for update")
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    if !access::require_member(&mut tx, id, a.identity_id)
+        .await?
+        .can_manage()
+    {
+        return Err(ApiError::Forbidden);
+    }
+    sqlx::query("delete from document_policy where document_id=$1")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    let (rules, source) = access::policy_with_source(&mut tx, id).await?;
+    crate::product::audit(
+        &mut tx,
+        a.identity_id,
+        "document.review_rules_inherited",
+        id,
+        json!({"source":source}),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(Json(json!({"policy":rules,"policy_source":source})))
 }
 
 #[derive(Deserialize)]
@@ -211,5 +248,5 @@ async fn transfer(
 }
 
 #[derive(utoipa::OpenApi)]
-#[openapi(paths(people, set_policy, transfer))]
+#[openapi(paths(people, set_policy, inherit_policy, transfer))]
 pub struct PeopleApi;

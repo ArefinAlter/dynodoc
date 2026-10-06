@@ -1,0 +1,34 @@
+<!doctype html><html><head><base target="_top"><style>body{font:14px system-ui;padding:12px;color:#222}label{display:block;margin:10px 0}input:not([type=checkbox]),textarea{width:95%;padding:6px}button{padding:7px;margin:4px}#message{white-space:pre-wrap}button:disabled{opacity:.5}</style></head><body>
+<h2>Dynodoc provenance</h2><p>Development connector for existing paragraph text in the current tab. Capture works while this sidebar is open. Formatting changes and structural edits require file push.</p>
+<label>File ID<input id="documentId"></label><label>Google Docs connection key<input id="token" type="password" autocomplete="off"></label><button id="connect">Connect</button>
+<label><input id="enabled" type="checkbox" disabled> Enable paragraph capture</label><button id="capture" disabled>Capture now</button>
+<label>Change request name<input id="name" value="Google Docs changes" maxlength="200"></label><label>Message<textarea id="note" maxlength="4000"></textarea></label>
+<button id="push" disabled>Push for review</button><button id="pull" disabled>Preview team changes</button><button id="apply" disabled>Apply preview</button><button id="export" disabled>Export local provenance</button><button id="exportPush" disabled>Export queued upload</button>
+<p id="message" role="status"></p><p>Capture records observations, not every keystroke or proof of who typed them. Paragraph replacements may inherit Google Docs formatting. Your connection key and queue are private to your Google account.</p>
+<?!= include('Protocol'); ?>
+<script>
+const $=id=>document.getElementById(id),api=(method,...args)=>new Promise((resolve,reject)=>google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[method](...args,boundScope));
+let session=null,generation=null,busy=false,preview=null,boundScope=null;
+const store={load:async()=>{const saved=await api('loadLedger');generation=saved.generation;return saved.payload;},save:async(payload)=>{generation=await api('saveLedger',payload,generation);}};
+function message(text){$('message').textContent=text;}
+async function run(work){if(busy)return;busy=true;try{await work();}catch(e){$('enabled').checked=false;message(e.message||String(e));}finally{busy=false;}}
+function download(value,filename){const url=URL.createObjectURL(new Blob([JSON.stringify(value,null,2)],{type:'application/json'})),link=document.createElement('a');link.href=url;link.download=filename;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+$('connect').onclick=()=>run(async()=>{
+  const connected=await api('connectDynodoc',$('documentId').value,$('token').value);boundScope=connected.scope;const c=connected.checkpoint,saved=await store.load();
+  const blocks=saved?await api('readDynodoc'):await api('bindDynodoc',DynodocProvenance.projectCheckpoint(c));
+  session=await DynodocProvenance.CaptureSession.connect(store,c,blocks,'google-docs');await session.capture(blocks);
+  ['enabled','capture','push','pull','export','exportPush'].forEach(id=>$(id).disabled=false);$('connect').disabled=true;$('documentId').disabled=true;$('token').value='';
+  message('Connected. Enable capture to keep observations while this sidebar is open.');
+});
+$('capture').onclick=()=>run(async()=>{await session.capture(await api('readDynodoc'));message(session.ledger.changes.length+' paragraph observations saved privately.');});
+setInterval(()=>{if($('enabled').checked&&session&&!busy)$('capture').click();},5000);
+$('push').onclick=()=>run(async()=>{await session.capture(await api('readDynodoc'));const bundle=await session.prepare($('name').value,$('note').value,true);await session.acknowledge(await api('pushDynodoc',bundle));message('Sent for review. Keep editing; pull after the request is merged.');});
+$('pull').onclick=()=>run(async()=>{
+  await session.capture(await api('readDynodoc'));const c=await api('checkpointDynodoc');session.canApply(c);const expected=await api('readDynodoc'),rows=session.plan(c,expected);
+  if(rows.some(r=>r.conflict))throw new Error('Local and team edits overlap. Export the queue and resolve through a change request.');
+  preview={checkpoint:c,expected:expected,next:rows.map(r=>({id:r.id,text:r.text}))};$('apply').disabled=false;message(rows.filter(r=>r.local!==r.text).length+' paragraphs will change. Apply explicitly to update Google Docs.');
+});
+$('apply').onclick=()=>run(async()=>{session.canApply(preview.checkpoint);const actual=await api('applyDynodoc',preview.expected,preview.next);await session.acceptPull(preview.checkpoint,actual);preview=null;$('apply').disabled=true;message('Team changes applied. Prior observations remain in your exported ledger.');});
+$('export').onclick=()=>download(session.export(),'google-docs.provenance.json');
+$('exportPush').onclick=()=>{if(session.ledger.pending)download(session.ledger.pending,'google-docs.changes.json');else message('No queued upload. Capture and push first; failed uploads remain exportable.');};
+</script></body></html>

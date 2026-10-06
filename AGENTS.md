@@ -2,6 +2,16 @@
 
 Monorepo for an append-only, hash-chained questionnaire authoring engine (Rust + PostgreSQL + SvelteKit). Read this before implementing features.
 
+## Current owner direction (6 October 2026)
+
+Dynodoc is a GitHub-style provenance/review/sync platform around existing editors.
+Prioritize Word and Google Docs together; retain the basic web editors without
+prioritizing Office parity. Read decision 010, PROJECT-STATUS.md and
+PROJECTS-PROVENANCE-RELEASE.md before continuing. Projects and portable bundles
+are authorized post-PoC increments; the original scope below remains the baseline
+for unrelated civic/CRDT/ML work. Development connector sources are not proof of
+host acceptance or marketplace publication.
+
 ## PoC scope (authoritative)
 
 `docs/decisions/000-initial.md` and `docs/dynodoc_poc_prd.md` define what is **in** and **out** of scope. When in doubt, defer to those files over the full-platform build docs (stages 22–31).

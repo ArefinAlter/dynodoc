@@ -56,7 +56,7 @@ pub async fn notify_reviewers(
     subject: Option<Uuid>,
     payload: Value,
 ) -> Result<(), ApiError> {
-    let people: Vec<Uuid> = sqlx::query_scalar("select created_by from document where id=$1 union select identity_id from document_access where document_id=$1 and role in ('author','approver')")
+    let people: Vec<Uuid> = sqlx::query_scalar("with recursive ancestors as (select s.id,s.parent_id from document d join access_space s on s.id=d.space_id where d.id=$1 union select s.id,s.parent_id from access_space s join ancestors a on a.parent_id=s.id) select created_by from document where id=$1 union select identity_id from document_access where document_id=$1 and role in ('author','approver') union select m.identity_id from space_member m join ancestors a on a.id=m.space_id where m.role in ('owner','manager','editor','approver') union select w.identity_id from project_watch w where w.space_id=document_project($1) and w.level='requests' and inherited_space_role(w.space_id,w.identity_id) is not null and document_member_role($1,w.identity_id) is not null")
         .bind(document)
         .fetch_all(&mut *db)
         .await?;

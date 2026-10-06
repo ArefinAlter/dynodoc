@@ -130,19 +130,43 @@ pub async fn require_member(
 }
 
 pub async fn policy(db: &mut PgConnection, document: Uuid) -> Result<Policy, ApiError> {
+    Ok(policy_with_source(db, document).await?.0)
+}
+
+/// A file override wins; otherwise the containing project's rules apply.
+pub async fn policy_with_source(
+    db: &mut PgConnection,
+    document: Uuid,
+) -> Result<(Policy, Value), ApiError> {
     let row: Option<(bool, i16, String)> = sqlx::query_as(
         "select protect_team_version,required_approvals,merge_roles from document_policy where document_id=$1",
     )
     .bind(document)
     .fetch_optional(&mut *db)
     .await?;
-    Ok(
-        row.map_or_else(Policy::default, |(protect, approvals, merge)| Policy {
-            protect_team_version: protect,
-            required_approvals: approvals,
-            merge_roles: merge,
-        }),
-    )
+    if let Some((protect, approvals, merge)) = row {
+        return Ok((
+            Policy {
+                protect_team_version: protect,
+                required_approvals: approvals,
+                merge_roles: merge,
+            },
+            json!({"kind":"file"}),
+        ));
+    }
+    let project: Option<(Uuid, String, bool, i16, String)> = sqlx::query_as("select s.id,s.name,p.protect_team_version,p.required_approvals,p.merge_roles from project_settings p join access_space s on s.id=p.space_id where p.space_id=document_project($1)")
+        .bind(document).fetch_optional(db).await?;
+    Ok(match project {
+        Some((id, name, protect, approvals, merge)) => (
+            Policy {
+                protect_team_version: protect,
+                required_approvals: approvals,
+                merge_roles: merge,
+            },
+            json!({"kind":"project","id":id,"name":name}),
+        ),
+        None => (Policy::default(), json!({"kind":"default"})),
+    })
 }
 
 /// Operations that change the team version's content, as opposed to comments,

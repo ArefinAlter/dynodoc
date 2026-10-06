@@ -368,6 +368,7 @@ pub(crate) async fn begin_write(
     if exists.is_none() {
         return Err(ApiError::NotFound);
     }
+    crate::projects::lock_document_project(&mut tx, document_id.0).await?;
     let role: Option<String> = sqlx::query_scalar("select effective_document_role($1,$2)")
         .bind(document_id.0)
         .bind(actor.0)

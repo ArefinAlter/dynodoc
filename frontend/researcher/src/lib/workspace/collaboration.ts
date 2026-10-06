@@ -35,6 +35,7 @@ export interface People {
   you: { id: string; role: MemberRole; can: Capabilities };
   members: PersonRow[];
   policy: Policy;
+  policy_source?: { kind: 'file' | 'project' | 'default'; id?: string; name?: string };
 }
 
 /** Plain-language names and what each role adds, lowest first. */
@@ -87,6 +88,8 @@ export const people = (documentId: string) =>
   workspaceRequest<People>(`/documents/${documentId}/people`);
 export const setPolicy = (documentId: string, policy: Policy) =>
   workspaceRequest<Policy>(`/documents/${documentId}/policy`, policy);
+export const inheritPolicy = (documentId: string) =>
+  workspaceRequest(`/documents/${documentId}/policy/inherit`, {});
 export const transferOwnership = (documentId: string, email: string) =>
   workspaceRequest(`/documents/${documentId}/owner`, { email });
 export const shareDocument = (documentId: string, email: string, role: MemberRole | 'remove') =>

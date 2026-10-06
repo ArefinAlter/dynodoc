@@ -116,7 +116,7 @@ async fn create_space(
                 .await?;
         if (input.kind == "team" && parent_kind.as_deref() != Some("organization"))
             || (input.kind == "folder"
-                && !matches!(parent_kind.as_deref(), Some("team" | "folder")))
+                && !matches!(parent_kind.as_deref(), Some("team" | "folder" | "project")))
         {
             return Err(bad(
                 "Teams belong to organizations; folders belong to teams or folders",
@@ -279,7 +279,7 @@ async fn document_access(
     auth: AuthContext,
 ) -> Result<Json<Value>, ApiError> {
     apply::require_role(&state.pool, DocumentId(id), IdentityId(auth.identity_id)).await?;
-    let value:Value=sqlx::query_scalar("select jsonb_build_object('can_manage',can_manage_document(d.id,$2),'space_id',d.space_id,'inherited_role',inherited_space_role(d.space_id,$2)) from document d where d.id=$1").bind(id).bind(auth.identity_id).fetch_one(&state.pool).await?;
+    let value:Value=sqlx::query_scalar("select jsonb_build_object('can_manage',can_manage_document(d.id,$2),'space_id',d.space_id,'inherited_role',inherited_space_role(d.space_id,$2),'project',(select jsonb_build_object('id',s.id,'name',s.name) from access_space s where s.id=document_project(d.id) and inherited_space_role(s.id,$2) is not null)) from document d where d.id=$1").bind(id).bind(auth.identity_id).fetch_one(&state.pool).await?;
     Ok(Json(value))
 }
 #[derive(Deserialize)]

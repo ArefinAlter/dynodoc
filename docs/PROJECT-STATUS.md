@@ -1,17 +1,32 @@
 # Dynodoc: intent, current implementation and remaining work
 
-Assessment updated: 6 October 2026, against application `52c2447` and the recorded September releases. This distinguishes executable functionality from the longer design documents. The old README's “feature-complete” description was too broad.
+Assessment updated: 6 October 2026, including decision 010's Projects/provenance increment and the recorded September releases. This distinguishes executable functionality from longer design documents and real-host/production acceptance.
 
-## Next work: Projects workspace
+## Current priority: external-editor provenance and Projects
 
-The GitHub-style **Projects workspace is still unimplemented**. File-level drafts,
-change requests, approvals, merges, named versions and copy detection already work;
-the missing layer groups these across a project's files. Build phase 1 first:
-project creation/listing, Files, Change requests, your private Drafts, Settings,
-inherited review rules, Watch and editor breadcrumbs. Then add Compare/Activity,
-followed by project releases and discussions. See the updated
-[prioritized handoff](HANDOFF.md#prioritized-remaining-work) and
-[implementation plan](proposals/PROJECTS-WORKSPACE-HANDOFF.md).
+The owner clarified on 6 October that Dynodoc is a GitHub-style provenance and
+change-sync platform around existing editors. **Word and Google Docs have equal
+priority.** Further Office-parity work is deprioritized; the existing basic web
+editors stay. [Decision 010](decisions/010-external-editor-provenance-and-projects.md)
+supersedes the earlier editor-expansion backlog.
+
+The first Projects implementation includes creation/listing, Files, cross-file
+requests, private own Drafts, Settings/members, inherited rules, new-request Watch
+and breadcrumbs. The engine stores/retrieves immutable change bundles, checks
+exact base hashes and returns durable retry receipts. File-scoped, revocable
+keys let connectors read/propose without account-wide access or merge permission.
+
+Word task-pane and Google Docs sidebar development sources share an opt-in,
+durable paragraph-observation queue and checked pull previews. **Actual Word/Docs
+host acceptance and marketplace publication are not complete.** Existing
+paragraph text is the initial supported exchange; formatting and structural
+changes require file push. Capture is pane-dependent, not a background local
+agent or a complete keystroke/authorship attestation.
+
+Next: real cross-host acceptance, structural block sync and durable background
+capture, secure pairing/publication, then project Compare/Activity/releases.
+See [release evidence](PROJECTS-PROVENANCE-RELEASE.md), [sync contract](PROVENANCE-SYNC.md)
+and [installation](../extensions/README.md). No VPS rollout for this iteration.
 
 Invitation emails shipped in `b70f048`; release documentation followed in
 `52c2447`. Document/workspace invitations are sent by the web gateway after the
@@ -127,7 +142,7 @@ The owner explicitly pivoted the product to document version control on 21 Septe
 - Broader spreadsheet features: advanced charts, native pivot caches, structured table formulas, full formula-based validation, protected cell ranges/passwords, full Excel formula/date/locale compatibility and higher-fidelity workbook formatting.
 - Survey execution beyond the supported preview subset: repeat instances, translations/media workflows, external datasets, advanced XPath/date functions and vendor-specific expression engines.
 - Research-platform synchronization: scheduled refresh, incremental reconciliation and writeback. All six implemented API import paths need real study-account verification. CSPro dictionary/form/logic support is not implemented; exported CSV/XLSX data can be edited.
-- Project-level workflow: creation, file grouping, aggregate requests, private-draft listing, inherited review rules, watch, compare and activity; see the Projects handoff. File-level review is already implemented.
+- Project-level follow-ups: Compare/Activity/search and consistent multi-file releases. Creation, files, aggregate requests, private own drafts, inherited rules, settings and submission Watch now have a first implementation.
 - Stronger review: optional e-mail for notices beyond invitations and mentions, richer tracked suggestions and per-block/protected-range permissions. In-app notifications, approvals, per-change comments and review rules shipped in decision 009; invitation email shipped in `b70f048`. Other people's unsubmitted drafts must remain private.
 - Versioning refinements: full offline synchronization, branch-to-branch review, more detailed side-by-side rich-content comparison, cryptographically anchored metadata/permission audit and long-lived retry/idempotency handling for every new workspace endpoint.
 - Production operation: off-site backups (explicitly deferred by the owner), monitoring/alerts, recovery objectives, resource/load tests beyond ten synthetic concurrent edits, complete keyboard/screen-reader audit and an external security review.

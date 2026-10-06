@@ -396,6 +396,7 @@
   </header>
   <aside class="sidebar" class:open={sidebarOpen}>
     <nav aria-label="Workspace">
+      <button onclick={() => goto('/projects')}><span>Projects</span></button>
       <button
         class:active={!trash && filter === 'all'}
         onclick={() => {
