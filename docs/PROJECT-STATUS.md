@@ -15,7 +15,10 @@ removing quadratic duplicate lists. Stable IDs, event formats and migrations rem
 compatible. Verification: 204 Rust tests in each repo and 274 frontend unit tests passed,
 with the affected event/snapshot tests rerun after final streaming changes. Lint,
 frontend type checks and standalone docs/OpenAPI passed. Exact publication and CI
-evidence are recorded in the evolution handoff.
+evidence are recorded in the evolution handoff. Remote CI also passed: 62 signed-in
+browser tests, 16 public browser tests and the production-proxy regression.
+
+Part-1 code is pushed to main: application `667ecb6`, standalone engine `647249e`.
 
 Next: part 2 typed content-addressed object/commit contracts and shared checkpoints,
 with legacy replay equivalence and tenant-scoped reachability/erasure tests. Complete

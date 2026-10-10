@@ -184,3 +184,31 @@ passes all 200 tests, format, Clippy, build, docs and OpenAPI consistency. Sourc
 publication does not sign off real Microsoft/Google hosts or marketplaces.
 [Application release evidence](SPREADSHEET-DATE-SYNC-RELEASE.md) records separate
 271-unit/62-signed-in-browser verification and the web/admin-only VPS activation.
+
+
+## Document repository foundations (10 October 2026)
+
+Application `667ecb6` and engine `647249e` implement evolution part 1: a shared
+nearest-checkpoint historical reader with streamed tails and replay accounting,
+streamed chain verification, lightweight cadence checks and cross-node constraint
+regressions. Seven changed source/test files match byte-for-byte. Existing migration
+bytes, event formats and HTTP schemas are unchanged. The sole dependency-lock change
+adds the already-pinned workspace futures dependency directly to engine-core.
+
+The application also bounds browser key matching and replaces questionnaire-first
+entrypoints with PRODUCT-SPEC, decision 012 and the engine evolution plan. Both
+repositories have explicit PROJECT-STATUS and ENGINE-EVOLUTION-HANDOFF documents.
+The standalone repository preserves MIT metadata and its local rich-text fixture.
+
+Local verification passed: application 204 Rust tests plus affected tests rerun after
+final streaming changes, 274 frontend units, Clippy, ESLint/type checks; engine task
+lint, all 204 tests, docs (existing link warnings) and unchanged generated OpenAPI.
+The disposable DB was removed. No VPS deployment or native-host acceptance is implied.
+Remote CI/source details and the next shared-storage task are in
+[the evolution handoff](ENGINE-EVOLUTION-HANDOFF.md).
+
+Final remote verification: application Rust and frontend runs passed, including
+274 unit, 62 signed-in browser and 16 public browser tests plus the proxy regression.
+Engine implementation CI and the final handoff/status head `6e7fdf9` both passed.
+[Application CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38038078512) ?
+[Engine CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38038345736).

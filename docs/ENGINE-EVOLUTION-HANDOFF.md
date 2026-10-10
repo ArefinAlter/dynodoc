@@ -1,7 +1,7 @@
 # Engine evolution handoff
 
-Updated 10 October 2026. **Part 1 implemented and locally verified.** Publication/CI
-results and source commits are recorded below before this increment is handed off.
+Updated 10 October 2026. **Part 1 complete, published and CI-verified.** Source
+commits and verification links are recorded below. Part 2 is the next task.
 Read [PRODUCT-SPEC](PRODUCT-SPEC.md), [decision 012](decisions/012-local-first-document-version-control.md)
 and [ENGINE-EVOLUTION-PLAN](ENGINE-EVOLUTION-PLAN.md) before continuing.
 
@@ -39,13 +39,15 @@ and [ENGINE-EVOLUTION-PLAN](ENGINE-EVOLUTION-PLAN.md) before continuing.
 | Standalone `task docs` | Passed with previously documented Rustdoc link warnings. |
 | Standalone `task openapi` and generated diff | Passed; HTTP schema unchanged. |
 | New documentation links, source equality and whitespace checks | Passed. |
+| Application remote CI | Rust passed; frontend lint/build, 274 unit tests, 62 signed-in browser tests, 16 public browser tests and proxy regression passed. |
+| Engine implementation and final documentation-head CI | Both passed. |
 
 The isolated container `dynodoc-evolution-part1-20261010` and its volumes were removed.
-No test servers started; unrelated local containers retained. No production deployment,
+No test servers started; unrelated local containers retained. No VPS deployment,
 real native-host acceptance or marketplace publication was performed. Last recorded
 production remains app `8c7461d`, schema 24, plus the Nginx repair. Local tests do not
-establish hundreds-of-MB or large-service capacity. Signed-in browser acceptance is
-left to the pushed CI run and must be recorded separately, not inferred here.
+establish hundreds-of-MB or large-service capacity. Remote browser acceptance used an isolated CI stack; it does not certify native
+Microsoft/Google installations, marketplace publication or a new VPS deployment.
 
 ## Measurements and complexity boundary
 
@@ -81,4 +83,16 @@ status records at every increment and before context/token exhaustion.
 ## Source and publication record
 
 Starting application `f054ad1`; starting standalone `67060cf` (service `d6666a2`).
-Implementation commit IDs and remote CI results will be filled after publication.
+Implementation is pushed to both main branches:
+
+- Application: `667ecb6ecef5b64debcca6817e73b6be807bde37`.
+- Standalone engine implementation: `647249e7ed692534f7ab21a1ad522912c7d58385`;
+  finalized handoff/status at `6e7fdf91810677b3dc8778b7d9789882125d2bb1`.
+- [Application Rust CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38038078571): passed.
+- [Frontend/authenticated browser CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38038078512): passed (274 unit, 62 signed-in, 16 public browser tests; proxy regression).
+- [Independent engine CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38038142218): passed.
+- [Final engine documentation-head CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38038345736): passed.
+
+All listed runs passed. The documentation follow-up records results and synchronization
+without changing the verified implementation. There are no remaining part-1 test
+failures; the larger unfinished product capabilities are explicitly listed above.
