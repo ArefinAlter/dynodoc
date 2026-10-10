@@ -1,7 +1,7 @@
 //! dynodoc API server (binary entry point).
 //!
-//! Reads configuration from the environment, connects to Postgres, applies pending
-//! migrations, and serves [`engine_api::app`]. The server exposes the full REST + SSE
+//! Reads configuration, verifies the schema and restricted Postgres login, and
+//! serves [`engine_api::app`]. The server exposes the full REST + SSE
 //! surface (stage 18) on top of the `/auth/*` identity routes (stage 17): documents,
 //! the governance-gated write path, the per-document event stream, and the public
 //! audit endpoints.
@@ -21,21 +21,30 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
-    // Fail before connecting or migrating: missing configuration is never a dev bypass.
+    // Fail before connecting: missing configuration is never a dev bypass.
     let config = load_auth_config()?;
+    if std::env::var_os("MIGRATION_DATABASE_URL").is_some() {
+        anyhow::bail!("MIGRATION_DATABASE_URL must not be present in the API environment");
+    }
     let database_url =
         std::env::var("DATABASE_URL").context("DATABASE_URL is not set (see .env / SETUP.md)")?;
     let pool = PgPoolOptions::new()
         .max_connections(8)
+        .after_connect(|connection, _| {
+            Box::pin(async move {
+                sqlx::query("set search_path = pg_catalog, public, pg_temp")
+                    .execute(connection)
+                    .await?;
+                Ok(())
+            })
+        })
         .connect(&database_url)
         .await
         .context("could not connect to Postgres")?;
 
-    // Apply any pending migrations on boot so a fresh database is usable immediately.
-    sqlx::migrate!("../../migrations")
-        .run(&pool)
+    engine_core::database::check_runtime(&pool)
         .await
-        .context("running database migrations failed")?;
+        .context("runtime database boundary check failed")?;
 
     let state = AppState::new(pool, config);
     // Copy detection runs beside the edit path, never inside it.

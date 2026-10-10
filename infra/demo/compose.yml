@@ -25,12 +25,30 @@ services:
       WEB_SERVICE_KEY: ${WEB_SERVICE_KEY:?Set WEB_SERVICE_KEY}
       TOKEN_TTL_SECONDS: ${TOKEN_TTL_SECONDS:-3600}
       PUBLIC_API_BASE_URL: ${ORIGIN}
-      DATABASE_URL: postgres://dynodoc:${POSTGRES_PASSWORD}@postgres:5432/dynodoc
+      DATABASE_URL: ${RUNTIME_DATABASE_URL:?Set RUNTIME_DATABASE_URL to the restricted runtime login}
       API_HOST: 0.0.0.0
       API_PORT: 8080
       APP_ENV: production
       ADMIN_EMAILS: ${ADMIN_EMAILS:-}
       RUST_LOG: info
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [engine]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp:size=64m]
+  database-admin:
+    profiles: [maintenance]
+    build:
+      context: ../..
+      dockerfile: infra/demo/Dockerfile.api
+    entrypoint: [engine-cli]
+    command: [migrate]
+    environment:
+      MIGRATION_DATABASE_URL: postgres://dynodoc:${POSTGRES_PASSWORD}@postgres:5432/dynodoc
+      DATABASE_URL: ${RUNTIME_DATABASE_URL:?Set RUNTIME_DATABASE_URL to the restricted runtime login}
     depends_on:
       postgres:
         condition: service_healthy

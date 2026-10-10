@@ -26,6 +26,12 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Apply migrations using MIGRATION_DATABASE_URL in a separate operator process.
+    Migrate,
+    /// Give an existing restricted login the explicit runtime allowlist (operator only).
+    GrantRuntime { role: String },
+    /// Check schema and runtime privileges using DATABASE_URL; makes no changes.
+    CheckRuntime,
     /// Independently verify the event chain and all legacy snapshots.
     Verify {
         /// Document id (UUID).
@@ -75,6 +81,22 @@ async fn main() -> anyhow::Result<()> {
 
     let cli = Cli::parse();
     match cli.command {
+        Command::Migrate => {
+            let pool = connect_migration().await?;
+            engine_core::database::MIGRATOR.run(&pool).await?;
+            println!("Database migrations complete; provision/check the runtime role before starting the API.");
+            Ok(())
+        }
+        Command::GrantRuntime { role } => {
+            engine_core::database::grant_runtime(&connect_migration().await?, &role).await?;
+            println!("Runtime grants verified for {role}; connect directly using its separate credentials.");
+            Ok(())
+        }
+        Command::CheckRuntime => {
+            engine_core::database::check_runtime(&connect().await?).await?;
+            println!("Runtime schema and database privileges verified.");
+            Ok(())
+        }
         Command::Verify { document_id } => verify(document_id).await,
         Command::VerifySnapshots { document_id, all } => verify_snapshots(document_id, all).await,
         Command::Replay { document_id } => replay(document_id).await,
@@ -118,6 +140,17 @@ async fn connect() -> anyhow::Result<PgPool> {
         .connect(&database_url)
         .await
         .context("could not connect to Postgres")
+}
+
+async fn connect_migration() -> anyhow::Result<PgPool> {
+    let url = std::env::var("MIGRATION_DATABASE_URL").context(
+        "MIGRATION_DATABASE_URL is required for this operator command; never pass it to the API",
+    )?;
+    PgPoolOptions::new()
+        .max_connections(1)
+        .connect(&url)
+        .await
+        .context("could not connect for database administration")
 }
 
 async fn verify(document_id: String) -> anyhow::Result<()> {

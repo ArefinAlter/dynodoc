@@ -78,7 +78,7 @@ jobs:
           --health-cmd "pg_isready -U dynodoc -d dynodoc"
           --health-interval 5s --health-timeout 3s --health-retries 20
     env:
-      DATABASE_URL: postgres://dynodoc:isolated-ci-only@127.0.0.1:5432/dynodoc
+      DATABASE_URL: postgres://dynodoc_runtime:isolated-ci-runtime-only@127.0.0.1:5432/dynodoc
       PASETO_LOCAL_KEY: '0707070707070707070707070707070707070707070707070707070707070707'
       WEB_SERVICE_KEY: isolated-ci-service-key-never-for-production
       SESSION_SECRET: isolated-ci-session-key-never-for-production
@@ -106,8 +106,18 @@ jobs:
           cache-dependency-path: frontend/researcher/pnpm-lock.yaml
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build -p engine-api
+      - run: cargo build -p engine-api -p engine-cli
         working-directory: .
+      - name: Migrate separately and provision the restricted API login
+        working-directory: .
+        env:
+          MIGRATION_DATABASE_URL: postgres://dynodoc:isolated-ci-only@127.0.0.1:5432/dynodoc
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          docker exec "$POSTGRES_CONTAINER" psql -U dynodoc -d dynodoc -v ON_ERROR_STOP=1 -c "CREATE ROLE dynodoc_runtime LOGIN PASSWORD 'isolated-ci-runtime-only' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS"
+          target/debug/engine-cli migrate
+          target/debug/engine-cli grant-runtime dynodoc_runtime
+          target/debug/engine-cli check-runtime
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm exec playwright install --with-deps chromium

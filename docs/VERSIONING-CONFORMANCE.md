@@ -7,8 +7,10 @@ Old snapshots require explicit replay backfill; API/CLI audits independently
 compare all legacy snapshots with canonical replay, including non-node state.
 See [the snapshot contract](VERIFIED-SNAPSHOTS.md) and [validation status](ENGINE-EVOLUTION-HANDOFF.md).
 `log::verify_chain` alone remains an event-hash check. Receipts are internal
-attestations, not signatures or independent witnesses. The runtime still owns its
-schema and applies migrations: privilege separation is the next urgent gate.
+attestations, not signatures or independent witnesses. Schema 0029 adds separate
+operator migrations and a non-owner runtime login, enforced at API startup; see
+[the privilege contract](DATABASE-PRIVILEGES.md). The trusted owner and permitted
+whole-resource erasure remain outside independently witnessed audit guarantees.
 
 ## Evolution part 2a - 10 October 2026
 

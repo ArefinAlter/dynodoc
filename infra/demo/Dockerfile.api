@@ -3,10 +3,11 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 COPY migrations ./migrations
-RUN cargo build --locked --release -p engine-api
+RUN cargo build --locked --release -p engine-api -p engine-cli
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/* && useradd --uid 10001 --create-home dynodoc
 COPY --from=build /app/target/release/engine-api /usr/local/bin/engine-api
+COPY --from=build /app/target/release/engine-cli /usr/local/bin/engine-cli
 USER dynodoc
 EXPOSE 8080
 CMD ["engine-api"]

@@ -1,9 +1,9 @@
 # Dynodoc — version control for documents
 
-Latest security source work (11 October 2026): legacy snapshots now require
-replay-verification receipts, and schema 0028 adds immutable storage guards.
-Existing data needs explicit verified backfill before rollout. See
-[the snapshot contract](docs/VERIFIED-SNAPSHOTS.md) and
+Latest security source work (11 October 2026): schema 0029 separates operator
+migrations from a restricted API database login. Schema 0028 also requires verified
+snapshot receipts; existing data needs explicit replay backfill before rollout. See
+[the database boundary](docs/DATABASE-PRIVILEGES.md), [snapshot contract](docs/VERIFIED-SNAPSHOTS.md) and
 [checks/remaining gates](docs/ENGINE-EVOLUTION-HANDOFF.md).
 
 > Version control and provenance for documents edited in your own tools. Collect block changes in Projects, review and merge them, and pull a shared history into another working copy.
@@ -17,8 +17,9 @@ Research instruments remain one supported adapter, not the product roadmap.
 
 **Status:** The centralized engine, Projects/review, checked proposal bundles and
 six development connectors exist. Current source hardening adds revocable logins,
-fail-closed service credentials and bounded history reads. Snapshot trust, runtime
-database privileges and project policy authority remain urgent open gates; see
+fail-closed service credentials, checked snapshots, runtime database privileges and
+bounded history reads. Deployment acceptance and project policy authority remain
+urgent open gates; see
 the [security findings and rollout contract](docs/SECURITY-HARDENING.md).
 Shared checkpoint readers and bounded database
 batches reuse unchanged objects. Shared writes remain opt-in; default snapshots

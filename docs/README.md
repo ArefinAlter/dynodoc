@@ -15,6 +15,7 @@ or public-consultation stage prompts.
 | Implemented capabilities and production record | [PROJECT-STATUS](PROJECT-STATUS.md), [HANDOFF](HANDOFF.md) |
 | Security findings, verified fixes, trust limits and next gates | [SECURITY-HARDENING](SECURITY-HARDENING.md) |
 | Legacy snapshot receipts, replay verification and upgrade | [VERIFIED-SNAPSHOTS](VERIFIED-SNAPSHOTS.md) |
+| Separate migrations, restricted API login and upgrade | [DATABASE-PRIVILEGES](DATABASE-PRIVILEGES.md) |
 | Shared checkpoint codec, storage limits and measured spike | [SHARED-CHECKPOINTS](SHARED-CHECKPOINTS.md) |
 | Bounded serialization contract and allocation measurement | [BOUNDED-CHECKPOINT-ENCODING](BOUNDED-CHECKPOINT-ENCODING.md) |
 | Combined protocol guide | [04-versioning-combined](04-versioning-combined.md) |

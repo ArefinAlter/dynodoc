@@ -4,8 +4,10 @@ Current security gate (11 October 2026): follow the prioritized
 [findings and fixes](SECURITY-HARDENING.md) before resuming the next storage build.
 Authentication/resource admission hardening is an independent source increment;
 it does not complete storage part 2 or independent audit part 6. The immediate
-remaining gates are snapshot upgrade/backfill acceptance and runtime database privileges,
-project policy authority and audited settings, then headers/resource budgets.
+remaining gates are runtime-boundary/snapshot upgrade acceptance, project policy
+authority and audited settings, then headers/resource budgets. The schema-29 source
+now separates operator migrations from runtime credentials; see
+[the database contract](DATABASE-PRIVILEGES.md) and handoff for verification status.
 
 10 October 2026. Implements [decision 012](decisions/012-local-first-document-version-control.md)
 and [the product specification](PRODUCT-SPEC.md). Status is in

@@ -39,3 +39,18 @@ fn missing_or_placeholder_credentials_prevent_startup_without_production_flag() 
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("random PASETO_LOCAL_KEY"));
 }
+
+#[test]
+fn api_rejects_migration_credentials_even_with_valid_auth_configuration() {
+    let output = Command::new(env!("CARGO_BIN_EXE_engine-api"))
+        .env("MIGRATION_DATABASE_URL", "never-use-this-owner-url")
+        .env("DATABASE_URL", "intentionally-invalid")
+        .env("PASETO_LOCAL_KEY", "07".repeat(32))
+        .env("WEB_SERVICE_KEY", "isolated-configuration-test-service-key")
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("MIGRATION_DATABASE_URL must not be present"));
+    assert!(!stderr.contains("never-use-this-owner-url"));
+}

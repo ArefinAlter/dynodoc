@@ -18,6 +18,8 @@ use sqlx::PgPool;
 use tower::ServiceExt;
 use uuid::Uuid;
 
+mod common;
+
 const KEY: [u8; 32] = [7u8; 32];
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -319,6 +321,8 @@ async fn discussion_replies_resolution_permissions_and_replay(pool: PgPool) {
 
 #[sqlx::test(migrations = "../../migrations")]
 async fn admin_erasure_removes_whole_document_but_cannot_bypass_history_guards(pool: PgPool) {
+    let runtime = common::RuntimeDatabase::new(pool).await;
+    let pool = runtime.pool.clone();
     let admin_id = seed_identity(&pool, "erase-admin@example.test").await;
     let owner_id = seed_identity(&pool, "erase-owner@example.test").await;
     let mut state = test_state(pool.clone());
@@ -464,6 +468,7 @@ async fn admin_erasure_removes_whole_document_but_cannot_bypass_history_guards(p
         "event",
         "node",
         "snapshot",
+        "snapshot_verification",
         "shared_checkpoint",
         "checkpoint_object",
         "document_upload",
@@ -529,10 +534,13 @@ async fn admin_erasure_removes_whole_document_but_cannot_bypass_history_guards(p
         .execute(&pool)
         .await
         .is_err());
+    runtime.close().await;
 }
 
 #[sqlx::test(migrations = "../../migrations")]
 async fn admin_account_erasure_preserves_shared_chain_and_clears_private_drafts(pool: PgPool) {
+    let runtime = common::RuntimeDatabase::new(pool).await;
+    let pool = runtime.pool.clone();
     let admin_id = seed_identity(&pool, "admin-erasure@example.test").await;
     let user_id = seed_identity(&pool, "erased@example.test").await;
     let receiver = seed_identity(&pool, "receiver@example.test").await;
@@ -645,6 +653,7 @@ async fn admin_account_erasure_preserves_shared_chain_and_clears_private_drafts(
         .0,
         StatusCode::FORBIDDEN
     );
+    runtime.close().await;
 }
 
 #[sqlx::test(migrations = "../../migrations")]

@@ -1,5 +1,35 @@
 # Dynodoc: intent, current implementation and remaining work
 
+## Current source work: restricted database runtime (11 October 2026)
+
+Migration 0029 and a separate operator CLI now remove migrations from API startup.
+The API requires a non-owner login with explicit table/function grants and checks
+the complete migration version/checksum list without writing. History UPDATE,
+DELETE and TRUNCATE, trigger/schema changes, role elevation and migration writes
+are denied. Existing audited whole-resource erasure uses tightly scoped trigger
+entrypoints; ordinary application authorization remains required.
+
+Application lint and `task test` pass: 265 Rust tests, 286 frontend units and all
+68 signed-in browser workflows. The final disguised-owner regression also passes,
+bringing coverage to 266 distinct Rust tests; final Clippy passes and OpenAPI is
+unchanged. Fresh final-schema CLI migration/grant/check and API startup passed.
+Standalone checks and source CI references are pending.
+CI browser workflows now provision a separate runtime login. Source deployment
+configuration and local tasks distinguish runtime credentials from operator-only
+credentials. See [the setup, trust and rollout contract](DATABASE-PRIVILEGES.md).
+Owned test servers are stopped; the labelled disposable database remains only for
+the standalone checks and will be removed afterwards.
+
+No VPS deployment has occurred. Existing production is still recorded as `ecbc643`,
+schema 26. Source requires schema 29, verified snapshot backfill and a provisioned
+runtime login. A production-copy upgrade and compatible-image rollback rehearsal
+remain required; pre-boundary API images are not safe rollback.
+
+Next source priority: project policy authority/floors and audited metadata, then
+CSP/HSTS and resource budgets. The product roadmap remains bounded shared chunks,
+portable project commits/branches, durable offline repositories/exchange/convergence,
+stronger audit commitments, measured scale and native-editor acceptance/distribution.
+
 ## Latest source work: verified legacy snapshots (11 October 2026)
 
 Security increment implemented: migration 0028 protects legacy snapshots and

@@ -23,8 +23,11 @@ stage notes below are historical; the latest verification is at the end of this 
 
 ```sh
 task setup          # creates .env only if absent, installs frontend deps
-# Before task dev, edit .env as described below.
-task dev            # boots Postgres, applies migrations, starts API + frontend
+# Configure the separate runtime/operator logins using docs/DATABASE-PRIVILEGES.md.
+task migrate        # operator process reads .env.migrate
+task db:grant-runtime # grant an already-created dynodoc_runtime login
+task db:check       # runtime login/schema check
+task dev            # boots Postgres and starts API + frontend; never migrates
 ```
 
 Then verify the Stage-12 gate:
@@ -43,7 +46,11 @@ Use `DEV_AUTH=true` only on your local machine to display a development email
 sign-in button. `task dev` passes the root `.env` to both processes. When running
 `pnpm dev` separately, also configure `frontend/researcher/.env` from its example,
 using the same `WEB_SERVICE_KEY`. Keep `DATABASE_URL` consistent with the local
-Compose port (5432 by default). Existing environment files are preserved by setup.
+Compose port (5432 by default). It must use a restricted runtime login. The owner's
+URL belongs only in `.env.migrate`; follow [the setup and upgrade contract](docs/DATABASE-PRIVILEGES.md).
+Existing environment files are preserved by setup. SQLx tests need separate,
+isolated test-owner credentials exported as `DATABASE_URL`, including CREATE ROLE
+for the runtime-boundary regressions; the API must never use that test-owner URL.
 
 For the public pilot use [Google and Resend setup](docs/GOOGLE-AND-EMAIL-SETUP.md)
 and [Vercel/VPS operations](docs/VERCEL-DEPLOYMENT.md). The public deployment always
@@ -796,8 +803,8 @@ covers comments/suggestions/removed choices as well as node roots.
 
 See [the exact contract and release gate](docs/VERIFIED-SNAPSHOTS.md). Ordinary reads
 retain checkpoint-plus-tail replay; full audit/backfill is a separate streamed pass.
-The API still applies migrations using its own DB credentials: runtime/migration
-role separation is the next required security increment. An unmodified old API
+Schema 0029 now separates operator migrations from restricted API credentials;
+follow [the current boundary](docs/DATABASE-PRIVILEGES.md). An unmodified old API
 bypasses snapshot receipts and login revocation and is not a compatible rollback.
 Verification results and source/deployment status are in
 [the handoff](docs/ENGINE-EVOLUTION-HANDOFF.md).

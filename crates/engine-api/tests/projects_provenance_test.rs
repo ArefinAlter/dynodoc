@@ -11,6 +11,8 @@ use sqlx::PgPool;
 use tower::ServiceExt;
 use uuid::Uuid;
 
+mod common;
+
 const KEY: [u8; 32] = [9u8; 32];
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -657,6 +659,8 @@ async fn projects_inherit_rules_collect_requests_and_hide_private_drafts(pool: P
 
 #[sqlx::test(migrations = "../../migrations")]
 async fn bundles_are_atomic_idempotent_anchored_and_credentials_are_scoped(pool: PgPool) {
+    let runtime = common::RuntimeDatabase::new(pool).await;
+    let pool = runtime.pool.clone();
     let router = app(test_state(pool.clone()));
     let owner = identity(&pool, "connector-owner@example.test").await;
     let viewer = identity(&pool, "connector-viewer@example.test").await;
@@ -811,7 +815,8 @@ async fn bundles_are_atomic_idempotent_anchored_and_credentials_are_scoped(pool:
         post(&router, &endpoint, &connector, input).await.0,
         StatusCode::UNAUTHORIZED
     );
-    // Audited erasure must still remove the new immutable child rows.
+    // Audited erasure must still remove the new immutable child rows under the
+    // real runtime login, which cannot directly DELETE these tables.
     let actor: Uuid =
         sqlx::query_scalar("select id from identity where email='connector-owner@example.test'")
             .fetch_one(&pool)
@@ -840,12 +845,15 @@ async fn bundles_are_atomic_idempotent_anchored_and_credentials_are_scoped(pool:
         .0,
         StatusCode::FORBIDDEN
     );
+    runtime.close().await;
 }
 
 #[sqlx::test(migrations = "../../migrations")]
 async fn connector_rechecks_current_access_sessions_expiry_and_private_account_erasure(
     pool: PgPool,
 ) {
+    let runtime = common::RuntimeDatabase::new(pool).await;
+    let pool = runtime.pool.clone();
     let router = app(test_state(pool.clone()));
     let owner = identity(&pool, "grant-owner@example.test").await;
     let author = identity(&pool, "grant-author@example.test").await;
@@ -956,4 +964,5 @@ async fn connector_rechecks_current_access_sessions_expiry_and_private_account_e
             .await
             .unwrap();
     assert_eq!(remaining, 0);
+    runtime.close().await;
 }

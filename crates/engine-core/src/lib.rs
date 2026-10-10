@@ -11,6 +11,9 @@
 /// Append-only, hash-chained event log (the system of record). See docs/14.
 pub mod log;
 
+/// Separate migration/provisioning commands and read-only runtime startup gates.
+pub mod database;
+
 /// Snapshotted fold / state materialization. See docs/15.
 pub mod materializer;
 

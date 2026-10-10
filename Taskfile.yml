@@ -24,7 +24,11 @@ tasks:
     cmds:
       - cmd: test -f .env || cp .env.example .env
         platforms: [linux, darwin]
+      - cmd: test -f .env.migrate || cp migration.env.example .env.migrate
+        platforms: [linux, darwin]
       - cmd: powershell -NoProfile -Command "if (-not (Test-Path .env)) { Copy-Item .env.example .env }"
+        platforms: [windows]
+      - cmd: powershell -NoProfile -Command "if (-not (Test-Path .env.migrate)) { Copy-Item migration.env.example .env.migrate }"
         platforms: [windows]
       - cd {{.FRONTEND}} && pnpm install
 
@@ -42,23 +46,40 @@ tasks:
 
   # --- Migrations (schema lands in stage 13) ---
   migrate:
-    desc: Apply pending database migrations.
+    desc: Apply migrations in a separate operator process using .env.migrate.
+    dotenv: [".env.migrate"]
     deps: [up]
     cmds:
-      - sqlx migrate run --source migrations
+      - cargo run -p engine-cli -- migrate
+
+  db:grant-runtime:
+    desc: Provision an existing dynodoc_runtime login; does not create a password.
+    dotenv: [".env.migrate"]
+    cmds:
+      - cargo run -p engine-cli -- grant-runtime dynodoc_runtime
+
+  db:check:
+    desc: Check schema and runtime privileges without changing them.
+    cmds:
+      - cargo run -p engine-cli -- check-runtime
 
   migrate-reset:
     desc: DEV ONLY — drop the database and re-apply all migrations.
     deps: [up]
+    dotenv: [".env.migrate"]
+    requires:
+      vars: [MIGRATION_DATABASE_URL]
+    env:
+      DATABASE_URL: '{{.MIGRATION_DATABASE_URL}}'
     cmds:
       - sqlx database drop -y
       - sqlx database create
-      - sqlx migrate run --source migrations
+      - cargo run -p engine-cli -- migrate
 
   # --- Dev (long-running; runs API + frontend concurrently) ---
   dev:
-    desc: Boot the full local stack (Postgres, migrations, API, frontend).
-    deps: [migrate]
+    desc: Start the provisioned local stack (Postgres, API, frontend).
+    deps: [up]
     cmds:
       - task: dev:run
 

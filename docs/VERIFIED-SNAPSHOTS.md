@@ -63,16 +63,18 @@ after the JSONB round trip; semantic replay comparisons handle removed-choice se
 
 Receipts are internal attestations. A database owner or compromised authorized
 writer able to replace both history and its evidence remains outside this guarantee.
-Immutability triggers do not prevent an owner from disabling them. Runtime role
-separation is the next security gate; signed envelopes and independent pinned or
-witnessed heads remain evolution part 6. Do not label receipts as signatures.
+Immutability triggers do not prevent an owner from disabling them. Schema 0029
+constrains the API's runtime role through [separate database privileges](DATABASE-PRIVILEGES.md);
+signed envelopes and independent pinned or witnessed heads remain evolution part 6.
+Do not label receipts as signatures.
 
 ## Upgrade and rollback gate
 
 Do not perform a routine API-only rollout against old data. Keep old API writers
 and public traffic stopped while applying migration 0028 and verifying old snapshots.
-The current API still migrates at startup; migration/runtime credential separation
-is not completed by this increment. A fresh empty database needs no backfill.
+Current source also requires schema 0029 and a separate migration/runtime process;
+the API never migrates at startup. Follow [the database boundary](DATABASE-PRIVILEGES.md)
+alongside this backfill contract. A fresh empty database needs no backfill.
 
 With the intended migrated database selected by `DATABASE_URL`, run:
 
@@ -92,7 +94,7 @@ backup/canonical history before repairing any derived state.
 
 Before release: verified backup, migration/backfill rehearsal on existing data,
 all documents passing independent verification, successful protected historical
-downloads/restores/public copies, and the remaining runtime-privilege gate. Schema
+downloads/restores/public copies, and the runtime-privilege upgrade gate. Schema
 27 session revocation must also remain effective. An unmodified old API bypasses
 receipt checks and may attempt now-forbidden snapshot updates; it is not a safe
 rollback. Retain a compatible build with both verification and revocation, or keep
