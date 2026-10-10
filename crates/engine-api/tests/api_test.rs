@@ -1393,6 +1393,21 @@ async fn stale_field_edits_are_refused_but_disjoint_edits_work(pool: PgPool) {
     )
     .await;
     let node = created["event"]["target_node_id"].as_str().unwrap();
+    // Exercise this full workflow from shared storage, including the API's
+    // authorized write transaction, stale checks and legacy version/draft bases.
+    engine_core::snapshot::SnapshotEngine::new(pool.clone())
+        .with_periodic_storage(engine_core::snapshot::PeriodicStorage::SharedV1)
+        .ensure_recent(engine_shared::DocumentId(doc), 0)
+        .await
+        .unwrap();
+    let shared: i64 =
+        sqlx::query_scalar("select count(*) from shared_checkpoint where document_id=$1")
+            .bind(doc)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(shared, 1);
+
     let first = json!({"node_id":node,"field":"label","value":"First edit","base_seq":1});
     let second = json!({"node_id":node,"field":"label","value":"Stale edit","base_seq":1});
     let third = json!({"node_id":node,"field":"hint","value":"Independent","base_seq":1});
@@ -1584,6 +1599,21 @@ async fn personal_draft_conflicts_are_reviewed_and_old_versions_restore_stable_i
     )
     .await;
     let node = created["event"]["target_node_id"].as_str().unwrap();
+    // Exercise this full workflow from shared storage, including the API's
+    // authorized write transaction, stale checks and legacy version/draft bases.
+    engine_core::snapshot::SnapshotEngine::new(pool.clone())
+        .with_periodic_storage(engine_core::snapshot::PeriodicStorage::SharedV1)
+        .ensure_recent(engine_shared::DocumentId(doc), 0)
+        .await
+        .unwrap();
+    let shared: i64 =
+        sqlx::query_scalar("select count(*) from shared_checkpoint where document_id=$1")
+            .bind(doc)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(shared, 1);
+
     let (status, version) = send(
         &router,
         auth_post(

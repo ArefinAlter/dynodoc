@@ -1,5 +1,59 @@
 # Engine evolution handoff
 
+## Part 2b: mixed readers and gated automatic writer (10 October 2026)
+
+Implementation and the database measurement are complete locally; standalone
+test/docs/OpenAPI and publication/CI are pending. This is a slice of part 2, not product completion.
+
+- Current/history readers select the nearest legacy/shared checkpoint (shared wins
+  ties), validate shared graphs and stream only the suffix. Pinned current seq
+  remains the SSE resume boundary. API write materialization uses the same reader
+  inside existing access checks and locks. Selected corrupt shared data fails.
+- Automatic writes default to legacy. API background jobs opt in via
+  DYNODOC_PERIODIC_CHECKPOINT_STORAGE=shared-v1; core exposes PeriodicStorage.
+  Both formats count toward cadence; per-document advisory locking skips duplicate
+  builders. No-op jobs check cadence before locking, then due jobs recheck it.
+- Shared capacity errors roll back partial objects at a savepoint before legacy
+  fallback at the same seq. Other errors propagate. Named/deployed snapshots,
+  snapshot audit IDs and draft/merge bases still contain full JSON.
+- PgStore prefetches at most 16 values, scoped by document; ordinary validation and
+  budgets remain. Latest-batch cache has a 16 MiB encoded-byte maximum, not a whole
+  request memory bound. Index entries/state still reside in memory.
+- Explicit operator publication still derives from legacy/event reconstruction,
+  independent of shared roots. No new schema/event/HTTP format; schema 25 required.
+- Publication holds KEY SHARE on the document, which blocks the API's FOR UPDATE
+  appends, and still scans/writes individual objects. Keep writer default off until
+  measured publication latency and concurrent acceptance improve.
+
+Verification so far: all 220 application Rust tests, fmt/Clippy and unchanged OpenAPI
+passed. Targeted tests cover every revision, mixed nearest/tie/scope selection,
+resume seq, duplicate builders, cadence/rollback, oversized-value partial rollback,
+batched duplicates/budgets/scope and corruption. Existing API workflows now run from
+shared state for stale edits and version/draft/restore compatibility. Standalone
+task lint passes; task test/docs/OpenAPI and CI are pending.
+
+PostgreSQL spike: 8,000 blocks / six checkpoints, all reconstruction/chain checks
+passed. Batching lowers graph object SELECTs 9,885 -> 2,385 and median read
+6,425 -> 1,831 ms; direct legacy JSONB read is 117 ms. Shared edit publication
+15.3-17.4 seconds blocks appends for much of that transaction. Shared relations
+11.26 MB versus compressed legacy snapshots 2.92 MB on this repetitive fixture,
+despite fewer canonical bytes and edit WAL. Observed client peak 101.1 MiB.
+No production gate passes from these figures; see the raw artifact and limitations
+in SHARED-CHECKPOINTS.md. Prior in-memory ratios are not database disk ratios.
+
+Next: optimize/batch publication and shorten its append-blocking transaction;
+bounded text/asset chunks; versioned draft/named references; cross-language codec
+and parent/root/actor commit envelope; durable local history and resumable exchange.
+Offline convergence, independent signatures/witnesses and native/scale acceptance
+remain separate gates. The basic web editor is not the product priority.
+
+Temporary DB: owned dynodoc-evolution-part2b-20261010 on 127.0.0.1:5553, label
+dynodoc.evolution=part2b-20261010. Remove it and its disposable volume after checks.
+No API/web server or VPS deployment in this increment. Production remains last
+recorded 8c7461d, schema 24. Starting app 0718ee6; standalone a70647d.
+
+## Previous completed increment
+
 Updated 10 October 2026. **Part 2a complete, published and CI-verified. Part 2 remains in progress.** Part 1 remains published. Read [PRODUCT-SPEC](PRODUCT-SPEC.md),
 [ENGINE-EVOLUTION-PLAN](ENGINE-EVOLUTION-PLAN.md) and
 [SHARED-CHECKPOINTS](SHARED-CHECKPOINTS.md) before continuing.

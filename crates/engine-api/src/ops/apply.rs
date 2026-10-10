@@ -19,9 +19,9 @@
 
 use engine_core::governance::{self, Role};
 use engine_core::log;
-use engine_core::materializer::{DocumentState, Materializer};
+use engine_core::materializer::DocumentState;
 use engine_core::snapshot::merkle_root;
-use engine_shared::{DocumentId, Event, EventPayload, IdentityId, NodeId, NodeType, Snapshot};
+use engine_shared::{DocumentId, Event, EventPayload, IdentityId, NodeId, NodeType};
 use serde_json::Value;
 use sqlx::{PgPool, Postgres, Transaction};
 
@@ -377,24 +377,7 @@ pub(crate) async fn begin_write(
     let role = role
         .and_then(|r| r.parse().ok())
         .ok_or(ApiError::Forbidden)?;
-    let snapshot = sqlx::query_as::<_, Snapshot>(
-        "select * from snapshot where document_id=$1 order by through_seq desc limit 1",
-    )
-    .bind(document_id.0)
-    .fetch_optional(&mut *tx)
-    .await?;
-    let tail = sqlx::query_as::<_, Event>(
-        "select * from event where document_id=$1 and seq>$2 order by seq",
-    )
-    .bind(document_id.0)
-    .bind(snapshot.as_ref().map_or(0, |s| s.through_seq))
-    .fetch_all(&mut *tx)
-    .await?;
-    let current = match snapshot {
-        Some(s) => Materializer::from_snapshot(&s, &tail),
-        None => Materializer::fold(&tail),
-    }
-    .map_err(|e| ApiError::Internal(e.to_string()))?;
+    let (current, _) = engine_core::snapshot::read_current_state(&mut tx, document_id).await?;
     Ok((tx, role, current))
 }
 

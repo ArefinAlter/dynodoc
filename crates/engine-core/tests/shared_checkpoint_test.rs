@@ -5,9 +5,13 @@ use engine_core::{
     materializer::Materializer,
     shared_checkpoint::{
         postgres::{self, PgStore},
-        read_state, Error, Limits,
+        read_state, write_state, Address, Error, Limits, ObjectStore, MAX_OBJECT_BYTES,
+        READ_BATCH_OBJECTS,
     },
-    snapshot::{read_state_at, SnapshotEngine, SnapshotReason},
+    snapshot::{
+        read_state_at, CheckpointFormat, PeriodicStorage, SnapshotEngine, SnapshotError,
+        SnapshotReason,
+    },
 };
 use engine_shared::{DocumentId, Event, EventPayload, IdentityId, NodeId, NodeType};
 use serde_json::json;
@@ -60,7 +64,276 @@ async fn object_count(pool: &PgPool, doc: DocumentId) -> i64 {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn every_checkpoint_matches_replay_and_legacy_reads_are_unchanged(
+async fn mixed_history_selects_nearest_checkpoint_and_preserves_resume_seq(
+    pool: PgPool,
+) -> anyhow::Result<()> {
+    let (actor, doc, node) = seed(&pool).await?;
+    let engine = SnapshotEngine::new(pool.clone());
+    let (_, other, _) = seed(&pool).await?;
+    for seq in 2..=10 {
+        for (document, target) in [(doc, Some(node.clone())), (other, None)] {
+            append(
+                &pool,
+                document,
+                &EventPayload::CommentAdded {
+                    node_id: target,
+                    body: format!("Revision {seq}"),
+                },
+                actor,
+            )
+            .await?;
+        }
+        if seq == 3 || seq == 7 {
+            engine.take(doc, SnapshotReason::Periodic).await?;
+        }
+        if seq == 5 || seq == 7 {
+            postgres::take(&pool, doc, seq, Limits::default()).await?;
+        }
+    }
+    postgres::take(&pool, other, 10, Limits::default()).await?;
+    let events =
+        sqlx::query_as::<_, Event>("select * from event where document_id=$1 order by seq")
+            .bind(doc.0)
+            .fetch_all(&pool)
+            .await?;
+    let mut connection = pool.acquire().await?;
+    for seq in 0..=10 {
+        let expected = Materializer::fold(&events[..seq as usize])?;
+        let actual = read_state_at(&mut connection, doc, seq).await?;
+        let (base, format) = match seq {
+            0..=2 => (0, CheckpointFormat::Genesis),
+            3..=4 => (3, CheckpointFormat::Legacy),
+            5..=6 => (5, CheckpointFormat::SharedV1),
+            _ => (7, CheckpointFormat::SharedV1),
+        };
+        assert_eq!(actual.state, expected, "revision {seq}");
+        assert_eq!(
+            (actual.snapshot_seq, actual.checkpoint_format),
+            (base, format)
+        );
+        assert_eq!(actual.replayed_events, (seq - base) as usize);
+    }
+    for seq in [-1, 11, i64::MAX] {
+        assert!(matches!(
+            read_state_at(&mut connection, doc, seq).await,
+            Err(SnapshotError::InvalidRevision(_))
+        ));
+    }
+    let (current, seq) = engine.read_current_state_with_seq(doc).await?;
+    assert_eq!(seq, 10);
+    assert_eq!(current, Materializer::fold(&events)?);
+    let legacy = engine.take(doc, SnapshotReason::Deployed).await?;
+    assert_eq!(legacy.through_seq, seq);
+    assert_eq!(serde_json::to_value(&current)?, legacy.state);
+    assert_eq!(
+        read_state_at(&mut connection, doc, 10)
+            .await?
+            .checkpoint_format,
+        CheckpointFormat::Legacy
+    );
+    Ok(())
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn periodic_rollout_cadence_and_duplicate_builders_are_reversible(
+    pool: PgPool,
+) -> anyhow::Result<()> {
+    let (actor, doc, node) = seed(&pool).await?;
+    let legacy = SnapshotEngine::new(pool.clone());
+    let shared = legacy
+        .clone()
+        .with_periodic_storage(PeriodicStorage::SharedV1);
+    let mut lock = pool.begin().await?;
+    sqlx::query("select pg_advisory_xact_lock(hashtextextended($1,0))")
+        .bind(format!("dynodoc.periodic-checkpoint:{}", doc.0))
+        .execute(&mut *lock)
+        .await?;
+    shared.ensure_recent(doc, 0).await?;
+    assert_eq!(object_count(&pool, doc).await, 0);
+    lock.rollback().await?;
+    let (a, b) = tokio::join!(shared.ensure_recent(doc, 0), shared.ensure_recent(doc, 0));
+    a?;
+    b?;
+    let mut connection = pool.acquire().await?;
+    assert_eq!(
+        read_state_at(&mut connection, doc, 1)
+            .await?
+            .checkpoint_format,
+        CheckpointFormat::SharedV1
+    );
+    for seq in 2..=3 {
+        append(
+            &pool,
+            doc,
+            &EventPayload::FieldEdited {
+                node_id: node.clone(),
+                field: "label".into(),
+                value: json!(seq),
+            },
+            actor,
+        )
+        .await?;
+        shared.ensure_recent(doc, 1).await?;
+    }
+    let checkpoints: Vec<i64> = sqlx::query_scalar(
+        "select through_seq from shared_checkpoint where document_id=$1 order by through_seq",
+    )
+    .bind(doc.0)
+    .fetch_all(&pool)
+    .await?;
+    assert_eq!(checkpoints, [1, 3]);
+    // Turning off shared writing does not duplicate a checkpoint or disable reads.
+    legacy.ensure_recent(doc, 0).await?;
+    let legacy_count: i64 = sqlx::query_scalar("select count(*) from snapshot")
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(legacy_count, 0);
+    append(
+        &pool,
+        doc,
+        &EventPayload::CommentAdded {
+            node_id: None,
+            body: "After rollback".into(),
+        },
+        actor,
+    )
+    .await?;
+    legacy.ensure_recent(doc, 0).await?;
+    assert_eq!(
+        read_state_at(&mut connection, doc, 4)
+            .await?
+            .checkpoint_format,
+        CheckpointFormat::Legacy
+    );
+    assert_eq!(
+        read_state_at(&mut connection, doc, 3)
+            .await?
+            .checkpoint_format,
+        CheckpointFormat::SharedV1
+    );
+    Ok(())
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn oversized_value_rolls_back_partial_objects_before_legacy_fallback(
+    pool: PgPool,
+) -> anyhow::Result<()> {
+    let (actor, doc, _) = seed(&pool).await?;
+    // Node/map objects are written before comments, so this fails after partial writes.
+    append(
+        &pool,
+        doc,
+        &EventPayload::CommentAdded {
+            node_id: None,
+            body: "x".repeat(MAX_OBJECT_BYTES),
+        },
+        actor,
+    )
+    .await?;
+    let engine = SnapshotEngine::new(pool.clone()).with_periodic_storage(PeriodicStorage::SharedV1);
+    engine.ensure_recent(doc, 0).await?;
+    assert_eq!(object_count(&pool, doc).await, 0);
+    let shared: i64 = sqlx::query_scalar("select count(*) from shared_checkpoint")
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(shared, 0);
+    let mut connection = pool.acquire().await?;
+    let read = read_state_at(&mut connection, doc, 2).await?;
+    assert_eq!(
+        (
+            read.snapshot_seq,
+            read.replayed_events,
+            read.checkpoint_format
+        ),
+        (2, 0, CheckpointFormat::Legacy)
+    );
+    assert_eq!(read.state.comments[0].body.len(), MAX_OBJECT_BYTES);
+    assert_eq!(
+        engine.read_current_state_with_seq(doc).await?,
+        (read.state, 2)
+    );
+    Ok(())
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn batched_values_keep_duplicate_references_scope_and_limits(
+    pool: PgPool,
+) -> anyhow::Result<()> {
+    let (_, doc, _) = seed(&pool).await?;
+    let (_, other, _) = seed(&pool).await?;
+    let mut connection = pool.acquire().await?;
+    let mut state = read_state_at(&mut connection, doc, 1).await?.state;
+    for index in 0..40 {
+        state
+            .comments
+            .push(engine_core::materializer::CommentState {
+                node_id: None,
+                body: if index < 20 {
+                    "Repeated".into()
+                } else {
+                    format!("Comment {index}")
+                },
+            });
+    }
+    let mut store = PgStore::new(&mut connection);
+    let (root, _) = write_state(&mut store, doc, &state, Limits::default()).await?;
+    let before = store.read_queries();
+    assert_eq!(
+        read_state(&mut store, doc, &root, Limits::default()).await?,
+        state
+    );
+    assert!(
+        store.read_queries() - before < 30,
+        "value batching should avoid one query per comment"
+    );
+    assert!(matches!(
+        read_state(
+            &mut store,
+            doc,
+            &root,
+            Limits {
+                max_objects: 3,
+                max_bytes: usize::MAX
+            }
+        )
+        .await,
+        Err(Error::Limit(_))
+    ));
+    assert!(matches!(
+        read_state(
+            &mut store,
+            doc,
+            &root,
+            Limits {
+                max_objects: usize::MAX,
+                max_bytes: 1
+            }
+        )
+        .await,
+        Err(Error::Limit(_))
+    ));
+    assert!(matches!(
+        store
+            .prefetch(doc, &vec![root.clone(); READ_BATCH_OBJECTS + 1])
+            .await,
+        Err(Error::Limit(_))
+    ));
+    store.prefetch(doc, std::slice::from_ref(&root)).await?;
+    assert!(matches!(
+        store.get(other, &root).await,
+        Err(Error::Missing(_))
+    ));
+    let absent = Address::try_from("a".repeat(64))?;
+    store.prefetch(doc, std::slice::from_ref(&absent)).await?;
+    assert!(matches!(
+        store.get(doc, &absent).await,
+        Err(Error::Missing(_))
+    ));
+    Ok(())
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn every_revision_matches_replay_before_and_after_shared_adoption(
     pool: PgPool,
 ) -> anyhow::Result<()> {
     let (actor, doc, node) = seed(&pool).await?;
@@ -100,7 +373,9 @@ async fn every_checkpoint_matches_replay_and_legacy_reads_are_unchanged(
         );
         let after = read_state_at(&mut connection, doc, seq).await?;
         assert_eq!(before.state, after.state);
-        assert_eq!(before.snapshot_seq, after.snapshot_seq);
+        assert_eq!(after.snapshot_seq, seq);
+        assert_eq!(after.checkpoint_format, CheckpointFormat::SharedV1);
+        assert_eq!(after.replayed_events, 0);
         assert_eq!(after.state, expected);
         let repeated = postgres::take(&pool, doc, seq, Limits::default()).await?;
         assert_eq!(repeated.root, published.root);
@@ -280,6 +555,16 @@ async fn forged_metadata_and_corrupt_stored_objects_fail_closed(
         ))
     ));
     assert_eq!(object_count(&pool, doc).await, 1);
+    let engine = SnapshotEngine::new(pool.clone()).with_periodic_storage(PeriodicStorage::SharedV1);
+    assert!(engine.read_current_state(doc).await.is_err());
+    assert!(engine.ensure_recent(doc, 0).await.is_err());
+    let snapshots: i64 = sqlx::query_scalar("select count(*) from snapshot")
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(
+        snapshots, 0,
+        "corruption must not become a legacy capacity fallback"
+    );
     sqlx::query("insert into shared_checkpoint(document_id,through_seq,codec_version,state_root,event_chain_hash) values($1,1,1,$2,$3)")
         .bind(doc.0).bind(&root).bind(vec![0u8;32]).execute(&pool).await?;
     assert!(matches!(

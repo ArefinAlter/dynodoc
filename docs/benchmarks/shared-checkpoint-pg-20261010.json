@@ -1,0 +1,135 @@
+{
+  "baseline_json_bytes": 6400063,
+  "blocks": 8000,
+  "checkpoints": 6,
+  "final_relations": {
+    "checkpoint_object": {
+      "index_bytes": 1474560,
+      "table_including_toast_bytes": 9748480,
+      "total_bytes": 11223040
+    },
+    "event": {
+      "index_bytes": 3014656,
+      "table_including_toast_bytes": 9404416,
+      "total_bytes": 12419072
+    },
+    "shared_checkpoint": {
+      "index_bytes": 16384,
+      "table_including_toast_bytes": 16384,
+      "total_bytes": 32768
+    },
+    "snapshot": {
+      "index_bytes": 49152,
+      "table_including_toast_bytes": 2867200,
+      "total_bytes": 2916352
+    }
+  },
+  "initial_relations": {
+    "checkpoint_object": {
+      "index_bytes": 8192,
+      "table_including_toast_bytes": 8192,
+      "total_bytes": 16384
+    },
+    "event": {
+      "index_bytes": 3014656,
+      "table_including_toast_bytes": 9396224,
+      "total_bytes": 12410880
+    },
+    "shared_checkpoint": {
+      "index_bytes": 8192,
+      "table_including_toast_bytes": 8192,
+      "total_bytes": 16384
+    },
+    "snapshot": {
+      "index_bytes": 24576,
+      "table_including_toast_bytes": 8192,
+      "total_bytes": 32768
+    }
+  },
+  "measurements": [
+    {
+      "batched_object_selects": 2385,
+      "batched_read_ms": 1950.0549999999998,
+      "legacy_read_ms": 220.4562,
+      "legacy_wal_bytes": 482024.0,
+      "legacy_write_ms": 461.2097,
+      "normal_read_ms": 2148.8677,
+      "revision": 8000,
+      "shared_wal_bytes": 11811304.0,
+      "shared_write_verify_ms": 11650.056400000001,
+      "unbatched_object_selects": 9885,
+      "unbatched_read_ms": 7755.668
+    },
+    {
+      "batched_object_selects": 2385,
+      "batched_read_ms": 1847.2298,
+      "legacy_read_ms": 115.7055,
+      "legacy_wal_bytes": 482504.0,
+      "legacy_write_ms": 2625.9294999999997,
+      "normal_read_ms": 1817.1136,
+      "revision": 8001,
+      "shared_wal_bytes": 9304.0,
+      "shared_write_verify_ms": 17354.9893,
+      "unbatched_object_selects": 9885,
+      "unbatched_read_ms": 6440.6059
+    },
+    {
+      "batched_object_selects": 2385,
+      "batched_read_ms": 1805.6908,
+      "legacy_read_ms": 124.3143,
+      "legacy_wal_bytes": 481728.0,
+      "legacy_write_ms": 2142.3969,
+      "normal_read_ms": 1961.9217,
+      "revision": 8002,
+      "shared_wal_bytes": 7912.0,
+      "shared_write_verify_ms": 16632.325999999997,
+      "unbatched_object_selects": 9885,
+      "unbatched_read_ms": 6272.1347
+    },
+    {
+      "batched_object_selects": 2385,
+      "batched_read_ms": 1894.9624000000001,
+      "legacy_read_ms": 112.2252,
+      "legacy_wal_bytes": 482592.0,
+      "legacy_write_ms": 2127.0213999999996,
+      "normal_read_ms": 1792.0495999999998,
+      "revision": 8003,
+      "shared_wal_bytes": 8840.0,
+      "shared_write_verify_ms": 15805.2063,
+      "unbatched_object_selects": 9885,
+      "unbatched_read_ms": 6409.6096
+    },
+    {
+      "batched_object_selects": 2385,
+      "batched_read_ms": 1815.1245000000001,
+      "legacy_read_ms": 108.0227,
+      "legacy_wal_bytes": 481816.0,
+      "legacy_write_ms": 2185.6598,
+      "normal_read_ms": 1797.1409999999998,
+      "revision": 8004,
+      "shared_wal_bytes": 9360.0,
+      "shared_write_verify_ms": 15488.8532,
+      "unbatched_object_selects": 9885,
+      "unbatched_read_ms": 6609.319100000001
+    },
+    {
+      "batched_object_selects": 2385,
+      "batched_read_ms": 1610.6926,
+      "legacy_read_ms": 118.7064,
+      "legacy_wal_bytes": 482672.0,
+      "legacy_write_ms": 1988.0546,
+      "normal_read_ms": 1821.9308999999998,
+      "revision": 8005,
+      "shared_wal_bytes": 38704.0,
+      "shared_write_verify_ms": 15299.220500000001,
+      "unbatched_object_selects": 9885,
+      "unbatched_read_ms": 6383.4241
+    }
+  ],
+  "scope": "Single local disposable PostgreSQL run. WAL is cluster-wide and may include background work. Sequential warm reads, no native assets or concurrent load. Shared writer runs after matching legacy publication; write timings are not an identical-source comparison.",
+  "unique_canonical_bytes": 7711664,
+  "unique_objects": 9909,
+  "observed_peak_working_set_bytes": 106016768,
+  "memory_method": "Windows OS peak working-set counter sampled every 250 ms; includes expected and multiple reconstructed states, runtime and client buffers; excludes PostgreSQL.",
+  "environment": "Windows, Intel Core i7-1255U, pinned Rust 1.96 release, local Docker PostgreSQL 16; one synthetic warm sequential run."
+}

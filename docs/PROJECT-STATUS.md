@@ -1,6 +1,27 @@
 # Dynodoc: intent, current implementation and remaining work
 
-## Latest increment: shared checkpoints (10 October 2026)
+## Latest increment: mixed checkpoint adoption (10 October 2026)
+
+Part 2b adds normal current/history and API write readers for legacy/shared
+checkpoints, with verified shared graphs and streamed suffixes. An optional periodic
+shared writer reuses objects; capacity failures roll back partial data and retain
+a legacy checkpoint at the same revision. Missing/corrupt selected shared data
+fails explicitly. Duplicate builders skip work; PostgreSQL value reads use batches
+of at most 16 objects. Named/deployed versions and draft bases still use full JSON.
+
+Shared writes remain off by default. Publication still scans all state and writes
+objects individually while blocking FOR UPDATE appends on the document. Database
+measurements and verification are in the [checkpoint contract](SHARED-CHECKPOINTS.md)
+and [handoff](ENGINE-EVOLUTION-HANDOFF.md). All 220 application Rust tests, fmt/Clippy
+and unchanged OpenAPI pass; standalone final checks/publication are in progress.
+No VPS deployment. Schema 25 is required by the new reader.
+
+Next: reduce publication round trips and lock duration, add bounded text/assets,
+migrate version/draft references, then durable local commits and resumable exchange.
+Offline convergence, independent audit and native/scale acceptance remain open.
+This increment does not certify the complete Git-style product.
+
+## Previous increment: shared checkpoints (10 October 2026)
 
 Part 2a implements opt-in shared checkpoint objects, stable-ID radix indexes,
 document-scoped memory/PostgreSQL stores, verified atomic publication/retry and

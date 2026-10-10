@@ -15,6 +15,9 @@ use crate::materializer::{CommentState, DocumentState, MaterializedNode, Suggest
 pub mod postgres;
 
 pub const MAX_OBJECT_BYTES: usize = 1024 * 1024;
+/// Maximum values fetched together. PostgreSQL retains at most this many encoded
+/// objects between batches (16 MiB with the per-object column/codec limit).
+pub const READ_BATCH_OBJECTS: usize = 16;
 const LEAF_ENTRIES: usize = 32;
 const DOMAIN: &[u8] = b"dynodoc.shared-checkpoint\0v1\0";
 
@@ -101,6 +104,16 @@ impl Limits {
 /// must be scoped to a document already authorized by the caller. `put` must
 /// validate bytes/address and return true only when inserting a new object.
 pub trait ObjectStore {
+    /// Optional bounded read-ahead. Every value still passes ordinary `get`,
+    /// hash/type validation and budget accounting. A backend may ignore this hint.
+    fn prefetch(
+        &mut self,
+        _document: DocumentId,
+        _addresses: &[Address],
+    ) -> impl Future<Output = Result<(), Error>> + Send {
+        async { Ok(()) }
+    }
+
     fn put(
         &mut self,
         document: DocumentId,
@@ -452,6 +465,28 @@ impl<S: ObjectStore + Send> Reader<'_, S> {
         self.map(root, String::new(), &mut entries).await?;
         Ok(entries)
     }
+
+    async fn values(
+        &mut self,
+        root: &Address,
+        mut apply: impl FnMut(String, Object) -> Result<(), Error> + Send,
+    ) -> Result<(), Error> {
+        let mut entries = self.entries(root).await?.into_iter();
+        loop {
+            let batch: Vec<_> = entries.by_ref().take(READ_BATCH_OBJECTS).collect();
+            if batch.is_empty() {
+                return Ok(());
+            }
+            if self.budget.max_objects < batch.len() {
+                return Err(Error::Limit("objects"));
+            }
+            let addresses: Vec<_> = batch.iter().map(|(_, address)| address.clone()).collect();
+            self.store.prefetch(self.document, &addresses).await?;
+            for (key, address) in batch {
+                apply(key, self.object(&address).await?)?;
+            }
+        }
+    }
 }
 
 /// Verify every reachable object's bytes, type and map structure and reconstruct
@@ -471,38 +506,50 @@ pub async fn read_state<S: ObjectStore + Send>(
         return Err(Error::Invalid("expected state root"));
     };
     let mut state = DocumentState::default();
-    for (key, address) in reader.entries(&roots.nodes).await? {
-        match reader.object(&address).await? {
-            Object::Node(node) if node.id.0 == key => {
-                state.nodes.insert(node.id.clone(), node);
+    reader
+        .values(&roots.nodes, |key, object| {
+            match object {
+                Object::Node(node) if node.id.0 == key => {
+                    state.nodes.insert(node.id.clone(), node);
+                }
+                _ => return Err(Error::Invalid("node type or logical id")),
             }
-            _ => return Err(Error::Invalid("node type or logical id")),
-        }
-    }
-    for (key, address) in reader.entries(&roots.comments).await? {
-        match reader.object(&address).await? {
-            Object::Comment(comment) if key == format!("{:016x}", state.comments.len()) => {
-                state.comments.push(comment)
+            Ok(())
+        })
+        .await?;
+    reader
+        .values(&roots.comments, |key, object| {
+            match object {
+                Object::Comment(comment) if key == format!("{:016x}", state.comments.len()) => {
+                    state.comments.push(comment)
+                }
+                _ => return Err(Error::Invalid("comment type or ordinal")),
             }
-            _ => return Err(Error::Invalid("comment type or ordinal")),
-        }
-    }
-    for (key, address) in reader.entries(&roots.suggestions).await? {
-        match reader.object(&address).await? {
-            Object::Suggestion(suggestion) => {
-                state.suggestions.insert(key, suggestion);
+            Ok(())
+        })
+        .await?;
+    reader
+        .values(&roots.suggestions, |key, object| {
+            match object {
+                Object::Suggestion(suggestion) => {
+                    state.suggestions.insert(key, suggestion);
+                }
+                _ => return Err(Error::Invalid("suggestion type")),
             }
-            _ => return Err(Error::Invalid("suggestion type")),
-        }
-    }
-    for (key, address) in reader.entries(&roots.removed_choices).await? {
-        match reader.object(&address).await? {
-            Object::RemovedChoice(id) if id.0 == key => {
-                state.removed_choices.insert(id);
+            Ok(())
+        })
+        .await?;
+    reader
+        .values(&roots.removed_choices, |key, object| {
+            match object {
+                Object::RemovedChoice(id) if id.0 == key => {
+                    state.removed_choices.insert(id);
+                }
+                _ => return Err(Error::Invalid("removed choice type or id")),
             }
-            _ => return Err(Error::Invalid("removed choice type or id")),
-        }
-    }
+            Ok(())
+        })
+        .await?;
     Ok(state)
 }
 

@@ -9,6 +9,7 @@ use tracing::warn;
 use crate::{
     log::{self, ZERO_HASH},
     materializer::{DocumentState, MaterializeError, MaterializedNode, Materializer},
+    shared_checkpoint::{self, postgres as shared, Limits},
 };
 
 /// Default tail length before an automatic background snapshot is taken.
@@ -33,6 +34,8 @@ impl SnapshotReason {
 /// Errors from snapshot reads/writes.
 #[derive(Debug, thiserror::Error)]
 pub enum SnapshotError {
+    #[error("shared checkpoint failed: {0}")]
+    Shared(Box<shared_checkpoint::Error>),
     #[error("revision {0} is outside the document history")]
     InvalidRevision(i64),
     #[error("event history gap: expected seq {expected}, found {actual}")]
@@ -47,41 +50,103 @@ pub enum SnapshotError {
     Serialize(#[from] serde_json::Error),
 }
 
+impl From<shared_checkpoint::Error> for SnapshotError {
+    fn from(error: shared_checkpoint::Error) -> Self {
+        Self::Shared(Box::new(error))
+    }
+}
+
+/// Selected checkpoint representation; exposed for replay accounting, not the API.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CheckpointFormat {
+    Genesis,
+    Legacy,
+    SharedV1,
+}
+
+/// Automatic writes retain a reversible rollout boundary. Readers always support
+/// both formats. Named/deployed snapshots continue to use the legacy contract.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PeriodicStorage {
+    Legacy,
+    SharedV1,
+}
+
 /// A historical state and the work required to reconstruct it.
 #[derive(Debug)]
 pub struct HistoricalState {
     pub state: DocumentState,
     pub snapshot_seq: i64,
+    pub checkpoint_format: CheckpointFormat,
     pub replayed_events: usize,
 }
 
-/// Read an exact revision using the nearest checkpoint at or before it.
-///
-/// Streams the bounded event suffix instead of collecting the entire history.
-/// Memory still includes the complete snapshot/state and SQL driver's buffers;
-/// this is not shared-object storage. With no earlier checkpoint, replay starts
-/// at genesis. Callers enforce document access and may pass a locked transaction's
-/// connection to retain the write path's authorization and serialization boundary.
-/// Snapshots are trusted derived data here; cryptographic verification is separate.
+/// Read an exact revision from the nearest legacy/shared checkpoint and a streamed
+/// event suffix. Ties prefer the verified shared graph. Corruption is an error,
+/// never a reason to silently choose an older checkpoint. Full state stays resident.
+/// Callers authorize document access and retain their existing transaction/locks.
 pub async fn read_state_at(
     connection: &mut PgConnection,
     document_id: DocumentId,
     through_seq: i64,
 ) -> Result<HistoricalState, SnapshotError> {
+    read_state_at_with_formats(connection, document_id, through_seq, true).await
+}
+
+/// Independent legacy/event reference for explicit shared checkpoint publication.
+pub(crate) async fn read_legacy_state_at(
+    connection: &mut PgConnection,
+    document_id: DocumentId,
+    through_seq: i64,
+) -> Result<HistoricalState, SnapshotError> {
+    read_state_at_with_formats(connection, document_id, through_seq, false).await
+}
+
+async fn read_state_at_with_formats(
+    connection: &mut PgConnection,
+    document_id: DocumentId,
+    through_seq: i64,
+    include_shared: bool,
+) -> Result<HistoricalState, SnapshotError> {
     if through_seq < 0 {
         return Err(SnapshotError::InvalidRevision(through_seq));
     }
-    let snapshot = sqlx::query_as::<_, Snapshot>(
-        "select * from snapshot where document_id=$1 and through_seq<=$2 order by through_seq desc limit 1",
+    // Metadata only: never hydrate an older full JSON snapshot just to compare it.
+    let selected: Option<(i64, bool)> = sqlx::query_as(
+        "select through_seq,shared from (
+           (select through_seq,false as shared from snapshot
+            where document_id=$1 and through_seq<=$2 order by through_seq desc limit 1)
+           union all
+           (select through_seq,true as shared from shared_checkpoint
+            where document_id=$1 and through_seq<=$2 and $3 order by through_seq desc limit 1)
+         ) candidates order by through_seq desc,shared desc limit 1",
     )
     .bind(document_id.0)
     .bind(through_seq)
+    .bind(include_shared)
     .fetch_optional(&mut *connection)
     .await?;
-    let snapshot_seq = snapshot.as_ref().map_or(0, |s| s.through_seq);
-    let mut state = match snapshot {
-        Some(s) => serde_json::from_value(s.state)?,
-        None => DocumentState::default(),
+    let (snapshot_seq, checkpoint_format, mut state) = match selected {
+        Some((seq, true)) => (
+            seq,
+            CheckpointFormat::SharedV1,
+            shared::load_in_connection(connection, document_id, seq, Limits::default()).await?,
+        ),
+        Some((seq, false)) => {
+            let value = sqlx::query_scalar(
+                "select state from snapshot where document_id=$1 and through_seq=$2",
+            )
+            .bind(document_id.0)
+            .bind(seq)
+            .fetch_one(&mut *connection)
+            .await?;
+            (
+                seq,
+                CheckpointFormat::Legacy,
+                serde_json::from_value(value)?,
+            )
+        }
+        None => (0, CheckpointFormat::Genesis, DocumentState::default()),
     };
     let mut tail = sqlx::query_as::<_, Event>(
         "select * from event where document_id=$1 and seq>$2 and seq<=$3 order by seq",
@@ -109,117 +174,200 @@ pub async fn read_state_at(
     Ok(HistoricalState {
         state,
         snapshot_seq,
+        checkpoint_format,
         replayed_events,
     })
+}
+
+/// Pin the current immutable revision before selecting a checkpoint. Concurrent
+/// appends are excluded from this read and delivered later by the existing SSE seq.
+pub async fn read_current_state(
+    connection: &mut PgConnection,
+    document_id: DocumentId,
+) -> Result<(DocumentState, i64), SnapshotError> {
+    let seq = latest_event_seq(connection, document_id).await?;
+    Ok((
+        read_state_at(connection, document_id, seq).await?.state,
+        seq,
+    ))
+}
+
+async fn latest_event_seq(
+    connection: &mut PgConnection,
+    document_id: DocumentId,
+) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar("select coalesce(max(seq),0) from event where document_id=$1")
+        .bind(document_id.0)
+        .fetch_one(connection)
+        .await
+}
+
+/// Advisory lock namespace for periodic builders. A collision only delays a
+/// checkpoint; it cannot affect content authorization or canonical append locking.
+async fn try_lock_periodic(
+    connection: &mut PgConnection,
+    document_id: DocumentId,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar("select pg_try_advisory_xact_lock(hashtextextended($1,0))")
+        .bind(format!("dynodoc.periodic-checkpoint:{}", document_id.0))
+        .fetch_one(connection)
+        .await
+}
+
+async fn checkpoint_due(
+    connection: &mut PgConnection,
+    document_id: DocumentId,
+    max_events_in_tail: i64,
+) -> Result<Option<i64>, sqlx::Error> {
+    let (seq, last): (i64, i64) = sqlx::query_as(
+        "select (select coalesce(max(seq),0) from event where document_id=$1),
+         greatest((select coalesce(max(through_seq),0) from snapshot where document_id=$1),
+         (select coalesce(max(through_seq),0) from shared_checkpoint where document_id=$1))",
+    )
+    .bind(document_id.0)
+    .fetch_one(connection)
+    .await?;
+    Ok((seq > 0 && seq - last > max_events_in_tail).then_some(seq))
+}
+
+async fn insert_legacy(
+    connection: &mut PgConnection,
+    document_id: DocumentId,
+    seq: i64,
+    state: &DocumentState,
+    chain: &[u8],
+) -> Result<Snapshot, SnapshotError> {
+    sqlx::query(
+        "insert into snapshot(document_id,through_seq,state,merkle_root,event_chain_hash)
+        values($1,$2,$3,$4,$5) on conflict(document_id,through_seq) do nothing",
+    )
+    .bind(document_id.0)
+    .bind(seq)
+    .bind(serde_json::to_value(state)?)
+    .bind(merkle_root(state)?.as_slice())
+    .bind(chain)
+    .execute(&mut *connection)
+    .await?;
+    // A concurrent later snapshot must never replace this caller's exact revision.
+    Ok(
+        sqlx::query_as("select * from snapshot where document_id=$1 and through_seq=$2")
+            .bind(document_id.0)
+            .bind(seq)
+            .fetch_one(connection)
+            .await?,
+    )
 }
 
 /// Persistent snapshot/materialization read path.
 #[derive(Clone)]
 pub struct SnapshotEngine {
     pool: PgPool,
+    periodic_storage: PeriodicStorage,
 }
 
 impl SnapshotEngine {
     pub fn new(pool: PgPool) -> Self {
-        Self { pool }
+        Self {
+            pool,
+            periodic_storage: PeriodicStorage::Legacy,
+        }
     }
 
-    /// Take a fresh snapshot at the latest event seq for the document.
+    /// Select the automatic writer for this instance. Default is legacy until
+    /// deployment acceptance; it does not disable reading already-shared history.
+    pub fn with_periodic_storage(mut self, storage: PeriodicStorage) -> Self {
+        self.periodic_storage = storage;
+        self
+    }
+
+    /// Explicit legacy snapshot contract used by deploys and the existing CLI.
+    /// Uses the common mixed-format reader and pins an exact event sequence.
     pub async fn take(
         &self,
         document_id: DocumentId,
-        reason: SnapshotReason,
+        _reason: SnapshotReason,
     ) -> Result<Snapshot, SnapshotError> {
-        let prior_snapshot = latest_snapshot(&self.pool, document_id).await?;
-        let base_seq = prior_snapshot
-            .as_ref()
-            .map(|snapshot| snapshot.through_seq)
-            .unwrap_or(0);
-        let tail = log::read_since_snapshot(&self.pool, document_id, base_seq).await?;
-
-        if tail.is_empty() {
-            if let Some(snapshot) = prior_snapshot {
-                return Ok(snapshot);
-            }
-        }
-
-        let state = match prior_snapshot.as_ref() {
-            Some(snapshot) => Materializer::from_snapshot(snapshot, &tail)?,
-            None => Materializer::fold(&tail)?,
-        };
-
-        let through_seq = tail
-            .last()
-            .map(|event| event.seq)
-            .or_else(|| prior_snapshot.as_ref().map(|snapshot| snapshot.through_seq))
-            .unwrap_or(0);
-        let event_chain_hash = tail
-            .last()
-            .map(|event| event.chain_hash.clone())
-            .or_else(|| {
-                prior_snapshot
-                    .as_ref()
-                    .map(|snapshot| snapshot.event_chain_hash.clone())
-            })
-            .unwrap_or_else(|| ZERO_HASH.to_vec());
-        let merkle_root = merkle_root(&state)?;
-        let state_json = serde_json::to_value(&state)?;
-
-        match sqlx::query_as::<_, Snapshot>(
-            "insert into snapshot (document_id, through_seq, state, merkle_root, event_chain_hash)
-             values ($1, $2, $3, $4, $5)
-             returning *",
-        )
-        .bind(document_id.0)
-        .bind(through_seq)
-        .bind(state_json)
-        .bind(&merkle_root[..])
-        .bind(&event_chain_hash[..])
-        .fetch_one(&self.pool)
-        .await
-        {
-            Ok(snapshot) => Ok(snapshot),
-            Err(err) if is_duplicate_snapshot(&err) => {
-                warn!(
-                    document_id = %document_id.0,
-                    through_seq,
-                    reason = reason.as_str(),
-                    "snapshot already exists for this chain position; reusing latest"
-                );
-                Ok(latest_snapshot(&self.pool, document_id)
-                    .await?
-                    .expect("duplicate snapshot implies one exists"))
-            }
-            Err(err) => Err(SnapshotError::Db(err)),
-        }
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("select id from document where id=$1 for key share")
+            .bind(document_id.0)
+            .fetch_one(&mut *tx)
+            .await?;
+        let (state, seq) = read_current_state(&mut tx, document_id).await?;
+        let chain = shared::chain_at(&mut tx, document_id, seq).await?;
+        let snapshot = insert_legacy(&mut tx, document_id, seq, &state, &chain).await?;
+        tx.commit().await?;
+        Ok(snapshot)
     }
 
-    /// Ensure the current document has a recent snapshot, folding in the background
-    /// when the event tail grows beyond the threshold.
+    /// Best-effort periodic publication. One builder per document; other jobs skip
+    /// redundant work. The shared writer rolls back all partial objects on capacity
+    /// failure before saving a legacy checkpoint at the same exact revision.
     pub async fn ensure_recent(
         &self,
         document_id: DocumentId,
         max_events_in_tail: i64,
     ) -> Result<(), SnapshotError> {
-        // Checking cadence needs only the indexed sequence, not a full JSON state.
-        let latest_snapshot_seq: i64 = sqlx::query_scalar(
-            "select coalesce(max(through_seq),0) from snapshot where document_id=$1",
-        )
-        .bind(document_id.0)
-        .fetch_one(&self.pool)
-        .await?;
-        let latest_event_seq: Option<i64> =
-            sqlx::query_scalar("select max(seq) from event where document_id = $1")
+        let mut tx = self.pool.begin().await?;
+        // Most appends do not need a checkpoint. Do not let these cheap no-op
+        // background jobs hold the builder lock and make a due request skip work.
+        if checkpoint_due(&mut tx, document_id, max_events_in_tail)
+            .await?
+            .is_none()
+        {
+            return Ok(());
+        }
+        if !try_lock_periodic(&mut tx, document_id).await? {
+            return Ok(());
+        }
+        // A prior builder may have committed between the first check and lock.
+        let Some(seq) = checkpoint_due(&mut tx, document_id, max_events_in_tail).await? else {
+            return Ok(());
+        };
+        let exists =
+            sqlx::query("select id from document where id=$1 and deleted_at is null for key share")
                 .bind(document_id.0)
-                .fetch_one(&self.pool)
+                .fetch_optional(&mut *tx)
                 .await?;
-
-        if let Some(latest_event_seq) = latest_event_seq {
-            if latest_event_seq - latest_snapshot_seq > max_events_in_tail {
-                let _ = self.take(document_id, SnapshotReason::Periodic).await?;
+        if exists.is_none() {
+            return Ok(());
+        }
+        let state = read_state_at(&mut tx, document_id, seq).await?.state;
+        let chain = shared::chain_at(&mut tx, document_id, seq).await?;
+        if self.periodic_storage == PeriodicStorage::SharedV1 {
+            sqlx::query("savepoint shared_periodic")
+                .execute(&mut *tx)
+                .await?;
+            match shared::publish_in_connection(
+                &mut tx,
+                document_id,
+                seq,
+                &state,
+                chain.clone(),
+                Limits::default(),
+            )
+            .await
+            {
+                Ok(_) => {
+                    sqlx::query("release savepoint shared_periodic")
+                        .execute(&mut *tx)
+                        .await?;
+                    tx.commit().await?;
+                    return Ok(());
+                }
+                Err(shared_checkpoint::Error::Limit(reason)) => {
+                    sqlx::query("rollback to savepoint shared_periodic")
+                        .execute(&mut *tx)
+                        .await?;
+                    sqlx::query("release savepoint shared_periodic")
+                        .execute(&mut *tx)
+                        .await?;
+                    warn!(document_id=%document_id.0, through_seq=seq, reason, "shared checkpoint capacity exceeded; saving legacy checkpoint");
+                }
+                Err(error) => return Err(error.into()),
             }
         }
-
+        insert_legacy(&mut tx, document_id, seq, &state, &chain).await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -232,37 +380,17 @@ impl SnapshotEngine {
     }
 
     /// Like [`read_current_state`](Self::read_current_state), but also returns the event
-    /// `seq` the state was folded through (0 for an empty log). The seq comes from the
-    /// same tail read as the fold, so it is exactly the position of the returned state —
+    /// `seq` the state was folded through (0 for an empty log). The seq is pinned before
+    /// selecting a checkpoint and bounds the suffix, so it matches the returned state —
     /// callers (the API read path) hand it to clients to resume an SSE stream without
     /// re-folding or missing events.
     pub async fn read_current_state_with_seq(
         &self,
         document_id: DocumentId,
     ) -> Result<(DocumentState, i64), SnapshotError> {
-        if let Some(snapshot) = latest_snapshot(&self.pool, document_id).await? {
-            let tail =
-                log::read_since_snapshot(&self.pool, document_id, snapshot.through_seq).await?;
-            let seq = tail.last().map_or(snapshot.through_seq, |event| event.seq);
-            Ok((Materializer::from_snapshot(&snapshot, &tail)?, seq))
-        } else {
-            let events = log::read_since_snapshot(&self.pool, document_id, 0).await?;
-            let seq = events.last().map_or(0, |event| event.seq);
-            Ok((Materializer::fold(&events)?, seq))
-        }
+        let mut connection = self.pool.acquire().await?;
+        read_current_state(&mut connection, document_id).await
     }
-}
-
-pub(crate) async fn latest_snapshot(
-    pool: &PgPool,
-    document_id: DocumentId,
-) -> Result<Option<Snapshot>, sqlx::Error> {
-    sqlx::query_as(
-        "select * from snapshot where document_id = $1 order by through_seq desc limit 1",
-    )
-    .bind(document_id.0)
-    .fetch_optional(pool)
-    .await
 }
 
 pub fn merkle_root(state: &DocumentState) -> Result<[u8; 32], SnapshotError> {
@@ -312,16 +440,16 @@ fn finish(ctx: Context) -> [u8; 32] {
     out
 }
 
-fn is_duplicate_snapshot(err: &sqlx::Error) -> bool {
-    err.as_database_error()
-        .and_then(|db| db.constraint())
-        .is_some_and(|name| name == "snapshot_document_seq_unique")
-}
-
 /// Spawn a best-effort background `ensure_recent` task after a successful append.
 pub fn spawn_ensure_recent(pool: PgPool, document_id: DocumentId, max_events_in_tail: i64) {
     tokio::spawn(async move {
-        let engine = SnapshotEngine::new(pool);
+        let storage =
+            if std::env::var("DYNODOC_PERIODIC_CHECKPOINT_STORAGE").as_deref() == Ok("shared-v1") {
+                PeriodicStorage::SharedV1
+            } else {
+                PeriodicStorage::Legacy
+            };
+        let engine = SnapshotEngine::new(pool).with_periodic_storage(storage);
         if let Err(err) = engine.ensure_recent(document_id, max_events_in_tail).await {
             warn!(
                 document_id = %document_id.0,
