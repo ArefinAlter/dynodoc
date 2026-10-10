@@ -1,5 +1,21 @@
 # Versioning implementation and theory
 
+## Evolution part 2a - 10 October 2026
+
+[Shared checkpoints v1](SHARED-CHECKPOINTS.md) add an opt-in content-addressed
+state graph covering nodes/tombstones, comments, suggestions and removed choices.
+Stable-key radix indexes reuse unchanged objects and avoid array-suffix rewrites
+on insertion. Canonical vectors, full-state round trips/property cases, malformed
+graph rejection, legacy replay equivalence, database rollback/concurrent retry and
+erasure/isolation tests exercise this contract. The normal read/snapshot path is
+unchanged; a hash-valid root is not an externally witnessed proof of event replay.
+
+The storage benchmark shows unique-content growth on a synthetic 8,000-block trace;
+it does not establish native-file throughput or database/service capacity. Creation
+still scans/encodes the full state, map construction sorts entries, reconstruction
+hydrates full state, and objects over 1 MiB fail explicitly. Portable commit/DAG
+exchange, default-path migration, large text/assets and stronger audit remain open.
+
 ## Evolution part 1 - 10 October 2026
 
 [Decision 012](decisions/012-local-first-document-version-control.md) and

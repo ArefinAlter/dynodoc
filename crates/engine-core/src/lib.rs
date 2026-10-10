@@ -17,6 +17,9 @@ pub mod materializer;
 /// Snapshot storage, Merkle commitments, and snapshot-backed current-state reads.
 pub mod snapshot;
 
+/// Opt-in content-addressed, document-scoped shared checkpoints.
+pub mod shared_checkpoint;
+
 /// Semantic operation handlers: per-variant validation against current state. See docs/16.
 pub mod ops;
 

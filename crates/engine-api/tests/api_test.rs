@@ -311,6 +311,14 @@ async fn admin_erasure_removes_whole_document_but_cannot_bypass_history_guards(p
     .await;
     sqlx::query("insert into document_upload(document_id,filename,content_type,content,created_by) values($1,'private.txt','text/plain',$2,$3)").bind(doc).bind(b"private bytes".as_slice()).bind(owner_id).execute(&pool).await.unwrap();
     let preview_uri = format!("/admin/impact?kind=documents&id={doc}");
+    engine_core::shared_checkpoint::postgres::take(
+        &pool,
+        engine_shared::DocumentId(doc),
+        1,
+        engine_core::shared_checkpoint::Limits::default(),
+    )
+    .await
+    .unwrap();
     assert_eq!(
         send(&router, auth_post_get(&preview_uri, &owner)).await.0,
         StatusCode::FORBIDDEN
@@ -356,6 +364,9 @@ async fn admin_erasure_removes_whole_document_but_cannot_bypass_history_guards(p
     );
     let (_, preview) = send(&router, auth_post_get(&preview_uri, &admin)).await;
     assert_eq!(preview["counts"]["events"], 1);
+    assert_eq!(preview["counts"]["shared_checkpoints"], 1);
+    assert!(preview["counts"]["checkpoint_objects"].as_i64().unwrap() > 0);
+    assert!(preview["counts"]["checkpoint_bytes"].as_i64().unwrap() > 0);
     let mut erase = json!({"kind":"documents","id":doc,"confirmation":"Remove me","revision":preview["revision"],"reason":"owner_request","acknowledge_backups":true});
     erase["confirmation"] = json!("wrong");
     assert_eq!(
@@ -391,6 +402,8 @@ async fn admin_erasure_removes_whole_document_but_cannot_bypass_history_guards(p
         "event",
         "node",
         "snapshot",
+        "shared_checkpoint",
+        "checkpoint_object",
         "document_upload",
         "document_version",
         "workspace_draft",

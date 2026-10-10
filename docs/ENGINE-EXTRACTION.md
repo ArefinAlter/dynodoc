@@ -1,5 +1,15 @@
 # Standalone engine release
 
+## Shared checkpoint synchronization - 10 October 2026
+
+Part 2a adds the same checkpoint codec, PostgreSQL store, CLI, tests, benchmark and
+migration 0025 to the application and `D:\dynodoc-engine`. Nine changed Rust/SQL
+files match byte-for-byte; engine MIT metadata and independent fixture paths remain.
+See [SHARED-CHECKPOINTS](SHARED-CHECKPOINTS.md) for the bounded opt-in capability and
+[evolution handoff](ENGINE-EVOLUTION-HANDOFF.md) for verification, source commits and
+CI. Existing default JSON snapshots and event hashes remain compatible. No VPS
+rollout is included; production remains schema 24 until a separate rollout.
+
 22 September 2026. Public repository:
 [ArefinAlter/dynodoc-engine](https://github.com/ArefinAlter/dynodoc-engine).
 Current local checkout: `D:\dynodoc-engine` (the original release used `B:`).

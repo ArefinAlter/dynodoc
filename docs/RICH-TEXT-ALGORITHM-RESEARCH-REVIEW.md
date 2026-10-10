@@ -1,5 +1,10 @@
 # Rich-text engine: algorithm and architecture research review
 
+> Implementation update, 10 October 2026: [shared checkpoints v1](SHARED-CHECKPOINTS.md)
+> now implement opt-in object reuse using stable-key radix maps. Default snapshots
+> still use full JSON. The dated research assessment below predates that increment;
+> the [evolution plan](ENGINE-EVOLUTION-PLAN.md) controls current product priorities.
+
 > **Status note (23 September 2026).** This was the first research pass.
 > [BLOCK-VERSIONING-LITERATURE-REVIEW.md](BLOCK-VERSIONING-LITERATURE-REVIEW.md)
 > is the current and better-sourced treatment of the same ground: it verifies

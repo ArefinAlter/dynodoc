@@ -1,6 +1,25 @@
 # Dynodoc: intent, current implementation and remaining work
 
-## Current continuation: document repositories (10 October 2026)
+## Latest increment: shared checkpoints (10 October 2026)
+
+Part 2a implements opt-in shared checkpoint objects, stable-ID radix indexes,
+document-scoped memory/PostgreSQL stores, verified atomic publication/retry and
+audited erasure (migration 0025). Admin deletion previews include checkpoint/object
+counts and bytes. Default snapshots and draft/version bases still use full JSON.
+
+Application verification: 216 Rust tests, fmt/Clippy and unchanged OpenAPI passed.
+Standalone task lint and 216 tests also passed; publication/CI is being finalized. An 8,000-block synthetic
+trace used 7.83 MB of unique object bytes for 21 checkpoints versus 135.24 MB of full
+JSON copies; each one-block edit added 4.7-7.3 KB. This excludes database/native-file
+and service-load costs. [Contract and benchmark](SHARED-CHECKPOINTS.md).
+
+Next: adopt shared checkpoints in normal readers/writers and version/draft bases,
+add large text/asset chunks, measure durable backends and then implement local
+commits/object exchange. Offline convergence, signatures/witnessing, full native
+capture and large-file/load acceptance remain open. No VPS deployment in this
+increment. [Exact handoff and publication record](ENGINE-EVOLUTION-HANDOFF.md).
+
+## Earlier increment: repository foundations (10 October 2026)
 
 Decision [012](decisions/012-local-first-document-version-control.md) establishes
 local/remote provenance and reviewed change synchronization around all six native
@@ -20,7 +39,7 @@ browser tests, 16 public browser tests and the production-proxy regression.
 
 Part-1 code is pushed to main: application `667ecb6`, standalone engine `647249e`.
 
-Next: part 2 typed content-addressed object/commit contracts and shared checkpoints,
+Part 1 handed off to part 2 typed object/commit contracts and shared checkpoints,
 with legacy replay equivalence and tenant-scoped reachability/erasure tests. Complete
 offline histories/convergence, signatures/witnessing, native structural/formatting
 capture and hundreds-of-MB/load acceptance remain unfinished. This increment has

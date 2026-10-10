@@ -1,11 +1,93 @@
 # Engine evolution handoff
 
-Updated 10 October 2026. **Part 1 complete, published and CI-verified.** Source
-commits and verification links are recorded below. Part 2 is the next task.
-Read [PRODUCT-SPEC](PRODUCT-SPEC.md), [decision 012](decisions/012-local-first-document-version-control.md)
-and [ENGINE-EVOLUTION-PLAN](ENGINE-EVOLUTION-PLAN.md) before continuing.
+Updated 10 October 2026. **Part 2a implemented and locally verified; publication/CI pending.** Part 1 remains published. Read [PRODUCT-SPEC](PRODUCT-SPEC.md),
+[ENGINE-EVOLUTION-PLAN](ENGINE-EVOLUTION-PLAN.md) and
+[SHARED-CHECKPOINTS](SHARED-CHECKPOINTS.md) before continuing.
 
-## Completed
+## Part 2a: shared checkpoint foundation
+
+- Versioned/domain-separated canonical objects cover all `DocumentState` fields,
+  including tombstones, comment order, suggestions and removed choices. Logical IDs
+  remain separate from addresses. Fixed hash vectors pin the Rust byte codec.
+- Stable-key radix maps share unchanged objects across checkpoints and avoid fixed
+  array chunk boundaries shifting on insertion. A one-node edit rewrites its value,
+  map path and root; creation still scans/hashes the complete state.
+- Document-scoped memory and PostgreSQL stores; no cross-document reuse or public
+  hash lookup. Migration 0025 adds immutable bytes and checkpoint manifests without
+  changing applied migrations or event encodings.
+- Transactional opt-in publication derives an exact historical state, verifies full
+  graph reconstruction before publishing, rejects mismatches, rolls back failures
+  and supports same-revision concurrent retries. Reads reject missing/corrupt roots
+  and check their recorded chain position. They still trust the root/history
+  association; external attestations are not implemented.
+- Operator `shared-snapshot` CLI; audited erasure removes manifests/objects and the
+  admin preview/receipt records their counts and bytes. Ordinary snapshots and
+  draft/version bases still use full JSON. No production default is switched.
+
+## Verification and measurement
+
+Seven codec/property tests and five isolated database tests cover round trips,
+canonical bytes, all state components, reuse/insertion, malformed references/routes,
+limits, legacy equivalence, rollback/retry, concurrency, scope and erasure. The
+existing admin API erasure test also checks new counts and cleanup.
+
+The first full application run failed the existing 100 ms SSE timing assertion
+while a release build was running concurrently. That test was not weakened; the
+full suite then passed all **216 tests** without competing work. Application fmt,
+Clippy and unchanged generated OpenAPI passed. Standalone task lint and all 216
+tests also passed. Standalone task docs passed with existing Rustdoc link warnings
+in unchanged files. Standalone generated OpenAPI is also unchanged, including MIT
+metadata. Remote CI is pending the source push.
+
+Synthetic release benchmark: 8,000 blocks, 21 checkpoints (20 one-block edits),
+135,244,119 bytes as repeated full-state JSON versus 7,831,404 unique object bytes;
+4,727-7,284 additional bytes per edit. Initial write 163.55 ms, median full scan/write
+168.54 ms, final reconstruction 115.87 ms, observed process peak working set
+54.5 MiB. Read the codec document for method and limitations: no PostgreSQL/WAL,
+large native files, transfer, concurrency or production backend acceptance.
+
+## Next concrete task: part 2b adoption and bounded content
+
+1. Add a compatibility-preserving default reader/writer selection between legacy
+   and shared checkpoints. Compare legacy/shared-plus-tail reconstruction at every
+   revision. Migrate draft bases/named versions by explicit versioned references;
+   preserve historical readers, erasure and stale-base checks. Do not silently
+   delete full snapshots or switch production before rollout evidence.
+2. Introduce bounded typed text/format/asset chunks so a single large logical node
+   does not exceed the current 1 MiB object cap. Benchmark PostgreSQL/index/TOAST/WAL
+   and durable local/remote backends, streaming, cancellation and memory. The memory
+   store is a test backend; write/read budgets do not bound the prior materializer.
+3. Settle cross-language numeric canonicalization and a separate commit envelope
+   binding repository, parents, root, operations/capture capabilities and actor
+   evidence. Then implement durable local commits, resumable missing-object exchange
+   and atomic branch refs (part 3). Offline convergence/audit/native host acceptance
+   remain separate explicit gates, not consequences of checkpoint deduplication.
+
+Current limits: whole-state residency/scans, up to 1 MiB per object, 512 MiB/one
+million object operations by default, Rust-specific numeric encoding, no chunked
+assets, no GC, no default-path storage savings yet. No complete product or capacity
+claim. The radix tree is an implementation choice; comparative prolly-tree results
+remain unmeasured. Backup retention still applies after live audited erasure.
+
+## Source, deployment and temporary resources
+
+Working from application `1907eea` and standalone `6e7fdf9`. Both copies must match
+for changed Rust sources/tests/examples and migration 0025, while preserving engine
+MIT metadata and its standalone rich-text fixture. Source commits/CI pending.
+
+No VPS deployment; last recorded production remains `8c7461d`, schema 24, with the
+previous Nginx header fix. The owned disposable PostgreSQL container
+`dynodoc-evolution-part2a-20261010` and its volumes were removed after verification
+and ownership-label checks. No test API/web servers were started. Existing local
+services were left running. Temporary logs and synthetic benchmark JSON are under
+the system temp directory.
+
+## Earlier completed increment: part 1
+
+The following is retained as the dated Part 1 release record. Its "next task" and
+shared-storage limits predate Part 2a; use the continuation above for current work.
+
+## Part 1 completed
 
 - Made existing-editor document repositories the authoritative product. Replaced the
   duplicated combined volume with a current guide and marked legacy questionnaire/

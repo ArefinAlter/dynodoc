@@ -1,5 +1,10 @@
 # Rich-text block versioning: literature review and architecture verdict
 
+> Implementation update, 10 October 2026: [shared checkpoints v1](SHARED-CHECKPOINTS.md)
+> now implement opt-in object reuse using stable-key radix maps. Default snapshots
+> still use full JSON. The dated research assessment below predates that increment;
+> the [evolution plan](ENGINE-EVOLUTION-PLAN.md) controls current product priorities.
+
 Reviewed 23 September 2026. Part II (sections 16 to 21) was added the same day after further owner discussion of the non-CRDT stance, offline editing in Word and Excel, and the identity-carrier problem. A second pass added sections 19.6 and 19.7 (manifest-first reconciliation, content-control locking, and a calibration-first experiment) and revised the earlier passages they supersede.
 
 Part I answers four questions from the owner. Is the block-based direction sound? What research and open-source work already covers the same ground? Which structures and algorithms fit formatting, provenance, conflict preservation, compression and speed? Does any platform already do what Dynodoc intends?

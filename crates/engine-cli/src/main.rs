@@ -41,6 +41,12 @@ enum Command {
         /// Document id (UUID).
         document_id: String,
     },
+    /// Publish an opt-in shared checkpoint at an exact event revision (schema 25).
+    SharedSnapshot {
+        document_id: String,
+        #[arg(long)]
+        through_seq: i64,
+    },
     /// Emit the generated OpenAPI document. With `--out`, write it there; otherwise
     /// print to stdout. CI compares the committed `openapi.yaml` against `--out -` to
     /// fail on drift (see SETUP.md).
@@ -64,6 +70,10 @@ async fn main() -> anyhow::Result<()> {
         Command::Verify { document_id } => verify(document_id).await,
         Command::Replay { document_id } => replay(document_id).await,
         Command::Snapshot { document_id } => snapshot(document_id).await,
+        Command::SharedSnapshot {
+            document_id,
+            through_seq,
+        } => shared_snapshot(document_id, through_seq).await,
         Command::Openapi { out } => openapi(out),
     }
 }
@@ -163,4 +173,27 @@ fn to_hex(bytes: &[u8]) -> String {
         s.push_str(&format!("{b:02x}"));
     }
     s
+}
+
+async fn shared_snapshot(document_id: String, through_seq: i64) -> anyhow::Result<()> {
+    let doc = parse_document_id(&document_id)?;
+    let pool = connect().await?;
+    let result = engine_core::shared_checkpoint::postgres::take(
+        &pool,
+        doc,
+        through_seq,
+        engine_core::shared_checkpoint::Limits::default(),
+    )
+    .await
+    .context("publishing shared checkpoint failed")?;
+    println!(
+        "shared checkpoint v1 at revision {}: {}",
+        result.through_seq,
+        result.root.as_str()
+    );
+    println!(
+        "new objects: {}; new canonical bytes: {}",
+        result.stats.new_objects, result.stats.new_bytes
+    );
+    Ok(())
 }

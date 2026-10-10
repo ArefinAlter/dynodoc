@@ -22,6 +22,15 @@ early; existing connectors must keep working while engine contracts evolve. Each
 part may require multiple reviewable increments. A finished part does not certify
 the entire product. Ship evidence with each claim.
 
+## Part 2a implementation boundary
+
+The first slice implements [shared checkpoints v1](SHARED-CHECKPOINTS.md): complete
+materialized-state objects, stable-key radix maps, document-scoped memory/Pg stores,
+transactional verified publication, legacy equivalence and audited erasure. The
+operator CLI opts in explicitly. Default snapshots and draft/version bases still
+use full JSON; portable commit manifests, large text/assets, durable local storage
+and backend/load acceptance remain open. Part 2 is therefore still in progress.
+
 ## Part 2 design gate and first implementation slice
 
 Specify immutable typed objects for text/format runs, logical-node properties,

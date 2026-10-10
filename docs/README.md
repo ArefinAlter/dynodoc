@@ -13,6 +13,7 @@ or public-consultation stage prompts.
 | Ordered engineering work and acceptance gates | [ENGINE-EVOLUTION-PLAN](ENGINE-EVOLUTION-PLAN.md) |
 | Current increment, tests, commits and next task | [ENGINE-EVOLUTION-HANDOFF](ENGINE-EVOLUTION-HANDOFF.md) |
 | Implemented capabilities and production record | [PROJECT-STATUS](PROJECT-STATUS.md), [HANDOFF](HANDOFF.md) |
+| Shared checkpoint codec, storage limits and measured spike | [SHARED-CHECKPOINTS](SHARED-CHECKPOINTS.md) |
 | Combined protocol guide | [04-versioning-combined](04-versioning-combined.md) |
 | Algorithm assumptions and corrected mathematics | [03-versioning-mathematics-vol2](03-versioning-mathematics-vol2.md) |
 | Implementation versus theoretical claims | [VERSIONING-CONFORMANCE](VERSIONING-CONFORMANCE.md) |
