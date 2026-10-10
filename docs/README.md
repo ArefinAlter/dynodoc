@@ -14,11 +14,13 @@ or public-consultation stage prompts.
 | Current increment, tests, commits and next task | [ENGINE-EVOLUTION-HANDOFF](ENGINE-EVOLUTION-HANDOFF.md) |
 | Implemented capabilities and production record | [PROJECT-STATUS](PROJECT-STATUS.md), [HANDOFF](HANDOFF.md) |
 | Shared checkpoint codec, storage limits and measured spike | [SHARED-CHECKPOINTS](SHARED-CHECKPOINTS.md) |
+| Bounded serialization contract and allocation measurement | [BOUNDED-CHECKPOINT-ENCODING](BOUNDED-CHECKPOINT-ENCODING.md) |
 | Combined protocol guide | [04-versioning-combined](04-versioning-combined.md) |
 | Algorithm assumptions and corrected mathematics | [03-versioning-mathematics-vol2](03-versioning-mathematics-vol2.md) |
 | Implementation versus theoretical claims | [VERSIONING-CONFORMANCE](VERSIONING-CONFORMANCE.md) |
 | Rich-text algorithm and benchmark boundaries | [RICH-TEXT-VERSIONING-RESEARCH](RICH-TEXT-VERSIONING-RESEARCH.md) |
 | Current connector contract and native acceptance | [PROVENANCE-SYNC](PROVENANCE-SYNC.md), [NATIVE-CONNECTOR-ACCEPTANCE](NATIVE-CONNECTOR-ACCEPTANCE.md) |
+| Desktop preflight, host tests and marketplace requirements | [ADDIN-PUBLICATION-AND-ACCEPTANCE](ADDIN-PUBLICATION-AND-ACCEPTANCE.md) |
 | Standalone MIT engine synchronization | [ENGINE-EXTRACTION](ENGINE-EXTRACTION.md) |
 
 ## Historical design and build references

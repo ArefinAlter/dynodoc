@@ -1,6 +1,7 @@
 # Dynodoc engineering and product handoff
 
-Current Projects-first work is tracked in [ENGINE-EVOLUTION-HANDOFF.md](ENGINE-EVOLUTION-HANDOFF.md)
+Current bounded-encoding and desktop-distribution work is tracked in
+[ENGINE-EVOLUTION-HANDOFF.md](ENGINE-EVOLUTION-HANDOFF.md). Projects-first work is in that record
 and [PROJECTS-WORKSPACE-RELEASE.md](PROJECTS-WORKSPACE-RELEASE.md). Those records
 supersede older interface/upload-limit descriptions below: profiles are visible
 only to shared Project members, Projects is the default front page, and original
@@ -8,16 +9,18 @@ uploads in the new source are capped at 3,000,000 bytes. Consult PROJECT-STATUS.
 for the separate live deployment state.
 
 
-Latest continuation: [deployed history and editor installation release](ENGINE-EVOLUTION-HANDOFF.md).
-Live build `536a448`, schema 25; [deployment evidence and rollback](operations/2026-10-10-history-connector-release.md).
+Latest source continuation: [bounded checkpoint encoding](BOUNDED-CHECKPOINT-ENCODING.md)
+and [desktop acceptance/publication](ADDIN-PUBLICATION-AND-ACCEPTANCE.md).
+Live build `ecbc643`, schema 26; [deployment evidence and rollback](operations/2026-10-10-projects-workspace-release.md).
 Installer/auth scope: [connector distribution contract](CONNECTOR-PAIRING-AND-INSTALLATION.md).
 
 ## Current continuation (10 October 2026)
 
 Continue from [the engine evolution handoff](ENGINE-EVOLUTION-HANDOFF.md) and
-[project status](PROJECT-STATUS.md). Parts 2b-2d add mixed checkpoint readers,
+[project status](PROJECT-STATUS.md). Parts 2b-2e add mixed checkpoint readers,
 gated periodic writes, bounded database batches and compatible content-writer
-locks. Publication still scans full state; shared writes remain off by default. The handoff records
+locks and bounded borrowed encoding. Publication still scans full state; shared writes
+remain off by default. The handoff records
 current verification, publication, measured limitations and the next task.
 The latest owner clarification adds [historical recovery](HISTORY-RECOVERY.md):
 permission-checked old-revision downloads and selected private recovery drafts.

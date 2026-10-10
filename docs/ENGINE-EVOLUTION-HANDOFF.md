@@ -1,5 +1,59 @@
 # Engine evolution handoff
 
+## Source increment: bounded checkpoint encoding and desktop distribution (10 October 2026)
+
+Part 2e serializes borrowed checkpoint values into a capped output buffer and
+validates canonical bytes by streaming comparison. It removes full-value clones,
+intermediate JSON trees and the reader's second encoded buffer without changing
+v1 objects, roots, events, API schemas or migrations. The 1 MiB object limit and
+remaining operation byte budget apply before output growth. Five new compatibility,
+property and boundary tests cover the byte contract. See
+[the contract and measured allocation trace](BOUNDED-CHECKPOINT-ENCODING.md).
+
+The application installer and `/connectors` source now distinguish Windows/Mac
+desktop from Office web, local files from hosted panes, and test distribution from
+publication. Google ZIP packages include the revised instructions. Read-only local
+inventory found Office 2021 version 16.0.14326.20348: PowerPoint lacks the required
+PowerPointApi 1.4; Word/Excel still need actual runtime acceptance. No host was
+sideloaded, account signed in, publisher registered or listing submitted. See
+[publication requirements and the host acceptance matrix](ADDIN-PUBLICATION-AND-ACCEPTANCE.md).
+
+Verification: all 238 Rust tests pass in each repository, including five new codec
+tests; both lint checks and Rust formatting pass. Frontend units: 282 passed;
+separate production build and all 16 public browser checks passed (51 signed-in
+cases skipped locally). Connector package consistency passes. Standalone docs build
+passes with existing rustdoc link warnings. Mirrored Rust files match byte-for-byte.
+
+The initial `task test` completed Rust and frontend units but stayed in Vitest watch
+mode; the test script now uses `vitest run` correctly. A browser build timed out
+under competing local checks; a separate build and direct installed browser runner
+passed. The global pnpm CI auto-install also stopped on existing dependency-build
+policy; no policy was relaxed and its incidental workspace-file additions were
+reverted. One standalone run missed the existing 100 ms SSE deadline under load;
+the complete quiet 238-test rerun passed, including SSE. Owned preview/watch
+processes and the labelled test database/volume are removed; existing local
+containers are preserved. Source commit/CI references follow after publication.
+
+This source increment has not been deployed. VPS remains application `ecbc643`,
+schema 26, with shared periodic writes disabled. Existing deployment/rollback
+evidence in the following section remains current. The new instructions become
+hosted only after a future web deployment.
+
+Continue with:
+
+1. Versioned, bounded text/value/asset chunks and reconstruction tests. Then
+   packing/incremental publication and shared named-version/draft references.
+   Current values above 1 MiB still fail shared encoding; full materialized state,
+   property-key metadata and legacy fallback are not newly memory-bounded.
+2. Part 3 portable project commits/parents/branches and durable local repositories,
+   followed by resumable exchange, format fidelity and offline convergence. Current
+   drafts still belong to individual files; a queue is not an offline commit graph.
+3. Run the installed-host matrix on compatible Office and real Google add-on hosts
+   using test identities. PowerPoint on this workstation needs a supporting host
+   version or the existing edited-file fallback. Complete publisher identity/listing
+   preparation before any marketplace submission. Capture still needs an open pane;
+   loading, pairing and remote sync need connectivity.
+
 ## Source increment: Projects front page and member profiles (10 October 2026)
 
 Application `6f1ac21` and engine `8eef6dd` implement the Projects-first interface: minimal

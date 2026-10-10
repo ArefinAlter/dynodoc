@@ -8,12 +8,42 @@ Make a disposable copy of a small supported file and add it to a Dynodoc Project
 ## Microsoft Word, Excel and PowerPoint
 
 Download the matching XML manifest from the workspace's `/connectors` page or
-`extensions/<host>/manifest.xml`. Sideload it using the method for your Office
-platform in [Microsoft's installation guide](https://learn.microsoft.com/en-us/office/dev/add-ins/testing/sideload-office-add-ins-for-testing).
+`extensions/<host>/manifest.xml`. These task-pane add-ins target compatible desktop
+Office as well as Office on the web. Choose the instructions for your platform:
+
+- **Windows desktop:** put the XML files in a shared folder, add its UNC path in
+  File > Options > Trust Center > Trust Center Settings > Trusted Add-in Catalogs,
+  enable Show in Menu and restart Office. Select Home > Add-ins > Advanced >
+  Shared Folder, then add the matching Dynodoc manifest. Menu labels vary by Office
+  version. [Microsoft's Windows guide](https://learn.microsoft.com/en-us/office/dev/add-ins/testing/create-a-network-shared-folder-catalog-for-task-pane-and-content-add-ins).
+- **Mac desktop:** copy the manifest into the host's `wef` folder under
+  `~/Library/Containers/com.microsoft.Word/Data/Documents/` (use
+  `com.microsoft.Excel` or `com.microsoft.Powerpoint` for the other hosts), restart
+  that application, and select Home > Add-ins.
+  [Microsoft's Mac guide](https://learn.microsoft.com/en-us/office/dev/add-ins/testing/sideload-an-office-add-in-on-mac).
+- **Office on the web:** open a test file and upload the XML through the add-ins
+  dialog. [Microsoft's web guide](https://learn.microsoft.com/en-us/office/dev/add-ins/testing/sideload-office-add-ins-for-testing).
+
+Developers can alternatively use Microsoft's `office-addin-debugging` tooling for
+an HTTPS-hosted pane; always run its matching stop command to remove test
+registrations. [Developer workflow](https://learn.microsoft.com/en-us/office/dev/add-ins/testing/test-debug-non-local-server).
+
 The Home ribbon has a Dynodoc group and **Open provenance** button. The task pane
 also remains available through Office's add-in menu. Word requires WordApi 1.3,
 Excel requires ExcelApi 1.13, and PowerPoint requires PowerPointApi 1.4.
 Save the local file before connecting. Keep the pane open while capturing changes.
+
+**PowerPoint 2021 is not supported by the current shape-text connector.** It lacks
+PowerPointApi 1.4. Use a supporting Microsoft 365 build or Office 2024 for that
+connector; older installations can use edited-file push through Projects.
+[Microsoft's requirement table](https://learn.microsoft.com/en-us/javascript/api/requirement-sets/powerpoint/powerpoint-api-requirement-sets).
+Word/Excel eligibility also depends on their requirement sets and Office policy;
+an installed executable or valid manifest does not prove a working add-in.
+
+The file can live on your local disk. The panel is hosted over HTTPS inside Office;
+loading it, signing in and syncing require connectivity. Enabled capture saves a
+local queue while the pane is open. Complete offline commits/exchange and background
+capture are still pending. Test originals must be at most 3,000,000 bytes.
 
 ## Google Docs, Sheets and Slides
 
@@ -54,5 +84,17 @@ For a staging server, use HTTPS with a certificate trusted by the editor. Replac
 the workspace origin in **all** URLs of each Office manifest; replace
 `DYNODOC_ORIGIN` in the Google host's `Code.gs` and its `urlFetchWhitelist` in
 `appsscript.json`. Do not disable TLS checks. The approval link is generated from
-that same origin. Use a matching API/web build, migrations through 0025 and your
+that same origin. Use a matching API/web build, migrations through 0026 and your
 normal email sign-in configuration. Public shared-checkpoint writes stay opt-in.
+
+## Publication
+
+Sideloading and Apps Script test deployments do not require a public marketplace
+listing. Public Office installation goes through Microsoft Partner Center and
+Microsoft Marketplace certification. Public Google installation uses a standard
+Cloud project, OAuth configuration and the Google Workspace Marketplace SDK/listing;
+scope-dependent OAuth verification and Marketplace review are separate steps.
+Organization-only distribution has platform-specific admin options. See
+[Microsoft publication](https://learn.microsoft.com/en-us/office/dev/add-ins/publish/publish)
+and [Google publication](https://developers.google.com/workspace/add-ons/how-tos/publish-add-on-overview).
+Current downloads remain development packages, not approved marketplace listings.

@@ -1,5 +1,27 @@
 # Dynodoc: intent, current implementation and remaining work
 
+## Latest source: bounded checkpoint encoding (10 October 2026)
+
+Part 2e now borrows checkpoint values, caps encoded output growth before allocation
+and validates canonical bytes without another full encoded buffer. V1 hashes and
+roots remain unchanged. An oversized-value rejection probe measured 1,048,724
+additional requested heap bytes versus 75,500,265 previously; this is not total
+document memory or service capacity. See [scope and evidence](BOUNDED-CHECKPOINT-ENCODING.md).
+
+Desktop/web installation instructions and Google test packages are clarified.
+The installed Office 2021 PowerPoint lacks the connector's required API. Actual
+Word/Excel/PowerPoint and Google-host acceptance is still open. Public distribution
+requires Microsoft Partner Center or Google Cloud/Workspace Marketplace setup and
+review; development sideloading does not require a public listing. No registration
+or submission was performed. See [the acceptance/publication record](ADDIN-PUBLICATION-AND-ACCEPTANCE.md).
+
+This increment is source-only; production remains `ecbc643`, schema 26. Shared
+periodic writes remain disabled. Next: large-value/asset chunks, packing/incremental
+publication and shared draft/version references, then portable project-wide commits/
+branches and resumable exchange. Offline convergence, background capture and native
+acceptance remain separate gates. Exact checks and source refs are recorded in
+[the handoff](ENGINE-EVOLUTION-HANDOFF.md).
+
 ## Current release: Projects first (10 October 2026)
 
 Application `6f1ac21` and standalone engine `8eef6dd` are pushed to main with green

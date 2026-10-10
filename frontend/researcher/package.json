@@ -17,7 +17,7 @@
     "lint": "prettier --check . && eslint . && pnpm check",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "pnpm test:unit -- --run && pnpm test:e2e",
+    "test": "pnpm test:unit run && pnpm test:e2e",
     "test:unit": "vitest",
     "test:e2e": "playwright test",
     "seo:indexnow": "node scripts/indexnow.mjs",

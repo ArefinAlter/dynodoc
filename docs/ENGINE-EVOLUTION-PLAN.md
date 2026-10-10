@@ -85,6 +85,22 @@ Full-state materialization, bounded text/assets, compressed packing and shared
 version/draft references remain the next work before portable local commit exchange.
 Default shared writes stay off until concurrent API/resource acceptance.
 
+## Part 2e implementation boundary
+
+Borrowed canonical encoding caps output growth before allocation/copy, preserving
+v1 bytes and hashes. Streaming canonical validation avoids another decoded-object
+clone and encoded buffer. Compatibility/property/boundary tests and a reproducible
+oversized-rejection allocation probe are recorded in
+[bounded checkpoint encoding](BOUNDED-CHECKPOINT-ENCODING.md). This does not add
+chunks or bound full-state memory, property-key sorting metadata, legacy fallback
+or all serialization time. Large-value/asset chunks, packing/incremental publication
+and shared draft/version references still precede portable project commits.
+
+Installed-host acceptance and publisher setup can proceed independently using
+[the acceptance/publication record](ADDIN-PUBLICATION-AND-ACCEPTANCE.md).
+The locally installed PowerPoint 2021 fails the current connector API prerequisite;
+Word/Excel inventory alone is not runtime acceptance.
+
 ## Part 2 design gate and first implementation slice
 
 Specify immutable typed objects for text/format runs, logical-node properties,

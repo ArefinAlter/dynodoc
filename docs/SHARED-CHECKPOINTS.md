@@ -1,6 +1,6 @@
 # Shared checkpoints v1
 
-10 October 2026. Parts 2a-2d of the engine evolution plan. A derived checkpoint
+10 October 2026. Parts 2a-2e of the engine evolution plan. A derived checkpoint
 codec with normal mixed-format readers and a gated automatic writer. This is not
 the future portable commit protocol. Event and legacy JSONB formats are unchanged.
 
@@ -34,6 +34,13 @@ are stable IDs; suggestion keys are their existing IDs; comment keys are zero-ba
 its map path and the state root. Insertion does not shift every subsequent leaf.
 The writer still scans/hashes all state; this is storage sharing, not incremental
 materialization or a proof of logarithmic total checkpoint creation time.
+
+Encoding borrows values and caps output allocation before growth at the smaller of
+1 MiB and the remaining operation byte budget. Read-side canonical validation
+compares emitted bytes directly with stored bytes. This preserves v1 hashes and
+avoids whole-value clones/intermediate JSON trees; see [allocation evidence and
+limits](BOUNDED-CHECKPOINT-ENCODING.md). It does not bound all resident state or
+property-key sorting metadata.
 
 Limits: 1 MiB per encoded object, 32 leaf references, 16 branch references,
 64 radix levels. Reads/writes have configurable total byte/object budgets. One
@@ -105,7 +112,7 @@ one pinned event sequence. Other builders skip duplicate work. Both formats coun
 toward cadence. On shared codec capacity failure only, a savepoint rolls back
 partial objects before writing a legacy checkpoint at the same revision. This
 preserves support for larger existing values; it does not chunk them or bound
-their prior serialization/materialization allocations. Corruption, database and
+legacy serialization/materialization allocations. Corruption, database and
 other codec errors fail, with background failures logged. Explicit CLI shared
 publication still returns capacity errors without fallback.
 

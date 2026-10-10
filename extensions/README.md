@@ -12,7 +12,7 @@ Microsoft and Google remain the editors. [Contract and remaining work](../docs/P
 
 ## Prepare a test project
 
-Run/deploy the matching engine (migrations through 0024) and web build. Open
+Run/deploy the matching engine (migrations through 0026) and web build. Open
 `/projects`, create an invite-only project, and add a plain-paragraph DOCX or move
 an existing plain document here. Keep a local editor copy with exactly the same
 paragraph text and order. In Files → Sync & connections, create a **Word** or
@@ -29,7 +29,7 @@ authorship attestation.
 
 ## Microsoft Word development installation
 
-1. Use [Microsoft's sideload instructions](https://learn.microsoft.com/office/dev/add-ins/testing/sideload-office-add-ins-for-testing)
+1. Use the platform-specific [Windows, Mac or browser instructions](INSTALL.md#microsoft-word-excel-and-powerpoint)
    with `word/manifest.xml`. Its pane URL is
    `https://app.dynodoc.online/connectors/word`. Before a source-only/local test,
    copy the manifest and set SourceLocation/AppDomain to your deployed test origin

@@ -12,7 +12,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::materializer::{CommentState, DocumentState, MaterializedNode, SuggestionState};
 
+mod canonical;
 pub mod postgres;
+use canonical::ObjectRef;
 
 pub const MAX_OBJECT_BYTES: usize = 1024 * 1024;
 /// Maximum values fetched together. PostgreSQL retains at most this many encoded
@@ -246,13 +248,9 @@ fn route(key: &str) -> String {
     hex(digest(&SHA256, key.as_bytes()).as_ref())
 }
 
+#[cfg(test)]
 fn encode(object: Object) -> Result<(Address, Vec<u8>), Error> {
-    let value = serde_json::to_value(Envelope { version: 1, object })?;
-    let bytes = crate::log::canonical_json(&value);
-    if bytes.len() > MAX_OBJECT_BYTES {
-        return Err(Error::Limit("object bytes"));
-    }
-    Ok((address(&bytes), bytes))
+    canonical::encode((&object).into(), MAX_OBJECT_BYTES)
 }
 
 fn decode(expected: &Address, bytes: &[u8]) -> Result<Object, Error> {
@@ -267,10 +265,7 @@ fn decode(expected: &Address, bytes: &[u8]) -> Result<Object, Error> {
         return Err(Error::Invalid("unsupported object version"));
     }
     // Also rejects duplicate/unknown fields and noncanonical numeric/string forms.
-    let (_, canonical) = encode(envelope.object.clone())?;
-    if canonical != bytes {
-        return Err(Error::Invalid("noncanonical object"));
-    }
+    canonical::matches((&envelope.object).into(), bytes)?;
     match &envelope.object {
         Object::MapLeaf(entries)
             if entries.len() > LEAF_ENTRIES || entries.windows(2).any(|w| w[0].key >= w[1].key) =>
@@ -310,7 +305,14 @@ struct Writer<'a, S> {
 
 impl<S: ObjectStore + Send> Writer<'_, S> {
     async fn object(&mut self, object: Object) -> Result<Address, Error> {
-        let (address, bytes) = encode(object)?;
+        self.value((&object).into()).await
+    }
+
+    async fn value(&mut self, object: ObjectRef<'_>) -> Result<Address, Error> {
+        if self.budget.max_objects == 0 {
+            return Err(Error::Limit("objects"));
+        }
+        let (address, bytes) = canonical::encode(object, self.budget.max_bytes)?;
         self.budget.consume(bytes.len())?;
         self.stats.visited_objects += 1;
         self.stats.encoded_bytes += bytes.len();
@@ -392,7 +394,7 @@ pub async fn write_state<S: ObjectStore + Send>(
         if id != &node.id {
             return Err(Error::Invalid("node map key differs from logical id"));
         }
-        let address = writer.object(Object::Node(node.clone())).await?;
+        let address = writer.value(ObjectRef::Node(node)).await?;
         entries.push((
             route(&id.0),
             Entry {
@@ -405,15 +407,13 @@ pub async fn write_state<S: ObjectStore + Send>(
     let mut entries = Vec::new();
     for (index, comment) in state.comments.iter().enumerate() {
         let key = format!("{index:016x}");
-        let address = writer.object(Object::Comment(comment.clone())).await?;
+        let address = writer.value(ObjectRef::Comment(comment)).await?;
         entries.push((route(&key), Entry { key, address }));
     }
     let comments = writer.entries(entries).await?;
     let mut entries = Vec::new();
     for (key, suggestion) in &state.suggestions {
-        let address = writer
-            .object(Object::Suggestion(suggestion.clone()))
-            .await?;
+        let address = writer.value(ObjectRef::Suggestion(suggestion)).await?;
         entries.push((
             route(key),
             Entry {
@@ -429,7 +429,7 @@ pub async fn write_state<S: ObjectStore + Send>(
     let mut removed: Vec<_> = state.removed_choices.iter().collect();
     removed.sort();
     for id in removed {
-        let address = writer.object(Object::RemovedChoice(id.clone())).await?;
+        let address = writer.value(ObjectRef::RemovedChoice(id)).await?;
         entries.push((
             route(&id.0),
             Entry {
