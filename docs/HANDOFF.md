@@ -8,7 +8,10 @@ audited erasure (migration 0025). Admin deletion previews include checkpoint/obj
 counts and bytes. Default snapshots and draft/version bases still use full JSON.
 
 Application verification: 216 Rust tests, fmt/Clippy and unchanged OpenAPI passed.
-Standalone task lint and 216 tests also passed; publication/CI is being finalized. An 8,000-block synthetic
+Standalone task lint, 216 tests and documentation also passed. Implementation CI
+passed in both repositories, including signed-in browser workflows. Source:
+application `7a8e28e`, engine `6ccdc22`; engine final checkout-guard/handoff `a70647d`
+also passed CI. Final records are linked below. An 8,000-block synthetic
 trace used 7.83 MB of unique object bytes for 21 checkpoints versus 135.24 MB of full
 JSON copies; each one-block edit added 4.7-7.3 KB. This excludes database/native-file
 and service-load costs. [Contract and benchmark](SHARED-CHECKPOINTS.md).

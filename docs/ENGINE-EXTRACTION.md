@@ -3,7 +3,9 @@
 ## Shared checkpoint synchronization - 10 October 2026
 
 Part 2a adds the same checkpoint codec, PostgreSQL store, CLI, tests, benchmark and
-migration 0025 to the application and `D:\dynodoc-engine`. Nine changed Rust/SQL
+migration 0025 to the application (`7a8e28e`) and `D:\dynodoc-engine` (`6ccdc22`).
+Both passed independent CI. The engine also pins SQL checkouts to LF; all 22
+migration files validated against the same isolated database. Nine changed Rust/SQL
 files match byte-for-byte; engine MIT metadata and independent fixture paths remain.
 See [SHARED-CHECKPOINTS](SHARED-CHECKPOINTS.md) for the bounded opt-in capability and
 [evolution handoff](ENGINE-EVOLUTION-HANDOFF.md) for verification, source commits and

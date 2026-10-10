@@ -1,6 +1,6 @@
 # Engine evolution handoff
 
-Updated 10 October 2026. **Part 2a implemented and locally verified; publication/CI pending.** Part 1 remains published. Read [PRODUCT-SPEC](PRODUCT-SPEC.md),
+Updated 10 October 2026. **Part 2a complete, published and CI-verified. Part 2 remains in progress.** Part 1 remains published. Read [PRODUCT-SPEC](PRODUCT-SPEC.md),
 [ENGINE-EVOLUTION-PLAN](ENGINE-EVOLUTION-PLAN.md) and
 [SHARED-CHECKPOINTS](SHARED-CHECKPOINTS.md) before continuing.
 
@@ -37,7 +37,8 @@ full suite then passed all **216 tests** without competing work. Application fmt
 Clippy and unchanged generated OpenAPI passed. Standalone task lint and all 216
 tests also passed. Standalone task docs passed with existing Rustdoc link warnings
 in unchanged files. Standalone generated OpenAPI is also unchanged, including MIT
-metadata. Remote CI is pending the source push.
+metadata. Application Rust, frontend/browser and independent engine source CI all
+passed; their runs are linked below.
 
 Synthetic release benchmark: 8,000 blocks, 21 checkpoints (20 one-block edits),
 135,244,119 bytes as repeated full-state JSON versus 7,831,404 unique object bytes;
@@ -73,14 +74,32 @@ remain unmeasured. Backup retention still applies after live audited erasure.
 
 Working from application `1907eea` and standalone `6e7fdf9`. Both copies must match
 for changed Rust sources/tests/examples and migration 0025, while preserving engine
-MIT metadata and its standalone rich-text fixture. Source commits/CI pending.
+MIT metadata and its standalone rich-text fixture. Published implementation:
+
+- Application: `7a8e28ed1bfdf5828deb341fdf9b533fad9f5469`.
+- Standalone engine: `6ccdc2277b187491eabbfa089a416bcdbcdaddac`; final handoff and
+  LF-checkout guard: `a70647d553be610f41c005d87ce6de26aeb955dd`.
+- [Application Rust CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38040472956): passed.
+- [Independent engine CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38040495733): passed.
+- [Final engine checkout-guard/handoff CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38041109485): passed at `a70647d`.
+- [Frontend/authenticated browser CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38040472960): passed (62 signed-in and 16 public browser tests, frontend units and the production-proxy regression).
+
+A final portability check found old Windows engine migration checkouts had CRLF
+although committed/app/production bytes were LF. The engine now pins SQL checkouts
+to LF and restores the committed bytes locally (no migration Git blob was edited).
+All 22 migration files match the app. Applying app migrations to a fresh isolated
+DB and then validating with engine migrations passed. All 216 engine tests passed
+again with canonical checkout bytes. The packaging follow-up is recorded with the
+finalized handoff.
 
 No VPS deployment; last recorded production remains `8c7461d`, schema 24, with the
 previous Nginx header fix. The owned disposable PostgreSQL container
 `dynodoc-evolution-part2a-20261010` and its volumes were removed after verification
 and ownership-label checks. No test API/web servers were started. Existing local
 services were left running. Temporary logs and synthetic benchmark JSON are under
-the system temp directory.
+the system temp directory. The second owned checksum/test container
+`dynodoc-checksum-part2a-20261010` and its volumes were also removed after its
+checksum validation and 216-test rerun passed. No increment-owned servers remain.
 
 ## Earlier completed increment: part 1
 
