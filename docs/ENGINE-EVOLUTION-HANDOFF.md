@@ -2,8 +2,8 @@
 
 ## Part 2c: bounded database batches (10 October 2026)
 
-The implementation and controlled PostgreSQL comparison are complete locally.
-Application checks pass; standalone full tests and publication/CI are pending.
+Part 2c is complete, synchronized and pushed to both main branches. Local checks
+and both source CI runs passed, including the application browser workflows.
 Part 2 remains open and shared writes remain off by default. No new migration,
 event encoding or HTTP schema; schema 25 remains required by mixed readers.
 
@@ -34,10 +34,13 @@ publishers, and an invalid concurrent INSERT winner checked after a real databas
 lock wait. Oversized-value fallback now proves rollback after an actual batch has
 reached the database. Existing hash vectors and event/graph equivalence tests pass.
 
-Standalone source is synchronized; lint/docs/OpenAPI pass, full tests are pending.
+Standalone source is synchronized; task lint, all 224 Rust tests, task docs and
+unchanged generated OpenAPI pass. The full suite passed on its first run here.
 All five changed Rust files and all 22 immutable migration files match byte for
 byte. Existing Rustdoc link warnings remain. MIT/OpenAPI packaging is preserved.
-Remote source/browser CI is pending; publication records will follow below.
+Remote source CI passed in both repositories (224 Rust tests each). Application
+frontend CI passed 274 unit tests, 16 public browser tests, 62 signed-in workflows
+and the production proxy regression. Source/CI records are linked below.
 
 Four separate fresh PostgreSQL databases: 8,000 fixed-ID blocks, initial 6.4 MB
 state, two one-block edits per trace; identical 600-byte repeated or varied payload
@@ -57,8 +60,9 @@ methodology and four portable raw artifacts are in [SHARED-CHECKPOINTS](SHARED-C
 
 ### Next concrete work
 
-1. Design and implement incremental/staged publication with a short final lock.
-   Preserve pinned sequence/chain validation, complete-root verification, erasure
+1. Reduce the publication lock window: audit lock-mode requirements first, then
+   design incremental/staged publication where necessary. Preserve append/access
+   serialization, pinned sequence/chain validation, complete-root verification, erasure
    isolation and crash/retry cleanup before moving writes outside one transaction.
    Measure hot-document contention; keep the writer opt-in until this passes.
 2. Specify bounded text/asset chunks and evaluate compressed packing/backend
@@ -73,13 +77,24 @@ methodology and four portable raw artifacts are in [SHARED-CHECKPOINTS](SHARED-C
 
 ### Publication and environment
 
-Starting application: 5ce3566; standalone: 2d93630. Implementation publication/CI
-is pending. The owned local container dynodoc-evolution-part2c-20261010 on loopback
-5553 currently holds tests and four synthetic benchmark databases; remove it with
-its volume after final checks, validating its ownership label/port first. Leave
-unrelated local services intact. Logs are in system temp; synthetic JSON artifacts
+Starting application: 5ce3566; standalone: 2d93630. Both implementation commits are
+pushed to main. This documentation follow-up records verified results without
+changing the tested source. The owned local container
+dynodoc-evolution-part2c-20261010 and its disposable volume were removed after
+validating its ownership label and loopback port 5553. Existing dynodoc-postgres
+and margin-qdrant remain running. Logs are in system temp; synthetic JSON artifacts
 are tracked. No API/web server or VPS deployment. Last recorded production remains
 8c7461d, schema 24, plus the documented Nginx repair.
+
+Publication:
+
+- Application source: `40a80be7e11ae8b10add920c787573fab822d0f9`.
+- [Application Rust CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38046287959): passed, 224 tests.
+- [Application frontend/browser CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38046287986): passed, 274 unit tests, 16 public browser tests and 62 signed-in workflows.
+- Standalone source: `c8ac6bcb108419cf40fb20199c6e3797353f197c`.
+- [Standalone engine CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38046494935): passed, 224 tests.
+- Final engine handoff/status: `11399dfd5525d86d65dcf57c84b1cb54bdf4c882`
+  ([checkout CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38046840829)); source is unchanged.
 
 ## Part 2b: mixed readers and gated automatic writer (10 October 2026)
 

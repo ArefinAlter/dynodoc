@@ -16,9 +16,11 @@ for repeated text and 20.78 MB for varied text. These are synthetic local traces
 not native large-file or concurrent-service acceptance. The shared writer remains
 off by default. [Measurements/limits](SHARED-CHECKPOINTS.md).
 
-Application fmt/Clippy, 224 Rust tests and unchanged OpenAPI pass. Standalone source
-is synchronized and lint/docs/OpenAPI pass; its full tests and source/browser CI
-are pending. [Verification/publication record](ENGINE-EVOLUTION-HANDOFF.md).
+Application fmt/Clippy, 224 Rust tests and unchanged OpenAPI pass. Standalone
+lint, all 224 tests, docs and unchanged OpenAPI pass. Both source CI runs passed,
+including 62 signed-in workflows, 16 public browser tests and 274 frontend unit
+tests. Application source: `40a80be`; standalone: `c8ac6bc`. Both are pushed to main;
+the disposable database/volume has been removed. [Verification/publication record](ENGINE-EVOLUTION-HANDOFF.md).
 No new migration or deployment; schema 25 remains required for mixed readers.
 
 Next: incremental/staged publication with a short final lock, bounded text/asset
