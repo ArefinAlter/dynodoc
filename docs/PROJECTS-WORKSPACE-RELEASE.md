@@ -69,7 +69,12 @@ Owned local API/web servers are stopped and the labelled disposable database and
 volume are removed. Initial local admin setup/rate-limit and load-sensitive timing
 failures were resolved; the full source CI passes without weakening assertions.
 
-This source increment is **not deployed**. The VPS remains on application `536a448`,
-schema 25. Keep its validated backup and compatible rollback release; rehearse a
-schema-26-compatible rollback before replacing this deployment. No production data,
-accounts, invitations or containers were changed during this implementation.
+This increment is now deployed as application `ecbc643`, schema 26. The matching
+API/web/admin/converter images passed builds and an isolated upgrade/compatible
+rollback/re-upgrade rehearsal before activation. A fresh database backup was
+validated first. PostgreSQL, Nginx and unrelated containers were preserved, as were
+document/event counts and the aggregate event fingerprint. All 17 live workspace
+checks and 22 connector delivery checks pass; a clean browser confirms the Projects
+sign-in destination and six downloads without page errors. No real production
+sign-in, invitation or document mutation was used. Native-host acceptance remains
+open. See the application [deployment and rollback record](https://github.com/ArefinAlter/dynodoc/blob/main/docs/operations/2026-10-10-projects-workspace-release.md).

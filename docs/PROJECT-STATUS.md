@@ -1,6 +1,6 @@
 # Dynodoc: intent, current implementation and remaining work
 
-## Source complete: Projects first (10 October 2026)
+## Current release: Projects first (10 October 2026)
 
 Application `6f1ac21` and standalone engine `8eef6dd` are pushed to main with green
 source CI. Projects/files are now the default signed-in workspace, with member-only
@@ -12,18 +12,24 @@ Verification: 233 Rust tests in each repository, 282 frontend unit tests, 16 pub
 and 67 signed-in browser tests pass, as do lint/build and Nginx header regressions
 for the new routes. Desktop/mobile and dark file previews were inspected. Owned
 local test servers are stopped and the labelled disposable database is removed.
-This source increment is not yet deployed; the schema-25 release below remains live.
+Application `ecbc643` (same implementation) is now live on schema 26. A fresh
+validated backup and an isolated upgrade/rollback rehearsal preceded activation.
+API/web/admin/converter were updated; PostgreSQL, Nginx and 18 unrelated containers
+were preserved. All 17 workspace and 22 connector delivery checks pass, including
+the new page-shell proxy paths. Existing document/event counts and the aggregate
+event fingerprint are unchanged. No real production sign-in/email or installed-host
+acceptance was performed. Shared checkpoint writes remain disabled.
 
-Next: a controlled schema-26 rollout with matching API/web/converter builds, fresh
-backup and compatible rollback rehearsal; installed-host acceptance for all six
-editors; then bounded values/assets and shared draft/version references in part 2,
-followed by portable project-wide commits/branches and resumable exchange in part 3.
-See the [handoff](ENGINE-EVOLUTION-HANDOFF.md) and
-[workspace release record](PROJECTS-WORKSPACE-RELEASE.md).
+Next engine increment: bounded values/assets, compression/incremental publication
+and shared draft/version references in part 2, followed by portable project-wide
+commits/branches and resumable exchange in part 3. Installed-host acceptance for all
+six editors can proceed alongside that work. See the [handoff](ENGINE-EVOLUTION-HANDOFF.md),
+[workspace release record](PROJECTS-WORKSPACE-RELEASE.md) and
+[deployment/rollback evidence](operations/2026-10-10-projects-workspace-release.md).
 
-## Current deployment: history and six-editor test packages (10 October 2026)
+## Previous deployment: history and six-editor test packages (10 October 2026)
 
-The VPS now runs application `536a448` (implementation `0478bf2`), schema 25.
+That release ran application `536a448` (implementation `0478bf2`), schema 25.
 History-range recovery, supported native historical downloads and the six editor
 sign-in/install packages are live at [editor installations](https://app.dynodoc.online/connectors).
 The database was backed up first; only API/web/admin containers were replaced.

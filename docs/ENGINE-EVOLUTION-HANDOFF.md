@@ -35,28 +35,34 @@ rate-limited synthetic account were resolved in the isolated test environment.
 The unchanged 100 ms SSE test also passes in a quiet local run and both source CI
 suites. All owned API/web servers are stopped; the labelled disposable database
 and its volume are removed. Existing local containers were preserved.
-No new source is deployed yet.
+The source is now deployed as application `ecbc643`, schema 26, at 21:22 Asia/Dhaka
+(15:22 UTC). The VPS backup was validated before activation; an isolated synthetic
+upgrade/compatible-rollback/re-upgrade rehearsal passed, including retained profile
+edits and erasure cleanup through the rollback API. Only API/web/admin/converter
+were replaced; PostgreSQL, Nginx and all 18 unrelated containers were preserved.
+All 17 live workspace and 22 connector checks pass, plus a clean browser check.
+Existing document/event counts and their aggregate event fingerprint are unchanged.
+No real production sign-in, email or installed-editor acceptance was used.
 Project-wide portable branches/commits remain part 3; current drafts belong to one
 file. Shared checkpoint writes remain disabled and part 2 storage work is pending.
-The schema-25 deployment described below is still the live release.
-Rollout must include matching API/web and the converter byte cap, migration 0026,
-a fresh backup and a rehearsed schema-compatible rollback. See
-[workspace release details](PROJECTS-WORKSPACE-RELEASE.md).
+The schema-25 deployment below is historical. Current release evidence, backup and
+compatible rollback instructions are in the application
+[deployment record](https://github.com/ArefinAlter/dynodoc/blob/main/docs/operations/2026-10-10-projects-workspace-release.md).
+See also [workspace source details](PROJECTS-WORKSPACE-RELEASE.md).
 
-Continue in this order:
+Continue with:
 
-1. Roll out schema 26 after a fresh backup and compatible rollback rehearsal;
-   verify matching API/web/converter behavior without sending real invitations.
-2. Complete installed-host acceptance for Word/Docs, Excel/Sheets and
-   PowerPoint/Slides. Development packages and browser tests are not host approval.
-3. Resume part 2 bounded values/assets, compression/incremental publication and
+1. Resume part 2 bounded values/assets, compression/incremental publication and
    shared draft/version references. Then implement part 3 portable commits/parents,
    project-wide branches and resumable exchange; retain the fidelity, offline,
    independent audit and measured-scale gates in the evolution plan.
+2. Run installed-host acceptance for Word/Docs, Excel/Sheets and PowerPoint/Slides
+   alongside independent engine work when host installations/test accounts are
+   available. Development packages and browser tests are not host approval.
 
-## Deployment handoff: history and editor installations (10 October 2026)
+## Previous deployment handoff: history and editor installations (10 October 2026)
 
-The matching API/web/admin build is now live on the VPS: application `536a448`
+That matching API/web/admin release ran on the VPS as application `536a448`
 (implementation `0478bf2`), schema 25, activated at 13:36 UTC. The standalone
 engine source remains `a44b8ad`; documentation head `7bfd16c` also passed CI.
 This increment changes deployment/operations documentation and adds the app's
