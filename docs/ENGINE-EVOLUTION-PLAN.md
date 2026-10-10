@@ -1,10 +1,10 @@
 # Engine and product evolution plan
 
-Current security gate (10 October 2026): follow the prioritized
+Current security gate (11 October 2026): follow the prioritized
 [findings and fixes](SECURITY-HARDENING.md) before resuming the next storage build.
 Authentication/resource admission hardening is an independent source increment;
 it does not complete storage part 2 or independent audit part 6. The immediate
-remaining gates are legacy snapshot verification, runtime database privileges,
+remaining gates are snapshot upgrade/backfill acceptance and runtime database privileges,
 project policy authority and audited settings, then headers/resource budgets.
 
 10 October 2026. Implements [decision 012](decisions/012-local-first-document-version-control.md)

@@ -34,6 +34,12 @@ impl SnapshotReason {
 /// Errors from snapshot reads/writes.
 #[derive(Debug, thiserror::Error)]
 pub enum SnapshotError {
+    #[error("snapshot {id} at seq {seq} failed verification: {detail}")]
+    Unverified {
+        id: uuid::Uuid,
+        seq: i64,
+        detail: String,
+    },
     #[error("shared checkpoint failed: {0}")]
     Shared(Box<shared_checkpoint::Error>),
     #[error("revision {0} is outside the document history")]
@@ -133,21 +139,22 @@ async fn read_state_at_with_formats(
             shared::load_in_connection(connection, document_id, seq, Limits::default()).await?,
         ),
         Some((seq, false)) => {
-            let value = sqlx::query_scalar(
-                "select state from snapshot where document_id=$1 and through_seq=$2",
-            )
-            .bind(document_id.0)
-            .bind(seq)
-            .fetch_one(&mut *connection)
-            .await?;
+            let snapshot: Snapshot =
+                sqlx::query_as("select * from snapshot where document_id=$1 and through_seq=$2")
+                    .bind(document_id.0)
+                    .bind(seq)
+                    .fetch_one(&mut *connection)
+                    .await?;
+            crate::snapshot_verification::check_receipt(connection, &snapshot).await?;
             (
                 seq,
                 CheckpointFormat::Legacy,
-                serde_json::from_value(value)?,
+                serde_json::from_value(snapshot.state)?,
             )
         }
         None => (0, CheckpointFormat::Genesis, DocumentState::default()),
     };
+    let mut previous = shared::chain_at(connection, document_id, snapshot_seq).await?;
     let mut tail = sqlx::query_as::<_, Event>(
         "select * from event where document_id=$1 and seq>$2 and seq<=$3 order by seq",
     )
@@ -164,6 +171,8 @@ async fn read_state_at_with_formats(
                 actual: event.seq,
             });
         }
+        log::verify_event(&event, document_id, last_seq + 1, &previous)?;
+        previous = event.chain_hash.clone();
         Materializer::fold_into(&mut state, std::slice::from_ref(&event))?;
         last_seq = event.seq;
         replayed_events += 1;
@@ -230,34 +239,6 @@ async fn checkpoint_due(
     Ok((seq > 0 && seq - last > max_events_in_tail).then_some(seq))
 }
 
-async fn insert_legacy(
-    connection: &mut PgConnection,
-    document_id: DocumentId,
-    seq: i64,
-    state: &DocumentState,
-    chain: &[u8],
-) -> Result<Snapshot, SnapshotError> {
-    sqlx::query(
-        "insert into snapshot(document_id,through_seq,state,merkle_root,event_chain_hash)
-        values($1,$2,$3,$4,$5) on conflict(document_id,through_seq) do nothing",
-    )
-    .bind(document_id.0)
-    .bind(seq)
-    .bind(serde_json::to_value(state)?)
-    .bind(merkle_root(state)?.as_slice())
-    .bind(chain)
-    .execute(&mut *connection)
-    .await?;
-    // A concurrent later snapshot must never replace this caller's exact revision.
-    Ok(
-        sqlx::query_as("select * from snapshot where document_id=$1 and through_seq=$2")
-            .bind(document_id.0)
-            .bind(seq)
-            .fetch_one(connection)
-            .await?,
-    )
-}
-
 /// Persistent snapshot/materialization read path.
 #[derive(Clone)]
 pub struct SnapshotEngine {
@@ -292,9 +273,9 @@ impl SnapshotEngine {
             .bind(document_id.0)
             .fetch_one(&mut *tx)
             .await?;
-        let (state, seq) = read_current_state(&mut tx, document_id).await?;
-        let chain = shared::chain_at(&mut tx, document_id, seq).await?;
-        let snapshot = insert_legacy(&mut tx, document_id, seq, &state, &chain).await?;
+        let seq = latest_event_seq(&mut tx, document_id).await?;
+        let snapshot =
+            crate::snapshot_verification::take_in_connection(&mut tx, document_id, seq).await?;
         tx.commit().await?;
         Ok(snapshot)
     }
@@ -331,9 +312,9 @@ impl SnapshotEngine {
         if exists.is_none() {
             return Ok(());
         }
-        let state = read_state_at(&mut tx, document_id, seq).await?.state;
-        let chain = shared::chain_at(&mut tx, document_id, seq).await?;
         if self.periodic_storage == PeriodicStorage::SharedV1 {
+            let state = read_state_at(&mut tx, document_id, seq).await?.state;
+            let chain = shared::chain_at(&mut tx, document_id, seq).await?;
             sqlx::query("savepoint shared_periodic")
                 .execute(&mut *tx)
                 .await?;
@@ -366,7 +347,7 @@ impl SnapshotEngine {
                 Err(error) => return Err(error.into()),
             }
         }
-        insert_legacy(&mut tx, document_id, seq, &state, &chain).await?;
+        crate::snapshot_verification::take_in_connection(&mut tx, document_id, seq).await?;
         tx.commit().await?;
         Ok(())
     }

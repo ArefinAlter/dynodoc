@@ -14,7 +14,6 @@ use engine_core::{
     governance::{self, Role},
     log,
     materializer::{apply_payload, DocumentState},
-    snapshot::merkle_root,
 };
 use engine_shared::{DocumentId, Event, EventPayload, IdentityId};
 use serde::Deserialize;
@@ -275,22 +274,21 @@ async fn save_version(
     if req.name.trim().is_empty() || req.name.len() > 200 {
         return Err(bad("Name this version in 1–200 characters"));
     }
-    let (mut tx, role, current) =
+    let (mut tx, role, _) =
         apply::begin_write(&state, DocumentId(id), IdentityId(auth.identity_id)).await?;
     if role != Role::Author {
         return Err(ApiError::Forbidden);
     }
-    let last = sqlx::query_as::<_, Event>(
-        "select * from event where document_id=$1 order by seq desc limit 1",
-    )
-    .bind(id)
-    .fetch_optional(&mut *tx)
-    .await?;
-    let seq = last.as_ref().map_or(0, |e| e.seq);
-    let hash = last.map_or_else(|| vec![0u8; 32], |e| e.chain_hash);
-    let root = merkle_root(&current)?;
-    let snapshot:Uuid=sqlx::query_scalar("insert into snapshot(document_id,through_seq,state,merkle_root,event_chain_hash) values($1,$2,$3,$4,$5) on conflict(document_id,through_seq) do update set through_seq=excluded.through_seq returning id")
-        .bind(id).bind(seq).bind(json!(current)).bind(root.as_slice()).bind(hash).fetch_one(&mut *tx).await?;
+    let seq: i64 =
+        sqlx::query_scalar("select coalesce(max(seq),0) from event where document_id=$1")
+            .bind(id)
+            .fetch_one(&mut *tx)
+            .await?;
+    let snapshot =
+        engine_core::snapshot_verification::take_in_connection(&mut tx, DocumentId(id), seq)
+            .await?
+            .id
+            .0;
     let version:Uuid=sqlx::query_scalar("insert into document_version(document_id,snapshot_id,name,note,created_by) values($1,$2,$3,$4,$5) returning id").bind(id).bind(snapshot).bind(req.name.trim()).bind(req.note).bind(auth.identity_id).fetch_one(&mut *tx).await?;
     tx.commit().await?;
     Ok(Json(
@@ -892,7 +890,18 @@ async fn restore_version(
             reason: "The document changed. Review the latest version before restoring.".into(),
         });
     }
-    let saved:Value=sqlx::query_scalar("select s.state from document_version v join snapshot s on s.id=v.snapshot_id where v.id=$1 and v.document_id=$2").bind(version).bind(id).fetch_optional(&mut *tx).await?.ok_or(ApiError::NotFound)?;
+    let snapshot_id: Uuid = sqlx::query_scalar(
+        "select snapshot_id from document_version where id=$1 and document_id=$2",
+    )
+    .bind(version)
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(ApiError::NotFound)?;
+    let saved = engine_core::snapshot_verification::load(&mut tx, DocumentId(id), snapshot_id)
+        .await?
+        .ok_or(ApiError::NotFound)?
+        .state;
     let target: DocumentState =
         serde_json::from_value(saved).map_err(|e| ApiError::Internal(e.to_string()))?;
     let ops = engine_core::workspace_merge::diff(&current, &target);

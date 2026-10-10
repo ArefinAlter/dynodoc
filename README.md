@@ -1,5 +1,11 @@
 # Dynodoc — version control for documents
 
+Latest security source work (11 October 2026): legacy snapshots now require
+replay-verification receipts, and schema 0028 adds immutable storage guards.
+Existing data needs explicit verified backfill before rollout. See
+[the snapshot contract](docs/VERIFIED-SNAPSHOTS.md) and
+[checks/remaining gates](docs/ENGINE-EVOLUTION-HANDOFF.md).
+
 > Version control and provenance for documents edited in your own tools. Collect block changes in Projects, review and merge them, and pull a shared history into another working copy.
 
 **Current direction (10 October 2026):** Local/remote document repositories around

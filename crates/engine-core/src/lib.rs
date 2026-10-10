@@ -17,6 +17,9 @@ pub mod materializer;
 /// Snapshot storage, Merkle commitments, and snapshot-backed current-state reads.
 pub mod snapshot;
 
+/// Legacy snapshot replay verification, immutable receipts and checked reads.
+pub mod snapshot_verification;
+
 /// Opt-in content-addressed, document-scoped shared checkpoints.
 pub mod shared_checkpoint;
 

@@ -2038,7 +2038,7 @@ paths:
     get:
       tags:
       - audit
-      summary: Replay + verify the hash chain. `[document member]`, cacheable 60s.
+      summary: Verify the chain and legacy snapshots by replay. `[document member]`, no-store.
       operationId: verify
       parameters:
       - name: id

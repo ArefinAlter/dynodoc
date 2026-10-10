@@ -1,14 +1,14 @@
 # Versioning implementation and theory
 
-## Current audit boundary - 10 October 2026
+## Current audit boundary - 11 October 2026
 
-Legacy snapshot rows lack immutability guards and read-time replay verification.
-Versions, public views and deployed pins can therefore serve altered snapshot state
-without `verify_chain` detecting it. Shared-object validation does not close that
-legacy boundary or defeat a privileged database owner. The runtime still owns its
-schema and applies migrations. Track these urgent open gates in
-[SECURITY-HARDENING](SECURITY-HARDENING.md); earlier references to immutable named
-checkpoints describe the intended API behavior, not a proven storage guarantee.
+Schema 0028 adds immutable legacy snapshots/receipts and checked serving paths.
+Old snapshots require explicit replay backfill; API/CLI audits independently
+compare all legacy snapshots with canonical replay, including non-node state.
+See [the snapshot contract](VERIFIED-SNAPSHOTS.md) and [validation status](ENGINE-EVOLUTION-HANDOFF.md).
+`log::verify_chain` alone remains an event-hash check. Receipts are internal
+attestations, not signatures or independent witnesses. The runtime still owns its
+schema and applies migrations: privilege separation is the next urgent gate.
 
 ## Evolution part 2a - 10 October 2026
 
@@ -66,7 +66,7 @@ of overlapping edits. It is not the complete distributed protocol in the mathema
 | Derived snapshots and Merkle commitments | Snapshots store replayed state, an event-chain head and a Merkle root over ordered node hashes (including tombstones), with separate leaf/internal prefixes. Property tests compare full replay with snapshot-plus-tail replay. |
 | Independent edits combine | Three-way merge compares the ancestor, current team version and draft by stable node ID and field. Independent fields and cells combine; diverging same-field values require a choice. Delete/edit and divergent locations are conflicts in the workspace merge implementation. |
 | Compact rich-text history | `RichTextPatched` interns style metadata and retains unchanged text; exact base/result hashes guard replay. Full-field events remain the fallback. Shared Rust/browser fixtures and the DB-backed API test exercise the contract. |
-| Restore without erasing history | Restoration emits new operations, including `NodeRestored`; it never resets canonical history. Named-version metadata is guarded, but backing legacy snapshot state lacks immutability/replay checks. |
+| Restore without erasing history | Restoration emits new operations, including `NodeRestored`; it never resets canonical history. Named-version metadata and legacy snapshots have immutable guards; backing snapshots require replay-verification receipts before serving. |
 | Review before canonical acceptance | Suggestions remain separate until an authorized author accepts. Acceptance and the wrapped content edit occur in the same transaction. |
 | Semantic integrity before deployment | Duplicate names, missing references, dependency cycles, incompatible numeric operands and undefined choices block deployment. This audit fixed malformed syntax passing unchecked and included the newer editor's `question_type` in type validation. Conditional-required expressions are now also inspected. |
 | Understandable editing language | Personal draft, team version, save version, share changes, get latest, compare, restore and who-changed-this expose familiar actions through the GUI. |

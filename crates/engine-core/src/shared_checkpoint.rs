@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::materializer::{CommentState, DocumentState, MaterializedNode, SuggestionState};
 
-mod canonical;
+pub(crate) mod canonical;
 pub mod postgres;
 use canonical::ObjectRef;
 

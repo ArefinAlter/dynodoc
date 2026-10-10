@@ -1,6 +1,6 @@
 # Dynodoc documentation
 
-Updated 10 October 2026. Dynodoc is document version control and provenance around
+Updated 11 October 2026. Dynodoc is document version control and provenance around
 existing editors. Start with the current contract, not the original questionnaire
 or public-consultation stage prompts.
 
@@ -14,6 +14,7 @@ or public-consultation stage prompts.
 | Current increment, tests, commits and next task | [ENGINE-EVOLUTION-HANDOFF](ENGINE-EVOLUTION-HANDOFF.md) |
 | Implemented capabilities and production record | [PROJECT-STATUS](PROJECT-STATUS.md), [HANDOFF](HANDOFF.md) |
 | Security findings, verified fixes, trust limits and next gates | [SECURITY-HARDENING](SECURITY-HARDENING.md) |
+| Legacy snapshot receipts, replay verification and upgrade | [VERIFIED-SNAPSHOTS](VERIFIED-SNAPSHOTS.md) |
 | Shared checkpoint codec, storage limits and measured spike | [SHARED-CHECKPOINTS](SHARED-CHECKPOINTS.md) |
 | Bounded serialization contract and allocation measurement | [BOUNDED-CHECKPOINT-ENCODING](BOUNDED-CHECKPOINT-ENCODING.md) |
 | Combined protocol guide | [04-versioning-combined](04-versioning-combined.md) |

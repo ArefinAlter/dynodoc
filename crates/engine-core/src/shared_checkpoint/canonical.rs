@@ -34,7 +34,7 @@ impl<'a> From<&'a Object> for ObjectRef<'a> {
     }
 }
 
-struct CanonicalValue<'a>(&'a Value);
+pub(crate) struct CanonicalValue<'a>(pub(crate) &'a Value);
 impl Serialize for CanonicalValue<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self.0 {

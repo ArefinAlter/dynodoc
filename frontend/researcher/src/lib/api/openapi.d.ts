@@ -1066,7 +1066,7 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Replay + verify the hash chain. `[document member]`, cacheable 60s. */
+    /** Verify the chain and legacy snapshots by replay. `[document member]`, no-store. */
     get: operations['verify'];
     put?: never;
     post?: never;

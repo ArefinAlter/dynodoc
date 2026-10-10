@@ -2451,3 +2451,122 @@ async fn product_admin_removal_invalidates_existing_tokens_after_restoration(poo
         .await;
     assert!(result.is_err(), "Operations audit must be append-only");
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn corrupt_historical_snapshot_cannot_escape_through_public_restore_or_audit(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let owner = bearer(seed_identity(&pool, "snapshot-owner@example.test").await);
+    let outsider = bearer(seed_identity(&pool, "snapshot-outsider@example.test").await);
+    let doc = create_document(&router, &owner, "Verified history").await;
+    let node = ulid::Ulid::new().to_string();
+    let (status, body) = send(&router, auth_post(&format!("/documents/{doc}/batch"), &owner,
+        &json!({"base_seq":0,"ops":[{"type":"NodeCreated","node_id":node,"node_type":"form","pos":"a0","fields":{"label":"Original"}}]}))).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = send(
+        &router,
+        auth_post(&format!("/documents/{doc}/deploy"), &owner, &json!({})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, version) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc}/versions"),
+            &owner,
+            &json!({"name":"Milestone","base_seq":2}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{version}");
+    let snapshot = version["snapshot_id"].as_str().unwrap();
+    let (status, link) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc}/public-links"),
+            &owner,
+            &json!({"base_seq":2}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{link}");
+    let public = format!("/public/documents/{}", link["token"].as_str().unwrap());
+    assert_eq!(send(&router, get(&public)).await.0, StatusCode::OK);
+    let deployed: Uuid =
+        sqlx::query_scalar("select deployed_snapshot_id from document where id=$1")
+            .bind(doc)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(deployed.to_string(), snapshot);
+    // A newer healthy checkpoint must not mask a corrupt retained historical one.
+    let (status, body) = send(&router, auth_post(&format!("/documents/{doc}/batch"), &owner,
+        &json!({"base_seq":2,"ops":[{"type":"FieldEdited","node_id":node,"field":"label","value":"Current"}]}))).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    engine_core::snapshot::SnapshotEngine::new(pool.clone())
+        .take(
+            DocumentId(doc),
+            engine_core::snapshot::SnapshotReason::Periodic,
+        )
+        .await
+        .unwrap();
+    sqlx::query("alter table snapshot disable trigger snapshot_no_update")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("update snapshot set state=jsonb_set(state,'{comments}','[{\"node_id\":null,\"body\":\"forged\"}]') where id=$1")
+        .bind(deployed).execute(&pool).await.unwrap();
+    sqlx::query("alter table snapshot enable trigger snapshot_no_update")
+        .execute(&pool)
+        .await
+        .unwrap();
+    engine_core::log::verify_chain(&pool, DocumentId(doc))
+        .await
+        .unwrap();
+    let (status, current) =
+        send(&router, auth_post_get(&format!("/documents/{doc}"), &owner)).await;
+    assert_eq!(status, StatusCode::OK, "{current}");
+    assert_eq!(
+        current["state"]["nodes"][&node]["current_fields"]["label"],
+        "Current"
+    );
+    let path = format!("/documents/{doc}/snapshot/{snapshot}");
+    assert_eq!(
+        send(&router, auth_post_get(&path, &owner)).await.0,
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
+    assert_eq!(
+        send(&router, auth_post_get(&path, &outsider)).await.0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        send(&router, get(&public)).await.0,
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
+    let (status, audit) = send(
+        &router,
+        auth_post_get(&format!("/documents/{doc}/verify"), &owner),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{audit}");
+    assert_eq!(audit["ok"], false);
+    assert_eq!(audit["broken_at_seq"], 2);
+    let (status, body) = send(
+        &router,
+        auth_post(
+            &format!(
+                "/documents/{doc}/versions/{}/restore",
+                version["id"].as_str().unwrap()
+            ),
+            &owner,
+            &json!({"base_seq":3}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{body}");
+    let seq: i64 = sqlx::query_scalar("select max(seq) from event where document_id=$1")
+        .bind(doc)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(seq, 3, "failed restore must append nothing");
+}

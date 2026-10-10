@@ -1,5 +1,35 @@
 # Dynodoc: intent, current implementation and remaining work
 
+## Latest source work: verified legacy snapshots (11 October 2026)
+
+Security increment in verification: migration 0028 protects legacy snapshots and
+adds immutable replay-verification receipts. New snapshots use a canonical checked
+writer; current/historical state, public copies, deployed downloads and restore
+use checked reads. API/CLI audits compare every legacy snapshot against event
+replay. An explicit per-document/all-document backfill verifies old states without
+rewriting them. Normal reads retain checkpoint-plus-tail work; fingerprints stream
+without another encoded state buffer. See [the contract](VERIFIED-SNAPSHOTS.md).
+
+Application `task lint` passes (Svelte: zero errors/warnings). `task test` passes:
+258 Rust tests, 286 frontend units and all 68 browser workflows. The final strict
+unknown-field regression and receipt index also pass the 15-test snapshot suite
+and final clippy check; there are now 259 distinct Rust tests. The schema-27 upgrade,
+backfill atomicity, erasure and historical/public/restore corruption checks pass.
+Standalone checks and source/CI references are being finalized. This is source
+verification, not a production release. Owned browser-test servers are stopped;
+the labelled disposable database is retained only for the remaining engine checks.
+No VPS workspace/API deployment has occurred; the last recorded VPS is still
+`ecbc643`, schema 26, with shared periodic writes off. Upgrade must include both
+schema-27 login revocation and schema-28 snapshot verification/backfill; an
+unmodified old API is not a compatible rollback.
+
+Next security gate: separate migration-owner and runtime database credentials and
+exercise forbidden operations under the real runtime role. Then project-policy
+floors/authority, audited metadata, CSP/HSTS and resource budgets. Resume bounded
+chunks/assets/shared versions, portable project commits/branches, durable offline
+repositories and convergence afterwards. All six native hosts still need actual
+installed acceptance; marketplace submission/background capture remain unfinished.
+
 ## Latest source work: authentication and bounded history (10 October 2026)
 
 The security findings are being addressed before the next storage increment.

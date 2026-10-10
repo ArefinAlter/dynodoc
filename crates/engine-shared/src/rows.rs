@@ -72,14 +72,14 @@ pub struct Event {
     pub created_at: DateTime<Utc>,
 }
 
-/// A row of `snapshot` — a snapshotted fold with a Merkle root over its events.
+/// A row of `snapshot` — a derived fold with a Merkle root over its node set.
 #[derive(Debug, Clone, PartialEq, Eq, FromRow, Serialize, Deserialize)]
 pub struct Snapshot {
     pub id: SnapshotId,
     pub document_id: DocumentId,
     pub through_seq: i64,
     pub state: Value,
-    /// Merkle root over the covered events (32 bytes).
+    /// Merkle root over materialized nodes (32 bytes); not the full state digest.
     pub merkle_root: Vec<u8>,
     /// The `event.chain_hash` at `through_seq`, binding the snapshot to the chain.
     pub event_chain_hash: Vec<u8>,

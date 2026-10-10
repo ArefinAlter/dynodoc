@@ -1,15 +1,9 @@
 //! Public audit endpoints (docs/18 §2 "Audit").
 //!
-//! These make the hash-chain guarantees externally checkable, with no token required —
-//! anyone can verify the log:
-//!
-//! - `GET /documents/:id/verify` runs [`engine_core::log::verify_chain`] and reports OK
-//!   or the first inconsistent seq. Cacheable for 60s (the answer changes only when the
-//!   log grows; a stale OK is harmless and a stale failure is still a real failure).
-//! - `GET /documents/:id/snapshot/:snapshot_id` returns a full snapshot incl. its
-//!   `merkle_root` (over the materialized node set) and `event_chain_hash`.
-//! - `GET /documents/:id/merkle-proof/:event_id` returns an inclusion proof for an event
-//!   within the events covered by the latest snapshot.
+//! These require current document membership. Verification independently replays
+//! the event chain and compares every legacy snapshot. Snapshot reads require
+//! replay-verification receipts; public content links use the same checked reader.
+//! Responses are private/no-store. These checks are not external audit anchors.
 //!
 //! ### Merkle proof scope (PoC)
 //!
@@ -60,7 +54,7 @@ pub struct VerifyResult {
     pub detail: Option<String>,
 }
 
-/// Replay + verify the hash chain. `[document member]`, cacheable 60s.
+/// Verify the chain and legacy snapshots by replay. `[document member]`, no-store.
 #[utoipa::path(
     get, path = "/documents/{id}/verify",
     params(("id" = Uuid, Path, description = "Document id")),
@@ -78,22 +72,34 @@ pub async fn verify(
         return Err(ApiError::NotFound);
     }
 
-    let result = match engine_core::log::verify_chain(&state.pool, document_id).await {
-        Ok(()) => VerifyResult {
-            ok: true,
-            broken_at_seq: None,
-            detail: None,
-        },
-        Err(engine_core::log::EventError::ChainBroken { seq, detail }) => VerifyResult {
-            ok: false,
-            broken_at_seq: Some(seq),
-            detail: Some(detail),
-        },
-        Err(other) => return Err(ApiError::Internal(other.to_string())),
-    };
+    let result =
+        match engine_core::snapshot_verification::verify_document(&state.pool, document_id, false)
+            .await
+        {
+            Ok(_) => VerifyResult {
+                ok: true,
+                broken_at_seq: None,
+                detail: None,
+            },
+            Err(engine_core::snapshot::SnapshotError::Event(
+                engine_core::log::EventError::ChainBroken { seq, detail },
+            )) => VerifyResult {
+                ok: false,
+                broken_at_seq: Some(seq),
+                detail: Some(detail),
+            },
+            Err(engine_core::snapshot::SnapshotError::Unverified { seq, detail, .. }) => {
+                VerifyResult {
+                    ok: false,
+                    broken_at_seq: Some(seq),
+                    detail: Some(detail),
+                }
+            }
+            Err(other) => return Err(ApiError::Internal(other.to_string())),
+        };
 
     let mut response = Json(result).into_response();
-    // Cacheable for 60s (docs/18). The verdict only changes as the log grows.
+    // Never cache an integrity verdict or leak it across membership changes.
     response.headers_mut().insert(
         header::CACHE_CONTROL,
         header::HeaderValue::from_static("private, no-store"),
@@ -122,11 +128,9 @@ pub async fn get_snapshot(
     Path((id, snapshot_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<Snapshot>, ApiError> {
     require_role(&state.pool, DocumentId(id), IdentityId(auth.identity_id)).await?;
+    let mut connection = state.pool.acquire().await?;
     let snapshot =
-        sqlx::query_as::<_, Snapshot>("select * from snapshot where id = $1 and document_id = $2")
-            .bind(snapshot_id)
-            .bind(id)
-            .fetch_optional(&state.pool)
+        engine_core::snapshot_verification::load(&mut connection, DocumentId(id), snapshot_id)
             .await?
             .ok_or(ApiError::NotFound)?;
     Ok(Json(snapshot))
@@ -180,13 +184,22 @@ pub async fn merkle_proof(
     require_role(&state.pool, document_id, IdentityId(auth.identity_id)).await?;
 
     // The latest snapshot pins the covered event range.
-    let through_seq: Option<i64> = sqlx::query_scalar(
-        "select through_seq from snapshot where document_id = $1 order by through_seq desc limit 1",
+    let mut connection = state.pool.acquire().await?;
+    let snapshot_id: Option<Uuid> = sqlx::query_scalar(
+        "select id from snapshot where document_id=$1 order by through_seq desc limit 1",
     )
-    .bind(document_id.0)
-    .fetch_optional(&state.pool)
+    .bind(id)
+    .fetch_optional(&mut *connection)
     .await?;
-    let through_seq = through_seq.ok_or(ApiError::NotFound)?;
+    let snapshot = engine_core::snapshot_verification::load(
+        &mut connection,
+        document_id,
+        snapshot_id.ok_or(ApiError::NotFound)?,
+    )
+    .await?
+    .ok_or(ApiError::NotFound)?;
+    let through_seq = snapshot.through_seq;
+    drop(connection);
 
     // Leaves: content_hash for events 1..=through_seq, in seq order.
     let rows: Vec<(String, i64, Vec<u8>)> = sqlx::query_as(

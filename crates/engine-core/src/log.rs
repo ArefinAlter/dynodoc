@@ -183,7 +183,7 @@ pub async fn post_commit_snapshot(
 /// matches what is stored. Linear in history bytes; streams events without
 /// collecting the whole log in application memory. Returns
 /// [`EventError::ChainBroken`] naming the exact `seq` on the first inconsistency —
-/// this is the function the auditor CLI calls.
+/// Snapshot equivalence is checked separately by `snapshot_verification::verify_document`.
 pub async fn verify_chain(pool: &PgPool, document_id: DocumentId) -> Result<(), EventError> {
     let mut events =
         sqlx::query_as::<_, Event>("select * from event where document_id = $1 order by seq asc")
@@ -194,47 +194,65 @@ pub async fn verify_chain(pool: &PgPool, document_id: DocumentId) -> Result<(), 
 
     let mut expected_seq = 1;
     while let Some(ev) = events.try_next().await? {
-        if ev.seq != expected_seq {
-            return Err(EventError::ChainBroken {
-                seq: ev.seq,
-                detail: format!(
-                    "expected seq {expected_seq}, found {} (gap or reorder)",
-                    ev.seq
-                ),
-            });
-        }
-
-        let canonical = canonical_json(&ev.payload);
-        let recomputed_content = content_hash(
-            &ev.event_type,
-            ev.target_node_id.as_ref().map(|n| n.0.as_str()),
-            &canonical,
-            &ev.actor_id.0,
-        );
-        if recomputed_content[..] != ev.content_hash[..] {
-            return Err(EventError::ChainBroken {
-                seq: ev.seq,
-                detail: "content_hash mismatch (type, target, payload, or actor altered)".into(),
-            });
-        }
-
-        if ev.prev_chain_hash[..] != prev_chain_hash[..] {
-            return Err(EventError::ChainBroken {
-                seq: ev.seq,
-                detail: "prev_chain_hash does not match the prior event's chain_hash".into(),
-            });
-        }
-
-        let recomputed_chain = chain_hash(&recomputed_content, &prev_chain_hash);
-        if recomputed_chain[..] != ev.chain_hash[..] {
-            return Err(EventError::ChainBroken {
-                seq: ev.seq,
-                detail: "chain_hash mismatch".into(),
-            });
-        }
+        verify_event(&ev, document_id, expected_seq, &prev_chain_hash)?;
 
         prev_chain_hash = ev.chain_hash.clone();
         expected_seq += 1;
+    }
+
+    Ok(())
+}
+
+/// Verify one row against its pinned document, expected sequence and predecessor.
+pub(crate) fn verify_event(
+    event: &Event,
+    document: DocumentId,
+    expected_seq: i64,
+    previous: &[u8],
+) -> Result<(), EventError> {
+    if event.document_id != document {
+        return Err(EventError::ChainBroken {
+            seq: event.seq,
+            detail: "document binding mismatch".into(),
+        });
+    }
+    if event.seq != expected_seq {
+        return Err(EventError::ChainBroken {
+            seq: event.seq,
+            detail: format!(
+                "expected seq {expected_seq}, found {} (gap or reorder)",
+                event.seq
+            ),
+        });
+    }
+
+    let canonical = canonical_json(&event.payload);
+    let recomputed_content = content_hash(
+        &event.event_type,
+        event.target_node_id.as_ref().map(|n| n.0.as_str()),
+        &canonical,
+        &event.actor_id.0,
+    );
+    if recomputed_content[..] != event.content_hash[..] {
+        return Err(EventError::ChainBroken {
+            seq: event.seq,
+            detail: "content_hash mismatch (type, target, payload, or actor altered)".into(),
+        });
+    }
+
+    if event.prev_chain_hash[..] != previous[..] {
+        return Err(EventError::ChainBroken {
+            seq: event.seq,
+            detail: "prev_chain_hash does not match the prior event's chain_hash".into(),
+        });
+    }
+
+    let recomputed_chain = chain_hash(&recomputed_content, previous);
+    if recomputed_chain[..] != event.chain_hash[..] {
+        return Err(EventError::ChainBroken {
+            seq: event.seq,
+            detail: "chain_hash mismatch".into(),
+        });
     }
 
     Ok(())

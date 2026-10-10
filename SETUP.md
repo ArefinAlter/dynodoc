@@ -783,3 +783,21 @@ Strict Clippy, formatting, frontend lint/type checks and Node production build
 passed. Only the disposable database's fsync/synchronous_commit were disabled to
 avoid Docker Desktop test checkpoint delays; production durability was unchanged.
 CI now runs the authenticated browser suite on an isolated PostgreSQL/API stack.
+
+
+## Verified legacy snapshots (11 October 2026, schema 0028)
+
+The checked reader now requires replay-verification receipts for legacy snapshots.
+Migration 0028 does not certify existing rows. Before reopening an upgraded system,
+run `engine-cli verify-snapshots --all` against its selected database, then independent
+`engine-cli verify DOCUMENT_UUID` checks. New snapshots use the canonical checked
+writer; public/history/deployed/restore routes refuse unverified state. Verification
+covers comments/suggestions/removed choices as well as node roots.
+
+See [the exact contract and release gate](docs/VERIFIED-SNAPSHOTS.md). Ordinary reads
+retain checkpoint-plus-tail replay; full audit/backfill is a separate streamed pass.
+The API still applies migrations using its own DB credentials: runtime/migration
+role separation is the next required security increment. An unmodified old API
+bypasses snapshot receipts and login revocation and is not a compatible rollback.
+Verification results and source/deployment status are in
+[the handoff](docs/ENGINE-EVOLUTION-HANDOFF.md).

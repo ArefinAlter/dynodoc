@@ -20,7 +20,6 @@
 use engine_core::governance::{self, Role};
 use engine_core::log;
 use engine_core::materializer::DocumentState;
-use engine_core::snapshot::merkle_root;
 use engine_shared::{DocumentId, Event, EventPayload, IdentityId, NodeId, NodeType};
 use serde_json::Value;
 use sqlx::{PgPool, Postgres, Transaction};
@@ -99,7 +98,7 @@ pub async fn apply_checked_op(
         .await
         .map_err(ApiError::from)?;
     if matches!(op, EventPayload::Deployed { .. }) {
-        checkpoint_in_tx(&mut tx, document_id, &current, &inserted).await?;
+        checkpoint_in_tx(&mut tx, document_id, &inserted).await?;
     }
     tx.commit().await?;
 
@@ -387,22 +386,12 @@ pub(crate) async fn begin_write(
 async fn checkpoint_in_tx(
     tx: &mut Transaction<'_, Postgres>,
     document_id: DocumentId,
-    current: &DocumentState,
     event: &Event,
 ) -> Result<(), ApiError> {
-    let root = merkle_root(current).map_err(|e| ApiError::Internal(e.to_string()))?;
-    let json = serde_json::to_value(current).map_err(|e| ApiError::Internal(e.to_string()))?;
-    let id: uuid::Uuid = sqlx::query_scalar(
-        "insert into snapshot(document_id,through_seq,state,merkle_root,event_chain_hash)
-         values($1,$2,$3,$4,$5) returning id",
-    )
-    .bind(document_id.0)
-    .bind(event.seq)
-    .bind(json)
-    .bind(root.as_slice())
-    .bind(&event.chain_hash)
-    .fetch_one(&mut **tx)
-    .await?;
+    let id = engine_core::snapshot_verification::take_in_connection(tx, document_id, event.seq)
+        .await?
+        .id
+        .0;
     sqlx::query("update document set status='deployed', deployed_snapshot_id=$2, updated_at=now() where id=$1")
         .bind(document_id.0).bind(id).execute(&mut **tx).await?;
     Ok(())

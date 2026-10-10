@@ -273,6 +273,8 @@ impl Materializer {
     }
 
     /// Restore a prior snapshot and fold the tail events on top.
+    /// This pure fold does not authenticate its inputs. Database callers must use
+    /// the checked snapshot reader; untrusted rows require replay verification.
     pub fn from_snapshot(
         snapshot: &Snapshot,
         tail: &[Event],

@@ -10,7 +10,6 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use engine_core::snapshot::merkle_root;
 use engine_shared::{DocumentId, IdentityId};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -389,13 +388,11 @@ async fn publish(
     {
         return Err(ApiError::Forbidden);
     }
-    let last: Option<(i64, Vec<u8>)> = sqlx::query_as(
-        "select seq,chain_hash from event where document_id=$1 order by seq desc limit 1",
-    )
-    .bind(id)
-    .fetch_optional(&mut *tx)
-    .await?;
-    let (seq, hash) = last.unwrap_or((0, vec![0u8; 32]));
+    let seq: i64 =
+        sqlx::query_scalar("select coalesce(max(seq),0) from event where document_id=$1")
+            .bind(id)
+            .fetch_one(&mut *tx)
+            .await?;
     if seq != input.base_seq {
         return Err(bad(
             "Refresh and save your changes before publishing this copy",
@@ -412,8 +409,12 @@ async fn publish(
             "Accept or reject tracked text changes before publishing a public copy",
         ));
     }
-    let root = merkle_root(&current)?;
-    let snapshot:Uuid=sqlx::query_scalar("insert into snapshot(document_id,through_seq,state,merkle_root,event_chain_hash) values($1,$2,$3,$4,$5) on conflict(document_id,through_seq) do update set through_seq=excluded.through_seq returning id").bind(id).bind(seq).bind(json!(current)).bind(root.as_slice()).bind(hash).fetch_one(&mut *tx).await?;
+    drop(current);
+    let snapshot =
+        engine_core::snapshot_verification::take_in_connection(&mut tx, DocumentId(id), seq)
+            .await?
+            .id
+            .0;
     let (token, hash) = random_token()?;
     let link:Uuid=sqlx::query_scalar("insert into public_document_view(document_id,token_hash,snapshot_id,created_by,expires_at,published_title,published_kind) select id,$2,$3,$4,case when $5::integer is null then null else now()+make_interval(days=>$5) end,title,coalesce(settings->>'kind','questionnaire') from document where id=$1 returning id").bind(id).bind(hash).bind(snapshot).bind(auth.identity_id).bind(input.expires_days).fetch_one(&mut *tx).await?;
     audit(
@@ -459,8 +460,17 @@ async fn public_document(
     if token.len() != 64 || !token.bytes().all(|c| c.is_ascii_hexdigit()) {
         return Err(ApiError::NotFound);
     }
-    let row:Option<(String,String,Value)>=sqlx::query_as("select p.published_title,p.published_kind,s.state from public_document_view p join document d on d.id=p.document_id join snapshot s on s.id=p.snapshot_id join identity i on i.id=p.created_by where p.token_hash=$1 and p.revoked_at is null and (p.expires_at is null or p.expires_at>now()) and d.deleted_at is null and i.disabled_at is null").bind(sha256(token.as_bytes())).fetch_optional(&state.pool).await?;
-    let (title, kind, mut content) = row.ok_or(ApiError::NotFound)?;
+    let mut connection = state.pool.acquire().await?;
+    let row:Option<(String,String,Uuid,Uuid)>=sqlx::query_as("select p.published_title,p.published_kind,p.document_id,p.snapshot_id from public_document_view p join document d on d.id=p.document_id join identity i on i.id=p.created_by where p.token_hash=$1 and p.revoked_at is null and (p.expires_at is null or p.expires_at>now()) and d.deleted_at is null and i.disabled_at is null").bind(sha256(token.as_bytes())).fetch_optional(&mut *connection).await?;
+    let (title, kind, document_id, snapshot_id) = row.ok_or(ApiError::NotFound)?;
+    let mut content = engine_core::snapshot_verification::load(
+        &mut connection,
+        DocumentId(document_id),
+        snapshot_id,
+    )
+    .await?
+    .ok_or(ApiError::NotFound)?
+    .state;
     // The public contract is content only, never suggestions, comments, events or uploads.
     content["comments"] = json!([]);
     content["suggestions"] = json!({});

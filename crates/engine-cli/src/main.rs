@@ -8,7 +8,7 @@
 use anyhow::Context as _;
 use clap::{Parser, Subcommand};
 use engine_api::ApiDoc;
-use engine_core::log::{self, verify_chain, EventError};
+use engine_core::log;
 use engine_core::materializer::Materializer;
 use engine_core::snapshot::{SnapshotEngine, SnapshotReason};
 use engine_shared::DocumentId;
@@ -26,10 +26,18 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Replay a document's event log and verify hash-chain integrity.
+    /// Independently verify the event chain and all legacy snapshots.
     Verify {
         /// Document id (UUID).
         document_id: String,
+    },
+    /// Backfill legacy snapshot receipts by verified replay (schema 28). Atomic per document.
+    VerifySnapshots {
+        #[arg(required_unless_present = "all", conflicts_with = "all")]
+        document_id: Option<String>,
+        /// Visit every document in keyset order; stop at the first integrity error.
+        #[arg(long)]
+        all: bool,
     },
     /// Replay a document's event log and print the materialized state.
     Replay {
@@ -68,6 +76,7 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Command::Verify { document_id } => verify(document_id).await,
+        Command::VerifySnapshots { document_id, all } => verify_snapshots(document_id, all).await,
         Command::Replay { document_id } => replay(document_id).await,
         Command::Snapshot { document_id } => snapshot(document_id).await,
         Command::SharedSnapshot {
@@ -115,19 +124,48 @@ async fn verify(document_id: String) -> anyhow::Result<()> {
     let doc = parse_document_id(&document_id)?;
     let pool = connect().await?;
 
-    match verify_chain(&pool, doc).await {
-        Ok(()) => {
-            println!("OK: hash chain verified for document {document_id}");
-            Ok(())
+    let report = engine_core::snapshot_verification::verify_document(&pool, doc, false)
+        .await
+        .context("event/snapshot verification failed")?;
+    println!("OK: event chain and {} legacy snapshots verified through seq {} for document {document_id}", report.snapshots, report.through_seq);
+    Ok(())
+}
+
+async fn verify_snapshots(document_id: Option<String>, all: bool) -> anyhow::Result<()> {
+    let pool = connect().await?;
+    let mut cursor: Option<Uuid> = None;
+    loop {
+        let document = if all {
+            sqlx::query_scalar::<_, Uuid>(
+                "select id from document where ($1::uuid is null or id>$1) order by id limit 1",
+            )
+            .bind(cursor)
+            .fetch_optional(&pool)
+            .await?
+        } else {
+            Some(parse_document_id(document_id.as_deref().context("document id required")?)?.0)
+        };
+        let Some(id) = document else {
+            break;
+        };
+        let report =
+            engine_core::snapshot_verification::verify_document(&pool, DocumentId(id), true)
+                .await
+                .with_context(|| {
+                    format!(
+                        "snapshot backfill failed for document {id}; its receipts were rolled back"
+                    )
+                })?;
+        println!(
+            "OK: document {id}; {} snapshots; {} replayed events; through seq {}",
+            report.snapshots, report.replayed_events, report.through_seq
+        );
+        if !all {
+            break;
         }
-        Err(EventError::ChainBroken { seq, detail }) => {
-            // A failed audit is an operational signal, not a crash: report the exact
-            // event and exit non-zero so scripts/CI can gate on it.
-            eprintln!("CHAIN BROKEN at event seq {seq}: {detail}");
-            std::process::exit(1);
-        }
-        Err(other) => Err(other).context("verify failed"),
+        cursor = Some(id);
     }
+    Ok(())
 }
 
 async fn replay(document_id: String) -> anyhow::Result<()> {

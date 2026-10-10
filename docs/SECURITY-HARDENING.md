@@ -1,6 +1,6 @@
 # Security hardening and remaining gates
 
-10 October 2026. This record tracks the owner's historical security findings against
+Updated 11 October 2026. This record tracks the owner's historical security findings against
 current code. It is a source/release checklist, not a claim that the whole platform
 or its audit history is secure against a database administrator. It takes priority
 over historical PoC auth descriptions. Continue the engine evolution plan after
@@ -14,7 +14,7 @@ Production remains application `ecbc643`, schema 26, shared periodic writes off.
 
 | Finding | Current source result | Outstanding work |
 |---|---|---|
-| Legacy snapshots mutable; replay not checked | **Open, highest priority.** Shared checkpoints already have object/reference validation, but legacy snapshot reads do not establish replay equivalence. | Add immutable snapshot guards with explicit audited erasure compatibility; remove no-op upserts first; verify/backfill legacy checkpoints from canonical history and fail closed on mismatch. Cover public versions, deployed pins, restore and audit reads. Do not replay all history on every ordinary read. |
+| Legacy snapshots mutable; replay not checked | **Implemented and locally verified in the application; standalone/CI checks pending.** Migration 0028 adds immutable snapshot/receipt guards, replay-based backfill and a checked reader/writer shared by serving paths. API/CLI verification compares all legacy snapshots, including non-node state. | Complete the checks in the handoff and [upgrade contract](VERIFIED-SNAPSHOTS.md), then migration-owner/runtime separation before release. Old rows need explicit verified backfill; no blanket migration attestation. Receipts are not external signatures. |
 | API uses migration/owner database credentials | **Open, highest priority.** | Separate migration owner and constrained runtime credentials, restrict privileges including TRUNCATE/trigger/schema changes, test administration/erasure, rehearse upgrade and compatible rollback. Database owner remains a trusted administrator until independent commitments exist. |
 | Missing service key exposes sign-in tokens | **Fixed in source.** Both issuance routes reject absent, blank, short, missing or incorrect service credentials, regardless of APP_ENV. Startup rejects missing/short keys and zero PASETO keys before DB access. | Deploy API/web together after rehearsal. DEV_AUTH is still an explicit local-only web bypass; never enable it publicly. |
 | Logout only clears a cookie | **Fixed in source.** Migration 0027 binds new tokens to a login ID. Logout revokes its refresh lineage and access tokens. Rotation/logout serialize on the identity row. Web clears cookies only after successful revocation. | Deploy; retain compatibility warning below. Browser and API regressions cover copied credentials, separate logins, rotated ancestors, races and stream data after revocation. |
@@ -68,7 +68,7 @@ correct before those guards were installed.
 
 ## Resume order
 
-### Next increment acceptance: snapshots and database roles
+### Acceptance checklist: snapshot source and next database-role increment
 
 - Inventory every legacy snapshot producer and reader, including core materialization,
   named versions, public links, deployed pins, restore and audit exports. The core
@@ -89,6 +89,10 @@ correct before those guards were installed.
   role against UPDATE/DELETE/TRUNCATE, trigger disabling, schema mutation and role
   escalation, then run normal append/read/review/auth/administration workflows with
   that role. Do not grant ownership or broad privileges just to make a test pass.
+  Run migrations in a separate operator/deployment command; do not keep an owner
+  credential in the API process environment alongside the runtime URL. API startup
+  should check schema compatibility without applying migrations. Preserve the
+  existing audited erasure contract while denying unrestricted TRUNCATE and DDL.
 - Rehearse an existing-database upgrade and compatible rollback with synthetic
   history and schema-27 sessions. Document the verification/backfill sequence and
   failures before a VPS rollout. The database owner can still rewrite privileged
@@ -96,8 +100,8 @@ correct before those guards were installed.
 
 ### Subsequent order
 
-1. Snapshot replay verification/immutable guards and runtime database privilege split,
-   with fixtures for corruption, old snapshots, erasure and rollback.
+1. Validate the snapshot upgrade/backfill and implement the runtime database privilege
+   split, with forbidden-operation, administration/erasure and compatible rollback tests.
 2. Project policy floor/authority and audited metadata; CSP/HSTS compatible with all
    six editors; search/deadline/rate/concurrency budgets.
 3. Complete bounded text/value/asset chunks and shared named-version/draft references.
