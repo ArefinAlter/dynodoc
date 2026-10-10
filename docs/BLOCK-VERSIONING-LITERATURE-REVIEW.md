@@ -2,6 +2,7 @@
 
 > Implementation update, 10 October 2026: [shared checkpoints v1](SHARED-CHECKPOINTS.md)
 > implement object reuse with stable-key radix maps and normal mixed-format reads.
+> Part 2c batches database writes and index reads, preserving v1 roots and validation.
 > Shared periodic writes are gated off by default pending database/lock acceptance;
 > named versions and draft bases still use full JSON. The dated assessment below
 > predates these increments. The [evolution plan](ENGINE-EVOLUTION-PLAN.md) controls

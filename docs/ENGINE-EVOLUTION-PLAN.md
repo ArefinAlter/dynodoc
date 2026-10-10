@@ -37,10 +37,21 @@ Normal current/history and API write materialization now select mixed checkpoint
 The periodic shared writer is explicit opt-in; default legacy remains reversible.
 Capacity fallback is transactional; corrupt shared data fails closed. PostgreSQL
 value reads are bounded batches. Named/deployed versions and draft bases stay
-legacy JSON. Database measurements must gate writer rollout: publication still
-scans full state, performs per-object writes and blocks document FOR UPDATE appends.
-Next reduce that publication cost/lock window, add large-value chunks, then migrate
-version/draft references before exposing local commits/exchange. Part 2 stays open.
+legacy JSON. Part 2b measurements gated writer rollout: publication scanned full
+state, performed per-object writes and blocked document FOR UPDATE appends. Part
+2c below batches those operations; full scans and locking remain. Large-value
+chunks and version/draft references still precede local commits/exchange.
+
+## Part 2c implementation boundary
+
+Bounded batch writes (64 objects / 1 MiB) and breadth-first index reads replace
+individual database round trips. Stored bytes, roots, limits, rollback and erasure
+contracts remain v1. Exact-byte reuse checks and concurrent INSERT conflict checks
+remain mandatory. Explicit/periodic publishers share a per-document advisory lock.
+Fixed-ID repetitive/varied fixtures compare individual and batched publication,
+with real FOR UPDATE wait probes. This optimization preserves the atomic
+transaction; full-state scans, resident state, compressed storage/backend choices
+and short staged publication remain open. The writer stays opt-in until acceptance.
 
 ## Part 2 design gate and first implementation slice
 

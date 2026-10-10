@@ -1,6 +1,6 @@
 # Shared checkpoints v1
 
-10 October 2026. Parts 2a/2b of the engine evolution plan. A derived checkpoint
+10 October 2026. Parts 2a-2c of the engine evolution plan. A derived checkpoint
 codec with normal mixed-format readers and a gated automatic writer. This is not
 the future portable commit protocol. Event and legacy JSONB formats are unchanged.
 
@@ -51,7 +51,8 @@ is an integrity address, not encryption or evidence of authorship.
 
 Migration 0025 adds immutable object bytes and checkpoint manifests. A manifest
 binds document, exact event sequence, chain hash and state root. Publication uses
-one transaction, protects the document against erasure, derives state through the
+one transaction, takes a per-document publication advisory lock before the document
+row lock, protects against erasure, derives state through the
 legacy/event reference reader (explicit CLI) or common mixed-format reader
 (automatic writer), stores objects, reconstructs/verifies the reachable
 graph and compares it with the input state before publishing. Failure rolls back
@@ -114,8 +115,12 @@ upload/lookup API. This is a staged adoption, not completion of part 2.
 
 ## Database read bounds and rollout limitation
 
-Map traversal validates each index object. Value reads use batches of at most 16
-addresses; the PostgreSQL cache retains only the latest batch, keyed by document
+Breadth-first map traversal and value reads use batches of at most 16 addresses.
+Every index object is still validated for route, depth, duplicate keys, nonempty
+children and canonical subtree size. A bounded-budget queue and reverse subtree
+counts replace per-object recursive reads; traversal metadata remains resident.
+The object budget includes queued references before expansion. In either path,
+the PostgreSQL cache retains only the latest batch, keyed by document
 and address. At the 1 MiB per-object limit it retains at most 16 MiB of encoded
 content, plus the current decoded/cloned value and driver overhead. Every value
 still passes hash/type and operation/byte-budget checks, including repeated
@@ -123,12 +128,27 @@ references. Missing/corrupt objects fail. Full map entries and full document sta
 remain resident; this cache bound is not a total request memory bound. Reads may
 fetch one batch before its cumulative byte budget is exhausted.
 
-The writer still scans/hashes all state and issues individual INSERT/reuse checks.
-Its transaction holds a document KEY SHARE lock to protect against erasure; API
+The writer still scans/hashes all state. Part 2c buffers at most 64 objects and
+1 MiB of encoded bytes per write batch, plus the current object being encoded.
+PostgreSQL checks canonical input, compares exact stored bytes in a bounded VALUES
+join returning only addresses/booleans, and inserts missing objects in one statement.
+This avoids fetching unexpectedly large corrupt stored bytes during reuse checks.
+An unchanged batch issues no INSERT. A concurrent insert that wins ON CONFLICT
+is checked again; duplicate input addresses count as new at most once. Byte/operation
+limits still count every encoded visit. Other stores can use the sequential default
+batch method. The internal ObjectStore trait requires Send, as graph operations
+already did.
+
+Explicit and periodic publishers use the same document advisory lock before any
+document row lock, avoiding cross-batch deadlocks between overlapping histories.
+The periodic path retains its try-lock behavior. This is a work reduction within
+the original atomic transaction, not staged/unlocked publication. Its transaction
+holds a document KEY SHARE lock to protect against erasure; API
 appends use FOR UPDATE on that same row and therefore wait during publication.
 This is a material performance gate. Shared writing remains off by default until
-bounded batching/incremental publication and concurrency acceptance improve the
-measured lock window. Disabling the flag is safe with the new mixed readers, but
+incremental publication and concurrent workload acceptance satisfy the rollout
+gates. Batching reduces the work; it does not eliminate the lock window.
+Disabling the flag is safe with the new mixed readers, but
 rolling back to older reader code can restore expensive genesis/legacy replay and
 does not promise the same shared-checkpoint corruption detection.
 
@@ -162,7 +182,7 @@ TOAST/WAL overhead, event bytes, compression, transfer, native parsing/assets,
 permissions, concurrent collaborators and hundreds-of-MB inputs. Production
 backend selection and those measurements remain open.
 
-## PostgreSQL acceptance spike (part 2b, 10 October 2026)
+## Historical PostgreSQL spike (part 2b, 10 October 2026)
 
 Release example `shared_checkpoint_pg_bench`, same Windows CPU/Rust, local Docker
 PostgreSQL 16. An empty migrated disposable database; 8,000 synthetic blocks
@@ -187,9 +207,10 @@ verified. [Raw measurements](benchmarks/shared-checkpoint-pg-20261010.json).
 | Additional legacy WAL per edit | 481,728-482,672 bytes |
 | Observed client process peak working set | 106,016,768 bytes (101.1 MiB) |
 
-**This backend does not pass the production rollout gate.** Batching helps but the
-index objects still require individual reads, and full-state individual object
-writes dominate publication. API appends can wait through most of that transaction.
+**Part 2b did not pass the production rollout gate.** Its value batching helped,
+but index objects still required individual reads and full-state individual object
+writes dominated publication. Part 2c changes those paths; the table here preserves
+the earlier result. API appends can wait through most of that transaction.
 On this highly repetitive six-checkpoint fixture, whole-state JSONB compression
 beats the current uncompressed small objects plus indexes on allocated disk space,
 despite shared storage using fewer logical canonical bytes and less edit WAL.
@@ -216,10 +237,83 @@ cargo run --release -p engine-core --example shared_checkpoint_pg_bench
 
 The benchmark writes synthetic events/checkpoints and deliberately leaves them for
 inspection; remove the disposable database/container afterward. It rejects a
-database that already contains documents. Next evaluate bounded bulk object
-writes/index reads, incremental reuse without scanning all values, compressed
-packing/backend alternatives and publication with a short final lock. Preserve
-erasure atomicity and root verification during those changes.
+database that already contains documents. Part 2c below evaluates bulk writes and
+index reads. Incremental reuse without scanning all values, compressed packing and
+publication with a short final lock remain open. Preserve erasure atomicity and
+root verification during those changes.
+
+## Controlled batching comparison (part 2c, 10 October 2026)
+
+Release example on the same Windows CPU/Rust and local PostgreSQL 16, with four
+separate empty migrated databases. Each trace has 8,000 fixed-ID blocks, an initial
+6,400,063-byte state and two one-block edits (three checkpoints). Repeated and
+deterministic varied ASCII payloads have the same 600-byte length. All paired roots
+and canonical byte totals match exactly; each reconstructed state matches event
+application and every event chain verifies.
+
+Both publication modes start from a matching legacy checkpoint. Individual mode is
+a benchmark-only adapter using per-object INSERT/reuse SELECT and individual reads
+with the current codec/validation; it is not an old released binary. Batched mode
+calls the actual explicit publisher. The rows below are one trace each; statement
+counts are initial checkpoint, edit 1, edit 2. SELECTs include object reuse checks
+and verification, excluding metadata/history queries.
+
+| Workload / mode | Publication range | Competing append-lock wait | Object INSERTs | Object SELECTs |
+|---|---:|---:|---|---|
+| Repeated / Individual | 16.47-20.86 s | 16.45-20.85 s | 9817, 9817, 9817 | 9819, 19629, 19628 |
+| Repeated / Batched | 2.32-2.45 s | 2.30-2.42 s | 154, 4, 3 | 773, 773, 773 |
+| Varied / Individual | 14.61-20.22 s | 14.58-20.20 s | 9817, 9817, 9817 | 9819, 19629, 19628 |
+| Varied / Batched | 2.08-2.92 s | 2.07-2.90 s | 154, 4, 3 | 773, 773, 773 |
+
+Index-plus-value batching uses 619 object SELECTs per reconstruction versus 9,817
+with read-ahead disabled, on exactly the same roots. Across these traces, batched
+raw graph reads took 695.32-1,409.09 ms;
+individual raw reads took 6,270.54-8,631.16 ms.
+Unchanged full-state re-publication inserts no objects in regression tests, though
+it still scans/encodes them, checks stored bytes and verifies reconstruction.
+
+Physical relation sizes below use the batched traces; totals include allocated
+heap, indexes and TOAST, and exclude the separate event/node relations. Canonical
+bytes exclude physical overhead. Three checkpoints cannot establish the long-history
+break-even point; text entropy materially changes the comparison.
+
+| Workload | Shared unique canonical bytes | Shared object + manifest relation bytes | Legacy snapshot relation bytes |
+|---|---:|---:|---:|
+| Repeated | 7,683,867 | 10,887,168 | 638,976 |
+| Varied | 7,683,867 | 10,895,360 | 20,783,104 |
+
+Raw artifacts: [individual repeated](benchmarks/shared-checkpoint-pg-part2c-individual-repeated-20261010.json),
+[batched repeated](benchmarks/shared-checkpoint-pg-part2c-batched-repeated-20261010.json),
+[individual varied](benchmarks/shared-checkpoint-pg-part2c-individual-varied-20261010.json),
+[batched varied](benchmarks/shared-checkpoint-pg-part2c-batched-varied-20261010.json).
+Observed client process peaks across the four runs were 91.03-104.81 MiB,
+including input/reconstructed states, client buffers and runtime; PostgreSQL memory
+is excluded. Windows OS peak working set was sampled every 250 ms. Batching bounds
+one buffer/cache, not the entire operation, and establishes no lower whole-process
+memory complexity.
+
+The lock probe detects an actual KEY SHARE conflict with FOR UPDATE NOWAIT, then
+measures waiting for FOR UPDATE. It rolls back and does not edit content. This is
+one contending lock request, not a ten-collaborator workload; its row-lock activity
+can add WAL/work. Timing includes only the remainder after conflict detection.
+Reads run sequentially/warm, and modes/workloads ran sequentially in the listed
+order. WAL is cluster-wide and includes possible background/full-page effects;
+legacy write timing may read a prior shared graph. These are observations, not
+percentiles, network-transfer results, native-file acceptance or service capacity.
+
+**The writer remains off by default.** Batching materially reduces SQL round trips
+and the lock window, but full-state scans/verification still hold the append-blocking
+transaction. Small uncompressed objects still allocate substantially more disk than whole-state
+compression on repetitive content. Incremental construction, short staged publication,
+compressed packing/backend alternatives and concurrent acceptance remain required.
+
+To reproduce, use one fresh empty migrated disposable database per combination,
+set explicit DATABASE_URL and DYNODOC_CHECKPOINT_BENCH=disposable, then select
+DYNODOC_CHECKPOINT_BENCH_MODE=individual or batched,
+DYNODOC_CHECKPOINT_BENCH_WORKLOAD=repeated or varied, and
+DYNODOC_CHECKPOINT_BENCH_EDITS=2 before running the release example above. Defaults
+are batched, repeated and five edits. Do not compare populated databases or reuse
+a trace database. Remove only the owned disposable databases after inspection.
 
 ## Still required after this slice
 

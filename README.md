@@ -10,8 +10,10 @@ Research instruments remain one supported adapter, not the product roadmap.
 ? [Current handoff](docs/ENGINE-EVOLUTION-HANDOFF.md).
 
 **Status:** The centralized engine, Projects/review, checked proposal bundles and
-six development connectors exist. Opt-in shared checkpoints now reuse unchanged
-objects; default snapshots/draft bases still use full JSON. A local commit DAG,
+six development connectors exist. Shared checkpoint readers and bounded database
+batches reuse unchanged objects. Shared writes remain opt-in; default snapshots
+and draft bases still use full JSON. Publication still scans state and blocks
+appends; [measured limits](docs/SHARED-CHECKPOINTS.md) gate rollout. A local commit DAG,
 complete offline convergence, full native format capture and large-file/service
 capacity still require implementation and acceptance. **License:** [AGPL v3](LICENSE).
 

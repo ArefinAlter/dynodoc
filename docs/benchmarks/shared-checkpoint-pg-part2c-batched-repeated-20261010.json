@@ -1,0 +1,111 @@
+{
+  "baseline_json_bytes": 6400063,
+  "blocks": 8000,
+  "checkpoints": 3,
+  "final_relations": {
+    "checkpoint_object": {
+      "index_bytes": 1466368,
+      "table_including_toast_bytes": 9388032,
+      "total_bytes": 10854400
+    },
+    "event": {
+      "index_bytes": 3031040,
+      "table_including_toast_bytes": 9396224,
+      "total_bytes": 12427264
+    },
+    "shared_checkpoint": {
+      "index_bytes": 16384,
+      "table_including_toast_bytes": 16384,
+      "total_bytes": 32768
+    },
+    "snapshot": {
+      "index_bytes": 49152,
+      "table_including_toast_bytes": 589824,
+      "total_bytes": 638976
+    }
+  },
+  "fixed_node_ids": true,
+  "initial_relations": {
+    "checkpoint_object": {
+      "index_bytes": 8192,
+      "table_including_toast_bytes": 8192,
+      "total_bytes": 16384
+    },
+    "event": {
+      "index_bytes": 3031040,
+      "table_including_toast_bytes": 9396224,
+      "total_bytes": 12427264
+    },
+    "shared_checkpoint": {
+      "index_bytes": 8192,
+      "table_including_toast_bytes": 8192,
+      "total_bytes": 16384
+    },
+    "snapshot": {
+      "index_bytes": 24576,
+      "table_including_toast_bytes": 8192,
+      "total_bytes": 32768
+    }
+  },
+  "measurements": [
+    {
+      "append_lock_wait_ms": 2301.1468,
+      "batched_object_selects": 619,
+      "batched_read_ms": 846.724,
+      "legacy_read_ms": 134.9036,
+      "legacy_wal_bytes": 186992.0,
+      "legacy_write_ms": 422.9732,
+      "normal_read_ms": 792.0309,
+      "publication_object_inserts": 154,
+      "publication_object_selects": 773,
+      "revision": 8000,
+      "root": "1d870c75c2962ac8b6a6dd8a4281ea851791e863a51cfb261d26475fc0bfeff0",
+      "shared_wal_bytes": 11627184.0,
+      "shared_write_verify_ms": 2323.0922,
+      "unbatched_object_selects": 9817,
+      "unbatched_read_ms": 7548.1711000000005
+    },
+    {
+      "append_lock_wait_ms": 2408.7641,
+      "batched_object_selects": 619,
+      "batched_read_ms": 846.9107,
+      "legacy_read_ms": 116.3129,
+      "legacy_wal_bytes": 186712.0,
+      "legacy_write_ms": 2707.4691,
+      "normal_read_ms": 695.6179,
+      "publication_object_inserts": 4,
+      "publication_object_selects": 773,
+      "revision": 8001,
+      "root": "7b2a490648a93b4ea710862d3317e56faea61df72e48417a8a661cb14f2b6c58",
+      "shared_wal_bytes": 8784.0,
+      "shared_write_verify_ms": 2431.5965,
+      "unbatched_object_selects": 9817,
+      "unbatched_read_ms": 6705.3057
+    },
+    {
+      "append_lock_wait_ms": 2421.5139,
+      "batched_object_selects": 619,
+      "batched_read_ms": 931.1958999999999,
+      "legacy_read_ms": 121.0759,
+      "legacy_wal_bytes": 186696.0,
+      "legacy_write_ms": 1383.2757,
+      "normal_read_ms": 1061.914,
+      "publication_object_inserts": 3,
+      "publication_object_selects": 773,
+      "revision": 8002,
+      "root": "e1c0a79414d665ad8dfc5951864b25010fae56d7dd245b9a4714472bc10871c4",
+      "shared_wal_bytes": 7768.0,
+      "shared_write_verify_ms": 2447.433,
+      "unbatched_object_selects": 9817,
+      "unbatched_read_ms": 6954.1477
+    }
+  ],
+  "mode": "batched",
+  "scope": "Single local disposable PostgreSQL run. WAL is cluster-wide and may include background work. Sequential warm reads, no native assets or concurrent load. Both publication modes derive from a matching legacy checkpoint. Individual mode preserves per-object SQL as a benchmark reference, with current codec/validation. Separate fresh databases and identical fixed-ID fixtures are required. Legacy-write timing includes previous shared reads. No production rollout or service-load claim.",
+  "unique_canonical_bytes": 7683867,
+  "unique_objects": 9826,
+  "workload": "repeated",
+  "observed_peak_working_set_bytes": 109465600,
+  "memory_method": "Windows OS peak working set sampled every 250 ms, including expected and reconstructed states and client buffers; excludes PostgreSQL.",
+  "environment": "Windows, Intel Core i7-1255U, Rust 1.96 release, local Docker PostgreSQL 16; one warm sequential run per mode/workload on separate empty migrated databases."
+}

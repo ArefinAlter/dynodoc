@@ -3,7 +3,7 @@
 //! This codec preserves all `DocumentState` fields. It does not change event
 //! hashes, select a large-asset backend, or provide a portable commit protocol.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::future::Future;
 
 use engine_shared::{DocumentId, NodeId};
@@ -18,6 +18,9 @@ pub const MAX_OBJECT_BYTES: usize = 1024 * 1024;
 /// Maximum values fetched together. PostgreSQL retains at most this many encoded
 /// objects between batches (16 MiB with the per-object column/codec limit).
 pub const READ_BATCH_OBJECTS: usize = 16;
+/// Bounded encoded write buffer. A single maximum-size object fits by itself.
+pub const WRITE_BATCH_OBJECTS: usize = 64;
+pub const WRITE_BATCH_BYTES: usize = MAX_OBJECT_BYTES;
 const LEAF_ENTRIES: usize = 32;
 const DOMAIN: &[u8] = b"dynodoc.shared-checkpoint\0v1\0";
 
@@ -103,7 +106,23 @@ impl Limits {
 /// Internal storage interface, not an authorization interface. Every operation
 /// must be scoped to a document already authorized by the caller. `put` must
 /// validate bytes/address and return true only when inserting a new object.
-pub trait ObjectStore {
+pub trait ObjectStore: Send {
+    /// Results follow input order; repeated addresses report a new insertion at
+    /// most once. Callers own rollback/atomic publication. Backends validate bytes.
+    fn put_batch(
+        &mut self,
+        document: DocumentId,
+        objects: &[(Address, Vec<u8>)],
+    ) -> impl Future<Output = Result<Vec<bool>, Error>> + Send {
+        async move {
+            let mut inserted = Vec::with_capacity(objects.len());
+            for (address, bytes) in objects {
+                inserted.push(self.put(document, address, bytes).await?);
+            }
+            Ok(inserted)
+        }
+    }
+
     /// Optional bounded read-ahead. Every value still passes ordinary `get`,
     /// hash/type validation and budget accounting. A backend may ignore this hint.
     fn prefetch(
@@ -285,6 +304,8 @@ struct Writer<'a, S> {
     document: DocumentId,
     budget: Limits,
     stats: WriteStats,
+    pending: Vec<(Address, Vec<u8>)>,
+    pending_bytes: usize,
 }
 
 impl<S: ObjectStore + Send> Writer<'_, S> {
@@ -293,11 +314,32 @@ impl<S: ObjectStore + Send> Writer<'_, S> {
         self.budget.consume(bytes.len())?;
         self.stats.visited_objects += 1;
         self.stats.encoded_bytes += bytes.len();
-        if self.store.put(self.document, &address, &bytes).await? {
-            self.stats.new_objects += 1;
-            self.stats.new_bytes += bytes.len();
+        if self.pending.len() == WRITE_BATCH_OBJECTS
+            || self.pending_bytes + bytes.len() > WRITE_BATCH_BYTES
+        {
+            self.flush().await?;
         }
+        self.pending_bytes += bytes.len();
+        self.pending.push((address.clone(), bytes));
         Ok(address)
+    }
+
+    async fn flush(&mut self) -> Result<(), Error> {
+        if self.pending.is_empty() {
+            return Ok(());
+        }
+        let inserted = self.store.put_batch(self.document, &self.pending).await?;
+        if inserted.len() != self.pending.len() {
+            return Err(Error::Invalid("batch result length"));
+        }
+        for ((_, bytes), new) in self.pending.drain(..).zip(inserted) {
+            if new {
+                self.stats.new_objects += 1;
+                self.stats.new_bytes += bytes.len();
+            }
+        }
+        self.pending_bytes = 0;
+        Ok(())
     }
 
     // Entries are keyed by (hash route, original key), so splitting borrows slices
@@ -342,6 +384,8 @@ pub async fn write_state<S: ObjectStore + Send>(
         document,
         budget: limits,
         stats: WriteStats::default(),
+        pending: Vec::new(),
+        pending_bytes: 0,
     };
     let mut entries = Vec::new();
     for (id, node) in &state.nodes {
@@ -403,6 +447,7 @@ pub async fn write_state<S: ObjectStore + Send>(
             removed_choices,
         }))
         .await?;
+    writer.flush().await?;
     Ok((root, writer.stats))
 }
 
@@ -424,45 +469,66 @@ impl<S: ObjectStore + Send> Reader<'_, S> {
         decode(address, &bytes)
     }
 
-    async fn map(
-        &mut self,
-        root: &Address,
-        prefix: String,
-        out: &mut BTreeMap<String, Address>,
-    ) -> Result<usize, Error> {
-        match self.object(root).await? {
-            Object::MapLeaf(entries) => {
-                let count = entries.len();
-                for entry in entries {
-                    if !route(&entry.key).starts_with(&prefix)
-                        || out.insert(entry.key, entry.address).is_some()
-                    {
-                        return Err(Error::Invalid("map key route or duplicate"));
-                    }
-                }
-                Ok(count)
-            }
-            Object::MapBranch(children) if prefix.len() < 64 => {
-                let mut count = 0;
-                for (slot, child) in children {
-                    let n = Box::pin(self.map(&child, format!("{prefix}{slot}"), out)).await?;
-                    if n == 0 {
-                        return Err(Error::Invalid("empty branch child"));
-                    }
-                    count += n;
-                }
-                if count <= LEAF_ENTRIES {
-                    return Err(Error::Invalid("unnecessary map branch"));
-                }
-                Ok(count)
-            }
-            _ => Err(Error::Invalid("expected bounded map")),
-        }
-    }
-
     async fn entries(&mut self, root: &Address) -> Result<BTreeMap<String, Address>, Error> {
         let mut entries = BTreeMap::new();
-        self.map(root, String::new(), &mut entries).await?;
+        // Breadth-first batches avoid retaining decoded ancestors or losing a
+        // sibling prefetch when recursion replaces the cache. Only references
+        // and (parent, subtree count) accounting survive between batches.
+        let mut queue = VecDeque::from([(root.clone(), String::new(), None)]);
+        let mut counts: Vec<(Option<usize>, usize, bool)> = Vec::new();
+        while !queue.is_empty() {
+            if queue.len() > self.budget.max_objects {
+                return Err(Error::Limit("objects"));
+            }
+            let batch: Vec<_> = queue.drain(..queue.len().min(READ_BATCH_OBJECTS)).collect();
+            let addresses: Vec<_> = batch
+                .iter()
+                .map(|(address, _, _)| address.clone())
+                .collect();
+            self.store.prefetch(self.document, &addresses).await?;
+            let batch_len = batch.len();
+            for (offset, (address, prefix, parent)) in batch.into_iter().enumerate() {
+                match self.object(&address).await? {
+                    Object::MapLeaf(leaf) => {
+                        counts.push((parent, leaf.len(), false));
+                        for entry in leaf {
+                            if !route(&entry.key).starts_with(&prefix)
+                                || entries.insert(entry.key, entry.address).is_some()
+                            {
+                                return Err(Error::Invalid("map key route or duplicate"));
+                            }
+                        }
+                    }
+                    Object::MapBranch(children) if prefix.len() < 64 => {
+                        // Bound queued references before allocating more. Object
+                        // visits (including repeated refs) consume the same budget.
+                        if queue.len() + children.len() + batch_len - offset - 1
+                            > self.budget.max_objects
+                        {
+                            return Err(Error::Limit("objects"));
+                        }
+                        let index = counts.len();
+                        counts.push((parent, 0, true));
+                        for (slot, child) in children {
+                            queue.push_back((child, format!("{prefix}{slot}"), Some(index)));
+                        }
+                    }
+                    _ => return Err(Error::Invalid("expected bounded map")),
+                }
+            }
+        }
+        for index in (0..counts.len()).rev() {
+            let (parent, count, branch) = counts[index];
+            if branch && count <= LEAF_ENTRIES {
+                return Err(Error::Invalid("unnecessary map branch"));
+            }
+            if let Some(parent) = parent {
+                if count == 0 {
+                    return Err(Error::Invalid("empty branch child"));
+                }
+                counts[parent].1 += count;
+            }
+        }
         Ok(entries)
     }
 

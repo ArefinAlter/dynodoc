@@ -1,5 +1,86 @@
 # Engine evolution handoff
 
+## Part 2c: bounded database batches (10 October 2026)
+
+The implementation and controlled PostgreSQL comparison are complete locally.
+Application checks pass; standalone full tests and publication/CI are pending.
+Part 2 remains open and shared writes remain off by default. No new migration,
+event encoding or HTTP schema; schema 25 remains required by mixed readers.
+
+- Writes buffer at most 64 objects / 1 MiB encoded bytes, plus the current encoding
+  and input/driver state. PostgreSQL checks canonical input and exact stored bytes
+  in a bounded VALUES join returning booleans, inserts missing objects in one
+  statement, and rechecks conflicts won by concurrent inserts. Unchanged batches
+  issue no INSERT; duplicate addresses count as new at most once.
+- Index traversal uses breadth-first batches of up to 16 objects, as do value
+  reads. Route/depth/duplicate/subtree checks and byte/object budgets remain;
+  queued references count against the remaining object budget before expansion.
+  Complete state/index/traversal metadata still resides in memory.
+- Explicit publishers acquire the same document advisory lock as periodic jobs
+  before the row lock, serializing overlapping historical graphs and preventing
+  cross-batch lock-order deadlocks. Periodic jobs keep try-lock behavior. Objects
+  and manifests remain in one verified transaction with rollback/erasure guarantees.
+- The row KEY SHARE lock still blocks FOR UPDATE appends through publication.
+  Batching shortens work but does not provide staged/unlocked or incremental
+  publication. V1 bytes, roots, document scope and full reconstruction are unchanged.
+  ObjectStore now requires Send, which graph operations already required.
+
+### Verification and measured limits
+
+Application fmt/Clippy, all 224 Rust tests and unchanged OpenAPI pass. New database
+regressions cover bounded bulk writes, duplicate reuse/scope/capacity/corruption,
+2,000-node index batching with byte-triggered flushes, overlapping historical
+publishers, and an invalid concurrent INSERT winner checked after a real database
+lock wait. Oversized-value fallback now proves rollback after an actual batch has
+reached the database. Existing hash vectors and event/graph equivalence tests pass.
+
+Standalone source is synchronized; lint/docs/OpenAPI pass, full tests are pending.
+All five changed Rust files and all 22 immutable migration files match byte for
+byte. Existing Rustdoc link warnings remain. MIT/OpenAPI packaging is preserved.
+Remote source/browser CI is pending; publication records will follow below.
+
+Four separate fresh PostgreSQL databases: 8,000 fixed-ID blocks, initial 6.4 MB
+state, two one-block edits per trace; identical 600-byte repeated or varied payload
+lengths. Individual/batched paired roots and canonical totals match, reconstructed
+states match event application, and event chains verify. Publication fell from
+14.6-20.9 s to 2.1-2.9 s; the competing append-lock wait remains 2.1-2.9 s. Object
+INSERT statements: 9,817 each checkpoint becomes 154 initially and 4/3 for edits.
+Verified graph SELECTs: 9,817 becomes 619. This compares individual SQL and batched
+SQL using the current codec, not different release binaries.
+
+Physical shared relations are about 10.9 MB. Three compressed legacy snapshots
+use 0.64 MB for repeated content and 20.78 MB for varied content. Canonical bytes
+alone do not predict disk savings. Client process peaks were 91.0-104.8 MiB,
+excluding PostgreSQL. The four one-run, three-checkpoint traces are not percentile,
+ten-collaborator, native 100-500 MB or service-scale acceptance. Exact results,
+methodology and four portable raw artifacts are in [SHARED-CHECKPOINTS](SHARED-CHECKPOINTS.md).
+
+### Next concrete work
+
+1. Design and implement incremental/staged publication with a short final lock.
+   Preserve pinned sequence/chain validation, complete-root verification, erasure
+   isolation and crash/retry cleanup before moving writes outside one transaction.
+   Measure hot-document contention; keep the writer opt-in until this passes.
+2. Specify bounded text/asset chunks and evaluate compressed packing/backend
+   alternatives with edit-density and longer-history traces. Current objects still
+   reject a single encoded value over 1 MiB; fallback retains a full JSON checkpoint.
+3. Migrate named versions and draft bases to explicit versioned shared references,
+   then add parent/root/actor commit envelopes, durable local history and resumable
+   missing-object exchange. Cross-language canonical conformance precedes exchange.
+4. Offline convergence, signed/witnessed provenance, all-six-host structural and
+   formatting/background capture, native large-file and service-load acceptance
+   remain later gates. The basic web editor is not the product priority.
+
+### Publication and environment
+
+Starting application: 5ce3566; standalone: 2d93630. Implementation publication/CI
+is pending. The owned local container dynodoc-evolution-part2c-20261010 on loopback
+5553 currently holds tests and four synthetic benchmark databases; remove it with
+its volume after final checks, validating its ownership label/port first. Leave
+unrelated local services intact. Logs are in system temp; synthetic JSON artifacts
+are tracked. No API/web server or VPS deployment. Last recorded production remains
+8c7461d, schema 24, plus the documented Nginx repair.
+
 ## Part 2b: mixed readers and gated automatic writer (10 October 2026)
 
 Part 2b is complete, synchronized and published to both main branches. Source CI

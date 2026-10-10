@@ -1,0 +1,111 @@
+{
+  "baseline_json_bytes": 6400063,
+  "blocks": 8000,
+  "checkpoints": 3,
+  "final_relations": {
+    "checkpoint_object": {
+      "index_bytes": 1474560,
+      "table_including_toast_bytes": 9388032,
+      "total_bytes": 10862592
+    },
+    "event": {
+      "index_bytes": 3047424,
+      "table_including_toast_bytes": 9404416,
+      "total_bytes": 12451840
+    },
+    "shared_checkpoint": {
+      "index_bytes": 16384,
+      "table_including_toast_bytes": 16384,
+      "total_bytes": 32768
+    },
+    "snapshot": {
+      "index_bytes": 49152,
+      "table_including_toast_bytes": 20733952,
+      "total_bytes": 20783104
+    }
+  },
+  "fixed_node_ids": true,
+  "initial_relations": {
+    "checkpoint_object": {
+      "index_bytes": 8192,
+      "table_including_toast_bytes": 8192,
+      "total_bytes": 16384
+    },
+    "event": {
+      "index_bytes": 3047424,
+      "table_including_toast_bytes": 9396224,
+      "total_bytes": 12443648
+    },
+    "shared_checkpoint": {
+      "index_bytes": 8192,
+      "table_including_toast_bytes": 8192,
+      "total_bytes": 16384
+    },
+    "snapshot": {
+      "index_bytes": 24576,
+      "table_including_toast_bytes": 8192,
+      "total_bytes": 32768
+    }
+  },
+  "measurements": [
+    {
+      "append_lock_wait_ms": 2903.1682,
+      "batched_object_selects": 619,
+      "batched_read_ms": 1004.162,
+      "legacy_read_ms": 132.2574,
+      "legacy_wal_bytes": 7107176.0,
+      "legacy_write_ms": 720.3374,
+      "normal_read_ms": 1033.1714000000002,
+      "publication_object_inserts": 154,
+      "publication_object_selects": 773,
+      "revision": 8000,
+      "root": "eff0fd68071a72697227d503132e80b40fef8e1da571895b45d62acac7ed2d39",
+      "shared_wal_bytes": 11631320.0,
+      "shared_write_verify_ms": 2918.8157,
+      "unbatched_object_selects": 9817,
+      "unbatched_read_ms": 7269.8556
+    },
+    {
+      "append_lock_wait_ms": 2723.0404,
+      "batched_object_selects": 619,
+      "batched_read_ms": 794.6617,
+      "legacy_read_ms": 207.6106,
+      "legacy_wal_bytes": 7108272.0,
+      "legacy_write_ms": 1284.8804,
+      "normal_read_ms": 1245.3137000000002,
+      "publication_object_inserts": 4,
+      "publication_object_selects": 773,
+      "revision": 8001,
+      "root": "d2686b037ef6fbe2d1037ced18249fed7468b859eb5b33387d44615e6c1404b7",
+      "shared_wal_bytes": 8744.0,
+      "shared_write_verify_ms": 2735.4272,
+      "unbatched_object_selects": 9817,
+      "unbatched_read_ms": 6438.131399999999
+    },
+    {
+      "append_lock_wait_ms": 2065.1877999999997,
+      "batched_object_selects": 619,
+      "batched_read_ms": 1409.0892,
+      "legacy_read_ms": 122.5261,
+      "legacy_wal_bytes": 7107520.0,
+      "legacy_write_ms": 1273.4142,
+      "normal_read_ms": 841.2225,
+      "publication_object_inserts": 3,
+      "publication_object_selects": 773,
+      "revision": 8002,
+      "root": "2baa608a5e26d33cd38a7ee1f28ea1dc873d204f76a3cb9072d9e8e1d56d83f4",
+      "shared_wal_bytes": 7712.0,
+      "shared_write_verify_ms": 2082.6213,
+      "unbatched_object_selects": 9817,
+      "unbatched_read_ms": 8631.163700000001
+    }
+  ],
+  "mode": "batched",
+  "scope": "Single local disposable PostgreSQL run. WAL is cluster-wide and may include background work. Sequential warm reads, no native assets or concurrent load. Both publication modes derive from a matching legacy checkpoint. Individual mode preserves per-object SQL as a benchmark reference, with current codec/validation. Separate fresh databases and identical fixed-ID fixtures are required. Legacy-write timing includes previous shared reads. No production rollout or service-load claim.",
+  "unique_canonical_bytes": 7683867,
+  "unique_objects": 9826,
+  "workload": "varied",
+  "observed_peak_working_set_bytes": 109903872,
+  "memory_method": "Windows OS peak working set sampled every 250 ms, including expected and reconstructed states and client buffers; excludes PostgreSQL.",
+  "environment": "Windows, Intel Core i7-1255U, Rust 1.96 release, local Docker PostgreSQL 16; one warm sequential run per mode/workload on separate empty migrated databases."
+}

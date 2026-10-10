@@ -6,7 +6,7 @@ use engine_core::{
     shared_checkpoint::{
         postgres::{self, PgStore},
         read_state, write_state, Address, Error, Limits, ObjectStore, MAX_OBJECT_BYTES,
-        READ_BATCH_OBJECTS,
+        READ_BATCH_OBJECTS, WRITE_BATCH_BYTES, WRITE_BATCH_OBJECTS,
     },
     snapshot::{
         read_state_at, CheckpointFormat, PeriodicStorage, SnapshotEngine, SnapshotError,
@@ -61,6 +61,225 @@ async fn object_count(pool: &PgPool, doc: DocumentId) -> i64 {
         .fetch_one(pool)
         .await
         .unwrap()
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn concurrent_invalid_insert_is_checked_after_bulk_conflict(
+    pool: PgPool,
+) -> anyhow::Result<()> {
+    let (_, source, _) = seed(&pool).await?;
+    let (_, target, _) = seed(&pool).await?;
+    postgres::take(&pool, source, 1, Limits::default()).await?;
+    let (key, bytes): (String, Vec<u8>) = sqlx::query_as(
+        "select address,bytes from checkpoint_object where document_id=$1 order by address limit 1",
+    )
+    .bind(source.0)
+    .fetch_one(&pool)
+    .await?;
+    let mut corrupt = pool.begin().await?;
+    sqlx::query("insert into checkpoint_object(document_id,address,bytes) values($1,$2,$3)")
+        .bind(target.0)
+        .bind(&key)
+        .bind(b"corrupt".as_slice())
+        .execute(&mut *corrupt)
+        .await?;
+    let worker_pool = pool.clone();
+    let (pid_sender, pid_receiver) = tokio::sync::oneshot::channel();
+    let worker = tokio::spawn(async move {
+        let mut tx = worker_pool.begin().await?;
+        let pid: i32 = sqlx::query_scalar("select pg_backend_pid()")
+            .fetch_one(&mut *tx)
+            .await?;
+        pid_sender.send(pid).unwrap();
+        let result = PgStore::new(&mut tx)
+            .put_batch(target, &[(Address::try_from(key)?, bytes)])
+            .await;
+        tx.rollback().await?;
+        result
+    });
+    let pid = pid_receiver.await?;
+    // Wait for the real INSERT conflict, not an assumed scheduling delay. The
+    // initial SELECT cannot see the other transaction's uncommitted corrupt row.
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let blocked: bool = sqlx::query_scalar("select cardinality(pg_blocking_pids($1))>0")
+                .bind(pid)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            if blocked {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await?;
+    corrupt.commit().await?;
+    assert!(matches!(worker.await?, Err(Error::HashMismatch)));
+    assert_eq!(object_count(&pool, target).await, 1);
+    Ok(())
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn bulk_store_validates_reuse_duplicates_scope_and_capacity(
+    pool: PgPool,
+) -> anyhow::Result<()> {
+    let (_, source, _) = seed(&pool).await?;
+    let (_, target, _) = seed(&pool).await?;
+    let published = postgres::take(&pool, source, 1, Limits::default()).await?;
+    let stored: Vec<(String, Vec<u8>)> = sqlx::query_as(
+        "select address,bytes from checkpoint_object where document_id=$1 order by address",
+    )
+    .bind(source.0)
+    .fetch_all(&pool)
+    .await?;
+    let mut objects: Vec<_> = stored
+        .into_iter()
+        .map(|(key, bytes)| Ok((Address::try_from(key)?, bytes)))
+        .collect::<Result<_, Error>>()?;
+    objects.push(objects[0].clone());
+    let mut tx = pool.begin().await?;
+    let mut store = PgStore::new(&mut tx);
+    let flags = store.put_batch(target, &objects).await?;
+    assert!(flags[..flags.len() - 1].iter().all(|new| *new));
+    assert!(!flags.last().unwrap());
+    assert_eq!(store.write_queries(), 1);
+    assert!(store
+        .put_batch(target, &objects)
+        .await?
+        .iter()
+        .all(|new| !new));
+    assert_eq!(
+        store.write_queries(),
+        1,
+        "unchanged batches should issue no INSERT"
+    );
+    let state = read_state(&mut store, target, &published.root, Limits::default()).await?;
+    assert_eq!(state.nodes.len(), 1);
+    assert!(matches!(
+        store
+            .put_batch(target, &vec![objects[0].clone(); WRITE_BATCH_OBJECTS + 1])
+            .await,
+        Err(Error::Limit(_))
+    ));
+    assert!(matches!(
+        store
+            .put_batch(
+                target,
+                &[(objects[0].0.clone(), vec![0; WRITE_BATCH_BYTES + 1])]
+            )
+            .await,
+        Err(Error::Limit(_))
+    ));
+    let bad = vec![(objects[0].0.clone(), b"corrupt".to_vec())];
+    assert!(matches!(
+        store.put_batch(target, &bad).await,
+        Err(Error::HashMismatch)
+    ));
+    tx.rollback().await?;
+    assert_eq!(object_count(&pool, target).await, 0);
+    // A forged stored value must not be accepted merely because its address exists.
+    sqlx::query("insert into checkpoint_object(document_id,address,bytes) values($1,$2,$3)")
+        .bind(target.0)
+        .bind(objects[0].0.as_str())
+        .bind(b"corrupt".as_slice())
+        .execute(&pool)
+        .await?;
+    let mut tx = pool.begin().await?;
+    assert!(matches!(
+        PgStore::new(&mut tx).put_batch(target, &objects).await,
+        Err(Error::HashMismatch)
+    ));
+    tx.rollback().await?;
+    assert_eq!(object_count(&pool, target).await, 1);
+    Ok(())
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn broad_index_batches_match_memory_graph_and_bound_query_growth(
+    pool: PgPool,
+) -> anyhow::Result<()> {
+    let (_, doc, _) = seed(&pool).await?;
+    let mut connection = pool.acquire().await?;
+    let mut state = read_state_at(&mut connection, doc, 1).await?.state;
+    let original = state.nodes.values().next().unwrap().clone();
+    state.nodes.clear();
+    for index in 0..2000 {
+        let mut node = original.clone();
+        node.id = NodeId(format!("{index:026}"));
+        if index < 3 {
+            node.current_fields = json!({"text": "ab".repeat(300_000)});
+        }
+        state.nodes.insert(node.id.clone(), node);
+    }
+    let mut reference = engine_core::shared_checkpoint::MemoryStore::default();
+    let (expected_root, expected_stats) =
+        write_state(&mut reference, doc, &state, Limits::default()).await?;
+    let mut tx = pool.begin().await?;
+    let mut store = PgStore::new(&mut tx);
+    let (root, stats) = write_state(&mut store, doc, &state, Limits::default()).await?;
+    assert_eq!(root, expected_root);
+    assert_eq!(stats.new_objects, expected_stats.new_objects);
+    assert_eq!(stats.new_bytes, expected_stats.new_bytes);
+    assert!(
+        store.write_queries() < 50,
+        "bounded bulk writes should replace per-object INSERTs"
+    );
+    let before = store.read_queries();
+    assert_eq!(
+        read_state(&mut store, doc, &root, Limits::default()).await?,
+        state
+    );
+    assert!(
+        store.read_queries() - before < 170,
+        "both indexes and values must be batched"
+    );
+    let before = store.write_queries();
+    let (repeated, stats) = write_state(&mut store, doc, &state, Limits::default()).await?;
+    assert_eq!(repeated, root);
+    assert_eq!(stats.new_objects, 0);
+    assert_eq!(store.write_queries(), before);
+    tx.commit().await?;
+    Ok(())
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn overlapping_historical_publishers_remain_atomic_and_replay_equivalent(
+    pool: PgPool,
+) -> anyhow::Result<()> {
+    let (actor, doc, _) = seed(&pool).await?;
+    let mut tx = pool.begin().await?;
+    for index in 0..140 {
+        engine_core::log::append_in_tx(
+            &mut tx,
+            doc,
+            &EventPayload::CommentAdded {
+                node_id: None,
+                body: format!("Repeated across batches {}", index % 71),
+            },
+            actor,
+        )
+        .await?;
+    }
+    tx.commit().await?;
+    let (first, second) = tokio::join!(
+        postgres::take(&pool, doc, 71, Limits::default()),
+        postgres::take(&pool, doc, 141, Limits::default()),
+    );
+    first?;
+    second?;
+    let events =
+        sqlx::query_as::<_, Event>("select * from event where document_id=$1 order by seq")
+            .bind(doc.0)
+            .fetch_all(&pool)
+            .await?;
+    for seq in [71, 141] {
+        assert_eq!(
+            postgres::load(&pool, doc, seq, Limits::default()).await?,
+            Materializer::fold(&events[..seq as usize])?
+        );
+    }
+    Ok(())
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -219,7 +438,22 @@ async fn oversized_value_rolls_back_partial_objects_before_legacy_fallback(
     pool: PgPool,
 ) -> anyhow::Result<()> {
     let (actor, doc, _) = seed(&pool).await?;
-    // Node/map objects are written before comments, so this fails after partial writes.
+    // More than one buffer of valid comments forces an actual database batch before
+    // the oversized final comment fails. The savepoint must remove that batch.
+    let mut tx = pool.begin().await?;
+    for index in 0..70 {
+        engine_core::log::append_in_tx(
+            &mut tx,
+            doc,
+            &EventPayload::CommentAdded {
+                node_id: None,
+                body: format!("Valid comment {index}"),
+            },
+            actor,
+        )
+        .await?;
+    }
+    tx.commit().await?;
     append(
         &pool,
         doc,
@@ -238,19 +472,22 @@ async fn oversized_value_rolls_back_partial_objects_before_legacy_fallback(
         .await?;
     assert_eq!(shared, 0);
     let mut connection = pool.acquire().await?;
-    let read = read_state_at(&mut connection, doc, 2).await?;
+    let read = read_state_at(&mut connection, doc, 72).await?;
     assert_eq!(
         (
             read.snapshot_seq,
             read.replayed_events,
             read.checkpoint_format
         ),
-        (2, 0, CheckpointFormat::Legacy)
+        (72, 0, CheckpointFormat::Legacy)
     );
-    assert_eq!(read.state.comments[0].body.len(), MAX_OBJECT_BYTES);
+    assert_eq!(
+        read.state.comments.last().unwrap().body.len(),
+        MAX_OBJECT_BYTES
+    );
     assert_eq!(
         engine.read_current_state_with_seq(doc).await?,
-        (read.state, 2)
+        (read.state, 72)
     );
     Ok(())
 }
@@ -389,7 +626,7 @@ async fn failed_and_interrupted_publication_roll_back_and_can_retry(
     pool: PgPool,
 ) -> anyhow::Result<()> {
     let (_, doc, _) = seed(&pool).await?;
-    // The first node is inserted, then the small total budget fails on its map.
+    // The budget fails before the buffered graph can be published.
     assert!(matches!(
         postgres::take(
             &pool,

@@ -209,7 +209,7 @@ async fn try_lock_periodic(
     document_id: DocumentId,
 ) -> Result<bool, sqlx::Error> {
     sqlx::query_scalar("select pg_try_advisory_xact_lock(hashtextextended($1,0))")
-        .bind(format!("dynodoc.periodic-checkpoint:{}", document_id.0))
+        .bind(shared::publication_lock_key(document_id))
         .fetch_one(connection)
         .await
 }
