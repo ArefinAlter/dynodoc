@@ -2,6 +2,13 @@
 
 ## Source increment: bounded checkpoint encoding and desktop distribution (10 October 2026)
 
+Implementation commits pushed to main: application `2f69c87`, standalone engine
+`3ac2ad6`. CI evidence: [application Rust](https://github.com/ArefinAlter/dynodoc/actions/runs/38066279174),
+[frontend and signed-in workflows](https://github.com/ArefinAlter/dynodoc/actions/runs/38066279185),
+[standalone engine](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38066287205).
+These links track source verification; a later documentation-only commit records
+the references without changing implementation or deployment.
+
 Part 2e serializes borrowed checkpoint values into a capped output buffer and
 validates canonical bytes by streaming comparison. It removes full-value clones,
 intermediate JSON trees and the reader's second encoded buffer without changing
@@ -32,7 +39,7 @@ policy; no policy was relaxed and its incidental workspace-file additions were
 reverted. One standalone run missed the existing 100 ms SSE deadline under load;
 the complete quiet 238-test rerun passed, including SSE. Owned preview/watch
 processes and the labelled test database/volume are removed; existing local
-containers are preserved. Source commit/CI references follow after publication.
+containers are preserved. Source commits and CI references are above.
 
 This source increment has not been deployed. VPS remains application `ecbc643`,
 schema 26, with shared periodic writes disabled. Existing deployment/rollback

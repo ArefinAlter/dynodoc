@@ -2,6 +2,9 @@
 
 ## Latest source: bounded checkpoint encoding (10 October 2026)
 
+Implementation is pushed to both main branches: application `2f69c87` and standalone
+engine `3ac2ad6`. Source CI evidence is linked in the handoff.
+
 Part 2e now borrows checkpoint values, caps encoded output growth before allocation
 and validates canonical bytes without another full encoded buffer. V1 hashes and
 roots remain unchanged. An oversized-value rejection probe measured 1,048,724
