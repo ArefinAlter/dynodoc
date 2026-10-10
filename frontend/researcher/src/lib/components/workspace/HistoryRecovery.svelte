@@ -1,8 +1,14 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import type { EventPayload } from '$lib/api/types';
+  import type { DocumentState, EventPayload } from '$lib/api/types';
+  import type { Conflict } from '$lib/workspace/reviews';
   import { workspaceRequest } from '$lib/workspace/api';
-  import { download } from '$lib/workspace/files';
+  import {
+    download,
+    exportDocument,
+    exportSpreadsheet,
+    exportPresentation
+  } from '$lib/workspace/files';
 
   let {
     documentId,
@@ -24,7 +30,13 @@
     blocks: { id: string; label: string }[];
     can_propose: boolean;
     blocked_reason: string | null;
+    mode: 'restore' | 'revert' | 'cherry_pick';
+    from_seq: number | null;
+    conflicts: Conflict[];
   }
+  let mode = $state<Preview['mode']>('restore');
+  let fromRevision = $state(0);
+  let resolutions = $state<Record<string, string>>({});
   let revision = $state(untrack(() => initialRevision));
   let preview = $state<Preview | null>(null);
   let selected = $state<string[]>([]);
@@ -63,9 +75,14 @@
   async function inspect() {
     preview = null;
     selected = [];
+    resolutions = {};
     visibleBlocks = 200;
     await run(async () => {
-      preview = await workspaceRequest<Preview>(endpoint, { through_seq: revision });
+      preview = await workspaceRequest<Preview>(endpoint, {
+        through_seq: revision,
+        mode,
+        ...(mode === 'restore' ? {} : { from_seq: fromRevision })
+      });
       requestId = crypto.randomUUID();
     });
   }
@@ -76,6 +93,17 @@
       const receipt = await workspaceRequest<{ id: string }>(endpoint, {
         action: 'create',
         through_seq: plan.through_seq,
+        mode: plan.mode,
+        ...(plan.mode === 'restore'
+          ? {}
+          : {
+              from_seq: plan.from_seq,
+              resolutions: Object.fromEntries(
+                plan.conflicts
+                  .filter((c) => selected.includes(c.node_id) && resolutions[c.key])
+                  .map((c) => [c.key, resolutions[c.key]])
+              )
+            }),
         base_seq: plan.base_seq,
         node_ids: selected,
         request_id: requestId
@@ -93,6 +121,22 @@
         `dynodoc-${documentId}-revision-${revision}.json`,
         'application/json'
       );
+    });
+  }
+  async function exportNative() {
+    await run(async () => {
+      const checkpoint = await workspaceRequest<{
+        state: DocumentState;
+        kind: string;
+        title: string;
+        through_seq: number;
+      }>(`/documents/${documentId}/provenance?through_seq=${revision}`);
+      const origin = { documentId, seq: checkpoint.through_seq };
+      if (checkpoint.kind === 'spreadsheet')
+        await exportSpreadsheet(checkpoint.state, checkpoint.title, 'xlsx', undefined, origin);
+      else if (checkpoint.kind === 'presentation')
+        await exportPresentation(checkpoint.state, checkpoint.title, origin);
+      else await exportDocument(checkpoint.state, checkpoint.title, origin);
     });
   }
   function describe(op: EventPayload) {
@@ -119,6 +163,42 @@
     }}
   >
     <label
+      >History operation
+      <select
+        bind:value={mode}
+        disabled={busy}
+        onchange={() => {
+          preview = null;
+          selected = [];
+        }}
+      >
+        <option value="restore">Restore earlier content</option>
+        <option value="revert">Revert changes in a range</option>
+        <option value="cherry_pick">Cherry-pick changes in a range</option>
+      </select>
+    </label>
+    {#if mode !== 'restore'}
+      <label
+        >From revision (exclusive)<input
+          type="number"
+          min="0"
+          max={revision - 1}
+          step="1"
+          required
+          bind:value={fromRevision}
+          disabled={busy}
+          oninput={() => {
+            preview = null;
+            selected = [];
+          }}
+        /></label
+      >
+      <p>
+        The range ends at the earlier revision below. Only its selected content changes are applied;
+        overlaps need a choice.
+      </p>
+    {/if}
+    <label
       >Earlier revision
       <input
         type="number"
@@ -141,12 +221,29 @@
         disabled={busy || !Number.isSafeInteger(revision) || revision < 0 || revision > head}
         onclick={() => void exportCheckpoint()}>Download checkpoint JSON</button
       >
+      <button
+        type="button"
+        disabled={busy || !Number.isSafeInteger(revision) || revision < 0 || revision > head}
+        onclick={() => void exportNative()}>Download native file</button
+      >
     </div>
+    <p>
+      Native downloads reconstruct this revision as DOCX, XLSX or PPTX with its origin and supported
+      content. Unsupported original formatting or embedded objects may be absent. Keep the original
+      file for full fidelity.
+    </p>
   </form>
   {#if error}<p role="alert">{error}</p>{/if}
   {#if preview}
     <p>
-      Content from revision {preview.through_seq}, compared with team revision {preview.base_seq}.
+      {preview.mode === 'restore'
+        ? 'Content'
+        : preview.mode === 'revert'
+          ? 'Revert'
+          : 'Cherry-pick'} from {preview.from_seq === null
+        ? 'revision'
+        : `revisions ${preview.from_seq + 1}–`}
+      {preview.through_seq}, compared with team revision {preview.base_seq}.
     </p>
     {#if preview.blocked_reason}<p>{preview.blocked_reason}</p>{/if}
     {#if blocks.length}
@@ -197,12 +294,38 @@
       <p>
         {selected.length} of {blocks.length} blocks selected. Recover up to 5,000 blocks at a time.
       </p>
+      {#each preview.conflicts.filter( (c) => selected.includes(c.node_id) ) as conflict (conflict.key)}
+        <label
+          >Overlapping {conflict.field} change
+          <select
+            value={resolutions[conflict.key] || ''}
+            disabled={busy}
+            onchange={(event) => {
+              resolutions[conflict.key] = event.currentTarget.value;
+              requestId = crypto.randomUUID();
+            }}
+          >
+            <option value="">Choose how to resolve</option>
+            <option value="team">Keep the team's current value</option>
+            <option value="draft">Use the selected historical change</option>
+          </select>
+        </label>
+        <details>
+          <summary>Compare values</summary>
+          <pre>Before: {JSON.stringify(conflict.ancestor, null, 2)}\nTeam: {JSON.stringify(
+              conflict.team,
+              null,
+              2
+            )}\nHistorical change: {JSON.stringify(conflict.draft, null, 2)}</pre>
+        </details>
+      {/each}
       {#if preview.can_propose}
         <button
           disabled={busy ||
             !canCreate ||
             !selected.length ||
             selected.length > 5000 ||
+            preview.conflicts.some((c) => selected.includes(c.node_id) && !resolutions[c.key]) ||
             preview.base_seq !== head}
           onclick={() => void create()}>Create recovery draft</button
         >

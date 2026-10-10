@@ -8,6 +8,18 @@ vi.mock('$lib/server/session', () => ({
 import { GET, POST } from './+server';
 const DOC = '11111111-2222-3333-4444-555555555555';
 let upstream: ReturnType<typeof vi.fn>;
+it('completes pairing with only the editor bearer and rejects methods and selectors', async () => {
+  const token = `Bearer ${'b'.repeat(64)}`;
+  expect((await call('connection')).status).toBe(401);
+  expect((await call('connection', 'GET', token)).status).toBe(200);
+  expect(upstream.mock.calls[0][0]).toBe('http://engine.test/connector/connection');
+  expect(upstream.mock.calls[0][1].headers).toEqual({
+    authorization: token,
+    'content-type': 'application/json'
+  });
+  expect((await call('connection', 'POST', token)).status).toBe(404);
+  expect((await call('connection', 'GET', token, '?through_seq=0')).status).toBe(400);
+});
 beforeEach(() => {
   upstream = vi.fn(async () => new Response('{"through_seq":4}', { status: 200 }));
   vi.stubGlobal('fetch', upstream);

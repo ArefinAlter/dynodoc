@@ -17,6 +17,15 @@ including a second user to verify private credential/queue isolation.
 
 ## Common workflow for every pair
 
+For the current release first install from `/connectors`: Office manifests must
+show the Home ribbon command/icons, and each Google test deployment must show the
+Open provenance menu/sidebar. Use **Sign in to Dynodoc**, compare the code in the
+browser, sign in, approve one file and return to finish. Check expiry, cancel/retry,
+wrong-file/kind, two accounts, lost membership and revocation. Check browser launch
+behavior on each desktop/web host; the sign-in page must not replace the working
+copy. Also exercise the manual-key fallback below. No marketplace acceptance is
+implied by Microsoft's XML validation.
+
 1. Create an invite-only Project with an owner and contributor. Import a simple
    DOCX, XLSX or PPTX and open matching Microsoft and Google working copies. Create
    a separate file/host key for each. Confirm a wrong-file/wrong-host key fails.

@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { ulid } from 'ulid';
 import { readFile } from 'node:fs/promises';
+import { unzipSync, strFromU8 } from 'fflate';
 
 test.skip(process.env.PILOT_E2E !== 'true', 'Requires the isolated signed-in development stack.');
 
@@ -81,6 +82,18 @@ test('recover an old deleted block through preview, checkpoint download, draft a
   expect(checkpoint.through_seq).toBe(3);
   expect(checkpoint.state.nodes[old].deleted).toBe(false);
   expect(checkpoint.state.nodes[live].current_fields.label).toBe('Original sibling');
+  const nativeDownload = page.waitForEvent('download');
+  await recovery.getByRole('button', { name: 'Download native file', exact: true }).click();
+  const native = await nativeDownload;
+  expect(native.suggestedFilename()).toMatch(/\(v3\)\.docx$/);
+  const zip = unzipSync(await readFile((await native.path())!));
+  expect(strFromU8(zip['word/document.xml'])).toContain('The paragraph we need back');
+  expect(strFromU8(zip['word/document.xml'])).not.toContain('Later save');
+  const properties = strFromU8(zip['docProps/custom.xml']);
+  expect(properties).toMatch(
+    new RegExp(`name="DynodocDocument"[^>]*><vt:lpwstr>${doc.id}</vt:lpwstr>`)
+  );
+  expect(properties).toMatch(/name="DynodocRevision"[^>]*><vt:lpwstr>3<\/vt:lpwstr>/);
   await recovery.getByRole('button', { name: 'Create recovery draft' }).click();
   await expect(page.getByRole('button', { name: 'Send for review', exact: true })).toBeVisible();
   expect((await api(page, `/documents/${doc.id}/provenance`)).through_seq).toBe(59);
@@ -101,4 +114,14 @@ test('recover an old deleted block through preview, checkpoint download, draft a
   expect(current.state.nodes[old].deleted).toBe(false);
   expect(current.state.nodes[live].current_fields.label).toBe('Later save 54');
   expect((await api(page, `/documents/${doc.id}/verify`)).ok).toBe(true);
+  await page.goto(`/documents/${doc.id}`);
+  await page.getByRole('button', { name: 'Version history', exact: true }).click();
+  await recovery.getByLabel('History operation').selectOption('cherry_pick');
+  await recovery.getByLabel('Earlier revision').fill('4');
+  await recovery.getByLabel('From revision (exclusive)').fill('3');
+  await recovery.getByRole('button', { name: 'Preview recovery', exact: true }).click();
+  await recovery.getByRole('button', { name: 'Select all blocks', exact: true }).click();
+  await recovery.getByRole('button', { name: 'Create recovery draft' }).click();
+  await expect(page.getByRole('button', { name: 'Send for review', exact: true })).toBeVisible();
+  expect((await api(page, `/documents/${doc.id}/provenance`)).through_seq).toBe(60);
 });

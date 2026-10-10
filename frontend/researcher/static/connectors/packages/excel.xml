@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1" xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="TaskPaneApp">
+  <Id>794ef9dc-6d78-4b08-a7f3-2526d0476930</Id>
+  <Version>1.0.0.0</Version>
+  <ProviderName>Dynodoc</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="Dynodoc Provenance (Development)" />
+  <Description DefaultValue="Capture block changes and exchange review requests with Dynodoc Projects." />
+  <IconUrl DefaultValue="https://app.dynodoc.online/connectors/assets/icon-32.png" />
+  <HighResolutionIconUrl DefaultValue="https://app.dynodoc.online/connectors/assets/icon-80.png" />
+  <SupportUrl DefaultValue="https://dynodoc.online" />
+  <AppDomains><AppDomain>https://app.dynodoc.online</AppDomain></AppDomains>
+  <Hosts><Host Name="Workbook" /></Hosts>
+  <Requirements><Sets DefaultMinVersion="1.13"><Set Name="ExcelApi" /></Sets></Requirements>
+  <DefaultSettings><SourceLocation DefaultValue="https://app.dynodoc.online/connectors/excel" /></DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+  <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
+    <Hosts><Host xsi:type="Workbook"><DesktopFormFactor>
+      <FunctionFile resid="Commands.Url" />
+      <ExtensionPoint xsi:type="PrimaryCommandSurface"><OfficeTab id="TabHome"><Group id="Dynodoc.Group">
+        <Label resid="Group.Label" /><Icon><bt:Image size="16" resid="Icon.16" /><bt:Image size="32" resid="Icon.32" /><bt:Image size="80" resid="Icon.80" /></Icon>
+        <Control xsi:type="Button" id="Dynodoc.Open"><Label resid="Open.Label" />
+          <Supertip><Title resid="Open.Label" /><Description resid="Open.Description" /></Supertip>
+          <Icon><bt:Image size="16" resid="Icon.16" /><bt:Image size="32" resid="Icon.32" /><bt:Image size="80" resid="Icon.80" /></Icon>
+          <Action xsi:type="ShowTaskpane"><TaskpaneId>Dynodoc.Provenance</TaskpaneId><SourceLocation resid="Pane.Url" /></Action>
+        </Control>
+      </Group></OfficeTab></ExtensionPoint>
+    </DesktopFormFactor></Host></Hosts>
+    <Resources>
+      <bt:Images><bt:Image id="Icon.16" DefaultValue="https://app.dynodoc.online/connectors/assets/icon-16.png" /><bt:Image id="Icon.32" DefaultValue="https://app.dynodoc.online/connectors/assets/icon-32.png" /><bt:Image id="Icon.80" DefaultValue="https://app.dynodoc.online/connectors/assets/icon-80.png" /></bt:Images>
+      <bt:Urls><bt:Url id="Commands.Url" DefaultValue="https://app.dynodoc.online/connectors/commands.html" /><bt:Url id="Pane.Url" DefaultValue="https://app.dynodoc.online/connectors/excel" /></bt:Urls>
+      <bt:ShortStrings><bt:String id="Group.Label" DefaultValue="Dynodoc" /><bt:String id="Open.Label" DefaultValue="Open provenance" /></bt:ShortStrings>
+      <bt:LongStrings><bt:String id="Open.Description" DefaultValue="Sign in, capture changes, push for review and pull team changes." /></bt:LongStrings>
+    </Resources>
+  </VersionOverrides>
+</OfficeApp>

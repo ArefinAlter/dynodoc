@@ -1,5 +1,11 @@
 # Microsoft and Google provenance connectors
 
+Current installation/sign-in instructions: [INSTALL.md](INSTALL.md). All six hosts
+now offer browser sign-in and file approval without copying a connection key.
+The manual workflow below remains supported. Microsoft manifests include ribbon
+commands; `/connectors` offers generated XML/Google ZIP test downloads. Deploy the
+matching API/web build first. This does not certify native acceptance or publication.
+
 All six development connectors use the same protocol and capture queue. Native
 acceptance and marketplace publication remain open. Dynodoc is the review/sync platform;
 Microsoft and Google remain the editors. [Contract and remaining work](../docs/PROVENANCE-SYNC.md).

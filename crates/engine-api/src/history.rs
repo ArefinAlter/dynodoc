@@ -12,9 +12,9 @@ use engine_core::{
     workspace_merge,
 };
 use engine_shared::{DocumentId, IdentityId, NodeId};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
 pub fn router() -> Router<AppState> {
@@ -31,6 +31,15 @@ enum Action {
     Create,
 }
 
+#[derive(Default, Deserialize, Serialize, PartialEq, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+enum Mode {
+    #[default]
+    Restore,
+    Revert,
+    CherryPick,
+}
+
 #[derive(Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 struct RecoveryRequest {
@@ -39,6 +48,14 @@ struct RecoveryRequest {
     action: Action,
     /// Exact retained event revision, including zero for the empty initial state.
     through_seq: i64,
+    /// Restore content, reverse a revision range, or apply that range again.
+    #[serde(default)]
+    mode: Mode,
+    /// Range start (exclusive), required for revert/cherry-pick. End is through_seq.
+    from_seq: Option<i64>,
+    /// Explicit overlap choices returned by preview: conflict key -> team or draft.
+    #[serde(default)]
+    resolutions: BTreeMap<String, String>,
     /// Required on create: the team revision returned by preview.
     base_seq: Option<i64>,
     /// Omit for all content; otherwise select 1-5000 unique logical block IDs.
@@ -93,10 +110,29 @@ async fn recover(
     if req.through_seq < 0 || req.through_seq > head {
         return Err(bad("That revision does not exist in this document"));
     }
+    if req.mode == Mode::Restore {
+        if req.from_seq.is_some() || !req.resolutions.is_empty() {
+            return Err(bad(
+                "Restore uses a single revision and no range resolutions",
+            ));
+        }
+    } else if !req
+        .from_seq
+        .is_some_and(|seq| seq >= 0 && seq < req.through_seq)
+    {
+        return Err(bad("Choose a range with 0 <= from_seq < through_seq"));
+    }
     let chain_hash = crate::provenance::anchor(&mut tx, id, req.through_seq).await?;
-    let source = json!({"kind":"history_recovery","version":1,
+    let mut source = json!({"kind":"history_recovery","version":1,
         "through_seq":req.through_seq,"chain_hash":chain_hash,
         "node_ids":selection,"start_seq":req.base_seq.unwrap_or(head)});
+    if req.mode != Mode::Restore {
+        source["mode"] = json!(req.mode);
+        source["from_seq"] = json!(req.from_seq);
+        source["from_chain_hash"] =
+            json!(crate::provenance::anchor(&mut tx, id, req.from_seq.unwrap()).await?);
+        source["resolutions"] = json!(req.resolutions);
+    }
     let draft_id = if req.action == Action::Create {
         let draft_id = req
             .request_id
@@ -129,15 +165,26 @@ async fn recover(
         None
     };
     let historical = crate::reviews::state_through(&mut tx, id, req.through_seq).await?;
+    let (base, historical) = match req.mode {
+        Mode::Restore => (team.clone(), historical),
+        Mode::CherryPick => (
+            crate::reviews::state_through(&mut tx, id, req.from_seq.unwrap()).await?,
+            historical,
+        ),
+        Mode::Revert => (
+            historical,
+            crate::reviews::state_through(&mut tx, id, req.from_seq.unwrap()).await?,
+        ),
+    };
     let target = if let Some(ids) = &selection {
-        let mut selected = team.clone();
+        let mut selected = base.clone();
         for id in ids {
             let key = NodeId(id.clone());
             match historical.nodes.get(&key) {
                 Some(node) => {
                     selected.nodes.insert(key.clone(), node.clone());
                 }
-                None if team.nodes.contains_key(&key) => {
+                None if base.nodes.contains_key(&key) => {
                     selected.nodes.remove(&key);
                 }
                 None => return Err(bad("A selected block is absent from both revisions")),
@@ -151,17 +198,17 @@ async fn recover(
     } else {
         historical
     };
-    let ops = workspace_merge::diff(&team, &target);
-    if ops.len() > 20_000 {
+    let own = workspace_merge::diff(&base, &target);
+    if own.len() > 20_000 {
         return Err(bad(
             "Recover at most 20,000 changes at a time; select fewer blocks",
         ));
     }
     // Preview reports invalid structural selections so callers can include the
     // missing parent/children. Creation must pass exactly the same validation.
-    let mut local = team.clone();
+    let mut local = base.clone();
     let mut blocked_reason = None;
-    for op in &ops {
+    for op in &own {
         if let Err(error) = governance::authorize(Role::Author, op, &local) {
             blocked_reason = Some(format!(
                 "{error}. Include dependent blocks or resolve the structure in a draft."
@@ -170,8 +217,43 @@ async fn recover(
         }
         apply_payload(&mut local, op).map_err(|error| ApiError::Internal(error.to_string()))?;
     }
+    // Replay the delta first: reverting creation needs a tombstone, not a missing
+    // node that the three-way merge could overlook. Merge only content changes;
+    // comments, suggestions and access metadata are not undone.
+    let unresolved = workspace_merge::merge(&base, &team, &local, &BTreeMap::new());
+    if req.resolutions.iter().any(|(key, value)| {
+        !matches!(value.as_str(), "team" | "draft")
+            || !unresolved
+                .conflicts
+                .iter()
+                .any(|conflict| &conflict.key == key)
+    }) {
+        return Err(bad(
+            "Use only conflict keys from this preview and team/draft choices",
+        ));
+    }
+    let plan = workspace_merge::merge(&base, &team, &local, &req.resolutions);
+    let ops = plan.ops;
+    if ops.len() > 20_000 {
+        return Err(bad(
+            "Recover at most 20,000 changes at a time; select fewer blocks",
+        ));
+    }
+    let mut validated = team.clone();
+    if blocked_reason.is_none() {
+        for op in &ops {
+            if let Err(error) = governance::authorize(Role::Author, op, &validated) {
+                blocked_reason = Some(format!(
+                    "{error}. Include dependent blocks or resolve the structure in a draft."
+                ));
+                break;
+            }
+            apply_payload(&mut validated, op)
+                .map_err(|error| ApiError::Internal(error.to_string()))?;
+        }
+    }
     let Some(draft_id) = draft_id else {
-        let changed: BTreeSet<_> = ops.iter().filter_map(|op| op.target_node_id()).collect();
+        let changed: BTreeSet<_> = own.iter().filter_map(|op| op.target_node_id()).collect();
         let blocks: Vec<_> = changed
             .into_iter()
             .filter_map(|id| {
@@ -194,11 +276,17 @@ async fn recover(
             })
             .collect();
         return Ok(Json(json!({"through_seq":req.through_seq,"base_seq":head,
-            "chain_hash":chain_hash,"node_ids":selection,"ops":ops,
+            "mode":req.mode,"from_seq":req.from_seq,
+            "chain_hash":chain_hash,"node_ids":selection,"ops":own,"result_ops":ops,"conflicts":plan.conflicts,
             "blocks":blocks,"blocked_reason":blocked_reason,"can_propose":role != Role::Auditor})));
     };
     if let Some(reason) = blocked_reason {
         return Err(bad(&reason));
+    }
+    if !plan.conflicts.is_empty() {
+        return Err(ApiError::Conflict {
+            reason: "Resolve overlapping changes in the preview before creating a draft".into(),
+        });
     }
     if ops.is_empty() {
         return Err(bad("The selected content already matches that revision"));
@@ -206,7 +294,11 @@ async fn recover(
     // Explicit ID makes retry atomic without a second, independently committed
     // receipt. A cross-document UUID collision fails without leaking its draft.
     let inserted = sqlx::query("insert into workspace_draft(id,document_id,name,base_seq,base_state,created_by,source,revision,content_changed_at) values($1,$2,$3,$4,$5,$6,$7,1,now()) on conflict(id) do nothing")
-        .bind(draft_id).bind(id).bind(format!("Recover content from revision {}", req.through_seq))
+        .bind(draft_id).bind(id).bind(match req.mode {
+            Mode::Restore => format!("Recover content from revision {}", req.through_seq),
+            Mode::Revert => format!("Revert revisions {}–{}", req.from_seq.unwrap() + 1, req.through_seq),
+            Mode::CherryPick => format!("Cherry-pick revisions {}–{}", req.from_seq.unwrap() + 1, req.through_seq),
+        })
         .bind(head).bind(json!(team)).bind(auth.identity_id).bind(&source).execute(&mut *tx).await?;
     if inserted.rows_affected() != 1 {
         return Err(ApiError::Conflict {
@@ -234,5 +326,5 @@ async fn recover(
 }
 
 #[derive(utoipa::OpenApi)]
-#[openapi(paths(recover), components(schemas(RecoveryRequest, Action)))]
+#[openapi(paths(recover), components(schemas(RecoveryRequest, Action, Mode)))]
 pub struct HistoryApi;

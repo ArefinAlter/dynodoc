@@ -2,6 +2,7 @@
  * never DocumentProperties or shared ScriptProperties. No general Docs onEdit
  * trigger exists: the opt-in sidebar polls while open. */
 const DYNODOC_ORIGIN = 'https://app.dynodoc.online';
+const DYNODOC_HOST = 'google-docs';
 const BLOCK_PREFIX = 'dynodoc.block.';
 function onOpen() { DocumentApp.getUi().createAddonMenu().addItem('Open provenance', 'showDynodoc').addToUi(); }
 function onInstall(e) { onOpen(e); }

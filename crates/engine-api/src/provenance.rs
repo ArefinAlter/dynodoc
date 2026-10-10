@@ -30,6 +30,7 @@ pub fn router() -> Router<AppState> {
         .route("/documents/:id/provenance/bundles/:bundle", get(bundle))
         .route("/documents/:id/connectors", get(grants).post(grant))
         .route("/documents/:id/connectors/:grant/revoke", post(revoke))
+        .route("/connector/connection", get(connection))
         .route(
             "/connector/documents/:id/checkpoint",
             get(connector_checkpoint),
@@ -254,17 +255,39 @@ async fn bundle(
         .bind(id).bind(bundle).bind(a.identity_id).fetch_optional(&mut *db).await?.ok_or(ApiError::NotFound)?;
     Ok(Json(item))
 }
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
 struct GrantInput {
     host: String,
+    /// SHA-256 of a 256-bit secret held by the requesting editor. Never the secret.
+    key_challenge: Option<String>,
+    /// Approval link expiry as Unix seconds; at most ten minutes into the future.
+    expires_at: Option<i64>,
 }
-#[utoipa::path(post,path="/documents/{id}/connectors",params(("id"=Uuid,Path)),request_body=Value,security(("paseto"=[])),responses((status=200,description="Seven-day file-scoped credential, returned once",body=Value)))]
+#[utoipa::path(post,path="/documents/{id}/connectors",params(("id"=Uuid,Path)),request_body=GrantInput,security(("paseto"=[])),responses((status=200,description="Seven-day file-scoped credential; pairing approval returns no secret",body=Value)))]
 async fn grant(
     State(s): State<AppState>,
     Path(id): Path<Uuid>,
     a: AuthContext,
     Json(p): Json<GrantInput>,
 ) -> Result<Json<Value>, ApiError> {
+    let pairing_hash =
+        match (&p.key_challenge, p.expires_at) {
+            (None, None) => None,
+            (Some(challenge), Some(expires))
+                if challenge.len() == 64
+                    && challenge
+                        .bytes()
+                        .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+                    && expires > Utc::now().timestamp()
+                    && expires <= Utc::now().timestamp() + 600 =>
+            {
+                Some(hex::decode(challenge).map_err(|_| bad("Invalid connection challenge"))?)
+            }
+            _ => return Err(bad(
+                "This connection link is invalid or expired. Start sign-in again in the editor.",
+            )),
+        };
     if ![
         "word",
         "google-docs",
@@ -297,13 +320,26 @@ async fn grant(
     if kind != expected {
         return Err(bad("Choose a connection for this file format"));
     }
+    if let Some(hash) = &pairing_hash {
+        let existing: Option<Value> = sqlx::query_scalar("select jsonb_build_object('id',id,'expires_at',expires_at,'host',host) from connector_grant where token_hash=$1 and document_id=$2 and identity_id=$3 and host=$4 and session_generation=$5 and revoked_at is null and expires_at>now()")
+            .bind(hash).bind(id).bind(a.identity_id).bind(&p.host).bind(a.session_generation).fetch_optional(&mut *tx).await?;
+        if let Some(grant) = existing {
+            return Ok(Json(json!({"grant":grant,"document_id":id})));
+        }
+    }
     let active:i64=sqlx::query_scalar("select count(*) from connector_grant where document_id=$1 and identity_id=$2 and revoked_at is null and expires_at>now()").bind(id).bind(a.identity_id).fetch_one(&mut *tx).await?;
     if active >= 10 {
         return Err(bad("Revoke an existing connection before creating another"));
     }
-    let (token, hash) = random_token()?;
-    let item:Value=sqlx::query_scalar("insert into connector_grant(document_id,identity_id,token_hash,session_generation,host) values($1,$2,$3,$4,$5) returning jsonb_build_object('id',id,'expires_at',expires_at,'host',host)")
-        .bind(id).bind(a.identity_id).bind(hash).bind(a.session_generation).bind(&p.host).fetch_one(&mut *tx).await?;
+    let (token, hash) = if let Some(hash) = pairing_hash {
+        (None, hash)
+    } else {
+        let (token, hash) = random_token()?;
+        (Some(token), hash)
+    };
+    let item:Value=sqlx::query_scalar("insert into connector_grant(document_id,identity_id,token_hash,session_generation,host) values($1,$2,$3,$4,$5) on conflict(token_hash) do nothing returning jsonb_build_object('id',id,'expires_at',expires_at,'host',host)")
+        .bind(id).bind(a.identity_id).bind(hash).bind(a.session_generation).bind(&p.host).fetch_optional(&mut *tx).await?
+        .ok_or_else(|| ApiError::Conflict { reason: "This connection was already used. Start sign-in again in the editor.".into() })?;
     crate::product::audit(
         &mut tx,
         a.identity_id,
@@ -314,6 +350,27 @@ async fn grant(
     .await?;
     tx.commit().await?;
     Ok(Json(json!({"grant":item,"token":token,"document_id":id})))
+}
+
+/// Completion needs the editor's secret, not the public approval challenge.
+#[utoipa::path(get,path="/connector/connection",security(("connector_key"=[])),responses((status=200,description="Approved file and host for this scoped credential",body=Value),(status=401,description="Not approved, expired or revoked")))]
+async fn connection(State(s): State<AppState>, c: Connector) -> Result<Json<Value>, ApiError> {
+    let mut tx = s.pool.begin().await?;
+    sqlx::query("select id from document where id=$1 for share")
+        .bind(c.document)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    crate::projects::lock_document_project(&mut tx, c.document).await?;
+    if access::require_member(&mut tx, c.document, c.auth.identity_id).await?
+        < MemberRole::Contributor
+    {
+        return Err(ApiError::Forbidden);
+    }
+    check_grant(&mut tx, c.grant, c.document, c.auth.identity_id).await?;
+    Ok(Json(
+        json!({"document_id":c.document,"host":c.host,"grant_id":c.grant}),
+    ))
 }
 #[utoipa::path(get,path="/documents/{id}/connectors",params(("id"=Uuid,Path)),security(("paseto"=[])),responses((status=200,description="Caller connections; no credentials",body=Value)))]
 async fn grants(
@@ -419,14 +476,18 @@ async fn connector_push(
     propose(s, id, c.auth, p, Some(c.grant)).await
 }
 #[derive(utoipa::OpenApi)]
-#[openapi(paths(
-    checkpoint,
-    push,
-    bundle,
-    grant,
-    grants,
-    revoke,
-    connector_checkpoint,
-    connector_push
-))]
+#[openapi(
+    paths(
+        checkpoint,
+        push,
+        bundle,
+        grant,
+        grants,
+        revoke,
+        connection,
+        connector_checkpoint,
+        connector_push
+    ),
+    components(schemas(GrantInput))
+)]
 pub struct ProvenanceApi;

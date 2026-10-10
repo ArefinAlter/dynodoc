@@ -700,6 +700,20 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
     await store.save(ledger);
     return CaptureSession.connect(store, remote, local, host);
   }
+  const hex = (bytes) => [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+  async function beginPairing(origin, host) {
+    const base = new URL(origin);
+    if (base.origin !== origin || base.protocol !== "https:" && !(base.protocol === "http:" && ["localhost", "127.0.0.1"].includes(base.hostname)))
+      throw new Error("Use your HTTPS Dynodoc workspace address.");
+    const token = hex(crypto.getRandomValues(new Uint8Array(32)));
+    const challenge = hex(
+      new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token)))
+    );
+    const expires = Math.floor(Date.now() / 1e3) + 600;
+    const url = new URL("/connectors/authorize", origin);
+    url.search = new URLSearchParams({ host, challenge, expires: String(expires) }).toString();
+    return { token, challenge, url: url.href, expires };
+  }
   function cellText(value, formula, type) {
     if (typeof formula === "string" && formula.startsWith("=")) {
       if (type === "text")
@@ -735,6 +749,7 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
   exports.CaptureSession = CaptureSession;
   exports.SIDECAR_MAX_BYTES = SIDECAR_MAX_BYTES;
   exports.assertHostKind = assertHostKind;
+  exports.beginPairing = beginPairing;
   exports.bindIdentical = bindIdentical;
   exports.blockKey = blockKey;
   exports.browserStore = browserStore;

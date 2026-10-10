@@ -45,6 +45,36 @@ offer **Recover before this edit**; named versions retain their existing workflo
 The review dialog identifies the recovery source revision. Existing source and
 target content comparisons show the changes being proposed.
 
+## Range revert, cherry-pick and native downloads
+
+The follow-up adds `mode: restore | revert | cherry_pick` (default `restore`).
+Revert and cherry-pick require `0 <= from_seq < through_seq <= head`. This selects
+the net content difference over `(from_seq, through_seq]`, not an arbitrary Git
+commit or branch. Revert reverses that difference; cherry-pick applies it forward.
+Optional block selection limits which differences participate. Comments, approvals,
+permissions and other workflow metadata do not participate.
+
+The server reconstructs both historical endpoints, diffs/replays the selected
+delta and three-way merges it with the current team state. Replay retains explicit
+deletion tombstones when reversing creation. Later independent fields survive;
+overlapping changes produce conflicts (including delete/edit). `ops` describes
+the selected historical delta, `result_ops` describes its effect on the current
+team, and `conflicts` contains ancestor/team/draft values. Supply `resolutions`
+mapping only returned conflict keys to `team` or `draft`. Unresolved conflicts,
+invented choices and invalid structure cannot create a draft. The checked current
+head and all existing permission/retry/review rules still apply. A zero-result
+range cannot create an empty draft. Drafts record both historical anchors, mode,
+selection and explicit choices in server-derived source metadata. A later canonical
+change is compared again by normal review/merge, even after preview resolutions.
+
+Version history offers these modes, block selection and overlap choices. The
+**Download native file** action fetches the authorized pinned checkpoint and uses
+the existing client exporters for DOCX/XLSX/PPTX. Downloads contain the requested
+revision's supported content and document/revision origin metadata for file push.
+They do not reproduce unsupported original OOXML parts or promise byte-identical
+historical files. Current title/kind metadata selects the filename/exporter; it
+is not itself versioned. Viewers may download without creating or merging a draft.
+
 ## Permission and resource contract
 
 Viewers can inspect/download history, contributors and above can propose, and
@@ -63,19 +93,19 @@ rejects it atomically. The UI renders 200 block groups initially and can show mo
 This operation still materializes full current and historical states and runs the
 existing full-state diff under a document lock. It does not improve asymptotic
 time/space bounds. No claim of hundred-MB latency or service-scale acceptance follows.
-Historical checkpoint downloads are full JSON, not a fidelity-certified native
-DOCX/XLSX/PPTX export. Source title/kind and access metadata are current metadata;
+Historical checkpoint downloads are full JSON; native exports reconstruct the
+supported subset in browser memory. Source title/kind and access metadata are current metadata;
 the content state and chain anchor refer to the requested revision.
 
 ## Remaining work
 
-- Range/commit cherry-pick, commit revert, field/run-level selection and branch-aware
-  ancestry; do not describe whole-block state restoration as any of these.
+- Portable commit-addressed cherry-pick/revert, field/run-level selection and
+  branch-aware ancestry. Current range commands operate on centralized revisions.
 - Indexed date/message/author/commit discovery and a dedicated Projects history
   view. Activity currently displays the latest 500 events, while the revision
   reader/recovery endpoint has no such history cutoff.
-- Native historical file generation and checked application through all six hosts,
-  retained opaque assets, multi-file named stages/releases and recovery UI there.
+- Full-fidelity native reconstruction, checked historical application through all
+  six hosts, retained opaque assets and multi-file named stages/releases.
 - Shared draft/version references, portable commit identities and signed/witnessed
   recovery provenance in the ordered engine plan. No canonical event/schema change
   or SQL migration is introduced by this increment.
@@ -101,3 +131,11 @@ and retained later content plus chain verification. Local checks and source CI p
 and 63 signed-in workflows. The source-label guard's five-test review suite also
 passed after the full local application suite. Publication and check links are in
 [the handoff](ENGINE-EVOLUTION-HANDOFF.md).
+
+
+The follow-up adds a real-router range test for preserving later independent fields,
+explicit overlap resolution, exact retry, revert/cherry-pick merge, creation
+tombstones, invalid ranges and source anchors. Signed-in browser checks download
+all three native formats and inspect old content plus retained origin; the DOCX
+workflow also exercises cherry-pick draft controls. Current check/publication
+results supersede the previous increment counts above in the handoff.

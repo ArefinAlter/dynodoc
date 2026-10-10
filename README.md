@@ -15,7 +15,10 @@ batches reuse unchanged objects. Shared writes remain opt-in; default snapshots
 and draft bases still use full JSON. Content edits can proceed during checkpoint
 publication; full-state scans and [measured limits](docs/CHECKPOINT-CONCURRENCY.md)
 still gate rollout. [Historical recovery](docs/HISTORY-RECOVERY.md) adds selected
-old content to a private draft under current review rules. A local commit DAG,
+old content to a private draft under current review rules. Revision-range
+revert/cherry-pick and native history downloads are available in
+Version history; [test add-in packages and sign-in](extensions/INSTALL.md) cover all
+six editor clients. Native acceptance and store publication remain open. A local commit DAG,
 complete offline convergence, full native format capture and large-file/service
 capacity still require implementation and acceptance. **License:** [AGPL v3](LICENSE).
 

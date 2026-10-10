@@ -33,6 +33,10 @@ export const handle: Handle = async ({ event, resolve }) => {
     'referrer-policy',
     event.url.pathname.startsWith('/view/') ? 'no-referrer' : 'strict-origin-when-cross-origin'
   );
+  if (event.url.pathname.startsWith('/connectors/')) {
+    response.headers.set('referrer-policy', 'no-referrer');
+    response.headers.set('cache-control', 'private, no-store');
+  }
   if (event.url.pathname.startsWith('/integrations/') || event.url.pathname.startsWith('/view/'))
     response.headers.set('cache-control', 'private, no-store');
   response.headers.set('x-content-type-options', 'nosniff');

@@ -1,6 +1,7 @@
 /** Pages that need a signed-in account. Visitors without a session are sent to sign in first. */
 export function requiresSignIn(pathname: string) {
   return (
+    pathname === '/connectors/authorize' ||
     pathname === '/workspace' ||
     pathname === '/projects' ||
     pathname.startsWith('/projects/') ||
@@ -16,7 +17,8 @@ export function safeNext(next: string | null | undefined): string | null {
   if (!next || next.length > 500 || !next.startsWith('/') || /^\/[\\/]/.test(next)) return null;
   if ([...next].some((c) => c.charCodeAt(0) < 32)) return null;
   const path = next.split(/[?#]/)[0];
-  return path === '/workspace' ||
+  return path === '/connectors/authorize' ||
+    path === '/workspace' ||
     path === '/projects' ||
     /^\/(documents|projects)\/[0-9a-f-]{36}$/i.test(path)
     ? next

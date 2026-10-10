@@ -4,10 +4,12 @@ import type { RequestHandler } from './$types';
 /** Dedicated bearer-only gateway. Never exchanges a browser session or service key. */
 const proxy: RequestHandler = async ({ request, params, url }) => {
   const path = params.path || '';
+  const connection = path === 'connection' && request.method === 'GET';
   if (
-    !/^documents\/[0-9a-f-]{36}\/(checkpoint|bundles)$/i.test(path) ||
-    (request.method === 'GET' && !path.endsWith('/checkpoint')) ||
-    (request.method === 'POST' && !path.endsWith('/bundles'))
+    !connection &&
+    (!/^documents\/[0-9a-f-]{36}\/(checkpoint|bundles)$/i.test(path) ||
+      (request.method === 'GET' && !path.endsWith('/checkpoint')) ||
+      (request.method === 'POST' && !path.endsWith('/bundles')))
   )
     return json({ error: 'Not found' }, { status: 404 });
   const auth = request.headers.get('authorization');
@@ -18,7 +20,8 @@ const proxy: RequestHandler = async ({ request, params, url }) => {
     [...url.searchParams.keys()].some((key) => key !== 'through_seq') ||
     values.length > 1 ||
     (values.length &&
-      (request.method !== 'GET' ||
+      (connection ||
+        request.method !== 'GET' ||
         !/^\d+$/.test(values[0]) ||
         !Number.isSafeInteger(Number(values[0]))))
   )

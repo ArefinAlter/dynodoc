@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import ConnectorSignIn from '$lib/components/product/ConnectorSignIn.svelte';
   import {
     CaptureSession,
     browserStore,
@@ -209,6 +210,16 @@
     retain its identities. Capture runs only while this pane is open.
   </p>
   {#if error}<p role="alert">{error}</p>{/if}{#if notice}<p role="status">{notice}</p>{/if}
+  {#if !session}<ConnectorSignIn
+      host="word"
+      {origin}
+      disabled={busy || !ready}
+      onConnected={async (value) => {
+        documentId = value.documentId;
+        token = value.token;
+        await run(connect);
+      }}
+    />{/if}
   <label>Dynodoc address<input bind:value={origin} disabled={!!session} /></label><label
     >File ID<input bind:value={documentId} disabled={!!session} /></label
   ><label>File connection key<input type="password" bind:value={token} autocomplete="off" /></label>

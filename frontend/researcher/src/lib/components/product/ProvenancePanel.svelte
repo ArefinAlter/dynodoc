@@ -123,6 +123,7 @@
         }}>Hide key</button
       >{/if}
     <p>
+      <a href="/connectors">Install editor add-ins</a> ·
       <a href="/connectors/word">Word task pane</a> ·
       <a href="/connectors/excel">Excel task pane</a> ·
       <a href="/connectors/powerpoint">PowerPoint task pane</a> ·

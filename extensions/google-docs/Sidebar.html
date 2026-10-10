@@ -1,5 +1,6 @@
 <!doctype html><html><head><base target="_top"><style>body{font:14px system-ui;padding:12px;color:#222}label{display:block;margin:10px 0}input:not([type=checkbox]),textarea{width:95%;padding:6px}button{padding:7px;margin:4px}#message{white-space:pre-wrap}button:disabled{opacity:.5}</style></head><body>
 <h2>Dynodoc provenance</h2><p>Development connector for existing paragraph text in the current tab. Capture works while this sidebar is open. Formatting changes and structural edits require file push.</p>
+<button id="signin">Sign in to Dynodoc</button><p id="pairing" hidden><a id="approveLink" target="_blank" rel="noreferrer">Open browser to sign in and choose a file</a><br>Compare code <strong id="pairCode"></strong>. Return after approval within ten minutes.<br><button id="approved">I approved this connection</button></p>
 <label>File ID<input id="documentId"></label><label>Google Docs connection key<input id="token" type="password" autocomplete="off"></label>
 <label>Restore provenance from this editor (optional)<input id="recovery" type="file" accept=".json,application/json"></label><p>Restore into a fresh tab with matching paragraph text, using the same Dynodoc account. Existing queues are preserved.</p><button id="connect">Connect</button>
 <label><input id="enabled" type="checkbox" disabled> Enable paragraph capture</label><button id="capture" disabled>Capture now</button>
@@ -19,8 +20,7 @@ $('recovery').onchange=()=>run(async()=>{
   if(file.size>DynodocProvenance.SIDECAR_MAX_BYTES)throw new Error('Use a provenance recovery file up to 16 MiB.');
   recovery=DynodocProvenance.parseSidecar(await file.text());message('Recovery selected. Connect to the original Dynodoc file. Paragraph text will not be replaced.');
 });
-$('connect').onclick=()=>run(async()=>{
-  const connected=await api('connectDynodoc',$('documentId').value,$('token').value);boundScope=connected.scope;const c=connected.checkpoint,saved=await store.load();
+async function acceptConnection(connected){boundScope=connected.scope;const c=connected.checkpoint,saved=await store.load();
   if(recovery){
     if(saved)throw new Error('This working copy already has a saved queue. Export it and use a fresh copy; recovery cannot replace it.');
     const verifiedBase=await api('historicalCheckpointDynodoc',recovery.ledger.checkpoint.through_seq);
@@ -32,6 +32,17 @@ $('connect').onclick=()=>run(async()=>{
   }
   ['enabled','capture','push','pull','export','exportPush'].forEach(id=>$(id).disabled=false);$('connect').disabled=true;$('documentId').disabled=true;$('recovery').disabled=true;$('token').value='';
   message(recovery?'Provenance restored. Queued upload IDs and observations are retained. Enable capture explicitly to continue.':'Connected. Enable capture to keep observations while this sidebar is open.');recovery=null;
+  $('signin').disabled=true;$('pairing').hidden=true;pairing=null;
+}
+let pairing=null;
+$('connect').onclick=()=>run(async()=>acceptConnection(await api('connectDynodoc',$('documentId').value,$('token').value)));
+$('signin').onclick=()=>run(async()=>{
+  const config=await api('pairingConfigDynodoc');boundScope=config.scope;pairing=await DynodocProvenance.beginPairing(config.origin,config.host);
+  $('approveLink').href=pairing.url;$('pairCode').textContent=pairing.challenge.slice(0,12);$('pairing').hidden=false;
+});
+$('approved').onclick=()=>run(async()=>{
+  if(!pairing||Date.now()/1000>=pairing.expires)throw new Error('Sign-in expired. Start again.');
+  await acceptConnection(await api('connectApprovedDynodoc',pairing.token));
 });
 $('capture').onclick=()=>run(async()=>{await session.capture(await api('readDynodoc'));message(session.ledger.changes.length+' paragraph observations saved privately.');});
 setInterval(()=>{if($('enabled').checked&&session&&!busy)$('capture').click();},5000);

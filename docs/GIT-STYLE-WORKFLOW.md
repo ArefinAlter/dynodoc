@@ -307,3 +307,24 @@ protected draft), `e2e/changes.spec.ts` (test 4), `structured-push.test.ts`
 (test 5 on real Excel/PowerPoint round trips) and
 `crates/engine-api/tests/copies_test.rs` (detection, roles, approvals, unrelated
 pushes and deletion against a real database).
+
+
+## Revert, cherry-pick and download earlier content
+
+Open **Version history**. Choose **Revert changes in a range** to undo the net
+content changes in that range, or **Cherry-pick changes in a range** to apply them
+again. The start revision is excluded and the end revision is included. Preview,
+select the blocks you need, and choose between current and historical values for
+any overlaps. Create a private recovery draft, inspect it and send it for review.
+Merging adds new history; it does not delete the intervening work. These commands
+currently use retained revision ranges, not portable commit IDs or other branches.
+
+**Download native file** reconstructs the requested revision as DOCX, XLSX or PPTX,
+with its document/revision origin. It exports Dynodoc's supported content; keep the
+original file for unsupported embedded parts and exact formatting. You can also
+download the checkpoint JSON. Current file permissions apply to both downloads.
+
+Install editor integrations from **Sync & connections ? Install editor add-ins**
+or `/connectors`. Use the pane's **Sign in to Dynodoc** link, approve a specific file
+in the browser, return to finish and enable capture. Packages are development/test
+installations until native acceptance and marketplace publication are complete.

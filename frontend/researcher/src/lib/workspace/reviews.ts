@@ -20,6 +20,8 @@ export interface ChangeRequest {
     summary?: Record<string, number>;
     start_seq?: number;
     through_seq?: number;
+    from_seq?: number;
+    mode?: 'revert' | 'cherry_pick';
     chain_hash?: string;
     /** Set by the server when the file shares little with the revision it started from. */
     unrelated?: boolean;

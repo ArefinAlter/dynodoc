@@ -1,5 +1,41 @@
 # Engine evolution handoff
 
+## Current increment: history ranges and editor pairing
+
+10 October 2026. User explicitly requested revert/cherry-pick, native historical
+exports and installable six-host add-ins with auth. Implementation is present:
+revert/cherry_pick net revision deltas with checked overlap choices/private drafts;
+DOCX/XLSX/PPTX historical downloads; hash-only browser approval for all six clients;
+Microsoft ribbon commands/icons and reproducible test installation packages.
+No migration; minimum schema remains 25. No VPS deployment. Both repositories
+have the same four changed Rust files; all 22 SQL migrations still match. OpenAPI
+API schemas match, with the intended AGPL/MIT/contact packaging difference.
+Application main is ready for source publication; standalone full tests are running.
+
+API targeted tests pass (range test corrected its merge request field names).
+All three Microsoft manifests pass the official validator after raising manifest
+version from 0.2.0.0 to its minimum 1.0.0.0; add-ins are still development clients.
+Application fmt/Clippy and all 231 Rust tests pass. Frontend lint/check/build and
+277 unit tests pass, followed by the final pairing suite including three new Google
+bridge tests. All four real signed-in browser checks pass: approval after login,
+DOCX recovery/download/range UI, XLSX and PPTX pinned history exports. Seven existing
+Office/Google connector bridge browser checks also pass. The DOCX browser assertion
+was corrected to read its existing custom origin properties; no exporter change
+was required. These archive checks verify old content and origin, not native fidelity.
+Standalone lint/docs/OpenAPI pass (existing 16 core / 4 API rustdoc warnings).
+Owned disposable PostgreSQL: dynodoc-connect-history-20261010, loopback 5553,
+label dynodoc.task=connect-history-20261010. Remove only this owned resource and
+owned browser-test API/web processes after validation (API PID 14912, web PID 9260;
+loopback 8087/4178, process record in temp). Logs: system temp prefix
+dynodoc-connect-history-, plus dynodoc-*-manifest.log. Existing databases untouched.
+Prior engine documentation CI 38051507307 has now been verified successful.
+
+Read HISTORY-RECOVERY.md and CONNECTOR-PAIRING-AND-INSTALLATION.md for exact scope.
+Native host acceptance/publication and full fidelity are not implied by source,
+browser mocks, OOXML archive checks or manifest validation. Portable commit IDs,
+branch ancestry, full local history/offline convergence and the remaining part 2
+storage work are still open.
+
 ## Historical recovery increment (10 October 2026)
 
 Complete and pushed to both main branches, with local and source CI checks passing.

@@ -120,6 +120,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/connector/connection': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Completion needs the editor's secret, not the public approval challenge. */
+    get: operations['connection'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/connector/documents/{id}/bundles': {
     parameters: {
       query?: never;
@@ -1382,6 +1399,18 @@ export interface components {
       node_id: string;
       value: unknown;
     };
+    GrantInput: {
+      /**
+       * Format: int64
+       * @description Approval link expiry as Unix seconds; at most ten minutes into the future.
+       */
+      expires_at?: number | null;
+      host: string;
+      /** @description SHA-256 of a 256-bit secret held by the requesting editor. Never the secret. */
+      key_challenge?: string | null;
+    };
+    /** @enum {string} */
+    Mode: 'restore' | 'revert' | 'cherry_pick';
     /** @description `POST /ops/node-create`. `node_id` is optional; absent, the server mints a ULID. */
     NodeCreateRequest: {
       fields?: unknown;
@@ -1399,6 +1428,13 @@ export interface components {
        * @description Required on create: the team revision returned by preview.
        */
       base_seq?: number | null;
+      /**
+       * Format: int64
+       * @description Range start (exclusive), required for revert/cherry-pick. End is through_seq.
+       */
+      from_seq?: number | null;
+      /** @description Restore content, reverse a revision range, or apply that range again. */
+      mode?: components['schemas']['Mode'];
       /** @description Omit for all content; otherwise select 1-5000 unique logical block IDs. */
       node_ids?: string[] | null;
       /**
@@ -1406,6 +1442,10 @@ export interface components {
        * @description Required on create. Keep the same UUID and request on a retry.
        */
       request_id?: string | null;
+      /** @description Explicit overlap choices returned by preview: conflict key -> team or draft. */
+      resolutions?: {
+        [key: string]: string;
+      };
       /**
        * Format: int64
        * @description Exact retained event revision, including zero for the empty initial state.
@@ -1776,6 +1816,33 @@ export interface operations {
       };
       /** @description Refresh the current revision */
       409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  connection: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Approved file and host for this scoped credential */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Not approved, expired or revoked */
+      401: {
         headers: {
           [name: string]: unknown;
         };
@@ -2407,11 +2474,11 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': unknown;
+        'application/json': components['schemas']['GrantInput'];
       };
     };
     responses: {
-      /** @description Seven-day file-scoped credential, returned once */
+      /** @description Seven-day file-scoped credential; pairing approval returns no secret */
       200: {
         headers: {
           [name: string]: unknown;

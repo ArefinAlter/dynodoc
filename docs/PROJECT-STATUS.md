@@ -1,6 +1,26 @@
 # Dynodoc: intent, current implementation and remaining work
 
-## Latest increment: permission-controlled historical recovery (10 October 2026)
+## Latest increment: history ranges and editor installations (10 October 2026)
+
+Implemented revision-range revert/cherry-pick through checked private drafts,
+explicit overlap choices and existing review rules; native historical DOCX/XLSX/PPTX
+downloads reuse the supported exporters and retain document/revision origins.
+All six connector clients now support browser sign-in/file approval; Microsoft
+ribbon manifests and Google Editor add-on ZIP packages are downloadable at
+`/connectors`. This remains test distribution, not store publication or full fidelity.
+Application fmt/Clippy and all 231 Rust tests pass. Frontend lint/check/build pass;
+the 277-test suite plus three new Google pairing tests pass. Four signed-in history/
+auth/export journeys and seven existing connector bridge scenarios pass locally.
+All three Office manifests pass Microsoft validation. The standalone source and
+schema are synchronized; its full suite and publication are tracked in the handoff.
+No production deployment or schema/event change. Shared writes remain opt-in.
+[History contract](HISTORY-RECOVERY.md), [connection contract](CONNECTOR-PAIRING-AND-INSTALLATION.md).
+
+Next: deploy the matching API/web build to a test environment and complete six-host
+acceptance; resume bounded text/assets and shared draft/version references, then
+portable commits/branches and exchange. Current range commands use event revisions.
+
+## Previous increment: permission-controlled historical recovery (10 October 2026)
 
 The product now explicitly includes retrieving old or unnamed revisions and
 recovering selected content through current role/approval rules. The implementation

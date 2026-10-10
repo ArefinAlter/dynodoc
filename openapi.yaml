@@ -175,6 +175,21 @@ paths:
           description: Refresh the current revision
       security:
       - paseto: []
+  /connector/connection:
+    get:
+      tags: []
+      summary: Completion needs the editor's secret, not the public approval challenge.
+      operationId: connection
+      responses:
+        '200':
+          description: Approved file and host for this scoped credential
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Not approved, expired or revoked
+      security:
+      - connector_key: []
   /connector/documents/{id}/bundles:
     post:
       tags: []
@@ -673,11 +688,12 @@ paths:
       requestBody:
         content:
           application/json:
-            schema: {}
+            schema:
+              $ref: '#/components/schemas/GrantInput'
         required: true
       responses:
         '200':
-          description: Seven-day file-scoped credential, returned once
+          description: Seven-day file-scoped credential; pairing approval returns no secret
           content:
             application/json:
               schema: {}
@@ -2640,6 +2656,31 @@ components:
         node_id:
           type: string
         value: {}
+    GrantInput:
+      type: object
+      required:
+      - host
+      properties:
+        expires_at:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: Approval link expiry as Unix seconds; at most ten minutes into the future.
+        host:
+          type: string
+        key_challenge:
+          type:
+          - string
+          - 'null'
+          description: SHA-256 of a 256-bit secret held by the requesting editor. Never the secret.
+      additionalProperties: false
+    Mode:
+      type: string
+      enum:
+      - restore
+      - revert
+      - cherry_pick
     NodeCreateRequest:
       type: object
       description: '`POST /ops/node-create`. `node_id` is optional; absent, the server mints a ULID.'
@@ -2678,6 +2719,15 @@ components:
           - 'null'
           format: int64
           description: 'Required on create: the team revision returned by preview.'
+        from_seq:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: Range start (exclusive), required for revert/cherry-pick. End is through_seq.
+        mode:
+          $ref: '#/components/schemas/Mode'
+          description: Restore content, reverse a revision range, or apply that range again.
         node_ids:
           type:
           - array
@@ -2691,6 +2741,13 @@ components:
           - 'null'
           format: uuid
           description: Required on create. Keep the same UUID and request on a retry.
+        resolutions:
+          type: object
+          description: 'Explicit overlap choices returned by preview: conflict key -> team or draft.'
+          additionalProperties:
+            type: string
+          propertyNames:
+            type: string
         through_seq:
           type: integer
           format: int64

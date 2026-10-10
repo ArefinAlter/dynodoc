@@ -13,6 +13,152 @@ use uuid::Uuid;
 
 const KEY: [u8; 32] = [9u8; 32];
 
+#[sqlx::test(migrations = "../../migrations")]
+async fn history_ranges_reverse_and_reapply_deltas_with_overlap_choices(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let owner = identity(&pool, "ranges@example.test").await;
+    let (_, doc) = post(&router, "/documents", &owner, json!({"title":"Ranges"})).await;
+    let doc = doc["id"].as_str().unwrap();
+    let root = ulid::Ulid::new().to_string();
+    let node = ulid::Ulid::new().to_string();
+    let (status, data) = post(&router, &format!("/documents/{doc}/batch"), &owner, json!({"base_seq":0,"ops":[
+        {"type":"NodeCreated","node_id":root,"node_type":"form","pos":"a0","fields":{}},
+        {"type":"NodeCreated","node_id":node,"node_type":"item","parent_id":root,"pos":"a0","fields":{"label":"A"}},
+        {"type":"FieldEdited","node_id":node,"field":"label","value":"B"},
+        {"type":"FieldEdited","node_id":node,"field":"help","value":"Keep later work"}
+    ]})).await;
+    assert_eq!(status, StatusCode::OK, "{data}");
+    let endpoint = format!("/documents/{doc}/history-recovery");
+    let (_, preview) = post(
+        &router,
+        &endpoint,
+        &owner,
+        json!({"mode":"revert","from_seq":2,"through_seq":3}),
+    )
+    .await;
+    assert_eq!(preview["conflicts"], json!([]));
+    assert_eq!(
+        preview["result_ops"],
+        json!([{"type":"FieldEdited","node_id":node,"field":"label","value":"A"}])
+    );
+    let (status, _) = post(&router, &format!("/documents/{doc}/batch"), &owner, json!({"base_seq":4,"ops":[{"type":"FieldEdited","node_id":node,"field":"label","value":"C"}]})).await;
+    assert_eq!(status, StatusCode::OK);
+    let conflict_key = format!("{node}:label");
+    let (_, preview) = post(
+        &router,
+        &endpoint,
+        &owner,
+        json!({"mode":"revert","from_seq":2,"through_seq":3}),
+    )
+    .await;
+    assert_eq!(preview["conflicts"][0]["key"], conflict_key);
+    assert_eq!(preview["conflicts"][0]["team"], "C");
+    assert_eq!(preview["conflicts"][0]["draft"], "A");
+    let mut request = json!({"action":"create","mode":"revert","from_seq":2,"through_seq":3,"base_seq":5,"request_id":Uuid::new_v4()});
+    let (status, _) = post(&router, &endpoint, &owner, request.clone()).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    request["resolutions"] = json!({conflict_key:"draft"});
+    let (status, receipt) = post(&router, &endpoint, &owner, request.clone()).await;
+    assert_eq!(status, StatusCode::OK, "{receipt}");
+    assert_eq!(receipt["source"]["mode"], "revert");
+    assert_eq!(
+        receipt["source"]["from_chain_hash"].as_str().unwrap().len(),
+        64
+    );
+    let draft = receipt["id"].as_str().unwrap();
+    post(
+        &router,
+        &format!("/documents/{doc}/drafts/{draft}/submit"),
+        &owner,
+        json!({}),
+    )
+    .await;
+    let (_, detail) = get(
+        &router,
+        &format!("/documents/{doc}/change-requests/{draft}"),
+        &owner,
+    )
+    .await;
+    let (status, merged) = post(
+        &router,
+        &format!("/documents/{doc}/change-requests/{draft}/merge"),
+        &owner,
+        json!({"team_seq":5,"revision":detail["revision"]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{merged}");
+    let (_, current) = get(&router, &format!("/documents/{doc}/provenance"), &owner).await;
+    assert_eq!(
+        current["state"]["nodes"][&node]["current_fields"]["label"],
+        "A"
+    );
+    assert_eq!(
+        current["state"]["nodes"][&node]["current_fields"]["help"],
+        "Keep later work"
+    );
+    let (status, retry) = post(&router, &endpoint, &owner, request).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(retry["created"], false);
+    let (status, picked) = post(&router, &endpoint, &owner, json!({"action":"create","mode":"cherry_pick","from_seq":2,"through_seq":3,"base_seq":6,"request_id":Uuid::new_v4()})).await;
+    assert_eq!(status, StatusCode::OK, "{picked}");
+    let draft = picked["id"].as_str().unwrap();
+    post(
+        &router,
+        &format!("/documents/{doc}/drafts/{draft}/submit"),
+        &owner,
+        json!({}),
+    )
+    .await;
+    let (_, detail) = get(
+        &router,
+        &format!("/documents/{doc}/change-requests/{draft}"),
+        &owner,
+    )
+    .await;
+    let (status, merged) = post(
+        &router,
+        &format!("/documents/{doc}/change-requests/{draft}/merge"),
+        &owner,
+        json!({"team_seq":6,"revision":detail["revision"]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{merged}");
+    let (_, current) = get(&router, &format!("/documents/{doc}/provenance"), &owner).await;
+    assert_eq!(
+        current["state"]["nodes"][&node]["current_fields"]["label"],
+        "B"
+    );
+    assert_eq!(
+        current["state"]["nodes"][&node]["current_fields"]["help"],
+        "Keep later work"
+    );
+    // Reversing creation emits a real tombstone, and detects edits since creation.
+    let (_, removal) = post(
+        &router,
+        &endpoint,
+        &owner,
+        json!({"mode":"revert","from_seq":1,"through_seq":2}),
+    )
+    .await;
+    assert_eq!(
+        removal["ops"],
+        json!([{"type":"NodeDeleted","node_id":node}])
+    );
+    assert_eq!(removal["conflicts"][0]["field"], "$node");
+    for bad_request in [
+        json!({"mode":"revert","through_seq":3}),
+        json!({"mode":"cherry_pick","from_seq":3,"through_seq":3}),
+        json!({"mode":"revert","from_seq":2,"through_seq":3,"resolutions":{"made-up":"draft"}}),
+    ] {
+        assert_eq!(
+            post(&router, &endpoint, &owner, bad_request).await.0,
+            StatusCode::BAD_REQUEST
+        );
+    }
+    let (_, verification) = get(&router, &format!("/documents/{doc}/verify"), &owner).await;
+    assert_eq!(verification["ok"], true);
+}
+
 /// A deleted paragraph and a live sibling, followed by 55 independent saves.
 async fn recovery_fixture(pool: &PgPool) -> (Router, String, Uuid, String, String) {
     let router = app(test_state(pool.clone()));

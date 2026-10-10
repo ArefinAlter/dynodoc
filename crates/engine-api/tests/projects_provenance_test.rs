@@ -13,6 +13,113 @@ use uuid::Uuid;
 
 const KEY: [u8; 32] = [9u8; 32];
 
+#[sqlx::test(migrations = "../../migrations")]
+async fn browser_pairing_keeps_secrets_in_editor_and_rechecks_permissions(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let owner = identity(&pool, "pair-owner@example.test").await;
+    let viewer = identity(&pool, "pair-viewer@example.test").await;
+    let (doc, _) = document(&router, &owner).await;
+    let (other, _) = document(&router, &owner).await;
+    post(
+        &router,
+        &format!("/documents/{doc}/members"),
+        &owner,
+        json!({"email":"pair-viewer@example.test","role":"viewer"}),
+    )
+    .await;
+    let (secret, hash) = engine_api::auth::random_token().unwrap();
+    let challenge = hex::encode(&hash);
+    let bearer = format!("Bearer {secret}");
+    let input = json!({"host":"word","key_challenge":challenge,"expires_at":chrono::Utc::now().timestamp()+590});
+    let endpoint = format!("/documents/{doc}/connectors");
+    assert_eq!(
+        get(&router, "/connector/connection", &bearer).await.0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        post(&router, &endpoint, &viewer, input.clone()).await.0,
+        StatusCode::FORBIDDEN
+    );
+    let (first, second) = tokio::join!(
+        post(&router, &endpoint, &owner, input.clone()),
+        post(&router, &endpoint, &owner, input.clone())
+    );
+    assert_eq!(first.0, StatusCode::OK, "{}", first.1);
+    assert_eq!(second.0, StatusCode::OK, "{}", second.1);
+    assert_eq!(first.1["grant"], second.1["grant"]);
+    assert!(first.1["token"].is_null());
+    let stored: Vec<u8> =
+        sqlx::query_scalar("select token_hash from connector_grant where document_id=$1")
+            .bind(doc)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(stored, hash);
+    assert_eq!(
+        get(
+            &router,
+            "/connector/connection",
+            &format!("Bearer {challenge}")
+        )
+        .await
+        .0,
+        StatusCode::UNAUTHORIZED
+    );
+    let (status, connected) = get(&router, "/connector/connection", &bearer).await;
+    assert_eq!(status, StatusCode::OK, "{connected}");
+    assert_eq!(connected["document_id"], doc.to_string());
+    assert_eq!(connected["host"], "word");
+    assert_eq!(
+        get(
+            &router,
+            &format!("/connector/documents/{other}/checkpoint"),
+            &bearer
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        post(
+            &router,
+            &format!("/documents/{other}/connectors"),
+            &owner,
+            input.clone()
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    let mut wrong_host = input.clone();
+    wrong_host["host"] = json!("excel");
+    assert_eq!(
+        post(&router, &endpoint, &owner, wrong_host).await.0,
+        StatusCode::BAD_REQUEST
+    );
+    let mut expired = input.clone();
+    expired["expires_at"] = json!(chrono::Utc::now().timestamp() - 1);
+    assert_eq!(
+        post(&router, &endpoint, &owner, expired).await.0,
+        StatusCode::BAD_REQUEST
+    );
+    let grant = first.1["grant"]["id"].as_str().unwrap();
+    post(
+        &router,
+        &format!("/documents/{doc}/connectors/{grant}/revoke"),
+        &owner,
+        json!({}),
+    )
+    .await;
+    assert_eq!(
+        get(&router, "/connector/connection", &bearer).await.0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        post(&router, &endpoint, &owner, input).await.0,
+        StatusCode::CONFLICT
+    );
+}
+
 fn test_state(pool: PgPool) -> AppState {
     AppState::new(
         pool,

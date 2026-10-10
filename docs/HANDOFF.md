@@ -1,5 +1,8 @@
 # Dynodoc engineering and product handoff
 
+Latest continuation: [history ranges, native exports and connector sign-in](ENGINE-EVOLUTION-HANDOFF.md).
+Installer/auth scope: [connector distribution contract](CONNECTOR-PAIRING-AND-INSTALLATION.md).
+
 ## Current continuation (10 October 2026)
 
 Continue from [the engine evolution handoff](ENGINE-EVOLUTION-HANDOFF.md) and
