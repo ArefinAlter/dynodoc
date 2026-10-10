@@ -12,8 +12,7 @@ role memberships, database/schema/object ownership, DDL/temporary-object privile
 trigger-bypass settings and callable application SECURITY DEFINER functions. It
 does not accept a privileged connection followed by SET ROLE or SESSION
 AUTHORIZATION: it also compares the session identity with the connection's login.
-Supplying
-`MIGRATION_DATABASE_URL` to the API is itself a configuration error, even in local
+Supplying `MIGRATION_DATABASE_URL` to the API is itself a configuration error, even in local
 development. API connections pin their search path to `pg_catalog, public, pg_temp`.
 
 `engine-cli migrate` uses **only** `MIGRATION_DATABASE_URL`, in a separate operator

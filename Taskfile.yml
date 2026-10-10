@@ -2,8 +2,9 @@
 # Cross-platform; chosen over GNU Make for first-class Windows/PowerShell support.
 #
 # Quick start:
-#   task setup     # one-time: copy .env, install frontend deps
-#   task dev       # boot Postgres, run migrations, start API + frontend
+#   task setup     # one-time: copy runtime/operator examples, install frontend deps
+#   task migrate   # separate operator process; provision the runtime login next
+#   task dev       # boot Postgres, start the already-provisioned API + frontend
 #   task test      # run all test suites
 version: "3"
 

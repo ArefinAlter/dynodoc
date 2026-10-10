@@ -12,8 +12,8 @@ snapshot receipts; existing data needs explicit replay backfill before rollout. 
 Word/Docs, Excel/Sheets and PowerPoint/Slides. The target is compact change transfer,
 shared content storage, offline history, reviewed merges and verifiable provenance.
 Research instruments remain one supported adapter, not the product roadmap.
-[Product specification](docs/PRODUCT-SPEC.md) ? [Ordered implementation plan](docs/ENGINE-EVOLUTION-PLAN.md)
-? [Current handoff](docs/ENGINE-EVOLUTION-HANDOFF.md).
+[Product specification](docs/PRODUCT-SPEC.md) · [Ordered implementation plan](docs/ENGINE-EVOLUTION-PLAN.md)
+· [Current handoff](docs/ENGINE-EVOLUTION-HANDOFF.md).
 
 **Status:** The centralized engine, Projects/review, checked proposal bundles and
 six development connectors exist. Current source hardening adds revocable logins,
@@ -66,9 +66,9 @@ See [the product pivot](docs/decisions/004-document-version-control.md) and
 [office editor support and limits](docs/OFFICE-EDITOR-CAPABILITIES.md).
 
 Dynodoc makes version control and the audit trail **part of the data model**. Every
-content change is a typed semantic event, attributable, hash-linked, and replayable. Concurrent edits to
-different fields merge automatically; same-field edits surface as a structured conflict, not a
-textual one; a reviewer's suggestion is a first-class proposal the author accepts or rejects with
+content change is a typed semantic event, attributable, hash-linked, and replayable.
+Supported independent edits can merge after validation; overlapping edits and shared
+constraints can require explicit resolution. A reviewer's suggestion is a proposal the author accepts or rejects with
 a recorded outcome. Document metadata and permission changes still need equivalent audit events.
 
 ## How it works
@@ -210,12 +210,15 @@ benchmarks, current import limits, and the remaining storage/CRDT work.
 Full prerequisites and verified setup notes are in **[SETUP.md](SETUP.md)**. Quick start:
 
 ```sh
-task setup          # first-time: copies .env, installs frontend deps
-task dev            # Postgres + migrate + API (:8080) + frontend (:5173)
-task test           # cargo test --workspace + frontend vitest/playwright
+task setup          # creates missing runtime/operator env files, installs frontend deps
+task up             # local PostgreSQL
+# Configure separate logins using docs/DATABASE-PRIVILEGES.md.
+task migrate        # operator process reads .env.migrate
+task db:grant-runtime # grant the already-created dynodoc_runtime login
+task db:check       # verify runtime login and schema
+task dev            # API (:8080) + frontend (:5173); never migrates
 task lint           # clippy + eslint + svelte-check
 task fmt            # format everything
-task migrate        # apply migrations   (task migrate-reset drops the DB — dev only)
 ```
 
 Health checks once `task dev` is up:
@@ -225,24 +228,28 @@ curl http://127.0.0.1:8080/healthz   # engine-api
 curl http://127.0.0.1:5173/healthz   # researcher frontend
 ```
 
-> **Note:** From Stage 13 onward the Rust tests need a reachable Postgres (`DATABASE_URL`); run
-> `task up` first locally (CI provides a Postgres service). One environment caveat: `ring`'s
+Run `task test` in a separate shell with `DATABASE_URL` pointing to an isolated
+test database owner with CREATE DATABASE and CREATE ROLE. Never use hosted data or
+start the API from that test shell. See [the database setup contract](docs/DATABASE-PRIVILEGES.md).
+
+> **Windows note:** `ring`'s
 > build script is blocked by Windows Smart App Control in Enforce mode — build on a SAC-free
 > machine or in WSL2. See [SETUP.md](SETUP.md).
 
-## Roadmap beyond the PoC
+## Current roadmap
 
-The same engine extends to **national-scale public consultation** by adding layers above it:
-identity tiers (T0 observer → T1 reactor → T2 contributor → T3 verified citizen), a four-stage
-moderation pipeline, a Polis-style deliberation layer that surfaces **bridge statements** (cross-
-cluster consensus), an AI summary loop validated back to each opinion cluster, and mandatory
-hash-linked **closeout reports** with cryptographically verifiable counts. Detail and phasing in
-[docs/05–09](docs/) and the [docs series index](docs/README.md).
+Finish the security boundaries and rollout checks, then bounded shared content,
+portable project commits and branches, durable offline exchange and convergence.
+Native format fidelity, independently verifiable audit commitments and measured
+large-file/service limits follow the [engine evolution plan](docs/ENGINE-EVOLUTION-PLAN.md).
+Word/Docs, Excel/Sheets and PowerPoint/Slides connectors also need installed-host
+acceptance and distribution. The older civic/public-consultation documents are
+historical adapter proposals, not the current product roadmap.
 
 ## Contributor & AI-agent tooling
 
 This repo ships parallel assistant assets so any agent or editor can work within the project's
-rules (PoC scope, immutable migrations, append-only events):
+rules (current product scope, immutable migrations, append-only events):
 
 | Path | For |
 |------|-----|
@@ -263,5 +270,5 @@ Start with [docs/README.md](docs/README.md) for the full numbered series. Most-u
 
 ## License
 
-[AGPL v3](LICENSE). Committed early because changing it later is hard, and it is the correct
-license for a system that will eventually run public consultation.
+[AGPL v3](LICENSE) for this application. The [standalone engine](https://github.com/ArefinAlter/dynodoc-engine)
+is separately published under MIT with the owner's authorization.

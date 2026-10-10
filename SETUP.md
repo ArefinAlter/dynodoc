@@ -1,9 +1,10 @@
 # dynodoc — local development setup
 
-The PoC stack: **Rust** engine (Axum + SQLx + Tokio), **PostgreSQL 16** (Docker),
-**SvelteKit** researcher frontend, orchestrated by **go-task**. See
-`docs/decisions/001-research-team-demo.md` for the expanded hosted pilot. The numbered
-stage notes below are historical; the latest verification is at the end of this file.
+The stack: **Rust** engine (Axum + SQLx + Tokio), **PostgreSQL 16** (Docker),
+**SvelteKit** Projects workspace, orchestrated by **go-task**. The frontend directory
+retains its historical `researcher` name. Read [the product specification](docs/PRODUCT-SPEC.md)
+and [current handoff](docs/ENGINE-EVOLUTION-HANDOFF.md) for priorities and verification.
+The numbered stage notes below are historical.
 
 ## Prerequisites
 
@@ -22,7 +23,8 @@ stage notes below are historical; the latest verification is at the end of this 
 ## First run
 
 ```sh
-task setup          # creates .env only if absent, installs frontend deps
+task setup          # creates missing runtime/operator env files, installs frontend deps
+task up             # local PostgreSQL, before creating the separate logins
 # Configure the separate runtime/operator logins using docs/DATABASE-PRIVILEGES.md.
 task migrate        # operator process reads .env.migrate
 task db:grant-runtime # grant an already-created dynodoc_runtime login
@@ -30,13 +32,12 @@ task db:check       # runtime login/schema check
 task dev            # boots Postgres and starts API + frontend; never migrates
 ```
 
-Then verify the Stage-12 gate:
+Then verify the local services:
 
 ```sh
 curl http://127.0.0.1:8080/healthz        # -> {"status":"ok","service":"engine-api"}
 curl http://127.0.0.1:5173/healthz        # -> {"status":"ok","service":"researcher-frontend"}
 # Browser: http://127.0.0.1:5173 shows the homepage.
-task test           # cargo test --workspace + frontend vitest/playwright
 task lint           # clippy + eslint + svelte-check
 ```
 
@@ -49,8 +50,9 @@ using the same `WEB_SERVICE_KEY`. Keep `DATABASE_URL` consistent with the local
 Compose port (5432 by default). It must use a restricted runtime login. The owner's
 URL belongs only in `.env.migrate`; follow [the setup and upgrade contract](docs/DATABASE-PRIVILEGES.md).
 Existing environment files are preserved by setup. SQLx tests need separate,
-isolated test-owner credentials exported as `DATABASE_URL`, including CREATE ROLE
-for the runtime-boundary regressions; the API must never use that test-owner URL.
+isolated test-owner credentials exported as `DATABASE_URL`, including CREATE DATABASE
+and CREATE ROLE for the runtime-boundary regressions. Run `task test` from a separate
+test shell; the API must never use that test-owner URL. Never run tests against hosted data.
 
 For the public pilot use [Google and Resend setup](docs/GOOGLE-AND-EMAIL-SETUP.md)
 and [Vercel/VPS operations](docs/VERCEL-DEPLOYMENT.md). The public deployment always

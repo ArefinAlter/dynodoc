@@ -9,25 +9,36 @@ DELETE and TRUNCATE, trigger/schema changes, role elevation and migration writes
 are denied. Existing audited whole-resource erasure uses tightly scoped trigger
 entrypoints; ordinary application authorization remains required.
 
-Application lint and `task test` pass: 265 Rust tests, 286 frontend units and all
-68 signed-in browser workflows. The final disguised-owner regression also passes,
-bringing coverage to 266 distinct Rust tests; final Clippy passes and OpenAPI is
-unchanged. Fresh final-schema CLI migration/grant/check and API startup passed.
-Standalone checks and source CI references are pending.
+Implementation is pushed to both main branches: application `880fc29`, standalone
+engine `40bd959`. All implementation CI passes:
+[application Rust](https://github.com/ArefinAlter/dynodoc/actions/runs/38095749693),
+[frontend and restricted-login browser workflows](https://github.com/ArefinAlter/dynodoc/actions/runs/38095749692),
+[standalone engine](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38096155982).
+CI ran all 266 final Rust tests in each repo, 286 frontend units, 16 public browser
+tests and 68 signed-in workflows. Lint, builds, source packaging, connector drift,
+proxy regression and OpenAPI consistency checks pass. Rustdoc retains 20 existing
+warnings (16 core, four API). These references identify implementation; subsequent
+documentation commits record the evidence without changing runtime behavior.
+
+Local application lint/test passes (265 Rust tests plus the final disguised-owner
+regression, 286 units and 68 browser workflows). Standalone lint, all 266 Rust tests,
+rustdoc and OpenAPI checks pass. Fresh final-schema CLI migration/grant/check and
+API startup also passed; generated API specifications are unchanged.
 CI browser workflows now provision a separate runtime login. Source deployment
 configuration and local tasks distinguish runtime credentials from operator-only
 credentials. See [the setup, trust and rollout contract](DATABASE-PRIVILEGES.md).
-Owned test servers are stopped; the labelled disposable database remains only for
-the standalone checks and will be removed afterwards.
+Owned test servers are stopped; the labelled disposable PostgreSQL database and
+volume are removed. Unrelated local services were left running.
 
 Local browser fixtures used the initial schema-29 default-function ACL during
 development. The final correction revokes global as well as schema-specific PUBLIC
 execution; a future-function regression passes, and a fresh database plus final
 API binary passed startup separately. No applied fixture checksum was rewritten.
-CI must exercise the final migration and restricted-login bootstrap end to end.
+Final CI exercised the final migration and restricted-login bootstrap end to end,
+including all 68 signed-in workflows.
 Local logs are ignored under `target/runtime-*` in each repo.
 
-No VPS deployment has occurred. Existing production is still recorded as `ecbc643`,
+The VPS workspace/API are unchanged. Existing production is still recorded as `ecbc643`,
 schema 26. Source requires schema 29, verified snapshot backfill and a provisioned
 runtime login. A production-copy upgrade and compatible-image rollback rehearsal
 remain required; pre-boundary API images are not safe rollback.
@@ -36,6 +47,24 @@ Next source priority: project policy authority/floors and audited metadata, then
 CSP/HSTS and resource budgets. The product roadmap remains bounded shared chunks,
 portable project commits/branches, durable offline repositories/exchange/convergence,
 stronger audit commitments, measured scale and native-editor acceptance/distribution.
+
+### Next increment acceptance
+
+Start with `access.rs::policy_with_source`, `Policy::can_edit_team`/`can_merge`,
+`people.rs::set_policy`, `workspace.rs::metadata` and project move/settings paths.
+The current file override returns before loading project rules, and document
+ownership grants the management bypass independently of the person's project role.
+Enforce the project floor and authority together, including existing weak overrides,
+file creators who are only project editors, direct writes and reviewed merges.
+Cover moving files/folders between projects and concurrent policy changes; a
+protection-flag OR alone does not close the role bypass. Keep capability/policy-source
+responses and the sharing UI consistent with server enforcement.
+
+Inventory settings consumed by current adapters before narrowing metadata writes.
+Specify field-level authority and bounded schemas, preserve permitted editor flows,
+and record actual before/after changes in the same transaction. Verify denied/no-op
+requests and audit rollback, plus a project-editor/file-owner regression. Mirror
+the engine changes and regenerate OpenAPI/types only if the public contract changes.
 
 ## Latest source work: verified legacy snapshots (11 October 2026)
 
