@@ -3,9 +3,9 @@
 ## Current continuation (10 October 2026)
 
 Continue from [the engine evolution handoff](ENGINE-EVOLUTION-HANDOFF.md) and
-[project status](PROJECT-STATUS.md). Parts 2b-2c add mixed checkpoint readers,
-gated periodic writes and bounded database batches. Publication still scans full
-state and blocks appends; shared writes remain off by default. The handoff records
+[project status](PROJECT-STATUS.md). Parts 2b-2d add mixed checkpoint readers,
+gated periodic writes, bounded database batches and compatible content-writer
+locks. Publication still scans full state; shared writes remain off by default. The handoff records
 current verification, publication, measured limitations and the next task.
 The dated entries below preserve earlier increments.
 

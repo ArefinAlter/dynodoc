@@ -89,10 +89,11 @@ unique changed bytes, memory and concurrent workload separately.
 The current engine has centralized transactional semantic history, stable IDs,
 checked rich-text deltas, three-way merging, review and portable proposal bundles.
 Part 1 centralizes checkpoint-aware streamed historical reads and bounds browser
-key-matching search/trace. Parts 2a-2c add [shared checkpoints](SHARED-CHECKPOINTS.md)
+key-matching search/trace. Parts 2a-2d add [shared checkpoints](SHARED-CHECKPOINTS.md)
 with full materialized-state roots, stable-key indexes, document-scoped objects,
 mixed-format readers and bounded database batches. Shared writes remain opt-in;
-publication still scans full state and holds a lock that blocks document appends.
+publication still scans full state, but compatible content-writer locks now allow
+appends during a pinned checkpoint. [Concurrency contract](CHECKPOINT-CONCURRENCY.md).
 Default JSON snapshots and full draft bases remain; their migration, large-asset
 storage, commit DAG exchange, complete offline convergence and stronger independent
 audit are pending. Native connectors still need installed-host acceptance and

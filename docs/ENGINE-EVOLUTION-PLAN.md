@@ -53,6 +53,17 @@ with real FOR UPDATE wait probes. This optimization preserves the atomic
 transaction; full-state scans, resident state, compressed storage/backend choices
 and short staged publication remain open. The writer stays opt-in until acceptance.
 
+## Part 2d implementation boundary
+
+Core and API content transactions use NO KEY UPDATE, compatible with checkpoints'
+KEY SHARE erasure guard. They still serialize writers and permission/state checks.
+Existing stronger permission/lifecycle/erasure locks remain. Checkpoints retain an
+exact immutable sequence and atomic object/manifest publication. No staging or
+migration is required for this lock correction. See [the concurrency contract](CHECKPOINT-CONCURRENCY.md).
+Full-state materialization, bounded text/assets, compressed packing and shared
+version/draft references remain the next work before portable local commit exchange.
+Default shared writes stay off until concurrent API/resource acceptance.
+
 ## Part 2 design gate and first implementation slice
 
 Specify immutable typed objects for text/format runs, logical-node properties,

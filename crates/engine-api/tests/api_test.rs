@@ -21,6 +21,68 @@ use uuid::Uuid;
 const KEY: [u8; 32] = [7u8; 32];
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn waiting_writer_rechecks_revoked_access(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let owner = bearer(seed_identity(&pool, "lock-owner@example.test").await);
+    let editor = seed_identity(&pool, "lock-editor@example.test").await;
+    let doc = create_document(&router, &owner, "Permission serialization").await;
+    sqlx::query("insert into document_access(document_id,identity_id,role) values($1,$2,'author')")
+        .bind(doc)
+        .bind(editor)
+        .execute(&pool)
+        .await
+        .unwrap();
+    // Hold the same lock taken by workspace membership changes, then revoke.
+    let mut permission = pool.begin().await.unwrap();
+    sqlx::query("select id from document where id=$1 for no key update")
+        .bind(doc)
+        .execute(&mut *permission)
+        .await
+        .unwrap();
+    let pid: i32 = sqlx::query_scalar("select pg_backend_pid()")
+        .fetch_one(&mut *permission)
+        .await
+        .unwrap();
+    sqlx::query("delete from document_access where document_id=$1 and identity_id=$2")
+        .bind(doc)
+        .bind(editor)
+        .execute(&mut *permission)
+        .await
+        .unwrap();
+    let writer = tokio::spawn(async move {
+        send(
+            &router,
+            auth_post(
+                &format!("/documents/{doc}/ops/node-create"),
+                &bearer(editor),
+                &json!({"node_type":"form","pos":"a0","fields":{}}),
+            ),
+        )
+        .await
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(5),async {
+        loop {
+            let blocked:bool=sqlx::query_scalar("select exists(select 1 from pg_stat_activity where datname=current_database() and $1=any(pg_blocking_pids(pid)))")
+                .bind(pid).fetch_one(&pool).await.unwrap();
+            if blocked {break;}
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    }).await.expect("writer never reached the permission lock");
+    permission.commit().await.unwrap();
+    let (status, body) = tokio::time::timeout(std::time::Duration::from_secs(5), writer)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    let events: i64 = sqlx::query_scalar("select count(*) from event where document_id=$1")
+        .bind(doc)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(events, 0);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn draft_sharing_remembers_exclusions_until_explicitly_included(pool: PgPool) {
     let router = app(test_state(pool.clone()));
     let owner = bearer(seed_identity(&pool, "selection@example.test").await);
@@ -1563,8 +1625,22 @@ async fn ten_researchers_merge_independent_cells_without_loss(pool: PgPool) {
         assert_eq!(status, StatusCode::OK);
         tokens.push(bearer(person));
     }
+    // A checkpoint can retain its erasure guard while actual API writers proceed.
+    let mut checkpoint_guard = pool.begin().await.unwrap();
+    sqlx::query("select id from document where id=$1 for key share")
+        .bind(doc)
+        .execute(&mut *checkpoint_guard)
+        .await
+        .unwrap();
     let futures=tokens.iter().enumerate().map(|(i,token)| {let router=router.clone();let node=node.clone();async move {send(&router,auth_post(&format!("/documents/{doc}/batch"),token,&json!({"base_seq":1,"ops":[{"type":"FieldEdited","node_id":node,"field":format!("cell_{i}"),"value":format!("Researcher {i}")}]}))).await}});
-    for (status, body) in futures::future::join_all(futures).await {
+    let results = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        futures::future::join_all(futures),
+    )
+    .await
+    .expect("API writers blocked by checkpoint guard");
+    checkpoint_guard.rollback().await.unwrap();
+    for (status, body) in results {
         assert_eq!(status, StatusCode::OK, "{body}");
     }
     let (_, read) = send(&router, auth_post_get(&format!("/documents/{doc}"), &token)).await;

@@ -1,6 +1,6 @@
 # Shared checkpoints v1
 
-10 October 2026. Parts 2a-2c of the engine evolution plan. A derived checkpoint
+10 October 2026. Parts 2a-2d of the engine evolution plan. A derived checkpoint
 codec with normal mixed-format readers and a gated automatic writer. This is not
 the future portable commit protocol. Event and legacy JSONB formats are unchanged.
 
@@ -141,13 +141,13 @@ already did.
 
 Explicit and periodic publishers use the same document advisory lock before any
 document row lock, avoiding cross-batch deadlocks between overlapping histories.
-The periodic path retains its try-lock behavior. This is a work reduction within
-the original atomic transaction, not staged/unlocked publication. Its transaction
-holds a document KEY SHARE lock to protect against erasure; API
-appends use FOR UPDATE on that same row and therefore wait during publication.
-This is a material performance gate. Shared writing remains off by default until
-incremental publication and concurrent workload acceptance satisfy the rollout
-gates. Batching reduces the work; it does not eliminate the lock window.
+The periodic path retains its try-lock behavior. Part 2d retains that atomic transaction and its KEY SHARE erasure guard, while
+core/API content writers now use compatible NO KEY UPDATE locks. Writers still
+serialize with each other and recheck permissions/state after locking; the
+checkpoint pins its immutable revision. Stronger management/erasure operations
+still wait. See the [lock audit and concurrency evidence](CHECKPOINT-CONCURRENCY.md).
+Full-state reconstruction, scanning and verification remain; shared writing stays
+off by default pending resource, compression and concurrent API load acceptance.
 Disabling the flag is safe with the new mixed readers, but
 rolling back to older reader code can restore expensive genesis/legacy replay and
 does not promise the same shared-checkpoint corruption detection.
@@ -242,7 +242,12 @@ index reads. Incremental reuse without scanning all values, compressed packing a
 publication with a short final lock remain open. Preserve erasure atomicity and
 root verification during those changes.
 
-## Controlled batching comparison (part 2c, 10 October 2026)
+## Historical batching comparison (part 2c, 10 October 2026)
+
+These measurements precede part 2d's compatible content-writer lock. The graph and
+storage results remain a baseline; its append-wait measurements describe the old
+FOR UPDATE entry lock. Current contention measurements are in
+[CHECKPOINT-CONCURRENCY](CHECKPOINT-CONCURRENCY.md).
 
 Release example on the same Windows CPU/Rust and local PostgreSQL 16, with four
 separate empty migrated databases. Each trace has 8,000 fixed-ID blocks, an initial

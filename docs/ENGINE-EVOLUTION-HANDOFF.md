@@ -1,5 +1,83 @@
 # Engine evolution handoff
 
+## Part 2d: concurrent content writes during checkpoints (10 October 2026)
+
+The lock audit, implementation, targeted regressions and controlled measurement are
+complete locally. Application full checks pass; standalone checks and publication/CI
+are pending. Shared writes remain opt-in. No new migration, event/codec/hash bytes,
+HTTP schema or VPS deployment; schema 25 remains required for mixed readers.
+
+### Implementation and correctness
+
+Core append and the API begin_write entrypoint take NO KEY UPDATE on the document.
+Writers still serialize before reading permissions, state, constraints and the
+next event sequence; core no longer upgrades the API lock. Checkpoint KEY SHARE
+guards can coexist with those writers while retaining protection against erasure.
+Checkpoints select immutable history through pinned sequence N, never mutable node
+rows, so later appends form the suffix rather than contaminating checkpoint N.
+
+Stronger SHARE/UPDATE locks remain on the existing authorized export, management,
+project and erasure paths. Membership changes through begin_write retain the same
+exclusive writer serialization. A queued stronger operation can still delay writers.
+Graph verification, object/manifest publication, rollback and erasure remain in
+one transaction; no staged objects or new crash-cleanup protocol is introduced.
+[The audited lock table and primary PostgreSQL reference](CHECKPOINT-CONCURRENCY.md)
+document the precise paths and limitations.
+
+### Verification and measurement
+
+Application fmt/Clippy, all 226 Rust tests and unchanged OpenAPI pass. Tests pause
+real explicit-shared, periodic-shared and legacy publishers before commit, then
+require ten concurrent core writers to finish while publication stays uncommitted.
+Consecutive sequences, chain integrity, old checkpoint content and replay of all
+ten later edits are checked. Strong UPDATE locks still fail NOWAIT at the guard.
+The real ten-collaborator API test now runs under a checkpoint guard. A new test
+observes a real lock wait, commits membership revocation, and verifies that the
+queued API writer is forbidden without appending any event. Existing access,
+erasure, merge, snapshot, codec/corruption and stale-write suites still pass.
+
+Standalone source is synchronized. Its full lint/test/docs/OpenAPI checks are
+running; source and browser CI remain pending. MIT packaging and immutable
+migrations are unchanged. No real Microsoft/Google host acceptance was performed.
+
+Controlled core benchmark: separate fresh databases, identical 8,000 fixed-ID
+blocks / 6.4 MB initial state, ten concurrent actor transactions. Prior entry lock
+commit times: 1,925-2,035 ms (median 1,987); compatible lock: 38-212 ms (median 129).
+Zero old-mode commits versus all ten current-mode commits completed before the
+publisher returned. Both roots match, all edits survive and chains verify.
+Publication after the barrier release still takes about two seconds. Client peaks
+were 104.38/100.59 MiB, excluding PostgreSQL. These one-run traces exclude API
+full-state materialization/authorization/validation and native/network work; they
+are not service latency percentiles or a large-file/scale acceptance result.
+Raw artifacts and reproduction are in [CHECKPOINT-CONCURRENCY](CHECKPOINT-CONCURRENCY.md).
+The old database spike example now calls its FOR UPDATE probe strong_lock_wait_ms;
+historical artifacts keep their previous append_lock_wait_ms meaning.
+
+### Next concrete work
+
+1. Specify and implement versioned bounded text/asset chunks while retaining v1
+   readers and old histories. A single encoded object over 1 MiB is still rejected;
+   periodic fallback still stores full JSON. Measure expanded/native-file memory.
+2. Evaluate compressed packing/backend options and incremental state construction.
+   Full API/checkpoint materialization and CPU/IO scans remain; measure concurrent
+   API workloads and longer/edit-dense histories before enabling shared writes.
+3. Replace full named-version and draft-base copies with versioned shared references,
+   then add durable local commit parents/branches and resumable missing-object
+   exchange, with cross-language canonical conformance before portable exchange.
+4. Offline convergence, signed/witnessed provenance, structural/formatting/background
+   capture in all six native hosts, marketplace and large-service acceptance remain
+   later gates. Do not resume Office web-editor parity or the civic roadmap.
+
+### Publication and environment
+
+Starting app c64a9ff; standalone 11399df. Publication and remote CI pending.
+Owned disposable container dynodoc-evolution-part2d-20261010 on loopback 5553 holds
+isolated tests and two synthetic benchmark databases. Remove it and its volume
+once checks pass, validating label/port; retain unrelated local services. Logs are
+in system temp and the two synthetic JSON artifacts are tracked. No API/web test
+servers started. No VPS deployment; last recorded production remains 8c7461d,
+schema 24, plus the documented Nginx repair.
+
 ## Part 2c: bounded database batches (10 October 2026)
 
 Part 2c is complete, synchronized and pushed to both main branches. Local checks

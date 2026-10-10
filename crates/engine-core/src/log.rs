@@ -110,9 +110,12 @@ pub async fn append_in_tx(
     // Serialize all appends for this document. Locking the document row (rather than
     // the latest event row) is what actually makes appends linearizable: a lock on
     // the latest *existing* event does not stop a concurrent txn from selecting that
-    // same row and computing a duplicate next `seq`.
+    // same row and computing a duplicate next `seq`. NO KEY UPDATE conflicts with
+    // other writers and permission/lifecycle locks, but permits checkpoint KEY
+    // SHARE guards. Appends never change document.id; checkpoints pin immutable
+    // event sequences and must not require stopping later appends.
     let exists: Option<(Uuid,)> =
-        sqlx::query_as("select id from document where id = $1 for update")
+        sqlx::query_as("select id from document where id = $1 for no key update")
             .bind(document_id.0)
             .fetch_optional(&mut **tx)
             .await?;

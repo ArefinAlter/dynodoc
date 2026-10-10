@@ -118,10 +118,11 @@ async fn storage(pool: &PgPool) -> anyhow::Result<serde_json::Value> {
     Ok(result.into())
 }
 
-// Measure a real competing FOR UPDATE wait without changing canonical content.
+// Measure a strong management/erasure FOR UPDATE wait without changing content.
+// Content writers use NO KEY UPDATE since part 2d; this is no longer their lock.
 // NOWAIT polling first confirms that publication actually holds a conflicting
 // lock; a missed very short publication is reported as null, not zero latency.
-async fn append_lock_probe(
+async fn strong_lock_probe(
     pool: PgPool,
     doc: DocumentId,
     finished: Arc<AtomicBool>,
@@ -251,7 +252,7 @@ async fn main() -> anyhow::Result<()> {
         .await?;
         let before = wal(&pool).await?;
         let finished = Arc::new(AtomicBool::new(false));
-        let probe = tokio::spawn(append_lock_probe(pool.clone(), doc, finished.clone()));
+        let probe = tokio::spawn(strong_lock_probe(pool.clone(), doc, finished.clone()));
         let start = Instant::now();
         let seq = (blocks + edit) as i64;
         let (write_queries, read_queries, published_root) = if mode == "individual" {
@@ -266,7 +267,7 @@ async fn main() -> anyhow::Result<()> {
         };
         let shared_ms = start.elapsed().as_secs_f64() * 1000.0;
         finished.store(true, Ordering::Release);
-        let append_lock_wait_ms = probe.await??;
+        let strong_lock_wait_ms = probe.await??;
         let shared_wal: f64 = sqlx::query_scalar(
             "select pg_wal_lsn_diff(pg_current_wal_insert_lsn(),$1::pg_lsn)::float8",
         )
@@ -318,7 +319,7 @@ async fn main() -> anyhow::Result<()> {
         let decoded: DocumentState = serde_json::from_value(value)?;
         assert_eq!(decoded, expected);
         let legacy_read_ms = start.elapsed().as_secs_f64() * 1000.0;
-        results.push(json!({"revision":seq,"root":root.as_str(),"publication_object_inserts":write_queries,"publication_object_selects":read_queries,"append_lock_wait_ms":append_lock_wait_ms,"legacy_write_ms":legacy_ms,"shared_write_verify_ms":shared_ms,"legacy_wal_bytes":legacy_wal,"shared_wal_bytes":shared_wal,"normal_read_ms":normal_read_ms,"batched_read_ms":batched_ms,"batched_object_selects":batched_queries,"unbatched_read_ms":unbatched_ms,"unbatched_object_selects":unbatched_queries,"legacy_read_ms":legacy_read_ms}));
+        results.push(json!({"revision":seq,"root":root.as_str(),"publication_object_inserts":write_queries,"publication_object_selects":read_queries,"strong_lock_wait_ms":strong_lock_wait_ms,"legacy_write_ms":legacy_ms,"shared_write_verify_ms":shared_ms,"legacy_wal_bytes":legacy_wal,"shared_wal_bytes":shared_wal,"normal_read_ms":normal_read_ms,"batched_read_ms":batched_ms,"batched_object_selects":batched_queries,"unbatched_read_ms":unbatched_ms,"unbatched_object_selects":unbatched_queries,"legacy_read_ms":legacy_read_ms}));
         eprintln!("Measured checkpoint {edit}/{edits}");
     }
     verify_chain(&pool, doc).await?;

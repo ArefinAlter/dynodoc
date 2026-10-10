@@ -240,8 +240,8 @@ async fn protect_document(
     connection: &mut PgConnection,
     document: DocumentId,
 ) -> Result<(), Error> {
-    // KEY SHARE blocks erasure. The API append path takes FOR UPDATE on the same
-    // row, so it also waits during publication; benchmark before enabling rollout.
+    // KEY SHARE blocks erasure/key changes. Content writers use NO KEY UPDATE,
+    // so later appends may proceed while we reconstruct a pinned event revision.
     let exists: Option<uuid::Uuid> = sqlx::query_scalar(
         "select id from document where id=$1 and deleted_at is null for key share",
     )

@@ -354,6 +354,9 @@ fn object_or_empty(fields: &Value) -> Value {
 }
 
 /// Every write path takes this lock before reading state or validating a proposal.
+/// Match the core append lock without upgrading it: writers still exclude each
+/// other and SHARE/UPDATE permission locks, while checkpoints retain KEY SHARE
+/// protection against erasure without stopping content edits.
 pub(crate) async fn begin_write(
     state: &AppState,
     document_id: DocumentId,
@@ -361,7 +364,7 @@ pub(crate) async fn begin_write(
 ) -> Result<(Transaction<'_, Postgres>, Role, DocumentState), ApiError> {
     let mut tx = state.pool.begin().await?;
     let exists: Option<uuid::Uuid> =
-        sqlx::query_scalar("select id from document where id=$1 for update")
+        sqlx::query_scalar("select id from document where id=$1 for no key update")
             .bind(document_id.0)
             .fetch_optional(&mut *tx)
             .await?;

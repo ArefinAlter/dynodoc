@@ -1,6 +1,29 @@
 # Dynodoc: intent, current implementation and remaining work
 
-## Latest increment: bounded checkpoint batches (10 October 2026)
+## Latest increment: content writes during checkpoints (10 October 2026)
+
+Part 2d makes the core/API writer lock compatible with checkpoint erasure guards.
+Writers still serialize before permission/state/sequence checks; checkpoints retain
+an exact immutable revision. Stronger management/erasure locks and atomic graph
+publication remain. No new schema or staged-object protocol. Shared writes stay
+opt-in while full-state, chunking, compression and concurrent API load work remain.
+
+A controlled 8,000-block / 6.4 MB trace with ten real core writers records commit
+times of 38-212 ms instead of 1.93-2.04 s under the old entry lock. All ten current
+commits overlap publication, with identical checkpoint roots and verified final
+states/chains. Checkpoint work itself remains about two seconds; the trace excludes
+full API validation/materialization and native-host processing. See
+[the lock audit, tests and measurements](CHECKPOINT-CONCURRENCY.md).
+
+Application fmt/Clippy, 226 Rust tests and unchanged OpenAPI pass. Standalone checks
+and publication/CI are pending; synchronized source and exact continuation steps
+are in [the handoff](ENGINE-EVOLUTION-HANDOFF.md). No VPS deployment.
+
+Next: versioned bounded text/asset chunks, compressed packing and incremental
+materialization, shared version/draft references, then durable local commits and
+resumable exchange. Native/offline/provenance/scale acceptance remains unfinished.
+
+## Previous increment: bounded checkpoint batches (10 October 2026)
 
 Part 2c batches PostgreSQL checkpoint writes (64 objects / 1 MiB encoded) and index
 reads (16 objects), retaining v1 hashes, exact-byte validation, document scope and

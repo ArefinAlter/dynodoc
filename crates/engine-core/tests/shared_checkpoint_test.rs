@@ -63,6 +63,116 @@ async fn object_count(pool: &PgPool, doc: DocumentId) -> i64 {
         .unwrap()
 }
 
+// Deliberately pause the real publisher at its manifest INSERT, after graph
+// verification but before commit. No timing guess or production test hook.
+#[sqlx::test(migrations = "../../migrations")]
+async fn checkpoints_pin_history_while_appends_continue(pool: PgPool) -> anyhow::Result<()> {
+    sqlx::raw_sql("create function pause_checkpoint_test() returns trigger language plpgsql as $$ begin perform pg_advisory_xact_lock(7421,1); return new; end $$; create trigger pause_shared before insert on shared_checkpoint for each row execute function pause_checkpoint_test(); create trigger pause_legacy before insert on snapshot for each row execute function pause_checkpoint_test();")
+        .execute(&pool).await?;
+    for mode in ["explicit", "periodic", "legacy"] {
+        let (actor, doc, node) = seed(&pool).await?;
+        let mut gate = pool.begin().await?;
+        sqlx::query("select pg_advisory_xact_lock(7421,1)")
+            .execute(&mut *gate)
+            .await?;
+        let gate_pid: i32 = sqlx::query_scalar("select pg_backend_pid()")
+            .fetch_one(&mut *gate)
+            .await?;
+        let worker_pool = pool.clone();
+        let publisher = tokio::spawn(async move {
+            match mode {
+                "explicit" => {
+                    postgres::take(&worker_pool, doc, 1, Limits::default()).await?;
+                }
+                "periodic" => {
+                    SnapshotEngine::new(worker_pool)
+                        .with_periodic_storage(PeriodicStorage::SharedV1)
+                        .ensure_recent(doc, 0)
+                        .await?;
+                }
+                _ => {
+                    SnapshotEngine::new(worker_pool)
+                        .take(doc, SnapshotReason::Periodic)
+                        .await?;
+                }
+            }
+            anyhow::Ok(())
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                let blocked: bool = sqlx::query_scalar("select exists(select 1 from pg_stat_activity where datname=current_database() and $1=any(pg_blocking_pids(pid)))")
+                    .bind(gate_pid).fetch_one(&pool).await.unwrap();
+                if blocked { break; }
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        }).await?;
+        // Physical erasure and stronger permission/lifecycle locks must still wait.
+        let mut destructive = pool.begin().await?;
+        let error = sqlx::query("select id from document where id=$1 for update nowait")
+            .bind(doc.0)
+            .execute(&mut *destructive)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, sqlx::Error::Database(ref e) if e.code().as_deref()==Some("55P03"))
+        );
+        destructive.rollback().await?;
+        let mut edits = tokio::task::JoinSet::new();
+        for index in 0..10 {
+            let writer_pool = pool.clone();
+            let node = node.clone();
+            edits.spawn(async move {
+                let mut tx = writer_pool.begin().await?;
+                let event = engine_core::log::append_in_tx(
+                    &mut tx,
+                    doc,
+                    &EventPayload::FieldEdited {
+                        node_id: node,
+                        field: format!("field_{index}"),
+                        value: json!(index),
+                    },
+                    actor,
+                )
+                .await?;
+                tx.commit().await?;
+                anyhow::Ok(event.seq)
+            });
+        }
+        // All edits must finish while the checkpoint is deliberately uncommitted.
+        let mut seqs = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            let mut seqs = Vec::new();
+            while let Some(result) = edits.join_next().await {
+                seqs.push(result??);
+            }
+            anyhow::Ok(seqs)
+        })
+        .await??;
+        seqs.sort_unstable();
+        assert_eq!(seqs, (2..=11).collect::<Vec<_>>());
+        assert!(!publisher.is_finished());
+        gate.commit().await?;
+        tokio::time::timeout(std::time::Duration::from_secs(5), publisher).await???;
+        let mut connection = pool.acquire().await?;
+        let pinned = read_state_at(&mut connection, doc, 1).await?;
+        assert_eq!(pinned.snapshot_seq, 1);
+        assert_eq!(
+            pinned.state.nodes[&node].current_fields,
+            json!({"label":"Original"})
+        );
+        let current = read_state_at(&mut connection, doc, 11).await?;
+        assert_eq!(current.snapshot_seq, 1);
+        assert_eq!(current.replayed_events, 10);
+        for index in 0..10 {
+            assert_eq!(
+                current.state.nodes[&node].current_fields[format!("field_{index}")],
+                json!(index)
+            );
+        }
+        engine_core::log::verify_chain(&pool, doc).await?;
+    }
+    Ok(())
+}
+
 #[sqlx::test(migrations = "../../migrations")]
 async fn concurrent_invalid_insert_is_checked_after_bulk_conflict(
     pool: PgPool,

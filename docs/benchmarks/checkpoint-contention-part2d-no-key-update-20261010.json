@@ -1,0 +1,87 @@
+{
+  "baseline_json_bytes": 6400063,
+  "blocks": 8000,
+  "checkpoint_root": "1d870c75c2962ac8b6a6dd8a4281ea851791e863a51cfb261d26475fc0bfeff0",
+  "commits_completed_before_publication_return": 10,
+  "concurrent_writers": 10,
+  "final_seq": 8010,
+  "pinned_seq": 8000,
+  "publication_after_barrier_release_ms": 2084.7031,
+  "scope": "One synthetic 8000-block document; ten real core transactions with derived node updates and hash-chained appends, excluding API authorization, validation and full-state materialization. Pool size 16. Both modes use a test-only first-object INSERT barrier and the current publisher/codec. Old mode takes FOR UPDATE before the current core append; current mode uses NO KEY UPDATE. Timings include pool wait and writer serialization, not service percentiles, native-file or 100000-user acceptance. Publication timing starts at barrier release, excluding initial legacy read/encoding. Overlap is relative to publisher return, not a server commit timestamp.",
+  "writer_lock": "no-key-update",
+  "writers": [
+    {
+      "before_publication_return": true,
+      "committed_ms": 138.4034,
+      "lock_acquired_ms": 120.6743,
+      "seq": 8006,
+      "writer": 0
+    },
+    {
+      "before_publication_return": true,
+      "committed_ms": 79.0158,
+      "lock_acquired_ms": 59.2761,
+      "seq": 8003,
+      "writer": 1
+    },
+    {
+      "before_publication_return": true,
+      "committed_ms": 120.29679999999999,
+      "lock_acquired_ms": 100.95439999999999,
+      "seq": 8005,
+      "writer": 2
+    },
+    {
+      "before_publication_return": true,
+      "committed_ms": 212.3415,
+      "lock_acquired_ms": 193.65630000000002,
+      "seq": 8010,
+      "writer": 3
+    },
+    {
+      "before_publication_return": true,
+      "committed_ms": 157.8897,
+      "lock_acquired_ms": 138.9629,
+      "seq": 8007,
+      "writer": 4
+    },
+    {
+      "before_publication_return": true,
+      "committed_ms": 59.682,
+      "lock_acquired_ms": 38.1534,
+      "seq": 8002,
+      "writer": 5
+    },
+    {
+      "before_publication_return": true,
+      "committed_ms": 173.4359,
+      "lock_acquired_ms": 156.4311,
+      "seq": 8008,
+      "writer": 6
+    },
+    {
+      "before_publication_return": true,
+      "committed_ms": 192.88739999999999,
+      "lock_acquired_ms": 173.1609,
+      "seq": 8009,
+      "writer": 7
+    },
+    {
+      "before_publication_return": true,
+      "committed_ms": 102.2685,
+      "lock_acquired_ms": 79.2546,
+      "seq": 8004,
+      "writer": 8
+    },
+    {
+      "before_publication_return": true,
+      "committed_ms": 38.017,
+      "lock_acquired_ms": 12.349,
+      "seq": 8001,
+      "writer": 9
+    }
+  ],
+  "observed_peak_working_set_bytes": 105476096,
+  "memory_method": "Windows OS peak working set sampled every 250 ms, includes seed/reference/reconstructed states and runtime, excludes PostgreSQL.",
+  "environment": "Windows, Intel Core i7-1255U, pinned Rust 1.96 release, local Docker PostgreSQL 16, separate empty migrated database per mode; one sequential trace per mode, no competing builds/tests."
+}
