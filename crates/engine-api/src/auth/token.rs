@@ -3,7 +3,8 @@
 //! Tokens use authenticated encryption; active-account and revocation checks additionally
 //! consult the database on each authenticated request. We use Paseto v4 local (symmetric
 //! AEAD) rather than JWT — one algorithm per version, no `alg` field to confuse, no
-//! `none` bypass. The only claim we carry is `identity_id`; the per-document role is
+//! `none` bypass. Claims bind identity, account generation and an optional login ID;
+//! the per-document role is
 //! resolved separately at request time, never embedded in a long-lived token.
 
 use chrono::{SecondsFormat, Utc};
@@ -27,6 +28,16 @@ pub fn mint_generation(
     ttl_seconds: i64,
     generation: i64,
 ) -> Result<String, AuthError> {
+    mint_bound_session(key, identity_id, ttl_seconds, generation, None)
+}
+
+pub fn mint_bound_session(
+    key: &[u8],
+    identity_id: Uuid,
+    ttl_seconds: i64,
+    generation: i64,
+    session_id: Option<Uuid>,
+) -> Result<String, AuthError> {
     let sk = SymmetricKey::<V4>::from(key).map_err(|_| AuthError::InvalidKey)?;
 
     let expires = Utc::now() + chrono::Duration::seconds(ttl_seconds);
@@ -41,6 +52,11 @@ pub fn mint_generation(
     claims
         .add_additional("session_generation", generation)
         .map_err(|e| AuthError::TokenMint(e.to_string()))?;
+    if let Some(id) = session_id {
+        claims
+            .add_additional("session_id", id.to_string())
+            .map_err(|e| AuthError::TokenMint(e.to_string()))?;
+    }
     local::encrypt(&sk, &claims, None, None).map_err(|e| AuthError::TokenMint(e.to_string()))
 }
 
@@ -51,6 +67,13 @@ pub fn verify(key: &[u8], token: &str) -> Result<Uuid, AuthError> {
     verify_session(key, token).map(|(identity, _)| identity)
 }
 pub fn verify_session(key: &[u8], token: &str) -> Result<(Uuid, i64), AuthError> {
+    verify_bound_session(key, token).map(|(id, generation, _)| (id, generation))
+}
+
+pub fn verify_bound_session(
+    key: &[u8],
+    token: &str,
+) -> Result<(Uuid, i64, Option<Uuid>), AuthError> {
     let sk = SymmetricKey::<V4>::from(key).map_err(|_| AuthError::InvalidKey)?;
 
     let untrusted =
@@ -68,9 +91,19 @@ pub fn verify_session(key: &[u8], token: &str) -> Result<(Uuid, i64), AuthError>
         Some(value) => value.as_i64().ok_or(AuthError::TokenInvalid)?,
         None => 0,
     };
+    let session_id = claims
+        .get_claim("session_id")
+        .map(|value| {
+            value
+                .as_str()
+                .and_then(|s| Uuid::parse_str(s).ok())
+                .ok_or(AuthError::TokenInvalid)
+        })
+        .transpose()?;
     Ok((
         Uuid::parse_str(id).map_err(|_| AuthError::TokenInvalid)?,
         generation,
+        session_id,
     ))
 }
 

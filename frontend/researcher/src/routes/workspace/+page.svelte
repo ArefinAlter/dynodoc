@@ -358,8 +358,12 @@
     }
   }
   async function logout() {
-    await clearSession();
-    await goto('/login');
+    try {
+      await clearSession();
+      await goto('/login');
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'Sign-out could not be completed. Please try again.';
+    }
   }
   function relative(date: string) {
     const days = Math.floor((Date.now() - new Date(date).getTime()) / 86400000);

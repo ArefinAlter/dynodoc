@@ -135,6 +135,7 @@ async fn openapi_json() -> Json<Value> {
     ),
     modifiers(&WorkspaceDocs),
     paths(
+        auth::routes::logout,
         profiles::own,
         profiles::read,
         profiles::save,
@@ -157,6 +158,7 @@ async fn openapi_json() -> Json<Value> {
         audit::merkle_proof,
     ),
     components(schemas(
+        auth::routes::RefreshRequest,
         documents::routes::CreateDocumentRequest,
         ops::routes::NodeCreateRequest,
         ops::routes::FieldEditRequest,

@@ -274,9 +274,12 @@ Structure / deviations recorded for later stages:
   number. Only the SHA-256 of every magic-link / refresh token is stored.
 - **Roles, not tiers** (continued from stage 16): `document_access.role ∈ {author, reviewer,
   auditor}`; `governance::Role` gained `FromStr` to parse the column.
-- **Magic link returned in the response** (`magic_link_token`) is a PoC/local-dev affordance —
-  a deployment emails it instead. The all-zero `PASETO_LOCAL_KEY` placeholder is allowed for
-  local dev with a startup warning.
+- **Current security boundary:** magic-link and provider-exchange responses are only
+  available with the web service credential, in every environment. The web server
+  emails the link. Missing/short service keys and zero PASETO keys stop API startup.
+  Migration 0027 adds revocable login lineages; logout revokes access/refresh tokens.
+  Legacy-cookie logout invalidates the account generation. See
+  [security compatibility and remaining work](docs/SECURITY-HARDENING.md).
 - **Deferred to stage 18** (kept minimal here): wiring `store::role_for` into endpoint
   authorization (the `Forbidden` path), HttpOnly refresh-cookie + UA/IP binding, and the
   document/event REST + SSE surface.

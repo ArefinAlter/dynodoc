@@ -13,6 +13,8 @@ export async function loadSession() {
   session.authenticated = res.ok && (await res.json()).authenticated;
 }
 export async function clearSession() {
+  const response = await fetch('/auth/logout', { method: 'POST' });
+  if (!response.ok) throw new Error('Sign-out could not be completed. Please try again.');
   session.authenticated = false;
   // Disable writes before clearing storage, including writes in other open tabs.
   try {
@@ -23,7 +25,6 @@ export async function clearSession() {
   }
   window.dispatchEvent(new Event('dynodoc:signout'));
   await clearRecovery().catch(() => {});
-  await fetch('/auth/logout', { method: 'POST' });
 }
 // Compatibility exports for existing API callers. Cookie sessions handle rotation server-side.
 export function setAccessToken(_token: string) {

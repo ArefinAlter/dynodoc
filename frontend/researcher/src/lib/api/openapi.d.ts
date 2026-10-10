@@ -120,6 +120,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/auth/logout': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Revoke the login identified by a refresh secret, including rotated ancestors.
+     *     Invalid/already revoked credentials have the same idempotent response.
+     */
+    post: operations['logout'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/connector/connection': {
     parameters: {
       query?: never;
@@ -1484,6 +1504,9 @@ export interface components {
        */
       through_seq: number;
     };
+    RefreshRequest: {
+      refresh_token: string;
+    };
     /** @description `POST /proposals/:event_id/reject`. */
     RejectRequest: {
       reason?: string | null;
@@ -1852,6 +1875,30 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+    };
+  };
+  logout: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RefreshRequest'];
+      };
+    };
+    responses: {
+      /** @description Login revoked; legacy sessions revoke the account generation */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
       };
     };
   };

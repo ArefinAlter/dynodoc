@@ -35,11 +35,7 @@ for (const host of ['google-docs', 'google-sheets', 'google-slides']) {
     out + 'Pairing.gs',
     await readFile(extensions + 'google-common/Pairing.gs', 'utf8')
   );
-  if (host !== 'google-docs')
-    await artifact(
-      out + 'Common.gs',
-      await readFile(extensions + 'google-common/Common.gs', 'utf8')
-    );
+  await artifact(out + 'Common.gs', await readFile(extensions + 'google-common/Common.gs', 'utf8'));
 }
 // Apps Script's native Sheets adapter uses the same strict calendar validator.
 const calendar = await build({
@@ -68,8 +64,14 @@ for (const host of ['word', 'excel', 'powerpoint'])
     await readFile(extensions + host + '/manifest.xml', 'utf8')
   );
 for (const host of ['google-docs', 'google-sheets', 'google-slides']) {
-  const names = ['Code.gs', 'Sidebar.html', 'Protocol.html', 'Pairing.gs', 'appsscript.json'];
-  if (host !== 'google-docs') names.push('Common.gs');
+  const names = [
+    'Code.gs',
+    'Sidebar.html',
+    'Protocol.html',
+    'Pairing.gs',
+    'appsscript.json',
+    'Common.gs'
+  ];
   if (host === 'google-sheets') names.push('Date.gs');
   const entries = {};
   for (const name of names)

@@ -1,7 +1,8 @@
-//! Authentication and identity (stage 17, PoC scope).
+//! Authentication and identity.
 //!
-//! PoC auth is **email + magic link only** (PRD §6.8 FR-25, NFR-9): no passwords, no
-//! tiers, no phone/OAuth, no Sybil signals. The flow is:
+//! The trusted web server delivers email links or exchanges provider-verified
+//! identities. Engine token issuance always requires its service credential.
+//! The email flow is:
 //!
 //! 1. `POST /auth/magic-link` with an email creates the `identity` (if new) and issues
 //!    a one-time link. Only the SHA-256 of the link token is stored.
@@ -9,7 +10,9 @@
 //!    local** access token (NFR-8 — not JWT) plus a rotating refresh token.
 //! 3. `POST /auth/refresh` rotates the refresh token and mints a new access token.
 //! 4. Protected handlers take the [`AuthContext`] extractor, which validates the
-//!    `Authorization: Bearer <paseto>` header.
+//!    bearer plus account generation and login revocation on each request.
+//! 5. `POST /auth/logout` revokes a refresh lineage and its bearer tokens. A legacy
+//!    cookie has no login ID, so its logout invalidates the account generation.
 //!
 //! A document's capability role (Author/Reviewer/Auditor) is **not** in the token; it
 //! is per-document state read from `document_access` at request time ([`store::role_for`])

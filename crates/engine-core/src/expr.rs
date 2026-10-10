@@ -90,6 +90,11 @@ pub enum Expr {
 /// A typed parse error.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ParseError {
+    #[error("expression exceeds the {resource} limit ({limit})")]
+    LimitExceeded {
+        resource: &'static str,
+        limit: usize,
+    },
     #[error("unexpected end of input")]
     UnexpectedEof,
     #[error("unexpected character {ch:?} at byte {pos}")]
@@ -110,6 +115,12 @@ pub enum ParseError {
 /// additive (`+ -`), multiplicative (`* / mod div`), unary (`not -`), primary
 /// (literals, `${var}`, `.`, calls, parens).
 pub fn parse(input: &str) -> Result<Expr, ParseError> {
+    if input.len() > MAX_EXPRESSION_BYTES {
+        return Err(ParseError::LimitExceeded {
+            resource: "byte",
+            limit: MAX_EXPRESSION_BYTES,
+        });
+    }
     let mut p = Parser::new(input);
     p.skip_ws();
     let expr = p.parse_or()?;
@@ -119,6 +130,12 @@ pub fn parse(input: &str) -> Result<Expr, ParseError> {
     }
     Ok(expr)
 }
+
+/// Conservative admission limits bound parsing, subsequent recursive visitors,
+/// cloning and AST destruction, including flat left-associative binary chains.
+pub const MAX_EXPRESSION_BYTES: usize = 64 * 1024;
+pub const MAX_EXPRESSION_DEPTH: usize = 32;
+pub const MAX_EXPRESSION_TERMS: usize = 256;
 
 /// Walk an AST and collect every referenced `var_name` from `VarRef` nodes.
 pub fn referenced_vars(expr: &Expr) -> BTreeSet<String> {
@@ -189,6 +206,8 @@ struct Parser<'a> {
     input: &'a str,
     bytes: &'a [u8],
     pos: usize,
+    depth: usize,
+    terms: usize,
 }
 
 impl<'a> Parser<'a> {
@@ -197,6 +216,8 @@ impl<'a> Parser<'a> {
             input,
             bytes: input.as_bytes(),
             pos: 0,
+            depth: 0,
+            terms: 0,
         }
     }
 
@@ -223,7 +244,7 @@ impl<'a> Parser<'a> {
     fn eat_keyword(&mut self, word: &str) -> bool {
         let end = self.pos + word.len();
         if end <= self.len()
-            && &self.input[self.pos..end] == word
+            && self.bytes.get(self.pos..end) == Some(word.as_bytes())
             && !self.bytes.get(end).copied().is_some_and(is_ident_continue)
         {
             self.pos = end;
@@ -236,7 +257,7 @@ impl<'a> Parser<'a> {
     /// If the remaining input starts with `sym`, consume it and return true.
     fn eat_symbol(&mut self, sym: &str) -> bool {
         let end = self.pos + sym.len();
-        if end <= self.len() && &self.input[self.pos..end] == sym {
+        if end <= self.len() && self.bytes.get(self.pos..end) == Some(sym.as_bytes()) {
             self.pos = end;
             true
         } else {
@@ -364,6 +385,26 @@ impl<'a> Parser<'a> {
 
     // unary := ( 'not' | '-' ) unary | primary
     fn parse_unary(&mut self) -> Result<Expr, ParseError> {
+        if self.depth >= MAX_EXPRESSION_DEPTH {
+            return Err(ParseError::LimitExceeded {
+                resource: "nesting",
+                limit: MAX_EXPRESSION_DEPTH,
+            });
+        }
+        if self.terms >= MAX_EXPRESSION_TERMS {
+            return Err(ParseError::LimitExceeded {
+                resource: "term",
+                limit: MAX_EXPRESSION_TERMS,
+            });
+        }
+        self.depth += 1;
+        self.terms += 1;
+        let result = self.parse_unary_inner();
+        self.depth -= 1;
+        result
+    }
+
+    fn parse_unary_inner(&mut self) -> Result<Expr, ParseError> {
         self.skip_ws();
         if self.eat_keyword("not") {
             self.skip_ws();
@@ -557,6 +598,41 @@ fn is_ident_continue(b: u8) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejects_deep_and_wide_untrusted_expressions_before_building_unbounded_asts() {
+        for input in [
+            format!("{}1{}", "(".repeat(1000), ")".repeat(1000)),
+            format!("{}1", "not ".repeat(1000)),
+            format!("{}1", "-".repeat(1000)),
+            format!("{}1{}", "f(".repeat(1000), ")".repeat(1000)),
+            vec!["1"; 1000].join("+"),
+            format!("f({})", vec!["1"; 1000].join(",")),
+            " ".repeat(MAX_EXPRESSION_BYTES + 1),
+        ] {
+            assert!(matches!(
+                parse(&input),
+                Err(ParseError::LimitExceeded { .. })
+            ));
+        }
+        assert!(parse(&format!(
+            "{}1{}",
+            "(".repeat(MAX_EXPRESSION_DEPTH - 1),
+            ")".repeat(MAX_EXPRESSION_DEPTH - 1)
+        ))
+        .is_ok());
+        let expr = parse(&vec!["${age}"; MAX_EXPRESSION_TERMS].join("+")).unwrap();
+        assert_eq!(referenced_vars(&expr), BTreeSet::from(["age".into()]));
+        assert!(selected_choice_refs(&expr).is_empty());
+        drop(expr);
+    }
+
+    #[test]
+    fn non_ascii_input_at_an_operator_boundary_is_an_error_without_panicking() {
+        assert!(parse("1 + \u{1f642}").is_err());
+        assert!(parse("1 \u{1f642}").is_err());
+        assert!(parse("'\u{1f642}' = '${name}'").is_ok());
+    }
 
     fn vars(input: &str) -> Vec<String> {
         referenced_vars(&parse(input).unwrap())

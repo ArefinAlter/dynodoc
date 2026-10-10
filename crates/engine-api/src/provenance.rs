@@ -444,6 +444,7 @@ impl FromRequestParts<AppState> for Connector {
             auth: AuthContext {
                 identity_id: identity,
                 session_generation: generation,
+                session_id: None,
             },
             document,
             grant,

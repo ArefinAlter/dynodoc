@@ -1,5 +1,24 @@
 # Dynodoc: intent, current implementation and remaining work
 
+## Latest source work: authentication and bounded history (10 October 2026)
+
+The security findings are being addressed before the next storage increment.
+Current changes: fail-closed token issuance; server-side logout with migration 0027;
+bounded REST/SSE history reads; expression admission limits and iterative cycle
+traversal; committed-tree source archives; Google shared-helper drift checks;
+OpenAPI CI and JSON-LD escaping. Application `task lint`, production build and
+`task test` pass: 248 Rust tests, 286 frontend unit tests and 68 signed-in browser
+tests. The browser regression confirms copied-cookie revocation and preservation
+of a separate login. Source packaging and generated connector checks also pass.
+Standalone checks and source/CI references are being finalized.
+See [the full findings matrix and rollout contract](SECURITY-HARDENING.md).
+
+Highest-priority remaining security work: legacy snapshot verification/immutability,
+runtime database privilege separation, project policy floor and audited metadata,
+CSP/HSTS and remaining resource budgets. Then resume bounded shared storage,
+portable project commits/branches, offline convergence and installed-editor acceptance.
+This increment is not deployed; production remains ecbc643/schema 26.
+
 ## Latest source: bounded checkpoint encoding (10 October 2026)
 
 Implementation is pushed to both main branches: application `2f69c87` and standalone

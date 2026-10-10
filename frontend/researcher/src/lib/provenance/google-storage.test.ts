@@ -30,6 +30,7 @@ function setup() {
     loadLedger: () => { generation: string | null; payload: unknown };
   };
   runInNewContext(readFileSync('../../extensions/google-docs/Code.gs', 'utf8'), context);
+  runInNewContext(readFileSync('../../extensions/google-docs/Common.gs', 'utf8'), context);
   return {
     context,
     properties,

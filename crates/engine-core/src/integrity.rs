@@ -403,30 +403,42 @@ fn dfs_cycles(
     reported: &mut BTreeSet<Vec<NodeId>>,
     violations: &mut Vec<IntegrityViolation>,
 ) {
-    match state.get(node) {
-        Some(VisitState::Done) => return,
-        Some(VisitState::InProgress) => {
-            // Found a back-edge: the cycle is the stack slice from `node` to the top.
-            if let Some(pos) = stack.iter().position(|n| n == node) {
-                let cycle = canonical_cycle(&stack[pos..]);
-                if reported.insert(cycle.clone()) {
-                    violations.push(IntegrityViolation::RelevanceCycle { cycle });
-                }
-            }
-            return;
-        }
-        None => {}
+    // Each frame remembers the next edge to visit. Memory is proportional to the
+    // current path, while native stack depth is constant even for very long chains.
+    if state.contains_key(node) {
+        return;
     }
-
+    let mut frames = vec![(node.clone(), 0usize)];
     state.insert(node.clone(), VisitState::InProgress);
     stack.push(node.clone());
-    if let Some(targets) = adjacency.get(node) {
-        for next in targets {
-            dfs_cycles(next, adjacency, state, stack, reported, violations);
+    while let Some((current, edge)) = frames.last_mut() {
+        let next = adjacency
+            .get(current)
+            .and_then(|targets| targets.get(*edge));
+        if let Some(next) = next {
+            *edge += 1;
+            match state.get(next) {
+                Some(VisitState::Done) => {}
+                Some(VisitState::InProgress) => {
+                    if let Some(pos) = stack.iter().position(|n| n == next) {
+                        let cycle = canonical_cycle(&stack[pos..]);
+                        if reported.insert(cycle.clone()) {
+                            violations.push(IntegrityViolation::RelevanceCycle { cycle });
+                        }
+                    }
+                }
+                None => {
+                    state.insert(next.clone(), VisitState::InProgress);
+                    stack.push(next.clone());
+                    frames.push((next.clone(), 0));
+                }
+            }
+        } else {
+            state.insert(current.clone(), VisitState::Done);
+            frames.pop();
+            stack.pop();
         }
     }
-    stack.pop();
-    state.insert(node.clone(), VisitState::Done);
 }
 
 /// Rotate a detected cycle to start at its smallest `NodeId` so the same cycle
@@ -488,6 +500,35 @@ mod tests {
             suggestions: BTreeMap::new(),
             removed_choices: HashSet::new(),
         }
+    }
+
+    #[test]
+    fn cycle_detection_handles_long_chains_without_native_recursion() {
+        let nodes: Vec<_> = (0..20_000).map(|i| NodeId(format!("{i:05}"))).collect();
+        let mut adjacency = BTreeMap::new();
+        for (i, node) in nodes.iter().enumerate() {
+            adjacency.insert(
+                node.clone(),
+                nodes.get(i + 1).cloned().into_iter().collect(),
+            );
+        }
+        // Include a short cycle deep in the graph, preserving deterministic output.
+        adjacency.insert(nodes[19_999].clone(), vec![nodes[19_998].clone()]);
+        let mut violations = Vec::new();
+        dfs_cycles(
+            &nodes[0],
+            &adjacency,
+            &mut BTreeMap::new(),
+            &mut Vec::new(),
+            &mut BTreeSet::new(),
+            &mut violations,
+        );
+        assert_eq!(
+            violations,
+            vec![IntegrityViolation::RelevanceCycle {
+                cycle: nodes[19_998..].to_vec()
+            }]
+        );
     }
 
     #[test]

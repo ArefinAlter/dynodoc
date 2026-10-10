@@ -21,6 +21,8 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
+    // Fail before connecting or migrating: missing configuration is never a dev bypass.
+    let config = load_auth_config()?;
     let database_url =
         std::env::var("DATABASE_URL").context("DATABASE_URL is not set (see .env / SETUP.md)")?;
     let pool = PgPoolOptions::new()
@@ -35,12 +37,6 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("running database migrations failed")?;
 
-    let config = load_auth_config()?;
-    if std::env::var("APP_ENV").as_deref() == Ok("production")
-        && config.service_key.as_ref().is_none_or(|s| s.len() < 32)
-    {
-        anyhow::bail!("Production requires WEB_SERVICE_KEY of at least 32 characters");
-    }
     let state = AppState::new(pool, config);
     // Copy detection runs beside the edit path, never inside it.
     engine_api::copies::spawn(state.clone());
@@ -67,8 +63,16 @@ fn load_auth_config() -> anyhow::Result<AuthConfig> {
         .as_slice()
         .try_into()
         .map_err(|_| anyhow::anyhow!("PASETO_LOCAL_KEY must be 32 bytes (64 hex chars)"))?;
-    if paseto_key == [0u8; 32] && std::env::var("APP_ENV").as_deref() == Ok("production") {
-        anyhow::bail!("Production requires a random PASETO_LOCAL_KEY");
+    if paseto_key == [0u8; 32] {
+        anyhow::bail!("A random PASETO_LOCAL_KEY is required in every environment");
+    }
+
+    let service_key = std::env::var("WEB_SERVICE_KEY").ok();
+    if service_key
+        .as_ref()
+        .is_none_or(|s| s.len() < 32 || s.trim().is_empty())
+    {
+        anyhow::bail!("WEB_SERVICE_KEY of at least 32 characters is required in every environment");
     }
 
     let token_ttl_seconds = std::env::var("TOKEN_TTL_SECONDS")
@@ -80,7 +84,7 @@ fn load_auth_config() -> anyhow::Result<AuthConfig> {
 
     Ok(AuthConfig {
         paseto_key,
-        service_key: std::env::var("WEB_SERVICE_KEY").ok(),
+        service_key,
         token_ttl_seconds,
         public_base_url,
     })

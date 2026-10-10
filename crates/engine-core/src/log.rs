@@ -260,6 +260,20 @@ pub async fn read_range(
     Ok(events)
 }
 
+/// Bounded history page, including at most one lookahead row for a 1,000-row API
+/// page. SQL applies the limit before rows enter application memory.
+pub async fn read_range_page(
+    pool: &PgPool,
+    document_id: DocumentId,
+    from_seq: i64,
+    to_seq: i64,
+    limit: i64,
+) -> Result<Vec<Event>, EventError> {
+    Ok(sqlx::query_as("select * from event where document_id=$1 and seq between $2 and $3 order by seq asc limit $4")
+        .bind(document_id.0).bind(from_seq).bind(to_seq).bind(limit.clamp(1, 1001))
+        .fetch_all(pool).await?)
+}
+
 /// Read every event after a snapshot's `through_seq`, in `seq` order — the tail the
 /// materializer folds onto a snapshot. Pass `0` to read the whole log.
 pub async fn read_since_snapshot(

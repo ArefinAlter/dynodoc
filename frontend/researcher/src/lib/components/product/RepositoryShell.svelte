@@ -7,6 +7,7 @@
   import { clearSession } from '$lib/stores/session.svelte';
   import './repository.css';
   let { children, active = 'projects' }: { children: Snippet; active?: string } = $props();
+  let signOutError = $state('');
 </script>
 
 <div class="repo">
@@ -34,12 +35,18 @@
         class="repo-icon"
         aria-label="Sign out"
         onclick={async () => {
-          await clearSession();
-          await goto('/login');
+          signOutError = '';
+          try {
+            await clearSession();
+            await goto('/login');
+          } catch {
+            signOutError = 'Sign-out could not be completed. Please try again.';
+          }
         }}><LogOut size={17} /></button
       >
     </div>
   </header>
+  {#if signOutError}<p class="repo-content" role="alert">{signOutError}</p>{/if}
   <main id="repository-content" class="repo-content">{@render children()}</main>
   <footer class="repo-footer">
     <span>Dynodoc · Version control for documents</span><a href="/compatibility"

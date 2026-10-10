@@ -66,7 +66,8 @@ pub struct Event {
     pub content_hash: Vec<u8>,
     /// The previous event's `chain_hash` (32 zero bytes for a document's genesis).
     pub prev_chain_hash: Vec<u8>,
-    /// SHA-256(prev_chain_hash || content_hash) (32 bytes).
+    /// V1: SHA-256(content_hash || prev_chain_hash) (32 bytes).
+    /// Does not bind document/event IDs, sequence or creation time; see audit limits.
     pub chain_hash: Vec<u8>,
     pub created_at: DateTime<Utc>,
 }

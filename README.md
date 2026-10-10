@@ -10,7 +10,11 @@ Research instruments remain one supported adapter, not the product roadmap.
 ? [Current handoff](docs/ENGINE-EVOLUTION-HANDOFF.md).
 
 **Status:** The centralized engine, Projects/review, checked proposal bundles and
-six development connectors exist. Shared checkpoint readers and bounded database
+six development connectors exist. Current source hardening adds revocable logins,
+fail-closed service credentials and bounded history reads. Snapshot trust, runtime
+database privileges and project policy authority remain urgent open gates; see
+the [security findings and rollout contract](docs/SECURITY-HARDENING.md).
+Shared checkpoint readers and bounded database
 batches reuse unchanged objects. Shared writes remain opt-in; default snapshots
 and draft bases still use full JSON. Content edits can proceed during checkpoint
 publication; full-state scans and [measured limits](docs/CHECKPOINT-CONCURRENCY.md)

@@ -2,7 +2,14 @@ import { env } from '$env/dynamic/private';
 import { json, redirect } from '@sveltejs/kit';
 import * as oidc from 'openid-client';
 import type { RequestHandler } from './$types';
-import { saveSession, clearSession, accessToken, engineUrl, enginePost } from '$lib/server/session';
+import {
+  saveSession,
+  readSession,
+  clearSession,
+  accessToken,
+  engineUrl,
+  enginePost
+} from '$lib/server/session';
 import { safeNext } from '$lib/auth-next';
 
 let configuration: Promise<oidc.Configuration> | undefined;
@@ -126,6 +133,19 @@ export const POST: RequestHandler = async ({ params, url, request, cookies }) =>
   if (request.headers.get('origin') !== url.origin)
     return json({ error: 'Invalid origin' }, { status: 403 });
   if (params.action === 'logout') {
+    const session = await readSession(cookies);
+    if (session) {
+      try {
+        // Use the cookie's refresh secret directly, even if its access token expired
+        // or a concurrent request rotated it. The engine revokes the whole login.
+        await enginePost('/auth/logout', { refresh_token: session.refresh_token });
+      } catch {
+        return json(
+          { error: 'Sign-out could not be completed. Please try again.' },
+          { status: 503 }
+        );
+      }
+    }
     clearSession(cookies);
     cookies.delete('dynodoc_forms', { path: '/api/google-forms' });
     cookies.delete('forms_pending', { path: '/integrations/google' });

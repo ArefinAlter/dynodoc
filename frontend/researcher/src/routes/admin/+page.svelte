@@ -14,6 +14,7 @@
   import type { PageData } from './$types';
   let { data }: { data: PageData } = $props();
   let busy = $state(false);
+  let signOutError = $state('');
   const bytes = (n: number) =>
     new Intl.NumberFormat('en', { maximumFractionDigits: 1 }).format(n / 1024 / 1024) + ' MiB';
   const stale = $derived(!data.host || Date.now() - Date.parse(data.host.checked_at) > 180_000);
@@ -177,11 +178,17 @@
       <a href="https://app.dynodoc.online/source">Download source code</a>
       <button
         onclick={async () => {
-          await clearSession();
-          await goto('/login');
+          signOutError = '';
+          try {
+            await clearSession();
+            await goto('/login');
+          } catch {
+            signOutError = 'Sign-out could not be completed. Please try again.';
+          }
         }}>Sign out</button
       >
     </footer>
+    {#if signOutError}<p role="alert">{signOutError}</p>{/if}
   </main>
 </div>
 

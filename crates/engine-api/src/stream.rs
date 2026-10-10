@@ -24,13 +24,13 @@
 //! `Cache-Control: no-cache, no-transform` and `X-Accel-Buffering: no` so a CDN/proxy
 //! does not buffer the stream.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::convert::Infallible;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use axum::extract::{Path, Query, State};
-use axum::http::header;
+use axum::http::{header, HeaderMap};
 use axum::response::sse::{Event as SseEvent, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -39,7 +39,6 @@ use engine_shared::{DocumentId, Event};
 use futures::stream::{self, StreamExt};
 use serde::Deserialize;
 use tokio::sync::broadcast;
-use tokio_stream::wrappers::BroadcastStream;
 use uuid::Uuid;
 
 use crate::auth::AuthContext;
@@ -85,12 +84,14 @@ impl Subscriptions {
         let _ = sender.send(Arc::new(event));
     }
 
-    /// Current live subscriber count for a document (the receiver count).
-    fn subscriber_count(&self, document_id: DocumentId) -> usize {
-        let map = self.inner.lock().expect("subscriptions mutex poisoned");
-        map.get(&document_id.0)
-            .map(|s| s.receiver_count())
-            .unwrap_or(0)
+    /// Check and subscribe under the same lock so concurrent requests cannot
+    /// oversubscribe between a receiver-count check and acquiring the receiver.
+    fn subscribe(&self, document_id: DocumentId) -> Option<broadcast::Receiver<Arc<Event>>> {
+        let mut map = self.inner.lock().expect("subscriptions mutex poisoned");
+        let sender = map
+            .entry(document_id.0)
+            .or_insert_with(|| broadcast::channel(CHANNEL_CAPACITY).0);
+        (sender.receiver_count() < MAX_SUBSCRIBERS_PER_DOCUMENT).then(|| sender.subscribe())
     }
 }
 
@@ -113,6 +114,7 @@ async fn document_stream(
     Path(document_id): Path<Uuid>,
     Query(params): Query<StreamParams>,
     auth: AuthContext,
+    headers: HeaderMap,
 ) -> Result<Response, ApiError> {
     let document_id = DocumentId(document_id);
     crate::ops::apply::require_role(
@@ -127,38 +129,82 @@ async fn document_stream(
         return Err(ApiError::NotFound);
     }
 
-    // Enforce the concurrent-subscriber cap before we hand out a receiver.
-    if state.subscriptions.subscriber_count(document_id) >= MAX_SUBSCRIBERS_PER_DOCUMENT {
-        return Err(ApiError::RateLimited { retry_after: 5 });
-    }
-
-    // Subscribe *before* reading the backfill so no append slips through the gap
-    // between the catch-up read and the live subscription.
-    let receiver = state.subscriptions.sender(document_id).subscribe();
-    let since = params.since_seq.unwrap_or(0);
-
-    // Backfill: events strictly after `since_seq` already in the log. A reconnecting
-    // client resumes exactly where it left off.
-    let backfill = engine_core::log::read_range(&state.pool, document_id, since + 1, i64::MAX)
-        .await
-        .map_err(ApiError::from)?;
-    let last_backfilled = backfill.last().map(|e| e.seq).unwrap_or(since);
-
-    let backfill_stream = stream::iter(backfill.into_iter().map(to_sse_event));
-
-    // Live stream: drop events at or before the last backfilled seq (the subscribe
-    // happened before the backfill read, so the first live events may overlap).
-    let live_stream = BroadcastStream::new(receiver)
-        .take_while(|result| futures::future::ready(result.is_ok()))
-        .filter_map(move |result| {
-            let value = match result {
-                Ok(event) if event.seq > last_backfilled => Some(to_sse_event((*event).clone())),
-                // A lagged subscriber missed events; the SSE client reconnects with
-                // Last-Event-ID and catches up from the backfill. Drop, don't error.
-                _ => None,
-            };
-            async move { value }
+    // Subscribe before pinning the backfill head; no append can slip through the gap.
+    let receiver = state
+        .subscriptions
+        .subscribe(document_id)
+        .ok_or(ApiError::RateLimited { retry_after: 5 })?;
+    let since = match params.since_seq {
+        Some(since) => since,
+        None => match headers.get("last-event-id") {
+            Some(value) => value
+                .to_str()
+                .ok()
+                .and_then(|v| v.parse::<i64>().ok())
+                .ok_or_else(|| ApiError::BadRequest {
+                    reason: "Invalid Last-Event-ID".into(),
+                })?,
+            None => 0,
+        },
+    };
+    let head: i64 =
+        sqlx::query_scalar("select coalesce(max(seq),0) from event where document_id=$1")
+            .bind(document_id.0)
+            .fetch_one(&state.pool)
+            .await?;
+    if since < 0 || since > head {
+        return Err(ApiError::BadRequest {
+            reason: "Resume position is outside document history".into(),
         });
+    }
+    // Hold only one page while catching up. DB failures and broadcast lag terminate
+    // the stream so the client can resume from its last delivered sequence.
+    let events = stream::unfold(
+        (
+            state.pool.clone(),
+            since,
+            VecDeque::<Event>::new(),
+            receiver,
+        ),
+        move |(pool, mut cursor, mut pending, mut receiver)| async move {
+            loop {
+                if let Some(event) = pending.pop_front() {
+                    cursor = event.seq;
+                    return Some((to_sse_event(event), (pool, cursor, pending, receiver)));
+                }
+                if cursor < head {
+                    match engine_core::log::read_range_page(
+                        &pool,
+                        document_id,
+                        cursor + 1,
+                        head,
+                        100,
+                    )
+                    .await
+                    {
+                        Ok(page) if !page.is_empty() => pending.extend(page),
+                        _ => return None,
+                    }
+                } else {
+                    match receiver.recv().await {
+                        Ok(event) if event.seq > cursor => {
+                            // A missing sequence must be recovered from storage, never skipped.
+                            if Some(event.seq) != cursor.checked_add(1) {
+                                return None;
+                            }
+                            cursor = event.seq;
+                            return Some((
+                                to_sse_event((*event).clone()),
+                                (pool, cursor, pending, receiver),
+                            ));
+                        }
+                        Ok(_) => {}
+                        Err(_) => return None,
+                    }
+                }
+            }
+        },
+    );
 
     let pool = state.pool.clone();
     // Flush an idle subscription immediately through HTTP proxies. Otherwise a
@@ -168,29 +214,27 @@ async fn document_stream(
     let ready = stream::iter([Ok::<_, Infallible>(
         SseEvent::default().comment("connected"),
     )]);
-    let stream = ready
-        .chain(backfill_stream)
-        .chain(live_stream)
-        .take_while(move |_| {
-            let pool = pool.clone();
-            async move {
-                if crate::auth::store::ensure_session(
-                    &pool,
-                    auth.identity_id,
-                    auth.session_generation,
-                )
-                .await
-                .is_err()
-                {
-                    return false;
-                }
-                crate::auth::store::role_for(&pool, document_id, auth.identity_id)
-                    .await
-                    .ok()
-                    .flatten()
-                    .is_some()
+    let stream = ready.chain(events).take_while(move |_| {
+        let pool = pool.clone();
+        async move {
+            if crate::auth::store::ensure_bound_session(
+                &pool,
+                auth.identity_id,
+                auth.session_generation,
+                auth.session_id,
+            )
+            .await
+            .is_err()
+            {
+                return false;
             }
-        });
+            crate::auth::store::role_for(&pool, document_id, auth.identity_id)
+                .await
+                .ok()
+                .flatten()
+                .is_some()
+        }
+    });
 
     let sse = Sse::new(stream).keep_alive(
         KeepAlive::new()

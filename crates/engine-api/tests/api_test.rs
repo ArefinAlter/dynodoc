@@ -1337,6 +1337,110 @@ async fn events_endpoint_paginates_with_cursor(pool: PgPool) {
     let first_seq_p2 = page2["items"][0]["seq"].as_i64().unwrap();
     let last_seq_p1 = page1["items"][1]["seq"].as_i64().unwrap();
     assert!(first_seq_p2 > last_seq_p1, "cursor page must not overlap");
+    let (_, final_page) = send(
+        &router,
+        auth_post_get(
+            &format!("/documents/{doc_id}/events?limit=2&from_seq=4"),
+            &token,
+        ),
+    )
+    .await;
+    assert_eq!(final_page["items"].as_array().unwrap().len(), 2);
+    assert!(
+        final_page["next_cursor"].is_null(),
+        "an exactly full final page has no successor"
+    );
+    let cursor = engine_api::pagination::Cursor {
+        last_seq: i64::MAX,
+        last_id: String::new(),
+    }
+    .encode();
+    let (status, terminal) = send(
+        &router,
+        auth_post_get(
+            &format!("/documents/{doc_id}/events?cursor={cursor}"),
+            &token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(terminal["items"].as_array().unwrap().is_empty());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn sse_pages_backfill_then_live_events_without_gaps_and_honors_resume_header(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let router = app(state.clone());
+    let author = seed_identity(&pool, "paged-stream@example.test").await;
+    let token = bearer(author);
+    let doc = create_document(&router, &token, "Paged stream").await;
+    let mut tx = pool.begin().await.unwrap();
+    let payload = engine_shared::EventPayload::CommentAdded {
+        node_id: None,
+        body: "comment".into(),
+    };
+    for _ in 0..205 {
+        engine_core::log::append_in_tx(
+            &mut tx,
+            DocumentId(doc),
+            &payload,
+            engine_shared::IdentityId(author),
+        )
+        .await
+        .unwrap();
+    }
+    tx.commit().await.unwrap();
+    let page = engine_core::log::read_range_page(&pool, DocumentId(doc), 1, i64::MAX, 7)
+        .await
+        .unwrap();
+    assert_eq!(page.len(), 7);
+    for since in ["-1", "206", "9223372036854775807"] {
+        assert_eq!(
+            send(
+                &router,
+                auth_post_get(
+                    &format!("/documents/{doc}/stream?since_seq={since}"),
+                    &token
+                )
+            )
+            .await
+            .0,
+            StatusCode::BAD_REQUEST
+        );
+    }
+    let mut req = auth_post_get(&format!("/documents/{doc}/stream"), &token);
+    req.headers_mut()
+        .insert("last-event-id", "2".parse().unwrap());
+    let response = router.clone().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let mut stream = response.into_body().into_data_stream();
+    assert!(
+        String::from_utf8_lossy(&stream.next().await.unwrap().unwrap()).contains(": connected")
+    );
+    // Append after the pinned backfill head, before consuming its three pages.
+    let mut tx = pool.begin().await.unwrap();
+    let live = engine_core::log::append_in_tx(
+        &mut tx,
+        DocumentId(doc),
+        &payload,
+        engine_shared::IdentityId(author),
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    state.subscriptions.publish(DocumentId(doc), live);
+    for seq in 3..=206 {
+        let frame = tokio::time::timeout(std::time::Duration::from_secs(2), stream.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        let text = String::from_utf8_lossy(&frame);
+        assert!(
+            text.lines().any(|line| line == format!("id: {seq}")),
+            "{text}"
+        );
+    }
 }
 
 /// A GET with a bearer token (the events endpoint is `[auth]`).

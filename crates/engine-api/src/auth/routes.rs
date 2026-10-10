@@ -1,6 +1,7 @@
 //! Auth HTTP surface: the `/auth/*` routes and the `Authorization: Bearer` extractor.
 //!
-//! Public routes (`magic-link`, `verify`, `refresh`) need no token; `me` requires a
+//! Issuance (`magic-link`, `exchange`) requires a trusted service key in every environment.
+//! `verify`, `refresh` and `logout` require their respective secret; `me` requires a
 //! valid access token via the [`AuthContext`] extractor. The document/event REST + SSE
 //! surface (stage 18) reuses this [`AuthContext`] and wires [`store::role_for`] into the
 //! governance gate on the write path (see [`crate::ops::apply`]).
@@ -26,6 +27,7 @@ use crate::AppState;
 pub struct AuthContext {
     pub identity_id: Uuid,
     pub session_generation: i64,
+    pub session_id: Option<Uuid>,
 }
 
 #[axum::async_trait]
@@ -42,11 +44,14 @@ impl FromRequestParts<AppState> for AuthContext {
             .strip_prefix("Bearer ")
             .ok_or(AuthError::TokenInvalid)?
             .trim();
-        let (identity_id, session_generation) = token::verify_session(&state.auth.paseto_key, raw)?;
-        store::ensure_session(&state.pool, identity_id, session_generation).await?;
+        let (identity_id, session_generation, session_id) =
+            token::verify_bound_session(&state.auth.paseto_key, raw)?;
+        store::ensure_bound_session(&state.pool, identity_id, session_generation, session_id)
+            .await?;
         Ok(AuthContext {
             identity_id,
             session_generation,
+            session_id,
         })
     }
 }
@@ -57,6 +62,7 @@ pub fn router() -> Router<AppState> {
         .route("/auth/magic-link", post(magic_link_request))
         .route("/auth/verify", post(verify))
         .route("/auth/refresh", post(refresh))
+        .route("/auth/logout", post(logout))
         .route("/auth/me", get(me))
         .route("/auth/exchange", post(exchange))
 }
@@ -72,8 +78,7 @@ struct MagicLinkRequest {
 
 #[derive(Serialize)]
 struct MagicLinkResponse {
-    /// PoC/local-dev affordance: the one-time token is returned here. In a deployed
-    /// system it is delivered by email instead (the token never travels in a response).
+    /// Returned only to the authenticated web server, which delivers it by email.
     magic_link_token: String,
     /// Convenience URL a human can use to complete login.
     verify_url: String,
@@ -86,7 +91,7 @@ async fn magic_link_request(
     headers: HeaderMap,
     Json(req): Json<MagicLinkRequest>,
 ) -> Result<Json<MagicLinkResponse>, AuthError> {
-    require_service(&state, &headers, true)?;
+    require_service(&state, &headers)?;
     if req.email.len() > 254 || !req.email.contains('@') {
         return Err(AuthError::Forbidden);
     }
@@ -103,9 +108,7 @@ async fn magic_link_request(
     let expires_at = Utc::now() + Duration::seconds(MAGIC_LINK_TTL_SECONDS);
     store::issue_magic_link(&state.pool, identity.id, &hash, expires_at).await?;
 
-    // In production this would be emailed. Locally we surface it (and log it) so the
-    // dev/test flow can complete without a mail provider (PoC scope; NFR-7 dev-HTTP ok).
-    tracing::info!(email = %req.email, "issued magic link (PoC: returned in response)");
+    tracing::info!("issued magic link to authenticated web service");
     let verify_url = format!(
         "{}/auth/verify?token={}",
         state.auth.public_base_url, plaintext
@@ -132,20 +135,23 @@ struct TokenResponse {
 
 async fn mint_session(state: &AppState, identity_id: Uuid) -> Result<TokenResponse, AuthError> {
     let generation = store::session_generation(&state.pool, identity_id).await?;
-    let access_token = token::mint_generation(
+    let session_id = Uuid::new_v4();
+    let access_token = token::mint_bound_session(
         &state.auth.paseto_key,
         identity_id,
         state.auth.token_ttl_seconds,
         generation,
+        Some(session_id),
     )?;
     let (refresh_plain, refresh_hash) = random_token()?;
     let refresh_expires = Utc::now() + Duration::seconds(REFRESH_TTL_SECONDS);
-    store::issue_refresh_generation(
+    store::issue_bound_refresh(
         &state.pool,
         identity_id,
         &refresh_hash,
         refresh_expires,
         generation,
+        Some(session_id),
     )
     .await?;
     Ok(TokenResponse {
@@ -170,8 +176,8 @@ async fn verify(
     Ok(Json(mint_session(&state, identity_id).await?))
 }
 
-#[derive(Deserialize)]
-struct RefreshRequest {
+#[derive(Deserialize, utoipa::ToSchema)]
+pub struct RefreshRequest {
     refresh_token: String,
 }
 
@@ -183,15 +189,16 @@ async fn refresh(
     let presented = sha256(req.refresh_token.as_bytes());
     let (new_plain, new_hash) = random_token()?;
     let refresh_expires = Utc::now() + Duration::seconds(REFRESH_TTL_SECONDS);
-    let (identity_id, generation) =
-        store::rotate_refresh_session(&state.pool, &presented, &new_hash, refresh_expires).await?;
+    let (identity_id, generation, session_id) =
+        store::rotate_bound_refresh(&state.pool, &presented, &new_hash, refresh_expires).await?;
 
     // The successor keeps the session generation of the presented credential.
-    let access_token = token::mint_generation(
+    let access_token = token::mint_bound_session(
         &state.auth.paseto_key,
         identity_id,
         state.auth.token_ttl_seconds,
         generation,
+        session_id,
     )?;
     Ok(Json(TokenResponse {
         access_token,
@@ -202,6 +209,20 @@ async fn refresh(
 }
 
 // --- me -------------------------------------------------------------------------
+
+/// Revoke the login identified by a refresh secret, including rotated ancestors.
+/// Invalid/already revoked credentials have the same idempotent response.
+#[utoipa::path(post,path="/auth/logout",request_body=RefreshRequest,responses((status=200,description="Login revoked; legacy sessions revoke the account generation",body=serde_json::Value)))]
+pub async fn logout(
+    State(state): State<AppState>,
+    Json(req): Json<RefreshRequest>,
+) -> Result<Json<serde_json::Value>, AuthError> {
+    if req.refresh_token.len() != 64 || !req.refresh_token.bytes().all(|c| c.is_ascii_hexdigit()) {
+        return Ok(Json(serde_json::json!({"ok":true})));
+    }
+    store::revoke_login(&state.pool, &sha256(req.refresh_token.as_bytes())).await?;
+    Ok(Json(serde_json::json!({"ok":true})))
+}
 
 #[derive(Serialize)]
 struct MeResponse {
@@ -235,7 +256,7 @@ async fn exchange(
     headers: HeaderMap,
     Json(req): Json<ExchangeRequest>,
 ) -> Result<Json<TokenResponse>, AuthError> {
-    require_service(&state, &headers, false)?;
+    require_service(&state, &headers)?;
     if req.email.len() > 254 || !req.email.contains('@') {
         return Err(AuthError::Forbidden);
     }
@@ -247,13 +268,9 @@ async fn exchange(
     .await?;
     Ok(Json(mint_session(&state, identity.id.0).await?))
 }
-fn require_service(
-    state: &AppState,
-    headers: &HeaderMap,
-    allow_local: bool,
-) -> Result<(), AuthError> {
+fn require_service(state: &AppState, headers: &HeaderMap) -> Result<(), AuthError> {
     match &state.auth.service_key {
-        Some(expected) => {
+        Some(expected) if expected.len() >= 32 && !expected.trim().is_empty() => {
             let presented = headers
                 .get("x-dynodoc-service-key")
                 .and_then(|v| v.to_str().ok())
@@ -265,7 +282,6 @@ fn require_service(
             ring::hmac::verify(&candidate, b"dynodoc-service-auth", tag.as_ref())
                 .map_err(|_| AuthError::Forbidden)
         }
-        None if allow_local => Ok(()),
-        None => Err(AuthError::Forbidden),
+        _ => Err(AuthError::Forbidden),
     }
 }

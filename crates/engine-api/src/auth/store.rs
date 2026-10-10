@@ -96,7 +96,18 @@ pub async fn issue_refresh_generation(
     expires_at: DateTime<Utc>,
     generation: i64,
 ) -> Result<(), AuthError> {
-    let result = sqlx::query("insert into refresh_token(identity_id,token_hash,expires_at,session_generation) select id,$2,$3,$4 from identity where id=$1 and disabled_at is null and session_generation=$4").bind(identity_id).bind(token_hash).bind(expires_at).bind(generation).execute(pool).await?;
+    issue_bound_refresh(pool, identity_id, token_hash, expires_at, generation, None).await
+}
+
+pub async fn issue_bound_refresh(
+    pool: &PgPool,
+    identity_id: Uuid,
+    token_hash: &[u8],
+    expires_at: DateTime<Utc>,
+    generation: i64,
+    session_id: Option<Uuid>,
+) -> Result<(), AuthError> {
+    let result = sqlx::query("insert into refresh_token(identity_id,token_hash,expires_at,session_generation,session_id) select id,$2,$3,$4,$5 from identity where id=$1 and disabled_at is null and session_generation=$4").bind(identity_id).bind(token_hash).bind(expires_at).bind(generation).bind(session_id).execute(pool).await?;
     if result.rows_affected() != 1 {
         return Err(AuthError::TokenInvalid);
     }
@@ -123,37 +134,78 @@ pub async fn rotate_refresh_session(
     new_hash: &[u8],
     new_expires: DateTime<Utc>,
 ) -> Result<(Uuid, i64), AuthError> {
+    rotate_bound_refresh(pool, presented_hash, new_hash, new_expires)
+        .await
+        .map(|(id, generation, _)| (id, generation))
+}
+
+pub async fn rotate_bound_refresh(
+    pool: &PgPool,
+    presented_hash: &[u8],
+    new_hash: &[u8],
+    new_expires: DateTime<Utc>,
+) -> Result<(Uuid, i64, Option<Uuid>), AuthError> {
     let mut tx = pool.begin().await?;
 
-    let identity: Option<(Uuid,i64)> = sqlx::query_as(
+    // Rotation and logout lock the same identity before touching token rows. This
+    // prevents a concurrent successor escaping a logout, in either lock order.
+    sqlx::query("select i.id from identity i join refresh_token r on r.identity_id=i.id where r.token_hash=$1 for update of i")
+        .bind(presented_hash).fetch_optional(&mut *tx).await?;
+    let identity: Option<(Uuid,i64,Option<Uuid>)> = sqlx::query_as(
         "update refresh_token
          set rotated_at = now()
          where token_hash = $1
            and rotated_at is null and revoked_at is null and expires_at > now()
            and exists(select 1 from identity i where i.id=refresh_token.identity_id and i.disabled_at is null and i.session_generation=refresh_token.session_generation)
-         returning identity_id,session_generation",
+         returning identity_id,session_generation,session_id",
     )
     .bind(presented_hash)
     .fetch_optional(&mut *tx)
     .await?;
 
-    let Some((identity_id, generation)) = identity else {
+    let Some((identity_id, generation, session_id)) = identity else {
         // Nothing valid to rotate — roll back (the tx made no changes anyway).
         return Err(AuthError::RefreshInvalid);
     };
 
     sqlx::query(
-        "insert into refresh_token (identity_id, token_hash, expires_at,session_generation) values ($1, $2, $3,$4)",
+        "insert into refresh_token (identity_id, token_hash, expires_at,session_generation,session_id) values ($1, $2, $3,$4,$5)",
     )
     .bind(identity_id)
     .bind(new_hash)
     .bind(new_expires)
     .bind(generation)
+    .bind(session_id)
     .execute(&mut *tx)
     .await?;
 
     tx.commit().await?;
-    Ok((identity_id, generation))
+    Ok((identity_id, generation, session_id))
+}
+
+/// Revoke a login using any unexpired refresh secret in its rotation lineage.
+/// Legacy tokens lack a login ID, so those logouts revoke the account generation.
+/// Retries and unknown/expired secrets are idempotent and reveal no account state.
+pub async fn revoke_login(pool: &PgPool, presented_hash: &[u8]) -> Result<(), AuthError> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("select i.id from identity i join refresh_token r on r.identity_id=i.id where r.token_hash=$1 for update of i")
+        .bind(presented_hash).fetch_optional(&mut *tx).await?;
+    let login: Option<(Uuid, i64, Option<Uuid>)> = sqlx::query_as(
+        "select r.identity_id,r.session_generation,r.session_id from refresh_token r join identity i on i.id=r.identity_id where r.token_hash=$1 and r.revoked_at is null and r.expires_at>now() and i.session_generation=r.session_generation")
+        .bind(presented_hash).fetch_optional(&mut *tx).await?;
+    if let Some((identity, generation, session)) = login {
+        if let Some(session) = session {
+            sqlx::query("update refresh_token set revoked_at=now() where identity_id=$1 and session_id=$2 and revoked_at is null")
+                .bind(identity).bind(session).execute(&mut *tx).await?;
+        } else {
+            sqlx::query("update identity set session_generation=session_generation+1 where id=$1 and session_generation=$2")
+                .bind(identity).bind(generation).execute(&mut *tx).await?;
+            sqlx::query("update refresh_token set revoked_at=now() where identity_id=$1 and session_generation=$2 and revoked_at is null")
+                .bind(identity).bind(generation).execute(&mut *tx).await?;
+        }
+    }
+    tx.commit().await?;
+    Ok(())
 }
 
 /// The role an identity holds on a document, if any (the access list). `None` means
@@ -214,7 +266,16 @@ pub async fn ensure_session(
     identity: Uuid,
     generation: i64,
 ) -> Result<(), AuthError> {
-    let active: bool = sqlx::query_scalar("select exists(select 1 from identity where id=$1 and disabled_at is null and session_generation=$2)").bind(identity).bind(generation).fetch_one(pool).await?;
+    ensure_bound_session(pool, identity, generation, None).await
+}
+
+pub async fn ensure_bound_session(
+    pool: &PgPool,
+    identity: Uuid,
+    generation: i64,
+    session: Option<Uuid>,
+) -> Result<(), AuthError> {
+    let active: bool = sqlx::query_scalar("select exists(select 1 from identity i where i.id=$1 and i.disabled_at is null and i.session_generation=$2 and ($3::uuid is null or exists(select 1 from refresh_token r where r.identity_id=i.id and r.session_generation=$2 and r.session_id=$3 and r.rotated_at is null and r.revoked_at is null and r.expires_at>now())))").bind(identity).bind(generation).bind(session).fetch_one(pool).await?;
     if active {
         Ok(())
     } else {

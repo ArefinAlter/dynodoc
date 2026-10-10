@@ -76,8 +76,8 @@ const faqPage = {
  * could end the script element early. The data is first-party and static, but
  * escaping keeps that guarantee local to this function.
  */
-function scriptTag(data: unknown): string {
-  const json = JSON.stringify(data).replace(/</g, '\u003c');
+export function scriptTag(data: unknown): string {
+  const json = JSON.stringify(data).replace(/</g, '\\u003c');
   return `<script type="application/ld+json">${json}</` + `script>`;
 }
 

@@ -254,7 +254,10 @@ pub async fn list_events(
     // (so a cursor advances strictly past the last returned event).
     let from = query.from_seq.unwrap_or(1).max(1);
     let from = match &cursor {
-        Some(c) => from.max(c.last_seq + 1),
+        Some(c) => match c.last_seq.checked_add(1) {
+            Some(after) => from.max(after),
+            None => return Ok(Json(Page::new(Vec::new(), None))),
+        },
         None => from,
     };
     let to = query.to_seq.unwrap_or(i64::MAX);
@@ -262,10 +265,12 @@ pub async fn list_events(
         return Ok(Json(Page::new(Vec::new(), None)));
     }
 
-    let mut events = engine_core::log::read_range(&state.pool, document_id, from, to).await?;
+    let mut events =
+        engine_core::log::read_range_page(&state.pool, document_id, from, to, limit + 1).await?;
+    let has_next = events.len() as i64 > limit;
     events.truncate(limit as usize);
 
-    let next = if events.len() as i64 == limit {
+    let next = if has_next {
         events.last().map(|e| crate::pagination::Cursor {
             last_seq: e.seq,
             last_id: e.id.0.clone(),

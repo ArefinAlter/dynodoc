@@ -8,6 +8,9 @@ on:
       - "Cargo.lock"
       - "rust-toolchain.toml"
       - "migrations/**"
+      - "openapi.yaml"
+      - "infra/demo/package-source.py"
+      - "infra/demo/test_package_source.py"
       - ".github/workflows/ci-rust.yml"
   pull_request:
     paths:
@@ -16,6 +19,9 @@ on:
       - "Cargo.lock"
       - "rust-toolchain.toml"
       - "migrations/**"
+      - "openapi.yaml"
+      - "infra/demo/package-source.py"
+      - "infra/demo/test_package_source.py"
       - ".github/workflows/ci-rust.yml"
 
 concurrency:
@@ -58,3 +64,7 @@ jobs:
         run: cargo build --workspace
       - name: Test
         run: cargo test --workspace
+      - name: OpenAPI drift check
+        run: cargo run -p engine-cli -- openapi | diff - openapi.yaml
+      - name: Source packaging regression
+        run: python -m unittest discover -s infra/demo -p test_package_source.py

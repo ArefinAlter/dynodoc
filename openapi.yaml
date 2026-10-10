@@ -175,6 +175,26 @@ paths:
           description: Refresh the current revision
       security:
       - paseto: []
+  /auth/logout:
+    post:
+      tags:
+      - auth::routes
+      summary: |-
+        Revoke the login identified by a refresh secret, including rotated ancestors.
+        Invalid/already revoked credentials have the same idempotent response.
+      operationId: logout
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+        required: true
+      responses:
+        '200':
+          description: Login revoked; legacy sessions revoke the account generation
+          content:
+            application/json:
+              schema: {}
   /connector/connection:
     get:
       tags: []
@@ -2809,6 +2829,13 @@ components:
           format: int64
           description: Exact retained event revision, including zero for the empty initial state.
       additionalProperties: false
+    RefreshRequest:
+      type: object
+      required:
+      - refresh_token
+      properties:
+        refresh_token:
+          type: string
     RejectRequest:
       type: object
       description: '`POST /proposals/:event_id/reject`.'
