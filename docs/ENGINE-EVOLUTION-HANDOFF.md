@@ -2,7 +2,8 @@
 
 ## Historical recovery increment (10 October 2026)
 
-Implemented following the owner's clarification: historical content retrieval and
+Complete and pushed to both main branches, with local and source CI checks passing.
+Following the owner's clarification, historical content retrieval and
 recovery are explicit product requirements under current permissions. The product
 specification distinguishes historical download, selected restoration, commit
 revert and cherry-pick. This increment implements centralized whole-block recovery;
@@ -22,24 +23,39 @@ passes locally through download, private recovery, submission and actual merge.
 OpenAPI and TypeScript definitions are regenerated. Four API source/test files and
 all 22 unchanged migrations match the standalone repository byte for byte.
 
-Standalone task lint, docs and OpenAPI pass; documentation retains the existing
-16 core / 4 API link warnings. Its full tests and source publication/CI are pending.
+Standalone task lint, all 229 Rust tests, docs and OpenAPI pass; documentation
+retains the existing 16 core / 4 API link warnings. Source CI passes all 229 Rust
+tests in each repository. Application CI passes 274 frontend unit tests, 16 public
+browser tests and all 63 signed-in workflows, including the new recovery journey
+and the production proxy regression.
 Initial sandboxed frontend check could not spawn esbuild; rerunning with subprocess
 permission passed. No source/test failure remains. No native host acceptance or
 large-file/performance benchmark was run for this UI/API increment.
 
-Temporary resource: owned loopback PostgreSQL container dynodoc-history-20261010
-(label dynodoc.task=history-20261010, port 5553). Remove only this task's container
-and disposable volume after final checks; existing containers remain untouched.
+The owned loopback PostgreSQL container dynodoc-history-20261010 and its disposable
+volume were removed after label/port verification. Existing containers remain untouched.
 Owned API/web processes on 8087/4178 have been stopped after the browser check.
 Logs are in system temp under dynodoc-history-*; fixtures are entirely synthetic.
 
 Starting main heads: application de49ccf; standalone b05796f. Application source
-publication is next; final source/CI references will be recorded below.
+`d83bf86782380860788a5edadf4bda342008031a` and engine source
+`fdba931985cc8aa34f57f535a597842fcb8f6cb1` are pushed to main. This documentation
+follow-up records completed checks without changing the tested source.
 
-Next: complete verification/publication of this slice, then resume part 2 bounded
-text/assets, compression/incremental construction, shared version/draft references
-and local commit exchange. See [the exact recovery contract](HISTORY-RECOVERY.md).
+- [Application Rust](https://github.com/ArefinAlter/dynodoc/actions/runs/38050861763): passed, 229 tests.
+- [Application frontend/browser](https://github.com/ArefinAlter/dynodoc/actions/runs/38050861752): passed, 274 unit / 16 public / 63 signed-in tests.
+- [Standalone engine](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38051048267): passed, 229 tests plus lint/docs/OpenAPI.
+- Final engine handoff/status: `be355d1bde86740e4babe7d8245e53b2f498c76f`
+  ([checkout CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38051507307));
+  source is unchanged from the verified implementation commit.
+
+Next: resume part 2 bounded text/assets, compression/incremental construction and
+shared version/draft references, followed by local commit exchange. Preserve old
+revision recovery while migrating storage. Indexed history discovery, commit
+revert/cherry-pick and native historical export/application remain explicit future
+gates. No VPS deployment; last recorded production remains 8c7461d/schema 24 plus
+the documented Nginx repair. Mixed readers require schema 25. See
+[the exact recovery contract](HISTORY-RECOVERY.md).
 
 ## Part 2d: concurrent content writes during checkpoints (10 October 2026)
 

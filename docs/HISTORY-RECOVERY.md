@@ -94,7 +94,10 @@ owner-only approval rules, append-only restoration, preservation of unrelated wo
 revocation, stale/out-of-range/no-op requests, incomplete parent/child selections,
 and conflicts with changes made after the draft was created.
 
-A signed-in browser scenario exercises revision selection, checkpoint download,
+A passing signed-in browser scenario exercises revision selection, checkpoint download,
 selected recovery, private draft, submission and merge, and checks both restored
-and retained later content plus chain verification. Final execution results and
-publication commits belong in [the handoff](ENGINE-EVOLUTION-HANDOFF.md).
+and retained later content plus chain verification. Local checks and source CI pass
+229 Rust tests in each repository, 274 frontend unit tests, 16 public browser tests
+and 63 signed-in workflows. The source-label guard's five-test review suite also
+passed after the full local application suite. Publication and check links are in
+[the handoff](ENGINE-EVOLUTION-HANDOFF.md).

@@ -12,7 +12,10 @@ Activity links to the state before an edit. Canonical history is never rewound.
 Application fmt/Clippy and 229 Rust tests pass, followed by the five review tests
 after the source-label guard. Frontend lint, 274 unit tests, production build and
 the new signed-in recovery workflow pass. API schemas are regenerated. Standalone
-source is synchronized and lint/docs pass; its full suite and publication/CI are pending.
+source is synchronized and lint, all 229 tests, docs and OpenAPI pass. Application
+source d83bf86 and engine source fdba931 are pushed to main. Both source CI runs
+passed, including 274 frontend unit tests, 16 public browser tests and 63 signed-in
+workflows. The owned disposable database and API/web servers are removed/stopped.
 [Contract and limits](HISTORY-RECOVERY.md), [continuation handoff](ENGINE-EVOLUTION-HANDOFF.md).
 No migration or VPS deployment. Shared checkpoint writes remain opt-in. This is
 whole-block state recovery; commit revert/cherry-pick and native historical file
