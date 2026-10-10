@@ -1,45 +1,105 @@
 # Engine evolution handoff
 
-## Current increment: history ranges and editor pairing
+## Latest increment: history ranges, native exports and editor sign-in (10 October 2026)
 
-10 October 2026. User explicitly requested revert/cherry-pick, native historical
-exports and installable six-host add-ins with auth. Implementation is present:
-revert/cherry_pick net revision deltas with checked overlap choices/private drafts;
-DOCX/XLSX/PPTX historical downloads; hash-only browser approval for all six clients;
-Microsoft ribbon commands/icons and reproducible test installation packages.
-No migration; minimum schema remains 25. No VPS deployment. Both repositories
-have the same four changed Rust files; all 22 SQL migrations still match. OpenAPI
-API schemas match, with the intended AGPL/MIT/contact packaging difference.
-Initial source commits are published: application 4df76ad789038dc208cb0ea9a5dc2a4137b28133
-and engine e26d51cd4d6a66f79d258a3d3117cdb592ca7844. All their CI gates passed:
-application Rust 38053822154, frontend/browser 38053822926 and engine 38053895976.
-Final review adds a one-minute server allowance for browser clock skew on fresh
-approval links; all six connector API tests pass including ahead/expired/too-far
-clock cases. Final engine suite and source CI for this small follow-up are pending.
+Implemented and pushed to both main branches. The application offers net revision-range
+revert/cherry-pick with explicit overlap choices, historical DOCX/XLSX/PPTX downloads,
+and browser sign-in/file approval in all six editor clients. Microsoft ribbon commands,
+icons and three XML manifests plus three reproducible Google Editor add-on ZIP packages
+are available through the application `/connectors` page and Sync & connections.
 
-API targeted tests pass (range test corrected its merge request field names).
-All three Microsoft manifests pass the official validator after raising manifest
-version from 0.2.0.0 to its minimum 1.0.0.0; add-ins are still development clients.
-Application fmt/Clippy and all 231 Rust tests pass. Frontend lint/check/build and
-277 unit tests pass, followed by the final pairing suite including three new Google
-bridge tests. All four real signed-in browser checks pass: approval after login,
-DOCX recovery/download/range UI, XLSX and PPTX pinned history exports. Seven existing
-Office/Google connector bridge browser checks also pass. The DOCX browser assertion
-was corrected to read its existing custom origin properties; no exporter change
-was required. These archive checks verify old content and origin, not native fidelity.
-Standalone lint/docs/OpenAPI pass (existing 16 core / 4 API rustdoc warnings).
-The first disposable database/container and owned API/web processes were removed
-after identity/port verification; existing databases were untouched. The final
-clock test uses dynodoc-pair-clock-20261010 on loopback 5553, label
-dynodoc.task=pair-clock-20261010; remove only it after the engine suite finishes. Logs: system temp prefix
-dynodoc-connect-history-, plus dynodoc-*-manifest.log. Existing databases untouched.
-Prior engine documentation CI 38051507307 has now been verified successful.
+Final implementation commits:
+- Application: `0478bf2fe3e9c4c6e171ec4fb38e61580c788a7a` (feature implementation `4df76ad`).
+- Standalone engine: `a44b8adac296aa6414bcafa12c56f3a4bd446e73` (feature implementation `e26d51c`).
 
-Read HISTORY-RECOVERY.md and CONNECTOR-PAIRING-AND-INSTALLATION.md for exact scope.
-Native host acceptance/publication and full fidelity are not implied by source,
-browser mocks, OOXML archive checks or manifest validation. Portable commit IDs,
-branch ancestry, full local history/offline convergence and the remaining part 2
-storage work are still open.
+No migration, event encoding, hash, storage codec or canonical-history rewrite.
+Minimum schema remains 25; shared writes remain opt-in. No VPS deployment. Last recorded
+production remains 8c7461d/schema 24 plus the earlier Nginx repair; it does not have these
+new endpoints/assets. Deploy a matching API/web build before distributing the new packages.
+The standalone repository contains the Rust API and contracts; native exporters and
+installation/ribbon/sidebar clients live in the application repository.
+
+### Behavior and boundaries
+
+- Restore takes selected blocks from one retained revision. Revert/cherry-pick uses the
+  selected net content delta over `(from_seq, through_seq]`, then three-way merges it
+  into the current team state. Old endpoints/anchors and explicit conflict choices
+  are recorded by the server. Permission, stale-head, retry, dependency and ordinary
+  review/approval checks apply. Private drafts do not change canonical content.
+- Native downloads reconstruct the requested checkpoint's supported content and include
+  document/revision origin metadata. Unsupported original formatting/assets and exact
+  original bytes are not reconstructed. No native-host fidelity certification was run.
+- Editor sign-in keeps a random 256-bit bearer secret in the requesting client; the
+  approval browser sees only its hash and approves a particular file/host. The scoped
+  connection cannot merge or manage access. Current membership, account/session state,
+  expiry and revocation are rechecked. Links last ten minutes; server validation allows
+  one minute for an ahead-running browser clock. Grants last seven days. No account-wide
+  token, refresh token or service key is passed to the editor or approval URL.
+- Office keys stay in pane memory; Google approved keys use existing private user/file
+  properties. Capture is explicitly enabled and still limited to supported paragraph,
+  cell/formula/date and shape-text observations while the pane is open. Durable local
+  commits, background sync and arbitrary formatting/structural capture remain open.
+
+Exact contracts: [history operations](HISTORY-RECOVERY.md),
+[connection and installation](CONNECTOR-PAIRING-AND-INSTALLATION.md).
+[Tester installation instructions](https://github.com/ArefinAlter/dynodoc/blob/4df76ad789038dc208cb0ea9a5dc2a4137b28133/extensions/INSTALL.md).
+
+### Verification
+
+Application fmt/Clippy and all 231 Rust tests pass locally. After the final clock fix,
+all six connector API tests pass again, including ahead-clock approval, expired and
+too-distant link rejection. Standalone task lint, all 231 tests, docs and regenerated
+OpenAPI pass on the final source; existing rustdoc warnings remain (16 core / 4 API).
+Four changed Rust source/test files and all 22 unchanged SQL migrations match byte for
+byte across repositories. OpenAPI schemas match with intended MIT/contact metadata in
+the standalone distribution and AGPL metadata in the application.
+
+Frontend lint, zero-diagnostic Svelte check, build and connector artifact consistency
+pass. Local unit coverage: full 277-test suite plus three added Google pairing bridge
+tests (also reran shared pairing tests). Four real signed-in browser journeys pass:
+auth approval after login; DOCX download/recovery/review/merge/range controls; pinned
+XLSX export; pinned PPTX export. Seven existing Office/Google connector bridge browser
+scenarios pass. All three Office XML manifests pass Microsoft's official validator.
+Its minimum manifest version is 1.0.0.0; this does not establish marketplace approval.
+
+Initial feature source CI passed:
+- [Application Rust: 231 tests](https://github.com/ArefinAlter/dynodoc/actions/runs/38053822154).
+- [Application frontend: 280 unit, 16 public and 66 signed-in browser tests](https://github.com/ArefinAlter/dynodoc/actions/runs/38053822926).
+- [Standalone engine: 231 tests, lint/docs/OpenAPI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38053895976).
+
+Final clock-only follow-up CI also passed (231 Rust tests per repository,
+280 frontend unit tests, 16 public browser tests and 66 tests against the authenticated stack):
+[application Rust](https://github.com/ArefinAlter/dynodoc/actions/runs/38054623731),
+[frontend/browser](https://github.com/ArefinAlter/dynodoc/actions/runs/38054623648),
+[standalone engine](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38054667212).
+The initial range test used wrong merge request field names and was corrected; the
+DOCX browser assertion was corrected to read the exporter's existing custom properties.
+No exporter fix was needed. No large-file/load benchmark or installed-host acceptance
+was performed for this increment; time/space complexity remains unchanged.
+
+### Cleanup and continuation
+
+Both owned disposable containers/volumes (dynodoc-connect-history-20261010 and
+dynodoc-pair-clock-20261010) were removed after task-label/loopback-port checks.
+Owned API/web processes 14912/9260 were stopped after PID/port verification. Ports
+5553, 8087 and 4178 are closed; existing dynodoc-postgres and margin-qdrant are untouched.
+Synthetic-only test logs remain in system temp under dynodoc-connect-history-*,
+dynodoc-pair-clock-* and dynodoc-*-manifest.log. No production email or document was used.
+
+Next work, with the existing engine plan's dependencies preserved:
+1. Deploy the matching API/web build to a pilot environment with backup/schema checks;
+   run installed Word/Docs, Excel/Sheets and PowerPoint/Slides acceptance, including
+   browser launch, Google consent, ribbon/menu commands, two accounts and revocation.
+   Store publisher setup, legal/listing assets, OAuth review and publication remain open.
+2. Resume part 2 bounded text/assets, compression/incremental publication and shared
+   named-version/draft references while retaining old histories and v1 readers.
+3. Add portable commit identities/parents, branch refs, durable local repositories,
+   resumable object exchange and checked commit-based revert/cherry-pick. Current
+   commands operate on centralized revision ranges; indexed date/author/message history
+   discovery and field/run-level selection are also still needed.
+4. Continue format/opaque-asset fidelity, offline replica convergence, signed/witnessed
+   provenance and measured large-file/concurrent-service acceptance. These are explicit
+   remaining product gates, not capabilities inferred from the current tests.
 
 ## Historical recovery increment (10 October 2026)
 

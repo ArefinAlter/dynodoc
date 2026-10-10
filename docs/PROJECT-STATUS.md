@@ -11,8 +11,12 @@ ribbon manifests and Google Editor add-on ZIP packages are downloadable at
 Application fmt/Clippy and all 231 Rust tests pass. Frontend lint/check/build pass;
 the 277-test suite plus three new Google pairing tests pass. Four signed-in history/
 auth/export journeys and seven existing connector bridge scenarios pass locally.
-All three Office manifests pass Microsoft validation. The standalone source and
-schema are synchronized; its full suite and publication are tracked in the handoff.
+All three Office manifests pass Microsoft validation. Both repos are synchronized
+and pushed: application 0478bf2, engine a44b8ad. Standalone final lint/docs/OpenAPI
+and all 231 tests pass. Final source CI passed all 231 Rust tests in each repository and 280 frontend
+unit / 16 public / 66 authenticated-stack browser tests. Source/check links and
+installation limits are recorded in the handoff.
+Both disposable test databases and owned API/web servers are removed/stopped.
 No production deployment or schema/event change. Shared writes remain opt-in.
 [History contract](HISTORY-RECOVERY.md), [connection contract](CONNECTOR-PAIRING-AND-INSTALLATION.md).
 
