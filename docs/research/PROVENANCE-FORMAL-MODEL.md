@@ -7,6 +7,12 @@
 differs. Do not publish it: the patent items in `docs/OPEN-RESEARCH-REGISTER.md`
 (L1–L5) still apply.
 
+**Corrections:** writing the proofs required 14 changes to this model (deletes
+are no longer recursive, text order is a successor function, same-anchor
+inserts are conflicts, and more). They are listed in
+[`PROVENANCE-PROOFS.md` §1](PROVENANCE-PROOFS.md#1-changes-the-proofs-required).
+Where the two files disagree, the proofs file wins.
+
 Related: [decision 012](../decisions/012-event-model-v2-and-replay-proof.md) and
 [the mathematics companion](../03-versioning-mathematics-vol2.md). Section E.2.1
 of the companion already proves tamper evidence for a hash chain.
