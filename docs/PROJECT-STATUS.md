@@ -10,14 +10,26 @@ OpenAPI CI and JSON-LD escaping. Application `task lint`, production build and
 `task test` pass: 248 Rust tests, 286 frontend unit tests and 68 signed-in browser
 tests. The browser regression confirms copied-cookie revocation and preservation
 of a separate login. Source packaging and generated connector checks also pass.
-Standalone checks and source/CI references are being finalized.
+Standalone `task lint`, `task test` (248 Rust tests), `task docs` and API generation
+also pass; rustdoc retains 16 existing link/HTML warnings. All 17 changed Rust and
+migration files match across repos; standalone fixture paths and package metadata
+are preserved. Implementations are pushed to main: application `c9d4994`, standalone
+engine `2e75859`. Both Rust CI runs passed. Frontend build/unit/public-browser CI
+passed; the first authenticated run passed 67 of 68, with an intermittent cursor
+failure in the existing personal-draft typing test. Twenty local diagnostic runs
+and the failed-job CI rerun passed. The exact cause is still unconfirmed; no editor
+or test behavior was changed to hide the failure. CI links and evidence are in
+[the handoff](ENGINE-EVOLUTION-HANDOFF.md).
 See [the full findings matrix and rollout contract](SECURITY-HARDENING.md).
 
 Highest-priority remaining security work: legacy snapshot verification/immutability,
 runtime database privilege separation, project policy floor and audited metadata,
 CSP/HSTS and remaining resource budgets. Then resume bounded shared storage,
 portable project commits/branches, offline convergence and installed-editor acceptance.
-This increment is not deployed; production remains ecbc643/schema 26.
+This increment is not deployed to the VPS; the workspace/API remain ecbc643/schema
+26. The new API needs schema 27. Rollback must retain login revocation enforcement
+or deliberately invalidate credentials; an unmodified old API is not safe rollback.
+No real production sign-in, email or document mutation was used.
 
 ## Latest source: bounded checkpoint encoding (10 October 2026)
 
