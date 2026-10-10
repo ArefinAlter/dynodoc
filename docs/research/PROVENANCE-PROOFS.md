@@ -596,6 +596,9 @@ quality goal.
 
 ## 9. What is not proved
 
+> **Update:** [Part 2](PROVENANCE-PROOFS-PART2.md) closes every row of this table
+> except "The code", which cannot be proved on paper. See its Section 12.
+
 | Gap | Status |
 |---|---|
 | **Sides with their own merges** (non-linear sides) | Not proved. The plan: show that each commit's state is reached from any ancestor's state by one valid run, then reuse Section 8. This needs a "path linearization" lemma. |
