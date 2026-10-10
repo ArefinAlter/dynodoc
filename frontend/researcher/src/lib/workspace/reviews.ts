@@ -19,6 +19,8 @@ export interface ChangeRequest {
     upload_id?: string;
     summary?: Record<string, number>;
     start_seq?: number;
+    through_seq?: number;
+    chain_hash?: string;
     /** Set by the server when the file shares little with the revision it started from. */
     unrelated?: boolean;
     similarity?: number;

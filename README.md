@@ -14,7 +14,8 @@ six development connectors exist. Shared checkpoint readers and bounded database
 batches reuse unchanged objects. Shared writes remain opt-in; default snapshots
 and draft bases still use full JSON. Content edits can proceed during checkpoint
 publication; full-state scans and [measured limits](docs/CHECKPOINT-CONCURRENCY.md)
-still gate rollout. A local commit DAG,
+still gate rollout. [Historical recovery](docs/HISTORY-RECOVERY.md) adds selected
+old content to a private draft under current review rules. A local commit DAG,
 complete offline convergence, full native format capture and large-file/service
 capacity still require implementation and acceptance. **License:** [AGPL v3](LICENSE).
 

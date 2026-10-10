@@ -43,7 +43,7 @@ Anyone with access can take a copy, change it on their own computer or in a priv
 **draft**, and send their changes back as a **change request**. Reviewers approve
 or ask for changes; an editor or the owner looks at exactly what changed, decides
 what to keep where two people changed the same sentence, and **merges**. Every step
-is recorded, so earlier text can always be restored. If someone uploads a copy of
+is recorded, so retained earlier text can be recovered. If someone uploads a copy of
 your file — even renamed — you are told.
 
 | What you do | Dynodoc button | Git name |
@@ -56,8 +56,26 @@ your file — even renamed — you are told.
 | Decide which version of a sentence wins | Keep the team's / Use theirs | resolve conflict |
 | Accept the changes into the team version | Merge selected | merge |
 | Catch up with newer team changes | Rebase onto latest | rebase |
-| Go back to an older version | Version history → Restore as new changes | revert |
+| Recover earlier content | Version history → Recover earlier content | restore selected content |
 | Protect the team version and require approvals | Share → Review rules | branch protection |
+
+## Recover something removed earlier
+
+Open **Version history**, enter the retained revision number and choose **Preview
+recovery**. Activity also offers **Recover before this edit**. The revision can be
+older than the visible activity list and does not need a named version.
+
+Choose the blocks to bring back, then **Create recovery draft**. Nothing changes
+for the team yet. Inspect the draft, choose **Send for review**, and use the normal
+approval and merge process. Unselected blocks keep their current content. Changes
+made after the draft was created are compared during merge; overlaps need review.
+Recovering a parent or child may require selecting the related blocks together.
+
+**Download checkpoint JSON** saves the selected historical state and chain anchor.
+It is data for inspection/integration, not a native Office file. Viewers may inspect
+and download; contributors may propose recovery; current owner/project rules decide
+who approves and merges. Previously erased history is unavailable. This feature
+restores whole block states; replaying or reverting an individual commit is future work.
 
 ## Who can do what
 

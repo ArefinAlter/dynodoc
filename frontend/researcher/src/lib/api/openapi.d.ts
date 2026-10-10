@@ -583,6 +583,22 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/documents/{id}/history-recovery': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations['recover'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/documents/{id}/location': {
     parameters: {
       query?: never;
@@ -1316,6 +1332,8 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    /** @enum {string} */
+    Action: 'preview' | 'create';
     /** @description `POST /ops/comment`. */
     CommentRequest: {
       body: string;
@@ -1372,6 +1390,27 @@ export interface components {
       parent_id?: string | null;
       pos: string;
       var_name?: string | null;
+    };
+    RecoveryRequest: {
+      /** @description Preview by default. Create makes a private draft, never a canonical edit. */
+      action?: components['schemas']['Action'];
+      /**
+       * Format: int64
+       * @description Required on create: the team revision returned by preview.
+       */
+      base_seq?: number | null;
+      /** @description Omit for all content; otherwise select 1-5000 unique logical block IDs. */
+      node_ids?: string[] | null;
+      /**
+       * Format: uuid
+       * @description Required on create. Keep the same UUID and request on a retry.
+       */
+      request_id?: string | null;
+      /**
+       * Format: int64
+       * @description Exact retained event revision, including zero for the empty initial state.
+       */
+      through_seq: number;
     };
     /** @description `POST /proposals/:event_id/reject`. */
     RejectRequest: {
@@ -2946,6 +2985,53 @@ export interface operations {
       };
       /** @description Document membership required */
       403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  recover: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RecoveryRequest'];
+      };
+    };
+    responses: {
+      /** @description Recovery preview or idempotent private draft receipt */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Invalid revision, selection or structurally invalid recovery */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Current membership required; viewers can only preview */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Team changed since preview or request ID was reused */
+      409: {
         headers: {
           [name: string]: unknown;
         };

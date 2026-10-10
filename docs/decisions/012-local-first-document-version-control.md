@@ -28,6 +28,10 @@ Decisions:
 - Offline commit exchange and eventual agreement on accepted merges are required.
   Automatic CRDT convergence is scoped per supported operation, not asserted for
   arbitrary native files. Preserve observed versus inferred provenance boundaries.
+- Retained historical states and changes are recoverable under current access and
+  review rules, including old or unnamed revisions. Downloads, selected restoration,
+  revert and cherry-pick are distinct operations. Recovery appends new work and
+  records its source; it never rewinds the canonical chain or bypasses approvals.
 - Introduce formats, storage and stronger commitments through versioned contracts
   and additive migrations. Do not rewrite existing event hashes or applied SQL.
 - Maintain explicit status, evidence and a continuation handoff in both application

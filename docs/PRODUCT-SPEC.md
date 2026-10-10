@@ -20,13 +20,47 @@ public consultation, civic identity and AI assessment are separate proposals.
    objects. A change request selects work for review. Pull retrieves missing objects
    and previews a checked application to the local document. A merge records its
    parents, resolutions and resulting state without discarding either contributor.
-5. Reviewers see content, formatting and structural differences, attribution and
-   explicit conflicts. They can restore earlier content through a new commit.
+5. Team members can inspect and download retained earlier revisions, named stages
+   and their change descriptions according to their current permissions. Someone
+   needing a paragraph removed five days and fifty commits ago can recover that
+   content without discarding newer work. Contributors propose selected recovery;
+   the owner or permitted reviewers/mergers apply the repository's approval rules.
+6. Reviewers see content, formatting and structural differences, attribution and
+   explicit conflicts. Restoration, reverting a change and replaying a selected
+   historical change create new commits with source references; history is not reset.
    Interrupted transfer/application can be retried or recovered without losing work.
 
 The web product provides repositories, branches, requests, comparisons, history,
 permissions and synchronization. Existing basic editors remain available.
 Native editor parity is not the product roadmap.
+
+## Historical access and recovery
+
+History is a first-class repository capability, not restricted to named versions
+or the most recent page of activity. Locate revisions by commit identifier, date,
+author, message or named milestone; inspect before/after states and download the
+supported file/checkpoint or change data. A commit message describes a change; the
+recoverable content is the state and operations referenced by that commit.
+
+Separate four actions: read/download an old state without modifying shared work;
+restore selected content to its earlier state; revert the effects of a selected
+commit; and replay selected changes onto another checked base (cherry-pick).
+Restoring a whole earlier document is an explicit broader selection. Review must
+show deletions and structural dependencies as well as recovered text. Never treat
+two different block IDs as sufficient proof that recovery is independent.
+
+All reads, downloads, proposals and merges recheck current document/project access.
+Read access does not imply merge permission, and past ownership does not preserve
+access after revocation. Existing approval/protected-team rules apply to recovery.
+Private drafts remain private. Neither public links nor content hashes grant access
+to arbitrary history. Retained history has no arbitrary age or fifty-commit cutoff;
+explicit audited erasure and disclosed retention can make content unavailable.
+
+Recovered work retains its source revision/commit and records the proposer,
+reviewers, merger and new resulting changes. Future branch/commit manifests must
+distinguish ancestry from recovery references: restoring a value is not itself a
+two-parent merge. Native download fidelity and signed provenance remain separate
+acceptance requirements. See [implemented recovery and limits](HISTORY-RECOVERY.md).
 
 ## Identity, formatting and format fidelity
 

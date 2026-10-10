@@ -13,6 +13,326 @@ use uuid::Uuid;
 
 const KEY: [u8; 32] = [9u8; 32];
 
+/// A deleted paragraph and a live sibling, followed by 55 independent saves.
+async fn recovery_fixture(pool: &PgPool) -> (Router, String, Uuid, String, String) {
+    let router = app(test_state(pool.clone()));
+    let owner = identity(pool, "recovery-owner@example.test").await;
+    let (status, doc) = post(&router, "/documents", &owner, json!({"title":"Recovery"})).await;
+    assert_eq!(status, StatusCode::OK, "{doc}");
+    let doc = Uuid::parse_str(doc["id"].as_str().unwrap()).unwrap();
+    let root = ulid::Ulid::new().to_string();
+    let old = ulid::Ulid::new().to_string();
+    let live = ulid::Ulid::new().to_string();
+    let (status, body) = post(&router, &format!("/documents/{doc}/batch"), &owner, json!({"base_seq":0,"ops":[
+        {"type":"NodeCreated","node_id":root,"node_type":"form","pos":"a0","fields":{}},
+        {"type":"NodeCreated","node_id":old,"node_type":"item","parent_id":root,"pos":"a0","fields":{"label":"Bring this paragraph back"}},
+        {"type":"NodeCreated","node_id":live,"node_type":"item","parent_id":root,"pos":"a1","fields":{"label":"Original sibling"}}
+    ]})).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    engine_core::shared_checkpoint::postgres::take(
+        pool,
+        engine_shared::DocumentId(doc),
+        3,
+        Default::default(),
+    )
+    .await
+    .unwrap();
+    let (status, body) = post(
+        &router,
+        &format!("/documents/{doc}/batch"),
+        &owner,
+        json!({"base_seq":3,"ops":[{"type":"NodeDeleted","node_id":old}]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    for i in 0..55 {
+        let (status, body) = post(&router, &format!("/documents/{doc}/batch"), &owner,
+            json!({"base_seq":4+i,"ops":[{"type":"FieldEdited","node_id":live,"field":"label","value":format!("Later save {i}")}]})).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+    (router, owner, doc, old, live)
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn historical_recovery_preserves_later_work_and_obeys_review_permissions(pool: PgPool) {
+    let (router, owner, doc, old, live) = recovery_fixture(&pool).await;
+    let contributor = identity(&pool, "recover-contributor@example.test").await;
+    let viewer = identity(&pool, "recover-viewer@example.test").await;
+    let editor = identity(&pool, "recover-editor@example.test").await;
+    let outsider = identity(&pool, "recover-outsider@example.test").await;
+    for (email, role) in [
+        ("recover-contributor@example.test", "contributor"),
+        ("recover-viewer@example.test", "viewer"),
+        ("recover-editor@example.test", "editor"),
+    ] {
+        let (status, body) = post(
+            &router,
+            &format!("/documents/{doc}/members"),
+            &owner,
+            json!({"email":email,"role":role}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+    sqlx::query("insert into document_policy(document_id,protect_team_version,required_approvals,merge_roles) values($1,true,1,'owners')")
+        .bind(doc).execute(&pool).await.unwrap();
+    let endpoint = format!("/documents/{doc}/history-recovery");
+    let (status, historical) = get(
+        &router,
+        &format!("/documents/{doc}/provenance?through_seq=3"),
+        &viewer,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{historical}");
+    assert_eq!(historical["state"]["nodes"][&old]["deleted"], false);
+    assert_eq!(
+        historical["state"]["nodes"][&live]["current_fields"]["label"],
+        "Original sibling"
+    );
+    let (status, preview) = post(
+        &router,
+        &endpoint,
+        &viewer,
+        json!({"through_seq":3,"node_ids":[old]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{preview}");
+    assert_eq!(preview["base_seq"], 59);
+    assert_eq!(preview["can_propose"], false);
+    assert_eq!(
+        preview["ops"],
+        json!([{"type":"NodeRestored","node_id":old}])
+    );
+    let request_id = Uuid::new_v4();
+    let request = json!({"action":"create","through_seq":3,"base_seq":59,"node_ids":[old],"request_id":request_id});
+    for person in [&viewer, &outsider] {
+        assert_eq!(
+            post(&router, &endpoint, person, request.clone()).await.0,
+            StatusCode::FORBIDDEN
+        );
+    }
+    assert_eq!(
+        post(&router, &endpoint, &outsider, json!({"through_seq":3}))
+            .await
+            .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        get(
+            &router,
+            &format!("/documents/{doc}/provenance?through_seq=3"),
+            &outsider
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    let (left, right) = tokio::join!(
+        post(&router, &endpoint, &contributor, request.clone()),
+        post(&router, &endpoint, &contributor, request.clone())
+    );
+    assert_eq!(left.0, StatusCode::OK, "{:?}", left);
+    assert_eq!(right.0, StatusCode::OK, "{:?}", right);
+    assert_ne!(left.1["created"], right.1["created"]);
+    assert_eq!(left.1["id"], right.1["id"]);
+    assert_eq!(left.1["source"]["chain_hash"], historical["chain_hash"]);
+    let uri = format!("/documents/{doc}/change-requests/{request_id}");
+    assert_eq!(
+        get(&router, &uri, &owner).await.0,
+        StatusCode::NOT_FOUND,
+        "recovery draft must be private"
+    );
+    let count: i64 = sqlx::query_scalar("select count(*) from event where document_id=$1")
+        .bind(doc)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        count, 59,
+        "creating and retrying recovery cannot alter canonical history"
+    );
+    let (status, body) = post(
+        &router,
+        &format!("/documents/{doc}/drafts/{request_id}/submit"),
+        &contributor,
+        json!({"note":"Recover the earlier wording"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let merge = json!({"team_seq":59,"revision":1});
+    for person in [&contributor, &editor, &owner] {
+        assert_eq!(
+            post(&router, &format!("{uri}/merge"), person, merge.clone())
+                .await
+                .0,
+            StatusCode::FORBIDDEN,
+            "role and required approvals must still apply"
+        );
+    }
+    let (status, body) = post(
+        &router,
+        &format!("{uri}/merge"),
+        &owner,
+        json!({"team_seq":59,"revision":1,"override_rules":true,"note":"Owner approved recovery"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["events"][0]["payload"],
+        json!({"type":"NodeRestored","node_id":old})
+    );
+    let (_, current) = get(&router, &format!("/documents/{doc}/provenance"), &viewer).await;
+    assert_eq!(current["through_seq"], 60);
+    assert_eq!(current["state"]["nodes"][&old]["deleted"], false);
+    assert_eq!(
+        current["state"]["nodes"][&live]["current_fields"]["label"],
+        "Later save 54"
+    );
+    let (_, unchanged) = get(
+        &router,
+        &format!("/documents/{doc}/provenance?through_seq=3"),
+        &viewer,
+    )
+    .await;
+    assert_eq!(unchanged["state"], historical["state"]);
+    assert_eq!(unchanged["chain_hash"], historical["chain_hash"]);
+    assert_eq!(
+        get(&router, &format!("/documents/{doc}/verify"), &owner)
+            .await
+            .1["ok"],
+        true
+    );
+    let (status, retry) = post(&router, &endpoint, &contributor, request.clone()).await;
+    assert_eq!(status, StatusCode::OK, "{retry}");
+    assert_eq!(
+        retry["created"], false,
+        "receipt must survive merging and head advancement"
+    );
+    let mut changed = request.clone();
+    changed["node_ids"] = json!([live]);
+    assert_eq!(
+        post(&router, &endpoint, &contributor, changed).await.0,
+        StatusCode::CONFLICT
+    );
+    post(
+        &router,
+        &format!("/documents/{doc}/members"),
+        &owner,
+        json!({"email":"recover-contributor@example.test","role":"remove"}),
+    )
+    .await;
+    assert_eq!(
+        post(&router, &endpoint, &contributor, request).await.0,
+        StatusCode::FORBIDDEN
+    );
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn historical_recovery_rejects_stale_invalid_and_incomplete_selections(pool: PgPool) {
+    let (router, owner, doc, old, live) = recovery_fixture(&pool).await;
+    let endpoint = format!("/documents/{doc}/history-recovery");
+    for body in [
+        json!({"through_seq":-1}),
+        json!({"through_seq":60}),
+        json!({"through_seq":3,"node_ids":[]}),
+        json!({"through_seq":3,"node_ids":[old,old]}),
+        json!({"through_seq":3,"node_ids":["missing"]}),
+    ] {
+        assert_eq!(
+            post(&router, &endpoint, &owner, body).await.0,
+            StatusCode::BAD_REQUEST
+        );
+    }
+    let forged = json!({"name":"Forged recovery","base_seq":59,
+        "source":{"kind":"history_recovery","through_seq":3,"chain_hash":"unverified"},
+        "ops":[{"type":"FieldEdited","node_id":live,"field":"label","value":"Not actually historical"}]});
+    assert_eq!(
+        post(
+            &router,
+            &format!("/documents/{doc}/change-requests"),
+            &owner,
+            forged
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    let create = json!({"action":"create","through_seq":3,"base_seq":58,"node_ids":[old],"request_id":Uuid::new_v4()});
+    assert_eq!(
+        post(&router, &endpoint, &owner, create).await.0,
+        StatusCode::CONFLICT
+    );
+    let (status, all) = post(&router, &endpoint, &owner, json!({"through_seq":3})).await;
+    assert_eq!(status, StatusCode::OK, "{all}");
+    assert_eq!(
+        all["ops"].as_array().unwrap().len(),
+        2,
+        "whole content preview includes the changed sibling"
+    );
+    // Selecting a parent for removal without its live child must fail atomically.
+    let parent: String = sqlx::query_scalar("select parent_id from node where id=$1")
+        .bind(&live)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let invalid = json!({"action":"create","through_seq":0,"base_seq":59,"node_ids":[parent],"request_id":Uuid::new_v4()});
+    assert_eq!(
+        post(&router, &endpoint, &owner, invalid).await.0,
+        StatusCode::BAD_REQUEST
+    );
+    let noop =
+        json!({"action":"create","through_seq":59,"base_seq":59,"request_id":Uuid::new_v4()});
+    assert_eq!(
+        post(&router, &endpoint, &owner, noop).await.0,
+        StatusCode::BAD_REQUEST
+    );
+    let count: i64 =
+        sqlx::query_scalar("select count(*) from workspace_draft where document_id=$1")
+            .bind(doc)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(count, 0);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn historical_recovery_conflicts_with_later_edits_instead_of_overwriting_them(pool: PgPool) {
+    let (router, owner, doc, _old, live) = recovery_fixture(&pool).await;
+    let recovery = Uuid::new_v4();
+    let (status, body) = post(&router, &format!("/documents/{doc}/history-recovery"), &owner,
+        json!({"action":"create","through_seq":3,"base_seq":59,"node_ids":[live],"request_id":recovery})).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = post(&router, &format!("/documents/{doc}/batch"), &owner,
+        json!({"base_seq":59,"ops":[{"type":"FieldEdited","node_id":live,"field":"label","value":"Concurrent wording after preview"}]})).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = post(
+        &router,
+        &format!("/documents/{doc}/drafts/{recovery}/submit"),
+        &owner,
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let uri = format!("/documents/{doc}/change-requests/{recovery}");
+    let (status, detail) = get(&router, &uri, &owner).await;
+    assert_eq!(status, StatusCode::OK, "{detail}");
+    assert!(!detail["conflicts"].as_array().unwrap().is_empty());
+    let (status, body) = post(
+        &router,
+        &format!("{uri}/merge"),
+        &owner,
+        json!({"team_seq":60,"revision":1}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    let (_, current) = get(&router, &format!("/documents/{doc}/provenance"), &owner).await;
+    assert_eq!(current["through_seq"], 60);
+    assert_eq!(
+        current["state"]["nodes"][&live]["current_fields"]["label"],
+        "Concurrent wording after preview"
+    );
+}
+
 fn test_state(pool: PgPool) -> AppState {
     AppState::new(
         pool,

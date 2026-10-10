@@ -22,6 +22,7 @@ pub mod copies;
 mod discussions;
 pub mod documents;
 pub mod error;
+mod history;
 pub mod idempotency;
 pub mod notifications;
 pub mod ops;
@@ -99,6 +100,7 @@ pub fn app(state: AppState) -> Router {
         .merge(audit::router())
         .merge(workspace::router())
         .merge(reviews::router())
+        .merge(history::router())
         .merge(discussions::router())
         .merge(notifications::router())
         .merge(copies::router())
@@ -174,6 +176,7 @@ impl utoipa::Modify for WorkspaceDocs {
     fn modify(&self, api: &mut utoipa::openapi::OpenApi) {
         api.merge(workspace::WorkspaceApi::openapi());
         api.merge(reviews::ReviewApi::openapi());
+        api.merge(history::HistoryApi::openapi());
         api.merge(product::ProductApi::openapi());
         api.merge(projects::ProjectsApi::openapi());
         api.merge(provenance::ProvenanceApi::openapi());

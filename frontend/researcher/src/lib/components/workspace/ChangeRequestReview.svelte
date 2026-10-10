@@ -249,6 +249,12 @@
       >
     </header>
     {#if detail}
+      {#if detail.request.source.kind === 'history_recovery'}
+        <p>
+          Recovery of content from revision {detail.request.source.through_seq}. Merging adds new
+          changes and preserves the intervening history.
+        </p>
+      {/if}
       {#if detail.request.note}<blockquote>{detail.request.note}</blockquote>{/if}
       {#if detail.request.status !== 'open'}
         <p class="closed">

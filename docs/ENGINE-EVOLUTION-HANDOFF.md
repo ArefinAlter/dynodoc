@@ -1,5 +1,46 @@
 # Engine evolution handoff
 
+## Historical recovery increment (10 October 2026)
+
+Implemented following the owner's clarification: historical content retrieval and
+recovery are explicit product requirements under current permissions. The product
+specification distinguishes historical download, selected restoration, commit
+revert and cherry-pick. This increment implements centralized whole-block recovery;
+portable commits, revert and cherry-pick remain future work.
+
+Implementation: account-authenticated history-recovery preview/private-draft API,
+server-derived source revision/hash, checked current base, idempotent UUID retries,
+ordinary review/merge policies, Version history selection/download/draft controls,
+Activity entrypoint and source display in review. No migration or canonical event
+change. Existing shared checkpoint writers remain opt-in; no VPS deployment.
+
+Application fmt/Clippy and the full 229 Rust tests pass. All five review integration
+tests passed again after reserving the server-verified recovery source label (three
+are new recovery regressions). Frontend lint, 274 unit tests, production build and
+Svelte validation with zero diagnostics pass. The new signed-in browser workflow
+passes locally through download, private recovery, submission and actual merge.
+OpenAPI and TypeScript definitions are regenerated. Four API source/test files and
+all 22 unchanged migrations match the standalone repository byte for byte.
+
+Standalone task lint, docs and OpenAPI pass; documentation retains the existing
+16 core / 4 API link warnings. Its full tests and source publication/CI are pending.
+Initial sandboxed frontend check could not spawn esbuild; rerunning with subprocess
+permission passed. No source/test failure remains. No native host acceptance or
+large-file/performance benchmark was run for this UI/API increment.
+
+Temporary resource: owned loopback PostgreSQL container dynodoc-history-20261010
+(label dynodoc.task=history-20261010, port 5553). Remove only this task's container
+and disposable volume after final checks; existing containers remain untouched.
+Owned API/web processes on 8087/4178 have been stopped after the browser check.
+Logs are in system temp under dynodoc-history-*; fixtures are entirely synthetic.
+
+Starting main heads: application de49ccf; standalone b05796f. Application source
+publication is next; final source/CI references will be recorded below.
+
+Next: complete verification/publication of this slice, then resume part 2 bounded
+text/assets, compression/incremental construction, shared version/draft references
+and local commit exchange. See [the exact recovery contract](HISTORY-RECOVERY.md).
+
 ## Part 2d: concurrent content writes during checkpoints (10 October 2026)
 
 Part 2d is complete, synchronized and pushed to both main branches. Full local

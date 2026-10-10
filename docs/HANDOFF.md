@@ -7,6 +7,9 @@ Continue from [the engine evolution handoff](ENGINE-EVOLUTION-HANDOFF.md) and
 gated periodic writes, bounded database batches and compatible content-writer
 locks. Publication still scans full state; shared writes remain off by default. The handoff records
 current verification, publication, measured limitations and the next task.
+The latest owner clarification adds [historical recovery](HISTORY-RECOVERY.md):
+permission-checked old-revision downloads and selected private recovery drafts.
+Commit revert/cherry-pick remain distinct future work; bounded storage stays next.
 The dated entries below preserve earlier increments.
 
 ## Previous increment: shared checkpoints (10 October 2026)

@@ -1,6 +1,24 @@
 # Dynodoc: intent, current implementation and remaining work
 
-## Latest increment: content writes during checkpoints (10 October 2026)
+## Latest increment: permission-controlled historical recovery (10 October 2026)
+
+The product now explicitly includes retrieving old or unnamed revisions and
+recovering selected content through current role/approval rules. The implementation
+adds a checked preview and private recovery draft using any retained event revision,
+with source hash/sequence, idempotent retry and the existing review/merge path.
+The web Version history panel offers checkpoint download and block selection;
+Activity links to the state before an edit. Canonical history is never rewound.
+
+Application fmt/Clippy and 229 Rust tests pass, followed by the five review tests
+after the source-label guard. Frontend lint, 274 unit tests, production build and
+the new signed-in recovery workflow pass. API schemas are regenerated. Standalone
+source is synchronized and lint/docs pass; its full suite and publication/CI are pending.
+[Contract and limits](HISTORY-RECOVERY.md), [continuation handoff](ENGINE-EVOLUTION-HANDOFF.md).
+No migration or VPS deployment. Shared checkpoint writes remain opt-in. This is
+whole-block state recovery; commit revert/cherry-pick and native historical file
+fidelity remain unfinished. Bounded chunks and shared references remain next.
+
+## Previous increment: content writes during checkpoints (10 October 2026)
 
 Part 2d makes the core/API writer lock compatible with checkpoint erasure guards.
 Writers still serialize before permission/state/sequence checks; checkpoints retain

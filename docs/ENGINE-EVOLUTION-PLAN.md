@@ -22,6 +22,18 @@ early; existing connectors must keep working while engine contracts evolve. Each
 part may require multiple reviewable increments. A finished part does not certify
 the entire product. Ship evidence with each claim.
 
+## Historical recovery clarification
+
+The owner's added journey requires permission-controlled retrieval of old/unnamed
+revisions and selected recovery without losing later work. The bounded
+[history-recovery increment](HISTORY-RECOVERY.md) reuses the existing centralized
+reader and review path, independently of the remaining storage work. Whole-block
+restoration is now distinct from future commit revert/cherry-pick. Parts 3 and 6
+must retain source/ancestry/actor links; part 8 must provide indexed discovery and
+native download/application across retained history. Current role and approval
+checks apply to all of these actions. This does not mark part 2 complete or defer
+bounded chunks, packing or shared draft/version references.
+
 ## Part 2a implementation boundary
 
 The first slice implements [shared checkpoints v1](SHARED-CHECKPOINTS.md): complete

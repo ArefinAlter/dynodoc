@@ -1130,6 +1130,38 @@ paths:
               schema: {}
         '403':
           description: Document membership required
+  /documents/{id}/history-recovery:
+    post:
+      tags:
+      - reviews
+      operationId: recover
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecoveryRequest'
+        required: true
+      responses:
+        '200':
+          description: Recovery preview or idempotent private draft receipt
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Invalid revision, selection or structurally invalid recovery
+        '403':
+          description: Current membership required; viewers can only preview
+        '409':
+          description: Team changed since preview or request ID was reused
+      security:
+      - paseto: []
   /documents/{id}/location:
     post:
       tags:
@@ -2514,6 +2546,11 @@ paths:
       - paseto: []
 components:
   schemas:
+    Action:
+      type: string
+      enum:
+      - preview
+      - create
     CommentRequest:
       type: object
       description: '`POST /ops/comment`.'
@@ -2627,6 +2664,38 @@ components:
           type:
           - string
           - 'null'
+    RecoveryRequest:
+      type: object
+      required:
+      - through_seq
+      properties:
+        action:
+          $ref: '#/components/schemas/Action'
+          description: Preview by default. Create makes a private draft, never a canonical edit.
+        base_seq:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: 'Required on create: the team revision returned by preview.'
+        node_ids:
+          type:
+          - array
+          - 'null'
+          items:
+            type: string
+          description: Omit for all content; otherwise select 1-5000 unique logical block IDs.
+        request_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+          description: Required on create. Keep the same UUID and request on a retry.
+        through_seq:
+          type: integer
+          format: int64
+          description: Exact retained event revision, including zero for the empty initial state.
+      additionalProperties: false
     RejectRequest:
       type: object
       description: '`POST /proposals/:event_id/reject`.'

@@ -71,6 +71,7 @@
   import PublicLinkPanel from '$lib/components/product/PublicLinkPanel.svelte';
   import RichEditor from './RichEditor.svelte';
   import DiscussionThreads from './DiscussionThreads.svelte';
+  import HistoryRecovery from './HistoryRecovery.svelte';
   import SheetEditor from './SheetEditor.svelte';
   import QuestionnaireEditor from './QuestionnaireEditor.svelte';
   import PushFileDialog from './PushFileDialog.svelte';
@@ -136,6 +137,7 @@
     name = $state(''),
     note = $state(''),
     historyQuery = $state('');
+  let historyRevision = $state<number | null>(null);
   let draftId = $state(''),
     draftName = $state(''),
     draftRevision = $state(0),
@@ -1352,7 +1354,19 @@
               return baseSeq;
             }}
           />
-        {:else if panel === 'versions'}<p>
+        {:else if panel === 'versions'}
+          <HistoryRecovery
+            documentId={store.documentId}
+            head={store.seq}
+            initialRevision={historyRevision ?? store.seq}
+            canCreate={!dirty && !saving && !draftId}
+            onCreated={(id) => {
+              void switchDraft(id).then(() => {
+                panel = 'drafts';
+              });
+            }}
+          />
+          <p>
             Name a milestone so everyone can find it later. Restoring adds new changes and keeps the
             complete history.
           </p>
@@ -1507,7 +1521,13 @@
               <strong>{person(e.actor_id)}</strong><small
                 >{new Date(e.created_at).toLocaleString()}</small
               >
-              <p>{describe(e.payload)}</p>
+              <p>Revision {e.seq}: {describe(e.payload)}</p>
+              <button
+                onclick={() => {
+                  historyRevision = Math.max(0, e.seq - 1);
+                  void openPanel('versions');
+                }}>Recover before this edit</button
+              >
               {#if e.payload.type === 'FieldEdited'}<blockquote>
                   {readable(e.payload.value).slice(0, 250)}
                 </blockquote>{/if}

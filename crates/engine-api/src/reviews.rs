@@ -259,6 +259,9 @@ pub(crate) async fn create(
     if req.note.len() > 4000 {
         return Err(bad("Keep the description under 4,000 characters"));
     }
+    if req.source["kind"] == "history_recovery" {
+        return Err(bad("Historical recovery must use the history-recovery endpoint so its source is checked by the server"));
+    }
     if req.ops.is_empty() || req.ops.len() > 20_000 {
         return Err(bad("A pushed file must change 1–20,000 blocks"));
     }
