@@ -2,7 +2,7 @@
 
 ## Latest source work: verified legacy snapshots (11 October 2026)
 
-Security increment in verification: migration 0028 protects legacy snapshots and
+Security increment implemented: migration 0028 protects legacy snapshots and
 adds immutable replay-verification receipts. New snapshots use a canonical checked
 writer; current/historical state, public copies, deployed downloads and restore
 use checked reads. API/CLI audits compare every legacy snapshot against event
@@ -15,9 +15,25 @@ Application `task lint` passes (Svelte: zero errors/warnings). `task test` passe
 unknown-field regression and receipt index also pass the 15-test snapshot suite
 and final clippy check; there are now 259 distinct Rust tests. The schema-27 upgrade,
 backfill atomicity, erasure and historical/public/restore corruption checks pass.
-Standalone checks and source/CI references are being finalized. This is source
-verification, not a production release. Owned browser-test servers are stopped;
-the labelled disposable database is retained only for the remaining engine checks.
+Standalone `task lint`, `task test` (all 259 Rust tests), `task docs` and OpenAPI
+generation pass. Rustdoc reports 20 existing warnings (16 core, four API). CLI
+backfill verified all 52 synthetic browser-test documents; an independent audit
+also passed for a document with a stored snapshot. Owned browser-test servers are
+stopped and the labelled disposable database/volume is removed. This is source
+verification, not a production release.
+
+Implementation is pushed to both main branches: application `6ccd5f3`, standalone
+engine `e8fe900`. All source CI passes:
+[application Rust](https://github.com/ArefinAlter/dynodoc/actions/runs/38076177189),
+[frontend and signed-in workflows](https://github.com/ArefinAlter/dynodoc/actions/runs/38076177211),
+[standalone engine](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38076557853).
+CI ran all 259 final Rust tests in each repo, plus frontend checks, 16 public browser
+tests and 68 signed-in workflows. These references track implementation; the later
+documentation-only commits record this evidence without changing runtime behavior.
+
+All 16 changed Rust/migration files are mirrored; the standalone's existing Merkle
+proof style, test fixture paths and MIT/API package metadata are preserved. Local
+logs are ignored under `target/snapshot-*`; CI provides the durable check record.
 No VPS workspace/API deployment has occurred; the last recorded VPS is still
 `ecbc643`, schema 26, with shared periodic writes off. Upgrade must include both
 schema-27 login revocation and schema-28 snapshot verification/backfill; an

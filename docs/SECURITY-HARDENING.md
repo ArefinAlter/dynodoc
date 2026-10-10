@@ -14,7 +14,7 @@ Production remains application `ecbc643`, schema 26, shared periodic writes off.
 
 | Finding | Current source result | Outstanding work |
 |---|---|---|
-| Legacy snapshots mutable; replay not checked | **Implemented and locally verified in the application; standalone/CI checks pending.** Migration 0028 adds immutable snapshot/receipt guards, replay-based backfill and a checked reader/writer shared by serving paths. API/CLI verification compares all legacy snapshots, including non-node state. | Complete the checks in the handoff and [upgrade contract](VERIFIED-SNAPSHOTS.md), then migration-owner/runtime separation before release. Old rows need explicit verified backfill; no blanket migration attestation. Receipts are not external signatures. |
+| Legacy snapshots mutable; replay not checked | **Implemented and locally verified in both repos.** Migration 0028 adds immutable snapshot/receipt guards, replay-based backfill and a checked reader/writer shared by serving paths. API/CLI verification compares all legacy snapshots, including non-node state. CI references are in the handoff. | Complete migration-owner/runtime separation and the [upgrade contract](VERIFIED-SNAPSHOTS.md) before release. Old rows need explicit verified backfill; no blanket migration attestation. Receipts are not external signatures. |
 | API uses migration/owner database credentials | **Open, highest priority.** | Separate migration owner and constrained runtime credentials, restrict privileges including TRUNCATE/trigger/schema changes, test administration/erasure, rehearse upgrade and compatible rollback. Database owner remains a trusted administrator until independent commitments exist. |
 | Missing service key exposes sign-in tokens | **Fixed in source.** Both issuance routes reject absent, blank, short, missing or incorrect service credentials, regardless of APP_ENV. Startup rejects missing/short keys and zero PASETO keys before DB access. | Deploy API/web together after rehearsal. DEV_AUTH is still an explicit local-only web bypass; never enable it publicly. |
 | Logout only clears a cookie | **Fixed in source.** Migration 0027 binds new tokens to a login ID. Logout revokes its refresh lineage and access tokens. Rotation/logout serialize on the identity row. Web clears cookies only after successful revocation. | Deploy; retain compatibility warning below. Browser and API regressions cover copied credentials, separate logins, rotated ancestors, races and stream data after revocation. |
@@ -70,21 +70,21 @@ correct before those guards were installed.
 
 ### Acceptance checklist: snapshot source and next database-role increment
 
-- Inventory every legacy snapshot producer and reader, including core materialization,
-  named versions, public links, deployed pins, restore and audit exports. The core
-  insert already uses `ON CONFLICT DO NOTHING`; `workspace.rs` and `product.rs` still
-  use no-op updates to return an existing snapshot ID. Replace those before adding
-  immutable guards. Applied migrations remain unchanged.
-- Establish equivalence to canonical event replay for existing snapshots before
-  trusting them. A hash computed from a stored snapshot alone cannot establish
-  that equivalence. Validate all reconstructed state, not just the node Merkle
-  root, and reject mismatched document/revision/chain bindings. Design bounded
-  verification/backfill work so ordinary reads do not replay from event one.
-- Add corruption regressions for old snapshots and each serving path, as well as
-  concurrent creation at the same revision, historical restore and explicit
-  account/document erasure. Guard installation must not silently bless old corrupt
-  states or make approved erasure impossible. Shared checkpoint validation remains
-  a separate contract; it does not automatically verify legacy JSON snapshots.
+- Completed in source: inventory and checked legacy snapshot producers/readers,
+  including core materialization, named versions, public links, deployed pins,
+  restore and audit exports. No-op snapshot updates in `workspace.rs` and
+  `product.rs` are removed. Migration 0028 adds guards without editing applied
+  migrations or automatically attesting old states.
+- Completed in source: compare full reconstructed state and document/revision/chain
+  bindings before issuing receipts. Ordinary reads validate a stored receipt and
+  checked suffix; explicit audit/backfill streams events and compares one snapshot
+  at a time. Full document state remains resident; request/tenant resource budgets
+  are still open. A hash of stored bytes alone does not prove replay equivalence.
+- Passed locally in both repos: pre-0028 upgrade, corruption and serving-path
+  regressions, concurrent creation, restore atomicity and approved erasure. CLI
+  backfill also verified the synthetic browser-workflow database. Shared checkpoint
+  validation remains a separate contract. These checks do not replace rehearsal
+  against a verified copy of existing production data before rollout.
 - Separate migration-owner and runtime connections. Exercise the actual runtime
   role against UPDATE/DELETE/TRUNCATE, trigger disabling, schema mutation and role
   escalation, then run normal append/read/review/auth/administration workflows with
