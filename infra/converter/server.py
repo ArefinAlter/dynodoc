@@ -17,7 +17,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except ValueError:
             self.send_error(400)
             return
-        if not 0 < size <= 10 * 1024 * 1024:
+        if not 0 < size <= 3_000_000:
             self.send_error(413)
             return
         if not slots.acquire(blocking=False):
@@ -38,7 +38,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 <oor:items xmlns:oor="http://openoffice.org/2001/registry"><item oor:path="/org.openoffice.Office.Common/Security/Scripting"><prop oor:name="MacroSecurityLevel" oor:op="fuse"><value>3</value></prop></item><item oor:path="/org.openoffice.Office.Common/Security/Scripting"><prop oor:name="DisableMacrosExecution" oor:op="fuse"><value>true</value></prop></item></oor:items>''')
                 subprocess.run(['libreoffice', '-env:UserInstallation=' + profile.as_uri(), '--headless', '--norestore', '--nodefault', '--nolockcheck', '--convert-to', 'docx', '--outdir', str(folder), str(source)], timeout=45, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 output = folder / 'document.docx'
-                if not output.exists() or output.stat().st_size > 20 * 1024 * 1024:
+                if not output.exists() or output.stat().st_size > 3_000_000:
                     self.send_error(422, 'Could not convert this document')
                     return
                 data = output.read_bytes()

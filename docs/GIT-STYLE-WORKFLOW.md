@@ -1,5 +1,26 @@
 # Working together on one file — the Dynodoc workflow
 
+## Projects front page (10 October)
+
+Sign in to open **Projects**. Your profile contains a name and optional short bio,
+visible only to people sharing a Project with you. Open **Edit profile** to change
+them. Profile pages do not show your email address.
+
+Create a Project and use **Add a file** for each document, workbook or presentation.
+Test uploads must be no larger than **3 MB (3,000,000 bytes)**. Each row opens a
+read-only file preview; **Pull requests**, **History** and **Sync & connections**
+manage the team's changes. **Web editor** opens the existing editor separately.
+The global **Editors** link also opens files outside Projects.
+
+The file's branch selector starts on **main**, its shared version. **New file draft**
+creates private work; use **Compare with main** and **Open pull request** when ready.
+Drafts currently belong to a single file. Project-wide branches and atomic multi-file
+commits are still planned. **History → Recover an earlier revision** provides native
+downloads and selected restore/revert/cherry-pick proposals, subject to permissions.
+Native downloads preserve the supported content; retain originals for unsupported
+formatting and embedded objects. The source/deployment status is in
+[PROJECT-STATUS.md](PROJECT-STATUS.md).
+
 ## Projects and external editors (development increment, 6 October)
 
 Dynodoc's priority is collecting and reviewing changes from your existing editors.
@@ -7,8 +28,8 @@ Word/Docs, Excel/Sheets and PowerPoint/Slides development connectors share the
 workflow; the web editors remain available. Native host acceptance and marketplace
 publication are separate checks. See [current release status](SPREADSHEET-DATE-SYNC-RELEASE.md).
 
-On a matching development installation, open **Home → Projects**, create a
-project and add/move your files. **Files** collects them, **Change requests** lists
+On a matching installation, open **Projects**, create a
+project and add/move your files. **Files** collects them, **Pull requests** lists
 submitted edits across those files, **Your drafts** shows only your unsubmitted
 work, and **Settings** manages people/default review rules. Files inherit the
 project's rules unless their People panel shows an override. Watch requests adds

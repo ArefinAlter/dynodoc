@@ -1,8 +1,9 @@
+import { checkFileSize } from './file-limits';
 import { Unzip, UnzipInflate, strFromU8 } from 'fflate';
 
 /** Streaming expansion enforces limits on actual output, not attacker supplied ZIP sizes. */
 export function readOfficeZip(bytes: Uint8Array, want: (name: string) => boolean) {
-  if (bytes.byteLength > 10 * 1024 * 1024) throw new Error('Office uploads are limited to 10 MB.');
+  checkFileSize(bytes.byteLength);
   const entries = new Map<string, Uint8Array>();
   let count = 0,
     expanded = 0,

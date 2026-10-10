@@ -12,7 +12,8 @@ async function login(page: Page) {
     .fill(`typist-${Date.now()}-${Math.random().toString(36).slice(2)}@example.test`);
   await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
   await page.getByRole('button', { name: /Continue in local development/ }).click();
-  await expect(page).toHaveURL(/\/workspace$/);
+  await expect(page).toHaveURL(/\/projects$/);
+  await page.goto('/workspace');
 }
 async function saved(page: Page) {
   await expect(page.locator('.save-state')).toHaveText(/All changes saved|Personal draft saved/, {

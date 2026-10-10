@@ -1,3 +1,4 @@
+import { checkFileSize } from './file-limits';
 import Papa from 'papaparse';
 import type { ImportedSheet } from './xlsx-import';
 import { ulid } from 'ulid';
@@ -44,8 +45,7 @@ export function paragraph(text: string): TextBlock {
   return { type: 'paragraph', content: text ? [{ type: 'text', text }] : [] };
 }
 export async function importFile(file: File, signal?: AbortSignal): Promise<ImportResult> {
-  if (file.size > 10 * 1024 * 1024)
-    throw new Error('Please use a file smaller than 10 MB per upload.');
+  checkFileSize(file.size);
   const ext = file.name.split('.').pop()?.toLowerCase();
   if (ext === 'tex') {
     const { importLatex } = await import('./latex');

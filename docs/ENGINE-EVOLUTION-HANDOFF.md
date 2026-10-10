@@ -1,5 +1,45 @@
 # Engine evolution handoff
 
+## Source increment: Projects front page and member profiles (10 October 2026)
+
+The current working tree implements the owner's Projects-first interface: minimal
+profiles visible only to shared Project members, repository file lists, read-only
+file previews, per-file main/private-draft selection, pull requests, history and
+recovery, with the existing editors under a separate Web editor tab. Migration
+0026 adds private profile metadata and revision checks. Original uploaded files
+are limited to 3,000,000 bytes in the browser, API and conversion/import services.
+Derived provenance envelopes and expanded archive safety budgets are separate.
+
+Verification in progress: standalone engine lint, all 233 Rust tests and API
+generation pass (rustdoc retains existing link warnings). All 282 frontend unit
+tests pass, with clean Svelte/ESLint checks. Profile tests cover absent/shared/
+removed membership, disabled accounts, email omission, stale saves and preserved
+names after sign-in. Upload tests cover exact 3 MB, excess bytes, request-body
+bounds and denied writers without extra stored uploads. Matching Rust/migrations
+and API schemas are mirrored into the standalone engine.
+
+Both focused production-mode browser journeys pass: external edits/review/revocation
+and profile setup, multiple files, file moves, draft comparison, merge, historical
+native download and selected recovery. Desktop/mobile layouts were inspected and
+table contrast fixed. Visual inspection then removed the editing ribbon from the
+read-only Word preview; its final build check is pending. Account erasure now clears
+the added bio; the extended erasure test passes in the standalone engine.
+
+Engine `a5c8eda` is pushed with green CI; its erasure follow-up and the application
+source are being committed. Full application browser regression is in progress.
+Local API admin tests require ADMIN_EMAILS before starting the API; a launch missing
+that variable caused admin-page failures. Application Rust passed 232 non-timing
+checks; its existing 100 ms SSE assertion failed locally under load, whereas the
+identical standalone serial and CI suites passed. Keep the assertion unchanged.
+Next: inspect final source CI, refresh this evidence, stop owned local test services
+and remove only the labelled disposable database. No new source is deployed yet.
+Project-wide portable branches/commits remain part 3; current drafts belong to one
+file. Shared checkpoint writes remain disabled and part 2 storage work is pending.
+The schema-25 deployment described below is still the live release.
+Rollout must include matching API/web and the converter byte cap, migration 0026,
+a fresh backup and a rehearsed schema-compatible rollback. See
+[workspace release details](PROJECTS-WORKSPACE-RELEASE.md).
+
 ## Deployment handoff: history and editor installations (10 October 2026)
 
 The matching API/web/admin build is now live on the VPS: application `536a448`

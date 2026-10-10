@@ -10,8 +10,8 @@
   let open = $state(false);
   const workspace = $derived(
     env.PUBLIC_WORKSPACE_URL
-      ? `${env.PUBLIC_WORKSPACE_URL.replace(/\/$/, '')}/workspace`
-      : '/workspace'
+      ? `${env.PUBLIC_WORKSPACE_URL.replace(/\/$/, '')}/projects`
+      : '/projects'
   );
 </script>
 

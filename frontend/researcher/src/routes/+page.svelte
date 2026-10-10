@@ -33,8 +33,8 @@
   import RichTextHistory from '$lib/components/marketing/RichTextHistory.svelte';
   const workspace = $derived(
     env.PUBLIC_WORKSPACE_URL
-      ? `${env.PUBLIC_WORKSPACE_URL.replace(/\/$/, '')}/workspace`
-      : '/workspace'
+      ? `${env.PUBLIC_WORKSPACE_URL.replace(/\/$/, '')}/projects`
+      : '/projects'
   );
   let useCase = $state(0);
   const cases = [

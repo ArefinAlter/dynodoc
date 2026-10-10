@@ -227,7 +227,7 @@ async fn erase_one(
             .bind(target.id)
             .execute(&mut *tx)
             .await?;
-        sqlx::query("update identity set email=$2,display_name='Deleted account',erased_at=now(),disabled_at=now(),session_generation=session_generation+1 where id=$1")
+        sqlx::query("update identity set email=$2,display_name='Deleted account',bio='',profile_revision=profile_revision+1,erased_at=now(),disabled_at=now(),session_generation=session_generation+1 where id=$1")
             .bind(target.id).bind(format!("deleted-{}@removed.invalid",target.id)).execute(&mut *tx).await?;
     }
     crate::product::audit(

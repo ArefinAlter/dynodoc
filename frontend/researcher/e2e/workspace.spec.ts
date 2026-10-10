@@ -12,7 +12,8 @@ async function login(page: Page, email?: string) {
     .fill(email || `browser-${Date.now()}-${Math.random().toString(36).slice(2)}@example.test`);
   await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
   await page.getByRole('button', { name: /Continue in local development/ }).click();
-  await expect(page).toHaveURL(/\/workspace$/);
+  await expect(page).toHaveURL(/\/projects$/);
+  await page.goto('/workspace');
 }
 async function create(page: Page, title: string, kind = 'document') {
   await page.getByRole('button', { name: 'New document', exact: true }).click();

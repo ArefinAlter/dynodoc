@@ -29,6 +29,7 @@ pub mod ops;
 pub mod pagination;
 pub mod people;
 pub mod product;
+mod profiles;
 pub mod projects;
 pub mod provenance;
 pub mod reviews;
@@ -92,6 +93,7 @@ pub fn app(state: AppState) -> Router {
         .merge(admin::router())
         .merge(product::router())
         .merge(projects::router())
+        .merge(profiles::router())
         .merge(provenance::router())
         .merge(documents::router())
         .merge(ops::router())
@@ -133,6 +135,9 @@ async fn openapi_json() -> Json<Value> {
     ),
     modifiers(&WorkspaceDocs),
     paths(
+        profiles::own,
+        profiles::read,
+        profiles::save,
         documents::routes::list_documents,
         documents::routes::get_document,
         documents::routes::get_node,

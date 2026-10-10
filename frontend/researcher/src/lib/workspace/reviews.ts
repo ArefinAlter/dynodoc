@@ -1,3 +1,4 @@
+import { checkFileSize } from './file-limits';
 import type { DocumentState, EventPayload, MaterializedNode } from '$lib/api/types';
 import { workspaceRequest } from './api';
 import type { DocxImport } from './docx-import';
@@ -133,7 +134,7 @@ export const PUSH_FILES: Record<PushKind, { accept: string; name: string; unit: 
 
 async function readOfficeFile(file: File, kind: 'spreadsheet' | 'presentation') {
   const ext = file.name.split('.').pop()?.toLowerCase();
-  if (file.size > 20 * 1024 * 1024) throw new Error('Please use a file smaller than 20 MB.');
+  checkFileSize(file.size);
   if (ext !== (kind === 'spreadsheet' ? 'xlsx' : 'pptx'))
     throw new Error(
       kind === 'spreadsheet'
@@ -150,7 +151,7 @@ async function readOfficeFile(file: File, kind: 'spreadsheet' | 'presentation') 
 
 async function readWordFile(file: File) {
   const ext = file.name.split('.').pop()?.toLowerCase();
-  if (file.size > 10 * 1024 * 1024) throw new Error('Please use a file smaller than 10 MB.');
+  checkFileSize(file.size);
   let buffer = await file.arrayBuffer();
   if (ext === 'doc') {
     const data = new FormData();

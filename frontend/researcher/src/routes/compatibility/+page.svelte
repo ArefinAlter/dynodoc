@@ -77,7 +77,7 @@
     ],
     [
       'Current limits',
-      '10 MB upload, 3,000 rows per workbook import and 100 columns per sheet. Ordinary edits are limited to 5,000 operations per save; use smaller ranges for large formatting or fill operations.'
+      '3 MB (3,000,000 bytes) upload during testing, 3,000 rows per workbook import and 100 columns per sheet. Ordinary edits are limited to 5,000 operations per save; use smaller ranges for large formatting or fill operations.'
     ]
   ];
 </script>

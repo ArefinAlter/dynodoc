@@ -14,7 +14,8 @@ test('browser approval survives sign-in and returns a revocable file-only connec
   const email = `pair-${Date.now()}@example.test`;
   await page.goto('/login');
   await signIn(page, email);
-  await expect(page).toHaveURL(/\/workspace$/);
+  await expect(page).toHaveURL(/\/projects$/);
+  await page.goto('/workspace');
   const id = await page.evaluate(async () => {
     const headers = { 'content-type': 'application/json', 'x-dynodoc-editor': 'office-v5' };
     const doc = await (

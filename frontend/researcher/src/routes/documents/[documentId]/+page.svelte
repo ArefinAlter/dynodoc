@@ -43,7 +43,13 @@
     </div>
   {:else if store.detail}
     {#if project}<nav class="project-trail" aria-label="Project">
-        <a href={`/projects/${project.id}`}>← {project.name}</a><span> / {store.detail.title}</span>
+        <a href={`/projects/${project.id}`}>← {project.name}</a><span> / </span><a
+          href={`/projects/${project.id}/files/${params.documentId}`}>{store.detail.title}</a
+        >
+        <a href={`/projects/${project.id}/files/${params.documentId}?tab=requests`}>Pull requests</a
+        >
+        <a href={`/projects/${project.id}/files/${params.documentId}?tab=history`}>History</a>
+        <span aria-current="page">Web editor</span>
       </nav>{/if}
     <WorkspaceEditor {store} />
   {/if}
@@ -51,6 +57,10 @@
 
 <style>
   .project-trail {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
     padding: 6px 18px;
     border-bottom: 1px solid var(--color-border);
     color: var(--color-ink);

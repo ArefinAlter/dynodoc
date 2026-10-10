@@ -541,6 +541,19 @@ async fn admin_account_erasure_preserves_shared_chain_and_clears_private_drafts(
     let router = app(state);
     let admin = bearer(admin_id);
     let user = bearer(user_id);
+    assert_eq!(
+        send(
+            &router,
+            auth_post(
+                "/profile",
+                &user,
+                &json!({"name":"Name to erase","bio":"Private profile to erase","revision":0})
+            )
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
     let doc = create_document(&router, &user, "Shared document").await;
     let (_, created) = send(
         &router,
@@ -582,6 +595,13 @@ async fn admin_account_erasure_preserves_shared_chain_and_clears_private_drafts(
         .await
         .unwrap();
     assert_eq!(name, "Deleted account");
+    let profile: (String, i64) =
+        sqlx::query_as("select bio,profile_revision from identity where id=$1")
+            .bind(user_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(profile, (String::new(), 2));
     assert_eq!(
         sqlx::query_scalar::<_, i64>("select count(*) from workspace_draft where created_by=$1")
             .bind(user_id)

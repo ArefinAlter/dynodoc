@@ -37,6 +37,12 @@ native download/application across retained history. Current role and approval
 checks apply to all of these actions. This does not mark part 2 complete or defer
 bounded chunks, packing or shared draft/version references.
 
+The owner also prioritized the Projects front page as an early part-8 increment:
+private member profiles, repository file browsing, per-file main/draft comparison,
+pull requests and history, with separate web editors and a 3 MB original-upload
+cap for testing. This reuses the current centralized contracts; it does not implement
+project-wide branches or atomic multi-file commits. See [decision 013](decisions/013-projects-first-test-workspace.md).
+
 ## Part 2a implementation boundary
 
 The first slice implements [shared checkpoints v1](SHARED-CHECKPOINTS.md): complete

@@ -1,5 +1,13 @@
 # Dynodoc engineering and product handoff
 
+Current Projects-first work is tracked in [ENGINE-EVOLUTION-HANDOFF.md](ENGINE-EVOLUTION-HANDOFF.md)
+and [PROJECTS-WORKSPACE-RELEASE.md](PROJECTS-WORKSPACE-RELEASE.md). Those records
+supersede older interface/upload-limit descriptions below: profiles are visible
+only to shared Project members, Projects is the default front page, and original
+uploads in the new source are capped at 3,000,000 bytes. Consult PROJECT-STATUS.md
+for the separate live deployment state.
+
+
 Latest continuation: [deployed history and editor installation release](ENGINE-EVOLUTION-HANDOFF.md).
 Live build `536a448`, schema 25; [deployment evidence and rollback](operations/2026-10-10-history-connector-release.md).
 Installer/auth scope: [connector distribution contract](CONNECTOR-PAIRING-AND-INSTALLATION.md).

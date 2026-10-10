@@ -15,7 +15,7 @@ use uuid::Uuid;
 use super::AuthError;
 
 /// Find-or-create the identity for `email` (case-insensitive). A returning user keeps
-/// their row; a new `display_name` updates it, a missing one leaves it untouched.
+/// their row. Provider names update only until the person saves their own profile.
 pub async fn upsert_identity(
     pool: &PgPool,
     email: &str,
@@ -25,7 +25,7 @@ pub async fn upsert_identity(
         "insert into identity (email, display_name)
          values ($1, $2)
          on conflict (lower(email))
-         do update set display_name = coalesce(excluded.display_name, identity.display_name)
+         do update set display_name = case when identity.profile_revision>0 then identity.display_name else coalesce(excluded.display_name, identity.display_name) end
          where identity.disabled_at is null
          returning *",
     )

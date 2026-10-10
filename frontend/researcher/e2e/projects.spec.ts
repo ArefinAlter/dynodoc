@@ -8,7 +8,7 @@ async function login(page: Page, email: string) {
   await page.getByLabel('Work email').fill(email);
   await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
   await page.getByRole('button', { name: /Continue in local development/ }).click();
-  await expect(page).toHaveURL(/\/workspace$/);
+  await expect(page).toHaveURL(/\/projects$/);
 }
 async function api(page: Page, path: string, body?: unknown) {
   return page.evaluate(
@@ -36,10 +36,10 @@ test('Projects collects external edits, hides private drafts, reviews a bundle a
     const owner = await ownerContext.newPage(),
       contributor = await contributorContext.newPage();
     await login(owner, `project-owner-${stamp}@example.test`);
-    await owner.getByRole('button', { name: 'Projects', exact: true }).click();
+    await owner.getByRole('button', { name: 'New project', exact: true }).click();
     await owner.getByLabel('Project name').fill(`External authors ${stamp}`);
     await owner.getByRole('button', { name: 'Create project' }).click();
-    await expect(owner.getByRole('heading', { name: 'Files', exact: true })).toBeVisible();
+    await expect(owner.getByRole('button', { name: 'Files', exact: true })).toBeVisible();
     const projectURL = owner.url(),
       projectId = projectURL.split('/').pop();
     const doc = await api(owner, '/documents', { title: 'Connector report' }),
@@ -81,7 +81,7 @@ test('Projects collects external edits, hides private drafts, reviews a bundle a
     await expect(owner.getByRole('status')).toContainText('Access updated');
     await login(contributor, `project-contributor-${stamp}@example.test`);
     await contributor.goto(projectURL);
-    await contributor.getByRole('button', { name: 'Your drafts' }).click();
+    await contributor.getByRole('button', { name: 'Your drafts', exact: true }).click();
     await expect(contributor.getByText('No private drafts on this page.')).toBeVisible();
     const base = await api(owner, `/documents/${doc.id}/provenance`);
     const bundle = (name: string, submit: boolean) => ({
@@ -122,7 +122,7 @@ test('Projects collects external edits, hides private drafts, reviews a bundle a
     await contributor.reload();
     await expect(contributor.getByText('Owner private work', { exact: true })).toHaveCount(0);
     await contributor.getByRole('button', { name: 'Files', exact: true }).click();
-    await contributor.getByRole('button', { name: 'Sync & connections' }).click();
+    await contributor.getByRole('button', { name: 'Sync Connector report', exact: true }).click();
     await expect(contributor.getByRole('combobox', { name: 'Editor', exact: true })).toBeVisible();
     await contributor
       .getByRole('combobox', { name: 'Editor', exact: true })
@@ -142,7 +142,7 @@ test('Projects collects external edits, hides private drafts, reviews a bundle a
       data: push
     });
     expect(await retry.json()).toEqual(receipt);
-    await owner.getByRole('button', { name: 'Change requests', exact: true }).click();
+    await owner.getByRole('button', { name: 'Pull requests', exact: true }).click();
     await expect(owner.getByText('Google Docs contribution', { exact: true })).toBeVisible();
     await owner.getByRole('button', { name: 'Review changes' }).click();
     await expect(owner.getByRole('dialog').locator('ins').last()).toContainText('in Google Docs');

@@ -11,6 +11,7 @@ async function signIn(page: Page) {
     .fill(`ux-${Date.now()}-${Math.random().toString(36).slice(2)}@example.test`);
   await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
   await page.getByRole('button', { name: /Continue in local development/ }).click();
+  await expect(page).not.toHaveURL(/\/login(?:\?|$)/);
 }
 async function create(page: Page, title: string, kind = 'document') {
   await page.getByRole('button', { name: 'New document', exact: true }).click();
@@ -29,6 +30,7 @@ test('signed-out visitors sign in before the workspace appears, then return to i
   await expect(page.getByText('Sign in to open your workspace.')).toBeVisible();
   await signIn(page);
   await expect(page).toHaveURL(/\/workspace$/);
+  await page.goto('/workspace');
   await create(page, 'Return path');
   const documentPath = new URL(page.url()).pathname;
   await page.context().clearCookies();
@@ -40,12 +42,13 @@ test('signed-out visitors sign in before the workspace appears, then return to i
   await page.context().clearCookies();
   await page.goto('/login?next=https%3A%2F%2Fexample.com');
   await signIn(page);
-  await expect(page).toHaveURL(/\/workspace$/);
+  await expect(page).toHaveURL(/\/projects$/);
 });
 
 test('the File menu closes on an outside click or Escape, like desktop apps', async ({ page }) => {
   await page.goto('/login');
   await signIn(page);
+  await page.goto('/workspace');
   await create(page, 'Menu behaviour');
   const file = page.getByRole('button', { name: 'File', exact: true });
   const menu = page.getByRole('menu', { name: 'File' });
@@ -72,6 +75,7 @@ test('grid view keeps every document name visible', async ({ page }) => {
   await page.goto('/login');
   await signIn(page);
   const long = 'Community interview guide for the second round of household visits';
+  await page.goto('/workspace');
   await create(page, long);
   await page.getByRole('link', { name: 'Back to workspace' }).click();
   await page.getByRole('button', { name: 'Grid view' }).click();
@@ -90,6 +94,7 @@ test('grid view keeps every document name visible', async ({ page }) => {
 test('ribbon captions stay on one line below their commands', async ({ page }) => {
   await page.goto('/login');
   await signIn(page);
+  await page.goto('/workspace');
   await create(page, 'Ribbon layout');
   for (const tab of ['Home', 'Insert', 'Layout', 'References', 'Review', 'View']) {
     await page.getByRole('tab', { name: tab, exact: true }).click();

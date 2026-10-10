@@ -27,7 +27,7 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
       google: Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET),
       email: Boolean(env.RESEND_API_KEY && env.EMAIL_FROM),
       development: env.DEV_AUTH === 'true',
-      destination: env.ADMIN_SITE === 'true' ? '/admin' : '/workspace'
+      destination: env.ADMIN_SITE === 'true' ? '/admin' : '/projects'
     });
   if (params.action === 'session') {
     const token = await accessToken(cookies, secure);
@@ -114,7 +114,7 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
     } catch {
       return json({ error: 'Google sign-in failed. Please start again.' }, { status: 401 });
     }
-    redirect(303, env.ADMIN_SITE === 'true' ? '/admin' : next || '/workspace');
+    redirect(303, env.ADMIN_SITE === 'true' ? '/admin' : next || '/projects');
   }
   if (params.action === 'verify') {
     // Confirmation is POSTed by the page so email link scanners cannot consume it.

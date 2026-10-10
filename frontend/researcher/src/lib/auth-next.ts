@@ -2,6 +2,8 @@
 export function requiresSignIn(pathname: string) {
   return (
     pathname === '/connectors/authorize' ||
+    pathname === '/profile' ||
+    pathname.startsWith('/profiles/') ||
     pathname === '/workspace' ||
     pathname === '/projects' ||
     pathname.startsWith('/projects/') ||
@@ -18,6 +20,9 @@ export function safeNext(next: string | null | undefined): string | null {
   if ([...next].some((c) => c.charCodeAt(0) < 32)) return null;
   const path = next.split(/[?#]/)[0];
   return path === '/connectors/authorize' ||
+    path === '/profile' ||
+    /^\/profiles\/[0-9a-f-]{36}$/i.test(path) ||
+    /^\/projects\/[0-9a-f-]{36}\/files\/[0-9a-f-]{36}$/i.test(path) ||
     path === '/workspace' ||
     path === '/projects' ||
     /^\/(documents|projects)\/[0-9a-f-]{36}$/i.test(path)

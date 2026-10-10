@@ -30,7 +30,8 @@ test('recover an old deleted block through preview, checkpoint download, draft a
   await page.getByLabel('Work email').fill(`history-${Date.now()}@example.test`);
   await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
   await page.getByRole('button', { name: /Continue in local development/ }).click();
-  await expect(page).toHaveURL(/\/workspace$/);
+  await expect(page).toHaveURL(/\/projects$/);
+  await page.goto('/workspace');
   const doc = await api(page, '/documents', { title: 'Historical recovery' });
   await api(page, `/documents/${doc.id}/metadata`, { settings: { kind: 'document' } });
   const root = ulid(),

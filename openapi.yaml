@@ -2188,6 +2188,62 @@ paths:
           description: Sign in required
       security:
       - paseto: []
+  /profile:
+    get:
+      tags:
+      - profiles
+      operationId: own
+      responses:
+        '200':
+          description: Own profile, excluding email
+          content:
+            application/json:
+              schema: {}
+      security:
+      - paseto: []
+    post:
+      tags:
+      - profiles
+      operationId: save
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Profile saved
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Invalid profile
+        '409':
+          description: Profile changed; reload
+      security:
+      - paseto: []
+  /profiles/{id}:
+    get:
+      tags:
+      - profiles
+      operationId: read
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Profile visible to shared project members
+          content:
+            application/json:
+              schema: {}
+        '404':
+          description: Not accessible
+      security:
+      - paseto: []
   /projects:
     get:
       tags: []

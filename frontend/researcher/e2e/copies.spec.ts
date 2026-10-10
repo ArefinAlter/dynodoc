@@ -22,7 +22,8 @@ async function login(page: Page, name: string, email: string) {
   await page.getByLabel('Work email').fill(email);
   await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
   await page.getByRole('button', { name: /Continue in local development/ }).click();
-  await expect(page).toHaveURL(/\/workspace$/);
+  await expect(page).toHaveURL(/\/projects$/);
+  await page.goto('/workspace');
 }
 async function saved(page: Page) {
   await expect(page.locator('.save-state')).toHaveText(/All changes saved|Personal draft saved/, {

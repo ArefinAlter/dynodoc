@@ -1,3 +1,4 @@
+import { MAX_FILE_BYTES } from '$lib/workspace/file-limits';
 import Papa from 'papaparse';
 import type { ResearchRequest, ResearchFile, ResearchChoice } from '$lib/workspace/connectors';
 import {
@@ -61,8 +62,8 @@ export async function vendorRead(
       body ? { method: 'POST', body: body.toString() } : undefined
     );
     total += response.body.length;
-    if (total > 10 * 1024 * 1024)
-      throw new ResearchError('The export exceeds 10 MB. Use a filtered file export.');
+    if (total > MAX_FILE_BYTES)
+      throw new ResearchError('The export exceeds 3 MB. Use a filtered file export.');
     if (response.status === 401 || response.status === 403)
       throw new ResearchError('Your credentials do not have permission to export this project.');
     if (response.status !== 200)
@@ -171,7 +172,7 @@ export async function vendorRead(
     throw new ResearchError('Limit is 2,999 rows per import. Use a filtered file export.');
   if (!rows.length) throw new ResearchError('There are no records to import.');
   const content = Buffer.from(csv);
-  if (content.length > 10 * 1024 * 1024) throw new ResearchError('The export exceeds 10 MB.');
+  if (content.length > MAX_FILE_BYTES) throw new ResearchError('The export exceeds 3 MB.');
   return {
     filename: `${input.provider}-${input.form || 'project'}-${input.kind}.csv`.replace(
       /[^\w.-]/g,

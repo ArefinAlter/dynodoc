@@ -33,7 +33,7 @@ export interface ProjectRequest {
   revision: number;
   source: { bundle_id?: string };
   document: { id: string; title: string; kind: string };
-  author?: { email: string };
+  author?: { id: string; name: string | null; email: string };
   created_at: string;
 }
 export function downloadJson(value: unknown, filename: string) {

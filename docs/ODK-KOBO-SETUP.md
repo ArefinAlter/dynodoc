@@ -40,7 +40,7 @@ record of the server, form and fetch time. **File → Original uploads & import
 report** shows that record. Tokens are used only for the current connection;
 they are not saved in the database, browser storage, source metadata or export.
 
-Response imports support 2,999 records plus a header, 100 columns and 10 MB.
+Response imports support 2,999 records plus a header, 100 columns and 3 MB (3,000,000 bytes).
 Pagination is followed within the chosen server; the connector refuses an
 oversized export rather than silently truncating it. Nested objects become
 columns; JSON arrays stay as text. Separate ODK repeat tables, attachments,

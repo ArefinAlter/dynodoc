@@ -8,4 +8,10 @@ it('requires a session for Projects and restores project destinations safely', (
   expect(safeNext('//evil.test/projects')).toBeNull();
   expect(safeNext('/projects/../admin')).toBeNull();
   expect(requiresSignIn('/connectors/word')).toBe(false);
+  expect(requiresSignIn('/profile')).toBe(true);
+  expect(requiresSignIn('/profiles/11111111-2222-3333-4444-555555555555')).toBe(true);
+  expect(safeNext('/profile')).toBe('/profile');
+  const file = path + '/files/11111111-2222-3333-4444-555555555555?tab=history';
+  expect(safeNext(file)).toBe(file);
+  expect(safeNext('/profiles/../admin')).toBeNull();
 });

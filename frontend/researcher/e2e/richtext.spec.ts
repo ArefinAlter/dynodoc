@@ -24,7 +24,8 @@ test('long formatted passages save compact history and replay after reload', asy
   await page.getByLabel('Work email').fill(`richtext-${Date.now()}@example.test`);
   await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
   await page.getByRole('button', { name: /Continue in local development/ }).click();
-  await expect(page).toHaveURL(/\/workspace$/);
+  await expect(page).toHaveURL(/\/projects$/);
+  await page.goto('/workspace');
   await page.getByRole('button', { name: 'New document', exact: true }).click();
   await page.getByLabel('Document name', { exact: true }).fill('Rich-text history verification');
   await page.getByRole('dialog').getByRole('combobox').selectOption('document');

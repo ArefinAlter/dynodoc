@@ -154,7 +154,14 @@ ${sites.join('\n')}
     .setIssuedAt()
     .setExpirationTime('10m')
     .encrypt(createHash('sha256').update(secret).digest());
-  for (const path of ['/workspace', '/projects']) {
+  const fixtureId = '11111111-2222-3333-4444-555555555555';
+  for (const path of [
+    '/workspace',
+    '/projects',
+    '/profile',
+    `/projects/${fixtureId}`,
+    `/projects/${fixtureId}/files/${fixtureId}`
+  ]) {
     const direct = await request(`${upstream.origin}${path}`, cookie);
     const proxied = await request(`${appURL}${path}`, cookie);
     assert.equal(direct.status, 200);

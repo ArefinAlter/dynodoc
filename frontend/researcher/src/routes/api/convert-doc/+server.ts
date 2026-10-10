@@ -1,3 +1,4 @@
+import { MAX_FILE_BYTES } from '$lib/workspace/file-limits';
 import { env } from '$env/dynamic/private';
 import { json } from '@sveltejs/kit';
 import { accessToken } from '$lib/server/session';
@@ -16,17 +17,17 @@ export const POST: RequestHandler = async ({ request, url, cookies }) => {
       { status: 503 }
     );
   const length = Number(request.headers.get('content-length'));
-  if (length > 11 * 1024 * 1024)
-    return json({ error: 'Use a file smaller than 10 MB.' }, { status: 413 });
+  if (length > MAX_FILE_BYTES + 65536)
+    return json({ error: 'Files are limited to 3 MB during testing.' }, { status: 413 });
   try {
     const form = await request.formData(),
       file = form.get('file');
     if (
       !(file instanceof File) ||
-      file.size > 10 * 1024 * 1024 ||
+      file.size > MAX_FILE_BYTES ||
       !file.name.toLowerCase().endsWith('.doc')
     )
-      return json({ error: 'Choose a .doc file under 10 MB.' }, { status: 400 });
+      return json({ error: 'Choose a .doc file no larger than 3 MB.' }, { status: 400 });
     const result = await fetch(env.CONVERTER_URL + '/convert', {
       method: 'POST',
       headers: { 'content-type': 'application/msword', 'x-converter-key': env.CONVERTER_KEY },

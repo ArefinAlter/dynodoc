@@ -22,6 +22,12 @@ six editor clients. Native acceptance and store publication remain open. A local
 complete offline convergence, full native format capture and large-file/service
 capacity still require implementation and acceptance. **License:** [AGPL v3](LICENSE).
 
+The new signed-in front page is **Projects**: member-only profiles, multiple files,
+per-file main/private drafts, pull requests, comparisons and history. Basic web
+editors have their own tab. Test uploads are limited to **3 MB (3,000,000 bytes)**.
+Project-wide portable branches remain planned; see [the handoff](docs/ENGINE-EVOLUTION-HANDOFF.md)
+for source verification and the separate production release state.
+
 - [Standalone engine — MIT](https://github.com/ArefinAlter/dynodoc-engine) · [extraction and integration notes](docs/ENGINE-EXTRACTION.md)
 - [Detailed engineering and product handoff](docs/HANDOFF.md)
 - [Current implementation and remaining work](docs/PROJECT-STATUS.md)

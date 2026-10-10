@@ -21,6 +21,10 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
+/// Temporary tester cap on original uploaded files (decimal MB, not MiB).
+pub const MAX_UPLOAD_BYTES: usize = 3_000_000;
+const MAX_UPLOAD_BASE64: usize = MAX_UPLOAD_BYTES.div_ceil(3) * 4;
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/search", get(search))
@@ -28,7 +32,9 @@ pub fn router() -> Router<AppState> {
             "/documents/:id/uploads",
             get(uploads)
                 .post(upload)
-                .layer(axum::extract::DefaultBodyLimit::max(30 * 1024 * 1024)),
+                .layer(axum::extract::DefaultBodyLimit::max(
+                    MAX_UPLOAD_BASE64 + 65_536,
+                )),
         )
         .route("/documents/:id/uploads/:upload_id", get(download_upload))
         .route("/documents/:id/batch", post(batch))
@@ -523,11 +529,21 @@ async fn upload(
     if role != Role::Author && !(change_request && role == Role::Reviewer) {
         return Err(ApiError::Forbidden);
     }
+    if req.content.len() > MAX_UPLOAD_BASE64 {
+        return Err(bad(
+            "Files are limited to 3 MB (3,000,000 bytes) during testing",
+        ));
+    }
     let content = base64::engine::general_purpose::STANDARD
         .decode(req.content)
         .map_err(|_| bad("Invalid file encoding"))?;
-    if content.len() > 10 * 1024 * 1024 || req.filename.len() > 255 {
-        return Err(bad("File exceeds the upload limit"));
+    if content.len() > MAX_UPLOAD_BYTES {
+        return Err(bad(
+            "Files are limited to 3 MB (3,000,000 bytes) during testing",
+        ));
+    }
+    if req.filename.len() > 255 {
+        return Err(bad("Filename must be at most 255 bytes"));
     }
     let upload:Uuid=sqlx::query_scalar("insert into document_upload(document_id,filename,content_type,content,report,created_by) values($1,$2,$3,$4,$5,$6) returning id")
         .bind(id).bind(req.filename).bind(req.content_type).bind(content).bind(req.report).bind(auth.identity_id).fetch_one(&state.pool).await?;

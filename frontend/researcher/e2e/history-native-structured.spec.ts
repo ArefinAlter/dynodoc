@@ -24,7 +24,8 @@ for (const kind of ['spreadsheet', 'presentation'])
     await page.getByLabel('Work email').fill(`native-${kind}-${Date.now()}@example.test`);
     await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
     await page.getByRole('button', { name: /Continue in local development/ }).click();
-    await expect(page).toHaveURL(/\/workspace$/);
+    await expect(page).toHaveURL(/\/projects$/);
+    await page.goto('/workspace');
     const doc = await api(page, '/documents', { title: 'Earlier native content' });
     await api(page, `/documents/${doc.id}/metadata`, { settings: { kind } });
     const root = ulid(),

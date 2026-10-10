@@ -1,5 +1,17 @@
 # Dynodoc: intent, current implementation and remaining work
 
+## Working increment: Projects first (10 October 2026)
+
+In progress, not deployed: repository-style Projects/files, private member profiles,
+per-file main/draft navigation, pull requests, history/recovery and a separate Web
+editor tab. Default sign-in and homepage actions open Projects. Test uploads are
+capped at 3,000,000 original bytes, with backend enforcement. Standalone Rust lint
+and 233 tests, 282 frontend unit tests and Svelte checking pass. Final signed-in
+browser/visual verification is underway, including the file picker and recovery.
+See the current [handoff](ENGINE-EVOLUTION-HANDOFF.md). Project-wide portable
+branches/commits and the remaining part 2 storage optimizations are still pending.
+
+
 ## Current deployment: history and six-editor test packages (10 October 2026)
 
 The VPS now runs application `536a448` (implementation `0478bf2`), schema 25.

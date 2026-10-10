@@ -12,7 +12,8 @@ async function login(
   await page.getByLabel('Work email').fill(email);
   await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
   await page.getByRole('button', { name: /Continue in local development/ }).click();
-  await expect(page).toHaveURL(/\/workspace$/);
+  await expect(page).toHaveURL(/\/projects$/);
+  await page.goto('/workspace');
   await expect(page.getByRole('button', { name: 'Help & tutorials', exact: true })).toBeVisible();
   return email;
 }

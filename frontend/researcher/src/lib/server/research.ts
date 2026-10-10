@@ -1,3 +1,4 @@
+import { MAX_FILE_BYTES } from '$lib/workspace/file-limits';
 import { lookup } from 'node:dns/promises';
 import { request as httpsRequest } from 'node:https';
 import { isIP } from 'node:net';
@@ -6,7 +7,7 @@ import type { ResearchRequest, ResearchFile, ResearchChoice } from '$lib/workspa
 
 export class ResearchError extends Error {}
 
-const maximumBytes = 10 * 1024 * 1024;
+const maximumBytes = MAX_FILE_BYTES;
 type Reply = { status: number; body: Buffer };
 export type ResearchTransport = (
   url: URL,
@@ -89,7 +90,7 @@ export const researchGet: ResearchTransport = async (url, authorization, init) =
           size += chunk.length;
           if (size > maximumBytes)
             req.destroy(
-              new ResearchError('The research export exceeds 10 MB. Use a smaller export.')
+              new ResearchError('The research export exceeds 3 MB. Use a smaller export.')
             );
           else chunks.push(chunk);
         });
@@ -191,7 +192,7 @@ export async function researchRead(
     const reply = await transport(url, authorization);
     downloaded += reply.body.length;
     if (downloaded > maximumBytes)
-      throw new ResearchError('The research export exceeds 10 MB. Use a smaller export.');
+      throw new ResearchError('The research export exceeds 3 MB. Use a smaller export.');
     if (reply.status === 401 || reply.status === 403)
       throw new ResearchError('The token does not have permission to read this project.');
     if (reply.status === 404)
@@ -288,7 +289,7 @@ export async function researchRead(
       'This is a snapshot of current responses. Nested objects become columns and arrays are retained as JSON text. Separate ODK repeat tables, media attachments and encrypted responses are not imported. Editing this copy does not update the collection platform.'
     );
   }
-  if (content.length > maximumBytes) throw new ResearchError('The research export exceeds 10 MB.');
+  if (content.length > maximumBytes) throw new ResearchError('The research export exceeds 3 MB.');
   const filename = `${input.provider}-${input.form}-${input.kind}.${ext}`.replace(/[^\w.-]/g, '_');
   return {
     filename,

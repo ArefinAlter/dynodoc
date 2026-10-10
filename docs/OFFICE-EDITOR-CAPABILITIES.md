@@ -44,7 +44,7 @@ See [the latest release evidence](OFFICE-EXPANSION-RELEASE.md) for verification 
 ## DOCX conversion
 
 `docx-import.ts` parses native WordprocessingML in `docx-import.worker.ts`, with
-45-second cancellation and transferable input. `bounded-zip.ts` enforces 10 MB
+45-second cancellation and transferable input. `bounded-zip.ts` enforces 3 MB (3,000,000 bytes)
 input, 10,000 entries, 32 MiB per selected expanded part, 64 MiB selected total,
 XML depth 128, no DTD/entity declarations, and duplicate-path rejection. Unselected
 ZIP entries are not decompressed. Image import is limited to supported embedded
@@ -82,7 +82,7 @@ to cell addresses. Merged sheets must be unmerged before sorting. Named ranges,
 text splitting, duplicate removal, chart/print/pivot source rebasing and data dialogs
 are supported. Unsupported imported validation rules are retained
 for export but not evaluated. Limits: 3,000 imported rows/workbook, 100 columns,
-10 MB source, 5,000 ordinary batch operations; UI operations use smaller guards.
+3 MB (3,000,000 bytes) source, 5,000 ordinary batch operations; UI operations use smaller guards.
 XLSX ZIP expansion and ExcelJS conversion run in a terminable worker with a
 45-second timeout and upload cancellation. Empty rows and merge anchors survive
 conversion. Numeric greater-than, less-than, equal-to and between conditional

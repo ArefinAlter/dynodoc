@@ -26,7 +26,7 @@ credentials in URLs, redirects and pagination to another origin are refused.
 REDCap export uses a token in an HTTPS form POST; SurveyCTO uses HTTP Basic over TLS;
 other platforms use bearer/token headers. No upstream response body or credential is
 returned in connection errors. Incoming connection details are limited to 8 KiB;
-exports are bounded to 10 MiB, 2,999 response rows and 100 spreadsheet columns.
+exports are bounded to 3,000,000 bytes, 2,999 response rows and 100 spreadsheet columns.
 Exceeding a bound fails explicitly instead of silently truncating the study.
 
 Original imports and source origin/form identifiers are retained in the research

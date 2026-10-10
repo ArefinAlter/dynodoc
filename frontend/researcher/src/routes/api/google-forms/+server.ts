@@ -1,3 +1,4 @@
+import { MAX_FILE_BYTES } from '$lib/workspace/file-limits';
 import { json } from '@sveltejs/kit';
 import ExcelJS from 'exceljs';
 import { activeIdentity, openProvider } from '$lib/server/session';
@@ -66,7 +67,7 @@ export const POST: RequestHandler = async ({ request, url, cookies }) => {
         const part = await reader.read();
         if (part.done) break;
         total += part.value.length;
-        if (total > 10 * 1024 * 1024) {
+        if (total > MAX_FILE_BYTES) {
           await reader.cancel();
           throw new Error('Import exceeds 10 MiB. Export a smaller dataset from Google Sheets.');
         }

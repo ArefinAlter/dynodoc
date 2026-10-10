@@ -188,7 +188,7 @@ Acceptance requires an owner-controlled real form: check single/multiple choice,
 grids, dates, validation, branching and response counts against the original.
 Grids flatten; branching, media, quiz grading and unsupported settings require
 review. Import retains the source form definition in the generated original XLSX.
-API reads are capped at 10 MiB, 2,000 questions, 2,999 response rows and 100 columns;
+API reads are capped at 3,000,000 bytes, 2,000 questions, 2,999 response rows and 100 columns;
 large imports fail with a visible explanation instead of silently truncating.
 
 ### Verification Center scope justifications

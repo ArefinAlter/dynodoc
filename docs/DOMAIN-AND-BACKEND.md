@@ -60,7 +60,7 @@ homepage host, not the persistence layer. Web/API container replacement does not
 replace the named database volume. Do not remove the volume or run a live
 migration reset.
 
-The current upload limit is 10 MiB per original file. The web and Nginx request
+The current upload limit is 3 MB (3,000,000 bytes) per original file. The web and Nginx request
 limits are 16 MiB to allow JSON/base64 overhead. The spreadsheet importer has
 additional row, column and format-fidelity limits; see
 [research compatibility](research-compatibility.md).

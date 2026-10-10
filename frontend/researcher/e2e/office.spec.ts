@@ -16,7 +16,8 @@ async function create(page: Page, kind = 'document') {
     .fill(`office-${Date.now()}-${Math.random().toString(36).slice(2)}@example.test`);
   await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
   await page.getByRole('button', { name: /Continue in local development/ }).click();
-  await expect(page).toHaveURL(/\/workspace$/);
+  await expect(page).toHaveURL(/\/projects$/);
+  await page.goto('/workspace');
   await page.getByRole('button', { name: 'New document', exact: true }).click();
   await page.getByLabel('Document name', { exact: true }).fill('Office workflow');
   await page.getByRole('dialog').getByRole('combobox').selectOption(kind);

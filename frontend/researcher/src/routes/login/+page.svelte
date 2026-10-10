@@ -19,7 +19,7 @@
     google: false,
     email: false,
     development: false,
-    destination: '/workspace'
+    destination: '/projects'
   });
   onMount(async () => {
     if (next) rememberNext(next);
@@ -30,7 +30,7 @@
     if ($page.url.searchParams.get('next') === 'admin' || options.destination === '/admin')
       return '/admin';
     const remembered = takeRememberedNext();
-    return next || remembered || '/workspace';
+    return next || remembered || '/projects';
   }
   async function requestLink(event: SubmitEvent) {
     event.preventDefault();
