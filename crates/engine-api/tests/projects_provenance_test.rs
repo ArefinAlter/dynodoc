@@ -30,7 +30,8 @@ async fn browser_pairing_keeps_secrets_in_editor_and_rechecks_permissions(pool: 
     let (secret, hash) = engine_api::auth::random_token().unwrap();
     let challenge = hex::encode(&hash);
     let bearer = format!("Bearer {secret}");
-    let input = json!({"host":"word","key_challenge":challenge,"expires_at":chrono::Utc::now().timestamp()+590});
+    // A browser clock 50 seconds ahead still gets its ten-minute approval window.
+    let input = json!({"host":"word","key_challenge":challenge,"expires_at":chrono::Utc::now().timestamp()+650});
     let endpoint = format!("/documents/{doc}/connectors");
     assert_eq!(
         get(&router, "/connector/connection", &bearer).await.0,
@@ -97,6 +98,11 @@ async fn browser_pairing_keeps_secrets_in_editor_and_rechecks_permissions(pool: 
         StatusCode::BAD_REQUEST
     );
     let mut expired = input.clone();
+    expired["expires_at"] = json!(chrono::Utc::now().timestamp() + 720);
+    assert_eq!(
+        post(&router, &endpoint, &owner, expired.clone()).await.0,
+        StatusCode::BAD_REQUEST
+    );
     expired["expires_at"] = json!(chrono::Utc::now().timestamp() - 1);
     assert_eq!(
         post(&router, &endpoint, &owner, expired).await.0,

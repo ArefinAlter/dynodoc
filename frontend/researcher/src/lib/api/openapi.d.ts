@@ -1402,7 +1402,7 @@ export interface components {
     GrantInput: {
       /**
        * Format: int64
-       * @description Approval link expiry as Unix seconds; at most ten minutes into the future.
+       * @description Approval link expiry as Unix seconds; ten minutes plus one minute clock allowance.
        */
       expires_at?: number | null;
       host: string;

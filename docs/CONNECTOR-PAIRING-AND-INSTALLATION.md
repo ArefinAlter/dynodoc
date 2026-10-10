@@ -13,7 +13,8 @@ not marketplace submissions. Source publication does not deploy the server.
 ## Authentication contract
 
 The editor creates a random 256-bit secret with browser Web Crypto and retains it.
-The approval URL contains its SHA-256 digest, a host and a ten-minute link expiry.
+The approval URL contains its SHA-256 digest, a host and a ten-minute link expiry
+(the server allows one additional minute for a browser clock running ahead).
 It contains no usable bearer, account session, refresh token or service key. In a
 separate browser, the user signs in with normal Dynodoc email authentication,
 compares the displayed code, chooses a remote file and explicitly approves.

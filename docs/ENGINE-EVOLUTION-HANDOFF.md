@@ -10,7 +10,12 @@ Microsoft ribbon commands/icons and reproducible test installation packages.
 No migration; minimum schema remains 25. No VPS deployment. Both repositories
 have the same four changed Rust files; all 22 SQL migrations still match. OpenAPI
 API schemas match, with the intended AGPL/MIT/contact packaging difference.
-Application main is ready for source publication; standalone full tests are running.
+Initial source commits are published: application 4df76ad789038dc208cb0ea9a5dc2a4137b28133
+and engine e26d51cd4d6a66f79d258a3d3117cdb592ca7844. All their CI gates passed:
+application Rust 38053822154, frontend/browser 38053822926 and engine 38053895976.
+Final review adds a one-minute server allowance for browser clock skew on fresh
+approval links; all six connector API tests pass including ahead/expired/too-far
+clock cases. Final engine suite and source CI for this small follow-up are pending.
 
 API targeted tests pass (range test corrected its merge request field names).
 All three Microsoft manifests pass the official validator after raising manifest
@@ -23,10 +28,10 @@ Office/Google connector bridge browser checks also pass. The DOCX browser assert
 was corrected to read its existing custom origin properties; no exporter change
 was required. These archive checks verify old content and origin, not native fidelity.
 Standalone lint/docs/OpenAPI pass (existing 16 core / 4 API rustdoc warnings).
-Owned disposable PostgreSQL: dynodoc-connect-history-20261010, loopback 5553,
-label dynodoc.task=connect-history-20261010. Remove only this owned resource and
-owned browser-test API/web processes after validation (API PID 14912, web PID 9260;
-loopback 8087/4178, process record in temp). Logs: system temp prefix
+The first disposable database/container and owned API/web processes were removed
+after identity/port verification; existing databases were untouched. The final
+clock test uses dynodoc-pair-clock-20261010 on loopback 5553, label
+dynodoc.task=pair-clock-20261010; remove only it after the engine suite finishes. Logs: system temp prefix
 dynodoc-connect-history-, plus dynodoc-*-manifest.log. Existing databases untouched.
 Prior engine documentation CI 38051507307 has now been verified successful.
 

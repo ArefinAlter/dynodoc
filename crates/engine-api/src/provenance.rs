@@ -261,7 +261,7 @@ struct GrantInput {
     host: String,
     /// SHA-256 of a 256-bit secret held by the requesting editor. Never the secret.
     key_challenge: Option<String>,
-    /// Approval link expiry as Unix seconds; at most ten minutes into the future.
+    /// Approval link expiry as Unix seconds; ten minutes plus one minute clock allowance.
     expires_at: Option<i64>,
 }
 #[utoipa::path(post,path="/documents/{id}/connectors",params(("id"=Uuid,Path)),request_body=GrantInput,security(("paseto"=[])),responses((status=200,description="Seven-day file-scoped credential; pairing approval returns no secret",body=Value)))]
@@ -280,7 +280,7 @@ async fn grant(
                         .bytes()
                         .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
                     && expires > Utc::now().timestamp()
-                    && expires <= Utc::now().timestamp() + 600 =>
+                    && expires <= Utc::now().timestamp() + 660 =>
             {
                 Some(hex::decode(challenge).map_err(|_| bad("Invalid connection challenge"))?)
             }
