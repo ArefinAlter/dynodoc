@@ -2,8 +2,9 @@
 
 ## Part 2b: mixed readers and gated automatic writer (10 October 2026)
 
-Implementation and the database measurement are complete locally; standalone
-test/docs/OpenAPI and publication/CI are pending. This is a slice of part 2, not product completion.
+Part 2b is complete, synchronized and published to both main branches. Source CI
+passed in both repositories, including application browser workflows. This is a
+slice of part 2, not product completion.
 
 - Current/history readers select the nearest legacy/shared checkpoint (shared wins
   ties), validate shared graphs and stream only the suffix. Pinned current seq
@@ -25,12 +26,17 @@ test/docs/OpenAPI and publication/CI are pending. This is a slice of part 2, not
   appends, and still scans/writes individual objects. Keep writer default off until
   measured publication latency and concurrent acceptance improve.
 
-Verification so far: all 220 application Rust tests, fmt/Clippy and unchanged OpenAPI
+Verification: all 220 application Rust tests, fmt/Clippy and unchanged OpenAPI
 passed. Targeted tests cover every revision, mixed nearest/tie/scope selection,
 resume seq, duplicate builders, cadence/rollback, oversized-value partial rollback,
 batched duplicates/budgets/scope and corruption. Existing API workflows now run from
 shared state for stale edits and version/draft/restore compatibility. Standalone
-task lint passes; task test/docs/OpenAPI and CI are pending.
+task lint, all 220 tests and task docs passed (existing Rustdoc link warnings).
+Its first full run hit the existing 100 ms SSE deadline once; the full rerun passed
+without changing the test. That timing check is not a production latency guarantee.
+Standalone generated OpenAPI is unchanged, including MIT metadata. Both copies of
+all seven changed Rust files and all 22 immutable migrations match exactly.
+Counterpart source commits and successful CI runs are linked below.
 
 PostgreSQL spike: 8,000 blocks / six checkpoints, all reconstruction/chain checks
 passed. Batching lowers graph object SELECTs 9,885 -> 2,385 and median read
@@ -42,15 +48,28 @@ No production gate passes from these figures; see the raw artifact and limitatio
 in SHARED-CHECKPOINTS.md. Prior in-memory ratios are not database disk ratios.
 
 Next: optimize/batch publication and shorten its append-blocking transaction;
+repeat controlled traces with fixed IDs, varying text entropy/edit density/history
+length and compressed backend alternatives;
 bounded text/asset chunks; versioned draft/named references; cross-language codec
 and parent/root/actor commit envelope; durable local history and resumable exchange.
 Offline convergence, independent signatures/witnesses and native/scale acceptance
 remain separate gates. The basic web editor is not the product priority.
 
-Temporary DB: owned dynodoc-evolution-part2b-20261010 on 127.0.0.1:5553, label
-dynodoc.evolution=part2b-20261010. Remove it and its disposable volume after checks.
+Temporary DB dynodoc-evolution-part2b-20261010 and its disposable volume were
+removed after validating its ownership label and loopback port 5553. Existing
+dynodoc-postgres and margin-qdrant services remain running. Logs are in system temp;
+the portable synthetic measurement artifact is committed under docs/benchmarks/.
 No API/web server or VPS deployment in this increment. Production remains last
 recorded 8c7461d, schema 24. Starting app 0718ee6; standalone a70647d.
+
+Publication:
+- Application source: `12be6a2d5444b7044b06749ca9d2b3fafea815ec`.
+- [Application Rust CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38043426193): passed.
+- [Application frontend/browser CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38043426145): passed (62 signed-in, 16 public browser tests and 274 frontend unit tests).
+- Standalone source: `970d78ad49c94e63f902ac4f97dcc61cf212db27`.
+- [Independent engine CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38043671852): passed.
+- Final engine handoff/status commit: `2d9363072788de69a19df38752852a24fe230c09`
+  ([checkout CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38044102949)).
 
 ## Previous completed increment
 

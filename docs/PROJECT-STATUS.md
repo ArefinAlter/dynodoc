@@ -13,7 +13,9 @@ Shared writes remain off by default. Publication still scans all state and write
 objects individually while blocking FOR UPDATE appends on the document. Database
 measurements and verification are in the [checkpoint contract](SHARED-CHECKPOINTS.md)
 and [handoff](ENGINE-EVOLUTION-HANDOFF.md). All 220 application Rust tests, fmt/Clippy
-and unchanged OpenAPI pass; standalone final checks/publication are in progress.
+and unchanged OpenAPI pass. Standalone lint, all 220 tests, docs and unchanged
+OpenAPI pass. Both source CI runs and application browser CI passed. Published
+source: application `12be6a2`, engine `970d78a`; final records are in the handoff.
 No VPS deployment. Schema 25 is required by the new reader.
 
 Next: reduce publication round trips and lock duration, add bounded text/assets,
