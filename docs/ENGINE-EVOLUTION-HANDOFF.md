@@ -1,5 +1,48 @@
 # Engine evolution handoff
 
+## Deployment handoff: history and editor installations (10 October 2026)
+
+The matching API/web/admin build is now live on the VPS: application `536a448`
+(implementation `0478bf2`), schema 25, activated at 13:36 UTC. The standalone
+engine source remains `a44b8ad`; documentation head `7bfd16c` also passed CI.
+This increment changes deployment/operations documentation and adds the app's
+read-only `infra/demo/check-connectors.py`; no Rust, event or codec changes.
+
+Validated backup, all applied migration checksums and previous images/source were
+retained. A disposable empty database rehearsed the actual previous API at schema
+24, new API upgrade to 25 and previous-source-plus-0025 rollback API on schema 25.
+The unmodified old API was confirmed to reject the newer migration. All labelled
+rehearsal containers/network and their temporary credentials are removed.
+
+Live checks: all 22 delivery/auth checks pass, including exact six-package/icon/
+command bytes, pane frame headers, protected return URLs and invalid-key rejection.
+A clean browser shows six downloads and approval-to-login without page errors.
+Synthetic page shells pass directly and through Nginx with identical preload links.
+API/web/admin are healthy. Existing counts/event fingerprint are unchanged;
+PostgreSQL, converter and all 18 unrelated containers retain their IDs/images/start
+times. Nginx is unchanged. Shared checkpoint writes remain disabled.
+
+Installation page: https://app.dynodoc.online/connectors. Detailed evidence and the
+rehearsed rollback command are in the application
+[release record](https://github.com/ArefinAlter/dynodoc/blob/main/docs/operations/2026-10-10-history-connector-release.md).
+The deployed source archive stays at `536a448`; later handoff/checker commits are
+documentation/operations updates and are not rebuilt application images.
+
+Continue with:
+
+1. Installed Word/Docs, Excel/Sheets and PowerPoint/Slides acceptance using test
+   accounts/files, including browser launch, consent, two users, push/review/pull
+   and revocation. No real production sign-in/email or native-host acceptance was
+   performed in this rollout. Marketplace/legal/publisher gates remain open.
+2. Independently resume part 2 bounded text/assets, compression/incremental
+   publication and shared named-version/draft references, retaining v1 readers
+   and old histories. Current full-state memory and legacy bases remain limits.
+3. Portable commits/parents/branches, local repositories and resumable exchange,
+   then format fidelity, offline convergence, stronger audit and measured scale.
+
+The source verification/feature details below remain applicable. Deployment alone
+does not improve algorithmic complexity or certify native-editor fidelity.
+
 ## Latest increment: history ranges, native exports and editor sign-in (10 October 2026)
 
 Implemented and pushed to both main branches. The application offers net revision-range
@@ -13,9 +56,10 @@ Final implementation commits:
 - Standalone engine: `a44b8adac296aa6414bcafa12c56f3a4bd446e73` (feature implementation `e26d51c`).
 
 No migration, event encoding, hash, storage codec or canonical-history rewrite.
-Minimum schema remains 25; shared writes remain opt-in. No VPS deployment. Last recorded
-production remains 8c7461d/schema 24 plus the earlier Nginx repair; it does not have these
-new endpoints/assets. Deploy a matching API/web build before distributing the new packages.
+Minimum schema remains 25; shared writes remain opt-in. At source completion there was
+no VPS deployment. The then-recorded
+production was 8c7461d/schema 24 plus the earlier Nginx repair; it did not have these
+new endpoints/assets. This is superseded by the deployment handoff above.
 The standalone repository contains the Rust API and contracts; native exporters and
 installation/ribbon/sidebar clients live in the application repository.
 
@@ -86,7 +130,7 @@ Owned API/web processes 14912/9260 were stopped after PID/port verification. Por
 Synthetic-only test logs remain in system temp under dynodoc-connect-history-*,
 dynodoc-pair-clock-* and dynodoc-*-manifest.log. No production email or document was used.
 
-Next work, with the existing engine plan's dependencies preserved:
+Next work recorded at source release (deployment is now complete):
 1. Deploy the matching API/web build to a pilot environment with backup/schema checks;
    run installed Word/Docs, Excel/Sheets and PowerPoint/Slides acceptance, including
    browser launch, Google consent, ribbon/menu commands, two accounts and revocation.

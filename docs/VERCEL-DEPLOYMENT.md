@@ -76,6 +76,26 @@ After an update, verify `/healthz`, anonymous document rejection, sign-in and a
 synthetic document edit. Check the existing VPS applications independently. Never
 use an unscoped stop/reset command on this shared host.
 
+For the editor installation release, run the read-only delivery check from the
+matching source checkout:
+
+```sh
+python3 infra/demo/check-connectors.py https://app.dynodoc.online
+```
+
+It verifies the six downloadable packages, icons and command page byte-for-byte,
+Office pane frame headers, normal authentication configuration, login redirects
+and anonymous/invalid-key rejection through the connector gateway. It sends no
+email, signs into no account and reads no document. It does not replace installed
+Word/Docs, Excel/Sheets and PowerPoint/Slides acceptance or an authenticated workflow.
+
+Schema 25 is additive, but the old API embeds only migrations through 24. Its
+startup migration check rejects a database containing migration 25. Preserve a
+rollback API built from the previous source plus the unchanged migration 0025,
+and rehearse it against an isolated schema-25 database before rollout. Reverting
+only to the original API image is insufficient; do not remove migration records
+or restore an older live database merely to make a code rollback start.
+
 The operations site is `https://admin.dynodoc.online`; its DNS A record points to
 the same VPS. See [administrator, telemetry and Search Console setup](SEARCH-AND-ADMIN-SETUP.md).
 After each release, verify the root sitemap, icons and canonical metadata on the

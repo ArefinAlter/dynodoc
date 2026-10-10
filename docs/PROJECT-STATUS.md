@@ -1,5 +1,27 @@
 # Dynodoc: intent, current implementation and remaining work
 
+## Current deployment: history and six-editor test packages (10 October 2026)
+
+The VPS now runs application `536a448` (implementation `0478bf2`), schema 25.
+History-range recovery, supported native historical downloads and the six editor
+sign-in/install packages are live at [editor installations](https://app.dynodoc.online/connectors).
+The database was backed up first; only API/web/admin containers were replaced.
+Existing document/event counts and aggregate event fingerprint are unchanged.
+PostgreSQL, converter, Nginx and 18 unrelated containers were preserved.
+
+All 22 read-only delivery/auth checks passed; a clean browser found six downloads
+and followed approval to login without page errors. Synthetic Workspace/Projects
+page shells pass through live HTTPS with their complete preload headers. No real
+account sign-in, email, document mutation or installed-editor acceptance was used.
+Upgrade and schema-compatible rollback startup passed on an isolated database;
+all rehearsal containers/network are removed. Shared checkpoint writes remain off.
+See the [release and rollback record](operations/2026-10-10-history-connector-release.md).
+
+Next: installed Word/Docs, Excel/Sheets and PowerPoint/Slides acceptance. The next
+independent engine increment is part 2 bounded text/assets and shared draft/version
+references, followed by portable commits/branches and resumable exchange. No new
+algorithm, complexity, native fidelity or marketplace claim follows from deployment.
+
 ## Latest increment: history ranges and editor installations (10 October 2026)
 
 Implemented revision-range revert/cherry-pick through checked private drafts,
@@ -17,11 +39,12 @@ and all 231 tests pass. Final source CI passed all 231 Rust tests in each reposi
 unit / 16 public / 66 authenticated-stack browser tests. Source/check links and
 installation limits are recorded in the handoff.
 Both disposable test databases and owned API/web servers are removed/stopped.
-No production deployment or schema/event change. Shared writes remain opt-in.
+At source completion there was no production deployment or schema/event change;
+the later schema-25 rollout is recorded above. Shared writes remain opt-in.
 [History contract](HISTORY-RECOVERY.md), [connection contract](CONNECTOR-PAIRING-AND-INSTALLATION.md).
 
-Next: deploy the matching API/web build to a test environment and complete six-host
-acceptance; resume bounded text/assets and shared draft/version references, then
+Deployment is now complete; next complete six-host acceptance and resume bounded
+text/assets and shared draft/version references, then
 portable commits/branches and exchange. Current range commands use event revisions.
 
 ## Previous increment: permission-controlled historical recovery (10 October 2026)

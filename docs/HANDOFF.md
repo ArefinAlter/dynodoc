@@ -1,6 +1,7 @@
 # Dynodoc engineering and product handoff
 
-Latest continuation: [history ranges, native exports and connector sign-in](ENGINE-EVOLUTION-HANDOFF.md).
+Latest continuation: [deployed history and editor installation release](ENGINE-EVOLUTION-HANDOFF.md).
+Live build `536a448`, schema 25; [deployment evidence and rollback](operations/2026-10-10-history-connector-release.md).
 Installer/auth scope: [connector distribution contract](CONNECTOR-PAIRING-AND-INSTALLATION.md).
 
 ## Current continuation (10 October 2026)
@@ -12,7 +13,9 @@ locks. Publication still scans full state; shared writes remain off by default. 
 current verification, publication, measured limitations and the next task.
 The latest owner clarification adds [historical recovery](HISTORY-RECOVERY.md):
 permission-checked old-revision downloads and selected private recovery drafts.
-Commit revert/cherry-pick remain distinct future work; bounded storage stays next.
+Revision-range revert/cherry-pick and supported native historical exports are now
+deployed. Portable commit-addressed commands remain future work; bounded storage
+stays next, alongside installed-host acceptance.
 The dated entries below preserve earlier increments.
 
 ## Previous increment: shared checkpoints (10 October 2026)

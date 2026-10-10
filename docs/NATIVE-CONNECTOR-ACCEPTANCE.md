@@ -6,6 +6,11 @@ accounts and disposable files before claiming native compatibility or publishing
 an add-in. No production email is needed. Installation instructions are in
 [extensions](../extensions/README.md).
 
+The matching server is now deployed at application `536a448`, schema 25, with
+[all six test packages available](https://app.dynodoc.online/connectors).
+[Delivery and rollback checks passed](operations/2026-10-10-history-connector-release.md).
+This makes the matrix below ready to run; it does not mark any host accepted.
+
 ## Record the environment
 
 Record the application commit, host/platform and version, available API sets,
