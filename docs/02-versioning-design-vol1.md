@@ -1,5 +1,7 @@
 # A Versioning, Review & Collaboration Protocol for Dynodoc
 
+> Historical research-instrument reference. The 10 October 2026 [product specification](PRODUCT-SPEC.md) and [engine evolution plan](ENGINE-EVOLUTION-PLAN.md) supersede this product scope/build order. Preserve existing history compatibility; proposed algorithms are not implementation proofs.
+
 ### Design compendium — every approach, end-to-end, with the science, mathematics, engineering, and economics behind each
 
 **Project:** Dynodoc (agentic questionnaire authoring for ODK / Kobo / REDCap workflows)

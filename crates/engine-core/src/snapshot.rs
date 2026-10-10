@@ -1,8 +1,9 @@
 //! Snapshot engine (docs/15).
 
-use engine_shared::{DocumentId, EventPayload, Snapshot};
+use engine_shared::{DocumentId, Event, EventPayload, Snapshot};
+use futures::TryStreamExt;
 use ring::digest::{Context, SHA256};
-use sqlx::PgPool;
+use sqlx::{PgConnection, PgPool};
 use tracing::warn;
 
 use crate::{
@@ -32,6 +33,10 @@ impl SnapshotReason {
 /// Errors from snapshot reads/writes.
 #[derive(Debug, thiserror::Error)]
 pub enum SnapshotError {
+    #[error("revision {0} is outside the document history")]
+    InvalidRevision(i64),
+    #[error("event history gap: expected seq {expected}, found {actual}")]
+    HistoryGap { expected: i64, actual: i64 },
     #[error("database error: {0}")]
     Db(#[from] sqlx::Error),
     #[error("event read failed: {0}")]
@@ -40,6 +45,72 @@ pub enum SnapshotError {
     Materialize(#[from] MaterializeError),
     #[error("snapshot state serialization failed: {0}")]
     Serialize(#[from] serde_json::Error),
+}
+
+/// A historical state and the work required to reconstruct it.
+#[derive(Debug)]
+pub struct HistoricalState {
+    pub state: DocumentState,
+    pub snapshot_seq: i64,
+    pub replayed_events: usize,
+}
+
+/// Read an exact revision using the nearest checkpoint at or before it.
+///
+/// Streams the bounded event suffix instead of collecting the entire history.
+/// Memory still includes the complete snapshot/state and SQL driver's buffers;
+/// this is not shared-object storage. With no earlier checkpoint, replay starts
+/// at genesis. Callers enforce document access and may pass a locked transaction's
+/// connection to retain the write path's authorization and serialization boundary.
+/// Snapshots are trusted derived data here; cryptographic verification is separate.
+pub async fn read_state_at(
+    connection: &mut PgConnection,
+    document_id: DocumentId,
+    through_seq: i64,
+) -> Result<HistoricalState, SnapshotError> {
+    if through_seq < 0 {
+        return Err(SnapshotError::InvalidRevision(through_seq));
+    }
+    let snapshot = sqlx::query_as::<_, Snapshot>(
+        "select * from snapshot where document_id=$1 and through_seq<=$2 order by through_seq desc limit 1",
+    )
+    .bind(document_id.0)
+    .bind(through_seq)
+    .fetch_optional(&mut *connection)
+    .await?;
+    let snapshot_seq = snapshot.as_ref().map_or(0, |s| s.through_seq);
+    let mut state = match snapshot {
+        Some(s) => serde_json::from_value(s.state)?,
+        None => DocumentState::default(),
+    };
+    let mut tail = sqlx::query_as::<_, Event>(
+        "select * from event where document_id=$1 and seq>$2 and seq<=$3 order by seq",
+    )
+    .bind(document_id.0)
+    .bind(snapshot_seq)
+    .bind(through_seq)
+    .fetch(&mut *connection);
+    let mut last_seq = snapshot_seq;
+    let mut replayed_events = 0;
+    while let Some(event) = tail.try_next().await? {
+        if event.seq != last_seq + 1 {
+            return Err(SnapshotError::HistoryGap {
+                expected: last_seq + 1,
+                actual: event.seq,
+            });
+        }
+        Materializer::fold_into(&mut state, std::slice::from_ref(&event))?;
+        last_seq = event.seq;
+        replayed_events += 1;
+    }
+    if last_seq != through_seq {
+        return Err(SnapshotError::InvalidRevision(through_seq));
+    }
+    Ok(HistoricalState {
+        state,
+        snapshot_seq,
+        replayed_events,
+    })
 }
 
 /// Persistent snapshot/materialization read path.
@@ -130,10 +201,13 @@ impl SnapshotEngine {
         document_id: DocumentId,
         max_events_in_tail: i64,
     ) -> Result<(), SnapshotError> {
-        let latest_snapshot_seq = latest_snapshot(&self.pool, document_id)
-            .await?
-            .map(|snapshot| snapshot.through_seq)
-            .unwrap_or(0);
+        // Checking cadence needs only the indexed sequence, not a full JSON state.
+        let latest_snapshot_seq: i64 = sqlx::query_scalar(
+            "select coalesce(max(through_seq),0) from snapshot where document_id=$1",
+        )
+        .bind(document_id.0)
+        .fetch_one(&self.pool)
+        .await?;
         let latest_event_seq: Option<i64> =
             sqlx::query_scalar("select max(seq) from event where document_id = $1")
                 .bind(document_id.0)

@@ -1,5 +1,7 @@
 # Dynodoc — Proof of Concept
 
+> Historical research-instrument reference. The 10 October 2026 [product specification](PRODUCT-SPEC.md) and [engine evolution plan](ENGINE-EVOLUTION-PLAN.md) supersede this product scope/build order. Preserve existing history compatibility; proposed algorithms are not implementation proofs.
+
 ### Product Requirements Document
 
 **Document status:** Draft v1.0

@@ -1,6 +1,30 @@
 # Dynodoc: intent, current implementation and remaining work
 
-Assessment updated: 6 October 2026, including decisions 010/011, date-only provenance, the verified VPS rollout and the workspace 502 repair. This distinguishes executable functionality from longer design documents and real-host/production acceptance.
+## Current continuation: document repositories (10 October 2026)
+
+Decision [012](decisions/012-local-first-document-version-control.md) establishes
+local/remote provenance and reviewed change synchronization around all six native
+editors. Read [PRODUCT-SPEC](PRODUCT-SPEC.md), [ENGINE-EVOLUTION-PLAN](ENGINE-EVOLUTION-PLAN.md)
+and [ENGINE-EVOLUTION-HANDOFF](ENGINE-EVOLUTION-HANDOFF.md) first. Research-instrument
+and civic stage prompts are historical references, not the current product roadmap.
+
+Part 1 corrects mathematical independence/cost claims, centralizes nearest-checkpoint
+historical reads, streams historical tails and chain verification, avoids decoding
+snapshots just to check cadence, and bounds browser key-alignment work/trace while
+removing quadratic duplicate lists. Stable IDs, event formats and migrations remain
+compatible. Verification: 204 Rust tests in each repo and 274 frontend unit tests passed,
+with the affected event/snapshot tests rerun after final streaming changes. Lint,
+frontend type checks and standalone docs/OpenAPI passed. Exact publication and CI
+evidence are recorded in the evolution handoff.
+
+Next: part 2 typed content-addressed object/commit contracts and shared checkpoints,
+with legacy replay equivalence and tenant-scoped reachability/erasure tests. Complete
+offline histories/convergence, signatures/witnessing, native structural/formatting
+capture and hundreds-of-MB/load acceptance remain unfinished. This increment has
+not changed the VPS; dated production records below remain historical evidence.
+
+
+Previous deployment assessment: 6 October 2026, including decisions 010/011, date-only provenance, the verified VPS rollout and the workspace 502 repair. This distinguishes executable functionality from longer design documents and real-host/production acceptance.
 
 Production workspace 502 was traced to asset preload response headers exceeding
 Nginx's 4 KiB default buffer. Both app/admin HTTPS proxies now allow 16 KiB headers;
@@ -8,7 +32,7 @@ the identical failing workspace request passes after a validated graceful reload
 Containers remain at `8c7461d`, schema 24. CI now includes the actual proxy
 templates. [Incident and verification](WORKSPACE-502-FIX.md).
 
-## Current priority: external-editor provenance and Projects
+## Previous release record: external-editor provenance and Projects (6 October)
 
 The owner clarified on 6 October that Dynodoc is a GitHub-style provenance and
 change-sync platform around existing editors. **Word/Docs, Excel/Sheets and

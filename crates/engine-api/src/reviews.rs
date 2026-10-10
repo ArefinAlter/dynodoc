@@ -21,11 +21,11 @@ use axum::{
 };
 use engine_core::{
     governance::{self, Role},
-    materializer::{apply_payload, DocumentState, Materializer},
+    materializer::{apply_payload, DocumentState},
     similarity,
     workspace_merge::MergePlan,
 };
-use engine_shared::{DocumentId, Event, EventPayload, IdentityId, NodeId, Snapshot};
+use engine_shared::{DocumentId, EventPayload, IdentityId, NodeId};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -84,25 +84,10 @@ pub(crate) async fn state_through(
     id: Uuid,
     through_seq: i64,
 ) -> Result<DocumentState, ApiError> {
-    let snapshot = sqlx::query_as::<_, Snapshot>(
-        "select * from snapshot where document_id=$1 and through_seq<=$2 order by through_seq desc limit 1",
-    )
-    .bind(id)
-    .bind(through_seq)
-    .fetch_optional(&mut *executor)
-    .await?;
-    let tail = sqlx::query_as::<_, Event>(
-        "select * from event where document_id=$1 and seq>$2 and seq<=$3 order by seq",
-    )
-    .bind(id)
-    .bind(snapshot.as_ref().map_or(0, |s| s.through_seq))
-    .bind(through_seq)
-    .fetch_all(&mut *executor)
-    .await?;
-    match snapshot {
-        Some(s) => Materializer::from_snapshot(&s, &tail).map_err(internal),
-        None => Materializer::fold(&tail).map_err(internal),
-    }
+    engine_core::snapshot::read_state_at(executor, DocumentId(id), through_seq)
+        .await
+        .map(|at| at.state)
+        .map_err(internal)
 }
 
 /// How a pushed file relates to the revision it claims to start from: content

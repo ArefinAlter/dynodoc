@@ -1,5 +1,30 @@
 # Versioning implementation and theory
 
+## Evolution part 1 - 10 October 2026
+
+[Decision 012](decisions/012-local-first-document-version-control.md) and
+[PRODUCT-SPEC](PRODUCT-SPEC.md) define the current target. D.2 now states a conditional
+read/write/validation-footprint theorem; different target IDs alone are insufficient.
+Regression examples cover unique-name collisions and crossed structural moves.
+
+Historical batches/draft bases and review/provenance checkpoints share the core
+`read_state_at` reader: nearest snapshot at/before the exact revision, streamed
+suffix, revision/gap rejection and replay accounting. Tests compare every revision
+across checkpoint boundaries with full replay, including zero/future revisions and
+another document's checkpoints. No preceding checkpoint still means genesis replay.
+Chain verification streams events; periodic cadence checks query only sequence
+metadata. Full current-state hydration, JSON snapshots and draft bases remain.
+
+Browser block alignment now caps extra Myers search work and trace cells and uses
+linear duplicate counting followed by unique-anchor/LIS fallback. Exceeding the
+budget can retain fewer matches and require more review; it never establishes
+identity from ambiguous repeated content. Other shape matching, large-file ingest
+and service concurrency still need profiling and resource bounds.
+
+See [the handoff](ENGINE-EVOLUTION-HANDOFF.md) for exact verification/publication
+state. The following September assessment is retained as a dated baseline; its
+portable-sync limits must be read alongside subsequent proposal/recovery releases.
+
 Reviewed 21 September 2026 against `02-versioning-design-vol1.md`,
 `03-versioning-mathematics-vol2.md`, the PoC decision and the hosted-workspace extension.
 The implemented product is centralized semantic version control with human resolution

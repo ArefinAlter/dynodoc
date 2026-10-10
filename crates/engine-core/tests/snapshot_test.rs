@@ -2,8 +2,8 @@
 
 use engine_core::{
     log::append,
-    materializer::DocumentState,
-    snapshot::{SnapshotEngine, SnapshotReason},
+    materializer::{DocumentState, Materializer},
+    snapshot::{read_state_at, SnapshotEngine, SnapshotError, SnapshotReason},
 };
 use engine_shared::{DocumentId, EventPayload, IdentityId, NodeId};
 use serde_json::json;
@@ -64,6 +64,88 @@ fn field_edit(node: &NodeId, field: &str, value: &str) -> EventPayload {
         field: field.to_string(),
         value: json!(value),
     }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn historical_reads_use_only_the_nearest_earlier_checkpoint(
+    pool: PgPool,
+) -> anyhow::Result<()> {
+    let (actor, doc, node) = seed(&pool).await?;
+    let engine = SnapshotEngine::new(pool.clone());
+    for seq in 2..=9 {
+        append(
+            &pool,
+            doc,
+            &field_edit(&node, "title", &seq.to_string()),
+            actor,
+        )
+        .await?;
+        if seq == 3 || seq == 6 {
+            engine.take(doc, SnapshotReason::Periodic).await?;
+        }
+    }
+
+    // A newer checkpoint belonging to another document must never be selected.
+    let other: uuid::Uuid = sqlx::query_scalar(
+        "insert into document (title, created_by) values ('Other', $1) returning id",
+    )
+    .bind(actor.0)
+    .fetch_one(&pool)
+    .await?;
+    for seq in 1..=9 {
+        append(
+            &pool,
+            DocumentId(other),
+            &EventPayload::CommentAdded {
+                node_id: None,
+                body: seq.to_string(),
+            },
+            actor,
+        )
+        .await?;
+    }
+    engine
+        .take(DocumentId(other), SnapshotReason::Periodic)
+        .await?;
+
+    let events = sqlx::query_as::<_, engine_shared::Event>(
+        "select * from event where document_id=$1 order by seq",
+    )
+    .bind(doc.0)
+    .fetch_all(&pool)
+    .await?;
+    let mut connection = pool.acquire().await?;
+    for seq in 0..=9 {
+        let at = read_state_at(&mut connection, doc, seq).await?;
+        let expected_snapshot = if seq >= 6 {
+            6
+        } else if seq >= 3 {
+            3
+        } else {
+            0
+        };
+        assert_eq!(at.snapshot_seq, expected_snapshot);
+        assert_eq!(at.replayed_events as i64, seq - expected_snapshot);
+        assert_eq!(at.state, Materializer::fold(&events[..seq as usize])?);
+    }
+    Ok(())
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn historical_reads_reject_revisions_outside_the_history(pool: PgPool) -> anyhow::Result<()> {
+    let (_, doc, _) = seed(&pool).await?;
+    let mut connection = pool.acquire().await?;
+    for seq in [-1, 2, i64::MAX] {
+        assert!(matches!(
+            read_state_at(&mut connection, doc, seq).await,
+            Err(SnapshotError::InvalidRevision(s)) if s == seq
+        ));
+    }
+    assert_eq!(
+        read_state_at(&mut connection, doc, 0).await?.state,
+        DocumentState::default()
+    );
+    Ok(())
 }
 
 #[sqlx::test(migrations = "../../migrations")]

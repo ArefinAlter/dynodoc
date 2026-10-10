@@ -481,6 +481,52 @@ mod tests {
     }
 
     #[test]
+    fn distinct_created_ids_can_compete_for_the_same_unique_name() {
+        let base = state(vec![n("01F", NodeType::Form, None, None)]);
+        let a = created("01A", NodeType::Item, Some("01F"), Some("shared"));
+        let b = created("01B", NodeType::Item, Some("01F"), Some("shared"));
+        for (first, second) in [(&a, &b), (&b, &a)] {
+            validate_op(&base, first).unwrap();
+            validate_op(&base, second).unwrap();
+            let mut current = base.clone();
+            crate::materializer::apply_payload(&mut current, first).unwrap();
+            assert!(matches!(
+                validate_op(&current, second),
+                Err(OpError::DuplicateVarName(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn distinct_move_targets_can_share_an_acyclicity_constraint() {
+        let base = state(vec![
+            n("01F", NodeType::Form, None, None),
+            n("01A", NodeType::Section, Some("01F"), None),
+            n("01B", NodeType::Section, Some("01F"), None),
+        ]);
+        let a = EventPayload::NodeMoved {
+            node_id: NodeId("01A".into()),
+            new_parent_id: Some(NodeId("01B".into())),
+            new_pos: "a0".into(),
+        };
+        let b = EventPayload::NodeMoved {
+            node_id: NodeId("01B".into()),
+            new_parent_id: Some(NodeId("01A".into())),
+            new_pos: "a0".into(),
+        };
+        for (first, second) in [(&a, &b), (&b, &a)] {
+            validate_op(&base, first).unwrap();
+            validate_op(&base, second).unwrap();
+            let mut current = base.clone();
+            crate::materializer::apply_payload(&mut current, first).unwrap();
+            assert!(matches!(
+                validate_op(&current, second),
+                Err(OpError::MoveCreatesCycle { .. })
+            ));
+        }
+    }
+
+    #[test]
     fn node_created_rejects_illegal_containment() {
         // A choice cannot contain a section (the docs/16 example).
         let s = state(vec![

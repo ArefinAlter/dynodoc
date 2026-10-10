@@ -95,15 +95,7 @@ async fn batch(
         if base < 0 || base > latest {
             return Err(bad("Invalid starting version"));
         }
-        let prior = sqlx::query_as::<_, Event>(
-            "select * from event where document_id=$1 and seq<=$2 order by seq",
-        )
-        .bind(id)
-        .bind(base)
-        .fetch_all(&mut *tx)
-        .await?;
-        let ancestor = engine_core::materializer::Materializer::fold(&prior)
-            .map_err(|e| ApiError::Internal(e.to_string()))?;
+        let ancestor = crate::reviews::state_through(&mut tx, id, base).await?;
         let mut local = ancestor.clone();
         for op in &req.ops {
             governance::authorize(role, op, &local)?;
@@ -362,15 +354,7 @@ async fn create_draft(
         if base < 0 || base > seq {
             return Err(bad("Invalid starting version"));
         }
-        let events = sqlx::query_as::<_, Event>(
-            "select * from event where document_id=$1 and seq<=$2 order by seq",
-        )
-        .bind(id)
-        .bind(base)
-        .fetch_all(&mut *tx)
-        .await?;
-        current = engine_core::materializer::Materializer::fold(&events)
-            .map_err(|e| ApiError::Internal(e.to_string()))?;
+        current = crate::reviews::state_through(&mut tx, id, base).await?;
         base
     } else {
         seq

@@ -1,5 +1,7 @@
 # 00 · Build Reference Index & Stack Decisions
 
+> Historical research-instrument reference. The 10 October 2026 [product specification](PRODUCT-SPEC.md) and [engine evolution plan](ENGINE-EVOLUTION-PLAN.md) supersede this product scope/build order. Preserve existing history compatibility; proposed algorithms are not implementation proofs.
+
 ### How to use this series
 
 This is a numbered, sequential reference for building Dynodoc platform end to end. Each file represents one focused stage of work, in the order you should do them. They are written assuming you are working with Claude Code or a similar AI coding assistant, with **one Claude Code prompt at the top of each stage's file** that you can paste in to start.

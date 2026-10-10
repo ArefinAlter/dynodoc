@@ -282,7 +282,10 @@ impl Materializer {
         Ok(state)
     }
 
-    fn fold_into(state: &mut DocumentState, events: &[Event]) -> Result<(), MaterializeError> {
+    pub(crate) fn fold_into(
+        state: &mut DocumentState,
+        events: &[Event],
+    ) -> Result<(), MaterializeError> {
         for event in events {
             let payload: EventPayload =
                 serde_json::from_value(event.payload.clone()).map_err(|source| {

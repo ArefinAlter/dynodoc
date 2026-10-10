@@ -563,6 +563,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "engine-shared",
+ "futures",
  "insta",
  "proptest",
  "ring",

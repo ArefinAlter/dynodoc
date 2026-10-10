@@ -1,5 +1,29 @@
 # Dynodoc engineering and product handoff
 
+## Current continuation: document repositories (10 October 2026)
+
+Decision [012](decisions/012-local-first-document-version-control.md) establishes
+local/remote provenance and reviewed change synchronization around all six native
+editors. Read [PRODUCT-SPEC](PRODUCT-SPEC.md), [ENGINE-EVOLUTION-PLAN](ENGINE-EVOLUTION-PLAN.md)
+and [ENGINE-EVOLUTION-HANDOFF](ENGINE-EVOLUTION-HANDOFF.md) first. Research-instrument
+and civic stage prompts are historical references, not the current product roadmap.
+
+Part 1 corrects mathematical independence/cost claims, centralizes nearest-checkpoint
+historical reads, streams historical tails and chain verification, avoids decoding
+snapshots just to check cadence, and bounds browser key-alignment work/trace while
+removing quadratic duplicate lists. Stable IDs, event formats and migrations remain
+compatible. Verification: 204 Rust tests in each repo and 274 frontend unit tests passed,
+with the affected event/snapshot tests rerun after final streaming changes. Lint,
+frontend type checks and standalone docs/OpenAPI passed. Exact publication and CI
+evidence are recorded in the evolution handoff.
+
+Next: part 2 typed content-addressed object/commit contracts and shared checkpoints,
+with legacy replay equivalence and tenant-scoped reachability/erasure tests. Complete
+offline histories/convergence, signatures/witnessing, native structural/formatting
+capture and hundreds-of-MB/load acceptance remain unfinished. This increment has
+not changed the VPS; dated production records below remain historical evidence.
+
+
 Prepared **21 September 2026**. Baseline: `main` at
 `915b2ab36ca75c0dcdb55e9119453590b9b34935`.
 

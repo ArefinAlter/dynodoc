@@ -24,6 +24,7 @@
 //! the JSONB round-trip.
 
 use engine_shared::{DocumentId, Event, EventPayload, IdentityId};
+use futures::TryStreamExt;
 use ring::digest::{Context, SHA256};
 use serde_json::Value;
 use sqlx::PgPool;
@@ -176,20 +177,20 @@ pub async fn post_commit_snapshot(
 }
 
 /// Replay a document's log in `seq` order, recompute every hash, and confirm it
-/// matches what is stored. Linear in the number of events. Returns
+/// matches what is stored. Linear in history bytes; streams events without
+/// collecting the whole log in application memory. Returns
 /// [`EventError::ChainBroken`] naming the exact `seq` on the first inconsistency —
 /// this is the function the auditor CLI calls.
 pub async fn verify_chain(pool: &PgPool, document_id: DocumentId) -> Result<(), EventError> {
-    let events: Vec<Event> =
-        sqlx::query_as("select * from event where document_id = $1 order by seq asc")
+    let mut events =
+        sqlx::query_as::<_, Event>("select * from event where document_id = $1 order by seq asc")
             .bind(document_id.0)
-            .fetch_all(pool)
-            .await?;
+            .fetch(pool);
 
     let mut prev_chain_hash = ZERO_HASH.to_vec();
 
-    for (i, ev) in events.iter().enumerate() {
-        let expected_seq = i as i64 + 1;
+    let mut expected_seq = 1;
+    while let Some(ev) = events.try_next().await? {
         if ev.seq != expected_seq {
             return Err(EventError::ChainBroken {
                 seq: ev.seq,
@@ -230,6 +231,7 @@ pub async fn verify_chain(pool: &PgPool, document_id: DocumentId) -> Result<(), 
         }
 
         prev_chain_hash = ev.chain_hash.clone();
+        expected_seq += 1;
     }
 
     Ok(())

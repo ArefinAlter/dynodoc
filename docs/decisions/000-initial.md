@@ -1,5 +1,7 @@
 # 000 · Initial Commitments
 
+> Historical research-instrument reference. The 10 October 2026 [product specification](../PRODUCT-SPEC.md) and [engine evolution plan](../ENGINE-EVOLUTION-PLAN.md) supersede this product scope/build order. Preserve existing history compatibility; proposed algorithms are not implementation proofs.
+
 Per `docs/11-build-index-and-stack.md` ("What you should commit to up front"), these four
 answers are recorded before stage 12 and referenced repeatedly. Scope is the **Research IDE
 Proof of Concept** — public-consultation layers (stages 22–31), ML services, and the citizen

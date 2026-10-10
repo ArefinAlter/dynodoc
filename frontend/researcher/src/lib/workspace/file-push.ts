@@ -172,17 +172,25 @@ function myers(a: string[], b: string[], maxD = 4000): [number, number][] | null
     max = n + m;
   if (!max) return [];
   const offset = max + 1;
-  let v = new Int32Array(2 * max + 3);
+  const v = new Int32Array(2 * max + 3);
   const trace: Int32Array[] = [];
+  // Allow one linear scan plus bounded search work, with at most ~4 MB of trace
+  // cells. Exhaustion falls back to conservative unique anchors, not guessed IDs.
+  let remainingWork = max + 1_000_000;
+  let traceCells = 0;
   for (let d = 0; d <= Math.min(max, maxD); d++) {
+    traceCells += 2 * d + 3;
+    if (traceCells > 1_000_000) return null;
     trace.push(v.slice(offset - d - 1, offset + d + 2));
     for (let k = -d; k <= d; k += 2) {
+      if (--remainingWork < 0) return null;
       let x =
         k === -d || (k !== d && v[offset + k - 1] < v[offset + k + 1])
           ? v[offset + k + 1]
           : v[offset + k - 1] + 1;
       let y = x - k;
       while (x < n && y < m && a[x] === b[y]) {
+        if (--remainingWork < 0) return null;
         x++;
         y++;
       }
@@ -215,7 +223,6 @@ function myers(a: string[], b: string[], maxD = 4000): [number, number][] | null
         return pairs.reverse();
       }
     }
-    v = v.slice();
   }
   return null;
 }
@@ -243,15 +250,17 @@ export function matchEqual(a: string[], b: string[]): [number, number][] {
   const exact = myers(a, b);
   if (exact) return exact;
   const count = (list: string[]) => {
-    const seen = new Map<string, number[]>();
-    list.forEach((key, i) => seen.set(key, [...(seen.get(key) || []), i]));
+    // Only uniqueness matters. Repeated keys retain a sentinel, not a copied
+    // occurrence list (which made duplicate-heavy inputs quadratic).
+    const seen = new Map<string, number>();
+    list.forEach((key, i) => seen.set(key, seen.has(key) ? -1 : i));
     return seen;
   };
   const left = count(a),
     right = count(b);
   const pairs = [...left.entries()]
-    .filter(([key, at]) => at.length === 1 && right.get(key)?.length === 1)
-    .map(([key, at]) => [at[0], right.get(key)![0]] as [number, number])
+    .filter(([key, at]) => at >= 0 && (right.get(key) ?? -1) >= 0)
+    .map(([key, at]) => [at, right.get(key)!] as [number, number])
     .sort((x, y) => x[1] - y[1]);
   const kept = increasing(pairs.map((p) => p[0]));
   return pairs.filter((_, i) => kept.has(i));

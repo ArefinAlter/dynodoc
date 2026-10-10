@@ -1,19 +1,23 @@
 # Dynodoc — Cursor Agent Guide
 
-Monorepo for an append-only, hash-chained questionnaire authoring engine (Rust + PostgreSQL + SvelteKit). Read this before implementing features.
+Monorepo for an append-only, hash-chained document provenance engine (Rust + PostgreSQL + SvelteKit). Read this before implementing features.
 
-## Current owner direction (6 October 2026)
+## Current owner direction (10 October 2026)
 
-Dynodoc is a GitHub-style provenance/review/sync platform around existing editors.
-Support Word/Docs, Excel/Sheets and PowerPoint/Slides through shared provenance;
-retain the basic web editors without prioritizing Office parity. Read decisions
-010 and 011, PROJECT-STATUS.md and
-PROJECTS-PROVENANCE-RELEASE.md before continuing. Projects and portable bundles
-are authorized post-PoC increments; the original scope below remains the baseline
-for unrelated civic/CRDT/ML work. Development connector sources are not proof of
-host acceptance or marketplace publication.
+Dynodoc is a local/remote document provenance, review and synchronization platform
+around Word/Docs, Excel/Sheets and PowerPoint/Slides, with additional file adapters.
+Read docs/PRODUCT-SPEC.md, decision 012, docs/ENGINE-EVOLUTION-PLAN.md,
+docs/ENGINE-EVOLUTION-HANDOFF.md and docs/PROJECT-STATUS.md before continuing.
+Stable logical nodes contain formatting runs; run boundaries are not permanent IDs.
 
-## PoC scope (authoritative)
+Shared content storage, offline history/convergence, stronger audit commitments and
+large-document/service optimization are authorized by decision 012. The staged
+engine-evolution plan controls their build order. Keep current web editors without
+prioritizing Office parity. Legacy questionnaire/civic plans do not define the
+current product. Native connector sources are not host or marketplace acceptance.
+Update explicit handoffs/status in both repos at each increment/context boundary.
+
+## Historical PoC scope (baseline only)
 
 `docs/decisions/000-initial.md` and `docs/dynodoc_poc_prd.md` define what is **in** and **out** of scope. When in doubt, defer to those files over the full-platform build docs (stages 22–31).
 
@@ -25,7 +29,7 @@ host acceptance or marketplace publication.
 
 | Need | Read |
 |------|------|
-| Build order & stack | `docs/11-build-index-and-stack.md` |
+| Product/build order | `docs/PRODUCT-SPEC.md`, `docs/ENGINE-EVOLUTION-PLAN.md` |
 | Current stage prompt + checklist | `docs/{NN}-build-*.md` (see `.cursor/stage-map.md`) |
 | Why the engine works this way | `docs/02-versioning-design-vol1.md`, `docs/03-versioning-mathematics-vol2.md` |
 | UX principles | `docs/01-uiux-theory.md` |
@@ -56,11 +60,11 @@ task migrate-reset  # DEV ONLY — drops database
 
 ## Implementation rules
 
-1. **Build stages are sequential.** Do not skip ahead; each stage assumes prior stages are done.
+1. **Build increments respect dependencies.** Use ENGINE-EVOLUTION-PLAN.md for the current product; original numbered stages are historical references.
 2. **Migrations are immutable.** Never edit a migration that has run in any shared environment; add a new numbered file instead.
 3. **Events are append-only.** No UPDATE/DELETE on `event`; hash chain fields are NOT NULL.
 4. **Stable node IDs.** `node.id` is a ULID; never reassign.
-5. **PoC deviations** in `docs/decisions/000-initial.md` override conflicting text in full-platform docs.
+5. **Current scope** follows decision 012 and PRODUCT-SPEC.md; preserve legacy compatibility without restarting PoC product priorities.
 6. **Minimize scope.** Match existing code style; no unrelated refactors.
 
 ## Cursor assets in this repo

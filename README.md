@@ -2,14 +2,17 @@
 
 > Version control and provenance for documents edited in your own tools. Collect block changes in Projects, review and merge them, and pull a shared history into another working copy.
 
-**Current direction:** Word and Google Docs connectors have equal priority;
-further web-editor parity is deprioritized. Projects, scoped editor keys and the
-portable bundle service have a first implementation. Both connector prototypes
-support existing paragraph text; live host acceptance and marketplace publication
-remain open. [Release and limits](docs/PROJECTS-PROVENANCE-RELEASE.md) ·
-[Connector setup](extensions/README.md).
+**Current direction (10 October 2026):** Local/remote document repositories around
+Word/Docs, Excel/Sheets and PowerPoint/Slides. The target is compact change transfer,
+shared content storage, offline history, reviewed merges and verifiable provenance.
+Research instruments remain one supported adapter, not the product roadmap.
+[Product specification](docs/PRODUCT-SPEC.md) ? [Ordered implementation plan](docs/ENGINE-EVOLUTION-PLAN.md)
+? [Current handoff](docs/ENGINE-EVOLUTION-HANDOFF.md).
 
-**Status:** Hosted product under active development. Common office editing, document version workflows, supported survey logic and the admin dashboard work. Google/Resend credentials are configured; real provider and study-account acceptance and broader editor/integration parity remain open. The public-consultation platform is a future extension. **License:** [AGPL v3](LICENSE).
+**Status:** The centralized engine, Projects/review, checked proposal bundles and
+six development connectors exist. Shared object storage, a local commit DAG,
+complete offline convergence, full native format capture and large-file/service
+capacity still require implementation and acceptance. **License:** [AGPL v3](LICENSE).
 
 - [Standalone engine — MIT](https://github.com/ArefinAlter/dynodoc-engine) · [extraction and integration notes](docs/ENGINE-EXTRACTION.md)
 - [Detailed engineering and product handoff](docs/HANDOFF.md)
@@ -50,9 +53,9 @@ The system rests on an **append-only, hash-chained event log** as the system of 
 - **Typed semantic events.** Every change is an event such as `NodeCreated`, `FieldEdited`,
   `NodeMoved`, `CommentAdded`, `SuggestionProposed`, `SuggestionAccepted` — operating on nodes,
   not text.
-- **Stable-identity nodes.** Every section, item, and choice gets a **ULID** at creation that
-  never changes for the node's lifetime. Diffs and merges match by id (`O(n)`), not by
-  heuristic tree-edit distance.
+- **Stable-identity nodes.** Each supported logical node gets a **ULID** at creation that
+  never changes for the node's lifetime. Stable IDs provide exact correspondence; total merge cost also includes
+  content comparison, ordered indexes, text diff and validation.
 - **Materialized state by fold.** Current document state is derived by folding the event log;
   periodic **snapshots** pin intermediate states so reads are fast. Snapshots are derived, never
   authoritative.

@@ -2,8 +2,8 @@
 
 ### A rigorous companion — formal foundations, equations, algorithms, complexity, and the patterns we reject and why
 
-**Status:** Deep theoretical & engineering treatment
-**Companion to:** `dynodoc_versioning_protocol.md` (the design narrative). That document argued *what* to build and *why*; this one proves the claims, states the mathematics formally, gives the algorithms in full, analyzes their costs, and dissects the expensive patterns we deliberately avoid.
+**Status:** Research reference, corrected 10 October 2026. Read [PRODUCT-SPEC](PRODUCT-SPEC.md) for current requirements and [VERSIONING-CONFORMANCE](VERSIONING-CONFORMANCE.md) for implemented guarantees. CRDT/shared-DAG sections are conditional designs unless marked implemented.
+**Companion to:** `dynodoc_versioning_protocol.md` (the design narrative). That document argued *what* to build and *why*; this one develops conditional mathematics and candidate algorithms. It is not a formal verification of the Rust implementation; D.2-D.6 distinguish current behavior from proposed designs.
 
 **Reading contract.** Every non-trivial equation is followed by a plain-language gloss of *what each symbol means and why the equation says something we care about.* Diagrams are given as labeled ASCII (portable inside the document) and supplemented by rendered figures in the chat. Pseudocode is given for every algorithm we would actually implement. Complexity is stated in $O(\cdot)$ with the reasoning, not asserted.
 
@@ -308,9 +308,14 @@ $$
 
 *Explanation.* Causal delivery handles all *ordered* pairs (they're applied in their causal order everywhere). The only freedom left is *concurrent* pairs, and if those commute, then it does not matter which order each replica happens to apply them — the result is identical. Convergence again reduces to an algebraic law, this time on operations rather than on a merge function. Causal delivery is weaker than the total order OT needs (B.3) and is exactly deliverable by attaching vector clocks.
 
-### B.2.2 Why this is the family we build on
+### B.2.2 Conditional relevance to the engine
 
-CmRDTs are delta-sized by nature (an operation is small), need only causal delivery (cheap, no central referee — contrast OT's total-order server), and map directly onto our **semantic event log**: an "operation" *is* a semantic event (`PromptEdited`, `ChoiceAdded`, …). The pivotal design question of Part D is then sharp and answerable: *do our semantic events, restricted to operations on disjoint nodes, commute?* If yes, the event log is itself a CmRDT and the separate convergence library collapses into it. We will show (Part D) that disjoint-node operations commute trivially, and that the only non-commuting pairs are same-node concurrent writes — which we deliberately route to human adjudication anyway (the register-conflict decision of the design doc). This is the deep justification for that design choice: *we surface exactly the operation pairs that violate commutativity, and no others.*
+Semantic events can support operation-based replication when their complete
+concurrency, causal-delivery and duplicate-handling requirements are met. Small
+operations alone do not make an event log a CmRDT. Different target IDs can share
+read/validation dependencies; see the corrected sufficient condition in D.2.
+The current server serializes accepted events and uses three-way merge. A text/move
+CRDT remains a candidate for scoped future operations, not a shipped foundation.
 
 ## B.3 Sequence CRDTs: ordering under concurrency
 
@@ -475,7 +480,7 @@ Pijul's fix, from Mimram & Di Giusto's *A Categorical Theory of Patches* (2013),
 
 *Take (the philosophy):* model changes as **first-class, independently-applicable objects** that **commute when independent**, so that "accept this one suggestion, reject that one, in any order" is mathematically sound — the cherry-pick-by-commutation idea. This is *exactly* the property our review layer needs, and it is the categorical sibling of CmRDT commutativity (B.2.1).
 
-*Leave (the engine):* a production pushout-completion engine is rare (Pijul is the lone mature instance and is young), the maintainer talent pool is minuscule, and operational debugging of free-cocompletion machinery is forbidding for a small team. So we **implement the philosophy with CmRDT/event-sourcing machinery** (commuting semantic operations on disjoint nodes, B.2.2 and Part D) — obtaining the cherry-pick property from a checkable commutativity argument we can actually staff and debug, rather than from category theory at runtime.
+*Implementation choice.* The current engine uses semantic event sourcing and reviewed three-way merge. Independent operation footprints can justify some automatic combinations (D.2); no implemented category-theoretic or CmRDT convergence claim follows from that choice.
 
 ---
 
@@ -532,7 +537,7 @@ $$
 \text{match}(x, y) \iff \mathrm{id}(x) = \mathrm{id}(y), \qquad \text{cost } O(1) \text{ per node, } O(n) \text{ total, and \emph{exact}}
 $$
 
-*Explanation and the lesson.* We turned an $O(n^3$–$n^4)$ heuristic problem into an $O(n)$ exact lookup by *making identity a first-class property of the data model* (Part D, §D.1). This is the single highest-leverage decision in the whole system: the most expensive classical tree algorithm simply does not run, because we never have to *guess* what corresponds to what. Tree edit distance appears in this document only to be **explicitly rejected** as an avoidable expense — a paradigm of the Part C theme that *the right data-model decision deletes an entire algorithmic cost class.*
+*Qualification.* Stable identity makes correspondence exact when IDs survive. O(n) matching assumes expected O(1) indexing or compatible ordered traversal; the current ordered-map implementation and downstream text/validation work have additional costs. Imported copies may lose IDs and still require conservative heuristic matching. Identity does not delete all alignment work.
 
 ## C.2 The concurrent-move problem and its CRDT solution
 
@@ -652,25 +657,25 @@ $$
 
 *Verdict.* Rejected in favor of operation-based / delta-state sync, $O(\text{change})$ per edit.
 
-### C.3.4 Naive event sourcing without snapshots
+### C.3.4 Historical replay and the actual snapshot bound
 
-*Pattern.* Compute current state by folding the entire event log on every read (a tempting purity).
+Without checkpoints, materialization reads all preceding history bytes and applies
+all preceding events. Counting events alone assumes bounded payload and apply cost.
+Let B be decoded checkpoint bytes, T the selected suffix, and A(e) the decode/apply
+cost of event e, including indexes and content sizes. Then:
 
-*Cost.* Read cost grows without bound:
+$$\mathrm{read\ time}=O\!\left(B+\sum_{e\in T}A(e)\right).$$
 
-$$
-\text{cost to materialize current state} = O(N) \text{ in the number of events } N \text{ ever recorded}
-$$
+Checkpoint transfer, deserialization and state allocation are not O(1). Historical
+reads select the greatest checkpoint sequence no larger than the requested revision.
+Without a preceding checkpoint, replay starts at genesis. The current 500-event
+periodic threshold is best-effort background work, not a hard suffix bound; large
+batches and delayed/failed snapshot tasks can exceed it.
 
-For a long-lived instrument with thousands of events this makes every "open the questionnaire" $O(N)$ — linear decay in responsiveness over the instrument's life.
-
-*Fix we use (snapshotting).* Persist a materialized snapshot every $S$ events; a read folds only the tail since the last snapshot:
-
-$$
-\text{read cost with snapshots} = O(S) \text{ (constant in } N), \qquad \text{extra storage} = O(N/S \cdot |\text{snapshot}|)
-$$
-
-*Explanation.* Snapshot cadence $S$ trades read latency against storage: small $S$ → fast reads, more snapshot storage; large $S$ → slower reads, less storage. We tune $S$ so a read folds at most a few hundred events (sub-millisecond) and write a guaranteed snapshot at every `Deployed` event (so "the fielded version" is always $O(1)$ to retrieve). Naive snapshot-less event sourcing is the expensive pattern; snapshotted event sourcing is what we build.
+Part 1 streams historical suffixes instead of collecting them. Full state and SQL
+driver buffering remain. With a strictly enforced cadence S and bounded A(e), only
+**tail work** is O(S). Full checkpoint storage is the sum of checkpoint bytes;
+snapshotting alone does not supply structurally shared storage.
 
 ### C.3.5 Storing the fat (uncompressed) CRDT state as the system of record
 
@@ -682,7 +687,7 @@ $$
 \text{stored size} = \phi \cdot |\text{content}|, \quad \phi \gg 1 \text{ for naive encodings}
 $$
 
-*Fix we use.* Store the **columnar/binary** CRDT encoding (Automerge 2.0 / Yjs compact format) for live convergence, and the **semantic event log** (small, $\sim$150–400 B/event) as the system of record. Never persist the fat JSON.
+*Candidate design.* A future live CRDT would use its compact native encoding with a versioned durability contract. The current engine stores semantic event payloads and full JSON checkpoints; it does not persist a live Yjs/Automerge cache. Large payloads and full-field fallbacks must be included in size measurements.
 
 ### C.3.6 Three-way *text* merge on serialized structured documents (the git-on-JSON trap)
 
@@ -714,12 +719,12 @@ $$
 | Pessimistic locking | $1/(d{+}2r)$ throughput; no offline | Unusable in the field (chooses C over A) | Optimistic CRDT replication |
 | Central total-order (OT) | $+r$/edit; SPOF; no offline ordering | Server-bound; violates availability | CmRDT + optional relay |
 | Pure state-based sync | $O(k\,|s|)$ bandwidth | Cripples low-bandwidth field links | Op-based / delta-state |
-| Snapshot-less event sourcing | $O(N)$ per read | Linear responsiveness decay | Snapshotted fold, $O(S)$ |
+| Snapshot-less event sourcing | $O(N)$ per read | Linear responsiveness decay | Checkpoint bytes plus suffix work (C.3.4) |
 | Fat CRDT-JSON as record | $\phi\,|content|$ storage | Order-of-magnitude bloat | Binary CRDT + semantic log |
 | Git line-merge on JSON | spurious conflicts + silent ref-breakage | Researcher-facing markers; broken forms | Semantic merge + integrity pass |
 | Hand-rolled sequence CRDT | long correctness tail | Prompt corruption under concurrency | Adopt Yjs/Automerge/Loro |
 
-*The unifying principle of the catalogue:* **reject any pattern whose dominant cost scales with the wrong quantity** — document size instead of edit size, total history instead of recent tail, or that trades away the availability CAP forced us to keep. Every rejection above is an instance of that single rule, and every replacement restores the correct scaling.
+*Engineering objective.* Avoid unnecessary repeated document/history work. Initial ingest and full verification necessarily inspect input/history bytes; incremental edits should touch changed content and affected dependencies. These are workload-specific goals, not claims that every implemented path already has those bounds (D.4).
 
 ---
 
@@ -755,111 +760,116 @@ $$
 
 *Explanation.* The first invariant is the tree property the move CRDT (C.2) maintains. The second is the questionnaire's grammar (a choice cannot contain a section). The third is the referential-integrity contract (C.3.6's silent-breakage class made into an enforced invariant): every variable referenced in a relevance/constraint/calculation must exist, and the reference graph must be acyclic (no item's visibility may depend, transitively, on itself). **Identity being a ULID independent of position, content, and varName is the load-bearing decision** — it is what made matching $O(n)$ exact (C.1.3) and what makes the commutativity proof below clean.
 
-## D.2 The operation set and the commutativity theorem
+## D.2 Operations, dependencies and conditional commutativity
 
-Our semantic operations (the events) are listed in the design document; abstractly each is a function $o: \Sigma \to \Sigma$ on instrument states, tagged with a target node id $\mathrm{tgt}(o)$ and a target field $\mathrm{fld}(o)$ (for content ops). The central claim:
+**Corrected 10 October 2026.** Different target IDs/fields alone do not imply
+independence. Model a validated operation as a deterministic partial transformation.
+Let R_i include every location consulted by its effect or validation, including
+ancestor paths, unique-name indexes, references, policy and ordering constraints.
+Let W_i include every location it can change. Footprints must conservatively cover
+both possible execution orders, not only accesses observed on the original state.
 
-**Theorem (disjoint-node commutativity).** For any two operations $o_1, o_2$ with $\mathrm{tgt}(o_1) \ne \mathrm{tgt}(o_2)$, or with $\mathrm{tgt}(o_1) = \mathrm{tgt}(o_2)$ but $\mathrm{fld}(o_1) \ne \mathrm{fld}(o_2)$,
+**Sufficient-condition theorem.** If both operations are initially valid, each
+preserves the declared invariants, all validity dependencies are represented in R,
+there are no unmodelled side effects/nondeterminism, and
 
-$$
-o_1 \circ o_2 = o_2 \circ o_1.
-$$
+$$W_1\cap(R_2\cup W_2)=\varnothing,\qquad W_2\cap(R_1\cup W_1)=\varnothing,$$
 
-*Proof.* Each content operation reads and writes only the single field $(\mathrm{tgt}(o), \mathrm{fld}(o))$. If the targets differ, or the targets agree but the fields differ, then $o_1$ and $o_2$ touch **disjoint locations** of the state record. Writes to disjoint memory commute: the value left at $o_1$'s location is the same whether $o_2$ ran before or after, and vice versa, and neither reads the other's location. Hence $o_1 \circ o_2$ and $o_2 \circ o_1$ produce identical states. Structural operations (`ItemAdded`, `ChoiceAdded`) on distinct fresh ULIDs likewise write disjoint new locations and commute; an addition and a content-edit to a *different* node commute for the same disjointness reason. $\blacksquare$
+then each remains valid after the other and their content transformations commute.
 
-*Explanation and why this is the keystone.* Recall (B.2.1) that an operation-based CRDT converges iff **concurrent operations commute** under causal delivery. The theorem says **all our operations on disjoint (node, field) locations commute** — which is the overwhelming majority of real concurrent editing (two researchers working on different items, or on different fields of the same item). Therefore, restricted to disjoint locations, **our semantic event log *is* a CmRDT**: attach vector clocks (A.2.3) for causal delivery, and convergence is guaranteed by this theorem with no separate CRDT machinery. This answers the design document's central open question (its §X.3) in the affirmative *for the disjoint case.*
+*Proof.* Neither operation changes values used to compute or validate the other.
+Both therefore compute the same writes and remain valid in either order. Disjoint
+writes leave the same final values, and all other locations remain unchanged.
+This proves content-state equivalence, not equality of serialized audit sequences,
+sequence numbers, timestamps or chain heads.
 
-**The non-commuting residue, characterized exactly.** The proof's hypotheses fail in precisely one situation: $\mathrm{tgt}(o_1) = \mathrm{tgt}(o_2)$ **and** $\mathrm{fld}(o_1) = \mathrm{fld}(o_2)$ — two concurrent writes to the *same field of the same node* (e.g. two different rewordings of one prompt, or two different new relevance expressions for one item). For these, generally $o_1 \circ o_2 \ne o_2 \circ o_1$, so they are *not* CmRDT-convergent and must be handled by one of:
+*Counterexamples to the former theorem.* Two fresh IDs can compete for the same
+unique variable name. Moving A under B and B under A is independently valid but
+jointly cyclic. Deleting a parent can invalidate insertion at another target ID.
+Shared style changes can affect formatting on other nodes. The implementation
+contains regressions for uniqueness and crossed moves; complete cross-format
+footprint inference is still planned.
 
-$$
-\textbf{(a) RichText fields:}\quad \text{embed a sequence CRDT (B.3) in the field} \Rightarrow \text{the two edits commute \emph{within} the text CRDT.}
-$$
-$$
-\textbf{(b) register fields (type, constraint, relevance, varName):}\quad \text{surface a same-field conflict for human decision (four-card).}
-$$
+Independent already-valid scalar assignments are a useful special case. Overlap
+of conservative footprints does not prove conflict: some overlapping operations
+commute under more specific semantics. Supported text/format merge rules and human
+review handle the remaining cases. Review is not exactly the complement of a
+mathematically characterized commuting set.
 
-*Explanation — the design's deepest coherence.* The set of operation pairs we route to human adjudication is **exactly** the set that violates commutativity, and **no others.** This is not an arbitrary product choice; it is forced by the algebra. For prose fields we restore commutativity by nesting a text CRDT (so co-editing a prompt converges automatically). For high-consequence scalar fields we *deliberately decline* to impose an artificial commutative rule (like last-writer-wins), because any such rule would silently pick a winner for, say, two different skip-logic expressions — and silently mis-merging skip logic corrupts a study. So we surface it. **The architecture thus partitions all concurrency into "provably commutes → converge automatically" and "provably doesn't → ask a human," with the boundary drawn by the commutativity theorem itself.** That is the rigorous core the narrative gestured at and could not state.
+CmRDT convergence also requires causal delivery, duplicate handling, stable identity
+and a proof for every supported concurrent pair. The centralized log and three-way
+merge do not establish those conditions. The product requires offline replicas to
+agree on verified accepted commits and recorded resolutions; that does not promise
+automatic intention-preserving merging of arbitrary native editor changes.
 
-## D.3 The layered architecture and its consistency argument
+## D.3 Implemented consistency and the target architecture
 
-```
-┌──────────────────────────────────────────────────────────────────────────┐
-│ L4  GOVERNANCE      roles · proposal lifecycle · approval policy           │
-│                     operates on PROPOSED events; gates folding             │
-│                     property: no event becomes canonical without policy    │
-│                     satisfaction (capability checked AT THE FOLD)          │
-├──────────────────────────────────────────────────────────────────────────┤
-│ L3  AUDIT/HISTORY   append-only, content-addressed, hash-linked log of     │
-│                     SEMANTIC events + periodic snapshots                   │
-│                     property: tamper-evident (Merkle chain, A: git model); │
-│                     read = O(S) via snapshots (C.3.4)                      │
-├──────────────────────────────────────────────────────────────────────────┤
-│ L2  CONVERGENCE     within a draft: CmRDT (disjoint ops, D.2 theorem) +    │
-│                     embedded text CRDTs (RichText) + move CRDT (C.2) for   │
-│                     reparenting + fractional index (B.3.5) for sibling     │
-│                     order.  property: Strong Eventual Consistency (A.3.2)  │
-├──────────────────────────────────────────────────────────────────────────┤
-│ L1  MERGE ENGINE    between drafts only: semantic 3-way merge over         │
-│  (deferred to V2)   identified nodes (O(n), C.1.3) + referential-integrity │
-│                     pass (D.1 invariant) + four-card for same-field clash  │
-└──────────────────────────────────────────────────────────────────────────┘
-```
+Today, PostgreSQL serializes document writes. The API checks current permissions,
+validates operations and appends canonical events transactionally. Replay follows
+that accepted order. Three-way merge compares identified ancestor/team/local states
+and surfaces unsupported overlaps. Governance acts at the write/accept boundary;
+historical replay is not an independent authority deciding access again.
 
-**Consistency argument, layer by layer.**
+The former layered diagram described proposed text/move CRDT components. They are
+not implemented. Independently SEC components do not by themselves prove preservation
+of shared structural/formatting invariants; composition needs its own argument.
 
-- **L2 within a draft is SEC.** Disjoint-node ops commute (D.2 theorem) ⇒ CmRDT convergence (B.2.1); RichText nests a no-interleaving sequence CRDT (B.3.4); reparenting uses the Isabelle-verified move CRDT (C.2.3); sibling order uses fractional indexing (B.3.5). Every sub-structure is independently SEC, and a product of SEC components, synchronized by the same causal channel, is SEC. Same-field register clashes are *escalated*, not silently merged (D.2(b)) — the one place we exchange automatic convergence for correctness, by design.
-- **L3 is a tamper-evident, $O(S)$-readable record.** Content-addressing + hash-linking (git's model, A/B.6.2 colimit kinship) gives integrity; snapshots bound read cost (C.3.4). The log is the system of record; the CRDT state is a cache of it.
-- **L4 never touches merge.** Governance gates *folding* of proposed events; it is a predicate over (event, policy, capabilities), evaluated at the fold, with every decision itself an event in L3. This realizes the concurrency/governance separation (the design doc's Part III) as a strict layering: L2 converges, L4 governs, and they share only the L3 log.
-- **L1 runs only between drafts**, where human adjudication is expected, and is the sole component carrying the (small, on our trees) move-CRDT and semantic-merge cost; it is deferred to V2, so V1's consistency rests entirely on L2–L4.
+The target adds immutable shared objects, commit parents, local branches and atomic
+remote refs. Replicas agree by receiving the same verified history and resolutions.
+Realtime CRDT components can be introduced for explicitly supported operations after
+semantics and compatibility testing. See [the staged plan](ENGINE-EVOLUTION-PLAN.md).
 
-## D.4 Per-operation complexity
+## D.4 Complexity: implementation versus target
 
-With $n$ = nodes in the instrument (tens–hundreds), $S$ = snapshot cadence, $\mathrm{depth}$ = tree height (3–4), $L$ = length of an ordered list (tens):
+Let B be document-state bytes, n nodes, h tree depth, H history bytes, W shingles
+and D text edit distance. These are not small fixed constants for large documents.
 
-| Operation | Complexity | Note |
+| Operation | Current cost/constraint | Qualification |
 |---|---|---|
-| Local content edit (prompt/constraint/…) | $O(1)$ amortized | write one field + append one event |
-| Insert item/choice (fractional index) | $O(1)$ typical, $O(L)$ on rebalance | B.3.5 |
-| Reorder sibling | $O(1)$ (rewrite one key) | B.3.5 |
-| Reparent (move) | $O(k\cdot\mathrm{depth})$, $k$=concurrent later moves | C.2.4; $k,\mathrm{depth}$ small ⇒ ~$O(1)$ |
-| Materialize current state (read) | $O(S)$ | snapshot + tail fold, C.3.4 |
-| Referential-integrity pass | $O(n + E)$, $E$=reference edges | parse expressions, check graph |
-| Match nodes for 3-way merge | $O(n)$ exact | stable-id equality, C.1.3 (vs $O(n^3)$ tree-edit) |
-| Semantic 3-way merge (L1) | $O(n + E)$ | per-node field merge + integrity pass |
-| Detect concurrency of two edits | $O(\#\text{replicas})$ | vector-clock compare, A.2.3 |
-| Sync one edit (delta/op) | $O(|\delta|) \approx O(\text{edit size})$ | B.1.3 / B.2 |
+| Hash-link append | O(payload bytes) plus database/index work | Only combining fixed-size digests is O(1); request hydration/validation/locking adds work. |
+| Current/historical materialization | Checkpoint bytes plus suffix decode/apply work | Historical suffix streamed in part 1; no preceding checkpoint means genesis. |
+| Full snapshot | At least O(B) time and stored bytes | Shared bounded objects are planned. |
+| Stable-ID merge/diff | Whole-state clones/comparisons, ordered-map lookups, depth-based sorting and text diff | Identity avoids tree-edit matching, not all superlinear implementation costs. |
+| Rust text diff | Myers O((a+b)D) time, O(a+b) auxiliary space | Deadline with approximation; hashing/encoding and multiple containers add work. |
+| Browser key alignment | Linear frontier plus bounded extra search/trace; unique-anchor fallback expected O(n + u log u) for u unique anchors | Part 1 removes copied duplicate lists; other shape-matching paths still need budgets. |
+| Copy fingerprint | O(W log W) time and O(W) working memory | Stored signature caps do not bound temporary shingles. |
+| Integrity validation | Expression parsing, ordered indexes, graph traversal and cycle reporting | Count expression bytes, log factors and reported cycles; not unconditional O(n+E). |
+| Whole-chain verification | O(H) time; event stream plus current-payload/driver working memory | Part 1 removes application buffering of the full log; trusted-head limitations remain. |
+| Event inclusion proof | Linear server construction; logarithmic proof length | Persisted/cached trees and independently committed roots remain planned. |
 
-*Explanation.* Every hot-path operation is $O(1)$ or near it on our problem sizes; the only superlinear classical algorithm (tree-edit matching) is engineered away to $O(n)$ by stable identity; the only potentially-costly CRDT primitive (move) is cheap because our trees are small. **There is no operation whose cost scales with total history on the hot path** (reads are $O(S)$, not $O(N)$) — the unifying anti-pattern rule of C.3.8, satisfied throughout.
+Key-alignment bounds count comparisons; hashing/equality also depend on key bytes.
+Document locks, SQL round trips, draft bases and full-state hydration still affect
+service cost. No claim that every hot path is independent of history size. Measure
+end-to-end latency, memory, storage/transfer amplification and concurrent writers.
 
 ## D.5 Storage growth
 
-Let $N$ = total events over the instrument's life, $\bar{e}$ = mean event size ($\approx$150–400 B), $S$ = snapshot cadence (events/snapshot), $|\mathrm{snap}|$ = snapshot size ($\approx$50–200 KB).
+Current storage includes event payload bytes P, full checkpoint sizes B_j, full
+draft bases D_k, retained original uploads/assets U and indexes/receipts I:
 
-$$
-\text{log storage} = N \cdot \bar{e}
-$$
-$$
-\text{snapshot storage} = \frac{N}{S}\cdot |\mathrm{snap}|
-$$
-$$
-\text{total} = N\Big(\bar{e} + \frac{|\mathrm{snap}|}{S}\Big)
-$$
+$$\mathrm{stored\ bytes}=O\!\left(P+\sum_j B_j+\sum_k D_k+U+I\right).$$
 
-*Explanation and the cadence optimization.* The first term (log) is irreducible — it *is* the audit trail, and it is cheap ($N \cdot \bar e \approx$ a few MB even for thousands of edits, A.7 of the narrative). The second term (snapshots) is a knob: read latency is $O(S)$, snapshot storage is $O(1/S)$, so choosing $S$ trades the two. Minimizing total cost+latency gives an interior optimum; in practice we fix $S$ so a tail fold is sub-millisecond (a few hundred events) and force a snapshot at every `Deployed` event (so the fielded version is $O(1)$ to fetch and permanently pinned). At our scale total storage is single-digit GB/year per active institution — the audit-maximalist design is, as claimed, economically free (narrative Part VII), and here is the formula that shows it: both terms are linear in $N$ with tiny constants, and $N$ itself is small because instruments are small and finite-lived.
+K similarly sized full checkpoints contribute O(KB). Manual versions/deployments
+also create checkpoints. Compact events do not remove this term. Former small
+questionnaire estimates of 150-400 bytes/event and low annual institutional costs
+are not capacity evidence for large rich documents and media.
 
-## D.6 What the rigor changed
+The planned shared-object model in E.5 instead stores unique reachable content and
+asset bytes plus manifests/history metadata and optional originals. Substantial
+rewrites and changed opaque assets still add substantial unique data. A Merkle root
+alone does not supply deduplication or this storage bound.
 
-Stating the mathematics did not merely decorate the earlier design; it *altered and sharpened* it in three concrete ways worth surfacing:
+## D.6 What the corrected argument establishes
 
-1. **The human-adjudication boundary is now derived, not chosen.** D.2 proves that the exact set of operations we route to the four-card decision is the complement of the commuting set. The product behavior ("surface same-field scalar clashes, auto-merge everything else") is *forced* by the commutativity theorem — a far stronger justification than "it seemed safer."
+1. Stable identity removes matching ambiguity where identity survives imports.
+   Name/content similarity remains a heuristic requiring explicit binding.
+2. Independence includes reads, writes and shared validation constraints. Overlap
+   can require review; it is not an exact characterization of semantic conflict.
+3. Replay, merge, distributed convergence and independently witnessed provenance
+   are separate claims with separate proof and test obligations.
+4. Payload size, depth, history length and output size belong in complexity bounds.
+   The former small-instrument assumptions do not cover the current product target.
 
-2. **The event log is shown to *be* a CmRDT on the disjoint case**, which means the design document's biggest open question — can the log double as the convergence engine and let us drop a separate CRDT dependency for the common case — is answered yes for disjoint-node edits, with the residue (same-field clashes) handled by nested text CRDTs and four-card. This is a genuine architectural simplification that only the proof revealed.
-
-3. **Every rejected pattern now has a cost formula** (C.3) rather than a verdict, so the choices are auditable by a skeptical systems reviewer: locking and central-OT are rejected by CAP-forced availability; pure-state and snapshot-less and fat-JSON by wrong-quantity scaling; git-line-merge by the textual-vs-semantic correctness gap; hand-rolled CRDTs by the correctness tail. The unifying rule — *reject any pattern whose dominant cost scales with the wrong quantity, or that trades away availability* — is now stated and applied uniformly.
-
-The design stands where it did, but it now stands on proofs and cost formulas rather than on names of theorems. That was the gap, and this companion closes it.
-
----
 ---
 
 # Part E — Merkle structures: the mathematics of the audit guarantee
@@ -972,52 +982,54 @@ $$
 \end{array}
 $$
 
-*Explanation and our composition.* We use **all three, each where its costs win**: the *log* is a chain (append-dominated, $O(1)$); each *snapshot* carries a Merkle *tree* root for $\log n$ inclusion proofs; and the *instrument state* is a content-addressed *DAG* so that successive snapshots and Tier-2 alternative versions **share unchanged subtrees by hash** rather than re-storing them (E.5). The design narrative's loose "Merkle DAG" was right in spirit for the instrument model but wrong as a blanket term for the log; this taxonomy is the correction.
+*Implementation status.* The current log is a chain and snapshots carry node Merkle
+roots, but snapshot state is full JSONB. No shared content-addressed state DAG is
+implemented. The table describes abstract structures with bounded objects, not
+measured endpoint costs. The event-proof endpoint rebuilds its tree from history;
+a logarithmic proof path does not imply logarithmic server construction.
 
-## E.5 Content-addressing and deduplication — the storage bound of D.5, derived
+## E.5 Planned content-addressing and structural sharing
 
-Make every node of the instrument tree addressed by the hash of its content (including the hashes of its children):
+Address immutable typed objects using domain-separated hashes of canonical bytes,
+schema version and child references. Keep logical identity separate from content
+address. Within an authorized storage domain, many commit roots can reuse identical
+objects. This is the target, not the current JSONB snapshot representation.
 
-$$
-\mathrm{addr}(v) = H\big(\mathrm{fields}(v) \;\Vert\; \mathrm{addr}(c_1)\Vert\cdots\Vert\mathrm{addr}(c_m)\big), \quad c_j = \text{children of } v
-$$
+For a persistent tree of bounded-size objects, a changed leaf creates objects along
+its root paths and reuses unrelated subtrees. One changed path costs O(depth) new
+objects; byte cost also includes changed content and all copied object bytes. Huge
+child arrays or unchunked paragraphs violate the bounded-object assumption. Chunked
+content/assets and persistent child indexes are required for large-document bounds.
+Multiple edits cost their affected path union plus changed bytes.
 
-Two consequences follow immediately and they are the ones Part D.5 assumed without proof:
+Canonicalization, tenant isolation, atomic publication, reachability/erasure and
+legacy replay equivalence are acceptance gates before claiming these storage gains.
 
-**Deduplication.** Identical content has identical address, so it is stored once. If two snapshots (or the canonical draft and a Tier-2 alternative) share a subtree $T$ unchanged, both reference the same $\mathrm{addr}(T)$; the bytes of $T$ are not duplicated.
+## E.6 Integrity, signatures and independent commitments
 
-**Structural sharing / the cost of a new snapshot.** Editing one field of one node $v$ changes $\mathrm{addr}(v)$, hence the addresses of its ancestors up to the root, and *only* those — every sibling subtree keeps its address and is shared. So a snapshot taken after a single edit costs only the path from the edited node to the root:
+Digests verify bytes relative to trusted digests. Without an independently retained
+head, a chain alone cannot reveal replacement of the whole history by its operator.
+Current content hashes bind type, target, payload and server actor identity; they
+do not bind every timestamp, transport detail or access-control operation.
 
-$$
-\text{incremental snapshot storage} = O(\mathrm{depth}) \text{ new nodes}, \quad \text{not } O(n)
-$$
+Future signed envelopes must bind repository identity, schema, parents, state root
+and provenance claims. A signature establishes control of a key under a stated trust
+model. It does not prove which human typed text, that capture observed every edit,
+or that a client clock is accurate. Rotation, revocation and distinguishing observed
+from inferred activity remain necessary.
 
-*Explanation.* This is the persistent-data-structure trick (the same one behind immutable maps and git's own efficiency): unchanged structure is shared by reference, changed structure is copied along one root-path. With our depth of 3–4, a snapshot after an edit allocates a handful of new node objects, not a copy of the whole instrument. This is the formal justification for D.5's claim that snapshot storage is cheap and that keeping many snapshots (one per deployment, plus periodic) is affordable — *most of each snapshot is shared with its predecessor by hash.* The earlier document asserted "deduplication" as a git inheritance; here it is derived from content-addressing and quantified at $O(\mathrm{depth})$ per snapshot.
+Client-pinned or witnessed heads can make rewrites, truncation and equivocation
+detectable relative to retained commitments. That is conditional detection, not
+physical prevention of deletion or unconditional non-repudiation. Signed/witnessed
+heads and binding event-proof roots into independent commitments remain planned.
 
-## E.6 What Merkle structure does *not* give, and the signature layer
+## E.7 Implementation and acceptance boundaries
 
-Honesty about scope, paralleling the tamper-evidence-vs-resistance caveat of E.2.1:
-
-- Merkle structure gives **integrity relative to a trusted root**, not **authenticity of authorship**. It proves "this history hashes to $r$," not "Dr. Rahman authored event $e$." Authorship needs **digital signatures**: each governance decision (accept/reject) and each `Deployed` event is signed by its actor's key, $\sigma = \mathrm{Sign}_{sk}(h_i)$, verifiable with the public key. The hash chain then binds the signature to all prior history.
-- Merkle structure gives **detection**, not **prevention** (E.2.1). Prevention of silent rewrite needs an external anchor for the head: a signed, timestamped head deposited with a party the institution trusts (an internal append-only audit service, or an external timestamping/transparency log). For the most regulated customers this is the difference between "we can show the record wasn't altered" and "the record could not have been altered without our knowing," and the design should make heads *signable and externally anchorable* even if V1 only signs locally.
-
-$$
-\textbf{integrity} \Leftarrow \text{Merkle root}; \qquad \textbf{authenticity} \Leftarrow \text{signatures over hashes}; \qquad \textbf{non-repudiation/prevention} \Leftarrow \text{externally anchored signed head}
-$$
-
-*Explanation.* The three properties stack: the Merkle root makes the history self-certifying against a trusted digest; signatures over the chained hashes attribute each link to an actor and make alteration of *attributed* history forge-resistant; anchoring the signed head externally removes the last gap (a custodian rewriting their own log and republishing). This is the full cryptographic basis for an audit trail that survives scrutiny in an IRB amendment or a data-management-plan review — and it is layered so V1 can ship with hashes-and-local-signing and add external anchoring only for the institutional tier that demands it.
-
-## E.7 What Part E changed
-
-Stating this rigorously did three things the loose treatment could not:
-
-1. **The audit guarantee is now reduced to a named cryptographic assumption** (second-preimage / collision resistance of SHA-256), with a proof, rather than asserted as "tamper-evident." A skeptical reviewer can check the reduction.
-
-2. **The three Merkle shapes are disentangled** (chain for the log, tree for snapshots/inclusion proofs, DAG for the content-addressed instrument), correcting the narrative's blanket "Merkle DAG," each placed where its cost profile wins (E.4 table).
-
-3. **D.5's storage claims are derived, not assumed** — deduplication and the $O(\mathrm{depth})$ incremental-snapshot bound fall out of content-addressing (E.5), and the $O(\log n)$ inclusion proof (E.3.2) shows integrity verification is viable on the same thin, intermittent links that drove the CRDT choice — tying the audit tier back to the offline-first thesis of Part A.
-
-The scope caveats (E.2.1, E.6) also sharpen the roadmap: Merkle structure is necessary but not sufficient for the strongest audit claims, and the signature/anchoring layer is the named addition the institutional tier will require.
+A chain, a tree and shared object storage solve different problems. The engine has
+hash-linked history and snapshot node roots, with streamed chain verification in
+part 1. Shared state objects, independently committed event-proof roots, signed
+receipts and external witnessing remain future work. New formats must bind their
+canonicalization, schema and trust assumptions explicitly and retain legacy readers.
 
 ## Appendix — equation index (where each is introduced)
 
@@ -1041,14 +1053,14 @@ The scope caveats (E.2.1, E.6) also sharpen the roadmap: Merkle structure is nec
 - Zhang–Shasha forest recurrence + $O(n^3$–$n^4)$ + $O(n)$ id-match — C.1.2–C.1.3
 - Move-CRDT full pseudocode + convergence + $O(k\cdot\mathrm{depth})$ — C.2.2–C.2.4
 - Expensive-pattern cost formulas + summary table — C.3
-- Disjoint-node commutativity theorem + proof — D.2
+- Conditional read/write/validation-footprint theorem + proof — D.2
 - Per-operation complexity table — D.4
-- Storage-growth equations + cadence optimization — D.5
+- Current full-state storage growth and planned sharing — D.5
 - Cryptographic hash assumptions (pre-image / 2nd-preimage / collision) — E.1
 - Hash-chain construction + tamper-evidence theorem and proof — E.2
 - Merkle tree construction + domain separation + O(log n) inclusion proof — E.3
 - Chain vs tree vs DAG cost table — E.4
 - Content-addressing, deduplication, O(depth) incremental snapshot — E.5
-- Integrity / authenticity / prevention layering — E.6
+- Integrity, signatures and conditional rewrite detection — E.6
 
-*End of the rigorous companion. Read alongside `dynodoc_versioning_protocol.md`: that document is the argument; this one is the proof, the cost accounting, and the algorithms in full.*
+*End of the research reference. Read PRODUCT-SPEC, VERSIONING-CONFORMANCE and the evolution handoff for current requirements, implementation evidence and open work.*

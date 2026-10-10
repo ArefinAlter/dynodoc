@@ -9,12 +9,35 @@ import {
   downloadName,
   exportOrder,
   matchScore,
+  matchEqual,
   planPush,
   readOrigin,
   revisionFromName,
   titleFromName,
   wordDiff
 } from './file-push';
+
+describe('bounded block alignment', () => {
+  it('keeps all equal repeated blocks on the linear matching path', () => {
+    const blocks = Array<string>(25_000).fill('same');
+    const pairs = matchEqual(blocks, blocks);
+    expect(pairs).toHaveLength(blocks.length);
+    expect(pairs[0]).toEqual([0, 0]);
+    expect(pairs.at(-1)).toEqual([24_999, 24_999]);
+  });
+
+  it('uses unique anchors when large different sequences exhaust the search budget', () => {
+    const left = [...Array<string>(20_000).fill('left'), 'anchor', 'repeat', 'repeat'];
+    const right = [...Array<string>(20_000).fill('right'), 'anchor', 'repeat', 'repeat'];
+    expect(matchEqual(left, right)).toEqual([[20_000, 20_000]]);
+  });
+
+  it('retains monotonic anchors and does not guess duplicate identity after fallback', () => {
+    const left = [...Array<string>(20_000).fill('left'), 'A', 'B'];
+    const right = [...Array<string>(20_000).fill('right'), 'B', 'A'];
+    expect(matchEqual(left, right)).toEqual([[20_000, 20_001]]);
+  });
+});
 
 const ROOT = '01J00000000000000000000000';
 const ids = Array.from({ length: 6 }, (_, i) => `01J0000000000000000000000${i + 1}`);
