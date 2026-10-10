@@ -2,7 +2,7 @@
 
 ## Source increment: Projects front page and member profiles (10 October 2026)
 
-The current working tree implements the owner's Projects-first interface: minimal
+Application `6f1ac21` and engine `8eef6dd` implement the Projects-first interface: minimal
 profiles visible only to shared Project members, repository file lists, read-only
 file previews, per-file main/private-draft selection, pull requests, history and
 recovery, with the existing editors under a separate Web editor tab. Migration
@@ -10,35 +10,49 @@ recovery, with the existing editors under a separate Web editor tab. Migration
 are limited to 3,000,000 bytes in the browser, API and conversion/import services.
 Derived provenance envelopes and expanded archive safety budgets are separate.
 
-Verification in progress: standalone engine lint, all 233 Rust tests and API
-generation pass (rustdoc retains existing link warnings). All 282 frontend unit
-tests pass, with clean Svelte/ESLint checks. Profile tests cover absent/shared/
+Both source commits are pushed to main. All 233 Rust tests pass in each repository;
+standalone lint, docs and API generation pass (rustdoc retains existing link
+warnings). All 282 frontend unit tests, 16 public and 67 signed-in browser tests
+pass, with clean Svelte/ESLint/format/build checks. Profile tests cover absent/shared/
 removed membership, disabled accounts, email omission, stale saves and preserved
 names after sign-in. Upload tests cover exact 3 MB, excess bytes, request-body
 bounds and denied writers without extra stored uploads. Matching Rust/migrations
 and API schemas are mirrored into the standalone engine.
 
-Both focused production-mode browser journeys pass: external edits/review/revocation
+The production-mode browser journeys include external edits/review/revocation
 and profile setup, multiple files, file moves, draft comparison, merge, historical
 native download and selected recovery. Desktop/mobile layouts were inspected and
-table contrast fixed. Visual inspection then removed the editing ribbon from the
-read-only Word preview; its final build check is pending. Account erasure now clears
-the added bio; the extended erasure test passes in the standalone engine.
+table contrast fixed. The final read-only Word preview has no editing ribbon;
+its build and browser assertion pass. Account erasure clears the bio and invalidates
+the profile revision, with a passing regression. Production Nginx configuration
+tests pass for Projects, profile and file routes, including the large auth-header
+fixture. Source CI: [application Rust](https://github.com/ArefinAlter/dynodoc/actions/runs/38061246753),
+[frontend and signed-in stack](https://github.com/ArefinAlter/dynodoc/actions/runs/38061246764),
+[standalone engine](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38061236800).
 
-Engine `a5c8eda` is pushed with green CI; its erasure follow-up and the application
-source are being committed. Full application browser regression is in progress.
-Local API admin tests require ADMIN_EMAILS before starting the API; a launch missing
-that variable caused admin-page failures. Application Rust passed 232 non-timing
-checks; its existing 100 ms SSE assertion failed locally under load, whereas the
-identical standalone serial and CI suites passed. Keep the assertion unchanged.
-Next: inspect final source CI, refresh this evidence, stop owned local test services
-and remove only the labelled disposable database. No new source is deployed yet.
+Local admin failures from starting the API without ADMIN_EMAILS and reusing a
+rate-limited synthetic account were resolved in the isolated test environment.
+The unchanged 100 ms SSE test also passes in a quiet local run and both source CI
+suites. All owned API/web servers are stopped; the labelled disposable database
+and its volume are removed. Existing local containers were preserved.
+No new source is deployed yet.
 Project-wide portable branches/commits remain part 3; current drafts belong to one
 file. Shared checkpoint writes remain disabled and part 2 storage work is pending.
 The schema-25 deployment described below is still the live release.
 Rollout must include matching API/web and the converter byte cap, migration 0026,
 a fresh backup and a rehearsed schema-compatible rollback. See
 [workspace release details](PROJECTS-WORKSPACE-RELEASE.md).
+
+Continue in this order:
+
+1. Roll out schema 26 after a fresh backup and compatible rollback rehearsal;
+   verify matching API/web/converter behavior without sending real invitations.
+2. Complete installed-host acceptance for Word/Docs, Excel/Sheets and
+   PowerPoint/Slides. Development packages and browser tests are not host approval.
+3. Resume part 2 bounded values/assets, compression/incremental publication and
+   shared draft/version references. Then implement part 3 portable commits/parents,
+   project-wide branches and resumable exchange; retain the fidelity, offline,
+   independent audit and measured-scale gates in the evolution plan.
 
 ## Deployment handoff: history and editor installations (10 October 2026)
 

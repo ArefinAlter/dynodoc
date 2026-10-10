@@ -1,16 +1,25 @@
 # Dynodoc: intent, current implementation and remaining work
 
-## Working increment: Projects first (10 October 2026)
+## Source complete: Projects first (10 October 2026)
 
-In progress, not deployed: repository-style Projects/files, private member profiles,
-per-file main/draft navigation, pull requests, history/recovery and a separate Web
-editor tab. Default sign-in and homepage actions open Projects. Test uploads are
-capped at 3,000,000 original bytes, with backend enforcement. Standalone Rust lint
-and 233 tests, 282 frontend unit tests and Svelte checking pass. Final signed-in
-browser/visual verification is underway, including the file picker and recovery.
-See the current [handoff](ENGINE-EVOLUTION-HANDOFF.md). Project-wide portable
-branches/commits and the remaining part 2 storage optimizations are still pending.
+Application `6f1ac21` and standalone engine `8eef6dd` are pushed to main with green
+source CI. Projects/files are now the default signed-in workspace, with member-only
+profiles, per-file main/draft navigation, pull requests, history/recovery and a
+separate Web editor tab. Test uploads are capped at 3,000,000 original bytes, with
+backend enforcement. Account erasure clears the added profile metadata.
 
+Verification: 233 Rust tests in each repository, 282 frontend unit tests, 16 public
+and 67 signed-in browser tests pass, as do lint/build and Nginx header regressions
+for the new routes. Desktop/mobile and dark file previews were inspected. Owned
+local test servers are stopped and the labelled disposable database is removed.
+This source increment is not yet deployed; the schema-25 release below remains live.
+
+Next: a controlled schema-26 rollout with matching API/web/converter builds, fresh
+backup and compatible rollback rehearsal; installed-host acceptance for all six
+editors; then bounded values/assets and shared draft/version references in part 2,
+followed by portable project-wide commits/branches and resumable exchange in part 3.
+See the [handoff](ENGINE-EVOLUTION-HANDOFF.md) and
+[workspace release record](PROJECTS-WORKSPACE-RELEASE.md).
 
 ## Current deployment: history and six-editor test packages (10 October 2026)
 

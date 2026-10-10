@@ -47,18 +47,28 @@ native exports retain the existing supported-format fidelity limits.
 
 ## Verification and release state
 
-Standalone engine source `a5c8eda` is on main and its CI is green. Local engine lint,
-all 233 Rust tests, docs generation and OpenAPI generation pass; rustdoc reports
-existing link warnings. Frontend unit tests: 282 pass. Profile authorization and
-exact/oversize upload integration tests pass. Both production-mode Project browser
-journeys pass, including external proposals/revocation and profile/files/drafts/
-merge/native history/recovery. Desktop/mobile layouts were inspected; the file table
-passes Axe contrast and mobile overflow checks. The read-only Word preview's editing
-ribbon was removed after visual inspection and is receiving the final build check.
+Application source `6f1ac21` and standalone engine `8eef6dd` are on main with green
+source CI. All 233 Rust tests pass in each repository, including the unchanged SSE
+timing assertion and extended account-erasure check. Local engine lint, docs and
+OpenAPI generation pass; rustdoc reports existing link warnings. Frontend lint,
+format, production build, 282 unit tests, 16 public browser tests and all 67
+signed-in browser tests pass. Profile authorization and exact/oversize upload
+integration tests pass.
 
-Application Rust tests passed 232 checks with the existing 100 ms SSE assertion
-isolated after local timing failures. Standalone serial and CI suites pass that
-same assertion. Full application browser regression and source CI are still pending.
+Project browser journeys cover external proposals/revocation and profile/files/
+drafts/merge/native history/recovery. Desktop/mobile and dark file previews were
+inspected; the file table passes Axe contrast and mobile overflow checks. The final
+read-only Word preview hides the editing ribbon, with a browser regression.
+Actual Nginx configuration tests pass for workspace, Projects, profile, Project and
+file routes, plus a 9,601-byte synthetic auth-header fixture.
+
+Source CI: [application Rust](https://github.com/ArefinAlter/dynodoc/actions/runs/38061246753),
+[frontend and authenticated stack](https://github.com/ArefinAlter/dynodoc/actions/runs/38061246764),
+[standalone engine](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38061236800).
+Owned local API/web servers are stopped and the labelled disposable database and
+volume are removed. Initial local admin setup/rate-limit and load-sensitive timing
+failures were resolved; the full source CI passes without weakening assertions.
+
 This source increment is **not deployed**. The VPS remains on application `536a448`,
 schema 25. Keep its validated backup and compatible rollback release; rehearse a
 schema-26-compatible rollback before replacing this deployment. No production data,
