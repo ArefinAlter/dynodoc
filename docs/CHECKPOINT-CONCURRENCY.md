@@ -62,8 +62,9 @@ the preceding transaction, then proves that the queued API writer is forbidden
 and no event is appended. Existing audited-erasure, stale-edit, project/access,
 hash/codec and snapshot compatibility suites remain required.
 
-Application fmt/Clippy, all 226 Rust tests and unchanged OpenAPI pass. Standalone
-checks and source/browser CI are pending; current publication results belong in
+Both repositories pass fmt/Clippy, all 226 Rust tests and unchanged OpenAPI.
+Standalone documentation passes with existing Rustdoc link warnings. Source/browser
+CI passed; verified runs and source commits are recorded in
 [the handoff](ENGINE-EVOLUTION-HANDOFF.md).
 
 ## Measurement contract

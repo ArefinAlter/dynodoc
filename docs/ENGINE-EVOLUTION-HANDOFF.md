@@ -2,9 +2,9 @@
 
 ## Part 2d: concurrent content writes during checkpoints (10 October 2026)
 
-The lock audit, implementation, targeted regressions and controlled measurement are
-complete locally. Application full checks pass; standalone checks and publication/CI
-are pending. Shared writes remain opt-in. No new migration, event/codec/hash bytes,
+Part 2d is complete, synchronized and pushed to both main branches. Full local
+checks and source CI passed in both repositories, including application browser
+workflows. Shared writes remain opt-in. No new migration, event/codec/hash bytes,
 HTTP schema or VPS deployment; schema 25 remains required for mixed readers.
 
 ### Implementation and correctness
@@ -36,9 +36,12 @@ observes a real lock wait, commits membership revocation, and verifies that the
 queued API writer is forbidden without appending any event. Existing access,
 erasure, merge, snapshot, codec/corruption and stale-write suites still pass.
 
-Standalone source is synchronized. Its full lint/test/docs/OpenAPI checks are
-running; source and browser CI remain pending. MIT packaging and immutable
-migrations are unchanged. No real Microsoft/Google host acceptance was performed.
+Standalone task lint, all 226 Rust tests, task docs and unchanged OpenAPI pass.
+Rustdoc retains 16 core / 4 API pre-existing link warnings. All seven changed Rust
+files and all 22 immutable migrations match byte-for-byte. MIT packaging remains
+unchanged. Source CI passed all 226 Rust tests in each repository. Application
+frontend CI passed 274 unit tests, 16 public browser tests and 62 signed-in workflows,
+including the production proxy regression. No real native-host acceptance was run.
 
 Controlled core benchmark: separate fresh databases, identical 8,000 fixed-ID
 blocks / 6.4 MB initial state, ten concurrent actor transactions. Prior entry lock
@@ -70,13 +73,25 @@ historical artifacts keep their previous append_lock_wait_ms meaning.
 
 ### Publication and environment
 
-Starting app c64a9ff; standalone 11399df. Publication and remote CI pending.
-Owned disposable container dynodoc-evolution-part2d-20261010 on loopback 5553 holds
-isolated tests and two synthetic benchmark databases. Remove it and its volume
-once checks pass, validating label/port; retain unrelated local services. Logs are
-in system temp and the two synthetic JSON artifacts are tracked. No API/web test
-servers started. No VPS deployment; last recorded production remains 8c7461d,
-schema 24, plus the documented Nginx repair.
+Starting app c64a9ff; standalone 11399df. Both implementation commits are pushed
+to main; this documentation follow-up records completed checks without changing
+the tested source.
+Owned container dynodoc-evolution-part2d-20261010 and its disposable volume were
+removed after label/loopback-port verification. Existing dynodoc-postgres and
+margin-qdrant remain running. Logs are in system temp; two synthetic JSON artifacts
+are tracked. No local API/web servers started and no VPS deployment. Last recorded
+production remains 8c7461d, schema 24, plus the documented Nginx repair.
+
+Publication:
+
+- Application source: `c19dbdab8c4e0e724e6510cf475fa97fcd9a56ac`.
+- [Application Rust CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38048638516): passed, 226 tests.
+- [Application frontend/browser CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38048638534): passed, 274 unit tests, 16 public browser tests and 62 signed-in workflows.
+- Standalone source: `cc12b29e0197304cdfebb86ee1c16d5653b800e4`.
+- [Standalone engine CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38048849334): passed, 226 tests.
+- Final engine handoff/status: `b05796fb85003ee6f87278853d8d1d57a5bd5d2c`;
+  [final checkout CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38049284279)
+  passed. Source is unchanged from the verified implementation commit.
 
 ## Part 2c: bounded database batches (10 October 2026)
 
