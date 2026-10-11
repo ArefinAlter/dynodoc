@@ -4,6 +4,11 @@
 codec with normal mixed-format readers and a gated automatic writer. This is not
 the future portable commit protocol. Event and legacy JSONB formats are unchanged.
 
+Part 2f adds a separate [streaming byte-content format](CHUNKED-CONTENT.md) to the
+same document-scoped store. It is not yet referenced by these v1 state graphs;
+the limits and gated v1 publication below still apply. Typed checkpoint integration,
+shared draft/version references and complete bounded-state reconstruction remain.
+
 ## Contract
 
 Objects have a canonical JSON envelope `{ "version": 1, "object": ... }`.

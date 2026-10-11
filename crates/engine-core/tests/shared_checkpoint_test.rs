@@ -63,6 +63,89 @@ async fn object_count(pool: &PgPool, doc: DocumentId) -> i64 {
         .unwrap()
 }
 
+#[sqlx::test(migrations = "../../migrations")]
+async fn chunked_content_reuses_objects_and_rolls_back_without_publishing(
+    pool: PgPool,
+) -> anyhow::Result<()> {
+    use engine_core::shared_checkpoint::content;
+    let (_, document, _) = seed(&pool).await?;
+    let data: Vec<u8> = (0..content::CHUNK_BYTES * 33 + 19)
+        .map(|n| (n.wrapping_mul(193) >> 8) as u8)
+        .collect();
+    let mut tx = pool.begin().await?;
+    let root;
+    {
+        let mut store = PgStore::new(&mut tx);
+        let (first, stats) = content::write(
+            &mut store,
+            document,
+            &mut data.as_slice(),
+            Limits::default(),
+        )
+        .await?;
+        assert!(stats.new_objects > 0);
+        let (again, reused) = content::write(
+            &mut store,
+            document,
+            &mut data.as_slice(),
+            Limits::default(),
+        )
+        .await?;
+        assert_eq!(first, again);
+        assert_eq!(reused.new_objects, 0);
+        let mut output = Vec::new();
+        content::read_into(&mut store, document, &first, &mut output, Limits::default()).await?;
+        assert_eq!(data, output);
+        // Content roots are not v1 state roots and cannot be mistaken for one.
+        assert!(read_state(&mut store, document, &first, Limits::default())
+            .await
+            .is_err());
+        assert!(matches!(
+            content::read_into(
+                &mut store,
+                DocumentId(uuid::Uuid::new_v4()),
+                &first,
+                &mut tokio::io::sink(),
+                Limits::default()
+            )
+            .await,
+            Err(Error::Missing(_))
+        ));
+        root = first;
+    }
+    tx.rollback().await?;
+    assert_eq!(object_count(&pool, document).await, 0);
+    let mut tx = pool.begin().await?;
+    let (committed, _) = content::write(
+        &mut PgStore::new(&mut tx),
+        document,
+        &mut data.as_slice(),
+        Limits::default(),
+    )
+    .await?;
+    assert_eq!(root, committed);
+    tx.commit().await?;
+    let mut connection = pool.acquire().await?;
+    assert_eq!(
+        content::read_into(
+            &mut PgStore::new(&mut connection),
+            document,
+            &root,
+            &mut tokio::io::sink(),
+            Limits::default()
+        )
+        .await?,
+        data.len() as u64
+    );
+    let manifests: i64 =
+        sqlx::query_scalar("select count(*) from shared_checkpoint where document_id=$1")
+            .bind(document.0)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(manifests, 0); // only a future owning commit may publish this root
+    Ok(())
+}
+
 // Deliberately pause the real publisher at its manifest INSERT, after graph
 // verification but before commit. No timing guess or production test hook.
 #[sqlx::test(migrations = "../../migrations")]
@@ -831,6 +914,18 @@ async fn scope_immutability_and_audited_erasure_are_preserved(pool: PgPool) -> a
         Err(Error::Missing(_))
     ));
     postgres::take(&pool, other, 1, Limits::default()).await?;
+    // New streaming content shares the exact same immutability/erasure boundary.
+    for document in [doc, other] {
+        let mut tx = pool.begin().await?;
+        engine_core::shared_checkpoint::content::write(
+            &mut PgStore::new(&mut tx),
+            document,
+            &mut b"retained asset".as_slice(),
+            Limits::default(),
+        )
+        .await?;
+        tx.commit().await?;
+    }
     let other_count = object_count(&pool, other).await;
     for query in [
         "update checkpoint_object set bytes=bytes where document_id=$1",

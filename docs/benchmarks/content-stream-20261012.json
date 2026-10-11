@@ -1,0 +1,47 @@
+{
+    "date":  "2026-10-12",
+    "platform":  "Windows x64; Rust 1.96.0 release; single-thread Tokio runtime",
+    "measurement":  "OS process peak working set sampled every 25 ms, not allocator or whole-service memory; one run per input",
+    "limitations":  "Highly repetitive synthetic bytes from AsyncRead to sink; MemoryStore retains only unique objects. No Office file parsing, database, network, concurrency, throughput percentile or user-capacity claim.",
+    "results":  [
+                    {
+                        "encoded_bytes":  104938465,
+                        "input_bytes":  104857600,
+                        "new_objects":  5,
+                        "read_bytes":  104857600,
+                        "read_ms":  78.6579,
+                        "root":  "70fde31c396d0fa924aa0136cb927581eb84ef660a247d9fe9767ffded15e07d",
+                        "stored_bytes":  73860,
+                        "visited_objects":  1615,
+                        "workload":  "repeated byte 0x5a; generated input; sink output; MemoryStore",
+                        "write_ms":  163.0673,
+                        "peak_working_set_bytes":  5951488
+                    },
+                    {
+                        "encoded_bytes":  262346024,
+                        "input_bytes":  262144000,
+                        "new_objects":  5,
+                        "read_bytes":  262144000,
+                        "read_ms":  171.1239,
+                        "root":  "268cae0c89fc26444b6f43b599b4a5bc3b81ab3bb6b524b1aad4aedd5a680a68",
+                        "stored_bytes":  73340,
+                        "visited_objects":  4034,
+                        "workload":  "repeated byte 0x5a; generated input; sink output; MemoryStore",
+                        "write_ms":  420.8708,
+                        "peak_working_set_bytes":  5537792
+                    },
+                    {
+                        "encoded_bytes":  524691915,
+                        "input_bytes":  524288000,
+                        "new_objects":  5,
+                        "read_bytes":  524288000,
+                        "read_ms":  352.9561,
+                        "root":  "2a2519c35835b2246760e8c95739a7bd8a57087729931abd4be9c14cf4cd46ad",
+                        "stored_bytes":  75860,
+                        "visited_objects":  8065,
+                        "workload":  "repeated byte 0x5a; generated input; sink output; MemoryStore",
+                        "write_ms":  849.971,
+                        "peak_working_set_bytes":  5533696
+                    }
+                ]
+}

@@ -1,0 +1,30 @@
+{
+  "description": "Independent Python hashlib/struct vectors; never regenerate to hide codec drift.",
+  "vectors": [
+    {
+      "name": "empty",
+      "length": 0,
+      "leaf_hash": "deab0dfe346fbe01cd4c0ea188efde080f9955af0a3c5d92317326f85ee21252",
+      "root_hash": "69a1b380f10b93e0cbd6e8beba542db092bc9ef9f77b318fac3928b4f272743d"
+    },
+    {
+      "name": "abc",
+      "length": 3,
+      "leaf_hash": "8f22e45354b67cfba782c6e6b4e4aba115d051556595c05de40de564334cf578",
+      "root_hash": "aceba39008a6603ee25aa6821bf13d976662c49f5e00a1c43294bfba6c91d654"
+    },
+    {
+      "name": "full",
+      "length": 65536,
+      "leaf_hash": "044426f488057ccfd65ae0a0b6cb896b04239adf236073876d1542a2861d542e",
+      "root_hash": "3ccce7b3a91d805f560d7e70e046af25d440725c64e64ccf7e3d71c62bc4d34d"
+    },
+    {
+      "name": "two_chunks",
+      "length": 65537,
+      "branch_hex": "44594e4f434e540001020100000000000100010002044426f488057ccfd65ae0a0b6cb896b04239adf236073876d1542a2861d542e0000000000010000dbfc4f0789c56823b1ea9474f35dabdc87f5bb385d7f69141450f7af441effaf0000000000000001",
+      "branch_hash": "156f3fddb44ce42e7ad6e22f14f081983d80bc30a06f3041c568874a8b07f3f2",
+      "root_hash": "4310c3fea492392653c469c13e9236d8611de2b1091d62f3d9d3200031d7a8af"
+    }
+  ]
+}

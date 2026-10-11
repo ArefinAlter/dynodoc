@@ -4,6 +4,8 @@ These are developer/test installations, not marketplace listings. Deploy the mat
 Dynodoc API and web build before using them; the default server is
 https://app.dynodoc.online. A source release alone does not update that server.
 Make a disposable copy of a small supported file and add it to a Dynodoc Project.
+Use [the acceptance worksheet](ACCEPTANCE.md) to record actual host results;
+installing a package or passing browser tests alone is not host acceptance.
 
 ## Microsoft Word, Excel and PowerPoint
 
@@ -84,7 +86,7 @@ For a staging server, use HTTPS with a certificate trusted by the editor. Replac
 the workspace origin in **all** URLs of each Office manifest; replace
 `DYNODOC_ORIGIN` in the Google host's `Code.gs` and its `urlFetchWhitelist` in
 `appsscript.json`. Do not disable TLS checks. The approval link is generated from
-that same origin. Use a matching API/web build, migrations through 0026 and your
+that same origin. Use a matching API/web build, migrations through 0029 and your
 normal email sign-in configuration. Public shared-checkpoint writes stay opt-in.
 
 ## Publication

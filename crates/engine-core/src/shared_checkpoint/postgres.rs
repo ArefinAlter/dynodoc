@@ -5,7 +5,7 @@ use sqlx::{PgConnection, PgPool, Postgres, QueryBuilder};
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{
-    decode, read_state, write_state, Address, Error, Limits, ObjectStore, WriteStats,
+    read_state, validate_stored, write_state, Address, Error, Limits, ObjectStore, WriteStats,
     READ_BATCH_OBJECTS, WRITE_BATCH_BYTES, WRITE_BATCH_OBJECTS,
 };
 use crate::{log::ZERO_HASH, materializer::DocumentState, snapshot::read_legacy_state_at};
@@ -89,7 +89,7 @@ impl ObjectStore for PgStore<'_> {
         self.prefetched.clear();
         let mut unique = BTreeMap::new();
         for (address, bytes) in objects {
-            decode(address, bytes)?;
+            validate_stored(address, bytes)?;
             if let Some(prior) = unique.insert(address.as_str(), bytes.as_slice()) {
                 if prior != bytes {
                     return Err(Error::HashMismatch);
@@ -173,7 +173,7 @@ impl ObjectStore for PgStore<'_> {
         address: &Address,
         bytes: &[u8],
     ) -> Result<bool, Error> {
-        decode(address, bytes)?;
+        validate_stored(address, bytes)?;
         self.write_queries += 1;
         let result = sqlx::query(
             "insert into checkpoint_object(document_id,address,bytes) values($1,$2,$3)

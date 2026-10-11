@@ -79,10 +79,11 @@ for (const host of ['google-docs', 'google-sheets', 'google-slides']) {
       strToU8((await readFile(extensions + host + '/' + name, 'utf8')).replaceAll('\r\n', '\n')),
       { mtime: new Date(1980, 0, 1) }
     ];
-  entries['INSTALL.md'] = [
-    strToU8((await readFile(extensions + 'INSTALL.md', 'utf8')).replaceAll('\r\n', '\n')),
-    { mtime: new Date(1980, 0, 1) }
-  ];
+  for (const name of ['INSTALL.md', 'ACCEPTANCE.md'])
+    entries[name] = [
+      strToU8((await readFile(extensions + name, 'utf8')).replaceAll('\r\n', '\n')),
+      { mtime: new Date(1980, 0, 1) }
+    ];
   const bytes = zipSync(entries, { level: 9 });
   const path = packages + host + '.zip';
   if (process.argv.includes('--check')) {

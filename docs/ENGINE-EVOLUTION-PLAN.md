@@ -7,7 +7,8 @@ at application `858801c`, schema 29 (11 October 2026). See the
 The API uses restricted runtime credentials; snapshot verification, project rules,
 browser policy and bounded workload admission have passed CI and VPS acceptance.
 
-Resume part 2 below: bounded text/value/asset chunks and shared historical references,
+Part 2f now provides the [streaming byte-content primitive](CHUNKED-CONTENT.md).
+Resume part 2 below: integrate typed text/value/asset manifests and shared historical references,
 then portable local/project commits. Request admission is not a full-state memory
 bound; independent audit part 6, native-host acceptance and large-service limits
 remain open. Shared periodic checkpoint writes remain off.
@@ -114,6 +115,14 @@ The locally installed PowerPoint 2021 fails the current connector API prerequisi
 Word/Excel inventory alone is not runtime acceptance.
 
 ## Part 2 design gate and first implementation slice
+
+Part 2f adds an internal binary byte-content tree, 64 KiB chunks, bounded 128-way
+frontier/traversal and operation budgets, with memory and transactional PostgreSQL
+stores. It preserves v1 state roots and default publication. This is the byte
+foundation; typed node/value/asset references, bounded semantic reconstruction and
+versioned checkpoint publication remain before shared draft/version adoption.
+See [the format, limits and acceptance](CHUNKED-CONTENT.md). It does not mark part 2
+complete or authorize enabling periodic shared writes.
 
 Specify immutable typed objects for text/format runs, logical-node properties,
 ordered children, assets and commit manifests. Keep stable identity separate from

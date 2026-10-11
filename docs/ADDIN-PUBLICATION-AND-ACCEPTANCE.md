@@ -81,6 +81,11 @@ the newer shape APIs. The existing edited-file workflow is the older-host fallba
 
 ## Acceptance matrix and procedure
 
+The [native acceptance worksheet](https://github.com/ArefinAlter/dynodoc/blob/main/extensions/ACCEPTANCE.md) provides a run record,
+synthetic test contents and thirteen reproducible cases for all three editor pairs.
+It is included in each Google test ZIP. On 11 October the document-control connector
+again reported no connected document sessions; runtime acceptance remains pending.
+
 Use disposable files no larger than 3,000,000 bytes and two permitted test identities.
 Keep credentials and document contents out of committed evidence. Record status as
 not run, failed (with reason), or passed; manifest validation is a separate result.

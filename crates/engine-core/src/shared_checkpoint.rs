@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use crate::materializer::{CommentState, DocumentState, MaterializedNode, SuggestionState};
 
 pub(crate) mod canonical;
+pub mod content;
 pub mod postgres;
 use canonical::ObjectRef;
 
@@ -69,6 +70,8 @@ pub enum Error {
     HashMismatch,
     #[error("checkpoint codec: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("checkpoint content I/O: {0}")]
+    Io(#[from] std::io::Error),
     #[error("checkpoint database: {0}")]
     Db(#[from] sqlx::Error),
     #[error("checkpoint history: {0}")]
@@ -173,7 +176,7 @@ impl ObjectStore for MemoryStore {
         address: &Address,
         bytes: &[u8],
     ) -> Result<bool, Error> {
-        decode(address, bytes)?;
+        validate_stored(address, bytes)?;
         let key = (document.0, address.clone());
         if let Some(existing) = self.objects.get(&key) {
             if existing != bytes {
@@ -286,6 +289,16 @@ fn decode(expected: &Address, bytes: &[u8]) -> Result<Object, Error> {
     Ok(envelope.object)
 }
 
+// New content objects occupy the same document-scoped store, but have a separate
+// version/hash domain. V1 state readers still require only v1 checkpoint objects.
+fn validate_stored(expected: &Address, bytes: &[u8]) -> Result<(), Error> {
+    if bytes.starts_with(content::MAGIC) {
+        content::validate(expected, bytes)
+    } else {
+        decode(expected, bytes).map(|_| ())
+    }
+}
+
 #[derive(Debug, Default, Clone, Copy)]
 pub struct WriteStats {
     pub visited_objects: usize,
@@ -313,6 +326,10 @@ impl<S: ObjectStore + Send> Writer<'_, S> {
             return Err(Error::Limit("objects"));
         }
         let (address, bytes) = canonical::encode(object, self.budget.max_bytes)?;
+        self.encoded(address, bytes).await
+    }
+
+    async fn encoded(&mut self, address: Address, bytes: Vec<u8>) -> Result<Address, Error> {
         self.budget.consume(bytes.len())?;
         self.stats.visited_objects += 1;
         self.stats.encoded_bytes += bytes.len();
