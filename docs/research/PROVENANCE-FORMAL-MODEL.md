@@ -5,7 +5,7 @@
 **Status:** internal research draft, 10 October 2026. This file describes the
 *vision* of Dynodoc, not the current code. Section 12 lists how the current code
 differs. Do not publish it: the patent items in `docs/OPEN-RESEARCH-REGISTER.md`
-(L1–L5) still apply.
+(L2–L3) still apply.
 
 **Corrections:** writing the proofs required 14 changes to this model (deletes
 are no longer recursive, text order is a successor function, same-anchor

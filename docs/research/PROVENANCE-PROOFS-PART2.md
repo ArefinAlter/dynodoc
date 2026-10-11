@@ -1,7 +1,7 @@
 # Provable Provenance for Documents — Part 2: The Remaining Proofs
 
 **Status:** internal research draft, 10 October 2026. Do not publish. The patent
-items in `docs/OPEN-RESEARCH-REGISTER.md` (L1–L5) still apply.
+items in `docs/OPEN-RESEARCH-REGISTER.md` (L2–L3) still apply.
 
 Part 1 ([`PROVENANCE-PROOFS.md`](PROVENANCE-PROOFS.md)) proved G1–G4 and listed
 what was still open in its Section 9. This part closes those items, and two

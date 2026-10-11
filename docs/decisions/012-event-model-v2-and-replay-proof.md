@@ -2,7 +2,7 @@
 
 **Status: proposed draft for owner review. Not accepted.** Nothing here changes
 code, migrations or stored history until the owner accepts it. Keep this internal:
-the patent items in `OPEN-RESEARCH-REGISTER.md` (L1–L5) still apply.
+the patent items in `OPEN-RESEARCH-REGISTER.md` (L2–L3) still apply.
 
 10 October 2026.
 
@@ -18,8 +18,9 @@ much cheaper to fix it before launch than after. Today's model has these gaps:
    and field-edit events. "Who wrote this sentence?" is wrong after them.
 3. **The node table and replay disagree for choices.** `ChoiceRemoved` sets
    `deleted = true` in the node table, but replay keeps the choice live and puts
-   it in `removed_choices`. Re-adding an existing choice succeeds in replay but
-   fails as a duplicate insert in the table.
+   it in `removed_choices`. (Re-adding a removed choice is rejected earlier, by
+   validation, with `NodeExists`. This was found by reading code; a regression
+   test is still needed.)
 4. **Document metadata is outside the chain.** Title and settings are plain
    updates, so replay cannot rebuild them.
 5. **Edits are not fully reversible from the log.** `FieldEdited` does not keep
@@ -129,7 +130,8 @@ only new node types and nesting rules, not new event types.
     identities. The importer is the recorder.
   - File timestamps are stored in the payload as claims, not as event time.
   - Outside the guarantee: anything the importer cannot represent (see the
-    LibreOffice findings L1–L6 in the ID report), plus threads, resolved
+    LibreOffice findings L1–L6 in the ID engine report, which is kept outside
+    the repo), plus threads, resolved
     comments and smart chips lost by Google's export.
 
 ### 8. Normalization
@@ -198,7 +200,7 @@ These are bugs under the current model:
   `NodeDeleted`, `ChoiceRemoved`).
 - Make `between()` reject `a >= b`, and fix the trailing-space case: today
   `between("m", "m ")` returns `"m O"`, which sorts after `"m "`.
-- Add the projection property test (L6) for the current 16 types.
+- Add the projection property test (L6) for the current 15 types.
 
 ## Rollout, one PR each
 
@@ -230,7 +232,8 @@ These are bugs under the current model:
 ## Consequences
 
 - Storage grows because deletions and previous values are stored. Measure this
-  on the footprint corpus before step 5.
+  on a synthetic footprint corpus before step 5 (the generator from the ID
+  engine report is kept outside the repo).
 - The OpenAPI schema and the change-bundle protocol (decision 010) need v2 event
   shapes.
 - Readers must support v1 and v2 forever. Tests must cover both.

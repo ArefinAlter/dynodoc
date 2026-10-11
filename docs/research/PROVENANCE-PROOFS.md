@@ -1,7 +1,7 @@
 # Provable Provenance for Documents — Part 1: Proofs of G1–G4
 
 **Status:** internal research draft, 10 October 2026. Do not publish. The patent
-items in `docs/OPEN-RESEARCH-REGISTER.md` (L1–L5) still apply.
+items in `docs/OPEN-RESEARCH-REGISTER.md` (L2–L3) still apply.
 
 This part proves four guarantees of the model in
 [`PROVENANCE-FORMAL-MODEL.md`](PROVENANCE-FORMAL-MODEL.md) (Part 0):
