@@ -1,6 +1,31 @@
 # Versioning implementation and theory
 
-## Current audit boundary - 11 October 2026
+## Current source boundary - 12 October 2026
+
+[Typed checkpoints](TYPED-CHECKPOINTS.md) chunk large strings/values and share
+objects across opt-in periodic checkpoints, [draft bases](SHARED-DRAFT-BASES.md)
+and [named/deployed/public snapshots](SHARED-NAMED-SNAPSHOTS.md). Verified mixed
+readers preserve legacy history. These writers still inspect full state and
+reconstruction remains resident; encoded/semantic budgets are operation limits,
+not a total-history quota or a global constant-memory guarantee.
+
+[Local project history](PORTABLE-PROJECT-HISTORY.md) now has durable SQLite
+commits, parent graphs, branches, transfer primitives and conservative project
+comparison. [Ref receipts](REF-RECEIPTS.md) provide signed envelopes, independent
+signature vectors and separate client pins with rotation/revocation. Account
+binding, server issuance, remote transport/review, witnesses and native adoption
+remain open. Source/CLI tests are not deployed or installed-host acceptance.
+
+Cached iterative parent depths bound the structural diff ordering step to
+O(N log N) time and O(N) auxiliary metadata with BTree collections. This does
+not bound all text matching, full-state clones, validators or end-to-end merge.
+The conditional read/write/validation-footprint theorem below remains the
+independence condition; different IDs alone remain insufficient.
+
+See the [current handoff](ENGINE-EVOLUTION-HANDOFF.md) and
+[acceptance ledger](ROADMAP-ACCEPTANCE.md) for evidence and remaining work.
+
+## Deployed audit boundary - 11 October 2026
 
 Schema 0028 adds immutable legacy snapshots/receipts and checked serving paths.
 Old snapshots require explicit replay backfill; API/CLI audits independently

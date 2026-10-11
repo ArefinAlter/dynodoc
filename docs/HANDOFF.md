@@ -1,6 +1,6 @@
 # Dynodoc engineering and product handoff
 
-Current bounded-encoding and desktop-distribution work is tracked in
+Current shared storage, local project history, client audit and editor work is tracked in
 [ENGINE-EVOLUTION-HANDOFF.md](ENGINE-EVOLUTION-HANDOFF.md). Projects-first work is in that record
 and [PROJECTS-WORKSPACE-RELEASE.md](PROJECTS-WORKSPACE-RELEASE.md). Those records
 supersede older interface/upload-limit descriptions below: profiles are visible
@@ -10,24 +10,26 @@ for the separate live deployment state.
 
 
 Latest live release: `858801c`, schema 29; [security/runtime evidence and compatible rollback](operations/2026-10-11-security-runtime-release.md).
-Resume bounded chunk storage/shared historical references from the
+Resume authenticated project transport, storage optimization and editor integration from the
 [current handoff](ENGINE-EVOLUTION-HANDOFF.md), alongside
 [desktop acceptance/publication](ADDIN-PUBLICATION-AND-ACCEPTANCE.md).
 Installer/auth scope: [connector distribution contract](CONNECTOR-PAIRING-AND-INSTALLATION.md).
 
-## Current continuation (10 October 2026)
+## Current continuation (12 October 2026)
 
 Continue from [the engine evolution handoff](ENGINE-EVOLUTION-HANDOFF.md) and
-[project status](PROJECT-STATUS.md). Parts 2b-2e add mixed checkpoint readers,
-gated periodic writes, bounded database batches and compatible content-writer
-locks and bounded borrowed encoding. Publication still scans full state; shared writes
-remain off by default. The handoff records
-current verification, publication, measured limitations and the next task.
+[project status](PROJECT-STATUS.md). Source now includes typed chunked state,
+shared draft and named/deployed/public references, durable local multi-file
+history/branches, and signed receipts with separate client trust journals.
+Publication still scans full state; shared writes remain off by default. The
+[acceptance ledger](ROADMAP-ACCEPTANCE.md) separates these capabilities from
+authenticated remote integration, complete offline/native behavior and load acceptance.
 The latest owner clarification adds [historical recovery](HISTORY-RECOVERY.md):
 permission-checked old-revision downloads and selected private recovery drafts.
 Revision-range revert/cherry-pick and supported native historical exports are now
-deployed. Portable commit-addressed commands remain future work; bounded storage
-stays next, alongside installed-host acceptance.
+deployed. Local commit/state reads and comparison commands exist; project-wide
+commit-addressed revert/cherry-pick and remote review remain future integration.
+Storage optimization and installed-host acceptance also remain open.
 The dated entries below preserve earlier increments.
 
 ## Previous increment: shared checkpoints (10 October 2026)

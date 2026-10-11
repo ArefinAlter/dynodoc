@@ -3,7 +3,7 @@
 Current release: [security/runtime rollout](operations/2026-10-11-security-runtime-release.md).
 Browser and request bounds: [contract and limitations](BROWSER-AND-WORKLOAD-SECURITY.md).
 
-Updated 11 October 2026. Dynodoc is document version control and provenance around
+Updated 12 October 2026. Dynodoc is document version control and provenance around
 existing editors. Start with the current contract, not the original questionnaire
 or public-consultation stage prompts.
 
@@ -15,12 +15,17 @@ or public-consultation stage prompts.
 | Accepted direction and scope precedence | [Decision 012](decisions/012-local-first-document-version-control.md) |
 | Ordered engineering work and acceptance gates | [ENGINE-EVOLUTION-PLAN](ENGINE-EVOLUTION-PLAN.md) |
 | Current increment, tests, commits and next task | [ENGINE-EVOLUTION-HANDOFF](ENGINE-EVOLUTION-HANDOFF.md) |
+| Implemented source versus complete-roadmap acceptance | [ROADMAP-ACCEPTANCE](ROADMAP-ACCEPTANCE.md) |
 | Implemented capabilities and production record | [PROJECT-STATUS](PROJECT-STATUS.md), [HANDOFF](HANDOFF.md) |
 | Security findings, verified fixes, trust limits and next gates | [SECURITY-HARDENING](SECURITY-HARDENING.md) |
 | Legacy snapshot receipts, replay verification and upgrade | [VERIFIED-SNAPSHOTS](VERIFIED-SNAPSHOTS.md) |
 | Separate migrations, restricted API login and upgrade | [DATABASE-PRIVILEGES](DATABASE-PRIVILEGES.md) |
 | Shared checkpoint codec, storage limits and measured spike | [SHARED-CHECKPOINTS](SHARED-CHECKPOINTS.md) |
 | Bounded serialization contract and allocation measurement | [BOUNDED-CHECKPOINT-ENCODING](BOUNDED-CHECKPOINT-ENCODING.md) |
+| Streaming byte objects and typed chunked state | [CHUNKED-CONTENT](CHUNKED-CONTENT.md), [TYPED-CHECKPOINTS](TYPED-CHECKPOINTS.md) |
+| Shared draft/rebase bases and named/deployed/public snapshots | [SHARED-DRAFT-BASES](SHARED-DRAFT-BASES.md), [SHARED-NAMED-SNAPSHOTS](SHARED-NAMED-SNAPSHOTS.md) |
+| Local project commits, branches, exchange and CLI | [PORTABLE-PROJECT-HISTORY](PORTABLE-PROJECT-HISTORY.md) |
+| Signed branch receipts, client pins and trust boundaries | [REF-RECEIPTS](REF-RECEIPTS.md) |
 | Combined protocol guide | [04-versioning-combined](04-versioning-combined.md) |
 | Algorithm assumptions and corrected mathematics | [03-versioning-mathematics-vol2](03-versioning-mathematics-vol2.md) |
 | Implementation versus theoretical claims | [VERSIONING-CONFORMANCE](VERSIONING-CONFORMANCE.md) |

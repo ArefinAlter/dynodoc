@@ -15,31 +15,30 @@ Research instruments remain one supported adapter, not the product roadmap.
 [Product specification](docs/PRODUCT-SPEC.md) · [Ordered implementation plan](docs/ENGINE-EVOLUTION-PLAN.md)
 · [Current handoff](docs/ENGINE-EVOLUTION-HANDOFF.md).
 
-**Status:** The centralized engine, Projects/review, checked proposal bundles and
-six development connectors exist. Current source hardening adds revocable logins,
-fail-closed service credentials, checked snapshots, runtime database privileges and
-bounded history reads. Project policy floors and bounded audited metadata are now
-implemented; see [the behavior contract](docs/PROJECT-POLICY-AND-METADATA.md) and
-[verification evidence](docs/ENGINE-EVOLUTION-HANDOFF.md).
-The VPS rollout passes its browser/runtime gates; broader byte/memory, distributed
-tenant and independent-audit limits remain open. See the
-[security findings and trust limits](docs/SECURITY-HARDENING.md).
-Shared checkpoint readers and bounded database
-batches reuse unchanged objects. Shared writes remain opt-in; default snapshots
-and draft bases still use full JSON. Content edits can proceed during checkpoint
-publication; full-state scans and [measured limits](docs/CHECKPOINT-CONCURRENCY.md)
-still gate rollout. [Historical recovery](docs/HISTORY-RECOVERY.md) adds selected
-old content to a private draft under current review rules. Revision-range
-revert/cherry-pick and native history downloads are available in
-Version history; [test add-in packages and sign-in](extensions/INSTALL.md) cover all
-six editor clients. Native acceptance and store publication remain open. A local commit DAG,
-complete offline convergence, full native format capture and large-file/service
-capacity still require implementation and acceptance. **License:** [AGPL v3](LICENSE).
+**Current source (12 October 2026):** Typed, chunked shared state now supports
+periodic checkpoints, draft/rebase/recovery bases and named/deployed/public
+snapshots. Shared writers are opt-in and preserve verified legacy reads. A
+[durable local project repository](docs/PORTABLE-PROJECT-HISTORY.md) provides signed
+multi-file commits, parents, branches, missing-object exchange, merge bases and
+comparison. [Signed ref receipts and separate client trust journals](docs/REF-RECEIPTS.md)
+add continuity checks, authority rotation and persistent local revocation.
+Read [the acceptance ledger](docs/ROADMAP-ACCEPTANCE.md) and
+[verified handoff](docs/ENGINE-EVOLUTION-HANDOFF.md) for exact source/production boundaries.
+
+The deployed centralized workspace supports Projects, review, proposal bundles,
+[historical recovery](docs/HISTORY-RECOVERY.md), revision-range revert/cherry-pick
+and supported native history downloads. [Test add-in packages and sign-in](extensions/INSTALL.md)
+cover all six editor clients. Authenticated remote project history, connector
+adoption of local commits, complete offline convergence, full native capture,
+external witnesses and large-file/service acceptance remain open. Shared writes
+still scan full state and reconstruction keeps state resident; packing and
+incremental publication remain storage priorities. Installed-editor acceptance
+and marketplace publication also remain open. **License:** [AGPL v3](LICENSE).
 
 The new signed-in front page is **Projects**: member-only profiles, multiple files,
 per-file main/private drafts, pull requests, comparisons and history. Basic web
 editors have their own tab. Test uploads are limited to **3 MB (3,000,000 bytes)**.
-Project-wide portable branches remain planned; see [the handoff](docs/ENGINE-EVOLUTION-HANDOFF.md)
+Hosted project-wide branch/review integration remains planned; see [the handoff](docs/ENGINE-EVOLUTION-HANDOFF.md)
 for source verification and the separate production release state.
 
 - [Standalone engine — MIT](https://github.com/ArefinAlter/dynodoc-engine) · [extraction and integration notes](docs/ENGINE-EXTRACTION.md)

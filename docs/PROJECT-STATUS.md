@@ -11,7 +11,7 @@ across restart and cannot be undone by retries or a replacement bootstrap.
 Journal publication is transactional and concurrent conflicting updates have one
 winner. The CLI exposes verification, first trust, advance, rotation and revocation.
 
-Validation so far: workspace check/Clippy passes; all 18 repository tests pass,
+Validation: workspace check/Clippy passes; all 18 repository tests pass,
 including eight new receipt/journal regressions. Independent Python/OpenSSL vectors
 pin canonical hashes and receipt/rotation signatures. The local demonstration
 creates real synthetic project commits, exercises a separate client journal,
@@ -23,7 +23,18 @@ PKCS#8 v1 keys as well as v2, retaining v2 public/private component checks.
 The new CLI regression passes against independent OpenSSL signatures; an actual
 CLI smoke signs/verifies a v1 key, trusts its receipt, signs/accepts a dual-key
 rotation, retries and revokes the journal. Synthetic key files were removed.
-Standalone/CI checks are being completed; no production change occurred.
+Source follow-up: application `07db4bf`, standalone engine `8386adb`.
+All 318 Rust tests pass in the standalone local suite and in both
+[application CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38169393679)
+and [engine CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38169397678).
+Formatting/Clippy pass; documentation builds with the same 20 pre-existing warnings.
+[Frontend CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38169393675)
+passes, including 19 public browser tests and 72 authenticated workflows (the
+public job intentionally skips its 53 authenticated cases). The disposable test
+PostgreSQL container and its volume have been removed; unrelated containers were
+preserved. No local application servers were started. Source is schema 32;
+production remains schema 29/application `858801c`. No new production migration,
+shared-writer enablement, installed-editor or marketplace acceptance occurred.
 
 These are core/CLI integration primitives. Production does not yet issue signed
 ref receipts or distribute authority keys. Account/device registration and remote
@@ -63,9 +74,9 @@ pass. [Browser CI](https://github.com/ArefinAlter/dynodoc/actions/runs/381678949
 passes both its build/unit/public job and all authenticated workflows.
 
 No production migration, optional-writer enablement or hosted package update has
-occurred. The task-owned disposable PostgreSQL container is
-dynodoc-snapshots-test-20261012 (label dynodoc.task=snapshots-20261012), loopback
-port 53367; remove it after the remaining suites. Logs are under ignored target.
+occurred. The task-owned disposable PostgreSQL container
+dynodoc-snapshots-test-20261012 and its volume were removed after the remaining
+suites completed. Logs and synthetic demo artifacts are under ignored target.
 Both repositories carry matching source; preserve standalone metadata/fixtures.
 
 Remaining storage work is physical packing, changed-node publication and realistic
