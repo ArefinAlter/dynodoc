@@ -98,7 +98,13 @@ pub async fn apply_checked_op(
         .await
         .map_err(ApiError::from)?;
     if matches!(op, EventPayload::Deployed { .. }) {
-        checkpoint_in_tx(&mut tx, document_id, &inserted).await?;
+        checkpoint_in_tx(
+            &mut tx,
+            document_id,
+            &inserted,
+            state.named_snapshot_storage,
+        )
+        .await?;
     }
     tx.commit().await?;
 
@@ -387,11 +393,17 @@ async fn checkpoint_in_tx(
     tx: &mut Transaction<'_, Postgres>,
     document_id: DocumentId,
     event: &Event,
+    storage: engine_core::snapshot::NamedStorage,
 ) -> Result<(), ApiError> {
-    let id = engine_core::snapshot_verification::take_in_connection(tx, document_id, event.seq)
-        .await?
-        .id
-        .0;
+    let id = engine_core::snapshot_verification::take_with_storage_in_connection(
+        tx,
+        document_id,
+        event.seq,
+        storage,
+    )
+    .await?
+    .id
+    .0;
     sqlx::query("update document set status='deployed', deployed_snapshot_id=$2, updated_at=now() where id=$1")
         .bind(document_id.0).bind(id).execute(&mut **tx).await?;
     Ok(())

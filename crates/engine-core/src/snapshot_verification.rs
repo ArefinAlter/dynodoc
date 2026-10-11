@@ -1,8 +1,8 @@
-//! Legacy snapshots are derived caches, not independent sources of truth.
+//! Legacy and shared-root snapshots are derived caches, not sources of truth.
 //!
 //! Ordinary reads require a receipt over the stored envelope and check its chain
 //! position. Upgrade/backfill and explicit audits replay from genesis in one pass,
-//! comparing every legacy checkpoint (including comments/suggestions/tombstones).
+//! comparing every snapshot (including comments/suggestions/tombstones).
 //! Receipts are internal attestations, not signatures against a database owner.
 
 use std::io::{self, Write};
@@ -17,8 +17,12 @@ use uuid::Uuid;
 use crate::{
     log::{self, ZERO_HASH},
     materializer::{DocumentState, Materializer},
-    shared_checkpoint::{canonical::CanonicalValue, postgres::chain_at},
-    snapshot::{merkle_root, SnapshotError},
+    shared_checkpoint::{
+        canonical::CanonicalValue,
+        postgres::{self, chain_at, PgStore},
+        typed, Address, Limits,
+    },
+    snapshot::{merkle_root, NamedStorage, SnapshotError},
 };
 
 fn invalid(snapshot: &Snapshot, detail: &str) -> SnapshotError {
@@ -27,6 +31,64 @@ fn invalid(snapshot: &Snapshot, detail: &str) -> SnapshotError {
         seq: snapshot.through_seq,
         detail: detail.into(),
     }
+}
+
+fn receipt_version(snapshot: &Snapshot) -> i16 {
+    if snapshot.state.get("$dynodoc_state").is_some() {
+        2
+    } else {
+        1
+    }
+}
+
+/// Strict reference recognition; a malformed/new version never falls back to JSON.
+fn shared_root(snapshot: &Snapshot) -> Result<Option<Address>, SnapshotError> {
+    let value = &snapshot.state;
+    if value.get("$dynodoc_state").is_none() {
+        return Ok(None);
+    }
+    if value["$dynodoc_state"] != 2 || value.as_object().is_none_or(|o| o.len() != 2) {
+        return Err(invalid(snapshot, "invalid shared state reference"));
+    }
+    let root = value["root"]
+        .as_str()
+        .ok_or_else(|| invalid(snapshot, "missing shared state root"))?;
+    Ok(Some(Address::try_from(root.to_owned())?))
+}
+
+async fn materialize(
+    connection: &mut PgConnection,
+    snapshot: &Snapshot,
+) -> Result<DocumentState, SnapshotError> {
+    if let Some(root) = shared_root(snapshot)? {
+        Ok(typed::read_state(
+            &mut PgStore::new(connection),
+            snapshot.document_id,
+            &root,
+            Limits::default(),
+            Default::default(),
+        )
+        .await?)
+    } else {
+        Ok(DocumentState::deserialize(&snapshot.state)?)
+    }
+}
+
+/// Verify the stored envelope before decoding its graph. Never fingerprint the
+/// hydrated response: v2 attests the immutable reference and v1 the inline state.
+pub(crate) async fn read_verified_state(
+    connection: &mut PgConnection,
+    snapshot: &Snapshot,
+) -> Result<DocumentState, SnapshotError> {
+    check_receipt(connection, snapshot).await?;
+    let state = materialize(connection, snapshot).await?;
+    if snapshot.merkle_root != merkle_root(&state)? {
+        return Err(invalid(
+            snapshot,
+            "node Merkle root differs from stored state",
+        ));
+    }
+    Ok(state)
 }
 
 /// Hash borrowed canonical JSON directly into SHA-256. No second encoded state
@@ -48,7 +110,11 @@ fn fingerprint(snapshot: &Snapshot) -> Result<Vec<u8>, serde_json::Error> {
     serde_json::to_writer(
         &mut writer,
         &(
-            "dynodoc.legacy-snapshot.v1",
+            if receipt_version(snapshot) == 1 {
+                "dynodoc.legacy-snapshot.v1"
+            } else {
+                "dynodoc.shared-snapshot.v2"
+            },
             snapshot.id,
             snapshot.document_id,
             snapshot.through_seq,
@@ -76,7 +142,7 @@ pub(crate) async fn check_receipt(
     };
     if document != snapshot.document_id.0
         || seq != snapshot.through_seq
-        || version != 1
+        || version != receipt_version(snapshot)
         || hash != fingerprint(snapshot)?
     {
         return Err(invalid(
@@ -99,19 +165,28 @@ pub async fn load(
     document: DocumentId,
     snapshot_id: Uuid,
 ) -> Result<Option<Snapshot>, SnapshotError> {
-    let snapshot: Option<Snapshot> =
+    let mut snapshot: Option<Snapshot> =
         sqlx::query_as("select * from snapshot where id=$1 and document_id=$2")
             .bind(snapshot_id)
             .bind(document.0)
             .fetch_optional(&mut *connection)
             .await?;
-    if let Some(ref snapshot) = snapshot {
-        check_receipt(connection, snapshot).await?;
+    if let Some(ref mut snapshot) = snapshot {
+        let state = read_verified_state(connection, snapshot).await?;
+        // Preserve legacy JSON exactly, including optional fields and set order.
+        if receipt_version(snapshot) == 2 {
+            snapshot.state = serde_json::to_value(state)?;
+        }
     }
     Ok(snapshot)
 }
 
-fn compare(snapshot: &Snapshot, state: &DocumentState, chain: &[u8]) -> Result<(), SnapshotError> {
+async fn compare(
+    connection: &mut PgConnection,
+    snapshot: &Snapshot,
+    state: &DocumentState,
+    chain: &[u8],
+) -> Result<(), SnapshotError> {
     // Serde normally ignores unknown struct fields. Reject them at this trust
     // boundary: otherwise backfill could attest bytes that replay never produced
     // and a JSON download/another consumer could still expose. Arbitrary document
@@ -156,18 +231,13 @@ fn compare(snapshot: &Snapshot, state: &DocumentState, chain: &[u8]) -> Result<(
             })
         })
     });
-    if !shape_ok {
+    if shared_root(snapshot)?.is_none() && !shape_ok {
         return Err(invalid(
             snapshot,
             "state contains unsupported fields or structure",
         ));
     }
-    let stored = DocumentState::deserialize(&snapshot.state).map_err(|_| {
-        invalid(
-            snapshot,
-            "state is not a valid legacy document representation",
-        )
-    })?;
+    let stored = materialize(connection, snapshot).await?;
     if &stored != state {
         return Err(invalid(
             snapshot,
@@ -188,13 +258,14 @@ fn compare(snapshot: &Snapshot, state: &DocumentState, chain: &[u8]) -> Result<(
 
 async fn record(connection: &mut PgConnection, snapshot: &Snapshot) -> Result<(), SnapshotError> {
     sqlx::query(
-        "insert into snapshot_verification(snapshot_id,document_id,through_seq,fingerprint)
-        values($1,$2,$3,$4) on conflict(snapshot_id) do nothing",
+        "insert into snapshot_verification(snapshot_id,document_id,through_seq,fingerprint,version)
+        values($1,$2,$3,$4,$5) on conflict(snapshot_id) do nothing",
     )
     .bind(snapshot.id.0)
     .bind(snapshot.document_id.0)
     .bind(snapshot.through_seq)
     .bind(fingerprint(snapshot)?)
+    .bind(receipt_version(snapshot))
     .execute(&mut *connection)
     .await?;
     // A conflicting receipt is never overwritten, even if an operator has changed
@@ -204,12 +275,24 @@ async fn record(connection: &mut PgConnection, snapshot: &Snapshot) -> Result<()
 
 /// Publish a snapshot from independently reconstructed canonical history. Caller
 /// owns the transaction and document lock. No arbitrary caller-supplied state is
-/// attested. Legacy receipts bound the replay suffix; shared roots aren't used as
-/// independent replay evidence here.
+/// attested. Previously verified snapshot receipts bound the replay suffix;
+/// periodic shared manifests aren't used as independent replay evidence here.
 pub async fn take_in_connection(
     connection: &mut PgConnection,
     document: DocumentId,
     through_seq: i64,
+) -> Result<Snapshot, SnapshotError> {
+    take_with_storage_in_connection(connection, document, through_seq, NamedStorage::Legacy).await
+}
+
+/// Explicit writer selection for named versions, public pins and deployments.
+/// The caller owns a transaction and document lock. Existing revisions retain
+/// their original format. Returned snapshots always contain hydrated state.
+pub async fn take_with_storage_in_connection(
+    connection: &mut PgConnection,
+    document: DocumentId,
+    through_seq: i64,
+    storage: NamedStorage,
 ) -> Result<Snapshot, SnapshotError> {
     if through_seq < 0 {
         return Err(SnapshotError::InvalidRevision(through_seq));
@@ -225,29 +308,63 @@ pub async fn take_in_connection(
             .await?
             .ok_or(sqlx::Error::RowNotFound.into());
     }
+    // Use the same lock order as periodic builders, including legacy writers:
+    // a mixed concurrent publication cannot leave an unreferenced typed graph.
+    sqlx::query("select pg_advisory_xact_lock(hashtextextended($1,0))")
+        .bind(postgres::publication_lock_key(document))
+        .execute(&mut *connection)
+        .await?;
+    let existing: Option<Uuid> =
+        sqlx::query_scalar("select id from snapshot where document_id=$1 and through_seq=$2")
+            .bind(document.0)
+            .bind(through_seq)
+            .fetch_optional(&mut *connection)
+            .await?;
+    if let Some(id) = existing {
+        return load(connection, document, id)
+            .await?
+            .ok_or(sqlx::Error::RowNotFound.into());
+    }
     let state = crate::snapshot::read_legacy_state_at(connection, document, through_seq)
         .await?
         .state;
     let chain = chain_at(connection, document, through_seq).await?;
+    let encoded = match storage {
+        NamedStorage::Legacy => serde_json::to_value(&state)?,
+        NamedStorage::SharedV2 => {
+            let (root, _) = typed::write_state(
+                &mut PgStore::new(connection),
+                document,
+                &state,
+                Limits::default(),
+                Default::default(),
+            )
+            .await?;
+            serde_json::json!({"$dynodoc_state":2,"root":root})
+        }
+    };
     sqlx::query(
         "insert into snapshot(document_id,through_seq,state,merkle_root,event_chain_hash)
         values($1,$2,$3,$4,$5) on conflict(document_id,through_seq) do nothing",
     )
     .bind(document.0)
     .bind(through_seq)
-    .bind(serde_json::to_value(&state)?)
+    .bind(encoded)
     .bind(merkle_root(&state)?.as_slice())
     .bind(&chain)
     .execute(&mut *connection)
     .await?;
-    let snapshot: Snapshot =
+    let mut snapshot: Snapshot =
         sqlx::query_as("select * from snapshot where document_id=$1 and through_seq=$2")
             .bind(document.0)
             .bind(through_seq)
             .fetch_one(&mut *connection)
             .await?;
-    compare(&snapshot, &state, &chain)?;
+    compare(connection, &snapshot, &state, &chain).await?;
     record(connection, &snapshot).await?;
+    if receipt_version(&snapshot) == 2 {
+        snapshot.state = serde_json::to_value(state)?;
+    }
     Ok(snapshot)
 }
 
@@ -258,8 +375,8 @@ pub struct VerificationReport {
     pub replayed_events: usize,
 }
 
-/// Audit the event chain AND every legacy snapshot independently of receipts and
-/// shared checkpoints. Backfill writes receipts only after replay comparison; one
+/// Audit the event chain AND every snapshot independently of receipts and
+/// periodic shared checkpoints. Backfill writes receipts after replay comparison; one
 /// transaction per document rolls them all back on failure. Event rows stream and
 /// snapshots are keyset-read one at a time, never O(history) retained rows.
 pub async fn verify_document(
@@ -322,7 +439,7 @@ pub async fn verify_document(
         let Some(snapshot) = next else {
             break;
         };
-        compare(&snapshot, &state, &chain)?;
+        compare(&mut tx, &snapshot, &state, &chain).await?;
         if backfill {
             record(&mut tx, &snapshot).await?;
         } else {
@@ -373,6 +490,29 @@ mod tests {
         assert_eq!(
             hex,
             "1547c22166c50bf50d510d1093a86be40648d86ff23bcbd6e3bb8814b05063ec"
+        );
+    }
+
+    #[test]
+    fn shared_receipt_v2_has_a_stable_envelope_vector() {
+        let snapshot = Snapshot {
+            id: engine_shared::SnapshotId(Uuid::nil()),
+            document_id: DocumentId(Uuid::from_u128(1)),
+            through_seq: 0,
+            state: serde_json::json!({"$dynodoc_state":2,"root":"0123456789abcdef".repeat(4)}),
+            merkle_root: vec![0; 32],
+            event_chain_hash: vec![0; 32],
+            created_at: "2026-10-11T00:00:00Z".parse().unwrap(),
+        };
+        // Independent Python JSON/SHA-256 envelope, not the engine encoder.
+        let hex: String = fingerprint(&snapshot)
+            .unwrap()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        assert_eq!(
+            hex,
+            "3108937000f9ea2d5fef24341ac085f2886808ba24f9197613ea603e23ff3d76"
         );
     }
 }

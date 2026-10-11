@@ -1,11 +1,45 @@
 # Dynodoc: intent, current implementation and remaining work
 
+## Source: shared named/deployed snapshots (12 October 2026)
+
+The current pass adds [shared named snapshots](SHARED-NAMED-SNAPSHOTS.md),
+schema 32. Named versions, public-copy pins and deployed snapshots can refer to
+the same typed objects as drafts and periodic checkpoints. The API hydrates the
+existing response shape after verifying the stored receipt and referenced graph.
+New receipts use a separate v2 hash domain; the legacy vector and stored rows are
+unchanged. The new explicit setting is DYNODOC_NAMED_SNAPSHOT_STORAGE=shared-v2;
+the default remains legacy and production is still schema 29/application 858801c.
+
+Targeted checks pass: 19 snapshot integration tests and all 45 API integration
+tests, including mixed histories/concurrent writers, object reuse, failed-write
+rollback, root/object tampering, independent replay/backfill, historical restore,
+public-copy privacy and audited erasure using restricted runtime credentials.
+Formatting, workspace Clippy and all 309 application Rust tests pass. Standalone validation and
+source CI for this increment are being completed. The prior source checkpoint's
+completed evidence is recorded immediately below.
+
+No production migration, optional-writer enablement or hosted package update has
+occurred. The task-owned disposable PostgreSQL container is
+dynodoc-snapshots-test-20261012 (label dynodoc.task=snapshots-20261012), loopback
+port 53367; remove it after the remaining suites. Logs are under ignored target.
+Both repositories carry matching source; preserve standalone metadata/fixtures.
+
+Remaining storage work is physical packing, changed-node publication and realistic
+growth/resource acceptance. Remote project history must bind signing keys to
+accounts/devices, enforce current file/project membership, preserve private drafts,
+serialize protected refs and review, and make whole-document erasure explicit for
+multi-file ancestry. Local signed commits alone do not supply these boundaries.
+The complete [acceptance ledger](ROADMAP-ACCEPTANCE.md) remains open; installed
+Office/Google acceptance is assigned to the owner using the local worksheet.
+Continue the roadmap across this checkpoint without requiring another prompt.
+
 ## Source: typed state, shared drafts and local project history (12 October 2026)
 
 This pass continues across storage, repository and algorithm boundaries. The
 [acceptance ledger](ROADMAP-ACCEPTANCE.md) tracks the whole roadmap without marking
-unfinished integration as complete. Implementation commits are recorded in the
-follow-up verification entry when both repository checks finish.
+unfinished integration as complete. Application implementation: `8dd816b`;
+standalone engine implementation: `f1cdf8c`. A later source increment for shared
+named/deployed snapshots is in progress; the evidence below covers these commits.
 
 Implemented:
 
@@ -29,12 +63,17 @@ Implemented:
   diff/state costs remain; the regression covers cyclic/missing-parent graphs and
   a 20,000-level chain.
 
-Verification so far: application formatting/Clippy pass and **303 Rust tests pass**
-against isolated PostgreSQL 16, including the new shared draft/rebase/recovery
-flows and restricted-role erasure. Independent fixed content/commit hashes and
-all previous v1 event vectors remain green. Standalone task lint passes; task
-test/docs and implementation CI are still being completed. The mirror preserves
-standalone package metadata, licensing, toolchain and independent fixtures.
+Verification: formatting/Clippy and **303 Rust tests pass in each repository**
+against isolated PostgreSQL 16. Standalone task docs passes with the same 20
+pre-existing rustdoc warnings. Fixed content/commit hashes and previous v1 event
+vectors remain green. [Application Rust CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38166114708)
+and [engine CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38166122646)
+pass, including OpenAPI compatibility and source packaging where applicable.
+[Frontend CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38166114711)
+passes 289 units, 19 public browser checks (53 authenticated checks intentionally
+skipped in that public-only job), and all 72 authenticated-stack checks. The local
+repository CLI reads the demo's common head at generation 2. Standalone package
+metadata, licensing, toolchain and independent fixtures remain preserved.
 
 The synthetic two-replica example reopens both databases, exchanges only missing
 objects, publishes the same reviewed project merge and recovers the initial
@@ -47,9 +86,10 @@ Production remains application 858801c, schema 29. No live migration, writer
 enablement, hosted package/archive update or marketplace submission occurred.
 Schemas 30/31 require matching readers and a compatible rollback build; old
 schema-29 binaries must not be reused after migration. Shared periodic writes
-remain off. The task-owned disposable database is dynodoc-roadmap-test-20261012
-(label dynodoc.task=roadmap-20261012); remove it after both suites finish. Synthetic
-demo databases/logs remain under ignored target. The owner still runs installed
+remain off. The task-owned disposable database dynodoc-roadmap-test-20261012
+and its anonymous volume were removed after both suites. Unrelated containers
+were preserved. Synthetic demo databases/logs remain under ignored target.
+The owner still runs installed
 Office/Google acceptance locally using the existing worksheet.
 
 Next integration priorities: shared named/deployed versions, physical packing and

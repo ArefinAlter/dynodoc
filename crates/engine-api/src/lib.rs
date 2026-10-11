@@ -62,6 +62,8 @@ pub struct AppState {
     pub workloads: workloads::Workloads,
     /// Explicit opt-in; new draft/rebase bases use typed shared objects.
     pub shared_draft_bases: bool,
+    /// Explicit opt-in; named versions, public pins and deploys share typed state.
+    pub named_snapshot_storage: engine_core::snapshot::NamedStorage,
 }
 
 impl AppState {
@@ -76,6 +78,13 @@ impl AppState {
             workloads: workloads::Workloads::default(),
             shared_draft_bases: std::env::var("DYNODOC_SHARED_DRAFT_BASES").as_deref()
                 == Ok("shared-v2"),
+            named_snapshot_storage: if std::env::var("DYNODOC_NAMED_SNAPSHOT_STORAGE").as_deref()
+                == Ok("shared-v2")
+            {
+                engine_core::snapshot::NamedStorage::SharedV2
+            } else {
+                engine_core::snapshot::NamedStorage::Legacy
+            },
         }
     }
 }

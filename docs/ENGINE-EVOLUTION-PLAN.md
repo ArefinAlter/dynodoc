@@ -8,7 +8,8 @@ The API uses restricted runtime credentials; snapshot verification, project rule
 browser policy and bounded workload admission have passed CI and VPS acceptance.
 
 Part 2g now adds [typed v2 checkpoints](TYPED-CHECKPOINTS.md) and the current pass
-adds opt-in shared draft bases. The settled typed-root contract also underlies the
+adds opt-in shared draft bases and schema-32 [named/deployed/public snapshots](SHARED-NAMED-SNAPSHOTS.md).
+The settled typed-root contract also underlies the
 [portable local project repository](PORTABLE-PROJECT-HISTORY.md), an early part-3
 implementation with signed commits, parent history, branch CAS and transfer primitives.
 Continue storage adoption/packing and authenticated transport/connector integration;

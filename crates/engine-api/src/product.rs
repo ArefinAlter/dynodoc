@@ -424,11 +424,15 @@ async fn publish(
         ));
     }
     drop(current);
-    let snapshot =
-        engine_core::snapshot_verification::take_in_connection(&mut tx, DocumentId(id), seq)
-            .await?
-            .id
-            .0;
+    let snapshot = engine_core::snapshot_verification::take_with_storage_in_connection(
+        &mut tx,
+        DocumentId(id),
+        seq,
+        state.named_snapshot_storage,
+    )
+    .await?
+    .id
+    .0;
     let (token, hash) = random_token()?;
     let link:Uuid=sqlx::query_scalar("insert into public_document_view(document_id,token_hash,snapshot_id,created_by,expires_at,published_title,published_kind) select id,$2,$3,$4,case when $5::integer is null then null else now()+make_interval(days=>$5) end,title,coalesce(settings->>'kind','questionnaire') from document where id=$1 returning id").bind(id).bind(hash).bind(snapshot).bind(auth.identity_id).bind(input.expires_days).fetch_one(&mut *tx).await?;
     audit(

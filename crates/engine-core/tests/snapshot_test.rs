@@ -3,7 +3,7 @@
 use engine_core::{
     log::append,
     materializer::{DocumentState, Materializer},
-    snapshot::{read_state_at, SnapshotEngine, SnapshotError, SnapshotReason},
+    snapshot::{read_state_at, NamedStorage, SnapshotEngine, SnapshotError, SnapshotReason},
 };
 use engine_shared::{DocumentId, EventPayload, IdentityId, NodeId};
 use serde_json::json;
@@ -404,7 +404,7 @@ async fn snapshot_guards_allow_only_audited_whole_document_erasure(
         .fetch_one(&pool)
         .await?,
     );
-    let engine = SnapshotEngine::new(pool.clone());
+    let engine = SnapshotEngine::new(pool.clone()).with_named_storage(NamedStorage::SharedV2);
     let snapshot = engine.take(doc, SnapshotReason::Periodic).await?;
     let survivor = engine.take(other, SnapshotReason::Periodic).await?;
     for query in [
@@ -642,5 +642,238 @@ async fn backfill_rejects_unknown_snapshot_fields_instead_of_silently_ignoring_t
         .fetch_one(&pool)
         .await?;
     assert_eq!(receipts, 0);
+    Ok(())
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn shared_named_snapshots_reuse_objects_and_preserve_mixed_history(
+    pool: PgPool,
+) -> anyhow::Result<()> {
+    let (actor, doc, node) = seed(&pool).await?;
+    let legacy = SnapshotEngine::new(pool.clone());
+    let shared = legacy.clone().with_named_storage(NamedStorage::SharedV2);
+    let first = legacy.take(doc, SnapshotReason::Periodic).await?;
+    assert_eq!(shared.take(doc, SnapshotReason::Deployed).await?, first);
+    let large = "aλ".repeat(400_000);
+    append(&pool, doc, &field_edit(&node, "large", &large), actor).await?;
+    append(
+        &pool,
+        doc,
+        &EventPayload::CommentAdded {
+            node_id: Some(node.clone()),
+            body: "Retained review".into(),
+        },
+        actor,
+    )
+    .await?;
+    let second = shared.take(doc, SnapshotReason::Deployed).await?;
+    assert_eq!(
+        second.state["nodes"][&node.0]["current_fields"]["large"],
+        large
+    );
+    let raw: serde_json::Value = sqlx::query_scalar("select state from snapshot where id=$1")
+        .bind(second.id.0)
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(raw["$dynodoc_state"], 2);
+    assert!(raw.to_string().len() < 100);
+    let count: i64 =
+        sqlx::query_scalar("select count(*) from checkpoint_object where document_id=$1")
+            .bind(doc.0)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(legacy.take(doc, SnapshotReason::Periodic).await?, second);
+    // Deploy carries no materialized content change: the new envelope shares every object.
+    let mut tx = pool.begin().await?;
+    let event = engine_core::log::append_in_tx(
+        &mut tx,
+        doc,
+        &EventPayload::Deployed { snapshot_id: None },
+        actor,
+    )
+    .await?;
+    let third = snapshot_verification::take_with_storage_in_connection(
+        &mut tx,
+        doc,
+        event.seq,
+        NamedStorage::SharedV2,
+    )
+    .await?;
+    tx.commit().await?;
+    assert_eq!(third.state, second.state);
+    let after: i64 =
+        sqlx::query_scalar("select count(*) from checkpoint_object where document_id=$1")
+            .bind(doc.0)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(count, after);
+    append(&pool, doc, &field_edit(&node, "label", "Later"), actor).await?;
+    legacy.take(doc, SnapshotReason::Periodic).await?;
+    let events: Vec<engine_shared::Event> =
+        sqlx::query_as("select * from event where document_id=$1 order by seq")
+            .bind(doc.0)
+            .fetch_all(&pool)
+            .await?;
+    let mut connection = pool.acquire().await?;
+    for seq in 0..=5 {
+        let at = read_state_at(&mut connection, doc, seq).await?;
+        assert_eq!(at.state, Materializer::fold(&events[..seq as usize])?);
+        if seq == 3 || seq == 4 {
+            assert_eq!(
+                at.checkpoint_format,
+                engine_core::snapshot::CheckpointFormat::SharedV2
+            );
+            assert_eq!(at.replayed_events, 0);
+        }
+    }
+    let versions: Vec<i16> = sqlx::query_scalar(
+        "select version from snapshot_verification where document_id=$1 order by through_seq",
+    )
+    .bind(doc.0)
+    .fetch_all(&pool)
+    .await?;
+    assert_eq!(versions, vec![1, 2, 2, 1]);
+    assert_eq!(verify_document(&pool, doc, true).await?.snapshots, 4);
+    Ok(())
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn shared_named_snapshots_fail_closed_on_root_and_object_tampering(
+    pool: PgPool,
+) -> anyhow::Result<()> {
+    let (actor, doc, node) = seed(&pool).await?;
+    let shared = SnapshotEngine::new(pool.clone()).with_named_storage(NamedStorage::SharedV2);
+    let first = shared.take(doc, SnapshotReason::Deployed).await?;
+    append(&pool, doc, &field_edit(&node, "label", "Changed"), actor).await?;
+    let second = shared.take(doc, SnapshotReason::Deployed).await?;
+    let root: String = sqlx::query_scalar("select state_root from snapshot where id=$1")
+        .bind(second.id.0)
+        .fetch_one(&pool)
+        .await?;
+    let mut tx = pool.begin().await?;
+    sqlx::query("alter table snapshot disable trigger snapshot_no_update")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("update snapshot set state=jsonb_build_object('$dynodoc_state',2,'root',$2::text) where id=$1").bind(first.id.0).bind(&root).execute(&mut *tx).await?;
+    assert!(matches!(
+        snapshot_verification::load(&mut tx, doc, first.id.0).await,
+        Err(SnapshotError::Unverified { .. })
+    ));
+    tx.rollback().await?;
+    let mut tx = pool.begin().await?;
+    // Simulate a database owner outside the restricted runtime trust boundary.
+    sqlx::query("set local session_replication_role=replica")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query(
+        "update checkpoint_object set bytes=decode('00','hex') where document_id=$1 and address=$2",
+    )
+    .bind(doc.0)
+    .bind(&root)
+    .execute(&mut *tx)
+    .await?;
+    assert!(snapshot_verification::load(&mut tx, doc, second.id.0)
+        .await
+        .is_err());
+    assert!(read_state_at(&mut tx, doc, 2).await.is_err());
+    tx.rollback().await?;
+    assert_eq!(verify_document(&pool, doc, false).await?.snapshots, 2);
+    // Even after removing a receipt, independent replay must refuse a valid
+    // content-addressed graph attached to the wrong historical revision.
+    let mut tx = pool.begin().await?;
+    sqlx::query("set local session_replication_role=replica")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("delete from snapshot_verification where snapshot_id=$1")
+        .bind(first.id.0)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("update snapshot set state=jsonb_build_object('$dynodoc_state',2,'root',$2::text) where id=$1").bind(first.id.0).bind(&root).execute(&mut *tx).await?;
+    tx.commit().await?;
+    assert!(verify_document(&pool, doc, true).await.is_err());
+    let count: i64 =
+        sqlx::query_scalar("select count(*) from snapshot_verification where snapshot_id=$1")
+            .bind(first.id.0)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(count, 0);
+    Ok(())
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn shared_named_snapshots_enforce_scope_and_rollback_publication(
+    pool: PgPool,
+) -> anyhow::Result<()> {
+    let (actor, doc, _) = seed(&pool).await?;
+    let other = DocumentId(
+        sqlx::query_scalar(
+            "insert into document(title,created_by) values('Other',$1) returning id",
+        )
+        .bind(actor.0)
+        .fetch_one(&pool)
+        .await?,
+    );
+    let mut tx = pool.begin().await?;
+    let snap = snapshot_verification::take_with_storage_in_connection(
+        &mut tx,
+        doc,
+        1,
+        NamedStorage::SharedV2,
+    )
+    .await?;
+    let root: String = sqlx::query_scalar("select state_root from snapshot where id=$1")
+        .bind(snap.id.0)
+        .fetch_one(&mut *tx)
+        .await?;
+    tx.rollback().await?;
+    for table in ["snapshot", "snapshot_verification", "checkpoint_object"] {
+        let count: i64 = sqlx::query_scalar(&format!("select count(*) from {table}"))
+            .fetch_one(&pool)
+            .await?;
+        assert_eq!(count, 0, "{table} survived rollback");
+    }
+    let shared = SnapshotEngine::new(pool.clone()).with_named_storage(NamedStorage::SharedV2);
+    shared.take(doc, SnapshotReason::Deployed).await?;
+    let cross = sqlx::query("insert into snapshot(document_id,through_seq,state,merkle_root,event_chain_hash) values($1,0,$2,$3,$3)")
+        .bind(other.0).bind(json!({"$dynodoc_state":2,"root":root})).bind(vec![0_u8;32]).execute(&pool).await;
+    assert!(
+        cross.is_err(),
+        "another document's address must not satisfy the FK"
+    );
+    let count: i64 = sqlx::query_scalar("select count(*) from checkpoint_object")
+        .fetch_one(&pool)
+        .await?;
+    assert!(shared.take(other, SnapshotReason::Deployed).await.is_ok());
+    assert!(count > 0);
+    Ok(())
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn concurrent_mixed_snapshot_writers_keep_one_format_and_receipt(
+    pool: PgPool,
+) -> anyhow::Result<()> {
+    let (_, doc, _) = seed(&pool).await?;
+    let legacy = SnapshotEngine::new(pool.clone());
+    let shared = legacy.clone().with_named_storage(NamedStorage::SharedV2);
+    let (a, b) = tokio::join!(
+        legacy.take(doc, SnapshotReason::Periodic),
+        shared.take(doc, SnapshotReason::Deployed)
+    );
+    let (a, b) = (a?, b?);
+    assert_eq!(a, b);
+    let count: i64 =
+        sqlx::query_scalar("select count(*) from snapshot_verification where document_id=$1")
+            .bind(doc.0)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(count, 1);
+    let (version, objects): (i16, i64) = sqlx::query_as("select version,(select count(*) from checkpoint_object where document_id=$1) from snapshot_verification where snapshot_id=$2")
+        .bind(doc.0).bind(a.id.0).fetch_one(&pool).await?;
+    assert_eq!(
+        objects == 0,
+        version == 1,
+        "losing typed publication must not leave objects"
+    );
+    assert_eq!(verify_document(&pool, doc, false).await?.snapshots, 1);
     Ok(())
 }

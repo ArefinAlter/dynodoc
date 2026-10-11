@@ -287,11 +287,15 @@ async fn save_version(
             .bind(id)
             .fetch_one(&mut *tx)
             .await?;
-    let snapshot =
-        engine_core::snapshot_verification::take_in_connection(&mut tx, DocumentId(id), seq)
-            .await?
-            .id
-            .0;
+    let snapshot = engine_core::snapshot_verification::take_with_storage_in_connection(
+        &mut tx,
+        DocumentId(id),
+        seq,
+        state.named_snapshot_storage,
+    )
+    .await?
+    .id
+    .0;
     let version:Uuid=sqlx::query_scalar("insert into document_version(document_id,snapshot_id,name,note,created_by) values($1,$2,$3,$4,$5) returning id").bind(id).bind(snapshot).bind(req.name.trim()).bind(req.note).bind(auth.identity_id).fetch_one(&mut *tx).await?;
     tx.commit().await?;
     Ok(Json(

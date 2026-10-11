@@ -22,8 +22,8 @@ keeps existing permission, stale-revision, review and selection checks.
 
 This reduces repeated **stored** bases. Current-state reconstruction, diff and
 merge still retain full states. No physical packing, garbage collector or hard
-total-history quota is added. Named/deployed snapshots still use their existing
-verified legacy representation. Readers built before schema 31 are incompatible
+total-history quota is added. [Named/deployed snapshots](SHARED-NAMED-SNAPSHOTS.md)
+have a separate schema-32 opt-in writer. Readers built before schema 31 are incompatible
 with the newer schema, even if this optional writer is disabled. Production is
 still schema 29; neither migration nor flag has been deployed by this work.
 

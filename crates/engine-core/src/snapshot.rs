@@ -72,11 +72,18 @@ pub enum CheckpointFormat {
 }
 
 /// Automatic writes retain a reversible rollout boundary. Readers always support
-/// both formats. Named/deployed snapshots continue to use the legacy contract.
+/// both formats. Named/deployed snapshots have a separate opt-in writer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PeriodicStorage {
     Legacy,
     SharedV1,
+    SharedV2,
+}
+
+/// Storage for named/deployed/public snapshots; the response shape stays legacy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NamedStorage {
+    Legacy,
     SharedV2,
 }
 
@@ -101,7 +108,8 @@ pub async fn read_state_at(
     read_state_at_with_formats(connection, document_id, through_seq, true).await
 }
 
-/// Independent legacy/event reference for explicit shared checkpoint publication.
+/// Independent verified-snapshot/event reference for explicit shared checkpoint
+/// publication. Excludes periodic shared manifests, includes attested named roots.
 pub(crate) async fn read_legacy_state_at(
     connection: &mut PgConnection,
     document_id: DocumentId,
@@ -151,11 +159,16 @@ async fn read_state_at_with_formats(
                     .bind(seq)
                     .fetch_one(&mut *connection)
                     .await?;
-            crate::snapshot_verification::check_receipt(connection, &snapshot).await?;
+            let state =
+                crate::snapshot_verification::read_verified_state(connection, &snapshot).await?;
             (
                 seq,
-                CheckpointFormat::Legacy,
-                serde_json::from_value(snapshot.state)?,
+                if snapshot.state.get("$dynodoc_state").is_some() {
+                    CheckpointFormat::SharedV2
+                } else {
+                    CheckpointFormat::Legacy
+                },
+                state,
             )
         }
         Some(_) => {
@@ -253,6 +266,7 @@ async fn checkpoint_due(
 pub struct SnapshotEngine {
     pool: PgPool,
     periodic_storage: PeriodicStorage,
+    named_storage: NamedStorage,
 }
 
 impl SnapshotEngine {
@@ -260,6 +274,7 @@ impl SnapshotEngine {
         Self {
             pool,
             periodic_storage: PeriodicStorage::Legacy,
+            named_storage: NamedStorage::Legacy,
         }
     }
 
@@ -270,7 +285,12 @@ impl SnapshotEngine {
         self
     }
 
-    /// Explicit legacy snapshot contract used by deploys and the existing CLI.
+    pub fn with_named_storage(mut self, storage: NamedStorage) -> Self {
+        self.named_storage = storage;
+        self
+    }
+
+    /// Snapshot contract used by deploys and the existing CLI; legacy by default.
     /// Uses the common mixed-format reader and pins an exact event sequence.
     pub async fn take(
         &self,
@@ -283,8 +303,13 @@ impl SnapshotEngine {
             .fetch_one(&mut *tx)
             .await?;
         let seq = latest_event_seq(&mut tx, document_id).await?;
-        let snapshot =
-            crate::snapshot_verification::take_in_connection(&mut tx, document_id, seq).await?;
+        let snapshot = crate::snapshot_verification::take_with_storage_in_connection(
+            &mut tx,
+            document_id,
+            seq,
+            self.named_storage,
+        )
+        .await?;
         tx.commit().await?;
         Ok(snapshot)
     }

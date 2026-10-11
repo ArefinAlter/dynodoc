@@ -460,6 +460,7 @@ async fn admin_erasure_removes_whole_document_but_cannot_bypass_history_guards(p
     let mut state = test_state(pool.clone());
     state.admin_emails = "erase-admin@example.test".into();
     state.shared_draft_bases = true;
+    state.named_snapshot_storage = engine_core::snapshot::NamedStorage::SharedV2;
     let router = app(state);
     let admin = bearer(admin_id);
     let owner = bearer(owner_id);
@@ -680,6 +681,7 @@ async fn admin_account_erasure_preserves_shared_chain_and_clears_private_drafts(
     let mut state = test_state(pool.clone());
     state.admin_emails = "admin-erasure@example.test".into();
     state.shared_draft_bases = true;
+    state.named_snapshot_storage = engine_core::snapshot::NamedStorage::SharedV2;
     let router = app(state);
     let admin = bearer(admin_id);
     let user = bearer(user_id);
@@ -1805,7 +1807,9 @@ async fn concurrent_acceptance_only_applies_once(pool: PgPool) {
 
 #[sqlx::test(migrations = "../../migrations")]
 async fn batch_rolls_back_and_deploy_pins_its_exact_state(pool: PgPool) {
-    let router = app(test_state(pool.clone()));
+    let mut state = test_state(pool.clone());
+    state.named_snapshot_storage = engine_core::snapshot::NamedStorage::SharedV2;
+    let router = app(state);
     let owner = seed_identity(&pool, "owner@example.test").await;
     let token = bearer(owner);
     let doc = create_document(&router, &token, "Study").await;
@@ -1928,7 +1932,9 @@ async fn ten_researchers_merge_independent_cells_without_loss(pool: PgPool) {
 
 #[sqlx::test(migrations = "../../migrations")]
 async fn personal_draft_conflicts_are_reviewed_and_old_versions_restore_stable_ids(pool: PgPool) {
-    let router = app(test_state(pool.clone()));
+    let mut state = test_state(pool.clone());
+    state.named_snapshot_storage = engine_core::snapshot::NamedStorage::SharedV2;
+    let router = app(state);
     let owner = seed_identity(&pool, "owner@draft.test").await;
     let token = bearer(owner);
     let doc = create_document(&router, &token, "Draft test").await;
@@ -2377,7 +2383,9 @@ async fn office_review_is_private_and_unresolved_changes_cannot_be_published(poo
 
 #[sqlx::test(migrations = "../../migrations")]
 async fn product_public_copy_is_frozen_private_and_revocable(pool: PgPool) {
-    let router = app(test_state(pool.clone()));
+    let mut state = test_state(pool.clone());
+    state.named_snapshot_storage = engine_core::snapshot::NamedStorage::SharedV2;
+    let router = app(state);
     let owner = bearer(seed_identity(&pool, "publisher@example.org").await);
     let doc = create_document(&router, &owner, "Published protocol").await;
     let root = "01J00000000000000000000000";
@@ -2597,7 +2605,21 @@ async fn product_admin_removal_invalidates_existing_tokens_after_restoration(poo
 
 #[sqlx::test(migrations = "../../migrations")]
 async fn corrupt_historical_snapshot_cannot_escape_through_public_restore_or_audit(pool: PgPool) {
-    let router = app(test_state(pool.clone()));
+    corrupt_snapshot_boundaries(pool, false).await;
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn corrupt_shared_snapshot_cannot_escape_through_public_restore_or_audit(pool: PgPool) {
+    corrupt_snapshot_boundaries(pool, true).await;
+}
+
+async fn corrupt_snapshot_boundaries(pool: PgPool, shared: bool) {
+    let mut state = test_state(pool.clone());
+    if shared {
+        state.named_snapshot_storage = engine_core::snapshot::NamedStorage::SharedV2;
+    }
+    let storage = state.named_snapshot_storage;
+    let router = app(state);
     let owner = bearer(seed_identity(&pool, "snapshot-owner@example.test").await);
     let outsider = bearer(seed_identity(&pool, "snapshot-outsider@example.test").await);
     let doc = create_document(&router, &owner, "Verified history").await;
@@ -2646,6 +2668,7 @@ async fn corrupt_historical_snapshot_cannot_escape_through_public_restore_or_aud
         &json!({"base_seq":2,"ops":[{"type":"FieldEdited","node_id":node,"field":"label","value":"Current"}]}))).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     engine_core::snapshot::SnapshotEngine::new(pool.clone())
+        .with_named_storage(storage)
         .take(
             DocumentId(doc),
             engine_core::snapshot::SnapshotReason::Periodic,
@@ -2656,8 +2679,19 @@ async fn corrupt_historical_snapshot_cannot_escape_through_public_restore_or_aud
         .execute(&pool)
         .await
         .unwrap();
-    sqlx::query("update snapshot set state=jsonb_set(state,'{comments}','[{\"node_id\":null,\"body\":\"forged\"}]') where id=$1")
+    let raw: Value = sqlx::query_scalar("select state from snapshot where id=$1")
+        .bind(deployed)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(raw.get("$dynodoc_state").is_some(), shared);
+    if shared {
+        sqlx::query("update snapshot set state=(select state from snapshot where document_id=$2 and through_seq=3) where id=$1")
+            .bind(deployed).bind(doc).execute(&pool).await.unwrap();
+    } else {
+        sqlx::query("update snapshot set state=jsonb_set(state,'{comments}','[{\"node_id\":null,\"body\":\"forged\"}]') where id=$1")
         .bind(deployed).execute(&pool).await.unwrap();
+    }
     sqlx::query("alter table snapshot enable trigger snapshot_no_update")
         .execute(&pool)
         .await
