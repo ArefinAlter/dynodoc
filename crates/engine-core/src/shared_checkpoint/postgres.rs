@@ -10,6 +10,44 @@ use super::{
 };
 use crate::{log::ZERO_HASH, materializer::DocumentState, snapshot::read_legacy_state_at};
 
+/// Explicit publication format. Changing this never rewrites an existing root.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Codec {
+    V1 = 1,
+    V2 = 2,
+}
+
+impl Codec {
+    pub async fn write<S: ObjectStore>(
+        self,
+        store: &mut S,
+        document: DocumentId,
+        state: &DocumentState,
+        limits: Limits,
+    ) -> Result<(Address, WriteStats), Error> {
+        match self {
+            Self::V1 => write_state(store, document, state, limits).await,
+            Self::V2 => {
+                super::typed::write_state(store, document, state, limits, Default::default()).await
+            }
+        }
+    }
+    pub async fn read<S: ObjectStore>(
+        self,
+        store: &mut S,
+        document: DocumentId,
+        root: &Address,
+        limits: Limits,
+    ) -> Result<DocumentState, Error> {
+        match self {
+            Self::V1 => read_state(store, document, root, limits).await,
+            Self::V2 => {
+                super::typed::read_state(store, document, root, limits, Default::default()).await
+            }
+        }
+    }
+}
+
 /// Internal document-scoped store. Use a transaction when writing graphs;
 /// individual `put` calls do not publish a checkpoint or check authorization.
 pub struct PgStore<'a> {
@@ -262,6 +300,16 @@ pub async fn take(
     through_seq: i64,
     limits: Limits,
 ) -> Result<PublishedCheckpoint, Error> {
+    take_with_codec(pool, document, through_seq, limits, Codec::V1).await
+}
+
+pub async fn take_with_codec(
+    pool: &PgPool,
+    document: DocumentId,
+    through_seq: i64,
+    limits: Limits,
+    codec: Codec,
+) -> Result<PublishedCheckpoint, Error> {
     if through_seq < 0 {
         return Err(Error::Invalid("negative revision"));
     }
@@ -286,6 +334,7 @@ pub async fn take(
         &state,
         event_chain_hash,
         limits,
+        codec,
     )
     .await?;
     tx.commit().await?;
@@ -301,10 +350,11 @@ pub(crate) async fn publish_in_connection(
     state: &DocumentState,
     event_chain_hash: Vec<u8>,
     limits: Limits,
+    codec: Codec,
 ) -> Result<PublishedCheckpoint, Error> {
     let mut store = PgStore::new(connection);
-    let (root, stats) = write_state(&mut store, document, state, limits).await?;
-    if read_state(&mut store, document, &root, limits).await? != *state {
+    let (root, stats) = codec.write(&mut store, document, state, limits).await?;
+    if codec.read(&mut store, document, &root, limits).await? != *state {
         return Err(Error::Invalid(
             "checkpoint reconstruction differs from history",
         ));
@@ -313,22 +363,23 @@ pub(crate) async fn publish_in_connection(
     let object_write_queries = store.write_queries();
     sqlx::query(
         "insert into shared_checkpoint(document_id,through_seq,codec_version,state_root,event_chain_hash)
-         values($1,$2,1,$3,$4) on conflict(document_id,through_seq) do nothing",
+         values($1,$2,$5,$3,$4) on conflict(document_id,through_seq) do nothing",
     )
     .bind(document.0)
     .bind(through_seq)
     .bind(root.as_str())
     .bind(&event_chain_hash)
+    .bind(codec as i16)
     .execute(&mut *connection)
     .await?;
-    let stored: (String, Vec<u8>) = sqlx::query_as(
-        "select state_root,event_chain_hash from shared_checkpoint where document_id=$1 and through_seq=$2",
+    let stored: (String, Vec<u8>, i16) = sqlx::query_as(
+        "select state_root,event_chain_hash,codec_version from shared_checkpoint where document_id=$1 and through_seq=$2",
     )
     .bind(document.0)
     .bind(through_seq)
     .fetch_one(&mut *connection)
     .await?;
-    if stored.0 != root.as_str() || stored.1 != event_chain_hash {
+    if stored.0 != root.as_str() || stored.1 != event_chain_hash || stored.2 != codec as i16 {
         return Err(Error::Invalid(
             "different checkpoint already published at revision",
         ));
@@ -375,14 +426,20 @@ pub(crate) async fn load_in_connection(
     .fetch_optional(&mut *connection)
     .await?
     .ok_or(Error::Invalid("checkpoint not published at revision"))?;
-    if version != 1 || chain != chain_at(connection, document, through_seq).await? {
+    if chain != chain_at(connection, document, through_seq).await? {
         return Err(Error::Invalid("checkpoint version or chain position"));
     }
-    read_state(
-        &mut PgStore::new(connection),
-        document,
-        &Address::try_from(root)?,
-        limits,
-    )
-    .await
+    let codec = match version {
+        1 => Codec::V1,
+        2 => Codec::V2,
+        _ => return Err(Error::Invalid("unsupported checkpoint version")),
+    };
+    codec
+        .read(
+            &mut PgStore::new(connection),
+            document,
+            &Address::try_from(root)?,
+            limits,
+        )
+        .await
 }

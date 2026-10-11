@@ -1,5 +1,65 @@
 # Engine evolution handoff
 
+## Source: typed state, shared drafts and local project history (12 October 2026)
+
+This pass continues across storage, repository and algorithm boundaries. The
+[acceptance ledger](ROADMAP-ACCEPTANCE.md) tracks the whole roadmap without marking
+unfinished integration as complete. Implementation commits are recorded in the
+follow-up verification entry when both repository checks finish.
+
+Implemented:
+
+- [Typed v2 checkpoints](TYPED-CHECKPOINTS.md), chunked text/value/asset references,
+  global encoded-object and semantic reconstruction budgets, exact replay comparison,
+  mixed historical readers and explicit codec selection. Schema 30 adds capability;
+  existing v1 roots/events remain unchanged.
+- [Shared draft bases](SHARED-DRAFT-BASES.md) at schema 31: private drafts, pushed
+  requests, recovery and rebase bases can store typed roots instead of repeated
+  full JSON. Transactions, document-scoped FKs, immutable initial bases and verified
+  reconstruction preserve access/review/stale checks and existing API responses.
+  DYNODOC_SHARED_DRAFT_BASES=shared-v2 opts in; default remains legacy.
+- [Portable local project history](PORTABLE-PROJECT-HISTORY.md): SQLite WAL/FULL
+  durability, signed multi-file commits/parents, generation-aware branch CAS,
+  bounded/idempotent missing-object transfer, all best merge bases, conservative
+  file comparison, and explicit CLI commands. Different paths still conflict when
+  they share a document identity or namespace constraint. Signatures do not supply
+  account binding, device revocation or independent witnesses.
+- Cached iterative parent-depth preparation replaces repeated walks during diff
+  sorting. Its ordering step is O(N log N) with O(N) auxiliary metadata. Other
+  diff/state costs remain; the regression covers cyclic/missing-parent graphs and
+  a 20,000-level chain.
+
+Verification so far: application formatting/Clippy pass and **303 Rust tests pass**
+against isolated PostgreSQL 16, including the new shared draft/rebase/recovery
+flows and restricted-role erasure. Independent fixed content/commit hashes and
+all previous v1 event vectors remain green. Standalone task lint passes; task
+test/docs and implementation CI are still being completed. The mirror preserves
+standalone package metadata, licensing, toolchain and independent fixtures.
+
+The synthetic two-replica example reopens both databases, exchanges only missing
+objects, publishes the same reviewed project merge and recovers the initial
+report. Repeating transfer sends zero objects. Initial transfer: 18 objects/2534
+encoded bytes; each changed side sends eight objects (~1.2 KiB). See the
+[record](benchmarks/local-repository-20261012.json). This is not native-editor,
+realistic large-file, HTTP, physical SQLite storage or service-load acceptance.
+
+Production remains application 858801c, schema 29. No live migration, writer
+enablement, hosted package/archive update or marketplace submission occurred.
+Schemas 30/31 require matching readers and a compatible rollback build; old
+schema-29 binaries must not be reused after migration. Shared periodic writes
+remain off. The task-owned disposable database is dynodoc-roadmap-test-20261012
+(label dynodoc.task=roadmap-20261012); remove it after both suites finish. Synthetic
+demo databases/logs remain under ignored target. The owner still runs installed
+Office/Google acceptance locally using the existing worksheet.
+
+Next integration priorities: shared named/deployed versions, physical packing and
+incremental publication; authenticated project transport/protected refs/device
+identity and connector/UI adoption of local history. Then complete same-file
+offline merge/constraint handling, native graph/fidelity/background capture,
+independent receipts/witnesses and realistic large/concurrent service acceptance.
+Current hosted drafts/branches remain per file. Do not call the total roadmap
+complete or treat the new local library as an installed Office/Google integration.
+
 ## Source: streaming shared content and local acceptance kit (12 October 2026)
 
 Application implementation `3462520` adds evolution part 2f. Standalone engine

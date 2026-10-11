@@ -516,7 +516,10 @@ async fn create_draft(
     } else {
         seq
     };
-    let draft:Uuid=sqlx::query_scalar("insert into workspace_draft(document_id,name,base_seq,base_state,created_by) values($1,$2,$3,$4,$5) returning id").bind(id).bind(req.name).bind(seq).bind(json!(current)).bind(auth.identity_id).fetch_one(&mut *tx).await?;
+    let stored =
+        crate::draft_storage::encode(&mut tx, DocumentId(id), &current, state.shared_draft_bases)
+            .await?;
+    let draft:Uuid=sqlx::query_scalar("insert into workspace_draft(document_id,name,base_seq,base_state,created_by) values($1,$2,$3,$4,$5) returning id").bind(id).bind(req.name).bind(seq).bind(stored).bind(auth.identity_id).fetch_one(&mut *tx).await?;
     tx.commit().await?;
     Ok(Json(json!({"id":draft})))
 }
@@ -537,9 +540,18 @@ async fn get_draft(
     auth: AuthContext,
 ) -> Result<Json<Value>, ApiError> {
     apply::require_role(&state.pool, DocumentId(id), IdentityId(auth.identity_id)).await?;
-    let row:Value=sqlx::query_scalar("select to_jsonb(d) from workspace_draft d where id=$1 and document_id=$2 and created_by=$3").bind(draft).bind(id).bind(auth.identity_id).fetch_optional(&state.pool).await?.ok_or(ApiError::NotFound)?;
-    let mut current: DocumentState = serde_json::from_value(row["base_state"].clone())
-        .map_err(|e| ApiError::Internal(e.to_string()))?;
+    let mut row:Value=sqlx::query_scalar("select to_jsonb(d) from workspace_draft d where id=$1 and document_id=$2 and created_by=$3").bind(draft).bind(id).bind(auth.identity_id).fetch_optional(&state.pool).await?.ok_or(ApiError::NotFound)?;
+    let mut connection = state.pool.acquire().await?;
+    let mut current =
+        crate::draft_storage::decode(&mut connection, DocumentId(id), &row["base_state"]).await?;
+    row["base_state"] = json!(current);
+    if !row["merge_base_state"].is_null() {
+        row["merge_base_state"] = json!(
+            crate::draft_storage::decode(&mut connection, DocumentId(id), &row["merge_base_state"])
+                .await?
+        );
+    }
+    drop(connection);
     let ops: Vec<Value> =
         sqlx::query_scalar("select payload from draft_edit where draft_id=$1 order by id")
             .bind(draft)
@@ -576,8 +588,7 @@ async fn edit_draft(
         });
     }
     let base:Value=sqlx::query_scalar("select base_state from workspace_draft where id=$1 and document_id=$2 and created_by=$3 and merged_at is null for update").bind(draft).bind(id).bind(auth.identity_id).fetch_optional(&mut *tx).await?.ok_or(ApiError::NotFound)?;
-    let mut current: DocumentState =
-        serde_json::from_value(base).map_err(|e| ApiError::Internal(e.to_string()))?;
+    let mut current = crate::draft_storage::decode(&mut tx, DocumentId(id), &base).await?;
     let prior: Vec<Value> =
         sqlx::query_scalar("select payload from draft_edit where draft_id=$1 order by id")
             .bind(draft)
@@ -788,15 +799,12 @@ pub(crate) async fn load_draft(
     creator: Option<Uuid>,
 ) -> Result<DraftContext, ApiError> {
     let row:Value=sqlx::query_scalar("select to_jsonb(d) from workspace_draft d where id=$1 and document_id=$2 and ($3::uuid is null or created_by=$3) and merged_at is null for update").bind(draft).bind(id).bind(creator).fetch_optional(&mut **tx).await?.ok_or(ApiError::NotFound)?;
-    let decode = |v: Value| {
-        serde_json::from_value::<DocumentState>(v).map_err(|e| ApiError::Internal(e.to_string()))
-    };
-    let mut local = decode(row["base_state"].clone())?;
-    let base = decode(if row["merge_base_state"].is_null() {
-        row["base_state"].clone()
+    let mut local = crate::draft_storage::decode(tx, DocumentId(id), &row["base_state"]).await?;
+    let base = if row["merge_base_state"].is_null() {
+        local.clone()
     } else {
-        row["merge_base_state"].clone()
-    })?;
+        crate::draft_storage::decode(tx, DocumentId(id), &row["merge_base_state"]).await?
+    };
     let edits: Vec<Value> =
         sqlx::query_scalar("select payload from draft_edit where draft_id=$1 order by id")
             .bind(draft)
@@ -1006,7 +1014,10 @@ async fn sync_draft(
         req.action == "share" && engine_core::workspace_merge::diff(&team, &local).is_empty();
     let next_seq = events.last().map_or(seq, |e| e.seq);
     // Sharing every change of a submitted draft yourself also closes its review request.
-    sqlx::query("update workspace_draft set content_changed_at=case when $6 then now() else content_changed_at end,merge_base_state=$2,base_seq=$3,revision=revision+1,merged_at=case when $4 then now() else merged_at end,review_outcome=case when $4 and submitted_at is not null then 'merged' else review_outcome end,reviewed_by=case when $4 and submitted_at is not null then $5 else reviewed_by end,reviewed_at=case when $4 and submitted_at is not null then now() else reviewed_at end where id=$1").bind(draft).bind(json!(team)).bind(next_seq).bind(completed).bind(auth.identity_id).bind(req.action != "share").execute(&mut *tx).await?;
+    let stored =
+        crate::draft_storage::encode(&mut tx, DocumentId(id), &team, state.shared_draft_bases)
+            .await?;
+    sqlx::query("update workspace_draft set content_changed_at=case when $6 then now() else content_changed_at end,merge_base_state=$2,base_seq=$3,revision=revision+1,merged_at=case when $4 then now() else merged_at end,review_outcome=case when $4 and submitted_at is not null then 'merged' else review_outcome end,reviewed_by=case when $4 and submitted_at is not null then $5 else reviewed_by end,reviewed_at=case when $4 and submitted_at is not null then now() else reviewed_at end where id=$1").bind(draft).bind(stored).bind(next_seq).bind(completed).bind(auth.identity_id).bind(req.action != "share").execute(&mut *tx).await?;
     tx.commit().await?;
     for event in &events {
         state.subscriptions.publish(doc, event.clone());

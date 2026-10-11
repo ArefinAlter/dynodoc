@@ -161,7 +161,9 @@ async fn history_ranges_reverse_and_reapply_deltas_with_overlap_choices(pool: Pg
 
 /// A deleted paragraph and a live sibling, followed by 55 independent saves.
 async fn recovery_fixture(pool: &PgPool) -> (Router, String, Uuid, String, String) {
-    let router = app(test_state(pool.clone()));
+    let mut state = test_state(pool.clone());
+    state.shared_draft_bases = true;
+    let router = app(state);
     let owner = identity(pool, "recovery-owner@example.test").await;
     let (status, doc) = post(&router, "/documents", &owner, json!({"title":"Recovery"})).await;
     assert_eq!(status, StatusCode::OK, "{doc}");
@@ -537,7 +539,9 @@ fn edit(node: &str, text: &str) -> Vec<Value> {
 
 #[sqlx::test(migrations = "../../migrations")]
 async fn pushed_files_become_reviewable_change_requests(pool: PgPool) {
-    let router = app(test_state(pool.clone()));
+    let mut state = test_state(pool.clone());
+    state.shared_draft_bases = true;
+    let router = app(state);
     let owner = identity(&pool, "owner-cr@example.test").await;
     let alice = identity(&pool, "alice-cr@example.test").await;
     let bob = identity(&pool, "bob-cr@example.test").await;

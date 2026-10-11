@@ -238,24 +238,49 @@ pub fn merge_strict(
     plan.ops = diff(team, &plan.state);
     plan
 }
-fn depth(state: &DocumentState, n: &MaterializedNode) -> usize {
-    let mut d = 0;
-    let mut p = n.parent_id.as_ref();
-    while let Some(id) = p {
-        d += 1;
-        if d > state.nodes.len() {
-            break;
+// Each parent chain is traversed once. Iterative traversal avoids stack growth
+// for deeply nested imports; malformed cycles retain the old capped sort depth.
+fn depths(state: &DocumentState) -> BTreeMap<NodeId, usize> {
+    let mut depths = BTreeMap::new();
+    let cap = state.nodes.len() + 1;
+    for id in state.nodes.keys() {
+        if depths.contains_key(id) {
+            continue;
         }
-        p = state.nodes.get(id).and_then(|n| n.parent_id.as_ref());
+        let mut path = Vec::new();
+        let mut seen = BTreeSet::new();
+        let mut cursor = id;
+        let mut depth = loop {
+            if let Some(depth) = depths.get(cursor) {
+                break *depth;
+            }
+            let Some(node) = state.nodes.get(cursor) else {
+                break 0;
+            };
+            let Some(parent) = &node.parent_id else {
+                depths.insert(cursor.clone(), 0);
+                break 0;
+            };
+            if !seen.insert(cursor) {
+                break cap;
+            }
+            path.push(cursor.clone());
+            cursor = parent;
+        };
+        for id in path.into_iter().rev() {
+            depth = (depth + 1).min(cap);
+            depths.insert(id, depth);
+        }
     }
-    d
+    depths
 }
 pub fn diff(from: &DocumentState, to: &DocumentState) -> Vec<EventPayload> {
     let from = canonical(from);
     let to = canonical(to);
     let mut result = Vec::new();
+    let to_depths = depths(&to);
     let mut nodes: Vec<_> = to.nodes.values().collect();
-    nodes.sort_by_key(|n| (depth(&to, n), n.id.clone()));
+    nodes.sort_by_cached_key(|n| (to_depths[&n.id], n.id.clone()));
     for n in nodes.into_iter().filter(|n| !n.deleted) {
         let prior = from.nodes.get(&n.id);
         if prior.is_none() {
@@ -331,7 +356,10 @@ pub fn diff(from: &DocumentState, to: &DocumentState) -> Vec<EventPayload> {
         .values()
         .filter(|n| !n.deleted && to.nodes.get(&n.id).is_none_or(|n| n.deleted))
         .collect();
-    removed.sort_by_key(|n| std::cmp::Reverse(depth(&from, n)));
+    if !removed.is_empty() {
+        let from_depths = depths(&from);
+        removed.sort_by_cached_key(|n| std::cmp::Reverse(from_depths[&n.id]));
+    }
     for n in removed {
         result.push(EventPayload::NodeDeleted {
             node_id: n.id.clone(),
@@ -382,6 +410,47 @@ pub fn diff(from: &DocumentState, to: &DocumentState) -> Vec<EventPayload> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn cached_depths_match_legacy_order_for_cycles_missing_parents_and_deep_trees() {
+        fn legacy(state: &DocumentState, node: &MaterializedNode) -> usize {
+            let mut count = 0;
+            let mut parent = node.parent_id.as_ref();
+            while let Some(id) = parent {
+                count += 1;
+                if count > state.nodes.len() {
+                    break;
+                }
+                parent = state.nodes.get(id).and_then(|node| node.parent_id.as_ref());
+            }
+            count
+        }
+        let template = state().nodes.values().next().unwrap().clone();
+        let mut random = 17u64;
+        for _ in 0..100 {
+            let mut graph = DocumentState::default();
+            for i in 0..64 {
+                random = random.wrapping_mul(6364136223846793005).wrapping_add(1);
+                let mut node = template.clone();
+                node.id = NodeId(i.to_string());
+                let parent = (random >> 32) % 70;
+                node.parent_id = (parent != 69).then(|| NodeId(parent.to_string()));
+                graph.nodes.insert(node.id.clone(), node);
+            }
+            let actual = depths(&graph);
+            for node in graph.nodes.values() {
+                assert_eq!(actual[&node.id], legacy(&graph, node));
+            }
+        }
+        let mut deep = DocumentState::default();
+        for i in 0..20_000 {
+            let mut node = template.clone();
+            node.id = NodeId(format!("{i:026}"));
+            node.parent_id = (i > 0).then(|| NodeId(format!("{:026}", i - 1)));
+            deep.nodes.insert(node.id.clone(), node);
+        }
+        let actual = depths(&deep);
+        assert_eq!(actual[&NodeId(format!("{:026}", 19_999))], 19_999);
+    }
     fn state() -> DocumentState {
         let mut s = DocumentState::default();
         s.nodes.insert(

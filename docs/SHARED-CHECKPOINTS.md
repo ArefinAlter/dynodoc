@@ -1,13 +1,18 @@
 # Shared checkpoints v1
 
+Current source also supports [typed v2 checkpoints](TYPED-CHECKPOINTS.md) and
+[opt-in shared draft bases](SHARED-DRAFT-BASES.md). The v1 contract below is retained
+unchanged for historical readers and roots. No shared writer is enabled in production.
+
 10 October 2026. Parts 2a-2e of the engine evolution plan. A derived checkpoint
 codec with normal mixed-format readers and a gated automatic writer. This is not
 the future portable commit protocol. Event and legacy JSONB formats are unchanged.
 
 Part 2f adds a separate [streaming byte-content format](CHUNKED-CONTENT.md) to the
 same document-scoped store. It is not yet referenced by these v1 state graphs;
-the limits and gated v1 publication below still apply. Typed checkpoint integration,
-shared draft/version references and complete bounded-state reconstruction remain.
+the limits and gated v1 publication below still apply. Typed v2 integration and
+draft references now exist separately; named versions, packing and incremental
+materialization remain open.
 
 ## Contract
 

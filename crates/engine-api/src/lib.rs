@@ -21,6 +21,7 @@ pub mod conflicts;
 pub mod copies;
 mod discussions;
 pub mod documents;
+mod draft_storage;
 pub mod error;
 mod history;
 pub mod idempotency;
@@ -59,6 +60,8 @@ pub struct AppState {
     /// Wakes the background copy-detection indexer ([`copies::spawn`]).
     pub copy_index: copies::CopyIndex,
     pub workloads: workloads::Workloads,
+    /// Explicit opt-in; new draft/rebase bases use typed shared objects.
+    pub shared_draft_bases: bool,
 }
 
 impl AppState {
@@ -71,6 +74,8 @@ impl AppState {
             admin_emails: std::env::var("ADMIN_EMAILS").unwrap_or_default(),
             copy_index: copies::CopyIndex::default(),
             workloads: workloads::Workloads::default(),
+            shared_draft_bases: std::env::var("DYNODOC_SHARED_DRAFT_BASES").as_deref()
+                == Ok("shared-v2"),
         }
     }
 }

@@ -1,5 +1,10 @@
 # Streaming shared content v1
 
+The current [typed v2 checkpoint codec](TYPED-CHECKPOINTS.md) now references these
+byte trees for strings and opaque assets; [shared draft bases](SHARED-DRAFT-BASES.md)
+can opt into typed roots. The byte format and fixed-boundary limitations below
+remain unchanged. Production remains on schema 29 with these writers disabled.
+
 12 October 2026. Part 2f storage primitive. This is the first bounded byte-content
 layer for future large values and assets, not completion of shared checkpoint
 adoption or portable commits. `shared_checkpoint::content::{write, read_into}`

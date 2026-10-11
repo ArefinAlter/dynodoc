@@ -64,6 +64,96 @@ async fn object_count(pool: &PgPool, doc: DocumentId) -> i64 {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn typed_publication_replays_large_values_and_mixed_history(
+    pool: PgPool,
+) -> anyhow::Result<()> {
+    use postgres::Codec;
+    let (actor, document, node) = seed(&pool).await?;
+    let v1 = postgres::take(&pool, document, 1, Limits::default()).await?;
+    let large = "বাংলা 🦀".repeat(150_000);
+    append(
+        &pool,
+        document,
+        &EventPayload::FieldEdited {
+            node_id: node.clone(),
+            field: "label".into(),
+            value: json!(large),
+        },
+        actor,
+    )
+    .await?;
+    let events: Vec<Event> =
+        sqlx::query_as("select * from event where document_id=$1 order by seq")
+            .bind(document.0)
+            .fetch_all(&pool)
+            .await?;
+    let expected = Materializer::fold(&events)?;
+    let published =
+        postgres::take_with_codec(&pool, document, 2, Limits::default(), Codec::V2).await?;
+    let repeat =
+        postgres::take_with_codec(&pool, document, 2, Limits::default(), Codec::V2).await?;
+    assert_eq!(published.root, repeat.root);
+    assert_eq!(repeat.stats.new_objects, 0);
+    assert_eq!(
+        postgres::load(&pool, document, 2, Limits::default()).await?,
+        expected
+    );
+    let mut connection = pool.acquire().await?;
+    let history = read_state_at(&mut connection, document, 2).await?;
+    assert_eq!(history.checkpoint_format, CheckpointFormat::SharedV2);
+    assert_eq!(history.replayed_events, 0);
+    assert_eq!(history.state, expected);
+    assert_eq!(
+        read_state_at(&mut connection, document, 1)
+            .await?
+            .checkpoint_format,
+        CheckpointFormat::SharedV1
+    );
+    drop(connection);
+    let count = object_count(&pool, document).await;
+    // A v2 publisher cannot rewrite an existing v1 manifest at the same revision.
+    assert!(
+        postgres::take_with_codec(&pool, document, 1, Limits::default(), Codec::V2)
+            .await
+            .is_err()
+    );
+    assert_eq!(object_count(&pool, document).await, count);
+    let preserved: String = sqlx::query_scalar(
+        "select state_root from shared_checkpoint where document_id=$1 and through_seq=1",
+    )
+    .bind(document.0)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(preserved, v1.root.as_str());
+    append(
+        &pool,
+        document,
+        &EventPayload::FieldEdited {
+            node_id: node,
+            field: "label".into(),
+            value: json!("After checkpoint"),
+        },
+        actor,
+    )
+    .await?;
+    SnapshotEngine::new(pool.clone())
+        .with_periodic_storage(PeriodicStorage::SharedV2)
+        .ensure_recent(document, 0)
+        .await?;
+    let mut connection = pool.acquire().await?;
+    let history = read_state_at(&mut connection, document, 3).await?;
+    assert_eq!(history.checkpoint_format, CheckpointFormat::SharedV2);
+    assert_eq!(history.replayed_events, 0);
+    let events: Vec<Event> =
+        sqlx::query_as("select * from event where document_id=$1 order by seq")
+            .bind(document.0)
+            .fetch_all(&pool)
+            .await?;
+    assert_eq!(history.state, Materializer::fold(&events)?);
+    Ok(())
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn chunked_content_reuses_objects_and_rolls_back_without_publishing(
     pool: PgPool,
 ) -> anyhow::Result<()> {

@@ -1,0 +1,13 @@
+{
+  "fixture": "local_repository_demo; two small synthetic logical files; two SQLite replicas",
+  "scope": "logical object transfer and restart/recovery acceptance, not native-file, HTTP or service capacity benchmarking",
+  "initial_transfer": {"objects": 18, "bytes": 2534},
+  "alice_received": {"objects": 8, "bytes": 1212},
+  "bob_received": {"objects": 8, "bytes": 1214},
+  "retry_objects": 0,
+  "old_revision_restored": true,
+  "replica_heads_equal": true,
+  "ref_generation": 2,
+  "physical_sqlite_bytes_or_network_framing_included": false,
+  "OS_power_loss_test": false
+}

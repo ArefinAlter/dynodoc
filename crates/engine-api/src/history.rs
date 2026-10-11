@@ -293,13 +293,16 @@ async fn recover(
     }
     // Explicit ID makes retry atomic without a second, independently committed
     // receipt. A cross-document UUID collision fails without leaking its draft.
+    let stored =
+        crate::draft_storage::encode(&mut tx, DocumentId(id), &team, state.shared_draft_bases)
+            .await?;
     let inserted = sqlx::query("insert into workspace_draft(id,document_id,name,base_seq,base_state,created_by,source,revision,content_changed_at) values($1,$2,$3,$4,$5,$6,$7,1,now()) on conflict(id) do nothing")
         .bind(draft_id).bind(id).bind(match req.mode {
             Mode::Restore => format!("Recover content from revision {}", req.through_seq),
             Mode::Revert => format!("Revert revisions {}–{}", req.from_seq.unwrap() + 1, req.through_seq),
             Mode::CherryPick => format!("Cherry-pick revisions {}–{}", req.from_seq.unwrap() + 1, req.through_seq),
         })
-        .bind(head).bind(json!(team)).bind(auth.identity_id).bind(&source).execute(&mut *tx).await?;
+        .bind(head).bind(stored).bind(auth.identity_id).bind(&source).execute(&mut *tx).await?;
     if inserted.rows_affected() != 1 {
         return Err(ApiError::Conflict {
             reason: "This request_id is already in use. Use a new ID for this recovery.".into(),

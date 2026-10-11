@@ -7,9 +7,12 @@ at application `858801c`, schema 29 (11 October 2026). See the
 The API uses restricted runtime credentials; snapshot verification, project rules,
 browser policy and bounded workload admission have passed CI and VPS acceptance.
 
-Part 2f now provides the [streaming byte-content primitive](CHUNKED-CONTENT.md).
-Resume part 2 below: integrate typed text/value/asset manifests and shared historical references,
-then portable local/project commits. Request admission is not a full-state memory
+Part 2g now adds [typed v2 checkpoints](TYPED-CHECKPOINTS.md) and the current pass
+adds opt-in shared draft bases. The settled typed-root contract also underlies the
+[portable local project repository](PORTABLE-PROJECT-HISTORY.md), an early part-3
+implementation with signed commits, parent history, branch CAS and transfer primitives.
+Continue storage adoption/packing and authenticated transport/connector integration;
+these sources do not yet complete either part. Request admission is not a full-state memory
 bound; independent audit part 6, native-host acceptance and large-service limits
 remain open. Shared periodic checkpoint writes remain off.
 

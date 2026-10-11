@@ -1,9 +1,15 @@
 # Standalone engine release
 
-Latest storage source (12 October 2026): application `3462520`, engine `746d373`
+Current source work adds [typed checkpoints](TYPED-CHECKPOINTS.md), schema 31
+[shared draft bases](SHARED-DRAFT-BASES.md) and a
+[portable local project repository](PORTABLE-PROJECT-HISTORY.md). See the
+[handoff](ENGINE-EVOLUTION-HANDOFF.md) for current checks and commit identities.
+These source changes have not been deployed to the schema-29 VPS.
+
+Earlier storage source (12 October 2026): application `3462520`, engine `746d373`
 add identical streaming byte-content objects, fixed hash vectors and transactional
 store tests. V1 snapshots/events and schema 29 remain compatible; typed chunked
-checkpoint integration and project commits are still future work. See
+checkpoint integration and project commits were future work at that revision. See
 [the content contract](CHUNKED-CONTENT.md) and [verification/handoff](ENGINE-EVOLUTION-HANDOFF.md).
 
 Latest test synchronization: engine PR #7 (`e31f093`, merged `d6be03a`)

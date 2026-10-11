@@ -137,12 +137,12 @@ pub(super) fn validate(expected: &Address, bytes: &[u8]) -> Result<(), Error> {
     decode(expected, bytes).map(|_| ())
 }
 
-struct Builder<'a, S> {
-    writer: Writer<'a, S>,
+struct Builder<'a, 'b, S> {
+    writer: &'a mut Writer<'b, S>,
     levels: Vec<Vec<Reference>>,
 }
 
-impl<S: ObjectStore> Builder<'_, S> {
+impl<S: ObjectStore> Builder<'_, '_, S> {
     async fn branch(&mut self, height: u8, children: &[Reference]) -> Result<Reference, Error> {
         let length = children.iter().map(|child| child.length).sum::<u64>();
         let mut bytes = header(2);
@@ -205,15 +205,25 @@ pub async fn write<S: ObjectStore, R: AsyncRead + Unpin + Send>(
     input: &mut R,
     limits: Limits,
 ) -> Result<(Address, WriteStats), Error> {
+    let mut writer = Writer {
+        store,
+        document,
+        budget: limits,
+        stats: WriteStats::default(),
+        pending: Vec::new(),
+        pending_bytes: 0,
+    };
+    let root = write_with_writer(&mut writer, input).await?;
+    writer.flush().await?;
+    Ok((root, writer.stats))
+}
+
+pub(super) async fn write_with_writer<S: ObjectStore, R: AsyncRead + Unpin + Send>(
+    writer: &mut Writer<'_, S>,
+    input: &mut R,
+) -> Result<Address, Error> {
     let mut builder = Builder {
-        writer: Writer {
-            store,
-            document,
-            budget: limits,
-            stats: WriteStats::default(),
-            pending: Vec::new(),
-            pending_bytes: 0,
-        },
+        writer,
         levels: (0..=MAX_HEIGHT).map(|_| Vec::new()).collect(),
     };
     let mut buffer = vec![0; CHUNK_BYTES];
@@ -252,9 +262,7 @@ pub async fn write<S: ObjectStore, R: AsyncRead + Unpin + Send>(
     bytes.push(height);
     bytes.extend_from_slice(&child.length.to_be_bytes());
     put_address(&mut bytes, &child.address);
-    let root = builder.writer.encoded(address(&bytes), bytes).await?;
-    builder.writer.flush().await?;
-    Ok((root, builder.writer.stats))
+    builder.writer.encoded(address(&bytes), bytes).await
 }
 
 async fn get<S: ObjectStore>(
@@ -282,7 +290,17 @@ pub async fn read_into<S: ObjectStore, W: AsyncWrite + Unpin + Send>(
     output: &mut W,
     mut limits: Limits,
 ) -> Result<u64, Error> {
-    let bytes = get(store, document, root, &mut limits).await?;
+    read_with_budget(store, document, root, output, &mut limits).await
+}
+
+pub(super) async fn read_with_budget<S: ObjectStore, W: AsyncWrite + Unpin + Send>(
+    store: &mut S,
+    document: DocumentId,
+    root: &Address,
+    output: &mut W,
+    limits: &mut Limits,
+) -> Result<u64, Error> {
+    let bytes = get(store, document, root, limits).await?;
     let Object::Root { height, child } = decode(root, &bytes)? else {
         return Err(Error::Invalid("expected content root"));
     };
@@ -292,7 +310,7 @@ pub async fn read_into<S: ObjectStore, W: AsyncWrite + Unpin + Send>(
     }
     let mut stack = vec![(height, child)];
     while let Some((height, child)) = stack.pop() {
-        let bytes = get(store, document, &child.address, &mut limits).await?;
+        let bytes = get(store, document, &child.address, limits).await?;
         match decode(&child.address, &bytes)? {
             Object::Chunk(data) if height == 0 && data.len() as u64 == child.length => {
                 output.write_all(data).await?;

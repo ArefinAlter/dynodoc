@@ -1,0 +1,94 @@
+# Portable project history
+
+12 October 2026. Source implementation in `engine_core::repository` introduces a
+local SQLite repository alongside centralized document history. It does not yet
+replace web drafts, turn connector queues into offline repositories, or authorize
+HTTP project ref updates. Project commits are a separate versioned contract;
+legacy event sequences remain intact.
+
+## Contract
+
+A commit v1 binds a project UUID, zero to two ordered parent addresses, the full
+path-to-document/state-root map, Ed25519 author public key, declared timestamp
+in milliseconds and message. Stable document UUIDs persist across path changes.
+File state roots use typed checkpoint v2. Parents preserve the first-parent
+distinction. Paths are bounded relative logical names; duplicate document IDs and
+file/directory collisions are rejected. This format currently caps projects at
+4096 files and a canonical commit at 1 MiB. The file map is fully encoded per
+commit; persistent file indexes are still an optimization to implement.
+
+Commit addresses hash `dynodoc.project-commit\0v1\0` followed by sorted-key canonical
+JSON. Signatures cover `dynodoc.project-commit-signature\0v1\0` followed by the
+32 raw address bytes. All fields, including parent order, actor and timestamp,
+are therefore bound. A valid signature proves possession of a key. Account
+binding, device authorization/revocation, trustworthy time, server receipts and
+external witnesses require additional protocols; a self-asserted key is not a
+verified user identity. No existing database event hash is changed.
+
+## Durable local operations
+
+`LocalRepository::open(path, project)` creates/reopens SQLite schema 1 with WAL,
+FULL synchronization and one-project binding. Object and commit rows are immutable.
+Writes and transfer batches are transactional. `write_state` verifies exact typed
+reconstruction before committing objects. `import_commit` verifies its signature,
+parent existence/scope and all reachable file state graphs under a shared object/
+byte budget before storing it. It never changes a branch implicitly.
+
+`compare_and_swap(branch, expected_head, new_commit)` publishes all project files
+through one transaction. A head contains a generation as well as an address, so
+an A → B → A update cannot make a stale comparison succeed. Historical commits
+remain available after branch changes. Local refs may intentionally move to an old
+commit; remote protected-branch policy is not implemented by this local method.
+
+`merge_bases` walks bounded parent history and returns **all** best common
+ancestors. Multiple bases and disconnected histories are explicit results. It
+does not choose an arbitrary base or claim to resolve all concurrent rich-text
+and structural edits. State reconstruction still uses bounded resident state.
+
+## Exchange and trust boundaries
+
+Inventory is keyset-paged (maximum 256 addresses), missing-object negotiation is
+bounded, and object packets are individually hashed and document-scoped. Imports
+accept at most 64 objects / 1 MiB atomically, tolerate reordering and are idempotent.
+An interrupted sender can restart negotiation without replaying existing content.
+Commit import waits for parents and all referenced content; refs publish last.
+These are transport primitives, not authenticated remote routes. Inventory includes
+staged/unreachable objects within the local project. A server must authorize each
+document/project, enforce quotas and avoid exposing cross-tenant existence.
+
+SQLite guarantees depend on the filesystem and hardware honoring synchronization.
+Reopen, transaction rollback and retry tests are not an OS power-loss experiment.
+Owner-level edits to the SQLite file are outside local trigger protection; hashes
+and signatures are checked on reads, but detecting removal of the newest history
+requires a previously retained head or independent witness. No garbage collection,
+key vault, native background capture, credential storage or marketplace publication
+is introduced by this module.
+
+See [the evolution handoff](ENGINE-EVOLUTION-HANDOFF.md) for validation and the
+remaining integration work. Installed-editor testing remains the owner's local
+worksheet in the application repository.
+
+## Local acceptance and CLI
+
+Run `cargo run --locked -p engine-core --example local_repository_demo -- NEW_DIR`
+with a new directory under an existing writable parent. The synthetic example
+creates Alice and Bob databases, commits two project files, closes and reopens
+both replicas, exchanges only missing objects, compares independent edits in both
+orders, signs one accepted merge and publishes matching project heads. It also
+recovers the initial report and verifies a repeated transfer sends zero objects.
+The example's publicly known keys are test fixtures, never production identities.
+The retained SQLite files allow inspection with the CLI.
+
+`engine-cli repository DATABASE PROJECT_UUID --help` exposes initialization,
+state storage/reconstruction, signed commit import/show, branch reads/CAS, merge
+bases and project comparison. `commit MANIFEST --help` describes the PKCS#8 key
+input (currently a positional path). Private keys are operator-supplied; the CLI
+does not generate/store credentials or establish a trusted account/device binding.
+Use an appropriately protected key source. State JSON input is capped at 16 MiB
+for these local commands; this does not change the product's 3 MB native-upload cap.
+
+Project comparison uses roots to combine unchanged/equal/independent file changes.
+Competing edits, delete/edit, shared-document rename and path namespace conflicts
+remain explicit. Same-file rich-text resolution, cross-file semantic validators,
+criss-cross virtual bases and native application remain additional work. The
+planner never writes to a branch or native document on its own.

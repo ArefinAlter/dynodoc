@@ -301,8 +301,11 @@ pub(crate) async fn create(
         ));
     }
     let base = state_through(&mut tx, id, req.base_seq).await?;
+    let stored =
+        crate::draft_storage::encode(&mut tx, DocumentId(id), &base, state.shared_draft_bases)
+            .await?;
     let draft:Uuid=sqlx::query_scalar("insert into workspace_draft(document_id,name,base_seq,base_state,created_by,source,submitted_at,submission_note,revision,content_changed_at) values($1,$2,$3,$4,$5,$6,case when $7 then now() end,$8,1,now()) returning id")
-        .bind(id).bind(req.name.trim()).bind(req.base_seq).bind(json!(base)).bind(auth.identity_id).bind(&source).bind(req.submit).bind(req.note.trim()).fetch_one(&mut *tx).await?;
+        .bind(id).bind(req.name.trim()).bind(req.base_seq).bind(stored).bind(auth.identity_id).bind(&source).bind(req.submit).bind(req.note.trim()).fetch_one(&mut *tx).await?;
     let mut current = base.clone();
     let mut edits = 0;
     for op in req.ops {
@@ -563,8 +566,10 @@ async fn merge(
     carry_into_draft(&mut tx, draft, auth.identity_id, &mut local, &plan.state).await?;
     let completed = engine_core::workspace_merge::diff(&team, &local).is_empty();
     let next_seq = events.last().map_or(seq, |e| e.seq);
+    let stored =
+        crate::draft_storage::encode(&mut tx, doc, &team, state.shared_draft_bases).await?;
     sqlx::query("update workspace_draft set merge_base_state=$2,base_seq=$3,revision=revision+1,merged_at=case when $4 then now() end,review_outcome=case when $4 then 'merged' end,reviewed_by=$5,reviewed_at=now(),review_note=$6 where id=$1")
-        .bind(draft).bind(json!(team)).bind(next_seq).bind(completed).bind(auth.identity_id).bind(req.note.trim()).execute(&mut *tx).await?;
+        .bind(draft).bind(stored).bind(next_seq).bind(completed).bind(auth.identity_id).bind(req.note.trim()).execute(&mut *tx).await?;
     crate::product::audit(
         &mut tx,
         auth.identity_id,

@@ -17,6 +17,8 @@ use sqlx::PgPool;
 use utoipa::OpenApi;
 use uuid::Uuid;
 
+mod repository;
+
 #[derive(Parser)]
 #[command(name = "engine-cli", version, about = "dynodoc admin tools")]
 struct Cli {
@@ -26,6 +28,13 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Durable local project history (no network or installed-editor session required).
+    Repository {
+        path: std::path::PathBuf,
+        project: Uuid,
+        #[command(subcommand)]
+        action: repository::Action,
+    },
     /// Apply migrations using MIGRATION_DATABASE_URL in a separate operator process.
     Migrate,
     /// Give an existing restricted login the explicit runtime allowlist (operator only).
@@ -60,6 +69,9 @@ enum Command {
         document_id: String,
         #[arg(long)]
         through_seq: i64,
+        /// Use typed chunked state objects (requires schema 30).
+        #[arg(long)]
+        typed: bool,
     },
     /// Emit the generated OpenAPI document. With `--out`, write it there; otherwise
     /// print to stdout. CI compares the committed `openapi.yaml` against `--out -` to
@@ -81,6 +93,11 @@ async fn main() -> anyhow::Result<()> {
 
     let cli = Cli::parse();
     match cli.command {
+        Command::Repository {
+            path,
+            project,
+            action,
+        } => repository::run(path, project, action).await,
         Command::Migrate => {
             let pool = connect_migration().await?;
             engine_core::database::MIGRATOR.run(&pool).await?;
@@ -104,7 +121,8 @@ async fn main() -> anyhow::Result<()> {
         Command::SharedSnapshot {
             document_id,
             through_seq,
-        } => shared_snapshot(document_id, through_seq).await,
+            typed,
+        } => shared_snapshot(document_id, through_seq, typed).await,
         Command::Openapi { out } => openapi(out),
     }
 }
@@ -246,19 +264,22 @@ fn to_hex(bytes: &[u8]) -> String {
     s
 }
 
-async fn shared_snapshot(document_id: String, through_seq: i64) -> anyhow::Result<()> {
+async fn shared_snapshot(document_id: String, through_seq: i64, typed: bool) -> anyhow::Result<()> {
     let doc = parse_document_id(&document_id)?;
     let pool = connect().await?;
-    let result = engine_core::shared_checkpoint::postgres::take(
+    use engine_core::shared_checkpoint::postgres::Codec;
+    let codec = if typed { Codec::V2 } else { Codec::V1 };
+    let result = engine_core::shared_checkpoint::postgres::take_with_codec(
         &pool,
         doc,
         through_seq,
         engine_core::shared_checkpoint::Limits::default(),
+        codec,
     )
     .await
     .context("publishing shared checkpoint failed")?;
     println!(
-        "shared checkpoint v1 at revision {}: {}",
+        "shared checkpoint {codec:?} at revision {}: {}",
         result.through_seq,
         result.root.as_str()
     );

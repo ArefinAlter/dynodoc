@@ -86,7 +86,9 @@ async fn waiting_writer_rechecks_revoked_access(pool: PgPool) {
 
 #[sqlx::test(migrations = "../../migrations")]
 async fn draft_sharing_remembers_exclusions_until_explicitly_included(pool: PgPool) {
-    let router = app(test_state(pool.clone()));
+    let mut shared_state = test_state(pool.clone());
+    shared_state.shared_draft_bases = true;
+    let router = app(shared_state);
     let owner = bearer(seed_identity(&pool, "selection@example.test").await);
     let doc = create_document(&router, &owner, "Selections").await;
     let root = ulid::Ulid::new().to_string();
@@ -163,6 +165,136 @@ async fn draft_sharing_remembers_exclusions_until_explicitly_included(pool: PgPo
     )
     .await;
     assert_eq!(verification["ok"], true);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn shared_draft_bases_reuse_content_preserve_responses_and_enforce_scope(pool: PgPool) {
+    let mut state = test_state(pool.clone());
+    state.shared_draft_bases = true;
+    let router = app(state);
+    let actor = seed_identity(&pool, "shared-drafts@example.test").await;
+    let owner = bearer(actor);
+    let document = create_document(&router, &owner, "Shared drafts").await;
+    let (_, created) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{document}/ops/node-create"),
+            &owner,
+            &json!({"node_type":"form","pos":"a0","fields":{"label":"Original"}}),
+        ),
+    )
+    .await;
+    let node = created["event"]["target_node_id"].as_str().unwrap();
+    let (_, first) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{document}/drafts"),
+            &owner,
+            &json!({"name":"First"}),
+        ),
+    )
+    .await;
+    let before: i64 =
+        sqlx::query_scalar("select count(*) from checkpoint_object where document_id=$1")
+            .bind(document)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let (_, second) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{document}/drafts"),
+            &owner,
+            &json!({"name":"Second"}),
+        ),
+    )
+    .await;
+    let after: i64 =
+        sqlx::query_scalar("select count(*) from checkpoint_object where document_id=$1")
+            .bind(document)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(before, after);
+    assert!(before > 0);
+    let bases: Vec<Value> =
+        sqlx::query_scalar("select base_state from workspace_draft where document_id=$1")
+            .bind(document)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(bases.len(), 2);
+    assert_eq!(bases[0], bases[1]);
+    assert_eq!(bases[0]["$dynodoc_state"], 2);
+    assert!(bases[0].to_string().len() < 120);
+    let uri = format!(
+        "/documents/{document}/drafts/{}",
+        first["id"].as_str().unwrap()
+    );
+    let (status, read) = send(&router, auth_post_get(&uri, &owner)).await;
+    assert_eq!(status, StatusCode::OK, "{read}");
+    assert_eq!(
+        read["draft"]["base_state"]["nodes"][node]["current_fields"]["label"],
+        "Original"
+    );
+    assert!(read["draft"]["base_state"].get("$dynodoc_state").is_none());
+    let (status,edited)=send(&router,auth_post(&uri,&owner,&json!({"revision":0,"ops":[{"type":"FieldEdited","node_id":node,"field":"label","value":"Draft"}]}))).await;
+    assert_eq!(status, StatusCode::OK, "{edited}");
+    let sync = format!("{uri}/sync");
+    let (_, preview) = send(
+        &router,
+        auth_post(&sync, &owner, &json!({"action":"preview"})),
+    )
+    .await;
+    let (status, merged) = send(
+        &router,
+        auth_post(
+            &sync,
+            &owner,
+            &json!({"action":"share","team_seq":preview["team_seq"],"revision":1}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{merged}");
+    let merge_base: Value =
+        sqlx::query_scalar("select merge_base_state from workspace_draft where id=$1")
+            .bind(Uuid::parse_str(first["id"].as_str().unwrap()).unwrap())
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(merge_base["$dynodoc_state"], 2);
+    assert_ne!(merge_base, bases[0]);
+    let (status, read) = send(&router, auth_post_get(&uri, &owner)).await;
+    assert_eq!(status, StatusCode::OK, "{read}");
+    assert_eq!(
+        read["draft"]["merge_base_state"]["nodes"][node]["current_fields"]["label"],
+        "Draft"
+    );
+    // Initial bases cannot be changed by application-level UPDATE, in either codec.
+    assert!(
+        sqlx::query("update workspace_draft set base_state='{}' where document_id=$1")
+            .bind(document)
+            .execute(&pool)
+            .await
+            .is_err()
+    );
+    let other = create_document(&router, &owner, "Another document").await;
+    assert!(sqlx::query("insert into workspace_draft(document_id,name,base_seq,base_state,created_by) values($1,'Cross scope',0,$2,$3)")
+        .bind(other).bind(&bases[0]).bind(actor).execute(&pool).await.is_err());
+    let stranger = bearer(seed_identity(&pool, "stranger-shared@example.test").await);
+    assert_eq!(
+        send(&router, auth_post_get(&uri, &stranger)).await.0,
+        StatusCode::FORBIDDEN
+    );
+    let second_uri = format!(
+        "/documents/{document}/drafts/{}",
+        second["id"].as_str().unwrap()
+    );
+    let (_, unchanged) = send(&router, auth_post_get(&second_uri, &owner)).await;
+    assert_eq!(
+        unchanged["state"]["nodes"][node]["current_fields"]["label"],
+        "Original"
+    );
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -327,6 +459,7 @@ async fn admin_erasure_removes_whole_document_but_cannot_bypass_history_guards(p
     let owner_id = seed_identity(&pool, "erase-owner@example.test").await;
     let mut state = test_state(pool.clone());
     state.admin_emails = "erase-admin@example.test".into();
+    state.shared_draft_bases = true;
     let router = app(state);
     let admin = bearer(admin_id);
     let owner = bearer(owner_id);
@@ -546,6 +679,7 @@ async fn admin_account_erasure_preserves_shared_chain_and_clears_private_drafts(
     let receiver = seed_identity(&pool, "receiver@example.test").await;
     let mut state = test_state(pool.clone());
     state.admin_emails = "admin-erasure@example.test".into();
+    state.shared_draft_bases = true;
     let router = app(state);
     let admin = bearer(admin_id);
     let user = bearer(user_id);

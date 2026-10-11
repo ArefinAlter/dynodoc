@@ -26,6 +26,9 @@ pub mod snapshot_verification;
 /// Opt-in content-addressed, document-scoped shared checkpoints.
 pub mod shared_checkpoint;
 
+/// Portable signed project commits and a durable local repository.
+pub mod repository;
+
 /// Semantic operation handlers: per-variant validation against current state. See docs/16.
 pub mod ops;
 

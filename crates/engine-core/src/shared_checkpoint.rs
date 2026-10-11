@@ -15,6 +15,7 @@ use crate::materializer::{CommentState, DocumentState, MaterializedNode, Suggest
 pub(crate) mod canonical;
 pub mod content;
 pub mod postgres;
+pub mod typed;
 use canonical::ObjectRef;
 
 pub const MAX_OBJECT_BYTES: usize = 1024 * 1024;
@@ -95,7 +96,7 @@ impl Default for Limits {
 }
 
 impl Limits {
-    fn consume(&mut self, bytes: usize) -> Result<(), Error> {
+    pub(crate) fn consume(&mut self, bytes: usize) -> Result<(), Error> {
         self.max_objects = self
             .max_objects
             .checked_sub(1)
@@ -291,9 +292,11 @@ fn decode(expected: &Address, bytes: &[u8]) -> Result<Object, Error> {
 
 // New content objects occupy the same document-scoped store, but have a separate
 // version/hash domain. V1 state readers still require only v1 checkpoint objects.
-fn validate_stored(expected: &Address, bytes: &[u8]) -> Result<(), Error> {
+pub(crate) fn validate_stored(expected: &Address, bytes: &[u8]) -> Result<(), Error> {
     if bytes.starts_with(content::MAGIC) {
         content::validate(expected, bytes)
+    } else if bytes.starts_with(typed::MAGIC) {
+        typed::validate(expected, bytes)
     } else {
         decode(expected, bytes).map(|_| ())
     }
@@ -487,6 +490,15 @@ impl<S: ObjectStore + Send> Reader<'_, S> {
     }
 
     async fn entries(&mut self, root: &Address) -> Result<BTreeMap<String, Address>, Error> {
+        self.entries_limited(root, usize::MAX, usize::MAX).await
+    }
+
+    async fn entries_limited(
+        &mut self,
+        root: &Address,
+        max_entries: usize,
+        max_key_bytes: usize,
+    ) -> Result<BTreeMap<String, Address>, Error> {
         let mut entries = BTreeMap::new();
         // Breadth-first batches avoid retaining decoded ancestors or losing a
         // sibling prefetch when recursion replaces the cache. Only references
@@ -509,6 +521,9 @@ impl<S: ObjectStore + Send> Reader<'_, S> {
                     Object::MapLeaf(leaf) => {
                         counts.push((parent, leaf.len(), false));
                         for entry in leaf {
+                            if entries.len() == max_entries || entry.key.len() > max_key_bytes {
+                                return Err(Error::Limit("map entries or key bytes"));
+                            }
                             if !route(&entry.key).starts_with(&prefix)
                                 || entries.insert(entry.key, entry.address).is_some()
                             {
@@ -642,7 +657,7 @@ mod tests {
     use proptest::prelude::*;
     use serde_json::json;
 
-    fn fixture(count: usize) -> DocumentState {
+    pub(super) fn fixture(count: usize) -> DocumentState {
         let mut state = DocumentState::default();
         for i in 0..count {
             let id = NodeId(format!("{i:026}"));
