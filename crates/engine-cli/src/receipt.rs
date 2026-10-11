@@ -1,11 +1,11 @@
 //! Offline receipt tools. Journal state stays separate from project data. No
 //! command connects to a server, registers an account key or publishes a branch.
+use crate::signing::load as key;
 use clap::Subcommand;
 use engine_core::repository::{
     attestation::{Pin, Receipt, Scope, SignedReceipt, SignedRotation},
     receipt_journal::ReceiptJournal,
 };
-use ring::signature::Ed25519KeyPair;
 use std::{
     io::Read,
     path::{Path, PathBuf},
@@ -52,10 +52,6 @@ fn read(path: &Path, limit: usize) -> anyhow::Result<Vec<u8>> {
 }
 fn json<T: serde::de::DeserializeOwned>(path: &Path, limit: usize) -> anyhow::Result<T> {
     Ok(serde_json::from_slice(&read(path, limit)?)?)
-}
-fn key(path: &Path) -> anyhow::Result<Ed25519KeyPair> {
-    Ed25519KeyPair::from_pkcs8(&read(path, 4096)?)
-        .map_err(|_| anyhow::anyhow!("invalid Ed25519 PKCS#8 key"))
 }
 pub async fn run(path: PathBuf, scope: Scope, action: Action) -> anyhow::Result<()> {
     let output = match action {

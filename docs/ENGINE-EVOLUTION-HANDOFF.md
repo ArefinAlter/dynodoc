@@ -2,7 +2,7 @@
 
 ## Source: signed ref receipts and durable client trust (12 October 2026)
 
-This pass adds [signed ref receipts](REF-RECEIPTS.md) and a separate SQLite client
+Application `3218315` and standalone engine `20caed4` add [signed ref receipts](REF-RECEIPTS.md) and a separate SQLite client
 trust journal. Scope, generation, commit, predecessor, declared time and authority
 key are signed. Contiguous proofs reject rollback, conflicting heads, missing
 updates and scope/key substitution. Verified-prefix retries are idempotent.
@@ -18,8 +18,12 @@ creates real synthetic project commits, exercises a separate client journal,
 reopens it and verifies fork/rollback/retry/rotation/revocation behavior. See
 [its record](benchmarks/receipt-journal-20261012.json). The built CLI successfully
 reads the reopened, revoked journal without PostgreSQL or network access.
-Standalone/CI checks for this increment are being completed; no production
-change occurred.
+A follow-up fixes both signing commands to accept standard unencrypted DER
+PKCS#8 v1 keys as well as v2, retaining v2 public/private component checks.
+The new CLI regression passes against independent OpenSSL signatures; an actual
+CLI smoke signs/verifies a v1 key, trusts its receipt, signs/accepts a dual-key
+rotation, retries and revokes the journal. Synthetic key files were removed.
+Standalone/CI checks are being completed; no production change occurred.
 
 These are core/CLI integration primitives. Production does not yet issue signed
 ref receipts or distribute authority keys. Account/device registration and remote
@@ -78,8 +82,8 @@ Continue the roadmap across this checkpoint without requiring another prompt.
 This pass continues across storage, repository and algorithm boundaries. The
 [acceptance ledger](ROADMAP-ACCEPTANCE.md) tracks the whole roadmap without marking
 unfinished integration as complete. Application implementation: `8dd816b`;
-standalone engine implementation: `f1cdf8c`. A later source increment for shared
-named/deployed snapshots is in progress; the evidence below covers these commits.
+standalone engine implementation: `f1cdf8c`. Newer entries above record shared
+named/deployed snapshots and client audit tools; the evidence below covers these commits.
 
 Implemented:
 

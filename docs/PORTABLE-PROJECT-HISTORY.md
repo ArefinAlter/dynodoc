@@ -82,7 +82,9 @@ The retained SQLite files allow inspection with the CLI.
 `engine-cli repository DATABASE PROJECT_UUID --help` exposes initialization,
 state storage/reconstruction, signed commit import/show, branch reads/CAS, merge
 bases and project comparison. `commit MANIFEST --help` describes the PKCS#8 key
-input (currently a positional path). Private keys are operator-supplied; the CLI
+input (currently a positional path). Unencrypted DER Ed25519 PKCS#8 v1 and v2
+are accepted, including standard OpenSSL v1 output; v2 component consistency
+remains checked. Private keys are operator-supplied; the CLI
 does not generate/store credentials or establish a trusted account/device binding.
 Use an appropriately protected key source. State JSON input is capped at 16 MiB
 for these local commands; this does not change the product's 3 MB native-upload cap.

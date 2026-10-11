@@ -72,7 +72,10 @@ Actions:
 - `rotate TRANSITION NEXT_RECEIPT`: atomically accept a rotation and next head.
 
 Signing tools never imply remote acceptance or publish a branch. Private keys
-are read from caller-selected files, never printed or stored in the journal.
+are read from caller-selected unencrypted DER Ed25519 PKCS#8 v1 or v2 files,
+never printed or stored in the journal. V1 imports derive the public key from
+the seed; v2 imports also check that the included public key matches. Standard
+OpenSSL v1 imports are pinned against the independent signature fixture.
 Inputs are bounded (8192 bytes per signed envelope, 2 MiB per proof file, 4096
 bytes per key file). Public keys and signatures are intentionally exportable.
 

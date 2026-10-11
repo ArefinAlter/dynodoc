@@ -19,6 +19,7 @@ use uuid::Uuid;
 
 mod receipt;
 mod repository;
+mod signing;
 
 #[derive(Parser)]
 #[command(name = "engine-cli", version, about = "dynodoc admin tools")]

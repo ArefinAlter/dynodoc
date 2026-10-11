@@ -7,7 +7,6 @@ use engine_core::{
     shared_checkpoint::Address,
 };
 use engine_shared::DocumentId;
-use ring::signature::Ed25519KeyPair;
 use std::{
     io::Read,
     path::{Path, PathBuf},
@@ -79,13 +78,7 @@ pub async fn run(path: PathBuf, project: uuid::Uuid, action: Action) -> anyhow::
         )?,
         Action::Commit { manifest, key } => {
             let commit: Commit = read_json(&manifest, engine_core::repository::MAX_COMMIT_BYTES)?;
-            let mut bytes = Vec::new();
-            std::fs::File::open(key)?
-                .take(4097)
-                .read_to_end(&mut bytes)?;
-            anyhow::ensure!(bytes.len() <= 4096, "signing key file too large");
-            let key = Ed25519KeyPair::from_pkcs8(&bytes)
-                .map_err(|_| anyhow::anyhow!("invalid Ed25519 PKCS#8 key"))?;
+            let key = crate::signing::load(&key)?;
             let signed = SignedCommit::sign(commit, &key)?;
             serde_json::json!({"commit":repo.import_commit(&signed).await?})
         }
