@@ -1,5 +1,40 @@
 # Engine evolution handoff
 
+## In progress: browser security, workload budgets and VPS rollout (11 October 2026)
+
+CSP/HSTS, scoped Office embedding, process-local response admission, authenticated
+identity/project expensive-read limits and database deadlines are implemented.
+See [the contract and remaining limits](BROWSER-AND-WORKLOAD-SECURITY.md). Schema
+remains 29; no event/hash changes. Local Rust lint/build/OpenAPI pass; 273 tests pass
+in the remaining-suite run and the unchanged 100 ms SSE test passes separately.
+Two full Windows runs missed that existing timing deadline; full Linux CI remains
+a deployment gate. Frontend type check, units, lint, connector drift and nine focused
+CSP/connector browser workflows pass. The full signed-in browser run is in progress. It exposed an exhausted-response
+stream panic in the admission wrapper; the stream is now fused, with a passing
+regression for repeated end-of-body polling. Packaging checks also pass.
+
+Deployment is authorized but live activation has not happened. VPS live images
+remain `release-ecbc643`, schema 26. A fresh backup was restored into the isolated
+`dynodoc-security-rehearsal` network. Upgrade to schema 29, snapshot/chain verification
+and restricted runtime-role checks passed with two documents, 36 events and zero
+snapshots unchanged. Baseline API `rollback-schema29-20261011` (source `336b718`)
+passes synthetic auth, snapshot, project, historical recovery, merge, audit, erasure
+and logout workflows on that upgraded copy. Preparation and private diagnostics are
+under `/opt/dynodoc-releases/20261011-security/`; no backup data leaves the VPS.
+
+Next: commit/push source, pass CI, build candidate images, repeat synthetic workflows
+on candidate then compatible rollback API, check web/proxy, take a fresh activation
+backup, stop old writers, upgrade/provision/backfill, and replace only API/web/admin.
+Preserve the existing PostgreSQL container and unrelated services. Retain candidate
+web with the compatible API rollback; older web/proxy combinations are not an
+approved rollback for the new CSP. Shared periodic checkpoint writes stay off.
+
+Local test API/web are running against the labelled disposable
+`dynodoc-security-test` container; process records and logs are in `target/security-*`.
+Stop only these recorded task-owned processes and remove this container/volume after
+checks. Afterwards resume shared chunk/byte bounds, project-wide portable commits,
+offline convergence, independent audit commitments and installed-editor acceptance.
+
 ## Verified source: project policy and audited metadata (11 October 2026)
 
 Project rules now form a minimum for file rules, including old weak overrides.

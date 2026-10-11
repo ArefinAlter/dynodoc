@@ -10,7 +10,22 @@
     void loadSession();
     void observeVitals().catch(() => {});
   });
-  import { goto } from '$app/navigation';
+  import { beforeNavigate, goto } from '$app/navigation';
+  import { isOfficePane } from '$lib/security-policy';
+  // A document's CSP cannot change during client navigation. Cross the Office
+  // boundary with a fresh response so Microsoft permissions never follow a pane
+  // into account/workspace pages, and entering a pane gets its scoped policy.
+  beforeNavigate(({ from, to, willUnload, cancel }) => {
+    if (
+      from &&
+      to &&
+      !willUnload &&
+      isOfficePane(from.url.pathname) !== isOfficePane(to.url.pathname)
+    ) {
+      cancel();
+      window.location.assign(to.url.href);
+    }
+  });
   import { setUnauthorizedHandler } from '$lib/api/client';
   import { requiresSignIn } from '$lib/auth-next';
   import HelpGuide from '$lib/components/product/HelpGuide.svelte';

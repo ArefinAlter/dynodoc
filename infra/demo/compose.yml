@@ -39,6 +39,9 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     tmpfs: [/tmp:size=64m]
+    mem_limit: 2g
+    cpus: 2
+    pids_limit: 128
   database-admin:
     profiles: [maintenance]
     build:
@@ -71,11 +74,15 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       CONVERTER_KEY: ${CONVERTER_KEY:?Set CONVERTER_KEY}
+      CONNECTOR_ORIGINS: ${CONNECTOR_ORIGINS:-}
       SOURCE_ARCHIVE_PATH: /app/source.tar.gz
       ENGINE_API_URL: http://api:8080
       CONVERTER_URL: http://converter:8090
       DEV_AUTH: 'false'
     volumes: ['../../source.tar.gz:/app/source.tar.gz:ro']
+    mem_limit: 1g
+    cpus: 2
+    pids_limit: 128
     ports: ['127.0.0.1:3088:3000']
     networks: [engine, conversion, web]
     depends_on: [api]
@@ -101,6 +108,9 @@ services:
       ENGINE_API_URL: http://api:8080
       OPS_STATUS_PATH: /app/ops/status.json
       DEV_AUTH: 'false'
+    mem_limit: 768m
+    cpus: 1
+    pids_limit: 128
     ports: ['127.0.0.1:3089:3000']
     volumes: ['../../ops:/app/ops:ro']
     networks: [engine, web]

@@ -34,6 +34,7 @@ pub mod projects;
 pub mod provenance;
 pub mod reviews;
 pub mod stream;
+pub mod workloads;
 pub mod workspace;
 
 use axum::{routing::get, Json, Router};
@@ -57,6 +58,7 @@ pub struct AppState {
     pub admin_emails: String,
     /// Wakes the background copy-detection indexer ([`copies::spawn`]).
     pub copy_index: copies::CopyIndex,
+    pub workloads: workloads::Workloads,
 }
 
 impl AppState {
@@ -68,6 +70,7 @@ impl AppState {
             subscriptions: Subscriptions::new(),
             admin_emails: std::env::var("ADMIN_EMAILS").unwrap_or_default(),
             copy_index: copies::CopyIndex::default(),
+            workloads: workloads::Workloads::default(),
         }
     }
 }
@@ -76,8 +79,8 @@ impl AppState {
 ///
 /// Middleware (docs/18 §1): gzip compression, a CORS layer (permissive for the
 /// local-only PoC — tighten origins for a deployment), and an OpenTelemetry-compatible
-/// `TraceLayer`. Rate limiting is intentionally minimal in the PoC (see the module-level
-/// note in [`idempotency`]); idempotency is implemented fully.
+/// `TraceLayer`. Process-local admission/deadline controls are in [`workloads`];
+/// these do not replace tenant quotas at a multi-instance gateway.
 pub fn app(state: AppState) -> Router {
     // PoC: permissive CORS (local-only). A deployment restricts `allow_origin` to the
     // known frontend origins (docs/18 "restrict to known origins").
@@ -107,6 +110,13 @@ pub fn app(state: AppState) -> Router {
         .merge(notifications::router())
         .merge(copies::router())
         .merge(people::router())
+        .layer(axum::middleware::from_fn_with_state(
+            state.workloads.clone(),
+            workloads::admission,
+        ))
+        .layer(tower_http::limit::RequestBodyLimitLayer::new(
+            16 * 1024 * 1024,
+        ))
         .with_state(state)
         .layer(cors)
         .layer(CompressionLayer::new())

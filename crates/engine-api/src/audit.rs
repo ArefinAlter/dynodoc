@@ -72,6 +72,10 @@ pub async fn verify(
         return Err(ApiError::NotFound);
     }
 
+    let _budget = state
+        .workloads
+        .document(&mut *state.pool.acquire().await?, auth.identity_id, id)
+        .await?;
     let result =
         match engine_core::snapshot_verification::verify_document(&state.pool, document_id, false)
             .await
@@ -95,7 +99,7 @@ pub async fn verify(
                     detail: Some(detail),
                 }
             }
-            Err(other) => return Err(ApiError::Internal(other.to_string())),
+            Err(other) => return Err(other.into()),
         };
 
     let mut response = Json(result).into_response();
@@ -129,6 +133,10 @@ pub async fn get_snapshot(
 ) -> Result<Json<Snapshot>, ApiError> {
     require_role(&state.pool, DocumentId(id), IdentityId(auth.identity_id)).await?;
     let mut connection = state.pool.acquire().await?;
+    let _budget = state
+        .workloads
+        .document(&mut connection, auth.identity_id, id)
+        .await?;
     let snapshot =
         engine_core::snapshot_verification::load(&mut connection, DocumentId(id), snapshot_id)
             .await?
@@ -185,6 +193,10 @@ pub async fn merkle_proof(
 
     // The latest snapshot pins the covered event range.
     let mut connection = state.pool.acquire().await?;
+    let _budget = state
+        .workloads
+        .document(&mut connection, auth.identity_id, id)
+        .await?;
     let snapshot_id: Option<Uuid> = sqlx::query_scalar(
         "select id from snapshot where document_id=$1 order by through_seq desc limit 1",
     )

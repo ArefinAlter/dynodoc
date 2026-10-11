@@ -1,10 +1,11 @@
 import { env } from '$env/dynamic/private';
 import { env as publicEnv } from '$env/dynamic/public';
-import { redirect, type Handle } from '@sveltejs/kit';
+import { isRedirect, redirect, type Handle } from '@sveltejs/kit';
 import { isIndexableHost, isPublicPath } from '$lib/seo';
 import { requiresSignIn } from '$lib/auth-next';
 import { accessToken } from '$lib/server/session';
-export const handle: Handle = async ({ event, resolve }) => {
+import { secureResponse } from '$lib/server/security';
+const application: Handle = async ({ event, resolve }) => {
   const { pathname, search } = event.url;
   if (env.ADMIN_SITE === 'true' && ['/', '/workspace'].includes(pathname)) redirect(303, '/admin');
   if (event.url.hostname === 'app.dynodoc.online' && pathname === '/')
@@ -41,4 +42,17 @@ export const handle: Handle = async ({ event, resolve }) => {
     response.headers.set('cache-control', 'private, no-store');
   response.headers.set('x-content-type-options', 'nosniff');
   return response;
+};
+
+// Include early sign-in/OAuth redirects without buffering bodies or SSE streams.
+export const handle: Handle = async (input) => {
+  try {
+    return secureResponse(await application(input), input.event.url, env.CONNECTOR_ORIGINS);
+  } catch (error) {
+    if (!isRedirect(error)) throw error;
+    return secureResponse(
+      new Response(null, { status: error.status, headers: { location: error.location } }),
+      input.event.url
+    );
+  }
 };

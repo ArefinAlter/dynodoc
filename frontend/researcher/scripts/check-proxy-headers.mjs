@@ -60,6 +60,16 @@ function request(url, cookie) {
     pending.on('error', reject);
   });
 }
+function checkSecurity(response, pane = false) {
+  assert.equal(response.headers['strict-transport-security'], 'max-age=31536000');
+  assert.equal(response.headers['x-content-type-options'], 'nosniff');
+  const csp = response.headers['content-security-policy'];
+  assert.ok(csp && !csp.includes(','), 'One complete CSP, without duplicate policies.');
+  assert.match(csp, /object-src 'none'/);
+  assert.doesNotMatch(csp, /script-src[^;]*unsafe-(inline|eval)/);
+  assert.equal(response.headers['x-frame-options'], pane ? undefined : 'SAMEORIGIN');
+  if (!pane) assert.match(csp, /frame-ancestors 'self'(?:;|$)/);
+}
 async function stopNginx() {
   if (!nginx) return;
   const force = setTimeout(() => nginx.kill('SIGTERM'), 5000);
@@ -139,7 +149,9 @@ ${sites.join('\n')}
     config.replace(/^\s*proxy_(?:buffer_size|buffers|busy_buffers_size) [^;]+;\r?$/gm, ''),
     appURL
   );
-  assert.equal((await request(`${appURL}/auth/header-check`)).status, 502);
+  const failure = await request(`${appURL}/auth/header-check`);
+  assert.equal(failure.status, 502);
+  checkSecurity(failure);
   assert.equal((await request(`${adminURL}/auth/header-check`)).status, 502);
   await stopNginx();
 
@@ -166,6 +178,8 @@ ${sites.join('\n')}
     const proxied = await request(`${appURL}${path}`, cookie);
     assert.equal(direct.status, 200);
     assert.equal(proxied.status, 200);
+    checkSecurity(proxied);
+    assert.match(proxied.headers['content-security-policy'], /script-src[^;]+(?:nonce-|sha256-)/);
     assert.equal(proxied.headers.link, direct.headers.link, 'Preserve asset preload headers.');
     assert.equal(proxied.headers['x-frame-options'], 'SAMEORIGIN');
     console.log(`${path}: direct headers ${direct.headerBytes} bytes; proxy 200`);
@@ -173,6 +187,7 @@ ${sites.join('\n')}
   for (const url of [appURL, adminURL]) {
     const response = await request(`${url}/auth/header-check`);
     assert.equal(response.status, 200);
+    checkSecurity(response);
     assert.equal(response.headers['set-cookie'].length, 2);
     assert.ok(response.headers.link.length > 8000);
     console.log(`auth preload/cookie fixture: ${response.headerBytes} bytes; proxy 200`);
@@ -181,8 +196,21 @@ ${sites.join('\n')}
   for (const host of ['word', 'excel', 'powerpoint']) {
     const response = await request(`${appURL}/connectors/${host}`);
     assert.equal(response.status, 200);
-    assert.equal(response.headers['x-frame-options'], undefined);
+    checkSecurity(response, true);
+    assert.match(
+      response.headers['content-security-policy'],
+      /script-src[^;]+appsforoffice\.microsoft\.com/
+    );
     assert.match(response.headers['content-security-policy'], /frame-ancestors/);
+  }
+  for (const [path, status] of [
+    ['/workspace', 303],
+    ['/theme-init.js', 200],
+    ['/missing-security-fixture', 404]
+  ]) {
+    const response = await request(`${appURL}${path}`);
+    assert.equal(response.status, status);
+    checkSecurity(response);
   }
   assert.doesNotMatch(nginxErrors, /upstream sent too big header/);
   console.log('Production proxy header regression passed. No account or document was accessed.');

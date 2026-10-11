@@ -25,7 +25,7 @@ tokio-stream = { version = "0.1", features = ["sync"] }
 futures = "0.3"
 axum = "0.7"
 tower = "0.5"
-tower-http = { version = "0.6", features = ["cors", "compression-gzip", "trace"] }
+tower-http = { version = "0.6", features = ["cors", "compression-gzip", "trace", "limit"] }
 
 # Database
 sqlx = { version = "0.8", features = [

@@ -1094,7 +1094,15 @@ async fn search(
     if term.len() > 200 {
         return Err(bad("Search in 200 characters or fewer"));
     }
-    let items:Vec<Value>=sqlx::query_scalar("select jsonb_build_object('document_id',d.id,'title',d.title,'node_id',n.id,'text',left(n.current_fields::text,4000)) from document d left join node n on n.document_id=d.id and not n.deleted where effective_document_role(d.id,$1) is not null and d.status<>'archived' and (strpos(lower(d.title),lower($2))>0 or strpos(lower(n.current_fields::text),lower($2))>0) order by d.updated_at desc,n.pos limit 50").bind(auth.identity_id).bind(term).fetch_all(&state.pool).await?;
+    let _budget = state.workloads.enter(auth.identity_id, None)?;
+    let mut tx = state.pool.begin().await?;
+    // PostgreSQL cancels the scan itself, including after a client disconnect.
+    // LIMIT bounds returned rows, not the amount of work required to find them.
+    sqlx::query("set local statement_timeout = '2s'")
+        .execute(&mut *tx)
+        .await?;
+    let items:Vec<Value>=sqlx::query_scalar("select jsonb_build_object('document_id',d.id,'title',d.title,'node_id',n.id,'text',left(n.current_fields::text,4000)) from document d left join node n on n.document_id=d.id and not n.deleted where effective_document_role(d.id,$1) is not null and d.status<>'archived' and (strpos(lower(d.title),lower($2))>0 or strpos(lower(n.current_fields::text),lower($2))>0) order by d.updated_at desc,n.pos limit 50").bind(auth.identity_id).bind(term).fetch_all(&mut *tx).await?;
+    tx.commit().await?;
     Ok(Json(json!({"items":items})))
 }
 

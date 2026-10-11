@@ -2579,3 +2579,73 @@ async fn corrupt_historical_snapshot_cannot_escape_through_public_restore_or_aud
         .unwrap();
     assert_eq!(seq, 3, "failed restore must append nothing");
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn search_timeout_stops_blocked_scan_and_recovers(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let token = bearer(seed_identity(&pool, "bounded-search@example.test").await);
+    create_document(&router, &token, "Search fixture").await;
+    let mut lock = pool.begin().await.unwrap();
+    sqlx::query("lock table node in access exclusive mode")
+        .execute(&mut *lock)
+        .await
+        .unwrap();
+    let (status, body) = tokio::time::timeout(
+        std::time::Duration::from_secs(8),
+        send(&router, auth_post_get("/search?q=fixture", &token)),
+    )
+    .await
+    .unwrap();
+    assert_eq!(status, StatusCode::GATEWAY_TIMEOUT, "{body}");
+    assert_eq!(body["code"], "deadline_exceeded");
+    assert!(!body.to_string().contains("statement"));
+    lock.rollback().await.unwrap();
+    let (status, body) = send(&router, auth_post_get("/search?q=fixture", &token)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["items"].as_array().unwrap().len(), 1);
+}
+#[sqlx::test(migrations = "../../migrations")]
+async fn expensive_reads_share_identity_budget_but_not_other_members(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let actor = seed_identity(&pool, "budget-actor@example.test").await;
+    let owner = bearer(actor);
+    let other = bearer(seed_identity(&pool, "budget-other@example.test").await);
+    let doc = create_document(&router, &owner, "Budget fixture").await;
+    // A denied caller cannot debit the owner's project or account budget.
+    for _ in 0..125 {
+        assert_eq!(
+            send(
+                &router,
+                auth_post_get(&format!("/documents/{doc}/verify"), &other)
+            )
+            .await
+            .0,
+            StatusCode::FORBIDDEN
+        );
+    }
+    for _ in 0..120 {
+        assert_eq!(
+            send(&router, auth_post_get("/search?q=fixture", &owner))
+                .await
+                .0,
+            StatusCode::OK
+        );
+    }
+    let response = router
+        .clone()
+        .oneshot(auth_post_get(
+            &format!("/documents/{doc}/provenance"),
+            &bearer(actor),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(response.headers()["retry-after"], "60");
+    drop(response);
+    assert_eq!(
+        send(&router, auth_post_get("/search?q=fixture", &other))
+            .await
+            .0,
+        StatusCode::OK
+    );
+}

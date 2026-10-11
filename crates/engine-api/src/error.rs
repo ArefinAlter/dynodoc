@@ -46,6 +46,12 @@ pub enum ApiError {
     /// The caller exceeded a rate limit → 429, with a `Retry-After` hint (seconds).
     #[error("rate limited")]
     RateLimited { retry_after: u64 },
+    /// Read/database deadline reached; no query internals are returned.
+    #[error("operation deadline exceeded")]
+    Deadline,
+    /// Database pool admission unavailable.
+    #[error("service busy; retry later")]
+    Busy,
     /// An unexpected server-side failure → 500. The detail is logged, never returned.
     #[error("internal error: {0}")]
     Internal(String),
@@ -62,6 +68,8 @@ impl ApiError {
             ApiError::Conflict { .. } => StatusCode::CONFLICT,
             ApiError::RateLimited { .. } => StatusCode::TOO_MANY_REQUESTS,
             ApiError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            ApiError::Deadline => StatusCode::GATEWAY_TIMEOUT,
+            ApiError::Busy => StatusCode::SERVICE_UNAVAILABLE,
         }
     }
 
@@ -75,6 +83,8 @@ impl ApiError {
             ApiError::Conflict { .. } => "conflict",
             ApiError::RateLimited { .. } => "rate_limited",
             ApiError::Internal(_) => "internal",
+            ApiError::Deadline => "deadline_exceeded",
+            ApiError::Busy => "busy",
         }
     }
 
@@ -132,13 +142,21 @@ impl From<AuthError> for ApiError {
             }
             AuthError::Forbidden => ApiError::Forbidden,
             AuthError::InvalidKey | AuthError::TokenMint(_) => ApiError::Internal(err.to_string()),
-            AuthError::Db(e) => ApiError::Internal(e.to_string()),
+            AuthError::Db(e) => e.into(),
         }
     }
 }
 
 impl From<sqlx::Error> for ApiError {
     fn from(err: sqlx::Error) -> Self {
+        if matches!(err, sqlx::Error::PoolTimedOut) {
+            return ApiError::Busy;
+        }
+        if let sqlx::Error::Database(db) = &err {
+            if matches!(db.code().as_deref(), Some("57014" | "55P03")) {
+                return ApiError::Deadline;
+            }
+        }
         ApiError::Internal(err.to_string())
     }
 }
@@ -179,6 +197,7 @@ impl From<EventError> for ApiError {
     fn from(err: EventError) -> Self {
         match err {
             EventError::DocumentNotFound(_) => ApiError::NotFound,
+            EventError::Db(e) => e.into(),
             other => ApiError::Internal(other.to_string()),
         }
     }
@@ -187,7 +206,8 @@ impl From<EventError> for ApiError {
 impl From<SnapshotError> for ApiError {
     fn from(err: SnapshotError) -> Self {
         match err {
-            SnapshotError::Event(EventError::DocumentNotFound(_)) => ApiError::NotFound,
+            SnapshotError::Event(e) => e.into(),
+            SnapshotError::Db(e) => e.into(),
             other => ApiError::Internal(other.to_string()),
         }
     }

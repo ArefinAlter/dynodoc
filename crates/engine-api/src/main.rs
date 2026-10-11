@@ -30,11 +30,17 @@ async fn main() -> anyhow::Result<()> {
         std::env::var("DATABASE_URL").context("DATABASE_URL is not set (see .env / SETUP.md)")?;
     let pool = PgPoolOptions::new()
         .max_connections(8)
+        .acquire_timeout(std::time::Duration::from_secs(5))
         .after_connect(|connection, _| {
             Box::pin(async move {
-                sqlx::query("set search_path = pg_catalog, public, pg_temp")
-                    .execute(connection)
-                    .await?;
+                for statement in [
+                    "set search_path = pg_catalog, public, pg_temp",
+                    "set statement_timeout = '15s'",
+                    "set lock_timeout = '5s'",
+                    "set idle_in_transaction_session_timeout = '30s'",
+                ] {
+                    sqlx::query(statement).execute(&mut *connection).await?;
+                }
                 Ok(())
             })
         })

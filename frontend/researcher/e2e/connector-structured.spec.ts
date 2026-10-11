@@ -226,9 +226,12 @@ for (const host of ['google-sheets', 'google-slides'] as const) {
     const c = checkpoint(host),
       base = projectCheckpoint(c),
       sheet = host === 'google-sheets';
-    // Establish a secure localhost origin without starting another host adapter.
-    // A late Office.js response could otherwise replace this bridge's edit hook.
-    await page.goto('/privacy');
+    // Apps Script HTML runs under Google's policy, not the Dynodoc site's CSP.
+    // Isolate the synthetic bridge from Svelte and Office runtimes as well.
+    await page.route('https://google-addon.invalid/', (route) =>
+      route.fulfill({ contentType: 'text/html', body: '<!doctype html><html></html>' })
+    );
+    await page.goto('https://google-addon.invalid/');
     await page.evaluate(
       ({ c, base, host, request, actor }) => {
         let generation: string | null = null,

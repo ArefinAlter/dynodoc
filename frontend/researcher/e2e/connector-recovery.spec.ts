@@ -139,12 +139,12 @@ test('Google Docs sidebar restores and exports the exact queue through its host 
     "<?!= include('Protocol'); ?>",
     readFileSync('../../extensions/google-docs/Protocol.html', 'utf8')
   );
-  await page.route('https://appsforoffice.microsoft.com/lib/1/hosted/office.js', (route) =>
-    route.fulfill({ contentType: 'text/javascript', body: wordRuntime })
+  // Google's host, not the Dynodoc site's CSP, owns Apps Script HTML. Keep this
+  // isolated bridge fixture on its own secure origin; native acceptance is separate.
+  await page.route('https://google-addon.invalid/', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<!doctype html><html></html>' })
   );
-  // Native hosts require separate acceptance. This exercises the real sidebar and
-  // generated protocol, with only the Apps Script bridge replaced.
-  await page.goto('/connectors/word');
+  await page.goto('https://google-addon.invalid/');
   await page.evaluate(
     ({ checkpoint, receipt }) => {
       let success: (value: unknown) => void,

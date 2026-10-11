@@ -200,6 +200,7 @@ async fn read_checkpoint(
     if let Some(grant) = credential {
         check_grant(&mut tx, grant, id, actor).await?;
     }
+    let _budget = s.workloads.document(&mut tx, actor, id).await?;
     let (title, kind): (String, String) = sqlx::query_as(
         "select title,coalesce(settings->>'kind','questionnaire') from document where id=$1",
     )
