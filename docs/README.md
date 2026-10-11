@@ -25,6 +25,7 @@ or public-consultation stage prompts.
 | Streaming byte objects and typed chunked state | [CHUNKED-CONTENT](CHUNKED-CONTENT.md), [TYPED-CHECKPOINTS](TYPED-CHECKPOINTS.md) |
 | Shared draft/rebase bases and named/deployed/public snapshots | [SHARED-DRAFT-BASES](SHARED-DRAFT-BASES.md), [SHARED-NAMED-SNAPSHOTS](SHARED-NAMED-SNAPSHOTS.md) |
 | Local project commits, branches, exchange and CLI | [PORTABLE-PROJECT-HISTORY](PORTABLE-PROJECT-HISTORY.md) |
+| Portable commit revert/cherry-pick and signed recovery sources | [PROJECT-COMMIT-RECOVERY](PROJECT-COMMIT-RECOVERY.md) |
 | Signed branch receipts, client pins and trust boundaries | [REF-RECEIPTS](REF-RECEIPTS.md) |
 | Combined protocol guide | [04-versioning-combined](04-versioning-combined.md) |
 | Algorithm assumptions and corrected mathematics | [03-versioning-mathematics-vol2](03-versioning-mathematics-vol2.md) |

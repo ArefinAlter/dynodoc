@@ -1,0 +1,24 @@
+{
+  "generator": "Independent Python canonical JSON/SHA-256 and OpenSSL Ed25519, public synthetic seed 7; hash/signature only, placeholder dependencies",
+  "canonical": "{\"author_key\":\"ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c\",\"authored_at_ms\":1700000000000,\"files\":{},\"message\":\"Recover selected change\",\"parents\":[\"1111111111111111111111111111111111111111111111111111111111111111\"],\"project\":\"00000000-0000-0000-0000-000000000001\",\"recovery\":{\"commit\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"kind\":\"cherry-pick\",\"mainline\":\"3333333333333333333333333333333333333333333333333333333333333333\"},\"version\":2}",
+  "address": "9e44fff545a9c0af68f49a11c9e337c1893a306606c3c7179c1215fd34fec25d",
+  "signed": {
+    "commit": {
+      "version": 2,
+      "project": "00000000-0000-0000-0000-000000000001",
+      "parents": [
+        "1111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "files": {},
+      "author_key": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+      "authored_at_ms": 1700000000000,
+      "message": "Recover selected change",
+      "recovery": {
+        "kind": "cherry-pick",
+        "commit": "2222222222222222222222222222222222222222222222222222222222222222",
+        "mainline": "3333333333333333333333333333333333333333333333333333333333333333"
+      }
+    },
+    "signature": "0c93b0db5ec4c285a809102ccb3da43e1ac39ceed76f1b614e13d5ca8521d95add34155ecbcda274c15a1b4a027793b43942764746d9c33acdd62ef0b150d10a"
+  }
+}

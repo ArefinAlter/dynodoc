@@ -1,5 +1,36 @@
 # Dynodoc: intent, current implementation and remaining work
 
+## Source: portable project revert and cherry-pick (12 October 2026)
+
+The core and CLI now support [commit-addressed project recovery](PROJECT-COMMIT-RECOVERY.md).
+Preview applies a source delta (or its inverse) to an exact current commit; new
+signed v2 commits retain source/mainline as provenance and current commit as their
+only ancestry parent. Existing v1 hashes/signatures remain unchanged. Root sources
+use an empty baseline; merge sources require a chosen parent. Same-file competition
+and shared identity/path constraints require explicit resolutions. Import verifies
+the sources, recomputes the plan and rejects unrelated settled-path changes.
+Publication remains a separate generation-aware branch CAS.
+
+All 25 repository regressions pass, including recovery fifty commits back,
+preservation of later independent work, restart/retry, missing/forged dependencies,
+mainline selection, conflict validation and independent Python/OpenSSL v2 vectors.
+Application Clippy passes. The [actual CLI smoke](benchmarks/project-recovery-cli-20261012.json)
+passes preview, revert, exact retry, historical reconstruction, later-file retention,
+branch publication, stale-CAS rejection and cherry-pick. Synthetic key files were
+removed. Full standalone validation is in progress; its completed outcome must be
+recorded before closing this checkpoint. SQLite schema 1 and PostgreSQL schema 32 remain unchanged. The test
+container is dynodoc-recovery-test-20261012, label dynodoc.task=recovery-20261012,
+loopback port 53367, disposable with --rm; remove after validation. Production
+remains application 858801c/schema 29, with no new writer enabled.
+
+This completes local commit-addressed recovery, not hosted project branches or
+native recovery adoption. Next remains authenticated project transport and device
+identity, permission/private-stage/erasure rules, protected reviews and atomic
+server receipts. Packing/incremental publication, complete same-file convergence,
+native/background capture, representative scale and installed-host/marketplace
+acceptance remain open in the [ledger](ROADMAP-ACCEPTANCE.md). Installed-editor
+acceptance is prepared for the owner to run locally. Continue across this checkpoint.
+
 ## Source: signed ref receipts and durable client trust (12 October 2026)
 
 Application `3218315` and standalone engine `20caed4` add [signed ref receipts](REF-RECEIPTS.md) and a separate SQLite client

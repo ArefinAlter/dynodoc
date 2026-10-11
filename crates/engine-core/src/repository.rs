@@ -15,12 +15,15 @@ pub mod attestation;
 pub mod compare;
 pub mod local;
 pub mod receipt_journal;
+pub mod recovery;
 
 pub const MAX_FILES: usize = 4096;
 pub const MAX_COMMIT_BYTES: usize = 1024 * 1024;
 pub const MAX_ANCESTORS: usize = 100_000;
 const COMMIT_DOMAIN: &[u8] = b"dynodoc.project-commit\0v1\0";
 const SIGNATURE_DOMAIN: &[u8] = b"dynodoc.project-commit-signature\0v1\0";
+const RECOVERY_COMMIT_DOMAIN: &[u8] = b"dynodoc.project-commit\0v2\0";
+const RECOVERY_SIGNATURE_DOMAIN: &[u8] = b"dynodoc.project-commit-signature\0v2\0";
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -60,6 +63,9 @@ pub struct Commit {
     pub author_key: String,
     pub authored_at_ms: i64,
     pub message: String,
+    /// V2 only. Recovery references are signed provenance, not merge parents.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recovery: Option<recovery::Source>,
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -108,8 +114,23 @@ pub fn valid_branch(name: &str) -> bool {
 }
 
 impl Commit {
+    /// Required commit objects for import/transfer. Only `parents` are ancestry;
+    /// recovery sources/mainlines are additional provenance dependencies.
+    pub fn dependencies(&self) -> Vec<Address> {
+        let mut result = self.parents.clone();
+        if let Some(source) = &self.recovery {
+            for address in std::iter::once(&source.commit).chain(source.mainline.iter()) {
+                if !result.contains(address) {
+                    result.push(address.clone());
+                }
+            }
+        }
+        result
+    }
+
     pub fn validate(&self) -> Result<(), Error> {
-        if self.version != 1
+        if !matches!((self.version, &self.recovery), (1, None) | (2, Some(_)))
+            || (self.recovery.is_some() && self.parents.len() != 1)
             || self.project.is_nil()
             || self.parents.len() > 2
             || (self.parents.len() == 2 && self.parents[0] == self.parents[1])
@@ -150,7 +171,11 @@ impl Commit {
     }
     pub fn address(&self) -> Result<Address, Error> {
         let mut hash = digest::Context::new(&digest::SHA256);
-        hash.update(COMMIT_DOMAIN);
+        hash.update(if self.version == 1 {
+            COMMIT_DOMAIN
+        } else {
+            RECOVERY_COMMIT_DOMAIN
+        });
         hash.update(&self.bytes()?);
         Ok(Address::try_from(hex(hash.finish().as_ref()))?)
     }
@@ -167,7 +192,7 @@ impl SignedCommit {
     pub fn sign(mut commit: Commit, key: &Ed25519KeyPair) -> Result<Self, Error> {
         commit.author_key = hex(key.public_key().as_ref());
         let address = commit.address()?;
-        let mut message = SIGNATURE_DOMAIN.to_vec();
+        let mut message = signature_domain(commit.version).to_vec();
         message.extend(unhex(address.as_str(), 32)?);
         Ok(Self {
             commit,
@@ -176,12 +201,20 @@ impl SignedCommit {
     }
     pub fn verify(&self) -> Result<Address, Error> {
         let address = self.commit.address()?;
-        let mut message = SIGNATURE_DOMAIN.to_vec();
+        let mut message = signature_domain(self.commit.version).to_vec();
         message.extend(unhex(address.as_str(), 32)?);
         signature::UnparsedPublicKey::new(&signature::ED25519, unhex(&self.commit.author_key, 32)?)
             .verify(&message, &unhex(&self.signature, 64)?)
             .map_err(|_| Error::Invalid("commit signature"))?;
         Ok(address)
+    }
+}
+
+fn signature_domain(version: u8) -> &'static [u8] {
+    if version == 1 {
+        SIGNATURE_DOMAIN
+    } else {
+        RECOVERY_SIGNATURE_DOMAIN
     }
 }
 
@@ -211,6 +244,7 @@ mod tests {
                 author_key: String::new(),
                 authored_at_ms: 1_700_000_000_000,
                 message: message.into(),
+                recovery: None,
             },
             &Ed25519KeyPair::from_seed_unchecked(&[7; 32]).unwrap(),
         )

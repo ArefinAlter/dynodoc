@@ -6,6 +6,11 @@ replace web drafts, turn connector queues into offline repositories, or authoriz
 HTTP project ref updates. Project commits are a separate versioned contract;
 legacy event sequences remain intact.
 
+[Project commit recovery](PROJECT-COMMIT-RECOVERY.md) adds local revert/cherry-pick
+with signed v2 source references and explicit conflict resolution. Ordinary v1
+commits remain unchanged; upgraded readers accept both versions. Source references
+are transfer dependencies, distinct from ancestry parents.
+
 ## Contract
 
 A commit v1 binds a project UUID, zero to two ordered parent addresses, the full
@@ -31,7 +36,7 @@ verified user identity. No existing database event hash is changed.
 FULL synchronization and one-project binding. Object and commit rows are immutable.
 Writes and transfer batches are transactional. `write_state` verifies exact typed
 reconstruction before committing objects. `import_commit` verifies its signature,
-parent existence/scope and all reachable file state graphs under a shared object/
+parent existence/scope, recovery dependencies/results and all reachable file state graphs under a shared object/
 byte budget before storing it. It never changes a branch implicitly.
 
 `compare_and_swap(branch, expected_head, new_commit)` publishes all project files

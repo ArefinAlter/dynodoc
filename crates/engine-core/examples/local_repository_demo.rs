@@ -89,6 +89,7 @@ async fn main() -> anyhow::Result<()> {
             author_key: String::new(),
             authored_at_ms: 1,
             message: "Initial two-file project".into(),
+            recovery: None,
         },
         &key_a,
     )?;

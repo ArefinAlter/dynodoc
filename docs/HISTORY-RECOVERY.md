@@ -1,5 +1,8 @@
 # Historical content recovery
 
+Current local project repositories also support [commit-addressed recovery](PROJECT-COMMIT-RECOVERY.md).
+The centralized per-file behavior below remains separate.
+
 10 October 2026. Owner clarification to the local/remote Git-style product vision.
 Team members should be able to retrieve retained older states and propose recovery
 according to current access and review rules, even fifty commits behind the head.
@@ -99,16 +102,17 @@ the content state and chain anchor refer to the requested revision.
 
 ## Remaining work
 
-- Portable commit-addressed cherry-pick/revert, field/run-level selection and
+- Hosted/native adoption of local commit-addressed cherry-pick/revert, field/run-level selection and
   branch-aware ancestry. Current range commands operate on centralized revisions.
 - Indexed date/message/author/commit discovery and a dedicated Projects history
   view. Activity currently displays the latest 500 events, while the revision
   reader/recovery endpoint has no such history cutoff.
 - Full-fidelity native reconstruction, checked historical application through all
   six hosts, retained opaque assets and multi-file named stages/releases.
-- Shared draft/version references, portable commit identities and signed/witnessed
-  recovery provenance in the ordered engine plan. No canonical event/schema change
-  or SQL migration is introduced by this increment.
+- Rollout of opt-in shared draft/version references, hosted adoption of portable
+  commit identities and externally witnessed recovery provenance. Local v2 recovery
+  commits bind their source with signatures. The centralized recovery increment
+  itself introduced no canonical event/schema change or SQL migration.
 
 Comments, permissions, ownership, approvals and operational audit records are not
 rewound by content recovery. Explicitly erased history cannot be recovered. A

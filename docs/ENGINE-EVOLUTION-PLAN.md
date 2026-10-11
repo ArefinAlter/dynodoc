@@ -16,6 +16,9 @@ Part 6 now has [portable ref receipts and a separate client trust journal](REF-R
 with independent signature vectors, contiguous proof checks, authority rotation
 and durable local revocation. Account/device binding, atomic server issuance,
 authority distribution, witnesses and connector adoption remain open.
+Part 3 also has local [commit-addressed recovery](PROJECT-COMMIT-RECOVERY.md):
+revert/cherry-pick with signed source references, explicit mainline selection and
+checked conflict resolutions. Hosted project review/UI integration remains open.
 Continue storage adoption/packing and authenticated transport/connector integration;
 these sources do not yet complete either part. Request admission is not a full-state memory
 bound; independent audit part 6, native-host acceptance and large-service limits
@@ -50,7 +53,8 @@ revisions and selected recovery without losing later work. The bounded
 [history-recovery increment](HISTORY-RECOVERY.md) reuses the existing centralized
 reader and review path, independently of the remaining storage work. Whole-block
 restoration is distinct from the implemented net revision-range revert/cherry-pick.
-Portable commit-addressed commands remain part 3. Test-installation packages,
+Portable commit-addressed commands now exist in the local part-3 repository;
+hosted and native adoption remain open. Test-installation packages,
 Microsoft ribbon commands and browser pairing are now early part-8 increments;
 real host acceptance and marketplace publication remain open. Parts 3 and 6
 must retain source/ancestry/actor links; part 8 must provide indexed discovery and

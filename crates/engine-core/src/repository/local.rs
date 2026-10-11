@@ -1,7 +1,7 @@
 //! SQLite local history with immutable content, verified commits and transactional
 //! ref CAS. No remote permissions or automatic native-file writes are implied.
 
-use super::{Error, Head, SignedCommit, MAX_ANCESTORS, MAX_COMMIT_BYTES};
+use super::{recovery, Error, Head, SignedCommit, MAX_ANCESTORS, MAX_COMMIT_BYTES};
 use crate::{
     materializer::DocumentState,
     shared_checkpoint::{self, typed, Address, Limits, ObjectStore, WriteStats},
@@ -120,6 +120,39 @@ async fn load_commit(
             .await?
             .ok_or_else(|| Error::Missing(address.clone()))?;
     Ok((decode_commit(&bytes, address, project)?, height))
+}
+
+async fn load_recovery_plan(
+    connection: &mut SqliteConnection,
+    project: uuid::Uuid,
+    kind: recovery::Kind,
+    source: &Address,
+    onto: &Address,
+    mainline: Option<&Address>,
+) -> Result<recovery::Plan, Error> {
+    let source = load_commit(connection, project, source).await?.0;
+    let onto = load_commit(connection, project, onto).await?.0;
+    let mainline = match (mainline, source.commit.parents.as_slice()) {
+        (Some(chosen), parents) if parents.contains(chosen) => Some(chosen),
+        (Some(_), _) => return Err(Error::Invalid("recovery mainline is not a source parent")),
+        (None, []) => None,
+        (None, [parent]) => Some(parent),
+        (None, _) => {
+            return Err(Error::Invalid(
+                "merge recovery requires an explicit mainline",
+            ))
+        }
+    };
+    let parent = match mainline {
+        Some(address) => Some(load_commit(connection, project, address).await?.0),
+        None => None,
+    };
+    recovery::plan(
+        kind,
+        &source.commit,
+        &onto.commit,
+        parent.as_ref().map(|p| &p.commit),
+    )
 }
 
 impl LocalRepository {
@@ -241,6 +274,23 @@ impl LocalRepository {
                     .ok_or(Error::Limit("commit height"))?,
             );
         }
+        if let Some(source) = &signed.commit.recovery {
+            let plan = load_recovery_plan(
+                &mut tx,
+                self.project,
+                source.kind,
+                &source.commit,
+                &signed.commit.parents[0],
+                source.mainline.as_ref(),
+            )
+            .await?;
+            // A signed source must record the actual selected mainline, including
+            // the automatic sole-parent selection made by local preview commands.
+            if plan.source != *source {
+                return Err(Error::Invalid("recovery mainline must be recorded"));
+            }
+            plan.validate_files(&signed.commit.files)?;
+        }
         let mut store = Store {
             connection: &mut tx,
             read_budget: Some(Limits::default()),
@@ -267,6 +317,19 @@ impl LocalRepository {
     pub async fn commit(&self, address: &Address) -> Result<SignedCommit, Error> {
         let mut connection = self.pool.acquire().await?;
         Ok(load_commit(&mut connection, self.project, address).await?.0)
+    }
+
+    /// Preview a historical delta against an exact current commit, without
+    /// storing a result or changing refs. Two-parent sources require a mainline.
+    pub async fn plan_recovery(
+        &self,
+        kind: recovery::Kind,
+        source: &Address,
+        onto: &Address,
+        mainline: Option<&Address>,
+    ) -> Result<recovery::Plan, Error> {
+        let mut connection = self.pool.acquire().await?;
+        load_recovery_plan(&mut connection, self.project, kind, source, onto, mainline).await
     }
 
     pub async fn head(&self, branch: &str) -> Result<Option<Head>, Error> {
@@ -512,6 +575,235 @@ mod tests {
                 Err(error) => panic!("owned test database cleanup: {error}"),
             }
         }
+    }
+
+    #[tokio::test]
+    async fn recovery_fifty_commits_back_preserves_new_work_and_survives_restart() {
+        use crate::repository::{recovery::Kind, SignedCommit};
+        use ring::signature::Ed25519KeyPair;
+        let file = path();
+        let project = uuid::Uuid::new_v4();
+        let repo = LocalRepository::open(&file, project).await.unwrap();
+        let report = DocumentId(uuid::Uuid::new_v4());
+        let budget = DocumentId(uuid::Uuid::new_v4());
+        let before = repo
+            .write_state(report, &state("Recoverable original paragraph"))
+            .await
+            .unwrap()
+            .0;
+        let after = repo
+            .write_state(report, &state("Replacement paragraph"))
+            .await
+            .unwrap()
+            .0;
+        let budget_root = repo
+            .write_state(budget, &state("Initial budget"))
+            .await
+            .unwrap()
+            .0;
+        let base = signed(
+            project,
+            vec![],
+            BTreeMap::from([
+                (
+                    "Report.docx".into(),
+                    FileEntry {
+                        document: report,
+                        state: before.clone(),
+                    },
+                ),
+                (
+                    "Budget.xlsx".into(),
+                    FileEntry {
+                        document: budget,
+                        state: budget_root,
+                    },
+                ),
+            ]),
+            "Initial",
+        );
+        let base_id = repo.import_commit(&base).await.unwrap();
+        let mut source_files = base.commit.files.clone();
+        source_files.get_mut("Report.docx").unwrap().state = after.clone();
+        let source = signed(
+            project,
+            vec![base_id.clone()],
+            source_files,
+            "Replace original paragraph",
+        );
+        let source_id = repo.import_commit(&source).await.unwrap();
+        let later_budget = repo
+            .write_state(budget, &state("Retain this later budget"))
+            .await
+            .unwrap()
+            .0;
+        let mut later_files = source.commit.files.clone();
+        later_files.get_mut("Budget.xlsx").unwrap().state = later_budget.clone();
+        let mut current = source_id.clone();
+        for i in 0..50 {
+            current = repo
+                .import_commit(&signed(
+                    project,
+                    vec![current],
+                    later_files.clone(),
+                    &format!("Later work {i}"),
+                ))
+                .await
+                .unwrap();
+        }
+        let head = repo.compare_and_swap("main", None, &current).await.unwrap();
+        let object_count = repo.inventory(None, 256).await.unwrap().len();
+        let plan = repo
+            .plan_recovery(Kind::Revert, &source_id, &current, None)
+            .await
+            .unwrap();
+        let key = Ed25519KeyPair::from_seed_unchecked(&[7; 32]).unwrap();
+        let recovered = SignedCommit::sign(
+            plan.resolve(&BTreeMap::new(), 2, "Recover old paragraph".into())
+                .unwrap(),
+            &key,
+        )
+        .unwrap();
+        let recovered_id = repo.import_commit(&recovered).await.unwrap();
+        assert_eq!(recovered.commit.parents, vec![current.clone()]);
+        assert_eq!(recovered.commit.files["Report.docx"].state, before);
+        assert_eq!(recovered.commit.files["Budget.xlsx"].state, later_budget);
+        assert_eq!(repo.head("main").await.unwrap(), Some(head.clone()));
+        assert_eq!(repo.inventory(None, 256).await.unwrap().len(), object_count);
+        repo.close().await;
+        let repo = LocalRepository::open(&file, project).await.unwrap();
+        assert_eq!(repo.import_commit(&recovered).await.unwrap(), recovered_id);
+        let published = repo
+            .compare_and_swap("main", Some(&head), &recovered_id)
+            .await
+            .unwrap();
+        let read = repo.commit(&published.commit).await.unwrap();
+        assert_eq!(read.commit.recovery.unwrap().commit, source_id);
+        assert_eq!(
+            repo.read_state(report, &before).await.unwrap(),
+            state("Recoverable original paragraph")
+        );
+        let pick = repo
+            .plan_recovery(Kind::CherryPick, &source_id, &recovered_id, None)
+            .await
+            .unwrap();
+        let picked = SignedCommit::sign(
+            pick.resolve(&BTreeMap::new(), 3, "Reapply selected change".into())
+                .unwrap(),
+            &key,
+        )
+        .unwrap();
+        repo.import_commit(&picked).await.unwrap();
+        assert_eq!(picked.commit.files, later_files);
+        assert_eq!(
+            repo.merge_bases(&recovered_id, &current).await.unwrap(),
+            vec![current]
+        );
+        assert!(matches!(
+            repo.compare_and_swap("main", Some(&head), &base_id).await,
+            Err(Error::StaleRef)
+        ));
+        cleanup(repo, &file).await;
+    }
+
+    #[tokio::test]
+    async fn imported_recovery_requires_source_mainline_and_preserves_settled_paths() {
+        use crate::repository::{recovery::Kind, SignedCommit};
+        use ring::signature::Ed25519KeyPair;
+        let file = path();
+        let other_file = path();
+        let project = uuid::Uuid::new_v4();
+        let repo = LocalRepository::open(&file, project).await.unwrap();
+        let other = LocalRepository::open(&other_file, project).await.unwrap();
+        let document = DocumentId(uuid::Uuid::new_v4());
+        let root = repo
+            .write_state(document, &state("Retained"))
+            .await
+            .unwrap()
+            .0;
+        let base = signed(project, vec![], BTreeMap::new(), "Empty");
+        let base_id = repo.import_commit(&base).await.unwrap();
+        other.import_commit(&base).await.unwrap();
+        let source = signed(
+            project,
+            vec![base_id.clone()],
+            BTreeMap::from([(
+                "a".into(),
+                FileEntry {
+                    document,
+                    state: root,
+                },
+            )]),
+            "Add file",
+        );
+        let source_id = repo.import_commit(&source).await.unwrap();
+        let key = Ed25519KeyPair::from_seed_unchecked(&[7; 32]).unwrap();
+        let plan = repo
+            .plan_recovery(Kind::CherryPick, &source_id, &base_id, None)
+            .await
+            .unwrap();
+        let valid = plan
+            .resolve(&BTreeMap::new(), 2, "Recover addition".into())
+            .unwrap();
+        let signed_valid = SignedCommit::sign(valid.clone(), &key).unwrap();
+        assert!(matches!(
+            other.import_commit(&signed_valid).await,
+            Err(Error::Missing(_))
+        ));
+        let mut bad = valid.clone();
+        bad.recovery.as_mut().unwrap().mainline = None;
+        assert!(repo
+            .import_commit(&SignedCommit::sign(bad, &key).unwrap())
+            .await
+            .is_err());
+        let mut bad = valid.clone();
+        bad.recovery.as_mut().unwrap().mainline = Some(source_id.clone());
+        assert!(repo
+            .import_commit(&SignedCommit::sign(bad, &key).unwrap())
+            .await
+            .is_err());
+        let mut bad = valid;
+        bad.files.clear();
+        let bad = SignedCommit::sign(bad, &key).unwrap();
+        assert!(repo.import_commit(&bad).await.is_err());
+        assert!(matches!(
+            repo.commit(&bad.verify().unwrap()).await,
+            Err(Error::Missing(_))
+        ));
+        repo.import_commit(&signed_valid).await.unwrap();
+        let merge = signed(
+            project,
+            vec![base_id.clone(), source_id.clone()],
+            source.commit.files.clone(),
+            "Merge",
+        );
+        let merge_id = repo.import_commit(&merge).await.unwrap();
+        assert!(repo
+            .plan_recovery(Kind::Revert, &merge_id, &merge_id, None)
+            .await
+            .is_err());
+        assert!(repo
+            .plan_recovery(Kind::Revert, &merge_id, &merge_id, Some(&merge_id))
+            .await
+            .is_err());
+        let plan = repo
+            .plan_recovery(Kind::Revert, &merge_id, &merge_id, Some(&base_id))
+            .await
+            .unwrap();
+        let undone = SignedCommit::sign(
+            plan.resolve(
+                &BTreeMap::new(),
+                3,
+                "Undo merge relative to empty parent".into(),
+            )
+            .unwrap(),
+            &key,
+        )
+        .unwrap();
+        assert!(undone.commit.files.is_empty());
+        repo.import_commit(&undone).await.unwrap();
+        cleanup(other, &other_file).await;
+        cleanup(repo, &file).await;
     }
 
     #[tokio::test]

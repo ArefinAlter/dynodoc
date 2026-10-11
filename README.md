@@ -19,8 +19,8 @@ Research instruments remain one supported adapter, not the product roadmap.
 periodic checkpoints, draft/rebase/recovery bases and named/deployed/public
 snapshots. Shared writers are opt-in and preserve verified legacy reads. A
 [durable local project repository](docs/PORTABLE-PROJECT-HISTORY.md) provides signed
-multi-file commits, parents, branches, missing-object exchange, merge bases and
-comparison. [Signed ref receipts and separate client trust journals](docs/REF-RECEIPTS.md)
+multi-file commits, parents, branches, missing-object exchange, merge bases,
+comparison and [commit-addressed revert/cherry-pick](docs/PROJECT-COMMIT-RECOVERY.md). [Signed ref receipts and separate client trust journals](docs/REF-RECEIPTS.md)
 add continuity checks, authority rotation and persistent local revocation.
 Read [the acceptance ledger](docs/ROADMAP-ACCEPTANCE.md) and
 [verified handoff](docs/ENGINE-EVOLUTION-HANDOFF.md) for exact source/production boundaries.

@@ -1,16 +1,32 @@
 //! Explicit local repository commands. These never contact a remote server or
 //! apply content to a native editor. Signing keys are supplied by the operator.
 use anyhow::Context;
-use clap::Subcommand;
+use clap::{Subcommand, ValueEnum};
 use engine_core::{
-    repository::{local::LocalRepository, Commit, Head, SignedCommit},
+    repository::{local::LocalRepository, recovery, Commit, Head, SignedCommit},
     shared_checkpoint::Address,
 };
 use engine_shared::DocumentId;
 use std::{
+    collections::BTreeMap,
     io::Read,
     path::{Path, PathBuf},
 };
+
+#[derive(Clone, Copy, ValueEnum)]
+pub enum RecoveryKind {
+    CherryPick,
+    Revert,
+}
+
+impl From<RecoveryKind> for recovery::Kind {
+    fn from(value: RecoveryKind) -> Self {
+        match value {
+            RecoveryKind::CherryPick => Self::CherryPick,
+            RecoveryKind::Revert => Self::Revert,
+        }
+    }
+}
 
 #[derive(Subcommand)]
 pub enum Action {
@@ -47,6 +63,34 @@ pub enum Action {
         base: String,
         left: String,
         right: String,
+    },
+    /// Preview a source commit's changes (or inverse) on an exact current commit.
+    RecoveryPlan {
+        source: String,
+        onto: String,
+        #[arg(long, value_enum)]
+        kind: RecoveryKind,
+        /// Required for a merge source; must name one of its parents.
+        #[arg(long)]
+        mainline: Option<String>,
+    },
+    /// Sign/store a reviewed recovery commit. Publish separately with set-head.
+    Recover {
+        source: String,
+        onto: String,
+        #[arg(long, value_enum)]
+        kind: RecoveryKind,
+        #[arg(long)]
+        mainline: Option<String>,
+        /// JSON object mapping EVERY conflict path to FileEntry or null (delete).
+        #[arg(long)]
+        resolutions: Option<PathBuf>,
+        #[arg(long)]
+        key: PathBuf,
+        #[arg(long)]
+        message: String,
+        #[arg(long)]
+        authored_at_ms: i64,
     },
 }
 
@@ -121,6 +165,50 @@ pub async fn run(path: PathBuf, project: uuid::Uuid, action: Action) -> anyhow::
                 &left.commit,
                 &right.commit,
             )?)?
+        }
+        Action::RecoveryPlan {
+            source,
+            onto,
+            kind,
+            mainline,
+        } => {
+            let mainline = mainline.map(address).transpose()?;
+            serde_json::to_value(
+                repo.plan_recovery(
+                    kind.into(),
+                    &address(source)?,
+                    &address(onto)?,
+                    mainline.as_ref(),
+                )
+                .await?,
+            )?
+        }
+        Action::Recover {
+            source,
+            onto,
+            kind,
+            mainline,
+            resolutions,
+            key,
+            message,
+            authored_at_ms,
+        } => {
+            let mainline = mainline.map(address).transpose()?;
+            let plan = repo
+                .plan_recovery(
+                    kind.into(),
+                    &address(source)?,
+                    &address(onto)?,
+                    mainline.as_ref(),
+                )
+                .await?;
+            let resolutions = match resolutions {
+                Some(path) => read_json(&path, engine_core::repository::MAX_COMMIT_BYTES)?,
+                None => BTreeMap::new(),
+            };
+            let commit = plan.resolve(&resolutions, authored_at_ms, message)?;
+            let signed = SignedCommit::sign(commit, &crate::signing::load(&key)?)?;
+            serde_json::json!({"commit":repo.import_commit(&signed).await?,"recovery":signed.commit.recovery,"parents":signed.commit.parents})
         }
     };
     repo.close().await;
