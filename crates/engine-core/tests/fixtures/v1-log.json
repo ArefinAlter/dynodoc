@@ -1,0 +1,518 @@
+{
+  "description": "Golden v1 event log: every event type, valid by today's rules. Hashes were computed by an independent implementation of the documented v1 formula, not by the engine. Never regenerate this file to make a failing test pass: a mismatch means the v1 hash, payload encoding or replay changed.",
+  "document_id": "0000000d-0000-4000-8000-00000000d001",
+  "actor_id": "0000000a-0000-4000-8000-00000000a001",
+  "events": [
+    {
+      "id": "01JB0000000000000000000001",
+      "seq": 1,
+      "type": "NodeCreated",
+      "target_node_id": "01JA0000000000000000000001",
+      "payload": {
+        "fields": {
+          "title": "Golden v1 log"
+        },
+        "node_id": "01JA0000000000000000000001",
+        "node_type": "form",
+        "pos": "a0",
+        "type": "NodeCreated"
+      },
+      "content_hash": "289a7e78c29ca3d7c75f9e4d96d293f0b563f01e450079e8643d61fde72c21f5",
+      "prev_chain_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "chain_hash": "1421f86b7906e6db12098e19e7178d2647384a56f3125e77cff437a1d0669f0a"
+    },
+    {
+      "id": "01JB0000000000000000000002",
+      "seq": 2,
+      "type": "NodeCreated",
+      "target_node_id": "01JA0000000000000000000002",
+      "payload": {
+        "fields": {
+          "title": "Intro"
+        },
+        "node_id": "01JA0000000000000000000002",
+        "node_type": "section",
+        "parent_id": "01JA0000000000000000000001",
+        "pos": "a0",
+        "type": "NodeCreated"
+      },
+      "content_hash": "d05f400150e8274e2b75f3251c180f128f06d616772aaf26c0175e3d20bf98f7",
+      "prev_chain_hash": "1421f86b7906e6db12098e19e7178d2647384a56f3125e77cff437a1d0669f0a",
+      "chain_hash": "9594252058a7d4ba4818c51e6186b44aa9e40d67f9022a74667bbd6380cabd72"
+    },
+    {
+      "id": "01JB0000000000000000000003",
+      "seq": 3,
+      "type": "NodeCreated",
+      "target_node_id": "01JA0000000000000000000003",
+      "payload": {
+        "fields": {
+          "kind": "single_choice",
+          "label": "Age group"
+        },
+        "node_id": "01JA0000000000000000000003",
+        "node_type": "item",
+        "parent_id": "01JA0000000000000000000002",
+        "pos": "a0",
+        "type": "NodeCreated",
+        "var_name": "age_group"
+      },
+      "content_hash": "e1756be57e2f2864f471f1920ba75611b21e89e087f051129a1ef3c603252395",
+      "prev_chain_hash": "9594252058a7d4ba4818c51e6186b44aa9e40d67f9022a74667bbd6380cabd72",
+      "chain_hash": "c3a2ba193bb8a9687a5d737f24711ac17b4386918dd2cf2330198d6c36b8666b"
+    },
+    {
+      "id": "01JB0000000000000000000004",
+      "seq": 4,
+      "type": "ChoiceAdded",
+      "target_node_id": "01JA0000000000000000000003",
+      "payload": {
+        "choice_id": "01JA0000000000000000000004",
+        "fields": {
+          "label": "Under 18"
+        },
+        "node_id": "01JA0000000000000000000003",
+        "type": "ChoiceAdded"
+      },
+      "content_hash": "35582db778ce35decc1c2af58ab0d56198c77120bcf6409a5df5900608a91454",
+      "prev_chain_hash": "c3a2ba193bb8a9687a5d737f24711ac17b4386918dd2cf2330198d6c36b8666b",
+      "chain_hash": "cbeec730557bb86589124e98a30f473f1dfb74a49acc31d019a2f88e1b20c368"
+    },
+    {
+      "id": "01JB0000000000000000000005",
+      "seq": 5,
+      "type": "ChoiceAdded",
+      "target_node_id": "01JA0000000000000000000003",
+      "payload": {
+        "choice_id": "01JA0000000000000000000005",
+        "fields": {
+          "label": "18 or over"
+        },
+        "node_id": "01JA0000000000000000000003",
+        "type": "ChoiceAdded"
+      },
+      "content_hash": "b26805503670090af32f79b8fdd8b3e0a22a613f375fb3818f38cc387d68dec5",
+      "prev_chain_hash": "cbeec730557bb86589124e98a30f473f1dfb74a49acc31d019a2f88e1b20c368",
+      "chain_hash": "e88a2c05d81cf60a0e5acc06c993a6f40bd893353ba60ef8242fc8c46673bec9"
+    },
+    {
+      "id": "01JB0000000000000000000006",
+      "seq": 6,
+      "type": "ChoiceRemoved",
+      "target_node_id": "01JA0000000000000000000003",
+      "payload": {
+        "choice_id": "01JA0000000000000000000004",
+        "node_id": "01JA0000000000000000000003",
+        "type": "ChoiceRemoved"
+      },
+      "content_hash": "d33fd546c299140581627f688d6da1e28ba3bb40373d64e99948973d89992a45",
+      "prev_chain_hash": "e88a2c05d81cf60a0e5acc06c993a6f40bd893353ba60ef8242fc8c46673bec9",
+      "chain_hash": "c1e6741d07b674d5ea0b5453d991751592d747abf4e43d0655b4b84ea606c87b"
+    },
+    {
+      "id": "01JB0000000000000000000007",
+      "seq": 7,
+      "type": "NodeCreated",
+      "target_node_id": "01JA0000000000000000000006",
+      "payload": {
+        "fields": {
+          "content": {
+            "content": [
+              {
+                "text": "Plain notes",
+                "type": "text"
+              }
+            ],
+            "type": "paragraph"
+          },
+          "label": "Plain notes"
+        },
+        "node_id": "01JA0000000000000000000006",
+        "node_type": "item",
+        "parent_id": "01JA0000000000000000000002",
+        "pos": "a1",
+        "type": "NodeCreated",
+        "var_name": "notes"
+      },
+      "content_hash": "36c75432d28594496af0197bfa9a7df054ed2be9efd2750c58a6cbf87bebcd5e",
+      "prev_chain_hash": "c1e6741d07b674d5ea0b5453d991751592d747abf4e43d0655b4b84ea606c87b",
+      "chain_hash": "ebc0779e4661bb32540e05b6a691942d3c223ffcb2f4032a8e3d78bb0aad56bf"
+    },
+    {
+      "id": "01JB0000000000000000000008",
+      "seq": 8,
+      "type": "RichTextPatched",
+      "target_node_id": "01JA0000000000000000000006",
+      "payload": {
+        "node_id": "01JA0000000000000000000006",
+        "patch": {
+          "after": "ea0cbd148737b7af778faad99f4349857a1f681b28f2b02638283014e6770eb1",
+          "before": "914d13b32d1f653b89cdb03aa15e34350582ce30bc95ea8ff5cbbd4237bd1cd5",
+          "edits": [
+            {
+              "kind": "text",
+              "ops": [
+                {
+                  "count": 11,
+                  "kind": "retain"
+                },
+                {
+                  "kind": "insert",
+                  "style": 0,
+                  "text": ", revised"
+                }
+              ],
+              "path": []
+            }
+          ],
+          "styles": [
+            {
+              "type": "text"
+            }
+          ],
+          "version": 1
+        },
+        "type": "RichTextPatched"
+      },
+      "content_hash": "684f6ef21a05010cd088607669d5e8c53e3176026fc7ee03c536df24adb5fed2",
+      "prev_chain_hash": "ebc0779e4661bb32540e05b6a691942d3c223ffcb2f4032a8e3d78bb0aad56bf",
+      "chain_hash": "53010818688838c1888af14be6aeb18d36d9b06b96e801fb61064a22c556d779"
+    },
+    {
+      "id": "01JB0000000000000000000009",
+      "seq": 9,
+      "type": "FieldEdited",
+      "target_node_id": "01JA0000000000000000000003",
+      "payload": {
+        "field": "label",
+        "node_id": "01JA0000000000000000000003",
+        "type": "FieldEdited",
+        "value": "Age group (years)"
+      },
+      "content_hash": "a87a1d97b6b07ba65ae6aa4b02e6635346021c204d0a0452e7c951cc7066fe65",
+      "prev_chain_hash": "53010818688838c1888af14be6aeb18d36d9b06b96e801fb61064a22c556d779",
+      "chain_hash": "b2b3626cfa620e66a7ea8bd53451745e86eaaffda5f4be098c5ec96170636003"
+    },
+    {
+      "id": "01JB0000000000000000000010",
+      "seq": 10,
+      "type": "NodeCreated",
+      "target_node_id": "01JA0000000000000000000007",
+      "payload": {
+        "fields": {
+          "label": "Temporary"
+        },
+        "node_id": "01JA0000000000000000000007",
+        "node_type": "item",
+        "parent_id": "01JA0000000000000000000002",
+        "pos": "a2",
+        "type": "NodeCreated"
+      },
+      "content_hash": "8551c1f43f488c890201e9a30d5e21b2730b2157a4dbe895e6e4804cb706e46e",
+      "prev_chain_hash": "b2b3626cfa620e66a7ea8bd53451745e86eaaffda5f4be098c5ec96170636003",
+      "chain_hash": "19e90d0d88dba3b71e8cded339782bdedb54fd4b3fe5dbcf7c85f9cea5f1933c"
+    },
+    {
+      "id": "01JB0000000000000000000011",
+      "seq": 11,
+      "type": "NodeMoved",
+      "target_node_id": "01JA0000000000000000000007",
+      "payload": {
+        "new_parent_id": "01JA0000000000000000000001",
+        "new_pos": "a1",
+        "node_id": "01JA0000000000000000000007",
+        "type": "NodeMoved"
+      },
+      "content_hash": "888a985aea6599910c27adceeda71aa9a38485e1b2e830f881bbf9c254df76ac",
+      "prev_chain_hash": "19e90d0d88dba3b71e8cded339782bdedb54fd4b3fe5dbcf7c85f9cea5f1933c",
+      "chain_hash": "fc4b2dc55d12a5dcf2ff16ce521f5b1f3653868577785908fd2841a496c479b3"
+    },
+    {
+      "id": "01JB0000000000000000000012",
+      "seq": 12,
+      "type": "NodeDeleted",
+      "target_node_id": "01JA0000000000000000000007",
+      "payload": {
+        "node_id": "01JA0000000000000000000007",
+        "type": "NodeDeleted"
+      },
+      "content_hash": "8783fb4dde448ff2af1a03e751ad2293887f79d6433b757b81c9dd4eb3798ca1",
+      "prev_chain_hash": "fc4b2dc55d12a5dcf2ff16ce521f5b1f3653868577785908fd2841a496c479b3",
+      "chain_hash": "32487b845b42bb39e401c21584050cf8bd7591a9122e9bac361376a7a66ead7a"
+    },
+    {
+      "id": "01JB0000000000000000000013",
+      "seq": 13,
+      "type": "NodeRestored",
+      "target_node_id": "01JA0000000000000000000007",
+      "payload": {
+        "node_id": "01JA0000000000000000000007",
+        "type": "NodeRestored"
+      },
+      "content_hash": "bdfd45cfdc9f42f1ddedb28aa664c6c46b86b7d7edf1e2597885adec684d0a74",
+      "prev_chain_hash": "32487b845b42bb39e401c21584050cf8bd7591a9122e9bac361376a7a66ead7a",
+      "chain_hash": "40590a0f0277aab268486337f046eb71c3aab54420bd1619f31ecb5c93f38c93"
+    },
+    {
+      "id": "01JB0000000000000000000014",
+      "seq": 14,
+      "type": "CommentAdded",
+      "target_node_id": "01JA0000000000000000000003",
+      "payload": {
+        "body": "প্রশ্নটি কি পরিষ্কার?",
+        "node_id": "01JA0000000000000000000003",
+        "type": "CommentAdded"
+      },
+      "content_hash": "756559136486fe3a55cac75a1228d8869050deeb4c95c3b3bc67ddbeedcafe2b",
+      "prev_chain_hash": "40590a0f0277aab268486337f046eb71c3aab54420bd1619f31ecb5c93f38c93",
+      "chain_hash": "5b9565f3d6c4050b902ba21ca95f128e9afe86503670b5f960861ed6e31f90f7"
+    },
+    {
+      "id": "01JB0000000000000000000015",
+      "seq": 15,
+      "type": "CommentReplied",
+      "target_node_id": null,
+      "payload": {
+        "body": "Yes, after the edit.",
+        "thread_id": "01JB0000000000000000000014",
+        "type": "CommentReplied"
+      },
+      "content_hash": "3a27f36e350e9f312b4d30eb855d63d2a2ba0f0ebad6db8498a5cfe6f0f68d72",
+      "prev_chain_hash": "5b9565f3d6c4050b902ba21ca95f128e9afe86503670b5f960861ed6e31f90f7",
+      "chain_hash": "5bb1afadf98176ee703372c6a526a6641f900246665d69800ca29b98add467b7"
+    },
+    {
+      "id": "01JB0000000000000000000016",
+      "seq": 16,
+      "type": "CommentResolved",
+      "target_node_id": null,
+      "payload": {
+        "resolved": true,
+        "thread_id": "01JB0000000000000000000014",
+        "type": "CommentResolved"
+      },
+      "content_hash": "3fa0182ad5b71e3abe2eb7f2ffa2ea5605dfcc70ddcb7eae595efd0a37a533e6",
+      "prev_chain_hash": "5bb1afadf98176ee703372c6a526a6641f900246665d69800ca29b98add467b7",
+      "chain_hash": "709a97c1820bd2e4997361430ddaab740bd247f0380ab812e00b9c21bf7c2031"
+    },
+    {
+      "id": "01JB0000000000000000000017",
+      "seq": 17,
+      "type": "SuggestionProposed",
+      "target_node_id": "01JA0000000000000000000003",
+      "payload": {
+        "detail": {
+          "field": "label",
+          "node_id": "01JA0000000000000000000003",
+          "type": "FieldEdited",
+          "value": "Age band"
+        },
+        "suggestion_id": "s1",
+        "target_node_id": "01JA0000000000000000000003",
+        "type": "SuggestionProposed"
+      },
+      "content_hash": "c8834f9057660a64f49264c90faae76cf3b28a0715e10e86dfc716a2895b56d9",
+      "prev_chain_hash": "709a97c1820bd2e4997361430ddaab740bd247f0380ab812e00b9c21bf7c2031",
+      "chain_hash": "f6f934cc51f47fe26661d7f90076b23215a4c4eaa5b0fdf878213354e38de3d6"
+    },
+    {
+      "id": "01JB0000000000000000000018",
+      "seq": 18,
+      "type": "FieldEdited",
+      "target_node_id": "01JA0000000000000000000003",
+      "payload": {
+        "field": "label",
+        "node_id": "01JA0000000000000000000003",
+        "type": "FieldEdited",
+        "value": "Age band"
+      },
+      "content_hash": "e07e20b40c38347b79d6f989e847af41aecbc0564909f9fd7c8a832a8f17ef50",
+      "prev_chain_hash": "f6f934cc51f47fe26661d7f90076b23215a4c4eaa5b0fdf878213354e38de3d6",
+      "chain_hash": "cd159a3d923a4eb683a2565c11cd7685e57849c2696e7052316b98395cad57a0"
+    },
+    {
+      "id": "01JB0000000000000000000019",
+      "seq": 19,
+      "type": "SuggestionAccepted",
+      "target_node_id": null,
+      "payload": {
+        "suggestion_id": "s1",
+        "type": "SuggestionAccepted"
+      },
+      "content_hash": "ff8149eb0408d2907d3b076437fa42e4620787ae38b30a12b2140a6cfff81068",
+      "prev_chain_hash": "cd159a3d923a4eb683a2565c11cd7685e57849c2696e7052316b98395cad57a0",
+      "chain_hash": "f459c4f4827e2b5f4c3091f7ea9c31b8908d7be30645377281662009fd3859d5"
+    },
+    {
+      "id": "01JB0000000000000000000020",
+      "seq": 20,
+      "type": "SuggestionProposed",
+      "target_node_id": "01JA0000000000000000000006",
+      "payload": {
+        "detail": {
+          "field": "label",
+          "node_id": "01JA0000000000000000000006",
+          "type": "FieldEdited",
+          "value": "Notes"
+        },
+        "suggestion_id": "s2",
+        "target_node_id": "01JA0000000000000000000006",
+        "type": "SuggestionProposed"
+      },
+      "content_hash": "7e6679b5fab6f4783b2f55bac88ccd7789932a631508b1b2b06925ca95d25353",
+      "prev_chain_hash": "f459c4f4827e2b5f4c3091f7ea9c31b8908d7be30645377281662009fd3859d5",
+      "chain_hash": "17fe8c7b2860f6707ee3112ca7657d233bcb063de943684108349636a7e942a4"
+    },
+    {
+      "id": "01JB0000000000000000000021",
+      "seq": 21,
+      "type": "SuggestionRejected",
+      "target_node_id": null,
+      "payload": {
+        "reason": "Keep the current wording",
+        "suggestion_id": "s2",
+        "type": "SuggestionRejected"
+      },
+      "content_hash": "ceebc9f7765f7e536480f7c0c35ff7817b16d38742383e52a0a953904c3e5cd9",
+      "prev_chain_hash": "17fe8c7b2860f6707ee3112ca7657d233bcb063de943684108349636a7e942a4",
+      "chain_hash": "4047c08006da09a1e6aa10c8e86b401a2ab849351a16dc3341ef305a51c9b728"
+    },
+    {
+      "id": "01JB0000000000000000000022",
+      "seq": 22,
+      "type": "Deployed",
+      "target_node_id": null,
+      "payload": {
+        "type": "Deployed"
+      },
+      "content_hash": "4a23021b855297b1cf676105f002b8b90c28233073c7506f5924b7c1fa4ba4fb",
+      "prev_chain_hash": "4047c08006da09a1e6aa10c8e86b401a2ab849351a16dc3341ef305a51c9b728",
+      "chain_hash": "4cbdede51253979ff958fc50649f44d31137f036790bd2bc1a5174f1eb631fdd"
+    }
+  ],
+  "final_state": {
+    "comments": [
+      {
+        "body": "প্রশ্নটি কি পরিষ্কার?",
+        "node_id": "01JA0000000000000000000003"
+      }
+    ],
+    "nodes": {
+      "01JA0000000000000000000001": {
+        "current_fields": {
+          "title": "Golden v1 log"
+        },
+        "deleted": false,
+        "id": "01JA0000000000000000000001",
+        "parent_id": null,
+        "pos": "a0",
+        "type": "form",
+        "var_name": null
+      },
+      "01JA0000000000000000000002": {
+        "current_fields": {
+          "title": "Intro"
+        },
+        "deleted": false,
+        "id": "01JA0000000000000000000002",
+        "parent_id": "01JA0000000000000000000001",
+        "pos": "a0",
+        "type": "section",
+        "var_name": null
+      },
+      "01JA0000000000000000000003": {
+        "current_fields": {
+          "kind": "single_choice",
+          "label": "Age band"
+        },
+        "deleted": false,
+        "id": "01JA0000000000000000000003",
+        "parent_id": "01JA0000000000000000000002",
+        "pos": "a0",
+        "type": "item",
+        "var_name": "age_group"
+      },
+      "01JA0000000000000000000004": {
+        "current_fields": {
+          "label": "Under 18"
+        },
+        "deleted": false,
+        "id": "01JA0000000000000000000004",
+        "parent_id": "01JA0000000000000000000003",
+        "pos": "01JA0000000000000000000004",
+        "type": "choice",
+        "var_name": null
+      },
+      "01JA0000000000000000000005": {
+        "current_fields": {
+          "label": "18 or over"
+        },
+        "deleted": false,
+        "id": "01JA0000000000000000000005",
+        "parent_id": "01JA0000000000000000000003",
+        "pos": "01JA0000000000000000000005",
+        "type": "choice",
+        "var_name": null
+      },
+      "01JA0000000000000000000006": {
+        "current_fields": {
+          "content": {
+            "content": [
+              {
+                "text": "Plain notes, revised",
+                "type": "text"
+              }
+            ],
+            "type": "paragraph"
+          },
+          "label": "Plain notes, revised"
+        },
+        "deleted": false,
+        "id": "01JA0000000000000000000006",
+        "parent_id": "01JA0000000000000000000002",
+        "pos": "a1",
+        "type": "item",
+        "var_name": "notes"
+      },
+      "01JA0000000000000000000007": {
+        "current_fields": {
+          "label": "Temporary"
+        },
+        "deleted": false,
+        "id": "01JA0000000000000000000007",
+        "parent_id": "01JA0000000000000000000001",
+        "pos": "a1",
+        "type": "item",
+        "var_name": null
+      }
+    },
+    "removed_choices": [
+      "01JA0000000000000000000004"
+    ],
+    "suggestions": {
+      "s1": {
+        "accepted": true,
+        "detail": {
+          "field": "label",
+          "node_id": "01JA0000000000000000000003",
+          "type": "FieldEdited",
+          "value": "Age band"
+        },
+        "rejected_reason": null,
+        "target_node_id": "01JA0000000000000000000003"
+      },
+      "s2": {
+        "accepted": false,
+        "detail": {
+          "field": "label",
+          "node_id": "01JA0000000000000000000006",
+          "type": "FieldEdited",
+          "value": "Notes"
+        },
+        "rejected_reason": "Keep the current wording",
+        "target_node_id": "01JA0000000000000000000006"
+      }
+    }
+  },
+  "merkle_root": "ebbfb135107974a897e795ddfaadca12db8f70d0b53846a92a68954d6e3ea2d1"
+}

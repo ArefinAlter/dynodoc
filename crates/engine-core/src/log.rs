@@ -533,4 +533,61 @@ mod tests {
         assert_eq!(chain, chain_hash(&ch, &ZERO_HASH));
         assert_ne!(chain, ch);
     }
+
+    fn hex(s: &str) -> Vec<u8> {
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).expect("fixture hex"))
+            .collect()
+    }
+
+    /// One valid log with every event type. The fixture's hashes come from an
+    /// independent implementation of the documented formula; replay must reproduce
+    /// the pinned state and node Merkle root.
+    #[test]
+    fn v1_golden_log_hashes_and_replay_are_stable() {
+        let fixture: Value =
+            serde_json::from_str(include_str!("../tests/fixtures/v1-log.json")).unwrap();
+        let document = DocumentId(fixture["document_id"].as_str().unwrap().parse().unwrap());
+        let actor = IdentityId(fixture["actor_id"].as_str().unwrap().parse().unwrap());
+
+        let mut events = Vec::new();
+        let mut types = std::collections::BTreeSet::new();
+        let mut previous = ZERO_HASH.to_vec();
+        for row in fixture["events"].as_array().unwrap() {
+            let payload: EventPayload = serde_json::from_value(row["payload"].clone()).unwrap();
+            let event = Event {
+                id: engine_shared::EventId(row["id"].as_str().unwrap().into()),
+                document_id: document,
+                seq: row["seq"].as_i64().unwrap(),
+                event_type: row["type"].as_str().unwrap().into(),
+                actor_id: actor,
+                target_node_id: row["target_node_id"]
+                    .as_str()
+                    .map(|id| engine_shared::NodeId(id.into())),
+                payload: row["payload"].clone(),
+                content_hash: hex(row["content_hash"].as_str().unwrap()),
+                prev_chain_hash: hex(row["prev_chain_hash"].as_str().unwrap()),
+                chain_hash: hex(row["chain_hash"].as_str().unwrap()),
+                created_at: chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+            };
+            // The type and target columns are derived from the payload at append time.
+            assert_eq!(event.event_type, payload.event_type().as_str());
+            assert_eq!(event.target_node_id.as_ref(), payload.target_node_id());
+            verify_event(&event, document, event.seq, &previous).unwrap();
+            previous = event.chain_hash.clone();
+            types.insert(event.event_type.clone());
+            events.push(event);
+        }
+        assert_eq!(types.len(), 15, "the fixture covers every v1 event type");
+
+        let state = crate::materializer::Materializer::fold(&events).unwrap();
+        let pinned: crate::materializer::DocumentState =
+            serde_json::from_value(fixture["final_state"].clone()).unwrap();
+        assert_eq!(state, pinned);
+        assert_eq!(
+            snapshot::merkle_root(&state).unwrap().to_vec(),
+            hex(fixture["merkle_root"].as_str().unwrap())
+        );
+    }
 }
