@@ -1,5 +1,13 @@
 # Standalone engine release
 
+Current synchronization (11 October 2026): engine `80cd148` and application
+`858801c` contain the same security/workload engine behavior and schema 29.
+Both pass 275 Rust tests and CI; the application is deployed after upgrade/rollback
+rehearsal. See [release evidence](operations/2026-10-11-security-runtime-release.md)
+and [the current handoff](ENGINE-EVOLUTION-HANDOFF.md). Intentional differences are
+MIT package/OpenAPI metadata, the standalone fixture path and Rust 1.96's equivalent
+integer parity method. The earlier extraction records below are historical.
+
 ## Shared checkpoint synchronization - 10 October 2026
 
 Part 2a adds the same checkpoint codec, PostgreSQL store, CLI, tests, benchmark and

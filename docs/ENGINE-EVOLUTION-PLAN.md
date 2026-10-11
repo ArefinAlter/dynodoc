@@ -1,18 +1,16 @@
 # Engine and product evolution plan
 
-Project policy floors/authority and bounded audited metadata pass local checks and
-implementation CI in both repos; evidence is tracked in
-[the handoff](ENGINE-EVOLUTION-HANDOFF.md) and
-[policy contract](PROJECT-POLICY-AND-METADATA.md). Schema remains 29.
+Security/runtime acceptance is complete for the single-instance pilot and deployed
+at application `858801c`, schema 29 (11 October 2026). See the
+[release and rollback evidence](operations/2026-10-11-security-runtime-release.md),
+[findings/trust limits](SECURITY-HARDENING.md) and [handoff](ENGINE-EVOLUTION-HANDOFF.md).
+The API uses restricted runtime credentials; snapshot verification, project rules,
+browser policy and bounded workload admission have passed CI and VPS acceptance.
 
-Current security gate (11 October 2026): follow the prioritized
-[findings and fixes](SECURITY-HARDENING.md) before resuming the next storage build.
-Authentication/resource admission hardening is an independent source increment;
-it does not complete storage part 2 or independent audit part 6. The immediate
-remaining gates are runtime-boundary/snapshot upgrade acceptance and browser
-headers/resource budgets. The schema-29 source
-now separates operator migrations from runtime credentials; see
-[the database contract](DATABASE-PRIVILEGES.md) and handoff for verification status.
+Resume part 2 below: bounded text/value/asset chunks and shared historical references,
+then portable local/project commits. Request admission is not a full-state memory
+bound; independent audit part 6, native-host acceptance and large-service limits
+remain open. Shared periodic checkpoint writes remain off.
 
 10 October 2026. Implements [decision 012](decisions/012-local-first-document-version-control.md)
 and [the product specification](PRODUCT-SPEC.md). Status is in

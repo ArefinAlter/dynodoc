@@ -90,8 +90,10 @@ actual restricted logins and dispose of their grants/roles after passing tests.
 
 ## Hosted upgrade and rollback
 
-Do not deploy the API alone. The last recorded VPS is schema 26; this source needs
-27 (revocable sessions), 28 (verified snapshots) and 29 (database privileges).
+Deploy the API and web as a compatible release. The VPS upgrade from 26 through
+27 (revocable sessions), 28 (verified snapshots) and 29 (database privileges) passed
+on 11 October 2026; see [the release and tested rollback](operations/2026-10-11-security-runtime-release.md).
+The sequence below remains the requirement for other existing installations.
 
 1. Take and validate a backup and rehearse on an isolated copy. Stop old API writers
    and public traffic. Preserve current data/receipt counts and verification results.
@@ -113,8 +115,9 @@ Pre-0029 API images are **not compatible rollback**: they migrate at boot and by
 the credential gate; earlier images also lack snapshot/session protections. Retain
 a tested build implementing this schema/role contract or keep traffic stopped for
 an explicit recovery/forward-fix procedure. Reopening a schema-29 database with the
-new runtime role is tested; a production-data upgrade and compatible-image rollback
-rehearsal remain deployment gates. Do not downgrade by deleting migration records.
+new runtime role, restored production-copy upgrade and compatible-image rollback
+are verified in the linked release. Repeat these gates for future schema changes.
+Do not downgrade by deleting migration records.
 
 ## Trust and remaining work
 

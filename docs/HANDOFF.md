@@ -9,9 +9,10 @@ uploads in the new source are capped at 3,000,000 bytes. Consult PROJECT-STATUS.
 for the separate live deployment state.
 
 
-Latest source continuation: [bounded checkpoint encoding](BOUNDED-CHECKPOINT-ENCODING.md)
-and [desktop acceptance/publication](ADDIN-PUBLICATION-AND-ACCEPTANCE.md).
-Live build `ecbc643`, schema 26; [deployment evidence and rollback](operations/2026-10-10-projects-workspace-release.md).
+Latest live release: `858801c`, schema 29; [security/runtime evidence and compatible rollback](operations/2026-10-11-security-runtime-release.md).
+Resume bounded chunk storage/shared historical references from the
+[current handoff](ENGINE-EVOLUTION-HANDOFF.md), alongside
+[desktop acceptance/publication](ADDIN-PUBLICATION-AND-ACCEPTANCE.md).
 Installer/auth scope: [connector distribution contract](CONNECTOR-PAIRING-AND-INSTALLATION.md).
 
 ## Current continuation (10 October 2026)

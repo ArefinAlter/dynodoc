@@ -1,39 +1,65 @@
 # Dynodoc: intent, current implementation and remaining work
 
-## In progress: browser security, workload budgets and VPS rollout (11 October 2026)
+## Live: security and runtime safeguards (11 October 2026)
 
-CSP/HSTS, scoped Office embedding, process-local response admission, authenticated
-identity/project expensive-read limits and database deadlines are implemented.
-See [the contract and remaining limits](BROWSER-AND-WORKLOAD-SECURITY.md). Schema
-remains 29; no event/hash changes. Local Rust lint/build/OpenAPI pass; 273 tests pass
-in the remaining-suite run and the unchanged 100 ms SSE test passes separately.
-Two full Windows runs missed that existing timing deadline; full Linux CI remains
-a deployment gate. Frontend type check, units, lint, connector drift and nine focused
-CSP/connector browser workflows pass. The full signed-in browser run is in progress. It exposed an exhausted-response
-stream panic in the admission wrapper; the stream is now fused, with a passing
-regression for repeated end-of-body polling. Packaging checks also pass.
+VPS workspace/API/admin run application `858801c`, schema 29. Engine source is
+`80cd148` (workload implementation `f718c11`); application security implementation
+is `812f97a`, hydration fixture correction `e22a103`, Office command-frame fix
+`858801c`. Read [the release, live evidence and compatible rollback](operations/2026-10-11-security-runtime-release.md).
+Documentation follow-ups do not change those deployed images/archive.
 
-Deployment is authorized but live activation has not happened. VPS live images
-remain `release-ecbc643`, schema 26. A fresh backup was restored into the isolated
-`dynodoc-security-rehearsal` network. Upgrade to schema 29, snapshot/chain verification
-and restricted runtime-role checks passed with two documents, 36 events and zero
-snapshots unchanged. Baseline API `rollback-schema29-20261011` (source `336b718`)
-passes synthetic auth, snapshot, project, historical recovery, merge, audit, erasure
-and logout workflows on that upgraded copy. Preparation and private diagnostics are
-under `/opt/dynodoc-releases/20261011-security/`; no backup data leaves the VPS.
+Deployed protections include fail-closed service auth, server-side logout,
+checked immutable snapshots, separate operator migrations/restricted API login,
+project policy floors, audited metadata, bounded REST/SSE row reads, expression
+limits, committed-tree source packaging, nonce/hash CSP and HTTPS HSTS. Process-local
+response admission, account/project expensive-read limits, database deadlines and
+container/proxy resource limits are live. See [the exact bounds and gaps](BROWSER-AND-WORKLOAD-SECURITY.md).
+The static Office manifest command frame also has a scoped policy and external
+initializer; ordinary pages keep their restrictive script/embedding policy.
 
-Next: commit/push source, pass CI, build candidate images, repeat synthetic workflows
-on candidate then compatible rollback API, check web/proxy, take a fresh activation
-backup, stop old writers, upgrade/provision/backfill, and replace only API/web/admin.
-Preserve the existing PostgreSQL container and unrelated services. Retain candidate
-web with the compatible API rollback; older web/proxy combinations are not an
-approved rollback for the new CSP. Shared periodic checkpoint writes stay off.
+[App Rust CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38116813490) and
+[engine CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38116978805)
+pass all 275 tests each. Deployed Rust inputs are identical to that app run.
+[Final frontend CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38118877490)
+passes lint/type/build/drift checks, 289 units, 19 public and 72 signed-in browser
+workflows, including Nginx regression. Local command-frame/CSP checks pass.
+Windows full-run SSE/accessibility timing misses are recorded in the release;
+Linux acceptance passes unchanged. Rustdoc passes with 20 existing warnings.
 
-Local test API/web are running against the labelled disposable
-`dynodoc-security-test` container; process records and logs are in `target/security-*`.
-Stop only these recorded task-owned processes and remove this container/volume after
-checks. Afterwards resume shared chunk/byte bounds, project-wide portable commits,
-offline convergence, independent audit commitments and installed-editor acceptance.
+The verified backup/isolated restore, schema 26-to-29 upgrade, actual runtime
+privilege denials and compatible API rollback rehearsal pass. Production retains
+two documents, 36 events, zero snapshots and identical history fingerprints.
+Only API/web/admin restarted; PostgreSQL/converter and unrelated containers were
+preserved. Live health/headers, 24 connector delivery/auth checks, committed archive,
+large signed-shell headers and anonymous Chromium checks pass. No real user sign-in,
+email or document mutation was used. A reload/header-case issue in the deployment
+checker was corrected before traffic reopened; no database rollback occurred.
+
+All task-owned local test processes/database and VPS rehearsal containers/volume/
+network are removed. Backups and private evidence remain under
+`/opt/dynodoc-releases/20261011-security/`. Shared periodic checkpoint writes remain
+off. Never use the old schema-26 API as rollback; use the documented schema-29
+compatible API with the new web/proxy and preserve current data/credentials.
+
+Next, in dependency order:
+
+1. Part 2: versioned bounded text/value/asset chunks, decode/reference budgets,
+   compatibility/reuse fixtures, packing/incremental publication and shared
+   draft/version references. Current full-state memory and legacy fallback are
+   still unbounded by the new workload admission limits. Keep the writer off
+   until its storage/concurrency/peak-memory acceptance passes.
+2. Part 3: durable local repositories, portable project-wide commits/parents,
+   atomic branch refs and resumable missing-object exchange. Current drafts and
+   main selection still belong to individual files.
+3. Parts 4–7: native format fidelity, constraint-aware offline convergence,
+   independently signed/witnessed audit commitments and measured large-file/
+   multi-tenant performance. V1 hashes still omit envelope metadata and cannot
+   detect an owner-level complete rewrite without an external commitment.
+4. In parallel where contracts are stable: real installed Word/Docs, Excel/Sheets
+   and PowerPoint/Slides acceptance and marketplace/publisher setup. Current
+   desktop packages need host tests; pane capture needs the pane open, and hosted
+   loading/pairing/sync need connectivity. No background/offline completeness or
+   hundreds-of-thousands-of-users capacity claim is made.
 
 ## Verified source: project policy and audited metadata (11 October 2026)
 

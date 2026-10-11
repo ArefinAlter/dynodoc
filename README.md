@@ -1,11 +1,10 @@
 # Dynodoc — version control for documents
 
-Latest security source work (11 October 2026): project rules now set minimum file
-protection, and permitted metadata changes have bounded validation and atomic audit
-receipts. Schema 0029 separates operator migrations from a restricted API database login. Schema 0028 also requires verified
-snapshot receipts; existing data needs explicit replay backfill before rollout. See
-[the database boundary](docs/DATABASE-PRIVILEGES.md), [snapshot contract](docs/VERIFIED-SNAPSHOTS.md) and
-[checks/remaining gates](docs/ENGINE-EVOLUTION-HANDOFF.md).
+Live security release (11 October 2026): workspace/API `858801c`, schema 29.
+Revocable sessions, verified snapshots, restricted API database credentials,
+project policy floors/audited metadata, scoped CSP/HSTS and workload admission
+are deployed after upgrade/rollback rehearsal. Read [release evidence](docs/operations/2026-10-11-security-runtime-release.md)
+and [the next storage/offline priorities](docs/ENGINE-EVOLUTION-HANDOFF.md).
 
 > Version control and provenance for documents edited in your own tools. Collect block changes in Projects, review and merge them, and pull a shared history into another working copy.
 
@@ -22,8 +21,9 @@ fail-closed service credentials, checked snapshots, runtime database privileges 
 bounded history reads. Project policy floors and bounded audited metadata are now
 implemented; see [the behavior contract](docs/PROJECT-POLICY-AND-METADATA.md) and
 [verification evidence](docs/ENGINE-EVOLUTION-HANDOFF.md).
-Deployment acceptance, browser security and resource budgets remain open; see
-the [security findings and rollout contract](docs/SECURITY-HARDENING.md).
+The VPS rollout passes its browser/runtime gates; broader byte/memory, distributed
+tenant and independent-audit limits remain open. See the
+[security findings and trust limits](docs/SECURITY-HARDENING.md).
 Shared checkpoint readers and bounded database
 batches reuse unchanged objects. Shared writes remain opt-in; default snapshots
 and draft bases still use full JSON. Content edits can proceed during checkpoint

@@ -1,9 +1,10 @@
 # Verified legacy snapshots
 
 11 October 2026. This source increment closes the legacy snapshot read boundary
-described in [the security findings](SECURITY-HARDENING.md). It is not a VPS release
-or an independently witnessed audit system. Final checks and source references are
-recorded in [the handoff](ENGINE-EVOLUTION-HANDOFF.md).
+described in [the security findings](SECURITY-HARDENING.md). It shipped in the
+[schema-29 VPS release](operations/2026-10-11-security-runtime-release.md) after
+upgrade/rollback rehearsal. It is not an independently witnessed audit system.
+Checks and remaining work are recorded in [the handoff](ENGINE-EVOLUTION-HANDOFF.md).
 
 ## Contract
 

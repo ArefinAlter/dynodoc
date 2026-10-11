@@ -1,6 +1,7 @@
 # Dynodoc documentation
 
-Current security contract: [Project rules and audited metadata](PROJECT-POLICY-AND-METADATA.md).
+Current release: [security/runtime rollout](operations/2026-10-11-security-runtime-release.md).
+Browser and request bounds: [contract and limitations](BROWSER-AND-WORKLOAD-SECURITY.md).
 
 Updated 11 October 2026. Dynodoc is document version control and provenance around
 existing editors. Start with the current contract, not the original questionnaire

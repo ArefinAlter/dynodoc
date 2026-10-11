@@ -8,22 +8,25 @@ the outstanding security boundaries below are addressed.
 
 ## First hardening increment
 
-Implemented and locally verified; source references are recorded in
-[the handoff](ENGINE-EVOLUTION-HANDOFF.md). The VPS workspace/API are not yet updated.
-Production remains application `ecbc643`, schema 26, shared periodic writes off.
+Implemented, verified in both repositories and deployed as application `858801c`,
+schema 29. Shared periodic writes remain off. The isolated restore/upgrade/rollback,
+restricted runtime, live browser/proxy and connector checks pass; see
+[release evidence](operations/2026-10-11-security-runtime-release.md) and
+[the current handoff](ENGINE-EVOLUTION-HANDOFF.md). Native-host acceptance,
+byte/memory bounds and independent commitments are separate open gates.
 
 | Finding | Current source result | Outstanding work |
 |---|---|---|
-| Legacy snapshots mutable; replay not checked | **Implemented and locally verified in both repos.** Migration 0028 adds immutable snapshot/receipt guards, replay-based backfill and a checked reader/writer shared by serving paths. API/CLI verification compares all legacy snapshots, including non-node state. CI references are in the handoff. | Complete runtime-role deployment acceptance and the [upgrade contract](VERIFIED-SNAPSHOTS.md) before release. Old rows need explicit verified backfill; no blanket migration attestation. Receipts are not external signatures. |
-| API uses migration/owner database credentials | **Implemented and locally verified in both repos.** Schema 0029, separate migrate/grant CLI, explicit runtime ACLs and read-only startup validation remove owner credentials and automatic migrations from the API. Real-login denial, schema-upgrade and audited erasure regressions pass. | CI passes in both repos (handoff links); rehearse [the database upgrade/rollback contract](DATABASE-PRIVILEGES.md) before deployment. Database owners and permitted audited erasure remain trusted boundaries until independent commitments exist. |
-| Missing service key exposes sign-in tokens | **Fixed in source.** Both issuance routes reject absent, blank, short, missing or incorrect service credentials, regardless of APP_ENV. Startup rejects missing/short keys and zero PASETO keys before DB access. | Deploy API/web together after rehearsal. DEV_AUTH is still an explicit local-only web bypass; never enable it publicly. |
-| Logout only clears a cookie | **Fixed in source.** Migration 0027 binds new tokens to a login ID. Logout revokes its refresh lineage and access tokens. Rotation/logout serialize on the identity row. Web clears cookies only after successful revocation. | Deploy; retain compatibility warning below. Browser and API regressions cover copied credentials, separate logins, rotated ancestors, races and stream data after revocation. |
+| Legacy snapshots mutable; replay not checked | **Deployed and verified.** Migration 0028 adds immutable snapshot/receipt guards, replay-based backfill and a checked reader/writer shared by serving paths. API/CLI verification includes non-node state. Existing-row/corruption cases pass in synthetic acceptance; production currently has zero legacy snapshots. | Retain the [upgrade contract](VERIFIED-SNAPSHOTS.md) for other databases: old rows require explicit replay backfill. Receipts are internal attestations, not external signatures. |
+| API uses migration/owner database credentials | **Deployed and verified.** Schema 0029 separates operator migrations/provisioning from the restricted API login. Runtime privilege denials, upgraded-copy workflows and compatible rollback pass. | Follow [the database contract](DATABASE-PRIVILEGES.md) for future upgrades. Database owners and permitted audited erasure remain trusted boundaries until independent commitments exist. |
+| Missing service key exposes sign-in tokens | **Deployed.** Both issuance routes reject absent, blank, short, missing or incorrect service credentials regardless of APP_ENV; startup rejects missing/short keys and zero PASETO keys. | DEV_AUTH is explicitly local-only and is disabled on the live web/admin. Real provider login/email delivery acceptance remains separate. |
+| Logout only clears a cookie | **Deployed.** Migration 0027 binds new tokens to a login ID; logout revokes its refresh lineage and access tokens. Rotation/logout serialize on the identity row. Web clears cookies only after successful revocation. | Retain the legacy-cookie compatibility warning below. API/browser tests and isolated candidate/rollback workflows pass; independently paired editor grants retain their own revocation lifecycle. |
 | Event hash omits envelope metadata | **Open by design of v1; misleading row comment corrected.** | Introduce versioned envelopes binding document/project, parents, sequence, event ID, actor and content root. Add device/server signatures and independent pinned/witnessed heads per evolution part 6. Preserve old hashes and label their trust limits. |
-| CSP/HSTS incomplete | **Open.** Marketing host has HSTS; app host lacked it in the read-only audit. Connector frame-ancestor policy alone is not a script CSP. | Nonce/hash CSP, scoped Office embedding, HTTPS HSTS and native-host/browser regression matrix. Avoid breaking Office panes with blanket frame denial. |
-| File policy can weaken project rules | **Implemented and verified locally and in implementation CI.** Effective floors and project authority govern file rules, direct writes, reviewed merges and moves; old weak overrides cannot weaken the project. | Follow the [policy/metadata contract](PROJECT-POLICY-AND-METADATA.md) and deploy API/web together after upgrade rehearsal. Existing directly shared file access remains additive; this is not per-user SQL isolation. |
-| Arbitrary metadata/settings changes lack audit | **Implemented and verified locally and in implementation CI.** Supported bounded settings patch; governing management for settings/archive; protected-team checks for rename; atomic before/after digest audit with no-op/rollback tests. | Source checks pass; rollout remains. Old changes are not retroactively audited; operational audit is not independently signed. |
-| Event routes load full history | **Fixed for REST pagination and SSE catch-up in source.** REST uses SQL LIMIT with lookahead; SSE pins a head and reads 100-row pages, then live events. Subscriber admission is atomic. Resume headers and overflow/future positions are handled. | These are row bounds, not a byte/tenant/time budget. Bound search, expensive operations, per-event bytes and total concurrent work; add statement deadlines and rate limits. Other historical readers are not changed by this increment. |
-| Public source archive includes stray worktree files | **Fixed in source.** Package the selected committed Git tree, record SOURCE_REVISION, retain secret/build exclusions. Untracked, staged-only and modified working files cannot enter the archive. | Rebuild the archive from the actual deployment commit when releasing. The audited live archive did not contain ops/status.json; tracked dynodoc_interactive.html is an intentional source file, not evidence of a secret leak. |
+| CSP/HSTS incomplete | **Deployed and browser/proxy verified.** Nonce/hash script CSP, HTTPS HSTS, restrictive ordinary-page framing and scoped Office pane/command-frame policies are live. | [Exact policy and limits](BROWSER-AND-WORKLOAD-SECURITY.md). Mock SDK/bridge tests and hosted delivery are not installed-Office/Google acceptance. |
+| File policy can weaken project rules | **Deployed and verified.** Effective floors and project authority govern file rules, direct writes, reviewed merges and moves; old weak overrides cannot weaken the project. | Follow the [policy/metadata contract](PROJECT-POLICY-AND-METADATA.md). Existing directly shared file access remains additive; this is not per-user SQL isolation. |
+| Arbitrary metadata/settings changes lack audit | **Deployed and verified.** Supported bounded settings patches; governing management for settings/archive; protected-team rename; atomic before/after digest audit with no-op/rollback tests. | Old changes are not retroactively audited; operational audit is not independently signed. |
+| Event routes load full history; expensive reads unbounded | **Deployed for REST/SSE row pagination and process-local admission.** REST uses SQL LIMIT/lookahead; SSE pins a head and reads 100-row pages. Response/SSE slots, identity/project expensive-read budgets, SQL deadlines and container/proxy limits are live. | These do not bound per-event or total document bytes, preempt all synchronous CPU work, index search or provide fleet-wide tenant fairness. See [workload limits](BROWSER-AND-WORKLOAD-SECURITY.md). Other historical readers still hydrate full state. |
+| Public source archive includes stray worktree files | **Deployed and byte-verified.** `/source` serves 632 files from the exact committed deployment tree with SOURCE_REVISION and hashes. Untracked/staged-only/modified working files cannot enter it. | Package each future deployed revision. Live checks exclude ops/status.json and env files; tracked dynodoc_interactive.html is intentional source. |
 | Expression and graph recursion unbounded | **Fixed at expression admission and relevance-cycle traversal in source.** Expressions allow at most 64 KiB, nesting 32 and 256 term entries (including groups/unary terms); the resulting AST also bounds recursive visitors/drop. Dependency DFS uses explicit frames. UTF-8 operator-boundary panic also corrected. | These checks are not a global JSON/format parser budget or a large-document performance guarantee. Previously accepted over-limit expressions now yield a validation error. |
 | OpenAPI check absent from application CI | **Fixed in source.** CI checks generated YAML, including schema-only changes. Standalone CI already did this. | Keep regenerated frontend API types and both YAML copies in sync. |
 | Docs duplicates unchecked Apps Script helpers | **Fixed in source.** All three Google hosts receive Common.gs from google-common; packages and CI drift checks include it. | Existing manual Docs installations must add Common.gs when updating. Installed-host acceptance is still required. |
@@ -92,21 +95,21 @@ correct before those guards were installed.
   pass full local verification and CI; evidence is recorded in the handoff. Never
   broaden grants to hide a workflow failure. The owner URL must stay out of the
   API environment.
-- Rehearse an existing-database upgrade and compatible rollback with synthetic
-  history and schema-27 sessions. Document the verification/backfill sequence and
-  failures before a VPS rollout. The database owner can still rewrite privileged
-  state; independent commitments remain a later, explicitly open audit boundary.
+- Passed: restored production-copy upgrade and compatible rollback with synthetic
+  sessions/workflows, followed by the verified live upgrade. The linked release
+  records the backfill sequence, two deployment-checker corrections and cleanup.
+  The database owner can still rewrite privileged state; independent commitments
+  remain an explicitly open audit boundary. Repeat acceptance for future upgrades.
 
 ### Subsequent order
 
-1. Rehearse the snapshot/role upgrade and compatible rollback before production
-   deployment; the runtime database privilege split passes local checks and CI.
-2. Add CSP/HSTS compatible with the six-editor flows, then search/deadline/rate/
-   concurrency budgets. Project policy/metadata verification passes (handoff).
-3. Complete bounded text/value/asset chunks and shared named-version/draft references.
-4. Portable project-wide commits/parents/branches, durable local repositories and
+The snapshot/role upgrade, compatible rollback, browser policies and first
+single-instance workload budgets pass and are deployed. Continue with:
+
+1. Complete bounded text/value/asset chunks and shared named-version/draft references.
+2. Portable project-wide commits/parents/branches, durable local repositories and
    resumable missing-object exchange; constraint-aware offline convergence.
-5. Full format fidelity, independent audit commitments and measured large-file/service
+3. Full format fidelity, independent audit commitments and measured large-file/service
    limits. Installed Office/Google acceptance and marketplace preparation can proceed
    where host contracts are stable. Sideload packages remain unaccepted in real hosts.
 
