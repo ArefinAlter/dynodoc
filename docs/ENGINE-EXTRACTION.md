@@ -3,7 +3,8 @@
 Current source work adds [typed checkpoints](TYPED-CHECKPOINTS.md), schema 31
 [shared draft bases](SHARED-DRAFT-BASES.md), schema-32
 [named/deployed snapshots](SHARED-NAMED-SNAPSHOTS.md), and a
-[portable local project repository](PORTABLE-PROJECT-HISTORY.md). See the
+[portable local project repository](PORTABLE-PROJECT-HISTORY.md). The following
+increment adds [signed ref receipts and durable client pins](REF-RECEIPTS.md). See the
 [handoff](ENGINE-EVOLUTION-HANDOFF.md) for current checks and commit identities.
 These source changes have not been deployed to the schema-29 VPS.
 

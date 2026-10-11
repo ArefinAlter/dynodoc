@@ -17,6 +17,7 @@ use sqlx::PgPool;
 use utoipa::OpenApi;
 use uuid::Uuid;
 
+mod receipt;
 mod repository;
 
 #[derive(Parser)]
@@ -28,6 +29,15 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Signed ref receipts and a separate durable client trust journal (offline).
+    Receipt {
+        journal: std::path::PathBuf,
+        authority: Uuid,
+        project: Uuid,
+        branch: String,
+        #[command(subcommand)]
+        action: receipt::Action,
+    },
     /// Durable local project history (no network or installed-editor session required).
     Repository {
         path: std::path::PathBuf,
@@ -93,6 +103,24 @@ async fn main() -> anyhow::Result<()> {
 
     let cli = Cli::parse();
     match cli.command {
+        Command::Receipt {
+            journal,
+            authority,
+            project,
+            branch,
+            action,
+        } => {
+            receipt::run(
+                journal,
+                engine_core::repository::attestation::Scope {
+                    authority,
+                    project,
+                    branch,
+                },
+                action,
+            )
+            .await
+        }
         Command::Repository {
             path,
             project,

@@ -1,0 +1,64 @@
+{
+  "generator": "Independent Python JSON/SHA-256 and OpenSSL Ed25519; public synthetic seeds 7 and 8",
+  "first": {
+    "signed": {
+      "receipt": {
+        "version": 1,
+        "scope": {
+          "authority": "00000000-0000-0000-0000-000000000001",
+          "project": "00000000-0000-0000-0000-000000000002",
+          "branch": "main"
+        },
+        "head": {
+          "commit": "1111111111111111111111111111111111111111111111111111111111111111",
+          "generation": 1
+        },
+        "previous": null,
+        "issued_at_ms": 1700000000000,
+        "issuer_key": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c"
+      },
+      "signature": "35484484e65f0cbb549828995346d8957f312a448fe86a62c78ef662f2c6593ced7143c91970f075f296703faeb9e24277b823a8ce1613220b03c53974648f0e"
+    },
+    "address": "0d88e1d4dfe00ea87cb57668d21d8cb8cce27a8d6d94937e514927d819338a4f"
+  },
+  "rotation": {
+    "signed": {
+      "rotation": {
+        "version": 1,
+        "scope": {
+          "authority": "00000000-0000-0000-0000-000000000001",
+          "project": "00000000-0000-0000-0000-000000000002",
+          "branch": "main"
+        },
+        "previous": "0d88e1d4dfe00ea87cb57668d21d8cb8cce27a8d6d94937e514927d819338a4f",
+        "next_generation": 2,
+        "old_key": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+        "new_key": "1398f62c6d1a457c51ba6a4b5f3dbd2f69fca93216218dc8997e416bd17d93ca"
+      },
+      "old_signature": "35be61e974d020caac2fb49a8656a2e3b2991595535d9c27f67bcac5d30373dd7b963770b8e2e6c80e91ac99e28225dec4ba8200018940634dc05e3a393bcc0c",
+      "new_signature": "a28c94208cc40e0c7c26333b83f99d877671b0b2c51169f649704e23bef804a7476356d4294c696d4fe1768d5f63e3835e269d20e8d894d9f28426f4be422508"
+    },
+    "address": "e8043a9975be210a3b7f602349e6478d898955c171315679a6c7cf96f6a0124a"
+  },
+  "next": {
+    "signed": {
+      "receipt": {
+        "version": 1,
+        "scope": {
+          "authority": "00000000-0000-0000-0000-000000000001",
+          "project": "00000000-0000-0000-0000-000000000002",
+          "branch": "main"
+        },
+        "head": {
+          "commit": "2222222222222222222222222222222222222222222222222222222222222222",
+          "generation": 2
+        },
+        "previous": "0d88e1d4dfe00ea87cb57668d21d8cb8cce27a8d6d94937e514927d819338a4f",
+        "issued_at_ms": 1700000000001,
+        "issuer_key": "1398f62c6d1a457c51ba6a4b5f3dbd2f69fca93216218dc8997e416bd17d93ca"
+      },
+      "signature": "b35bec08943dc2fa1e5dc172ca3a452af4fc75acd6b8dee201d36c4a1478f6640043bcbb1e302bdc3afa6dcb8ff303ea41a6145491badac2a2a4df0c5778a002"
+    },
+    "address": "c00339bef9492065fd5183bbde7fc4374ed0f8bacb9988942bddb00aa5122bcc"
+  }
+}

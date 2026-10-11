@@ -1,0 +1,16 @@
+{
+  "commit": "311999ccb630287f446a747704f6dcce26b759f6150e877ef9c5ce7c894e5696",
+  "fixture": "local synthetic authority and client; not production/witness/host acceptance",
+  "fork_rejected": true,
+  "generation": 3,
+  "initial_public_key": "1398f62c6d1a457c51ba6a4b5f3dbd2f69fca93216218dc8997e416bd17d93ca",
+  "proof_retry_idempotent": true,
+  "revocation_rejects_rotation_retry": true,
+  "rollback_rejected": true,
+  "rotation_survives_reopen": true,
+  "scope": {
+    "authority": "50694ece-0547-4709-9e95-efec52104063",
+    "branch": "main",
+    "project": "f3a48b09-ad81-4523-adcb-1e73a49f940c"
+  }
+}

@@ -11,8 +11,10 @@ use ring::{
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
+pub mod attestation;
 pub mod compare;
 pub mod local;
+pub mod receipt_journal;
 
 pub const MAX_FILES: usize = 4096;
 pub const MAX_COMMIT_BYTES: usize = 1024 * 1024;
@@ -185,6 +187,7 @@ impl SignedCommit {
 
 /// Generation prevents an ABA ref update (A -> B -> A) from satisfying an old CAS.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Head {
     pub commit: Address,
     pub generation: i64,

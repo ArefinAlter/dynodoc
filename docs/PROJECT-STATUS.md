@@ -1,8 +1,46 @@
 # Dynodoc: intent, current implementation and remaining work
 
+## Source: signed ref receipts and durable client trust (12 October 2026)
+
+This pass adds [signed ref receipts](REF-RECEIPTS.md) and a separate SQLite client
+trust journal. Scope, generation, commit, predecessor, declared time and authority
+key are signed. Contiguous proofs reject rollback, conflicting heads, missing
+updates and scope/key substitution. Verified-prefix retries are idempotent.
+Authority rotation requires both keys at the exact pin; local revocation persists
+across restart and cannot be undone by retries or a replacement bootstrap.
+Journal publication is transactional and concurrent conflicting updates have one
+winner. The CLI exposes verification, first trust, advance, rotation and revocation.
+
+Validation so far: workspace check/Clippy passes; all 18 repository tests pass,
+including eight new receipt/journal regressions. Independent Python/OpenSSL vectors
+pin canonical hashes and receipt/rotation signatures. The local demonstration
+creates real synthetic project commits, exercises a separate client journal,
+reopens it and verifies fork/rollback/retry/rotation/revocation behavior. See
+[its record](benchmarks/receipt-journal-20261012.json). The built CLI successfully
+reads the reopened, revoked journal without PostgreSQL or network access.
+Standalone/CI checks for this increment are being completed; no production
+change occurred.
+
+These are core/CLI integration primitives. Production does not yet issue signed
+ref receipts or distribute authority keys. Account/device registration and remote
+revocation, atomic protected-ref publication with receipts, proof endpoints,
+witnesses/gossip and connector adoption remain open. A declared time is not
+trusted timestamping. Initial trust cannot prove unseen history, and an attacker
+who can roll back the client's own trusted journal can destroy its pin.
+
+Next: authenticated remote project history with explicit staged-object visibility,
+current project/file permissions, protected refs/reviews, account/device key
+binding and audited erasure of multi-file history. Do not expose object inventory
+through private drafts or treat a local commit signature as an account grant.
+Physical packing/incremental publication, same-file offline convergence, native
+format/background capture, realistic large/concurrent workloads and installed
+Office/Google acceptance also remain in the [ledger](ROADMAP-ACCEPTANCE.md).
+The owner will run installed-editor acceptance locally. Continue across this
+checkpoint; the complete roadmap is not certified.
+
 ## Source: shared named/deployed snapshots (12 October 2026)
 
-The current pass adds [shared named snapshots](SHARED-NAMED-SNAPSHOTS.md),
+Application `f8f0adb` and standalone engine `107e45e` add [shared named snapshots](SHARED-NAMED-SNAPSHOTS.md),
 schema 32. Named versions, public-copy pins and deployed snapshots can refer to
 the same typed objects as drafts and periodic checkpoints. The API hydrates the
 existing response shape after verifying the stored receipt and referenced graph.
@@ -14,9 +52,11 @@ Targeted checks pass: 19 snapshot integration tests and all 45 API integration
 tests, including mixed histories/concurrent writers, object reuse, failed-write
 rollback, root/object tampering, independent replay/backfill, historical restore,
 public-copy privacy and audited erasure using restricted runtime credentials.
-Formatting, workspace Clippy and all 309 application Rust tests pass. Standalone validation and
-source CI for this increment are being completed. The prior source checkpoint's
-completed evidence is recorded immediately below.
+Formatting/Clippy and all 309 Rust tests pass in both repositories. Standalone
+task docs passes with the same 20 pre-existing warnings. [Application Rust CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38167894976)
+and [engine CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38167901880)
+pass. [Browser CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38167894975)
+passes both its build/unit/public job and all authenticated workflows.
 
 No production migration, optional-writer enablement or hosted package update has
 occurred. The task-owned disposable PostgreSQL container is

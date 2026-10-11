@@ -12,6 +12,10 @@ adds opt-in shared draft bases and schema-32 [named/deployed/public snapshots](S
 The settled typed-root contract also underlies the
 [portable local project repository](PORTABLE-PROJECT-HISTORY.md), an early part-3
 implementation with signed commits, parent history, branch CAS and transfer primitives.
+Part 6 now has [portable ref receipts and a separate client trust journal](REF-RECEIPTS.md),
+with independent signature vectors, contiguous proof checks, authority rotation
+and durable local revocation. Account/device binding, atomic server issuance,
+authority distribution, witnesses and connector adoption remain open.
 Continue storage adoption/packing and authenticated transport/connector integration;
 these sources do not yet complete either part. Request admission is not a full-state memory
 bound; independent audit part 6, native-host acceptance and large-service limits
