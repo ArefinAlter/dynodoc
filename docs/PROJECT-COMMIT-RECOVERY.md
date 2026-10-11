@@ -64,7 +64,8 @@ recover SOURCE ONTO --kind revert --key KEY.der --message "Recover earlier work"
 recover SOURCE ONTO --kind cherry-pick --resolutions choices.json --key KEY.der --message "Recover reviewed change" --authored-at-ms TIMESTAMP
 ```
 
-The preview writes nothing. `recover` signs and stores only the new commit; the
+The preview creates no commit, content object or branch update. `recover` signs
+and stores only the new commit; the
 caller reviews it with `show` and publishes separately using `set-head` with the
 expected address **and generation**. A stale branch cannot overwrite later work.
 Signatures prove key control, not account permissions; hosted authorization and
@@ -86,3 +87,8 @@ under existing budgets, one resident file state at a time. Native exports, remot
 current-permission checks, protected refs, project UI and connector recovery still
 need integration. Offline same-file semantic convergence remains a separate
 roadmap requirement.
+
+Local roots represent the complete typed `DocumentState`, including any comments
+and suggestions captured in it. Native/remote adoption must map content changes
+through current permission and workflow rules; importing a local root must never
+replace server-owned access, approval or audit records.

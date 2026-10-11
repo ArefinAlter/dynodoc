@@ -2,7 +2,8 @@
 
 ## Source: portable project revert and cherry-pick (12 October 2026)
 
-The core and CLI now support [commit-addressed project recovery](PROJECT-COMMIT-RECOVERY.md).
+Application `7d889ac` and engine `bdde0f3` add core/CLI
+[commit-addressed project recovery](PROJECT-COMMIT-RECOVERY.md).
 Preview applies a source delta (or its inverse) to an exact current commit; new
 signed v2 commits retain source/mainline as provenance and current commit as their
 only ancestry parent. Existing v1 hashes/signatures remain unchanged. Root sources
@@ -17,11 +18,21 @@ mainline selection, conflict validation and independent Python/OpenSSL v2 vector
 Application Clippy passes. The [actual CLI smoke](benchmarks/project-recovery-cli-20261012.json)
 passes preview, revert, exact retry, historical reconstruction, later-file retention,
 branch publication, stale-CAS rejection and cherry-pick. Synthetic key files were
-removed. Full standalone validation is in progress; its completed outcome must be
-recorded before closing this checkpoint. SQLite schema 1 and PostgreSQL schema 32 remain unchanged. The test
-container is dynodoc-recovery-test-20261012, label dynodoc.task=recovery-20261012,
-loopback port 53367, disposable with --rm; remove after validation. Production
-remains application 858801c/schema 29, with no new writer enabled.
+removed. All 325 standalone Rust tests pass, along with task lint and task docs
+(the same 20 existing rustdoc warnings). Application focused tests, formatting and
+Clippy pass. The disposable PostgreSQL container and its volume were removed after
+validation; no local API/frontend server was started. Synthetic reports/databases
+and logs remain under ignored target. SQLite schema 1 and PostgreSQL schema 32 are
+unchanged. Production remains application 858801c/schema 29, with no new writer
+enabled. [Application Rust CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38171109983)
+and [standalone CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38171113730)
+pass all 325 tests plus their lint/build/OpenAPI checks. The application source
+packaging regression and standalone documentation check also pass.
+[Frontend CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38171109919)
+passes both jobs, including frontend checks, unit tests, the shared Google connector
+drift check, public browser tests, production-proxy regression and authenticated
+browser workflows. These CI browser sessions are not installed Office/Google
+acceptance. No deployment occurred.
 
 This completes local commit-addressed recovery, not hosted project branches or
 native recovery adoption. Next remains authenticated project transport and device
