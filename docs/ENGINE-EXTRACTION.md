@@ -1,12 +1,18 @@
 # Standalone engine release
 
+Latest storage source (12 October 2026): application `3462520`, engine `746d373`
+add identical streaming byte-content objects, fixed hash vectors and transactional
+store tests. V1 snapshots/events and schema 29 remain compatible; typed chunked
+checkpoint integration and project commits are still future work. See
+[the content contract](CHUNKED-CONTENT.md) and [verification/handoff](ENGINE-EVOLUTION-HANDOFF.md).
+
 Latest test synchronization: engine PR #7 (`e31f093`, merged `d6be03a`)
 is mirrored byte-for-byte in application `648aa27`. The v1 event fixture
 and regression test do not change runtime behavior or schema. See
 [verification and handoff](ENGINE-EVOLUTION-HANDOFF.md). The runtime
 synchronization and release below remain the deployed baseline.
 
-Current synchronization (11 October 2026): engine `80cd148` and application
+Deployed runtime baseline (11 October 2026): engine `80cd148` and application
 `858801c` contain the same security/workload engine behavior and schema 29.
 Both pass 275 Rust tests and CI; the application is deployed after upgrade/rollback
 rehearsal. See [release evidence](operations/2026-10-11-security-runtime-release.md)

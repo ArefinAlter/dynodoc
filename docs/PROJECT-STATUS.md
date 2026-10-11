@@ -1,5 +1,68 @@
 # Dynodoc: intent, current implementation and remaining work
 
+## Source: streaming shared content and local acceptance kit (12 October 2026)
+
+Application implementation `3462520` adds evolution part 2f. Standalone engine
+implementation: `746d373`. Read [the binary contract, resource
+bounds and measurements](CHUNKED-CONTENT.md). A separate content hash domain stores
+64 KiB pieces under bounded 128-way trees; streaming I/O and object/byte budgets
+avoid a full input/output buffer. The document-scoped memory/Pg stores retain
+byte validation, reuse, transactional rollback, immutability and audited erasure.
+V1 state/event hashes and migrations are unchanged. No root is silently published
+as a checkpoint/commit, and no default writer or upload limit changes.
+
+Verification: application formatting, workspace Clippy and all 284 Rust tests pass
+against an isolated local PostgreSQL 16. Eight new tests cover independent fixed
+hashes, chunk/tree boundaries, fragmented I/O, reuse, scope, repeated-reference
+budgets, malformed graphs, I/O errors and Pg rollback/durability. Existing v1
+compatibility, history and erasure checks pass. Standalone task lint, all
+284 Rust tests and task docs also pass;
+rustdoc retains the same 20 pre-existing link warnings. The
+[application Rust CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38162089809)
+and [engine CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38162187293)
+pass, including OpenAPI compatibility and source packaging where applicable.
+The [frontend CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38162089764)
+passes lint/type/build/package checks, 289 frontend units, 19 public browser
+checks, and all 72 tests against the authenticated stack, including the
+production-proxy regression. Source inputs are the commits above; later
+documentation-only commits record evidence without changing those inputs.
+All changed engine sources/fixtures are mirrored; application/engine packaging
+and existing independent fixture/toolchain differences are preserved.
+
+The 100/250/500 MiB release probe streams generated repeated bytes to a sink. Peak
+working set was 5.95/5.54/5.53 MB and each trace retained five unique objects. This
+checks streaming behavior only; it is not native-file, realistic-entropy database,
+concurrent-service or user-capacity acceptance. Fixed boundaries can rewrite later
+chunks after insertions/deletions; equal-length edits reuse unaffected pieces.
+
+The owner chose to run installed-editor tests locally. The application now includes
+the [acceptance worksheet](https://github.com/ArefinAlter/dynodoc/blob/main/extensions/ACCEPTANCE.md)
+in each Google test ZIP and links it from Office installation instructions. It
+covers all six hosts, exact versions, synthetic inputs, pairing/capture/review/pull,
+conflicts, stale application, retries, restart, revocation and historical recovery.
+The stale schema-26 installation prerequisite is corrected to 29. Package rebuild,
+drift verification and script formatting pass. No native session was connected;
+real host results remain not run, and PowerPoint 2021 still fails its API baseline.
+No publisher registration, Marketplace submission or public listing is claimed.
+
+VPS remains application `858801c`, schema 29. This increment is source-only; hosted
+packages/archive still belong to that deployed release. Shared periodic writes
+remain off. The task-owned local PostgreSQL container and its anonymous data
+volume were auto-removed after both suites. Docker Desktop was left running
+because unrelated containers were active. No local app server was started;
+ignored target files retain only synthetic probe/review evidence.
+
+Next concrete dependency: part 2g typed node/value/asset manifests referencing
+content roots, with bounded semantic decode (not encoded bytes alone), exact
+state/replay equivalence, and explicit versioned publication/read selection. Keep
+v1 roots readable and add any schema change as a new migration. Ordinary v1 values
+over 1 MiB still reject/fall back; full DocumentState memory is not solved here.
+Then packing/incremental publication and shared draft/named-version references.
+Portable project-wide commits/parents/atomic refs, durable local history and
+resumable exchange follow those contracts; offline convergence, independent signed/
+witnessed commitments and native fidelity/large-service acceptance remain open.
+Current drafts/branches are per file. This does not complete parts 2-8.
+
 ## Source: v1 event hash regression synchronized (11 October 2026)
 
 Engine PR [#7](https://github.com/ArefinAlter/dynodoc-engine/pull/7), source
@@ -15,7 +78,7 @@ warnings denied, formatting and diff checks pass. Prior independent review of
 passed all 276 Rust tests. Application mirror CI is tracked in
 [Rust](https://github.com/ArefinAlter/dynodoc/actions/runs/38160929510) and
 [frontend](https://github.com/ArefinAlter/dynodoc/actions/runs/38160929481).
-These links are run records; do not infer completion from their existence.
+Both application mirror runs completed successfully.
 
 Optional follow-up: pin typed serialization round-trips and per-event validate_op
 inside the test; both passed in the separate review probe. This regression does
