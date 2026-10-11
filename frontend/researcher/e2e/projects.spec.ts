@@ -42,7 +42,11 @@ test('A project editor can import a file but its ownership cannot bypass project
     await api(manager, `/spaces/${project.id}/members`, { email, role: 'editor' });
     await login(creator, email);
     await creator.goto(`/projects/${project.id}`);
-    await creator.locator('input[type=file]').setInputFiles({
+    const upload = creator.locator('input[type=file]');
+    // setInputFiles can target a disabled input while the initial file list loads.
+    // Wait for the same ready state required by the real file picker.
+    await expect(upload).toBeEnabled();
+    await upload.setInputFiles({
       name: 'Owned report.txt',
       mimeType: 'text/plain',
       buffer: Buffer.from('Imported by a project editor')

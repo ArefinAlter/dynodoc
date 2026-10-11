@@ -5,7 +5,8 @@
 Project rules now form a minimum for file rules, including old weak overrides.
 File ownership/nested-folder management no longer grants project review bypasses.
 Rule setters, direct edits, merges/approval overrides, metadata and moves use the
-project authority. Source/destination project locks prevent policy/membership races.
+project authority. Source/destination project locks serialize project-root policy/member changes
+against affected writes.
 Metadata accepts bounded supported settings patches and records actual changes
 atomically; settings/archive need governing management and rename follows team-edit
 protection. Web import initializes files before attachment to a protected project.
@@ -16,8 +17,17 @@ regressions, nested-folder/cross-project authority, metadata digest audit and er
 Final Clippy, API/CLI/web builds, generated OpenAPI/client types and frontend lint
 (zero errors/warnings) pass. All 286 frontend units and five affected signed-in
 workflows pass, including project-editor import/protection and the 80 KiB request
-cap. Standalone verification and full source CI are pending. The first full run hit the existing 100 ms SSE deadline while lint
-ran concurrently; the isolated final run passes without changing that deadline.
+cap. Standalone lint, all 269 Rust tests, rustdoc and OpenAPI generation pass;
+rustdoc retains 20 existing warnings. The standalone parallel compiler exhausted
+Windows paging memory; a single compiler job completed all remaining checks.
+Application Rust CI passes for `6a1926f`. Full browser CI passed 68 workflows but
+the new project-policy workflow attached a file while the input was disabled by
+initial loading. The saved trace shows no import request; the test now waits for
+the enabled control without relaxing assertions/timeouts. Three consecutive local
+repeats pass; full frontend CI for the corrected regression is pending.
+Standalone source `2100213` is pushed; its implementation CI is running. The first local application Rust run hit the
+existing 100 ms SSE deadline while lint ran concurrently; the isolated final run
+passes without changing that deadline.
 An erasure assertion was updated to include the new metadata receipt and verify
 that it retains no readable title. No VPS release has occurred.
 Logs are ignored under `target/policy-*`. The task-owned disposable database is
@@ -38,7 +48,7 @@ search/deadline/rate/concurrency budgets. Afterwards resume bounded shared chunk
 shared draft/version references, portable project commits/branches, durable offline
 exchange/convergence, independent commitments and installed-editor acceptance.
 
-## Current source work: restricted database runtime (11 October 2026)
+## Previous increment: restricted database runtime (11 October 2026)
 
 Migration 0029 and a separate operator CLI now remove migrations from API startup.
 The API requires a non-owner login with explicit table/function grants and checks
