@@ -1,5 +1,7 @@
 # Dynodoc documentation
 
+Current security contract: [Project rules and audited metadata](PROJECT-POLICY-AND-METADATA.md).
+
 Updated 11 October 2026. Dynodoc is document version control and provenance around
 existing editors. Start with the current contract, not the original questionnaire
 or public-consultation stage prompts.

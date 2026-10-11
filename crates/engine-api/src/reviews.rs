@@ -441,7 +441,7 @@ async fn detail(
     let (mut tx, _, team) = apply::begin_write(&state, doc, IdentityId(auth.identity_id)).await?;
     let request = request_row(&mut tx, id, draft, auth.identity_id).await?;
     let seq = latest_seq(&mut tx, id).await?;
-    let role = access::require_member(&mut tx, id, auth.identity_id).await?;
+    let role = access::governance_role(&mut tx, id, auth.identity_id).await?;
     let rules = access::policy(&mut tx, id).await?;
     let review = review_state(&mut tx, id, draft, &request, role, &rules).await?;
     // Closed requests keep their record; only open ones have a live comparison.
@@ -510,7 +510,7 @@ async fn merge(
             reason: "This change request is no longer open.".into(),
         });
     }
-    let member = access::require_member(&mut tx, id, auth.identity_id).await?;
+    let member = access::governance_role(&mut tx, id, auth.identity_id).await?;
     let rules = access::policy(&mut tx, id).await?;
     if !rules.can_merge(member) {
         return Err(ApiError::Denied {
@@ -624,7 +624,7 @@ async fn close_request(
         return Err(ApiError::Forbidden);
     }
     if outcome == "declined" {
-        let member = access::require_member(&mut tx, id, auth.identity_id).await?;
+        let member = access::governance_role(&mut tx, id, auth.identity_id).await?;
         if !access::policy(&mut tx, id).await?.can_merge(member) {
             return Err(ApiError::Denied {
                 reason: "Only the owner and managers decide on change requests in this document."
@@ -765,7 +765,7 @@ async fn review(
             reason: "This change request is no longer open.".into(),
         });
     }
-    let member = access::require_member(&mut tx, id, auth.identity_id).await?;
+    let member = access::governance_role(&mut tx, id, auth.identity_id).await?;
     let verdict_given = req.verdict != "commented";
     if member < MemberRole::Contributor
         || (verdict_given && (!member.can_approve() || request["mine"] == true))

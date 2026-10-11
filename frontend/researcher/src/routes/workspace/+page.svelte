@@ -204,8 +204,6 @@
     error = '';
     try {
       const doc = await createDocument({ title: title.trim() });
-      if (selectedSpace)
-        await workspaceRequest(`/documents/${doc.id}/location`, { space_id: selectedSpace });
       await workspaceRequest(`/documents/${doc.id}/metadata`, { settings: { kind } });
       const root = ulid();
       let ops = [rootOp(root, title)];
@@ -224,6 +222,8 @@
       }
       if (kind === 'presentation') ops = initialPresentationOps(title, root);
       await saveBatch(doc.id, ops, 0);
+      if (selectedSpace)
+        await workspaceRequest(`/documents/${doc.id}/location`, { space_id: selectedSpace });
       await goto(`/documents/${doc.id}`);
     } catch (e) {
       error = e instanceof Error ? e.message : 'Could not create document.';
@@ -328,8 +328,6 @@
     try {
       progress = 'Creating your document…';
       const doc = await createDocument({ title: title.trim() || importResult.filename });
-      if (selectedSpace)
-        await workspaceRequest(`/documents/${doc.id}/location`, { space_id: selectedSpace });
       await workspaceRequest(`/documents/${doc.id}/metadata`, {
         settings: {
           kind: importResult.kind,
@@ -349,6 +347,8 @@
       });
       progress = 'Importing into the workspace…';
       await saveBatch(doc.id, importResult.ops, 0);
+      if (selectedSpace)
+        await workspaceRequest(`/documents/${doc.id}/location`, { space_id: selectedSpace });
       await goto(`/documents/${doc.id}`);
     } catch (e) {
       error = e instanceof Error ? e.message : 'Import failed.';

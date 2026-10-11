@@ -32,7 +32,7 @@ On a matching installation, open **Projects**, create a
 project and add/move your files. **Files** collects them, **Pull requests** lists
 submitted edits across those files, **Your drafts** shows only your unsubmitted
 work, and **Settings** manages people/default review rules. Files inherit the
-project's rules unless their People panel shows an override. Watch requests adds
+project's minimum rules. File rules in the People panel can add protection. Watch requests adds
 in-app notices when someone submits work; invitation email remains optional.
 
 **Sync & connections** lets you download the team checkpoint, upload a portable
@@ -109,8 +109,8 @@ access and how they got it, and what *you* can do.
 | **Contributor** | Everything a viewer can, plus comment, suggest, work in personal drafts and send changes (including edited files) for review. |
 | **Reviewer** | Everything a contributor can, plus **Approve** or **Request changes** on other people's requests. |
 | **Editor** | Edit the team version directly, and merge or decline change requests — within the review rules. |
-| **Manager** | Given through a workspace (organization, team or folder). Shares the file, sets review rules, can override them. |
-| **Owner** | One person — whoever created or uploaded the file, until they transfer it. Everything a manager can do, and is told when someone uploads a copy. |
+| **Manager** | Given through a workspace (organization, team or folder). Shares the file. Review management for project files requires project-level management. |
+| **Owner** | One person — whoever created or uploaded the file, until they transfer it. Manages standalone files and is told about copies. Project review authority still belongs to project owners/managers. |
 
 The owner and managers add people with **Add people** (email + role), change a
 person's role from the list, and move ownership with **Transfer ownership** (the
@@ -127,6 +127,12 @@ Workspace roles (Home → Options → Access & folders) offer the same ladder:
 Owner, Manager, Editor, Reviewer, Contributor, Viewer.
 
 ### Review rules
+
+For project files, only project owners/managers can change rules or override
+approvals. Owning a file or managing a nested folder does not grant that authority.
+Existing weaker file rules cannot lower the project minimum. Moving a file out
+also requires the project's management permission. Standalone files keep their
+file-owner/manager authority. The People panel shows the effective rules.
 
 Under **Share → Review rules** the owner or a manager chooses:
 

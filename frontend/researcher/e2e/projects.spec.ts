@@ -25,6 +25,70 @@ async function api(page: Page, path: string, body?: unknown) {
     { path, body }
   );
 }
+
+test('A project editor can import a file but its ownership cannot bypass project rules', async ({
+  browser
+}) => {
+  test.setTimeout(120000);
+  const managerContext = await browser.newContext(),
+    creatorContext = await browser.newContext(),
+    stamp = Date.now();
+  try {
+    const manager = await managerContext.newPage(),
+      creator = await creatorContext.newPage();
+    await login(manager, `policy-manager-${stamp}@example.test`);
+    const project = await api(manager, '/projects', { name: `Protected project ${stamp}` });
+    const email = `policy-creator-${stamp}@example.test`;
+    await api(manager, `/spaces/${project.id}/members`, { email, role: 'editor' });
+    await login(creator, email);
+    await creator.goto(`/projects/${project.id}`);
+    await creator.locator('input[type=file]').setInputFiles({
+      name: 'Owned report.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('Imported by a project editor')
+    });
+    await creator.getByRole('link', { name: 'Owned report', exact: true }).click();
+    const files = await api(creator, `/projects/${project.id}/files`);
+    const file = files.items[0];
+    const people = await api(creator, `/documents/${file.id}/people`);
+    expect(people.you.role).toBe('owner');
+    expect(people.you.can.edit_team).toBe(false);
+    expect(people.you.can.manage_rules).toBe(false);
+    const oversized = await creator.evaluate(async (id: string) => {
+      const response = await fetch(`/api/engine/documents/${id}/metadata`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-dynodoc-editor': 'office-v5' },
+        body: JSON.stringify({ title: 'x'.repeat(80 * 1024) })
+      });
+      return response.status;
+    }, file.id);
+    expect(oversized).toBe(413);
+    await creator.getByRole('link', { name: 'Web editor', exact: true }).click();
+    await expect(
+      creator.getByText('The team version is protected.', { exact: true })
+    ).toBeVisible();
+    await expect(creator.getByLabel('Document title')).toBeDisabled();
+    await creator.getByRole('button', { name: 'Share', exact: true }).click();
+    await expect(creator.getByText('Minimum rules from', { exact: false })).toBeVisible();
+    await expect(creator.getByRole('checkbox', { name: /Protect the team version/ })).toBeChecked();
+    await expect(
+      creator.getByRole('checkbox', { name: /Protect the team version/ })
+    ).toBeDisabled();
+    await expect(creator.getByRole('button', { name: 'Save rules', exact: true })).toHaveCount(0);
+    await manager.goto(`/documents/${file.id}`);
+    await manager.getByRole('button', { name: 'Share', exact: true }).click();
+    await expect(
+      manager.getByRole('checkbox', { name: /Protect the team version/ })
+    ).toBeDisabled();
+    await manager.getByLabel('Approvals needed before merging').selectOption('1');
+    await manager.getByRole('button', { name: 'Save rules', exact: true }).click();
+    await expect(manager.getByText('Review rules saved.')).toBeVisible();
+    expect((await api(creator, `/documents/${file.id}/people`)).policy.required_approvals).toBe(1);
+  } finally {
+    await managerContext.close();
+    await creatorContext.close();
+  }
+});
 test('Projects collects external edits, hides private drafts, reviews a bundle and revokes its connector', async ({
   browser
 }) => {

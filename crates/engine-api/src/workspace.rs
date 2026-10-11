@@ -45,7 +45,10 @@ pub fn router() -> Router<AppState> {
         )
         .route("/documents/:id/members", get(members).post(share))
         .route("/documents/:id/versions", get(versions).post(save_version))
-        .route("/documents/:id/metadata", post(metadata))
+        .route(
+            "/documents/:id/metadata",
+            post(metadata).layer(axum::extract::DefaultBodyLimit::max(80 * 1024)),
+        )
         .route("/documents/:id/drafts", get(drafts).post(create_draft))
         .route(
             "/documents/:id/drafts/:draft_id",
@@ -306,12 +309,79 @@ async fn versions(
     Ok(Json(json!({"items":items})))
 }
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Metadata {
     title: Option<String>,
     settings: Option<Value>,
     archived: Option<bool>,
 }
-#[utoipa::path(post, path="/documents/{id}/metadata", tag="workspace", request_body=Value, params(("id" = Uuid, Path, description = "Resource identifier")), responses((status=200, description="Success; requires document membership", body=Value),(status=401, description="Sign in required"),(status=403, description="Insufficient access"),(status=409, description="Review a concurrent change before retrying")))]
+
+/// Only adapter metadata belongs here; review/access rules have separate endpoints.
+/// Settings are a shallow patch, so older adapter fields survive unrelated edits.
+fn settings_patch(value: &Value) -> Result<&serde_json::Map<String, Value>, ApiError> {
+    let fields = value
+        .as_object()
+        .ok_or_else(|| bad("Settings must be an object"))?;
+    if value.to_string().len() > 65_536 {
+        return Err(bad("Keep settings under 64 KiB"));
+    }
+    for (key, value) in fields {
+        let valid = match key.as_str() {
+            "kind" => value.as_str().is_some_and(|s| {
+                ["document", "spreadsheet", "presentation", "questionnaire"].contains(&s)
+            }),
+            "copied_from" => {
+                value.is_null() || value.as_str().is_some_and(|s| Uuid::parse_str(s).is_ok())
+            }
+            "import_warnings" => value.as_array().is_some_and(|items| {
+                items.len() <= 256
+                    && items
+                        .iter()
+                        .all(|v| v.as_str().is_some_and(|s| s.len() <= 2000))
+            }),
+            "research_source" => {
+                value.is_null()
+                    || value.as_object().is_some_and(|source| {
+                        let keys = [
+                            "provider",
+                            "origin",
+                            "project",
+                            "form",
+                            "kind",
+                            "fetched_at",
+                        ];
+                        source.len() == keys.len()
+                            && keys.iter().all(|k| {
+                                source
+                                    .get(*k)
+                                    .and_then(Value::as_str)
+                                    .is_some_and(|s| s.len() <= 2048)
+                            })
+                            && [
+                                "odk",
+                                "kobo",
+                                "redcap",
+                                "surveycto",
+                                "surveymonkey",
+                                "google_forms",
+                            ]
+                            .contains(&source["provider"].as_str().unwrap_or_default())
+                            && ["questionnaire", "submissions"]
+                                .contains(&source["kind"].as_str().unwrap_or_default())
+                    })
+            }
+            _ => false,
+        };
+        if !valid {
+            return Err(bad(&format!("Unsupported or invalid setting: {key}")));
+        }
+    }
+    Ok(fields)
+}
+/// Rename under team-edit policy; settings/archive require governing management.
+/// Settings shallow-patch supported adapter keys (64 KiB total); changes are audited
+/// atomically. Unknown request fields/settings are rejected; no-ops add no audit row.
+#[utoipa::path(post, path="/documents/{id}/metadata", tag="workspace", request_body=Value, params(("id" = Uuid, Path, description = "Resource identifier")), responses((status=200, description="Permitted metadata saved and audited; no-op preserved", body=Value),(status=400, description="Invalid metadata or unsupported settings"),(status=401, description="Sign in required"),(status=403, description="Project/file authority or protected-team rules deny this change"),(status=413, description="Metadata request exceeds 80 KiB"),(status=422, description="Malformed request or unknown top-level field")))]
 async fn metadata(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -323,6 +393,13 @@ async fn metadata(
     if role != Role::Author {
         return Err(ApiError::Forbidden);
     }
+    let governance = crate::access::governance_role(&mut tx, id, auth.identity_id).await?;
+    if (req.settings.is_some() || req.archived.is_some()) && !governance.can_manage() {
+        return Err(ApiError::Forbidden);
+    }
+    if req.title.is_some() {
+        crate::access::ensure_team_edit(&mut tx, id, auth.identity_id).await?;
+    }
     if req
         .title
         .as_ref()
@@ -330,7 +407,83 @@ async fn metadata(
     {
         return Err(bad("Title must contain 1–500 characters"));
     }
-    sqlx::query("update document set title=coalesce($2,title),settings=coalesce($3,settings),status=case when $4::boolean is null then status when $4 then 'archived' when deployed_snapshot_id is not null then 'deployed' else 'draft' end,updated_at=now() where id=$1").bind(id).bind(req.title).bind(req.settings).bind(req.archived).execute(&mut *tx).await?;
+    let (title, settings, status, deployed): (String, Value, String, bool) = sqlx::query_as(
+        "select title,settings,status,deployed_snapshot_id is not null from document where id=$1",
+    )
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await?;
+    let before = json!({"title":title,"settings":settings,"status":status});
+    let mut after = before.clone();
+    if let Some(title) = req.title {
+        after["title"] = json!(title.trim());
+    }
+    if let Some(patch) = req.settings {
+        let patch = settings_patch(&patch)?;
+        if let Some(source) = patch.get("copied_from").and_then(Value::as_str) {
+            let source = Uuid::parse_str(source).map_err(|_| bad("Invalid copy source"))?;
+            if source == id {
+                return Err(bad("A file cannot be its own copy source"));
+            }
+            crate::access::require_member(&mut tx, source, auth.identity_id).await?;
+        }
+        let settings = after["settings"]
+            .as_object_mut()
+            .ok_or_else(|| bad("Stored settings need an operator repair"))?;
+        for (key, value) in patch {
+            settings.insert(key.clone(), value.clone());
+        }
+        if after["settings"].to_string().len() > 65_536 {
+            return Err(bad("Keep settings under 64 KiB"));
+        }
+    }
+    if let Some(archived) = req.archived {
+        after["status"] = json!(if archived {
+            "archived"
+        } else if deployed {
+            "deployed"
+        } else {
+            "draft"
+        });
+    }
+    if before != after {
+        // Operational audit survives erasure: commit to values without retaining
+        // readable titles/import metadata. Bind the digest to its document/domain.
+        let fingerprint = |value: &Value| {
+            engine_core::richtext::fingerprint(
+                &json!({"domain":"dynodoc.metadata.v1","document_id":id,"metadata":value}),
+            )
+        };
+        let fields: Vec<_> = ["title", "settings", "status"]
+            .into_iter()
+            .filter(|key| before[key] != after[key])
+            .collect();
+        let settings_keys: Vec<_> = after["settings"]
+            .as_object()
+            .into_iter()
+            .flat_map(|s| s.keys())
+            .filter(|key| before["settings"].get(*key) != after["settings"].get(*key))
+            .collect();
+        let receipt = json!({"format":"dynodoc.metadata-audit.v1","fields":fields,"settings_keys":settings_keys,
+            "before_hash":fingerprint(&before),"after_hash":fingerprint(&after)});
+        sqlx::query(
+            "update document set title=$2,settings=$3,status=$4,updated_at=now() where id=$1",
+        )
+        .bind(id)
+        .bind(after["title"].as_str())
+        .bind(&after["settings"])
+        .bind(after["status"].as_str())
+        .execute(&mut *tx)
+        .await?;
+        crate::product::audit(
+            &mut tx,
+            auth.identity_id,
+            "document.metadata_changed",
+            id,
+            receipt,
+        )
+        .await?;
+    }
     tx.commit().await?;
     Ok(Json(json!({"ok":true})))
 }

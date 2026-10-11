@@ -16,6 +16,453 @@ mod common;
 const KEY: [u8; 32] = [9u8; 32];
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn project_floor_applies_to_file_owners_and_existing_overrides(pool: PgPool) {
+    let runtime = common::RuntimeDatabase::new(pool.clone()).await;
+    let router = app(test_state(runtime.pool.clone()));
+    let manager = identity(&pool, "floor-manager@example.test").await;
+    let creator = identity(&pool, "floor-creator@example.test").await;
+    let (_, project) = post(&router, "/projects", &manager, json!({"name":"Protected"})).await;
+    let project = project["id"].as_str().unwrap();
+    assert_eq!(
+        post(
+            &router,
+            &format!("/spaces/{project}/members"),
+            &manager,
+            json!({"email":"floor-creator@example.test","role":"editor"})
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(post(&router, &format!("/projects/{project}/settings"), &manager,
+        json!({"name":"Protected","description":"","revision":1,"protect_team_version":true,"required_approvals":1,"merge_roles":"editors"})).await.0, StatusCode::OK);
+    let (doc, block) = document(&router, &creator).await;
+    let weak = json!({"protect_team_version":false,"required_approvals":0,"merge_roles":"editors"});
+    assert_eq!(
+        post(
+            &router,
+            &format!("/documents/{doc}/policy"),
+            &creator,
+            weak.clone()
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        post(
+            &router,
+            &format!("/documents/{doc}/location"),
+            &creator,
+            json!({"space_id":project})
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let people = get(&router, &format!("/documents/{doc}/people"), &creator)
+        .await
+        .1;
+    assert_eq!(people["you"]["role"], "owner");
+    for capability in ["edit_team", "manage_rules", "archive", "edit_settings"] {
+        assert_eq!(people["you"]["can"][capability], false, "{people}");
+    }
+    assert_eq!(people["policy"]["protect_team_version"], true);
+    assert_eq!(people["policy"]["required_approvals"], 1);
+    assert_eq!(people["policy_source"]["file_rules"], weak);
+    for (suffix, body) in [
+        ("policy", weak.clone()),
+        ("policy/inherit", json!({})),
+        ("metadata", json!({"settings":{"kind":"presentation"}})),
+        ("metadata", json!({"title":"Bypass"})),
+        ("metadata", json!({"archived":true})),
+        ("location", json!({"space_id":null})),
+        (
+            "batch",
+            json!({"base_seq":2,"ops":[{"type":"FieldEdited","node_id":block,"field":"label","value":"Bypass"}]}),
+        ),
+    ] {
+        let result = post(
+            &router,
+            &format!("/documents/{doc}/{suffix}"),
+            &creator,
+            body,
+        )
+        .await;
+        assert_eq!(result.0, StatusCode::FORBIDDEN, "{suffix}: {}", result.1);
+    }
+    // Even project managers change the floor in Project settings, not via a file exception.
+    assert_eq!(
+        post(&router, &format!("/documents/{doc}/policy"), &manager, weak)
+            .await
+            .0,
+        StatusCode::BAD_REQUEST
+    );
+    let strong = json!({"protect_team_version":true,"required_approvals":2,"merge_roles":"owners"});
+    assert_eq!(
+        post(
+            &router,
+            &format!("/documents/{doc}/policy"),
+            &manager,
+            strong.clone()
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let people = get(&router, &format!("/documents/{doc}/people"), &creator)
+        .await
+        .1;
+    assert_eq!(people["policy"], strong);
+    assert_eq!(people["you"]["can"]["merge"], false);
+    assert_eq!(
+        post(
+            &router,
+            &format!("/documents/{doc}/policy/inherit"),
+            &manager,
+            json!({})
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let checkpoint = get(&router, &format!("/documents/{doc}/provenance"), &creator)
+        .await
+        .1;
+    let proposed = post(
+        &router,
+        &format!("/documents/{doc}/provenance"),
+        &creator,
+        upload(doc, &checkpoint, &block, "word", true),
+    )
+    .await;
+    assert_eq!(proposed.0, StatusCode::OK, "{}", proposed.1);
+    let draft = proposed.1["id"].as_str().unwrap();
+    let endpoint = format!("/documents/{doc}/change-requests/{draft}");
+    let detail = get(&router, &endpoint, &creator).await.1;
+    assert_eq!(detail["review"]["can_merge"], true);
+    assert_eq!(detail["review"]["can_override"], false);
+    let merge =
+        json!({"team_seq":detail["team_seq"],"revision":detail["revision"],"override_rules":true});
+    assert_eq!(
+        post(
+            &router,
+            &format!("{endpoint}/merge"),
+            &creator,
+            merge.clone()
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    let result = post(&router, &format!("{endpoint}/merge"), &manager, merge).await;
+    assert_eq!(result.0, StatusCode::OK, "{}", result.1);
+    // Project authority follows folders and the destination when managers move a file.
+    let (_, folder) = post(
+        &router,
+        "/spaces",
+        &manager,
+        json!({"name":"Nested","kind":"folder","parent_id":project}),
+    )
+    .await;
+    assert_eq!(
+        post(
+            &router,
+            &format!("/documents/{doc}/location"),
+            &manager,
+            json!({"space_id":folder["id"]})
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        get(&router, &format!("/documents/{doc}/people"), &creator)
+            .await
+            .1["policy_source"]["id"],
+        project
+    );
+    assert_eq!(
+        post(
+            &router,
+            &format!("/spaces/{}/members", folder["id"].as_str().unwrap()),
+            &manager,
+            json!({"email":"floor-creator@example.test","role":"owner"})
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        get(&router, &format!("/documents/{doc}/people"), &creator)
+            .await
+            .1["you"]["can"]["manage_rules"],
+        false
+    );
+    let (_, second) = post(&router, "/projects", &manager, json!({"name":"Second"})).await;
+    let second = second["id"].as_str().unwrap();
+    assert_eq!(post(&router, &format!("/projects/{second}/settings"), &manager,
+        json!({"name":"Second","description":"","revision":1,"protect_team_version":true,"required_approvals":3,"merge_roles":"owners"})).await.0, StatusCode::OK);
+    assert_eq!(
+        post(
+            &router,
+            &format!("/documents/{doc}/location"),
+            &manager,
+            json!({"space_id":second})
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let moved = get(&router, &format!("/documents/{doc}/people"), &creator)
+        .await
+        .1;
+    assert_eq!(moved["policy_source"]["id"], second);
+    assert_eq!(moved["policy"]["required_approvals"], 3);
+    assert_eq!(moved["you"]["can"]["merge"], false);
+    assert_eq!(
+        post(
+            &router,
+            &format!("/documents/{doc}/location"),
+            &manager,
+            json!({"space_id":null})
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        get(&router, &format!("/documents/{doc}/people"), &creator)
+            .await
+            .1["you"]["can"]["edit_team"],
+        true
+    );
+    runtime.close().await;
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn metadata_authority_schema_and_audit_are_atomic(pool: PgPool) {
+    let runtime = common::RuntimeDatabase::new(pool.clone()).await;
+    let router = app(test_state(runtime.pool.clone()));
+    let owner = identity(&pool, "metadata-owner@example.test").await;
+    let editor = identity(&pool, "metadata-editor@example.test").await;
+    let stranger = identity(&pool, "metadata-stranger@example.test").await;
+    let (doc, _) = document(&router, &owner).await;
+    let (private, _) = document(&router, &stranger).await;
+    assert_eq!(
+        post(
+            &router,
+            &format!("/documents/{doc}/members"),
+            &owner,
+            json!({"email":"metadata-editor@example.test","role":"editor"})
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let uri = format!("/documents/{doc}/metadata");
+    for body in [
+        json!({"settings":{"kind":"presentation"}}),
+        json!({"archived":true}),
+    ] {
+        assert_eq!(
+            post(&router, &uri, &editor, body).await.0,
+            StatusCode::FORBIDDEN
+        );
+    }
+    for settings in [
+        json!([]),
+        json!({"merge_roles":"editors"}),
+        json!({"kind":"wrong"}),
+        json!({"import_warnings":[{}]}),
+        json!({"research_source":{"token":"secret"}}),
+        json!({"copied_from":doc}),
+        json!({"import_warnings":["x".repeat(65_537)]}),
+    ] {
+        assert_eq!(
+            post(&router, &uri, &owner, json!({"settings":settings}))
+                .await
+                .0,
+            StatusCode::BAD_REQUEST
+        );
+    }
+    assert_eq!(
+        post(
+            &router,
+            &uri,
+            &owner,
+            json!({"settings":{"copied_from":private}})
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        post(&router, &uri, &owner, json!({"protect_team_version":false}))
+            .await
+            .0,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert_eq!(
+        post(
+            &router,
+            &uri,
+            &owner,
+            json!({"settings":{"import_warnings":["Imported subset"]}})
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        post(&router, &uri, &editor, json!({"title":" Renamed "}))
+            .await
+            .0,
+        StatusCode::OK
+    );
+    let current = get(&router, &format!("/documents/{doc}"), &owner).await.1;
+    assert_eq!(current["settings"]["kind"], "document");
+    assert_eq!(
+        current["settings"]["import_warnings"],
+        json!(["Imported subset"])
+    );
+    let audit: Value = sqlx::query_scalar("select detail from operation_audit where resource_id=$1 and action='document.metadata_changed' order by id desc limit 1")
+        .bind(doc).fetch_one(&pool).await.unwrap();
+    assert_eq!(audit["format"], "dynodoc.metadata-audit.v1");
+    assert_eq!(audit["fields"], json!(["title"]));
+    assert_eq!(audit["settings_keys"], json!([]));
+    assert_ne!(audit["before_hash"], audit["after_hash"]);
+    for key in ["before_hash", "after_hash"] {
+        assert_eq!(audit[key].as_str().unwrap().len(), 64);
+    }
+    assert!(!audit.to_string().contains("Renamed"));
+    assert!(!audit.to_string().contains("Imported subset"));
+    let before: i64 =
+        sqlx::query_scalar("select count(*) from operation_audit where resource_id=$1")
+            .bind(doc)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        post(&router, &uri, &editor, json!({"title":"Renamed"}))
+            .await
+            .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        post(&router, &uri, &owner, json!({})).await.0,
+        StatusCode::OK
+    );
+    let after: i64 =
+        sqlx::query_scalar("select count(*) from operation_audit where resource_id=$1")
+            .bind(doc)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(before, after);
+    // Make audit insertion fail after the metadata UPDATE. Both must roll back.
+    sqlx::raw_sql("alter table operation_audit add constraint reject_test_metadata check(action <> 'document.metadata_changed') not valid").execute(&pool).await.unwrap();
+    assert_eq!(
+        post(&router, &uri, &owner, json!({"title":"Must roll back"}))
+            .await
+            .0,
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
+    assert_eq!(
+        get(&router, &format!("/documents/{doc}"), &owner).await.1["title"],
+        "Renamed"
+    );
+    runtime.close().await;
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn policy_and_move_wait_for_project_authority_changes(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let owner = identity(&pool, "race-owner@example.test").await;
+    let creator = identity(&pool, "race-creator@example.test").await;
+    let (_, p) = post(&router, "/projects", &owner, json!({"name":"Race"})).await;
+    let project = Uuid::parse_str(p["id"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        post(
+            &router,
+            &format!("/spaces/{project}/members"),
+            &owner,
+            json!({"email":"race-creator@example.test","role":"manager"})
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let (doc, _) = document(&router, &creator).await;
+    assert_eq!(
+        post(
+            &router,
+            &format!("/documents/{doc}/location"),
+            &creator,
+            json!({"space_id":project})
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    for moving in [false, true] {
+        let mut tx = pool.begin().await.unwrap();
+        let pid: i32 = sqlx::query_scalar("select pg_backend_pid()")
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        sqlx::query("select id from access_space where id=$1 for update")
+            .bind(project)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        if moving {
+            sqlx::query("update space_member set role='editor' where space_id=$1 and identity_id=(select id from identity where email='race-creator@example.test')").bind(project).execute(&mut *tx).await.unwrap();
+        } else {
+            sqlx::query("update project_settings set required_approvals=2 where space_id=$1")
+                .bind(project)
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+        }
+        let router = router.clone();
+        let actor = creator.clone();
+        let pending = tokio::spawn(async move {
+            if moving {
+                post(
+                    &router,
+                    &format!("/documents/{doc}/location"),
+                    &actor,
+                    json!({"space_id":null}),
+                )
+                .await
+            } else {
+                post(&router, &format!("/documents/{doc}/policy"), &actor, json!({"protect_team_version":true,"required_approvals":0,"merge_roles":"editors"})).await
+            }
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                let blocked: bool = sqlx::query_scalar("select exists(select 1 from pg_stat_activity where $1=any(pg_blocking_pids(pid)))").bind(pid).fetch_one(&pool).await.unwrap();
+                if blocked { break; }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        }).await.expect("request must wait on the project lock");
+        tx.commit().await.unwrap();
+        let result = pending.await.unwrap();
+        assert_eq!(
+            result.0,
+            if moving {
+                StatusCode::FORBIDDEN
+            } else {
+                StatusCode::BAD_REQUEST
+            },
+            "{}",
+            result.1
+        );
+    }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn browser_pairing_keeps_secrets_in_editor_and_rechecks_permissions(pool: PgPool) {
     let router = app(test_state(pool.clone()));
     let owner = identity(&pool, "pair-owner@example.test").await;
@@ -620,7 +1067,7 @@ async fn projects_inherit_rules_collect_requests_and_hide_private_drafts(pool: P
         StatusCode::CONFLICT
     );
     let override_rules =
-        json!({"protect_team_version":false,"required_approvals":0,"merge_roles":"editors"});
+        json!({"protect_team_version":true,"required_approvals":2,"merge_roles":"owners"});
     assert_eq!(
         post(
             &router,
@@ -636,7 +1083,7 @@ async fn projects_inherit_rules_collect_requests_and_hide_private_drafts(pool: P
         get(&router, &format!("/documents/{doc}/people"), &editor)
             .await
             .1["policy_source"]["kind"],
-        "file"
+        "project"
     );
     assert_eq!(
         post(

@@ -785,8 +785,16 @@ async fn administrators_permanently_delete_active_and_trashed_documents(pool: Pg
             .unwrap();
     assert_eq!(
         trashed,
-        vec!["document.trashed_by_admin", "documents.erased"]
+        vec![
+            "document.metadata_changed",
+            "document.trashed_by_admin",
+            "documents.erased"
+        ]
     );
+    let receipt: Value = sqlx::query_scalar("select detail from operation_audit where resource_id=$1 and action='document.metadata_changed'")
+        .bind(active).fetch_one(&pool).await.unwrap();
+    assert_eq!(receipt["format"], "dynodoc.metadata-audit.v1");
+    assert!(!receipt.to_string().contains("Active report"));
 
     // Batch deletion needs the typed count; each document gets its own receipt.
     let (a, _) = document(&router, &owner, "Batch A", &BUDGET, None).await;

@@ -688,7 +688,7 @@
     });
   }
   async function saveTitle() {
-    if (!author || title === store.detail?.title) return;
+    if (!teamEditable || title === store.detail?.title) return;
     await run(async () => {
       await request(`${prefix}/metadata`, { title });
       store.detail!.title = title;
@@ -1017,7 +1017,7 @@
         <input
           aria-label="Document title"
           bind:value={title}
-          disabled={!author}
+          disabled={!teamEditable}
           onblur={saveTitle}
           onkeydown={(e) => {
             if (e.key === 'Enter') e.currentTarget.blur();
@@ -1103,7 +1103,7 @@
                   kind === 'questionnaire'
                     ? window.print()
                     : window.dispatchEvent(new Event('dynodoc-print'))}>Print</button
-              >{#if author}<button onclick={() => void archive()}
+              >{#if peopleInfo?.you.can.archive}<button onclick={() => void archive()}
                   >{store.detail?.status === 'archived'
                     ? 'Restore to workspace'
                     : 'Move to archive'}</button

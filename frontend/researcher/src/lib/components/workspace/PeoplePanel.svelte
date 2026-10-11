@@ -249,30 +249,32 @@
     <section class="rules">
       <h3><ShieldCheck size={16} /> Review rules</h3>
       {#if data?.policy_source?.kind === 'project'}<p>
-          Inherited from <a href={`/projects/${data.policy_source.id}`}>{data.policy_source.name}</a
-          >. Saving rules here creates a file override.
+          Minimum rules from <a href={`/projects/${data.policy_source.id}`}
+            >{data.policy_source.name}</a
+          >. File rules can add protection; only project owners and managers can change them.
         </p>{:else if data?.policy_source?.kind === 'file'}<p>
           This file has its own review rules.
         </p>
-        {#if you.can.manage_rules}<button
-            disabled={!!busy}
-            onclick={() =>
-              run(
-                'Restoring inherited rules…',
-                () => inheritPolicy(documentId),
-                'Inherited rules restored.'
-              )}>Use project or default rules</button
-          >{/if}{/if}
+      {/if}
+      {#if you.can.manage_rules && (data?.policy_source?.kind === 'file' || data?.policy_source?.file_rules)}<button
+          disabled={!!busy}
+          onclick={() =>
+            run(
+              'Restoring inherited rules…',
+              () => inheritPolicy(documentId),
+              'Inherited rules restored.'
+            )}>Use project or default rules</button
+        >{/if}
       <label class="check"
         ><input
           type="checkbox"
           bind:checked={rules.protect_team_version}
-          disabled={!you.can.manage_rules}
+          disabled={!you.can.manage_rules || data?.policy_source?.floor?.protect_team_version}
         />
         <span
           ><strong>Protect the team version</strong><small
-            >Only the owner and managers change it directly. Editors and everyone else send changes
-            for review.</small
+            >Only the governing owner and managers change it directly. In a project, these are the
+            project owners and managers. Everyone else sends changes for review.</small
           ></span
         ></label
       >
@@ -280,7 +282,9 @@
         >Approvals needed before merging<select
           bind:value={rules.required_approvals}
           disabled={!you.can.manage_rules}
-          >{#each [0, 1, 2, 3, 4, 5] as n}<option value={n}
+          >{#each [0, 1, 2, 3, 4, 5] as n}<option
+              value={n}
+              disabled={n < (data?.policy_source?.floor?.required_approvals ?? 0)}
               >{n === 0 ? 'None' : `${n} approval${n === 1 ? '' : 's'}`}</option
             >{/each}</select
         ></label
@@ -288,8 +292,12 @@
       <fieldset disabled={!you.can.manage_rules}>
         <legend>Who merges change requests</legend>
         <label class="check"
-          ><input type="radio" value="editors" bind:group={rules.merge_roles} /> Editors, managers and
-          the owner</label
+          ><input
+            type="radio"
+            value="editors"
+            disabled={data?.policy_source?.floor?.merge_roles === 'owners'}
+            bind:group={rules.merge_roles}
+          /> Editors, managers and the owner</label
         >
         <label class="check"
           ><input type="radio" value="owners" bind:group={rules.merge_roles} /> Only the owner and managers</label
@@ -301,8 +309,8 @@
           onclick={() => void saveRules()}>Save rules</button
         >
         <p class="help">
-          The owner and managers can still merge without the required approvals; that choice is
-          recorded in the audit log.
+          The governing owner and managers can still merge without the required approvals; that
+          choice is recorded in the audit log.
         </p>{/if}
     </section>
 

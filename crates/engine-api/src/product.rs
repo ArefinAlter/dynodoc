@@ -294,6 +294,20 @@ async fn move_document(
 ) -> Result<Json<Value>, ApiError> {
     let mut tx = state.pool.begin().await?;
     manage(&mut tx, id, auth.identity_id).await?;
+    // Lock both project roots in UUID order after the document lock. Project
+    // settings/membership writes lock only their root; moves cannot escape rules.
+    sqlx::query("with recursive destination as (select id,parent_id,kind from access_space where id=$2 union select s.id,s.parent_id,s.kind from access_space s join destination d on d.parent_id=s.id) select id from access_space where id=document_project($1) or id in (select id from destination where kind='project') order by id for share")
+        .bind(id).bind(input.space_id).fetch_all(&mut *tx).await?;
+    if !crate::access::governance_role(&mut tx, id, auth.identity_id)
+        .await?
+        .can_manage()
+    {
+        return Err(ApiError::Denied { reason: "Only project owners and managers can move a project file. Ask them to move it for you.".into() });
+    }
+    let previous: Option<Uuid> = sqlx::query_scalar("select space_id from document where id=$1")
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await?;
     if let Some(space) = input.space_id {
         let role: i32 = sqlx::query_scalar("select access_role_rank(inherited_space_role($1,$2))")
             .bind(space)
@@ -314,7 +328,7 @@ async fn move_document(
         auth.identity_id,
         "document.moved",
         id,
-        json!({"space_id":input.space_id}),
+        json!({"space_id":input.space_id,"previous_space_id":previous}),
     )
     .await?;
     tx.commit().await?;

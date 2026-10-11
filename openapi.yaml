@@ -1317,6 +1317,10 @@ paths:
     post:
       tags:
       - workspace
+      summary: |-
+        Rename under team-edit policy; settings/archive require governing management.
+        Settings shallow-patch supported adapter keys (64 KiB total); changes are audited
+        atomically. Unknown request fields/settings are rejected; no-ops add no audit row.
       operationId: metadata
       parameters:
       - name: id
@@ -1333,16 +1337,20 @@ paths:
         required: true
       responses:
         '200':
-          description: Success; requires document membership
+          description: Permitted metadata saved and audited; no-op preserved
           content:
             application/json:
               schema: {}
+        '400':
+          description: Invalid metadata or unsupported settings
         '401':
           description: Sign in required
         '403':
-          description: Insufficient access
-        '409':
-          description: Review a concurrent change before retrying
+          description: Project/file authority or protected-team rules deny this change
+        '413':
+          description: Metadata request exceeds 80 KiB
+        '422':
+          description: Malformed request or unknown top-level field
   /documents/{id}/node/{node_id}:
     get:
       tags:
@@ -1544,7 +1552,9 @@ paths:
     post:
       tags:
       - people
-      summary: Change the review rules. The owner and managers only.
+      summary: |-
+        Strengthen file review rules without weakening the containing project's floor.
+        Project owners/managers govern project files; standalone files use file authority.
       operationId: set_policy
       parameters:
       - name: id

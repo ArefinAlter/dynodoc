@@ -101,8 +101,10 @@ of overlapping edits. It is not the complete distributed protocol in the mathema
   Opt-in browser recovery preserves a save base and unsaved state; offline local
   repositories, portable clone/fetch protocols and arbitrary remotes are not
   implemented. Drafts remain server-backed personal workspaces.
-- Membership/lifecycle changes now have a separate append-only operations audit. Document metadata and operational samples do not all use the semantic
-  document event log. The cryptographic claim is specifically about recorded content
+- Membership/lifecycle changes and document metadata now have a separate append-only
+  operations audit. Metadata receipts retain changed fields and document-bound
+  before/after digests, not readable copies that would survive erasure. Neither
+  metadata nor operational samples are part of the semantic document event log. The cryptographic claim is specifically about recorded content
   operations, not every administrative action in the installation.
 - Formula/expression support is a documented subset. Neither successful parsing nor
   a native preview proves arbitrary REDCap, SurveyCTO, CSPro or XLSForm runtime parity.
@@ -115,7 +117,7 @@ of overlapping edits. It is not the complete distributed protocol in the mathema
 | local / remote | Personal draft / Team version | Both live on the server. |
 | branch / switch | Create draft / Open draft | Author's own draft workspace. |
 | stage / ignore | Include in sharing / Keep for later | Block selection with remembered per-draft exclusions; no path/glob ignore patterns. |
-| commit | Save version | Named checkpoint of recorded work; legacy state verification remains an open security gate. |
+| commit | Save version | Named checkpoint of recorded work; checked legacy receipts require backfill before rollout. |
 | push / pull | Share changes / Get latest | Three-way comparison with the stored base. |
 | merge / conflict | Combine changes / Review overlaps | Explicit choices before conflicting edits land. |
 | checkout / revert | View version / Restore as new changes | Previous records remain intact. |

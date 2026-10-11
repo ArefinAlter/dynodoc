@@ -694,6 +694,11 @@ export interface paths {
     };
     get?: never;
     put?: never;
+    /**
+     * Rename under team-edit policy; settings/archive require governing management.
+     *     Settings shallow-patch supported adapter keys (64 KiB total); changes are audited
+     *     atomically. Unknown request fields/settings are rejected; no-ops add no audit row.
+     */
     post: operations['metadata'];
     delete?: never;
     options?: never;
@@ -832,7 +837,10 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Change the review rules. The owner and managers only. */
+    /**
+     * Strengthen file review rules without weakening the containing project's floor.
+     *     Project owners/managers govern project files; standalone files use file authority.
+     */
     post: operations['set_policy'];
     delete?: never;
     options?: never;
@@ -3380,7 +3388,7 @@ export interface operations {
       };
     };
     responses: {
-      /** @description Success; requires document membership */
+      /** @description Permitted metadata saved and audited; no-op preserved */
       200: {
         headers: {
           [name: string]: unknown;
@@ -3389,6 +3397,13 @@ export interface operations {
           'application/json': unknown;
         };
       };
+      /** @description Invalid metadata or unsupported settings */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
       /** @description Sign in required */
       401: {
         headers: {
@@ -3396,15 +3411,22 @@ export interface operations {
         };
         content?: never;
       };
-      /** @description Insufficient access */
+      /** @description Project/file authority or protected-team rules deny this change */
       403: {
         headers: {
           [name: string]: unknown;
         };
         content?: never;
       };
-      /** @description Review a concurrent change before retrying */
-      409: {
+      /** @description Metadata request exceeds 80 KiB */
+      413: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Malformed request or unknown top-level field */
+      422: {
         headers: {
           [name: string]: unknown;
         };

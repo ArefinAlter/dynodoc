@@ -18,8 +18,9 @@ Research instruments remain one supported adapter, not the product roadmap.
 **Status:** The centralized engine, Projects/review, checked proposal bundles and
 six development connectors exist. Current source hardening adds revocable logins,
 fail-closed service credentials, checked snapshots, runtime database privileges and
-bounded history reads. Deployment acceptance and project policy authority remain
-urgent open gates; see
+bounded history reads. Project policy floors and bounded audited metadata are now
+implemented; [verification is in progress](docs/PROJECT-POLICY-AND-METADATA.md).
+Deployment acceptance, browser security and resource budgets remain open; see
 the [security findings and rollout contract](docs/SECURITY-HARDENING.md).
 Shared checkpoint readers and bounded database
 batches reuse unchanged objects. Shared writes remain opt-in; default snapshots
@@ -69,7 +70,8 @@ Dynodoc makes version control and the audit trail **part of the data model**. Ev
 content change is a typed semantic event, attributable, hash-linked, and replayable.
 Supported independent edits can merge after validation; overlapping edits and shared
 constraints can require explicit resolution. A reviewer's suggestion is a proposal the author accepts or rejects with
-a recorded outcome. Document metadata and permission changes still need equivalent audit events.
+a recorded outcome. Metadata and permissions use a separate operational audit; metadata receipts commit
+to before/after values without retaining readable copies after erasure.
 
 ## How it works
 

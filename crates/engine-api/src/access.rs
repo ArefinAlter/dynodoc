@@ -11,10 +11,11 @@
 //! | Reviewer    | `approver`                       | approve or request changes               |
 //! | Editor      | `author`                         | edit the team version, merge, decline    |
 //! | Manager     | workspace owner/manager          | share, review rules, trash, ownership    |
-//! | Owner       | `document.created_by`            | everything; notified about copies        |
+//! | Owner       | `document.created_by`            | file management; notified about copies   |
 //!
 //! Review rules ([`Policy`]) can protect the team version, require approvals and
-//! reserve merging for the owner and managers.
+//! reserve merging for the governing owner and managers. Project files use
+//! project management for review bypasses, irrespective of file/folder ownership.
 use crate::error::ApiError;
 use engine_shared::EventPayload;
 use serde::{Deserialize, Serialize};
@@ -98,6 +99,19 @@ impl Default for Policy {
     }
 }
 impl Policy {
+    /// File rules can strengthen, but never weaken, the containing project's floor.
+    pub fn with_floor(&self, floor: &Self) -> Self {
+        Self {
+            protect_team_version: self.protect_team_version || floor.protect_team_version,
+            required_approvals: self.required_approvals.max(floor.required_approvals),
+            merge_roles: if self.merge_roles == "owners" || floor.merge_roles == "owners" {
+                "owners"
+            } else {
+                "editors"
+            }
+            .into(),
+        }
+    }
     pub fn can_merge(&self, role: MemberRole) -> bool {
         role.can_manage() || (role == MemberRole::Editor && self.merge_roles == "editors")
     }
@@ -129,11 +143,30 @@ pub async fn require_member(
         .ok_or(ApiError::Forbidden)
 }
 
+/// Review administration belongs to the project, even when the file has a different
+/// owner or a manager of a nested folder. Direct file access is otherwise retained.
+/// Mutating callers hold the document and project locks before checking this role.
+pub async fn governance_role(
+    db: &mut PgConnection,
+    document: Uuid,
+    person: Uuid,
+) -> Result<MemberRole, ApiError> {
+    let role = require_member(db, document, person).await?;
+    let project_managed: Option<bool> = sqlx::query_scalar(
+        "select coalesce(inherited_space_role(id,$2) in ('owner','manager'),false) from access_space where id=document_project($1)",
+    ).bind(document).bind(person).fetch_optional(db).await?;
+    Ok(if role.can_manage() && project_managed == Some(false) {
+        MemberRole::Editor
+    } else {
+        role
+    })
+}
+
 pub async fn policy(db: &mut PgConnection, document: Uuid) -> Result<Policy, ApiError> {
     Ok(policy_with_source(db, document).await?.0)
 }
 
-/// A file override wins; otherwise the containing project's rules apply.
+/// Combine file rules with the project floor, including previously saved overrides.
 pub async fn policy_with_source(
     db: &mut PgConnection,
     document: Uuid,
@@ -144,28 +177,31 @@ pub async fn policy_with_source(
     .bind(document)
     .fetch_optional(&mut *db)
     .await?;
-    if let Some((protect, approvals, merge)) = row {
-        return Ok((
-            Policy {
-                protect_team_version: protect,
-                required_approvals: approvals,
-                merge_roles: merge,
-            },
-            json!({"kind":"file"}),
-        ));
-    }
+    let file = row.map(|(protect, approvals, merge)| Policy {
+        protect_team_version: protect,
+        required_approvals: approvals,
+        merge_roles: merge,
+    });
     let project: Option<(Uuid, String, bool, i16, String)> = sqlx::query_as("select s.id,s.name,p.protect_team_version,p.required_approvals,p.merge_roles from project_settings p join access_space s on s.id=p.space_id where p.space_id=document_project($1)")
         .bind(document).fetch_optional(db).await?;
     Ok(match project {
-        Some((id, name, protect, approvals, merge)) => (
-            Policy {
+        Some((id, name, protect, approvals, merge)) => {
+            let floor = Policy {
                 protect_team_version: protect,
                 required_approvals: approvals,
                 merge_roles: merge,
-            },
-            json!({"kind":"project","id":id,"name":name}),
-        ),
-        None => (Policy::default(), json!({"kind":"default"})),
+            };
+            (
+                file.as_ref()
+                    .unwrap_or(&Policy::default())
+                    .with_floor(&floor),
+                json!({"kind":"project","id":id,"name":name,"floor":floor,"file_rules":file}),
+            )
+        }
+        None => match file {
+            Some(rules) => (rules, json!({"kind":"file"})),
+            None => (Policy::default(), json!({"kind":"default"})),
+        },
     })
 }
 
@@ -193,7 +229,7 @@ pub async fn ensure_team_edit(
     document: Uuid,
     person: Uuid,
 ) -> Result<(), ApiError> {
-    let role = require_member(db, document, person).await?;
+    let role = governance_role(db, document, person).await?;
     let rules = policy(db, document).await?;
     if rules.can_edit_team(role) {
         return Ok(());
@@ -208,16 +244,18 @@ pub async fn ensure_team_edit(
 }
 
 /// What each role may do, for the sharing panel and client-side affordances.
-pub fn capabilities(role: MemberRole, rules: &Policy) -> Value {
+pub fn capabilities(role: MemberRole, governance: MemberRole, rules: &Policy) -> Value {
     json!({
         "read": true,
         "comment": role >= MemberRole::Contributor,
         "propose": role >= MemberRole::Contributor,
         "approve": role.can_approve(),
-        "edit_team": rules.can_edit_team(role),
-        "merge": rules.can_merge(role),
+        "edit_team": rules.can_edit_team(governance),
+        "merge": rules.can_merge(governance),
         "share": role.can_manage(),
-        "manage_rules": role.can_manage(),
+        "manage_rules": governance.can_manage(),
+        "archive": governance.can_manage(),
+        "edit_settings": governance.can_manage(),
         "transfer": role.can_manage(),
         "trash": role.can_manage(),
     })

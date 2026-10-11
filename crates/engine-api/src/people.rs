@@ -39,6 +39,7 @@ async fn people(
 ) -> Result<Json<Value>, ApiError> {
     let mut db = state.pool.acquire().await?;
     let role = access::require_member(&mut db, id, auth.identity_id).await?;
+    let governance = access::governance_role(&mut db, id, auth.identity_id).await?;
     let (rules, policy_source) = access::policy_with_source(&mut db, id).await?;
     let owner: Value = sqlx::query_scalar("select jsonb_build_object('id',i.id,'email',case when i.erased_at is null then i.email end,'name',i.display_name) from document d join identity i on i.id=d.created_by where d.id=$1")
         .bind(id)
@@ -67,7 +68,7 @@ async fn people(
     .await?;
     Ok(Json(json!({
         "owner": owner,
-        "you": {"id": auth.identity_id, "role": role.as_str(), "can": access::capabilities(role, &rules)},
+        "you": {"id": auth.identity_id, "role": role.as_str(), "can": access::capabilities(role, governance, &rules)},
         "members": members,
         "policy": rules,
         "policy_source": policy_source,
@@ -80,7 +81,8 @@ struct PolicyRequest {
     required_approvals: i16,
     merge_roles: String,
 }
-/// Change the review rules. The owner and managers only.
+/// Strengthen file review rules without weakening the containing project's floor.
+/// Project owners/managers govern project files; standalone files use file authority.
 #[utoipa::path(post, path="/documents/{id}/policy", tag="people", request_body=Value, params(("id" = Uuid, Path, description = "Document identifier")), security(("paseto" = [])), responses((status=200, description="Saved review rules", body=Value),(status=400, description="Invalid rules"),(status=403, description="The owner or a manager")))]
 async fn set_policy(
     State(state): State<AppState>,
@@ -101,11 +103,25 @@ async fn set_policy(
         .fetch_optional(&mut *tx)
         .await?
         .ok_or(ApiError::NotFound)?;
-    if !access::require_member(&mut tx, id, auth.identity_id)
+    crate::projects::lock_document_project(&mut tx, id).await?;
+    if !access::governance_role(&mut tx, id, auth.identity_id)
         .await?
         .can_manage()
     {
         return Err(ApiError::Forbidden);
+    }
+    let (before, source) = access::policy_with_source(&mut tx, id).await?;
+    let requested = access::Policy {
+        protect_team_version: req.protect_team_version,
+        required_approvals: req.required_approvals,
+        merge_roles: req.merge_roles.clone(),
+    };
+    if let Some(floor) = source.get("floor") {
+        let floor: access::Policy = serde_json::from_value(floor.clone())
+            .map_err(|_| bad("Invalid project review rules"))?;
+        if requested.with_floor(&floor) != requested {
+            return Err(bad("File rules cannot weaken project rules. Change the project's rules in Project settings."));
+        }
     }
     sqlx::query("insert into document_policy(document_id,protect_team_version,required_approvals,merge_roles,updated_by,updated_at) values($1,$2,$3,$4,$5,now()) on conflict(document_id) do update set protect_team_version=excluded.protect_team_version,required_approvals=excluded.required_approvals,merge_roles=excluded.merge_roles,updated_by=excluded.updated_by,updated_at=now()")
         .bind(id)
@@ -121,7 +137,7 @@ async fn set_policy(
         auth.identity_id,
         "document.review_rules_changed",
         id,
-        json!(rules),
+        json!({"before":before,"after":rules,"previous_source":source}),
     )
     .await?;
     tx.commit().await?;
@@ -140,7 +156,8 @@ async fn inherit_policy(
         .fetch_optional(&mut *tx)
         .await?
         .ok_or(ApiError::NotFound)?;
-    if !access::require_member(&mut tx, id, a.identity_id)
+    crate::projects::lock_document_project(&mut tx, id).await?;
+    if !access::governance_role(&mut tx, id, a.identity_id)
         .await?
         .can_manage()
     {

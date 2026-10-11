@@ -1,5 +1,43 @@
 # Engine evolution handoff
 
+## Current source work: project policy and audited metadata (11 October 2026)
+
+Project rules now form a minimum for file rules, including old weak overrides.
+File ownership/nested-folder management no longer grants project review bypasses.
+Rule setters, direct edits, merges/approval overrides, metadata and moves use the
+project authority. Source/destination project locks prevent policy/membership races.
+Metadata accepts bounded supported settings patches and records actual changes
+atomically; settings/archive need governing management and rename follows team-edit
+protection. Web import initializes files before attachment to a protected project.
+See [the behavior and compatibility contract](PROJECT-POLICY-AND-METADATA.md).
+
+Application Rust verification passes all 269 tests, including the three new project
+regressions, nested-folder/cross-project authority, metadata digest audit and erasure.
+Final Clippy, API/CLI/web builds, generated OpenAPI/client types and frontend lint
+(zero errors/warnings) pass. All 286 frontend units and five affected signed-in
+workflows pass, including project-editor import/protection and the 80 KiB request
+cap. Standalone verification and full source CI are pending. The first full run hit the existing 100 ms SSE deadline while lint
+ran concurrently; the isolated final run passes without changing that deadline.
+An erasure assertion was updated to include the new metadata receipt and verify
+that it retains no readable title. No VPS release has occurred.
+Logs are ignored under `target/policy-*`. The task-owned disposable database is
+`dynodoc-policy-test` (label `dynodoc.task=policy-20261011`, port 5553); remove it and
+owned test databases after standalone verification. No production data is used.
+The API/web test servers (3676/7944) are stopped after identity verification. Their
+record is in `target/policy-processes.json`; do not stop reused PIDs. The database
+includes fresh schema-29 `policy_browser` with a separately provisioned restricted
+login. Synthetic test configuration is in ignored `target/policy-test-env.ps1`.
+
+Schema stays 29; no migration, hash or canonical event changes. The VPS workspace/API
+remain recorded at `ecbc643`, schema 26, shared periodic writes off. Rollout still
+needs session/snapshot backfill/runtime-role upgrade and compatible rollback rehearsal;
+old policy-vulnerable API images are not a safe rollback.
+
+Next security source work: CSP/HSTS compatible with Office panes, then expensive
+search/deadline/rate/concurrency budgets. Afterwards resume bounded shared chunks,
+shared draft/version references, portable project commits/branches, durable offline
+exchange/convergence, independent commitments and installed-editor acceptance.
+
 ## Current source work: restricted database runtime (11 October 2026)
 
 Migration 0029 and a separate operator CLI now remove migrations from API startup.

@@ -14,6 +14,8 @@ export interface Capabilities {
   merge: boolean;
   share: boolean;
   manage_rules: boolean;
+  archive?: boolean;
+  edit_settings?: boolean;
   transfer: boolean;
   trash: boolean;
 }
@@ -35,7 +37,13 @@ export interface People {
   you: { id: string; role: MemberRole; can: Capabilities };
   members: PersonRow[];
   policy: Policy;
-  policy_source?: { kind: 'file' | 'project' | 'default'; id?: string; name?: string };
+  policy_source?: {
+    kind: 'file' | 'project' | 'default';
+    id?: string;
+    name?: string;
+    floor?: Policy;
+    file_rules?: Policy | null;
+  };
 }
 
 /** Plain-language names and what each role adds, lowest first. */
@@ -71,13 +79,14 @@ export const ROLES: { role: MemberRole; name: string; summary: string; grantable
     role: 'manager',
     name: 'Manager',
     summary:
-      'Given through a workspace. Shares the document, sets review rules and can override them.',
+      'Given through a workspace. Shares the document; project review rules and overrides require project management.',
     grantable: false
   },
   {
     role: 'owner',
     name: 'Owner',
-    summary: 'One person. Everything a manager can do, and is told when someone uploads a copy.',
+    summary:
+      'Manages standalone files and is told about copies. Project review authority belongs to project owners and managers.',
     grantable: false
   }
 ];
