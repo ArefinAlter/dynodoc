@@ -1,5 +1,27 @@
 # Engine evolution handoff
 
+## Source: v1 event hash regression synchronized (11 October 2026)
+
+Engine PR [#7](https://github.com/ArefinAlter/dynodoc-engine/pull/7), source
+`e31f093`, merged as `d6be03a`. Application mirror `648aa27` copies the test and
+fixture byte-for-byte with contributor attribution. The 22 synthetic events cover
+all 15 v1 event types, fixed content/chain hashes, replay state and node Merkle root.
+No runtime, event encoding, migration or API behavior changed; no deployment is
+needed. The live application remains `858801c`, schema 29, as recorded below.
+
+Local application verification: all six log unit tests, workspace Clippy with
+warnings denied, formatting and diff checks pass. Prior independent review of
+`e31f093` verified hashes/root and the chain-input-order mutation; its engine CI
+passed all 276 Rust tests. Application mirror CI is tracked in
+[Rust](https://github.com/ArefinAlter/dynodoc/actions/runs/38160929510) and
+[frontend](https://github.com/ArefinAlter/dynodoc/actions/runs/38160929481).
+These links are run records; do not infer completion from their existence.
+
+Optional follow-up: pin typed serialization round-trips and per-event validate_op
+inside the test; both passed in the separate review probe. This regression does
+not add independent audit commitments. Next product dependency remains bounded
+shared content and historical references, before portable project commits.
+
 ## Live: security and runtime safeguards (11 October 2026)
 
 VPS workspace/API/admin run application `858801c`, schema 29. Engine source is

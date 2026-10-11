@@ -1,5 +1,11 @@
 # Standalone engine release
 
+Latest test synchronization: engine PR #7 (`e31f093`, merged `d6be03a`)
+is mirrored byte-for-byte in application `648aa27`. The v1 event fixture
+and regression test do not change runtime behavior or schema. See
+[verification and handoff](ENGINE-EVOLUTION-HANDOFF.md). The runtime
+synchronization and release below remain the deployed baseline.
+
 Current synchronization (11 October 2026): engine `80cd148` and application
 `858801c` contain the same security/workload engine behavior and schema 29.
 Both pass 275 Rust tests and CI; the application is deployed after upgrade/rollback
