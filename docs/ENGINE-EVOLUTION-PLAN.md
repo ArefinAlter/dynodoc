@@ -1,15 +1,16 @@
 # Engine and product evolution plan
 
-Project policy floors/authority and bounded audited metadata are implemented in source;
-final acceptance is tracked in [the handoff](ENGINE-EVOLUTION-HANDOFF.md) and
+Project policy floors/authority and bounded audited metadata pass local checks and
+implementation CI in both repos; evidence is tracked in
+[the handoff](ENGINE-EVOLUTION-HANDOFF.md) and
 [policy contract](PROJECT-POLICY-AND-METADATA.md). Schema remains 29.
 
 Current security gate (11 October 2026): follow the prioritized
 [findings and fixes](SECURITY-HARDENING.md) before resuming the next storage build.
 Authentication/resource admission hardening is an independent source increment;
 it does not complete storage part 2 or independent audit part 6. The immediate
-remaining gates are runtime-boundary/snapshot upgrade acceptance, final project
-policy/metadata verification, then headers/resource budgets. The schema-29 source
+remaining gates are runtime-boundary/snapshot upgrade acceptance and browser
+headers/resource budgets. The schema-29 source
 now separates operator migrations from runtime credentials; see
 [the database contract](DATABASE-PRIVILEGES.md) and handoff for verification status.
 

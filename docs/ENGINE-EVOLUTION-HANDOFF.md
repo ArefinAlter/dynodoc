@@ -1,42 +1,47 @@
 # Engine evolution handoff
 
-## Current source work: project policy and audited metadata (11 October 2026)
+## Verified source: project policy and audited metadata (11 October 2026)
 
 Project rules now form a minimum for file rules, including old weak overrides.
 File ownership/nested-folder management no longer grants project review bypasses.
 Rule setters, direct edits, merges/approval overrides, metadata and moves use the
-project authority. Source/destination project locks serialize project-root policy/member changes
-against affected writes.
-Metadata accepts bounded supported settings patches and records actual changes
-atomically; settings/archive need governing management and rename follows team-edit
+project authority. Source/destination project locks serialize project-root policy
+and membership changes against affected writes. Metadata accepts bounded supported
+settings patches and records actual changes atomically; settings/archive need governing management and rename follows team-edit
 protection. Web import initializes files before attachment to a protected project.
 See [the behavior and compatibility contract](PROJECT-POLICY-AND-METADATA.md).
 
-Application Rust verification passes all 269 tests, including the three new project
-regressions, nested-folder/cross-project authority, metadata digest audit and erasure.
-Final Clippy, API/CLI/web builds, generated OpenAPI/client types and frontend lint
-(zero errors/warnings) pass. All 286 frontend units and five affected signed-in
-workflows pass, including project-editor import/protection and the 80 KiB request
-cap. Standalone lint, all 269 Rust tests, rustdoc and OpenAPI generation pass;
-rustdoc retains 20 existing warnings. The standalone parallel compiler exhausted
-Windows paging memory; a single compiler job completed all remaining checks.
-Application Rust CI passes for `6a1926f`. Full browser CI passed 68 workflows but
-the new project-policy workflow attached a file while the input was disabled by
-initial loading. The saved trace shows no import request; the test now waits for
-the enabled control without relaxing assertions/timeouts. Three consecutive local
-repeats pass; full frontend CI for the corrected regression is pending.
-Standalone source `2100213` is pushed; its implementation CI is running. The first local application Rust run hit the
-existing 100 ms SSE deadline while lint ran concurrently; the isolated final run
-passes without changing that deadline.
-An erasure assertion was updated to include the new metadata receipt and verify
-that it retains no readable title. No VPS release has occurred.
-Logs are ignored under `target/policy-*`. The task-owned disposable database is
-`dynodoc-policy-test` (label `dynodoc.task=policy-20261011`, port 5553); remove it and
-owned test databases after standalone verification. No production data is used.
-The API/web test servers (3676/7944) are stopped after identity verification. Their
-record is in `target/policy-processes.json`; do not stop reused PIDs. The database
-includes fresh schema-29 `policy_browser` with a separately provisioned restricted
-login. Synthetic test configuration is in ignored `target/policy-test-env.ps1`.
+Implementation is pushed to both main branches: application `6a1926f`, browser
+regression correction `4dbe3f4`, standalone engine `2100213`. Implementation CI:
+[application Rust](https://github.com/ArefinAlter/dynodoc/actions/runs/38112653973) and
+[standalone engine](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38113414584)
+pass all 269 Rust tests each. The corrected
+[frontend CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38113581840) passes
+286 units, 16 public browser tests and all 69 signed-in workflows. Lint, builds,
+OpenAPI consistency, source packaging, connector drift and proxy regressions pass.
+These are implementation references; later documentation commits record evidence
+without changing the verified runtime sources.
+
+Local checks pass: 269 Rust tests in each repo, 286 frontend units, five affected
+signed-in workflows, lint, builds, OpenAPI/client generation and standalone rustdoc.
+Rustdoc retains 20 existing warnings (16 core, four API). The new project-editor
+import/protection test also verifies the 80 KiB metadata request cap. Its initial CI
+run attached a file while the upload control was disabled during loading; the trace
+shows no import request. An enabled-control wait corrects the test, with three
+consecutive local repeats and the full CI run passing, without relaxing assertions
+or timeouts.
+
+The first local app Rust run hit the existing 100 ms SSE deadline while frontend
+lint ran concurrently; the final isolated run passes without changing the deadline.
+The standalone parallel build exhausted Windows paging memory; `CARGO_BUILD_JOBS=1`
+completed all remaining checks. Run heavy build/lint tasks separately from browser
+and timing-sensitive Rust checks. An erasure assertion now includes the metadata
+receipt and verifies that it retains no readable title.
+
+Task-owned API/web servers are stopped, and the labelled disposable PostgreSQL
+container and its volume are removed. Unrelated services are unchanged. Ignored
+logs are under `target/policy-*`; process records are historical and PIDs may be
+reused. No production data or real invitation emails were used.
 
 Schema stays 29; no migration, hash or canonical event changes. The VPS workspace/API
 remain recorded at `ecbc643`, schema 26, shared periodic writes off. Rollout still
@@ -50,8 +55,9 @@ exchange/convergence, independent commitments and installed-editor acceptance.
 
 ### Next increment acceptance: browser security and resource budgets
 
-Inspect `frontend/researcher/svelte.config.js`, `src/hooks.server.ts`, connector
-routes and `infra/demo/nginx-app.conf` together. Current connector frame ancestors
+In the application repo, inspect `frontend/researcher/svelte.config.js`, its
+`src/hooks.server.ts`, connector routes and `infra/demo/nginx-app.conf` together.
+Current connector frame ancestors
 do not provide a script CSP. Add nonce/hash-based script restrictions and HTTPS-only
 HSTS, preserving scoped Office embedding, sign-in/pairing and document exports.
 Exercise ordinary pages and all three hosted Office panes in browser/proxy checks;

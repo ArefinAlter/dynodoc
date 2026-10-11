@@ -1,7 +1,8 @@
 # Dynodoc — version control for documents
 
-Latest security source work (11 October 2026): schema 0029 separates operator
-migrations from a restricted API database login. Schema 0028 also requires verified
+Latest security source work (11 October 2026): project rules now set minimum file
+protection, and permitted metadata changes have bounded validation and atomic audit
+receipts. Schema 0029 separates operator migrations from a restricted API database login. Schema 0028 also requires verified
 snapshot receipts; existing data needs explicit replay backfill before rollout. See
 [the database boundary](docs/DATABASE-PRIVILEGES.md), [snapshot contract](docs/VERIFIED-SNAPSHOTS.md) and
 [checks/remaining gates](docs/ENGINE-EVOLUTION-HANDOFF.md).
@@ -19,7 +20,8 @@ Research instruments remain one supported adapter, not the product roadmap.
 six development connectors exist. Current source hardening adds revocable logins,
 fail-closed service credentials, checked snapshots, runtime database privileges and
 bounded history reads. Project policy floors and bounded audited metadata are now
-implemented; [verification is in progress](docs/PROJECT-POLICY-AND-METADATA.md).
+implemented; see [the behavior contract](docs/PROJECT-POLICY-AND-METADATA.md) and
+[verification evidence](docs/ENGINE-EVOLUTION-HANDOFF.md).
 Deployment acceptance, browser security and resource budgets remain open; see
 the [security findings and rollout contract](docs/SECURITY-HARDENING.md).
 Shared checkpoint readers and bounded database
