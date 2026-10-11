@@ -73,3 +73,22 @@ test('all pane responses keep scoped policies; redirects, errors and theme remai
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 });
+
+test('Office manifest command frame loads its SDK and initializer without inline permission', async ({
+  page
+}) => {
+  await page.route('https://appsforoffice.microsoft.com/**', (route) =>
+    route.fulfill({
+      contentType: 'text/javascript',
+      body: 'window.Office={onReady:()=>{window.commandsInitialized=true;}};'
+    })
+  );
+  await page.goto('/connectors/commands.html');
+  await expect.poll(() => page.evaluate(() => 'commandsInitialized' in window)).toBe(true);
+  await page.evaluate(() => {
+    const script = document.createElement('script');
+    script.textContent = 'window.commandInjectionRan=true';
+    document.head.append(script);
+  });
+  expect(await page.evaluate(() => 'commandInjectionRan' in window)).toBe(false);
+});

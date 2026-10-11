@@ -3,10 +3,12 @@
   <head>
     <meta charset="utf-8" />
     <title>Dynodoc commands</title>
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self' https://appsforoffice.microsoft.com https://officeapis.public.onecdn.static.microsoft https://ajax.aspnetcdn.com; connect-src 'self' https://appsforoffice.microsoft.com https://officeapis.public.onecdn.static.microsoft https://ajax.aspnetcdn.com; base-uri 'none'; object-src 'none'; form-action 'self'"
+    />
     <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-    <script>
-      Office.onReady(function () {});
-    </script>
+    <script src="/connectors/commands.js"></script>
   </head>
   <body></body>
 </html>

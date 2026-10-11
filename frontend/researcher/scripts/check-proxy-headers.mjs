@@ -193,7 +193,7 @@ ${sites.join('\n')}
     console.log(`auth preload/cookie fixture: ${response.headerBytes} bytes; proxy 200`);
   }
   assert.equal((await request(`${appURL}/workspace`)).status, 303, 'Keep the sign-in boundary.');
-  for (const host of ['word', 'excel', 'powerpoint']) {
+  for (const host of ['word', 'excel', 'powerpoint', 'commands.html']) {
     const response = await request(`${appURL}/connectors/${host}`);
     assert.equal(response.status, 200);
     checkSecurity(response, true);

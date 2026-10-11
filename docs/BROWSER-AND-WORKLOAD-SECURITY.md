@@ -10,9 +10,12 @@ and Svelte transitions require inline styles. Images can use HTTPS/data/blob;
 fonts and workers are local/data/blob as appropriate. Print frames are same-origin.
 The prepaint theme initializer is an external local script.
 
-Only `/connectors/word`, `/connectors/excel` and `/connectors/powerpoint` allow the
-Microsoft Office CDN scripts and Office/SharePoint frame ancestors. Crossing that
-boundary forces a document navigation, because a SPA cannot replace the active CSP.
+The panes `/connectors/word`, `/connectors/excel` and `/connectors/powerpoint` allow
+Microsoft Office CDN scripts and Office/SharePoint frame ancestors. The static
+`/connectors/commands.html` manifest command frame has its own equivalent scoped
+Nginx policy and an additional script CSP meta tag for direct/static hosting. Its
+initializer is an external local script. Crossing the pane navigation boundary
+forces a document navigation, because a SPA cannot replace the active CSP.
 Other pages use `frame-ancestors 'self'` and SAMEORIGIN. Operator-configured
 `CONNECTOR_ORIGINS` adds comma-separated HTTPS origins to pane connections only;
 credentials, non-HTTPS URLs and malformed entries are discarded. The default is the

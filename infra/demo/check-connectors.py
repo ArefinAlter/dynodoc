@@ -62,7 +62,7 @@ def check(origin):
     if options.get("development") or not (options.get("email") or options.get("google")):
         raise RuntimeError("Expected normal sign-in with development authentication disabled.")
     request("/connectors")
-    for host in ["word", "excel", "powerpoint"]:
+    for host in ["word", "excel", "powerpoint", "commands.html"]:
         headers, _ = request("/connectors/" + host)
         if headers.get("x-frame-options"):
             raise RuntimeError(f"{host}: X-Frame-Options prevents Office embedding.")
@@ -73,7 +73,7 @@ def check(origin):
     artifacts = [f"packages/{host}.xml" for host in ["word", "excel", "powerpoint"]]
     artifacts += [f"packages/google-{host}.zip" for host in ["docs", "sheets", "slides"]]
     artifacts += [f"assets/icon-{size}.png" for size in [16, 32, 80]]
-    artifacts += ["commands.html"]
+    artifacts += ["commands.html", "commands.js"]
     for artifact in artifacts:
         path = "/connectors/" + artifact
         _, body = request(path)
