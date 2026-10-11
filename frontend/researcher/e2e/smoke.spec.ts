@@ -118,12 +118,16 @@ test('homepage controls wait for hydration on a slow connection', async ({ page 
   const scriptsReady = new Promise<void>((resolve) => {
     resumeScripts = resolve;
   });
-  await page.route('**/*.js', async (route) => {
+  // Hold hydration bundles, not the parser-blocking prepaint theme initializer.
+  let heldScripts = 0;
+  await page.route('**/_app/immutable/**/*.js', async (route) => {
+    heldScripts += 1;
     await scriptsReady;
     await route.continue();
   });
   try {
     await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await expect.poll(() => heldScripts).toBeGreaterThan(0);
     await expect(
       page.getByRole('button', { name: 'Plan the numbers', exact: true })
     ).toBeDisabled();
