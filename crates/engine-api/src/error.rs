@@ -161,7 +161,11 @@ impl From<sqlx::Error> for ApiError {
             if db.code().as_deref() == Some("23514")
                 && matches!(
                     db.constraint(),
-                    Some("checkpoint_storage_quota" | "project_staging_quota")
+                    Some(
+                        "checkpoint_storage_quota"
+                            | "project_staging_quota"
+                            | "project_history_quota"
+                    )
                 )
             {
                 return ApiError::StorageLimit;

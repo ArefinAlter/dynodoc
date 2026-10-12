@@ -2526,6 +2526,344 @@ paths:
               schema: {}
       security:
       - paseto: []
+  /projects/{id}/history/authority:
+    get:
+      tags:
+      - project history
+      operationId: project_history_authority
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Installed public receipt authority; clients must verify this binding through an independently trusted channel
+          content:
+            application/json:
+              schema: {}
+      security:
+      - paseto: []
+  /projects/{id}/history/commits:
+    post:
+      tags:
+      - project history
+      operationId: project_history_publish
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Explicit publication of own staged candidate and exactly its reachable objects; dependencies must already be published; no branch move
+          content:
+            application/json:
+              schema: {}
+        '403':
+          description: Current contributor access and active own signing key required
+        '507':
+          description: Project metadata budget reached
+      security:
+      - paseto: []
+  /projects/{id}/history/commits/{address}:
+    get:
+      tags:
+      - project history
+      operationId: project_history_commit
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: address
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Published signed envelope; entire transitive file scope requires current access
+          content:
+            application/json:
+              schema: {}
+      security:
+      - paseto: []
+  /projects/{id}/history/commits/{address}/objects/{document}:
+    get:
+      tags:
+      - project history
+      operationId: project_history_inventory
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: address
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: document
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: after
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+      responses:
+        '200':
+          description: Reachable object keys in this published file state only; maximum 256
+          content:
+            application/json:
+              schema: {}
+      security:
+      - paseto: []
+  /projects/{id}/history/commits/{address}/objects/{document}/{object}:
+    get:
+      tags:
+      - project history
+      operationId: project_history_object
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: address
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: document
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: object
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Hash-verified base64 object reachable from this published file state
+          content:
+            application/json:
+              schema: {}
+        '404':
+          description: Not reachable from this publication
+      security:
+      - paseto: []
+  /projects/{id}/history/receipts:
+    get:
+      tags:
+      - project history
+      operationId: project_history_receipts
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: branch
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: after_generation
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+      responses:
+        '200':
+          description: At most 256 consecutive signed ref receipts, oldest first; current head scope must remain accessible
+          content:
+            application/json:
+              schema: {}
+        '409':
+          description: Erased branch head or receipt gap
+      security:
+      - paseto: []
+  /projects/{id}/history/refs:
+    get:
+      tags:
+      - project history
+      operationId: project_history_refs
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: branch
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: after
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+      responses:
+        '200':
+          description: Current published branch heads, keyset page max 256; whole page fails closed when any head scope is unavailable
+          content:
+            application/json:
+              schema: {}
+      security:
+      - paseto: []
+    post:
+      tags:
+      - project history
+      operationId: project_history_advance
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Atomic fast-forward branch CAS; main enforces current project/file merge roles and approvals; no centralized document edits
+          content:
+            application/json:
+              schema: {}
+        '409':
+          description: Stale head, unavailable ancestry, non-fast-forward or unmet reviews
+      security:
+      - paseto: []
+  /projects/{id}/history/reviews:
+    get:
+      tags:
+      - project history
+      operationId: project_history_reviews
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: candidate
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: after
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+      responses:
+        '200':
+          description: Bounded review history for a published candidate; no emails
+          content:
+            application/json:
+              schema: {}
+      security:
+      - paseto: []
+    post:
+      tags:
+      - project history
+      operationId: project_history_review
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Append approve/request_changes for exact branch base generation and candidate; independent current reviewer required
+          content:
+            application/json:
+              schema: {}
+        '409':
+          description: Base changed
+      security:
+      - paseto: []
+  /projects/{id}/history/storage:
+    get:
+      tags:
+      - project history
+      operationId: project_history_storage
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Project published metadata budget; physical object bytes have separate document/creator limits
+          content:
+            application/json:
+              schema: {}
+      security:
+      - paseto: []
   /projects/{id}/settings:
     post:
       tags: []

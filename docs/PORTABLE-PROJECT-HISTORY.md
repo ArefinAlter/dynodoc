@@ -1,13 +1,15 @@
 # Portable project history
 
 Schema 35 adds [authenticated private project transfers](PRIVATE-PROJECT-TRANSFERS.md)
-around these local primitives. Shared publication/protected refs and native
-adoption remain separate work; the dated local implementation below still applies.
+around these local primitives. Schema 36 adds [shared publication, protected refs
+and server receipts](SHARED-PROJECT-HISTORY.md). Automatic network commands and
+native/UI adoption remain separate work; the dated local implementation below
+still applies.
 
 12 October 2026. Source implementation in `engine_core::repository` introduces a
 local SQLite repository alongside centralized document history. It does not yet
-replace web drafts, turn connector queues into offline repositories, or authorize
-HTTP project ref updates. Project commits are a separate versioned contract;
+replace web drafts, turn connector queues into offline repositories, or by itself authorize
+HTTP project ref updates. The separate schema-36 service provides that boundary. Project commits are a separate versioned contract;
 legacy event sequences remain intact.
 
 [Project commit recovery](PROJECT-COMMIT-RECOVERY.md) adds local revert/cherry-pick

@@ -25,6 +25,10 @@ const HISTORY: &[&str] = &[
     "device_key_revocation",
     "project_staged_object",
     "project_staged_commit",
+    "project_published_commit",
+    "project_published_object",
+    "project_history_review",
+    "project_ref_event",
 ];
 const MUTABLE: &[&str] = &[
     "document",
@@ -62,7 +66,11 @@ const FUNCTIONS: &[&str] = &[
     "document_member_role(uuid,uuid,boolean)",
     "document_project(uuid)",
 ];
-const SEQUENCES: &[&str] = &["draft_edit_id_seq", "operation_audit_id_seq"];
+const SEQUENCES: &[&str] = &[
+    "draft_edit_id_seq",
+    "operation_audit_id_seq",
+    "project_history_review_id_seq",
+];
 const READ_ONLY: &[&str] = &[
     "_sqlx_migrations",
     "current_documents",
@@ -70,6 +78,8 @@ const READ_ONLY: &[&str] = &[
     "checkpoint_storage_account",
     "checkpoint_storage_document",
     "project_staging_storage",
+    "project_history_storage",
+    "project_ref_authority",
 ];
 
 /// Read-only exact version/checksum check. Both missing and newer schemas fail.

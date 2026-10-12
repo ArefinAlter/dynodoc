@@ -1,5 +1,12 @@
 # Database runtime boundary
 
+Schema 36 adds SELECT/INSERT on published commits, root reachability indexes,
+project history reviews and signed ref events. Published metadata counters and
+`project_ref_authority` are SELECT-only; only the operator installs its public key.
+Review sequence USAGE is explicitly granted. Immutable guards and audited document
+erasure preserve the boundary. Re-provision grants with the matching binary; see
+[Shared project history](SHARED-PROJECT-HISTORY.md).
+
 Schema 35 extends the explicit runtime inventory with SELECT/INSERT on
 `project_staged_object` and `project_staged_commit`, and SELECT-only on
 `project_staging_storage`. Immutable staging history has audited document/account

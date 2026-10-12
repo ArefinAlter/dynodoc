@@ -28,7 +28,7 @@ use uuid::Uuid;
 mod common;
 const KEY: [u8; 32] = [9; 32];
 fn router(pool: PgPool) -> Router {
-    app(AppState::new(
+    let mut state = AppState::new(
         pool,
         AuthConfig {
             paseto_key: KEY,
@@ -36,7 +36,11 @@ fn router(pool: PgPool) -> Router {
             token_ttl_seconds: 3600,
             public_base_url: "http://test.local".into(),
         },
-    ))
+    );
+    state.ref_signer = Some(std::sync::Arc::new(
+        Ed25519KeyPair::from_seed_unchecked(&[99; 32]).unwrap(),
+    ));
+    app(state)
 }
 async fn new_actor(pool: &PgPool, name: &str) -> (Uuid, String) {
     let id = store::upsert_identity(pool, &format!("{name}@example.test"), None)
@@ -1004,5 +1008,1103 @@ async fn waiting_upload_rechecks_project_membership_and_concurrent_quota_spendin
         ok(&app, "GET", &format!("{base}/storage"), &login, Value::Null).await["objects_used"],
         1
     );
+    runtime.close().await;
+}
+
+async fn publish_commit(
+    app: &Router,
+    login: &str,
+    project: Uuid,
+    signed: &SignedCommit,
+) -> Address {
+    ok(
+        app,
+        "POST",
+        &format!("/projects/{project}/staging/commits"),
+        login,
+        json!(signed),
+    )
+    .await;
+    let address = signed.verify().unwrap();
+    ok(
+        app,
+        "POST",
+        &format!("/projects/{project}/history/commits"),
+        login,
+        json!({"address":address}),
+    )
+    .await;
+    address
+}
+async fn member(pool: &PgPool, project: Uuid, name: &str, role: &str) -> (Uuid, String) {
+    let (id, login) = new_actor(pool, name).await;
+    sqlx::query("insert into space_member(space_id,identity_id,role) values($1,$2,$3)")
+        .bind(project)
+        .bind(id)
+        .bind(role)
+        .execute(pool)
+        .await
+        .unwrap();
+    (id, login)
+}
+async fn enroll(app: &Router, actor: Uuid, login: &str, seed: u8) -> Ed25519KeyPair {
+    let key = Ed25519KeyPair::from_seed_unchecked(&[seed; 32]).unwrap();
+    let challenge: Challenge = serde_json::from_value(
+        ok(
+            app,
+            "POST",
+            "/devices/challenge",
+            login,
+            json!({"public_key":hex::encode(key.public_key().as_ref())}),
+        )
+        .await,
+    )
+    .unwrap();
+    let proof = Proof::sign(challenge.clone(), challenge.authority, actor, &key).unwrap();
+    ok(app, "POST", "/devices", login, json!(proof)).await;
+    key
+}
+#[sqlx::test(migrations = "../../migrations")]
+async fn shared_publication_exposes_only_reachable_objects_and_supports_another_authors_descendant(
+    pool: PgPool,
+) {
+    install_receipts(&pool).await;
+    let runtime = common::RuntimeDatabase::new(pool.clone()).await;
+    let (app, _, login, project, doc, key) = setup(&runtime.pool).await;
+    let (contributor, other) = member(&runtime.pool, project, "contributor", "reviewer").await;
+    let other_key = enroll(&app, contributor, &other, 8).await;
+    let (root, objects) = graph(doc).await;
+    upload(&app, &login, project, doc, &objects).await;
+    // An unrelated private graph for the very same document must not be promoted.
+    let mut private = Collect::default();
+    let (secret, _) = typed::write_state(
+        &mut private,
+        DocumentId(doc),
+        &DocumentState::default(),
+        Limits::default(),
+        Default::default(),
+    )
+    .await
+    .unwrap();
+    let extra: Vec<_> = private
+        .objects
+        .iter()
+        .map(|(address, bytes)| json!({"address":address,"bytes":STANDARD.encode(bytes)}))
+        .collect();
+    upload(&app, &login, project, doc, &extra).await;
+    let base = format!("/projects/{project}/history");
+    let initial = signed(project, doc, root.clone(), &key, vec![], "Initial version");
+    let address = initial.verify().unwrap();
+    ok(
+        &app,
+        "POST",
+        &format!("/projects/{project}/staging/commits"),
+        &login,
+        json!(initial),
+    )
+    .await;
+    assert_eq!(
+        request(
+            &app,
+            "GET",
+            &format!("{base}/commits/{address}", address = address.as_str()),
+            &other,
+            Value::Null
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    publish_commit(&app, &login, project, &initial).await;
+    let before = ok(&app, "GET", &format!("{base}/storage"), &login, Value::Null).await;
+    // Retry is free and does not move any ref.
+    ok(
+        &app,
+        "POST",
+        &format!("{base}/commits"),
+        &login,
+        json!({"address":address}),
+    )
+    .await;
+    assert_eq!(
+        before,
+        ok(&app, "GET", &format!("{base}/storage"), &login, Value::Null).await
+    );
+    assert_eq!(
+        ok(&app, "GET", &format!("{base}/refs"), &other, Value::Null).await["items"],
+        json!([])
+    );
+    let fetched: SignedCommit = serde_json::from_value(
+        ok(
+            &app,
+            "GET",
+            &format!("{base}/commits/{address}", address = address.as_str()),
+            &other,
+            Value::Null,
+        )
+        .await,
+    )
+    .unwrap();
+    assert_eq!(fetched.verify().unwrap(), address);
+    let inventory = ok(
+        &app,
+        "GET",
+        &format!(
+            "{base}/commits/{address}/objects/{doc}?limit=256",
+            address = address.as_str()
+        ),
+        &other,
+        Value::Null,
+    )
+    .await;
+    assert_eq!(
+        inventory["addresses"].as_array().unwrap().len(),
+        objects.len()
+    );
+    assert!(!inventory["addresses"]
+        .as_array()
+        .unwrap()
+        .contains(&json!(secret)));
+    assert_eq!(
+        request(
+            &app,
+            "GET",
+            &format!(
+                "{base}/commits/{address}/objects/{doc}/{secret}",
+                address = address.as_str(),
+                secret = secret.as_str()
+            ),
+            &other,
+            Value::Null
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    let mut replica = MemoryStore::default();
+    for object in inventory["addresses"].as_array().unwrap() {
+        let packet = ok(
+            &app,
+            "GET",
+            &format!(
+                "{base}/commits/{address}/objects/{doc}/{}",
+                object.as_str().unwrap(),
+                address = address.as_str()
+            ),
+            &other,
+            Value::Null,
+        )
+        .await;
+        let key: Address = serde_json::from_value(packet["address"].clone()).unwrap();
+        replica
+            .put(
+                DocumentId(doc),
+                &key,
+                &STANDARD.decode(packet["bytes"].as_str().unwrap()).unwrap(),
+            )
+            .await
+            .unwrap();
+    }
+    let reconstructed = typed::read_state(
+        &mut replica,
+        DocumentId(doc),
+        &root,
+        Limits::default(),
+        Default::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(reconstructed, document_state());
+    // Staging accepts an already published parent from a different enrolled key.
+    // Object packets must still be supplied in full for this account's private graph.
+    upload(&app, &other, project, doc, &objects).await;
+    let child = signed(
+        project,
+        doc,
+        root,
+        &other_key,
+        vec![address.clone()],
+        "Contributor change",
+    );
+    let child_address = publish_commit(&app, &other, project, &child).await;
+    let target = json!({"branch":"feature/team","candidate":child_address,"expected":null});
+    ok(&app, "POST", &format!("{base}/refs"), &other, target).await;
+    assert_eq!(
+        request(
+            &app,
+            "POST",
+            &format!("{base}/refs"),
+            &other,
+            json!({"branch":"main","candidate":child_address,"expected":null})
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    ok(
+        &app,
+        "POST",
+        &format!("{base}/refs"),
+        &login,
+        json!({"branch":"main","candidate":address,"expected":null}),
+    )
+    .await;
+    ok(&app,"POST",&format!("{base}/refs"),&login,json!({"branch":"main","candidate":child_address,"expected":{"commit":address,"generation":1}})).await;
+    assert_eq!(
+        ok(
+            &app,
+            "GET",
+            &format!("{base}/refs?branch=main"),
+            &other,
+            Value::Null
+        )
+        .await["items"][0]["head"]["generation"],
+        2
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("select count(*) from event")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        0
+    );
+    runtime.close().await;
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn shared_main_reviews_bind_candidate_and_base_and_recheck_roles_and_file_floors(
+    pool: PgPool,
+) {
+    install_receipts(&pool).await;
+    let runtime = common::RuntimeDatabase::new(pool.clone()).await;
+    let (app, _, login, project, doc, key) = setup(&runtime.pool).await;
+    let (reviewer, review_login) = member(&runtime.pool, project, "reviewer", "approver").await;
+    let (_, editor) = member(&runtime.pool, project, "editor", "editor").await;
+    let (root, objects) = graph(doc).await;
+    upload(&app, &login, project, doc, &objects).await;
+    let first = publish_commit(
+        &app,
+        &login,
+        project,
+        &signed(project, doc, root.clone(), &key, vec![], "base"),
+    )
+    .await;
+    let base = format!("/projects/{project}/history");
+    ok(
+        &app,
+        "POST",
+        &format!("{base}/refs"),
+        &login,
+        json!({"branch":"main","candidate":first,"expected":null}),
+    )
+    .await;
+    let a = publish_commit(
+        &app,
+        &login,
+        project,
+        &signed(project, doc, root.clone(), &key, vec![first.clone()], "a"),
+    )
+    .await;
+    let b = publish_commit(
+        &app,
+        &login,
+        project,
+        &signed(project, doc, root.clone(), &key, vec![first.clone()], "b"),
+    )
+    .await;
+    sqlx::query("update project_settings set required_approvals=1 where space_id=$1")
+        .bind(project)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let target = json!({"branch":"main","candidate":a,"expected":{"commit":first,"generation":1}});
+    assert_eq!(
+        request(
+            &app,
+            "POST",
+            &format!("{base}/refs"),
+            &login,
+            target.clone()
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    // Even project owners cannot approve their own publication or skip approvals.
+    assert_eq!(
+        request(
+            &app,
+            "POST",
+            &format!("{base}/reviews"),
+            &login,
+            json!({"target":target,"decision":"approve"})
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    ok(
+        &app,
+        "POST",
+        &format!("{base}/reviews"),
+        &review_login,
+        json!({"target":target,"decision":"request_changes"}),
+    )
+    .await;
+    assert_eq!(
+        request(
+            &app,
+            "POST",
+            &format!("{base}/refs"),
+            &login,
+            target.clone()
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    ok(
+        &app,
+        "POST",
+        &format!("{base}/reviews"),
+        &review_login,
+        json!({"target":target,"decision":"approve"}),
+    )
+    .await;
+    let usage = ok(&app, "GET", &format!("{base}/storage"), &login, Value::Null).await;
+    ok(
+        &app,
+        "POST",
+        &format!("{base}/reviews"),
+        &review_login,
+        json!({"target":target,"decision":"approve"}),
+    )
+    .await;
+    assert_eq!(
+        usage,
+        ok(&app, "GET", &format!("{base}/storage"), &login, Value::Null).await
+    );
+    sqlx::query("update space_member set role='viewer' where space_id=$1 and identity_id=$2")
+        .bind(project)
+        .bind(reviewer)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        request(
+            &app,
+            "POST",
+            &format!("{base}/refs"),
+            &login,
+            target.clone()
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    sqlx::query("update space_member set role='approver' where space_id=$1 and identity_id=$2")
+        .bind(project)
+        .bind(reviewer)
+        .execute(&pool)
+        .await
+        .unwrap();
+    // An approval for a cannot approve b at the same base.
+    assert_eq!(
+        request(
+            &app,
+            "POST",
+            &format!("{base}/refs"),
+            &login,
+            json!({"branch":"main","candidate":b,"expected":{"commit":first,"generation":1}})
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    sqlx::query("insert into document_policy(document_id,protect_team_version,required_approvals,merge_roles) values($1,true,1,'owners')").bind(doc).execute(&pool).await.unwrap();
+    assert_eq!(
+        request(
+            &app,
+            "POST",
+            &format!("{base}/refs"),
+            &editor,
+            target.clone()
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    ok(
+        &app,
+        "POST",
+        &format!("{base}/refs"),
+        &login,
+        target.clone(),
+    )
+    .await;
+    assert_eq!(
+        request(
+            &app,
+            "POST",
+            &format!("{base}/refs"),
+            &login,
+            target.clone()
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        request(
+            &app,
+            "POST",
+            &format!("{base}/reviews"),
+            &review_login,
+            json!({"target":target,"decision":"approve"})
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    // A sibling cannot reset history even with the current generation.
+    assert_eq!(
+        request(
+            &app,
+            "POST",
+            &format!("{base}/refs"),
+            &login,
+            json!({"branch":"main","candidate":b,"expected":{"commit":a,"generation":2}})
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        ok(
+            &app,
+            "GET",
+            &format!("{base}/reviews?candidate={a}", a = a.as_str()),
+            &login,
+            Value::Null
+        )
+        .await["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    runtime.close().await;
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn shared_metadata_quotas_rollback_publication_and_erasure_never_resets_ref_generations(
+    pool: PgPool,
+) {
+    install_receipts(&pool).await;
+    let runtime = common::RuntimeDatabase::new(pool.clone()).await;
+    let (app, actor, login, project, doc, key) = setup(&runtime.pool).await;
+    let (_, review_login) = member(&runtime.pool, project, "reviewer", "approver").await;
+    let (root, objects) = graph(doc).await;
+    upload(&app, &login, project, doc, &objects).await;
+    let signed = signed(project, doc, root, &key, vec![], "base");
+    let first = signed.verify().unwrap();
+    ok(
+        &app,
+        "POST",
+        &format!("/projects/{project}/staging/commits"),
+        &login,
+        json!(signed),
+    )
+    .await;
+    sqlx::query("insert into project_history_storage(project_id,row_limit) values($1,1)")
+        .bind(project)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let base = format!("/projects/{project}/history");
+    assert_eq!(
+        request(
+            &app,
+            "POST",
+            &format!("{base}/commits"),
+            &login,
+            json!({"address":first})
+        )
+        .await
+        .0,
+        StatusCode::INSUFFICIENT_STORAGE
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("select count(*) from project_published_commit")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        ok(&app, "GET", &format!("{base}/storage"), &login, Value::Null).await["rows_used"],
+        0
+    );
+    sqlx::query("update project_history_storage set row_limit=1000000 where project_id=$1")
+        .bind(project)
+        .execute(&pool)
+        .await
+        .unwrap();
+    publish_commit(&app, &login, project, &signed).await;
+    let target = json!({"branch":"main","candidate":first,"expected":null});
+    ok(
+        &app,
+        "POST",
+        &format!("{base}/reviews"),
+        &review_login,
+        json!({"target":target,"decision":"approve"}),
+    )
+    .await;
+    sqlx::query("update project_history_storage set branch_limit=0 where project_id=$1")
+        .bind(project)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        request(
+            &app,
+            "POST",
+            &format!("{base}/refs"),
+            &login,
+            target.clone()
+        )
+        .await
+        .0,
+        StatusCode::INSUFFICIENT_STORAGE
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("select count(*) from project_ref_event")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        0
+    );
+    sqlx::query("update project_history_storage set branch_limit=4096 where project_id=$1")
+        .bind(project)
+        .execute(&pool)
+        .await
+        .unwrap();
+    ok(&app, "POST", &format!("{base}/refs"), &login, target).await;
+    let mut empty = signed.commit.clone();
+    empty.parents = vec![first.clone()];
+    empty.files.clear();
+    empty.message = "Remove file".into();
+    let empty = SignedCommit::sign(empty, &key).unwrap();
+    let last = publish_commit(&app, &login, project, &empty).await;
+    ok(
+        &app,
+        "POST",
+        &format!("{base}/refs"),
+        &login,
+        json!({"branch":"main","candidate":last,"expected":{"commit":first,"generation":1}}),
+    )
+    .await;
+    for query in [
+        "update project_history_storage set byte_limit=0",
+        "delete from project_published_commit",
+        "truncate project_published_object",
+        "update project_ref_event set generation=7",
+        "delete from project_ref_event",
+        "select erase_published_project_history()",
+    ] {
+        assert!(
+            sqlx::query(query).execute(&runtime.pool).await.is_err(),
+            "runtime allowed {query}"
+        );
+    }
+    assert!(sqlx::query("delete from project_published_commit")
+        .execute(&pool)
+        .await
+        .is_err());
+    sqlx::query("update document set deleted_at=now() where id=$1")
+        .bind(doc)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        request(
+            &app,
+            "GET",
+            &format!("{base}/commits/{last}", last = last.as_str()),
+            &review_login,
+            Value::Null
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    let mut tx = runtime.pool.begin().await.unwrap();
+    sqlx::query("insert into erasure_receipt(resource_id,kind,actor_id,reason,counts) values($1,'documents',$2,'owner_request','{}')").bind(doc).bind(actor).execute(&mut *tx).await.unwrap();
+    sqlx::query("delete from document where id=$1")
+        .bind(doc)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    for table in [
+        "project_published_commit",
+        "project_published_object",
+        "project_history_review",
+        "checkpoint_object",
+    ] {
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>(&format!("select count(*) from {table}"))
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            0,
+            "{table}"
+        );
+    }
+    assert_eq!(
+        ok(&app, "GET", &format!("{base}/storage"), &login, Value::Null).await["rows_used"],
+        2
+    );
+    assert_eq!(
+        request(
+            &app,
+            "GET",
+            &format!("{base}/refs?branch=main"),
+            &login,
+            Value::Null
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("select max(generation) from project_ref_event")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        2
+    );
+    runtime.close().await;
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn shared_ref_races_have_one_winner_and_revocation_erasure_preserve_accepted_history(
+    pool: PgPool,
+) {
+    install_receipts(&pool).await;
+    let runtime = common::RuntimeDatabase::new(pool.clone()).await;
+    let (app, actor, login, project, doc, key) = setup(&runtime.pool).await;
+    let (editor, other) = member(&runtime.pool, project, "editor", "editor").await;
+    let (root, objects) = graph(doc).await;
+    upload(&app, &login, project, doc, &objects).await;
+    let initial = signed(project, doc, root.clone(), &key, vec![], "base");
+    let first = initial.verify().unwrap();
+    let child = signed(
+        project,
+        doc,
+        root.clone(),
+        &key,
+        vec![first.clone()],
+        "child",
+    );
+    let child_address = child.verify().unwrap();
+    let base = format!("/projects/{project}/history");
+    for envelope in [&initial, &child] {
+        ok(
+            &app,
+            "POST",
+            &format!("/projects/{project}/staging/commits"),
+            &login,
+            json!(envelope),
+        )
+        .await;
+    }
+    assert_eq!(
+        request(
+            &app,
+            "POST",
+            &format!("{base}/commits"),
+            &login,
+            json!({"address":child_address})
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    let first = publish_commit(&app, &login, project, &initial).await;
+    let child_address = publish_commit(&app, &login, project, &child).await;
+    let sibling = publish_commit(
+        &app,
+        &login,
+        project,
+        &signed(
+            project,
+            doc,
+            root.clone(),
+            &key,
+            vec![first.clone()],
+            "sibling",
+        ),
+    )
+    .await;
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("select count(*) from project_published_object")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        objects.len() as i64,
+        "identical file roots reuse their reachability index"
+    );
+    let unpublished = signed(
+        project,
+        doc,
+        root,
+        &key,
+        vec![child_address.clone()],
+        "still private",
+    );
+    ok(
+        &app,
+        "POST",
+        &format!("/projects/{project}/staging/commits"),
+        &login,
+        json!(unpublished),
+    )
+    .await;
+    let devices = ok(&app, "GET", "/devices", &login, Value::Null).await;
+    ok(
+        &app,
+        "POST",
+        &format!(
+            "/devices/{}/revoke",
+            devices["keys"][0]["id"].as_str().unwrap()
+        ),
+        &login,
+        json!({}),
+    )
+    .await;
+    assert_eq!(
+        request(
+            &app,
+            "POST",
+            &format!("{base}/commits"),
+            &login,
+            json!({"address":unpublished.verify().unwrap()})
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    // Already published content and exact retries remain accepted after revocation.
+    ok(
+        &app,
+        "POST",
+        &format!("{base}/commits"),
+        &login,
+        json!({"address":first}),
+    )
+    .await;
+    ok(
+        &app,
+        "POST",
+        &format!("{base}/refs"),
+        &login,
+        json!({"branch":"main","candidate":first,"expected":null}),
+    )
+    .await;
+    let path = format!("{base}/refs");
+    let a = json!({"branch":"main","candidate":child_address,"expected":{"commit":first,"generation":1}});
+    let b = json!({"branch":"main","candidate":sibling,"expected":{"commit":first,"generation":1}});
+    let (a, b) = tokio::join!(
+        request(&app, "POST", &path, &login, a),
+        request(&app, "POST", &path, &other, b)
+    );
+    let mut statuses = vec![a.0, b.0];
+    statuses.sort();
+    assert_eq!(
+        statuses,
+        vec![StatusCode::OK, StatusCode::CONFLICT],
+        "{a:?} {b:?}"
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("select count(*) from project_ref_event")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        2
+    );
+    // Account erasure clears private work, never destroys team publications.
+    let mut tx = runtime.pool.begin().await.unwrap();
+    sqlx::query("insert into erasure_receipt(resource_id,kind,actor_id,reason,counts) values($1,'users',$2,'owner_request','{}')").bind(actor).bind(editor).execute(&mut *tx).await.unwrap();
+    sqlx::query("update identity set erased_at=now(),disabled_at=now() where id=$1")
+        .bind(actor)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("select count(*) from project_staged_commit")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        0
+    );
+    let fetched: SignedCommit = serde_json::from_value(
+        ok(
+            &app,
+            "GET",
+            &format!("{base}/commits/{}", first.as_str()),
+            &other,
+            Value::Null,
+        )
+        .await,
+    )
+    .unwrap();
+    assert_eq!(fetched.verify().unwrap(), first);
+    ok(
+        &app,
+        "GET",
+        &format!("{base}/refs?branch=main"),
+        &other,
+        Value::Null,
+    )
+    .await;
+    runtime.close().await;
+}
+
+async fn install_receipts(pool: &PgPool) {
+    let key = Ed25519KeyPair::from_seed_unchecked(&[99; 32]).unwrap();
+    engine_core::repository::server_authority::install(
+        pool,
+        &hex::encode(key.public_key().as_ref()),
+    )
+    .await
+    .unwrap();
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn shared_receipts_are_atomic_fail_closed_and_verify_in_the_client_pin(pool: PgPool) {
+    use engine_core::repository::attestation::{Pin, SignedReceipt};
+    install_receipts(&pool).await;
+    let runtime = common::RuntimeDatabase::new(pool.clone()).await;
+    let (app, _, login, project, doc, key) = setup(&runtime.pool).await;
+    let (_, reviewer) = member(&runtime.pool, project, "reviewer", "approver").await;
+    let (root, objects) = graph(doc).await;
+    upload(&app, &login, project, doc, &objects).await;
+    let first = publish_commit(
+        &app,
+        &login,
+        project,
+        &signed(project, doc, root.clone(), &key, vec![], "base"),
+    )
+    .await;
+    let second = publish_commit(
+        &app,
+        &login,
+        project,
+        &signed(project, doc, root, &key, vec![first.clone()], "second"),
+    )
+    .await;
+    let base = format!("/projects/{project}/history");
+    let target = json!({"branch":"main","candidate":first,"expected":null});
+    let config = AuthConfig {
+        paseto_key: KEY,
+        service_key: None,
+        token_ttl_seconds: 3600,
+        public_base_url: "http://test.local".into(),
+    };
+    let unsigned = engine_api::app(AppState::new(runtime.pool.clone(), config.clone()));
+    assert_eq!(
+        request(
+            &unsigned,
+            "POST",
+            &format!("{base}/refs"),
+            &login,
+            target.clone()
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    let mut wrong = AppState::new(runtime.pool.clone(), config);
+    wrong.ref_signer = Some(std::sync::Arc::new(
+        Ed25519KeyPair::from_seed_unchecked(&[98; 32]).unwrap(),
+    ));
+    assert_eq!(
+        request(
+            &engine_api::app(wrong),
+            "POST",
+            &format!("{base}/refs"),
+            &login,
+            target.clone()
+        )
+        .await
+        .0,
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("select count(*) from project_ref_event")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        0
+    );
+    let first_response = ok(&app, "POST", &format!("{base}/refs"), &login, target).await;
+    let first_receipt: SignedReceipt =
+        serde_json::from_value(first_response["signed_receipt"].clone()).unwrap();
+    first_receipt.verify().unwrap();
+    // Trust this independently supplied test key, not the endpoint/receipt's own claim.
+    let trusted_key = Ed25519KeyPair::from_seed_unchecked(&[99; 32]).unwrap();
+    let trusted_public = hex::encode(trusted_key.public_key().as_ref());
+    let pin = Pin::trust_checkpoint(
+        &first_receipt.receipt.scope,
+        &trusted_public,
+        first_receipt.clone(),
+    )
+    .unwrap();
+    let authority = ok(
+        &app,
+        "GET",
+        &format!("{base}/authority"),
+        &login,
+        Value::Null,
+    )
+    .await;
+    assert_eq!(authority["public_key"], trusted_public);
+    assert_eq!(
+        authority["authority"],
+        json!(first_receipt.receipt.scope.authority)
+    );
+    let second_target =
+        json!({"branch":"main","candidate":second,"expected":{"commit":first,"generation":1}});
+    sqlx::query("update project_settings set required_approvals=1 where space_id=$1")
+        .bind(project)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        request(
+            &app,
+            "POST",
+            &format!("{base}/refs"),
+            &login,
+            second_target.clone()
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    ok(
+        &app,
+        "POST",
+        &format!("{base}/reviews"),
+        &reviewer,
+        json!({"target":second_target,"decision":"approve"}),
+    )
+    .await;
+    sqlx::query("update project_history_storage set row_limit=rows_used where project_id=$1")
+        .bind(project)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        request(
+            &app,
+            "POST",
+            &format!("{base}/refs"),
+            &login,
+            second_target.clone()
+        )
+        .await
+        .0,
+        StatusCode::INSUFFICIENT_STORAGE
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("select count(*) from project_ref_event")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "select count(*) from operation_audit where action='project.ref_advanced'"
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        1
+    );
+    sqlx::query("update project_history_storage set row_limit=1000000 where project_id=$1")
+        .bind(project)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let second_response = ok(&app, "POST", &format!("{base}/refs"), &login, second_target).await;
+    let second_receipt: SignedReceipt =
+        serde_json::from_value(second_response["signed_receipt"].clone()).unwrap();
+    assert_eq!(
+        second_receipt.receipt.previous,
+        Some(first_receipt.verify().unwrap())
+    );
+    let proof = ok(
+        &app,
+        "GET",
+        &format!("{base}/receipts?branch=main&after_generation=1&limit=1"),
+        &login,
+        Value::Null,
+    )
+    .await;
+    let receipts: Vec<SignedReceipt> = serde_json::from_value(proof["items"].clone()).unwrap();
+    assert_eq!(receipts, vec![second_receipt.clone()]);
+    let advanced = pin.advance(&receipts).unwrap();
+    assert_eq!(
+        &advanced.receipt().receipt.head,
+        &second_receipt.receipt.head
+    );
+    assert!(
+        advanced.advance(&[first_receipt]).is_err(),
+        "rollback must fail against saved client trust"
+    );
+    assert_eq!(
+        ok(
+            &app,
+            "GET",
+            &format!("{base}/receipts?branch=main&after_generation=2"),
+            &login,
+            Value::Null
+        )
+        .await["items"],
+        json!([])
+    );
+    assert_eq!(
+        request(
+            &app,
+            "GET",
+            &format!("{base}/receipts?branch=main&after_generation=3"),
+            &login,
+            Value::Null
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        ok(
+            &app,
+            "GET",
+            &format!("{base}/refs?branch=main"),
+            &login,
+            Value::Null
+        )
+        .await["receipts"],
+        json!([second_receipt])
+    );
+    assert!(sqlx::query(
+        "insert into project_ref_authority(singleton,public_key) values(true,repeat('a',64))"
+    )
+    .execute(&runtime.pool)
+    .await
+    .is_err());
     runtime.close().await;
 }

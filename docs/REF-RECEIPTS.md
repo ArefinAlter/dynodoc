@@ -2,9 +2,10 @@
 
 12 October 2026. The core provides versioned Ed25519 branch-head receipts,
 contiguous proof verification, dual-signed authority rotation, and a separate
-SQLite client trust journal. These are integration primitives and offline CLI
-tools. The production API does not yet issue these receipts, register device
-keys, distribute authority keys, or contact an external witness.
+SQLite client trust journal. Schema 36 now [issues these receipts atomically with shared branch updates](SHARED-PROJECT-HISTORY.md),
+using an operator-installed public binding and separately mounted signing key.
+The production schema-29 pilot has not received this source update. Authority
+distribution, server rotation and external witnesses remain open.
 
 A receipt binds a stable authority UUID, project UUID, branch, commit address,
 ref generation, previous receipt address, declared issuance time and signing
@@ -13,7 +14,8 @@ canonical sorted-key JSON. Ed25519 signs `dynodoc.ref-receipt-signature\0v1\0`
 followed by the raw 32-byte receipt address. The canonical envelope limit is
 4096 bytes. Generation one has no predecessor; subsequent generations require
 one. Generations count accepted ref updates, including a move back to an older
-commit; receipt continuity does not imply a fast-forward-only branch policy.
+commit; receipt continuity alone does not imply a fast-forward-only branch policy.
+The current hosted shared-ref service independently enforces fast-forward updates.
 
 The independent fixture [ref-receipt-v1.json](../crates/engine-core/tests/fixtures/ref-receipt-v1.json)
 pins canonical bytes and address

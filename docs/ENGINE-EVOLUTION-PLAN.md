@@ -15,18 +15,20 @@ implementation with signed commits, parent history, branch CAS and transfer prim
 Part 6 now has [portable ref receipts and a separate client trust journal](REF-RECEIPTS.md),
 with independent signature vectors, contiguous proof checks, authority rotation
 and durable local revocation. Schema 33 adds [account/device binding and permanent
-revocation](DEVICE-SIGNING-KEYS.md). Atomic server issuance, authority distribution,
-witnesses and connector adoption remain open. Schema 34 adds [durable shared-object
+revocation](DEVICE-SIGNING-KEYS.md). Schema 36 now provides atomic server issuance with protected project refs;
+authority distribution/rotation, witnesses and connector adoption remain open. Schema 34 adds [durable shared-object
 budgets](SHARED-STORAGE-BUDGETS.md). Local SQLite schema 2 now adds persistent
 [object/commit/branch capacity](LOCAL-STORAGE-BUDGETS.md). Physical storage packing,
 whole-device capacity and explicit local retention/GC remain separate work.
 Schema 35 adds [private project transfers](PRIVATE-PROJECT-TRANSFERS.md):
 account-scoped object negotiation, signed multi-file commit staging, current
-permission/key checks, logical staging quotas and transitive erasure. Shared
-publication/discovery, protected refs/review and atomic receipts remain open.
+permission/key checks, logical staging quotas and transitive erasure. [Shared candidate publication](SHARED-PROJECT-HISTORY.md), verified reachable
+object reads, protected main refs/reviews and atomic receipts are implemented in
+schema 36. Automatic selected-root push/fetch, remote tracking and UI/native
+adoption remain open.
 Part 3 also has local [commit-addressed recovery](PROJECT-COMMIT-RECOVERY.md):
 revert/cherry-pick with signed source references, explicit mainline selection and
-checked conflict resolutions. Hosted project review/UI integration remains open.
+checked conflict resolutions. Hosted project UI integration remains open.
 Continue storage adoption/packing and authenticated transport/connector integration;
 these sources do not yet complete either part. Request admission is not a full-state memory
 bound; independent audit part 6, native-host acceptance and large-service limits

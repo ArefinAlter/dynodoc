@@ -1,5 +1,39 @@
 # Dynodoc: intent, current implementation and remaining work
 
+## Source: shared publication, protected refs and receipts (12 October 2026)
+
+Schema 36 adds [shared project history](SHARED-PROJECT-HISTORY.md): explicit
+candidate publication, reachable-object downloads, published multi-author ancestry,
+fast-forward branch CAS and exact candidate/base reviews. Main applies current
+project/file policy floors and independent approvals; contributors can advance
+feature branches. Ref generation, signed receipt and audit entry commit atomically.
+Receipts bind an operator-installed public authority and use the existing client
+pin/journal contract. API signing keys must be explicitly mounted outside the DB;
+there is no unsigned fallback or silent replacement of the installed authority.
+
+Published metadata has per-project byte/row/branch quotas. Identical file roots
+reuse reachability indexes. Full graph scans, full commit manifests and changed-root
+index amplification remain. Document erasure removes affected envelopes and their
+descendants/reviews while retaining opaque receipt generations; affected heads
+become unavailable and never fall back. Account erasure clears private work while
+shared publications retain pseudonymous authorship and current access checks.
+
+The ten real-router transfer/publication tests pass, including atomic receipts,
+independent client pin advancement, failed-write rollback and concurrent CAS.
+Standalone task lint passes. Full-suite, docs/generated contracts, exact source
+revisions and CI results are being finalized and must be recorded before sign-off. Only synthetic isolated data
+is used. No installed Office/Google acceptance or VPS upgrade is claimed.
+Production remains recorded at `858801c`, schema 29, shared writers off. Schema 36
+needs matching grants, receipt-key provisioning, a production-copy rehearsal and
+schema-compatible rollback images before deployment.
+
+Next: selected-root authenticated push/fetch and remote tracking; project-scoped
+device sessions; Projects/native branch/review adoption. Authority distribution,
+server rotation, independent witnesses, audited erased-branch reinitialization,
+reachability GC, complete same-file offline convergence, packing and large-workload
+acceptance remain open. These APIs do not advance centralized per-file events or
+replace web drafts. The full roadmap is not complete.
+
 ## Source: private project history transfers (12 October 2026)
 
 Schema 35 adds account-private authenticated object/commit exchange, described in

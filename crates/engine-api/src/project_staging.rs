@@ -18,7 +18,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
 const MAX_SCOPE: usize = 256;
-const READ_LIMIT: Limits = Limits {
+pub(crate) const READ_LIMIT: Limits = Limits {
     max_objects: 65_536,
     max_bytes: 64 * 1024 * 1024,
 };
@@ -37,18 +37,18 @@ pub fn router() -> Router<AppState> {
         .route("/projects/:id/staging/storage", get(storage))
         .layer(DefaultBodyLimit::max(1_500_000))
 }
-fn bad(reason: &str) -> ApiError {
+pub(crate) fn bad(reason: &str) -> ApiError {
     ApiError::BadRequest {
         reason: reason.into(),
     }
 }
-fn content_error(error: shared_checkpoint::Error) -> ApiError {
+pub(crate) fn content_error(error: shared_checkpoint::Error) -> ApiError {
     match error {
         shared_checkpoint::Error::Db(e) => e.into(),
         _ => bad("Invalid, unavailable or oversized staged object graph"),
     }
 }
-fn history_error(error: engine_core::repository::Error) -> ApiError {
+pub(crate) fn history_error(error: engine_core::repository::Error) -> ApiError {
     match error {
         engine_core::repository::Error::Db(e) => e.into(),
         _ => bad("Invalid signed project history or recovery"),
@@ -58,7 +58,7 @@ fn history_error(error: engine_core::repository::Error) -> ApiError {
 /// Account first, documents in UUID order, then their immutable space ancestry.
 /// Document SHARE locks also serialize Trash, moves and direct membership changes.
 /// Each permission is read again after waiting for the locks.
-async fn authorize(
+pub(crate) async fn authorize(
     tx: &mut Transaction<'_, Postgres>,
     auth: &AuthContext,
     project: Uuid,
@@ -67,7 +67,7 @@ async fn authorize(
 ) -> Result<(), ApiError> {
     if scope.len() > MAX_SCOPE {
         return Err(bad(
-            "Private transfer scope is limited to 256 historical files",
+            "Project history scope is limited to 256 historical files",
         ));
     }
     let locked: Vec<Uuid> =
@@ -106,7 +106,7 @@ async fn authorize(
     }
     Ok(())
 }
-async fn start(
+pub(crate) async fn start(
     state: &AppState,
     auth: &AuthContext,
 ) -> Result<Transaction<'static, Postgres>, ApiError> {
@@ -224,12 +224,13 @@ async fn inventory(
 }
 
 /// Only acknowledged bytes, with a global budget across every file in a commit.
-struct PrivateStore<'a> {
-    db: &'a mut PgConnection,
-    actor: Uuid,
-    project: Uuid,
-    budget: Limits,
-    prefetched: BTreeMap<(Uuid, Address), Vec<u8>>,
+pub(crate) struct PrivateStore<'a> {
+    pub(crate) db: &'a mut PgConnection,
+    pub(crate) actor: Uuid,
+    pub(crate) project: Uuid,
+    pub(crate) budget: Limits,
+    pub(crate) prefetched: BTreeMap<(Uuid, Address), Vec<u8>>,
+    pub(crate) seen: BTreeSet<(Uuid, Address)>,
 }
 impl ObjectStore for PrivateStore<'_> {
     async fn prefetch(
@@ -283,6 +284,7 @@ impl ObjectStore for PrivateStore<'_> {
             .checked_sub(bytes.len())
             .ok_or(shared_checkpoint::Error::Limit("bytes"))?;
         shared_checkpoint::validate_stored(address, &bytes)?;
+        self.seen.insert((document.0, address.clone()));
         Ok(bytes)
     }
 }
@@ -300,6 +302,7 @@ async fn object(
         project: id,
         budget: READ_LIMIT,
         prefetched: BTreeMap::new(),
+        seen: BTreeSet::new(),
     }
     .get(DocumentId(document), &address)
     .await
@@ -313,12 +316,12 @@ async fn object(
     ))
 }
 
-struct Stored {
-    signed: SignedCommit,
-    scope: Vec<Uuid>,
-    height: i64,
+pub(crate) struct Stored {
+    pub(crate) signed: SignedCommit,
+    pub(crate) scope: Vec<Uuid>,
+    pub(crate) height: i64,
 }
-async fn load(
+pub(crate) async fn load(
     db: &mut PgConnection,
     actor: Uuid,
     project: Uuid,
@@ -372,7 +375,13 @@ async fn stage(
     let mut dependencies = BTreeMap::new();
     let mut height = 0;
     for dependency in signed.commit.dependencies() {
-        let stored = load(&mut tx, auth.identity_id, id, &dependency).await?;
+        let stored = match load(&mut tx, auth.identity_id, id, &dependency).await {
+            Ok(stored) => stored,
+            Err(ApiError::NotFound) => {
+                crate::project_history::load(&mut tx, id, &dependency).await?
+            }
+            Err(error) => return Err(error),
+        };
         scope.extend(stored.scope.iter());
         if signed.commit.parents.contains(&dependency) {
             height = height.max(stored.height + 1);
@@ -409,6 +418,7 @@ async fn stage(
         project: id,
         budget: READ_LIMIT,
         prefetched: BTreeMap::new(),
+        seen: BTreeSet::new(),
     };
     for file in signed.commit.files.values() {
         typed::read_state(

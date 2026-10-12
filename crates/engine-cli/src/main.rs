@@ -56,6 +56,8 @@ enum Command {
     Migrate,
     /// Give an existing restricted login the explicit runtime allowlist (operator only).
     GrantRuntime { role: String },
+    /// Install the public receipt key using operator credentials; never replaces a key.
+    InstallRefAuthority { public_key: String },
     /// Check schema and runtime privileges using DATABASE_URL; makes no changes.
     CheckRuntime,
     /// Independently verify the event chain and all legacy snapshots.
@@ -143,6 +145,15 @@ async fn main() -> anyhow::Result<()> {
         Command::GrantRuntime { role } => {
             engine_core::database::grant_runtime(&connect_migration().await?, &role).await?;
             println!("Runtime grants verified for {role}; connect directly using its separate credentials.");
+            Ok(())
+        }
+        Command::InstallRefAuthority { public_key } => {
+            let id = engine_core::repository::server_authority::install(
+                &connect_migration().await?,
+                &public_key,
+            )
+            .await?;
+            println!("Installed receipt authority {id}; distribute this identity and public key through a trusted channel.");
             Ok(())
         }
         Command::CheckRuntime => {

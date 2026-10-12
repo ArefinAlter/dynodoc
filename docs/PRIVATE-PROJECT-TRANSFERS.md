@@ -3,13 +3,13 @@
 12 October 2026. PostgreSQL schema 35; portable commit encodings and SQLite schema
 2 are unchanged. This is an authenticated private staging protocol. Uploading a
 commit does not change a project branch, create a review or update any team file.
-Protected shared refs, publication receipts and native connector adoption remain
-the next dependencies. These sources are not deployed to the schema-29 pilot.
+Schema 36 adds a separate [shared publication/ref/review/receipt protocol](SHARED-PROJECT-HISTORY.md).
+Native connector adoption and automatic network commands remain open. These sources are not deployed to the schema-29 pilot.
 
 A signed-in account can upload typed objects, resume by asking which supplied
 addresses are missing, stage signed multi-file commits and retrieve those exact
-commits on another device. All dependencies must already have been staged by the
-same account. The server verifies signatures, dependency scope, recovery semantics
+commits on another device. Dependencies must already be staged by the same account or, since schema 36,
+explicitly published in the project by an authorized author. The server verifies signatures, dependency scope, recovery semantics
 and complete typed file graphs before acknowledging a new commit. Accepted history
 survives signing-key revocation; new commits need an active enrolled key belonging
 to the current account. A self-declared signing time is not a trusted timestamp.

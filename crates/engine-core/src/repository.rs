@@ -17,6 +17,7 @@ pub mod device;
 pub mod local;
 pub mod receipt_journal;
 pub mod recovery;
+pub mod server_authority;
 
 pub const MAX_FILES: usize = 4096;
 pub const MAX_COMMIT_BYTES: usize = 1024 * 1024;

@@ -52,7 +52,21 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("runtime database boundary check failed")?;
 
-    let state = AppState::new(pool, config);
+    let mut state = AppState::new(pool, config);
+    if let Some(path) = std::env::var_os("DYNODOC_REF_SIGNING_KEY_FILE") {
+        use engine_core::repository::server_authority;
+        use ring::signature::KeyPair;
+        let key = server_authority::load_key(std::path::Path::new(&path))?;
+        let mut authority_connection = state.pool.acquire().await?;
+        let (_, installed) = server_authority::binding(&mut authority_connection)
+            .await
+            .context("install the receipt public key with the separate operator command first")?;
+        anyhow::ensure!(
+            installed == hex::encode(key.public_key().as_ref()),
+            "receipt signing key does not match the installed authority"
+        );
+        state.ref_signer = Some(std::sync::Arc::new(key));
+    }
     // Copy detection runs beside the edit path, never inside it.
     engine_api::copies::spawn(state.clone());
 
