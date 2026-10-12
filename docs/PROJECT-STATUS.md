@@ -18,30 +18,41 @@ Audited document erasure removes affected envelopes and all descendant envelopes
 even after they remove the file; account erasure removes its private staging.
 The CLI can inventory/export/import the same bounded base64 object packets.
 
-Implementation is pushed to main: application `2d5f613`, standalone engine
-`1a4e6fb`. [Application Rust CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38210908540)
-and [standalone CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38210916051)
-passed, including all 344 Linux engine tests, unchanged 100 ms SSE acceptance,
-Clippy, documentation and OpenAPI consistency. Five new restricted-runtime tests
-cover transfer into a second SQLite repository, metadata privacy, revoked-key
-history, recovery, scope/Trash/move checks, quota rollback/concurrent spending,
-permission changes during a lock wait and document/account erasure.
+Final tested code is pushed to main: application `be538a6`, standalone engine
+`554afec` (initial implementation `2d5f613` / `1a4e6fb`).
+[Application Rust CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38212242810),
+[standalone CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38212247413)
+and [frontend CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38212242806)
+all passed, including both frontend build/test and authenticated browser workflows.
+The complete Linux engine suite passed all 344 tests, including the unchanged
+100 ms SSE assertion. Five new restricted-runtime tests cover transfer into a
+second SQLite repository, privacy, revoked-key history, recovery, current scopes,
+quota rollback/concurrent spending, permission changes during a lock wait and
+both erasure paths.
 
-The actual CLI packet smoke passed: a second database reconstructs the same state,
-retry inserts zero objects, invalid packets roll back and no local ref moves.
-Standalone task lint and local frontend lint/Svelte checks pass (zero diagnostics).
-Generated web API types are updated, and standalone MIT/contact metadata preserved.
-The first frontend CI attempt failed before tests because floating pnpm 10 resolved
-to a 404 tarball. Application `fdb7624` pins verified pnpm 10.34.6; its archive was
-checked successfully and [frontend/browser CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38211132718)
-passed both build/test and authenticated browser jobs. The full local Windows
-suite and its isolated recheck both failed the unchanged 100 ms SSE deadline.
-The separate local run excluding only that assertion caught a test-cleanup race:
-SQLite can release its final Windows handle just after Pool::close. The test now
-uses the existing bounded retry for sharing errors 32/33; all other cleanup errors
-still fail. The local run with that fix is in progress. This is not a clean local
-full-suite result or a certified Windows latency guarantee; the complete Linux
-suite passed as recorded above. No timing threshold was relaxed.
+Local verification: standalone task lint and task docs pass; documentation retains
+its existing warnings. Generated OpenAPI exactly matches the committed Git blob,
+including standalone MIT/contact metadata; the initial raw working-file hash check
+was sensitive to Windows line endings. Web API types are regenerated, and local
+frontend lint/Svelte checks pass with zero diagnostics. The actual CLI packet smoke
+reconstructs the same state in another database, inserts zero objects on retry,
+rolls back invalid packets and leaves the local branch unchanged.
+
+The full Windows task test run and an isolated recheck both failed the existing
+100 ms SSE deadline. A separate full run explicitly excluding only that assertion
+passed all 343 remaining tests. Its earlier attempt exposed a test-cleanup race:
+SQLite releases its final Windows handle shortly after Pool::close. The test now
+uses the existing bounded retry for sharing errors 32/33; other cleanup failures
+remain fatal, and the final run passed. This is not a clean local full-suite result
+or a certified Windows latency guarantee. No timing threshold or CI coverage was
+relaxed. Linux full-suite acceptance is recorded above.
+
+The first frontend CI attempt failed during package-manager setup: floating pnpm
+10 resolved to an unavailable tarball. Application `fdb7624` pins pnpm 10.34.6,
+whose npm archive was verified with HTTP 200; both subsequent frontend/browser CI
+runs passed. Task-owned PostgreSQL and synthetic SQLite scratch files are removed.
+No task test servers remain. Ignored logs are retained under application target/.
+No installed Office/Google host, real invitation or production data was exercised.
 
 Last recorded VPS release: application `858801c`/schema 29, shared writers off.
 No VPS deployment or production migration occurred in this pass. Source schema 35 needs compatible runtime grants
