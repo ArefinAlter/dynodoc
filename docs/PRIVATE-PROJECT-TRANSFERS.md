@@ -4,7 +4,9 @@
 2 are unchanged. This is an authenticated private staging protocol. Uploading a
 commit does not change a project branch, create a review or update any team file.
 Schema 36 adds a separate [shared publication/ref/review/receipt protocol](SHARED-PROJECT-HISTORY.md).
-Native connector adoption and automatic network commands remain open. These sources are not deployed to the schema-29 pilot.
+[Selected-history CLI synchronization](SELECTED-HISTORY-SYNC.md) now automates
+reviewed push, verified fetch, fast-forward pull and pinned remote tracking. Native
+connector/project sign-in adoption remains open. These sources are not deployed to the schema-29 pilot.
 
 A signed-in account can upload typed objects, resume by asking which supplied
 addresses are missing, stage signed multi-file commits and retrieve those exact
@@ -126,8 +128,10 @@ engine-cli repository DB PROJECT import-commit signed.json
 `batch.json` uses the upload JSON shape above. Local imports verify addresses,
 enforce persistent capacity and never move a branch. These CLI commands do not
 contact a remote or provide a new login flow. Do not blindly publish local
-inventory: it can contain unrelated staged/private objects. Automatic selected-root
-push/fetch, durable remote tracking refs and shared review/publication remain work.
+inventory: it can contain unrelated staged/private objects. [Selected-history synchronization](SELECTED-HISTORY-SYNC.md) uses only explicit
+candidate dependencies/reachable graphs and a separate receipt journal for remote
+tracking. Shared review/publication is implemented by schema 36. Connector/UI
+adoption remains open.
 
 ## Evidence and next integration
 

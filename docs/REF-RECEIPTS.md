@@ -4,6 +4,9 @@
 contiguous proof verification, dual-signed authority rotation, and a separate
 SQLite client trust journal. Schema 36 now [issues these receipts atomically with shared branch updates](SHARED-PROJECT-HISTORY.md),
 using an operator-installed public binding and separately mounted signing key.
+[Selected-history CLI sync](SELECTED-HISTORY-SYNC.md) verifies contiguous proofs
+and records remote heads in this separate journal; no key is silently trusted
+from the server authority endpoint.
 The production schema-29 pilot has not received this source update. Authority
 distribution, server rotation and external witnesses remain open.
 

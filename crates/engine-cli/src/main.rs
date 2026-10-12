@@ -21,6 +21,7 @@ mod device;
 mod receipt;
 mod repository;
 mod signing;
+mod sync;
 
 #[derive(Parser)]
 #[command(name = "engine-cli", version, about = "dynodoc admin tools")]
@@ -31,6 +32,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Selected-history transfer. Remote heads are pinned separately from local branches.
+    Sync(sync::Options),
     /// Enroll a local signing key in an authenticated Dynodoc account.
     Device {
         #[command(subcommand)]
@@ -112,6 +115,7 @@ async fn main() -> anyhow::Result<()> {
 
     let cli = Cli::parse();
     match cli.command {
+        Command::Sync(options) => sync::run(options).await,
         Command::Device { action } => device::run(action),
         Command::Receipt {
             journal,

@@ -26,6 +26,9 @@ add continuity checks, authority rotation and persistent local revocation.
 authenticated object/commit staging, durable quotas and current access/erasure
 checks in schema 35; uploading does not publish a shared branch. Schema 36 adds
 [shared publication, protected refs/review and atomic signed receipts](docs/SHARED-PROJECT-HISTORY.md).
+[Selected-history CLI synchronization](docs/SELECTED-HISTORY-SYNC.md) now provides
+reviewed push, verified fetch, fast-forward pull and separately pinned remote heads.
+Project-scoped sign-in and web/native adoption of this contract remain open.
 Read [the acceptance ledger](docs/ROADMAP-ACCEPTANCE.md) and
 [verified handoff](docs/ENGINE-EVOLUTION-HANDOFF.md) for exact source/production boundaries.
 

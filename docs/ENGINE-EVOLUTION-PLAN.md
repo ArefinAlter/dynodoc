@@ -24,8 +24,10 @@ Schema 35 adds [private project transfers](PRIVATE-PROJECT-TRANSFERS.md):
 account-scoped object negotiation, signed multi-file commit staging, current
 permission/key checks, logical staging quotas and transitive erasure. [Shared candidate publication](SHARED-PROJECT-HISTORY.md), verified reachable
 object reads, protected main refs/reviews and atomic receipts are implemented in
-schema 36. Automatic selected-root push/fetch, remote tracking and UI/native
-adoption remain open.
+schema 36. [Selected-history CLI sync](SELECTED-HISTORY-SYNC.md) now adds explicit
+publication plans, reachable-object transfer/reuse, verified fetch, separate pinned
+remote tracking and local CAS fast-forward pull. Project-scoped sign-in and
+UI/native adoption remain open.
 Part 3 also has local [commit-addressed recovery](PROJECT-COMMIT-RECOVERY.md):
 revert/cherry-pick with signed source references, explicit mainline selection and
 checked conflict resolutions. Hosted project UI integration remains open.

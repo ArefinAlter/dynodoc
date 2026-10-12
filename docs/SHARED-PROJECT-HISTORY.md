@@ -176,7 +176,9 @@ tests in the run explicitly excluding its failing 100 ms SSE deadline. The actua
 operator CLI/key-file startup smoke also passed. Exact evidence and deployment
 boundaries are recorded in [the handoff](ENGINE-EVOLUTION-HANDOFF.md).
 
-Projects UI adoption, automatic network push/pull, connector project authentication,
+[Selected-history CLI sync](SELECTED-HISTORY-SYNC.md) now automates reviewed
+push/fetch, fast-forward pull and pinned remote tracking. Projects UI adoption,
+connector project authentication,
 complete offline same-file convergence, installed-host/marketplace acceptance,
 independent authority distribution and large-file/service measurements remain open.
 The existing web editors and pilot upload cap remain in place.

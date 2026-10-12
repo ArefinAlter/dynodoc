@@ -2,8 +2,8 @@
 
 Schema 35 adds [authenticated private project transfers](PRIVATE-PROJECT-TRANSFERS.md)
 around these local primitives. Schema 36 adds [shared publication, protected refs
-and server receipts](SHARED-PROJECT-HISTORY.md). Automatic network commands and
-native/UI adoption remain separate work; the dated local implementation below
+and server receipts](SHARED-PROJECT-HISTORY.md). [Selected-history CLI push/fetch, fast-forward pull and remote tracking](SELECTED-HISTORY-SYNC.md)
+now connect these contracts. Native/UI adoption remains separate work; the dated local implementation below
 still applies.
 
 12 October 2026. Source implementation in `engine_core::repository` introduces a
