@@ -1404,6 +1404,22 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/projects/{id}/history/commits/{address}/acknowledge': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations['project_history_acknowledge'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/projects/{id}/history/commits/{address}/objects/{document}': {
     parameters: {
       query?: never;
@@ -5446,6 +5462,47 @@ export interface operations {
         content: {
           'application/json': unknown;
         };
+      };
+    };
+  };
+  project_history_acknowledge: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+        address: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': unknown;
+      };
+    };
+    responses: {
+      /** @description Privately acknowledge up to 256 objects reachable from an authorized published file state, without uploading their bytes again */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description An object is not reachable from this publication; nothing acknowledged */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Private staging quota reached; nothing acknowledged */
+      507: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
     };
   };

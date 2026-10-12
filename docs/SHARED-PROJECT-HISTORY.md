@@ -13,9 +13,10 @@ Then explicitly publish its address. Its author must be the signed-in account
 with an active enrolled device key; project and every historical file must still
 allow contribution. Publish dependencies first, including recovery sources.
 Staging can now use another author's already published dependency, but cannot use
-another account's private staging. For now, each account must still supply full
-bytes for its own private object acknowledgements, even for downloaded shared
-objects. Automatic selected-root push/fetch and remote tracking remain open.
+another account's private staging. A contributor can privately acknowledge up to 256 reached objects from an
+authorized published file state without uploading those bytes again. The whole
+batch fails if any address is not reached or the private quota is exceeded; exact
+retries are free. Only genuinely new/private objects need full-byte uploads. Automatic selected-root push/fetch and remote tracking remain open.
 
 Publication revalidates all typed file graphs and records only reached object
 addresses. Unrelated uploads, private drafts and guessed hashes confer no shared
@@ -110,6 +111,7 @@ File connector grants are not broadened to project authority.
 |---|---|
 | POST `/commits` | `{address}` publishes an own staged candidate; exact accepted retry is free. |
 | GET `/commits/{address}` | Original signed commit envelope. |
+| POST `/commits/{address}/acknowledge` | `{document,addresses}` (1-256); privately acknowledge published objects without retransmitting their bytes. |
 | GET `/commits/{address}/objects/{document}` | `after` address and `limit` (1–256); returns only that file state's reachable keys. |
 | GET `/commits/{address}/objects/{document}/{object}` | Hash-verified `{address,bytes}` base64 packet. |
 | POST `/refs` | `{branch,candidate,expected}`; returns head and `signed_receipt`. |
@@ -138,7 +140,7 @@ by these logical metadata counters.
 New publication retains the staging limits of 256 historical files, 65,536 object
 reads and 64 MiB encoded reads across all files. Fast-forward traversal is batched
 and capped at 10,000 visited commits. At most 256 distinct reviewers participate
-per candidate/base. The HTTP mutation body cap is 16 KiB. Existing workload admission
+per candidate/base. The HTTP mutation body cap is 20 KiB. Existing workload admission
 and database/request timeouts still apply. Full graph validation/materialization
 and complete commit file manifests remain; this is not changed-node publication
 or constant-memory native-file ingest. A changed state root currently gets a full

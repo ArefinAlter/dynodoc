@@ -12,16 +12,28 @@ pin/journal contract. API signing keys must be explicitly mounted outside the DB
 there is no unsigned fallback or silent replacement of the installed authority.
 
 Published metadata has per-project byte/row/branch quotas. Identical file roots
-reuse reachability indexes. Full graph scans, full commit manifests and changed-root
+reuse reachability indexes. Contributors can acknowledge up to 256 objects from
+an explicitly selected authorized publication without uploading the same bytes
+again. Private hashes remain inaccessible; mixed invalid/quota-limited batches
+roll back and exact retries are free. Full graph scans, full commit manifests and changed-root
 index amplification remain. Document erasure removes affected envelopes and their
 descendants/reviews while retaining opaque receipt generations; affected heads
 become unavailable and never fall back. Account erasure clears private work while
 shared publications retain pseudonymous authorship and current access checks.
 
-The ten real-router transfer/publication tests pass, including atomic receipts,
-independent client pin advancement, failed-write rollback and concurrent CAS.
-Standalone task lint passes. Full-suite, docs/generated contracts, exact source
-revisions and CI results are being finalized and must be recorded before sign-off. Only synthetic isolated data
+Initial publication/receipt commits are application `0d501ca` and engine `15cc6c4`.
+[Application Rust CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38223880655),
+[standalone CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38223883892)
+and [frontend/browser CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38223881119)
+passed. Linux ran all 350 tests, including the unchanged 100 ms SSE deadline.
+The shared-object acknowledgement follow-up passes its focused privacy, atomic
+quota/retry and 256-address boundary test; final follow-up CI is still pending.
+The initial 16 KiB body cap was too small for 256 addresses; it is now 20 KiB.
+Standalone lint and docs pass (existing documentation warnings), and local frontend
+lint/Svelte checks pass with zero diagnostics. Generated contracts are updated.
+The Windows full suite again failed the existing 100 ms SSE assertion; the full
+run explicitly excluding only that test is still being finalized. This does not
+certify a Windows latency guarantee. Only synthetic isolated data
 is used. No installed Office/Google acceptance or VPS upgrade is claimed.
 Production remains recorded at `858801c`, schema 29, shared writers off. Schema 36
 needs matching grants, receipt-key provisioning, a production-copy rehearsal and

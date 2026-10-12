@@ -36,6 +36,10 @@ pub fn router() -> Router<AppState> {
         .route("/projects/:id/history/commits", post(publish))
         .route("/projects/:id/history/commits/:address", get(commit))
         .route(
+            "/projects/:id/history/commits/:address/acknowledge",
+            post(acknowledge),
+        )
+        .route(
             "/projects/:id/history/commits/:address/objects/:document",
             get(inventory),
         )
@@ -48,7 +52,7 @@ pub fn router() -> Router<AppState> {
         .route("/projects/:id/history/storage", get(storage))
         .route("/projects/:id/history/authority", get(authority))
         .route("/projects/:id/history/receipts", get(receipts))
-        .layer(DefaultBodyLimit::max(16 * 1024))
+        .layer(DefaultBodyLimit::max(20 * 1024))
 }
 
 pub(crate) async fn load(
@@ -255,6 +259,52 @@ async fn object(
     Ok(Json(
         json!({"address":object,"bytes":STANDARD.encode(bytes)}),
     ))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Acknowledge {
+    document: Uuid,
+    addresses: Vec<Address>,
+}
+#[utoipa::path(operation_id="project_history_acknowledge",post,path="/projects/{id}/history/commits/{address}/acknowledge",tag="project history",params(("id"=Uuid,Path),("address"=String,Path)),request_body=Value,security(("paseto"=[])),responses((status=200,description="Privately acknowledge up to 256 objects reachable from an authorized published file state, without uploading their bytes again",body=Value),(status=404,description="An object is not reachable from this publication; nothing acknowledged"),(status=507,description="Private staging quota reached; nothing acknowledged")))]
+async fn acknowledge(
+    State(state): State<AppState>,
+    auth: AuthContext,
+    Path((id, address)): Path<(Uuid, Address)>,
+    Json(input): Json<Acknowledge>,
+) -> Result<Json<Value>, ApiError> {
+    if input.addresses.is_empty() || input.addresses.len() > 256 {
+        return Err(bad("Acknowledge 1 to 256 published objects"));
+    }
+    let mut tx = start(&state, &auth).await?;
+    let published = load(&mut tx, id, &address).await?;
+    authorize(&mut tx, &auth, id, &published.scope, false).await?;
+    authorize(&mut tx, &auth, id, &[input.document], true).await?;
+    let root = published
+        .signed
+        .commit
+        .files
+        .values()
+        .find(|f| f.document.0 == input.document)
+        .ok_or(ApiError::NotFound)?
+        .state
+        .as_str();
+    let keys: BTreeSet<_> = input.addresses.iter().map(Address::as_str).collect();
+    let keys: Vec<_> = keys.into_iter().collect();
+    // Immutable publication already verified these bytes. Only reached objects
+    // qualify; staging and downloads still verify every content address on read.
+    let rows:Vec<(String,i64)>=sqlx::query_as("select p.address,octet_length(o.bytes)::bigint from project_published_object p join checkpoint_object o using(document_id,address) where p.project_id=$1 and p.state_root=$2 and p.document_id=$3 and p.address=any($4)")
+        .bind(id).bind(root).bind(input.document).bind(&keys).fetch_all(&mut *tx).await?;
+    if rows.len() != keys.len() {
+        return Err(ApiError::NotFound);
+    }
+    let addresses: Vec<_> = rows.iter().map(|r| r.0.as_str()).collect();
+    let sizes: Vec<_> = rows.iter().map(|r| r.1).collect();
+    sqlx::query("insert into project_staged_object(identity_id,project_id,document_id,address,charged_bytes) select $1,$2,$3,u.a,u.b from unnest($4::text[],$5::bigint[]) as u(a,b) on conflict do nothing")
+        .bind(auth.identity_id).bind(id).bind(input.document).bind(addresses).bind(sizes).execute(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(Json(json!({"accepted":keys.len(),"published":false})))
 }
 
 #[derive(Deserialize)]
@@ -830,7 +880,17 @@ async fn receipts(
 }
 #[derive(utoipa::OpenApi)]
 #[openapi(paths(
-    publish, commit, inventory, object, advance, refs, review, reviews, storage, authority,
-    receipts
+    publish,
+    commit,
+    inventory,
+    object,
+    advance,
+    refs,
+    review,
+    reviews,
+    storage,
+    authority,
+    receipts,
+    acknowledge
 ))]
 pub struct ProjectHistoryApi;

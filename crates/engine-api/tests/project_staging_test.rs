@@ -1215,9 +1215,99 @@ async fn shared_publication_exposes_only_reachable_objects_and_supports_another_
     .await
     .unwrap();
     assert_eq!(reconstructed, document_state());
-    // Staging accepts an already published parent from a different enrolled key.
-    // Object packets must still be supplied in full for this account's private graph.
-    upload(&app, &other, project, doc, &objects).await;
+    // Staging accepts another author's published ancestry and acknowledges only
+    // its reached objects. No content bytes need to travel back to the server.
+    let path = format!("{base}/commits/{}/acknowledge", address.as_str());
+    assert_eq!(
+        request(
+            &app,
+            "POST",
+            &path,
+            &other,
+            json!({"document":doc,"addresses":[root,secret]})
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "select count(*) from project_staged_object where identity_id=$1"
+        )
+        .bind(contributor)
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        0
+    );
+    sqlx::query("insert into project_staging_storage(identity_id,object_limit) values($1,0)")
+        .bind(contributor)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let acknowledgements = json!({"document":doc,"addresses":inventory["addresses"]});
+    assert_eq!(
+        request(&app, "POST", &path, &other, acknowledgements.clone())
+            .await
+            .0,
+        StatusCode::INSUFFICIENT_STORAGE
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "select count(*) from project_staged_object where identity_id=$1"
+        )
+        .bind(contributor)
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        0
+    );
+    sqlx::query("update project_staging_storage set object_limit=1000000 where identity_id=$1")
+        .bind(contributor)
+        .execute(&pool)
+        .await
+        .unwrap();
+    ok(&app, "POST", &path, &other, acknowledgements.clone()).await;
+    let used: i64 =
+        sqlx::query_scalar("select bytes_used from project_staging_storage where identity_id=$1")
+            .bind(contributor)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    ok(&app, "POST", &path, &other, acknowledgements).await;
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "select bytes_used from project_staging_storage where identity_id=$1"
+        )
+        .bind(contributor)
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        used
+    );
+    assert_eq!(
+        ok(
+            &app,
+            "POST",
+            &path,
+            &other,
+            json!({"document":doc,"addresses":vec![root.clone();256]})
+        )
+        .await["accepted"],
+        1
+    );
+    assert_eq!(
+        request(
+            &app,
+            "POST",
+            &path,
+            &other,
+            json!({"document":doc,"addresses":vec![root.clone();257]})
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
     let child = signed(
         project,
         doc,

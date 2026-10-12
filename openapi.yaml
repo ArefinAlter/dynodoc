@@ -2600,6 +2600,40 @@ paths:
               schema: {}
       security:
       - paseto: []
+  /projects/{id}/history/commits/{address}/acknowledge:
+    post:
+      tags:
+      - project history
+      operationId: project_history_acknowledge
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: address
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Privately acknowledge up to 256 objects reachable from an authorized published file state, without uploading their bytes again
+          content:
+            application/json:
+              schema: {}
+        '404':
+          description: An object is not reachable from this publication; nothing acknowledged
+        '507':
+          description: Private staging quota reached; nothing acknowledged
+      security:
+      - paseto: []
   /projects/{id}/history/commits/{address}/objects/{document}:
     get:
       tags:

@@ -26,7 +26,9 @@ membership. Project review protection is untouched because nothing is published.
 
 Bytes are deduplicated in the existing document-scoped shared store. A separate
 immutable acknowledgement records which account supplied each exact object in
-each project. Knowing a hash or having file access does not expose another
+each project. Schema 36 also accepts a scoped acknowledgement of bytes already
+reachable from an explicitly selected, authorized published commit, avoiding
+redundant cross-author uploads. Knowing a hash or having file access does not expose another
 person's drafts, cached snapshots or unsubmitted uploads. The upload response does
 not disclose global reuse. Missing-object queries and inventory consult only the
 current account's acknowledgements. There is no global commit/object directory.
