@@ -1276,6 +1276,27 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/profiles/{id}/activity': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Events authored by one account per UTC day. Your own calendar counts everything you
+     *     wrote; anyone else's counts only files in projects and folders you both belong to,
+     *     so no title, project or count outside that overlap is revealed.
+     */
+    get: operations['profile_activity'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/projects': {
     parameters: {
       query?: never;
@@ -1308,6 +1329,22 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/projects/{id}/activity': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations['project_activity_feed'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/projects/{id}/change-requests': {
     parameters: {
       query?: never;
@@ -1318,6 +1355,54 @@ export interface paths {
     get: operations['requests'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/projects/{id}/contributors': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations['project_contributors'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/projects/{id}/device-sessions': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations['device_session_issue'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/projects/{id}/device-sessions/challenge': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations['device_session_challenge'];
     delete?: never;
     options?: never;
     head?: never;
@@ -1763,6 +1848,19 @@ export interface components {
   schemas: {
     /** @enum {string} */
     Action: 'preview' | 'create';
+    ChallengeRequest: {
+      /** @description Lowercase hexadecimal Ed25519 public key of an enrolled device key. */
+      public_key: string;
+      /** @description One or more of `history:read`, `history:write`, `project:read`. */
+      scopes: string[];
+    };
+    /** @description Documentation shapes. The wire types are the engine-core session proof. */
+    ChallengeResponse: {
+      /** @description `{version,id,authority,public_key,project,scopes,nonce,issued_at_ms,expires_at_ms,token_ttl_seconds}` */
+      challenge: Record<string, never>;
+      /** @description Service MAC over the challenge; echo it unchanged. */
+      mac: string;
+    };
     /** @description `POST /ops/comment`. */
     CommentRequest: {
       body: string;
@@ -1802,6 +1900,17 @@ export interface components {
     CreateDocumentRequest: {
       languages?: string[];
       title: string;
+    };
+    DeviceToken: {
+      access_token: string;
+      /** Format: date-time */
+      expires_at: string;
+      /** Format: int64 */
+      expires_in: number;
+      /** Format: uuid */
+      project: string;
+      scopes: string[];
+      token_type: string;
     };
     /** @description `POST /ops/field-edit`. */
     FieldEditRequest: {
@@ -1877,6 +1986,16 @@ export interface components {
       accept_suggestion_id?: string | null;
       /** @description Override all proposals with this custom value. */
       custom_value?: unknown;
+    };
+    SessionAnswer: {
+      /** @description The challenge exactly as issued. */
+      challenge: Record<string, never>;
+      mac: string;
+      /**
+       * @description Ed25519 signature (128 hex characters) over `dynodoc.device-session\0v1\0`
+       *     followed by the canonical JSON of the challenge.
+       */
+      signature: string;
     };
     /** @description `POST /ops/suggest`. `detail` is the wrapped content op (internally-tagged JSON). */
     SuggestRequest: {
@@ -2192,7 +2311,22 @@ export interface operations {
   };
   records: {
     parameters: {
-      query?: never;
+      query: {
+        /** @description users, documents, spaces, projects, audit or erasures */
+        kind: string;
+        /** @description Case-insensitive substring search, up to 200 characters */
+        q?: string;
+        /** @description Rows to skip, 50 per page */
+        offset?: number;
+        /** @description Documents only: active or trash */
+        status?: string;
+        /** @description Audit only: account id or part of the actor email */
+        actor?: string;
+        /** @description Audit only: RFC 3339 time or YYYY-MM-DD, inclusive */
+        since?: string;
+        /** @description Audit only: RFC 3339 time (exclusive) or YYYY-MM-DD, through that day */
+        until?: string;
+      };
       header?: never;
       path?: never;
       cookie?: never;
@@ -5242,6 +5376,59 @@ export interface operations {
       };
     };
   };
+  profile_activity: {
+    parameters: {
+      query?: {
+        /** @description UTC calendar year, 2000-2100; defaults to the current year */
+        year?: number;
+      };
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Per-day counts of events authored by the profile (days without activity are omitted) */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Invalid year */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Not accessible */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Too many activity reads */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Deadline exceeded */
+      504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
   list: {
     parameters: {
       query?: never;
@@ -5308,6 +5495,61 @@ export interface operations {
       };
     };
   };
+  project_activity_feed: {
+    parameters: {
+      query?: {
+        /** @description Items per page, 1-100 (default 50) */
+        limit?: number;
+        /** @description Opaque cursor from the previous page's next value */
+        before?: string;
+      };
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Newest-first project activity: items and an opaque next cursor */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Invalid cursor */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Project membership required */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Too many activity reads */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Deadline exceeded */
+      504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
   requests: {
     parameters: {
       query?: {
@@ -5329,6 +5571,131 @@ export interface operations {
         content: {
           'application/json': unknown;
         };
+      };
+    };
+  };
+  project_contributors: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Current project members with merged requests and authored events; capped is true when a very active file's older events were not counted */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Project membership required */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Too many activity reads */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Deadline exceeded */
+      504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  device_session_issue: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Project */
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SessionAnswer'];
+      };
+    };
+    responses: {
+      /** @description One-hour bearer token for this project and the signed scopes; renew by signing a new challenge. Never cacheable */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DeviceToken'];
+        };
+      };
+      /** @description Challenge, signature, key or account is not current (uniform) */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Current project role does not allow the scopes */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Issuance budget reached */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  device_session_challenge: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Project */
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ChallengeRequest'];
+      };
+    };
+    responses: {
+      /** @description Stateless two-minute challenge with the service MAC. Written nowhere; identical for enrolled, unknown and revoked keys and for any project ID */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ChallengeResponse'];
+        };
+      };
+      /** @description Invalid key or scopes */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
     };
   };
@@ -5369,7 +5736,7 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description Accessible project files */
+      /** @description Accessible project files, each with its newest team change (last_change) */
       200: {
         headers: {
           [name: string]: unknown;

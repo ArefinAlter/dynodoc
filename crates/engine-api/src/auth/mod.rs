@@ -18,6 +18,7 @@
 //! is per-document state read from `document_access` at request time ([`store::role_for`])
 //! and handed to the stage-16 governance gate.
 
+pub mod device;
 pub mod routes;
 pub mod store;
 pub mod token;
@@ -28,7 +29,7 @@ use ring::digest::{digest, SHA256};
 use ring::rand::{SecureRandom, SystemRandom};
 use serde_json::json;
 
-pub use routes::{router, AuthContext};
+pub use routes::{router, AuthContext, DeviceBinding};
 
 /// Process-wide auth configuration, derived from environment at boot.
 #[derive(Clone)]

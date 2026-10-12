@@ -43,10 +43,22 @@ multi-commit plan is deliberately resumable, not one all-or-nothing transaction.
 
 ## Operator procedure
 
-This first client uses a current ordinary **account access token**. A signing key
-must already be enrolled in that account for newly published commits. File connector
-grants do not become project tokens. Project-scoped device sign-in, secure native
-credential storage and automatic refresh are still required for end-user adoption.
+A signing key must already be enrolled in the account for newly published commits.
+File connector grants do not become project tokens. Choose one credential mode:
+
+- `--device-key signing-key.der` (preferred): the enrolled private key signs a
+  one-use challenge for a one-hour token limited to this project, and renews the
+  same way; the token lives in memory only. Create the key with
+  `engine-cli device keygen --out signing-key.der`. Plan/fetch/pull request
+  `history:read`; push also requests `history:write`. See
+  [project-scoped device sessions](PROJECT-SCOPED-DEVICE-SESSIONS.md).
+- `--token-file access.txt --refresh-token-file refresh.txt`: an ordinary account
+  login. On `401` the CLI rotates the refresh token and atomically replaces both
+  files. `--refresh-token-file` alone renews before the first request.
+- `--token-file` alone: a fixed access token that is never renewed.
+
+Secure native credential storage (OS keystore, hardware keys) is still required
+for end-user adoption. Private key and refresh files are plain local files.
 
 Prepare `remote.json` yourself from a trusted installation/operator channel:
 
@@ -68,7 +80,8 @@ Keep the access token alone in a private `account-token.txt`, outside the reposi
 and public source archives. The command takes its path, never the token value.
 It neither reads browser cookie stores nor persists the token in a plan/journal.
 Restrict the file using the operating system's permissions and remove it after use.
-An expired token stops transfer; obtain a fresh account token and retry.
+With only `--token-file`, an expired token stops transfer; obtain a fresh account
+token and retry, or use one of the renewing modes above.
 
 ```sh
 engine-cli sync work.sqlite PROJECT --remote remote.json --token-file account-token.txt --journal pins.sqlite --branch main plan COMMIT --out push-plan.json
@@ -155,7 +168,8 @@ Transport settings follow the [reqwest client contract](https://docs.rs/reqwest/
 - Existing verified objects make retries inexpensive in bytes, but metadata and
   graph scans repeat. Extremely long ancestry or receipt catch-up needs explicit
   smaller/manual transfers using the existing packet/receipt tools. There is no
-  durable arbitrary job queue or automatic backoff/refresh in this initial CLI.
+  durable arbitrary job queue or automatic backoff in this initial CLI. Credential
+  renewal happens once per rejected request, at most 50 times per run.
 - No automatic local deletion/GC, native writes, complete offline convergence,
   web/connector project branch UI or marketplace/installed-host acceptance.
 

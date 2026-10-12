@@ -159,6 +159,50 @@ paths:
       tags:
       - administration
       operationId: records
+      parameters:
+      - name: kind
+        in: query
+        description: users, documents, spaces, projects, audit or erasures
+        required: true
+        schema:
+          type: string
+      - name: q
+        in: query
+        description: Case-insensitive substring search, up to 200 characters
+        required: false
+        schema:
+          type: string
+      - name: offset
+        in: query
+        description: Rows to skip, 50 per page
+        required: false
+        schema:
+          type: integer
+          format: int64
+      - name: status
+        in: query
+        description: 'Documents only: active or trash'
+        required: false
+        schema:
+          type: string
+      - name: actor
+        in: query
+        description: 'Audit only: account id or part of the actor email'
+        required: false
+        schema:
+          type: string
+      - name: since
+        in: query
+        description: 'Audit only: RFC 3339 time or YYYY-MM-DD, inclusive'
+        required: false
+        schema:
+          type: string
+      - name: until
+        in: query
+        description: 'Audit only: RFC 3339 time (exclusive) or YYYY-MM-DD, through that day'
+        required: false
+        schema:
+          type: string
       responses:
         '200':
           description: Successful operation
@@ -2404,6 +2448,45 @@ paths:
           description: Not accessible
       security:
       - paseto: []
+  /profiles/{id}/activity:
+    get:
+      tags:
+      - profiles
+      summary: |-
+        Events authored by one account per UTC day. Your own calendar counts everything you
+        wrote; anyone else's counts only files in projects and folders you both belong to,
+        so no title, project or count outside that overlap is revealed.
+      operationId: profile_activity
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: year
+        in: query
+        description: UTC calendar year, 2000-2100; defaults to the current year
+        required: false
+        schema:
+          type: integer
+          format: int32
+      responses:
+        '200':
+          description: Per-day counts of events authored by the profile (days without activity are omitted)
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Invalid year
+        '404':
+          description: Not accessible
+        '429':
+          description: Too many activity reads
+        '504':
+          description: Deadline exceeded
+      security:
+      - paseto: []
   /projects:
     get:
       tags: []
@@ -2451,6 +2534,48 @@ paths:
               schema: {}
       security:
       - paseto: []
+  /projects/{id}/activity:
+    get:
+      tags: []
+      operationId: project_activity_feed
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        description: Items per page, 1-100 (default 50)
+        required: false
+        schema:
+          type: integer
+          format: int64
+      - name: before
+        in: query
+        description: Opaque cursor from the previous page's next value
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: 'Newest-first project activity: items and an opaque next cursor'
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Invalid cursor
+        '403':
+          description: Project membership required
+        '429':
+          description: Too many activity reads
+        '504':
+          description: Deadline exceeded
+      security:
+      - paseto: []
+      - device_session:
+        - project:read
   /projects/{id}/change-requests:
     get:
       tags: []
@@ -2476,6 +2601,91 @@ paths:
               schema: {}
       security:
       - paseto: []
+  /projects/{id}/contributors:
+    get:
+      tags: []
+      operationId: project_contributors
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Current project members with merged requests and authored events; capped is true when a very active file's older events were not counted
+          content:
+            application/json:
+              schema: {}
+        '403':
+          description: Project membership required
+        '429':
+          description: Too many activity reads
+        '504':
+          description: Deadline exceeded
+      security:
+      - paseto: []
+  /projects/{id}/device-sessions:
+    post:
+      tags:
+      - device sessions
+      operationId: device_session_issue
+      parameters:
+      - name: id
+        in: path
+        description: Project
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionAnswer'
+        required: true
+      responses:
+        '200':
+          description: One-hour bearer token for this project and the signed scopes; renew by signing a new challenge. Never cacheable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceToken'
+        '401':
+          description: Challenge, signature, key or account is not current (uniform)
+        '403':
+          description: Current project role does not allow the scopes
+        '429':
+          description: Issuance budget reached
+  /projects/{id}/device-sessions/challenge:
+    post:
+      tags:
+      - device sessions
+      operationId: device_session_challenge
+      parameters:
+      - name: id
+        in: path
+        description: Project
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChallengeRequest'
+        required: true
+      responses:
+        '200':
+          description: Stateless two-minute challenge with the service MAC. Written nowhere; identical for enrolled, unknown and revoked keys and for any project ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChallengeResponse'
+        '400':
+          description: Invalid key or scopes
   /projects/{id}/drafts:
     get:
       tags: []
@@ -2520,12 +2730,14 @@ paths:
           format: int64
       responses:
         '200':
-          description: Accessible project files
+          description: Accessible project files, each with its newest team change (last_change)
           content:
             application/json:
               schema: {}
       security:
       - paseto: []
+      - device_session:
+        - project:read
   /projects/{id}/history/authority:
     get:
       tags:
@@ -2546,6 +2758,8 @@ paths:
               schema: {}
       security:
       - paseto: []
+      - device_session:
+        - history:read
   /projects/{id}/history/commits:
     post:
       tags:
@@ -2575,6 +2789,8 @@ paths:
           description: Project metadata budget reached
       security:
       - paseto: []
+      - device_session:
+        - history:write
   /projects/{id}/history/commits/{address}:
     get:
       tags:
@@ -2600,6 +2816,8 @@ paths:
               schema: {}
       security:
       - paseto: []
+      - device_session:
+        - history:read
   /projects/{id}/history/commits/{address}/acknowledge:
     post:
       tags:
@@ -2634,6 +2852,8 @@ paths:
           description: Private staging quota reached; nothing acknowledged
       security:
       - paseto: []
+      - device_session:
+        - history:write
   /projects/{id}/history/commits/{address}/objects/{document}:
     get:
       tags:
@@ -2676,6 +2896,8 @@ paths:
               schema: {}
       security:
       - paseto: []
+      - device_session:
+        - history:read
   /projects/{id}/history/commits/{address}/objects/{document}/{object}:
     get:
       tags:
@@ -2714,6 +2936,8 @@ paths:
           description: Not reachable from this publication
       security:
       - paseto: []
+      - device_session:
+        - history:read
   /projects/{id}/history/receipts:
     get:
       tags:
@@ -2753,6 +2977,8 @@ paths:
           description: Erased branch head or receipt gap
       security:
       - paseto: []
+      - device_session:
+        - history:read
   /projects/{id}/history/refs:
     get:
       tags:
@@ -2789,6 +3015,8 @@ paths:
               schema: {}
       security:
       - paseto: []
+      - device_session:
+        - history:read
     post:
       tags:
       - project history
@@ -2815,6 +3043,8 @@ paths:
           description: Stale head, unavailable ancestry, non-fast-forward or unmet reviews
       security:
       - paseto: []
+      - device_session:
+        - history:write
   /projects/{id}/history/reviews:
     get:
       tags:
@@ -2852,6 +3082,8 @@ paths:
               schema: {}
       security:
       - paseto: []
+      - device_session:
+        - history:read
     post:
       tags:
       - project history
@@ -2878,6 +3110,8 @@ paths:
           description: Base changed
       security:
       - paseto: []
+      - device_session:
+        - history:write
   /projects/{id}/history/storage:
     get:
       tags:
@@ -2898,6 +3132,8 @@ paths:
               schema: {}
       security:
       - paseto: []
+      - device_session:
+        - history:read
   /projects/{id}/settings:
     post:
       tags: []
@@ -2957,6 +3193,8 @@ paths:
           description: Durable quota reached
       security:
       - paseto: []
+      - device_session:
+        - history:write
   /projects/{id}/staging/commits/{address}:
     get:
       tags:
@@ -2984,6 +3222,8 @@ paths:
           description: No such own staged commit
       security:
       - paseto: []
+      - device_session:
+        - history:write
   /projects/{id}/staging/objects:
     post:
       tags:
@@ -3015,6 +3255,8 @@ paths:
           description: Durable quota reached
       security:
       - paseto: []
+      - device_session:
+        - history:write
   /projects/{id}/staging/objects/missing:
     post:
       tags:
@@ -3040,6 +3282,8 @@ paths:
               schema: {}
       security:
       - paseto: []
+      - device_session:
+        - history:write
   /projects/{id}/staging/objects/{document}:
     get:
       tags:
@@ -3077,6 +3321,8 @@ paths:
               schema: {}
       security:
       - paseto: []
+      - device_session:
+        - history:write
   /projects/{id}/staging/objects/{document}/{address}:
     get:
       tags:
@@ -3110,6 +3356,8 @@ paths:
           description: Not in own uploads
       security:
       - paseto: []
+      - device_session:
+        - history:write
   /projects/{id}/staging/storage:
     get:
       tags:
@@ -3130,6 +3378,8 @@ paths:
               schema: {}
       security:
       - paseto: []
+      - device_session:
+        - history:write
   /projects/{id}/watch:
     post:
       tags: []
@@ -3361,6 +3611,34 @@ components:
       enum:
       - preview
       - create
+    ChallengeRequest:
+      type: object
+      required:
+      - public_key
+      - scopes
+      properties:
+        public_key:
+          type: string
+          description: Lowercase hexadecimal Ed25519 public key of an enrolled device key.
+        scopes:
+          type: array
+          items:
+            type: string
+          description: One or more of `history:read`, `history:write`, `project:read`.
+      additionalProperties: false
+    ChallengeResponse:
+      type: object
+      description: Documentation shapes. The wire types are the engine-core session proof.
+      required:
+      - challenge
+      - mac
+      properties:
+        challenge:
+          type: object
+          description: '`{version,id,authority,public_key,project,scopes,nonce,issued_at_ms,expires_at_ms,token_ttl_seconds}`'
+        mac:
+          type: string
+          description: Service MAC over the challenge; echo it unchanged.
     CommentRequest:
       type: object
       description: '`POST /ops/comment`.'
@@ -3431,6 +3709,33 @@ components:
           items:
             type: string
         title:
+          type: string
+    DeviceToken:
+      type: object
+      required:
+      - access_token
+      - token_type
+      - expires_in
+      - expires_at
+      - project
+      - scopes
+      properties:
+        access_token:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        expires_in:
+          type: integer
+          format: int64
+        project:
+          type: string
+          format: uuid
+        scopes:
+          type: array
+          items:
+            type: string
+        token_type:
           type: string
     FieldEditRequest:
       type: object
@@ -3573,6 +3878,23 @@ components:
           description: Accept this competing proposal's value as canonical.
         custom_value:
           description: Override all proposals with this custom value.
+    SessionAnswer:
+      type: object
+      required:
+      - challenge
+      - mac
+      - signature
+      properties:
+        challenge:
+          type: object
+          description: The challenge exactly as issued.
+        mac:
+          type: string
+        signature:
+          type: string
+          description: |-
+            Ed25519 signature (128 hex characters) over `dynodoc.device-session\0v1\0`
+            followed by the canonical JSON of the challenge.
     SuggestRequest:
       type: object
       description: '`POST /ops/suggest`. `detail` is the wrapped content op (internally-tagged JSON).'
@@ -3593,6 +3915,10 @@ components:
       type: http
       scheme: bearer
       bearerFormat: 64 hexadecimal characters; file-scoped editor key
+    device_session:
+      type: http
+      scheme: bearer
+      bearerFormat: PASETO v4.local project device session; one project, 1 hour
     paseto:
       type: http
       scheme: bearer

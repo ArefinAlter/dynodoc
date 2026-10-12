@@ -18,6 +18,7 @@ use utoipa::OpenApi;
 use uuid::Uuid;
 
 mod device;
+mod private_file;
 mod receipt;
 mod repository;
 mod signing;

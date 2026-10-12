@@ -18,7 +18,8 @@ to the current account. A self-declared signing time is not a trusted timestamp.
 
 ## Access and privacy
 
-The endpoints accept ordinary account bearer sessions, not file connector grants.
+The endpoints accept ordinary account bearer sessions and `history:write`
+[project device sessions](PROJECT-SCOPED-DEVICE-SESSIONS.md), not file connector grants.
 Every transaction locks and rechecks the current account/session, document rows
 and containing project/folder membership. Uploads and new commits require project
 and file contribution rights. Downloads and exact accepted retries require current

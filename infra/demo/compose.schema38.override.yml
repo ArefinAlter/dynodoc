@@ -1,0 +1,27 @@
+# Receipt-authority signing key for the API (schema 36 and later). Nothing else.
+#
+# Use only after `engine-cli install-ref-authority PUBLIC_HEX` has installed the
+# matching public key with the operator login, and only when signed shared branch
+# writes are meant to be enabled. Without this file the API starts normally and
+# refuses shared branch writes; no other behavior depends on it.
+#
+#   REF_AUTHORITY_KEY_FILE=/opt/dynodoc-secrets/ref-authority.der   (in infra/demo/.env)
+#   chown 10001:10001 "$REF_AUTHORITY_KEY_FILE" && chmod 0400 "$REF_AUTHORITY_KEY_FILE"
+#
+#   docker compose --project-name dynodoc-demo --env-file infra/demo/.env \
+#     -f infra/demo/compose.yml -f infra/demo/compose.schema38.override.yml \
+#     up -d --no-deps --no-build --pull never api
+#
+# The file is bind-mounted read-only at /run/secrets/ref_authority with the host
+# file's owner and mode, so it must be readable by the API's uid 10001. The API
+# refuses to start if the file is missing, unreadable, malformed or does not match
+# the installed public key. The key is never stored in PostgreSQL or an image, and
+# a lost key cannot be replaced (the installed public key is immutable).
+secrets:
+  ref_authority:
+    file: ${REF_AUTHORITY_KEY_FILE:?Set REF_AUTHORITY_KEY_FILE to the private receipt-authority key path}
+services:
+  api:
+    environment:
+      DYNODOC_REF_SIGNING_KEY_FILE: /run/secrets/ref_authority
+    secrets: [ref_authority]

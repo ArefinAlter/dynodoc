@@ -24,10 +24,21 @@ use crate::AppState;
 /// The authenticated caller, extracted from a validated bearer token. A handler that
 /// takes this as an argument is automatically gated: a missing/invalid token short-
 /// circuits with `401` before the handler body runs.
+/// Present only on a project device session ([`super::device::ProjectAuth`]). The
+/// account extractor below never sets it and cannot decrypt a device token.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeviceBinding {
+    pub key_id: Uuid,
+    pub project: Uuid,
+    pub session: Uuid,
+}
+
 pub struct AuthContext {
     pub identity_id: Uuid,
     pub session_generation: i64,
     pub session_id: Option<Uuid>,
+    /// `None` for every account login and connector grant.
+    pub device: Option<DeviceBinding>,
 }
 
 #[axum::async_trait]
@@ -52,6 +63,7 @@ impl FromRequestParts<AppState> for AuthContext {
             identity_id,
             session_generation,
             session_id,
+            device: None,
         })
     }
 }

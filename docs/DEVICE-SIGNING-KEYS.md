@@ -22,8 +22,11 @@ Enter the public key, download the challenge, and run the `device prove` command
 shown in your profile. The command requires the expected installation and account
 IDs, checks the key matches, and writes a new proof file without overwriting an
 existing file. Select that proof JSON in the profile to finish enrollment. The
-private key stays local. Do not upload a private key. Key generation and secure
-native-host key storage are not implemented by this enrollment workflow.
+private key stays local. Do not upload a private key. `engine-cli device keygen
+--out FILE` creates a new key (exclusive file, mode 0600 on Unix) and prints its
+public key. Secure native-host key storage is not implemented. An enrolled key can
+also sign in to one project at a time for short-lived `sync` tokens: see
+[project-scoped device sessions](PROJECT-SCOPED-DEVICE-SESSIONS.md).
 
 Revoke keys from the same profile. Revocation is permanent, including after a
 lost-response retry or account restoration. Reconnect using a new key. Existing

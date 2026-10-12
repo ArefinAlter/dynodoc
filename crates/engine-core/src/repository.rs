@@ -14,6 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 pub mod attestation;
 pub mod compare;
 pub mod device;
+pub mod device_session;
 pub mod local;
 pub mod receipt_journal;
 pub mod recovery;

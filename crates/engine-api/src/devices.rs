@@ -68,6 +68,15 @@ pub(crate) async fn account_lock(
     if !active {
         return Err(ApiError::Unauthorized);
     }
+    // A project device session is also only as good as its key, rechecked here so
+    // revocation serializes with this request through the same account row lock.
+    if let Some(device) = &auth.device {
+        let current: bool = sqlx::query_scalar("select exists(select 1 from device_signing_key k where k.id=$1 and k.identity_id=$2 and not exists(select 1 from device_key_revocation r where r.key_id=k.id))")
+            .bind(device.key_id).bind(auth.identity_id).fetch_one(&mut **tx).await?;
+        if !current {
+            return Err(ApiError::Unauthorized);
+        }
+    }
     Ok(())
 }
 

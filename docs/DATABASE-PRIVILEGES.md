@@ -1,5 +1,11 @@
 # Database runtime boundary
 
+Schema 38 adds one mutable table, `device_session`: a short-lived replay ledger and
+issuance-rate window for project device sign-in. It stores no bearer token, secret
+or grant, is pruned by the runtime login, and joins the mutable allowlist. The
+permanent issuance record is an `operation_audit` row. Re-run `grant-runtime`, then
+`check-runtime`. See [project-scoped device sessions](PROJECT-SCOPED-DEVICE-SESSIONS.md).
+
 Schema 36 adds SELECT/INSERT on published commits, root reachability indexes,
 project history reviews and signed ref events. Published metadata counters and
 `project_ref_authority` are SELECT-only; only the operator installs its public key.

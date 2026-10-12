@@ -1,5 +1,13 @@
 //! Invite-only repositories. Unsubmitted drafts remain private to their creator.
-use crate::{auth::AuthContext, error::ApiError, product::audit, AppState};
+use crate::{
+    auth::{
+        device::{ProjectAuth, ProjectRead},
+        AuthContext,
+    },
+    error::ApiError,
+    product::audit,
+    AppState,
+};
 use axum::{
     extract::{Path, Query, State},
     routing::{get, post},
@@ -36,7 +44,11 @@ pub(crate) async fn lock_document_project(
         .await?;
     Ok(())
 }
-async fn require(db: &mut PgConnection, id: Uuid, person: Uuid) -> Result<String, ApiError> {
+pub(crate) async fn require(
+    db: &mut PgConnection,
+    id: Uuid,
+    person: Uuid,
+) -> Result<String, ApiError> {
     sqlx::query_scalar::<_, Option<String>>(
         "select inherited_space_role(id,$2) from access_space where id=$1 and kind='project'",
     )
@@ -139,7 +151,9 @@ async fn page(
     let mut tx = state.pool.begin().await?;
     lock(&mut tx, id, actor).await?;
     let select=match kind {
-        "files"=>"select jsonb_build_object('id',d.id,'title',d.title,'kind',coalesce(d.settings->>'kind','questionnaire'),'updated_at',d.updated_at,'role',document_member_role(d.id,$2),'latest_seq',(select coalesce(max(seq),0) from event where document_id=d.id)) from document d join tree t on t.id=d.space_id where d.deleted_at is null and document_member_role(d.id,$2) is not null order by d.updated_at desc,d.id limit 101 offset $3".to_owned(),
+        // `last_change` is the newest team event: a merged request is named by the
+        // request (same transaction timestamp as its audit row), otherwise by event type.
+        "files"=>format!("select jsonb_build_object('id',d.id,'title',d.title,'kind',coalesce(d.settings->>'kind','questionnaire'),'updated_at',d.updated_at,'role',document_member_role(d.id,$2),'latest_seq',(select coalesce(max(seq),0) from event where document_id=d.id))||coalesce((select jsonb_build_object('last_change',jsonb_build_object('seq',e.seq,'at',e.created_at,'actor_name',{who},'summary',coalesce((select w.name from operation_audit a join workspace_draft w on w.id=case when jsonb_typeof(a.detail->'draft_id')='string' then (a.detail->>'draft_id')::uuid end where a.resource_id=d.id and a.action='document.change_request_merged' and a.created_at=e.created_at order by a.id desc limit 1),{label}))) from event e left join identity i on i.id=e.actor_id where e.document_id=d.id order by e.seq desc limit 1),'{{}}'::jsonb) from document d join tree t on t.id=d.space_id where d.deleted_at is null and document_member_role(d.id,$2) is not null order by d.updated_at desc,d.id limit 101 offset $3",who=crate::project_activity::person("i"),label=crate::project_activity::EVENT_LABEL),
         "requests"=>format!("select {}||jsonb_build_object('document',jsonb_build_object('id',f.id,'title',f.title,'kind',coalesce(f.settings->>'kind','questionnaire'))) from workspace_draft d join document f on f.id=d.document_id join tree t on t.id=f.space_id join identity a on a.id=d.created_by left join identity r on r.id=d.reviewed_by where f.deleted_at is null and document_member_role(f.id,$2) is not null and d.submitted_at is not null order by d.submitted_at desc,d.id limit 101 offset $3",crate::reviews::REQUEST_JSON),
         _=>"select jsonb_build_object('id',d.id,'name',d.name,'base_seq',d.base_seq,'revision',d.revision,'created_at',d.created_at,'document',jsonb_build_object('id',f.id,'title',f.title,'kind',coalesce(f.settings->>'kind','questionnaire'))) from workspace_draft d join document f on f.id=d.document_id join tree t on t.id=f.space_id where f.deleted_at is null and document_member_role(f.id,$2) is not null and d.created_by=$2 and d.submitted_at is null and d.merged_at is null and d.review_outcome is null order by d.created_at desc,d.id limit 101 offset $3".into()
     };
@@ -154,11 +168,11 @@ async fn page(
         json!({"items":items.into_iter().take(100).collect::<Vec<_>>(),"more":more,"offset":offset}),
     ))
 }
-#[utoipa::path(get, path="/projects/{id}/files", params(("id"=Uuid,Path),("offset"=Option<i64>,Query)), security(("paseto"=[])), responses((status=200,description="Accessible project files",body=Value)))]
+#[utoipa::path(get, path="/projects/{id}/files", params(("id"=Uuid,Path),("offset"=Option<i64>,Query)), security(("paseto"=[]),("device_session"=["project:read"])), responses((status=200,description="Accessible project files, each with its newest team change (last_change)",body=Value)))]
 async fn files(
     State(s): State<AppState>,
     Path(id): Path<Uuid>,
-    a: AuthContext,
+    a: ProjectAuth<ProjectRead>,
     Query(p): Query<Page>,
 ) -> Result<Json<Value>, ApiError> {
     page(&s, id, a.identity_id, p.offset, "files").await

@@ -334,6 +334,12 @@ async fn control(
                 .bind(input.id)
                 .execute(&mut *tx)
                 .await?;
+            // A device key can mint project sessions without a login, so ending
+            // sessions must also retire it. The person enrolls a fresh key.
+            sqlx::query("insert into device_key_revocation(key_id) select id from device_signing_key where identity_id=$1 on conflict do nothing")
+                .bind(input.id)
+                .execute(&mut *tx)
+                .await?;
             sqlx::query("delete from magic_link where identity_id=$1")
                 .bind(input.id)
                 .execute(&mut *tx)

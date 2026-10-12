@@ -57,6 +57,8 @@ const MUTABLE: &[&str] = &[
     "connector_grant",
     "device_enrollment_challenge",
 ];
+/// Rows are created and pruned but never edited: a replay ledger, not a record.
+const INSERT_DELETE: &[&str] = &["device_session"];
 const FUNCTIONS: &[&str] = &[
     "access_role_rank(text)",
     "member_role_order(text)",
@@ -150,6 +152,7 @@ pub async fn grant_runtime(pool: &PgPool, role: &str) -> anyhow::Result<()> {
     for (tables, privileges) in [
         (READ_ONLY, "select"),
         (HISTORY, "select,insert"),
+        (INSERT_DELETE, "select,insert,delete"),
         (MUTABLE, "select,insert,update,delete"),
     ] {
         for table in tables {
@@ -199,13 +202,14 @@ async fn check_privileges(connection: &mut PgConnection, role: &str) -> anyhow::
         "select c.relname from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid=c.relnamespace
          where n.nspname='public' and c.relkind in ('r','p','v','m','f') order by c.relname",
     ).fetch_all(&mut *connection).await?;
-    if tables.len() != HISTORY.len() + MUTABLE.len() + READ_ONLY.len() {
+    if tables.len() != HISTORY.len() + MUTABLE.len() + READ_ONLY.len() + INSERT_DELETE.len() {
         bail!("runtime table inventory differs from this binary");
     }
     for table in tables {
         let mutable = MUTABLE.contains(&table.as_str());
         let history = HISTORY.contains(&table.as_str());
-        if !mutable && !history && !READ_ONLY.contains(&table.as_str()) {
+        let prunable = INSERT_DELETE.contains(&table.as_str());
+        if !mutable && !history && !prunable && !READ_ONLY.contains(&table.as_str()) {
             bail!("unexpected runtime table {table}");
         }
         let relation = format!("public.{}", ident(&table));
@@ -217,10 +221,10 @@ async fn check_privileges(connection: &mut PgConnection, role: &str) -> anyhow::
              or has_any_column_privilege($1,$2,'REFERENCES,SELECT WITH GRANT OPTION,INSERT WITH GRANT OPTION,UPDATE WITH GRANT OPTION')",
         ).bind(role).bind(&relation).fetch_one(&mut *connection).await?;
         if !read
-            || insert != (mutable || history)
+            || insert != (mutable || history || prunable)
             || update != mutable
-            || delete != mutable
-            || column_insert != (mutable || history)
+            || delete != (mutable || prunable)
+            || column_insert != (mutable || history || prunable)
             || column_update != mutable
             || dangerous
         {

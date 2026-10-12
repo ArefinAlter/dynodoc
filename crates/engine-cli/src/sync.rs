@@ -22,7 +22,7 @@ use std::{
 };
 use uuid::Uuid;
 mod http;
-use http::{Client, Remote};
+use http::{Client, Credential, Remote};
 #[cfg(test)]
 mod tests;
 mod transfer;
@@ -40,8 +40,16 @@ pub struct Options {
     #[arg(long)]
     remote: PathBuf,
     /// Account access token in a private file; never pass the token as an argument.
+    #[arg(long, conflicts_with = "device_key")]
+    token_file: Option<PathBuf>,
+    /// Private file with the account refresh token. On a 401 the command calls
+    /// /auth/refresh and atomically replaces this file (and --token-file).
+    #[arg(long, conflicts_with = "device_key")]
+    refresh_token_file: Option<PathBuf>,
+    /// Enrolled Ed25519 key (unencrypted DER PKCS#8). Obtains and renews short-lived
+    /// tokens for this project in memory; no token or refresh secret is stored.
     #[arg(long)]
-    token_file: PathBuf,
+    device_key: Option<PathBuf>,
     /// Separate durable client receipt journal (must not be the repository database).
     #[arg(long)]
     journal: PathBuf,
@@ -94,6 +102,64 @@ struct Plan {
     /// Topological signed manifests: explicit disclosure of messages, paths and sources.
     publish: Vec<SignedCommit>,
 }
+/// Build the network client. A device key asks only for the scopes this action
+/// needs: reads for plan/fetch/pull, reads and writes for push.
+fn credentials(options: &Options, remote: Remote) -> anyhow::Result<Client> {
+    let loopback = options.allow_loopback_http;
+    if let Some(path) = &options.device_key {
+        let mut scopes = vec!["history:read".to_owned()];
+        if matches!(options.action, Action::Push { .. }) {
+            scopes.push("history:write".to_owned());
+        }
+        let key = crate::signing::load(path)?;
+        return Client::with_credential(
+            remote,
+            options.project,
+            Credential::Device { key, scopes },
+            None,
+            loopback,
+        );
+    }
+    // Rotation replaces both files; one path would let the access token overwrite
+    // the refresh secret (or the reverse).
+    if let (Some(access), Some(refresh)) = (&options.token_file, &options.refresh_token_file) {
+        let same = access == refresh
+            || matches!(
+                (std::fs::canonicalize(access), std::fs::canonicalize(refresh)),
+                (Ok(a), Ok(r)) if a == r
+            );
+        ensure!(
+            !same,
+            "--token-file and --refresh-token-file must be different files"
+        );
+    }
+    let token = |path: &Path| -> anyhow::Result<String> {
+        Ok(String::from_utf8(read(path, 16384)?)?.trim().to_owned())
+    };
+    match (&options.refresh_token_file, &options.token_file) {
+        (Some(refresh_file), access_file) => {
+            // An unreadable/absent access file only means: renew on first use.
+            let initial = access_file
+                .as_deref()
+                .and_then(|path| token(path).ok())
+                .filter(|t| !t.is_empty());
+            Client::with_credential(
+                remote,
+                options.project,
+                Credential::Refresh {
+                    refresh_file: refresh_file.clone(),
+                    access_file: access_file.clone(),
+                },
+                initial.as_deref(),
+                loopback,
+            )
+        }
+        (None, Some(path)) => Client::new(remote, options.project, &token(path)?, loopback),
+        (None, None) => {
+            anyhow::bail!("provide --device-key, or --token-file and/or --refresh-token-file")
+        }
+    }
+}
 fn read(path: &Path, cap: usize) -> anyhow::Result<Vec<u8>> {
     let mut bytes = Vec::new();
     std::fs::File::open(path)?
@@ -111,15 +177,14 @@ pub async fn run(options: Options) -> anyhow::Result<()> {
     let scope = Scope {
         authority: remote.authority,
         project: options.project,
-        branch: options.branch,
+        branch: options.branch.clone(),
     };
     // Open the repository first so the journal refuses aliases to it, even on first use.
     let repo = LocalRepository::open(&options.repository, options.project).await?;
     let journal = ReceiptJournal::open(&options.journal).await?;
     let result = async {
         if matches!(options.action, Action::Tracking) { return Ok(serde_json::to_value(journal.pin(&scope).await?)?); }
-        let token = String::from_utf8(read(&options.token_file, 16384)?)?;
-        let client = Client::new(remote, options.project, token.trim(), options.allow_loopback_http)?;
+        let client = credentials(&options, remote)?;
         client.authority().await?;
         match options.action {
             Action::Plan { candidate, out, publish_only } => {

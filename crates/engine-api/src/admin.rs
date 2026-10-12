@@ -121,6 +121,83 @@ struct RecordsQuery {
     /// Documents only: `active`, `trash`, or empty for both.
     #[serde(default)]
     status: String,
+    /// Audit only: an account id, or part of the actor's email.
+    #[serde(default)]
+    actor: String,
+    /// Audit only: RFC 3339 time or `YYYY-MM-DD` (start of that UTC day), inclusive.
+    #[serde(default)]
+    since: String,
+    /// Audit only: RFC 3339 time (exclusive) or `YYYY-MM-DD` (through the end of that UTC day).
+    #[serde(default)]
+    until: String,
+}
+/// Accepts an RFC 3339 instant, or a calendar date at the start (`end_of_day=false`)
+/// or the exclusive end (`end_of_day=true`) of that UTC day.
+fn bound(value: &str, end_of_day: bool) -> Result<Option<chrono::DateTime<chrono::Utc>>, ApiError> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(None);
+    }
+    if let Ok(t) = chrono::DateTime::parse_from_rfc3339(value) {
+        return Ok(Some(t.with_timezone(&chrono::Utc)));
+    }
+    chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")
+        .ok()
+        .and_then(|d| if end_of_day { d.succ_opt() } else { Some(d) })
+        .and_then(|d| d.and_hms_opt(0, 0, 0))
+        .map(|t| Some(t.and_utc()))
+        .ok_or_else(|| ApiError::BadRequest {
+            reason: "Use dates as YYYY-MM-DD or RFC 3339 times".into(),
+        })
+}
+const SECRET_KEYS: [&str; 12] = [
+    "token",
+    "secret",
+    "password",
+    "passwd",
+    "passphrase",
+    "authorization",
+    "cookie",
+    "credential",
+    "private",
+    "apikey",
+    "api_key",
+    "bearer",
+];
+/// Replace values stored under obviously secret key names; nothing else is rewritten.
+fn redact(value: Value, depth: usize) -> Value {
+    match value {
+        Value::Object(map) if depth < 8 => Value::Object(
+            map.into_iter()
+                .map(|(key, v)| {
+                    let lower = key.to_ascii_lowercase();
+                    if lower == "key" || SECRET_KEYS.iter().any(|s| lower.contains(s)) {
+                        (key, json!("[redacted]"))
+                    } else {
+                        (key, redact(v, depth + 1))
+                    }
+                })
+                .collect(),
+        ),
+        Value::Array(items) if depth < 8 => {
+            Value::Array(items.into_iter().map(|v| redact(v, depth + 1)).collect())
+        }
+        Value::Object(_) | Value::Array(_) => json!("[truncated]"),
+        other => other,
+    }
+}
+/// Redacted audit detail, at most 4 KiB of JSON; larger records keep only their key names.
+fn bounded_detail(detail: Value) -> Value {
+    let detail = redact(detail, 0);
+    let size = detail.to_string().len();
+    if size <= 4096 {
+        return detail;
+    }
+    let keys: Vec<&String> = detail
+        .as_object()
+        .map(|m| m.keys().take(32).collect())
+        .unwrap_or_default();
+    json!({"truncated":true,"bytes":size,"keys":keys})
 }
 pub(crate) async fn require_admin(state: &AppState, auth: &AuthContext) -> Result<(), ApiError> {
     let email: String =
@@ -133,7 +210,7 @@ pub(crate) async fn require_admin(state: &AppState, auth: &AuthContext) -> Resul
     }
     Ok(())
 }
-#[utoipa::path(get, path="/admin/records", tag="administration", security(("paseto" = [])), responses((status=200, description="Successful operation", body=Value),(status=400, description="Validation or confirmation failed"),(status=401, description="Sign in required"),(status=403, description="Insufficient access"),(status=409, description="Refresh the current revision")))]
+#[utoipa::path(get, path="/admin/records", tag="administration", params(("kind"=String,Query,description="users, documents, spaces, projects, audit or erasures"),("q"=Option<String>,Query,description="Case-insensitive substring search, up to 200 characters"),("offset"=Option<i64>,Query,description="Rows to skip, 50 per page"),("status"=Option<String>,Query,description="Documents only: active or trash"),("actor"=Option<String>,Query,description="Audit only: account id or part of the actor email"),("since"=Option<String>,Query,description="Audit only: RFC 3339 time or YYYY-MM-DD, inclusive"),("until"=Option<String>,Query,description="Audit only: RFC 3339 time (exclusive) or YYYY-MM-DD, through that day")), security(("paseto" = [])), responses((status=200, description="Successful operation", body=Value),(status=400, description="Validation or confirmation failed"),(status=401, description="Sign in required"),(status=403, description="Insufficient access"),(status=409, description="Refresh the current revision")))]
 async fn records(
     State(state): State<AppState>,
     auth: AuthContext,
@@ -148,20 +225,51 @@ async fn records(
     let query=match q.kind.as_str(){
  "users"=>"select jsonb_build_object('id',id,'label',email,'name',display_name,'created_at',created_at,'removed_at',disabled_at,'erased_at',erased_at) from identity where erased_at is null and (strpos(lower(email),lower($1))>0 or strpos(lower(coalesce(display_name,'')),lower($1))>0) order by created_at desc,id limit 50 offset $2",
  "documents"=>"select jsonb_build_object('id',d.id,'label',d.title,'owner',i.email,'created_at',d.created_at,'updated_at',d.updated_at,'removed_at',d.deleted_at,'kind',coalesce(d.settings->>'kind','questionnaire')) from document d left join identity i on i.id=d.created_by where strpos(lower(d.title),lower($1))>0 and ($3='' or ($3='trash')=(d.deleted_at is not null)) order by d.created_at desc,d.id limit 50 offset $2",
- "audit"=>"select jsonb_build_object('id',a.id,'label',a.action,'actor',i.email,'resource_id',a.resource_id,'created_at',a.created_at) from operation_audit a join identity i on i.id=a.actor_id where strpos(lower(a.action),lower($1))>0 order by a.id desc limit 50 offset $2",
+ "audit"=>"select jsonb_build_object('id',a.id,'label',a.action,'actor',i.email,'actor_id',a.actor_id,'resource_id',a.resource_id,'created_at',a.created_at,'detail',case when pg_column_size(a.detail)<=16384 then a.detail else jsonb_build_object('truncated',true,'bytes',pg_column_size(a.detail)) end) from operation_audit a join identity i on i.id=a.actor_id where strpos(lower(a.action),lower($1))>0 and ($3='' or a.actor_id::text=lower($3) or strpos(lower(i.email),lower($3))>0) and ($4::timestamptz is null or a.created_at>=$4) and ($5::timestamptz is null or a.created_at<$5) order by a.id desc limit 50 offset $2",
+ "projects"=>"with recursive page as (select s.id,s.name,s.created_at from access_space s join project_settings p on p.space_id=s.id where s.kind='project' and strpos(lower(s.name),lower($1))>0 order by s.created_at desc,s.id limit 50 offset $2), tree(root,id) as (select id,id from page union select t.root,c.id from access_space c join tree t on c.parent_id=t.id), live as (select t.root,d.id,d.updated_at from tree t join document d on d.space_id=t.id and d.deleted_at is null), stats as (select l.root,count(*) as files,max(greatest(l.updated_at,(select e.created_at from event e where e.document_id=l.id order by e.created_at desc limit 1))) as last_activity,(coalesce(sum((select sum(octet_length(u.content)) from document_upload u where u.document_id=l.id)),0)+coalesce(sum((select c.bytes_used from checkpoint_storage_document c where c.document_id=l.id)),0))::bigint as bytes from live l group by l.root) select jsonb_build_object('id',p.id,'label',p.name,'name',p.name,'members',(select count(*) from space_member m join identity i on i.id=m.identity_id where m.space_id=p.id and i.disabled_at is null and i.erased_at is null),'files',coalesce(st.files,0),'bytes',coalesce(st.bytes,0),'created_at',p.created_at,'last_activity_at',greatest(p.created_at,st.last_activity)) from page p left join stats st on st.root=p.id order by p.created_at desc,p.id",
  "spaces"=>"select jsonb_build_object('id',s.id,'label',s.name,'name',s.kind,'created_at',s.created_at) from access_space s where strpos(lower(s.name),lower($1))>0 order by s.created_at desc,s.id limit 50 offset $2",
  "erasures"=>"select jsonb_build_object('id',resource_id,'label',kind||' erased','name',reason,'created_at',erased_at) from erasure_receipt where strpos(lower(kind||' '||reason),lower($1))>0 order by erased_at desc,resource_id limit 50 offset $2",
- _=>return Err(ApiError::BadRequest{reason:"Choose users, documents, spaces, audit or erasures".into()})};
+ _=>return Err(ApiError::BadRequest{reason:"Choose users, documents, spaces, projects, audit or erasures".into()})};
     if !["", "active", "trash"].contains(&q.status.as_str()) {
         return Err(ApiError::BadRequest {
             reason: "Filter documents by active or trash".into(),
         });
     }
-    let mut query = sqlx::query_scalar(query).bind(q.q.trim()).bind(q.offset);
-    if q.kind == "documents" {
-        query = query.bind(q.status.as_str());
+    if q.actor.len() > 200 || q.since.len() > 64 || q.until.len() > 64 {
+        return Err(ApiError::BadRequest {
+            reason: "Invalid audit filter".into(),
+        });
     }
-    let items: Vec<Value> = query.fetch_all(&state.pool).await?;
+    let mut query = sqlx::query_scalar(query).bind(q.q.trim()).bind(q.offset);
+    match q.kind.as_str() {
+        "documents" => query = query.bind(q.status.as_str()),
+        "audit" => {
+            query = query
+                .bind(q.actor.trim())
+                .bind(bound(&q.since, false)?)
+                .bind(bound(&q.until, true)?)
+        }
+        _ => {}
+    }
+    let mut items: Vec<Value> = if q.kind == "projects" {
+        // Per-project totals walk every file; bound them like search does.
+        let mut tx = state.pool.begin().await?;
+        sqlx::query("set local statement_timeout='5s'")
+            .execute(&mut *tx)
+            .await?;
+        let rows = query.fetch_all(&mut *tx).await?;
+        tx.commit().await?;
+        rows
+    } else {
+        query.fetch_all(&state.pool).await?
+    };
+    if q.kind == "audit" {
+        for item in &mut items {
+            if let Some(detail) = item.get_mut("detail") {
+                *detail = bounded_detail(detail.take());
+            }
+        }
+    }
     Ok(Json(json!({"items":items})))
 }
 #[derive(Deserialize)]

@@ -19,6 +19,7 @@ pub mod audit;
 pub mod auth;
 pub mod conflicts;
 pub mod copies;
+mod device_sessions;
 mod devices;
 mod discussions;
 pub mod documents;
@@ -32,6 +33,7 @@ pub mod pagination;
 pub mod people;
 pub mod product;
 mod profiles;
+mod project_activity;
 mod project_history;
 mod project_staging;
 pub mod projects;
@@ -69,6 +71,8 @@ pub struct AppState {
     pub shared_draft_bases: bool,
     /// Explicit opt-in; named versions, public pins and deploys share typed state.
     pub named_snapshot_storage: engine_core::snapshot::NamedStorage,
+    /// The immutable installation ID, read once for device-session challenges.
+    device_authority: std::sync::Arc<tokio::sync::OnceCell<uuid::Uuid>>,
 }
 
 impl AppState {
@@ -91,6 +95,7 @@ impl AppState {
             } else {
                 engine_core::snapshot::NamedStorage::Legacy
             },
+            device_authority: Default::default(),
         }
     }
 }
@@ -116,10 +121,12 @@ pub fn app(state: AppState) -> Router {
         .merge(admin::router())
         .merge(product::router())
         .merge(projects::router())
+        .merge(project_activity::router())
         .merge(project_staging::router())
         .merge(project_history::router())
         .merge(profiles::router())
         .merge(devices::router())
+        .merge(device_sessions::router())
         .merge(provenance::router())
         .merge(documents::router())
         .merge(ops::router())
@@ -173,6 +180,7 @@ async fn openapi_json() -> Json<Value> {
         profiles::read,
         profiles::save,
         profiles::storage,
+        profiles::profile_activity,
         documents::routes::list_documents,
         documents::routes::get_document,
         documents::routes::get_node,
@@ -220,6 +228,7 @@ impl utoipa::Modify for WorkspaceDocs {
         api.merge(history::HistoryApi::openapi());
         api.merge(product::ProductApi::openapi());
         api.merge(projects::ProjectsApi::openapi());
+        api.merge(project_activity::ProjectActivityApi::openapi());
         api.merge(provenance::ProvenanceApi::openapi());
         api.merge(admin::AdminApi::openapi());
         api.merge(admin_controls::AdminControlsApi::openapi());
@@ -228,6 +237,7 @@ impl utoipa::Modify for WorkspaceDocs {
         api.merge(copies::CopiesApi::openapi());
         api.merge(people::PeopleApi::openapi());
         api.merge(devices::DevicesApi::openapi());
+        api.merge(device_sessions::DeviceSessionsApi::openapi());
         api.merge(project_staging::ProjectStagingApi::openapi());
         api.merge(project_history::ProjectHistoryApi::openapi());
         let components = api.components.get_or_insert_with(Default::default);
@@ -237,6 +247,17 @@ impl utoipa::Modify for WorkspaceDocs {
                 utoipa::openapi::security::HttpBuilder::new()
                     .scheme(utoipa::openapi::security::HttpAuthScheme::Bearer)
                     .bearer_format("64 hexadecimal characters; file-scoped editor key")
+                    .build(),
+            ),
+        );
+        // Scopes are role names (OpenAPI 3.1): `project:read`, `history:read` and
+        // `history:write`. Only the allow-listed project operations list it.
+        components.add_security_scheme(
+            "device_session",
+            utoipa::openapi::security::SecurityScheme::Http(
+                utoipa::openapi::security::HttpBuilder::new()
+                    .scheme(utoipa::openapi::security::HttpAuthScheme::Bearer)
+                    .bearer_format("PASETO v4.local project device session; one project, 1 hour")
                     .build(),
             ),
         );

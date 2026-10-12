@@ -446,6 +446,7 @@ impl FromRequestParts<AppState> for Connector {
                 identity_id: identity,
                 session_generation: generation,
                 session_id: None,
+                device: None,
             },
             document,
             grant,

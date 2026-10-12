@@ -1,11 +1,24 @@
 //! Explicit origins, no redirects/proxy discovery, bounded bodies and deadlines.
+//! Credentials renew on `401` at most once per request: from a refresh token file
+//! (atomic rotation) or by signing a project-device challenge with an enrolled key.
+//! Access tokens are held in memory only and marked sensitive.
 use super::*;
+use engine_core::repository::device_session::{SessionChallenge, SessionProof, TOKEN_TTL_SECONDS};
 use reqwest::{header, Method, StatusCode, Url};
+use ring::signature::{Ed25519KeyPair, KeyPair};
 use serde::de::DeserializeOwned;
 use std::{
     sync::atomic::{AtomicUsize, Ordering},
     time::{Duration, Instant},
 };
+use tokio::sync::Mutex;
+
+/// Renew this long before a known expiry rather than failing a request.
+const RENEW_MARGIN: Duration = Duration::from_secs(120);
+/// Longest server-claimed token lifetime honoured for proactive renewal.
+const MAX_LIFETIME: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+/// A run that needs more renewals than this is looping, not expiring.
+const MAX_RENEWALS: usize = 50;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -17,17 +30,75 @@ pub struct Remote {
     /// Obtain this key independently of the server's authority endpoint.
     pub public_key: String,
 }
+
+/// Where the bearer comes from and how it is renewed.
+pub enum Credential {
+    /// One fixed token. An expired token stops the run.
+    Static,
+    /// Rotate the account refresh token on `401`; both files are replaced atomically.
+    Refresh {
+        refresh_file: PathBuf,
+        access_file: Option<PathBuf>,
+    },
+    /// Sign a one-use challenge with an enrolled device key for a project token.
+    Device {
+        key: Ed25519KeyPair,
+        scopes: Vec<String>,
+    },
+}
+
+struct Session {
+    header: Option<header::HeaderValue>,
+    /// When to renew before the first rejection, if the server stated a lifetime.
+    renew_at: Option<Instant>,
+    /// Incremented per renewal, so a request that saw an old token does not renew again.
+    epoch: u64,
+}
+
 pub struct Client {
     pub remote: Remote,
     pub project: Uuid,
     http: reqwest::Client,
     base: Url,
+    credential: Credential,
+    session: Mutex<Session>,
+    renewals: AtomicUsize,
     requests: AtomicUsize,
     transferred: AtomicUsize,
     started: Instant,
 }
+
+fn bearer(token: &str) -> anyhow::Result<header::HeaderValue> {
+    ensure!(
+        !token.is_empty() && token.len() <= 16384 && !token.chars().any(char::is_whitespace),
+        "invalid bearer token"
+    );
+    let mut authorization = header::HeaderValue::from_str(&format!("Bearer {token}"))
+        .map_err(|_| anyhow!("invalid bearer token"))?;
+    authorization.set_sensitive(true);
+    Ok(authorization)
+}
+
+fn lower_hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn is_secret(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
 impl Client {
+    /// A fixed bearer, as used by tests and by an externally managed token file.
     pub fn new(remote: Remote, project: Uuid, token: &str, loopback: bool) -> anyhow::Result<Self> {
+        Self::with_credential(remote, project, Credential::Static, Some(token), loopback)
+    }
+    pub fn with_credential(
+        remote: Remote,
+        project: Uuid,
+        credential: Credential,
+        initial: Option<&str>,
+        loopback: bool,
+    ) -> anyhow::Result<Self> {
         ensure!(
             remote.version == 1 && !remote.authority.is_nil() && !project.is_nil(),
             "invalid remote scope/version"
@@ -55,16 +126,15 @@ impl Client {
             base.path().ends_with('/'),
             "remote API base must end with /"
         );
+        let header = match initial {
+            Some(token) => Some(bearer(token).map_err(|_| anyhow!("invalid bearer token file"))?),
+            None => None,
+        };
         ensure!(
-            !token.is_empty() && token.len() <= 16384 && !token.chars().any(char::is_whitespace),
+            header.is_some() || !matches!(credential, Credential::Static),
             "invalid bearer token file"
         );
-        let mut authorization = header::HeaderValue::from_str(&format!("Bearer {token}"))?;
-        authorization.set_sensitive(true);
-        let mut headers = header::HeaderMap::new();
-        headers.insert(header::AUTHORIZATION, authorization);
         let http = reqwest::Client::builder()
-            .default_headers(headers)
             .redirect(reqwest::redirect::Policy::none())
             .no_proxy()
             .no_gzip()
@@ -80,47 +150,216 @@ impl Client {
             project,
             http,
             base,
+            credential,
+            session: Mutex::new(Session {
+                header,
+                renew_at: None,
+                epoch: 0,
+            }),
+            renewals: AtomicUsize::new(0),
             requests: AtomicUsize::new(0),
             transferred: AtomicUsize::new(0),
             started: Instant::now(),
         })
     }
-    async fn request<T: DeserializeOwned>(
+    fn renewable(&self) -> bool {
+        !matches!(self.credential, Credential::Static)
+    }
+    fn project_url(&self, path: &str) -> anyhow::Result<Url> {
+        Ok(self
+            .base
+            .join(&format!("projects/{}/{path}", self.project))?)
+    }
+    /// The current bearer, renewing first when it is absent or about to expire.
+    async fn current(&self) -> anyhow::Result<(header::HeaderValue, u64)> {
+        let mut session = self.session.lock().await;
+        let stale =
+            session.header.is_none() || session.renew_at.is_some_and(|at| Instant::now() >= at);
+        if stale && self.renewable() {
+            self.renew(&mut session).await?;
+        }
+        let header = session
+            .header
+            .clone()
+            .ok_or_else(|| anyhow!("no credential available"))?;
+        Ok((header, session.epoch))
+    }
+    /// A `401` for a token of this epoch: renew unless another request already did.
+    async fn rejected(&self, seen: u64) -> anyhow::Result<()> {
+        let mut session = self.session.lock().await;
+        if session.epoch == seen {
+            self.renew(&mut session).await?;
+        }
+        Ok(())
+    }
+    async fn renew(&self, session: &mut Session) -> anyhow::Result<()> {
+        ensure!(
+            self.renewals.fetch_add(1, Ordering::Relaxed) < MAX_RENEWALS,
+            "credential renewal limit reached; sign in again"
+        );
+        let (token, lifetime) = match &self.credential {
+            Credential::Static => anyhow::bail!("the access token expired; obtain a fresh token"),
+            Credential::Refresh {
+                refresh_file,
+                access_file,
+            } => self.refresh(refresh_file, access_file.as_deref()).await?,
+            Credential::Device { key, scopes } => self.device_token(key, scopes).await?,
+        };
+        // Any rotated secret is already saved. A hostile lifetime can neither
+        // overflow `Instant` nor force renewal on every request.
+        let renew_at = match lifetime.filter(|l| !l.is_zero()) {
+            Some(lifetime) => {
+                let lifetime = lifetime.min(MAX_LIFETIME);
+                let margin = RENEW_MARGIN.min(lifetime / 4);
+                Some(
+                    Instant::now()
+                        .checked_add(lifetime - margin)
+                        .ok_or_else(|| anyhow!("unexpected token lifetime from the server"))?,
+                )
+            }
+            None => None,
+        };
+        session.header = Some(bearer(&token)?);
+        session.renew_at = renew_at;
+        session.epoch += 1;
+        Ok(())
+    }
+    /// Rotate the refresh secret. The replacement files are prepared first; the
+    /// rotated secret is persisted before anything else can fail.
+    async fn refresh(
         &self,
-        method: Method,
-        path: &str,
-        query: &[(&str, String)],
-        body: Option<&Value>,
-        cap: usize,
-        missing: bool,
-    ) -> anyhow::Result<Option<T>> {
+        refresh_file: &Path,
+        access_file: Option<&Path>,
+    ) -> anyhow::Result<(String, Option<Duration>)> {
+        let presented = String::from_utf8(read(refresh_file, 1024)?)?;
+        let presented = presented.trim();
+        ensure!(is_secret(presented), "invalid refresh token file");
+        let refresh_out = crate::private_file::Replacement::prepare(refresh_file)?;
+        let access_out = access_file
+            .map(crate::private_file::Replacement::prepare)
+            .transpose()?;
+        #[derive(Deserialize)]
+        struct Rotated {
+            access_token: String,
+            refresh_token: String,
+            expires_in: Option<u64>,
+        }
+        let rotated: Rotated = self
+            .anonymous(
+                "auth/refresh",
+                &json!({ "refresh_token": presented }),
+                16 * 1024,
+            )
+            .await
+            .map_err(|e| anyhow!("refresh token rejected or unavailable ({e}); sign in again"))?;
+        ensure!(
+            is_secret(&rotated.refresh_token),
+            "unexpected refresh response; sign in again"
+        );
+        // The server has already retired the presented secret: persist its
+        // successor before anything else can fail.
+        refresh_out
+            .commit(rotated.refresh_token.as_bytes())
+            .context(
+                "the server rotated the refresh token but it could not be saved; sign in again",
+            )?;
+        bearer(&rotated.access_token)?;
+        if let Some(access_out) = access_out {
+            access_out.commit(rotated.access_token.as_bytes())?;
+        }
+        Ok((
+            rotated.access_token,
+            rotated.expires_in.map(Duration::from_secs),
+        ))
+    }
+    /// One challenge/response with the enrolled key. The challenge is verified
+    /// against the independently configured installation, project and scopes
+    /// before anything is signed.
+    async fn device_token(
+        &self,
+        key: &Ed25519KeyPair,
+        scopes: &[String],
+    ) -> anyhow::Result<(String, Option<Duration>)> {
+        #[derive(Deserialize)]
+        struct Issued {
+            challenge: SessionChallenge,
+            mac: String,
+        }
+        let issued: Issued = self
+            .anonymous(
+                &format!("projects/{}/device-sessions/challenge", self.project),
+                &json!({"public_key":lower_hex(key.public_key().as_ref()),"scopes":scopes}),
+                8 * 1024,
+            )
+            .await?;
+        let proof = SessionProof::sign(
+            issued.challenge,
+            issued.mac,
+            self.remote.authority,
+            self.project,
+            scopes,
+            key,
+        )
+        .map_err(|_| anyhow!("device-session challenge differs from the configured installation, project, key or scopes; nothing was signed"))?;
+        #[derive(Deserialize)]
+        struct Granted {
+            access_token: String,
+            expires_in: u64,
+        }
+        let session: Granted = self
+            .anonymous(
+                &format!("projects/{}/device-sessions", self.project),
+                &json!(proof),
+                16 * 1024,
+            )
+            .await
+            .map_err(|e| anyhow!("device sign-in refused ({e}); check that the key is enrolled and unrevoked and that the account can still access the project"))?;
+        ensure!(
+            session.expires_in > 0 && session.expires_in <= TOKEN_TTL_SECONDS as u64,
+            "unexpected device-session lifetime"
+        );
+        Ok((
+            session.access_token,
+            Some(Duration::from_secs(session.expires_in)),
+        ))
+    }
+    /// Count a request against the run's deadline and request budget.
+    fn admit(&self) -> anyhow::Result<()> {
         ensure!(
             self.started.elapsed() < Duration::from_secs(1800)
                 && self.requests.fetch_add(1, Ordering::Relaxed) < 100_000,
             "transfer run deadline/request limit; verified partial progress is retained"
         );
-        let mut url = self
-            .base
-            .join(&format!("projects/{}/{path}", self.project))?;
-        if !query.is_empty() {
-            url.query_pairs_mut()
-                .extend_pairs(query.iter().map(|(k, v)| (*k, v)));
-        }
+        Ok(())
+    }
+    async fn send(
+        &self,
+        method: Method,
+        url: Url,
+        body: Option<&[u8]>,
+        authorization: Option<header::HeaderValue>,
+    ) -> anyhow::Result<reqwest::Response> {
         let mut request = self.http.request(method, url);
-        if let Some(body) = body {
-            let bytes = serde_json::to_vec(body)?;
-            self.charge(bytes.len())?;
+        if let Some(authorization) = authorization {
+            request = request.header(header::AUTHORIZATION, authorization);
+        }
+        if let Some(bytes) = body {
             request = request
                 .header(header::CONTENT_TYPE, "application/json")
-                .body(bytes);
+                .body(bytes.to_vec());
         }
-        let mut response = request.send().await.map_err(|_| anyhow!("remote request failed or timed out; retry is safe, fetch after an uncertain ref update"))?;
-        if missing && response.status() == StatusCode::NOT_FOUND {
-            return Ok(None);
-        }
+        request.send().await.map_err(|_| anyhow!("remote request failed or timed out; retry is safe, fetch after an uncertain ref update"))
+    }
+    /// Success status, bounded body and JSON decoding, without logging the body.
+    async fn finish<T: DeserializeOwned>(
+        &self,
+        mut response: reqwest::Response,
+        label: &str,
+        cap: usize,
+    ) -> anyhow::Result<T> {
         ensure!(
             response.status().is_success(),
-            "remote HTTP {} at {path}; no response body logged",
+            "remote HTTP {} at {label}; no response body logged",
             response.status().as_u16()
         );
         ensure!(
@@ -140,7 +379,85 @@ impl Client {
             self.charge(chunk.len())?;
             bytes.extend_from_slice(&chunk);
         }
-        Ok(Some(serde_json::from_slice(&bytes)?))
+        Ok(serde_json::from_slice(&bytes)?)
+    }
+    /// Unauthenticated JSON POST relative to the API base (never carries a bearer).
+    /// Deliberately independent of `exchange`: renewal runs inside a request.
+    async fn anonymous<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &Value,
+        cap: usize,
+    ) -> anyhow::Result<T> {
+        self.admit()?;
+        let encoded = serde_json::to_vec(body)?;
+        self.charge(encoded.len())?;
+        let response = self
+            .send(Method::POST, self.base.join(path)?, Some(&encoded), None)
+            .await?;
+        self.finish(response, path, cap).await
+    }
+    #[allow(clippy::too_many_arguments)]
+    async fn exchange<T: DeserializeOwned>(
+        &self,
+        method: Method,
+        url: Url,
+        label: &str,
+        body: Option<&Value>,
+        cap: usize,
+        missing: bool,
+    ) -> anyhow::Result<Option<T>> {
+        self.admit()?;
+        let encoded = match body {
+            Some(body) => {
+                let bytes = serde_json::to_vec(body)?;
+                self.charge(bytes.len())?;
+                Some(bytes)
+            }
+            None => None,
+        };
+        let mut renewed = false;
+        let response = loop {
+            let (header, epoch) = self.current().await?;
+            let response = self
+                .send(
+                    method.clone(),
+                    url.clone(),
+                    encoded.as_deref(),
+                    Some(header),
+                )
+                .await?;
+            // A 401 comes from the credential extractor or from the account lock that
+            // opens each transaction, both before the handler writes anything, and
+            // ref updates are compare-and-swap. The identical request is retried
+            // once with a renewed credential.
+            if response.status() == StatusCode::UNAUTHORIZED && !renewed && self.renewable() {
+                renewed = true;
+                self.rejected(epoch).await?;
+                continue;
+            }
+            break response;
+        };
+        if missing && response.status() == StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        Ok(Some(self.finish(response, label, cap).await?))
+    }
+    async fn request<T: DeserializeOwned>(
+        &self,
+        method: Method,
+        path: &str,
+        query: &[(&str, String)],
+        body: Option<&Value>,
+        cap: usize,
+        missing: bool,
+    ) -> anyhow::Result<Option<T>> {
+        let mut url = self.project_url(path)?;
+        if !query.is_empty() {
+            url.query_pairs_mut()
+                .extend_pairs(query.iter().map(|(k, v)| (*k, v)));
+        }
+        self.exchange(method, url, path, body, cap, missing).await
     }
     fn charge(&self, bytes: usize) -> anyhow::Result<()> {
         ensure!(

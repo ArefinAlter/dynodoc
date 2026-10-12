@@ -2,7 +2,10 @@
 //! Centralized document events/editors are not advanced by these separate refs.
 use crate::{
     access::{self, MemberRole, Policy},
-    auth::AuthContext,
+    auth::{
+        device::{HistoryRead, HistoryWrite, ProjectAuth},
+        AuthContext,
+    },
     devices,
     error::ApiError,
     product::audit,
@@ -91,19 +94,28 @@ async fn serial(db: &mut PgConnection, project: Uuid) -> Result<(), ApiError> {
         .await?;
     Ok(())
 }
+/// A non-member gets 403 before any publication, receipt or review lookup can
+/// answer 404/409 (no existence oracle). Lock-free on purpose: `authorize`, which
+/// follows, keeps the document-then-space lock order and is the authoritative check.
+async fn member(db: &mut PgConnection, auth: &AuthContext, project: Uuid) -> Result<(), ApiError> {
+    crate::projects::require(db, project, auth.identity_id)
+        .await
+        .map(|_| ())
+}
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Publish {
     address: Address,
 }
-#[utoipa::path(operation_id="project_history_publish",post,path="/projects/{id}/history/commits",tag="project history",params(("id"=Uuid,Path)),request_body=Value,security(("paseto"=[])),responses((status=200,description="Explicit publication of own staged candidate and exactly its reachable objects; dependencies must already be published; no branch move",body=Value),(status=403,description="Current contributor access and active own signing key required"),(status=507,description="Project metadata budget reached")))]
+#[utoipa::path(operation_id="project_history_publish",post,path="/projects/{id}/history/commits",tag="project history",params(("id"=Uuid,Path)),request_body=Value,security(("paseto"=[]),("device_session"=["history:write"])),responses((status=200,description="Explicit publication of own staged candidate and exactly its reachable objects; dependencies must already be published; no branch move",body=Value),(status=403,description="Current contributor access and active own signing key required"),(status=507,description="Project metadata budget reached")))]
 async fn publish(
     State(state): State<AppState>,
-    auth: AuthContext,
+    auth: ProjectAuth<HistoryWrite>,
     Path(id): Path<Uuid>,
     Json(input): Json<Publish>,
 ) -> Result<Json<Value>, ApiError> {
     let mut tx = start(&state, &auth).await?;
+    member(&mut tx, &auth, id).await?;
     // An exact accepted retry is a read, including after device revocation.
     match load(&mut tx, id, &input.address).await {
         Ok(stored) => {
@@ -182,13 +194,14 @@ async fn publish(
         json!({"address":input.address,"visibility":"project","branch_changed":false}),
     ))
 }
-#[utoipa::path(operation_id="project_history_commit",get,path="/projects/{id}/history/commits/{address}",tag="project history",params(("id"=Uuid,Path),("address"=String,Path)),security(("paseto"=[])),responses((status=200,description="Published signed envelope; entire transitive file scope requires current access",body=Value)))]
+#[utoipa::path(operation_id="project_history_commit",get,path="/projects/{id}/history/commits/{address}",tag="project history",params(("id"=Uuid,Path),("address"=String,Path)),security(("paseto"=[]),("device_session"=["history:read"])),responses((status=200,description="Published signed envelope; entire transitive file scope requires current access",body=Value)))]
 async fn commit(
     State(state): State<AppState>,
-    auth: AuthContext,
+    auth: ProjectAuth<HistoryRead>,
     Path((id, address)): Path<(Uuid, Address)>,
 ) -> Result<Json<Value>, ApiError> {
     let mut tx = start(&state, &auth).await?;
+    member(&mut tx, &auth, id).await?;
     let stored = load(&mut tx, id, &address).await?;
     authorize(&mut tx, &auth, id, &stored.scope, false).await?;
     tx.commit().await?;
@@ -207,15 +220,16 @@ fn page_limit(limit: Option<i64>) -> Result<i64, ApiError> {
     }
     Ok(limit)
 }
-#[utoipa::path(operation_id="project_history_inventory",get,path="/projects/{id}/history/commits/{address}/objects/{document}",tag="project history",params(("id"=Uuid,Path),("address"=String,Path),("document"=Uuid,Path),("after"=Option<String>,Query),("limit"=Option<i64>,Query)),security(("paseto"=[])),responses((status=200,description="Reachable object keys in this published file state only; maximum 256",body=Value)))]
+#[utoipa::path(operation_id="project_history_inventory",get,path="/projects/{id}/history/commits/{address}/objects/{document}",tag="project history",params(("id"=Uuid,Path),("address"=String,Path),("document"=Uuid,Path),("after"=Option<String>,Query),("limit"=Option<i64>,Query)),security(("paseto"=[]),("device_session"=["history:read"])),responses((status=200,description="Reachable object keys in this published file state only; maximum 256",body=Value)))]
 async fn inventory(
     State(state): State<AppState>,
-    auth: AuthContext,
+    auth: ProjectAuth<HistoryRead>,
     Path((id, address, document)): Path<(Uuid, Address, Uuid)>,
     Query(page): Query<Page>,
 ) -> Result<Json<Value>, ApiError> {
     let limit = page_limit(page.limit)?;
     let mut tx = start(&state, &auth).await?;
+    member(&mut tx, &auth, id).await?;
     let stored = load(&mut tx, id, &address).await?;
     authorize(&mut tx, &auth, id, &stored.scope, false).await?;
     let root = stored
@@ -234,13 +248,14 @@ async fn inventory(
         json!({"addresses":keys,"next":keys.last(),"visibility":"project"}),
     ))
 }
-#[utoipa::path(operation_id="project_history_object",get,path="/projects/{id}/history/commits/{address}/objects/{document}/{object}",tag="project history",params(("id"=Uuid,Path),("address"=String,Path),("document"=Uuid,Path),("object"=String,Path)),security(("paseto"=[])),responses((status=200,description="Hash-verified base64 object reachable from this published file state",body=Value),(status=404,description="Not reachable from this publication")))]
+#[utoipa::path(operation_id="project_history_object",get,path="/projects/{id}/history/commits/{address}/objects/{document}/{object}",tag="project history",params(("id"=Uuid,Path),("address"=String,Path),("document"=Uuid,Path),("object"=String,Path)),security(("paseto"=[]),("device_session"=["history:read"])),responses((status=200,description="Hash-verified base64 object reachable from this published file state",body=Value),(status=404,description="Not reachable from this publication")))]
 async fn object(
     State(state): State<AppState>,
-    auth: AuthContext,
+    auth: ProjectAuth<HistoryRead>,
     Path((id, address, document, object)): Path<(Uuid, Address, Uuid, Address)>,
 ) -> Result<Json<Value>, ApiError> {
     let mut tx = start(&state, &auth).await?;
+    member(&mut tx, &auth, id).await?;
     let stored = load(&mut tx, id, &address).await?;
     authorize(&mut tx, &auth, id, &stored.scope, false).await?;
     let root = stored
@@ -267,10 +282,10 @@ struct Acknowledge {
     document: Uuid,
     addresses: Vec<Address>,
 }
-#[utoipa::path(operation_id="project_history_acknowledge",post,path="/projects/{id}/history/commits/{address}/acknowledge",tag="project history",params(("id"=Uuid,Path),("address"=String,Path)),request_body=Value,security(("paseto"=[])),responses((status=200,description="Privately acknowledge up to 256 objects reachable from an authorized published file state, without uploading their bytes again",body=Value),(status=404,description="An object is not reachable from this publication; nothing acknowledged"),(status=507,description="Private staging quota reached; nothing acknowledged")))]
+#[utoipa::path(operation_id="project_history_acknowledge",post,path="/projects/{id}/history/commits/{address}/acknowledge",tag="project history",params(("id"=Uuid,Path),("address"=String,Path)),request_body=Value,security(("paseto"=[]),("device_session"=["history:write"])),responses((status=200,description="Privately acknowledge up to 256 objects reachable from an authorized published file state, without uploading their bytes again",body=Value),(status=404,description="An object is not reachable from this publication; nothing acknowledged"),(status=507,description="Private staging quota reached; nothing acknowledged")))]
 async fn acknowledge(
     State(state): State<AppState>,
-    auth: AuthContext,
+    auth: ProjectAuth<HistoryWrite>,
     Path((id, address)): Path<(Uuid, Address)>,
     Json(input): Json<Acknowledge>,
 ) -> Result<Json<Value>, ApiError> {
@@ -278,6 +293,7 @@ async fn acknowledge(
         return Err(bad("Acknowledge 1 to 256 published objects"));
     }
     let mut tx = start(&state, &auth).await?;
+    member(&mut tx, &auth, id).await?;
     let published = load(&mut tx, id, &address).await?;
     authorize(&mut tx, &auth, id, &published.scope, false).await?;
     authorize(&mut tx, &auth, id, &[input.document], true).await?;
@@ -490,15 +506,16 @@ async fn latest_reviews(
     Ok(sqlx::query_as("select distinct on (reviewer) reviewer,decision from project_history_review where project_id=$1 and branch=$2 and candidate=$3 and expected_generation=$4 and expected_commit is not distinct from $5 order by reviewer,id desc limit 257")
         .bind(project).bind(&target.branch).bind(target.candidate.as_str()).bind(target.generation()).bind(target.previous()).fetch_all(db).await?)
 }
-#[utoipa::path(operation_id="project_history_advance",post,path="/projects/{id}/history/refs",tag="project history",params(("id"=Uuid,Path)),request_body=Value,security(("paseto"=[])),responses((status=200,description="Atomic fast-forward branch CAS; main enforces current project/file merge roles and approvals; no centralized document edits",body=Value),(status=409,description="Stale head, unavailable ancestry, non-fast-forward or unmet reviews")))]
+#[utoipa::path(operation_id="project_history_advance",post,path="/projects/{id}/history/refs",tag="project history",params(("id"=Uuid,Path)),request_body=Value,security(("paseto"=[]),("device_session"=["history:write"])),responses((status=200,description="Atomic fast-forward branch CAS; main enforces current project/file merge roles and approvals; no centralized document edits",body=Value),(status=409,description="Stale head, unavailable ancestry, non-fast-forward or unmet reviews")))]
 async fn advance(
     State(state): State<AppState>,
-    auth: AuthContext,
+    auth: ProjectAuth<HistoryWrite>,
     Path(id): Path<Uuid>,
     Json(target): Json<Target>,
 ) -> Result<Json<Value>, ApiError> {
     target.validate()?;
     let mut tx = start(&state, &auth).await?;
+    member(&mut tx, &auth, id).await?;
     let candidate = load(&mut tx, id, &target.candidate).await?;
     authorize(&mut tx, &auth, id, &candidate.scope, true).await?;
     serial(&mut tx, id).await?;
@@ -626,10 +643,10 @@ struct RefPage {
     after: Option<String>,
     limit: Option<i64>,
 }
-#[utoipa::path(operation_id="project_history_refs",get,path="/projects/{id}/history/refs",tag="project history",params(("id"=Uuid,Path),("branch"=Option<String>,Query),("after"=Option<String>,Query),("limit"=Option<i64>,Query)),security(("paseto"=[])),responses((status=200,description="Current published branch heads, keyset page max 256; whole page fails closed when any head scope is unavailable",body=Value)))]
+#[utoipa::path(operation_id="project_history_refs",get,path="/projects/{id}/history/refs",tag="project history",params(("id"=Uuid,Path),("branch"=Option<String>,Query),("after"=Option<String>,Query),("limit"=Option<i64>,Query)),security(("paseto"=[]),("device_session"=["history:read"])),responses((status=200,description="Current published branch heads, keyset page max 256; whole page fails closed when any head scope is unavailable",body=Value)))]
 async fn refs(
     State(state): State<AppState>,
-    auth: AuthContext,
+    auth: ProjectAuth<HistoryRead>,
     Path(id): Path<Uuid>,
     Query(page): Query<RefPage>,
 ) -> Result<Json<Value>, ApiError> {
@@ -689,10 +706,10 @@ struct Review {
     target: Target,
     decision: String,
 }
-#[utoipa::path(operation_id="project_history_review",post,path="/projects/{id}/history/reviews",tag="project history",params(("id"=Uuid,Path)),request_body=Value,security(("paseto"=[])),responses((status=200,description="Append approve/request_changes for exact branch base generation and candidate; independent current reviewer required",body=Value),(status=409,description="Base changed")))]
+#[utoipa::path(operation_id="project_history_review",post,path="/projects/{id}/history/reviews",tag="project history",params(("id"=Uuid,Path)),request_body=Value,security(("paseto"=[]),("device_session"=["history:write"])),responses((status=200,description="Append approve/request_changes for exact branch base generation and candidate; independent current reviewer required",body=Value),(status=409,description="Base changed")))]
 async fn review(
     State(state): State<AppState>,
-    auth: AuthContext,
+    auth: ProjectAuth<HistoryWrite>,
     Path(id): Path<Uuid>,
     Json(input): Json<Review>,
 ) -> Result<Json<Value>, ApiError> {
@@ -701,6 +718,7 @@ async fn review(
         return Err(bad("Unknown review decision"));
     }
     let mut tx = start(&state, &auth).await?;
+    member(&mut tx, &auth, id).await?;
     let candidate = load(&mut tx, id, &input.target.candidate).await?;
     authorize(&mut tx, &auth, id, &candidate.scope, false).await?;
     serial(&mut tx, id).await?;
@@ -750,15 +768,16 @@ struct ReviewPage {
     after: Option<i64>,
     limit: Option<i64>,
 }
-#[utoipa::path(operation_id="project_history_reviews",get,path="/projects/{id}/history/reviews",tag="project history",params(("id"=Uuid,Path),("candidate"=String,Query),("after"=Option<i64>,Query),("limit"=Option<i64>,Query)),security(("paseto"=[])),responses((status=200,description="Bounded review history for a published candidate; no emails",body=Value)))]
+#[utoipa::path(operation_id="project_history_reviews",get,path="/projects/{id}/history/reviews",tag="project history",params(("id"=Uuid,Path),("candidate"=String,Query),("after"=Option<i64>,Query),("limit"=Option<i64>,Query)),security(("paseto"=[]),("device_session"=["history:read"])),responses((status=200,description="Bounded review history for a published candidate; no emails",body=Value)))]
 async fn reviews(
     State(state): State<AppState>,
-    auth: AuthContext,
+    auth: ProjectAuth<HistoryRead>,
     Path(id): Path<Uuid>,
     Query(page): Query<ReviewPage>,
 ) -> Result<Json<Value>, ApiError> {
     let limit = page_limit(page.limit)?;
     let mut tx = start(&state, &auth).await?;
+    member(&mut tx, &auth, id).await?;
     let candidate = load(&mut tx, id, &page.candidate).await?;
     authorize(&mut tx, &auth, id, &candidate.scope, false).await?;
     let items:Vec<Value>=sqlx::query_scalar("select jsonb_build_object('id',id,'branch',branch,'expected_generation',expected_generation,'expected_commit',expected_commit,'reviewer',reviewer,'decision',decision,'created_at',created_at) from project_history_review where project_id=$1 and candidate=$2 and id>$3 order by id limit $4")
@@ -768,10 +787,10 @@ async fn reviews(
         json!({"items":items,"next":items.last().map(|r|&r["id"])}),
     ))
 }
-#[utoipa::path(operation_id="project_history_storage",get,path="/projects/{id}/history/storage",tag="project history",params(("id"=Uuid,Path)),security(("paseto"=[])),responses((status=200,description="Project published metadata budget; physical object bytes have separate document/creator limits",body=Value)))]
+#[utoipa::path(operation_id="project_history_storage",get,path="/projects/{id}/history/storage",tag="project history",params(("id"=Uuid,Path)),security(("paseto"=[]),("device_session"=["history:read"])),responses((status=200,description="Project published metadata budget; physical object bytes have separate document/creator limits",body=Value)))]
 async fn storage(
     State(state): State<AppState>,
-    auth: AuthContext,
+    auth: ProjectAuth<HistoryRead>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>, ApiError> {
     let mut tx = start(&state, &auth).await?;
@@ -785,10 +804,10 @@ async fn storage(
     tx.commit().await?;
     Ok(Json(usage.unwrap_or(json!({"bytes_used":0,"rows_used":0,"branches_used":0,"byte_limit":1073741824,"row_limit":1000000,"branch_limit":4096}))))
 }
-#[utoipa::path(operation_id="project_history_authority",get,path="/projects/{id}/history/authority",tag="project history",params(("id"=Uuid,Path)),security(("paseto"=[])),responses((status=200,description="Installed public receipt authority; clients must verify this binding through an independently trusted channel",body=Value)))]
+#[utoipa::path(operation_id="project_history_authority",get,path="/projects/{id}/history/authority",tag="project history",params(("id"=Uuid,Path)),security(("paseto"=[]),("device_session"=["history:read"])),responses((status=200,description="Installed public receipt authority; clients must verify this binding through an independently trusted channel",body=Value)))]
 async fn authority(
     State(state): State<AppState>,
-    auth: AuthContext,
+    auth: ProjectAuth<HistoryRead>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>, ApiError> {
     let mut tx = start(&state, &auth).await?;
@@ -812,10 +831,10 @@ struct ReceiptPage {
     after_generation: Option<i64>,
     limit: Option<i64>,
 }
-#[utoipa::path(operation_id="project_history_receipts",get,path="/projects/{id}/history/receipts",tag="project history",params(("id"=Uuid,Path),("branch"=String,Query),("after_generation"=Option<i64>,Query),("limit"=Option<i64>,Query)),security(("paseto"=[])),responses((status=200,description="At most 256 consecutive signed ref receipts, oldest first; current head scope must remain accessible",body=Value),(status=409,description="Erased branch head or receipt gap")))]
+#[utoipa::path(operation_id="project_history_receipts",get,path="/projects/{id}/history/receipts",tag="project history",params(("id"=Uuid,Path),("branch"=String,Query),("after_generation"=Option<i64>,Query),("limit"=Option<i64>,Query)),security(("paseto"=[]),("device_session"=["history:read"])),responses((status=200,description="At most 256 consecutive signed ref receipts, oldest first; current head scope must remain accessible",body=Value),(status=409,description="Erased branch head or receipt gap")))]
 async fn receipts(
     State(state): State<AppState>,
-    auth: AuthContext,
+    auth: ProjectAuth<HistoryRead>,
     Path(id): Path<Uuid>,
     Query(page): Query<ReceiptPage>,
 ) -> Result<Json<Value>, ApiError> {
@@ -825,6 +844,7 @@ async fn receipts(
         return Err(bad("Invalid receipt cursor or branch"));
     }
     let mut tx = start(&state, &auth).await?;
+    member(&mut tx, &auth, id).await?;
     let current = latest_receipt(&mut tx, id, &page.branch)
         .await?
         .ok_or(ApiError::NotFound)?;

@@ -731,3 +731,491 @@ async fn interrupted_or_corrupt_download_retains_verified_objects_and_never_impo
     remove(p1).await;
     remove(p2).await;
 }
+
+// --- renewal and project device sessions -------------------------------------------
+
+fn scratch() -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("dynodoc-credentials-{}", Uuid::new_v4()));
+    std::fs::create_dir(&dir).unwrap();
+    dir
+}
+fn entries(dir: &Path) -> Vec<String> {
+    let mut names: Vec<_> = std::fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+async fn get_json(url: &str, path: &str, login: &str) -> Value {
+    let response = reqwest::Client::new()
+        .get(format!("{url}{path}"))
+        .bearer_auth(login)
+        .send()
+        .await
+        .unwrap();
+    assert!(response.status().is_success(), "{path}");
+    response.json().await.unwrap()
+}
+async fn api(
+    pool: &PgPool,
+    signer: Option<Arc<Ed25519KeyPair>>,
+) -> (String, tokio::task::JoinHandle<()>) {
+    let mut state = AppState::new(
+        pool.clone(),
+        AuthConfig {
+            paseto_key: TOKEN_KEY,
+            service_key: None,
+            token_ttl_seconds: 3600,
+            public_base_url: "http://test.local".into(),
+        },
+    );
+    state.ref_signer = signer;
+    serve(app(state)).await
+}
+fn device(url: &str, authority: Uuid, project: Uuid, seed: u8, scopes: &[&str]) -> Client {
+    Client::with_credential(
+        remote(url.to_owned(), authority),
+        project,
+        Credential::Device {
+            key: key(seed),
+            scopes: scopes.iter().map(|s| s.to_string()).collect(),
+        },
+        None,
+        true,
+    )
+    .unwrap()
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn refresh_rotation_retries_once_and_replaces_files_atomically(pool: PgPool) {
+    let authority = engine_core::repository::server_authority::install(
+        &pool,
+        &hex::encode(key(99).public_key().as_ref()),
+    )
+    .await
+    .unwrap();
+    let runtime = common::RuntimeDatabase::new(pool.clone()).await;
+    let (url, server) = api(&runtime.pool, None).await;
+    let (owner, login) = actor(&runtime.pool, "owner").await;
+    let project: Uuid = serde_json::from_value(
+        post(&url, "projects", &login, json!({"name":"Renewal"})).await["id"].clone(),
+    )
+    .unwrap();
+    // A real login: bound session, an access token that has already expired, and
+    // a refresh secret the server knows only by hash.
+    let session = Uuid::new_v4();
+    let secret = "ab".repeat(32);
+    sqlx::query("insert into refresh_token(identity_id,token_hash,expires_at,session_generation,session_id) values($1,$2,now()+interval '1 day',0,$3)")
+        .bind(owner)
+        .bind(engine_api::auth::sha256(secret.as_bytes()))
+        .bind(session)
+        .execute(&runtime.pool)
+        .await
+        .unwrap();
+    let expired = token::mint_bound_session(&TOKEN_KEY, owner, -30, 0, Some(session)).unwrap();
+    let dir = scratch();
+    let (access_file, refresh_file) = (dir.join("access.txt"), dir.join("refresh.txt"));
+    std::fs::write(&access_file, &expired).unwrap();
+    std::fs::write(&refresh_file, &secret).unwrap();
+    let credential = || Credential::Refresh {
+        refresh_file: refresh_file.clone(),
+        access_file: Some(access_file.clone()),
+    };
+
+    let client = Client::with_credential(
+        remote(url.clone(), authority),
+        project,
+        credential(),
+        Some(&expired),
+        true,
+    )
+    .unwrap();
+    let files: Value = client.get("files", &[], 1 << 20).await.unwrap();
+    assert!(files["items"].is_array());
+    // Rotation persisted both secrets completely and left no temporary files.
+    let rotated = std::fs::read_to_string(&refresh_file).unwrap();
+    let access = std::fs::read_to_string(&access_file).unwrap();
+    assert!(rotated.len() == 64 && rotated != secret);
+    assert!(!access.is_empty() && access != expired);
+    assert_eq!(entries(&dir), ["access.txt", "refresh.txt"]);
+    // The consumed refresh secret is dead; the new files work without renewal.
+    let stale = reqwest::Client::new()
+        .post(format!("{url}auth/refresh"))
+        .json(&json!({"refresh_token":secret}))
+        .send()
+        .await
+        .unwrap()
+        .status();
+    assert_eq!(stale, reqwest::StatusCode::UNAUTHORIZED);
+    let second = Client::with_credential(
+        remote(url.clone(), authority),
+        project,
+        credential(),
+        Some(access.trim()),
+        true,
+    )
+    .unwrap();
+    second.get::<Value>("files", &[], 1 << 20).await.unwrap();
+    assert_eq!(std::fs::read_to_string(&refresh_file).unwrap(), rotated);
+    // A start with only the refresh file renews before its first request.
+    let only_refresh = Client::with_credential(
+        remote(url.clone(), authority),
+        project,
+        Credential::Refresh {
+            refresh_file: refresh_file.clone(),
+            access_file: None,
+        },
+        None,
+        true,
+    )
+    .unwrap();
+    only_refresh
+        .get::<Value>("files", &[], 1 << 20)
+        .await
+        .unwrap();
+    let rotated_again = std::fs::read_to_string(&refresh_file).unwrap();
+    assert_ne!(rotated_again, rotated);
+    // An invalid refresh secret changes nothing and reports no secret.
+    std::fs::write(&refresh_file, "cd".repeat(32)).unwrap();
+    let broken = Client::with_credential(
+        remote(url.clone(), authority),
+        project,
+        credential(),
+        Some(&expired),
+        true,
+    )
+    .unwrap();
+    let error = broken
+        .get::<Value>("files", &[], 1 << 20)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("401") && !error.contains(&"cd".repeat(32)),
+        "{error}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&refresh_file).unwrap(),
+        "cd".repeat(32)
+    );
+    assert_eq!(entries(&dir), ["access.txt", "refresh.txt"]);
+    // A fixed expired token stops with the server's refusal rather than looping.
+    let fixed = Client::new(remote(url.clone(), authority), project, &expired, true).unwrap();
+    assert!(fixed
+        .get::<Value>("files", &[], 1 << 20)
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("401"));
+    std::fs::remove_dir_all(dir).unwrap();
+    server.abort();
+    let _ = server.await;
+    runtime.close().await;
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn device_sessions_push_fetch_keep_policy_and_end_with_revocation_or_removal(pool: PgPool) {
+    let authority = engine_core::repository::server_authority::install(
+        &pool,
+        &hex::encode(key(99).public_key().as_ref()),
+    )
+    .await
+    .unwrap();
+    let runtime = common::RuntimeDatabase::new(pool.clone()).await;
+    let (url, server) = api(&runtime.pool, Some(Arc::new(key(99)))).await;
+    let (owner, login) = actor(&runtime.pool, "owner").await;
+    let (contributor, contributor_login) = actor(&runtime.pool, "contributor").await;
+    let project: Uuid = serde_json::from_value(
+        post(&url, "projects", &login, json!({"name":"Device"})).await["id"].clone(),
+    )
+    .unwrap();
+    let doc: Uuid = sqlx::query_scalar(
+        "insert into document(title,created_by,space_id) values('Report',$1,$2) returning id",
+    )
+    .bind(owner)
+    .bind(project)
+    .fetch_one(&runtime.pool)
+    .await
+    .unwrap();
+    sqlx::query("insert into space_member(space_id,identity_id,role) values($1,$2,'reviewer')")
+        .bind(project)
+        .bind(contributor)
+        .execute(&runtime.pool)
+        .await
+        .unwrap();
+    let owner_key = enroll(&url, &login, owner, 7).await;
+    let contributor_key = enroll(&url, &contributor_login, contributor, 8).await;
+    let scope = Scope {
+        authority,
+        project,
+        branch: "main".into(),
+    };
+    let rw = ["history:read", "history:write"];
+
+    // The owner publishes main with no account token anywhere.
+    let owner_client = device(&url, authority, project, 7, &rw);
+    owner_client.authority().await.unwrap();
+    let (p1, r1) = repo(project).await;
+    let (j1, journal1) = journal().await;
+    let first = commit(&r1, doc, &owner_key, vec![], "base").await;
+    let a = first.verify().unwrap();
+    let approved = plan(&r1, &owner_client, &journal1, &scope, a.clone(), true)
+        .await
+        .unwrap();
+    let result = push(&r1, &owner_client, &journal1, &scope, approved)
+        .await
+        .unwrap();
+    assert_eq!(result["head"]["generation"], 1);
+
+    // A read-only session fetches but cannot stage, publish or review.
+    let (p2, r2) = repo(project).await;
+    let (j2, journal2) = journal().await;
+    let reader = device(&url, authority, project, 8, &["history:read"]);
+    assert_eq!(transfer::fetch(&r2, &reader, &a).await.unwrap(), 1);
+    let second = commit(&r2, doc, &contributor_key, vec![a.clone()], "feature").await;
+    let b = second.verify().unwrap();
+    let review = plan(&r2, &reader, &journal2, &scope, b.clone(), false)
+        .await
+        .unwrap();
+    assert_eq!(review.publish.len(), 1);
+    let denied = push(&r2, &reader, &journal2, &scope, review.clone())
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(denied.contains("403"), "{denied}");
+    assert!(reader.published(&b).await.unwrap().is_none());
+
+    // A writing session publishes a candidate, but the contributor role still
+    // cannot move protected main: the server's rules are unchanged.
+    let writer = device(&url, authority, project, 8, &rw);
+    assert_eq!(
+        push(&r2, &writer, &journal2, &scope, review).await.unwrap()["branch_changed"],
+        false
+    );
+    assert!(writer.published(&b).await.unwrap().is_some());
+    let advance = plan(&r2, &writer, &journal2, &scope, b.clone(), true)
+        .await
+        .unwrap();
+    let refused = push(&r2, &writer, &journal2, &scope, advance)
+        .await
+        .unwrap_err();
+    assert!(format!("{refused:#}").contains("403"), "{refused:#}");
+    assert_eq!(
+        owner_client
+            .head(&scope)
+            .await
+            .unwrap()
+            .unwrap()
+            .receipt
+            .head
+            .commit,
+        a
+    );
+    // Review rules are the same too: with one required approval the owner cannot
+    // merge the contributor's candidate until a current approval exists.
+    sqlx::query("update project_settings set required_approvals=1 where space_id=$1")
+        .bind(project)
+        .execute(&runtime.pool)
+        .await
+        .unwrap();
+    transfer::fetch(&r1, &owner_client, &b).await.unwrap();
+    let merge = plan(&r1, &owner_client, &journal1, &scope, b.clone(), true)
+        .await
+        .unwrap();
+    let unreviewed = push(&r1, &owner_client, &journal1, &scope, merge.clone())
+        .await
+        .unwrap_err();
+    assert!(format!("{unreviewed:#}").contains("409"), "{unreviewed:#}");
+    owner_client
+        .post(
+            "history/reviews",
+            json!({"target":{"branch":"main","candidate":b,"expected":{"commit":a,"generation":1}},"decision":"approve"}),
+        )
+        .await
+        .unwrap();
+    let merged = push(&r1, &owner_client, &journal1, &scope, merge)
+        .await
+        .unwrap();
+    assert_eq!(merged["head"]["generation"], 2);
+    // One audit row per issuance, with no token material.
+    let issued: Vec<String> = sqlx::query_scalar(
+        "select detail::text from operation_audit where action='device.session_issued'",
+    )
+    .fetch_all(&runtime.pool)
+    .await
+    .unwrap();
+    assert!(issued.len() >= 3 && issued.iter().all(|d| !d.contains("v4.local")));
+
+    // Revoking the key ends this client; its renewal cannot succeed either.
+    let owner_key_id = get_json(&url, "devices", &login).await["keys"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    post(
+        &url,
+        &format!("devices/{owner_key_id}/revoke"),
+        &login,
+        json!({}),
+    )
+    .await;
+    let error = format!("{:#}", owner_client.head(&scope).await.unwrap_err());
+    assert!(error.contains("401"), "{error}");
+    let fresh = device(&url, authority, project, 7, &rw);
+    assert!(fresh.authority().await.is_err());
+
+    // Removing the member ends the contributor even with an unexpired token.
+    sqlx::query("delete from space_member where space_id=$1 and identity_id=$2")
+        .bind(project)
+        .bind(contributor)
+        .execute(&runtime.pool)
+        .await
+        .unwrap();
+    let error = format!("{:#}", writer.head(&scope).await.unwrap_err());
+    assert!(error.contains("403"), "{error}");
+    assert!(device(&url, authority, project, 8, &rw)
+        .authority()
+        .await
+        .is_err());
+    server.abort();
+    let _ = server.await;
+    journal1.close().await;
+    journal2.close().await;
+    r1.close().await;
+    r2.close().await;
+    for path in [p1, p2, j1, j2] {
+        remove(path).await;
+    }
+    runtime.close().await;
+}
+
+#[test]
+fn credential_options_conflict_and_require_a_source_for_network_actions() {
+    use clap::Parser;
+    #[derive(Parser)]
+    struct Cli {
+        #[command(flatten)]
+        options: Options,
+    }
+    let parse = |extra: &[&str], action: &str| {
+        let mut args = vec![
+            "sync",
+            "repo.sqlite",
+            "11111111-1111-4111-8111-111111111111",
+            "--remote",
+            "remote.json",
+            "--journal",
+            "pins.sqlite",
+            "--branch",
+            "main",
+        ];
+        args.extend(extra);
+        args.push(action);
+        Cli::try_parse_from(args)
+    };
+    assert!(parse(&["--device-key", "k.der"], "fetch").is_ok());
+    assert!(parse(&["--token-file", "a", "--refresh-token-file", "r"], "fetch").is_ok());
+    assert!(parse(&["--device-key", "k", "--token-file", "a"], "fetch").is_err());
+    assert!(parse(&["--device-key", "k", "--refresh-token-file", "r"], "fetch").is_err());
+    // Rotation replaces both files, so they must be two files.
+    let same = parse(
+        &[
+            "--token-file",
+            "same.txt",
+            "--refresh-token-file",
+            "same.txt",
+        ],
+        "fetch",
+    )
+    .unwrap()
+    .options;
+    let error = credentials(
+        &same,
+        remote("https://example.test/".into(), Uuid::new_v4()),
+    )
+    .err()
+    .unwrap()
+    .to_string();
+    assert!(error.contains("different files"), "{error}");
+    // Offline tracking needs no credential; any network action does.
+    let none = parse(&[], "fetch").unwrap().options;
+    assert!(credentials(
+        &none,
+        remote("https://example.test/".into(), Uuid::new_v4())
+    )
+    .is_err());
+    assert!(parse(&[], "tracking").is_ok());
+}
+
+#[tokio::test]
+async fn hostile_token_lifetimes_neither_panic_nor_lose_the_rotated_secret() {
+    use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+    let lifetime = Arc::new(AtomicU64::new(0));
+    let rotations = Arc::new(AtomicUsize::new(0));
+    let rotated = "cd".repeat(32);
+    let (served, counted, successor) = (lifetime.clone(), rotations.clone(), rotated.clone());
+    let router = Router::new()
+        .route(
+            "/auth/refresh",
+            axum::routing::post(move || {
+                counted.fetch_add(1, Ordering::Relaxed);
+                let (successor, expires_in) = (successor.clone(), served.load(Ordering::Relaxed));
+                async move {
+                    Json(json!({
+                        "access_token":"fresh-token",
+                        "token_type":"Bearer",
+                        "refresh_token":successor,
+                        "expires_in":expires_in,
+                    }))
+                }
+            }),
+        )
+        .route(
+            "/projects/:id/files",
+            get(|headers: axum::http::HeaderMap| async move {
+                let bearer = headers.get("authorization").and_then(|v| v.to_str().ok());
+                if bearer == Some("Bearer fresh-token") {
+                    Ok(Json(json!({"items":[]})))
+                } else {
+                    Err(axum::http::StatusCode::UNAUTHORIZED)
+                }
+            }),
+        );
+    let (url, server) = serve(router).await;
+    let dir = scratch();
+    let refresh_file = dir.join("refresh.txt");
+    // Overflowing, absurd, zero and ordinary values: one rotation each, no panic,
+    // the successor secret saved, and no renewal on the second request.
+    for expires_in in [u64::MAX, u64::MAX / 2, 1 << 40, 0, 3600] {
+        lifetime.store(expires_in, Ordering::Relaxed);
+        std::fs::write(&refresh_file, "ab".repeat(32)).unwrap();
+        let before = rotations.load(Ordering::Relaxed);
+        let client = Client::with_credential(
+            remote(url.clone(), Uuid::new_v4()),
+            Uuid::new_v4(),
+            Credential::Refresh {
+                refresh_file: refresh_file.clone(),
+                access_file: None,
+            },
+            None,
+            true,
+        )
+        .unwrap();
+        for _ in 0..2 {
+            client
+                .get::<Value>("files", &[], 1 << 16)
+                .await
+                .unwrap_or_else(|e| panic!("expires_in {expires_in}: {e:#}"));
+        }
+        assert_eq!(
+            rotations.load(Ordering::Relaxed),
+            before + 1,
+            "{expires_in}"
+        );
+        assert_eq!(std::fs::read_to_string(&refresh_file).unwrap(), rotated);
+        assert_eq!(entries(&dir), ["refresh.txt"]);
+    }
+    std::fs::remove_dir_all(dir).unwrap();
+    server.abort();
+    let _ = server.await;
+}

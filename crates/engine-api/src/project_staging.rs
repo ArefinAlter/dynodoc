@@ -1,5 +1,13 @@
 //! Account-private, resumable project transfers. No shared ref is published here.
-use crate::{auth::AuthContext, devices, error::ApiError, AppState};
+use crate::{
+    auth::{
+        device::{HistoryWrite, ProjectAuth},
+        AuthContext,
+    },
+    devices,
+    error::ApiError,
+    AppState,
+};
 use axum::{
     extract::{DefaultBodyLimit, Path, Query, State},
     routing::{get, post},
@@ -65,6 +73,11 @@ pub(crate) async fn authorize(
     scope: &[Uuid],
     writing: bool,
 ) -> Result<(), ApiError> {
+    // A device session is bound to one project; the extractor already refused a
+    // different route project, this keeps the invariant for every caller.
+    if auth.device.as_ref().is_some_and(|d| d.project != project) {
+        return Err(ApiError::Forbidden);
+    }
     if scope.len() > MAX_SCOPE {
         return Err(bad(
             "Project history scope is limited to 256 historical files",
@@ -128,10 +141,10 @@ struct Upload {
     objects: Vec<Packet>,
 }
 
-#[utoipa::path(post,path="/projects/{id}/staging/objects",tag="project staging",params(("id"=Uuid,Path)),request_body=Value,security(("paseto"=[])),responses((status=200,description="Private upload acknowledged; base64 bytes, at most 64 objects and 1 MiB decoded; no ref published",body=Value),(status=400,description="Invalid batch"),(status=403,description="Current project/file contribution access required"),(status=507,description="Durable quota reached")))]
+#[utoipa::path(post,path="/projects/{id}/staging/objects",tag="project staging",params(("id"=Uuid,Path)),request_body=Value,security(("paseto"=[]),("device_session"=["history:write"])),responses((status=200,description="Private upload acknowledged; base64 bytes, at most 64 objects and 1 MiB decoded; no ref published",body=Value),(status=400,description="Invalid batch"),(status=403,description="Current project/file contribution access required"),(status=507,description="Durable quota reached")))]
 async fn upload(
     State(state): State<AppState>,
-    auth: AuthContext,
+    auth: ProjectAuth<HistoryWrite>,
     Path(id): Path<Uuid>,
     Json(input): Json<Upload>,
 ) -> Result<Json<Value>, ApiError> {
@@ -175,10 +188,10 @@ struct Missing {
     document: Uuid,
     addresses: Vec<Address>,
 }
-#[utoipa::path(post,path="/projects/{id}/staging/objects/missing",tag="project staging",params(("id"=Uuid,Path)),request_body=Value,security(("paseto"=[])),responses((status=200,description="Missing from this account's uploads only, at most 256 addresses; never searches other drafts",body=Value)))]
+#[utoipa::path(post,path="/projects/{id}/staging/objects/missing",tag="project staging",params(("id"=Uuid,Path)),request_body=Value,security(("paseto"=[]),("device_session"=["history:write"])),responses((status=200,description="Missing from this account's uploads only, at most 256 addresses; never searches other drafts",body=Value)))]
 async fn missing(
     State(state): State<AppState>,
-    auth: AuthContext,
+    auth: ProjectAuth<HistoryWrite>,
     Path(id): Path<Uuid>,
     Json(input): Json<Missing>,
 ) -> Result<Json<Value>, ApiError> {
@@ -202,10 +215,10 @@ struct Page {
     after: Option<Address>,
     limit: Option<i64>,
 }
-#[utoipa::path(get,path="/projects/{id}/staging/objects/{document}",tag="project staging",params(("id"=Uuid,Path),("document"=Uuid,Path),("after"=Option<String>,Query),("limit"=Option<i64>,Query)),security(("paseto"=[])),responses((status=200,description="Own upload inventory; bounded keyset page, maximum 256",body=Value)))]
+#[utoipa::path(get,path="/projects/{id}/staging/objects/{document}",tag="project staging",params(("id"=Uuid,Path),("document"=Uuid,Path),("after"=Option<String>,Query),("limit"=Option<i64>,Query)),security(("paseto"=[]),("device_session"=["history:write"])),responses((status=200,description="Own upload inventory; bounded keyset page, maximum 256",body=Value)))]
 async fn inventory(
     State(state): State<AppState>,
-    auth: AuthContext,
+    auth: ProjectAuth<HistoryWrite>,
     Path((id, document)): Path<(Uuid, Uuid)>,
     Query(page): Query<Page>,
 ) -> Result<Json<Value>, ApiError> {
@@ -288,10 +301,10 @@ impl ObjectStore for PrivateStore<'_> {
         Ok(bytes)
     }
 }
-#[utoipa::path(get,path="/projects/{id}/staging/objects/{document}/{address}",tag="project staging",params(("id"=Uuid,Path),("document"=Uuid,Path),("address"=String,Path)),security(("paseto"=[])),responses((status=200,description="Own acknowledged object, base64 encoded and hash verified",body=Value),(status=404,description="Not in own uploads")))]
+#[utoipa::path(get,path="/projects/{id}/staging/objects/{document}/{address}",tag="project staging",params(("id"=Uuid,Path),("document"=Uuid,Path),("address"=String,Path)),security(("paseto"=[]),("device_session"=["history:write"])),responses((status=200,description="Own acknowledged object, base64 encoded and hash verified",body=Value),(status=404,description="Not in own uploads")))]
 async fn object(
     State(state): State<AppState>,
-    auth: AuthContext,
+    auth: ProjectAuth<HistoryWrite>,
     Path((id, document, address)): Path<(Uuid, Uuid, Address)>,
 ) -> Result<Json<Value>, ApiError> {
     let mut tx = start(&state, &auth).await?;
@@ -342,10 +355,10 @@ pub(crate) async fn load(
         height,
     })
 }
-#[utoipa::path(post,path="/projects/{id}/staging/commits",tag="project staging",params(("id"=Uuid,Path)),request_body=Value,security(("paseto"=[])),responses((status=200,description="Private signed commit accepted after all dependencies and typed file graphs verify; no branch published",body=Value),(status=400,description="Invalid signature, graph or recovery"),(status=403,description="Current account, key and contribution rights required"),(status=404,description="Missing private dependency"),(status=507,description="Durable quota reached")))]
+#[utoipa::path(post,path="/projects/{id}/staging/commits",tag="project staging",params(("id"=Uuid,Path)),request_body=Value,security(("paseto"=[]),("device_session"=["history:write"])),responses((status=200,description="Private signed commit accepted after all dependencies and typed file graphs verify; no branch published",body=Value),(status=400,description="Invalid signature, graph or recovery"),(status=403,description="Current account, key and contribution rights required"),(status=404,description="Missing private dependency"),(status=507,description="Durable quota reached")))]
 async fn stage(
     State(state): State<AppState>,
-    auth: AuthContext,
+    auth: ProjectAuth<HistoryWrite>,
     Path(id): Path<Uuid>,
     Json(signed): Json<SignedCommit>,
 ) -> Result<Json<Value>, ApiError> {
@@ -447,10 +460,10 @@ async fn stage(
         json!({"address":address,"visibility":"private","published":false}),
     ))
 }
-#[utoipa::path(get,path="/projects/{id}/staging/commits/{address}",tag="project staging",params(("id"=Uuid,Path),("address"=String,Path)),security(("paseto"=[])),responses((status=200,description="Own signed commit; current access checked for its entire dependency scope, even after signing-key revocation",body=Value),(status=404,description="No such own staged commit")))]
+#[utoipa::path(get,path="/projects/{id}/staging/commits/{address}",tag="project staging",params(("id"=Uuid,Path),("address"=String,Path)),security(("paseto"=[]),("device_session"=["history:write"])),responses((status=200,description="Own signed commit; current access checked for its entire dependency scope, even after signing-key revocation",body=Value),(status=404,description="No such own staged commit")))]
 async fn commit(
     State(state): State<AppState>,
-    auth: AuthContext,
+    auth: ProjectAuth<HistoryWrite>,
     Path((id, address)): Path<(Uuid, Address)>,
 ) -> Result<Json<Value>, ApiError> {
     let mut tx = start(&state, &auth).await?;
@@ -459,10 +472,10 @@ async fn commit(
     tx.commit().await?;
     Ok(Json(json!(stored.signed)))
 }
-#[utoipa::path(get,path="/projects/{id}/staging/storage",tag="project staging",params(("id"=Uuid,Path)),security(("paseto"=[])),responses((status=200,description="Own durable private-transfer usage across all projects; shared physical bytes have separate document/creator budgets",body=Value)))]
+#[utoipa::path(get,path="/projects/{id}/staging/storage",tag="project staging",params(("id"=Uuid,Path)),security(("paseto"=[]),("device_session"=["history:write"])),responses((status=200,description="Own durable private-transfer usage across all projects; shared physical bytes have separate document/creator budgets",body=Value)))]
 async fn storage(
     State(state): State<AppState>,
-    auth: AuthContext,
+    auth: ProjectAuth<HistoryWrite>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>, ApiError> {
     let mut tx = start(&state, &auth).await?;
