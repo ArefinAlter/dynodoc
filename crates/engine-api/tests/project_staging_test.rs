@@ -418,7 +418,18 @@ async fn private_multifile_transfer_round_trips_without_publishing_or_exposing_o
         document_state()
     );
     replica.close().await;
-    std::fs::remove_file(path).unwrap();
+    // SQLx's SQLite worker can release its final handle just after Pool::close
+    // completes on Windows. Retry only that sharing violation, never I/O errors
+    // generally, and never hide a failed cleanup.
+    for attempt in 0..20 {
+        match std::fs::remove_file(&path) {
+            Ok(()) => break,
+            Err(error) if matches!(error.raw_os_error(), Some(32 | 33)) && attempt < 19 => {
+                tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+            }
+            Err(error) => panic!("owned staging test database cleanup: {error}"),
+        }
+    }
     runtime.close().await;
 }
 

@@ -18,15 +18,33 @@ Audited document erasure removes affected envelopes and all descendant envelopes
 even after they remove the file; account erasure removes its private staging.
 The CLI can inventory/export/import the same bounded base64 object packets.
 
-Validation in progress: five restricted-runtime PostgreSQL/router tests pass,
-including transfer into a second SQLite repository, metadata privacy, revoked-key
-history, recovery, scope/Trash/move checks, byte/object/commit quota rollback,
-concurrent spending, permission changes during a lock wait and both erasure paths.
-Application Rust Clippy passes. Full suites, OpenAPI, standalone mirror and source
-push are being completed; do not infer their outcome from this working checkpoint.
+Implementation is pushed to main: application `2d5f613`, standalone engine
+`1a4e6fb`. [Application Rust CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38210908540)
+and [standalone CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38210916051)
+passed, including all 344 Linux engine tests, unchanged 100 ms SSE acceptance,
+Clippy, documentation and OpenAPI consistency. Five new restricted-runtime tests
+cover transfer into a second SQLite repository, metadata privacy, revoked-key
+history, recovery, scope/Trash/move checks, quota rollback/concurrent spending,
+permission changes during a lock wait and document/account erasure.
 
-Production remains application `858801c`/schema 29, shared writers off. No deployment
-or production migration occurred. Source schema 35 needs compatible runtime grants
+The actual CLI packet smoke passed: a second database reconstructs the same state,
+retry inserts zero objects, invalid packets roll back and no local ref moves.
+Standalone task lint and local frontend lint/Svelte checks pass (zero diagnostics).
+Generated web API types are updated, and standalone MIT/contact metadata preserved.
+The first frontend CI attempt failed before tests because floating pnpm 10 resolved
+to a 404 tarball. Application `fdb7624` pins verified pnpm 10.34.6; its archive was
+checked successfully and [frontend/browser CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38211132718)
+passed both build/test and authenticated browser jobs. The full local Windows
+suite and its isolated recheck both failed the unchanged 100 ms SSE deadline.
+The separate local run excluding only that assertion caught a test-cleanup race:
+SQLite can release its final Windows handle just after Pool::close. The test now
+uses the existing bounded retry for sharing errors 32/33; all other cleanup errors
+still fail. The local run with that fix is in progress. This is not a clean local
+full-suite result or a certified Windows latency guarantee; the complete Linux
+suite passed as recorded above. No timing threshold was relaxed.
+
+Last recorded VPS release: application `858801c`/schema 29, shared writers off.
+No VPS deployment or production migration occurred in this pass. Source schema 35 needs compatible runtime grants
 and rollback binaries plus a production-copy rehearsal before rollout. Installed
 Office/Google acceptance remains the owner's local worksheet, not a completed test.
 
