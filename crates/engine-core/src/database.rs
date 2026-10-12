@@ -23,6 +23,8 @@ const HISTORY: &[&str] = &[
     "change_request_review",
     "device_signing_key",
     "device_key_revocation",
+    "project_staged_object",
+    "project_staged_commit",
 ];
 const MUTABLE: &[&str] = &[
     "document",
@@ -67,6 +69,7 @@ const READ_ONLY: &[&str] = &[
     "device_authority",
     "checkpoint_storage_account",
     "checkpoint_storage_document",
+    "project_staging_storage",
 ];
 
 /// Read-only exact version/checksum check. Both missing and newer schemas fail.

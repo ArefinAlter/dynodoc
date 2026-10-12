@@ -1,5 +1,12 @@
 # Database runtime boundary
 
+Schema 35 extends the explicit runtime inventory with SELECT/INSERT on
+`project_staged_object` and `project_staged_commit`, and SELECT-only on
+`project_staging_storage`. Immutable staging history has audited document/account
+erasure entrypoints; quota/erasure functions are not runtime-callable. See
+[Private project transfers](PRIVATE-PROJECT-TRANSFERS.md). Re-provision the matching
+runtime grants after migration with a schema-compatible operator binary.
+
 11 October 2026, schema 0029. This is a source and rollout contract; current checks
 and deployment state are in [the handoff](ENGINE-EVOLUTION-HANDOFF.md).
 

@@ -292,7 +292,9 @@ fn decode(expected: &Address, bytes: &[u8]) -> Result<Object, Error> {
 
 // New content objects occupy the same document-scoped store, but have a separate
 // version/hash domain. V1 state readers still require only v1 checkpoint objects.
-pub(crate) fn validate_stored(expected: &Address, bytes: &[u8]) -> Result<(), Error> {
+/// Verify one encoded object and its address. This does not verify a complete
+/// reachable graph and never grants access to an object or its document.
+pub fn validate_stored(expected: &Address, bytes: &[u8]) -> Result<(), Error> {
     if bytes.starts_with(content::MAGIC) {
         content::validate(expected, bytes)
     } else if bytes.starts_with(typed::MAGIC) {

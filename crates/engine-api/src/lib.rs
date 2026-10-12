@@ -32,6 +32,7 @@ pub mod pagination;
 pub mod people;
 pub mod product;
 mod profiles;
+mod project_staging;
 pub mod projects;
 pub mod provenance;
 pub mod reviews;
@@ -111,6 +112,7 @@ pub fn app(state: AppState) -> Router {
         .merge(admin::router())
         .merge(product::router())
         .merge(projects::router())
+        .merge(project_staging::router())
         .merge(profiles::router())
         .merge(devices::router())
         .merge(provenance::router())
@@ -221,6 +223,7 @@ impl utoipa::Modify for WorkspaceDocs {
         api.merge(copies::CopiesApi::openapi());
         api.merge(people::PeopleApi::openapi());
         api.merge(devices::DevicesApi::openapi());
+        api.merge(project_staging::ProjectStagingApi::openapi());
         let components = api.components.get_or_insert_with(Default::default);
         components.add_security_scheme(
             "connector_key",

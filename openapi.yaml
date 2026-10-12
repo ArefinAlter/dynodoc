@@ -2552,6 +2552,212 @@ paths:
           description: Concurrent change
       security:
       - paseto: []
+  /projects/{id}/staging/commits:
+    post:
+      tags:
+      - project staging
+      operationId: stage
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Private signed commit accepted after all dependencies and typed file graphs verify; no branch published
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Invalid signature, graph or recovery
+        '403':
+          description: Current account, key and contribution rights required
+        '404':
+          description: Missing private dependency
+        '507':
+          description: Durable quota reached
+      security:
+      - paseto: []
+  /projects/{id}/staging/commits/{address}:
+    get:
+      tags:
+      - project staging
+      operationId: commit
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: address
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Own signed commit; current access checked for its entire dependency scope, even after signing-key revocation
+          content:
+            application/json:
+              schema: {}
+        '404':
+          description: No such own staged commit
+      security:
+      - paseto: []
+  /projects/{id}/staging/objects:
+    post:
+      tags:
+      - project staging
+      operationId: upload
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Private upload acknowledged; base64 bytes, at most 64 objects and 1 MiB decoded; no ref published
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Invalid batch
+        '403':
+          description: Current project/file contribution access required
+        '507':
+          description: Durable quota reached
+      security:
+      - paseto: []
+  /projects/{id}/staging/objects/missing:
+    post:
+      tags:
+      - project staging
+      operationId: missing
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Missing from this account's uploads only, at most 256 addresses; never searches other drafts
+          content:
+            application/json:
+              schema: {}
+      security:
+      - paseto: []
+  /projects/{id}/staging/objects/{document}:
+    get:
+      tags:
+      - project staging
+      operationId: inventory
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: document
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: after
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+      responses:
+        '200':
+          description: Own upload inventory; bounded keyset page, maximum 256
+          content:
+            application/json:
+              schema: {}
+      security:
+      - paseto: []
+  /projects/{id}/staging/objects/{document}/{address}:
+    get:
+      tags:
+      - project staging
+      operationId: object
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: document
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: address
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Own acknowledged object, base64 encoded and hash verified
+          content:
+            application/json:
+              schema: {}
+        '404':
+          description: Not in own uploads
+      security:
+      - paseto: []
+  /projects/{id}/staging/storage:
+    get:
+      tags:
+      - project staging
+      operationId: storage
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Own durable private-transfer usage across all projects; shared physical bytes have separate document/creator budgets
+          content:
+            application/json:
+              schema: {}
+      security:
+      - paseto: []
   /projects/{id}/watch:
     post:
       tags: []

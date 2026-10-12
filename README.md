@@ -22,13 +22,16 @@ snapshots. Shared writers are opt-in and preserve verified legacy reads. A
 multi-file commits, parents, branches, missing-object exchange, merge bases,
 comparison and [commit-addressed revert/cherry-pick](docs/PROJECT-COMMIT-RECOVERY.md). [Signed ref receipts and separate client trust journals](docs/REF-RECEIPTS.md)
 add continuity checks, authority rotation and persistent local revocation.
+[Private project transfers](docs/PRIVATE-PROJECT-TRANSFERS.md) now provide
+authenticated object/commit staging, durable quotas and current access/erasure
+checks in schema 35; uploading does not publish a shared branch.
 Read [the acceptance ledger](docs/ROADMAP-ACCEPTANCE.md) and
 [verified handoff](docs/ENGINE-EVOLUTION-HANDOFF.md) for exact source/production boundaries.
 
 The deployed centralized workspace supports Projects, review, proposal bundles,
 [historical recovery](docs/HISTORY-RECOVERY.md), revision-range revert/cherry-pick
 and supported native history downloads. [Test add-in packages and sign-in](extensions/INSTALL.md)
-cover all six editor clients. Authenticated remote project history, connector
+cover all six editor clients. Shared remote project publication/review, connector
 adoption of local commits, complete offline convergence, full native capture,
 external witnesses and large-file/service acceptance remain open. Shared writes
 still scan full state and reconstruction keeps state resident; packing and

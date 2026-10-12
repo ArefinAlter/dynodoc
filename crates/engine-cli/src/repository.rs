@@ -1,10 +1,11 @@
 //! Explicit local repository commands. These never contact a remote server or
 //! apply content to a native editor. Signing keys are supplied by the operator.
 use anyhow::Context;
+use base64::{engine::general_purpose::STANDARD, Engine};
 use clap::{Subcommand, ValueEnum};
 use engine_core::{
     repository::{
-        local::{LocalRepository, StorageLimits, SCHEMA_VERSION},
+        local::{LocalRepository, ObjectKey, ObjectPacket, StorageLimits, SCHEMA_VERSION},
         recovery, Commit, Head, SignedCommit,
     },
     shared_checkpoint::Address,
@@ -37,6 +38,22 @@ pub enum Action {
     Init,
     /// Inspect retained encoded bytes/object/commit/branch counts and limits.
     Storage,
+    /// Local private inventory; do not publish it as a shared remote listing.
+    Objects {
+        #[arg(long, requires = "after_address")]
+        after_document: Option<uuid::Uuid>,
+        #[arg(long, requires = "after_document")]
+        after_address: Option<String>,
+        #[arg(long, default_value_t = 64)]
+        limit: usize,
+    },
+    /// Export one verified object as a base64 transfer packet.
+    ExportObject {
+        document: uuid::Uuid,
+        address: String,
+    },
+    /// Import a private staging upload JSON batch, without moving any branch.
+    ImportObjects { input: PathBuf },
     /// Explicitly set persistent capacity; never deletes retained history.
     StorageLimits {
         #[arg(long)]
@@ -122,12 +139,74 @@ fn read_json<T: serde::de::DeserializeOwned>(path: &Path, limit: usize) -> anyho
     Ok(serde_json::from_slice(&bytes)?)
 }
 
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TransferBatch {
+    document: uuid::Uuid,
+    objects: Vec<TransferObject>,
+}
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TransferObject {
+    address: Address,
+    bytes: String,
+}
+
 pub async fn run(path: PathBuf, project: uuid::Uuid, action: Action) -> anyhow::Result<()> {
     let repo = LocalRepository::open(&path, project).await?;
     let address = |s: String| Address::try_from(s);
     let output = match action {
         Action::Init => serde_json::json!({"project":project,"local_schema":SCHEMA_VERSION}),
         Action::Storage => serde_json::to_value(repo.storage_usage().await?)?,
+        Action::Objects {
+            after_document,
+            after_address,
+            limit,
+        } => {
+            let after = match (after_document, after_address) {
+                (Some(document), Some(value)) => Some(ObjectKey {
+                    document: DocumentId(document),
+                    address: address(value)?,
+                }),
+                _ => None,
+            };
+            let keys = repo.inventory(after.as_ref(), limit).await?;
+            serde_json::json!({"objects":keys.iter().map(|k|serde_json::json!({"document":k.document,"address":k.address})).collect::<Vec<_>>()})
+        }
+        Action::ExportObject {
+            document,
+            address: value,
+        } => {
+            let packet = repo
+                .object(&ObjectKey {
+                    document: DocumentId(document),
+                    address: address(value)?,
+                })
+                .await?;
+            serde_json::json!({"address":packet.key.address,"bytes":STANDARD.encode(packet.bytes)})
+        }
+        Action::ImportObjects { input } => {
+            let batch: TransferBatch = read_json(&input, 1_500_000)?;
+            anyhow::ensure!(batch.objects.len() <= 64, "import at most 64 objects");
+            let mut bytes = 0usize;
+            let packets = batch
+                .objects
+                .into_iter()
+                .map(|object| {
+                    let decoded = STANDARD.decode(object.bytes)?;
+                    bytes += decoded.len();
+                    anyhow::ensure!(bytes <= 1024 * 1024, "import at most 1 MiB");
+                    Ok(ObjectPacket {
+                        key: ObjectKey {
+                            document: DocumentId(batch.document),
+                            address: object.address,
+                        },
+                        bytes: decoded,
+                    })
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?;
+            serde_json::json!({"new_objects":repo.import_objects(&packets).await?,"published":false})
+        }
         Action::StorageLimits {
             bytes,
             objects,

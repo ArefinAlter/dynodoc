@@ -159,7 +159,10 @@ impl From<sqlx::Error> for ApiError {
         }
         if let sqlx::Error::Database(db) = &err {
             if db.code().as_deref() == Some("23514")
-                && db.constraint() == Some("checkpoint_storage_quota")
+                && matches!(
+                    db.constraint(),
+                    Some("checkpoint_storage_quota" | "project_staging_quota")
+                )
             {
                 return ApiError::StorageLimit;
             }

@@ -1,5 +1,9 @@
 # Portable project history
 
+Schema 35 adds [authenticated private project transfers](PRIVATE-PROJECT-TRANSFERS.md)
+around these local primitives. Shared publication/protected refs and native
+adoption remain separate work; the dated local implementation below still applies.
+
 12 October 2026. Source implementation in `engine_core::repository` introduces a
 local SQLite repository alongside centralized document history. It does not yet
 replace web drafts, turn connector queues into offline repositories, or authorize

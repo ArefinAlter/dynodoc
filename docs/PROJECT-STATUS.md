@@ -1,5 +1,43 @@
 # Dynodoc: intent, current implementation and remaining work
 
+## Source: private project history transfers (12 October 2026)
+
+Schema 35 adds account-private authenticated object/commit exchange, described in
+[Private project transfers](PRIVATE-PROJECT-TRANSFERS.md). Changed typed objects
+are shared physically per document; immutable per-account upload acknowledgements
+prevent guessed hashes from exposing other drafts. New signed multi-file commits
+verify active enrolled keys, dependencies, recovery semantics and complete typed
+graphs. Accepted ancestry remains readable after key revocation, subject to current
+project/file access. No project branch, team document or review is published.
+
+Persistent account staging budgets cover logical acknowledged bytes and signed
+commit/scope metadata: 4 GiB, 1,000,000 acknowledgements and 100,000 commits. Batches
+are atomic, retries free, quota failures return 507. Current API limits include
+256 historical files per transitive scope and 64 MiB/65,536 graph reads per commit.
+Audited document erasure removes affected envelopes and all descendant envelopes,
+even after they remove the file; account erasure removes its private staging.
+The CLI can inventory/export/import the same bounded base64 object packets.
+
+Validation in progress: five restricted-runtime PostgreSQL/router tests pass,
+including transfer into a second SQLite repository, metadata privacy, revoked-key
+history, recovery, scope/Trash/move checks, byte/object/commit quota rollback,
+concurrent spending, permission changes during a lock wait and both erasure paths.
+Application Rust Clippy passes. Full suites, OpenAPI, standalone mirror and source
+push are being completed; do not infer their outcome from this working checkpoint.
+
+Production remains application `858801c`/schema 29, shared writers off. No deployment
+or production migration occurred. Source schema 35 needs compatible runtime grants
+and rollback binaries plus a production-copy rehearsal before rollout. Installed
+Office/Google acceptance remains the owner's local worksheet, not a completed test.
+
+Next: shared candidate publication with explicit reader reachability, protected
+project refs/reviews and atomic server receipts; selected-root push/fetch and remote
+tracking; then Projects/native adoption. Private acknowledgements must never become
+shared discovery. Whole-document erasure must cover future accepted history too.
+Complete same-file convergence, changed-node publication/packing, trusted witnesses,
+large native/service measurements and marketplace acceptance remain open. The full
+roadmap is not complete.
+
 ## Source: persistent local repository capacity (12 October 2026)
 
 Implementation: application `962c9e1`, standalone engine `5822e57`, both pushed
