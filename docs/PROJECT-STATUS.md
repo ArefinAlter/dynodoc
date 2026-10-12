@@ -1,6 +1,57 @@
 # Dynodoc: intent, current implementation and remaining work
 
-## Source: shared publication, protected refs and receipts (12 October 2026)
+## Source: selected-history CLI synchronization (12 October 2026)
+
+The operator CLI now connects local project history to the schema-36 API through
+reviewed push plans, selected reachable-object transfer, authorized reuse of
+published bytes, verified fetch and separate receipt-journal remote tracking.
+Fast-forward pull advances only an explicitly selected local branch with exact
+address/generation CAS; divergent local work remains intact. No command writes an
+open/native file. Publication plans disclose private ancestry and recovery sources;
+execution cannot add an unreviewed dependency. Retries reuse accepted objects and
+commits; stale shared refs, corrupted objects and inconsistent receipt proofs fail
+closed. See [the contract and procedure](SELECTED-HISTORY-SYNC.md).
+
+This adds no migration/hash format change (PostgreSQL 36 / local SQLite 2). HTTP
+origins, credentials, response sizes, request deadlines and cumulative work are
+bounded. Initial authority trust comes from independently supplied configuration;
+accepted heads remain in the separate journal. First trust is a checkpoint, not
+proof of unseen older receipts. Multi-commit publication can partially succeed;
+complete file-state validation/scans remain, and local quotas include partial work.
+
+Code is pushed to main: application `47cb87f`, standalone engine `4ca7f16`.
+[Application Rust CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38248717652)
+and [standalone engine CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38248983325)
+passed on those exact revisions. Each Linux CI run passed all **356 tests** with
+no failures, ignored or filtered cases. Both Rust workflows cover formatting,
+Clippy, build/test and unchanged OpenAPI consistency; standalone also builds docs.
+Both frontend build/test and authenticated browser workflows passed in
+[frontend CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38248717732).
+
+The Windows standalone workspace run passed all **355 tests** before the final
+up-to-date race regression was added, including the unchanged 100 ms SSE check.
+After that final fix, task lint and all **seven CLI tests** passed. Six new sync
+scenarios cover restricted-runtime real HTTP with two authors, privacy and private
+ancestry disclosure, shared byte reuse, publish-only review, stale/lost-response
+retries, fast-forward/local-CAS/divergence behavior, resumable corruption failure,
+receipt rollback/fork/gap/key/revocation and a concurrent up-to-date response race.
+Task docs passed with existing rustdoc warnings; the actual sync command help
+smoke passed. No test threshold or coverage was relaxed. The dedicated PostgreSQL
+container was verified by its task label and auto-remove setting, then stopped
+and removed; existing development containers were untouched. Test HTTP listeners
+and temporary SQLite databases were closed/removed by the tests. Logs remain in
+ignored application target/sync-*.log. No real email or production data was used.
+
+Production is still recorded at application `858801c`, schema 29, shared writers
+off. No VPS rollout or installed Office/Google acceptance occurred in this increment.
+Schema-36 deployment still needs a production-copy rehearsal, compatible rollback
+images and operator receipt-key provisioning. Next priorities are project-scoped
+device sign-in/token renewal and native key storage, Projects/native branch/review
+adoption, incremental storage/GC, richer same-file convergence, independent audit
+witnesses/rotation and measured large-file/service acceptance. The owner runs the
+prepared installed-host worksheet. The full product roadmap is not complete.
+
+## Previous increment: shared publication, protected refs and receipts (12 October 2026)
 
 Schema 36 adds [shared project history](SHARED-PROJECT-HISTORY.md): explicit
 candidate publication, reachable-object downloads, published multi-author ancestry,
