@@ -367,6 +367,16 @@ pub(crate) async fn begin_write(
     document_id: DocumentId,
     actor: IdentityId,
 ) -> Result<(Transaction<'_, Postgres>, Role, DocumentState), ApiError> {
+    let (mut tx, role) = begin_write_locked(state, document_id, actor).await?;
+    let (current, _) = engine_core::snapshot::read_current_state(&mut tx, document_id).await?;
+    Ok((tx, role, current))
+}
+
+pub(crate) async fn begin_write_locked(
+    state: &AppState,
+    document_id: DocumentId,
+    actor: IdentityId,
+) -> Result<(Transaction<'_, Postgres>, Role), ApiError> {
     let mut tx = state.pool.begin().await?;
     let exists: Option<uuid::Uuid> =
         sqlx::query_scalar("select id from document where id=$1 for no key update")
@@ -385,8 +395,7 @@ pub(crate) async fn begin_write(
     let role = role
         .and_then(|r| r.parse().ok())
         .ok_or(ApiError::Forbidden)?;
-    let (current, _) = engine_core::snapshot::read_current_state(&mut tx, document_id).await?;
-    Ok((tx, role, current))
+    Ok((tx, role))
 }
 
 async fn checkpoint_in_tx(

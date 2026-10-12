@@ -277,8 +277,8 @@ async fn save_version(
     if req.name.trim().is_empty() || req.name.len() > 200 {
         return Err(bad("Name this version in 1–200 characters"));
     }
-    let (mut tx, role, _) =
-        apply::begin_write(&state, DocumentId(id), IdentityId(auth.identity_id)).await?;
+    let (mut tx, role) =
+        apply::begin_write_locked(&state, DocumentId(id), IdentityId(auth.identity_id)).await?;
     if role != Role::Author {
         return Err(ApiError::Forbidden);
     }

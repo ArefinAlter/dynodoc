@@ -185,19 +185,71 @@ pub async fn post_commit_snapshot(
 /// [`EventError::ChainBroken`] naming the exact `seq` on the first inconsistency —
 /// Snapshot equivalence is checked separately by `snapshot_verification::verify_document`.
 pub async fn verify_chain(pool: &PgPool, document_id: DocumentId) -> Result<(), EventError> {
-    let mut events =
-        sqlx::query_as::<_, Event>("select * from event where document_id = $1 order by seq asc")
-            .bind(document_id.0)
-            .fetch(pool);
+    verify_from(pool, document_id, 0, &ZERO_HASH).await
+}
 
-    let mut prev_chain_hash = ZERO_HASH.to_vec();
+/// Verify only the events after a trusted `(trusted_seq, trusted_chain_hash)`
+/// position, which must match the stored row; `0` with [`ZERO_HASH`] verifies the
+/// whole chain. Earlier events are not re-checked. The position must come from
+/// outside this database: one read from it adds speed, not security.
+pub async fn verify_from(
+    pool: &PgPool,
+    document_id: DocumentId,
+    trusted_seq: i64,
+    trusted_chain_hash: &[u8],
+) -> Result<(), EventError> {
+    if trusted_seq < 0 || (trusted_seq == 0 && trusted_chain_hash != ZERO_HASH) {
+        return Err(EventError::ChainBroken {
+            seq: trusted_seq,
+            detail: "invalid trusted position (genesis must use 32 zero bytes)".into(),
+        });
+    }
+    // Genesis audits every stored row, including malformed negative sequences;
+    // the schema does not enforce positive seq values. A trusted non-genesis
+    // position intentionally skips earlier rows.
+    let from_seq = if trusted_seq == 0 {
+        i64::MIN
+    } else {
+        trusted_seq
+    };
+    // One statement, so the trusted row and the suffix come from one consistent view.
+    let mut events = sqlx::query_as::<_, Event>(
+        "select * from event where document_id = $1 and seq >= $2 order by seq asc",
+    )
+    .bind(document_id.0)
+    .bind(from_seq)
+    .fetch(pool);
 
-    let mut expected_seq = 1;
+    if trusted_seq > 0 {
+        match events.try_next().await? {
+            Some(ev) if ev.seq == trusted_seq && ev.chain_hash[..] == trusted_chain_hash[..] => {}
+            Some(ev) if ev.seq == trusted_seq => {
+                return Err(EventError::ChainBroken {
+                    seq: trusted_seq,
+                    detail: "stored chain_hash differs from the trusted position".into(),
+                })
+            }
+            _ => {
+                return Err(EventError::ChainBroken {
+                    seq: trusted_seq,
+                    detail: "trusted position not found".into(),
+                })
+            }
+        }
+    }
+
+    let mut prev_chain_hash = trusted_chain_hash.to_vec();
+    let mut expected_seq = trusted_seq;
     while let Some(ev) = events.try_next().await? {
+        expected_seq = expected_seq
+            .checked_add(1)
+            .ok_or_else(|| EventError::ChainBroken {
+                seq: ev.seq,
+                detail: "event sequence exceeds the supported range".into(),
+            })?;
         verify_event(&ev, document_id, expected_seq, &prev_chain_hash)?;
 
         prev_chain_hash = ev.chain_hash.clone();
-        expected_seq += 1;
     }
 
     Ok(())

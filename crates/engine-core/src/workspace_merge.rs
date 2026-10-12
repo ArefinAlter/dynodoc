@@ -5,6 +5,7 @@ use crate::materializer::{DocumentState, MaterializedNode};
 use engine_shared::{EventPayload, NodeId};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,14 +23,17 @@ pub struct MergePlan {
     pub conflicts: Vec<Conflict>,
     pub ops: Vec<EventPayload>,
 }
-fn canonical(s: &DocumentState) -> DocumentState {
+fn canonical(s: &DocumentState) -> Cow<'_, DocumentState> {
+    if s.removed_choices.is_empty() {
+        return Cow::Borrowed(s);
+    }
     let mut s = s.clone();
     for id in &s.removed_choices {
         if let Some(n) = s.nodes.get_mut(id) {
             n.deleted = true;
         }
     }
-    s
+    Cow::Owned(s)
 }
 fn location(n: &MaterializedNode) -> Value {
     json!({"parent_id":n.parent_id,"pos":n.pos})
@@ -83,7 +87,7 @@ pub fn merge(
     let base = canonical(base);
     let team = canonical(team);
     let draft = canonical(draft);
-    let mut out = team.clone();
+    let mut out = team.clone().into_owned();
     let mut conflicts = Vec::new();
     for (id, d) in &draft.nodes {
         let b = base.nodes.get(id);
@@ -280,7 +284,7 @@ pub fn diff(from: &DocumentState, to: &DocumentState) -> Vec<EventPayload> {
     let mut result = Vec::new();
     let to_depths = depths(&to);
     let mut nodes: Vec<_> = to.nodes.values().collect();
-    nodes.sort_by_cached_key(|n| (to_depths[&n.id], n.id.clone()));
+    nodes.sort_by_cached_key(|n| (to_depths[&n.id], &n.id));
     for n in nodes.into_iter().filter(|n| !n.deleted) {
         let prior = from.nodes.get(&n.id);
         if prior.is_none() {
@@ -640,5 +644,15 @@ mod tests {
         assert!(
             matches!(&diff(&deleted,&b)[0],EventPayload::NodeRestored{node_id} if node_id.0=="root")
         );
+    }
+
+    #[test]
+    fn canonical_borrows_when_empty_and_owns_when_choices_removed() {
+        let mut s = state();
+        assert!(matches!(canonical(&s), Cow::Borrowed(_)));
+        s.removed_choices.insert(NodeId("root".into()));
+        let c = canonical(&s);
+        assert!(matches!(c, Cow::Owned(_)));
+        assert!(c.nodes[&NodeId("root".into())].deleted);
     }
 }

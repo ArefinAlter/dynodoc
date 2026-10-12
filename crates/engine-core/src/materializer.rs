@@ -289,13 +289,12 @@ impl Materializer {
         events: &[Event],
     ) -> Result<(), MaterializeError> {
         for event in events {
-            let payload: EventPayload =
-                serde_json::from_value(event.payload.clone()).map_err(|source| {
-                    MaterializeError::InvalidPayload {
-                        seq: event.seq,
-                        source,
-                    }
-                })?;
+            let payload = EventPayload::deserialize(&event.payload).map_err(|source| {
+                MaterializeError::InvalidPayload {
+                    seq: event.seq,
+                    source,
+                }
+            })?;
 
             apply_payload(state, &payload).map_err(|err| err.with_seq(event.seq))?;
         }
