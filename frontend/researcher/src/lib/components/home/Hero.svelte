@@ -1,0 +1,157 @@
+<script lang="ts">
+  import Dino from '$lib/art/Dino.svelte';
+  import Rex from '$lib/art/Rex.svelte';
+  import { AddinMock } from '$lib/components/mock';
+  import { Btn, Eyebrow, spotlight } from '$lib/components/site';
+  import { parallax } from './parallax';
+
+  let { workspace }: { workspace: string } = $props();
+</script>
+
+<section
+  class="hero dotgrid dotgrid--fade-b spotlight"
+  aria-labelledby="hero-title"
+  use:spotlight
+  use:parallax
+>
+  <div class="container grid">
+    <div class="copy">
+      <Eyebrow label="DOCUMENT PROVENANCE" accent />
+      <h1 id="hero-title" class="title">
+        Version control for the documents <span class="hl">you already write.</span>
+      </h1>
+      <p class="lede">
+        Every change you make in Word, Docs, Excel, Sheets, PowerPoint and Slides is captured,
+        reviewed, merged and provable.
+      </p>
+      <div class="actions">
+        <Btn href={workspace} size="lg" arrow>Open workspace</Btn>
+        <Btn href="/add-ins" variant="secondary" size="lg">Get the add-ins</Btn>
+      </div>
+      <p class="note">
+        Add-ins ship as test installs today; marketplace listings are not live. Open source under
+        AGPL-3.0.
+      </p>
+    </div>
+
+    <div class="stage">
+      <div class="plate"><Dino name="rex" art={Rex} /></div>
+      <div class="win"><AddinMock host="word" /></div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .hero {
+    padding-block: clamp(32px, 5vw, 72px) clamp(40px, 6vw, 88px);
+    overflow: clip;
+  }
+  .grid {
+    display: grid;
+    gap: clamp(36px, 5vw, 56px);
+    align-items: center;
+  }
+  .copy {
+    display: grid;
+    justify-items: start;
+    gap: 22px;
+    min-width: 0;
+  }
+  .title {
+    font-size: clamp(2.375rem, 1.1rem + 3.4vw, 3.75rem);
+    line-height: 1.05;
+    letter-spacing: -0.04em;
+    font-weight: 520;
+  }
+  .lede {
+    max-width: 46ch;
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 6px;
+  }
+  .note {
+    margin: 0;
+    max-width: 52ch;
+    color: var(--color-muted);
+    font-size: 0.875rem;
+    line-height: 1.55;
+  }
+
+  .stage {
+    position: relative;
+    min-width: 0;
+  }
+  .plate {
+    position: relative;
+    z-index: 0;
+    width: min(76%, 460px);
+    margin: 0 0 -2px auto;
+    color: var(--color-ink);
+    --art-accent: var(--color-accent);
+  }
+  .win {
+    position: relative;
+    z-index: 1;
+  }
+
+  @media (min-width: 1000px) {
+    .grid {
+      grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+      gap: clamp(32px, 4vw, 72px);
+    }
+  }
+  @media (max-width: 999px) {
+    .plate {
+      width: min(62%, 360px);
+      margin-right: 4%;
+    }
+    .title {
+      max-width: 20ch;
+    }
+  }
+
+  /* Entrance and pointer parallax: transform only, off under reduced motion. */
+  @media (prefers-reduced-motion: no-preference) {
+    .copy > :global(*) {
+      animation: rise 0.75s var(--site-ease) both;
+    }
+    .copy > :global(:nth-child(2)) {
+      animation-delay: 70ms;
+    }
+    .copy > :global(:nth-child(3)) {
+      animation-delay: 140ms;
+    }
+    .copy > :global(:nth-child(4)) {
+      animation-delay: 210ms;
+    }
+    .copy > :global(:nth-child(5)) {
+      animation-delay: 280ms;
+    }
+    .win {
+      animation: rise-lg 0.95s var(--site-ease) 0.2s both;
+    }
+    @keyframes rise {
+      from {
+        transform: translateY(14px);
+      }
+    }
+    @keyframes rise-lg {
+      from {
+        transform: translateY(28px) scale(0.985);
+      }
+    }
+  }
+  @media (prefers-reduced-motion: no-preference) and (hover: hover) and (pointer: fine) {
+    .plate {
+      translate: calc(var(--px, 0) * 12px) calc(var(--py, 0) * 7px);
+      transition: translate 0.7s var(--site-ease);
+    }
+    .win {
+      translate: calc(var(--px, 0) * -6px) calc(var(--py, 0) * -4px);
+      transition: translate 0.7s var(--site-ease);
+    }
+  }
+</style>

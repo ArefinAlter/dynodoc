@@ -9,7 +9,14 @@ import { buildPayload, describeStatus, readKey } from '../../../scripts/indexnow
 import { FAQ } from './faq';
 import { INDEXNOW_KEY, INDEXNOW_KEY_PATH } from './indexnow';
 import { structuredDataScript } from './structured-data';
-import { CANONICAL_ORIGIN, DISALLOWED_PATHS, INDEXABLE_PAGES, canonicalUrl } from './site';
+import {
+  CANONICAL_ORIGIN,
+  DISALLOWED_PATHS,
+  INDEXABLE_PAGES,
+  SITE_DESCRIPTION,
+  SITE_TAGLINE,
+  canonicalUrl
+} from './site';
 
 // Vitest runs from the package root, so resolve the published assets from there.
 const staticDir = resolve(process.cwd(), 'static');
@@ -66,9 +73,10 @@ describe('sitemap.xml', () => {
 });
 
 describe('llms.txt', () => {
-  it('states what the product is, and what the pilot does not do', async () => {
+  it('states what the product is, and what it does not do', async () => {
     const text = await body(llms, `${PUBLIC}/llms.txt`);
     expect(text.startsWith('# Dynodoc')).toBe(true);
+    expect(text).toContain('Word, Google Docs, Excel, Google Sheets, PowerPoint and Google Slides');
     expect(text).toContain('## What it does not do');
     expect(text).toContain('no live collaborator cursors');
     for (const page of INDEXABLE_PAGES) expect(text).toContain(canonicalUrl(page.path));
@@ -118,6 +126,40 @@ describe('structured data', () => {
 
   it('escapes any sequence that could close the script element early', () => {
     expect(structuredDataScript.slice(30, -9)).not.toContain('<');
+  });
+});
+
+describe('homepage copy', () => {
+  // The research/questionnaire framing is retired: no crawler-facing text may bring it back.
+  const stale = /questionnaire|xlsform|\bodk\b|kobo|redcap|survey|research|respondent|pilot/i;
+
+  it('describes document provenance for the six editors in the tagline and description', () => {
+    expect(SITE_TAGLINE).toBe('Version control for the documents you already write');
+    for (const editor of ['Word', 'Docs', 'Excel', 'Sheets', 'PowerPoint', 'Slides'])
+      expect(SITE_DESCRIPTION).toContain(editor);
+  });
+
+  it('keeps retired framing out of the FAQ, llms.txt and structured data', async () => {
+    // The page list is each page's own description; this test covers the homepage copy.
+    const withoutPages = (text: string) => text.replace(/## Pages[\s\S]*?(?=## What it does)/, '');
+    const texts = [
+      SITE_TAGLINE,
+      SITE_DESCRIPTION,
+      structuredDataScript,
+      withoutPages(await body(llms, `${PUBLIC}/llms.txt`)),
+      withoutPages(await body(llmsFull, `${PUBLIC}/llms-full.txt`)),
+      ...FAQ.flatMap((entry) => [entry.question, entry.answer])
+    ];
+    for (const text of texts) expect(text).not.toMatch(stale);
+  });
+
+  it('answers the questions the page promises, at a length search engines can quote', () => {
+    expect(FAQ).toHaveLength(8);
+    for (const entry of FAQ) {
+      expect(entry.question.endsWith('?')).toBe(true);
+      expect(entry.answer.length).toBeGreaterThan(80);
+    }
+    expect(FAQ.map((entry) => entry.question)).toContain('What does it not do?');
   });
 });
 

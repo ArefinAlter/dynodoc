@@ -1,54 +1,96 @@
 import { expect, test } from '@playwright/test';
 
-test('homepage examples demonstrate editing, formulas and selected-change sharing', async ({
+test('homepage states the product, links the calls to action and carries one JSON-LD graph', async ({
   page
 }) => {
   await page.goto('/');
   await expect(
-    page.getByRole('heading', { name: 'Great work evolves. Keep every version.' })
+    page.getByRole('heading', {
+      level: 1,
+      name: 'Version control for the documents you already write.'
+    })
   ).toBeVisible();
-  await page.getByRole('button', { name: 'Try this wording' }).click();
-  await expect(
-    page.getByText('Deliver the first phase in September, following two weeks of review.')
-  ).toBeVisible();
-  await page.getByRole('button', { name: 'Spreadsheets', exact: true }).click();
-  await page.getByLabel('Design tasks').fill('40');
-  await expect(page.getByRole('cell', { name: '93', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Questionnaires', exact: true }).click();
-  await page.getByLabel('A group conversation', { exact: true }).check();
-  await expect(page.getByLabel('A group conversation', { exact: true })).toBeChecked();
-  await page.getByRole('button', { name: /Sam’s draft/ }).click();
-  await expect(
-    page.getByText('Launch in August, with a second phase in October.', { exact: true })
-  ).toBeVisible();
-  await page.getByRole('checkbox', { name: /Proposal wording/ }).uncheck();
-  await expect(page.getByRole('button', { name: 'Share selected changes' })).toBeDisabled();
-  await page.getByRole('checkbox', { name: /Review note/ }).check();
-  await page.getByRole('button', { name: 'Share selected changes' }).click();
-  await expect(
-    page.getByText(/The review note is shared. The wording stays in your draft./)
-  ).toBeVisible();
-  await page.getByRole('button', { name: 'Try again', exact: true }).click();
-  await expect(page.getByRole('checkbox', { name: /Proposal wording/ })).toBeChecked();
+  const main = page.getByRole('main');
+  await expect(main.getByRole('link', { name: 'Open workspace' }).first()).toHaveAttribute(
+    'href'
+    //projects$/
+  );
+  await expect(main.getByRole('link', { name: 'Get the add-ins' }).first()).toHaveAttribute(
+    'href',
+    '/add-ins'
+  );
+  const more = page.getByRole('navigation', { name: 'More about Dynodoc' });
+  for (const [name, href] of [
+    ['Features', '/features'],
+    ['Add-ins', '/add-ins'],
+    ['Security', '/security'],
+    ['Why provenance', '/why-dynodoc'],
+    ['Roadmap', '/roadmap']
+  ])
+    await expect(more.getByRole('link', { name, exact: true })).toHaveAttribute('href', href);
+  await expect(page.locator('script[type="application/ld+json"]')).toHaveCount(1);
+  const graph = JSON.parse(
+    (await page.locator('script[type="application/ld+json"]').textContent()) || '{}'
+  )['@graph'];
+  expect(graph.map((node: { '@type': string }) => node['@type'])).toEqual([
+    'Organization',
+    'WebSite',
+    'SoftwareApplication',
+    'FAQPage'
+  ]);
+  const text = (await main.textContent()) ?? '';
+  expect(text).not.toMatch(/questionnaire|XLSForm|KoboToolbox|ODK|REDCap|survey/i);
+  for (const section of ['how-it-works', 'editors', 'review', 'history', 'projects', 'faq'])
+    await expect(page.locator(`#${section}`)).toHaveCount(1);
 });
 
-test('research workflow and integration explanations reflect the selected tool', async ({
-  page
-}) => {
+test('editor tabs switch the add-in preview and support arrow keys', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Plan the numbers', exact: true }).click();
-  await expect(
-    page.getByRole('heading', { name: 'Keep the reasoning close to the numbers.' })
-  ).toBeVisible();
-  await page.getByRole('button', { name: /KoboToolbox.*Connect & import/ }).click();
-  await expect(
-    page.getByRole('heading', { name: 'Give your Kobo project a shared working space.' })
-  ).toBeVisible();
-  await expect(
-    page.getByText(/Repeat imports create new snapshots, without automatic synchronization./)
-  ).toBeVisible();
-  await page.getByRole('button', { name: /REDCap.*Connect & import/ }).click();
-  await expect(page.getByText(/Read-only API imports and dictionary files/)).toBeVisible();
+  const tablist = page.getByRole('tablist', { name: 'Editor' });
+  await tablist.scrollIntoViewIfNeeded();
+  const panel = page.getByRole('tabpanel');
+  await expect(tablist.getByRole('tab')).toHaveCount(6);
+  await expect(tablist.getByRole('tab', { name: 'Word', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true'
+  );
+  await expect(panel.getByRole('img', { name: /pane open in Word,/ })).toBeVisible();
+  await tablist.getByRole('tab', { name: 'Excel', exact: true }).click();
+  await expect(tablist.getByRole('tab', { name: 'Excel', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true'
+  );
+  await expect(tablist.getByRole('tab', { name: 'Word', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'false'
+  );
+  await expect(panel.getByRole('img', { name: /pane open in Excel,/ })).toBeVisible();
+  await expect(panel.getByText('Existing cell values, formula sources')).toBeVisible();
+  await page.keyboard.press('ArrowRight');
+  await expect(tablist.getByRole('tab', { name: 'PowerPoint', exact: true })).toBeFocused();
+  await expect(panel.getByRole('img', { name: /pane open in PowerPoint,/ })).toBeVisible();
+  await page.keyboard.press('End');
+  await expect(tablist.getByRole('tab', { name: 'Google Slides', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true'
+  );
+});
+
+test('FAQ answers open and close, and the page does not overflow on a phone', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  const faq = page.locator('#faq');
+  const question = faq.getByText('What does it not do?', { exact: true });
+  const answer = faq.getByText(/no live collaborator cursors/);
+  await question.scrollIntoViewIfNeeded();
+  await expect(answer).toBeHidden();
+  await question.click();
+  await expect(answer).toBeVisible();
+  await question.click();
+  await expect(answer).toBeHidden();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true
+  );
 });
 
 test('legal pages are linked, readable on mobile and explicitly marked as drafts', async ({
@@ -58,13 +100,18 @@ test('legal pages are linked, readable on mobile and explicitly marked as drafts
   await page.emulateMedia({ reducedMotion: 'reduce' });
   for (const [path, title] of [
     ['/privacy', 'Privacy policy'],
-    ['/terms', 'Terms & conditions']
+    ['/terms', 'Terms & conditions'],
+    ['/cookies', 'Cookies & local storage'],
+    ['/security', 'Security'],
+    ['/subprocessors', 'Subprocessors'],
+    ['/acceptable-use', 'Acceptable use'],
+    ['/accessibility', 'Accessibility statement'],
+    ['/dpa', 'Data processing terms (draft)'],
+    ['/licenses', 'Licenses']
   ]) {
     await page.goto(path);
     await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
-    await expect(
-      page.getByText('Draft prepared 19 September 2026 · Not yet effective')
-    ).toBeVisible();
+    await expect(page.getByText('Draft revised 12 October 2026 · Not yet effective')).toBeVisible();
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
     ).toBe(true);
@@ -85,10 +132,11 @@ test('legal pages are linked, readable on mobile and explicitly marked as drafts
     true
   );
   await page.getByRole('button', { name: 'Open menu', exact: true }).click();
-  await page
-    .getByRole('navigation', { name: 'Main navigation' })
-    .getByRole('link', { name: 'Integrations' })
-    .click();
+  const main = page.getByRole('navigation', { name: 'Main navigation' });
+  await main.getByRole('button', { name: 'Product', exact: true }).click();
+  await main.getByRole('link', { name: /^Features/ }).click();
+  await expect(page).toHaveURL(/\/features$/);
+  // The full-screen menu closes when a link is followed.
   await expect(page.getByRole('button', { name: 'Open menu', exact: true })).toBeVisible();
 });
 
@@ -113,7 +161,7 @@ test('frontend healthz returns ok', async ({ request }) => {
   expect(await res.json()).toMatchObject({ status: 'ok', service: 'researcher-frontend' });
 });
 
-test('homepage controls wait for hydration on a slow connection', async ({ page }) => {
+test('homepage tabs wait for hydration on a slow connection', async ({ page }) => {
   let resumeScripts!: () => void;
   const scriptsReady = new Promise<void>((resolve) => {
     resumeScripts = resolve;
@@ -128,18 +176,18 @@ test('homepage controls wait for hydration on a slow connection', async ({ page 
   try {
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await expect.poll(() => heldScripts).toBeGreaterThan(0);
+    // The server-rendered page is complete and readable; only the tabs wait.
     await expect(
-      page.getByRole('button', { name: 'Plan the numbers', exact: true })
-    ).toBeDisabled();
-    await expect(page.getByRole('button', { name: 'Try this wording' })).toBeDisabled();
-    await expect(
-      page.getByRole('button', { name: /KoboToolbox.*Connect & import/ })
-    ).toBeDisabled();
-    resumeScripts();
-    await page.getByRole('button', { name: 'Plan the numbers', exact: true }).click();
-    await expect(
-      page.getByRole('heading', { name: 'Keep the reasoning close to the numbers.' })
+      page.getByRole('heading', { level: 1, name: /Version control for the documents/ })
     ).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Excel', exact: true })).toBeDisabled();
+    resumeScripts();
+    await expect(page.getByRole('tab', { name: 'Excel', exact: true })).toBeEnabled();
+    await page.getByRole('tab', { name: 'Excel', exact: true }).click();
+    await expect(page.getByRole('tab', { name: 'Excel', exact: true })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
   } finally {
     resumeScripts();
   }

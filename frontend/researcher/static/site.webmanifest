@@ -1,11 +1,11 @@
 {
   "name": "Dynodoc",
   "short_name": "Dynodoc",
-  "description": "A shared workspace for research documents, spreadsheets and questionnaires.",
+  "description": "Version control and provenance for Word, Docs, Excel, Sheets, PowerPoint and Slides documents: capture, review, merge and prove every change.",
   "start_url": "/",
   "display": "browser",
-  "background_color": "#faf9f6",
-  "theme_color": "#2059b0",
+  "background_color": "#f6f3ea",
+  "theme_color": "#f6f3ea",
   "icons": [
     { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }

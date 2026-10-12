@@ -1,6 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import ProductPage from '$lib/components/marketing/ProductPage.svelte';
+  import LegalPage from '$lib/components/marketing/LegalPage.svelte';
+  const sections = [
+    { id: 'signin', title: 'Sign-in and security' },
+    { id: 'preferences', title: 'Preferences on your device' },
+    { id: 'addins', title: 'Editor add-ins' },
+    { id: 'measurements', title: 'Performance measurements' },
+    { id: 'controls', title: 'Connected services and browser controls' }
+  ];
   let disabled = $state(false),
     saved = $state(false);
   onMount(() => {
@@ -17,122 +24,177 @@
   }
 </script>
 
-<ProductPage
+<LegalPage
   title="Cookies & local storage"
-  description="What Dynodoc stores in your browser, why it is there, and how to control optional performance measurements."
-  eyebrow="Service information · Updated 19 September 2026"
+  description="What Dynodoc stores in your browser and on your device, why it is there, how long it lasts and how to control the optional performance measurements."
+  {sections}
 >
-  <section>
+  <section id="signin">
     <h2>Sign-in and security</h2>
     <p>
       The workspace uses a secure, HTTP-only session cookie to keep you signed in. Short-lived
-      cookies protect Google sign-in against forged requests. These are scoped to the host that sets
-      them; your homepage visit does not disclose your workspace session to the analytics endpoint.
+      cookies protect Google sign-in against forged requests. Each is scoped to the host that sets
+      it, so a visit to the public website does not disclose your workspace session. There are no
+      advertising cookies and no cross-site tracking identifiers.
     </p>
-    <div class="table-wrap">
+    <!-- Scrollable data tables need keyboard access on narrow screens. -->
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <div class="table-scroll" role="region" aria-label="Sign-in cookies" tabindex="0">
       <table>
         <thead><tr><th>Storage</th><th>Purpose</th><th>Duration</th></tr></thead><tbody
           ><tr
             ><td><code>dynodoc_session</code></td><td
-              >Encrypted sign-in session. Access tokens are refreshed while your account remains
-              active.</td
-            ><td
-              >Up to 30 days; cleared on sign-out. Server-side revocation can end access sooner.</td
+              >Encrypted sign-in session. HTTP-only, SameSite=Lax and Secure over HTTPS. Access
+              tokens are renewed while your account stays active.</td
+            ><td>Up to 30 days; cleared on sign-out. Server-side revocation can end it sooner.</td
             ></tr
           ><tr
-            ><td><code>oauth_state</code>, <code>oauth_verifier</code></td><td
-              >Validate a Google sign-in request and its callback.</td
+            ><td><code>oauth_state</code>, <code>oauth_verifier</code>, <code>oauth_next</code></td
+            ><td
+              >Validate a Google sign-in request and its callback, and remember which page to return
+              to.</td
             ><td>Up to 10 minutes; removed when the callback is processed.</td></tr
           ><tr
             ><td><code>forms_pending</code></td><td
-              >Bind the Google Forms connection to the signed-in researcher.</td
+              >Bind the optional Google Forms authorization to the signed-in account.</td
             ><td>Up to 10 minutes.</td></tr
           ><tr
             ><td><code>dynodoc_forms</code></td><td
-              >Encrypted, HTTP-only read-only Google Forms connection, used only by the Forms import
+              >Encrypted, HTTP-only, read-only Google Forms access token, used only by the import
               endpoint.</td
             ><td>Up to one hour; cleared when you disconnect or sign out.</td></tr
+          ></tbody
+        >
+      </table>
+    </div>
+    <p>
+      The email sign-in link is not a cookie. It is valid for 15 minutes and Dynodoc keeps the page
+      you wanted to reach in local storage briefly so that the link, which opens in a new tab, can
+      return you there.
+    </p>
+  </section>
+  <section id="preferences">
+    <h2>Preferences on your device</h2>
+    <p>
+      These items remember choices you made. None is sent to an advertiser or used to track you
+      across sites, and the website works without them.
+    </p>
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <div class="table-scroll" role="region" aria-label="Preference storage" tabindex="0">
+      <table>
+        <thead><tr><th>Storage</th><th>Purpose</th><th>Duration</th></tr></thead><tbody
           ><tr
-            ><td><code>dynodoc_guide_v1</code> (local storage)</td><td
-              >Remember that you have seen or dismissed the welcome guide.</td
-            ><td>Until cleared in your browser. You can replay the guide at any time.</td></tr
+            ><td><code>dynodoc_theme</code> (cookie), <code>dynodoc.theme</code></td><td
+              >Your light, dark or system choice, applied before the page is painted. The cookie is
+              shared across dynodoc.online subdomains. Set only when you use the theme switch.</td
+            ><td>Cookie: one year. Local storage: until cleared.</td></tr
           ><tr
-            ><td
-              ><code>dynodoc-browser-recovery</code> (IndexedDB),
-              <code>dynodoc.browser-recovery</code> (preference)</td
-            ><td
-              >Optional recovery copies of unsaved edits, only when enabled through the editor File
-              menu. Contains document content; use only on a trusted browser.</td
-            ><td
-              >Copies expire after seven days on the next storage check, and clear on sign-out or
-              disabling recovery. Preference remains until cleared.</td
-            ></tr
-          ><tr
-            ><td><code>dynodoc_metrics</code></td><td
-              >Remember your performance-measurement preference across Dynodoc subdomains.</td
+            ><td><code>dynodoc_metrics</code> (cookie)</td><td
+              >Remember your performance-measurement choice across subdomains. Set only when you
+              change it on this page.</td
             ><td>Up to 180 days.</td></tr
+          ><tr
+            ><td><code>dynodoc.workspace-view</code></td><td>List or grid view of your files.</td
+            ><td>Until cleared.</td></tr
+          ><tr
+            ><td><code>dynodoc:sheet:…</code></td><td
+              >The last sheet tab you viewed in a spreadsheet, per file.</td
+            ><td>Until cleared.</td></tr
+          ><tr
+            ><td><code>dynodoc.light-pages</code></td><td
+              >Your choice to show documents on white pages in night mode.</td
+            ><td>Until cleared.</td></tr
+          ><tr
+            ><td><code>dynodoc.login-next</code></td><td
+              >A same-site page address to return to after an email sign-in link opens in a new tab.</td
+            ><td>Removed when used; ignored after 20 minutes.</td></tr
+          ><tr
+            ><td><code>dynodoc.session-ended</code></td><td
+              >A timestamp that tells your other tabs you signed out.</td
+            ><td>Until cleared.</td></tr
+          ><tr
+            ><td
+              ><code>dynodoc.browser-recovery</code> (preference),
+              <code>dynodoc-browser-recovery</code>
+              (IndexedDB)</td
+            ><td
+              >Optional recovery copies of unsaved edits, only after you enable them in the editor’s
+              File menu. They contain document content: use them only on a trusted browser.</td
+            ><td
+              >Copies expire after seven days, at the next storage check, and are cleared on
+              sign-out or when you disable recovery. At most 30 copies of 10 MiB each. The
+              preference stays until cleared.</td
+            ></tr
           ></tbody
         >
       </table>
     </div>
   </section>
-  <section>
-    <h2>Performance measurements in PostgreSQL</h2>
+  <section id="addins">
+    <h2>Editor add-ins</h2>
     <p>
-      Dynodoc measures page loads and web vitals to understand speed and responsiveness. These
-      samples use a random identifier for the current page load, a coarse page category, a metric
-      name and a number. The identifier is not saved in a tracking cookie or reused as a visitor
-      identity.
+      The add-ins set no cookies. Office add-ins keep their capture queue in IndexedDB (the
+      <code>dynodoc-provenance</code> database) inside the Office web view, and the connection key
+      only in the pane’s memory. Google add-ons keep the queue and key in Apps Script UserProperties
+      of the Google user who installed them. None of this is sent anywhere except to Dynodoc when
+      you push. See <a href="/privacy#addins">the privacy policy</a> for what is held and how to clear
+      it.
+    </p>
+  </section>
+  <section id="measurements">
+    <h2>Performance measurements</h2>
+    <p>
+      Dynodoc measures page loads and web vitals to understand speed and responsiveness. A sample
+      holds a random identifier for the current page load, a coarse page category, a metric name and
+      a number. The identifier is not saved in a cookie and is not reused as a visitor identity.
     </p>
     <p>
-      Samples do not include document titles, text, form answers, full URLs, search terms, account
-      emails or authentication cookies. They are sent to the Dynodoc workspace service and stored in
-      PostgreSQL, with a 30-day retention job. Network infrastructure necessarily receives
+      Samples do not include document titles, text, full addresses, search terms, account emails or
+      authentication cookies. They are sent without cookies to the Dynodoc workspace service, stored
+      in PostgreSQL and removed after 30 days. Network infrastructure necessarily receives
       connection information such as an IP address; server and provider logs are separate from these
-      metric records.
+      records.
     </p>
     <p>
       Page-load counts are not counts of unique people. Do Not Track and Global Privacy Control
-      signals suppress this collection. We do not use these samples for advertising or cross-site
+      signals suppress this collection. The samples are not used for advertising or cross-site
       profiling.
     </p>
-  </section>
-  <section class="callout">
-    <h2>Your preference</h2>
-    <p>
-      Optional performance measurements are {disabled ? 'disabled' : 'enabled'} for this browser unless
-      a browser privacy signal disables them. Changing this preference affects future measurements; it
-      does not remove samples already received.
-    </p>
-    <div class="preferences">
-      <button onclick={() => preference(true)} aria-pressed={disabled}>Disable measurements</button
-      ><button onclick={() => preference(false)} aria-pressed={!disabled}
-        >Enable measurements</button
-      >
+    <div class="callout">
+      <h3>Your preference</h3>
+      <p>
+        Optional performance measurements are {disabled ? 'disabled' : 'enabled'} for this browser unless
+        a browser privacy signal disables them. Changing this preference affects future measurements;
+        it does not remove samples already received.
+      </p>
+      <div class="preferences">
+        <button type="button" onclick={() => preference(true)} aria-pressed={disabled}
+          >Disable measurements</button
+        ><button type="button" onclick={() => preference(false)} aria-pressed={!disabled}
+          >Enable measurements</button
+        >
+      </div>
+      {#if saved}<p role="status">
+          Preference saved. Reload open Dynodoc tabs for the change to take effect.
+        </p>{/if}
     </div>
-    {#if saved}<p role="status">
-        Preference saved. Reload open Dynodoc tabs for the change to take effect.
-      </p>{/if}
   </section>
-  <section>
-    <h2>Connected services</h2>
+  <section id="controls">
+    <h2>Connected services and browser controls</h2>
     <p>
-      Google, Vercel and other services may apply their own storage and privacy practices when you
-      visit or authenticate with them. A Google Forms connection is separate from normal Google
-      sign-in. Disconnecting this browser clears its token; you can also remove Dynodoc’s grant in
-      your Google Account.
+      Google, Microsoft, Vercel and other services may apply their own storage and privacy practices
+      when you visit or authenticate with them or use an add-in inside their products. A Google
+      Forms connection is separate from Google sign-in; disconnecting clears its token, and you can
+      also remove Dynodoc’s grant in your Google Account.
     </p>
-  </section>
-  <section>
-    <h2>Browser controls and questions</h2>
     <p>
       You can inspect, block or clear cookies and local storage in your browser settings. Blocking
-      essential sign-in storage prevents authenticated workspace use. Clearing the guide preference
-      may show the welcome message again. See the <a href="/privacy">privacy policy</a> for account and
-      content handling, including retention and the operator-contact information still awaiting confirmation.
+      essential sign-in storage prevents signed-in use. Clearing preferences resets the theme and
+      view choices. See the <a href="/privacy">privacy policy</a> for account and content handling, including
+      retention and the operator contact details still awaiting confirmation.
     </p>
   </section>
-</ProductPage>
+</LegalPage>
 
 <style>
   .preferences {
@@ -141,17 +203,31 @@
     gap: 12px;
   }
   .preferences button {
+    min-height: 44px;
     font: inherit;
     font-size: 15px;
-    padding: 12px 17px;
-    border: 1px solid var(--color-accent-border);
-    border-radius: 6px;
+    padding: 10px 17px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--site-radius, 6px);
     background: var(--color-surface-raised);
-    color: var(--color-accent-strong);
+    color: var(--color-ink);
     cursor: pointer;
   }
+  .preferences button:hover {
+    border-color: var(--color-ink-soft);
+  }
   .preferences button[aria-pressed='true'] {
-    background: var(--color-accent-solid);
-    color: var(--color-on-accent);
+    border-color: var(--color-ink-strong);
+    background: var(--color-ink-strong);
+    color: var(--color-parchment);
+  }
+  .callout h3 {
+    margin-top: 0;
+  }
+  .table-scroll table {
+    min-width: 640px;
+  }
+  .table-scroll td:first-child code {
+    white-space: nowrap;
   }
 </style>

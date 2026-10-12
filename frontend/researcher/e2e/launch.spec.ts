@@ -18,10 +18,17 @@ test('canonical pages, sitemap, structured metadata and icons are available', as
     'href',
     'https://dynodoc.online/'
   );
+  await expect(page.locator('script[type="application/ld+json"]')).toHaveCount(1);
   const metadata = JSON.parse(
     (await page.locator('script[type="application/ld+json"]').textContent()) || '{}'
   );
   expect(metadata['@graph'][0].name).toBe('Dynodoc');
+  expect(metadata['@graph'].map((node: { '@type': string }) => node['@type'])).toEqual([
+    'Organization',
+    'WebSite',
+    'SoftwareApplication',
+    'FAQPage'
+  ]);
   const sitemap = await request.get('/sitemap.xml');
   if (['dynodoc.online', 'www.dynodoc.online'].includes(new URL(page.url()).hostname)) {
     expect(sitemap.status()).toBe(200);
@@ -41,19 +48,31 @@ test('canonical pages, sitemap, structured metadata and icons are available', as
   expect(admin.status()).toBe(303);
   expect(admin.headers()['x-robots-tag']).toContain('noindex');
 });
-test('public pages pass automated WCAG A and AA checks', async ({ page }) => {
-  for (const path of [
-    '/',
-    '/login',
-    '/privacy',
-    '/terms',
-    '/features',
-    '/compatibility',
-    '/why-dynodoc',
-    '/roadmap',
-    '/help',
-    '/cookies'
-  ]) {
+const PUBLIC_PATHS = [
+  '/',
+  '/login',
+  '/privacy',
+  '/terms',
+  '/features',
+  '/compatibility',
+  '/why-dynodoc',
+  '/roadmap',
+  '/changelog',
+  '/brand',
+  '/help',
+  '/add-ins',
+  '/support',
+  '/cookies',
+  '/security',
+  '/subprocessors',
+  '/acceptable-use',
+  '/accessibility',
+  '/dpa',
+  '/licenses'
+];
+// One test per page keeps each run inside the per-test timeout as the site grows.
+for (const path of PUBLIC_PATHS) {
+  test(`${path} passes automated WCAG A and AA checks`, async ({ page }) => {
     await page.goto(path);
     await page.waitForLoadState('networkidle');
     const result = await new AxeBuilder({ page })
@@ -67,8 +86,8 @@ test('public pages pass automated WCAG A and AA checks', async ({ page }) => {
       })),
       path
     ).toEqual([]);
-  }
-});
+  });
+}
 test('administrator sees actual counters while a member is denied', async ({ page, browser }) => {
   test.skip(process.env.PILOT_E2E !== 'true', 'Requires an isolated local test stack');
   await login(page, 'admin@example.test');

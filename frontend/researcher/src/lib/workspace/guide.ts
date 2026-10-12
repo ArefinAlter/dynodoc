@@ -2,7 +2,7 @@ export const guide = [
   {
     title: 'Bring your documents together',
     action: 'Start in the workspace',
-    body: 'Create a document, spreadsheet or questionnaire. Upload Word, Excel, CSV or LaTeX files, or import from a connected research tool. Review the conversion notes before creating the editable copy. Your original upload remains downloadable.',
+    body: 'Create a document or spreadsheet, or upload a Word, Excel, PowerPoint, CSV, plain-text or LaTeX file (up to 3 MB while Dynodoc is in testing). Review the conversion notes before creating the editable copy. Your original upload remains downloadable.',
     icon: 'files'
   },
   {

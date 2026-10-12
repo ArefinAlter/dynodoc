@@ -1,0 +1,856 @@
+/*
+ * Paper & Ink: the public marketing site's design foundation.
+ *
+ * Everything is scoped to the `.site` wrapper rendered by routes/(site)/+layout.svelte,
+ * so the workspace, admin and login keep the tokens in app.css. `.site` re-declares the
+ * app's `--color-*` tokens, so existing components (ThemeToggle, older markup) inherit
+ * the palette without changes. Utilities use `:where(.site)` and therefore have the
+ * lowest possible specificity: any scoped component style overrides them.
+ * Night mode keys off `:root[data-theme='dark']`, exactly like app.css. Printing always
+ * uses the day palette. Documented in docs/SITE-DESIGN.md.
+ */
+
+/* Geist (sans) and Geist Mono: SIL OFL 1.1, self-hosted (see static/fonts/README.md). */
+@font-face {
+  font-family: 'Geist';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url(/fonts/geist-latin-ext.woff2) format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Geist';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url(/fonts/geist-latin.woff2) format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Geist Mono';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url(/fonts/geist-mono-latin-ext.woff2) format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Geist Mono';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url(/fonts/geist-mono-latin.woff2) format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* ---------------------------------------------------------------- tokens: day */
+.site {
+  color-scheme: light;
+  --color-parchment: #f6f3ea;
+  --color-surface: #fbf9f3;
+  --color-surface-raised: #ffffff;
+  --color-surface-muted: #ece7d8;
+  --color-surface-sunken: #efebdf;
+  --color-surface-hover: #eee9db;
+  --color-surface-selected: #e3efe6;
+  --color-overlay: rgb(27 26 23 / 0.5);
+  --color-terracotta: #0f6b3f;
+  --color-accent: #0f6b3f;
+  --color-accent-strong: #0a5530;
+  --color-accent-solid: #0f6b3f;
+  --color-accent-solid-hover: #0a5530;
+  --color-accent-bg: #e3efe6;
+  --color-accent-border: #b7d3bf;
+  --color-on-accent: #ffffff;
+  --color-ink: #1b1a17;
+  --color-ink-strong: #0f0e0c;
+  --color-ink-soft: #45423a;
+  --color-muted: #67645a;
+  --color-subtle: #67645a;
+  --color-rule: #d9d4c4;
+  --color-border: #d9d4c4;
+  --color-border-soft: #e6e1d2;
+  --color-border-strong: #b9b39f;
+  --color-suggest: #1d6f3f;
+  --color-suggest-bg: #e3efe6;
+  --color-success: #1d6f3f;
+  --color-success-bg: #e3efe6;
+  --color-success-border: #b7d3bf;
+  --color-warn: #8a6410;
+  --color-warn-ink: #6b4a0b;
+  --color-warn-bg: #f8ecc9;
+  --color-warn-border: #e0cc8f;
+  --color-danger: #a3271d;
+  --color-danger-bg: #f8e1dc;
+  --color-danger-border: #e8b9b0;
+  --color-danger-solid: #a3271d;
+  --color-success-solid: #1d6f3f;
+  --color-word: #185abd;
+  --color-word-bg: #e5effd;
+  --color-word-solid: #185abd;
+  --color-excel: #0e7038;
+  --color-excel-bg: #e3efe6;
+  --color-excel-solid: #0e7038;
+  --color-powerpoint: #b4381a;
+  --color-powerpoint-bg: #f8e4dc;
+  --color-powerpoint-solid: #b4381a;
+  --color-diff-add-bg: #e3efe6;
+  --color-diff-add-ink: #14502d;
+  --color-diff-del-bg: #f8e1dc;
+  --color-diff-del-ink: #8a1f17;
+  --color-chrome: #f1eee3;
+  --color-canvas: #ebe7da;
+  --color-page: #ffffff;
+  --color-page-ink: #1b1a17;
+  --color-page-border: #d9d4c4;
+  --color-grid-bg: #ffffff;
+  --color-grid-ink: #1b1a17;
+  --color-grid-line: #e4dfd0;
+  --color-grid-header-bg: #f0ece0;
+  --color-grid-header-ink: #45423a;
+  --color-grid-header-active: #e3efe6;
+  --color-grid-selection: rgb(15 107 63 / 0.1);
+  --color-grid-selection-border: #0f6b3f;
+  --color-focus: #0f6b3f;
+  --color-selection-bg: #d7f25c;
+  --color-selection-ink: #1b1a17;
+  --font-display: var(--site-font-sans);
+  --font-body: var(--site-font-sans);
+  --font-ui: var(--site-font-sans);
+  --font-mono: var(--site-font-mono);
+  --radius-control: 4px;
+  --radius-panel: 8px;
+  --shadow-panel: 0 1px 0 rgb(27 26 23 / 0.04);
+  --shadow-menu: 0 14px 32px -14px rgb(27 26 23 / 0.28), 0 0 0 1px rgb(27 26 23 / 0.04);
+  --shadow-dialog: 0 24px 64px -24px rgb(27 26 23 / 0.4);
+
+  /* Site-only extras. */
+  --site-font-sans: 'Geist', 'Public Sans', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  --site-font-mono:
+    'Geist Mono', 'Cascadia Code', 'SFMono-Regular', ui-monospace, Consolas, monospace;
+  --site-highlighter: #d7f25c;
+  --site-on-highlighter: #1b1a17;
+  --site-dot: rgb(27 26 23 / 0.17);
+  --site-ink-bg: #1b1a17;
+  --site-max: 1200px;
+  --site-gutter: 24px;
+  --site-radius: 6px;
+  --site-radius-sm: 4px;
+  --site-section-y: clamp(64px, 8vw, 120px);
+  --site-header-h: 64px;
+  --site-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  background: var(--color-parchment);
+  color: var(--color-ink);
+  font-family: var(--site-font-sans);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  /* A wide ghost wordmark or marquee must never create a page-wide scrollbar. */
+  overflow-x: clip;
+}
+
+/* ------------------------------------------------------------ tokens: night */
+@media screen {
+  :root[data-theme='dark'] .site,
+  .site .tone-ink {
+    color-scheme: dark;
+    --color-parchment: #12120f;
+    --color-surface: #191914;
+    --color-surface-raised: #1f1f19;
+    --color-surface-muted: #1e1e18;
+    --color-surface-sunken: #0e0e0c;
+    --color-surface-hover: #24241d;
+    --color-surface-selected: #1a2a20;
+    --color-overlay: rgb(0 0 0 / 0.66);
+    --color-terracotta: #6fcf97;
+    --color-accent: #6fcf97;
+    --color-accent-strong: #8fdfae;
+    --color-accent-solid: #1f7a4a;
+    --color-accent-solid-hover: #278a56;
+    --color-accent-bg: #1a2a20;
+    --color-accent-border: #2d4a38;
+    --color-on-accent: #ffffff;
+    --color-ink: #ece8dc;
+    --color-ink-strong: #f7f4ea;
+    --color-ink-soft: #c9c4b4;
+    --color-muted: #a29d8d;
+    --color-subtle: #9a9585;
+    --color-rule: #2d2c25;
+    --color-border: #2d2c25;
+    --color-border-soft: #25241e;
+    --color-border-strong: #45443a;
+    --color-suggest: #6fcf97;
+    --color-suggest-bg: #1a2a20;
+    --color-success: #6fcf97;
+    --color-success-bg: #1a2a20;
+    --color-success-border: #2d4a38;
+    --color-warn: #e0b85a;
+    --color-warn-ink: #e9c46a;
+    --color-warn-bg: #2b2410;
+    --color-warn-border: #55451a;
+    --color-danger: #ff9b8f;
+    --color-danger-bg: #32191a;
+    --color-danger-border: #5f2c2e;
+    --color-danger-solid: #c23a4b;
+    --color-success-solid: #1f7a4a;
+    --color-word: #6aa0f5;
+    --color-word-bg: #172a45;
+    --color-word-solid: #2f6fd6;
+    --color-excel: #4cc27f;
+    --color-excel-bg: #132f20;
+    --color-excel-solid: #1f7a4a;
+    --color-powerpoint: #f0845f;
+    --color-powerpoint-bg: #3a1f16;
+    --color-powerpoint-solid: #c43e1c;
+    --color-diff-add-bg: #16291d;
+    --color-diff-add-ink: #8fdfae;
+    --color-diff-del-bg: #35191a;
+    --color-diff-del-ink: #ffab9f;
+    --color-chrome: #16160f;
+    --color-canvas: #0e0e0b;
+    --color-page: #1c1c16;
+    --color-page-ink: #ece8dc;
+    --color-page-border: #2d2c25;
+    --color-grid-bg: #161611;
+    --color-grid-ink: #ece8dc;
+    --color-grid-line: #2a2922;
+    --color-grid-header-bg: #1e1e18;
+    --color-grid-header-ink: #c9c4b4;
+    --color-grid-header-active: #1a2a20;
+    --color-grid-selection: rgb(111 207 151 / 0.14);
+    --color-grid-selection-border: #6fcf97;
+    --color-focus: #6fcf97;
+    --color-selection-bg: #d7f25c;
+    --color-selection-ink: #12120f;
+    --shadow-menu: 0 14px 32px -12px rgb(0 0 0 / 0.7), 0 0 0 1px rgb(255 255 255 / 0.04);
+    --shadow-dialog: 0 24px 64px -24px rgb(0 0 0 / 0.8);
+    --site-dot: rgb(236 232 220 / 0.15);
+    --site-ink-bg: #0b0b09;
+  }
+}
+/* An ink panel in day mode needs the night palette plus its own background. */
+.site .tone-ink {
+  background: var(--site-ink-bg);
+  color: var(--color-ink);
+}
+@media print {
+  .site .tone-ink {
+    background: transparent;
+  }
+}
+
+/* Overscroll and the area behind the page match the paper. */
+body:has(.site) {
+  background: #f6f3ea;
+}
+@media screen {
+  :root[data-theme='dark'] body:has(.site) {
+    background: #12120f;
+  }
+}
+/* Anchors land below the sticky header. */
+:root:has(.site) {
+  scroll-padding-top: calc(var(--site-header-h, 64px) + 20px);
+}
+@media (max-width: 640px) {
+  .site {
+    --site-gutter: 16px;
+  }
+}
+
+/* ------------------------------------------------------------------ base */
+:where(.site) :where(h1, h2, h3, h4, h5, h6) {
+  margin: 0;
+  color: var(--color-ink-strong);
+  font-weight: 540;
+  letter-spacing: -0.025em;
+  line-height: 1.12;
+  text-wrap: balance;
+}
+:where(.site) :where(p, li, dd, figcaption) {
+  text-wrap: pretty;
+}
+:where(.site) :where(code, kbd, samp, pre) {
+  font-family: var(--site-font-mono);
+}
+:where(.site) :focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+:where(.site) :where(img, svg, video) {
+  max-width: 100%;
+}
+
+/* ------------------------------------------------------------- utilities */
+/* .container: content max 1200px, gutter 24px (16px on phones). */
+:where(.site) .container {
+  width: 100%;
+  max-width: calc(var(--site-max) + 2 * var(--site-gutter));
+  margin-inline: auto;
+  padding-inline: var(--site-gutter);
+}
+:where(.site) .container--narrow {
+  max-width: calc(880px + 2 * var(--site-gutter));
+}
+
+/* Type scale. Headings carry no size by default: pick one of these. */
+:where(.site) .h-display {
+  font-size: clamp(2.5rem, 1.2rem + 5.6vw, 5.25rem);
+  line-height: 1.02;
+  letter-spacing: -0.04em;
+  font-weight: 520;
+}
+:where(.site) .h-1 {
+  font-size: clamp(2.125rem, 1.3rem + 3.4vw, 3.75rem);
+  line-height: 1.05;
+  letter-spacing: -0.035em;
+}
+:where(.site) .h-2 {
+  font-size: clamp(1.625rem, 1.15rem + 2vw, 2.5rem);
+  line-height: 1.12;
+  letter-spacing: -0.03em;
+}
+:where(.site) .h-3 {
+  font-size: clamp(1.1875rem, 1.05rem + 0.6vw, 1.5rem);
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  font-weight: 560;
+}
+:where(.site) .lede {
+  font-size: clamp(1.0625rem, 1rem + 0.35vw, 1.25rem);
+  line-height: 1.55;
+  color: var(--color-ink-soft);
+  max-width: 62ch;
+  margin: 0;
+}
+:where(.site) .small {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--color-muted);
+}
+:where(.site) .mono {
+  font-family: var(--site-font-mono);
+}
+/* Highlighter mark behind a phrase in a heading. */
+:where(.site) .hl {
+  background: linear-gradient(transparent 58%, var(--site-highlighter) 58% 94%, transparent 94%);
+  color: inherit;
+  padding: 0 0.06em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+/* On dark surfaces the mark is translucent so light text on it stays readable. */
+:where(.site) .tone-ink .hl {
+  color: inherit;
+  background: linear-gradient(transparent 58%, rgb(215 242 92 / 0.32) 58% 94%, transparent 94%);
+}
+@media screen {
+  :root[data-theme='dark'] .site .hl {
+    background: linear-gradient(transparent 58%, rgb(215 242 92 / 0.32) 58% 94%, transparent 94%);
+  }
+}
+
+/* .eyebrow: mono label. <Eyebrow> renders the `[ LABEL ]` brackets. */
+:where(.site) .eyebrow {
+  margin: 0;
+  font-family: var(--site-font-mono);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+:where(.site) .eyebrow--accent {
+  color: var(--color-accent);
+}
+
+/* .num: mono numerals for `01`, `STEP 01`, counters. */
+:where(.site) .num {
+  font-family: var(--site-font-mono);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-muted);
+}
+:where(.site) .num--lg {
+  font-size: clamp(2rem, 1.4rem + 2vw, 3rem);
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: var(--color-ink-strong);
+}
+
+/* .rule: hairline with registration marks at both ends. Use <hr class="rule">. */
+:where(.site) .rule {
+  position: relative;
+  display: block;
+  height: 0;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--color-rule);
+  color: var(--color-ink-soft);
+  overflow: visible;
+}
+:where(.site) .rule::before,
+:where(.site) .rule::after {
+  content: '';
+  position: absolute;
+  top: -5px;
+  width: 9px;
+  height: 9px;
+  opacity: 0.6;
+  background:
+    linear-gradient(currentColor, currentColor) 50% 0 / 1px 100% no-repeat,
+    linear-gradient(currentColor, currentColor) 0 50% / 100% 1px no-repeat;
+}
+:where(.site) .rule::before {
+  left: -4px;
+}
+:where(.site) .rule::after {
+  right: -4px;
+}
+:where(.site) .rule--bare::before,
+:where(.site) .rule--bare::after {
+  display: none;
+}
+
+/* .dotgrid: faint dotted field behind an element's content.
+   Modifiers: .dotgrid--fade (fades to the edges), .dotgrid--fade-b (fades downward). */
+:where(.site) .dotgrid {
+  position: relative;
+  isolation: isolate;
+}
+:where(.site) .dotgrid::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: radial-gradient(circle at 1px 1px, var(--site-dot) 1px, transparent 1.3px);
+  background-size: var(--dot-gap, 22px) var(--dot-gap, 22px);
+}
+:where(.site) .dotgrid--fade::before {
+  -webkit-mask-image: radial-gradient(ellipse 70% 70% at 50% 45%, #000 20%, transparent 100%);
+  mask-image: radial-gradient(ellipse 70% 70% at 50% 45%, #000 20%, transparent 100%);
+}
+:where(.site) .dotgrid--fade-b::before {
+  -webkit-mask-image: linear-gradient(#000 40%, transparent);
+  mask-image: linear-gradient(#000 40%, transparent);
+}
+
+/* .card: flat, bordered. Modifiers: --raised, --flat, --interactive (lifts on hover). */
+:where(.site) .card {
+  position: relative;
+  display: block;
+  padding: clamp(18px, 2.4vw, 28px);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--site-radius);
+  color: inherit;
+  text-decoration: none;
+}
+:where(.site) .card--raised {
+  background: var(--color-surface-raised);
+}
+:where(.site) .card--flat {
+  background: transparent;
+}
+:where(.site) .card--interactive {
+  transition:
+    border-color 0.2s var(--site-ease),
+    transform 0.25s var(--site-ease),
+    background-color 0.2s var(--site-ease);
+}
+:where(.site) .card--interactive:hover,
+:where(.site) .card--interactive:focus-visible {
+  border-color: var(--color-ink-soft);
+  transform: translateY(-2px);
+}
+
+/* .badge: small mono status tag. */
+:where(.site) .badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+  font-family: var(--site-font-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 1.6;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-ink-soft);
+  background: transparent;
+}
+:where(.site) .badge--accent {
+  border-color: var(--color-accent-border);
+  background: var(--color-accent-bg);
+  color: var(--color-accent-strong);
+}
+
+/* .callout: left-ruled note. */
+:where(.site) .callout {
+  padding: 16px 20px;
+  background: var(--color-accent-bg);
+  border: 1px solid var(--color-accent-border);
+  border-left: 3px solid var(--color-accent);
+  border-radius: var(--site-radius-sm);
+  color: var(--color-ink);
+}
+:where(.site) .callout > :first-child {
+  margin-top: 0;
+}
+:where(.site) .callout > :last-child {
+  margin-bottom: 0;
+}
+
+/* Section tones. <Section tone> applies these. .tone-ink is defined with the tokens. */
+:where(.site) .tone-muted {
+  background: var(--color-surface-muted);
+}
+
+/* .btn: rectangular. Variants: --primary (ink fill), --secondary (outline),
+   --ghost, --link. Sizes: --sm, --lg. <Btn> adds the nudging arrow (.btn__arrow). */
+:where(.site) .btn {
+  --btn-bg: transparent;
+  --btn-fg: var(--color-ink);
+  --btn-bd: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6em;
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: 0 1.15rem;
+  border: 1px solid var(--btn-bd);
+  border-radius: var(--site-radius-sm);
+  background: var(--btn-bg);
+  color: var(--btn-fg);
+  font-family: var(--site-font-sans);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  line-height: 1.2;
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 0.18s var(--site-ease),
+    border-color 0.18s var(--site-ease),
+    color 0.18s var(--site-ease);
+}
+:where(.site) .btn:disabled,
+:where(.site) .btn[aria-disabled='true'] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+:where(.site) .btn--primary {
+  --btn-bg: var(--color-ink-strong);
+  --btn-fg: var(--color-parchment);
+  --btn-bd: var(--color-ink-strong);
+}
+:where(.site) .btn--primary:hover:not(:disabled) {
+  --btn-bg: var(--color-accent);
+  --btn-bd: var(--color-accent);
+}
+:where(.site) .btn--secondary {
+  --btn-bd: var(--color-border-strong);
+}
+:where(.site) .btn--secondary:hover:not(:disabled) {
+  --btn-bd: var(--color-ink);
+  --btn-bg: var(--color-surface);
+}
+:where(.site) .btn--ghost:hover:not(:disabled) {
+  --btn-bg: var(--color-surface-hover);
+}
+:where(.site) .btn--link {
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: var(--color-ink);
+  font-weight: 560;
+}
+:where(.site) .btn--link:hover {
+  color: var(--color-accent);
+}
+:where(.site) .btn--sm {
+  min-height: 36px;
+  padding: 0 0.85rem;
+  font-size: 0.875rem;
+}
+:where(.site) .btn--lg {
+  min-height: 52px;
+  padding: 0 1.5rem;
+  font-size: 1rem;
+}
+:where(.site) .btn__arrow {
+  flex: none;
+  transition: transform 0.22s var(--site-ease);
+}
+:where(.site) .btn:hover .btn__arrow,
+:where(.site) .btn:focus-visible .btn__arrow {
+  transform: translateX(3px);
+}
+:where(.site) .btn:hover .btn__arrow--up,
+:where(.site) .btn:focus-visible .btn__arrow--up {
+  transform: translate(2px, -2px);
+}
+:where(.site) .tone-ink .btn--primary {
+  --btn-bg: var(--color-ink-strong);
+  --btn-fg: var(--site-ink-bg);
+  --btn-bd: var(--color-ink-strong);
+}
+:where(.site) .tone-ink .btn--primary:hover:not(:disabled) {
+  --btn-bg: var(--site-highlighter);
+  --btn-bd: var(--site-highlighter);
+  --btn-fg: var(--site-on-highlighter);
+}
+
+/* .link-sweep: underline that sweeps in from the left on hover and focus. */
+:where(.site) .link-sweep {
+  color: inherit;
+  text-decoration: none;
+  background-image:
+    linear-gradient(currentColor, currentColor),
+    linear-gradient(
+      color-mix(in srgb, currentColor 35%, transparent),
+      color-mix(in srgb, currentColor 35%, transparent)
+    );
+  background-size:
+    0 1px,
+    100% 1px;
+  background-position:
+    0 100%,
+    0 100%;
+  background-repeat: no-repeat;
+  padding-bottom: 2px;
+  transition: background-size 0.3s var(--site-ease);
+}
+:where(.site) .link-sweep:hover,
+:where(.site) .link-sweep:focus-visible {
+  background-size:
+    100% 1px,
+    100% 1px;
+}
+
+/* .prose: long-form text at a readable measure (68ch). */
+:where(.site) .prose {
+  max-width: 68ch;
+  font-size: 1rem;
+  line-height: 1.75;
+  color: var(--color-ink-soft);
+}
+:where(.site) .prose > :first-child {
+  margin-top: 0;
+}
+:where(.site) .prose :where(h2) {
+  margin: 2.4em 0 0.7em;
+  font-size: 1.5rem;
+  letter-spacing: -0.025em;
+}
+:where(.site) .prose :where(h3) {
+  margin: 1.8em 0 0.5em;
+  font-size: 1.125rem;
+  letter-spacing: -0.015em;
+}
+:where(.site) .prose :where(p, ul, ol, dl, blockquote, pre, table, figure) {
+  margin: 0 0 1.1em;
+}
+:where(.site) .prose :where(ul, ol) {
+  padding-left: 1.3em;
+}
+:where(.site) .prose :where(li) {
+  margin: 0.4em 0;
+  padding-left: 0.25em;
+}
+:where(.site) .prose :where(li)::marker {
+  color: var(--color-muted);
+}
+:where(.site) .prose :where(strong, b) {
+  color: var(--color-ink);
+  font-weight: 600;
+}
+:where(.site) .prose :where(a) {
+  color: var(--color-accent-strong);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+:where(.site) .prose :where(a:hover) {
+  color: var(--color-accent);
+}
+:where(.site) .prose :where(code) {
+  padding: 0.1em 0.35em;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  background: var(--color-surface-muted);
+  font-size: 0.88em;
+  overflow-wrap: anywhere;
+}
+:where(.site) .prose :where(pre) {
+  padding: 16px 18px;
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--site-radius);
+  background: var(--color-surface);
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+:where(.site) .prose :where(pre code) {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+:where(.site) .prose :where(blockquote) {
+  padding-left: 1.1em;
+  border-left: 2px solid var(--color-border-strong);
+  color: var(--color-ink-soft);
+}
+:where(.site) .prose :where(hr) {
+  margin: 2.4em 0;
+  border: 0;
+  border-top: 1px solid var(--color-rule);
+}
+:where(.site) .prose :where(dt) {
+  color: var(--color-ink);
+  font-weight: 560;
+}
+:where(.site) .prose :where(dd) {
+  margin: 0 0 0.8em;
+}
+:where(.site) .prose :where(table) {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+:where(.site) .prose :where(th) {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--color-border-strong);
+  background: var(--color-surface-muted);
+  color: var(--color-ink);
+  font-family: var(--site-font-mono);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-align: left;
+  text-transform: uppercase;
+}
+:where(.site) .prose :where(td) {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: top;
+}
+:where(.site) .prose :where(tr:last-child td) {
+  border-bottom: 0;
+}
+:where(.site) .prose :where(.table-scroll, .table-wrap) {
+  margin: 1.4em 0;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--site-radius);
+  background: var(--color-surface-raised);
+}
+:where(.site) .prose :where(.table-scroll, .table-wrap) table {
+  min-width: 480px;
+  margin: 0;
+}
+:where(.site) .prose :where(.callout) {
+  margin: 1.4em 0;
+}
+:where(.site) .prose :where(.contact-details) {
+  display: grid;
+  grid-template-columns: minmax(110px, 160px) 1fr;
+  gap: 10px 20px;
+  margin: 1.4em 0;
+  padding: 18px 20px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--site-radius);
+  background: var(--color-surface);
+}
+:where(.site) .prose :where(.contact-details dd) {
+  margin: 0;
+}
+
+/* ------------------------------------------------------------ motion */
+/* reveal-on-scroll (see components/site/reveal.ts): elements marked `data-reveal`
+   rise 12px and fade in once. The action only sets the state attribute when motion
+   is allowed and JavaScript runs, so nothing is ever hidden without it. */
+@media (prefers-reduced-motion: no-preference) {
+  :where(.site) [data-reveal][data-reveal-state='pending'] {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  :where(.site) [data-reveal][data-reveal-state='running'] {
+    transition:
+      opacity 0.55s var(--site-ease),
+      transform 0.55s var(--site-ease);
+    transition-delay: var(--reveal-delay, 0ms);
+  }
+}
+
+/* .spotlight: pointer-following glow (see components/site/spotlight.ts). Add
+   `use:spotlight`; the glow sits under the content. With .dotgrid the dots light up. */
+:where(.site) .spotlight {
+  position: relative;
+  isolation: isolate;
+}
+:where(.site) .spotlight::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: var(--spot, 0);
+  transition: opacity 0.35s var(--site-ease);
+  background: radial-gradient(
+    circle 360px at var(--mx, 50%) var(--my, 40%),
+    color-mix(in srgb, var(--color-accent) 14%, transparent),
+    transparent 70%
+  );
+}
+:where(.site) .spotlight.dotgrid::after {
+  background-image: radial-gradient(
+    circle at 1px 1px,
+    var(--color-accent) 1.2px,
+    transparent 1.6px
+  );
+  background-size: var(--dot-gap, 22px) var(--dot-gap, 22px);
+  -webkit-mask-image: radial-gradient(
+    circle 240px at var(--mx, 50%) var(--my, 40%),
+    #000,
+    transparent
+  );
+  mask-image: radial-gradient(circle 240px at var(--mx, 50%) var(--my, 40%), #000, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :where(.site) *,
+  :where(.site) *::before,
+  :where(.site) *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+  }
+  :where(.site) .spotlight::after {
+    display: none;
+  }
+}

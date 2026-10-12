@@ -194,7 +194,7 @@ export const POST: RequestHandler = async ({ params, url, request, cookies }) =>
           from: env.EMAIL_FROM,
           to: [email],
           subject: 'Sign in to Dynodoc',
-          text: `Sign in to your research workspace:\n\n${link}\n\nThis link expires in 15 minutes. If you did not request it, you can ignore this message.`
+          text: `Sign in to your Dynodoc workspace:\n\n${link}\n\nThis link expires in 15 minutes. If you did not request it, you can ignore this message.`
         }),
         signal: AbortSignal.timeout(15_000)
       });

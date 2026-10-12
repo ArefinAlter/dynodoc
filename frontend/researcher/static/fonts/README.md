@@ -15,3 +15,12 @@ Each TTF is distributed under the SIL Open Font License 1.1; its adjacent
 fallbacks loaded by the editors and print preview, without third-party font requests.
 Microsoft font names in the toolbar use locally installed fonts; no Microsoft
 font binaries are distributed. Users must have permission to upload custom fonts.
+
+The public marketing site (`src/lib/styles/site.css`) self-hosts Geist and Geist
+Mono, designed by Vercel with Basement Studio, under the SIL Open Font License 1.1
+(`geist-OFL.txt`, `geist-mono-OFL.txt`; both fonts ship from the same
+https://github.com/vercel/geist-font repository). The variable WOFF2 files
+(latin and latin-ext subsets) were retrieved on 12 October 2026 from the
+`@fontsource-variable/geist` and `@fontsource-variable/geist-mono` packages via
+jsDelivr and checked for the `wOF2` signature. Characters outside those subsets
+fall back to Public Sans. Readers make no third-party font requests.

@@ -1,23 +1,5 @@
 import { test, expect } from '@playwright/test';
 
-test('the homepage explains independent wording and formatting changes', async ({ page }) => {
-  await page.goto('/');
-  const example = page.getByLabel(
-    'Interactive example of combining wording and formatting changes'
-  );
-  await expect(example.locator('.result p')).toHaveText(
-    'The reviewers will publish the plan in June.'
-  );
-  await expect(example.locator('.result .emphasis')).toHaveText('June');
-  await example.getByRole('button', { name: /Maya adds emphasis/ }).click();
-  await expect(example.locator('.result .emphasis')).toHaveCount(0);
-  await expect(example.locator('.result p')).toHaveText(
-    'The reviewers will publish the plan in June.'
-  );
-  await example.getByRole('button', { name: /Sam refines the wording/ }).click();
-  await expect(example.locator('.result p')).toHaveText('The team will publish the plan in June.');
-});
-
 test('long formatted passages save compact history and replay after reload', async ({ page }) => {
   test.skip(process.env.PILOT_E2E !== 'true', 'Requires the isolated authenticated stack.');
   await page.goto('/login');

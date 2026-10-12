@@ -3,44 +3,57 @@
   const sections = [
     { id: 'scope', title: 'Scope and responsibility' },
     { id: 'information', title: 'Information we handle' },
-    { id: 'performance', title: 'Anonymous visits and performance' },
     { id: 'purposes', title: 'How information is used' },
-    { id: 'collaboration', title: 'Who can see your work' },
+    { id: 'visibility', title: 'Who can see your work' },
+    { id: 'provenance', title: 'History, signing keys and receipts' },
+    { id: 'addins', title: 'Editor add-ins' },
+    { id: 'measurements', title: 'Anonymous visits and performance' },
     { id: 'providers', title: 'Service providers and integrations' },
-    { id: 'cookies', title: 'Cookies and sign-in' },
-    { id: 'history', title: 'History, retention and deletion' },
-    { id: 'security', title: 'Security and storage' },
-    { id: 'research', title: 'Research and sensitive data' },
+    { id: 'cookies', title: 'Cookies and local storage' },
+    { id: 'retention', title: 'Retention, erasure and what stays' },
+    { id: 'security', title: 'Security' },
     { id: 'rights', title: 'Your choices and rights' },
-    { id: 'changes', title: 'Changes to this notice' },
+    { id: 'changes', title: 'Changes to this policy' },
     { id: 'contact', title: 'Contact and operator details' }
   ];
 </script>
 
 <LegalPage
   title="Privacy policy"
-  description="How the Dynodoc document workspace handles account information, research materials, collaboration history and connected services."
+  description="How Dynodoc handles account information, documents, project history, signing keys, audit records and editor add-in data, and what can and cannot be erased."
   {sections}
 >
   <section id="scope">
     <h2>Scope and responsibility</h2>
     <p>
-      This draft covers the Dynodoc homepage and the associated hosted research workspace. It
-      explains the behavior of the current pilot. A separately operated installation may have a
-      different operator, hosting arrangement and privacy notice.
+      This draft covers the Dynodoc website at dynodoc.online, the hosted workspace and
+      administration sites (app.dynodoc.online and admin.dynodoc.online) and the Dynodoc editor
+      add-ins for Microsoft Word, Excel and PowerPoint and for Google Docs, Sheets and Slides.
+      Dynodoc is a document provenance, review and synchronization service: it records who changed
+      what in a document, helps a team review and merge changes, and keeps that history checkable. A
+      separately operated installation of the open-source software may have a different operator and
+      a different notice.
     </p>
     <p>
       “Dynodoc,” “we” and “our” refer to the operator of this hosted service, whose legal identity
-      is still to be supplied below. We handle account and service-operation information to run the
-      workspace. A research organization that uploads study materials generally determines why those
-      materials are processed, who may access them and what participant information belongs in them.
+      is still to be supplied below. For account and service-operation information we decide how and
+      why it is processed. For the documents and project history a team places in Dynodoc, that team
+      or its organization generally decides what is uploaded, who may see it and how long it should
+      be kept; we process it to provide the service. The precise controller, processor or equivalent
+      roles depend on applicable law and any signed agreement. The
+      <a href="/dpa">draft data processing terms</a> show how those roles would be set out; they are not
+      an executed agreement.
     </p>
-    <p>
-      The precise controller, processor or equivalent roles depend on applicable law and the study
-      arrangement. This notice is not a data processing agreement, a participant information sheet
-      or an ethics approval. Those arrangements must be agreed before the pilot is used for
-      identifiable participant data.
-    </p>
+    <p>The service is not directed at children.</p>
+    <div class="callout">
+      <p>
+        <strong>Not everything described here is switched on yet.</strong> This policy also covers
+        capabilities that exist in the software but are not yet enabled on the hosted service, such
+        as account signing keys, shared project history and signed branch receipts. The editor
+        add-ins are not yet published in a marketplace. The
+        <a href="/security#status">security overview</a> lists what is live today.
+      </p>
+    </div>
   </section>
   <section id="information">
     <h2>Information we handle</h2>
@@ -53,69 +66,75 @@
         ><tbody
           ><tr
             ><td>Account and identity</td><td
-              >Your email address, supplied display name, account identifier and sign-in records.
-              These come from you or your selected sign-in provider.</td
+              >Your email address, display name, account identifier and sign-in records, including
+              login sessions and their revocation. These come from you or from the sign-in provider
+              you choose.</td
             ><td>Identify you, authenticate your session and attribute contributions.</td></tr
           ><tr
-            ><td>Research content</td><td
-              >Uploaded documents and workbooks, original filenames and files, paragraphs, cells,
-              formulas, questions, choices, notes, comments and suggestions.</td
-            ><td>Provide editing, import, export, review and collaboration.</td></tr
+            ><td>Profile</td><td
+              >An optional display name and short bio. A profile is visible to you and to people who
+              share a project with you; it never includes your email address. Per-day counts of your
+              edits are shown to others only for files in projects and folders you both belong to.</td
+            ><td>Let collaborators recognise each other.</td></tr
           ><tr
-            ><td>Version and collaboration records</td><td
-              >Content changes, author identifiers, timestamps, saved versions, drafts, document
-              membership, roles and import provenance.</td
-            ><td>Show changes in context, manage access and preserve a working history.</td></tr
+            ><td>Documents and project content</td><td
+              >Uploaded files and the original upload, text, cells, slides, formatting, comments,
+              suggestions, titles, file, folder and project names, and member roles.</td
+            ><td>Provide capture, editing, import, export, review and collaboration.</td></tr
           ><tr
-            ><td>Integration information</td><td
-              >The server URL, project or form you select, the token supplied for a request, and the
-              instrument or response data you import.</td
-            ><td>Retrieve the requested material from your research platform.</td></tr
+            ><td>History and provenance records</td><td
+              >Append-only change records with author identifiers and timestamps, personal drafts,
+              change requests, reviews, named versions, verified snapshots, signed project commits
+              and branch receipts. These contain document content.</td
+            ><td
+              >Show changes in context, apply review rules, verify integrity and allow recovery.</td
+            ></tr
+          ><tr
+            ><td>Audit and operations records</td><td
+              >Administrative actions such as forced sign-out, link revocation, role changes and
+              erasure receipts, digests of metadata changes, and security-relevant events.</td
+            ><td>Run, secure and account for the service.</td></tr
+          ><tr
+            ><td>Connection and signing keys</td><td
+              >Editor connection grants (file, editor, account, a hash of the key, expiry and
+              revocation), account signing public keys and enrolment challenges. Private keys and
+              the connection keys themselves are not stored by Dynodoc.</td
+            ><td>Authorize editors and check who signed a commit.</td></tr
+          ><tr
+            ><td>Editor add-in data</td><td
+              >What an add-in reads from the open file, its local queue, the identity markers it
+              writes and what it sends. See <a href="#addins">Editor add-ins</a>.</td
+            ><td>Capture and deliver the changes you choose to push.</td></tr
           ><tr
             ><td>Technical and support information</td><td
-              >Server request information, which may include IP address, request path, time, browser
-              information and error details; information you give an administrator when requesting
-              help.</td
+              >Web server request logs (IP address, time, method, path without the query string,
+              status and size; private link paths are masked), error details, and information you
+              send when you ask for help.</td
             ><td>Operate, troubleshoot and protect the service.</td></tr
           ></tbody
         >
       </table>
     </div>
     <p>
-      An email address is required to use the authenticated workspace. Browsing the public homepage
-      does not require an account. The interactive homepage examples use sample information and keep
-      their edits in the page’s memory; they do not create research records or submit example
-      responses.
-    </p>
-  </section>
-  <section id="performance">
-    <h2>Anonymous visits and performance</h2>
-    <p>
-      We measure page loads and browser performance (LCP, INP, CLS, FCP and TTFB) to find slow or
-      unstable pages. Each page load gets a random identifier held only in page memory. Samples
-      include the site, a broad page category, a metric and its numeric value. They do not contain
-      your IP address, email, document identifier, full URL, query string, text you type or research
-      content. These measurements use no tracking cookies or persistent identifiers and are retained
-      for 30 days.
-    </p>
-    <p>
-      The administrator dashboard shows page-load counts and aggregate performance. Counts do not
-      identify unique visitors. Collection is skipped when your browser sends Do Not Track or Global
-      Privacy Control. Server access logs are separate operational records and may still contain IP
-      addresses as described above.
+      An email address is required to use the signed-in workspace. Browsing the public website does
+      not require an account. When you invite someone, we handle their email address to give them
+      access and, if you choose, to send an invitation. Please invite only people you are authorized
+      to invite.
     </p>
   </section>
   <section id="purposes">
     <h2>How information is used</h2>
     <p>
-      The pilot uses information to sign you in, save and retrieve work, display history and
-      attribution, apply document permissions, process requested imports and exports, send sign-in
-      emails, respond to support needs and investigate errors or misuse.
+      We use information to sign you in, store and return your work, show history and attribution,
+      apply file and project permissions, process requested imports and exports, send sign-in and
+      invitation emails, deliver in-app notifications, detect likely copies of documents (described
+      below), respond to support needs, investigate errors and misuse, and keep the records the
+      service needs in order to operate.
     </p>
     <p>
-      The current application does not include advertising trackers, marketing profiling, sale of
-      research content, AI model training or automated decisions about people with legal or
-      similarly significant effects. It does not send document contents to an AI service.
+      The service has no advertising trackers, no marketing profiling, no sale of content, no use of
+      your content to train AI models and no automated decisions about people with legal or
+      similarly significant effects. Document content is not sent to an AI service.
     </p>
     <h3>Legal basis</h3>
     <p>
@@ -124,249 +143,365 @@
       requested service; proportionate security and support processing may rely on legitimate
       interests where permitted; legal obligations may require particular records. Consent, where
       used, must be specific and withdrawable. These examples do not establish a legal basis for
-      sensitive research data or replace the research organization’s assessment.
+      sensitive information or replace your organization’s own assessment.
     </p>
   </section>
-  <section id="collaboration">
+  <section id="visibility">
     <h2>Who can see your work</h2>
     <p>
-      Document access is controlled by direct membership and inherited organization, team and folder
-      roles. The strongest applicable grant wins; a narrower grant does not cancel inherited access.
-      Editors, reviewers and readers have different capabilities. People with permission to manage
-      membership can give others access. A collaborator who is allowed to view or export content may
-      retain a copy outside Dynodoc; removing access cannot recall copies they already obtained.
+      Access is controlled by project, folder and file membership with the roles Owner, Manager,
+      Editor, Reviewer, Contributor and Viewer. The strongest applicable grant wins; a narrower
+      grant does not cancel inherited access. People with permission to manage membership can give
+      others access. Project rules can require approvals before a change is merged and apply to
+      every file in the project.
     </p>
     <p>
-      Personal drafts are kept separate from the shared team version until you share changes. Saved
-      versions and attribution may reveal earlier wording and contributor identities to people
-      authorized to view the relevant document history.
+      Personal drafts stay private until you share them. Once changes are merged, earlier wording
+      and contributor identities are visible to anyone authorized to see the file’s history. A
+      collaborator who can view or export content may keep a copy outside Dynodoc; removing access
+      cannot recall copies they already have.
     </p>
     <p>
-      To recognise renamed or edited copies, Dynodoc compares the text of every document with other
-      documents in the service, using fingerprints derived from the content. When a document you
-      upload or create closely matches a document owned by someone else, that owner is told your
-      name, email address, the file name and how similar the two are, even if you cannot open their
-      document. They are not shown your content. Before uploading, you are only shown matches in
-      documents you can already open.
+      To recognise renamed or edited copies, Dynodoc fingerprints document text and compares it with
+      other documents in the service. When a document you upload or create closely matches a
+      document owned by someone else, that owner is told your name, email address, the file name and
+      how similar the two are, even if you cannot open their document. They are not shown your
+      content. Before uploading, you are only shown matches in documents you can already open.
     </p>
     <p>
-      Owners and managers can publish a frozen read-only copy with a separate link. Anyone who
-      obtains that link can read the published content without signing in. Comments, original
-      uploads and version history remain private. Revoking a link or moving the document to Trash
-      stops future access through the link, but cannot recall downloaded copies. Later edits are not
-      included until a new copy is published.
+      Owners and managers can publish a frozen read-only copy with a separate link. Anyone who has
+      the link can read it without signing in. Comments, original uploads and version history stay
+      private. Revoking a link or moving the file to Trash stops future access through the link, but
+      cannot recall copies already downloaded. Later edits are not included until a new copy is
+      published.
     </p>
     <p>
-      Authorized service administrators may access stored information when needed to operate or
-      support the service. The pilot is not end-to-end encrypted. Access roles restrict application
-      access; they do not prevent the infrastructure operator from administering the database.
+      Authorized administrators may access stored information when needed to operate or support the
+      service, and the operator administers the database. Dynodoc is not end-to-end encrypted: it
+      reconstructs and reviews versions on the server, so it holds document content in a form the
+      service can read. Access roles restrict application access; they do not prevent the
+      infrastructure operator from administering the database.
     </p>
     <p>
-      We may need to disclose information to comply with a binding legal requirement or address a
-      substantiated security issue. Any adopted policy must specify the responsible operator and its
+      We may need to disclose information to comply with a binding legal requirement or to address a
+      substantiated security issue. Any adopted policy must name the responsible operator and its
       process for assessing such requests.
+    </p>
+  </section>
+  <section id="provenance">
+    <h2>History, signing keys and receipts</h2>
+    <p>
+      Dynodoc’s history is append-only. Each recorded change is linked to the one before it with a
+      SHA-256 hash, so a later alteration of the record is detectable. Deleting a paragraph,
+      restoring an older version or reverting a change adds new records; it does not remove the old
+      ones.
+    </p>
+    <p>
+      Signed project commits and branch receipts, where enabled, carry Ed25519 signatures. To sign,
+      you enrol a public key with your account by proving that you hold the matching private key.
+      The private key stays on your device and is never uploaded. The service keeps the public key
+      with its enrolment and revocation times, and no email address, device label or secret.
+      Revoking a key is permanent, and commits it already signed remain verifiable. A branch receipt
+      records the project, branch, commit, a generation counter and a declared time, signed by the
+      service’s authority key. Receipts hold identifiers and hashes, not document text.
+    </p>
+    <p>
+      These records are pseudonymous, not anonymous: they identify an account by its internal
+      identifier, and the history they point to can contain personal information that people wrote.
+      They stay with the history, including after an account is erased, so that contributions remain
+      verifiable. See <a href="#retention">Retention, erasure and what stays</a>.
+    </p>
+  </section>
+  <section id="addins">
+    <h2>Editor add-ins</h2>
+    <p>
+      The add-ins for Word, Excel and PowerPoint (task panes hosted at app.dynodoc.online) and for
+      Docs, Sheets and Slides (Google Apps Script add-ons) capture changes in the file you have open
+      and send them to Dynodoc when you choose. This section describes what the add-in code does.
+    </p>
+    <h3>What an add-in reads</h3>
+    <p>
+      Only the open file, and only while the pane or sidebar is open. Word and Docs: the text of
+      body paragraphs (Docs: the active tab), up to 2,000 paragraphs; a table, list, image or
+      embedded object stops the adapter with a message. Excel and Sheets: values, formula text,
+      date-only values and number formats of cells in rows mapped to Dynodoc, up to 2,000 cells,
+      plus sheet names and whether cells are merged. PowerPoint and Slides: the text of existing
+      text shapes and the identity of slides and shapes, up to 2,000 shapes. The add-ins do not read
+      other files or tabs, contacts, mail, calendar, Drive listings or your account profile, and
+      they request no permission that could.
+    </p>
+    <h3>What stays on your device</h3>
+    <ul>
+      <li>
+        <strong>Office:</strong> a capture queue in the browser database (IndexedDB) of the Office web
+        view, keyed to the Dynodoc file and the saved file’s address. The connection key is held only
+        in the pane’s memory and is gone when the pane closes.
+      </li>
+      <li>
+        <strong>Google:</strong> the queue and the connection key are kept in Apps Script UserProperties,
+        which are private to the Google user who installed the add-on and cannot be read by collaborators
+        on the file. A file’s queue is capped at 100 KB.
+      </li>
+      <li>
+        A queue holds the text of the file’s synced fields as last served by Dynodoc, the last
+        observed text of covered items, the observed changes with timestamps and identifiers, any
+        frozen upload awaiting delivery and the last receipt.
+      </li>
+      <li>
+        There is no automatic expiry and no in-product delete button yet. Office queues remain until
+        you clear the web view’s storage or remove the add-in. For Google, what happens to stored
+        properties when you uninstall is Google’s platform behaviour, which we have not confirmed.
+        <em>Export local provenance</em> gives you a JSON copy of what is held.
+      </li>
+    </ul>
+    <h3>The connection key</h3>
+    <p>
+      The add-in creates a 32-byte random key. Only its SHA-256 hash appears in the approval address
+      that opens in your browser; the key itself is sent only in an authorization header from the
+      editor to Dynodoc. You approve while signed in, choose one file and confirm a code shown in
+      both places. Dynodoc stores a grant (file, editor, account, key hash, expiry and revocation),
+      not the key. The key can read and propose changes for that one file and editor only. It cannot
+      merge, grant access or act as your account session, it expires seven days after approval and
+      you can revoke it under Sync &amp; connections, which stops access immediately. No Dynodoc
+      password, session cookie or account-wide token is ever given to an add-in.
+    </p>
+    <h3>What is sent to Dynodoc</h3>
+    <p>
+      Every request goes to <code>https://app.dynodoc.online/api/connectors/</code> over HTTPS; the Google
+      manifests enforce that single address. The add-in checks the connection, fetches the file’s retained
+      text and history position when you connect, preview or recover, and, only when you choose Push for
+      review, sends a bundle: a bundle identifier, a random client identifier, the file identifier, the
+      base revision and hash, the editor and capture mode, the Dynodoc file title, the change request
+      name and note you typed and, for each change, the node identifier, field, new text or value and
+      observed time. Nothing is sent while you only edit, nothing is sent in the background, and no device
+      identifier or telemetry is sent.
+    </p>
+    <h3>What is written into your file</h3>
+    <p>
+      Identity markers only: Word content controls tagged <code>dynodoc.block.&lt;id&gt;</code>,
+      named ranges in Excel, Sheets and Docs, and tags on PowerPoint slides and shapes. They travel
+      with the file when it is shared or exported and contain identifiers, not text. Text in your
+      file changes only when you choose <em>Apply preview</em>, after a compare-before-write check,
+      and only for text that has been reviewed and merged in Dynodoc.
+    </p>
+    <h3>Third parties and what is not done</h3>
+    <p>
+      Office panes load Microsoft’s Office.js library from appsforoffice.microsoft.com and run
+      inside Office, which has its own data practices. Google add-ons run on Google’s Apps Script
+      platform, which may log execution errors because exception logging is enabled in the add-on
+      manifests. The add-ins contain no analytics, advertising, fingerprinting or error-reporting
+      service, set no cookies and capture nothing while the pane or sidebar is closed. They record
+      what they observe at snapshot times; they do not prove who typed a change.
+    </p>
+  </section>
+  <section id="measurements">
+    <h2>Anonymous visits and performance</h2>
+    <p>
+      We measure page loads and browser performance (LCP, INP, CLS, FCP and TTFB) to find slow or
+      unstable pages. Each page load gets a random identifier held only in page memory. A sample
+      contains the site, a broad page category such as home, editor or sign-in, a metric name and
+      its numeric value. It does not contain your IP address, email address, document identifier,
+      full address, query string or anything you type. The request omits cookies, no tracking cookie
+      or persistent identifier is used, and samples are kept for 30 days.
+    </p>
+    <p>
+      Counts are page loads, not unique people. Collection is skipped when your browser sends Do Not
+      Track or Global Privacy Control, or when you switch it off on the
+      <a href="/cookies#measurements">cookies page</a>. Web server logs are separate operational
+      records and do contain IP addresses, as described above.
     </p>
   </section>
   <section id="providers">
     <h2>Service providers and integrations</h2>
-    <h3>Sign-in and hosting</h3>
     <ul>
       <li>
-        <strong>Google, when enabled:</strong> sign-in requests identity, email and profile
-        information. It does not request Google Drive, Docs or Sheets access. Google processes
+        <strong>Google, when enabled:</strong> sign-in requests your identity, email address and
+        profile only. It does not request Google Drive, Docs or Sheets access. Google handles
         sign-in activity under its own
         <a href="https://policies.google.com/privacy">privacy policy</a>.
       </li>
       <li>
-        <strong>Resend, when configured:</strong> receives the recipient email address and sign-in
-        message needed to deliver a magic link. Its handling is described in the
+        <strong>Resend, when configured:</strong> receives the recipient address and the message
+        needed to deliver a sign-in link or an invitation. Its handling is described in the
         <a href="https://resend.com/legal/privacy-policy">Resend privacy policy</a>.
       </li>
       <li>
-        <strong>Hosting providers:</strong> the workspace runs on the operator’s server. A homepage deployed
-        on Vercel also involves Vercel in serving page requests. The final provider list, hosting locations
-        and contractual arrangements remain to be confirmed by the operator.
+        <strong>Vercel:</strong> serves the public website at dynodoc.online and so receives
+        ordinary request information such as IP address and the page requested. See the
+        <a href="https://vercel.com/legal/privacy-policy">Vercel privacy notice</a>. The signed-in
+        workspace does not run on Vercel.
+      </li>
+      <li>
+        <strong>Hosting provider:</strong> the workspace, API, database, document converter and backups
+        run on a server the operator rents. The provider’s name, the hosting location and the contractual
+        arrangements remain to be confirmed.
+      </li>
+      <li>
+        <strong>Microsoft and Google as editor platforms:</strong> the add-ins run inside their products,
+        as described under Editor add-ins.
       </li>
     </ul>
-    <h3>Research platforms</h3>
     <p>
-      When you choose an ODK Central or KoboToolbox connection, the server contacts the platform
-      address you provide using your supplied token. The token is used for the requested connection
-      and is not intentionally saved in the application database or browser local storage. Imported
-      files or responses, their source information and the resulting workspace content are retained
-      as research material.
+      The <a href="/subprocessors">subprocessors page</a> lists these providers, what each receives and
+      what is not used. Website fonts, icons and artwork are served from Dynodoc itself, and the document
+      converter runs on the same private network rather than at a third party.
     </p>
+    <h3>Optional source imports</h3>
     <p>
-      Imports are snapshots. The pilot does not schedule background synchronization or write changes
-      back to the source platform. REDCap, SurveyCTO and SurveyMonkey also support the documented
-      read-only API import paths using credentials supplied for the connection. CSPro compatibility
-      is limited to exported CSV or Excel files.
-    </p>
-    <h3>Optional Google Forms connection</h3>
-    <p>
-      Google Forms requires a separate authorization after sign-in. With your permission, Dynodoc
-      reads the form definition or responses for the form ID you choose. The connection requests
-      forms.body.readonly and forms.responses.readonly, does not modify the Google form, and does
-      not request access to all Drive files. A short-lived access token is encrypted in an HttpOnly
-      cookie for up to one hour; no refresh token is requested. Disconnecting or signing out clears
-      that connection. You can also revoke the grant in your Google Account permissions.
-    </p>
-    <p>
-      Imported questions, answers, respondent identifiers supplied by Google and source metadata
-      become workspace research content when you confirm import. They follow the document’s access,
-      history and retention rules. Disconnecting does not erase imported copies. This data is used
-      to provide the import and editing features you request; it is not sold, used for advertising
-      or sent to a model-training service by this application.
+      The workspace can import a form definition or a set of responses from an external form or
+      survey platform you point it at. The server contacts the address you give it using a
+      credential you supply for that request; the credential is not intentionally saved in the
+      application database or browser storage. A Google Forms import uses a separate, read-only
+      Google authorization (<code>forms.body.readonly</code> and
+      <code>forms.responses.readonly</code>) whose short-lived access token is kept encrypted in an
+      HTTP-only cookie for up to one hour; no refresh token is requested, and signing out or
+      disconnecting clears it. Imported material becomes workspace content under the file’s access,
+      history and retention rules, and disconnecting does not erase imported copies.
     </p>
     <h3>External content</h3>
     <p>
-      Homepage integration logos are served locally. If you insert an externally hosted image into a
-      research document, a viewer’s browser may contact that image host and disclose ordinary
-      request information to it. External links take you to services with their own policies.
+      If a document contains an image hosted elsewhere, a viewer’s browser may contact that host and
+      disclose ordinary request information to it. External links lead to services with their own
+      policies.
     </p>
   </section>
   <section id="cookies">
-    <h2>Cookies and sign-in</h2>
+    <h2>Cookies and local storage</h2>
     <p>
-      The application uses first-party cookies for authentication, the optional Forms connection and
-      your performance-measurement preference. There are no advertising cookies or persistent
-      visitor-tracking identifiers. The welcome-guide preference uses browser local storage. See the <a
-        href="https://dynodoc.online/cookies">cookie policy and browser preference control</a
-      >
-      for the complete list and lifetimes.
+      Dynodoc sets first-party cookies for your sign-in session, the sign-in handshake, your light
+      or dark preference and, if you change it, your performance-measurement choice, plus a
+      short-lived cookie for the optional Google Forms import. There are no advertising cookies and
+      no persistent visitor-tracking identifiers. The browser also stores a few preferences and the
+      optional recovery copies you enable. The <a href="/cookies">cookies page</a> lists every item with
+      its lifetime and lets you control the optional measurements.
     </p>
-    <!-- Scrollable data tables need keyboard access on narrow screens. -->
+  </section>
+  <section id="retention">
+    <h2>Retention, erasure and what stays</h2>
+    <div class="callout">
+      <p>
+        <strong>Removing text from the current version is not erasure.</strong> Dynodoc preserves history.
+        Earlier wording, deleted cells or slides, attribution and original uploads can remain in historical
+        records until the whole document is erased.
+      </p>
+    </div>
+    <h3>Archive and Trash</h3>
+    <p>
+      Archiving changes a file’s visibility. Trash blocks ordinary access and revokes public links
+      while preserving content and history so it can be recovered. These actions, like other
+      administrative actions, are recorded in a separate operations log and erase nothing.
+    </p>
+    <h3>Erasing a whole document</h3>
+    <p>
+      An administrator can permanently erase a whole document that is already in Trash, after
+      reviewing an impact preview, typing its title, choosing a reason category and acknowledging
+      that backups persist. In one transaction this removes its files, content, change history,
+      snapshots, named versions, personal drafts, public copies and cached request responses from
+      the live database. A minimal receipt remains: the resource identifier and kind, the
+      administrator’s identifier, the reason category, aggregate counts and the time. It holds no
+      title, email address, file or content. Where shared project history is enabled, published
+      history that depended on the document is removed with it, leaving only opaque receipt
+      commitments and generation counters.
+    </p>
+    <h3>Erasing an account</h3>
+    <p>
+      Account erasure requires the account to be disabled first and its owned documents and
+      workspaces to be transferred or removed. It removes sessions, pending sign-in links,
+      memberships and personal drafts and turns the email address and display name into a
+      deleted-account identity. The internal identifier remains so that shared contributions and
+      their hashes stay verifiable. Signing keys are revoked; their public bindings stay with the
+      historical authorship. Using the same email address again creates a new identity with no
+      inherited access, and an erased identity cannot be restored.
+    </p>
+    <h3>What cannot be removed</h3>
+    <ul>
+      <li>
+        <strong>One past change inside a retained history.</strong> There is no feature that redacts a
+        single revision and keeps the rest of the chain intact; the only removal is erasure of the whole
+        document.
+      </li>
+      <li>
+        <strong>What you wrote in other people’s documents.</strong> Account erasure is not content redaction
+        across other people’s documents.
+      </li>
+      <li>
+        <strong>Copies outside Dynodoc:</strong> downloads, exports, published links already used, files
+        in an editor and add-in queues on your own devices.
+      </li>
+      <li>
+        <strong>Backups.</strong> Database backups are kept for a rolling 14 days on the same server as
+        the live system and expire on that schedule; erasure does not reach into them. An off-site copy
+        is not currently configured.
+      </li>
+      <li>
+        <strong>Receipts and audit records:</strong> erasure receipts, signed branch receipt commitments
+        and the operations log remain under their own retention.
+      </li>
+    </ul>
+    <h3>How long things are kept</h3>
     <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-    <div class="table-scroll" role="region" aria-label="Authentication cookies" tabindex="0">
+    <div class="table-scroll" role="region" aria-label="Retention periods" tabindex="0">
       <table>
-        <thead
-          ><tr><th>Cookie or mechanism</th><th>Purpose</th><th>Configured lifetime</th></tr></thead
-        ><tbody
+        <thead><tr><th>Item</th><th>How long</th></tr></thead><tbody
           ><tr
-            ><td>dynodoc_session</td><td
-              >Encrypted session data used to keep you signed in. The cookie is HttpOnly, uses
-              SameSite=Lax and is marked Secure on HTTPS.</td
-            ><td>Up to 30 days, subject to session expiration, renewal or sign-out.</td></tr
-          ><tr
-            ><td>oauth_state and oauth_verifier</td><td
-              >Protect the Google sign-in request and callback.</td
-            ><td>Up to 10 minutes.</td></tr
-          ><tr
-            ><td>Email sign-in link</td><td
-              >A short-lived verification link delivered to your inbox. It is not a tracking cookie.</td
-            ><td
-              >The link is valid for 15 minutes. Expiration does not imply immediate deletion of
-              associated server records.</td
+            ><td>Login session cookie</td><td>Up to 30 days; ends at sign-out or revocation.</td
             ></tr
-          ></tbody
+          ><tr><td>Email sign-in link</td><td>Valid for 15 minutes.</td></tr><tr
+            ><td>Editor connection key</td><td
+              >Expires seven days after approval; revocable at any time.</td
+            ></tr
+          ><tr><td>Signing-key enrolment challenge</td><td>Five minutes.</td></tr><tr
+            ><td>Performance measurements</td><td>30 days.</td></tr
+          ><tr><td>Database backups</td><td>Rolling 14 days.</td></tr><tr
+            ><td>Browser recovery copies (your device)</td><td
+              >Seven days, at most 30 copies of 10 MiB each, only if you enable them.</td
+            ></tr
+          ><tr
+            ><td>Documents, history, drafts and audit records</td><td
+              >Until erased through the processes above; there is no automatic expiry. Retention
+              rules per organization and for administrative logs remain for the operator to set.</td
+            ></tr
+          ><tr><td>Web server logs</td><td>Awaiting confirmation.</td></tr></tbody
         >
       </table>
     </div>
     <p>
-      You can clear cookies through your browser, but authenticated features will require you to
-      sign in again. Do not forward a sign-in link or share an active session. Your email provider
-      and sign-in provider process their own service information independently.
-    </p>
-  </section>
-  <section id="history">
-    <h2>History, retention and deletion</h2>
-    <div class="callout">
-      <p>
-        <strong>Removing text from the current version is not permanent erasure.</strong> Dynodoc preserves
-        content history. Earlier wording, deleted cells or questions, attribution and original uploads
-        can remain in historical records.
-      </p>
-    </div>
-    <p>
-      Archiving changes a document’s visibility. Trash blocks ordinary access and revokes public
-      links while preserving recoverable content and history. Administrators can disable accounts;
-      restoring an account requires fresh sign-in and does not restore old links or sessions. These
-      actions are recorded in an append-only operations log and do not permanently erase data.
-      Administrators can separately permanently delete a trashed document after reviewing its impact
-      and typing its title. This removes its content history, uploads, versions, drafts and
-      published copies from the live database. A minimal receipt records the resource identifier,
-      administrator, reason category, counts and time, without retaining document content. Account
-      erasure removes the profile, credentials, personal drafts and access; a pseudonymous actor
-      identifier remains to preserve the integrity of contributions to other documents. Owned
-      documents and workspaces must first be transferred or separately handled.
-    </p>
-    <p>
-      The current hosted backup schedule keeps a rolling set of daily database backups for 14 days.
-      That backup rotation does not delete records from the live database, and restored backups may
-      contain earlier copies. The operator must establish and publish retention rules for research
-      projects, accounts, access logs, support records and any additional backups before wider use.
-    </p>
-    <p>
-      Optional browser recovery keeps unsaved content on your device only after you enable it from
-      the editor's File menu. Copies expire after seven days when the application next checks
-      recovery storage, and are cleared on sign-out or when you disable recovery. Up to 30 copies
-      may be retained, with a 10 MiB limit per copy. This is browser storage, not a server backup;
-      anyone with access to your browser profile may be able to inspect it. Do not enable it on a
-      shared or untrusted device.
-    </p>
-    <p>
       A deletion or correction request must be assessed by the operator and, where appropriate, the
-      responsible research organization. The assessment must account for the request, applicable
-      rights, research obligations, restricted access, legal retention duties and the append-only
-      history. The operator must not treat version history as a blanket exemption from deletion
-      rights. This draft does not promise an automated or immediate erasure process that the pilot
-      does not provide.
+      organization responsible for the project. The assessment must account for the request,
+      applicable rights, legal retention duties and the append-only history; history is not a
+      blanket exemption from deletion rights. There is no self-service or automatic erasure today,
+      so requests go through the contact details below.
     </p>
   </section>
   <section id="security">
-    <h2>Security and storage</h2>
+    <h2>Security</h2>
     <p>
-      The hosted pilot uses HTTPS for public traffic, authenticated server requests, document
-      permissions, protected session cookies and a database isolated from public access. Content
-      history includes integrity checks. Integrity checks help detect changes to recorded history;
-      they do not prove that research content is correct or prevent every form of unauthorized
-      access.
+      The hosted service uses HTTPS, signed-in sessions in protected cookies, document and project
+      permissions, a restricted database login that cannot rewrite history, integrity checks over
+      recorded history and limits on request volume. The <a href="/security">security overview</a>
+      explains each of these with its limits. Integrity checks help detect changes to recorded history;
+      they do not prove that content is correct or prevent every form of unauthorized access.
     </p>
     <p>
-      No internet service can guarantee absolute security. This draft makes no claim of end-to-end
-      encryption, a particular encryption-at-rest configuration, an external security certification
-      or a regulated-data hosting standard. Local server backups are not a substitute for a
-      confirmed offsite recovery arrangement.
-    </p>
-    <p>
-      The operator must identify the hosting provider, processing countries, relevant subprocessors
-      and any required international-transfer safeguards before the final policy is published. If a
-      personal-data incident occurs, the operator and responsible organization must assess and meet
-      applicable notification duties.
-    </p>
-  </section>
-  <section id="research">
-    <h2>Research and sensitive data</h2>
-    <p>
-      The workspace is intended for professional research collaboration. Study materials can contain
-      information about participants who do not have Dynodoc accounts, including information
-      supplied by research collaborators or imported from connected platforms.
-    </p>
-    <p>
-      Research teams are responsible for their participant notices, consent or other lawful
-      authority, ethics approvals, access decisions and retention requirements. Use the minimum
-      information necessary. Avoid uploading identifiable, sensitive or regulated participant data
-      until the institution and operator have agreed suitable safeguards and processing
-      arrangements.
-    </p>
-    <p>
-      The service is not directed at children. A study involving children requires its own lawful
-      and ethical arrangements; the presence of research tools in this pilot does not authorize
-      collecting children’s information.
+      No internet service can guarantee absolute security. This draft claims no end-to-end
+      encryption, no particular encryption-at-rest configuration, no external security certification
+      and no regulated-data hosting standard. If a personal-data incident occurs, the operator and
+      the responsible organization must assess it and meet applicable notification duties.
     </p>
   </section>
   <section id="rights">
     <h2>Your choices and rights</h2>
     <p>
-      You can review the content you are authorized to access, export supported files, update
-      research content through the editor, manage access where your role permits, sign out and
-      choose not to use optional connections.
+      You can review the content you are authorized to access, export supported files, manage access
+      where your role permits, revoke editor connections, enrol or revoke signing keys, sign out,
+      and choose not to use optional connections or measurements.
     </p>
     <p>
       Depending on the law that applies, you may have rights to obtain information or a copy,
       correct inaccurate personal information, request erasure, restrict processing, receive
-      portable data, withdraw consent or complain to an appropriate supervisory authority. These
-      rights may have conditions or exceptions.
+      portable data, withdraw consent or complain to a supervisory authority. These rights can have
+      conditions or exceptions, and the append-only history is one of the things the operator must
+      weigh.
     </p>
     <p>
       <strong
@@ -375,25 +510,20 @@
       is the basis, withdrawing it does not affect the lawfulness of processing before withdrawal.
     </p>
     <p>
-      To exercise a right, contact the operator using the details to be completed below. A research
-      participant may also contact the organization responsible for the study. For the current
-      limited pilot, use the administrator who invited you as the interim contact. Do not send
-      sensitive study records through public repository issues. Identity checks should be
-      proportionate, and requests must be handled within applicable legal deadlines.
+      To exercise a right, use the contact details below once they are published. A person named in
+      a document may also contact the organization responsible for that project. Do not send
+      sensitive documents through public repository issues. Identity checks should be proportionate,
+      and requests must be handled within applicable legal deadlines.
     </p>
   </section>
   <section id="changes">
-    <h2>Changes to this notice</h2>
+    <h2>Changes to this policy</h2>
     <p>
-      The final notice must carry an effective date and identify its operator. Material changes to
+      The final policy must carry an effective date and identify its operator. Material changes to
       purposes, providers or data handling should be communicated before they take effect when
-      required. A revised notice does not itself authorize incompatible uses of previously collected
-      information.
-    </p>
-    <p>
-      For the proposed rules governing use of the service, see the <a href="/terms"
-        >terms and conditions</a
-      >.
+      required, and a revised policy does not authorize incompatible uses of information already
+      collected. For the rules proposed for using the service, see the
+      <a href="/terms">terms and conditions</a>.
     </p>
   </section>
   <section id="contact">
@@ -405,14 +535,23 @@
       <dd>Awaiting confirmation.</dd>
       <dt>Mailing address</dt>
       <dd>Awaiting confirmation.</dd>
-      <dt>Hosting jurisdictions</dt>
+      <dt>Hosting provider and location</dt>
       <dd>Awaiting confirmation.</dd>
       <dt>Representative or DPO</dt>
       <dd>To be identified if required by applicable law.</dd>
+      <dt>Effective date</dt>
+      <dd>Not set; this is a draft.</dd>
     </dl>
     <p>
       These missing details are intentional markers in a draft. They are not a substitute for an
-      identifiable operator and a functioning privacy-request channel.
+      identifiable operator and a working privacy-request channel. To report a security
+      vulnerability, see <a href="/security#report">the security overview</a>.
     </p>
   </section>
 </LegalPage>
+
+<style>
+  .table-scroll table {
+    min-width: 600px;
+  }
+</style>

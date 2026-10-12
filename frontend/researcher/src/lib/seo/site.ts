@@ -15,9 +15,9 @@ export const CANONICAL_ORIGIN = 'https://dynodoc.online';
 export const INDEXABLE_HOSTS = ['dynodoc.online', 'www.dynodoc.online'];
 
 export const SITE_NAME = 'Dynodoc';
-export const SITE_TAGLINE = 'Version control for documents';
+export const SITE_TAGLINE = 'Version control for the documents you already write';
 export const SITE_DESCRIPTION =
-  'Version control for rich-text documents and spreadsheets. Write in a familiar editor, explore private drafts, review wording and formatting, and share selected changes.';
+  'Capture, review, merge and prove every change to Word, Docs, Excel, Sheets, PowerPoint and Slides files, with an append-only, hash-chained history. Open source.';
 export const SITE_IMAGE = `${CANONICAL_ORIGIN}/brand/social.png`;
 
 export type IndexablePage = {
@@ -34,10 +34,10 @@ export type IndexablePage = {
 export const INDEXABLE_PAGES: IndexablePage[] = [
   {
     path: '/compatibility',
-    title: 'Document & spreadsheet compatibility · Dynodoc',
+    title: 'Compatibility: editors, formats and limits · Dynodoc',
     description:
-      'Current Word, Excel, DOCX, XLSX, pagination, review and accessibility support, with explicit limits.',
-    lastmod: '2026-09-21',
+      'What Dynodoc captures, reviews and applies in Word, Excel, PowerPoint, Google Docs, Sheets and Slides today, with minimum host versions, file formats and limits.',
+    lastmod: '2026-10-12',
     changefreq: 'monthly',
     priority: '0.7'
   },
@@ -45,7 +45,7 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     path: '/',
     title: `${SITE_NAME} — ${SITE_TAGLINE}`,
     description: SITE_DESCRIPTION,
-    lastmod: '2026-09-21',
+    lastmod: '2026-10-12',
     changefreq: 'weekly',
     priority: '1.0'
   },
@@ -53,8 +53,8 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     path: '/privacy',
     title: `Privacy policy · ${SITE_NAME}`,
     description:
-      'How Dynodoc handles account information, uploaded documents, collaboration history and connected services.',
-    lastmod: '2026-09-21',
+      'How Dynodoc handles account information, documents, project history, signing keys, audit records and editor add-in data, and what can and cannot be erased. A draft.',
+    lastmod: '2026-10-12',
     changefreq: 'monthly',
     priority: '0.5'
   },
@@ -62,8 +62,8 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     path: '/terms',
     title: `Terms & conditions · ${SITE_NAME}`,
     description:
-      'Proposed terms for using Dynodoc, including accounts, collaboration, content ownership and responsible use.',
-    lastmod: '2026-09-21',
+      'Proposed terms for using Dynodoc, including accounts, projects and history, editor add-ins, content ownership, responsible use and ending use. A draft.',
+    lastmod: '2026-10-12',
     changefreq: 'monthly',
     priority: '0.5'
   },
@@ -71,45 +71,136 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     path: '/features',
     title: 'Features · Dynodoc',
     description:
-      'Current document, spreadsheet, questionnaire, integration and review capabilities.',
-    lastmod: '2026-09-21',
+      'Stable identity for every paragraph, cell and shape; reviewed change requests under project rules; private drafts; recoverable history; tamper-evident records; local-first sync; connectors for six editors.',
+    lastmod: '2026-10-12',
     changefreq: 'monthly',
     priority: '0.7'
   },
   {
     path: '/why-dynodoc',
-    title: 'Why Dynodoc · Dynodoc',
+    title: 'Why provenance matters · Dynodoc',
     description:
-      'Document version control, transparent revisions and the evidence behind the design.',
-    lastmod: '2026-09-21',
+      'A document shows what it says now, not who changed it, who agreed or what it said last week. Why a verifiable history needs stable identity, an append-only log, deterministic merge and checkable evidence.',
+    lastmod: '2026-10-12',
     changefreq: 'monthly',
     priority: '0.7'
   },
   {
     path: '/roadmap',
-    title: 'Product roadmap · Dynodoc',
+    title: 'Roadmap · Dynodoc',
     description:
-      'The roadmap for document fidelity, efficient history, attribution, offline collaboration and additional use cases.',
-    lastmod: '2026-09-21',
+      'What Dynodoc has built, what exists only in source, what is in progress and what comes later. Dated where a record gives a date, with no promised release dates.',
+    lastmod: '2026-10-12',
     changefreq: 'monthly',
     priority: '0.7'
   },
   {
+    path: '/changelog',
+    title: 'Changelog · Dynodoc',
+    description:
+      'Plain-language release notes for Dynodoc, newest first: what changed for you, and whether it runs in the hosted pilot or only in source.',
+    lastmod: '2026-10-12',
+    changefreq: 'weekly',
+    priority: '0.6'
+  },
+  {
+    path: '/brand',
+    title: 'Brand and press kit · Dynodoc',
+    description:
+      'Dynodoc logo and mark downloads, colour tokens, typography, usage rules, original dinosaur artwork and boilerplate text for press and partners.',
+    lastmod: '2026-10-12',
+    changefreq: 'monthly',
+    priority: '0.4'
+  },
+  {
     path: '/help',
-    title: 'Help & tutorials · Dynodoc',
-    description: 'Learn editing, team access, personal drafts, public sharing and version history.',
-    lastmod: '2026-09-21',
+    title: 'Help: projects, review and history · Dynodoc',
+    description:
+      'Create a project, capture changes from an editor, review and merge a pull request, restore or revert earlier content, name versions and verify history.',
+    lastmod: '2026-10-12',
     changefreq: 'monthly',
     priority: '0.7'
+  },
+  {
+    path: '/add-ins',
+    title: 'Editors & add-ins · Dynodoc',
+    description:
+      'Add-ins for Word, Excel, PowerPoint, Google Docs, Sheets and Slides: what each captures, requirements, test installation, what is stored and sent, and marketplace status.',
+    lastmod: '2026-10-12',
+    changefreq: 'monthly',
+    priority: '0.8'
+  },
+  {
+    path: '/support',
+    title: 'Support · Dynodoc',
+    description:
+      'How to get help with Dynodoc: guides, bug reports, security reports and add-in questions, with what to expect.',
+    lastmod: '2026-10-12',
+    changefreq: 'monthly',
+    priority: '0.6'
   },
   {
     path: '/cookies',
     title: 'Cookies & local storage · Dynodoc',
     description:
-      'Sign-in cookies, local preferences and optional PostgreSQL performance measurements.',
-    lastmod: '2026-09-21',
+      'Every cookie and local-storage item Dynodoc sets, why, and for how long, plus the control for optional performance measurements.',
+    lastmod: '2026-10-12',
     changefreq: 'monthly',
-    priority: '0.7'
+    priority: '0.5'
+  },
+  {
+    path: '/security',
+    title: 'Security · Dynodoc',
+    description:
+      'What protects the history of your documents and access to it, what is live today, what exists only in source, what is not claimed, and how to report a vulnerability.',
+    lastmod: '2026-10-12',
+    changefreq: 'monthly',
+    priority: '0.6'
+  },
+  {
+    path: '/subprocessors',
+    title: 'Subprocessors · Dynodoc',
+    description:
+      'The outside providers Dynodoc uses to host, deliver and sign in to the service, what each receives, and what is not used.',
+    lastmod: '2026-10-12',
+    changefreq: 'monthly',
+    priority: '0.4'
+  },
+  {
+    path: '/acceptable-use',
+    title: 'Acceptable use · Dynodoc',
+    description:
+      'Proposed rules for using Dynodoc: what is not allowed, keeping provenance records honest, volume limits and good-faith security testing. A draft.',
+    lastmod: '2026-10-12',
+    changefreq: 'monthly',
+    priority: '0.4'
+  },
+  {
+    path: '/accessibility',
+    title: 'Accessibility statement · Dynodoc',
+    description:
+      'Dynodoc aims for WCAG 2.2 level AA. What is done and tested, the known limitations, and how to report a barrier.',
+    lastmod: '2026-10-12',
+    changefreq: 'monthly',
+    priority: '0.4'
+  },
+  {
+    path: '/dpa',
+    title: 'Data processing terms (draft) · Dynodoc',
+    description:
+      'The structure of data processing terms for Dynodoc: roles, subject matter, categories, security, subprocessors, deletion and audit. A draft, not an agreement.',
+    lastmod: '2026-10-12',
+    changefreq: 'monthly',
+    priority: '0.3'
+  },
+  {
+    path: '/licenses',
+    title: 'Licenses · Dynodoc',
+    description:
+      'Dynodoc is AGPL-3.0-or-later with an MIT engine. Font licenses, direct dependencies, artwork and where to get the source.',
+    lastmod: '2026-10-12',
+    changefreq: 'monthly',
+    priority: '0.4'
   }
 ];
 

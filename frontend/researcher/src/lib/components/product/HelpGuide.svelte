@@ -13,80 +13,89 @@
     Share2
   } from '@lucide/svelte';
   import { guide } from '$lib/workspace/guide';
-  let dialog: HTMLDialogElement;
+  let dialog = $state<HTMLDialogElement>();
   let index = $state(0);
   const step = $derived(guide[index]);
   $effect(() => {
     window.addEventListener('dynodoc:help', open);
     return () => window.removeEventListener('dynodoc:help', open);
   });
+  // Marketing (site) pages have their own header, help and support links. The tutorial
+  // dialog and its button belong to the signed-in application.
+  const marketing = $derived(($page.route.id ?? '').startsWith('/(site)'));
   function open() {
     index = 0;
-    dialog.showModal();
+    dialog?.showModal();
   }
 </script>
 
-{#if $page.url.pathname === '/admin'}<button
-    class="help"
-    title="Help & tutorials"
-    aria-label="Help & tutorials"
-    onclick={open}><HelpCircle size={18} /><span>Help & tutorials</span></button
-  >{/if}
-<dialog bind:this={dialog} aria-labelledby="guide-title">
-  <header>
-    <a href="https://dynodoc.online"
-      ><img class="logo-day" src="/brand/logo.svg?v=2" alt="Dynodoc" width="145" height="32" /><img
-        class="logo-night"
-        src="/brand/logo-dark.svg?v=2"
-        alt="Dynodoc"
-        width="145"
-        height="32"
-      /></a
-    ><button aria-label="Close tutorial" onclick={() => dialog.close()}><X size={20} /></button>
-  </header>
-  <div class="guide-body">
-    <div class="visual" aria-hidden="true">
-      <div class="document">
-        <FileText size={29} />
-        <div class="lines"><i></i><i></i><i></i></div>
-        <Table2 size={26} />
+{#if !marketing}{#if $page.url.pathname === '/admin'}<button
+      class="help"
+      title="Help & tutorials"
+      aria-label="Help & tutorials"
+      onclick={open}><HelpCircle size={18} /><span>Help & tutorials</span></button
+    >{/if}
+  <dialog bind:this={dialog} aria-labelledby="guide-title">
+    <header>
+      <a href="https://dynodoc.online"
+        ><img
+          class="logo-day"
+          src="/brand/logo.svg?v=2"
+          alt="Dynodoc"
+          width="145"
+          height="32"
+        /><img
+          class="logo-night"
+          src="/brand/logo-dark.svg?v=2"
+          alt="Dynodoc"
+          width="145"
+          height="32"
+        /></a
+      ><button aria-label="Close tutorial" onclick={() => dialog?.close()}><X size={20} /></button>
+    </header>
+    <div class="guide-body">
+      <div class="visual" aria-hidden="true">
+        <div class="document">
+          <FileText size={29} />
+          <div class="lines"><i></i><i></i><i></i></div>
+          <Table2 size={26} />
+        </div>
+        <div class="connections">
+          <Users class={index === 2 ? 'active' : ''} size={27} /><GitBranch
+            class={index === 3 ? 'active' : ''}
+            size={27}
+          /><History class={index === 4 ? 'active' : ''} size={27} /><Share2
+            class={index === 5 ? 'active' : ''}
+            size={27}
+          />
+        </div>
       </div>
-      <div class="connections">
-        <Users class={index === 2 ? 'active' : ''} size={27} /><GitBranch
-          class={index === 3 ? 'active' : ''}
-          size={27}
-        /><History class={index === 4 ? 'active' : ''} size={27} /><Share2
-          class={index === 5 ? 'active' : ''}
-          size={27}
-        />
-      </div>
+      <p class="action">{step.action}</p>
+      <h2 id="guide-title">{step.title}</h2>
+      <p class="body">{step.body}</p>
+      <nav aria-label="Tutorial topics">
+        {#each guide as item, i}<button
+            class:current={i === index}
+            aria-label={item.title}
+            aria-current={i === index ? 'step' : undefined}
+            onclick={() => (index = i)}
+          ></button>{/each}
+      </nav>
     </div>
-    <p class="action">{step.action}</p>
-    <h2 id="guide-title">{step.title}</h2>
-    <p class="body">{step.body}</p>
-    <nav aria-label="Tutorial topics">
-      {#each guide as item, i}<button
-          class:current={i === index}
-          aria-label={item.title}
-          aria-current={i === index ? 'step' : undefined}
-          onclick={() => (index = i)}
-        ></button>{/each}
-    </nav>
-  </div>
-  <footer>
-    <button disabled={index === 0} onclick={() => index--}><ArrowLeft size={16} />Back</button><a
-      href="https://dynodoc.online/help"
-      target="_blank"
-      rel="noopener noreferrer">Full guide</a
-    ><button
-      class="next"
-      onclick={() => {
-        if (index === guide.length - 1) dialog.close();
-        else index++;
-      }}>{index === guide.length - 1 ? 'Start working' : 'Next'}<ArrowRight size={16} /></button
-    >
-  </footer>
-</dialog>
+    <footer>
+      <button disabled={index === 0} onclick={() => index--}><ArrowLeft size={16} />Back</button><a
+        href="https://dynodoc.online/help"
+        target="_blank"
+        rel="noopener noreferrer">Full guide</a
+      ><button
+        class="next"
+        onclick={() => {
+          if (index === guide.length - 1) dialog?.close();
+          else index++;
+        }}>{index === guide.length - 1 ? 'Start working' : 'Next'}<ArrowRight size={16} /></button
+      >
+    </footer>
+  </dialog>{/if}
 
 <style>
   .help {

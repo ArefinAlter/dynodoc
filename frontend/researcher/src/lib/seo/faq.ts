@@ -7,38 +7,43 @@ export type FaqEntry = { question: string; answer: string };
 
 export const FAQ: FaqEntry[] = [
   {
-    question: 'What makes Dynodoc different from a shared document?',
+    question: 'What is Dynodoc?',
     answer:
-      'Version control is the foundation. Wording, formatting and spreadsheet changes have a recorded history. You can work in a personal draft, bring in shared updates and choose which changes to publish. It is especially useful when several people need to propose revisions before they become part of the team’s version.'
+      'Dynodoc is version control for documents written in Word, Google Docs, Excel, Google Sheets, PowerPoint and Google Slides. It records changes against stable paragraph, cell and slide identities, routes them through change requests and review, and keeps an append-only, hash-chained history that can be verified. You keep editing in the tools you already use.'
   },
   {
-    question: 'Will the editors feel familiar?',
+    question: 'How is it different from track changes or version history?',
     answer:
-      'The document editor provides common formatting, headings, lists, links, images, tables and comments. The spreadsheet editor includes formulas, multiple sheets, cell formatting and row and column tools. Dynodoc does not yet match every feature of Google Docs, Google Sheets, Word or Excel; advanced charts, pivots and citation tools are not included.'
+      'Track changes and built-in version history live inside one file in one editor. Dynodoc keeps one history across files and editors: a project with private drafts, change requests with approval rules, named versions and a hash-chained log of who changed what and when. A change made in Excel and a change made in Word are reviewed in the same place.'
   },
   {
-    question: 'Can we work without learning Git?',
+    question: 'Which editors and file types does it work with?',
     answer:
-      'Yes. You use actions such as “Save version,” “Create draft,” “Review changes” and “Share changes.” Drafts let you try a direction; comparison lets you see the differences; sharing brings selected changes into the team version. When edits overlap, the interface asks you which content to keep.'
+      'Word, Excel and PowerPoint through task-pane add-ins, and Google Docs, Sheets and Slides through Apps Script add-ons. You can add DOCX, XLSX, PPTX, CSV and Markdown files to a project. Dynodoc also has basic web editors for documents and spreadsheets, which are not the main product.'
   },
   {
-    question: 'Can everyone type in the same document at once?',
+    question: 'How does capture work?',
     answer:
-      'The current release centers on personal drafts and deliberate sharing. It does not provide live character-by-character co-editing or live collaborator cursors. Get the latest shared changes into your draft, resolve any overlaps and share back when ready.'
+      'An add-in watches the open file while its pane is open and records edits to existing paragraph text, cell values and formulas, and slide text. There is no background agent, so edits made while the pane is closed are picked up by pushing the edited file instead. A reviewer sees what was captured before anything merges.'
   },
   {
-    question: 'How do imports and research integrations work?',
+    question: 'Is the history tamper-evident?',
     answer:
-      'Upload DOCX, legacy DOC, XLSX or CSV files. For ODK Central and KoboToolbox, you can also connect to your server and import an available XLSForm or a response snapshot. Other listed tools use compatible file exports. Imports are snapshots, with no scheduled sync or writeback. Review conversion warnings, formulas and survey logic before relying on imported material.'
+      'Every event is appended and hashed together with the one before it, so altering an earlier event breaks every later hash, and anyone with access can verify the chain. That is tamper-evident, not tamper-proof: spotting a wholesale rewrite by a database administrator also needs a hash or backup you kept independently. External witnesses are planned, not shipped.'
   },
   {
-    question: 'How should we evaluate it for our team?',
+    question: 'Can I self-host it?',
     answer:
-      'Try representative documents and workbooks, check their import and export, and rehearse your review workflow. The compatibility page distinguishes supported features from advanced Office features that still need work. A document history does not itself establish institutional compliance or suitability for regulated data.'
+      'Yes. The application is open source under AGPL-3.0 and the standalone engine is MIT. It needs PostgreSQL 16, Rust and Node; SETUP.md lists the steps, and task setup, task migrate and task dev run it locally. Private document content you put in the app does not become open source.'
   },
   {
-    question: 'Can we take our work with us?',
+    question: 'What does it not do?',
     answer:
-      'You can export supported documents and spreadsheets and retrieve retained original uploads. Check the exported result when your files use complex formatting or formulas. Dynodoc’s application code is open source under the AGPL; your private document content does not become open source because you use the app.'
+      'There is no character-by-character co-editing and no live collaborator cursors; collaboration works through drafts, change requests and deliberate merges. The add-ins do not run in the background and do not capture every keystroke, layout change or embedded object. Dynodoc is not a replacement editor for Office or Google, and it makes no compliance claims.'
+  },
+  {
+    question: 'What does it cost, and who can use it?',
+    answer:
+      'There is no paid plan and no payment flow yet. The hosted workspace at dynodoc.online is a test deployment with email and Google sign-in, and projects are invite-only: only their members can see them. The add-ins are test installs, not marketplace listings. The source is open, so you can run your own copy today. The terms and privacy policy are drafts and are not yet effective.'
   }
 ];

@@ -2,8 +2,7 @@
 // metadata: no visitor, session or document value is ever interpolated.
 //
 // Answer engines lean on this graph more heavily than classic search does, so
-// it describes what Dynodoc is and what the pilot does *not* do, rather than
-// only carrying keywords.
+// it describes what Dynodoc is, rather than only carrying keywords.
 
 import { FAQ } from './faq';
 import {
@@ -15,7 +14,7 @@ import {
   pageMeta
 } from './site';
 
-const REPOSITORY = 'https://github.com/ArefinAlter/dynodoc';
+const REPOSITORY = 'https://github.com/ArefinAlter/dynodoc-engine';
 
 const organization = {
   '@type': 'Organization',
@@ -44,19 +43,18 @@ const application = {
   applicationCategory: 'ProductivityApplication',
   operatingSystem: 'Web browser',
   description:
-    'A document version-control workspace for rich text and spreadsheets with formatting-aware history. Teams draft in private, compare revisions, resolve overlapping edits and share selected changes into the team version.',
+    'Version control and provenance for Word, Google Docs, Excel, Google Sheets, PowerPoint and Google Slides. Changes are captured by editor add-ins, reviewed as change requests, merged under project rules and recorded in an append-only, hash-chained history.',
   image: SITE_IMAGE,
   license: 'https://www.gnu.org/licenses/agpl-3.0.html',
   isAccessibleForFree: true,
   featureList: [
-    'Document editor with headings, lists, tables, images and comments',
-    'Spreadsheet editor with formulas, multiple sheets and cell formatting',
-    'Questionnaire and XLSForm editing',
-    'Private drafts with deliberate sharing into the team version',
-    'Block-level version history and revision comparison',
-    'Guided resolution of overlapping edits',
-    'Imports from DOCX, legacy DOC, XLSX and CSV',
-    'Snapshot imports from ODK Central and KoboToolbox'
+    'Add-ins that capture edits in Word, Excel, PowerPoint, Google Docs, Google Sheets and Google Slides',
+    'Projects that group DOCX, XLSX, PPTX, CSV and Markdown files',
+    'Change requests with word-level diffs, approvals and project policy floors',
+    'Private drafts, named versions and recovery by restore, revert or replay',
+    'Append-only, hash-chained event log with stable node identities',
+    'Signed project commits and ref receipts in the open-source engine and CLI',
+    'Self-hosting with PostgreSQL under AGPL-3.0'
   ],
   publisher: { '@id': `${CANONICAL_ORIGIN}/#organization` }
 };

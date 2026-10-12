@@ -1,0 +1,214 @@
+/*
+ * Product-mockup palette and shared atoms. Everything is scoped under `.mock`, so it never
+ * leaks and renders the same with or without the marketing `.site` scope. Interiors use a
+ * GitHub/Primer-like UI palette; only the frame edge reads the paper token (--color-rule).
+ * Dark follows `:root[data-theme='dark']`, like the rest of the app.
+ */
+.mock {
+  --mock-canvas: #ffffff;
+  --mock-subtle: #f6f8fa;
+  --mock-inset: #eaeef2;
+  --mock-border: #d0d7de;
+  --mock-fg: #1f2328;
+  --mock-muted: #59636e;
+  --mock-accent: #0969da;
+  --mock-accent-fg: #0550ae;
+  --mock-accent-bg: #ddf4ff;
+  --mock-accent-solid: #0969da;
+  --mock-success: #1a7f37;
+  --mock-success-fg: #116329;
+  --mock-success-bg: #dafbe1;
+  --mock-success-solid: #1a7f37;
+  --mock-danger: #d1242f;
+  --mock-danger-fg: #a40e26;
+  --mock-danger-bg: #ffebe9;
+  --mock-attention: #9a6700;
+  --mock-attention-fg: #7d4e00;
+  --mock-attention-bg: #fff8c5;
+  --mock-done: #8250df;
+  --mock-done-fg: #6639ba;
+  --mock-done-bg: #fbefff;
+  --mock-del: #ffcecb;
+  --mock-ins: #aceebb;
+  --mock-edge: var(--color-rule, #d9d4c4);
+  --mock-lift: 0 1px 0 rgb(27 26 23 / 0.04), 0 18px 36px -24px rgb(27 26 23 / 0.35);
+  --mock-host: var(--mock-muted);
+  --mock-font:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+  --mock-mono:
+    ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+}
+:root[data-theme='dark'] .mock,
+.mock[data-variant='terminal'] {
+  --mock-canvas: #0d1117;
+  --mock-subtle: #161b22;
+  --mock-inset: #21262d;
+  --mock-border: #30363d;
+  --mock-fg: #e6edf3;
+  --mock-muted: #9198a1;
+  --mock-accent: #4493f8;
+  --mock-accent-fg: #4493f8;
+  --mock-accent-bg: #121d2f;
+  --mock-accent-solid: #1f6feb;
+  --mock-success: #3fb950;
+  --mock-success-fg: #3fb950;
+  --mock-success-bg: #12261e;
+  --mock-success-solid: #238636;
+  --mock-danger: #f85149;
+  --mock-danger-fg: #f85149;
+  --mock-danger-bg: #2d1117;
+  --mock-attention: #d29922;
+  --mock-attention-fg: #d29922;
+  --mock-attention-bg: #272115;
+  --mock-done: #ab7df8;
+  --mock-done-fg: #ab7df8;
+  --mock-done-bg: #1e1a2e;
+  --mock-del: #6b2b2b;
+  --mock-ins: #1a4a29;
+  --mock-edge: var(--color-rule, #2d2c25);
+  --mock-lift: 0 1px 0 rgb(0 0 0 / 0.4), 0 18px 36px -22px rgb(0 0 0 / 0.7);
+}
+.mock[data-variant='word'] {
+  --mock-host: #185abd;
+}
+.mock[data-variant='excel'] {
+  --mock-host: #107c41;
+}
+.mock[data-variant='powerpoint'] {
+  --mock-host: #c43e1c;
+}
+.mock[data-variant='docs'] {
+  --mock-host: #1a73e8;
+}
+.mock[data-variant='sheets'] {
+  --mock-host: #0f9d58;
+}
+.mock[data-variant='slides'] {
+  --mock-host: #f4b400;
+}
+
+.mock {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  container: mock / inline-size;
+  overflow: hidden;
+  border: 1px solid var(--mock-edge);
+  border-radius: 8px;
+  background: var(--mock-canvas);
+  box-shadow: var(--mock-lift);
+  color: var(--mock-fg);
+  font: 400 13px/1.45 var(--mock-font);
+  letter-spacing: 0;
+  text-align: left;
+  text-transform: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.mock *,
+.mock *::before,
+.mock *::after {
+  box-sizing: border-box;
+}
+
+/* Shared atoms (prefix mk-). Components compose these and keep their own layout local. */
+.mock .mk-mono {
+  font-family: var(--mock-mono);
+}
+.mock .mk-muted {
+  color: var(--mock-muted);
+}
+.mock .mk-av {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--mock-accent-solid);
+  color: #fff;
+  font: 600 9px/1 var(--mock-font);
+}
+.mock .mk-av.is-maya {
+  background: #0969da;
+}
+.mock .mk-av.is-sam {
+  background: #9a6700;
+}
+.mock .mk-av.is-priya {
+  background: #6639ba;
+}
+.mock .mk-pill {
+  display: inline-block;
+  min-width: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--mock-inset);
+  color: var(--mock-fg);
+  font: 600 11px/18px var(--mock-font);
+  text-align: center;
+}
+.mock .mk-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--mock-border);
+  border-radius: 999px;
+  color: var(--mock-muted);
+  font: 500 11px/1 var(--mock-font);
+  white-space: nowrap;
+}
+.mock .mk-badge.is-success {
+  border-color: transparent;
+  background: var(--mock-success-bg);
+  color: var(--mock-success-fg);
+}
+.mock .mk-badge.is-done {
+  border-color: transparent;
+  background: var(--mock-done-bg);
+  color: var(--mock-done-fg);
+}
+.mock .mk-badge.is-attention {
+  border-color: transparent;
+  background: var(--mock-attention-bg);
+  color: var(--mock-attention-fg);
+}
+.mock .mk-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--mock-border);
+  border-radius: 6px;
+  background: var(--mock-subtle);
+  color: var(--mock-fg);
+  font: 600 12px/1 var(--mock-font);
+  white-space: nowrap;
+}
+.mock .mk-btn.is-primary {
+  border-color: transparent;
+  background: var(--mock-success-solid);
+  color: #fff;
+}
+.mock .mk-btn.is-accent {
+  border-color: transparent;
+  background: var(--mock-accent-solid);
+  color: #fff;
+}
+.mock .mk-hash {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--mock-inset);
+  color: var(--mock-muted);
+  font: 500 11px/16px var(--mock-mono);
+  white-space: nowrap;
+}
+.mock .mk-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
