@@ -1,0 +1,327 @@
+{
+  "kind": "Synthetic local CLI storage growth; one changed paragraph per commit",
+  "environment": {
+    "platform": "win32",
+    "arch": "x64",
+    "cpu": "12th Gen Intel(R) Core(TM) i7-1255U",
+    "node": "v24.12.0",
+    "build_profile": "cargo build --locked -p engine-cli (debug)",
+    "binary_sha256": "5b73a6452194e3c12073ee423f2e9115c810903af03410a8c022d42cc3e36de8",
+    "engine_source_revision": "5822e5725cc4eb1cccc46eac8385c4a9b3e564da",
+    "application_source_revision": "962c9e143a9de253ca34c1fab4250945f5ac1e73"
+  },
+  "fixture": {
+    "nodes": 512,
+    "edits": 32,
+    "commits": 33,
+    "label_padding_characters": 256
+  },
+  "usage": {
+    "branches_used": 1,
+    "bytes_used": 736893,
+    "commits_used": 33,
+    "limits": {
+      "branches": 4096,
+      "bytes": 4294967296,
+      "commits": 100000,
+      "objects": 1000000
+    },
+    "objects_used": 3494
+  },
+  "sum_full_state_json_bytes": 7599032,
+  "retained_payload_fraction_of_full_json_history": 0.09697195642813453,
+  "sqlite_database_wal_shm_bytes_after_closed_cli": 1695744,
+  "state_write_ms": {
+    "min": 772.7008,
+    "median": 1167.5491000000002,
+    "p95": 2158.4923,
+    "max": 2285.883100000001
+  },
+  "commit_import_ms": {
+    "min": 337.9776999999999,
+    "median": 469.0891999999985,
+    "p95": 768.4629999999997,
+    "max": 874.3092000000033
+  },
+  "historical_first_root_read_ms": 514.9744999999966,
+  "unchanged_retry_ms": 1523.3104000000021,
+  "assertions": [
+    "exact object and signed-commit accounting",
+    "first historical root still exact",
+    "unchanged retry stores zero objects and bytes"
+  ],
+  "rounds": [
+    {
+      "revision": 0,
+      "input_json_bytes": 230353,
+      "new_objects": 3189,
+      "new_object_bytes": 562739,
+      "state_write_ms": 772.7008,
+      "commit_import_ms": 357.0625
+    },
+    {
+      "revision": 1,
+      "input_json_bytes": 230348,
+      "new_objects": 10,
+      "new_object_bytes": 3865,
+      "state_write_ms": 807.9559999999999,
+      "commit_import_ms": 363.91849999999977
+    },
+    {
+      "revision": 2,
+      "input_json_bytes": 230343,
+      "new_objects": 9,
+      "new_object_bytes": 5852,
+      "state_write_ms": 893.4076,
+      "commit_import_ms": 337.9776999999999
+    },
+    {
+      "revision": 3,
+      "input_json_bytes": 230338,
+      "new_objects": 10,
+      "new_object_bytes": 4093,
+      "state_write_ms": 955.6941999999999,
+      "commit_import_ms": 461.47940000000017
+    },
+    {
+      "revision": 4,
+      "input_json_bytes": 230333,
+      "new_objects": 10,
+      "new_object_bytes": 4078,
+      "state_write_ms": 1187.3752000000004,
+      "commit_import_ms": 428.1765999999998
+    },
+    {
+      "revision": 5,
+      "input_json_bytes": 230328,
+      "new_objects": 10,
+      "new_object_bytes": 3865,
+      "state_write_ms": 2285.883100000001,
+      "commit_import_ms": 768.4629999999997
+    },
+    {
+      "revision": 6,
+      "input_json_bytes": 230323,
+      "new_objects": 10,
+      "new_object_bytes": 4007,
+      "state_write_ms": 2158.4923,
+      "commit_import_ms": 530.3325999999997
+    },
+    {
+      "revision": 7,
+      "input_json_bytes": 230318,
+      "new_objects": 9,
+      "new_object_bytes": 5966,
+      "state_write_ms": 1472.6100000000006,
+      "commit_import_ms": 593.9902000000002
+    },
+    {
+      "revision": 8,
+      "input_json_bytes": 230313,
+      "new_objects": 10,
+      "new_object_bytes": 4050,
+      "state_write_ms": 1376.9995,
+      "commit_import_ms": 485.226200000001
+    },
+    {
+      "revision": 9,
+      "input_json_bytes": 230308,
+      "new_objects": 9,
+      "new_object_bytes": 5852,
+      "state_write_ms": 1025.7343,
+      "commit_import_ms": 464.3637000000017
+    },
+    {
+      "revision": 10,
+      "input_json_bytes": 230304,
+      "new_objects": 10,
+      "new_object_bytes": 3866,
+      "state_write_ms": 1035.9946999999993,
+      "commit_import_ms": 419.83599999999933
+    },
+    {
+      "revision": 11,
+      "input_json_bytes": 230299,
+      "new_objects": 10,
+      "new_object_bytes": 3795,
+      "state_write_ms": 1433.9379000000008,
+      "commit_import_ms": 437.3833999999988
+    },
+    {
+      "revision": 12,
+      "input_json_bytes": 230294,
+      "new_objects": 10,
+      "new_object_bytes": 3752,
+      "state_write_ms": 1165.1823000000004,
+      "commit_import_ms": 438.8737999999976
+    },
+    {
+      "revision": 13,
+      "input_json_bytes": 230289,
+      "new_objects": 10,
+      "new_object_bytes": 4193,
+      "state_write_ms": 1075.2677000000003,
+      "commit_import_ms": 483.8680999999997
+    },
+    {
+      "revision": 14,
+      "input_json_bytes": 230284,
+      "new_objects": 9,
+      "new_object_bytes": 6195,
+      "state_write_ms": 1070.1339000000007,
+      "commit_import_ms": 469.0891999999985
+    },
+    {
+      "revision": 15,
+      "input_json_bytes": 230279,
+      "new_objects": 9,
+      "new_object_bytes": 5169,
+      "state_write_ms": 1167.5491000000002,
+      "commit_import_ms": 463.79859999999826
+    },
+    {
+      "revision": 16,
+      "input_json_bytes": 230274,
+      "new_objects": 9,
+      "new_object_bytes": 5853,
+      "state_write_ms": 1215.3941999999988,
+      "commit_import_ms": 452.9730000000018
+    },
+    {
+      "revision": 17,
+      "input_json_bytes": 230269,
+      "new_objects": 9,
+      "new_object_bytes": 6081,
+      "state_write_ms": 1748.814199999997,
+      "commit_import_ms": 448.6106
+    },
+    {
+      "revision": 18,
+      "input_json_bytes": 230264,
+      "new_objects": 9,
+      "new_object_bytes": 5055,
+      "state_write_ms": 1238.1560000000027,
+      "commit_import_ms": 433.9751000000033
+    },
+    {
+      "revision": 19,
+      "input_json_bytes": 230259,
+      "new_objects": 9,
+      "new_object_bytes": 5853,
+      "state_write_ms": 1157.1705000000002,
+      "commit_import_ms": 572.7980000000025
+    },
+    {
+      "revision": 20,
+      "input_json_bytes": 230254,
+      "new_objects": 10,
+      "new_object_bytes": 3866,
+      "state_write_ms": 1078.6281000000017,
+      "commit_import_ms": 463.25100000000384
+    },
+    {
+      "revision": 21,
+      "input_json_bytes": 230249,
+      "new_objects": 9,
+      "new_object_bytes": 6195,
+      "state_write_ms": 1113.8278000000064,
+      "commit_import_ms": 489.19050000000425
+    },
+    {
+      "revision": 22,
+      "input_json_bytes": 230244,
+      "new_objects": 9,
+      "new_object_bytes": 5853,
+      "state_write_ms": 1260.6300000000047,
+      "commit_import_ms": 874.3092000000033
+    },
+    {
+      "revision": 23,
+      "input_json_bytes": 230239,
+      "new_objects": 10,
+      "new_object_bytes": 3681,
+      "state_write_ms": 1488.4464000000007,
+      "commit_import_ms": 489.68420000000333
+    },
+    {
+      "revision": 24,
+      "input_json_bytes": 230234,
+      "new_objects": 10,
+      "new_object_bytes": 4193,
+      "state_write_ms": 1197.1730000000025,
+      "commit_import_ms": 653.1720999999961
+    },
+    {
+      "revision": 25,
+      "input_json_bytes": 230229,
+      "new_objects": 10,
+      "new_object_bytes": 4122,
+      "state_write_ms": 1693.6111999999994,
+      "commit_import_ms": 438.77040000000125
+    },
+    {
+      "revision": 26,
+      "input_json_bytes": 230224,
+      "new_objects": 9,
+      "new_object_bytes": 5853,
+      "state_write_ms": 1129.023699999998,
+      "commit_import_ms": 486.68009999999776
+    },
+    {
+      "revision": 27,
+      "input_json_bytes": 230219,
+      "new_objects": 9,
+      "new_object_bytes": 5853,
+      "state_write_ms": 1081.8773,
+      "commit_import_ms": 706.008799999996
+    },
+    {
+      "revision": 28,
+      "input_json_bytes": 230214,
+      "new_objects": 10,
+      "new_object_bytes": 4122,
+      "state_write_ms": 1126.7733000000007,
+      "commit_import_ms": 388.9985000000015
+    },
+    {
+      "revision": 29,
+      "input_json_bytes": 230209,
+      "new_objects": 9,
+      "new_object_bytes": 6081,
+      "state_write_ms": 1041.8314000000028,
+      "commit_import_ms": 496.4346000000005
+    },
+    {
+      "revision": 30,
+      "input_json_bytes": 230204,
+      "new_objects": 10,
+      "new_object_bytes": 4008,
+      "state_write_ms": 1292.1152999999977,
+      "commit_import_ms": 509.99779999999737
+    },
+    {
+      "revision": 31,
+      "input_json_bytes": 230199,
+      "new_objects": 9,
+      "new_object_bytes": 5853,
+      "state_write_ms": 1179.3078999999998,
+      "commit_import_ms": 478.5265999999974
+    },
+    {
+      "revision": 32,
+      "input_json_bytes": 230194,
+      "new_objects": 10,
+      "new_object_bytes": 3980,
+      "state_write_ms": 1265.5924999999988,
+      "commit_import_ms": 497.4945000000007
+    }
+  ],
+  "limitations": [
+    "debug/release CLI startup and reopen cost are included",
+    "full JSON baseline is uncompressed and excludes commit metadata",
+    "native binaries/assets and installed editors are not exercised",
+    "not a PostgreSQL, HTTP transfer, peak memory or service-scale benchmark",
+    "storage deduplication does not establish incremental publication complexity"
+  ],
+  "date": "2026-10-12"
+}

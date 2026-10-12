@@ -62,3 +62,40 @@ and above-default branch counts, independent byte/count exhaustion, rollback aft
 partial insertion, exact-capacity reuse, explicit increases, reopen persistence,
 concurrent connections, unchanged branch CAS behavior and missing accounting.
 Actual commands and results are recorded in the handoff.
+
+## Measured small-history growth
+
+The [reproducible CLI experiment](benchmarks/local-storage-growth.mjs) stores an
+initial synthetic paragraph graph and 32 commits, each changing one paragraph.
+It verifies exact retained-byte accounting, the unchanged first historical root,
+and a final retry adding zero bytes/objects. These are real local CLI calls on
+engine `5822e57`, Windows x64, i7-1255U, debug build, with process startup and
+database reopen included. Native files, formatting/assets, peak memory, HTTP and
+PostgreSQL are not measured. The labels are repetitive ASCII; the comparison is
+uncompressed full-state JSON and excludes the copies' own commit metadata.
+
+| Paragraphs | Sum of full JSON states (bytes) | Retained objects + commits (bytes) | SQLite files (bytes) | Median state write (ms) | Unchanged retry (ms) |
+|---|---:|---:|---:|---:|---:|
+| 128 | 1,896,632 | 273,586 | 589,824 | 280 | 277 |
+| 512 | 7,599,032 | 736,893 | 1,695,744 | 1168 | 1523 |
+
+Reports retain every per-revision measurement:
+[128 paragraphs](benchmarks/local-storage-growth-128-20261012.json) and
+[512 paragraphs](benchmarks/local-storage-growth-512-20261012.json).
+The initial object graph has reference/index overhead and is larger than its
+JSON state; reuse across subsequent revisions reduces accumulated payload.
+Zero additional bytes on retry does not imply constant-time publication:
+the writer still visits the complete state and verifies reconstruction. This
+measurement supports prioritizing changed-node publication; it does not establish
+large-document throughput, compression comparisons or installed-editor latency.
+
+To reproduce, build the CLI and use a directory that does not yet exist:
+
+```text
+cargo build --locked -p engine-cli
+node docs/benchmarks/local-storage-growth.mjs target/debug/engine-cli NEW_DIRECTORY 128 32
+```
+
+On Windows the executable ends in `.exe`. The script uses and removes a publicly
+known synthetic signing key; it retains only synthetic data and the report in the
+new directory. Never substitute an existing repository or production key.
