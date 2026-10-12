@@ -1,6 +1,60 @@
 # Dynodoc: intent, current implementation and remaining work
 
-## Source: selected-history CLI synchronization (12 October 2026)
+## Source: engine PR review and application synchronization (12 October 2026)
+
+Reviewed all ten open standalone-engine PRs and merged **#1, #2, #3, #4, #6,
+#8, #9, #10 and #11**. PR #5 remains open: ULID 3 removes `Ulid::new()`;
+[fresh CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38251056776)
+fails with E0599. It needs an explicit call-site/API migration and fresh tests.
+The engine and application retain ULID 1.2.1.
+
+The merged updates use checkout v7, UUID 1.28.0 (the old PR title said 1.27.0),
+clap 4.6.7, serde 1.0.229 and similar 3.2.0. PR #1's old failure was generated
+OpenAPI metadata drift; updating its branch made the full workflow pass. PR #4's
+overlapping lockfile changes were resolved to retain syn 3 for both derive crates.
+The final lockfile matches the combined locally tested dependency graph.
+
+Replay now decodes borrowed payload JSON. Merge canonicalization borrows states
+without removed choices, retaining the newer cached tree-depth implementation
+when resolving PR #9. Saving a named version avoids a redundant state load while
+keeping the document/project locks, authorization and verified snapshot path.
+
+PR #10 adds streaming `log::verify_from` for an explicitly trusted chain position.
+Review caught two regressions in the proposed implementation: full-chain audits
+could omit negative sequence rows, and a maximum-sequence anchor could overflow.
+Both new regression tests failed against the original implementation and pass
+with the corrections; all ten event-log tests pass. Genesis verification still
+checks every stored row. A non-genesis trusted position intentionally excludes
+earlier events; it needs an independently trusted anchor, not a database-only
+claim of independent audit security.
+
+The original combined candidate passed **358 Windows tests**, none failed,
+ignored or filtered. After the audit fixes, targeted event-log tests, final
+`task lint`, `task docs` and unchanged generated OpenAPI passed. Documentation
+builds retain existing rustdoc warnings. Historical hash, snapshot/receipt and
+rich-text replay fixtures were not regenerated. Similar 3.2 changes new diff
+heuristics; the tested replay and merge cases pass, without claiming identical
+hunks for all inputs or complete offline convergence.
+
+Final engine source: `422e011`; application synchronization: `15f42c6`.
+[Final engine CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38253849857) and
+[application Rust CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38253873729) passed all **360 tests**
+on those code revisions. Application package/license metadata is preserved.
+Both frontend jobs, including authenticated browser workflows, passed in
+[application frontend CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38253873733).
+Handoff/status updates follow separately so the evidence identifies tested code.
+
+No migration, stored hash format or API schema changed (PostgreSQL 36 / SQLite 2).
+The disposable PostgreSQL container was identified by its task label and removed;
+existing development containers were untouched. The two clean task review
+worktrees were removed after verification. Logs remain under ignored
+application `target/engine-pr*.log`. No production data or real email was used.
+No VPS deployment or installed-editor acceptance occurred. Production remains
+recorded at `858801c` / schema 29; the preceding selected-history sync handoff and
+roadmap acceptance ledger still describe the remaining product work.
+
+
+## Previous increment: selected-history CLI synchronization (12 October 2026)
 
 The operator CLI now connects local project history to the schema-36 API through
 reviewed push plans, selected reachable-object transfer, authorized reuse of
