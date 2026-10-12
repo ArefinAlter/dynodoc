@@ -96,8 +96,8 @@
     >
     <h3>Connect an editor</h3>
     <p>
-      Development connectors exchange existing paragraph text, spreadsheet cells/formulas and slide
-      shape text. Installation and real-host acceptance are still required.
+      Editor connectors exchange existing paragraph text, spreadsheet cells/formulas and slide shape
+      text. Installation and real-host acceptance are still required.
     </p>
     <label
       >Editor<select bind:value={host}
@@ -127,9 +127,7 @@
       <a href="/connectors/word">Word task pane</a> ·
       <a href="/connectors/excel">Excel task pane</a> ·
       <a href="/connectors/powerpoint">PowerPoint task pane</a> ·
-      <a href="https://github.com/ArefinAlter/dynodoc/tree/main/extensions"
-        >Connector installation instructions</a
-      >
+      <a href="/add-ins">Add-in installation overview</a>
     </p>
   {/if}
   <h3>Your connections</h3>

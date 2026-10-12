@@ -22,6 +22,9 @@
   let { host }: { host: 'excel' | 'powerpoint' } = $props();
   const label = $derived(host === 'excel' ? 'Excel' : 'PowerPoint');
   const apiVersion = $derived(host === 'excel' ? '1.13' : '1.4');
+  const scope = $derived(
+    host === 'excel' ? 'existing cell values, dates and formulas' : 'existing text in slide shapes'
+  );
   import {
     exportSidecar,
     parseSidecar,
@@ -34,7 +37,7 @@
   let origin = $state(''),
     documentId = $state(''),
     token = $state(''),
-    name = $state('External editor changes'),
+    name = $state(''),
     note = $state(''),
     enabled = $state(false),
     busy = $state(false),
@@ -49,6 +52,7 @@
     preview = $state<{ checkpoint: Checkpoint; expected: Block[]; next: Block[] } | null>(null);
   onMount(() => {
     origin = location.origin;
+    name = `${label} changes`;
     const script = document.createElement('script');
     script.src = 'https://appsforoffice.microsoft.com/lib/1/hosted/office.js';
     script.onload = () => {
@@ -87,7 +91,7 @@
       if (enabled && session && !busy)
         void run(async () => {
           await session!.capture(await adapter!.read());
-          notice = `${session!.ledger.changes.length} observed block changes saved locally`;
+          notice = `${session!.ledger.changes.length} observed changes saved locally`;
         });
     }, 2000);
     return () => {
@@ -130,7 +134,7 @@
       throw new Error('Use a provenance recovery file up to 16 MiB.');
     recovery = parseSidecar(await file.text());
     notice =
-      'Recovery selected. Connect to the original Dynodoc file using the same account. Paragraph text will not be replaced.';
+      'Recovery selected. Connect to the original Dynodoc file using the same account. Existing content will not be replaced.';
   }
   async function connect() {
     if (!adapter || !officeDocument) return;
@@ -179,7 +183,7 @@
     }
     ready = true;
     if (!notice.startsWith('Provenance restored'))
-      notice = 'Connected. Enable capture to record block text changes while this pane is open.';
+      notice = 'Connected. Enable capture to record changes while this pane is open.';
   }
   async function send() {
     if (!session || !adapter) return;
@@ -222,15 +226,14 @@
   }
 </script>
 
-<svelte:head
-  ><title>{label} provenance · Dynodoc</title><meta name="robots" content="noindex" /></svelte:head
+<svelte:head><title>Dynodoc for {label}</title><meta name="robots" content="noindex" /></svelte:head
 >
 <main>
   <h1>Dynodoc for {label}</h1>
   <p>
-    Development connector for existing spreadsheet cells, dates and formulas, or slide shape text.
-    Save the file to retain identities. Capture runs while this pane is open. Structural and
-    formatting changes require file push.
+    Sign in to connect this file to a Dynodoc project. While this pane is open, Dynodoc records
+    edits to {scope} so you can send them for review and bring approved team changes back. Save the file
+    first so identities stay with it. Structural and formatting changes use file push.
   </p>
   {#if error}<p role="alert">{error}</p>{/if}{#if notice}<p role="status">{notice}</p>{/if}
   {#if !session}<ConnectorSignIn
@@ -242,11 +245,7 @@
         token = value.token;
         await run(connect);
       }}
-    />{/if}
-  <label>Dynodoc address<input bind:value={origin} disabled={!!session} /></label><label
-    >File ID<input bind:value={documentId} disabled={!!session} /></label
-  ><label>File connection key<input type="password" bind:value={token} autocomplete="off" /></label>
-  {#if !session}
+    />
     <label
       >Restore provenance from this editor (optional)<input
         type="file"
@@ -256,17 +255,29 @@
       /></label
     >
     <p>
-      Use an exported recovery file in a saved copy with matching block text. Existing queues are
+      Use an exported recovery file in a saved copy with matching content. Existing queues are
       preserved.
     </p>
   {/if}
-  <button disabled={busy || !ready || !!session} onclick={() => run(connect)}
-    >Connect this file</button
-  >
+  <details class="advanced">
+    <summary>Advanced: connect with a key</summary>
+    <div class="advanced-body">
+      <p>
+        Only needed when browser sign-in is not available. Create a key under Sync &amp; connections
+        in your Dynodoc project. A key works for one file and expires after seven days.
+      </p>
+      <label>Dynodoc address<input bind:value={origin} disabled={!!session} /></label><label
+        >File ID<input bind:value={documentId} disabled={!!session} /></label
+      ><label
+        >File connection key<input type="password" bind:value={token} autocomplete="off" /></label
+      >
+      <button disabled={busy || !ready || !!session} onclick={() => run(connect)}
+        >Connect this file</button
+      >
+    </div>
+  </details>
   {#if session}
-    <label
-      ><input type="checkbox" bind:checked={enabled} disabled={busy} /> Enable block capture</label
-    >
+    <label><input type="checkbox" bind:checked={enabled} disabled={busy} /> Enable capture</label>
     <p>
       Capture stores checkpoint observations on this device. It does not prove who typed each change
       or record every keystroke. Text replacements may inherit the host's formatting; formatting
@@ -287,8 +298,9 @@
       onclick={() => run(plan)}>Preview team changes</button
     >
     {#if preview}<p>
-        {preview.next.filter((b, i) => b.text !== preview!.expected[i].text).length} blocks will change
-        in {label}. Local edits are retained.
+        {preview.next.filter((b, i) => b.text !== preview!.expected[i].text).length}
+        {host === 'excel' ? 'cells' : 'text shapes'} will change in {label}. Local edits are
+        retained.
       </p>
       <button disabled={busy} onclick={() => run(apply)}>Apply preview to {label}</button><button
         onclick={() => {
@@ -340,5 +352,23 @@
   }
   a {
     color: var(--workspace-accent);
+  }
+  .advanced {
+    margin: 16px 0;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    background: var(--color-surface);
+  }
+  .advanced summary {
+    cursor: pointer;
+    padding: 10px 12px;
+    font-weight: 600;
+  }
+  .advanced summary:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+  .advanced-body {
+    padding: 0 12px 12px;
   }
 </style>

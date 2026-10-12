@@ -47,6 +47,12 @@ equal calculation/rendering behavior across products.
    API support and a useful unsupported-host response. Current requirements are
    WordApi 1.3, ExcelApi 1.13 and PowerPointApi 1.4. The recorded local PowerPoint
    2021 inventory is below its requirement; use a supporting host for a pass.
+   Also check what a store reviewer will see: Office shows a **Dynodoc** group with a
+   **Dynodoc** button and the add-in name reads "Dynodoc for Word/Excel/PowerPoint";
+   Google shows **Extensions > Dynodoc > Open Dynodoc** and a sidebar titled Dynodoc.
+   No "development" or "test" wording is visible, **Sign in to Dynodoc** is the first
+   action and the manual key fields sit collapsed under **Advanced: connect with a
+   key**. Record the manifest `Version` or Apps Script version that was tested.
 2. **Authorize.** Pair through the normal browser approval flow, compare the code
    and choose the intended Project file. Check cancellation and expiry. No access
    should be granted before explicit approval; unrelated projects stay inaccessible.

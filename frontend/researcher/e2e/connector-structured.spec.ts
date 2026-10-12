@@ -104,11 +104,13 @@ for (const host of ['excel', 'powerpoint'] as const) {
       });
     });
     await page.goto(`/connectors/${host}`);
+    await expect(page.getByRole('button', { name: 'Sign in to Dynodoc' })).toBeEnabled();
+    await page.getByText('Advanced: connect with a key').click();
     await page.getByLabel('File ID', { exact: true }).fill(DOC);
     await page.getByLabel('File connection key').fill('a'.repeat(64));
     await page.getByRole('button', { name: 'Connect this file' }).click();
     await expect(page.getByRole('status')).toContainText('Connected');
-    await expect(page.getByLabel('Enable block capture')).not.toBeChecked();
+    await expect(page.getByLabel('Enable capture')).not.toBeChecked();
     await page.evaluate(() => (window as unknown as { editNative: () => void }).editNative());
     await page.getByRole('button', { name: 'Push changes for review' }).click();
     await expect(page.getByRole('alert')).toContainText('Offline transport');
@@ -194,6 +196,8 @@ test('Excel date pane freezes retries and preflights calendar pulls before writi
     });
   });
   await page.goto('/connectors/excel');
+  await expect(page.getByRole('button', { name: 'Sign in to Dynodoc' })).toBeEnabled();
+  await page.getByText('Advanced: connect with a key').click();
   await page.getByLabel('File ID', { exact: true }).fill(DOC);
   await page.getByLabel('File connection key').fill('a'.repeat(64));
   await page.getByRole('button', { name: 'Connect this file' }).click();
@@ -312,6 +316,7 @@ for (const host of ['google-sheets', 'google-slides'] as const) {
       readFileSync(`../../extensions/${host}/Protocol.html`, 'utf8')
     );
     await page.setContent(html);
+    await page.getByText('Advanced: connect with a key').click();
     await page.locator('#documentId').fill(DOC);
     await page.locator('#token').fill('a'.repeat(64));
     await page.getByRole('button', { name: 'Connect', exact: true }).click();

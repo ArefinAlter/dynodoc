@@ -30,7 +30,12 @@
 </script>
 
 <section aria-label="Connect to Dynodoc">
+  <p>
+    Sign in with your Dynodoc account in your browser, then choose which Dynodoc file to connect. No
+    password or key is typed here.
+  </p>
   <button
+    class:primary={!pairing}
     disabled={disabled || busy}
     onclick={() =>
       void run(async () => {
@@ -49,6 +54,7 @@
       in ten minutes. Return here after approval.
     </p>
     <button
+      class="primary"
       disabled={disabled || busy}
       onclick={() =>
         void run(async () => {
@@ -62,3 +68,42 @@
   {/if}
   {#if error}<p role="alert">{error}</p>{/if}
 </section>
+
+<style>
+  section {
+    margin: 16px 0;
+  }
+  p {
+    line-height: 1.5;
+  }
+  button {
+    font: inherit;
+    padding: 8px 14px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: 5px;
+    background: var(--color-surface);
+    color: inherit;
+    cursor: pointer;
+  }
+  button.primary {
+    background: var(--color-accent-solid);
+    border-color: var(--color-accent-solid);
+    color: var(--color-on-accent);
+    font-weight: 600;
+  }
+  button.primary:hover:not(:disabled) {
+    background: var(--color-accent-solid-hover);
+  }
+  button:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+  button:focus-visible,
+  a:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+  a {
+    color: var(--color-accent);
+  }
+</style>

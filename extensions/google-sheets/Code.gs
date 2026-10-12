@@ -1,10 +1,10 @@
-/** Development Sheets adapter. Named rows retain the engine's stable IDs.
+/** Google Sheets adapter. Named rows retain the engine's stable IDs.
  * Date-only values use the spreadsheet timezone; timestamps, merges, structural
  * and format edits require file push. */
 const DYNODOC_ORIGIN='https://app.dynodoc.online',DYNODOC_HOST='google-sheets',BLOCK_PREFIX='dynodoc_';
-function onOpen(){SpreadsheetApp.getUi().createAddonMenu().addItem('Open provenance','showDynodoc').addToUi();}
+function onOpen(){SpreadsheetApp.getUi().createAddonMenu().addItem('Open Dynodoc','showDynodoc').addToUi();}
 function onInstall(e){onOpen(e);}
-function showDynodoc(){SpreadsheetApp.getUi().showSidebar(HtmlService.createTemplateFromFile('Sidebar').evaluate().setTitle('Dynodoc provenance'));}
+function showDynodoc(){SpreadsheetApp.getUi().showSidebar(HtmlService.createTemplateFromFile('Sidebar').evaluate().setTitle('Dynodoc'));}
 function include(name){return HtmlService.createHtmlOutputFromFile(name).getContent();}
 function scope_(expected){const doc=SpreadsheetApp.getActiveSpreadsheet(),key='dynodoc.'+doc.getId();if(expected&&expected!==key)throw new Error('Return to the connected spreadsheet.');return {doc:doc,key:key};}
 function rows_(config,scopeKey,binding){

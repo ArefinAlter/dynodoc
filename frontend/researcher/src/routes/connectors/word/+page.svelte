@@ -200,14 +200,13 @@
   }
 </script>
 
-<svelte:head
-  ><title>Word provenance · Dynodoc</title><meta name="robots" content="noindex" /></svelte:head
->
+<svelte:head><title>Dynodoc for Word</title><meta name="robots" content="noindex" /></svelte:head>
 <main>
   <h1>Dynodoc for Word</h1>
   <p>
-    Development connector: existing paragraph text, with stable block identities. Save the DOCX to
-    retain its identities. Capture runs only while this pane is open.
+    Sign in to connect this file to a Dynodoc project. While this pane is open, Dynodoc records
+    edits to existing paragraph text so you can send them for review and bring approved team changes
+    back. Save the document first so paragraph identities stay with the file.
   </p>
   {#if error}<p role="alert">{error}</p>{/if}{#if notice}<p role="status">{notice}</p>{/if}
   {#if !session}<ConnectorSignIn
@@ -219,11 +218,7 @@
         token = value.token;
         await run(connect);
       }}
-    />{/if}
-  <label>Dynodoc address<input bind:value={origin} disabled={!!session} /></label><label
-    >File ID<input bind:value={documentId} disabled={!!session} /></label
-  ><label>File connection key<input type="password" bind:value={token} autocomplete="off" /></label>
-  {#if !session}
+    />
     <label
       >Restore provenance from this editor (optional)<input
         type="file"
@@ -237,9 +232,23 @@
       are preserved.
     </p>
   {/if}
-  <button disabled={busy || !ready || !!session} onclick={() => run(connect)}
-    >Connect this file</button
-  >
+  <details class="advanced">
+    <summary>Advanced: connect with a key</summary>
+    <div class="advanced-body">
+      <p>
+        Only needed when browser sign-in is not available. Create a key under Sync &amp; connections
+        in your Dynodoc project. A key works for one file and expires after seven days.
+      </p>
+      <label>Dynodoc address<input bind:value={origin} disabled={!!session} /></label><label
+        >File ID<input bind:value={documentId} disabled={!!session} /></label
+      ><label
+        >File connection key<input type="password" bind:value={token} autocomplete="off" /></label
+      >
+      <button disabled={busy || !ready || !!session} onclick={() => run(connect)}
+        >Connect this file</button
+      >
+    </div>
+  </details>
   {#if session}
     <label
       ><input type="checkbox" bind:checked={enabled} disabled={busy} /> Enable paragraph capture</label
@@ -317,5 +326,23 @@
   }
   a {
     color: var(--workspace-accent);
+  }
+  .advanced {
+    margin: 16px 0;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    background: var(--color-surface);
+  }
+  .advanced summary {
+    cursor: pointer;
+    padding: 10px 12px;
+    font-weight: 600;
+  }
+  .advanced summary:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+  .advanced-body {
+    padding: 0 12px 12px;
   }
 </style>

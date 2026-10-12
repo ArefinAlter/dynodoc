@@ -1,18 +1,34 @@
 # Microsoft and Google provenance connectors
 
-Current installation/sign-in instructions: [INSTALL.md](INSTALL.md). All six hosts
-now offer browser sign-in and file approval without copying a connection key.
-The manual workflow below remains supported. Microsoft manifests include ribbon
-commands; `/connectors` offers generated XML/Google ZIP test downloads. Deploy the
-matching API/web build first. This does not certify native acceptance or publication.
+Installation, sign-in and staging-server instructions: [INSTALL.md](INSTALL.md).
+All six hosts offer browser sign-in and file approval without copying a connection
+key; entering a file-scoped key remains available under **Advanced: connect with a
+key**. Microsoft manifests (Dynodoc for Word/Excel/PowerPoint) include a ribbon
+command; `/connectors` offers generated XML/Google ZIP downloads. Deploy the matching
+API/web build first. This does not certify native acceptance or publication.
 
-All six development connectors use the same protocol and capture queue. Native
-acceptance and marketplace publication remain open. Dynodoc is the review/sync platform;
-Microsoft and Google remain the editors. [Contract and remaining work](../docs/PROVENANCE-SYNC.md).
+All six add-ins use the same protocol and capture queue. Native host acceptance and
+marketplace publication are still open: no listing exists, none has been submitted
+and none is approved. Dynodoc is the review/sync platform; Microsoft and Google remain
+the editors. [Contract and remaining work](../docs/PROVENANCE-SYNC.md).
+
+## Marketplace submission kit
+
+Everything that can be prepared from this repository is here; everything that needs
+an owner account is listed, not done.
+
+| What | Where |
+| --- | --- |
+| Per-host listing copy, scopes/permissions, reviewer script, screenshot shot-list | [`docs/listings/`](../docs/listings/) |
+| Owner-only steps (accounts, verification, forms, versioning) | [`docs/listings/SUBMISSION-CHECKLIST.md`](../docs/listings/SUBMISSION-CHECKLIST.md) |
+| What each add-in stores, sends and keeps (for the privacy policy) | [`docs/listings/addin-data-handling.md`](../docs/listings/addin-data-handling.md) |
+| Store icons, logo and card banners (generated, committed) | [`marketplace/assets/`](marketplace/assets/), built by `pnpm build:marketplace-assets` |
+| Offline invariants for manifests/scopes/assets | `frontend/researcher/src/lib/connectors/*.test.ts` |
+| Microsoft's online manifest validator | `pnpm validate:manifests` (needs network; not part of CI) |
 
 ## Prepare a test project
 
-Run/deploy the matching engine (migrations through 0026) and web build. Open
+Run/deploy the matching engine (migrations through 0029) and web build. Open
 `/projects`, create an invite-only project, and add a plain-paragraph DOCX or move
 an existing plain document here. Keep a local editor copy with exactly the same
 paragraph text and order. In Files → Sync & connections, create a **Word** or
@@ -27,15 +43,17 @@ edited-file push workflow for unsupported changes. Text replacements may inherit
 host formatting. Do not describe this as a complete edit recorder or AI/human
 authorship attestation.
 
-## Microsoft Word development installation
+## Microsoft Word installation
 
 1. Use the platform-specific [Windows, Mac or browser instructions](INSTALL.md#microsoft-word-excel-and-powerpoint)
    with `word/manifest.xml`. Its pane URL is
-   `https://app.dynodoc.online/connectors/word`. Before a source-only/local test,
-   copy the manifest and set SourceLocation/AppDomain to your deployed test origin
-   served over HTTPS. The URL must serve the matching new web build.
+   `https://app.dynodoc.online/connectors/word`. For a staging server follow
+   [INSTALL.md](INSTALL.md#pointing-an-installation-at-a-staging-server): every
+   URL and the `AppDomain` in the copied manifest must name your HTTPS origin, and
+   that origin must serve the matching new web build.
 2. Open the same saved plain document in Word. The task pane requires stable
-   WordApi 1.3 support. Enter the file ID and Word-scoped key; connect.
+   WordApi 1.3 support. Use **Sign in to Dynodoc**, or open **Advanced: connect with a
+   key**, enter the file ID and Word-scoped key and connect.
 3. Enable capture explicitly. Edit existing paragraphs, capture, then push for
    review. Review/merge in Projects, preview team changes and explicitly apply.
 4. Save the DOCX: `dynodoc.block.<ULID>` content-control tags retain block IDs.
@@ -48,7 +66,7 @@ capture available. This is not a background desktop agent. See
 [Microsoft's content-control API](https://learn.microsoft.com/javascript/api/word/word.contentcontrol)
 and [paragraph API](https://learn.microsoft.com/javascript/api/word/word.paragraph).
 
-## Google Docs development installation
+## Google Docs installation
 
 1. Run `pnpm build:connectors` in `frontend/researcher`. Copy `Code.gs`,
    `Sidebar.html`, generated `Protocol.html` and `appsscript.json` into a Docs
@@ -56,15 +74,19 @@ and [paragraph API](https://learn.microsoft.com/javascript/api/word/word.paragra
    editor. For an HTTPS staging deployment, change the **code allowlist**
    `DYNODOC_ORIGIN` and manifest `urlFetchWhitelist` together.
 2. Use [Google's Editor add-on test deployment](https://developers.google.com/workspace/add-ons/how-tos/testing-editor-addons)
-   with your own document/account. Open **Dynodoc → Open provenance**. Choose the
-   intended Google Docs tab and keep it selected throughout that sidebar session.
-3. Enter the file ID and Google-Docs-scoped key; connect and opt into capture.
+   with your own document/account. Open **Extensions → Dynodoc → Open Dynodoc**. Choose
+   the intended Google Docs tab and keep it selected throughout that sidebar session.
+3. Use **Sign in to Dynodoc** (or **Advanced: connect with a key**); connect and opt
+   into capture.
    Named ranges `dynodoc.block.<ULID>` anchor existing paragraphs in this tab.
 4. Edit, capture and push. Review in Projects, then preview/apply the merged team
-   checkpoint. Export the ledger before it reaches the 100 KB development cap.
+   checkpoint. Export the ledger before it reaches the 100 KB per-file limit.
 
 Credentials and queues use **UserProperties**, scoped by Google document/tab ID;
-no secret is stored in document properties or shared script properties. The
+no secret is stored in document properties or shared script properties. Google caps
+that store at about 500 KB per user and script across all files, so the per-file
+100 KB limit cannot be reached by many large files at once: the sidebar then stops
+capture with a clear message and keeps the previous saved queue. The
 sidebar polls every five seconds while enabled. Google Docs has no universal
 `onEdit` trigger: [official trigger support](https://developers.google.com/workspace/add-ons/concepts/editor-triggers).
 This is an Editor add-on prototype, not a Workspace card-based extension; its
@@ -83,7 +105,7 @@ the frozen upload without changing its IDs or message. Enable capture explicitly
 afterward. Paragraph text is not replaced by restoration.
 
 Existing queues cannot be replaced. If storage fails, retain the export and retry;
-Google's 100 KB ledger cap still applies. Previous unwrapped ledger exports are
+Google's 100 KB per-file ledger limit still applies. Previous unwrapped ledger exports are
 evidence; recovery accepts the new `dynodoc.provenance-sidecar` format. To exchange
 Word and Docs work, review/merge and pull a team checkpoint rather than importing
 a queue into a different editor. This does not add background capture.
@@ -108,7 +130,7 @@ Reopen the task pane in the saved copy and select the sidecar before reconnectin
 Automated protocol/storage and signed-in platform tests cannot substitute for
 these host tests. No production email is required for this development acceptance.
 
-## Excel/Sheets and PowerPoint/Slides development installation
+## Excel/Sheets and PowerPoint/Slides installation
 
 All six editors use the same bundle/review/merge/pull and recovery contract. This
 increment supports existing cells, date-only values/formula source and existing slide shape text,
@@ -118,7 +140,7 @@ media or animations. Formula dialects/layout differences require real-host check
 Remote structural/formatting changes stop incremental pull. Use file push for
 unsupported edits; keep original files.
 
-The development panes and scoped APIs are now deployed at `https://app.dynodoc.online`. Installation in the native hosts and marketplace publication remain open.
+The panes and scoped APIs are deployed at `https://app.dynodoc.online`. Installation in the native hosts and marketplace publication remain open.
 
 1. Import the XLSX/PPTX into a Project and keep a matching native working copy.
 2. Create an **Excel**, **Google Sheets**, **PowerPoint** or **Google Slides** key
@@ -131,7 +153,7 @@ The development panes and scoped APIs are now deployed at `https://app.dynodoc.o
    spreadsheet/presentation. Install that host directory's `Code.gs`, `Common.gs`,
    `Sidebar.html`, `Protocol.html` and `appsscript.json`.
    For Sheets, include the generated `Date.gs` as well. Authorize only the
-   current-file scopes and reopen the file to use the **Open provenance** menu.
+   current-file scopes and reopen the file to use **Extensions → Dynodoc → Open Dynodoc**.
    Credentials/queues are private to your Google user and file. Slides mappings
    use native IDs in private properties and preserve accessibility descriptions.
 5. Enable capture explicitly, edit supported values, push for review in Projects,

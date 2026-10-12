@@ -215,8 +215,7 @@ function projectStructured(c: Checkpoint, nodes: Node[], root: Node, targets = f
     )
   )
     throw new Error('Unsupported nested structure. Use file push.');
-  if (result.length > 2000)
-    throw new Error('This development connector supports up to 2,000 cells or shapes.');
+  if (result.length > 2000) throw new Error('This add-in supports up to 2,000 cells or shapes.');
   return targets ? result : result.map(({ id, text, field }) => ({ id, text, field }));
 }
 export function projectCheckpoint(c: Checkpoint): Block[] {
@@ -234,8 +233,7 @@ export function projectCheckpoint(c: Checkpoint): Block[] {
   if (roots.length !== 1) throw new Error('This connector needs a document with one root.');
   if (c.kind !== 'document') return projectStructured(c, nodes, roots[0]);
   const items = nodes.filter((n) => n.type !== 'form');
-  if (items.length > 2000)
-    throw new Error('This development connector supports up to 2,000 paragraphs.');
+  if (items.length > 2000) throw new Error('This add-in supports up to 2,000 paragraphs.');
   const sorted = items.sort((a, b) =>
     a.pos < b.pos ? -1 : a.pos > b.pos ? 1 : a.id.localeCompare(b.id)
   );

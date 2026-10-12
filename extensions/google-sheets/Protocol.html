@@ -112,8 +112,7 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
       (n) => n.id !== root.id && !groups.includes(n) && !groups.some((g) => n.parent_id === g.id)
     ))
       throw new Error("Unsupported nested structure. Use file push.");
-    if (result.length > 2e3)
-      throw new Error("This development connector supports up to 2,000 cells or shapes.");
+    if (result.length > 2e3) throw new Error("This add-in supports up to 2,000 cells or shapes.");
     return targets ? result : result.map(({ id, text, field }) => ({ id, text, field }));
   }
   function projectCheckpoint(c) {
@@ -123,8 +122,7 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
     if (roots.length !== 1) throw new Error("This connector needs a document with one root.");
     if (c.kind !== "document") return projectStructured(c, nodes, roots[0]);
     const items = nodes.filter((n) => n.type !== "form");
-    if (items.length > 2e3)
-      throw new Error("This development connector supports up to 2,000 paragraphs.");
+    if (items.length > 2e3) throw new Error("This add-in supports up to 2,000 paragraphs.");
     const sorted = items.sort(
       (a, b) => a.pos < b.pos ? -1 : a.pos > b.pos ? 1 : a.id.localeCompare(b.id)
     );

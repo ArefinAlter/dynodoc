@@ -72,7 +72,7 @@ def check(origin):
 
     artifacts = [f"packages/{host}.xml" for host in ["word", "excel", "powerpoint"]]
     artifacts += [f"packages/google-{host}.zip" for host in ["docs", "sheets", "slides"]]
-    artifacts += [f"assets/icon-{size}.png" for size in [16, 32, 80]]
+    artifacts += [f"assets/icon-{size}.png" for size in [16, 32, 64, 80]]
     artifacts += ["commands.html", "commands.js"]
     for artifact in artifacts:
         path = "/connectors/" + artifact

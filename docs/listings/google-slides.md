@@ -1,0 +1,129 @@
+# Dynodoc for Slides — listing kit
+
+Draft copy prepared from this repository for the owner to paste into the **Google Workspace Marketplace SDK** configuration. No listing exists, none has been submitted and nothing has passed OAuth verification. Re-check every claim against the exact build you submit; the limits below are enforced by the code in `extensions/google-slides/` and `frontend/researcher/src/lib/provenance/`. Owner-only steps are in [SUBMISSION-CHECKLIST.md](SUBMISSION-CHECKLIST.md); what the add-on stores and sends is in [addin-data-handling.md](addin-data-handling.md).
+
+## Listing fields
+
+| Field | Value | Limit |
+| --- | --- | --- |
+| Application name (must match the OAuth consent screen name) | Dynodoc for Slides; fallback `Dynodoc` | 50 |
+| Short description / tagline | Send your Google Slides text edits to Dynodoc for review and bring approved team changes back. | 100 here (Google allows 200) |
+| Detailed description | see below | 16,000 |
+| Category | Productivity (alternative: Business Tools). Choose from the list the Marketplace SDK shows. | |
+| Search keywords | presentation review, approvals, version history, change tracking, audit trail, collaboration, provenance, slide history, team review | |
+| Language | English | |
+| Editor | Google Slides (Editor add-on, standalone Apps Script project; source in `extensions/google-slides/`) | |
+| Support / privacy / terms links | https://dynodoc.online/support, https://dynodoc.online/privacy, https://dynodoc.online/terms (owner must confirm the operator details are final first) | all required |
+| Icons | `extensions/marketplace/assets/google-icon-128.png` and `google-icon-32.png` (`google-icon-96.png` only for a listing that includes a web app) | 128 and 32 required |
+| Card banner | `extensions/marketplace/assets/google-card-banner-220x140.png` (a 440 x 280 version is alongside) | 220 x 140 |
+| Screenshots | real captures, see below | 1280 x 800 recommended |
+
+Naming: Google's Marketplace branding rules allow a Google product name after “for” with a trademark attribution, but the add-on style guide discourages product names in add-on names and prefers short names. Submit `Dynodoc for Slides`; if review objects, use `Dynodoc` and let the description and icon say which editor it serves. Do not put the word “Google” in the name.
+
+## Long description
+
+```
+Dynodoc for Slides connects the presentation you are editing in Google Slides to a Dynodoc project, where changes are reviewed before they become the team's version.
+
+Work in Google Slides as usual. While the Dynodoc sidebar is open and capture is switched on, the add-on notices edits to existing text in slide shapes and keeps them in a queue. When you are ready, send them for review. Teammates compare the change in Dynodoc, approve or reject it and merge it. Back in Google Slides, preview the approved team changes and apply them with one click. Nothing is written to your presentation until you choose Apply.
+
+What you get
+- Connect the open presentation to a Dynodoc project with browser sign-in and a one-time code check
+- Record edits to existing slide text while the sidebar is open
+- Send your changes for review as a change request that teammates can compare, approve and merge
+- Preview approved team changes, then apply them to the presentation in one step
+- Stops safely if slides or shapes changed after the preview instead of overwriting your work
+
+Good to know
+- Covers existing text in slide shapes. Formatting, new, deleted or moved content, comments and embedded objects are not synchronized; use Dynodoc's file upload for those changes.
+- Records changes only while the sidebar is open. There is no background capture.
+- Needs an internet connection to load the sidebar, sign in and send changes. Captured changes wait in a queue until you send them.
+- Sign-in happens in your browser with your Dynodoc account; the add-on never sees your password. Each connection reaches one file, expires after seven days and can be revoked in Dynodoc.
+- Requires a Dynodoc account and a Dynodoc project that contains the file.
+
+Google Slides is a trademark of Google LLC. Dynodoc is not affiliated with or endorsed by Google.
+```
+
+## Feature bullets
+
+- Connect the open presentation to a Dynodoc project with browser sign-in and a one-time code check
+- Record edits to existing slide text while the sidebar is open
+- Send your changes for review as a change request that teammates can compare, approve and merge
+- Preview approved team changes, then apply them to the presentation in one step
+- Stops safely if slides or shapes changed after the preview instead of overwriting your work
+
+## Supported platforms
+
+- Google Slides in a desktop browser (Editor add-on sidebar)
+
+Not supported:
+
+- Google Slides mobile apps (Editor add-on sidebars are not available there)
+- Presentations with grouped or table shapes on synced slides
+
+List only what has passed [extensions/ACCEPTANCE.md](../../extensions/ACCEPTANCE.md) inside a real Editor add-on host; at the time of writing no such run has been recorded.
+
+## Honest limitations (keep these visible in the listing)
+
+What it covers:
+
+- Edits to the text of existing slide shapes, up to 2,000 shapes. Shape accessibility descriptions are preserved.
+
+What it does not do:
+
+- Inserting, deleting or reordering slides or shapes, grouped or table shapes, formatting, media and animations.
+- Any edit made while the sidebar is closed (the sidebar compares snapshots every five seconds while capture is on).
+- It is not a background recorder, not a keystroke log and not proof of who typed a change.
+- Loading the sidebar, signing in and sending changes need an internet connection. Offline commits and background capture are not available.
+- Files imported into a Dynodoc project for sync must be 3 MB or smaller.
+- Google keeps about 500 KB of saved add-on data per user and script, shared by every file. A single file's queue is capped at 100 KB; when Google's store is full capture stops with a message and the previous saved queue stays intact. Export your provenance when you see it.
+- Sign-in uses a Dynodoc browser approval for one file. Google sign-in is not the identity Dynodoc uses.
+
+Changes made to the file itself: Dynodoc keeps a private mapping from Google's slide and shape IDs to Dynodoc identities in your own Apps Script user storage; it adds nothing visible to the presentation.
+
+## OAuth scopes and why
+
+The manifest (`extensions/google-slides/appsscript.json`) requests exactly these scopes. The consent screen and the Marketplace SDK scope list must match it.
+
+| Scope | Why |
+| --- | --- |
+| `https://www.googleapis.com/auth/presentations.currentonly` | Lets the add-on read and edit only the presentation it is opened in: reads slide shape text to detect edits and writes approved team text when the user chooses Apply. |
+| `https://www.googleapis.com/auth/script.container.ui` | Shows the Extensions > Dynodoc menu item and the Dynodoc sidebar. |
+| `https://www.googleapis.com/auth/script.external_request` | Sends requests to Dynodoc and nowhere else (the manifest allow-list is `https://app.dynodoc.online/api/connectors/`). |
+
+Runtime: V8, `exceptionLogging: STACKDRIVER`, `urlFetchWhitelist` limited to `https://app.dynodoc.online/api/connectors/`. The Cloud console shows each scope's sensitivity category when you add it; treat `script.external_request` as needing OAuth verification until the console says otherwise. Do not broaden scopes to simplify distribution.
+
+## Reviewer test instructions
+
+Paste into the review notes. The reviewer needs a copy of the sample presentation, a Dynodoc reviewer account they can actually sign in to, and a Dynodoc project that already contains the matching file.
+
+1. Open the supplied sample (Launch plan (Google Slides)) in Google Slides. Use a copy; do not convert from an Office format.
+2. Choose the Dynodoc entry point (below). The sidebar opens with **Sign in to Dynodoc** as the first action.
+3. Choose **Sign in to Dynodoc**, then **Open browser to sign in and choose a file**. Sign in with the reviewer account supplied below, check the code matches the one in the sidebar, choose the sample file and choose **Approve connection**.
+4. Return to Google Slides and choose **I approved this connection**. The sidebar shows the connected controls.
+5. Tick the capture box. Change the first slide's text to `Acceptance alpha revised`, then choose **Push for review**. Expected: the sidebar reports the changes were sent for review.
+6. In the browser open https://app.dynodoc.online/projects, open the project's change request and merge it (the reviewer account is an owner).
+7. Back in Google Slides choose **Preview team changes**, then **Apply preview**. Expected: the merged value appears in the file.
+8. Optional: in Dynodoc open Sync & connections for the file and revoke the connection; a further push from the sidebar is refused.
+
+Entry point: choose **Extensions > Dynodoc > Open Dynodoc** and authorize the add-on when Google asks.
+
+## What the owner must provision for review
+
+- A Dynodoc account for the reviewer that can be signed into without access to the owner's inbox. Dynodoc email sign-in sends a link to the account's mailbox, so give the reviewer a mailbox they can read, or an account that can use Google sign-in. Put the details only in private review notes.
+- A project that contains the sample file, imported from the same content the reviewer opens. Sample content: Two slides, each with one ordinary editable text shape: `Acceptance alpha` and `Acceptance beta`. Start from a Google-native presentation, not a converted .pptx.
+- A shareable “make a copy” link to the Google-native sample, and a short screen recording of the full flow if Google's OAuth verification asks for one.
+- The production web and API deployed at https://app.dynodoc.online at the schema level this build needs, and `python infra/demo/check-connectors.py https://app.dynodoc.online` passing.
+- A support mailbox that is read during review.
+
+## Screenshots to capture
+
+Real captures from the installed add-on only (see [extensions/marketplace/README.md](../../extensions/marketplace/README.md)). Use synthetic names and content. Recommended 1280 x 800 (640 x 400 and 2560 x 1600 are also accepted), square corners, full bleed, at least one.
+
+| # | Shot | What it shows | Caption |
+| --- | --- | --- | --- |
+| 1 | Sidebar open next to a presentation | Google Slides with Extensions > Dynodoc > Open Dynodoc and the sidebar showing Sign in to Dynodoc, over a sample deck called Launch plan. | Open Dynodoc from the Extensions menu |
+| 2 | Browser approval | The Dynodoc approval page in a browser with the comparison code and the file chooser. Crop to the page; use a synthetic user such as Maya Chen. | Approve one file, nothing else |
+| 3 | Capture on | Sidebar after connecting, Enable capture ticked and a status line showing saved observations. | Edits are queued privately |
+| 4 | Review in Dynodoc | Dynodoc change request showing the slide text before/after diff, reviewer Sam Okoye. | Teammates review before it is merged |
+| 5 | Preview and apply | Sidebar with a preview ready and the Apply preview button enabled, one text shape changed. | You decide when team changes land |

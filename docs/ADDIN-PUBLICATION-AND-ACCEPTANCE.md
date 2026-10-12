@@ -1,9 +1,10 @@
 # Editor installation, acceptance and publication
 
-10 October 2026. Distribution is separate from Dynodoc sign-in and file permissions.
-Current packages are development/test packages; none is represented as an approved
-marketplace listing. No publisher account was registered or listing submitted by
-this increment.
+10 October 2026, updated 12 October 2026. Distribution is separate from Dynodoc
+sign-in and file permissions. The manifests and add-on sources are now shaped for
+store submission (production names, store icons, plain-language copy), but none is an
+approved marketplace listing: no publisher account was registered and nothing was
+submitted. The submission kit is in [`docs/listings/`](listings/SUBMISSION-CHECKLIST.md).
 
 ## Where registration is needed
 
@@ -23,10 +24,17 @@ submission. Do not promise approval, completion dates or fees from these notes.
 
 ## Current package inventory
 
-Office uses three XML task-pane manifests, version `1.0.0.0`, named Dynodoc
-Provenance (Development). Word requires WordApi 1.3, Excel requires ExcelApi 1.13,
-and PowerPoint requires PowerPointApi 1.4. Keep IDs stable when updating the same
-listing and increment manifest versions for manifest changes:
+Office uses three XML task-pane manifests, version `1.1.0.0`, named **Dynodoc for
+Word**, **Dynodoc for Excel** and **Dynodoc for PowerPoint** (the earlier
+`1.0.0.0` development manifests were all called Dynodoc Provenance (Development)).
+Each has a plain-language description under 250 characters, `SupportUrl`
+`https://dynodoc.online/support` (a page the site work provides; confirm it is live
+before submitting), a 32 px `IconUrl`, a 64 px `HighResolutionIconUrl`, and 16/32/80 px
+ribbon icons, all served from `https://app.dynodoc.online/connectors/assets/`. The
+Home ribbon shows a Dynodoc group with a Dynodoc button. Word requires WordApi 1.3,
+Excel requires ExcelApi 1.13, and PowerPoint requires PowerPointApi 1.4. Keep IDs
+stable when updating the same listing and increment manifest versions for manifest
+changes:
 
 - Word: `adbda646-1a13-4a70-baf5-c772e9cc90a6`.
 - Excel: `794ef9dc-6d78-4b08-a7f3-2526d0476930`.
@@ -40,9 +48,37 @@ adding those unrelated permissions or replacing the existing approval flow.
 Google has three separate Apps Script source packages. Their scopes are the host's
 `documents.currentonly`, `spreadsheets.currentonly` or `presentations.currentonly`,
 plus `script.container.ui` and `script.external_request`. Their external-request
-allowlist is the Dynodoc connector API. Select the listing/script/project mapping
-before submission; three ZIP downloads are not one published multi-host add-on.
-Do not broaden scopes merely to simplify distribution.
+allowlist is the Dynodoc connector API. Each manifest sets `runtimeVersion: V8` and
+`exceptionLogging: STACKDRIVER`, and each add-on appears under Extensions > Dynodoc >
+Open Dynodoc. Select the listing/script/project mapping before submission: one
+standalone script and one listing per editor, so three ZIP downloads are three
+listings, not one multi-host add-on. Do not broaden scopes merely to simplify
+distribution.
+
+Saved queues use Apps Script UserProperties: about 500 KB per user and script, shared by
+every file, against a 100 KB per-file queue cap and daily property quotas. A full store
+stops capture with a message and keeps the previous queue; this is documented in the
+listing copy rather than hidden. There is no in-add-on clear action.
+
+## Store assets and listing copy
+
+| Item | Where |
+| --- | --- |
+| Per-host listing fields, long description, scopes/permissions with reasons, reviewer steps, screenshot shot-list | [`docs/listings/<host>.md`](listings/) |
+| Owner-only account, verification, form and versioning steps | [`docs/listings/SUBMISSION-CHECKLIST.md`](listings/SUBMISSION-CHECKLIST.md) |
+| What each add-in stores, sends and keeps (privacy policy input) | [`docs/listings/addin-data-handling.md`](listings/addin-data-handling.md) |
+| Icons, 300 px logo, 128/96/32 px Google icons, 220 x 140 and 440 x 280 banners | `extensions/marketplace/assets/`, built by `pnpm build:marketplace-assets` |
+| Offline manifest/scope/asset invariants | `frontend/researcher/src/lib/connectors/*.test.ts` |
+| Microsoft schema validation (online; not in CI) | `pnpm validate:manifests` |
+
+Store screenshots are not generated: they must be real captures from installed hosts.
+
+Microsoft's `office-addin-manifest validate` reported all three manifests valid on
+12 October 2026 and listed eligible platforms from the requirement sets alone (for
+example Word and Excel on iPad, Mac 2016/2019 builds); that is eligibility, not a
+runtime result. Validation also confirmed the support URL, HTTPS icon URLs and file
+extensions. The offline checks in `src/lib/connectors/` re-verify names, limits, GUIDs,
+URL origins, icon pixel sizes, scopes and Google manifest settings on every test run.
 
 ## Concrete publication work remaining
 
@@ -51,10 +87,12 @@ Do not broaden scopes merely to simplify distribution.
    contact. Existing OAuth web sign-in credentials are not proof of publisher setup.
 2. Complete the host acceptance matrix below and retain exact app builds, manifest/
    script versions and evidence. Correct unsupported-platform declarations first.
-3. Prepare release display names, descriptions, host-specific screenshots, icons,
-   support instructions and reviewer test access. Review existing `/privacy` and
-   `/terms` against actual observed capture, local queue, remote storage, retention,
-   account erasure and third-party processing; their existence is not legal approval.
+3. Capture host-specific screenshots from installed hosts and provision reviewer test
+   access. Display names, descriptions, icons and support instructions are drafted in
+   `docs/listings/` and `extensions/marketplace/`. Review existing `/privacy` and
+   `/terms` against [addin-data-handling.md](listings/addin-data-handling.md) and actual
+   remote storage, retention, account erasure and third-party processing; their
+   existence is not legal approval.
 4. Configure Google standard projects, consent branding/scopes, script versions and
    SDK integration/listing. Complete any required OAuth verification separately
    from Marketplace review. Choose organization-only/public visibility deliberately.

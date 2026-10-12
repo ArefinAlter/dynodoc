@@ -90,6 +90,8 @@ test('Word workflow: direction, tracked text, undo, saved page setup and actual 
 test('Spreadsheet workflow: relative fill, merged cells, frozen panes and keyboard navigation', async ({
   page
 }) => {
+  // The final axe pass walks the whole ~2000-button grid and alone takes 35-60 s on a slow host.
+  test.setTimeout(180000);
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await create(page, 'spreadsheet');

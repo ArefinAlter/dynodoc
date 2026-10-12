@@ -1,13 +1,13 @@
-/** Development Google Docs Editor add-on. Credentials and queues are per user,
+/** Google Docs Editor add-on. Credentials and queues are per user,
  * never DocumentProperties or shared ScriptProperties. No general Docs onEdit
  * trigger exists: the opt-in sidebar polls while open. */
 const DYNODOC_ORIGIN = 'https://app.dynodoc.online';
 const DYNODOC_HOST = 'google-docs';
 const BLOCK_PREFIX = 'dynodoc.block.';
-function onOpen() { DocumentApp.getUi().createAddonMenu().addItem('Open provenance', 'showDynodoc').addToUi(); }
+function onOpen() { DocumentApp.getUi().createAddonMenu().addItem('Open Dynodoc', 'showDynodoc').addToUi(); }
 function onInstall(e) { onOpen(e); }
 function showDynodoc() {
-  DocumentApp.getUi().showSidebar(HtmlService.createTemplateFromFile('Sidebar').evaluate().setTitle('Dynodoc provenance'));
+  DocumentApp.getUi().showSidebar(HtmlService.createTemplateFromFile('Sidebar').evaluate().setTitle('Dynodoc'));
 }
 function include(name) { return HtmlService.createHtmlOutputFromFile(name).getContent(); }
 function scope_(expected) {
@@ -25,7 +25,7 @@ function paragraphs_(scope) {
     for(let j=0;j<p.getNumChildren();j++)if(p.getChild(j).getType()!==DocumentApp.ElementType.TEXT)throw new Error('Inline images and other embedded content require file push.');
     paragraphs.push(p);
   }
-  if(paragraphs.length>2000)throw new Error('Use up to 2,000 paragraphs in this development connector.');
+  if(paragraphs.length>2000)throw new Error('This add-on supports up to 2,000 paragraphs. Use file push for longer documents.');
   return paragraphs;
 }
 function bindDynodoc(blocks,scopeKey) {

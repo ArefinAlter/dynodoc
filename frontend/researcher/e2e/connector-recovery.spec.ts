@@ -90,6 +90,8 @@ test('Word pane restores an offline queue, retries exactly and stops after Save 
     });
   });
   await page.goto('/connectors/word');
+  await expect(page.getByRole('button', { name: 'Sign in to Dynodoc' })).toBeEnabled();
+  await page.getByText('Advanced: connect with a key').click();
   await page.getByLabel('File ID', { exact: true }).fill(DOC);
   await page.getByLabel('File connection key').fill('a'.repeat(64));
   await page.getByLabel('Restore provenance from this editor').setInputFiles({
@@ -120,6 +122,8 @@ test('Word pane restores an offline queue, retries exactly and stops after Save 
   expect(recovered.ledger.changes).toEqual(sidecar.ledger.changes);
   const second = await context.newPage();
   await second.goto('/connectors/word');
+  await expect(second.getByRole('button', { name: 'Sign in to Dynodoc' })).toBeEnabled();
+  await second.getByText('Advanced: connect with a key').click();
   await second.getByLabel('File ID', { exact: true }).fill(DOC);
   await second.getByLabel('File connection key').fill('a'.repeat(64));
   await second.getByLabel('Restore provenance from this editor').setInputFiles({
@@ -205,6 +209,7 @@ test('Google Docs sidebar restores and exports the exact queue through its host 
     { checkpoint, receipt }
   );
   await page.setContent(html);
+  await page.getByText('Advanced: connect with a key').click();
   await page.locator('#documentId').fill(DOC);
   await page.locator('#token').fill('a'.repeat(64));
   await page.locator('#recovery').setInputFiles({

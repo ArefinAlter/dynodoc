@@ -65,7 +65,7 @@ export class WordAdapter {
     await ctx.sync();
     if (tables.items.length || paragraphs.items.some((p) => p.isListItem))
       throw new Error(
-        'This development connector supports body paragraphs only. Use file push for tables or lists.'
+        'This add-in supports body paragraphs only. Use file push for tables or lists.'
       );
     for (const p of paragraphs.items) p.contentControls.load('items/tag,items/text');
     await ctx.sync();

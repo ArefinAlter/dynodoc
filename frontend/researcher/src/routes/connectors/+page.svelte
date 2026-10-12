@@ -1,23 +1,53 @@
+<script lang="ts">
+  const office = [
+    {
+      host: 'word',
+      name: 'Word',
+      syncs: 'Edits to existing paragraph text.',
+      needs: 'Word with WordApi 1.3 (desktop or on the web).'
+    },
+    {
+      host: 'excel',
+      name: 'Excel',
+      syncs: 'Edits to existing cell values, dates and formulas.',
+      needs: 'Excel with ExcelApi 1.13 (desktop or on the web).'
+    },
+    {
+      host: 'powerpoint',
+      name: 'PowerPoint',
+      syncs: 'Edits to existing text in slide shapes.',
+      needs: 'PowerPoint with PowerPointApi 1.4: current Microsoft 365 or Office 2024, not 2021.'
+    }
+  ];
+</script>
+
 <svelte:head
-  ><title>Editor add-ins · Dynodoc</title><meta name="robots" content="noindex" /></svelte:head
+  ><title>Dynodoc add-ins · Dynodoc</title><meta name="robots" content="noindex" /></svelte:head
 >
 <main>
   <a href="/projects">Dynodoc Projects</a>
-  <h1>Connect your editor</h1>
+  <h1>Add Dynodoc to your editor</h1>
   <p>
-    Capture changes in your usual editor, push them for review, and pull team changes. These are
-    test installations; store publication and acceptance in every native host remain pending.
+    Keep working in Word, Excel, PowerPoint, Google Docs, Google Sheets or Google Slides. The add-in
+    records edits to existing text and cell values while its pane is open, lets you send them for
+    review in a Dynodoc project, and brings approved team changes back into your file.
   </p>
-  <h2>Microsoft Office</h2>
+  <p class="status">
+    Marketplace listings are not live yet. Until they are, install an add-in yourself with the files
+    below. Each installs for your own account and can be removed at any time.
+  </p>
+
+  <h2>Microsoft Word, Excel and PowerPoint</h2>
   <p>
-    Use the matching manifest in a compatible desktop Word, Excel or PowerPoint, or in Office on the
-    web. Choose Home → Dynodoc → Open provenance after installation. Save your working file first.
+    Download the add-in file for your app and add it to Office from a shared folder (Windows), the
+    add-in folder (Mac) or the add-ins dialog (Office on the web). Then choose Home → Dynodoc.
   </p>
-  <ul>
-    {#each ['word', 'excel', 'powerpoint'] as host}<li>
-        <a href={`/connectors/packages/${host}.xml`} download
-          >{host === 'word' ? 'Word' : host === 'excel' ? 'Excel' : 'PowerPoint'} manifest</a
-        >
+  <ul class="cards">
+    {#each office as app (app.host)}<li>
+        <h3>{app.name}</h3>
+        <p>{app.syncs}</p>
+        <p class="needs">{app.needs}</p>
+        <a href={`/connectors/packages/${app.host}.xml`} download>Download the {app.name} add-in</a>
       </li>{/each}
   </ul>
   <ul>
@@ -26,63 +56,77 @@
         href="https://learn.microsoft.com/en-us/office/dev/add-ins/testing/create-a-network-shared-folder-catalog-for-task-pane-and-content-add-ins"
         target="_blank"
         rel="noreferrer">Windows desktop installation</a
-      > — add the XML through a trusted shared-folder catalog.
+      > — add the file through a trusted shared-folder catalog.
     </li>
     <li>
       <a
         href="https://learn.microsoft.com/en-us/office/dev/add-ins/testing/sideload-an-office-add-in-on-mac"
         target="_blank"
         rel="noreferrer">Mac desktop installation</a
-      > — copy the XML into the application's test add-in folder.
+      > — copy the file into the application's add-in folder.
     </li>
     <li>
       <a
         href="https://learn.microsoft.com/en-us/office/dev/add-ins/testing/sideload-office-add-ins-for-testing"
         target="_blank"
         rel="noreferrer">Office on the web installation</a
-      > — upload the XML in the add-ins dialog.
+      > — upload the file in the add-ins dialog.
     </li>
   </ul>
+
+  <h2>Google Docs, Sheets and Slides</h2>
   <p>
-    The PowerPoint connector requires PowerPointApi 1.4, available in supporting Microsoft 365
-    builds and Office 2024. PowerPoint 2021 cannot run this connector; use edited-file push in
-    Projects. Word requires WordApi 1.3 and Excel requires ExcelApi 1.13.
+    Each Google add-in is a small Apps Script project. Download the package, unzip it, add its files
+    to a new Apps Script project and run an Editor add-on test deployment for your file. Each
+    package includes its own installation instructions.
   </p>
-  <h2>Google Workspace</h2>
-  <p>
-    Unzip a package, copy its files into an Apps Script project, and create an Editor add-on test
-    deployment for a test file. Each package includes installation instructions.
-  </p>
-  <ul>
-    {#each ['docs', 'sheets', 'slides'] as host}<li>
-        <a href={`/connectors/packages/google-${host}.zip`} download
-          >Google {host[0].toUpperCase() + host.slice(1)} package</a
-        >
+  <ul class="cards">
+    {#each [['docs', 'Docs', 'Edits to existing paragraph text in the current tab.'], ['sheets', 'Sheets', 'Edits to existing cell values and formulas.'], ['slides', 'Slides', 'Edits to existing text in slide shapes.']] as [host, name, syncs] (host)}<li
+      >
+        <h3>Google {name}</h3>
+        <p>{syncs}</p>
+        <a href={`/connectors/packages/google-${host}.zip`} download>Download the {name} package</a>
       </li>{/each}
   </ul>
   <p>
     <a
       href="https://developers.google.com/workspace/add-ons/how-tos/testing-editor-addons"
       target="_blank"
-      rel="noreferrer">Google test installation instructions</a
+      rel="noreferrer">Google's test-deployment instructions</a
     >
   </p>
-  <h2>Sign in from the editor</h2>
+
+  <h2>Connect a file</h2>
+  <ol>
+    <li>Open the add-in in your editor and choose <strong>Sign in to Dynodoc</strong>.</li>
+    <li>
+      In the browser window that opens, sign in, check that the code matches the one in your editor,
+      pick the Dynodoc file and approve.
+    </li>
+    <li>Return to the editor and choose <strong>I approved this connection</strong>.</li>
+    <li>Turn on capture when you are ready. Nothing is recorded before you do.</li>
+  </ol>
   <p>
-    Select “Sign in to Dynodoc”, open the browser link, compare the code, choose the matching file
-    and approve. Return to the pane and select “I approved this connection”. Connections expire in
-    seven days and can be revoked in Sync &amp; connections.
+    A connection reaches one file, expires after seven days and can be revoked under Sync &amp;
+    connections. No account password or token is given to the editor.
   </p>
-  <p>
-    The current adapters support existing paragraph text, cells/formulas/date-only values and slide
-    shape text. Structural and formatting changes require file push. Capture runs while the pane is
-    open; enable it explicitly.
-  </p>
-  <p>
-    Desktop files can stay on your local disk. Loading the pane, signing in and syncing need an
-    internet connection. Captured changes have a local queue; complete offline sync and background
-    capture are still being developed. Test files are limited to 3 MB each.
-  </p>
+
+  <h2>What to expect</h2>
+  <ul>
+    <li>
+      The add-ins cover existing paragraph text, cell values, formulas and dates, and slide shape
+      text. Formatting, new or moved content and other structural edits go through file push in
+      Projects.
+    </li>
+    <li>
+      Changes are recorded only while the add-in pane is open. There is no background capture.
+    </li>
+    <li>
+      The pane loads from Dynodoc, so opening it and syncing need an internet connection. Recorded
+      changes wait in a local queue until you send them.
+    </li>
+    <li>The original file you import into a project must be 3 MB or smaller.</li>
+  </ul>
 </main>
 
 <style>
@@ -90,11 +134,48 @@
     max-width: 48rem;
     margin: 3rem auto;
     padding: 1.5rem;
+    color: var(--color-ink);
+    line-height: 1.55;
+  }
+  h2 {
+    margin-top: 2rem;
   }
   li {
     margin: 0.6rem 0;
   }
-  h2 {
-    margin-top: 2rem;
+  a {
+    color: var(--color-accent);
+  }
+  .status {
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--color-border);
+    border-left: 4px solid var(--color-accent);
+    border-radius: 6px;
+    background: var(--color-surface);
+  }
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+    gap: 0.75rem;
+    padding: 0;
+    list-style: none;
+  }
+  .cards li {
+    margin: 0;
+    padding: 0.9rem 1rem;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    background: var(--color-surface);
+  }
+  .cards h3 {
+    margin: 0 0 0.35rem;
+    font-size: 1.05rem;
+  }
+  .cards p {
+    margin: 0.25rem 0;
+  }
+  .needs {
+    color: var(--color-muted);
+    font-size: 0.92rem;
   }
 </style>
