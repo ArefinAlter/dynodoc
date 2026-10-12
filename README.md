@@ -8,6 +8,14 @@ and [the next storage/offline priorities](docs/ENGINE-EVOLUTION-HANDOFF.md).
 
 > Version control and provenance for documents edited in your own tools. Collect block changes in Projects, review and merge them, and pull a shared history into another working copy.
 
+**Current source (13 October 2026):** Schema 38 adds read-only project activity,
+contributor and profile-activity APIs and [project-scoped device sessions](docs/PROJECT-SCOPED-DEVICE-SESSIONS.md):
+a device key signs a one-use challenge and receives a one-hour token for one project,
+renewable without a stored refresh secret. The public site, Projects, profile and admin
+interfaces are rebuilt (see [the site design system](docs/SITE-DESIGN.md)), and the six
+editor add-ins carry a [marketplace listing kit](docs/listings/SUBMISSION-CHECKLIST.md).
+No marketplace listing exists and production remains at schema 29 until a rollout record says otherwise.
+
 **Current direction (10 October 2026):** Local/remote document repositories around
 Word/Docs, Excel/Sheets and PowerPoint/Slides. The target is compact change transfer,
 shared content storage, offline history, reviewed merges and verifiable provenance.

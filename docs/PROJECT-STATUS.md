@@ -1,5 +1,74 @@
 # Dynodoc: intent, current implementation and remaining work
 
+## Source: public site redesign, GitHub-style workspace, device sessions (13 October 2026)
+
+This increment changes the public site, the signed-in Projects and admin interfaces,
+the add-in marketplace kit and the API. Source is PostgreSQL schema 38 (migrations
+0037 and 0038); production is still recorded at application `858801c`, schema 29,
+until the rollout record below says otherwise.
+
+**Public site.** The marketing pages are rebuilt as a "Paper and Ink" design system
+([SITE-DESIGN.md](SITE-DESIGN.md)): warm paper palette, Geist and Geist Mono, mono
+`[ LABEL ]` eyebrows, dropdown header, large footer, scroll reveals, count-ups, typing
+diffs and eight original pencil-and-halftone dinosaur plates that animate in on scroll
+and respect reduced motion. Pages: home, features, why-dynodoc, roadmap, changelog,
+brand, help, compatibility, add-ins, support, and the legal/trust set (privacy, terms,
+cookies, security, subprocessors, acceptable use, accessibility, DPA draft, licenses,
+`/.well-known/security.txt`). All research/questionnaire framing is removed from the
+public copy, FAQ, `llms.txt` and structured data. Legal pages remain drafts; every
+operator, address, email, jurisdiction and effective-date field still reads
+"Awaiting confirmation" and must be filled by the owner ([LEGAL-PAGES.md](LEGAL-PAGES.md)).
+Public links now point at the public MIT engine repository because the application
+repository is private.
+
+**Workspace.** Projects, the repository page, file page and profile follow GitHub's
+layout: global header with command palette (Ctrl/Cmd+K, `/`, `t`, `?`, `g p`),
+file table with last-change summaries, README panel, formats bar, contributors,
+pull-request list with Open/Merged/Declined counts, activity feed, contribution graph
+and history list. A read-only **Branches** tab lists shared project history
+(refs, generation, head commit, signed receipt metadata, reviews); the browser never
+claims to verify a receipt. Creating and merging project-wide branches in the
+browser, stars, issues and labels are not built.
+
+**Admin.** `/admin` is reorganised as a left-nav console (overview with needs-attention
+list, people/projects/content, audit log with filters and detail, storage, services,
+traffic, database, danger zone). All existing controls and accessible names are kept.
+
+**API (schemas 37 and 38).** Read-only APIs back the new UI ([contract](PROJECT-ACTIVITY-API.md)):
+file `last_change`, project activity feed, contributors, profile activity calendar,
+admin project overview and audit detail/filters; migration 0037 adds only indexes.
+[Project-scoped device sessions](PROJECT-SCOPED-DEVICE-SESSIONS.md) (migration 0038):
+a device holding an enrolled Ed25519 key signs a one-use challenge and receives a
+one-hour token for one project with a subset of `project:read`, `history:read`,
+`history:write`; renewal is another signature, so the key file is the only long-lived
+credential. Token confusion is closed with a Paseto implicit assertion; the allow-list is
+21 explicit handlers; every request rechecks key, account, generation and current role.
+`engine-cli device keygen`, `sync --device-key` and `sync --refresh-token-file` are added.
+Admin "sign out all sessions" now also revokes the account's device keys. An independent
+review found no critical or high issue; accepted residual risks are an unencrypted key
+file as a single factor for account-wide history write/approval until per-project key
+grants or a review scope exist, no Windows ACL hardening, and no OS key store.
+
+**Add-ins.** Manifests are production-named (Dynodoc for Word/Excel/PowerPoint), carry a
+64 px icon and the support URL, and are covered by 32 offline invariant tests; the online
+Microsoft validator accepted all three. Marketplace assets, listing copy, reviewer notes
+and an owner checklist are in `docs/listings/` and `extensions/marketplace/`. Panes drop
+"development" wording and make browser sign-in primary. No listing exists, none is
+submitted, and installed-host acceptance has not been run.
+
+**Verification.** Application Rust: all tests pass except the known Windows-only
+`sse_delivers_a_new_event_within_100ms` timing assertion (385 tests; Linux CI is the
+acceptance run). Clippy and rustfmt clean; OpenAPI regenerated. Frontend: lint,
+Prettier and svelte-check 0 errors; 340 unit tests; 25 public browser tests; axe on 20
+public pages; authenticated suite 99/99 on an isolated stack built before migration 0038.
+
+**Not done:** a retention/GC plan command and same-file convergence reporting were
+started and set aside incomplete (partial work retained outside the repository);
+storage packing, offline convergence, witnesses and large-file acceptance remain open.
+Per-project key grants, OS key storage and project-wide branch authoring in the web UI
+remain open. Marketplace publication, legal operator details and real-host acceptance
+need the owner.
+
 ## Source: engine PR review and application synchronization (12 October 2026)
 
 Reviewed all ten open standalone-engine PRs and merged **#1, #2, #3, #4, #6,
