@@ -32,6 +32,11 @@ A download addresses a published commit and one of its file states, never an
 unscoped object inventory. Published history remains readable after the author's
 device revocation or account erasure; new publications need an active own key.
 
+Fetching an older commit by its address does not move a branch or lower a client
+trust pin. Removing a file path from a portable manifest does not itself trash or
+erase the document; earlier authorized revisions remain downloadable. Application
+Trash and audited erasure are separate access/retention operations.
+
 ## Branches and review
 
 Every update names a branch, candidate and expected `{commit,generation}`; use
@@ -165,7 +170,11 @@ Real-router tests under restricted credentials cover reconstruction, private-obj
 isolation, multi-author ancestry, approval/base/role checks, CAS races, quotas,
 key/account revocation and document erasure. Receipt tests use a separately supplied
 synthetic authority key and the existing client pin verifier, including failed-write
-rollback. Exact commands/results and source revisions belong in the handoff.
+rollback. Final source is application `23ed7bf` / engine `5f86db2`; full Linux CI passed
+350 tests and authenticated browser workflows passed. Windows passed the 349
+tests in the run explicitly excluding its failing 100 ms SSE deadline. The actual
+operator CLI/key-file startup smoke also passed. Exact evidence and deployment
+boundaries are recorded in [the handoff](ENGINE-EVOLUTION-HANDOFF.md).
 
 Projects UI adoption, automatic network push/pull, connector project authentication,
 complete offline same-file convergence, installed-host/marketplace acceptance,

@@ -13,38 +13,61 @@ there is no unsigned fallback or silent replacement of the installed authority.
 
 Published metadata has per-project byte/row/branch quotas. Identical file roots
 reuse reachability indexes. Contributors can acknowledge up to 256 objects from
-an explicitly selected authorized publication without uploading the same bytes
-again. Private hashes remain inaccessible; mixed invalid/quota-limited batches
-roll back and exact retries are free. Full graph scans, full commit manifests and changed-root
-index amplification remain. Document erasure removes affected envelopes and their
-descendants/reviews while retaining opaque receipt generations; affected heads
-become unavailable and never fall back. Account erasure clears private work while
-shared publications retain pseudonymous authorship and current access checks.
+an explicitly selected authorized publication without uploading their bytes again.
+Private hashes remain inaccessible; mixed invalid/quota-limited batches roll back
+and exact retries are free. Full graph scans, complete commit file manifests and
+changed-root index amplification remain. Document erasure removes affected
+published envelopes and descendants/reviews while retaining opaque receipt
+commitments and generations. Affected heads become unavailable and never fall
+back. Account erasure clears private work while retaining shared publications
+under current access checks. Reading an older commit does not rewind any branch.
 
-Initial publication/receipt commits are application `0d501ca` and engine `15cc6c4`.
-[Application Rust CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38223880655),
-[standalone CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38223883892)
-and [frontend/browser CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38223881119)
-passed. Linux ran all 350 tests, including the unchanged 100 ms SSE deadline.
-The shared-object acknowledgement follow-up passes its focused privacy, atomic
-quota/retry and 256-address boundary test; final follow-up CI is still pending.
-The initial 16 KiB body cap was too small for 256 addresses; it is now 20 KiB.
-Standalone lint and docs pass (existing documentation warnings), and local frontend
-lint/Svelte checks pass with zero diagnostics. Generated contracts are updated.
-The Windows full suite again failed the existing 100 ms SSE assertion; the full
-run explicitly excluding only that test is still being finalized. This does not
-certify a Windows latency guarantee. Only synthetic isolated data
-is used. No installed Office/Google acceptance or VPS upgrade is claimed.
-Production remains recorded at `858801c`, schema 29, shared writers off. Schema 36
-needs matching grants, receipt-key provisioning, a production-copy rehearsal and
-schema-compatible rollback images before deployment.
+Final code is pushed to main: application `23ed7bf`, standalone engine `5f86db2`
+(initial publication/receipt implementation `0d501ca` / `15cc6c4`).
+[Application Rust CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38225348149),
+[standalone engine CI](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/38225347973)
+and [frontend CI](https://github.com/ArefinAlter/dynodoc/actions/runs/38225348138)
+all passed, including both frontend build/test and authenticated browser workflows.
+Linux ran all **350 tests**, including the unchanged 100 ms SSE deadline. Five new
+restricted-runtime scenarios plus the core authority-installation test cover
+publication/privacy, cross-author ancestry and content reuse, policy/base/role
+checks, concurrent CAS, quota rollback, key/account/document erasure, immutable
+boundaries, atomic receipts and independent client pin advancement/rollback.
 
-Next: selected-root authenticated push/fetch and remote tracking; project-scoped
-device sessions; Projects/native branch/review adoption. Authority distribution,
-server rotation, independent witnesses, audited erased-branch reinitialization,
-reachability GC, complete same-file offline convergence, packing and large-workload
-acceptance remain open. These APIs do not advance centralized per-file events or
-replace web drafts. The full roadmap is not complete.
+Local standalone task lint and task docs pass; existing documentation warnings
+remain. Contracts/types are regenerated with distinct shared-history operation
+names and preserved standalone MIT/contact metadata. Frontend lint/Svelte checks
+pass with zero diagnostics. The expanded object-reuse regression passes, including
+rejection of private hashes, all-or-nothing quota failure, free retries and the
+256-address boundary. Its initial 16 KiB request cap was too small for that boundary;
+it is now 20 KiB. There is no migration/hash/commit format change in that follow-up.
+
+The full Windows task test run again failed the existing 100 ms SSE assertion.
+A complete run explicitly excluding only that test passed all **349 remaining
+tests**, with no other ignored/filtered cases. No threshold or CI coverage was
+relaxed; this is not a Windows latency guarantee. The actual operator CLI migrated
+an isolated database to schema 36, installed a synthetic public authority and
+provisioned a restricted runtime login. A mismatched DER key prevented API startup;
+the matching key served health and the final API contract. That hidden test process
+was stopped, and the task-owned PostgreSQL container and synthetic key scratch
+directory were removed. Existing development containers were untouched. Ignored
+verification logs remain under application target/. No real email, production data
+or installed Office/Google host was used.
+
+Production remains recorded at application `858801c`, schema 29, shared writers off.
+No VPS upgrade was made in this pass. Schema 36 needs matching runtime grants,
+receipt-key provisioning, a production-copy rehearsal and schema-compatible
+rollback images before deployment. The owner runs installed-editor acceptance
+using the prepared worksheet; source/package tests do not certify those hosts.
+
+Next: automatic selected-root push/fetch and remote tracking, with explicit
+publication of dependencies; project-scoped device sessions; Projects/native
+branch/review adoption. Private/unreachable local inventory must stay private,
+and the server-reported authority key must not silently become a trusted pin.
+Server key rotation/distribution, witnesses, audited erased-branch reinitialization,
+reachability GC/packing, complete same-file offline convergence and realistic
+large-document/service acceptance remain open. These APIs do not advance centralized
+per-file events or replace web drafts. The full roadmap is not complete.
 
 ## Source: private project history transfers (12 October 2026)
 
