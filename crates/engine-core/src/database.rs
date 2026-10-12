@@ -21,6 +21,8 @@ const HISTORY: &[&str] = &[
     "checkpoint_object",
     "shared_checkpoint",
     "change_request_review",
+    "device_signing_key",
+    "device_key_revocation",
 ];
 const MUTABLE: &[&str] = &[
     "document",
@@ -47,6 +49,7 @@ const MUTABLE: &[&str] = &[
     "project_settings",
     "project_watch",
     "connector_grant",
+    "device_enrollment_challenge",
 ];
 const FUNCTIONS: &[&str] = &[
     "access_role_rank(text)",
@@ -58,7 +61,13 @@ const FUNCTIONS: &[&str] = &[
     "document_project(uuid)",
 ];
 const SEQUENCES: &[&str] = &["draft_edit_id_seq", "operation_audit_id_seq"];
-const READ_ONLY: &[&str] = &["_sqlx_migrations", "current_documents"];
+const READ_ONLY: &[&str] = &[
+    "_sqlx_migrations",
+    "current_documents",
+    "device_authority",
+    "checkpoint_storage_account",
+    "checkpoint_storage_document",
+];
 
 /// Read-only exact version/checksum check. Both missing and newer schemas fail.
 pub async fn check_schema(pool: &PgPool) -> anyhow::Result<()> {

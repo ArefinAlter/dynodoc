@@ -14,8 +14,11 @@ The settled typed-root contract also underlies the
 implementation with signed commits, parent history, branch CAS and transfer primitives.
 Part 6 now has [portable ref receipts and a separate client trust journal](REF-RECEIPTS.md),
 with independent signature vectors, contiguous proof checks, authority rotation
-and durable local revocation. Account/device binding, atomic server issuance,
-authority distribution, witnesses and connector adoption remain open.
+and durable local revocation. Schema 33 adds [account/device binding and permanent
+revocation](DEVICE-SIGNING-KEYS.md). Atomic server issuance, authority distribution,
+witnesses and connector adoption remain open. Schema 34 adds [durable shared-object
+budgets](SHARED-STORAGE-BUDGETS.md); physical storage packing and local-store quotas
+are separate remaining work.
 Part 3 also has local [commit-addressed recovery](PROJECT-COMMIT-RECOVERY.md):
 revert/cherry-pick with signed source references, explicit mainline selection and
 checked conflict resolutions. Hosted project review/UI integration remains open.

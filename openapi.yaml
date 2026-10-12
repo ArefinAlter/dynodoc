@@ -291,6 +291,121 @@ paths:
           description: The owner or a manager of the original document
       security:
       - paseto: []
+  /devices:
+    get:
+      tags:
+      - devices
+      operationId: list
+      responses:
+        '200':
+          description: Own public signing keys, at most 128; never a directory of other members
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Sign in required
+      security:
+      - paseto: []
+    post:
+      tags:
+      - devices
+      operationId: register
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Enrolled device or exact active retry
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Invalid proof
+        '401':
+          description: Sign in required
+        '403':
+          description: Wrong account
+        '409':
+          description: Challenge expired, used, key revoked or limit reached
+      security:
+      - paseto: []
+  /devices/challenge:
+    post:
+      tags:
+      - devices
+      operationId: challenge
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Five-minute account and installation bound enrollment challenge
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Invalid key
+        '401':
+          description: Sign in required
+        '409':
+          description: Key unavailable or device limit
+        '429':
+          description: Too many enrollment attempts
+      security:
+      - paseto: []
+  /devices/verify-commit:
+    post:
+      tags:
+      - devices
+      operationId: verify_commit
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+        required: true
+      responses:
+        '200':
+          description: Signature matches an active key of this account; does not publish, store or authorize project changes
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Invalid signed commit
+        '401':
+          description: Sign in required
+        '403':
+          description: Key is not active for this account
+      security:
+      - paseto: []
+  /devices/{id}/revoke:
+    post:
+      tags:
+      - devices
+      operationId: revoke
+      parameters:
+      - name: id
+        in: path
+        description: Own device ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Permanently revoked, idempotent
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Sign in required
+        '404':
+          description: No such own device
+      security:
+      - paseto: []
   /documents:
     get:
       tags:
@@ -2250,6 +2365,21 @@ paths:
           description: Invalid profile
         '409':
           description: Profile changed; reload
+      security:
+      - paseto: []
+  /profile/storage:
+    get:
+      tags:
+      - profiles
+      operationId: storage
+      responses:
+        '200':
+          description: Own encoded shared-history usage and quotas; excludes uploads, events, legacy snapshots and database overhead
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Sign in required
       security:
       - paseto: []
   /profiles/{id}:

@@ -1,5 +1,58 @@
 # Engine evolution handoff
 
+## Source: device identity and retained shared storage (12 October 2026)
+
+Schema 33 adds [account-bound signing keys](DEVICE-SIGNING-KEYS.md): one-use
+five-minute account/installation challenges, Ed25519 possession proofs, immutable
+bindings, permanent revocation, current-key commit verification, offline CLI proof
+signing and own-profile enrollment/revocation. Account removal revokes keys;
+restoration cannot revive them. Transactional login rechecks cover the logout race.
+Historical signatures remain verifiable after revocation. Signature verification
+does not store/publish a commit or confer any project permission.
+
+Schema 34 adds [durable shared-object budgets](SHARED-STORAGE-BUDGETS.md):
+1 GiB/250,000 objects per document and 4 GiB/1,000,000 per creator by default.
+Transition-table accounting charges only inserted objects, preserves reuse at
+capacity, rolls back failed graphs and releases quota through audited erasure.
+Counters/limits are read-only to the runtime. Own-profile usage and HTTP 507 errors
+make capacity failures visible. This is encoded shared-history accounting, not a
+physical disk, event/legacy snapshot, upload or local SQLite quota. The pilot
+native-file cap remains 3,000,000 bytes. No shared writer was enabled in production.
+
+Validation: all 334 standalone Rust tests pass, including the schema-33→34
+backfill regression, restricted-runtime byte/count quota tests, concurrent account
+spending, key enrollment/retry/revocation and logout races. The final targeted
+quota run also tests byte and object limits independently. Both Rust Clippy checks
+pass. Frontend lint/Svelte checks, 289 unit tests, production build and all three
+authenticated Projects browser tests pass with shared draft/named writers enabled
+on an isolated schema-34 stack. The browser test caught and verified a fix for the
+Svelte-interpolated key-length pattern. The original full engine attempt missed
+the existing 100 ms SSE deadline under concurrent linking; its isolated and full
+reruns passed unchanged. No performance threshold was relaxed. The CLI smoke
+matches the independent Node/OpenSSL vector, rejects wrong scope and preserves
+existing output files. Synthetic private key files were removed. OpenAPI and web
+types are regenerated; standalone OpenAPI retains its MIT metadata and matches
+its generator. Rust documentation builds with 20 existing warnings. CI is pending
+the source push.
+
+Application source is mirrored into D:/dynodoc-engine with MIT metadata preserved.
+The task-owned API/web acceptance servers are stopped and the labeled disposable
+PostgreSQL test container has been removed. Logs live under ignored target/. Production remains 858801c/schema 29. No production migration or deployment
+occurred; a schema-34-compatible rollback build and production-copy rehearsal are
+still required before rollout. Never start a schema-29 image on schema 34.
+
+Next implementation order: authenticated remote commit/object discovery and
+exchange with explicit private-stage/reachability/whole-document-erasure rules;
+protected project refs/reviews and atomic server receipts; portable project UI and
+connector adoption. Do not expose the local inventory as an HTTP endpoint or treat
+a prior verify-commit response as a grant. Recheck the live account/key/permissions
+inside publication. Retained ancestry stays readable after signer revocation under
+the reader's current access. Physical packing/incremental publication, local-store
+retention, complete same-file convergence, background capture, RTF/native fidelity,
+large-document/service evidence and marketplace acceptance remain open in
+[the ledger](ROADMAP-ACCEPTANCE.md). Installed Office/Google acceptance is prepared
+for the owner to run locally. This is a source checkpoint, not roadmap completion.
+
 ## Source: portable project revert and cherry-pick (12 October 2026)
 
 Application `7d889ac` and engine `bdde0f3` add core/CLI

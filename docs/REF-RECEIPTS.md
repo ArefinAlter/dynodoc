@@ -79,8 +79,10 @@ OpenSSL v1 imports are pinned against the independent signature fixture.
 Inputs are bounded (8192 bytes per signed envelope, 2 MiB per proof file, 4096
 bytes per key file). Public keys and signatures are intentionally exportable.
 
-To complete server integration, bind device keys to authenticated accounts and
-current permissions, atomically issue a receipt with every accepted protected-ref
+Account-bound device enrollment/revocation now exists in source (see
+[device signing keys](DEVICE-SIGNING-KEYS.md)). To complete server integration, use
+that current-key check in the same transaction as project permissions and
+atomically issue a receipt with every accepted protected-ref
 update, retain bounded proof pages, and establish trusted authority discovery,
 rotation and revocation distribution. Independent witness storage/client gossip
 must detect mutually consistent forks shown to different clients. A server with

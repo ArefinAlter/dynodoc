@@ -37,7 +37,7 @@ pub(crate) async fn encode(
         Default::default(),
     )
     .await
-    .map_err(internal)?;
+    .map_err(ApiError::from)?;
     if typed::read_state(
         &mut store,
         document,

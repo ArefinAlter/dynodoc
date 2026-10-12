@@ -19,6 +19,7 @@ pub mod audit;
 pub mod auth;
 pub mod conflicts;
 pub mod copies;
+mod devices;
 mod discussions;
 pub mod documents;
 mod draft_storage;
@@ -111,6 +112,7 @@ pub fn app(state: AppState) -> Router {
         .merge(product::router())
         .merge(projects::router())
         .merge(profiles::router())
+        .merge(devices::router())
         .merge(provenance::router())
         .merge(documents::router())
         .merge(ops::router())
@@ -163,6 +165,7 @@ async fn openapi_json() -> Json<Value> {
         profiles::own,
         profiles::read,
         profiles::save,
+        profiles::storage,
         documents::routes::list_documents,
         documents::routes::get_document,
         documents::routes::get_node,
@@ -217,6 +220,7 @@ impl utoipa::Modify for WorkspaceDocs {
         api.merge(notifications::NotificationApi::openapi());
         api.merge(copies::CopiesApi::openapi());
         api.merge(people::PeopleApi::openapi());
+        api.merge(devices::DevicesApi::openapi());
         let components = api.components.get_or_insert_with(Default::default);
         components.add_security_scheme(
             "connector_key",

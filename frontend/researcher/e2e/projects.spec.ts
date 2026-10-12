@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { ulid } from 'ulid';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, generateKeyPairSync, createPublicKey, sign } from 'node:crypto';
 test.skip(process.env.PILOT_E2E !== 'true', 'Requires the isolated signed-in development stack.');
 async function login(page: Page, email: string) {
   await page.goto('/login');
@@ -25,6 +25,50 @@ async function api(page: Page, path: string, body?: unknown) {
     { path, body }
   );
 }
+
+test('Profile enrolls a local signing key and permanently revokes it', async ({ page }) => {
+  await login(page, `device-owner-${Date.now()}@example.test`);
+  await page.goto('/profile');
+  await expect(page.getByRole('heading', { name: 'Shared history storage' })).toBeVisible();
+  const section = page.getByRole('region', { name: 'Signing keys' });
+  await expect(section.getByText('No signing keys connected.')).toBeVisible();
+  await section.getByText('Connect a local signing key', { exact: true }).click();
+  // Synthetic key stays in the test process; the browser receives only its public key.
+  const { privateKey: key } = generateKeyPairSync('ed25519');
+  const publicKey = createPublicKey(key)
+    .export({ format: 'der', type: 'spki' })
+    .subarray(-32)
+    .toString('hex');
+  await section.getByLabel('Public key', { exact: true }).fill(publicKey);
+  const response = page.waitForResponse(
+    (r) => r.url().endsWith('/api/engine/devices/challenge') && r.request().method() === 'POST'
+  );
+  await section.getByRole('button', { name: 'Create enrollment challenge' }).click();
+  const challenge = await (await response).json();
+  const canonical = JSON.stringify(
+    Object.fromEntries(Object.entries(challenge).sort(([a], [b]) => (a < b ? -1 : 1)))
+  );
+  const signature = sign(
+    null,
+    Buffer.concat([Buffer.from('dynodoc.device-enrollment\0v1\0'), Buffer.from(canonical)]),
+    key
+  ).toString('hex');
+  await section.getByLabel('Enrollment proof JSON').setInputFiles({
+    name: 'device-proof.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify({ challenge, signature }))
+  });
+  await expect(section.getByRole('status')).toHaveText('Signing key connected to your account.');
+  await expect(section.locator('code').filter({ hasText: publicKey })).toBeVisible();
+  await page.reload();
+  await section.getByRole('button', { name: 'Revoke key', exact: true }).click();
+  await section.getByRole('button', { name: 'Confirm revocation' }).click();
+  await expect(section.getByRole('status')).toContainText('Signing key revoked.');
+  await page.reload();
+  await expect(section.getByText(/Connected .*Revoked/)).toBeVisible();
+  await expect(section.getByRole('button', { name: 'Revoke key', exact: true })).toHaveCount(0);
+  expect((await api(page, '/devices')).keys[0].revoked_at).toBeTruthy();
+});
 
 test('A project editor can import a file but its ownership cannot bypass project rules', async ({
   browser

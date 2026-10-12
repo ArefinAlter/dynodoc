@@ -26,9 +26,11 @@ Commit addresses hash `dynodoc.project-commit\0v1\0` followed by sorted-key cano
 JSON. Signatures cover `dynodoc.project-commit-signature\0v1\0` followed by the
 32 raw address bytes. All fields, including parent order, actor and timestamp,
 are therefore bound. A valid signature proves possession of a key. Account
-binding, device authorization/revocation, trustworthy time, server receipts and
-external witnesses require additional protocols; a self-asserted key is not a
-verified user identity. No existing database event hash is changed.
+binding and permanent device revocation are now available through the separate
+[enrollment protocol](DEVICE-SIGNING-KEYS.md). Remote publication must check that
+binding and current project permissions atomically. Trustworthy time, issued server
+receipts and external witnesses remain separate; a self-asserted key alone is not
+a verified user identity. No existing database event hash is changed.
 
 ## Durable local operations
 

@@ -52,6 +52,9 @@ pub enum ApiError {
     /// Database pool admission unavailable.
     #[error("service busy; retry later")]
     Busy,
+    /// Encoded shared history reached its retained-storage budget.
+    #[error("Shared history storage limit reached. Your change was not saved. Ask the workspace operator to increase the storage budget.")]
+    StorageLimit,
     /// An unexpected server-side failure → 500. The detail is logged, never returned.
     #[error("internal error: {0}")]
     Internal(String),
@@ -70,6 +73,7 @@ impl ApiError {
             ApiError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
             ApiError::Deadline => StatusCode::GATEWAY_TIMEOUT,
             ApiError::Busy => StatusCode::SERVICE_UNAVAILABLE,
+            ApiError::StorageLimit => StatusCode::INSUFFICIENT_STORAGE,
         }
     }
 
@@ -85,6 +89,7 @@ impl ApiError {
             ApiError::Internal(_) => "internal",
             ApiError::Deadline => "deadline_exceeded",
             ApiError::Busy => "busy",
+            ApiError::StorageLimit => "storage_limit",
         }
     }
 
@@ -153,6 +158,11 @@ impl From<sqlx::Error> for ApiError {
             return ApiError::Busy;
         }
         if let sqlx::Error::Database(db) = &err {
+            if db.code().as_deref() == Some("23514")
+                && db.constraint() == Some("checkpoint_storage_quota")
+            {
+                return ApiError::StorageLimit;
+            }
             if matches!(db.code().as_deref(), Some("57014" | "55P03")) {
                 return ApiError::Deadline;
             }
@@ -208,6 +218,17 @@ impl From<SnapshotError> for ApiError {
         match err {
             SnapshotError::Event(e) => e.into(),
             SnapshotError::Db(e) => e.into(),
+            SnapshotError::Shared(e) => (*e).into(),
+            other => ApiError::Internal(other.to_string()),
+        }
+    }
+}
+
+impl From<engine_core::shared_checkpoint::Error> for ApiError {
+    fn from(err: engine_core::shared_checkpoint::Error) -> Self {
+        match err {
+            engine_core::shared_checkpoint::Error::Db(e) => e.into(),
+            engine_core::shared_checkpoint::Error::History(e) => e.into(),
             other => ApiError::Internal(other.to_string()),
         }
     }

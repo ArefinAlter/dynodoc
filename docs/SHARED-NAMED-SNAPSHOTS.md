@@ -55,13 +55,15 @@ objects within a document. A snapshot after an event that changes no materialize
 content reuses its entire graph. Permission checks, immutable events/snapshots,
 restricted runtime grants and audited whole-document erasure remain in force.
 
-Resource limits still apply per operation. Materialized state is resident, writes
-still inspect full state, and retained history can grow without a total storage
-quota. Packing/compression, incremental publication, garbage-collection policy,
+Resource limits still apply per operation. Materialized state is resident and writes
+still inspect full state. Schema 34 adds [durable shared-object budgets](SHARED-STORAGE-BUDGETS.md)
+per document and creator; these exclude events, legacy snapshots and physical database
+overhead. Packing/compression, incremental publication, garbage-collection policy,
 realistic growth benchmarks and large native/service acceptance remain open.
 There is no automatic fallback to legacy if an explicit named v2 write exceeds
 its limits: its transaction fails without publishing a partial snapshot.
 
-Deployment must use schema-32-compatible readers and rollback binaries, even
+Deployment must use readers and rollback binaries compatible with the complete
+current schema (34), even
 when this optional writer is disabled. Schema-29 production remains unchanged.
 Disabling the setting stops new shared writes; readers retain both formats.

@@ -12,6 +12,7 @@ use uuid::Uuid;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/profile", get(own).post(save))
+        .route("/profile/storage", get(storage))
         .route("/profiles/:id", get(read))
 }
 async fn profile(state: &AppState, actor: Uuid, id: Uuid) -> Result<Json<Value>, ApiError> {
@@ -22,6 +23,16 @@ async fn profile(state: &AppState, actor: Uuid, id: Uuid) -> Result<Json<Value>,
 #[utoipa::path(get, path="/profile", security(("paseto"=[])), responses((status=200,description="Own profile, excluding email",body=Value)))]
 async fn own(State(state): State<AppState>, auth: AuthContext) -> Result<Json<Value>, ApiError> {
     profile(&state, auth.identity_id, auth.identity_id).await
+}
+
+#[utoipa::path(get, path="/profile/storage", security(("paseto"=[])), responses((status=200,description="Own encoded shared-history usage and quotas; excludes uploads, events, legacy snapshots and database overhead",body=Value),(status=401,description="Sign in required")))]
+async fn storage(
+    State(state): State<AppState>,
+    auth: AuthContext,
+) -> Result<Json<Value>, ApiError> {
+    let usage: Option<Value> = sqlx::query_scalar("select jsonb_build_object('bytes_used',bytes_used,'objects_used',objects_used,'byte_limit',byte_limit,'object_limit',object_limit) from checkpoint_storage_account where identity_id=$1")
+        .bind(auth.identity_id).fetch_optional(&state.pool).await?;
+    Ok(Json(usage.unwrap_or_else(|| json!({"bytes_used":0,"objects_used":0,"byte_limit":4294967296_i64,"object_limit":1000000}))))
 }
 #[utoipa::path(get, path="/profiles/{id}", params(("id"=Uuid,Path)), security(("paseto"=[])), responses((status=200,description="Profile visible to shared project members",body=Value),(status=404,description="Not accessible")))]
 async fn read(

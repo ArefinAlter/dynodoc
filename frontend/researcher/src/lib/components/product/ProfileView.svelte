@@ -3,7 +3,14 @@
   import { workspaceRequest } from '$lib/workspace/api';
   import { loadProfile, initials, type Profile } from '$lib/workspace/profile';
   import RepositoryShell from './RepositoryShell.svelte';
+  import DeviceKeys from './DeviceKeys.svelte';
   let { id }: { id?: string } = $props();
+  let storage = $state<{
+    bytes_used: number;
+    byte_limit: number;
+    objects_used: number;
+    object_limit: number;
+  } | null>(null);
   let profile = $state<Profile | null>(null),
     name = $state(''),
     bio = $state(''),
@@ -15,6 +22,7 @@
       profile = await loadProfile(id);
       name = profile.name;
       bio = profile.bio;
+      if (!id) storage = await workspaceRequest('/profile/storage');
     } catch (e) {
       error = e instanceof Error ? e.message : 'This profile is not available';
     }
@@ -90,5 +98,23 @@
             </form>
           </div>
         </section>{/if}
-    </div>{:else if !error}<p role="status">Loading profile…</p>{/if}
+    </div>
+    {#if !id && storage}
+      <section class="repo-panel" aria-labelledby="shared-storage-title">
+        <div class="repo-panel-body">
+          <h2 id="shared-storage-title">Shared history storage</h2>
+          <p>
+            {(storage.bytes_used / 1048576).toLocaleString(undefined, { maximumFractionDigits: 2 })} MiB
+            of {(storage.byte_limit / 1048576).toLocaleString()} MiB used · {storage.objects_used.toLocaleString()}
+            of {storage.object_limit.toLocaleString()} content objects.
+          </p>
+          <p class="repo-muted">
+            Retained shared history for files you created. Original uploads and older snapshot
+            storage are counted separately. Contact the workspace operator if you need more space.
+          </p>
+        </div>
+      </section>
+    {/if}
+    {#if !id}<DeviceKeys />{/if}
+  {:else if !error}<p role="status">Loading profile…</p>{/if}
 </RepositoryShell>

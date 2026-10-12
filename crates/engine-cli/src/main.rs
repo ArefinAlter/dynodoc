@@ -17,6 +17,7 @@ use sqlx::PgPool;
 use utoipa::OpenApi;
 use uuid::Uuid;
 
+mod device;
 mod receipt;
 mod repository;
 mod signing;
@@ -30,6 +31,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Enroll a local signing key in an authenticated Dynodoc account.
+    Device {
+        #[command(subcommand)]
+        action: device::Action,
+    },
     /// Signed ref receipts and a separate durable client trust journal (offline).
     Receipt {
         journal: std::path::PathBuf,
@@ -104,6 +110,7 @@ async fn main() -> anyhow::Result<()> {
 
     let cli = Cli::parse();
     match cli.command {
+        Command::Device { action } => device::run(action),
         Command::Receipt {
             journal,
             authority,
