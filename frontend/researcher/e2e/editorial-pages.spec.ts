@@ -33,7 +33,8 @@ for (const [path, heading] of PAGES) {
 test('the roadmap and changelog never present source work as deployed', async ({ page }) => {
   await page.goto('/roadmap');
   const roadmap = (await page.locator('main#main').textContent()) ?? '';
-  expect(roadmap).toMatch(/Built and tested, not deployed/);
+  expect(roadmap).toMatch(/Built and tested, not enabled on the hosted pilot/);
+  expect(roadmap).toMatch(/application 49ada1e on database schema 38/);
   expect(roadmap).toMatch(/Nothing has been submitted and no listing exists/);
   await page.goto('/changelog');
   await expect(page.getByText('In source').first()).toBeVisible();

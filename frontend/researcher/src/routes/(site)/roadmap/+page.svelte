@@ -24,7 +24,7 @@
       label: 'Live',
       heading: 'Running in the hosted pilot.',
       blurb:
-        'Deployed at application 858801c on database schema 29, as recorded on 11 October 2026.',
+        'Deployed at application 49ada1e on database schema 38, activated on 12 October 2026 (UTC) after a verified backup and a rehearsal on a production copy.',
       items: [
         {
           title: 'Projects workspace',
@@ -45,15 +45,25 @@
           title: 'Security and runtime safeguards',
           body: 'Revocable sessions, verified snapshots, restricted database credentials, project policy floors, scoped CSP and HSTS, and workload limits.',
           when: '11 Oct 2026'
+        },
+        {
+          title: 'New public site, GitHub-style Projects and admin console',
+          body: 'The rebuilt site, repository-style Projects, profile, command palette, activity feed and read-only Branches tab, and the reorganised admin console.',
+          when: '12 Oct 2026'
+        },
+        {
+          title: 'Shared-history schema and project-scoped device sessions',
+          body: 'Schemas 30 to 38 are deployed: signing keys, storage budgets, private transfers, shared project history, activity read APIs and one-hour project-scoped device tokens. Shared writers stay off and no receipt-signing key is installed, so publishing to shared branches is refused.',
+          when: '12 Oct 2026'
         }
       ]
     },
     {
       id: 'source',
       label: 'In source',
-      heading: 'Built and tested, not deployed.',
+      heading: 'Built and tested, not enabled on the hosted pilot.',
       blurb:
-        'Implemented in the repository and passing CI. None of it runs on the hosted pilot, and none of it counts as installed-editor acceptance.',
+        'Implemented in the repository and passing CI. These are client libraries and opt-in writers that the hosted pilot does not use, and none of it counts as installed-editor acceptance.',
       items: [
         {
           title: 'Typed shared storage',
@@ -95,12 +105,12 @@
         'These come next. They are listed in the order the dependencies run, not as dated commitments.',
       items: [
         {
-          title: 'Hosted rollout of schema 36',
-          body: 'A rehearsal on a production copy, rollback images that match the schema, and receipt-key provisioning come first. Production stays on schema 29 until then.'
+          title: 'Receipt authority and shared writers',
+          body: 'Schema 38 is deployed with shared writers off and no receipt-signing key installed. Turning on signed shared branches needs the owner to decide key custody, then a rehearsal of the writer path.'
         },
         {
           title: 'Project-scoped sign-in',
-          body: 'Device sign-in, token renewal and native key storage, so the sync client does not depend on an ordinary account token.'
+          body: 'Project-scoped sessions are live. Operating-system key storage, per-project key grants, Windows file-permission hardening and a separate review scope remain.'
         },
         {
           title: 'Projects and add-in adoption',

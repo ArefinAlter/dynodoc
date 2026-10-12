@@ -121,17 +121,18 @@
             ><td>Account signing keys</td><td
               >An Ed25519 public key is bound to your account by proving possession of the private
               key. Revocation is permanent.</td
-            ><td><strong>In source</strong></td></tr
+            ><td><strong>Live</strong></td></tr
           ><tr
             ><td>Signed project history and branch receipts</td><td
               >Signed commits, protected main branch, reviews bound to an exact candidate, and
               signed receipts issued with each accepted branch update, verified against a pin kept
-              on the client.</td
-            ><td><strong>In source</strong></td></tr
+              on the client. The schema and API are deployed; publication stays refused until the
+              operator installs a receipt-signing key.</td
+            ><td><strong>Live, not enabled</strong></td></tr
           ><tr
             ><td>Durable storage budgets</td><td
               >Per-document and per-account limits on retained shared objects.</td
-            ><td><strong>In source</strong></td></tr
+            ><td><strong>Live</strong></td></tr
           ><tr
             ><td>Independent witness of history</td><td
               >Signed heads kept by someone other than the service, to expose a rewrite.</td

@@ -21,6 +21,22 @@
   // Newest first. Distilled from docs/PROJECT-STATUS.md; no dates beyond those recorded there.
   const entries: Entry[] = [
     {
+      id: 'schema-38-release',
+      iso: '2026-10-12',
+      date: '12 Oct 2026',
+      state: 'live',
+      title: 'New site, GitHub-style Projects and project-scoped device sessions go live',
+      summary:
+        'The hosted pilot moved to application 49ada1e on schema 38 after a verified backup and a rehearsal on a copy of production. The history digests before and after are identical.',
+      changes: [
+        'Projects, profiles and the admin console have a repository-style layout with a command palette, activity feed, contribution graph and a read-only Branches tab.',
+        'A device holding an enrolled signing key can request a one-hour token for one project and renew it by signing again. Tokens are separated from account tokens and re-checked on every request.',
+        'The schema and API for shared project history, signing keys, storage budgets and private transfers are deployed. Shared writers stay off and no receipt-signing key is installed, so publishing to shared branches is still refused.',
+        'Add-in manifests are renamed for a future store listing. No listing exists yet.'
+      ],
+      refs: 'Application 49ada1e · schema 38 · engine e5b9d94'
+    },
+    {
       id: 'dependencies-and-audit',
       iso: '2026-10-12',
       date: '12 Oct 2026',
@@ -156,7 +172,7 @@
   <InfoHero
     eyebrow="CHANGELOG"
     title="Changelog"
-    lede="What changed, in plain language, newest first. Production runs application 858801c on schema 29. Entries marked In source are implemented and tested but not deployed."
+    lede="What changed, in plain language, newest first. Production runs application 49ada1e on schema 38. Entries marked In source describe work that was implemented before the 12 October release; the newest entry says which parts are now deployed."
   >
     {#snippet actions()}
       <Btn href="/roadmap" arrow>See the roadmap</Btn>

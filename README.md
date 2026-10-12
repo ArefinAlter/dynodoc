@@ -1,6 +1,6 @@
 # Dynodoc — version control for documents
 
-Live security release (11 October 2026): workspace/API `858801c`, schema 29.
+Live release (12 October 2026): workspace/API `49ada1e`, schema 38 (previous security release: `858801c`, schema 29).
 Revocable sessions, verified snapshots, restricted API database credentials,
 project policy floors/audited metadata, scoped CSP/HSTS and workload admission
 are deployed after upgrade/rollback rehearsal. Read [release evidence](docs/operations/2026-10-11-security-runtime-release.md)
@@ -14,7 +14,7 @@ a device key signs a one-use challenge and receives a one-hour token for one pro
 renewable without a stored refresh secret. The public site, Projects, profile and admin
 interfaces are rebuilt (see [the site design system](docs/SITE-DESIGN.md)), and the six
 editor add-ins carry a [marketplace listing kit](docs/listings/SUBMISSION-CHECKLIST.md).
-No marketplace listing exists and production remains at schema 29 until a rollout record says otherwise.
+Production runs this revision at schema 38 ([release record](docs/operations/2026-10-13-schema38-release.md)); shared writers are off and no marketplace listing exists.
 
 **Current direction (10 October 2026):** Local/remote document repositories around
 Word/Docs, Excel/Sheets and PowerPoint/Slides. The target is compact change transfer,

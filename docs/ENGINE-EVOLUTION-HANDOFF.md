@@ -1,11 +1,22 @@
 # Engine evolution handoff
 
+## Live: schema 38 release (12 October 2026, 19:18 UTC)
+
+The VPS workspace, API and admin site now run application `49ada1e`, schema 38, with the
+new public site, GitHub-style Projects/profile/admin and project-scoped device sessions.
+A production-copy rehearsal and a verified backup preceded activation; row counts and
+event/snapshot digests were identical before and after (two documents, 36 events).
+Shared writers stay off and no receipt-signing key is installed, so shared branch
+publication is refused. Read [the release record](operations/2026-10-13-schema38-release.md)
+for evidence, rollback and next steps. CI on both repositories passed on the deployed
+revisions (application `49ada1e`, engine `e5b9d94`). Older entries below that record production at
+`858801c`/schema 29 describe the state before this release.
+
 ## Source: public site redesign, GitHub-style workspace, device sessions (13 October 2026)
 
 This increment changes the public site, the signed-in Projects and admin interfaces,
 the add-in marketplace kit and the API. Source is PostgreSQL schema 38 (migrations
-0037 and 0038); production is still recorded at application `858801c`, schema 29,
-until the rollout record below says otherwise.
+0037 and 0038); this source was deployed to production later the same day (see the entry above).
 
 **Public site.** The marketing pages are rebuilt as a "Paper and Ink" design system
 ([SITE-DESIGN.md](SITE-DESIGN.md)): warm paper palette, Geist and Geist Mono, mono

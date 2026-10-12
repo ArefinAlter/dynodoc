@@ -32,7 +32,7 @@
     {
       question: 'What runs today, and what exists only in source?',
       answer:
-        'The hosted pilot runs application 858801c on database schema 29, as of 11 October 2026. The project repository, signed receipts, device keys and the sync client are implemented and tested in source at schema 36 and are not deployed yet. The roadmap lists each item with its status.'
+        'The hosted pilot runs application 49ada1e on database schema 38, as of 12 October 2026. Shared project history is deployed with its writers off and no receipt-signing key installed, so publishing to shared branches is refused. The local repository and the sync client are implemented and tested in source. The roadmap lists each item with its status.'
     },
     {
       question: 'How large can a file be?',
@@ -170,8 +170,8 @@
     <p class="eyebrow">Status labels</p>
     <ul>
       <li>
-        <span class="lg lg--live">Live</span> In the hosted pilot today (application 858801c, database
-        schema 29).
+        <span class="lg lg--live">Live</span> In the hosted pilot today (application 49ada1e, database
+        schema 38).
       </li>
       <li>
         <span class="lg lg--source">In source</span> Implemented and tested in source, not yet deployed.
