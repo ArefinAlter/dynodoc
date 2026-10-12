@@ -1,0 +1,40 @@
+{
+  "date": "2026-10-12",
+  "kind": "actual CLI, local schema 2, synthetic empty state",
+  "initial": {
+    "branches_used": 0,
+    "bytes_used": 0,
+    "commits_used": 0,
+    "limits": {
+      "branches": 4096,
+      "bytes": 4294967296,
+      "commits": 100000,
+      "objects": 1000000
+    },
+    "objects_used": 0
+  },
+  "retained": {
+    "branches_used": 0,
+    "bytes_used": 407,
+    "commits_used": 0,
+    "limits": {
+      "branches": 4,
+      "bytes": 407,
+      "commits": 10,
+      "objects": 2
+    },
+    "objects_used": 2
+  },
+  "root": "79dd16e18d75b7580ba04633e3f87ab35461ae0f813abfa4b4ff174f897cc558",
+  "capacity_error": "Error: repository content: shared checkpoint limit exceeded: local storage capacity; inspect repository storage and explicitly increase limits to retain more history\n\nCaused by:\n    shared checkpoint limit exceeded: local storage capacity; inspect repository storage and explicitly increase limits to retain more history",
+  "assertions": [
+    "schema 2 initialization",
+    "persistent zero capacity across CLI processes",
+    "failed write retains zero objects/bytes",
+    "explicit increase resumes writes",
+    "exact-capacity retries add zero objects",
+    "retained historical root remains readable"
+  ],
+  "network": false,
+  "scope": "Functional CLI acceptance; not a disk-space, throughput, native-host or full offline-convergence benchmark."
+}

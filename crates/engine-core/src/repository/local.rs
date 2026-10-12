@@ -17,6 +17,9 @@ use std::{
     time::Duration,
 };
 
+mod storage;
+pub use storage::{StorageLimits, StorageUsage, SCHEMA_VERSION};
+
 const SCHEMA: &str = "
 create table if not exists local_meta(singleton integer primary key check(singleton=1), version integer not null, project text not null);
 create table if not exists objects(document text not null,address text not null,bytes blob not null check(length(bytes) between 1 and 1048576),primary key(document,address));
@@ -60,7 +63,7 @@ impl ObjectStore for Store<'_> {
     ) -> Result<bool, shared_checkpoint::Error> {
         shared_checkpoint::validate_stored(address, bytes)?;
         let inserted = sqlx::query("insert into objects(document,address,bytes) values(?,?,?) on conflict(document,address) do nothing")
-            .bind(document.0.to_string()).bind(address.as_str()).bind(bytes).execute(&mut *self.connection).await?.rows_affected() == 1;
+            .bind(document.0.to_string()).bind(address.as_str()).bind(bytes).execute(&mut *self.connection).await.map_err(storage::object_error)?.rows_affected() == 1;
         if !inserted && self.get(document, address).await? != bytes {
             return Err(shared_checkpoint::Error::HashMismatch);
         }
@@ -181,9 +184,15 @@ impl LocalRepository {
             sqlx::query_as("select version,project from local_meta where singleton=1")
                 .fetch_one(&mut *tx)
                 .await?;
-        if version != 1 || actual != project.to_string() {
+        if !matches!(version, 1 | SCHEMA_VERSION) || actual != project.to_string() {
             return Err(Error::Invalid("local schema/project"));
         }
+        if version == 1 {
+            storage::upgrade(&mut tx).await?;
+        }
+        // Missing accounting state is corruption, never permission to admit
+        // unbounded writes or to reconstruct lower usage on reopen.
+        storage::usage(&mut tx).await?;
         tx.commit().await?;
         Ok(Self { pool, project })
     }
@@ -192,6 +201,29 @@ impl LocalRepository {
     }
     pub fn project(&self) -> uuid::Uuid {
         self.project
+    }
+
+    pub async fn storage_usage(&self) -> Result<StorageUsage, Error> {
+        let mut connection = self.pool.acquire().await?;
+        storage::usage(&mut connection).await
+    }
+
+    /// Explicit local-owner action; never evicts history or permits limits below
+    /// retained usage. All writes, including staged transfer objects, share these
+    /// persistent limits across connections and restarts.
+    pub async fn set_storage_limits(&self, limits: StorageLimits) -> Result<StorageUsage, Error> {
+        limits.validate()?;
+        let mut tx = self.pool.begin().await?;
+        let changed = sqlx::query("update local_storage set byte_limit=?,object_limit=?,commit_limit=?,branch_limit=? where singleton=1 and bytes_used<=? and objects_used<=? and commits_used<=? and branches_used<=?")
+            .bind(limits.bytes).bind(limits.objects).bind(limits.commits).bind(limits.branches)
+            .bind(limits.bytes).bind(limits.objects).bind(limits.commits).bind(limits.branches)
+            .execute(&mut *tx).await?.rows_affected();
+        if changed != 1 {
+            return Err(Error::Limit("local storage limits below retained usage"));
+        }
+        let usage = storage::usage(&mut tx).await?;
+        tx.commit().await?;
+        Ok(usage)
     }
 
     /// Transactional, verified materialization; no branch is changed by this call.
@@ -306,7 +338,7 @@ impl LocalRepository {
             .await?;
         }
         sqlx::query("insert into commits(address,body,height) values(?,?,?) on conflict(address) do nothing")
-            .bind(address.as_str()).bind(&bytes).bind(height).execute(&mut *tx).await?;
+            .bind(address.as_str()).bind(&bytes).bind(height).execute(&mut *tx).await.map_err(storage::error)?;
         let existing = load_commit(&mut tx, self.project, &address).await?;
         if existing.0.commit != signed.commit || existing.1 != height {
             return Err(Error::Invalid("commit collision"));
@@ -380,7 +412,8 @@ impl LocalRepository {
             .bind(old.commit.as_str())
             .bind(old.generation)
             .execute(&mut *tx)
-            .await?
+            .await
+            .map_err(storage::error)?
             .rows_affected()
         } else {
             sqlx::query(
@@ -389,7 +422,8 @@ impl LocalRepository {
             .bind(branch)
             .bind(new.as_str())
             .execute(&mut *tx)
-            .await?
+            .await
+            .map_err(storage::error)?
             .rows_affected()
         };
         if affected != 1 {
@@ -535,6 +569,9 @@ impl LocalRepository {
 }
 
 #[cfg(test)]
+mod storage_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
@@ -544,10 +581,10 @@ mod tests {
     use engine_shared::NodeId;
     use serde_json::json;
 
-    fn path() -> std::path::PathBuf {
+    pub(super) fn path() -> std::path::PathBuf {
         std::env::temp_dir().join(format!("dynodoc-repo-test-{}.sqlite", uuid::Uuid::new_v4()))
     }
-    fn state(text: &str) -> DocumentState {
+    pub(super) fn state(text: &str) -> DocumentState {
         let node = MaterializedNode {
             id: NodeId("01ARZ3NDEKTSV4RRFFQ69G5FAV".into()),
             parent_id: None,
@@ -562,7 +599,7 @@ mod tests {
             ..Default::default()
         }
     }
-    async fn cleanup(repo: LocalRepository, file: &Path) {
+    pub(super) async fn cleanup(repo: LocalRepository, file: &Path) {
         repo.close().await;
         // On Windows SQLite's worker can release its last file handle just after
         // Pool::close completes. Only retry that specific sharing violation.

@@ -34,8 +34,12 @@ a verified user identity. No existing database event hash is changed.
 
 ## Durable local operations
 
-`LocalRepository::open(path, project)` creates/reopens SQLite schema 1 with WAL,
+`LocalRepository::open(path, project)` creates/reopens SQLite schema 2 with WAL,
 FULL synchronization and one-project binding. Object and commit rows are immutable.
+Schema 1 upgrades transactionally; older schema-1-only clients reject schema 2.
+[Persistent local capacity](LOCAL-STORAGE-BUDGETS.md) bounds retained object/commit
+bytes and object/commit/branch counts, including staged objects. Exact retries and
+existing branch updates remain possible at capacity; no history is auto-pruned.
 Writes and transfer batches are transactional. `write_state` verifies exact typed
 reconstruction before committing objects. `import_commit` verifies its signature,
 parent existence/scope, recovery dependencies/results and all reachable file state graphs under a shared object/

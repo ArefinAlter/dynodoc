@@ -3,7 +3,10 @@
 use anyhow::Context;
 use clap::{Subcommand, ValueEnum};
 use engine_core::{
-    repository::{local::LocalRepository, recovery, Commit, Head, SignedCommit},
+    repository::{
+        local::{LocalRepository, StorageLimits, SCHEMA_VERSION},
+        recovery, Commit, Head, SignedCommit,
+    },
     shared_checkpoint::Address,
 };
 use engine_shared::DocumentId;
@@ -32,6 +35,19 @@ impl From<RecoveryKind> for recovery::Kind {
 pub enum Action {
     /// Initialize or verify the local project database.
     Init,
+    /// Inspect retained encoded bytes/object/commit/branch counts and limits.
+    Storage,
+    /// Explicitly set persistent capacity; never deletes retained history.
+    StorageLimits {
+        #[arg(long)]
+        bytes: i64,
+        #[arg(long)]
+        objects: i64,
+        #[arg(long)]
+        commits: i64,
+        #[arg(long)]
+        branches: i64,
+    },
     /// Store a DocumentState JSON graph; returns its typed root without publishing.
     StoreState {
         document: uuid::Uuid,
@@ -110,7 +126,22 @@ pub async fn run(path: PathBuf, project: uuid::Uuid, action: Action) -> anyhow::
     let repo = LocalRepository::open(&path, project).await?;
     let address = |s: String| Address::try_from(s);
     let output = match action {
-        Action::Init => serde_json::json!({"project":project,"local_schema":1}),
+        Action::Init => serde_json::json!({"project":project,"local_schema":SCHEMA_VERSION}),
+        Action::Storage => serde_json::to_value(repo.storage_usage().await?)?,
+        Action::StorageLimits {
+            bytes,
+            objects,
+            commits,
+            branches,
+        } => serde_json::to_value(
+            repo.set_storage_limits(StorageLimits {
+                bytes,
+                objects,
+                commits,
+                branches,
+            })
+            .await?,
+        )?,
         Action::StoreState { document, input } => {
             let state = read_json(&input, 16 * 1024 * 1024)?;
             let (root, stats) = repo.write_state(DocumentId(document), &state).await?;

@@ -1,5 +1,56 @@
 # Dynodoc: intent, current implementation and remaining work
 
+## Source: persistent local repository capacity (12 October 2026)
+
+SQLite schema 2 now enforces [persistent local capacity](LOCAL-STORAGE-BUDGETS.md)
+for retained objects, signed commits and branches: 4 GiB of encoded object/commit
+payloads, 1,000,000 objects, 100,000 commits and 4096 branches by default. Staged
+and unreachable objects count. Exact retries are free, failed batches roll back,
+and existing refs remain usable at capacity. Explicit CLI/library limit changes
+never prune history and cannot reduce capacity below current usage. Schema 1
+upgrades transactionally without changing roots/signatures/refs; above-default
+usage is retained. Older schema-1 clients reject schema 2. Physical disk/WAL,
+trust-journal budgets, packing and explicit retention/GC remain separate work.
+
+Validation: all 32 application repository tests pass, including five new migration,
+quota, rollback, concurrency and missing-accounting regressions. Both Rust Clippy
+checks and formatting pass. Rust documentation builds with the existing warnings.
+Two complete local Windows runs failed the existing 100 ms SSE assertion; its
+isolated run passed. A separate full run explicitly excluding that one timing test
+passed all 338 remaining tests. This is not a clean full-suite local result or a
+certified latency guarantee. The check includes the write request, database work
+and per-frame authorization, not just broadcast delivery. Its threshold and CI
+coverage were left unchanged; full Linux CI for this source is required after push.
+[Actual CLI acceptance](benchmarks/local-storage-cli-20261012.json)
+checks persisted capacity across processes, rejected-write rollback, explicit
+increase, zero-cost reuse at capacity and reading the retained root. Logs are
+under ignored target/. No native Office/Google host was exercised in this pass.
+
+The preceding device/shared-budget changes are application `a72333a` and engine
+`932f48a`: application Rust CI 38204054464, frontend CI 38204054384 (including
+authenticated workflows), and standalone CI 38204058559 all passed. Source hashes
+and CI for local capacity are recorded after push. The prior frontend verification
+also passed 289 unit tests, lint, build and three local Projects browser tests.
+
+Application sources are mirrored to D:/dynodoc-engine; MIT metadata is preserved.
+Task-owned PostgreSQL and synthetic CLI scratch data are removed; API/web test
+servers remain stopped. Only ignored validation logs and the synthetic report remain.
+PostgreSQL source stays schema 34. Production remains `858801c`/schema 29, shared
+writers off; no deployment or production migration occurred. Before rollout,
+prepare a schema-34-compatible rollback image and rehearse with a production copy.
+Installed-editor acceptance remains the owner's prepared local worksheet.
+
+Next: authenticated project commit/object discovery and exchange with explicit
+private-stage/reachability/whole-document-erasure rules; protected project refs,
+review and atomic server receipts; then project-wide UI and native connector
+adoption. Local inventory must not become a public remote listing. Recheck current
+account/key/project/document rights in the publication transaction, distinguish
+already-accepted signed ancestry from new actions, and retain access checks after
+revocation/erasure. Complete same-file convergence, incremental native capture,
+packing/changed-node publication, trusted witnesses, large-document/service
+acceptance and marketplace publication remain open in [the ledger](ROADMAP-ACCEPTANCE.md).
+This checkpoint does not complete the product roadmap.
+
 ## Source: device identity and retained shared storage (12 October 2026)
 
 Schema 33 adds [account-bound signing keys](DEVICE-SIGNING-KEYS.md): one-use

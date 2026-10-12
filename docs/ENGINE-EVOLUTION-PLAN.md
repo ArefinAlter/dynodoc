@@ -17,8 +17,9 @@ with independent signature vectors, contiguous proof checks, authority rotation
 and durable local revocation. Schema 33 adds [account/device binding and permanent
 revocation](DEVICE-SIGNING-KEYS.md). Atomic server issuance, authority distribution,
 witnesses and connector adoption remain open. Schema 34 adds [durable shared-object
-budgets](SHARED-STORAGE-BUDGETS.md); physical storage packing and local-store quotas
-are separate remaining work.
+budgets](SHARED-STORAGE-BUDGETS.md). Local SQLite schema 2 now adds persistent
+[object/commit/branch capacity](LOCAL-STORAGE-BUDGETS.md). Physical storage packing,
+whole-device capacity and explicit local retention/GC remain separate work.
 Part 3 also has local [commit-addressed recovery](PROJECT-COMMIT-RECOVERY.md):
 revert/cherry-pick with signed source references, explicit mainline selection and
 checked conflict resolutions. Hosted project review/UI integration remains open.

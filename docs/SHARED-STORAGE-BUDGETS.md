@@ -16,6 +16,8 @@ physical disk limits. Uploads, events, legacy JSON snapshots, indexes, WAL, back
 and local SQLite repositories are outside this accounting. The pilot native-upload
 limit remains **3,000,000 bytes**. Packing, incremental publication, total-service
 capacity and local-store retention remain unfinished.
+Local repositories now have [separate persistent admission limits](LOCAL-STORAGE-BUDGETS.md);
+those counters are not included in the server profile's usage.
 
 The profile shows the signed-in account's usage via `GET /profile/storage`.
 Quota failures reach the web client as HTTP 507 with `code: storage_limit` and an
