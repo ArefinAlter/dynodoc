@@ -1,0 +1,471 @@
+/*
+ * Administration console design language (Primer-like). Everything is scoped to the
+ * `.admin` root so global application tokens in app.css stay untouched. Dark mode keys
+ * off :root[data-theme='dark'] like the rest of the product.
+ */
+.admin {
+  --a-canvas: #ffffff;
+  --a-subtle: #f6f8fa;
+  --a-inset: #eff2f5;
+  --a-border: #d0d7de;
+  --a-border-muted: #d8dee4;
+  --a-fg: #1f2328;
+  --a-muted: #59636e;
+  --a-hover: rgb(208 215 222 / 0.32);
+  --a-accent: #0969da;
+  --a-accent-bg: #ddf4ff;
+  --a-accent-border: rgb(84 174 255 / 0.4);
+  --a-success: #1a7f37;
+  --a-success-bg: #dafbe1;
+  --a-success-border: rgb(74 194 107 / 0.4);
+  --a-danger: #d1242f;
+  --a-danger-bg: #ffebe9;
+  --a-danger-border: rgb(255 129 130 / 0.4);
+  --a-attention: #9a6700;
+  --a-attention-bg: #fff8c5;
+  --a-attention-border: rgb(212 167 44 / 0.4);
+  --a-done: #8250df;
+  --a-done-bg: #fbefff;
+  --a-solid-green: #1f883d;
+  --a-solid-red: #cf222e;
+  --a-overlay: rgb(31 35 40 / 0.5);
+  --a-shadow: 0 1px 0 rgb(31 35 40 / 0.04);
+  --a-shadow-pop: 0 8px 24px rgb(140 149 159 / 0.25);
+  --a-font:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif,
+    'Apple Color Emoji', 'Segoe UI Emoji';
+  --a-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  min-height: 100vh;
+  background: var(--a-canvas);
+  color: var(--a-fg);
+  font-family: var(--a-font);
+  font-size: 14px;
+  line-height: 1.5;
+}
+:root[data-theme='dark'] .admin {
+  --a-canvas: #0d1117;
+  --a-subtle: #161b22;
+  --a-inset: #21262d;
+  --a-border: #30363d;
+  --a-border-muted: #21262d;
+  --a-fg: #e6edf3;
+  --a-muted: #9198a1;
+  --a-hover: rgb(110 118 129 / 0.1);
+  --a-accent: #4493f8;
+  --a-accent-bg: rgb(56 139 253 / 0.1);
+  --a-accent-border: rgb(56 139 253 / 0.4);
+  --a-success: #3fb950;
+  --a-success-bg: rgb(46 160 67 / 0.15);
+  --a-success-border: rgb(46 160 67 / 0.4);
+  --a-danger: #f85149;
+  --a-danger-bg: rgb(248 81 73 / 0.1);
+  --a-danger-border: rgb(248 81 73 / 0.4);
+  --a-attention: #d29922;
+  --a-attention-bg: rgb(187 128 9 / 0.15);
+  --a-attention-border: rgb(187 128 9 / 0.4);
+  --a-done: #ab7df8;
+  --a-done-bg: rgb(171 125 248 / 0.15);
+  --a-solid-green: #238636;
+  --a-solid-red: #c93c37;
+  --a-overlay: rgb(1 4 9 / 0.7);
+  --a-shadow: 0 0 transparent;
+  --a-shadow-pop: 0 8px 24px rgb(1 4 9 / 0.85);
+}
+.admin *,
+.admin *::before,
+.admin *::after {
+  box-sizing: border-box;
+}
+.admin a {
+  color: var(--a-accent);
+  text-decoration: none;
+}
+.admin a:hover {
+  text-decoration: underline;
+}
+.admin :focus-visible {
+  outline: 2px solid var(--a-accent);
+  outline-offset: 1px;
+}
+.admin h1,
+.admin h2,
+.admin h3,
+.admin p {
+  margin: 0;
+}
+.admin code,
+.admin .mono {
+  font-family: var(--a-mono);
+  font-size: 12px;
+}
+.admin .muted {
+  color: var(--a-muted);
+}
+
+/* Buttons */
+.admin .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--a-border);
+  border-radius: 6px;
+  background: var(--a-subtle);
+  color: var(--a-fg);
+  box-shadow: var(--a-shadow);
+  font: inherit;
+  font-weight: 500;
+  line-height: 20px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease;
+}
+.admin .btn:hover:not(:disabled) {
+  background: var(--a-inset);
+  border-color: var(--a-muted);
+  text-decoration: none;
+}
+.admin .btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.admin .btn-sm {
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.admin .btn-primary {
+  background: var(--a-solid-green);
+  border-color: rgb(31 35 40 / 0.15);
+  color: #ffffff;
+}
+.admin .btn-primary:hover:not(:disabled) {
+  background: var(--a-solid-green);
+  border-color: rgb(31 35 40 / 0.15);
+  filter: brightness(0.93);
+}
+.admin .btn-danger {
+  background: var(--a-canvas);
+  color: var(--a-danger);
+}
+.admin .btn-danger:hover:not(:disabled) {
+  background: var(--a-solid-red);
+  border-color: var(--a-solid-red);
+  color: #ffffff;
+}
+.admin .btn-danger-solid {
+  background: var(--a-solid-red);
+  border-color: rgb(31 35 40 / 0.15);
+  color: #ffffff;
+}
+.admin .btn-danger-solid:hover:not(:disabled) {
+  background: var(--a-solid-red);
+  border-color: rgb(31 35 40 / 0.15);
+  filter: brightness(0.92);
+}
+.admin .btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+.admin .btn-ghost:hover:not(:disabled) {
+  background: var(--a-hover);
+  border-color: transparent;
+}
+.admin .btn-icon {
+  width: 32px;
+  padding: 0;
+}
+.admin .btn-sm.btn-icon {
+  width: 28px;
+}
+
+/* Inputs */
+.admin .field {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--a-muted);
+}
+.admin .input,
+.admin .select {
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--a-border);
+  border-radius: 6px;
+  background: var(--a-canvas);
+  color: var(--a-fg);
+  font: inherit;
+  font-weight: 400;
+  box-shadow: inset 0 1px 0 rgb(31 35 40 / 0.04);
+}
+.admin .select {
+  padding-right: 8px;
+}
+.admin .input:focus,
+.admin .select:focus {
+  outline: none;
+  border-color: var(--a-accent);
+  box-shadow: inset 0 0 0 1px var(--a-accent);
+}
+.admin .input::placeholder {
+  color: var(--a-muted);
+  opacity: 1;
+}
+
+/* Segmented control */
+.admin .seg {
+  display: inline-flex;
+}
+.admin .seg button {
+  min-height: 32px;
+  padding: 0 12px;
+  margin-left: -1px;
+  border: 1px solid var(--a-border);
+  background: var(--a-subtle);
+  color: var(--a-fg);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.admin .seg button:first-child {
+  margin-left: 0;
+  border-radius: 6px 0 0 6px;
+}
+.admin .seg button:last-child {
+  border-radius: 0 6px 6px 0;
+}
+.admin .seg button:hover {
+  background: var(--a-inset);
+}
+.admin .seg button[aria-pressed='true'] {
+  background: var(--a-accent-bg);
+  border-color: var(--a-accent);
+  color: var(--a-accent);
+  font-weight: 600;
+  position: relative;
+}
+
+/* Pills and counters */
+.admin .counter {
+  display: inline-block;
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 2em;
+  background: rgb(175 184 193 / 0.2);
+  color: var(--a-fg);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  text-align: center;
+}
+.admin .pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border: 1px solid var(--a-border);
+  border-radius: 2em;
+  color: var(--a-muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+  white-space: nowrap;
+}
+.admin .pill-success {
+  color: var(--a-success);
+  background: var(--a-success-bg);
+  border-color: var(--a-success-border);
+}
+.admin .pill-attention {
+  color: var(--a-attention);
+  background: var(--a-attention-bg);
+  border-color: var(--a-attention-border);
+}
+.admin .pill-danger {
+  color: var(--a-danger);
+  background: var(--a-danger-bg);
+  border-color: var(--a-danger-border);
+}
+.admin .pill-accent {
+  color: var(--a-accent);
+  background: var(--a-accent-bg);
+  border-color: var(--a-accent-border);
+}
+.admin .pill-done {
+  color: var(--a-done);
+  background: var(--a-done-bg);
+  border-color: var(--a-border);
+}
+
+/* Boxes and rows */
+.admin .box {
+  border: 1px solid var(--a-border);
+  border-radius: 6px;
+  background: var(--a-canvas);
+  overflow: hidden;
+}
+.admin .box-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 8px 16px;
+  background: var(--a-subtle);
+  border-bottom: 1px solid var(--a-border);
+}
+.admin .box-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+.admin .box-row {
+  padding: 12px 16px;
+  border-top: 1px solid var(--a-border-muted);
+}
+.admin .box-row:first-child {
+  border-top: 0;
+}
+
+/* Callouts */
+.admin .flash {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 16px;
+  border: 1px solid var(--a-border);
+  border-radius: 6px;
+  background: var(--a-subtle);
+  color: var(--a-fg);
+}
+.admin .flash > svg {
+  flex: none;
+  margin-top: 2px;
+}
+.admin .flash-warn {
+  background: var(--a-attention-bg);
+  border-color: var(--a-attention-border);
+}
+.admin .flash-warn > svg {
+  color: var(--a-attention);
+}
+.admin .flash-error {
+  background: var(--a-danger-bg);
+  border-color: var(--a-danger-border);
+}
+.admin .flash-error > svg {
+  color: var(--a-danger);
+}
+.admin .flash-success {
+  background: var(--a-success-bg);
+  border-color: var(--a-success-border);
+}
+.admin .flash-success > svg {
+  color: var(--a-success);
+}
+
+/* Data tables */
+.admin .table-scroll {
+  position: relative; /* contains visually hidden cells so they never widen the page */
+  overflow-x: auto;
+}
+.admin table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 13px;
+}
+.admin th {
+  padding: 8px 16px;
+  background: var(--a-subtle);
+  border-bottom: 1px solid var(--a-border);
+  color: var(--a-muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.admin td {
+  padding: 10px 16px;
+  border-top: 1px solid var(--a-border-muted);
+  vertical-align: middle;
+}
+.admin tbody tr:first-child td {
+  border-top: 0;
+}
+.admin tbody tr {
+  transition: background-color 0.1s ease;
+}
+.admin tbody tr:hover {
+  background: var(--a-hover);
+}
+.admin td.num,
+.admin th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Loading placeholders */
+.admin .skeleton {
+  display: block;
+  height: 12px;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    var(--a-inset) 25%,
+    var(--a-border-muted) 50%,
+    var(--a-inset) 75%
+  );
+  background-size: 200% 100%;
+  animation: admin-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes admin-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .admin .skeleton {
+    animation: none;
+  }
+}
+
+/* Section titles and key/value rows */
+.admin .section-title {
+  font-size: 24px;
+  font-weight: 400;
+  line-height: 1.25;
+}
+.admin .kv {
+  margin: 0;
+}
+.admin .kv > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--a-border-muted);
+}
+.admin .kv > div:first-child {
+  border-top: 0;
+}
+.admin .kv dt {
+  color: var(--a-muted);
+}
+.admin .kv dd {
+  margin: 0;
+  text-align: right;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}

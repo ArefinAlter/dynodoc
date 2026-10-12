@@ -1,23 +1,127 @@
 <script lang="ts">
   import ThemeToggle from '$lib/components/ThemeToggle.svelte';
   import AdminRecords from '$lib/components/product/AdminRecords.svelte';
+  import AdminNav, { type NavGroup } from '$lib/components/admin/AdminNav.svelte';
+  import RelativeTime from '$lib/components/admin/RelativeTime.svelte';
+  import TableScroll from '$lib/components/admin/TableScroll.svelte';
+  import { formatBytes, serviceLabel, serviceOk, serviceState } from '$lib/components/admin/health';
+  import '$lib/components/admin/admin.css';
   import { clearSession } from '$lib/stores/session.svelte';
   import { invalidateAll, goto } from '$app/navigation';
   import {
-    Activity,
+    CircleAlert,
+    CircleCheck,
     Database,
+    ExternalLink,
+    FolderGit2,
+    Gauge,
     HardDrive,
-    ShieldCheck,
+    LayoutDashboard,
+    LogOut,
     RefreshCw,
-    ExternalLink
+    ScrollText,
+    Server,
+    ShieldCheck,
+    TriangleAlert,
+    Trash2,
+    Users,
+    FileText
   } from '@lucide/svelte';
   import type { PageData } from './$types';
   let { data }: { data: PageData } = $props();
   let busy = $state(false);
   let signOutError = $state('');
-  const bytes = (n: number) =>
-    new Intl.NumberFormat('en', { maximumFractionDigits: 1 }).format(n / 1024 / 1024) + ' MiB';
-  const stale = $derived(!data.host || Date.now() - Date.parse(data.host.checked_at) > 180_000);
+  let records = $state<ReturnType<typeof AdminRecords>>();
+  let browsing = $state('documents');
+  const counts = $derived(data.overview.counts);
+  const services = $derived(data.host?.services ?? []);
+  const tableBytes = $derived(
+    Math.max(1, ...data.overview.tables.map((t: { bytes: number }) => Number(t.bytes)))
+  );
+  const running = $derived(services.filter((s) => s.running).length);
+  const cards = $derived([
+    { label: 'Accounts', value: counts.accounts, action: 'Browse accounts', kind: 'users' },
+    { label: 'Documents', value: counts.documents, action: 'Browse documents', kind: 'documents' },
+    // Only shown when the engine reports project totals.
+    ...(counts.projects != null
+      ? [{ label: 'Projects', value: counts.projects, action: 'Browse projects', kind: 'projects' }]
+      : []),
+    { label: 'Recorded changes', value: counts.events },
+    { label: 'Saved versions', value: counts.versions }
+  ] as { label: string; value: number; action?: string; kind?: string }[]);
+  const nav = $derived<NavGroup[]>([
+    {
+      items: [
+        {
+          label: 'Overview',
+          href: '#overview',
+          section: 'overview',
+          icon: LayoutDashboard,
+          count: data.attention.length || null
+        }
+      ]
+    },
+    {
+      items: [
+        {
+          label: 'People',
+          href: '#records',
+          section: 'records',
+          icon: Users,
+          count: counts.accounts,
+          kinds: ['users']
+        },
+        {
+          label: 'Projects & spaces',
+          href: '#records',
+          section: 'records',
+          icon: FolderGit2,
+          count: counts.projects ?? null,
+          kinds: ['projects', 'spaces']
+        },
+        {
+          label: 'Content',
+          href: '#records',
+          section: 'records',
+          icon: FileText,
+          count: counts.documents,
+          kinds: ['documents']
+        },
+        {
+          label: 'Audit log',
+          href: '#records',
+          section: 'records',
+          icon: ScrollText,
+          kinds: ['audit', 'erasures']
+        }
+      ]
+    },
+    {
+      items: [
+        { label: 'Storage & recovery', href: '#storage', section: 'storage', icon: HardDrive },
+        { label: 'Services & health', href: '#services', section: 'services', icon: Server },
+        { label: 'Traffic & performance', href: '#traffic', section: 'traffic', icon: Gauge },
+        {
+          label: 'Database',
+          href: '#database',
+          section: 'database',
+          icon: Database,
+          count: data.overview.tables.length
+        }
+      ]
+    },
+    {
+      items: [
+        {
+          label: 'Danger zone',
+          href: '#danger',
+          section: 'danger',
+          icon: TriangleAlert,
+          tone: 'danger'
+        }
+      ]
+    }
+  ]);
   async function refresh() {
     busy = true;
     try {
@@ -26,411 +130,749 @@
       busy = false;
     }
   }
+  /** Used by the navigation and the danger zone: choose what the records table lists. */
+  function showRecords(kind: string) {
+    records?.show(kind);
+  }
+  function jumpToRecords(kind: string) {
+    showRecords(kind);
+    document.getElementById('records-heading')?.focus();
+  }
+  async function signOut() {
+    signOutError = '';
+    try {
+      await clearSession();
+      await goto('/login');
+    } catch {
+      signOutError = 'Sign-out could not be completed. Please try again.';
+    }
+  }
 </script>
 
 <svelte:head
-  ><title>Operations · Dynodoc</title><meta name="robots" content="noindex,nofollow" /></svelte:head
+  ><title>Administration · Dynodoc</title><meta
+    name="robots"
+    content="noindex,nofollow"
+  /></svelte:head
 >
-<div class="ops">
-  <header>
-    <a href="https://dynodoc.online"
-      ><img class="logo-day" src="/brand/logo.svg?v=2" width="165" height="36" alt="Dynodoc" /><img
+<div class="admin">
+  <a class="skip" href="#admin-main">Skip to content</a>
+  <header class="topbar">
+    <a class="brand" href="https://dynodoc.online"
+      ><img class="logo-day" src="/brand/logo.svg?v=2" width="128" height="28" alt="Dynodoc" /><img
         class="logo-night"
         src="/brand/logo-dark.svg?v=2"
-        width="165"
-        height="36"
+        width="128"
+        height="28"
         alt="Dynodoc"
       /></a
-    ><span>Operations</span><a href="https://app.dynodoc.online/workspace"
-      >Workspace <ExternalLink size={14} /></a
-    ><ThemeToggle />
+    ><span class="divider" aria-hidden="true">/</span><span class="app-name">Administration</span
+    ><span class="pill" class:pill-accent={data.environment === 'Local'}>{data.environment}</span>
+    <div class="top-actions">
+      <a class="btn btn-sm btn-ghost" href="https://app.dynodoc.online/projects"
+        >Workspace <ExternalLink size={14} aria-hidden="true" /></a
+      ><ThemeToggle /><button type="button" class="btn btn-sm" onclick={signOut}
+        ><LogOut size={14} aria-hidden="true" /> Sign out</button
+      >
+    </div>
   </header>
-  <main>
-    <div class="heading">
-      <div>
-        <p class="eyebrow"><ShieldCheck size={15} /> ADMINISTRATOR ACCESS</p>
-        <h1>Your workspace, under control.</h1>
-        <p>
-          Signed in as {data.overview.administrator}. Checked {new Date(
-            data.overview.checked_at
-          ).toLocaleString()}.
-        </p>
-      </div>
-      <button disabled={busy} onclick={refresh}
-        ><RefreshCw size={16} />{busy ? 'Refreshing…' : 'Refresh'}</button
-      >
-    </div>
-    <nav class="section-nav" aria-label="Administration sections">
-      <a href="#overview">Overview</a><a href="#manage">People & content</a><a href="#storage"
-        >Storage & recovery</a
-      ><a href="#performance">Performance</a><a href="#database">Database</a>
-    </nav>
-    <section id="overview" class="stats" aria-label="Workspace totals">
-      {#each [['Accounts', data.overview.counts.accounts], ['Documents', data.overview.counts.documents], ['Recorded changes', data.overview.counts.events], ['Saved versions', data.overview.counts.versions]] as [label, value]}<article
-        >
-          <span>{label}</span><strong>{Number(value).toLocaleString()}</strong>
-        </article>{/each}
-    </section>
-    <div id="manage"><AdminRecords /></div>
-    <div class="columns">
-      <section class="panel">
-        <h2><Activity size={20} /> Services</h2>
-        {#if stale}<p class="notice">
-            Host monitoring is unavailable or older than three minutes. Refresh after checking the
-            collector.
-          </p>{/if}
-        {#each data.host?.services || [] as service}<div class="line">
-            <span>{service.name}</span><b
-              class:healthy={service.running && service.health !== 'unhealthy'}
-              >{service.health || (service.running ? 'Running' : 'Stopped')}</b
-            >
-          </div>{/each}
-        <div class="line">
-          <span>Google credentials</span><b>{data.providers.google ? 'Configured' : 'Missing'}</b>
-        </div>
-        <div class="line">
-          <span>Email credentials</span><b>{data.providers.email ? 'Configured' : 'Missing'}</b>
-        </div>
-        <p class="detail">Credential presence does not verify a successful provider sign-in.</p>
-      </section>
-      <section class="panel">
-        <h2 id="storage"><HardDrive size={20} /> Storage & recovery</h2>
-        <dl>
-          <dt>PostgreSQL database</dt>
-          <dd>{bytes(data.overview.counts.database_bytes)}</dd>
-          <dt>Original files</dt>
-          <dd>{data.overview.counts.uploads} · {bytes(data.overview.counts.upload_bytes)}</dd>
-          <dt>Active database connections</dt>
-          <dd>{data.overview.counts.connections}</dd>
-          <dt>Applied migrations</dt>
-          <dd>{data.overview.counts.migrations}</dd>
-          <dt>VPS disk free</dt>
-          <dd>{data.host ? bytes(data.host.disk_free_bytes) : 'Unavailable'}</dd>
-          <dt>Latest local backup</dt>
-          <dd>
-            {data.host?.backup?.created_at
-              ? new Date(data.host.backup.created_at).toLocaleString()
-              : 'Unavailable'}
-          </dd>
-          <dt>Backup checksum</dt>
-          <dd>{data.host?.backup?.checksum_ok ? 'Verified' : 'Not verified'}</dd>
-        </dl>
-        <p class="detail">
-          Files are stored in PostgreSQL. There are no object-storage buckets in this deployment.
-          Local backups share the VPS; off-server recovery is not configured.
-        </p>
-      </section>
-    </div>
-    <section class="panel">
-      <h2 id="performance"><Activity size={20} /> Visits & web vitals <span>Last 30 days</span></h2>
-      <p class="detail">
-        Anonymous page loads, not unique people. No IP addresses, account IDs, document IDs, queries
-        or research content are collected. Browser-reported samples may exclude blocked or
-        unsupported clients.
-      </p>
-      <div class="columns">
+  {#if signOutError}<p class="flash flash-error sign-out-error" role="alert">
+      <CircleAlert size={16} aria-hidden="true" />{signOutError}
+    </p>{/if}
+  <div class="shell">
+    <AdminNav groups={nav} activeKind={browsing} onpick={showRecords} />
+    <main id="admin-main">
+      <div class="page-head">
         <div>
-          <h3>Page loads</h3>
-          {#if !data.overview.traffic.length}<p>No visits recorded yet.</p>{:else}<table>
-              <thead><tr><th>Site / page</th><th>Loads</th></tr></thead><tbody
-                >{#each data.overview.traffic as row}<tr
-                    ><td>{row.host} / {row.page}</td><td>{row.visits}</td></tr
-                  >{/each}</tbody
-              >
-            </table>{/if}
-        </div>
-        <div>
-          <h3>75th percentile</h3>
-          {#if !data.overview.vitals.length}<p>
-              Performance samples will appear after real browser visits.
-            </p>{:else}<table>
-              <thead><tr><th>Site / metric</th><th>p75</th><th>Samples</th></tr></thead><tbody
-                >{#each data.overview.vitals as row}<tr
-                    ><td>{row.host} / {row.metric}</td><td
-                      >{Number(row.p75).toFixed(row.metric === 'CLS' ? 3 : 0)}{row.metric === 'CLS'
-                        ? ''
-                        : ' ms'}</td
-                    ><td>{row.samples}</td></tr
-                  >{/each}</tbody
-              >
-            </table>{/if}
-        </div>
-      </div>
-    </section>
-    <section class="panel">
-      <h2 id="database"><Database size={20} /> Database tables</h2>
-      <p class="detail">
-        Storage and approximate row counts from PostgreSQL statistics. Research records are not
-        exposed in this dashboard.
-      </p>
-      <div class="scroll">
-        <table>
-          <thead><tr><th>Table</th><th>Estimated rows</th><th>Total storage</th></tr></thead><tbody
-            >{#each data.overview.tables as table}<tr
-                ><td>{table.name}</td><td>{table.estimated_rows}</td><td>{bytes(table.bytes)}</td
-                ></tr
-              >{/each}</tbody
+          <span class="pill pill-accent"
+            ><ShieldCheck size={13} aria-hidden="true" /> Administrator access</span
           >
-        </table>
+          <h1>Your workspace, under control.</h1>
+          <p class="muted">
+            Signed in as {data.overview.administrator}. Checked <RelativeTime
+              value={data.overview.checked_at}
+            />.
+          </p>
+        </div>
+        <button type="button" class="btn" disabled={busy} onclick={refresh}
+          ><RefreshCw size={16} class={busy ? 'spin' : ''} aria-hidden="true" />{busy
+            ? 'Refreshing…'
+            : 'Refresh'}</button
+        >
       </div>
-    </section>
-    <footer class="detail">
-      <a href="https://app.dynodoc.online/source">Download source code</a>
-      <button
-        onclick={async () => {
-          signOutError = '';
-          try {
-            await clearSession();
-            await goto('/login');
-          } catch {
-            signOutError = 'Sign-out could not be completed. Please try again.';
-          }
-        }}>Sign out</button
-      >
-    </footer>
-    {#if signOutError}<p role="alert">{signOutError}</p>{/if}
-  </main>
+
+      <section id="overview" class="block" aria-labelledby="overview-heading">
+        <h2 id="overview-heading" class="section-title">Overview</h2>
+        <ul class="cards">
+          {#each cards as card}
+            <li class="card">
+              <span class="card-label">{card.label}</span>
+              <strong>{Number(card.value).toLocaleString('en')}</strong>
+              {#if card.kind}{@const kind = card.kind}<button
+                  type="button"
+                  class="link"
+                  onclick={() => jumpToRecords(kind)}>{card.action}</button
+                >{/if}
+            </li>
+          {/each}
+        </ul>
+        <div class="split">
+          <div class="box">
+            <div class="box-header">
+              <h3 class="box-title">Needs attention</h3>
+              <span class="counter">{data.attention.length}</span>
+            </div>
+            {#if data.attention.length}
+              <ul class="rows">
+                {#each data.attention as item (item.id)}
+                  <li class="box-row attention">
+                    {#if item.level === 'danger'}<CircleAlert
+                        class="level-danger"
+                        size={18}
+                        aria-hidden="true"
+                      />{:else}<TriangleAlert
+                        class="level-warning"
+                        size={18}
+                        aria-hidden="true"
+                      />{/if}
+                    <div>
+                      <strong>{item.title}</strong>
+                      <p class="muted">{item.detail}</p>
+                    </div>
+                    <a class="btn btn-sm" href={item.href}
+                      >Review<span class="sr-only"> {item.title}</span></a
+                    >
+                  </li>
+                {/each}
+              </ul>
+            {:else}
+              <div class="box-row attention">
+                <CircleCheck class="level-ok" size={18} aria-hidden="true" />
+                <div>
+                  <strong>Nothing needs attention</strong>
+                  <p class="muted">
+                    Checked the host report, services, disk space, backups and credential presence.
+                    This does not test provider sign-in or a backup restore.
+                  </p>
+                </div>
+              </div>
+            {/if}
+          </div>
+          <div class="box">
+            <div class="box-header"><h3 class="box-title">At a glance</h3></div>
+            <dl class="kv">
+              <div>
+                <dt>Services running</dt>
+                <dd>{data.host ? `${running} of ${services.length}` : 'Unavailable'}</dd>
+              </div>
+              <div>
+                <dt>Latest local backup</dt>
+                <dd><RelativeTime value={data.host?.backup?.created_at} /></dd>
+              </div>
+              <div>
+                <dt>Server disk free</dt>
+                <dd>{data.host ? formatBytes(data.host.disk_free_bytes) : 'Unavailable'}</dd>
+              </div>
+              <div>
+                <dt>Database size</dt>
+                <dd>{formatBytes(counts.database_bytes)}</dd>
+              </div>
+            </dl>
+          </div>
+        </div>
+      </section>
+
+      <div class="block"><AdminRecords bind:this={records} onkind={(k) => (browsing = k)} /></div>
+
+      <section id="storage" class="block" aria-labelledby="storage-heading">
+        <h2 id="storage-heading" class="section-title">Storage & recovery</h2>
+        <div class="flash flash-warn">
+          <TriangleAlert size={16} aria-hidden="true" />
+          <p>
+            Files are stored in PostgreSQL. There are no object-storage buckets in this deployment.
+            Local backups share the VPS; off-server recovery is not configured.
+          </p>
+        </div>
+        <div class="split">
+          <div class="box">
+            <div class="box-header"><h3 class="box-title">Database</h3></div>
+            <dl class="kv">
+              <div>
+                <dt>PostgreSQL database</dt>
+                <dd>{formatBytes(counts.database_bytes)}</dd>
+              </div>
+              <div>
+                <dt>Original files</dt>
+                <dd>
+                  {Number(counts.uploads).toLocaleString('en')} · {formatBytes(counts.upload_bytes)}
+                </dd>
+              </div>
+              <div>
+                <dt>Active database connections</dt>
+                <dd>{counts.connections}</dd>
+              </div>
+              <div>
+                <dt>Applied migrations</dt>
+                <dd>{counts.migrations}</dd>
+              </div>
+            </dl>
+          </div>
+          <div class="box">
+            <div class="box-header"><h3 class="box-title">Server and backups</h3></div>
+            <dl class="kv">
+              <div>
+                <dt>VPS disk free</dt>
+                <dd>{data.host ? formatBytes(data.host.disk_free_bytes) : 'Unavailable'}</dd>
+              </div>
+              <div>
+                <dt>Latest local backup</dt>
+                <dd><RelativeTime value={data.host?.backup?.created_at} /></dd>
+              </div>
+              <div>
+                <dt>Backup checksum</dt>
+                <dd>
+                  {#if data.host?.backup?.checksum_ok}<span class="pill pill-success">Verified</span
+                    >{:else}<span class="pill pill-attention">Not verified</span>{/if}
+                </dd>
+              </div>
+            </dl>
+          </div>
+        </div>
+      </section>
+
+      <section id="services" class="block" aria-labelledby="services-heading">
+        <h2 id="services-heading" class="section-title">Services & health</h2>
+        {#if data.stale}<div class="flash flash-warn">
+            <TriangleAlert size={16} aria-hidden="true" />
+            <p>
+              Host monitoring is unavailable or older than three minutes. Refresh after checking the
+              collector.
+            </p>
+          </div>{/if}
+        <div class="split">
+          <div class="box">
+            <div class="box-header">
+              <h3 class="box-title">Host services</h3>
+              <span class="counter">{services.length}</span>
+            </div>
+            {#if services.length}
+              <TableScroll label="Host services table">
+                <table>
+                  <thead
+                    ><tr
+                      ><th scope="col">Service</th><th scope="col">State</th><th scope="col"
+                        >Health</th
+                      ><th scope="col">Started</th></tr
+                    ></thead
+                  >
+                  <tbody>
+                    {#each services as service (service.name)}
+                      <tr>
+                        <td title={service.name}>{serviceLabel(service.name)}</td>
+                        <td
+                          ><span
+                            class="pill"
+                            class:pill-success={serviceOk(service)}
+                            class:pill-danger={!serviceOk(service)}>{serviceState(service)}</span
+                          ></td
+                        >
+                        <td>{service.health || '—'}</td>
+                        <td><RelativeTime value={service.started_at} fallback="—" /></td>
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              </TableScroll>
+            {:else}
+              <p class="empty">No host report is available.</p>
+            {/if}
+          </div>
+          <div class="box">
+            <div class="box-header"><h3 class="box-title">Provider credentials</h3></div>
+            <dl class="kv">
+              <div>
+                <dt>Google credentials</dt>
+                <dd>
+                  <span
+                    class="pill"
+                    class:pill-success={data.providers.google}
+                    class:pill-attention={!data.providers.google}
+                    >{data.providers.google ? 'Configured' : 'Missing'}</span
+                  >
+                </dd>
+              </div>
+              <div>
+                <dt>Email credentials</dt>
+                <dd>
+                  <span
+                    class="pill"
+                    class:pill-success={data.providers.email}
+                    class:pill-attention={!data.providers.email}
+                    >{data.providers.email ? 'Configured' : 'Missing'}</span
+                  >
+                </dd>
+              </div>
+            </dl>
+            <p class="note">Credential presence does not verify a successful provider sign-in.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="traffic" class="block" aria-labelledby="traffic-heading">
+        <h2 id="traffic-heading" class="section-title">
+          Traffic & performance <span class="pill">Last 30 days</span>
+        </h2>
+        <p class="muted lead">
+          Anonymous page loads, not unique people. No IP addresses, account IDs, document IDs,
+          queries or document content are collected. Browser-reported samples may exclude blocked or
+          unsupported clients.
+        </p>
+        <div class="split">
+          <div class="box">
+            <div class="box-header"><h3 class="box-title">Page loads</h3></div>
+            {#if !data.overview.traffic.length}<p class="empty">No visits recorded yet.</p>{:else}
+              <TableScroll label="Page loads table">
+                <table>
+                  <thead
+                    ><tr><th scope="col">Site / page</th><th scope="col" class="num">Loads</th></tr
+                    ></thead
+                  >
+                  <tbody>
+                    {#each data.overview.traffic as row}<tr
+                        ><td>{row.host} / {row.page}</td><td class="num">{row.visits}</td></tr
+                      >{/each}
+                  </tbody>
+                </table>
+              </TableScroll>
+            {/if}
+          </div>
+          <div class="box">
+            <div class="box-header"><h3 class="box-title">75th percentile</h3></div>
+            {#if !data.overview.vitals.length}<p class="empty">
+                Performance samples will appear after real browser visits.
+              </p>{:else}
+              <TableScroll label="Web vitals table">
+                <table>
+                  <thead
+                    ><tr
+                      ><th scope="col">Site / metric</th><th scope="col" class="num">p75</th><th
+                        scope="col"
+                        class="num">Samples</th
+                      ></tr
+                    ></thead
+                  >
+                  <tbody>
+                    {#each data.overview.vitals as row}<tr
+                        ><td>{row.host} / {row.metric}</td><td class="num"
+                          >{Number(row.p75).toFixed(row.metric === 'CLS' ? 3 : 0)}{row.metric ===
+                          'CLS'
+                            ? ''
+                            : ' ms'}</td
+                        ><td class="num">{row.samples}</td></tr
+                      >{/each}
+                  </tbody>
+                </table>
+              </TableScroll>
+            {/if}
+          </div>
+        </div>
+      </section>
+
+      <section id="database" class="block" aria-labelledby="database-heading">
+        <h2 id="database-heading" class="section-title">Database</h2>
+        <p class="muted lead">
+          Storage and approximate row counts from PostgreSQL statistics. Document content is not
+          exposed in this dashboard.
+        </p>
+        <div class="box">
+          <TableScroll label="Database tables">
+            <table>
+              <thead
+                ><tr
+                  ><th scope="col">Table</th><th scope="col" class="num">Estimated rows</th><th
+                    scope="col"
+                    class="num">Total storage</th
+                  ><th scope="col">Relative size</th></tr
+                ></thead
+              >
+              <tbody>
+                {#each data.overview.tables as table (table.name)}<tr
+                    ><td>{table.name}</td><td class="num">{table.estimated_rows}</td><td class="num"
+                      >{formatBytes(table.bytes)}</td
+                    ><td class="share"
+                      ><span
+                        class="bar"
+                        aria-hidden="true"
+                        style:width="{Math.max(2, (Number(table.bytes) / tableBytes) * 100)}%"
+                      ></span></td
+                    ></tr
+                  >{/each}
+              </tbody>
+            </table>
+          </TableScroll>
+        </div>
+      </section>
+
+      <section id="danger" class="block" aria-labelledby="danger-heading">
+        <h2 id="danger-heading" class="section-title danger-title">Danger zone</h2>
+        <div class="danger-box">
+          <div class="danger-row">
+            <div>
+              <h3>Move to Trash or disable</h3>
+              <p class="muted">
+                Reversible. Trash keeps content and history and revokes public links. Disabling an
+                account blocks its sessions and published links; restoring requires a fresh sign-in.
+              </p>
+            </div>
+            <div class="danger-actions">
+              <button
+                type="button"
+                class="btn btn-danger"
+                onclick={() => jumpToRecords('documents')}>Find documents</button
+              ><button type="button" class="btn btn-danger" onclick={() => jumpToRecords('users')}
+                >Find accounts</button
+              >
+            </div>
+          </div>
+          <div class="danger-row">
+            <div>
+              <h3>Transfer ownership</h3>
+              <p class="muted">
+                Give an active account ownership of a document or a workspace. Existing
+                collaborators keep their access.
+              </p>
+            </div>
+            <div class="danger-actions">
+              <button type="button" class="btn btn-danger" onclick={() => jumpToRecords('spaces')}
+                >Review workspaces</button
+              >
+            </div>
+          </div>
+          <div class="danger-row">
+            <div>
+              <h3>Permanently delete</h3>
+              <p class="muted">
+                Removes a document, with its history, files, versions, drafts and public copies, or
+                an account profile and credentials, from the live database. This cannot be undone. A
+                minimal deletion receipt remains, and existing backups may retain the data until
+                they expire.
+              </p>
+            </div>
+            <div class="danger-actions">
+              <button
+                type="button"
+                class="btn btn-danger-solid"
+                onclick={() => jumpToRecords('documents')}
+                ><Trash2 size={15} aria-hidden="true" /> Choose documents to delete</button
+              >
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <footer class="foot">
+    <a href="https://app.dynodoc.online/source">Download source code</a>
+  </footer>
 </div>
 
 <style>
-  .section-nav {
-    display: flex;
-    gap: 6px;
-    overflow: auto;
-    margin: 0 0 28px;
-    padding: 6px;
-    background: var(--color-surface-raised);
-    border: 1px solid var(--color-border-soft);
-    border-radius: 14px;
-    width: fit-content;
-    max-width: 100%;
+  .skip {
+    position: absolute;
+    left: 8px;
+    top: -48px;
+    z-index: 20;
+    padding: 8px 12px;
+    border-radius: 6px;
+    background: var(--a-canvas);
+    border: 1px solid var(--a-accent);
   }
-  .section-nav a {
-    padding: 9px 15px;
-    border-radius: 9px;
-    text-decoration: none;
-    white-space: nowrap;
-    font-size: 13px;
-    color: var(--color-ink-soft);
+  .skip:focus {
+    top: 8px;
   }
-  .section-nav a:hover {
-    background: var(--color-accent-bg);
-    color: var(--color-accent);
-  }
-  [id] {
-    scroll-margin-top: 25px;
-  }
-  footer {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 20px;
-    margin-top: 24px;
-  }
-  footer a {
-    color: var(--color-accent);
-  }
-  .ops {
-    min-height: 100vh;
-    background: var(--color-parchment);
-    color: var(--color-ink);
-    font-family: var(--font-ui);
-  }
-  header {
+  .topbar {
     display: flex;
     align-items: center;
-    gap: 22px;
-    padding: 24px 5%;
-    border-bottom: 1px solid var(--color-border);
+    gap: 12px;
+    min-height: 56px;
+    padding: 8px 32px;
+    background: var(--a-subtle);
+    border-bottom: 1px solid var(--a-border);
   }
-  header > a:last-of-type {
+  .brand {
+    display: inline-flex;
+  }
+  .brand img {
+    height: 28px;
+    width: auto;
+  }
+  .divider {
+    color: var(--a-border);
+    font-size: 20px;
+  }
+  .app-name {
+    font-weight: 600;
+  }
+  .top-actions {
     margin-left: auto;
     display: flex;
+    align-items: center;
     gap: 8px;
-    color: var(--color-accent);
-    text-decoration: none;
   }
-  header > span {
-    border-left: 1px solid var(--color-border);
-    padding-left: 22px;
+  .sign-out-error {
+    margin: 16px 32px 0;
+  }
+  .shell {
+    display: grid;
+    grid-template-columns: 256px minmax(0, 1fr);
+    gap: 32px;
+    max-width: 1344px;
+    margin: 0 auto;
+    padding: 24px 32px 96px;
   }
   main {
-    max-width: 1280px;
-    margin: auto;
-    padding: 42px 30px;
+    min-width: 0;
   }
-  .heading {
+  .page-head {
     display: flex;
+    align-items: flex-start;
     justify-content: space-between;
-    align-items: center;
-    gap: 24px;
-    margin-bottom: 32px;
-  }
-  h1 {
-    font-size: 34px;
-    letter-spacing: -1px;
-    margin: 12px 0;
-  }
-  .heading p,
-  .detail {
-    color: var(--color-ink-soft);
-    font-size: 13px;
-    line-height: 1.7;
-  }
-  .eyebrow {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 11px !important;
-    letter-spacing: 1px;
-  }
-  button {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    background: var(--color-accent-bg);
-    color: var(--color-accent-strong);
-    padding: 11px 16px;
-    border: 1px solid var(--color-accent-border);
-    border-radius: 6px;
-    cursor: pointer;
-  }
-  .stats {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
     gap: 16px;
     margin-bottom: 24px;
   }
-  .stats article,
-  .panel {
-    border: 1px solid var(--color-border);
-    background: var(--color-surface);
-    border-radius: 22px;
-    padding: 24px;
-  }
-  .stats span {
-    font-size: 13px;
-    color: var(--color-ink-soft);
-  }
-  .stats strong {
-    display: block;
-    font-size: 34px;
-    margin-top: 12px;
+  .page-head h1 {
+    margin: 8px 0 4px;
+    font-size: 28px;
     font-weight: 600;
+    line-height: 1.25;
   }
-  .columns {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 24px;
+  .block {
+    margin-bottom: 40px;
+    scroll-margin-top: 16px;
   }
-  .panel {
-    margin-bottom: 24px;
-    min-width: 0;
-  }
-  h2 {
+  .block > .section-title {
+    padding-bottom: 8px;
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--a-border-muted);
     display: flex;
-    gap: 10px;
     align-items: center;
-    font-size: 18px;
-    margin: 0 0 20px;
+    gap: 12px;
   }
-  h2 > span {
-    font-size: 12px;
-    font-weight: 400;
+  .block > .section-title .pill {
     margin-left: auto;
-  }
-  h3 {
-    font-size: 14px;
-  }
-  .line {
-    display: flex;
-    justify-content: space-between;
-    gap: 20px;
-    padding: 12px 0;
-    border-bottom: 1px solid var(--color-border-soft);
-    font-size: 13px;
-  }
-  .line b {
+    font-size: 12px;
     font-weight: 500;
   }
-  .healthy {
-    color: var(--color-success);
+  .lead {
+    margin: -4px 0 16px;
+    max-width: 760px;
   }
-  dl {
+  .block > .flash {
+    margin-bottom: 16px;
+  }
+  .cards {
+    list-style: none;
+    margin: 0 0 16px;
+    padding: 0;
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 13px;
-    font-size: 13px;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 16px;
   }
-  dd {
-    margin: 0;
-    text-align: right;
+  .card {
+    display: grid;
+    align-content: start;
+    gap: 4px;
+    padding: 16px;
+    border: 1px solid var(--a-border);
+    border-radius: 6px;
+    background: var(--a-canvas);
+    transition:
+      border-color 0.15s ease,
+      transform 0.15s ease;
   }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-    text-align: left;
+  .card:hover {
+    border-color: var(--a-muted);
+    transform: translateY(-1px);
   }
-  th,
-  td {
-    padding: 12px;
-    border-bottom: 1px solid var(--color-border-soft);
-  }
-  th {
+  .card-label {
+    color: var(--a-muted);
+    font-size: 12px;
     font-weight: 600;
-    background: var(--color-surface-sunken);
   }
-  td:last-child,
-  th:last-child {
-    text-align: right;
+  .card strong {
+    font-size: 28px;
+    font-weight: 600;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
   }
-  .notice {
-    background: var(--color-warn-bg);
-    padding: 14px;
-    line-height: 1.6;
-    color: var(--color-warn-ink);
+  .link {
+    justify-self: start;
+    padding: 2px 0;
+    border: 0;
+    background: none;
+    color: var(--a-accent);
+    font: inherit;
+    cursor: pointer;
   }
-  .scroll {
-    overflow: auto;
+  .link:hover {
+    text-decoration: underline;
   }
-  @media (max-width: 750px) {
-    main {
-      padding: 24px 16px;
+  .split {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    align-items: start;
+  }
+  .block > .cards + .split {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  }
+  .rows {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .attention {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: start;
+  }
+  .attention p {
+    margin-top: 2px;
+  }
+  .attention :global(.level-danger) {
+    color: var(--a-danger);
+    margin-top: 1px;
+  }
+  .attention :global(.level-warning) {
+    color: var(--a-attention);
+    margin-top: 1px;
+  }
+  .attention :global(.level-ok) {
+    color: var(--a-success);
+    margin-top: 1px;
+  }
+  .empty,
+  .note {
+    padding: 12px 16px;
+    color: var(--a-muted);
+  }
+  .note {
+    border-top: 1px solid var(--a-border-muted);
+    font-size: 12px;
+  }
+  .share {
+    width: 22%;
+    min-width: 96px;
+  }
+  .bar {
+    display: block;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--a-accent);
+    opacity: 0.55;
+  }
+  .danger-title {
+    color: var(--a-danger);
+  }
+  .danger-box {
+    border: 1px solid var(--a-danger);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .danger-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    padding: 16px;
+    border-top: 1px solid var(--a-danger-border);
+  }
+  .danger-row:first-child {
+    border-top: 0;
+  }
+  .danger-row h3 {
+    margin: 0 0 4px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .danger-row p {
+    max-width: 640px;
+  }
+  .danger-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: flex-end;
+  }
+  .foot {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 12px 24px;
+    max-width: 1344px;
+    margin: 0 auto;
+    padding: 16px 32px 32px;
+    border-top: 1px solid var(--a-border-muted);
+    font-size: 12px;
+  }
+  :global(.admin .spin) {
+    animation: admin-spin 0.9s linear infinite;
+  }
+  @keyframes admin-spin {
+    to {
+      transform: rotate(360deg);
     }
-    .columns {
-      grid-template-columns: 1fr;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.admin .spin) {
+      animation: none;
     }
-    .stats {
-      grid-template-columns: 1fr 1fr;
-    }
-    .heading {
-      align-items: start;
-      flex-direction: column;
-    }
-    h1 {
-      font-size: 29px;
-    }
-    header {
-      gap: 12px;
-    }
-    header > span {
-      display: none;
-    }
-    .panel {
-      padding: 18px;
+    .card:hover {
+      transform: none;
     }
   }
   /* Wordmark with light lettering for night mode (printing keeps the day logo). */
-  .logo-night {
+  .brand .logo-night {
     display: none;
   }
   @media screen {
-    :global([data-theme='dark']) .logo-day {
+    :global([data-theme='dark']) .brand .logo-day {
       display: none;
     }
-    :global([data-theme='dark']) .logo-night {
-      display: inline;
+    :global([data-theme='dark']) .brand .logo-night {
+      display: block;
+    }
+  }
+  @media (max-width: 860px) {
+    .shell {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 16px;
+      padding: 16px 16px 96px;
+    }
+    .topbar {
+      padding: 8px 16px;
+      flex-wrap: wrap;
+    }
+    .divider {
+      display: none;
+    }
+    .split,
+    .block > .cards + .split {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .sign-out-error {
+      margin: 16px 16px 0;
+    }
+    .foot {
+      padding: 16px 16px 32px;
+    }
+    .danger-row {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    .danger-actions {
+      justify-content: flex-start;
     }
   }
 </style>

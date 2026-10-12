@@ -1,6 +1,10 @@
 <script lang="ts">
   import { workspaceRequest } from '$lib/workspace/api';
-  let { projectId, onMoved }: { projectId: string; onMoved: () => Promise<void> } = $props();
+  let {
+    projectId,
+    onMoved,
+    open = $bindable(false)
+  }: { projectId: string; onMoved: () => Promise<void>; open?: boolean } = $props();
   type FileChoice = { id: string; title: string; space_id: string | null; can_manage: boolean };
   let files = $state<FileChoice[]>([]),
     selected = $state(''),
@@ -42,6 +46,9 @@
 </script>
 
 <details
+  id="move-project-file"
+  class="repo-box move"
+  bind:open
   ontoggle={(e) => {
     if (e.currentTarget.open) void load();
   }}
