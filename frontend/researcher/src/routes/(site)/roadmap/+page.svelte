@@ -24,7 +24,7 @@
       label: 'Live',
       heading: 'Running in the hosted pilot.',
       blurb:
-        'Deployed at application 49ada1e on database schema 38, activated on 12 October 2026 (UTC) after a verified backup and a rehearsal on a production copy.',
+        'Deployed at application 1b469a2 on database schema 39, activated on 13 October 2026 (UTC) after a verified backup and a rehearsal on a production copy.',
       items: [
         {
           title: 'Projects workspace',
@@ -50,6 +50,11 @@
           title: 'New public site, GitHub-style Projects and admin console',
           body: 'The rebuilt site, repository-style Projects, profile, command palette, activity feed and read-only Branches tab, and the reorganised admin console.',
           when: '12 Oct 2026'
+        },
+        {
+          title: 'Issues, labels and stars',
+          body: 'Project issues with labels, assignees and immutable comments, and project stars, for invite-only projects (schema 39).',
+          when: '13 Oct 2026'
         },
         {
           title: 'Shared-history schema and project-scoped device sessions',
@@ -91,11 +96,6 @@
           when: '12 Oct 2026'
         },
         {
-          title: 'Issues, labels and stars',
-          body: 'Project issues with labels, assignees and immutable comments, and project stars, for invite-only projects (schema 39).',
-          when: '13 Oct 2026'
-        },
-        {
           title: 'Retention plan and same-file convergence report',
           body: 'Two read-only command-line reports: what no branch or recovery source reaches in a local repository, and a dry-run node-level merge of a file edited on both sides. Nothing is deleted, stored or signed.',
           when: '13 Oct 2026'
@@ -116,7 +116,7 @@
       items: [
         {
           title: 'Receipt authority and shared writers',
-          body: 'Schema 38 is deployed with shared writers off and no receipt-signing key installed. That is a deliberate decision: the key cannot be replaced once installed and server-side rotation does not exist yet, so enabling waits for key custody, rotation and a production-copy rehearsal.'
+          body: 'Schema 39 is deployed with shared writers off and no receipt-signing key installed. That is a deliberate decision: the key cannot be replaced once installed and server-side rotation does not exist yet, so enabling waits for key custody, rotation and a production-copy rehearsal.'
         },
         {
           title: 'Project-scoped sign-in',

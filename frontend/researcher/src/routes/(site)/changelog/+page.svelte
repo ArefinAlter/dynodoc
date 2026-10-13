@@ -21,6 +21,22 @@
   // Newest first. Distilled from docs/PROJECT-STATUS.md; no dates beyond those recorded there.
   const entries: Entry[] = [
     {
+      id: 'schema-39-release',
+      iso: '2026-10-13',
+      date: '13 Oct 2026',
+      state: 'live',
+      title: 'Issues, labels and stars go live; the operator is named',
+      summary:
+        'The hosted pilot moved to application 1b469a2 on schema 39 after a verified backup and a rehearsal on a copy of production. The history digests before and after are identical.',
+      changes: [
+        'Projects have an Issues tab with labels, assignees and immutable comments, and projects can be starred. Only members of a project can see or change them.',
+        'The privacy, terms, security and support pages name Verne Systems as the operator and give its registered address and contact. They are still drafts and are not yet in effect.',
+        'Only the engine, API and command-line tools are open source (MIT). The workspace and website are not published as open source, so the source download now points to the engine repository.',
+        'Two read-only command-line reports are available for local repositories: a retention plan and a dry-run merge report for files edited on both sides.'
+      ],
+      refs: 'Application 1b469a2 · schema 39 · engine 676d143'
+    },
+    {
       id: 'schema-38-release',
       iso: '2026-10-12',
       date: '12 Oct 2026',
@@ -172,7 +188,7 @@
   <InfoHero
     eyebrow="CHANGELOG"
     title="Changelog"
-    lede="What changed, in plain language, newest first. Production runs application 49ada1e on schema 38. Entries marked In source describe work that was implemented before the 12 October release; the newest entry says which parts are now deployed."
+    lede="What changed, in plain language, newest first. Production runs application 1b469a2 on schema 39. Entries marked In source describe work that was implemented before the 12 October release; the newest entry says which parts are now deployed."
   >
     {#snippet actions()}
       <Btn href="/roadmap" arrow>See the roadmap</Btn>

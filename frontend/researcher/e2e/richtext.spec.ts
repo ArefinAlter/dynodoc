@@ -14,6 +14,8 @@ test('long formatted passages save compact history and replay after reload', asy
   await page.getByRole('button', { name: 'Create document', exact: true }).click();
   const editor = page.getByRole('textbox', { name: 'Document content' });
   const text = 'Research evidence stays with its history. '.repeat(100);
+  // The textbox exists before the editor becomes editable; wait for that to avoid a race.
+  await expect(editor).toHaveAttribute('contenteditable', 'true');
   await editor.fill(text);
   await expect(page.locator('.save-state')).toHaveText('All changes saved', { timeout: 30_000 });
   await editor.focus();

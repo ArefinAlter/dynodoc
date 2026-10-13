@@ -1,9 +1,19 @@
 # Engine evolution handoff
 
+## Live: schema 39 release (13 October 2026, 03:02 UTC)
+
+The VPS workspace, API and admin site run application `1b469a2`, schema 39: project issues,
+labels and stars, the Verne Systems operator details on the legal pages, and `/source` as a
+redirect to the public engine repository. Rehearsal on a production copy, a verified backup
+and unchanged event/snapshot digests preceded activation. The receipt authority stays
+uninstalled (see [the decision](RECEIPT-AUTHORITY-DECISION.md)). Evidence, rollback and
+follow-ups: [release record](operations/2026-10-13-schema39-release.md). The entry below
+describes this revision as source; it was deployed after CI passed.
+
 ## Source: operator details, private application, issues and retention plan (13 October 2026)
 
-Source is PostgreSQL schema 39 (migration 0039). Production runs schema 38 until the
-follow-up release record below says otherwise.
+Source is PostgreSQL schema 39 (migration 0039); this was deployed to production the same day
+(see the entry above).
 
 **Operator and legal.** The public legal, trust, support and brand pages now carry the
 owner's operator facts from one module (`frontend/researcher/src/lib/site/operator.ts`):
