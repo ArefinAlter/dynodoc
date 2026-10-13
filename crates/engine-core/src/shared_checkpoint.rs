@@ -213,6 +213,17 @@ struct StateRoots {
     removed_choices: Address,
 }
 
+impl StateRoots {
+    fn addresses(self) -> Vec<Address> {
+        vec![
+            self.nodes,
+            self.comments,
+            self.suggestions,
+            self.removed_choices,
+        ]
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(
     tag = "kind",
@@ -301,6 +312,28 @@ pub fn validate_stored(expected: &Address, bytes: &[u8]) -> Result<(), Error> {
         typed::validate(expected, bytes)
     } else {
         decode(expected, bytes).map(|_| ())
+    }
+}
+
+/// Direct child references of one stored object, after the same address and
+/// canonical-form checks as [`validate_stored`]. Retention planning uses this to
+/// walk a graph without reconstructing `DocumentState`; it grants no access and
+/// does not verify that the referenced objects exist.
+pub fn references(expected: &Address, bytes: &[u8]) -> Result<Vec<Address>, Error> {
+    if bytes.starts_with(content::MAGIC) {
+        content::references(expected, bytes)
+    } else if bytes.starts_with(typed::MAGIC) {
+        typed::references(expected, bytes)
+    } else {
+        Ok(match decode(expected, bytes)? {
+            Object::MapLeaf(entries) => entries.into_iter().map(|entry| entry.address).collect(),
+            Object::MapBranch(children) => children.into_values().collect(),
+            Object::State(roots) => roots.addresses(),
+            Object::Node(_)
+            | Object::Comment(_)
+            | Object::Suggestion(_)
+            | Object::RemovedChoice(_) => Vec::new(),
+        })
     }
 }
 
@@ -786,6 +819,44 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(first.new_bytes, other_stats.new_bytes);
+    }
+
+    /// Breadth-first walk of verified direct references from `root`.
+    pub(super) async fn reachable(
+        store: &mut MemoryStore,
+        document: DocumentId,
+        root: &Address,
+    ) -> std::collections::BTreeSet<Address> {
+        let mut seen = std::collections::BTreeSet::new();
+        let mut queue = vec![root.clone()];
+        while let Some(address) = queue.pop() {
+            if seen.insert(address.clone()) {
+                let bytes = store.get(document, &address).await.unwrap();
+                queue.extend(references(&address, &bytes).unwrap());
+            }
+        }
+        seen
+    }
+
+    #[tokio::test]
+    async fn reference_walk_reaches_exactly_the_written_v1_graph() {
+        let doc = DocumentId(uuid::Uuid::new_v4());
+        let mut store = MemoryStore::default();
+        let (root, _) = write_state(&mut store, doc, &fixture(300), Limits::default())
+            .await
+            .unwrap();
+        assert!(store.object_count() > 300);
+        assert_eq!(
+            reachable(&mut store, doc, &root).await.len(),
+            store.object_count()
+        );
+        let bytes = store.get(doc, &root).await.unwrap();
+        // Another object's bytes under this address are a hash mismatch, not a reference list.
+        let other = Address::try_from("ab".repeat(32)).unwrap();
+        assert!(matches!(
+            references(&other, &bytes),
+            Err(Error::HashMismatch)
+        ));
     }
 
     #[tokio::test]

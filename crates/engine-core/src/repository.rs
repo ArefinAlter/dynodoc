@@ -13,6 +13,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 pub mod attestation;
 pub mod compare;
+pub mod convergence;
 pub mod device;
 pub mod device_session;
 pub mod local;

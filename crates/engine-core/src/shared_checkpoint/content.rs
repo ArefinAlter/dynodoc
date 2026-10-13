@@ -137,6 +137,17 @@ pub(super) fn validate(expected: &Address, bytes: &[u8]) -> Result<(), Error> {
     decode(expected, bytes).map(|_| ())
 }
 
+/// Direct child addresses of a verified content object (see `super::references`).
+pub(super) fn references(expected: &Address, bytes: &[u8]) -> Result<Vec<Address>, Error> {
+    Ok(match decode(expected, bytes)? {
+        Object::Chunk(_) => Vec::new(),
+        Object::Branch { children, .. } => {
+            children.into_iter().map(|child| child.address).collect()
+        }
+        Object::Root { child, .. } => vec![child.address],
+    })
+}
+
 struct Builder<'a, 'b, S> {
     writer: &'a mut Writer<'b, S>,
     levels: Vec<Vec<Reference>>,

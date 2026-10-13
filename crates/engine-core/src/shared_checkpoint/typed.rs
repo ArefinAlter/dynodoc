@@ -169,6 +169,26 @@ pub(super) fn validate(expected: &Address, bytes: &[u8]) -> Result<(), Error> {
     decode(expected, bytes).map(|_| ())
 }
 
+/// Direct child addresses of a verified typed object (see `super::references`).
+pub(super) fn references(expected: &Address, bytes: &[u8]) -> Result<Vec<Address>, Error> {
+    Ok(match decode(expected, bytes)? {
+        Object::Scalar(_) | Object::RemovedChoice(_) => Vec::new(),
+        Object::Text(text) => vec![text.root],
+        Object::Array { entries, .. } | Object::Dictionary { entries, .. } => vec![entries],
+        Object::Node { fields, .. } => vec![fields],
+        Object::Comment { body, .. } => vec![body.root],
+        Object::Suggestion {
+            detail,
+            rejected_reason,
+            ..
+        } => std::iter::once(detail)
+            .chain(rejected_reason.map(|reason| reason.root))
+            .collect(),
+        Object::State(roots) => roots.addresses(),
+        Object::Asset { content, .. } => vec![content.root],
+    })
+}
+
 struct Encoder<'a, S> {
     writer: Writer<'a, S>,
     semantic: SemanticLimits,
@@ -753,6 +773,38 @@ mod tests {
             small
         );
         assert!(read(&mut store, document, &v1).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn reference_walk_reaches_exactly_the_written_typed_graph() {
+        let mut store = MemoryStore::default();
+        let document = doc();
+        let (root, _) = write(&mut store, document, &fixture()).await;
+        // Includes v2 values, v1 map nodes and multi-level content trees.
+        assert!(store.object_count() > 100);
+        let reached = super::super::tests::reachable(&mut store, document, &root).await;
+        assert_eq!(reached.len(), store.object_count());
+        let body = "asset body ".repeat(20_000);
+        let (content, _) = content::write(
+            &mut store,
+            document,
+            &mut body.as_bytes(),
+            Limits::default(),
+        )
+        .await
+        .unwrap();
+        let asset = write_asset(
+            &mut store,
+            document,
+            &content,
+            "text/plain",
+            Limits::default(),
+        )
+        .await
+        .unwrap();
+        let reached = super::super::tests::reachable(&mut store, document, &asset).await;
+        assert!(reached.len() >= 3);
+        assert!(!reached.contains(&root));
     }
 
     #[tokio::test]

@@ -1,5 +1,15 @@
 # Database runtime boundary
 
+Schema 39 adds six project issue tables, each with an explicit allowlist (see
+[project issues](PROJECT-ISSUES-API.md)). `project_issue_comment` joins the
+SELECT/INSERT history list and also refuses UPDATE through a trigger. A new
+SELECT/INSERT/UPDATE class holds `project_issue` and `project_issue_counter`: the
+runtime login edits and closes issues but never deletes them. `project_issue_label`
+and `project_star` join the INSERT/DELETE class (created and removed, never edited).
+`project_label` is mutable. The startup check compares all four classes and counts
+the tables, so an unlisted table or a wrong privilege fails closed. Re-run
+`grant-runtime`, then `check-runtime`, after migrating.
+
 Schema 38 adds one mutable table, `device_session`: a short-lived replay ledger and
 issuance-rate window for project device sign-in. It stores no bearer token, secret
 or grant, is pruned by the runtime login, and joins the mutable allowlist. The

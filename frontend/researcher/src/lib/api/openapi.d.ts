@@ -1601,6 +1601,86 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/projects/{id}/issues': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations['project_issues_list'];
+    put?: never;
+    post: operations['project_issues_create'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/projects/{id}/issues/{number}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations['project_issue_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch: operations['project_issue_update'];
+    trace?: never;
+  };
+  '/projects/{id}/issues/{number}/comments': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations['project_issue_comment_create'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/projects/{id}/labels': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations['project_labels_list'];
+    put?: never;
+    post: operations['project_label_create'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/projects/{id}/labels/{label_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete: operations['project_label_delete'];
+    options?: never;
+    head?: never;
+    patch: operations['project_label_update'];
+    trace?: never;
+  };
   '/projects/{id}/settings': {
     parameters: {
       query?: never;
@@ -1724,6 +1804,22 @@ export interface paths {
     put?: never;
     post?: never;
     delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/projects/{id}/star': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put: operations['project_star_put'];
+    post?: never;
+    delete: operations['project_star_delete'];
     options?: never;
     head?: never;
     patch?: never;
@@ -1930,8 +2026,190 @@ export interface components {
       /** @description SHA-256 of a 256-bit secret held by the requesting editor. Never the secret. */
       key_challenge?: string | null;
     };
+    Issue: {
+      assignee?: null | components['schemas']['IssueAssignee'];
+      author: components['schemas']['IssuePerson'];
+      body: string;
+      /** Format: date-time */
+      closed_at?: string | null;
+      closed_by?: null | components['schemas']['IssuePerson'];
+      /** Format: int32 */
+      comment_count: number;
+      comments?: null | components['schemas']['IssueCommentPage'];
+      /** Format: date-time */
+      created_at: string;
+      /** Format: uuid */
+      id: string;
+      labels: components['schemas']['IssueLabel'][];
+      /** Format: int32 */
+      number: number;
+      /**
+       * Format: int64
+       * @description Send with edits of title or description; changes on every edit.
+       */
+      revision: number;
+      state: string;
+      title: string;
+      /** Format: date-time */
+      updated_at: string;
+      viewer: components['schemas']['IssueViewer'];
+    };
+    IssueAssignee: {
+      /** Format: uuid */
+      id: string;
+      /** @description False when the assignee has since left the project. */
+      member: boolean;
+      name?: string | null;
+    };
+    IssueChange: {
+      /**
+       * Format: uuid
+       * @description A current project member, or `null` to unassign.
+       */
+      assignee_id?: string | null;
+      body?: string | null;
+      /** @description The complete new label set; an empty list clears. */
+      labels?: string[] | null;
+      /**
+       * Format: int64
+       * @description Required with `title` or `body`: the issue's current revision.
+       */
+      revision?: number | null;
+      /** @description `open` or `closed`. */
+      state?: string | null;
+      title?: string | null;
+    };
+    IssueComment: {
+      author: components['schemas']['IssuePerson'];
+      body: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: uuid */
+      id: string;
+      /**
+       * Format: int32
+       * @description 1, 2, 3... within the issue; page with `after`.
+       */
+      seq: number;
+    };
+    IssueCommentCreated: {
+      comment: components['schemas']['IssueComment'];
+      /** Format: int32 */
+      comment_count: number;
+    };
+    IssueCommentPage: {
+      items: components['schemas']['IssueComment'][];
+      /** Format: int32 */
+      next_after?: number | null;
+    };
+    IssueCounts: {
+      /** Format: int64 */
+      closed: number;
+      /** Format: int64 */
+      open: number;
+    };
+    IssueLabel: {
+      /** @description Six lowercase hexadecimal digits, no `#`. */
+      color: string;
+      description: string;
+      /** Format: uuid */
+      id: string;
+      name: string;
+    };
+    IssuePage: {
+      /** @description Project totals, ignoring the filters. */
+      counts: components['schemas']['IssueCounts'];
+      items: components['schemas']['IssueSummary'][];
+      /**
+       * Format: int32
+       * @description Send as `before` for the next page; null on the last page.
+       */
+      next_before?: number | null;
+    };
+    /** @description A person as shown to project members. */
+    IssuePerson: {
+      /** Format: uuid */
+      id: string;
+      /** @description Chosen name, else the email's local part; `Deleted account` after erasure. */
+      name?: string | null;
+    };
+    IssueSummary: {
+      assignee?: null | components['schemas']['IssueAssignee'];
+      author: components['schemas']['IssuePerson'];
+      /** Format: date-time */
+      closed_at?: string | null;
+      /** Format: int32 */
+      comment_count: number;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: uuid */
+      id: string;
+      labels: components['schemas']['IssueLabel'][];
+      /** Format: int32 */
+      number: number;
+      /** @description `open` or `closed`. */
+      state: string;
+      title: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    IssueViewer: {
+      can_comment: boolean;
+      /** @description Title, description, labels, assignee and state. */
+      can_edit: boolean;
+      /** @description The caller's project role. */
+      role: string;
+    };
+    LabelChange: {
+      color?: string | null;
+      description?: string | null;
+      name?: string | null;
+    };
+    LabelDeleted: {
+      /** Format: int64 */
+      issues_updated: number;
+      ok: boolean;
+    };
+    LabelList: {
+      can_manage: boolean;
+      items: components['schemas']['LabelWithCount'][];
+    };
+    LabelWithCount: {
+      color: string;
+      description: string;
+      /** Format: uuid */
+      id: string;
+      name: string;
+      /** Format: int64 */
+      open_issue_count: number;
+    };
     /** @enum {string} */
     Mode: 'restore' | 'revert' | 'cherry_pick';
+    NewComment: {
+      /** @description 1-10,000 characters. */
+      body: string;
+    };
+    NewIssue: {
+      /**
+       * Format: uuid
+       * @description A current project member.
+       */
+      assignee_id?: string | null;
+      /** @description Up to 20,000 characters. */
+      body?: string;
+      /** @description Up to 20 labels of this project. */
+      labels?: string[];
+      /** @description 1-200 characters, one line. */
+      title: string;
+    };
+    NewLabel: {
+      /** @description Six hexadecimal digits; a leading `#` is accepted. */
+      color: string;
+      /** @description Up to 200 characters. */
+      description?: string;
+      /** @description 1-50 characters, unique in the project ignoring case. */
+      name: string;
+    };
     /** @description `POST /ops/node-create`. `node_id` is optional; absent, the server mints a ULID. */
     NodeCreateRequest: {
       fields?: unknown;
@@ -1996,6 +2274,11 @@ export interface components {
        *     followed by the canonical JSON of the challenge.
        */
       signature: string;
+    };
+    StarState: {
+      /** Format: int64 */
+      star_count: number;
+      starred: boolean;
     };
     /** @description `POST /ops/suggest`. `detail` is the wrapped content op (internally-tagged JSON). */
     SuggestRequest: {
@@ -6105,6 +6388,564 @@ export interface operations {
       };
     };
   };
+  project_issues_list: {
+    parameters: {
+      query?: {
+        /** @description open (default), closed or all */
+        state?: string;
+        /** @description A label id or name */
+        label?: string;
+        /** @description An account id, me or none */
+        assignee?: string;
+        /** @description An account id or me */
+        author?: string;
+        /** @description Title substring, up to 100 characters */
+        q?: string;
+        /** @description Issue number: only smaller numbers */
+        before?: number;
+        /** @description 1-100 (default 30) */
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        /** @description Project */
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Newest issue number first, with the next page marker and project open/closed totals */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['IssuePage'];
+        };
+      };
+      /** @description Invalid filter */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Project membership required */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Too many reads */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Deadline exceeded */
+      504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  project_issues_create: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Project */
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['NewIssue'];
+      };
+    };
+    responses: {
+      /** @description The new issue (numbered per project, never reused) */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Issue'];
+        };
+      };
+      /** @description Invalid text, label or assignee */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Project membership with a non-viewer role required */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The project has 5,000 issues */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Too many requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Deadline exceeded */
+      504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  project_issue_get: {
+    parameters: {
+      query?: {
+        /** @description Comment seq to continue after */
+        after?: number;
+        /** @description Comments per page, 1-100 (default 50) */
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        /** @description Project */
+        id: string;
+        /** @description Issue number */
+        number: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The issue with its oldest-first page of comments */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Issue'];
+        };
+      };
+      /** @description Project membership required */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description No such issue */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Too many reads */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Deadline exceeded */
+      504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  project_issue_update: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Project */
+        id: string;
+        /** @description Issue number */
+        number: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['IssueChange'];
+      };
+    };
+    responses: {
+      /** @description The issue after the change (no comments) */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Issue'];
+        };
+      };
+      /** @description Invalid change, or revision missing */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Only the author, a manager or an owner may change an issue */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description No such issue */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The issue changed since this revision */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Too many requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Deadline exceeded */
+      504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  project_issue_comment_create: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Project */
+        id: string;
+        /** @description Issue number */
+        number: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['NewComment'];
+      };
+    };
+    responses: {
+      /** @description The immutable comment */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['IssueCommentCreated'];
+        };
+      };
+      /** @description Invalid comment */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Project membership with a non-viewer role required */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description No such issue */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The issue has 1,000 comments */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Too many requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Deadline exceeded */
+      504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  project_labels_list: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Project */
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The project's labels (at most 100) by name, with open-issue counts */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['LabelList'];
+        };
+      };
+      /** @description Project membership required */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Too many reads */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Deadline exceeded */
+      504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  project_label_create: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Project */
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['NewLabel'];
+      };
+    };
+    responses: {
+      /** @description The new label */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['IssueLabel'];
+        };
+      };
+      /** @description Invalid name, colour or description */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Managers and owners only */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Duplicate name or 100 labels */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Too many requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Deadline exceeded */
+      504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  project_label_delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Project */
+        id: string;
+        /** @description Label */
+        label_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The label is removed from every issue */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['LabelDeleted'];
+        };
+      };
+      /** @description Managers and owners only */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description No such label */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Too many requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Deadline exceeded */
+      504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  project_label_update: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Project */
+        id: string;
+        /** @description Label */
+        label_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['LabelChange'];
+      };
+    };
+    responses: {
+      /** @description The label after the change */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['IssueLabel'];
+        };
+      };
+      /** @description Invalid name, colour or description */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Managers and owners only */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description No such label */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Duplicate name */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Too many requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Deadline exceeded */
+      504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
   settings: {
     parameters: {
       query?: never;
@@ -6371,6 +7212,94 @@ export interface operations {
         content: {
           'application/json': unknown;
         };
+      };
+    };
+  };
+  project_star_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Project */
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The caller's own star is set (idempotent) */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['StarState'];
+        };
+      };
+      /** @description Project membership required */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Too many requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Deadline exceeded */
+      504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  project_star_delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Project */
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The caller's own star is cleared (idempotent) */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['StarState'];
+        };
+      };
+      /** @description Project membership required */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Too many requests */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Deadline exceeded */
+      504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
     };
   };

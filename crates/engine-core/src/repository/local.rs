@@ -17,7 +17,9 @@ use std::{
     time::Duration,
 };
 
+mod retention;
 mod storage;
+pub use retention::{GcPlan, GcPlanOptions};
 pub use storage::{StorageLimits, StorageUsage, SCHEMA_VERSION};
 
 const SCHEMA: &str = "
@@ -35,6 +37,8 @@ create trigger if not exists commits_no_delete before delete on commits begin se
 pub struct LocalRepository {
     pool: SqlitePool,
     project: uuid::Uuid,
+    /// Connection settings, reused to open private read-only planning connections.
+    options: SqliteConnectOptions,
 }
 
 /// Transfer inventory uses stable keyset cursors. Object bytes are always scoped
@@ -174,7 +178,7 @@ impl LocalRepository {
             .busy_timeout(Duration::from_secs(5));
         let pool = SqlitePoolOptions::new()
             .max_connections(4)
-            .connect_with(options)
+            .connect_with(options.clone())
             .await?;
         let mut tx = pool.begin().await?;
         sqlx::raw_sql(SCHEMA).execute(&mut *tx).await?;
@@ -194,7 +198,42 @@ impl LocalRepository {
         // unbounded writes or to reconstruct lower usage on reopen.
         storage::usage(&mut tx).await?;
         tx.commit().await?;
-        Ok(Self { pool, project })
+        Ok(Self {
+            pool,
+            project,
+            options,
+        })
+    }
+
+    /// Open an existing repository without any chance of writing: nothing is
+    /// created, no schema is upgraded and every connection is `query_only`.
+    /// Read methods work; mutating methods fail with a database error.
+    pub async fn open_read_only(path: &Path, project: uuid::Uuid) -> Result<Self, Error> {
+        if project.is_nil() {
+            return Err(Error::Invalid("nil project"));
+        }
+        let options = SqliteConnectOptions::new()
+            .filename(path)
+            .create_if_missing(false)
+            .foreign_keys(true)
+            .busy_timeout(Duration::from_secs(5))
+            .pragma("query_only", "ON");
+        let pool = SqlitePoolOptions::new()
+            .max_connections(4)
+            .connect_with(options.clone())
+            .await?;
+        let (version, actual): (i64, String) =
+            sqlx::query_as("select version,project from local_meta where singleton=1")
+                .fetch_one(&pool)
+                .await?;
+        if !matches!(version, 1 | SCHEMA_VERSION) || actual != project.to_string() {
+            return Err(Error::Invalid("local schema/project"));
+        }
+        Ok(Self {
+            pool,
+            project,
+            options,
+        })
     }
     pub async fn close(self) {
         self.pool.close().await;
@@ -568,6 +607,10 @@ impl LocalRepository {
     }
 }
 
+#[cfg(test)]
+mod convergence_tests;
+#[cfg(test)]
+mod retention_tests;
 #[cfg(test)]
 mod storage_tests;
 

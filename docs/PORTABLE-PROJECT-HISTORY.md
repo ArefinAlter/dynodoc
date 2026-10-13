@@ -111,3 +111,38 @@ Competing edits, delete/edit, shared-document rename and path namespace conflict
 remain explicit. Same-file rich-text resolution, cross-file semantic validators,
 criss-cross virtual bases and native application remain additional work. The
 planner never writes to a branch or native document on its own.
+
+## Same-file convergence report
+
+`compare` (and `LocalRepository::same_file_convergence`) now adds a dry-run report
+for conflicting paths that still name the same stable document UUID on the base,
+left and right commits. It reads the three typed states and runs the existing
+node/field three-way merge used for change requests, including rich-text run
+merging. For each such file it reports whether the merge is clean, the typed-state
+address the merged state **would** have, and node-level conflicts with stable node
+ids, the field name and the base, left and right values. The path-level `files` and
+`conflicts` output is unchanged; the extra `same_file_convergence` key appears only
+when at least one conflict qualifies, and a comparison without one prints exactly
+what it printed before.
+
+Nothing is stored or signed and no branch moves. The address is computed without
+writing; storing the merged state later gives the same root. Left and right can be
+swapped: the merge runs in both orientations and is reported clean only when both
+are, the address comes from one canonical orientation (the side with the smaller
+state address is treated as the team side), and conflicts are the same list with
+left and right values exchanged. Two replicas merging each other's work therefore
+agree on the address, but where a tie-break exists (for example two different marks
+added to the same words) the order of those marks is the canonical choice, not
+either user's.
+
+Limits. This is a report, not automatic resolution: a clean file still needs a
+signed commit, and every conflict still needs an explicit choice. It is not
+constraint-aware across documents (references between files, shared identity or
+namespace rules) and does not understand native structures the typed state does not
+represent. Nodes are compared by stable id; a node missing from one side's map is a
+removal that wins only over an unchanged copy, otherwise a delete/edit conflict.
+Comments and suggestions are compared as whole collections. Only documents whose
+id is identical on all three commits are examined, at most 64 files per comparison
+(the rest are counted as `not_examined`), each bounded by the ordinary state read
+budgets. Criss-cross and disconnected histories are still refused before any file
+is read; virtual merge bases remain future work.

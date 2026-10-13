@@ -29,6 +29,7 @@ const HISTORY: &[&str] = &[
     "project_published_object",
     "project_history_review",
     "project_ref_event",
+    "project_issue_comment",
 ];
 const MUTABLE: &[&str] = &[
     "document",
@@ -56,9 +57,12 @@ const MUTABLE: &[&str] = &[
     "project_watch",
     "connector_grant",
     "device_enrollment_challenge",
+    "project_label",
 ];
 /// Rows are created and pruned but never edited: a replay ledger, not a record.
-const INSERT_DELETE: &[&str] = &["device_session"];
+const INSERT_DELETE: &[&str] = &["device_session", "project_issue_label", "project_star"];
+/// Rows are created and edited but never deleted by the runtime login.
+const INSERT_UPDATE: &[&str] = &["project_issue", "project_issue_counter"];
 const FUNCTIONS: &[&str] = &[
     "access_role_rank(text)",
     "member_role_order(text)",
@@ -153,6 +157,7 @@ pub async fn grant_runtime(pool: &PgPool, role: &str) -> anyhow::Result<()> {
         (READ_ONLY, "select"),
         (HISTORY, "select,insert"),
         (INSERT_DELETE, "select,insert,delete"),
+        (INSERT_UPDATE, "select,insert,update"),
         (MUTABLE, "select,insert,update,delete"),
     ] {
         for table in tables {
@@ -202,14 +207,21 @@ async fn check_privileges(connection: &mut PgConnection, role: &str) -> anyhow::
         "select c.relname from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid=c.relnamespace
          where n.nspname='public' and c.relkind in ('r','p','v','m','f') order by c.relname",
     ).fetch_all(&mut *connection).await?;
-    if tables.len() != HISTORY.len() + MUTABLE.len() + READ_ONLY.len() + INSERT_DELETE.len() {
+    if tables.len()
+        != HISTORY.len()
+            + MUTABLE.len()
+            + READ_ONLY.len()
+            + INSERT_DELETE.len()
+            + INSERT_UPDATE.len()
+    {
         bail!("runtime table inventory differs from this binary");
     }
     for table in tables {
         let mutable = MUTABLE.contains(&table.as_str());
         let history = HISTORY.contains(&table.as_str());
         let prunable = INSERT_DELETE.contains(&table.as_str());
-        if !mutable && !history && !prunable && !READ_ONLY.contains(&table.as_str()) {
+        let editable = INSERT_UPDATE.contains(&table.as_str());
+        if !mutable && !history && !prunable && !editable && !READ_ONLY.contains(&table.as_str()) {
             bail!("unexpected runtime table {table}");
         }
         let relation = format!("public.{}", ident(&table));
@@ -221,11 +233,11 @@ async fn check_privileges(connection: &mut PgConnection, role: &str) -> anyhow::
              or has_any_column_privilege($1,$2,'REFERENCES,SELECT WITH GRANT OPTION,INSERT WITH GRANT OPTION,UPDATE WITH GRANT OPTION')",
         ).bind(role).bind(&relation).fetch_one(&mut *connection).await?;
         if !read
-            || insert != (mutable || history || prunable)
-            || update != mutable
+            || insert != (mutable || history || prunable || editable)
+            || update != (mutable || editable)
             || delete != (mutable || prunable)
-            || column_insert != (mutable || history || prunable)
-            || column_update != mutable
+            || column_insert != (mutable || history || prunable || editable)
+            || column_update != (mutable || editable)
             || dangerous
         {
             bail!("runtime privileges do not match the allowlist for {table}");

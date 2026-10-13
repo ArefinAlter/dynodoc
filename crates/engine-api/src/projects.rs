@@ -71,7 +71,7 @@ async fn lock(
         .ok_or(ApiError::NotFound)?;
     require(tx, id, person).await
 }
-const PROJECT: &str = "jsonb_build_object('id',s.id,'name',s.name,'description',p.description,'revision',p.revision,'role',inherited_space_role(s.id,$1),'policy',jsonb_build_object('protect_team_version',p.protect_team_version,'required_approvals',p.required_approvals,'merge_roles',p.merge_roles),'watch',coalesce((select level from project_watch where space_id=s.id and identity_id=$1),'ignore'))";
+const PROJECT: &str = "jsonb_build_object('id',s.id,'name',s.name,'description',p.description,'revision',p.revision,'role',inherited_space_role(s.id,$1),'policy',jsonb_build_object('protect_team_version',p.protect_team_version,'required_approvals',p.required_approvals,'merge_roles',p.merge_roles),'watch',coalesce((select level from project_watch where space_id=s.id and identity_id=$1),'ignore'),'starred',exists(select 1 from project_star where project_id=s.id and identity_id=$1),'star_count',(select count(*) from project_star st join space_member m on m.space_id=st.project_id and m.identity_id=st.identity_id join identity si on si.id=st.identity_id and si.disabled_at is null where st.project_id=s.id),'open_issue_count',(select count(*) from project_issue where project_id=s.id and state='open'))";
 #[utoipa::path(get, path="/projects", security(("paseto"=[])), responses((status=200, description="Invited projects", body=Value)))]
 async fn list(State(state): State<AppState>, auth: AuthContext) -> Result<Json<Value>, ApiError> {
     let items: Vec<Value> = sqlx::query_scalar(&format!("select {PROJECT} from access_space s join project_settings p on p.space_id=s.id where inherited_space_role(s.id,$1) is not null order by s.created_at desc,s.id limit 1000"))

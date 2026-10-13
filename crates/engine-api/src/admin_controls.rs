@@ -73,7 +73,7 @@ async fn plan(
             if !row.get::<bool, _>("removed") {
                 blockers.push("Disable the account first.".into());
             }
-            let counts: Value = sqlx::query_scalar("select jsonb_build_object('owned_documents',(select count(*) from document where created_by=$1),'owned_workspaces',(select count(*) from space_member where identity_id=$1 and role='owner'),'sessions',(select count(*) from refresh_token where identity_id=$1),'contributions_retained',(select count(*) from event where actor_id=$1),'drafts',(select count(*) from workspace_draft where created_by=$1))")
+            let counts: Value = sqlx::query_scalar("select jsonb_build_object('owned_documents',(select count(*) from document where created_by=$1),'owned_workspaces',(select count(*) from space_member where identity_id=$1 and role='owner'),'sessions',(select count(*) from refresh_token where identity_id=$1),'contributions_retained',(select count(*) from event where actor_id=$1),'issue_contributions_retained',(select count(*) from project_issue where author_id=$1)+(select count(*) from project_issue_comment where author_id=$1),'drafts',(select count(*) from workspace_draft where created_by=$1))")
                 .bind(target.id).fetch_one(&mut *db).await?;
             if counts["owned_documents"].as_i64().unwrap_or(0) > 0 {
                 blockers.push("Transfer or permanently delete owned documents first, including documents in Trash.".into());
@@ -217,12 +217,18 @@ async fn erase_one(
             "idempotency_key",
             "document_access",
             "space_member",
+            "project_star",
         ] {
             sqlx::query(&format!("delete from {table} where identity_id=$1"))
                 .bind(target.id)
                 .execute(&mut *tx)
                 .await?;
         }
+        // Issues and comments they wrote stay under the anonymised account.
+        sqlx::query("update project_issue set assignee_id=null where assignee_id=$1")
+            .bind(target.id)
+            .execute(&mut *tx)
+            .await?;
         sqlx::query("delete from notification where recipient_id=$1")
             .bind(target.id)
             .execute(&mut *tx)

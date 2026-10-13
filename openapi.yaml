@@ -3134,6 +3134,409 @@ paths:
       - paseto: []
       - device_session:
         - history:read
+  /projects/{id}/issues:
+    get:
+      tags:
+      - project issues
+      operationId: project_issues_list
+      parameters:
+      - name: id
+        in: path
+        description: Project
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: state
+        in: query
+        description: open (default), closed or all
+        required: false
+        schema:
+          type: string
+      - name: label
+        in: query
+        description: A label id or name
+        required: false
+        schema:
+          type: string
+      - name: assignee
+        in: query
+        description: An account id, me or none
+        required: false
+        schema:
+          type: string
+      - name: author
+        in: query
+        description: An account id or me
+        required: false
+        schema:
+          type: string
+      - name: q
+        in: query
+        description: Title substring, up to 100 characters
+        required: false
+        schema:
+          type: string
+      - name: before
+        in: query
+        description: 'Issue number: only smaller numbers'
+        required: false
+        schema:
+          type: integer
+          format: int32
+      - name: limit
+        in: query
+        description: 1-100 (default 30)
+        required: false
+        schema:
+          type: integer
+          format: int64
+      responses:
+        '200':
+          description: Newest issue number first, with the next page marker and project open/closed totals
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssuePage'
+        '400':
+          description: Invalid filter
+        '403':
+          description: Project membership required
+        '429':
+          description: Too many reads
+        '504':
+          description: Deadline exceeded
+      security:
+      - paseto: []
+    post:
+      tags:
+      - project issues
+      operationId: project_issues_create
+      parameters:
+      - name: id
+        in: path
+        description: Project
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewIssue'
+        required: true
+      responses:
+        '200':
+          description: The new issue (numbered per project, never reused)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Issue'
+        '400':
+          description: Invalid text, label or assignee
+        '403':
+          description: Project membership with a non-viewer role required
+        '409':
+          description: The project has 5,000 issues
+        '429':
+          description: Too many requests
+        '504':
+          description: Deadline exceeded
+      security:
+      - paseto: []
+  /projects/{id}/issues/{number}:
+    get:
+      tags:
+      - project issues
+      operationId: project_issue_get
+      parameters:
+      - name: id
+        in: path
+        description: Project
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: number
+        in: path
+        description: Issue number
+        required: true
+        schema:
+          type: integer
+          format: int32
+      - name: after
+        in: query
+        description: Comment seq to continue after
+        required: false
+        schema:
+          type: integer
+          format: int32
+      - name: limit
+        in: query
+        description: Comments per page, 1-100 (default 50)
+        required: false
+        schema:
+          type: integer
+          format: int64
+      responses:
+        '200':
+          description: The issue with its oldest-first page of comments
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Issue'
+        '403':
+          description: Project membership required
+        '404':
+          description: No such issue
+        '429':
+          description: Too many reads
+        '504':
+          description: Deadline exceeded
+      security:
+      - paseto: []
+    patch:
+      tags:
+      - project issues
+      operationId: project_issue_update
+      parameters:
+      - name: id
+        in: path
+        description: Project
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: number
+        in: path
+        description: Issue number
+        required: true
+        schema:
+          type: integer
+          format: int32
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IssueChange'
+        required: true
+      responses:
+        '200':
+          description: The issue after the change (no comments)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Issue'
+        '400':
+          description: Invalid change, or revision missing
+        '403':
+          description: Only the author, a manager or an owner may change an issue
+        '404':
+          description: No such issue
+        '409':
+          description: The issue changed since this revision
+        '429':
+          description: Too many requests
+        '504':
+          description: Deadline exceeded
+      security:
+      - paseto: []
+  /projects/{id}/issues/{number}/comments:
+    post:
+      tags:
+      - project issues
+      operationId: project_issue_comment_create
+      parameters:
+      - name: id
+        in: path
+        description: Project
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: number
+        in: path
+        description: Issue number
+        required: true
+        schema:
+          type: integer
+          format: int32
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewComment'
+        required: true
+      responses:
+        '200':
+          description: The immutable comment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueCommentCreated'
+        '400':
+          description: Invalid comment
+        '403':
+          description: Project membership with a non-viewer role required
+        '404':
+          description: No such issue
+        '409':
+          description: The issue has 1,000 comments
+        '429':
+          description: Too many requests
+        '504':
+          description: Deadline exceeded
+      security:
+      - paseto: []
+  /projects/{id}/labels:
+    get:
+      tags:
+      - project issues
+      operationId: project_labels_list
+      parameters:
+      - name: id
+        in: path
+        description: Project
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: The project's labels (at most 100) by name, with open-issue counts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LabelList'
+        '403':
+          description: Project membership required
+        '429':
+          description: Too many reads
+        '504':
+          description: Deadline exceeded
+      security:
+      - paseto: []
+    post:
+      tags:
+      - project issues
+      operationId: project_label_create
+      parameters:
+      - name: id
+        in: path
+        description: Project
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewLabel'
+        required: true
+      responses:
+        '200':
+          description: The new label
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueLabel'
+        '400':
+          description: Invalid name, colour or description
+        '403':
+          description: Managers and owners only
+        '409':
+          description: Duplicate name or 100 labels
+        '429':
+          description: Too many requests
+        '504':
+          description: Deadline exceeded
+      security:
+      - paseto: []
+  /projects/{id}/labels/{label_id}:
+    delete:
+      tags:
+      - project issues
+      operationId: project_label_delete
+      parameters:
+      - name: id
+        in: path
+        description: Project
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: label_id
+        in: path
+        description: Label
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: The label is removed from every issue
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LabelDeleted'
+        '403':
+          description: Managers and owners only
+        '404':
+          description: No such label
+        '429':
+          description: Too many requests
+        '504':
+          description: Deadline exceeded
+      security:
+      - paseto: []
+    patch:
+      tags:
+      - project issues
+      operationId: project_label_update
+      parameters:
+      - name: id
+        in: path
+        description: Project
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: label_id
+        in: path
+        description: Label
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LabelChange'
+        required: true
+      responses:
+        '200':
+          description: The label after the change
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueLabel'
+        '400':
+          description: Invalid name, colour or description
+        '403':
+          description: Managers and owners only
+        '404':
+          description: No such label
+        '409':
+          description: Duplicate name
+        '429':
+          description: Too many requests
+        '504':
+          description: Deadline exceeded
+      security:
+      - paseto: []
   /projects/{id}/settings:
     post:
       tags: []
@@ -3380,6 +3783,61 @@ paths:
       - paseto: []
       - device_session:
         - history:write
+  /projects/{id}/star:
+    put:
+      tags:
+      - project issues
+      operationId: project_star_put
+      parameters:
+      - name: id
+        in: path
+        description: Project
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: The caller's own star is set (idempotent)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StarState'
+        '403':
+          description: Project membership required
+        '429':
+          description: Too many requests
+        '504':
+          description: Deadline exceeded
+      security:
+      - paseto: []
+    delete:
+      tags:
+      - project issues
+      operationId: project_star_delete
+      parameters:
+      - name: id
+        in: path
+        description: Project
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: The caller's own star is cleared (idempotent)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StarState'
+        '403':
+          description: Project membership required
+        '429':
+          description: Too many requests
+        '504':
+          description: Deadline exceeded
+      security:
+      - paseto: []
   /projects/{id}/watch:
     post:
       tags: []
@@ -3774,12 +4232,415 @@ components:
           - 'null'
           description: SHA-256 of a 256-bit secret held by the requesting editor. Never the secret.
       additionalProperties: false
+    Issue:
+      type: object
+      required:
+      - id
+      - number
+      - title
+      - state
+      - author
+      - labels
+      - comment_count
+      - created_at
+      - updated_at
+      - body
+      - revision
+      - viewer
+      properties:
+        assignee:
+          oneOf:
+          - type: 'null'
+          - $ref: '#/components/schemas/IssueAssignee'
+        author:
+          $ref: '#/components/schemas/IssuePerson'
+        body:
+          type: string
+        closed_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        closed_by:
+          oneOf:
+          - type: 'null'
+          - $ref: '#/components/schemas/IssuePerson'
+        comment_count:
+          type: integer
+          format: int32
+        comments:
+          oneOf:
+          - type: 'null'
+          - $ref: '#/components/schemas/IssueCommentPage'
+            description: Present on `GET` of one issue only.
+        created_at:
+          type: string
+          format: date-time
+        id:
+          type: string
+          format: uuid
+        labels:
+          type: array
+          items:
+            $ref: '#/components/schemas/IssueLabel'
+        number:
+          type: integer
+          format: int32
+        revision:
+          type: integer
+          format: int64
+          description: Send with edits of title or description; changes on every edit.
+        state:
+          type: string
+        title:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+        viewer:
+          $ref: '#/components/schemas/IssueViewer'
+    IssueAssignee:
+      type: object
+      required:
+      - id
+      - member
+      properties:
+        id:
+          type: string
+          format: uuid
+        member:
+          type: boolean
+          description: False when the assignee has since left the project.
+        name:
+          type:
+          - string
+          - 'null'
+    IssueChange:
+      type: object
+      properties:
+        assignee_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+          description: A current project member, or `null` to unassign.
+        body:
+          type:
+          - string
+          - 'null'
+        labels:
+          type:
+          - array
+          - 'null'
+          items:
+            type: string
+            format: uuid
+          description: The complete new label set; an empty list clears.
+        revision:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: 'Required with `title` or `body`: the issue''s current revision.'
+        state:
+          type:
+          - string
+          - 'null'
+          description: '`open` or `closed`.'
+        title:
+          type:
+          - string
+          - 'null'
+      additionalProperties: false
+    IssueComment:
+      type: object
+      required:
+      - id
+      - seq
+      - author
+      - body
+      - created_at
+      properties:
+        author:
+          $ref: '#/components/schemas/IssuePerson'
+        body:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        id:
+          type: string
+          format: uuid
+        seq:
+          type: integer
+          format: int32
+          description: 1, 2, 3... within the issue; page with `after`.
+    IssueCommentCreated:
+      type: object
+      required:
+      - comment
+      - comment_count
+      properties:
+        comment:
+          $ref: '#/components/schemas/IssueComment'
+        comment_count:
+          type: integer
+          format: int32
+    IssueCommentPage:
+      type: object
+      required:
+      - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/IssueComment'
+        next_after:
+          type:
+          - integer
+          - 'null'
+          format: int32
+    IssueCounts:
+      type: object
+      required:
+      - open
+      - closed
+      properties:
+        closed:
+          type: integer
+          format: int64
+        open:
+          type: integer
+          format: int64
+    IssueLabel:
+      type: object
+      required:
+      - id
+      - name
+      - color
+      - description
+      properties:
+        color:
+          type: string
+          description: Six lowercase hexadecimal digits, no `#`.
+        description:
+          type: string
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+    IssuePage:
+      type: object
+      required:
+      - items
+      - counts
+      properties:
+        counts:
+          $ref: '#/components/schemas/IssueCounts'
+          description: Project totals, ignoring the filters.
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/IssueSummary'
+        next_before:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: Send as `before` for the next page; null on the last page.
+    IssuePerson:
+      type: object
+      description: A person as shown to project members.
+      required:
+      - id
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type:
+          - string
+          - 'null'
+          description: Chosen name, else the email's local part; `Deleted account` after erasure.
+    IssueSummary:
+      type: object
+      required:
+      - id
+      - number
+      - title
+      - state
+      - author
+      - labels
+      - comment_count
+      - created_at
+      - updated_at
+      properties:
+        assignee:
+          oneOf:
+          - type: 'null'
+          - $ref: '#/components/schemas/IssueAssignee'
+        author:
+          $ref: '#/components/schemas/IssuePerson'
+        closed_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        comment_count:
+          type: integer
+          format: int32
+        created_at:
+          type: string
+          format: date-time
+        id:
+          type: string
+          format: uuid
+        labels:
+          type: array
+          items:
+            $ref: '#/components/schemas/IssueLabel'
+        number:
+          type: integer
+          format: int32
+        state:
+          type: string
+          description: '`open` or `closed`.'
+        title:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+    IssueViewer:
+      type: object
+      required:
+      - role
+      - can_comment
+      - can_edit
+      properties:
+        can_comment:
+          type: boolean
+        can_edit:
+          type: boolean
+          description: Title, description, labels, assignee and state.
+        role:
+          type: string
+          description: The caller's project role.
+    LabelChange:
+      type: object
+      properties:
+        color:
+          type:
+          - string
+          - 'null'
+        description:
+          type:
+          - string
+          - 'null'
+        name:
+          type:
+          - string
+          - 'null'
+      additionalProperties: false
+    LabelDeleted:
+      type: object
+      required:
+      - ok
+      - issues_updated
+      properties:
+        issues_updated:
+          type: integer
+          format: int64
+        ok:
+          type: boolean
+    LabelList:
+      type: object
+      required:
+      - items
+      - can_manage
+      properties:
+        can_manage:
+          type: boolean
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LabelWithCount'
+    LabelWithCount:
+      type: object
+      required:
+      - id
+      - name
+      - color
+      - description
+      - open_issue_count
+      properties:
+        color:
+          type: string
+        description:
+          type: string
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        open_issue_count:
+          type: integer
+          format: int64
     Mode:
       type: string
       enum:
       - restore
       - revert
       - cherry_pick
+    NewComment:
+      type: object
+      required:
+      - body
+      properties:
+        body:
+          type: string
+          description: 1-10,000 characters.
+      additionalProperties: false
+    NewIssue:
+      type: object
+      required:
+      - title
+      properties:
+        assignee_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+          description: A current project member.
+        body:
+          type: string
+          description: Up to 20,000 characters.
+        labels:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Up to 20 labels of this project.
+        title:
+          type: string
+          description: 1-200 characters, one line.
+      additionalProperties: false
+    NewLabel:
+      type: object
+      required:
+      - name
+      - color
+      properties:
+        color:
+          type: string
+          description: Six hexadecimal digits; a leading `#` is accepted.
+        description:
+          type: string
+          description: Up to 200 characters.
+        name:
+          type: string
+          description: 1-50 characters, unique in the project ignoring case.
+      additionalProperties: false
     NodeCreateRequest:
       type: object
       description: '`POST /ops/node-create`. `node_id` is optional; absent, the server mints a ULID.'
@@ -3895,6 +4756,17 @@ components:
           description: |-
             Ed25519 signature (128 hex characters) over `dynodoc.device-session\0v1\0`
             followed by the canonical JSON of the challenge.
+    StarState:
+      type: object
+      required:
+      - starred
+      - star_count
+      properties:
+        star_count:
+          type: integer
+          format: int64
+        starred:
+          type: boolean
     SuggestRequest:
       type: object
       description: '`POST /ops/suggest`. `detail` is the wrapped content op (internally-tagged JSON).'
