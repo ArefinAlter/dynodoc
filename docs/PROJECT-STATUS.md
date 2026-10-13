@@ -1,9 +1,18 @@
 # Dynodoc: intent, current implementation and remaining work
 
+## Live: schema 40 release (13 October 2026, 11:36 UTC)
+
+The VPS workspace, API and admin site run application `0f67372`, schema 40: per-project
+device-key grants and the review permission, the profile grants editor and starred projects,
+and legal pages without placeholders. Rehearsal on a production copy, a verified backup and
+unchanged event/snapshot digests preceded activation; the receipt authority stays
+uninstalled. Evidence, rollback and the behaviour change for new keys:
+[release record](operations/2026-10-13-schema40-release.md).
+
 ## Source: licence removal, device-key grants, storage collector and merge apply (13 October 2026)
 
-Source is PostgreSQL schema 40 (migration 0040). Production runs schema 39 until a newer
-live entry above says otherwise.
+Source is PostgreSQL schema 40 (migration 0040); it was deployed to production the same
+day (see the entry above).
 
 **Licence and copyright.** The AGPL-3.0 text and metadata are removed from the private
 repository, the frontend package and the generated API description: `LICENSE` is a proprietary

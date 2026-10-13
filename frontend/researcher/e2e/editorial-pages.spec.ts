@@ -34,7 +34,7 @@ test('the roadmap and changelog never present source work as deployed', async ({
   await page.goto('/roadmap');
   const roadmap = (await page.locator('main#main').textContent()) ?? '';
   expect(roadmap).toMatch(/Built and tested, not enabled on the hosted pilot/);
-  expect(roadmap).toMatch(/application 1b469a2 on database schema 39/);
+  expect(roadmap).toMatch(/application 0f67372 on database schema 40/);
   expect(roadmap).toMatch(/Nothing has been submitted and no listing exists/);
   await page.goto('/changelog');
   await expect(page.getByText('In source').first()).toBeVisible();

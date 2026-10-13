@@ -32,7 +32,7 @@
     {
       question: 'What runs today, and what exists only in source?',
       answer:
-        'The hosted pilot runs application 1b469a2 on database schema 39, as of 13 October 2026. Shared project history is deployed with its writers off and no receipt-signing key installed, so publishing to shared branches is refused. The local repository and the sync client are implemented and tested in source. The roadmap lists each item with its status.'
+        'The hosted pilot runs application 0f67372 on database schema 40, as of 13 October 2026. Shared project history is deployed with its writers off and no receipt-signing key installed, so publishing to shared branches is refused. The local repository and the sync client are implemented and tested in source. The roadmap lists each item with its status.'
     },
     {
       question: 'How large can a file be?',
@@ -170,8 +170,8 @@
     <p class="eyebrow">Status labels</p>
     <ul>
       <li>
-        <span class="lg lg--live">Live</span> In the hosted pilot today (application 1b469a2, database
-        schema 39).
+        <span class="lg lg--live">Live</span> In the hosted pilot today (application 0f67372, database
+        schema 40).
       </li>
       <li>
         <span class="lg lg--source">In source</span> Implemented and tested in source, not yet deployed.

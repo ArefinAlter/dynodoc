@@ -20,7 +20,7 @@
       />
     </div>
     <div data-reveal>
-      <Stat value={39} label="PostgreSQL schema version, deployed on the hosted workspace." />
+      <Stat value={40} label="PostgreSQL schema version, deployed on the hosted workspace." />
     </div>
   </div>
   <div class="links" data-reveal>

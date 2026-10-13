@@ -21,6 +21,22 @@
   // Newest first. Distilled from docs/PROJECT-STATUS.md; no dates beyond those recorded there.
   const entries: Entry[] = [
     {
+      id: 'schema-40-release',
+      iso: '2026-10-13',
+      date: '13 Oct 2026',
+      state: 'live',
+      title: 'Per-project key grants and a review permission go live',
+      summary:
+        'The hosted pilot moved to application 0f67372 on schema 40 after a verified backup and a rehearsal on a copy of production. The history digests before and after are identical.',
+      changes: [
+        'A signing key can open only the projects and permissions its owner grants. New keys start with no access; existing keys keep working until switched. Changes apply on the next request.',
+        'Approving a review is a separate permission from publishing history, so a key that can push cannot approve unless it was granted that too.',
+        'Your profile lists the projects you starred, and the key settings show how much access each key has.',
+        'The licence metadata for the private workspace is replaced with a proprietary notice; the engine, API and command-line tools stay open source under the MIT licence.'
+      ],
+      refs: 'Application 0f67372 · schema 40 · engine 370de91'
+    },
+    {
       id: 'schema-39-release',
       iso: '2026-10-13',
       date: '13 Oct 2026',
@@ -188,7 +204,7 @@
   <InfoHero
     eyebrow="CHANGELOG"
     title="Changelog"
-    lede="What changed, in plain language, newest first. Production runs application 1b469a2 on schema 39. Entries marked In source describe work that was implemented before the 12 October release; the newest entry says which parts are now deployed."
+    lede="What changed, in plain language, newest first. Production runs application 0f67372 on schema 40. Entries marked In source describe work that was implemented before the 12 October release; the newest entry says which parts are now deployed."
   >
     {#snippet actions()}
       <Btn href="/roadmap" arrow>See the roadmap</Btn>

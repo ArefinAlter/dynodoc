@@ -24,7 +24,7 @@
       label: 'Live',
       heading: 'Running in the hosted pilot.',
       blurb:
-        'Deployed at application 1b469a2 on database schema 39, activated on 13 October 2026 (UTC) after a verified backup and a rehearsal on a production copy.',
+        'Deployed at application 0f67372 on database schema 40, activated on 13 October 2026 (UTC) after a verified backup and a rehearsal on a production copy.',
       items: [
         {
           title: 'Projects workspace',
@@ -54,6 +54,11 @@
         {
           title: 'Issues, labels and stars',
           body: 'Project issues with labels, assignees and immutable comments, and project stars, for invite-only projects (schema 39).',
+          when: '13 Oct 2026'
+        },
+        {
+          title: 'Per-project device-key grants and a review permission (schema 40)',
+          body: 'A device key opens only the projects and permissions its owner grants, and approving reviews needs its own permission. Key-file permission hardening ships with the command-line tools.',
           when: '13 Oct 2026'
         },
         {
@@ -101,11 +106,6 @@
           when: '13 Oct 2026'
         },
         {
-          title: 'Per-project device-key grants and a review scope (schema 40)',
-          body: 'A device key opens only the projects and permissions its owner grants, approving reviews needs its own permission, and key files are permission-hardened on Windows and refused if too open on Unix.',
-          when: '13 Oct 2026'
-        },
-        {
           title: 'Selected-history sync client',
           body: 'Plan, push, fetch and fast-forward pull from the command line, with verified objects and receipts.',
           when: '12 Oct 2026'
@@ -121,7 +121,7 @@
       items: [
         {
           title: 'Receipt authority and shared writers',
-          body: 'Schema 39 is deployed with shared writers off and no receipt-signing key installed. That is a deliberate decision: the key cannot be replaced once installed and server-side rotation does not exist yet, so enabling waits for key custody, rotation and a production-copy rehearsal.'
+          body: 'Schema 40 is deployed with shared writers off and no receipt-signing key installed. That is a deliberate decision: the key cannot be replaced once installed and server-side rotation does not exist yet, so enabling waits for key custody, rotation and a production-copy rehearsal.'
         },
         {
           title: 'Project-scoped sign-in',
