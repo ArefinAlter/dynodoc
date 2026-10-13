@@ -33,7 +33,7 @@ const LIMITATIONS = [
   'Tamper-evident, not tamper-proof: detecting a wholesale rewrite by a database administrator needs a hash or backup retained independently. External witnesses are planned, not shipped.',
   'Not a replacement for Word, Excel, PowerPoint or the Google editors, and no compliance certification or regulated-data hosting agreement is claimed.',
   'Original file uploads are limited to 3 MB (3,000,000 bytes) during testing, and large-file performance is not yet accepted.',
-  'The privacy policy and terms are drafts pending legal review. The operator has not adopted them and they are not yet effective.'
+  'The privacy policy and terms are drafts. The operator has not adopted them and they are not yet effective.'
 ];
 
 const FACTS = [

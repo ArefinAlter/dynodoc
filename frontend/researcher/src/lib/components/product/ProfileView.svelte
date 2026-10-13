@@ -1,8 +1,21 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { FolderGit2, LockKeyhole, GitPullRequest, CalendarDays } from '@lucide/svelte';
+  import {
+    FolderGit2,
+    LockKeyhole,
+    GitPullRequest,
+    CalendarDays,
+    Star,
+    CircleDot
+  } from '@lucide/svelte';
   import { workspaceRequest } from '$lib/workspace/api';
-  import { loadProfile, type Profile } from '$lib/workspace/profile';
+  import {
+    loadProfile,
+    loadStarred,
+    starredUnavailable,
+    type Profile,
+    type StarredList
+  } from '$lib/workspace/profile';
   import { projectRoleName, type Project } from '$lib/workspace/projects';
   import {
     loadActivity,
@@ -43,7 +56,9 @@
     days = $state<ActivityDay[]>([]),
     graphLoading = $state(true),
     graphDerived = $state(false),
-    recent = $state<(ActivityItem & { project_id: string; project_name: string })[]>([]);
+    recent = $state<(ActivityItem & { project_id: string; project_name: string })[]>([]),
+    starred = $state<StarredList | null>(null),
+    starredState = $state<'loading' | 'ready' | 'hidden' | 'failed'>('loading');
   const years = [thisYear, thisYear - 1, thisYear - 2];
   const pinned = $derived(
     [...projects]
@@ -62,7 +77,18 @@
       return;
     }
     void quietExtras();
+    void starredProjects();
   });
+  /** Starred projects fill in on their own; an older server simply has none to show. */
+  async function starredProjects() {
+    if (!profile) return;
+    try {
+      starred = await loadStarred(profile.id);
+      starredState = 'ready';
+    } catch (e) {
+      starredState = starredUnavailable(e) ? 'hidden' : 'failed';
+    }
+  }
   /** Projects, the graph and recent activity fill in after the profile itself. */
   async function quietExtras() {
     let all: Project[] = [];
@@ -254,6 +280,56 @@
               </div>
             {/if}
           </section>
+          {#if starredState !== 'hidden'}
+            <section aria-labelledby="starred-title">
+              <div class="rp-section-head">
+                <h2 id="starred-title">Starred projects</h2>
+              </div>
+              {#if starredState === 'loading'}
+                <div class="rp-pinned" aria-busy="true">
+                  {#each [0, 1] as n (n)}<div class="rp-pin" aria-hidden="true">
+                      <span class="repo-skel" style:width="{40 + n * 15}%"></span><span
+                        class="repo-skel"
+                        style:width="70%"
+                      ></span>
+                    </div>{/each}
+                </div>
+              {:else if starredState === 'failed' || !starred}
+                <p class="repo-muted">Starred projects could not be loaded right now.</p>
+              {:else if !starred.items.length}
+                <p class="repo-muted">
+                  {id
+                    ? 'This person has not starred a project you can open.'
+                    : 'No starred projects yet. Star a project to keep it close.'}
+                </p>
+              {:else}
+                <div class="rp-pinned">
+                  {#each starred.items as p (p.id)}
+                    <article class="rp-pin rp-starred">
+                      <div class="rp-proj-head">
+                        <FolderGit2 size={16} aria-hidden="true" />
+                        <h3><a href={`/projects/${p.id}`}>{p.name}</a></h3>
+                      </div>
+                      <div class="rp-proj-meta">
+                        <span class="rp-stars"
+                          ><Star size={14} fill="currentColor" aria-hidden="true" /><span
+                            aria-hidden="true">{p.starCount}</span
+                          ><span class="sr-only">{plural(p.starCount, 'star')}</span></span
+                        >
+                        <a href={`/projects/${p.id}?tab=issues`}
+                          ><CircleDot size={14} aria-hidden="true" />
+                          {p.openIssueCount ? plural(p.openIssueCount, 'open issue') : 'Issues'}</a
+                        >
+                      </div>
+                    </article>
+                  {/each}
+                </div>
+                {#if starred.truncated}<p class="repo-muted repo-small">
+                    Showing the 100 most recently starred projects.
+                  </p>{/if}
+              {/if}
+            </section>
+          {/if}
           <section class="repo-box rp-graph" aria-labelledby="graph-title">
             <div class="repo-panel-body">
               <h2 id="graph-title">
@@ -329,3 +405,19 @@
     {/if}
   </div>
 </RepositoryShell>
+
+<style>
+  /* A long project name stays beside its icon instead of wrapping below it. */
+  .rp-starred h3 {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  /* Links stay at least 24px tall so they are easy to hit. */
+  .rp-starred h3 a {
+    display: inline-block;
+    padding: 4px 0;
+  }
+  .rp-starred .rp-proj-meta a {
+    min-height: 24px;
+  }
+</style>

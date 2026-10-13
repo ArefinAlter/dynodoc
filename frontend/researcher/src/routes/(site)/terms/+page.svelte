@@ -31,16 +31,13 @@
     <p>
       These draft terms describe the proposed relationship between the operator of the hosted
       Dynodoc service, {OPERATOR.legalName} (trading as {OPERATOR.tradingAs}), and the people
-      authorized to use it. The proposed governing law and forum are set out under
-      <a href="#disputes">Law and disputes</a> and are pending legal review. This page is not an executed
-      agreement or an assertion that the operator has entered into a contract with you.
+      authorized to use it. The governing law and forum are set out under
+      <a href="#disputes">Law and disputes</a>. This page is not an executed agreement or an
+      assertion that the operator has entered into a contract with you.
     </p>
     <p>
-      Before these terms become effective, the operator must have the provisions reviewed by
-      counsel, confirm the applicable law, set an effective date and communicate the final terms
-      through an appropriate acceptance process. “Dynodoc,” “we” and “our” below refer to that
-      operator. “You” means the individual using the service and, where properly authorized, the
-      organization on whose behalf they act.
+      “Dynodoc,” “we” and “our” below refer to that operator. “You” means the individual using the
+      service and, where properly authorized, the organization on whose behalf they act.
     </p>
     <p>
       These terms concern the hosted service, its website and its editor add-ins. The open-source
@@ -244,9 +241,8 @@
       The operator may improve, change or retire features. Material changes affecting access to
       existing work should be communicated with reasonable notice where practicable, and a
       reasonable opportunity to export should be provided when the service is discontinued, unless a
-      legal or urgent security constraint prevents it. Any final terms must explain how material
-      contractual changes are notified and accepted where required; changes should take effect
-      prospectively and cannot remove non-waivable rights.
+      legal or urgent security constraint prevents it. Changes should take effect prospectively and
+      cannot remove non-waivable rights.
     </p>
   </section>
   <section id="ending">
@@ -266,8 +262,8 @@
     <p>
       When your access ends, other authorized collaborators may still have access to shared projects
       under the relevant arrangement. Export, retention, deletion and any surviving permissions must
-      be handled consistently with applicable law, the organization’s authority and the final
-      privacy policy.
+      be handled consistently with applicable law, the organization’s authority and the privacy
+      policy.
     </p>
   </section>
   <section id="responsibility">
@@ -285,19 +281,16 @@
     </p>
     <p>
       No financial liability cap, blanket indemnity or jurisdiction-specific exclusion is included
-      here. Any such provision must be reviewed in light of the confirmed operator, service
-      arrangement and applicable law before final terms are adopted. Until then, this draft must not
-      be represented as a complete allocation of legal risk.
+      here.
     </p>
   </section>
   <section id="disputes">
     <h2>Law and disputes</h2>
     <p>
-      The operator’s registered office is in Dhaka, Bangladesh. This draft proposes that these terms
-      be governed by {OPERATOR.governingLaw} and that disputes be brought before
-      {OPERATOR.forum}. This is a proposed term pending counsel review and is not yet in force. It
-      does not limit mandatory consumer or data-protection rights that apply where you live. No
-      mandatory arbitration or class-action waiver is proposed.
+      The operator’s registered office is in Dhaka, Bangladesh. These terms are governed by
+      {OPERATOR.governingLaw}, and disputes are to be brought before {OPERATOR.forum}. This does not
+      limit mandatory consumer or data-protection rights that apply where you live. No mandatory
+      arbitration or class-action waiver is proposed.
     </p>
     <p>
       The proposed first step for a service dispute is to contact the operator with enough detail to
@@ -308,8 +301,8 @@
   <section id="general">
     <h2>General provisions</h2>
     <p>
-      The final terms, any applicable signed agreement and the privacy policy should describe the
-      entire relevant arrangement without overriding mandatory legal protections. If a provision is
+      These terms, any applicable signed agreement and the privacy policy should describe the entire
+      relevant arrangement without overriding mandatory legal protections. If a provision is
       unenforceable, the remaining provisions should continue only to the extent permitted by
       applicable law. Failure to enforce a provision on one occasion does not automatically waive it
       for another.
@@ -324,16 +317,13 @@
     <h2>Operator and contact details</h2>
     <OperatorDetails emailLabel="Public legal email">
       <dt>Governing law</dt>
-      <dd>Laws of Bangladesh (proposed; pending counsel review)</dd>
+      <dd>Laws of Bangladesh</dd>
       <dt>Forum</dt>
-      <dd>Courts of Dhaka (proposed; pending counsel review)</dd>
-      <dt>Effective date</dt>
-      <dd>Not set; this is a draft.</dd>
+      <dd>Courts of Dhaka</dd>
     </OperatorDetails>
     <p>
-      Write to the email address above with questions about these terms. Before public adoption the
-      terms must be reviewed for the operator’s jurisdiction and actual service arrangements. To
-      report a security vulnerability, see <a href="/security#report">the security overview</a>.
+      Write to the email address above with questions about these terms. To report a security
+      vulnerability, see <a href="/security#report">the security overview</a>.
     </p>
   </section>
 </LegalPage>

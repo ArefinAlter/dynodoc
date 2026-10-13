@@ -205,7 +205,7 @@
     <ul>
       <li>
         <strong>Transport:</strong> HTTPS only, with HTTP redirected and TLS 1.2 or 1.3 on the workspace.
-        HSTS lasts one year and is not set for subdomains or preloaded.
+        HSTS lasts one year, without subdomains or preloading.
       </li>
       <li>
         <strong>Scripts:</strong> only from Dynodoc’s own origin with a per-response nonce, no inline
@@ -254,8 +254,8 @@
       </li>
       <li>
         <strong>Add-ins are pre-release.</strong> They are not in a marketplace, and acceptance testing
-        in installed Word, Excel, PowerPoint, Docs, Sheets and Slides is still to be done by the owner.
-        They record observations at snapshot times and do not prove who typed a change.
+        in installed Word, Excel, PowerPoint, Docs, Sheets and Slides is not complete. They record observations
+        at snapshot times and do not prove who typed a change.
       </li>
       <li>
         <strong>Signed history needs more.</strong> Even with signed receipts, a server holding its signing
@@ -292,8 +292,8 @@
     </p>
     <p>
       This is an early project: fixes target the current main branch and no response time is
-      guaranteed. No legal safe harbour is offered by this draft; the operator must decide that with
-      its final terms. See also the <a href="/acceptable-use">acceptable use page</a>.
+      guaranteed. No legal safe harbour is offered. See also the
+      <a href="/acceptable-use">acceptable use page</a>.
     </p>
     <div class="plate"><Dino name="fossil" art={Fossil} /></div>
   </section>

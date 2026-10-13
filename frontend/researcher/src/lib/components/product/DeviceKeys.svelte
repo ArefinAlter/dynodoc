@@ -1,44 +1,87 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { workspaceRequest } from '$lib/workspace/api';
+  import {
+    GRANT_LIMIT,
+    ProofFileError,
+    createChallenge,
+    deviceMessage,
+    enrollKey,
+    loadProjectChoices,
+    loadRegistry,
+    revokeKey,
+    type DeviceRegistry,
+    type ProjectChoice,
+    type Subject
+  } from '$lib/workspace/device-grants';
+  import DeviceKeyAccess from './DeviceKeyAccess.svelte';
 
-  interface Device {
-    id: string;
-    public_key: string;
-    registered_at: string;
-    revoked_at: string | null;
-  }
-  interface Registry {
-    authority: string;
-    identity: string;
-    keys: Device[];
-    active_limit: number;
-    total_limit: number;
-  }
-  let registry = $state<Registry | null>(null);
+  let registry = $state<DeviceRegistry | null>(null);
   let publicKey = $state('');
   let challenge = $state<Record<string, unknown> | null>(null);
   let error = $state('');
   let notice = $state('');
   let busy = $state(false);
   let pendingRevoke = $state('');
+  let enrolOpen = $state(false);
+  /** The key connected in this visit; its access block leads with the next step. */
+  let freshKey = $state('');
+  let projects = $state<ProjectChoice[]>([]);
+  let projectsState = $state<'loading' | 'ready' | 'failed'>('loading');
+  let projectsRequested = false;
+  let section = $state<HTMLElement | null>(null);
 
   async function load() {
-    registry = await workspaceRequest<Registry>('/devices');
+    registry = await loadRegistry();
+    // The grant picker needs the account's projects, but only once a key can use them.
+    if (!projectsRequested && registry.keys.some((k) => !k.revokedAt && k.projectAccess)) {
+      projectsRequested = true;
+      void loadProjectChoices()
+        .then((list) => {
+          projects = list;
+          projectsState = 'ready';
+        })
+        .catch(() => {
+          projectsState = 'failed';
+        });
+    }
+  }
+  /**
+   * The command palette links to #signing-keys. This section mounts before the profile's
+   * other sections have loaded above it, so keep it in view while the page settles, and
+   * stop as soon as the person scrolls or presses a key.
+   */
+  function holdAnchor() {
+    const target = section;
+    if (!target) return () => {};
+    const events = ['wheel', 'touchstart', 'pointerdown', 'keydown'] as const;
+    const show = () => target.scrollIntoView({ block: 'start', behavior: 'instant' });
+    const observer = new ResizeObserver(show);
+    const timer = setTimeout(end, 4000);
+    function end() {
+      clearTimeout(timer);
+      observer.disconnect();
+      for (const name of events) window.removeEventListener(name, end);
+    }
+    observer.observe(document.body);
+    for (const name of events) window.addEventListener(name, end, { passive: true });
+    show();
+    return end;
   }
   onMount(() => {
+    const release = location.hash === '#signing-keys' ? holdAnchor() : undefined;
     void load().catch((e) => {
-      error = e instanceof Error ? e.message : 'Could not load your signing keys';
+      error = deviceMessage(e, 'load');
     });
+    return release;
   });
-  async function act(action: () => Promise<void>) {
+  async function act(action: () => Promise<void>, subject: Subject) {
     busy = true;
     error = '';
     notice = '';
     try {
       await action();
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Could not update your signing keys';
+      error = deviceMessage(e, subject);
     } finally {
       busy = false;
     }
@@ -46,10 +89,8 @@
   async function requestChallenge() {
     challenge = null;
     await act(async () => {
-      challenge = await workspaceRequest<Record<string, unknown>>('/devices/challenge', {
-        public_key: publicKey.trim()
-      });
-    });
+      challenge = await createChallenge(publicKey);
+    }, 'challenge');
   }
   function downloadChallenge() {
     if (!challenge) return;
@@ -62,42 +103,72 @@
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+  /** The change is saved; a failed refresh must not read as a failed change. */
+  async function reload(done: string) {
+    try {
+      await load();
+      return done;
+    } catch {
+      return `${done} The list could not be refreshed. Reload the page to see it.`;
+    }
+  }
   async function submitProof(file: File | undefined) {
     if (!file || !registry || !challenge) return;
     await act(async () => {
       if (file.size > 2048)
-        throw new Error('The enrollment proof must be at most 2 KB. Choose the proof JSON file.');
-      const proof = JSON.parse(await file.text());
+        throw new ProofFileError(
+          'The enrollment proof must be at most 2 KB. Choose the proof JSON file.'
+        );
+      let proof: { challenge?: { identity?: unknown; authority?: unknown; id?: unknown } } | null;
+      try {
+        proof = JSON.parse(await file.text());
+      } catch {
+        throw new ProofFileError(
+          'That file is not valid JSON. Choose the proof file created by engine-cli device prove.'
+        );
+      }
       if (
         proof?.challenge?.identity !== registry?.identity ||
         proof?.challenge?.authority !== registry?.authority ||
         proof?.challenge?.id !== challenge?.id
       ) {
-        throw new Error('This proof does not match the challenge from your current account.');
+        throw new ProofFileError(
+          'This proof does not match the challenge from your current account.'
+        );
       }
-      await workspaceRequest('/devices', proof);
+      const enrolled = await enrollKey(proof);
       challenge = null;
       publicKey = '';
-      await load();
-      notice = 'Signing key connected to your account.';
-    });
+      enrolOpen = false;
+      freshKey = enrolled.id || String(proof?.challenge?.id ?? '');
+      notice = await reload('Signing key connected to your account.');
+    }, 'enroll');
   }
   async function revoke(id: string) {
     await act(async () => {
-      await workspaceRequest(`/devices/${id}/revoke`, {});
+      await revokeKey(id);
       pendingRevoke = '';
-      await load();
-      notice = 'Signing key revoked. To reconnect this device, enroll a new key.';
-    });
+      notice = await reload('Signing key revoked. To reconnect this device, enroll a new key.');
+    }, 'revoke-key');
+  }
+  /** Called by a key's access block after it changed something. */
+  async function changed() {
+    freshKey = '';
+    await load();
   }
 </script>
 
-<section class="repo-panel" aria-labelledby="signing-keys-title">
+<section
+  class="repo-panel"
+  id="signing-keys"
+  aria-labelledby="signing-keys-title"
+  bind:this={section}
+>
   <div class="repo-panel-body repo-form">
     <h2 id="signing-keys-title">Signing keys</h2>
     <p class="repo-muted">
-      Connect keys used to sign your local project history. Your keys are visible only to you.
-      Connecting a key does not change project access.
+      Connect keys used to sign your local project history. Your keys are visible only to you. A new
+      key can open no project until you grant it one.
     </p>
     {#if error}<p class="repo-alert" role="alert">{error}</p>{/if}
     {#if notice}<p class="repo-notice" role="status">{notice}</p>{/if}
@@ -105,13 +176,23 @@
       {#if registry.keys.length === 0}<p>No signing keys connected.</p>{/if}
       {#each registry.keys as device (device.id)}
         <div class="repo-panel-body key-row">
-          <code class="key-value">{device.public_key}</code>
+          <code class="key-value">{device.publicKey}</code>
           <p class="repo-small repo-muted">
-            Connected {new Date(device.registered_at).toLocaleDateString()}
-            {#if device.revoked_at}
-              · Revoked {new Date(device.revoked_at).toLocaleDateString()}{/if}
+            Connected {new Date(device.registeredAt).toLocaleDateString()}
+            {#if device.revokedAt}
+              · Revoked {new Date(device.revokedAt).toLocaleDateString()}{/if}
           </p>
-          {#if !device.revoked_at}
+          {#if !device.revokedAt}
+            {#if device.projectAccess}
+              <DeviceKeyAccess
+                {device}
+                {projects}
+                {projectsState}
+                grantLimit={registry.grantLimit || GRANT_LIMIT}
+                fresh={freshKey === device.id}
+                onChanged={changed}
+              />
+            {/if}
             {#if pendingRevoke === device.id}
               <p>
                 Revoke this key permanently? Its past signatures remain in history. You will need a
@@ -128,7 +209,13 @@
           {/if}
         </div>
       {/each}
-      <details>
+      {#if registry.keys.some((k) => !k.revokedAt && k.projectAccess)}
+        <p class="repo-small repo-muted">
+          Access tokens issued to a key last at most one hour and end on their own. Revoking a grant
+          takes effect on that key's next request.
+        </p>
+      {/if}
+      <details bind:open={enrolOpen}>
         <summary>Connect a local signing key</summary>
         <p>
           For the engine CLI preview, obtain the public key with <code
@@ -175,7 +262,7 @@
           >
         {/if}
         <p class="repo-small repo-muted">
-          Up to {registry.active_limit} active keys and {registry.total_limit} registrations per account.
+          Up to {registry.activeLimit} active keys and {registry.totalLimit} registrations per account.
           Remote project push and pull are still in development.
         </p>
       </details>
@@ -191,5 +278,8 @@
   }
   .key-row {
     border-bottom: 1px solid var(--repo-border, #d0d7de);
+  }
+  #signing-keys {
+    scroll-margin-top: 16px;
   }
 </style>

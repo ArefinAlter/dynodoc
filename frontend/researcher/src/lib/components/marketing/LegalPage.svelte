@@ -95,11 +95,9 @@
       <div>
         <strong>A transparent draft, not yet adopted</strong>
         <p>
-          {OPERATOR.legalName}, the operator of the hosted service, has not adopted this page and no
-          effective date is set. It describes how the service currently works and the terms proposed
-          for it, and it is pending legal review. Hosting details are still awaiting confirmation.
-          It must be completed and reviewed before it is adopted for customer data or a public
-          launch.
+          {OPERATOR.legalName}, the operator of the hosted service, has not adopted this page. It
+          describes how the service currently works and the terms proposed for it, and it takes
+          effect only when adopted.
         </p>
       </div>
     </div>

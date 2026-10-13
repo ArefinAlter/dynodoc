@@ -117,6 +117,10 @@ test('legal pages are linked, readable on mobile and explicitly marked as drafts
     await page.goto(path);
     await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
     await expect(page.getByText('Draft revised 13 October 2026 · Not yet effective')).toBeVisible();
+    // Facts the owner has not decided are omitted, never shown as a placeholder.
+    expect((await page.locator('main').textContent()) ?? '').not.toMatch(
+      /awaiting confirmation|not set\b|to be confirmed|pending (counsel|legal) review|open items|AGPL/i
+    );
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
     ).toBe(true);

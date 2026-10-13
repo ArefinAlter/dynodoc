@@ -64,9 +64,8 @@
     <h2>Engine, API and command-line tools</h2>
     <p>
       The event-log, versioning and merge engine, its HTTP API and the command-line tools are
-      published in a public repository under the MIT license, copyright 2026 ArefinAlter and Dynodoc
-      contributors. Source and license text:
-      <a href={ENGINE_REPO_URL}>dynodoc-engine on GitHub</a>.
+      published in a public repository under the MIT license, copyright 2026 Verne Ltd. Source and
+      license text: <a href={ENGINE_REPO_URL}>dynodoc-engine on GitHub</a>.
     </p>
     <p>{OPEN_SOURCE_STATEMENT}</p>
   </section>
@@ -74,9 +73,9 @@
     <h2>Workspace and website</h2>
     <p>
       The Dynodoc workspace, which is the web application and its operator tools, and this website
-      are &copy; 2026 {OPERATOR.legalName}. They are developed in a private repository and are not
-      published as open source; no open-source license is offered for them, and no source archive of
-      them is available.
+      are &copy; 2026 {OPERATOR.legalName}. They are proprietary, developed in a private repository
+      and not published as open source; no open-source license is offered for them, and no source
+      archive of them is available.
     </p>
     <p>
       A software license is separate from the <a href="/terms">terms of using the hosted service</a
@@ -141,7 +140,7 @@
           ><tr
             ><td>GPL-3.0-only</td><td
               ><code>hyperformula</code> (spreadsheet calculation), which its publisher offers under GPL-3.0
-              or a separate commercial license. Which option applies to the workspace is awaiting confirmation.</td
+              or a separate commercial license.</td
             ></tr
           ></tbody
         >

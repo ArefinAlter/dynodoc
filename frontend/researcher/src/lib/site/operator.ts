@@ -2,9 +2,8 @@
 // Supplied by the owner on 13 October 2026; legal pages, the footer, structured data and
 // security.txt read from here so a value is never retyped.
 //
-// Not supplied, so never invented: hosting provider and location, domain registrar and DNS
-// provider, representative or DPO, log retention, effective date. Pages show UNCONFIRMED.
-// Governing law and forum are the draft's proposed terms, pending counsel review.
+// A fact the owner has not decided is left out of the public pages entirely: no
+// placeholder row and no list of open items. Never invent one.
 
 export const OPERATOR = {
   legalName: 'Verne Systems',
@@ -23,13 +22,9 @@ export const OPERATOR = {
   email: 'info@vernesystems.com',
   phone: '+880 1870 034384',
   phoneHref: 'tel:+8801870034384',
-  /** Proposed governing law and forum (draft, pending counsel review). */
   governingLaw: 'the laws of Bangladesh',
   forum: 'the courts of Dhaka'
 } as const;
-
-/** Shown wherever the owner has not yet provided a value. */
-export const UNCONFIRMED = 'Awaiting confirmation.';
 
 export const EMAIL_HREF = `mailto:${OPERATOR.email}`;
 

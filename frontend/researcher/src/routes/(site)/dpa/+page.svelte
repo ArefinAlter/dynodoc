@@ -11,9 +11,7 @@
     { id: 'subprocessors', title: 'Subprocessors' },
     { id: 'assistance', title: 'Assistance, incidents and requests' },
     { id: 'return', title: 'Deletion and return' },
-    { id: 'audit', title: 'Audit and records' },
-    { id: 'transfers', title: 'Location and transfers' },
-    { id: 'open', title: 'Open items' }
+    { id: 'audit', title: 'Audit and records' }
   ];
 </script>
 
@@ -29,8 +27,7 @@
       draft, not an executed agreement; it is not offered for signature, and nobody becomes bound by
       it by using the service. It describes how the service behaves today, as already stated in the
       <a href="/privacy">privacy policy</a>, the <a href="/terms">terms</a> and the
-      <a href="/security">security overview</a>, and it leaves anything that needs a legal decision
-      as an open item. It adds no commitment of its own.
+      <a href="/security">security overview</a>. It adds no commitment of its own.
     </p>
   </section>
   <section id="roles">
@@ -110,9 +107,7 @@
     <h2>Processing instructions</h2>
     <p>
       The service processes project content only to provide the features the customer uses, as
-      configured through roles, project rules, shared links and erasure requests. The final
-      agreement must say how further written instructions are given, and what happens when an
-      instruction would be unlawful.
+      configured through roles, project rules, shared links and erasure requests.
     </p>
   </section>
   <section id="security">
@@ -129,9 +124,7 @@
   <section id="subprocessors">
     <h2>Subprocessors</h2>
     <p>
-      The current providers are listed on the <a href="/subprocessors">subprocessors page</a>. The
-      final agreement must say how a change to that list is announced and whether the customer may
-      object.
+      The current providers are listed on the <a href="/subprocessors">subprocessors page</a>.
     </p>
   </section>
   <section id="assistance">
@@ -140,8 +133,7 @@
       A customer can export supported files and see its own members’ access. Administrators can
       erase a whole document or account as described in the privacy policy; there is no self-service
       erasure today. If a personal-data incident occurs, the operator and the customer must assess
-      it and meet applicable notification duties. The final agreement must set the timelines and the
-      form of assistance with data-subject requests and impact assessments; this draft invents none.
+      it and meet applicable notification duties.
     </p>
   </section>
   <section id="return">
@@ -170,33 +162,8 @@
       document can ask the service to verify the integrity of its history. The engine, API and
       command-line tools that implement the history are open source under the MIT licence so that
       their behaviour can be inspected; the workspace and website are not published as open source.
-      See <a href="/licenses">licenses</a>. No independent audit or certification exists. The final
-      agreement must state any audit right, how it is exercised and who bears its cost.
+      See <a href="/licenses">licenses</a>. No independent audit or certification exists.
     </p>
-  </section>
-  <section id="transfers">
-    <h2>Location and transfers</h2>
-    <p>
-      The hosting provider and the locations where information is stored are awaiting confirmation.
-      Safeguards for any transfer outside the customer’s jurisdiction must be identified before
-      these terms are completed.
-    </p>
-  </section>
-  <section id="open">
-    <h2>Open items</h2>
-    <ul>
-      <li>
-        Counsel review of the proposed governing law and forum (the laws of Bangladesh and the
-        courts of Dhaka).
-      </li>
-      <li>Hosting provider, storage locations and transfer safeguards.</li>
-      <li>How instructions are given and how an unlawful instruction is handled.</li>
-      <li>How subprocessor changes are announced and objected to.</li>
-      <li>Incident-notification and assistance timelines.</li>
-      <li>Audit rights and cost.</li>
-      <li>Retention for administrative logs and web server logs.</li>
-      <li>Liability allocation, reviewed with the final terms.</li>
-    </ul>
   </section>
 </LegalPage>
 

@@ -7,6 +7,7 @@
     Plus,
     Upload,
     UserRound,
+    KeyRound,
     PanelsTopLeft,
     Plug,
     Sun,
@@ -158,6 +159,13 @@
       label: 'Your profile',
       icon: UserRound,
       run: go('/profile')
+    },
+    {
+      id: 'a-keys',
+      group: 'Actions',
+      label: 'Manage signing keys',
+      icon: KeyRound,
+      run: go('/profile#signing-keys')
     },
     {
       id: 'a-editors',

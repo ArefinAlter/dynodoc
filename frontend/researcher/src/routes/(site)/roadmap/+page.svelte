@@ -96,8 +96,13 @@
           when: '12 Oct 2026'
         },
         {
-          title: 'Retention plan and same-file convergence report',
-          body: 'Two read-only command-line reports: what no branch or recovery source reaches in a local repository, and a dry-run node-level merge of a file edited on both sides. Nothing is deleted, stored or signed.',
+          title: 'Retention collector and same-file merge (command line)',
+          body: 'A read-only retention plan, a collector that removes only staged objects no commit references after you confirm the exact plan, and a merge that applies clean node-level merges of a file edited on both sides. Commits are never pruned.',
+          when: '13 Oct 2026'
+        },
+        {
+          title: 'Per-project device-key grants and a review scope (schema 40)',
+          body: 'A device key opens only the projects and permissions its owner grants, approving reviews needs its own permission, and key files are permission-hardened on Windows and refused if too open on Unix.',
           when: '13 Oct 2026'
         },
         {
@@ -120,7 +125,7 @@
         },
         {
           title: 'Project-scoped sign-in',
-          body: 'Project-scoped sessions are live. Operating-system key storage, per-project key grants, Windows file-permission hardening and a separate review scope remain.'
+          body: 'Project-scoped sessions are live and per-project grants and a review scope are built. Operating-system key storage and encrypted key files remain.'
         },
         {
           title: 'Projects and add-in adoption',
@@ -128,11 +133,11 @@
         },
         {
           title: 'Storage packing and retention',
-          body: 'A read-only retention plan exists. Physical packing, publication of only changed nodes, and an actual garbage collector with a retention policy do not.'
+          body: 'A retention plan and a collector for staged objects exist. Physical packing, publication of only changed nodes, and commit pruning with a retention policy do not.'
         },
         {
           title: 'Same-file offline convergence',
-          body: 'A dry-run report shows whether a same-file merge is clean. Applying it, constraint handling across documents, and tests across restarts and partitions remain.'
+          body: 'Clean same-file merges can be applied from the command line. Constraint handling across documents, resolving real conflicts, and tests across restarts and partitions remain.'
         },
         {
           title: 'Installed-editor acceptance',

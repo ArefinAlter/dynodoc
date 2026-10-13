@@ -6,12 +6,23 @@ represented as adopted agreements. Each one keeps the visible banner and the
 `LegalPage.svelte`; the e2e test in `e2e/smoke.spec.ts` asserts the exact text, so
 change both together). Nothing records acceptance: the account form links to the
 pages for information and has no agreement checkbox. The owner has not adopted the
-policies, so the effective date stays "Not set".
+policies, so the pages carry no effective date.
+
+## Policy: undecided facts are omitted
+
+Owner instruction, 13 October 2026: "For the legal pages we don't say the other
+information now." A fact the owner has not decided is **left out of the public
+pages**, not shown as a placeholder. No "Awaiting confirmation", "Not set", "to be
+confirmed" or "pending counsel review" text, no empty table row, no "open items"
+section, and no list of what is missing. When a decision is made, add the fact (and
+only then) in one place, the operator module or the page that states it. The "draft,
+not yet adopted" banner and the "Not yet effective" line stay: that is the status of
+the documents, not a missing fact.
 
 ## Operator facts (owner, 13 October 2026)
 
 One module holds them: `frontend/researcher/src/lib/site/operator.ts`
-(`OPERATOR`, `UNCONFIRMED`, `ENGINE_REPO_URL`, `OPEN_SOURCE_STATEMENT`). Pages and
+(`OPERATOR`, `ENGINE_REPO_URL`, `OPEN_SOURCE_STATEMENT`). Pages and
 structured data import from it; the shared `OperatorDetails.svelte` renders the
 operator block. Do not retype a value in a page.
 
@@ -24,7 +35,7 @@ operator block. Do not retype a value in a page.
 | Email (privacy, legal, support, abuse, accessibility, security, DPA notices) | info@vernesystems.com |
 | Phone | +880 1870 034384 |
 | Operator website | vernesystems.com |
-| Governing law / forum | Laws of Bangladesh / courts of Dhaka, shown as the **draft's proposed term pending counsel review** |
+| Governing law / forum | Laws of Bangladesh / courts of Dhaka, stated as a plain term of the draft |
 
 The owner's tax identification number and D&B D-U-N-S number are deliberately **not**
 published anywhere.
@@ -41,11 +52,15 @@ and website are not published as open source." Do not use "AGPL", "open source" 
 application, "source archive" or "Download the source" on a public page. `/source` is a
 302 redirect to the engine repository and serves no archive.
 
-Open licensing point for the owner and counsel: the workspace bundle ships
-`hyperformula`, which its publisher licenses as GPL-3.0-only or under a separate
-commercial licence. Distributing it in a closed application needs the commercial licence
-(or replacing the library); `/licenses` says which option applies is "Awaiting
-confirmation".
+Copyright: the engine repository is MIT with copyright held by Verne Ltd.; the
+application repository is proprietary (decision 013). `/licenses` says so and lists the
+third-party components under their own licences.
+
+Open licensing point for the owner and counsel (kept here, not on the public page): the
+workspace bundle ships `hyperformula`, which its publisher licenses as GPL-3.0-only or
+under a separate commercial licence. Distributing it in a closed application needs the
+commercial licence (or replacing the library). `/licenses` lists the library and both
+publisher options and does not say which applies.
 
 ## Pages
 
@@ -68,21 +83,26 @@ served on both the public host and the workspace host. `LegalPage.svelte` also l
 every legal document in a "Related documents" strip; add a new page there and in the
 footer (`nav.ts`) when one is created.
 
-## Placeholders the owner must fill
+## Facts the owner has not decided (omitted from the public pages)
 
 The operator identity, address, registration numbers, contact email, phone and the
-proposed governing law and forum are filled in (see "Operator facts"). The owner has
-not decided the following and none is invented. Every one reads "Awaiting
-confirmation" (or "Not set") on the pages:
+governing law and forum are published (see "Operator facts"). The following are not
+decided, are none of them invented, and are **not mentioned** on any public page:
 
-- Effective date (the policies are not adopted; "Not set").
+- Effective date (the policies are not adopted).
 - Hosting provider name and storage location, domain registrar/DNS provider.
 - Representative or DPO, if required.
 - Web server log retention and administrative-log retention; legal bases per purpose.
 - Which hyperformula licence option applies to the workspace (see above).
-- Counsel review of the proposed governing law and forum.
-- Data-processing items listed under "Open items" on `/dpa` (instruction mechanism,
-  subprocessor-change notice, incident and assistance timelines, audit right).
+- Counsel review of the governing law and forum.
+- Data-processing items: instruction mechanism, subprocessor-change notice, incident
+  and assistance timelines, audit right, transfer safeguards, liability allocation.
+
+Where a page would have said so, the sentence, row or section is simply absent (for
+example `/dpa` has no "Location and transfers" or "Open items" section, and
+`/subprocessors` has no location column). The hosting provider is still listed as a
+role on `/subprocessors` and `/privacy` because it holds all service data; only its
+name and location are omitted.
 
 ## Facts the pages rely on (re-check when behaviour changes)
 
@@ -145,5 +165,5 @@ shared contributions under a deleted-user identity. Existing backups expire unde
 the current retention schedule. Off-site backup is deferred by the owner. The
 operator identity and address are published as of 13 October 2026, but the policies
 are not adopted and have no effective date; the public legal pages stay marked as
-drafts pending counsel review. This is a record of product behavior and owner
-direction, not legal approval of the policy.
+drafts. This is a record of product behavior and owner direction, not legal approval
+of the policy.

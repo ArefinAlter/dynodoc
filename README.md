@@ -289,11 +289,10 @@ Start with [docs/README.md](docs/README.md) for the full numbered series. Most-u
 
 ## License
 
-This repository is private. The application (web workspace and website) is not
-published as open source, and its licence is an open owner decision. Only the
-[engine, API and command-line tools](https://github.com/ArefinAlter/dynodoc-engine)
-are open source, under the MIT licence, with the owner's authorization. The
-[`LICENSE`](LICENSE) file, `Cargo.toml` and the frontend `package.json` still carry
-the AGPL v3 text and metadata from the original PoC; replacing them is an open owner
-decision. The operator is Verne Systems (trading as Verne), Dhaka, Bangladesh; see
-[the legal pages notes](docs/LEGAL-PAGES.md).
+This repository is private and proprietary: Copyright (c) 2026 Verne Ltd., all rights
+reserved (see [`LICENSE`](LICENSE)). The web workspace, website and editor connectors
+are not published as open source. Only the
+[engine, API and command-line tools](https://github.com/ArefinAlter/dynodoc-engine) are
+open source, under the MIT licence, in their own repository. The operator is Verne Systems
+(trading as Verne), Dhaka, Bangladesh; see [the legal pages notes](docs/LEGAL-PAGES.md) and
+[the licensing decision](docs/decisions/013-private-application-licence.md).

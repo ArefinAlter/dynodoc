@@ -84,7 +84,7 @@
       and report it. Do not publish credentials, private documents or working exploit details.
       Report what you find privately through the
       <a href="/security#report">vulnerability reporting channel</a>. No legal safe harbour is
-      offered by this draft; the operator must decide that with its final terms.
+      offered.
     </p>
   </section>
   <section id="enforcement">

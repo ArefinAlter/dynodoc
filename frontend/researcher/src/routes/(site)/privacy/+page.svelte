@@ -1,7 +1,7 @@
 <script lang="ts">
   import LegalPage from '$lib/components/marketing/LegalPage.svelte';
   import OperatorDetails from '$lib/components/marketing/OperatorDetails.svelte';
-  import { OPERATOR, UNCONFIRMED } from '$lib/site/operator';
+  import { OPERATOR } from '$lib/site/operator';
   const sections = [
     { id: 'scope', title: 'Scope and responsibility' },
     { id: 'information', title: 'Information we handle' },
@@ -140,15 +140,6 @@
       your content to train AI models and no automated decisions about people with legal or
       similarly significant effects. Document content is not sent to an AI service.
     </p>
-    <h3>Legal basis</h3>
-    <p>
-      Where a law requires a legal basis, the operator must identify it for each purpose before this
-      draft becomes effective. Account and workspace operation may be necessary to provide the
-      requested service; proportionate security and support processing may rely on legitimate
-      interests where permitted; legal obligations may require particular records. Consent, where
-      used, must be specific and withdrawable. These examples do not establish a legal basis for
-      sensitive information or replace your organization’s own assessment.
-    </p>
   </section>
   <section id="visibility">
     <h2>Who can see your work</h2>
@@ -188,8 +179,7 @@
     </p>
     <p>
       We may need to disclose information to comply with a binding legal requirement or to address a
-      substantiated security issue. Any adopted policy must set out how {OPERATOR.legalName}
-      assesses such requests.
+      substantiated security issue.
     </p>
   </section>
   <section id="provenance">
@@ -337,8 +327,7 @@
       </li>
       <li>
         <strong>Hosting provider:</strong> the workspace, API, database, document converter and backups
-        run on a server the operator rents. The provider’s name, the hosting location and the contractual
-        arrangements remain to be confirmed.
+        run on a server the operator rents.
       </li>
       <li>
         <strong>Microsoft and Google as editor platforms:</strong> the add-ins run inside their products,
@@ -462,10 +451,9 @@
             ></tr
           ><tr
             ><td>Documents, history, drafts and audit records</td><td
-              >Until erased through the processes above; there is no automatic expiry. Retention
-              rules per organization and for administrative logs remain for the operator to set.</td
+              >Until erased through the processes above; there is no automatic expiry.</td
             ></tr
-          ><tr><td>Web server logs</td><td>{UNCONFIRMED}</td></tr></tbody
+          ></tbody
         >
       </table>
     </div>
@@ -524,28 +512,17 @@
   <section id="changes">
     <h2>Changes to this policy</h2>
     <p>
-      The final policy must carry an effective date. Material changes to purposes, providers or data
-      handling should be communicated before they take effect when required, and a revised policy
-      does not authorize incompatible uses of information already collected. For the rules proposed
-      for using the service, see the
+      Material changes to purposes, providers or data handling should be communicated before they
+      take effect when required, and a revised policy does not authorize incompatible uses of
+      information already collected. For the rules proposed for using the service, see the
       <a href="/terms">terms and conditions</a>.
     </p>
   </section>
   <section id="contact">
     <h2>Contact and operator details</h2>
     <OperatorDetails emailLabel="Privacy and legal email" />
-    <dl class="contact-details">
-      <dt>Hosting provider and location</dt>
-      <dd>{UNCONFIRMED}</dd>
-      <dt>Representative or DPO</dt>
-      <dd>{UNCONFIRMED} To be identified if required by applicable law.</dd>
-      <dt>Effective date</dt>
-      <dd>Not set; this is a draft.</dd>
-    </dl>
     <p>
-      The hosting provider and location, any representative or DPO and the effective date have not
-      been confirmed and are marked as such rather than guessed. To report a security vulnerability,
-      see <a href="/security#report">the security overview</a>.
+      To report a security vulnerability, see <a href="/security#report">the security overview</a>.
     </p>
   </section>
 </LegalPage>

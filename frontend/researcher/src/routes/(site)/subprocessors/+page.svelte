@@ -1,6 +1,6 @@
 <script lang="ts">
   import LegalPage from '$lib/components/marketing/LegalPage.svelte';
-  import { EMAIL_HREF, OPERATOR, UNCONFIRMED } from '$lib/site/operator';
+  import { EMAIL_HREF, OPERATOR } from '$lib/site/operator';
   const sections = [
     { id: 'about', title: 'About this list' },
     { id: 'list', title: 'Providers that handle data' },
@@ -21,8 +21,7 @@
     <p>
       This draft names the providers that the Dynodoc code and deployment configuration actually
       use. It was checked against the repository on 12 October 2026 and is not an executed
-      agreement. A provider is listed only if it is configured; hosting details that the operator
-      has not yet confirmed are marked as such rather than guessed.
+      agreement. A provider is listed only if it is configured.
     </p>
     <p>
       “Subprocessor” here means a provider that handles information on the operator’s behalf to run
@@ -39,32 +38,29 @@
     <div class="table-scroll" role="region" aria-label="Providers that handle data" tabindex="0">
       <table>
         <thead
-          ><tr
-            ><th>Provider</th><th>Role and purpose</th><th>Information involved</th><th>Location</th
-            ></tr
-          ></thead
+          ><tr><th>Provider</th><th>Role and purpose</th><th>Information involved</th></tr></thead
         ><tbody
           ><tr
-            ><td>Hosting provider of the workspace server (name awaiting confirmation)</td><td
+            ><td>Hosting provider of the workspace server</td><td
               >Runs the workspace, API, database, document converter and backups on a rented virtual
               server.</td
             ><td
               >All service data: account records, document content and history, original uploads,
               audit records, logs and backups.</td
-            ><td>{UNCONFIRMED}</td></tr
+            ></tr
           ><tr
             ><td>Vercel Inc.</td><td>Serves the public website at dynodoc.online.</td><td
               >IP address, requested address and browser details for public-page requests. The
               website deployment is configured with only the public workspace address and has no
               database.</td
-            ><td>Per Vercel.</td></tr
+            ></tr
           ><tr
             ><td><a href="https://resend.com/legal/privacy-policy">Resend</a></td><td
               >Delivers transactional email: sign-in links and invitations. Used when configured.</td
             ><td
               >Recipient address, the sender’s name and reply-to address for invitations, and the
               message, which contains a link and a file or project name.</td
-            ><td>Per Resend.</td></tr
+            ></tr
           ><tr
             ><td><a href="https://policies.google.com/privacy">Google</a> (your choice)</td><td
               >Optional sign-in with Google, limited to identity, email and profile; and the
@@ -72,7 +68,7 @@
             ><td
               >Your Google account identifier, name and email address are passed to Dynodoc; for a
               Forms import, requests for the form you select.</td
-            ><td>Per Google.</td></tr
+            ></tr
           ></tbody
         >
       </table>
@@ -110,10 +106,6 @@
         hostnames. It receives domain names, not user information.
       </li>
       <li>
-        <strong>Domain registrar and DNS:</strong> provider awaiting confirmation. It holds the domain
-        records, not user information.
-      </li>
-      <li>
         <strong>GitHub:</strong> hosts the source code and runs the automated tests, which use synthetic
         data only. It receives no customer content.
       </li>
@@ -142,10 +134,9 @@
   <section id="changes">
     <h2>Changes and contact</h2>
     <p>
-      Adding or replacing a provider that handles content changes this list and, before the service
-      is adopted for customer data, must be announced in a way the final terms define. Until then
-      this page is the single record. A document can also link to an image hosted elsewhere; that
-      host is chosen by the author, not by Dynodoc.
+      Adding or replacing a provider that handles content changes this list; this page is the single
+      record. A document can also link to an image hosted elsewhere; that host is chosen by the
+      author, not by Dynodoc.
     </p>
     <dl class="contact-details">
       <dt>Legal operator</dt>
@@ -155,14 +146,12 @@
         <a href={EMAIL_HREF}>{OPERATOR.email}</a>. See also the
         <a href="/privacy#contact">privacy policy</a>.
       </dd>
-      <dt>Hosting provider</dt>
-      <dd>{UNCONFIRMED}</dd>
     </dl>
   </section>
 </LegalPage>
 
 <style>
   .table-scroll table {
-    min-width: 760px;
+    min-width: 600px;
   }
 </style>

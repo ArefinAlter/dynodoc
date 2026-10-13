@@ -1,5 +1,43 @@
 # Dynodoc: intent, current implementation and remaining work
 
+## Source: licence removal, device-key grants, storage collector and merge apply (13 October 2026)
+
+Source is PostgreSQL schema 40 (migration 0040). Production runs schema 39 until a newer
+live entry above says otherwise.
+
+**Licence and copyright.** The AGPL-3.0 text and metadata are removed from the private
+repository, the frontend package and the generated API description: `LICENSE` is a proprietary
+notice (Verne Ltd.), the workspace sets `license-file` and `publish = false`, and
+`package.json` is `UNLICENSED`. The engine repository's copyright holder is Verne Ltd.
+([decision 013](decisions/013-private-application-licence.md)). Open point: `hyperformula`
+is GPL-3.0-only or commercial and ships in the browser bundle.
+
+**Legal pages.** Undecided facts are omitted instead of shown as placeholders
+([LEGAL-PAGES.md](LEGAL-PAGES.md)); the operator facts the owner supplied stay.
+
+**Device-key grants (schema 40).** [Contract](DEVICE-KEY-GRANTS-API.md): new keys default to
+"granted" mode and open only projects and scopes their owner grants; existing keys stay
+"all" until switched; grant changes apply on the next request. A fourth scope,
+`history:review`, is required to approve reviews. The profile UI manages grants and lists
+starred projects; `GET /profiles/{id}/starred` is added. The CLI applies a current-user-only
+ACL to key and token files on Windows and refuses over-permissive key files on Unix
+(`--allow-insecure-key-file` opts out).
+
+**Storage collector and merge apply (local repository).** `gc --plan-hash` removes only staged
+objects that no stored commit references, after an exact reviewed plan; commits, signatures
+and refs are never pruned ([LOCAL-RETENTION-PLAN.md](LOCAL-RETENTION-PLAN.md)). `merge
+--same-file-merge clean` applies node-level merges of a file edited on both sides and writes a
+new signed commit format (v3; old readers reject it) with a fixed vector
+([PORTABLE-PROJECT-HISTORY.md](PORTABLE-PROJECT-HISTORY.md)). `verify-merge` re-runs it.
+
+**Decision 014.** Browser-authored project-wide branches and a follow graph are not built, with
+reasons ([decision](decisions/014-web-branch-authoring-and-follows.md)).
+
+**Not done.** Pack files and commit pruning, encrypted key files and operating-system key
+storage, applying merges across documents or resolving real node conflicts automatically,
+server-side receipt-authority rotation, witnesses, large-file acceptance, marketplace
+publication and installed-editor acceptance.
+
 ## Live: schema 39 release (13 October 2026, 03:02 UTC)
 
 The VPS workspace, API and admin site run application `1b469a2`, schema 39: project issues,
