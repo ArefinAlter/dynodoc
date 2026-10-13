@@ -25,7 +25,7 @@
   </div>
   <div class="links" data-reveal>
     <Btn href="/roadmap" variant="secondary" arrow>Read the roadmap</Btn>
-    <Btn href={GITHUB_URL} variant="link" external arrow>Inspect the source</Btn>
+    <Btn href={GITHUB_URL} variant="link" external arrow>Inspect the open engine</Btn>
   </div>
 </Section>
 

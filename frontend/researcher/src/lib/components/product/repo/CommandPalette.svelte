@@ -15,7 +15,8 @@
     Keyboard,
     FileText,
     X,
-    CornerDownLeft
+    CornerDownLeft,
+    CircleDot
   } from '@lucide/svelte';
   import { workspaceRequest } from '$lib/workspace/api';
   import { theme } from '$lib/theme.svelte';
@@ -104,6 +105,15 @@
   });
 
   const go = (path: string) => () => goto(path);
+  /**
+   * The project page listens for this and shows its Issues tab. When no page handled it
+   * (for example on a file page), open the project's Issues tab by address instead.
+   */
+  const issues = (view: 'list' | 'new') => () => {
+    const event = new CustomEvent('dynodoc:issues', { detail: { view }, cancelable: true });
+    if (window.dispatchEvent(event))
+      void goto(`/projects/${projectId}?tab=issues${view === 'new' ? '&new=1' : ''}`);
+  };
   const actions = $derived<Entry[]>([
     { id: 'a-new', group: 'Actions', label: 'New project', icon: Plus, run: go('/projects?new=1') },
     ...(canAdd
@@ -114,6 +124,24 @@
             label: 'Add file to this project',
             icon: Upload,
             run: () => onAction('add-file')
+          }
+        ]
+      : []),
+    ...(projectId
+      ? [
+          {
+            id: 'a-issue-new',
+            group: 'Actions',
+            label: 'New issue',
+            icon: CircleDot,
+            run: issues('new')
+          },
+          {
+            id: 'a-issues',
+            group: 'Actions',
+            label: 'Go to issues',
+            icon: CircleDot,
+            run: issues('list')
           }
         ]
       : []),
@@ -226,7 +254,7 @@
     }));
     const limit = q ? 8 : 5;
     return [
-      ...rank(actions, q ? 6 : 10),
+      ...rank(actions, q ? 6 : 14),
       ...rank(projectEntries, limit),
       ...rank(fileEntries, limit),
       ...docEntries

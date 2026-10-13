@@ -169,5 +169,7 @@ device or in their Google properties are outside Dynodoc's control.
   clear/disconnect action: not built.
 - Whether Google's OAuth consent screen and the Microsoft certification form need
   additional data-use declarations beyond sections 2 to 6.
-- The operator identity, contact address and jurisdiction required by both stores
-  are still missing from the public legal pages (see `docs/LEGAL-PAGES.md`).
+- The operator identity, address and contact (Verne Systems, info@vernesystems.com,
+  +880 1870 034384) are published on the legal pages as of 13 October 2026; the pages
+  remain unadopted drafts without an effective date, and the hosting provider and
+  location are still unconfirmed (see `docs/LEGAL-PAGES.md`).

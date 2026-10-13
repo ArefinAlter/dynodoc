@@ -75,11 +75,9 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       CONVERTER_KEY: ${CONVERTER_KEY:?Set CONVERTER_KEY}
       CONNECTOR_ORIGINS: ${CONNECTOR_ORIGINS:-}
-      SOURCE_ARCHIVE_PATH: /app/source.tar.gz
       ENGINE_API_URL: http://api:8080
       CONVERTER_URL: http://converter:8090
       DEV_AUTH: 'false'
-    volumes: ['../../source.tar.gz:/app/source.tar.gz:ro']
     mem_limit: 1g
     cpus: 2
     pids_limit: 128

@@ -1,5 +1,6 @@
 <script lang="ts">
   import LegalPage from '$lib/components/marketing/LegalPage.svelte';
+  import { EMAIL_HREF, OPERATOR } from '$lib/site/operator';
   const sections = [
     { id: 'status', title: 'Status of this document' },
     { id: 'roles', title: 'Parties and roles' },
@@ -41,15 +42,19 @@
         or a processor acting for its own clients.
       </li>
       <li>
-        <strong>Operator:</strong> the legal operator of the hosted service, not yet identified. For project
-        content it would act as a processor on the customer’s instructions. For account and service-operation
-        records, security logs and anonymous performance measurements it decides how and why information
-        is processed.
+        <strong>Operator:</strong>
+        {OPERATOR.legalName} (trading as {OPERATOR.tradingAs}), the legal operator of the hosted
+        service. For project content it would act as a processor on the customer’s instructions. For
+        account and service-operation records, security logs and anonymous performance measurements
+        it decides how and why information is processed.
       </li>
     </ul>
     <p>
       The roles actually applicable depend on the law that governs the arrangement. A person who
-      uses the service in their own capacity is covered by the privacy policy directly.
+      uses the service in their own capacity is covered by the privacy policy directly. The
+      operator’s registered address and registration details are under
+      <a href="/privacy#contact">contact and operator details</a> in the privacy policy; questions
+      and notices about these draft terms go to <a href={EMAIL_HREF}>{OPERATOR.email}</a>.
     </p>
   </section>
   <section id="subject">
@@ -162,9 +167,10 @@
     <h2>Audit and records</h2>
     <p>
       The service keeps an operations log and erasure receipts, and a customer with access to a
-      document can ask the service to verify the integrity of its history. The source code is
-      available under an open-source license so that behaviour can be inspected; see
-      <a href="/licenses">licenses</a>. No independent audit or certification exists. The final
+      document can ask the service to verify the integrity of its history. The engine, API and
+      command-line tools that implement the history are open source under the MIT licence so that
+      their behaviour can be inspected; the workspace and website are not published as open source.
+      See <a href="/licenses">licenses</a>. No independent audit or certification exists. The final
       agreement must state any audit right, how it is exercised and who bears its cost.
     </p>
   </section>
@@ -179,7 +185,10 @@
   <section id="open">
     <h2>Open items</h2>
     <ul>
-      <li>Legal operator, address and governing law.</li>
+      <li>
+        Counsel review of the proposed governing law and forum (the laws of Bangladesh and the
+        courts of Dhaka).
+      </li>
       <li>Hosting provider, storage locations and transfer safeguards.</li>
       <li>How instructions are given and how an unlawful instruction is handled.</li>
       <li>How subprocessor changes are announced and objected to.</li>

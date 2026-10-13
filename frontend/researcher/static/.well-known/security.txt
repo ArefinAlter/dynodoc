@@ -1,8 +1,10 @@
 # Dynodoc security contact (RFC 9116).
-# A dedicated security email address is not yet decided; GitHub private
-# vulnerability reporting is the confirmed channel. No bug bounty is offered.
+# Report vulnerabilities privately by email to Verne Systems, the operator, or through
+# GitHub private vulnerability reporting for the public engine repository.
+# No bug bounty is offered.
+Contact: mailto:info@vernesystems.com
 Contact: https://github.com/ArefinAlter/dynodoc-engine/security/advisories/new
 Expires: 2027-10-11T23:59:59.000Z
 Preferred-Languages: en
 Canonical: https://dynodoc.online/.well-known/security.txt
-Policy: https://dynodoc.online/security
+Policy: https://dynodoc.online/security#report

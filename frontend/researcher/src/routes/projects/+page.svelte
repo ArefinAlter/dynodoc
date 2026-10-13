@@ -10,7 +10,9 @@
     ArrowUpRight,
     Search,
     ChevronDown,
-    Check
+    Check,
+    CircleDot,
+    Star
   } from '@lucide/svelte';
   import RepositoryShell from '$lib/components/product/RepositoryShell.svelte';
   import Avatar from '$lib/components/product/repo/Avatar.svelte';
@@ -20,21 +22,23 @@
   import { workspaceRequest } from '$lib/workspace/api';
   import { mapPool, summarizeProject, type ProjectSummary } from '$lib/workspace/activity';
   import { projectRoleName, type Project } from '$lib/workspace/projects';
+  import type { ProjectEngagement } from '$lib/workspace/issues';
   import { loadProfile, type Profile } from '$lib/workspace/profile';
   import { plural, relativeTime } from '$lib/workspace/repo-ui';
-  type Kind = 'all' | 'owned' | 'shared';
+  type Kind = 'all' | 'owned' | 'shared' | 'starred';
   type Sort = 'created' | 'updated' | 'name';
   const KINDS: [Kind, string][] = [
     ['all', 'All'],
     ['owned', 'Owned by me'],
-    ['shared', 'Shared with me']
+    ['shared', 'Shared with me'],
+    ['starred', 'Starred']
   ];
   const SORTS: [Sort, string][] = [
     ['created', 'Newest first'],
     ['updated', 'Last updated'],
     ['name', 'Name']
   ];
-  let projects = $state<Project[]>([]),
+  let projects = $state<(Project & ProjectEngagement)[]>([]),
     profile = $state<Profile | null>(null),
     summaries = $state<Record<string, ProjectSummary>>({});
   let name = $state(''),
@@ -51,7 +55,8 @@
     const q = search.toLowerCase();
     const list = projects.filter(
       (p) =>
-        (kind === 'all' || (kind === 'owned') === (p.role === 'owner')) &&
+        (kind === 'all' ||
+          (kind === 'starred' ? !!p.starred : (kind === 'owned') === (p.role === 'owner'))) &&
         `${p.name} ${p.description}`.toLowerCase().includes(q)
     );
     if (sort === 'name') return [...list].sort((a, b) => a.name.localeCompare(b.name));
@@ -70,7 +75,9 @@
     search = $page.url.searchParams.get('q') || '';
     try {
       [projects, profile] = await Promise.all([
-        workspaceRequest<{ items: Project[] }>('/projects').then((p) => p.items),
+        workspaceRequest<{ items: (Project & ProjectEngagement)[] }>('/projects').then(
+          (p) => p.items
+        ),
         loadProfile()
       ]);
     } catch (e) {
@@ -259,10 +266,25 @@
                 {#if s?.updated_at}<span>Updated {relativeTime(s.updated_at)}</span>{/if}
                 {#if s}<span>{plural(s.files, 'file')}{s.filesMore ? '+' : ''}</span>{/if}
                 <span class="repo-role">{projectRoleName(p.role)}</span>
+                {#if typeof p.star_count === 'number'}<span class="rp-stars"
+                    ><Star
+                      size={14}
+                      fill={p.starred ? 'currentColor' : 'none'}
+                      aria-hidden="true"
+                    />{p.star_count}<span class="sr-only"
+                      >{p.star_count === 1 ? ' star' : ' stars'}{p.starred
+                        ? ', including yours'
+                        : ''}</span
+                    ></span
+                  >{/if}
                 <a href={`/projects/${p.id}?tab=requests`}
                   ><GitPullRequest size={14} aria-hidden="true" />
                   {s?.open_requests ? `${s.open_requests} open` : 'Pull requests'}</a
                 >
+                {#if typeof p.open_issue_count === 'number'}<a href={`/projects/${p.id}?tab=issues`}
+                    ><CircleDot size={14} aria-hidden="true" />
+                    {p.open_issue_count ? plural(p.open_issue_count, 'open issue') : 'Issues'}</a
+                  >{/if}
               </div>
             </article>
           {/each}

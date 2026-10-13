@@ -7,7 +7,7 @@ Draft copy prepared from this repository for the owner to paste into **Partner C
 | Field | Value | Limit |
 | --- | --- | --- |
 | Name (manifest `DisplayName` and reserved offer name; keep identical) | Dynodoc for PowerPoint | 50 in Partner Center, 125 in the manifest |
-| Publisher | Dynodoc (owner to confirm the legal publisher name) | |
+| Publisher / developer name | Verne Systems (trading as Verne), 8/A, Sher-e-Bangla Road, Zighatola, Dhaka-1209, Bangladesh; confirm it matches the Partner Center verification | |
 | Summary / tagline | Send your slide text edits to Dynodoc for review and bring approved team changes back. | 100 |
 | Manifest description | Connect this presentation to a Dynodoc project. Dynodoc records edits to existing slide text while this pane is open, sends them for review, and brings approved changes from your team back into the presentation. | 250 |
 | Category | Collaboration (secondary: Productivity). Choose from the list Partner Center shows. | |
@@ -15,7 +15,8 @@ Draft copy prepared from this repository for the owner to paste into **Partner C
 | Language | English (United States) | |
 | Manifest | `extensions/powerpoint/manifest.xml` (Id `28155d15-5a0e-4b94-b0ce-c448d684d125`; keep it for the life of the listing) | |
 | Support URL | https://dynodoc.online/support | public page, no sign-in |
-| Privacy policy / terms | https://dynodoc.online/privacy and https://dynodoc.online/terms (owner must confirm the operator details are final before submitting) | |
+| Support email / phone | info@vernesystems.com / +880 1870 034384 | owner to confirm the mailbox is monitored |
+| Privacy policy / terms | https://dynodoc.online/privacy and https://dynodoc.online/terms (the pages are drafts and not yet effective; the owner must adopt them before submitting) | |
 | Icons and logo | `extensions/marketplace/assets/office-icon-16.png`, `-32`, `-64`, `-80` and `office-store-logo-300.png` | manifest uses 32 and 64 px; Partner Center logo is 300 x 300 |
 
 Microsoft's listing guidance recommends not repeating the host product name in an add-in name. The name is kept as Dynodoc for PowerPoint because it tells users which app it is for; if certification objects, rename the offer and the manifest `DisplayName` together and keep the same Id.

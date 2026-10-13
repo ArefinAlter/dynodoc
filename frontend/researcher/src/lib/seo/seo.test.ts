@@ -163,6 +163,37 @@ describe('homepage copy', () => {
   });
 });
 
+describe('licence and operator statements', () => {
+  it('claims open source only for the engine, API and command-line tools', async () => {
+    const texts = [
+      SITE_DESCRIPTION,
+      structuredDataScript,
+      await body(llms, `${PUBLIC}/llms.txt`),
+      await body(llmsFull, `${PUBLIC}/llms-full.txt`),
+      ...FAQ.flatMap((entry) => [entry.question, entry.answer])
+    ];
+    for (const text of texts)
+      expect(text).not.toMatch(/AGPL|source archive|dynodoc\.online\/source/i);
+    const text = await body(llms, `${PUBLIC}/llms.txt`);
+    expect(text).toContain(
+      'The engine, API and command-line tools are open source under the MIT licence. The workspace and website are not published as open source.'
+    );
+    expect(structuredDataScript).toContain(
+      '"codeRepository":"https://github.com/ArefinAlter/dynodoc-engine"'
+    );
+    expect(structuredDataScript).toContain('https://opensource.org/license/mit');
+  });
+
+  it('names the operator and its contact, and never a tax or commercial identifier', async () => {
+    const text = await body(llms, `${PUBLIC}/llms.txt`);
+    expect(text).toContain('Verne Systems');
+    expect(text).toContain('info@vernesystems.com');
+    expect(structuredDataScript).toContain('"legalName":"Verne Systems"');
+    expect(structuredDataScript).toContain('"telephone":"+880 1870 034384"');
+    expect(`${structuredDataScript}${text}`).not.toMatch(/\bTIN\b|D-U-N-S|DUNS/);
+  });
+});
+
 describe('IndexNow', () => {
   it('publishes a key file whose name and contents match the key', async () => {
     const onDisk = readFileSync(`${staticDir}${INDEXNOW_KEY_PATH}`, 'utf8');

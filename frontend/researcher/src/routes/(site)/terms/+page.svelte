@@ -1,5 +1,7 @@
 <script lang="ts">
   import LegalPage from '$lib/components/marketing/LegalPage.svelte';
+  import OperatorDetails from '$lib/components/marketing/OperatorDetails.svelte';
+  import { OPEN_SOURCE_STATEMENT, OPERATOR } from '$lib/site/operator';
   const sections = [
     { id: 'agreement', title: 'About these terms' },
     { id: 'accounts', title: 'Accounts and access' },
@@ -28,22 +30,23 @@
     <h2>About these terms</h2>
     <p>
       These draft terms describe the proposed relationship between the operator of the hosted
-      Dynodoc service and the people authorized to use it. The legal operator and governing
-      jurisdiction have not yet been confirmed. This page is not an executed agreement or an
-      assertion that an unidentified operator has entered into a contract with you.
+      Dynodoc service, {OPERATOR.legalName} (trading as {OPERATOR.tradingAs}), and the people
+      authorized to use it. The proposed governing law and forum are set out under
+      <a href="#disputes">Law and disputes</a> and are pending legal review. This page is not an executed
+      agreement or an assertion that the operator has entered into a contract with you.
     </p>
     <p>
-      Before these terms become effective, the operator must complete its identity and contact
-      details, confirm the applicable law, review the provisions and communicate the final terms
+      Before these terms become effective, the operator must have the provisions reviewed by
+      counsel, confirm the applicable law, set an effective date and communicate the final terms
       through an appropriate acceptance process. “Dynodoc,” “we” and “our” below refer to that
       operator. “You” means the individual using the service and, where properly authorized, the
       organization on whose behalf they act.
     </p>
     <p>
       These terms concern the hosted service, its website and its editor add-ins. The open-source
-      software licenses (see <a href="/licenses">licenses</a>) and any separately agreed
-      institutional, <a href="/dpa">data-processing</a> or service agreement are distinct. A signed agreement
-      may take precedence where it expressly says so.
+      licence of the engine, API and command-line tools (see <a href="/licenses">licenses</a>) and
+      any separately agreed institutional, <a href="/dpa">data-processing</a> or service agreement are
+      distinct. A signed agreement may take precedence where it expressly says so.
     </p>
   </section>
   <section id="accounts">
@@ -56,8 +59,8 @@
     <p>
       Protect access to your email account, sign-in links, sessions, editor connection keys and any
       signing keys. Do not share an account as a substitute for inviting collaborators individually.
-      Tell the operator promptly if you suspect unauthorized access, using the contact channel to be
-      established below.
+      Tell the operator promptly if you suspect unauthorized access, using the email address under
+      <a href="#contact">Operator and contact details</a>.
     </p>
     <p>
       The service is intended for adults and authorized collaborators who can enter a binding
@@ -116,11 +119,9 @@
       information. Do not grant another person access that exceeds your own authority.
     </p>
     <p>
-      Dynodoc’s application code is available under the GNU Affero General Public License, version 3
-      or later, and its standalone engine under the MIT license, as described on the
-      <a href="/licenses">licenses page</a>. A software license does not make your private content
-      public or apply an open-source license to it. Third-party software and trademarks remain
-      subject to their own licenses and rights.
+      {OPEN_SOURCE_STATEMENT} The <a href="/licenses">licenses page</a> has the details. A software license
+      does not make your private content public or apply an open-source license to it. Third-party software
+      and trademarks remain subject to their own licenses and rights.
     </p>
   </section>
   <section id="sensitive">
@@ -292,8 +293,11 @@
   <section id="disputes">
     <h2>Law and disputes</h2>
     <p>
-      The governing law, competent forum and operator’s legal address remain to be confirmed. No
-      mandatory arbitration, class-action waiver or exclusive court is designated by this draft.
+      The operator’s registered office is in Dhaka, Bangladesh. This draft proposes that these terms
+      be governed by {OPERATOR.governingLaw} and that disputes be brought before
+      {OPERATOR.forum}. This is a proposed term pending counsel review and is not yet in force. It
+      does not limit mandatory consumer or data-protection rights that apply where you live. No
+      mandatory arbitration or class-action waiver is proposed.
     </p>
     <p>
       The proposed first step for a service dispute is to contact the operator with enough detail to
@@ -318,23 +322,18 @@
   </section>
   <section id="contact">
     <h2>Operator and contact details</h2>
-    <dl class="contact-details">
-      <dt>Legal operator</dt>
-      <dd>Awaiting confirmation.</dd>
-      <dt>Public legal email</dt>
-      <dd>Awaiting confirmation.</dd>
-      <dt>Mailing address</dt>
-      <dd>Awaiting confirmation.</dd>
+    <OperatorDetails emailLabel="Public legal email">
       <dt>Governing law</dt>
-      <dd>Awaiting confirmation.</dd>
+      <dd>Laws of Bangladesh (proposed; pending counsel review)</dd>
+      <dt>Forum</dt>
+      <dd>Courts of Dhaka (proposed; pending counsel review)</dd>
       <dt>Effective date</dt>
       <dd>Not set; this is a draft.</dd>
-    </dl>
+    </OperatorDetails>
     <p>
-      Until these details are published, contact the administrator who invited you for operational
-      questions. Before public adoption they must be completed and the terms reviewed for the
-      operator’s jurisdiction and actual service arrangements. To report a security vulnerability,
-      see <a href="/security#report">the security overview</a>.
+      Write to the email address above with questions about these terms. Before public adoption the
+      terms must be reviewed for the operator’s jurisdiction and actual service arrangements. To
+      report a security vulnerability, see <a href="/security#report">the security overview</a>.
     </p>
   </section>
 </LegalPage>

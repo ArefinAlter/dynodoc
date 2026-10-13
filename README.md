@@ -48,7 +48,8 @@ adoption of local commits, complete offline convergence, full native capture,
 external witnesses and large-file/service acceptance remain open. Shared writes
 still scan full state and reconstruction keeps state resident; packing and
 incremental publication remain storage priorities. Installed-editor acceptance
-and marketplace publication also remain open. **License:** [AGPL v3](LICENSE).
+and marketplace publication also remain open. **Licensing:** this repository is
+private and its application is not published as open source; see [License](#license).
 
 The new signed-in front page is **Projects**: member-only profiles, multiple files,
 per-file main/private drafts, pull requests, comparisons and history. Basic web
@@ -288,5 +289,11 @@ Start with [docs/README.md](docs/README.md) for the full numbered series. Most-u
 
 ## License
 
-[AGPL v3](LICENSE) for this application. The [standalone engine](https://github.com/ArefinAlter/dynodoc-engine)
-is separately published under MIT with the owner's authorization.
+This repository is private. The application (web workspace and website) is not
+published as open source, and its licence is an open owner decision. Only the
+[engine, API and command-line tools](https://github.com/ArefinAlter/dynodoc-engine)
+are open source, under the MIT licence, with the owner's authorization. The
+[`LICENSE`](LICENSE) file, `Cargo.toml` and the frontend `package.json` still carry
+the AGPL v3 text and metadata from the original PoC; replacing them is an open owner
+decision. The operator is Verne Systems (trading as Verne), Dhaka, Bangladesh; see
+[the legal pages notes](docs/LEGAL-PAGES.md).

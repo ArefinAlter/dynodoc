@@ -6,6 +6,7 @@
   import Dino from '$lib/art/Dino.svelte';
   import Tracks from '$lib/art/Tracks.svelte';
   import { FOOTER_COLUMNS, isAppHost, siteHref, workspaceHref } from '$lib/components/site/nav';
+  import { OPERATOR } from '$lib/site/operator';
 
   const relative = $derived(!isAppHost($page.url.hostname));
   const href = (path: string) => siteHref(path, relative);
@@ -60,9 +61,11 @@
 
   <div class="container bottom">
     <p class="legal">
-      <span>&copy; {year} Dynodoc</span>
+      <span>&copy; {year} {OPERATOR.legalName}</span>
       <span class="sep" aria-hidden="true">/</span>
-      <a href={href('/licenses')}>Open source (AGPL-3.0)</a>
+      <span>Dynodoc is a product of {OPERATOR.legalName}, Dhaka, Bangladesh</span>
+      <span class="sep" aria-hidden="true">/</span>
+      <a href={href('/licenses')}>Open-source engine (MIT)</a>
     </p>
     <ThemeToggle variant="label" />
   </div>
@@ -227,6 +230,15 @@
   }
   .sep {
     color: var(--color-border-strong);
+  }
+  @media (max-width: 639px) {
+    .legal {
+      flex-direction: column;
+      gap: 2px;
+    }
+    .sep {
+      display: none;
+    }
   }
 
   /* Oversized outlined wordmark. Each letter lifts and fills as the pointer passes. */

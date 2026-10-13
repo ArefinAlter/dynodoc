@@ -40,6 +40,11 @@ test('homepage states the product, links the calls to action and carries one JSO
   ]);
   const text = (await main.textContent()) ?? '';
   expect(text).not.toMatch(/questionnaire|XLSForm|KoboToolbox|ODK|REDCap|survey/i);
+  // Only the engine, API and CLI are open source; the application source is not published.
+  expect(text).not.toMatch(/AGPL|source archive/i);
+  await expect(
+    page.locator('#self-host').getByRole('link', { name: /Engine on GitHub/ })
+  ).toHaveAttribute('href', 'https://github.com/ArefinAlter/dynodoc-engine');
   for (const section of ['how-it-works', 'editors', 'review', 'history', 'projects', 'faq'])
     await expect(page.locator(`#${section}`)).toHaveCount(1);
 });
@@ -111,7 +116,7 @@ test('legal pages are linked, readable on mobile and explicitly marked as drafts
   ]) {
     await page.goto(path);
     await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
-    await expect(page.getByText('Draft revised 12 October 2026 · Not yet effective')).toBeVisible();
+    await expect(page.getByText('Draft revised 13 October 2026 · Not yet effective')).toBeVisible();
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
     ).toBe(true);
@@ -121,10 +126,32 @@ test('legal pages are linked, readable on mobile and explicitly marked as drafts
       .evaluateAll((links) => links.map((link) => link.getAttribute('href')));
     for (const anchor of anchors) expect(await page.locator(anchor!).count()).toBe(1);
   }
+  // The operator is identified on the legal pages and in the footer; only the engine is open.
+  await page.goto('/privacy#contact');
+  const operator = page.locator('#contact');
+  await expect(operator.getByText('Verne Systems, trading as Verne')).toBeVisible();
+  await expect(
+    operator.getByText('8/A, Sher-e-Bangla Road, Zighatola, Dhaka-1209, Bangladesh')
+  ).toBeVisible();
+  await expect(operator.getByText('C-201411-1')).toBeVisible();
+  await expect(operator.getByText('TRAD/DSCC/035498/2024')).toBeVisible();
+  await expect(operator.getByRole('link', { name: 'info@vernesystems.com' })).toHaveAttribute(
+    'href',
+    'mailto:info@vernesystems.com'
+  );
+  await page.goto('/licenses');
+  await expect(
+    page.getByText(
+      'The engine, API and command-line tools are open source under the MIT licence. The workspace and website are not published as open source.'
+    )
+  ).toBeVisible();
+  await expect(page.locator('main').getByText(/AGPL/)).toHaveCount(0);
   await page.goto('/');
   await expect(
     page.getByRole('contentinfo').getByRole('link', { name: 'Privacy policy' })
   ).toBeVisible();
+  await expect(page.getByRole('contentinfo')).toContainText('Verne Systems');
+  await expect(page.getByRole('contentinfo')).not.toContainText('AGPL');
   await expect(
     page.getByRole('contentinfo').getByRole('link', { name: 'Terms & conditions' })
   ).toBeVisible();

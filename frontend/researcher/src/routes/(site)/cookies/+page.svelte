@@ -190,8 +190,8 @@
     <p>
       You can inspect, block or clear cookies and local storage in your browser settings. Blocking
       essential sign-in storage prevents signed-in use. Clearing preferences resets the theme and
-      view choices. See the <a href="/privacy">privacy policy</a> for account and content handling, including
-      retention and the operator contact details still awaiting confirmation.
+      view choices. See the <a href="/privacy">privacy policy</a> for account and content handling,
+      including retention and the <a href="/privacy#contact">operator’s contact details</a>.
     </p>
   </section>
 </LegalPage>

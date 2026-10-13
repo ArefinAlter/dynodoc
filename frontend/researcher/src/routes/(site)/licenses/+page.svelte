@@ -1,8 +1,9 @@
 <script lang="ts">
   import LegalPage from '$lib/components/marketing/LegalPage.svelte';
+  import { ENGINE_REPO_URL, OPEN_SOURCE_STATEMENT, OPERATOR } from '$lib/site/operator';
   const sections = [
-    { id: 'software', title: 'Dynodoc software' },
-    { id: 'engine', title: 'Standalone engine' },
+    { id: 'engine', title: 'Engine, API and command-line tools' },
+    { id: 'software', title: 'Workspace and website' },
     { id: 'fonts', title: 'Fonts' },
     { id: 'dependencies', title: 'Dependencies' },
     { id: 'art', title: 'Artwork, icons and marks' },
@@ -56,31 +57,31 @@
 
 <LegalPage
   title="Licenses"
-  description="The licenses that apply to Dynodoc's software, its standalone engine, bundled fonts, direct dependencies and artwork, with links to the full texts."
+  description="The licenses that apply to Dynodoc: the open-source engine, API and command-line tools, the workspace and website, bundled fonts, direct dependencies and artwork."
   {sections}
 >
-  <section id="software">
-    <h2>Dynodoc software</h2>
+  <section id="engine">
+    <h2>Engine, API and command-line tools</h2>
     <p>
-      The Dynodoc application, which is the web app, the API and its operator tools, is licensed
-      under the GNU Affero General Public License, version 3 or later (<code>AGPL-3.0-or-later</code
-      >). The license text is the <code>LICENSE</code> file in the source. Because the license
-      covers use over a network, the hosted service offers the source of the revision it runs at
-      <a href="/source" data-sveltekit-reload>/source</a>, as a downloadable archive with a manifest
-      of file hashes.
+      The event-log, versioning and merge engine, its HTTP API and the command-line tools are
+      published in a public repository under the MIT license, copyright 2026 ArefinAlter and Dynodoc
+      contributors. Source and license text:
+      <a href={ENGINE_REPO_URL}>dynodoc-engine on GitHub</a>.
+    </p>
+    <p>{OPEN_SOURCE_STATEMENT}</p>
+  </section>
+  <section id="software">
+    <h2>Workspace and website</h2>
+    <p>
+      The Dynodoc workspace, which is the web application and its operator tools, and this website
+      are &copy; 2026 {OPERATOR.legalName}. They are developed in a private repository and are not
+      published as open source; no open-source license is offered for them, and no source archive of
+      them is available.
     </p>
     <p>
       A software license is separate from the <a href="/terms">terms of using the hosted service</a
-      >. It applies to the code, not to your documents or to Dynodoc’s name and artwork.
-    </p>
-  </section>
-  <section id="engine">
-    <h2>Standalone engine</h2>
-    <p>
-      The event-log, versioning and merge engine is also published as a standalone repository under
-      the MIT license, copyright 2026 ArefinAlter and Dynodoc contributors. The copyright owner
-      authorized that release; the application’s AGPL license is unchanged. Source and license text:
-      <a href="https://github.com/ArefinAlter/dynodoc-engine">dynodoc-engine on GitHub</a>.
+      >. Using the hosted service is governed by those terms, not by a software license, and none of
+      the licenses on this page applies to your documents or to Dynodoc’s name and artwork.
     </p>
   </section>
   <section id="fonts">
@@ -116,13 +117,11 @@
     <p>
       These are the direct runtime dependencies as of 12 October 2026, with licenses taken from the
       lockfiles and installed package metadata. Each keeps its own license, and so do the transitive
-      packages beneath them, which are not listed here. The authoritative record is the lockfile; <code
-        >pnpm licenses list</code
-      >
-      and <code>cargo metadata --locked</code> print the complete set. Build and test tools are not shipped
-      and are not listed.
+      packages beneath them, which are not listed here. The authoritative record is the lockfile; in
+      the engine repository, <code>cargo metadata --locked</code> prints the complete Rust set. Build
+      and test tools are not shipped and are not listed.
     </p>
-    <h3>Web application (npm)</h3>
+    <h3>Workspace and website (npm)</h3>
     <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
     <div class="table-scroll" role="region" aria-label="Web dependencies" tabindex="0">
       <table>
@@ -141,14 +140,14 @@
             ><td>MIT or GPL-3.0-or-later</td><td><code>jszip</code></td></tr
           ><tr
             ><td>GPL-3.0-only</td><td
-              ><code>hyperformula</code> (spreadsheet calculation), which its publisher dual-licenses;
-              Dynodoc uses it under the GPL-3.0 option</td
+              ><code>hyperformula</code> (spreadsheet calculation), which its publisher offers under GPL-3.0
+              or a separate commercial license. Which option applies to the workspace is awaiting confirmation.</td
             ></tr
           ></tbody
         >
       </table>
     </div>
-    <h3>Engine and API (Rust)</h3>
+    <h3>Engine, API and command-line tools (Rust)</h3>
     <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
     <div class="table-scroll" role="region" aria-label="Rust dependencies" tabindex="0">
       <table>
@@ -177,10 +176,9 @@
     <h2>Artwork, icons and marks</h2>
     <p>
       The pencil-and-halftone dinosaur plates on this site are original works of the Dynodoc
-      project, drawn as silhouettes and rendered by a script in the source. Interface icons come
-      from Lucide (ISC). Names and logos of other products, such as Microsoft Word or Google Docs,
-      identify compatibility only; they belong to their owners and imply no partnership or
-      endorsement.
+      project, drawn as silhouettes and rendered by a script. Interface icons come from Lucide
+      (ISC). Names and logos of other products, such as Microsoft Word or Google Docs, identify
+      compatibility only; they belong to their owners and imply no partnership or endorsement.
     </p>
   </section>
   <section id="content">

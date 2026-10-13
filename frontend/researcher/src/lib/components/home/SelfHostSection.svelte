@@ -4,19 +4,26 @@
   import { Btn, CopyCode, Section } from '$lib/components/site';
   import { GITHUB_URL } from '$lib/components/site/nav';
 
+  // Commands from the engine repository's README and Taskfile.yml. The workspace and website
+  // live in a private repository and have no public setup.
   const steps = [
-    { n: '01', label: 'Create env files and install frontend dependencies', code: 'task setup' },
+    { n: '01', label: 'Start PostgreSQL 16 on loopback port 5548', code: 'task up' },
     { n: '02', label: 'Apply migrations with the operator login', code: 'task migrate' },
-    { n: '03', label: 'Start PostgreSQL, the API and the web app', code: 'task dev' }
+    {
+      n: '03',
+      label: 'Grant the restricted runtime login its allowlist',
+      code: 'task db:grant-runtime'
+    },
+    { n: '04', label: 'Run the HTTP API on loopback port 8080', code: 'task run' }
   ];
 </script>
 
 <Section
   id="self-host"
   tone="muted"
-  eyebrow="SELF-HOST"
-  title="Open source. Run it yourself."
-  lede="The application is AGPL-3.0 and the standalone engine is MIT. Run the API and workspace on your own machine against PostgreSQL 16."
+  eyebrow="OPEN ENGINE"
+  title="The engine is open source. Run it yourself."
+  lede="The engine, API and command-line tools are open source under the MIT licence. Run the API on your own machine against PostgreSQL 16. The workspace and website are not published as open source."
   layout="split"
 >
   <div class="host">
@@ -31,13 +38,12 @@
         {/each}
       </ol>
       <p class="note" data-reveal>
-        Between steps, create the separate runtime and operator database logins, as SETUP.md in the
-        source archive describes. Private document content you put in the app does not become open
-        source.
+        First copy the two example env files, set the keys and create the restricted runtime login,
+        as the engine README describes. The API listens on loopback only and never applies
+        migrations itself. The commands need Docker, Rust and Task.
       </p>
       <div class="links" data-reveal>
-        <Btn href="/source" variant="secondary" arrow>Download the source archive</Btn>
-        <Btn href={GITHUB_URL} variant="link" external arrow>Standalone engine (MIT)</Btn>
+        <Btn href={GITHUB_URL} variant="secondary" external arrow>Engine on GitHub (MIT)</Btn>
       </div>
     </div>
     <div class="art" aria-hidden="true">

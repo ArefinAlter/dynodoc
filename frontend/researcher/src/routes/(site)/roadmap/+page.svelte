@@ -91,6 +91,16 @@
           when: '12 Oct 2026'
         },
         {
+          title: 'Issues, labels and stars',
+          body: 'Project issues with labels, assignees and immutable comments, and project stars, for invite-only projects (schema 39).',
+          when: '13 Oct 2026'
+        },
+        {
+          title: 'Retention plan and same-file convergence report',
+          body: 'Two read-only command-line reports: what no branch or recovery source reaches in a local repository, and a dry-run node-level merge of a file edited on both sides. Nothing is deleted, stored or signed.',
+          when: '13 Oct 2026'
+        },
+        {
           title: 'Selected-history sync client',
           body: 'Plan, push, fetch and fast-forward pull from the command line, with verified objects and receipts.',
           when: '12 Oct 2026'
@@ -106,7 +116,7 @@
       items: [
         {
           title: 'Receipt authority and shared writers',
-          body: 'Schema 38 is deployed with shared writers off and no receipt-signing key installed. Turning on signed shared branches needs the owner to decide key custody, then a rehearsal of the writer path.'
+          body: 'Schema 38 is deployed with shared writers off and no receipt-signing key installed. That is a deliberate decision: the key cannot be replaced once installed and server-side rotation does not exist yet, so enabling waits for key custody, rotation and a production-copy rehearsal.'
         },
         {
           title: 'Project-scoped sign-in',
@@ -118,11 +128,11 @@
         },
         {
           title: 'Storage packing and retention',
-          body: 'Physical packing, publication of only changed nodes, and explicit retention and garbage collection.'
+          body: 'A read-only retention plan exists. Physical packing, publication of only changed nodes, and an actual garbage collector with a retention policy do not.'
         },
         {
           title: 'Same-file offline convergence',
-          body: 'Semantic resolution when one file is edited on partitioned devices, tested across restarts and reordering.'
+          body: 'A dry-run report shows whether a same-file merge is clean. Applying it, constraint handling across documents, and tests across restarts and partitions remain.'
         },
         {
           title: 'Installed-editor acceptance',
@@ -154,7 +164,7 @@
         },
         {
           title: 'Project workspace depth',
-          body: 'Branch, compare, activity, search and releases in the web workspace.'
+          body: 'Creating and merging project-wide branches in the web workspace, project-scoped search and releases. Compare, activity, issues and stars exist.'
         }
       ]
     }

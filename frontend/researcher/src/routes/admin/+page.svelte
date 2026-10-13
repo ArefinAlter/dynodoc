@@ -572,7 +572,7 @@
     </main>
   </div>
   <footer class="foot">
-    <a href="https://app.dynodoc.online/source">Download source code</a>
+    <a href="https://github.com/ArefinAlter/dynodoc-engine">Open-source engine (MIT)</a>
   </footer>
 </div>
 

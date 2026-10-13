@@ -1,5 +1,6 @@
 <script lang="ts">
   import LegalPage from '$lib/components/marketing/LegalPage.svelte';
+  import { EMAIL_HREF, OPERATOR, UNCONFIRMED } from '$lib/site/operator';
   const sections = [
     { id: 'about', title: 'About this list' },
     { id: 'list', title: 'Providers that handle data' },
@@ -50,7 +51,7 @@
             ><td
               >All service data: account records, document content and history, original uploads,
               audit records, logs and backups.</td
-            ><td>Awaiting confirmation.</td></tr
+            ><td>{UNCONFIRMED}</td></tr
           ><tr
             ><td>Vercel Inc.</td><td>Serves the public website at dynodoc.online.</td><td
               >IP address, requested address and browser details for public-page requests. The
@@ -148,11 +149,14 @@
     </p>
     <dl class="contact-details">
       <dt>Legal operator</dt>
-      <dd>Awaiting confirmation.</dd>
+      <dd>{OPERATOR.legalName}, trading as {OPERATOR.tradingAs}</dd>
       <dt>Contact for questions</dt>
-      <dd>Awaiting confirmation. See the <a href="/privacy#contact">privacy policy</a>.</dd>
+      <dd>
+        <a href={EMAIL_HREF}>{OPERATOR.email}</a>. See also the
+        <a href="/privacy#contact">privacy policy</a>.
+      </dd>
       <dt>Hosting provider</dt>
-      <dd>Awaiting confirmation.</dd>
+      <dd>{UNCONFIRMED}</dd>
     </dl>
   </section>
 </LegalPage>

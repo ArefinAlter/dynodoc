@@ -4,6 +4,7 @@
 // Answer engines lean on this graph more heavily than classic search does, so
 // it describes what Dynodoc is, rather than only carrying keywords.
 
+import { ENGINE_REPO_URL, OPERATOR } from '$lib/site/operator';
 import { FAQ } from './faq';
 import {
   CANONICAL_ORIGIN,
@@ -14,15 +15,34 @@ import {
   pageMeta
 } from './site';
 
-const REPOSITORY = 'https://github.com/ArefinAlter/dynodoc-engine';
+const REPOSITORY = ENGINE_REPO_URL;
 
+// The publisher is the operator, Verne Systems; Dynodoc is its product. No tax or commercial
+// identifier is published here.
 const organization = {
   '@type': 'Organization',
   '@id': `${CANONICAL_ORIGIN}/#organization`,
-  name: SITE_NAME,
-  url: `${CANONICAL_ORIGIN}/`,
-  logo: `${CANONICAL_ORIGIN}/brand/logo.svg`,
-  sameAs: [REPOSITORY]
+  name: OPERATOR.legalName,
+  legalName: OPERATOR.legalName,
+  alternateName: OPERATOR.tradingAs,
+  url: OPERATOR.website,
+  brand: {
+    '@type': 'Brand',
+    name: SITE_NAME,
+    url: `${CANONICAL_ORIGIN}/`,
+    logo: `${CANONICAL_ORIGIN}/brand/logo.svg`
+  },
+  address: {
+    '@type': 'PostalAddress',
+    ...OPERATOR.addressParts
+  },
+  contactPoint: {
+    '@type': 'ContactPoint',
+    contactType: 'customer support',
+    email: OPERATOR.email,
+    telephone: OPERATOR.phone,
+    availableLanguage: 'en'
+  }
 };
 
 const website = {
@@ -45,7 +65,6 @@ const application = {
   description:
     'Version control and provenance for Word, Google Docs, Excel, Google Sheets, PowerPoint and Google Slides. Changes are captured by editor add-ins, reviewed as change requests, merged under project rules and recorded in an append-only, hash-chained history.',
   image: SITE_IMAGE,
-  license: 'https://www.gnu.org/licenses/agpl-3.0.html',
   isAccessibleForFree: true,
   featureList: [
     'Add-ins that capture edits in Word, Excel, PowerPoint, Google Docs, Google Sheets and Google Slides',
@@ -54,7 +73,17 @@ const application = {
     'Private drafts, named versions and recovery by restore, revert or replay',
     'Append-only, hash-chained event log with stable node identities',
     'Signed project commits and ref receipts in the open-source engine and CLI',
-    'Self-hosting with PostgreSQL under AGPL-3.0'
+    'Open-source engine, API and command-line tools under the MIT licence, runnable against PostgreSQL 16'
+  ],
+  // Only the engine, API and command-line tools are published; the workspace and website are not.
+  hasPart: [
+    {
+      '@type': 'SoftwareSourceCode',
+      name: 'Dynodoc engine, API and command-line tools',
+      codeRepository: REPOSITORY,
+      license: 'https://opensource.org/license/mit',
+      programmingLanguage: 'Rust'
+    }
   ],
   publisher: { '@id': `${CANONICAL_ORIGIN}/#organization` }
 };

@@ -1,4 +1,5 @@
 import { CANONICAL_ORIGIN } from '$lib/seo/site';
+import { ENGINE_REPO_URL } from '$lib/site/operator';
 
 /**
  * Navigation data shared by SiteHeader and SiteFooter, and the helper that decides
@@ -15,7 +16,8 @@ export type NavLink = {
 };
 export type NavGroup = { id: string; label: string; links: NavLink[] };
 
-export const GITHUB_URL = 'https://github.com/ArefinAlter/dynodoc-engine';
+/** The public repository: the MIT engine, API and command-line tools. Nothing else is published. */
+export const GITHUB_URL = ENGINE_REPO_URL;
 
 export const NAV_GROUPS: NavGroup[] = [
   {
@@ -112,8 +114,7 @@ export const FOOTER_COLUMNS: FooterColumn[] = [
     links: [
       { label: 'Support', href: '/support' },
       { label: 'Brand', href: '/brand' },
-      { label: 'Source code', href: '/source' },
-      { label: 'GitHub', href: GITHUB_URL, external: true }
+      { label: 'Open-source engine', href: GITHUB_URL, external: true }
     ]
   }
 ];

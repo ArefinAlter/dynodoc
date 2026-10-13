@@ -4,13 +4,14 @@
   import Dino from '$lib/art/Dino.svelte';
   import Trike from '$lib/art/Trike.svelte';
   import { pageMeta, scriptTag, type FaqEntry } from '$lib/seo';
+  import { EMAIL_HREF, ENGINE_ISSUES_URL, OPERATOR } from '$lib/site/operator';
 
-  const ISSUES = 'https://github.com/ArefinAlter/dynodoc-engine/issues';
+  const ISSUES = ENGINE_ISSUES_URL;
   const meta = pageMeta('/support');
   const title = meta?.title ?? 'Support · Dynodoc';
   const description =
     meta?.description ??
-    'How to get help with Dynodoc: documentation, bug reports, security reports and what to expect.';
+    'How to get help with Dynodoc: documentation, email support, security reports and what to expect.';
 
   const routes = [
     {
@@ -108,7 +109,7 @@
         </p>
         <div class="actions">
           <Btn href="/help" arrow>Read the guide</Btn>
-          <Btn href={ISSUES} variant="secondary" external arrow>Report a problem on GitHub</Btn>
+          <Btn href={EMAIL_HREF} variant="secondary" arrow>Email support</Btn>
         </div>
       </div>
       <div class="hero__art" aria-hidden="true">
@@ -135,16 +136,28 @@
         </li>
       {/each}
       <li>
+        <a class="card card--interactive route" href={EMAIL_HREF}>
+          <span class="num">06</span>
+          <span class="h-3">Email support</span>
+          <span class="small"
+            >Questions and bug reports about the workspace, the website and the add-ins.</span
+          >
+          <ArrowUpRight class="route__arrow" size={18} aria-hidden="true" />
+        </a>
+      </li>
+      <li>
         <a
           class="card card--interactive route"
           href={ISSUES}
           target="_blank"
           rel="noopener noreferrer"
         >
-          <span class="num">06</span>
-          <span class="h-3">Report a bug<span class="sr-only"> (opens in a new tab)</span></span>
+          <span class="num">07</span>
+          <span class="h-3"
+            >Engine and CLI issues<span class="sr-only"> (opens in a new tab)</span></span
+          >
           <span class="small"
-            >GitHub Issues is the place to report a problem or ask a question.</span
+            >Public GitHub Issues for the open-source engine, API and command-line tools only.</span
           >
           <ArrowUpRight class="route__arrow" size={18} aria-hidden="true" />
         </a>
@@ -156,7 +169,7 @@
     id="report"
     eyebrow="REPORT A PROBLEM"
     title="Report a bug or ask a question."
-    lede="GitHub Issues is the channel for bug reports and questions today. Issues are public, so write each one as if a stranger will read it."
+    lede="Email is the channel for questions and bug reports about the workspace, the website and the add-ins. Use public GitHub Issues only for the open-source engine, API and command-line tools, and write each one as if a stranger will read it."
     layout="split"
   >
     <div class="report" data-reveal>
@@ -173,13 +186,14 @@
         <h3 class="h-3">Leave out</h3>
         <ul class="list">
           <li>Connection keys, pairing codes, passwords and sign-in links.</li>
-          <li>Document contents you would not publish.</li>
+          <li>Document contents you would not publish, especially in a public GitHub issue.</li>
           <li>Security vulnerabilities. Report those privately, as described below.</li>
         </ul>
       </div>
     </div>
     <div class="actions" data-reveal>
-      <Btn href={ISSUES} external arrow>Open GitHub Issues</Btn>
+      <Btn href={EMAIL_HREF} arrow>Email {OPERATOR.email}</Btn>
+      <Btn href={ISSUES} variant="secondary" external arrow>Engine and CLI issues on GitHub</Btn>
     </div>
   </Section>
 
@@ -205,10 +219,10 @@
       <div>
         <dt>Support email</dt>
         <dd>
-          <span class="badge">Awaiting confirmation</span>
+          <a class="mail" href={EMAIL_HREF}>{OPERATOR.email}</a>
           <p>
-            No support address has been decided yet. It will be listed here once the operator
-            confirms one. Until then, use GitHub Issues.
+            Mail goes to {OPERATOR.legalName}, the operator. Include the page or editor involved and
+            what you expected, and leave out connection keys, pairing codes and document contents.
           </p>
         </dd>
       </div>
@@ -217,8 +231,8 @@
         <dd>
           <span class="badge">No status page</span>
           <p>
-            There is no live status page. If you cannot reach the service, report it on GitHub
-            Issues with the time and the page you were using.
+            There is no live status page. If you cannot reach the service, email the time and the
+            page you were using.
           </p>
         </dd>
       </div>
@@ -235,11 +249,13 @@
       <div>
         <dt>Operator details</dt>
         <dd>
-          <span class="badge">Awaiting confirmation</span>
+          <span class="badge">Policies are drafts</span>
           <p>
-            The legal operator, contact details and jurisdiction are not final. The
-            <a href="/privacy">privacy policy</a> and <a href="/terms">terms</a> remain drafts until they
-            are.
+            Dynodoc is operated by {OPERATOR.legalName}, trading as {OPERATOR.tradingAs},
+            {OPERATOR.address}. Company registration {OPERATOR.companyRegistration}; trade licence
+            {OPERATOR.tradeLicence}. Phone: <a href={OPERATOR.phoneHref}>{OPERATOR.phone}</a>. The
+            <a href="/privacy">privacy policy</a> and <a href="/terms">terms</a> remain drafts until the
+            operator adopts them.
           </p>
         </dd>
       </div>
@@ -362,6 +378,11 @@
   .facts a {
     color: var(--color-accent-strong);
     text-underline-offset: 3px;
+  }
+  .facts .mail {
+    font-family: var(--site-font-mono);
+    font-size: 1.0625rem;
+    overflow-wrap: anywhere;
   }
 
   @media (min-width: 720px) {

@@ -5,6 +5,7 @@
   import Eyebrow from '$lib/components/site/Eyebrow.svelte';
   import { page } from '$app/stores';
   import { legalPageStructuredData } from '$lib/seo';
+  import { OPERATOR } from '$lib/site/operator';
   // Legal documents: left table of contents with scrollspy, 68ch reading column, print
   // styles. The site header and footer come from the (site) layout.
   let {
@@ -85,19 +86,20 @@
       <Eyebrow label="LEGAL" />
       <h1>{title}</h1>
       <p class="intro">{description}</p>
-      <p class="date">Draft revised 12 October 2026 · Not yet effective</p>
+      <p class="date">Draft revised 13 October 2026 · Not yet effective</p>
     </div>
   </header>
   <div class="container legal-body">
     <div class="draft-notice" role="note">
       <FileText size={20} aria-hidden="true" />
       <div>
-        <strong>A transparent draft, pending operator details</strong>
+        <strong>A transparent draft, not yet adopted</strong>
         <p>
-          The legal operator, public contact details, hosting jurisdiction and governing law have
-          not yet been confirmed. This page describes how the service currently works and the terms
-          proposed for it. It must be completed and reviewed before it is adopted for customer data
-          or a public launch.
+          {OPERATOR.legalName}, the operator of the hosted service, has not adopted this page and no
+          effective date is set. It describes how the service currently works and the terms proposed
+          for it, and it is pending legal review. Hosting details are still awaiting confirmation.
+          It must be completed and reviewed before it is adopted for customer data or a public
+          launch.
         </p>
       </div>
     </div>

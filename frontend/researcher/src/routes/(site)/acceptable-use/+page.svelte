@@ -1,5 +1,6 @@
 <script lang="ts">
   import LegalPage from '$lib/components/marketing/LegalPage.svelte';
+  import { EMAIL_HREF, OPERATOR } from '$lib/site/operator';
   const sections = [
     { id: 'scope', title: 'What this covers' },
     { id: 'rules', title: 'What is not allowed' },
@@ -101,15 +102,18 @@
     <h2>Questions and reports</h2>
     <dl class="contact-details">
       <dt>Report abuse</dt>
-      <dd>Awaiting confirmation.</dd>
+      <dd><a href={EMAIL_HREF}>{OPERATOR.email}</a></dd>
       <dt>Security vulnerabilities</dt>
       <dd><a href="/security#report">See the security overview</a></dd>
       <dt>Legal operator</dt>
-      <dd>Awaiting confirmation.</dd>
+      <dd>
+        {OPERATOR.legalName}, trading as {OPERATOR.tradingAs}. Address and registration details are
+        in the <a href="/privacy#contact">privacy policy</a>.
+      </dd>
     </dl>
     <p>
-      Until an abuse contact is published, contact the administrator who invited you or use the
-      sharing controls in the product to remove access.
+      You can also contact the administrator who invited you or use the sharing controls in the
+      product to remove access.
     </p>
   </section>
 </LegalPage>

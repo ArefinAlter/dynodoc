@@ -17,7 +17,7 @@ export const INDEXABLE_HOSTS = ['dynodoc.online', 'www.dynodoc.online'];
 export const SITE_NAME = 'Dynodoc';
 export const SITE_TAGLINE = 'Version control for the documents you already write';
 export const SITE_DESCRIPTION =
-  'Capture, review, merge and prove every change to Word, Docs, Excel, Sheets, PowerPoint and Slides files, with an append-only, hash-chained history. Open source.';
+  'Capture, review, merge and prove every change to Word, Docs, Excel, Sheets, PowerPoint and Slides files, with an append-only, hash-chained history. Open-source engine.';
 export const SITE_IMAGE = `${CANONICAL_ORIGIN}/brand/social.png`;
 
 export type IndexablePage = {
@@ -45,7 +45,7 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     path: '/',
     title: `${SITE_NAME} — ${SITE_TAGLINE}`,
     description: SITE_DESCRIPTION,
-    lastmod: '2026-10-12',
+    lastmod: '2026-10-13',
     changefreq: 'weekly',
     priority: '1.0'
   },
@@ -54,7 +54,7 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     title: `Privacy policy · ${SITE_NAME}`,
     description:
       'How Dynodoc handles account information, documents, project history, signing keys, audit records and editor add-in data, and what can and cannot be erased. A draft.',
-    lastmod: '2026-10-12',
+    lastmod: '2026-10-13',
     changefreq: 'monthly',
     priority: '0.5'
   },
@@ -63,7 +63,7 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     title: `Terms & conditions · ${SITE_NAME}`,
     description:
       'Proposed terms for using Dynodoc, including accounts, projects and history, editor add-ins, content ownership, responsible use and ending use. A draft.',
-    lastmod: '2026-10-12',
+    lastmod: '2026-10-13',
     changefreq: 'monthly',
     priority: '0.5'
   },
@@ -108,7 +108,7 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     title: 'Brand and press kit · Dynodoc',
     description:
       'Dynodoc logo and mark downloads, colour tokens, typography, usage rules, original dinosaur artwork and boilerplate text for press and partners.',
-    lastmod: '2026-10-12',
+    lastmod: '2026-10-13',
     changefreq: 'monthly',
     priority: '0.4'
   },
@@ -135,7 +135,7 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     title: 'Support · Dynodoc',
     description:
       'How to get help with Dynodoc: guides, bug reports, security reports and add-in questions, with what to expect.',
-    lastmod: '2026-10-12',
+    lastmod: '2026-10-13',
     changefreq: 'monthly',
     priority: '0.6'
   },
@@ -144,7 +144,7 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     title: 'Cookies & local storage · Dynodoc',
     description:
       'Every cookie and local-storage item Dynodoc sets, why, and for how long, plus the control for optional performance measurements.',
-    lastmod: '2026-10-12',
+    lastmod: '2026-10-13',
     changefreq: 'monthly',
     priority: '0.5'
   },
@@ -153,7 +153,7 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     title: 'Security · Dynodoc',
     description:
       'What protects the history of your documents and access to it, what is live today, what exists only in source, what is not claimed, and how to report a vulnerability.',
-    lastmod: '2026-10-12',
+    lastmod: '2026-10-13',
     changefreq: 'monthly',
     priority: '0.6'
   },
@@ -162,7 +162,7 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     title: 'Subprocessors · Dynodoc',
     description:
       'The outside providers Dynodoc uses to host, deliver and sign in to the service, what each receives, and what is not used.',
-    lastmod: '2026-10-12',
+    lastmod: '2026-10-13',
     changefreq: 'monthly',
     priority: '0.4'
   },
@@ -171,7 +171,7 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     title: 'Acceptable use · Dynodoc',
     description:
       'Proposed rules for using Dynodoc: what is not allowed, keeping provenance records honest, volume limits and good-faith security testing. A draft.',
-    lastmod: '2026-10-12',
+    lastmod: '2026-10-13',
     changefreq: 'monthly',
     priority: '0.4'
   },
@@ -180,7 +180,7 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     title: 'Accessibility statement · Dynodoc',
     description:
       'Dynodoc aims for WCAG 2.2 level AA. What is done and tested, the known limitations, and how to report a barrier.',
-    lastmod: '2026-10-12',
+    lastmod: '2026-10-13',
     changefreq: 'monthly',
     priority: '0.4'
   },
@@ -189,7 +189,7 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     title: 'Data processing terms (draft) · Dynodoc',
     description:
       'The structure of data processing terms for Dynodoc: roles, subject matter, categories, security, subprocessors, deletion and audit. A draft, not an agreement.',
-    lastmod: '2026-10-12',
+    lastmod: '2026-10-13',
     changefreq: 'monthly',
     priority: '0.3'
   },
@@ -197,8 +197,8 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     path: '/licenses',
     title: 'Licenses · Dynodoc',
     description:
-      'Dynodoc is AGPL-3.0-or-later with an MIT engine. Font licenses, direct dependencies, artwork and where to get the source.',
-    lastmod: '2026-10-12',
+      'The engine, API and command-line tools are open source under the MIT licence; the workspace and website are not published as open source. Font licenses, direct dependencies and artwork.',
+    lastmod: '2026-10-13',
     changefreq: 'monthly',
     priority: '0.4'
   }

@@ -13,6 +13,8 @@
   import InfoHero from '$lib/components/marketing/InfoHero.svelte';
   import { Btn, CopyCode, Section, scrollable } from '$lib/components/site';
   import { GITHUB_URL } from '$lib/components/site/nav';
+  import OperatorDetails from '$lib/components/marketing/OperatorDetails.svelte';
+  import { OPERATOR } from '$lib/site/operator';
 
   const description =
     'Dynodoc logo and mark downloads, colour tokens, typography, usage rules, original dinosaur artwork and boilerplate text for press and partners.';
@@ -91,13 +93,17 @@
   const short =
     'Dynodoc is a document provenance, review and synchronization platform for Word, Excel, PowerPoint and their Google equivalents.';
   const long =
-    'Dynodoc keeps a verifiable history of changes to documents edited in familiar tools. Every paragraph, cell and slide shape has a stable identity. Changes are recorded in an append-only, hash-chained log, reviewed as change requests, merged under project rules and recoverable without rewriting history. Dynodoc is open source under the AGPL v3. It is in active development: a hosted pilot is running, and the Microsoft and Google add-ins are available as test builds with no marketplace listing yet.';
+    'Dynodoc keeps a verifiable history of changes to documents edited in familiar tools. Every paragraph, cell and slide shape has a stable identity. Changes are recorded in an append-only, hash-chained log, reviewed as change requests, merged under project rules and recoverable without rewriting history. Dynodoc is a product of Verne Systems. The engine, API and command-line tools are open source under the MIT licence; the workspace and website are not published as open source. It is in active development: a hosted pilot is running, and the Microsoft and Google add-ins are available as test builds with no marketplace listing yet.';
 
   const facts = [
     ['Name', 'Dynodoc'],
     ['Website', 'dynodoc.online'],
     ['Workspace', 'app.dynodoc.online'],
-    ['Licence', 'Application: AGPL v3. Standalone engine: MIT.'],
+    ['Operator', `${OPERATOR.legalName}, trading as ${OPERATOR.tradingAs}, Dhaka, Bangladesh`],
+    [
+      'Licence',
+      'Engine, API and command-line tools: MIT. Workspace and website: not published as open source.'
+    ],
     ['Status', 'Hosted pilot. Add-ins are test builds; no marketplace listing exists.']
   ] as const;
 </script>
@@ -313,7 +319,7 @@
           </div>
         {/each}
         <div>
-          <dt>Source</dt>
+          <dt>Open engine</dt>
           <dd>
             <Btn href={GITHUB_URL} variant="link" external arrow
               >github.com/ArefinAlter/dynodoc-engine</Btn
@@ -328,23 +334,16 @@
     id="contact"
     eyebrow="CONTACT"
     title="Press and licensing."
-    lede="Contact details are not published yet. They match the placeholders in the legal pages."
+    lede="Press and licensing enquiries go to the operator. The same details appear in the legal pages."
     layout="split"
     tone="muted"
   >
     <div class="prose" data-reveal>
-      <dl class="contact-details">
-        <dt>Press contact</dt>
-        <dd>Awaiting confirmation.</dd>
-        <dt>Legal operator</dt>
-        <dd>Awaiting confirmation.</dd>
-        <dt>Mailing address</dt>
-        <dd>Awaiting confirmation.</dd>
-      </dl>
+      <OperatorDetails emailLabel="Press and licensing email" />
       <p>
-        These details are intentionally blank until the operator confirms them. The same markers
-        appear in the <a href="/privacy#contact">privacy policy</a> and the
-        <a href="/terms">terms</a>.
+        The same details appear in the <a href="/privacy#contact">privacy policy</a> and the
+        <a href="/terms">terms</a>, which are drafts. Operator website:
+        <a href={OPERATOR.website}>{OPERATOR.websiteLabel}</a>.
       </p>
       <p class="small">
         Microsoft, Word, Excel, PowerPoint, Google, Google Docs, Google Sheets and Google Slides are

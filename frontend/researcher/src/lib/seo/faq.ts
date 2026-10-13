@@ -34,7 +34,7 @@ export const FAQ: FaqEntry[] = [
   {
     question: 'Can I self-host it?',
     answer:
-      'Yes. The application is open source under AGPL-3.0 and the standalone engine is MIT. It needs PostgreSQL 16, Rust and Node; SETUP.md lists the steps, and task setup, task migrate and task dev run it locally. Private document content you put in the app does not become open source.'
+      'Partly. The engine, HTTP API and command-line tools are open source under the MIT licence. The engine repository explains how to run them against PostgreSQL 16 with Docker, Rust and Task: task up, task migrate, task db:grant-runtime and task run. The workspace and website are not published as open source, so the full hosted application cannot be self-hosted from public source. Private document content you put in the hosted app does not become open source.'
   },
   {
     question: 'What does it not do?',
@@ -44,6 +44,6 @@ export const FAQ: FaqEntry[] = [
   {
     question: 'What does it cost, and who can use it?',
     answer:
-      'There is no paid plan and no payment flow yet. The hosted workspace at dynodoc.online is a test deployment with email and Google sign-in, and projects are invite-only: only their members can see them. The add-ins are test installs, not marketplace listings. The source is open, so you can run your own copy today. The terms and privacy policy are drafts and are not yet effective.'
+      'There is no paid plan and no payment flow yet. The hosted workspace at dynodoc.online is a test deployment with email and Google sign-in, and projects are invite-only: only their members can see them. The add-ins are test installs, not marketplace listings. The engine, API and command-line tools are open source, so you can run those yourself today. The terms and privacy policy are drafts and are not yet effective.'
   }
 ];

@@ -1,5 +1,7 @@
 <script lang="ts">
   import LegalPage from '$lib/components/marketing/LegalPage.svelte';
+  import OperatorDetails from '$lib/components/marketing/OperatorDetails.svelte';
+  import { OPERATOR, UNCONFIRMED } from '$lib/site/operator';
   const sections = [
     { id: 'scope', title: 'Scope and responsibility' },
     { id: 'information', title: 'Information we handle' },
@@ -31,16 +33,18 @@
       add-ins for Microsoft Word, Excel and PowerPoint and for Google Docs, Sheets and Slides.
       Dynodoc is a document provenance, review and synchronization service: it records who changed
       what in a document, helps a team review and merge changes, and keeps that history checkable. A
-      separately operated installation of the open-source software may have a different operator and
-      a different notice.
+      separately operated installation of the open-source engine and API may have a different
+      operator and a different notice.
     </p>
     <p>
-      “Dynodoc,” “we” and “our” refer to the operator of this hosted service, whose legal identity
-      is still to be supplied below. For account and service-operation information we decide how and
-      why it is processed. For the documents and project history a team places in Dynodoc, that team
-      or its organization generally decides what is uploaded, who may see it and how long it should
-      be kept; we process it to provide the service. The precise controller, processor or equivalent
-      roles depend on applicable law and any signed agreement. The
+      “Dynodoc,” “we” and “our” refer to the operator of this hosted service, {OPERATOR.legalName}
+      (trading as {OPERATOR.tradingAs}), of Dhaka, Bangladesh, whose details are under
+      <a href="#contact">Contact and operator details</a>. For account and service-operation
+      information we decide how and why it is processed. For the documents and project history a
+      team places in Dynodoc, that team or its organization generally decides what is uploaded, who
+      may see it and how long it should be kept; we process it to provide the service. The precise
+      controller, processor or equivalent roles depend on applicable law and any signed agreement.
+      The
       <a href="/dpa">draft data processing terms</a> show how those roles would be set out; they are not
       an executed agreement.
     </p>
@@ -49,8 +53,8 @@
       <p>
         <strong>Not everything described here is switched on yet.</strong> This policy also covers
         capabilities that exist in the software but are not yet enabled on the hosted service, such
-        as account signing keys, shared project history and signed branch receipts. The editor
-        add-ins are not yet published in a marketplace. The
+        as shared project history and signed branch receipts. The editor add-ins are not yet
+        published in a marketplace. The
         <a href="/security#status">security overview</a> lists what is live today.
       </p>
     </div>
@@ -184,8 +188,8 @@
     </p>
     <p>
       We may need to disclose information to comply with a binding legal requirement or to address a
-      substantiated security issue. Any adopted policy must name the responsible operator and its
-      process for assessing such requests.
+      substantiated security issue. Any adopted policy must set out how {OPERATOR.legalName}
+      assesses such requests.
     </p>
   </section>
   <section id="provenance">
@@ -461,7 +465,7 @@
               >Until erased through the processes above; there is no automatic expiry. Retention
               rules per organization and for administrative logs remain for the operator to set.</td
             ></tr
-          ><tr><td>Web server logs</td><td>Awaiting confirmation.</td></tr></tbody
+          ><tr><td>Web server logs</td><td>{UNCONFIRMED}</td></tr></tbody
         >
       </table>
     </div>
@@ -510,42 +514,38 @@
       is the basis, withdrawing it does not affect the lawfulness of processing before withdrawal.
     </p>
     <p>
-      To exercise a right, use the contact details below once they are published. A person named in
-      a document may also contact the organization responsible for that project. Do not send
-      sensitive documents through public repository issues. Identity checks should be proportionate,
-      and requests must be handled within applicable legal deadlines.
+      To exercise a right, write to the email address under
+      <a href="#contact">Contact and operator details</a>. A person named in a document may also
+      contact the organization responsible for that project. Do not send sensitive documents through
+      public repository issues. Identity checks should be proportionate, and requests must be
+      handled within applicable legal deadlines.
     </p>
   </section>
   <section id="changes">
     <h2>Changes to this policy</h2>
     <p>
-      The final policy must carry an effective date and identify its operator. Material changes to
-      purposes, providers or data handling should be communicated before they take effect when
-      required, and a revised policy does not authorize incompatible uses of information already
-      collected. For the rules proposed for using the service, see the
+      The final policy must carry an effective date. Material changes to purposes, providers or data
+      handling should be communicated before they take effect when required, and a revised policy
+      does not authorize incompatible uses of information already collected. For the rules proposed
+      for using the service, see the
       <a href="/terms">terms and conditions</a>.
     </p>
   </section>
   <section id="contact">
     <h2>Contact and operator details</h2>
+    <OperatorDetails emailLabel="Privacy and legal email" />
     <dl class="contact-details">
-      <dt>Legal operator</dt>
-      <dd>Awaiting confirmation.</dd>
-      <dt>Privacy contact email</dt>
-      <dd>Awaiting confirmation.</dd>
-      <dt>Mailing address</dt>
-      <dd>Awaiting confirmation.</dd>
       <dt>Hosting provider and location</dt>
-      <dd>Awaiting confirmation.</dd>
+      <dd>{UNCONFIRMED}</dd>
       <dt>Representative or DPO</dt>
-      <dd>To be identified if required by applicable law.</dd>
+      <dd>{UNCONFIRMED} To be identified if required by applicable law.</dd>
       <dt>Effective date</dt>
       <dd>Not set; this is a draft.</dd>
     </dl>
     <p>
-      These missing details are intentional markers in a draft. They are not a substitute for an
-      identifiable operator and a working privacy-request channel. To report a security
-      vulnerability, see <a href="/security#report">the security overview</a>.
+      The hosting provider and location, any representative or DPO and the effective date have not
+      been confirmed and are marked as such rather than guessed. To report a security vulnerability,
+      see <a href="/security#report">the security overview</a>.
     </p>
   </section>
 </LegalPage>

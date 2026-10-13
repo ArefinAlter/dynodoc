@@ -1,6 +1,6 @@
 # Research-tool trademarks
 
-These assets identify compatible products. They are not Dynodoc branding and do not imply endorsement. They remain the property of their respective owners; the repository's AGPL license does not relicense third-party marks.
+These assets identify compatible products. They are not Dynodoc branding and do not imply endorsement. They remain the property of their respective owners; no Dynodoc license relicenses third-party marks.
 
 Downloaded 19 September 2026 from official project sources. Served locally so viewing the homepage does not send image requests to these organizations.
 

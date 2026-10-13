@@ -40,7 +40,7 @@ test('the roadmap and changelog never present source work as deployed', async ({
   await expect(page.getByText('In source').first()).toBeVisible();
 });
 
-test('the press kit offers its logo and art downloads and placeholder contacts', async ({
+test('the press kit offers its logo and art downloads and the operator contact', async ({
   page,
   request
 }) => {
@@ -52,5 +52,25 @@ test('the press kit offers its logo and art downloads and placeholder contacts',
   for (const art of ['rex', 'stego', 'trike', 'brachio', 'ptero', 'fossil', 'egg', 'tracks']) {
     expect((await request.get(`/brand/art/${art}.svg`)).status()).toBe(200);
   }
-  await expect(page.getByText('Awaiting confirmation.').first()).toBeVisible();
+  await expect(page.getByRole('link', { name: 'info@vernesystems.com' }).first()).toBeVisible();
+  await expect(page.getByText(/AGPL/)).toHaveCount(0);
+});
+
+test('/source redirects to the open engine repository and serves no archive', async ({
+  request
+}) => {
+  const response = await request.get('/source', { maxRedirects: 0 });
+  expect(response.status()).toBe(302);
+  expect(response.headers()['location']).toBe('https://github.com/ArefinAlter/dynodoc-engine');
+});
+
+test('security.txt names the email and private-reporting contacts', async ({ request }) => {
+  const response = await request.get('/.well-known/security.txt');
+  expect(response.status()).toBe(200);
+  const text = await response.text();
+  expect(text).toContain('Contact: mailto:info@vernesystems.com');
+  expect(text).toContain(
+    'Contact: https://github.com/ArefinAlter/dynodoc-engine/security/advisories/new'
+  );
+  expect(text).toContain('Policy: https://dynodoc.online/security#report');
 });

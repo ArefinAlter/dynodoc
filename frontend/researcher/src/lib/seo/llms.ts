@@ -7,6 +7,7 @@
 // here: the limitations section exists so an engine answering "can Dynodoc do
 // live co-editing?" gets the real answer rather than inferring one.
 
+import { ENGINE_REPO_URL, OPEN_SOURCE_STATEMENT, OPERATOR } from '$lib/site/operator';
 import { FAQ } from './faq';
 import { CANONICAL_ORIGIN, INDEXABLE_PAGES, SITE_NAME, canonicalUrl } from './site';
 
@@ -32,16 +33,17 @@ const LIMITATIONS = [
   'Tamper-evident, not tamper-proof: detecting a wholesale rewrite by a database administrator needs a hash or backup retained independently. External witnesses are planned, not shipped.',
   'Not a replacement for Word, Excel, PowerPoint or the Google editors, and no compliance certification or regulated-data hosting agreement is claimed.',
   'Original file uploads are limited to 3 MB (3,000,000 bytes) during testing, and large-file performance is not yet accepted.',
-  'The published privacy policy and terms are drafts pending confirmed operator details, and are not yet effective.'
+  'The privacy policy and terms are drafts pending legal review. The operator has not adopted them and they are not yet effective.'
 ];
 
 const FACTS = [
   `Product: ${SITE_NAME}, a document provenance, review and synchronization platform.`,
   'Status: early software under active development; hosted test deployment with email and Google sign-in, no paid plan.',
   'Hosting: a hosted application at dynodoc.online; the workspace runs at app.dynodoc.online.',
-  'Licence: application code is open source under the AGPL-3.0-or-later; the standalone engine is MIT. Private document content placed in the app does not become open source.',
-  'Self-hosting: PostgreSQL 16, Rust and Node; see SETUP.md. Commands: task setup, task migrate, task dev.',
-  'Source code: the application source archive is at https://dynodoc.online/source; the standalone engine is https://github.com/ArefinAlter/dynodoc-engine'
+  `Operator: ${OPERATOR.legalName} (trading as ${OPERATOR.tradingAs}), Dhaka, Bangladesh. Contact: ${OPERATOR.email}.`,
+  `Licence: ${OPEN_SOURCE_STATEMENT} Private document content placed in the hosted app does not become open source.`,
+  'Self-hosting the open engine and API: PostgreSQL 16, Docker, Rust and Task; see the engine repository README. Commands: task up, task migrate, task db:grant-runtime, task run.',
+  `Source code: the open-source engine, API and command-line tools are at ${ENGINE_REPO_URL}. The workspace and website source is not published.`
 ];
 
 function bullets(lines: string[]): string {
@@ -81,8 +83,7 @@ ${bullets(FACTS)}
 ## Optional
 
 - [Full description](${CANONICAL_ORIGIN}/llms-full.txt): the same summary with the complete FAQ.
-- [Source archive](https://dynodoc.online/source): the application source under AGPL-3.0-or-later.
-- [Standalone engine](https://github.com/ArefinAlter/dynodoc-engine): the MIT engine repository.
+- [Open-source engine](${ENGINE_REPO_URL}): the MIT engine, API and command-line tools. The workspace and website are not published as open source.
 `;
 }
 

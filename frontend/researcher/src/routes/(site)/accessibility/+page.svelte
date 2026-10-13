@@ -1,5 +1,6 @@
 <script lang="ts">
   import LegalPage from '$lib/components/marketing/LegalPage.svelte';
+  import { EMAIL_HREF, OPERATOR } from '$lib/site/operator';
   const sections = [
     { id: 'commitment', title: 'Our goal' },
     { id: 'practice', title: 'What we do' },
@@ -97,8 +98,8 @@
     </p>
     <dl class="contact-details">
       <dt>Accessibility contact</dt>
-      <dd>Awaiting confirmation.</dd>
-      <dt>Meanwhile</dt>
+      <dd><a href={EMAIL_HREF}>{OPERATOR.email}</a> ({OPERATOR.legalName})</dd>
+      <dt>Also</dt>
       <dd>
         Use the <a href="/support">support page</a> or contact the administrator who invited you.
       </dd>

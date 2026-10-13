@@ -322,11 +322,9 @@
     </div>
 
     <div class="refs" data-reveal>
-      <Btn href="{DESIGN}/02-versioning-design-vol1.md" variant="secondary" external arrow
-        >Design volume 1</Btn
-      >
-      <Btn href="{DESIGN}/03-versioning-mathematics-vol2.md" variant="secondary" external arrow
-        >Design volume 2: the mathematics</Btn
+      <Btn href="{DESIGN}/ARCHITECTURE.md" variant="secondary" external arrow>Architecture</Btn>
+      <Btn href="{DESIGN}/VERSIONING-CONFORMANCE.md" variant="secondary" external arrow
+        >Versioning implementation and theory</Btn
       >
       <Btn href="{DESIGN}/PRODUCT-SPEC.md" variant="secondary" external arrow
         >Product specification</Btn

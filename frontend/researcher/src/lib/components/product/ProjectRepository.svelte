@@ -22,7 +22,9 @@
     Search,
     Plus,
     BookOpen,
-    Plug
+    Plug,
+    CircleDot,
+    Star
   } from '@lucide/svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
@@ -32,6 +34,7 @@
   import { importFile } from '$lib/workspace/files';
   import { people, inviteByEmail, invitationNotice } from '$lib/workspace/collaboration';
   import { projectRoleName, downloadJson, type Project } from '$lib/workspace/projects';
+  import type { IssuesRequest, ProjectEngagement } from '$lib/workspace/issues';
   import {
     loadActivity,
     loadContributors,
@@ -60,6 +63,8 @@
   import TabNav from './repo/TabNav.svelte';
   import ActivityFeed from './repo/ActivityFeed.svelte';
   import ProjectBranches from './repo/ProjectBranches.svelte';
+  import IssueList from './repo/IssueList.svelte';
+  import StarButton from './repo/StarButton.svelte';
 
   type Listing = 'files' | 'requests' | 'drafts';
   const prFilters = [
@@ -67,7 +72,7 @@
     { key: 'merged', label: 'Merged', icon: GitMerge },
     { key: 'declined', label: 'Declined', icon: GitPullRequestClosed }
   ] as const;
-  let project = $state<Project | null>(null),
+  let project = $state<(Project & ProjectEngagement) | null>(null),
     tab = $state('files'),
     files = $state<RepoFile[]>([]),
     requests = $state<RepoRequest[]>([]),
@@ -102,7 +107,9 @@
     fileInput = $state<HTMLInputElement | null>(null),
     moveOpen = $state(false),
     readme = $state<{ id: string; title: string; state: DocumentState } | null>(null),
-    Preview = $state<typeof import('./FilePreview.svelte').default | null>(null);
+    Preview = $state<typeof import('./FilePreview.svelte').default | null>(null),
+    issuesRequest = $state<IssuesRequest | null>(null),
+    openIssues = $state<number | null>(null);
   const id = $derived($page.params.id || ''),
     manage = $derived(project && ['owner', 'manager'].includes(project.role)),
     canImport = $derived(project && ['owner', 'manager', 'editor'].includes(project.role));
@@ -123,6 +130,17 @@
             mores.requests
           )
         : null
+    },
+    {
+      key: 'issues',
+      label: 'Issues',
+      icon: CircleDot,
+      count:
+        openIssues !== null
+          ? String(openIssues)
+          : typeof project?.open_issue_count === 'number'
+            ? String(project.open_issue_count)
+            : null
     },
     {
       key: 'drafts',
@@ -188,8 +206,8 @@
       await loadMembers();
       return;
     }
-    // The Branches tab reads shared history itself, and aborts when the tab is left.
-    if (tab === 'branches') return;
+    // The Branches and Issues tabs read their own data, and abort when the tab is left.
+    if (tab === 'branches' || tab === 'issues') return;
     if (tab === 'activity') {
       if (!members.length) await loadMembers().catch(() => {});
       if (!seen.files) await fetchList('files');
@@ -230,7 +248,7 @@
     }
   }
   async function load() {
-    project = await workspaceRequest<Project>(`/projects/${id}`);
+    project = await workspaceRequest<Project & ProjectEngagement>(`/projects/${id}`);
     await loadTab();
     loaded = true;
     void loadExtras();
@@ -248,19 +266,51 @@
     }
   }
   onMount(() => {
-    const requested = $page.url.searchParams.get('tab');
+    const params = $page.url.searchParams,
+      requested = params.get('tab');
     if (requested && tabs.some((t) => t.key === requested)) tab = requested;
+    if (tab === 'issues') {
+      const number = Number(params.get('issue'));
+      if (Number.isSafeInteger(number) && number > 0)
+        issuesRequest = { view: 'issue', number, at: Date.now() };
+      else if (params.get('new') === '1') issuesRequest = { view: 'new', at: Date.now() };
+    }
     void run(load);
     const add = () => void openUpload();
+    // The palette's "New issue" and "Go to issues"; handled here when this page is open.
+    const issues = (event: Event) => {
+      event.preventDefault();
+      const view =
+        (event as CustomEvent<{ view?: string }>).detail?.view === 'new' ? 'new' : 'list';
+      issuesRequest = { view, at: Date.now() };
+      if (tab !== 'issues') void run(() => select('issues'));
+      else void navigateIssue(null);
+    };
     window.addEventListener('dynodoc:add-file', add);
-    return () => window.removeEventListener('dynodoc:add-file', add);
+    window.addEventListener('dynodoc:issues', issues);
+    return () => {
+      window.removeEventListener('dynodoc:add-file', add);
+      window.removeEventListener('dynodoc:issues', issues);
+    };
   });
   async function select(value: string) {
+    // Choosing Issues again, from inside an issue or its form, returns to the list.
+    if (value === 'issues' && tab === 'issues') issuesRequest = { view: 'list', at: Date.now() };
     tab = value;
+    // A palette or address request starts the Issues tab once; leaving the tab spends it.
+    if (value !== 'issues') issuesRequest = null;
     await goto(`/projects/${id}?tab=${value}`, { replaceState: true, noScroll: true });
     offsets = { files: 0, requests: 0, drafts: 0 };
     sync = null;
     await loadTab();
+  }
+  /** Keep the address in step with the open issue, so it can be shared and reloaded. */
+  async function navigateIssue(number: number | null) {
+    await goto(`/projects/${id}?tab=issues${number ? `&issue=${number}` : ''}`, {
+      replaceState: true,
+      noScroll: true,
+      keepFocus: true
+    });
   }
   async function openUpload() {
     if (!canImport) return;
@@ -352,6 +402,16 @@
         <h1>{project?.name || 'Loading project...'}</h1>
         <span class="repo-badge"><LockKeyhole size={12} aria-hidden="true" /> Private</span>
         {#if project}<div class="rp-title-actions">
+            {#if typeof project.star_count === 'number'}<StarButton
+                projectId={id}
+                starred={!!project.starred}
+                count={project.star_count}
+                onChange={(state) => {
+                  if (project)
+                    project = { ...project, starred: state.starred, star_count: state.starCount };
+                }}
+                onError={(message) => (error = message)}
+              />{/if}
             <Menu align="right" title="Choose project notifications">
               {#snippet trigger()}<Eye size={15} aria-hidden="true" />{project?.watch === 'requests'
                   ? 'Watching'
@@ -697,6 +757,17 @@
                 </article>
               {/each}
             </div>
+          {:else if tab === 'issues'}
+            <IssueList
+              projectId={id}
+              role={project.role}
+              {members}
+              request={issuesRequest}
+              onCounts={(counts) => {
+                openIssues = counts.open;
+              }}
+              onNavigate={(number) => void navigateIssue(number)}
+            />
           {:else if tab === 'branches'}
             <ProjectBranches
               projectId={id}
@@ -843,7 +914,7 @@
                 ><button class="repo-primary" disabled={busy}>Add person</button>
               </form>{/if}
           {/if}
-          {#if tab !== 'settings' && tab !== 'activity' && tab !== 'branches' && (offsets[tab === 'editors' ? 'files' : (tab as Listing)] > 0 || mores[tab === 'editors' ? 'files' : (tab as Listing)])}<footer
+          {#if tab !== 'settings' && tab !== 'activity' && tab !== 'branches' && tab !== 'issues' && (offsets[tab === 'editors' ? 'files' : (tab as Listing)] > 0 || mores[tab === 'editors' ? 'files' : (tab as Listing)])}<footer
               class="repo-pagination"
             >
               <button
@@ -879,6 +950,14 @@
                 <GitPullRequest size={15} aria-hidden="true" />
                 <span>Your role: {projectRoleName(project.role)}</span>
               </li>
+              {#if typeof project.star_count === 'number'}<li>
+                  <Star size={15} aria-hidden="true" />
+                  <span>{plural(project.star_count, 'star')}</span>
+                </li>{/if}
+              {#if typeof project.open_issue_count === 'number'}<li>
+                  <CircleDot size={15} aria-hidden="true" />
+                  <span>{plural(openIssues ?? project.open_issue_count, 'open issue')}</span>
+                </li>{/if}
             </ul>
             <p class="repo-small">
               Edit in Word or Google Docs, Excel or Sheets, PowerPoint or Slides. Push changes here

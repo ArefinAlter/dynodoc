@@ -814,7 +814,7 @@ Never copy configured values into this file, source control, logs or chat.
 | Location | Relevant names |
 | --- | --- |
 | VPS `infra/demo/.env` | `POSTGRES_PASSWORD`, `PASETO_LOCAL_KEY`, `WEB_SERVICE_KEY`, `SESSION_SECRET`, `CONVERTER_KEY`, `ORIGIN`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `RESEND_API_KEY`, `EMAIL_FROM`, `ADMIN_EMAILS`, optional token TTL |
-| Web/container wiring | `ENGINE_API_URL`, `CONVERTER_URL`, `SOURCE_ARCHIVE_PATH`; admin `ADMIN_SITE`, `OPS_STATUS_PATH`, its own `ORIGIN` |
+| Web/container wiring | `ENGINE_API_URL`, `CONVERTER_URL`; admin `ADMIN_SITE`, `OPS_STATUS_PATH`, its own `ORIGIN` |
 | Vercel public app | `PUBLIC_WORKSPACE_URL=https://app.dynodoc.online`; optional `PUBLIC_GOOGLE_SITE_VERIFICATION` |
 | Local development | Root and frontend example env files; existing ignored `.env.local` is private configuration, not a template to publish |
 

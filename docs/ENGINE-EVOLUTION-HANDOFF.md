@@ -1,5 +1,59 @@
 # Engine evolution handoff
 
+## Source: operator details, private application, issues and retention plan (13 October 2026)
+
+Source is PostgreSQL schema 39 (migration 0039). Production runs schema 38 until the
+follow-up release record below says otherwise.
+
+**Operator and legal.** The public legal, trust, support and brand pages now carry the
+owner's operator facts from one module (`frontend/researcher/src/lib/site/operator.ts`):
+Verne Systems, trading as Verne; registered address 8/A Sher-e-Bangla Road, Zighatola,
+Dhaka-1209, Bangladesh; company registration C-201411-1; trade licence
+TRAD/DSCC/035498/2024; `info@vernesystems.com`; +880 1870 034384. The TIN and D-U-N-S
+numbers are deliberately not published. Governing law (Bangladesh) and forum (Dhaka) are
+shown as proposed terms pending counsel review. The policies remain drafts and are
+"Not yet effective"; the effective date, hosting provider and location, DNS provider,
+representative/DPO and log-retention values are still "Awaiting confirmation".
+
+**Application stays private.** Only the engine, API and command-line tools are open source
+(MIT, public repository `ArefinAlter/dynodoc-engine`). The site and workspace are no longer
+described as open source or downloadable: `/source` is a 302 to the engine repository, the
+footer, FAQ, `llms.txt`, JSON-LD and licenses page carry the owner's sentence, and the
+compose file no longer mounts a source archive. The engine repository's README, NOTICE,
+SECURITY and CODE_OF_CONDUCT use the company contact. **Open decisions for the owner:**
+the private repository's `LICENSE`, `Cargo.toml`, `package.json` and `openapi.yaml` still
+say AGPL-3.0; and `hyperformula` is GPL-3.0-only (or commercial) and ships in the
+workspace bundle delivered to browsers, so a commercial licence or a replacement is needed
+before the workspace can be called closed source.
+
+**Receipt authority.** Decision recorded in [RECEIPT-AUTHORITY-DECISION.md](RECEIPT-AUTHORITY-DECISION.md):
+the signing authority stays uninstalled in production (immutable key, no server-side
+rotation or recovery, no consumer, no rehearsal, no custodian), with an enablement checklist.
+
+**Issues, labels and stars (schema 39).** [Project issues API](PROJECT-ISSUES-API.md):
+invite-only project issues with labels, assignees, immutable comments, optimistic edit
+conflicts, per-project caps, audit entries and erasure rules; project stars. The Projects UI
+gains an Issues tab, a labels manager, a star button and palette actions. Project-scoped
+device tokens are not accepted on these routes. The engine API proxy now forwards `PUT`.
+
+**Storage and convergence (local, read-only).** `engine-cli repository … gc-plan`
+([LOCAL-RETENTION-PLAN.md](LOCAL-RETENTION-PLAN.md)) reports unreachable commits and objects
+and what stays pinned; there is still no garbage collector. `compare` gains a dry-run
+`same_file_convergence` report for files edited on both sides (node and field conflicts,
+order-independent address, nothing stored or signed; see
+[PORTABLE-PROJECT-HISTORY.md](PORTABLE-PROJECT-HISTORY.md)).
+
+**Verification.** Application Rust: fmt and Clippy clean; all tests pass except the
+Windows-only `sse_delivers_a_new_event_within_100ms` timing assertion (Linux CI is the
+acceptance run). Frontend: Prettier, ESLint and svelte-check clean; unit tests pass;
+isolated authenticated browser suite 103/103 (23 specs) on a schema-39 stack.
+
+**Not done / still open.** Packing and incremental publication, a real retention policy and
+collector, applying (not just reporting) same-file merges, per-project device-key grants,
+operating-system key storage, Windows key-file ACL hardening, web authoring of project-wide
+branches (a browser holds no signing key), follows/profile-starred lists, marketplace
+publication, installed-editor acceptance, witnesses and large-file acceptance.
+
 ## Live: schema 38 release (12 October 2026, 19:18 UTC)
 
 The VPS workspace, API and admin site now run application `49ada1e`, schema 38, with the

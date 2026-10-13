@@ -1,11 +1,51 @@
 # Legal and trust pages
 
-12 October 2026. These pages are product drafts, not legal advice, and are not
+13 October 2026. These pages are product drafts, not legal advice, and are not
 represented as adopted agreements. Each one keeps the visible banner and the
-"Draft revised 12 October 2026 · Not yet effective" line (rendered by
+"Draft revised 13 October 2026 · Not yet effective" line (rendered by
 `LegalPage.svelte`; the e2e test in `e2e/smoke.spec.ts` asserts the exact text, so
 change both together). Nothing records acceptance: the account form links to the
-pages for information and has no agreement checkbox.
+pages for information and has no agreement checkbox. The owner has not adopted the
+policies, so the effective date stays "Not set".
+
+## Operator facts (owner, 13 October 2026)
+
+One module holds them: `frontend/researcher/src/lib/site/operator.ts`
+(`OPERATOR`, `UNCONFIRMED`, `ENGINE_REPO_URL`, `OPEN_SOURCE_STATEMENT`). Pages and
+structured data import from it; the shared `OperatorDetails.svelte` renders the
+operator block. Do not retype a value in a page.
+
+| Fact | Value |
+| --- | --- |
+| Legal entity / trading name | Verne Systems, trading as Verne |
+| Registered address | 8/A, Sher-e-Bangla Road, Zighatola, Dhaka-1209, Bangladesh |
+| Company registration | C-201411-1 |
+| Trade licence | TRAD/DSCC/035498/2024 |
+| Email (privacy, legal, support, abuse, accessibility, security, DPA notices) | info@vernesystems.com |
+| Phone | +880 1870 034384 |
+| Operator website | vernesystems.com |
+| Governing law / forum | Laws of Bangladesh / courts of Dhaka, shown as the **draft's proposed term pending counsel review** |
+
+The owner's tax identification number and D&B D-U-N-S number are deliberately **not**
+published anywhere.
+
+## Licensing and openness (owner decision)
+
+The application repository stays private. Only the engine, HTTP API and command-line
+tools are open source (MIT, <https://github.com/ArefinAlter/dynodoc-engine>). The
+workspace and the website are not published as open source and no licence is asserted
+for them (the pages say they are (c) Verne Systems and "not published as open
+source"). The one sentence every public page uses is `OPEN_SOURCE_STATEMENT`: "The
+engine, API and command-line tools are open source under the MIT licence. The workspace
+and website are not published as open source." Do not use "AGPL", "open source" for the
+application, "source archive" or "Download the source" on a public page. `/source` is a
+302 redirect to the engine repository and serves no archive.
+
+Open licensing point for the owner and counsel: the workspace bundle ships
+`hyperformula`, which its publisher licenses as GPL-3.0-only or under a separate
+commercial licence. Distributing it in a closed application needs the commercial licence
+(or replacing the library); `/licenses` says which option applies is "Awaiting
+confirmation".
 
 ## Pages
 
@@ -19,7 +59,7 @@ pages for information and has no agreement checkbox.
 | `/acceptable-use` | Standalone rules; `terms#acceptable-use` summarises and links to it | `src/routes/(site)/acceptable-use` |
 | `/accessibility` | WCAG 2.2 AA goal, what is tested, limitations, feedback | `src/routes/(site)/accessibility` |
 | `/dpa` | Structure of data processing terms; not an agreement | `src/routes/(site)/dpa` |
-| `/licenses` | AGPL application, MIT engine, font licenses, direct dependencies | `src/routes/(site)/licenses` |
+| `/licenses` | MIT engine, API and CLI; workspace and website not open source; font licenses, direct dependencies | `src/routes/(site)/licenses` |
 | `/.well-known/security.txt` | RFC 9116 contact file (static) | `static/.well-known/security.txt` |
 
 All are indexable and listed in `INDEXABLE_PAGES` (`src/lib/seo/site.ts`), so they
@@ -30,25 +70,27 @@ footer (`nav.ts`) when one is created.
 
 ## Placeholders the owner must fill
 
-The owner has not decided any of these and none is invented. Every one reads
-"Awaiting confirmation" (or "Not set") on the pages:
+The operator identity, address, registration numbers, contact email, phone and the
+proposed governing law and forum are filled in (see "Operator facts"). The owner has
+not decided the following and none is invented. Every one reads "Awaiting
+confirmation" (or "Not set") on the pages:
 
-- Legal operator (entity name), mailing address, governing law and forum, effective date.
-- Public privacy/legal contact email, abuse contact, accessibility contact, a dedicated
-  security email (security.txt currently uses GitHub private vulnerability reporting
-  only; see below).
+- Effective date (the policies are not adopted; "Not set").
 - Hosting provider name and storage location, domain registrar/DNS provider.
 - Representative or DPO, if required.
 - Web server log retention and administrative-log retention; legal bases per purpose.
+- Which hyperformula licence option applies to the workspace (see above).
+- Counsel review of the proposed governing law and forum.
 - Data-processing items listed under "Open items" on `/dpa` (instruction mechanism,
   subprocessor-change notice, incident and assistance timelines, audit right).
 
 ## Facts the pages rely on (re-check when behaviour changes)
 
-- Release state: production is application `858801c`, schema 29. Account signing keys
-  (schema 33), shared project history and signed branch receipts (schema 36) and storage
-  budgets (schema 34) are in source only; `/security#status` and the privacy callout say
-  so. Update the status table on every rollout.
+- Release state: production runs application `49ada1e` on schema 38 (12 October 2026).
+  Account signing keys and storage budgets are live; shared project history and signed
+  branch receipts are deployed with writers off and no receipt-signing key, shown as
+  "Live, not enabled" in `/security#status`, and the privacy callout says the same.
+  Update the status table on every rollout.
 - Add-in data handling comes from [`listings/addin-data-handling.md`](listings/addin-data-handling.md);
   keep `/privacy#addins` and `/cookies#addins` in step with it.
 - Cookies and storage come from `src/lib/server/session.ts`, the auth and Google
@@ -62,18 +104,19 @@ The owner has not decided any of these and none is invented. Every one reads
   [BROWSER-AND-WORKLOAD-SECURITY](BROWSER-AND-WORKLOAD-SECURITY.md) and
   [DATABASE-PRIVILEGES](DATABASE-PRIVILEGES.md); non-claims (no audit, certification,
   witness, end-to-end encryption or off-site backup) must stay.
-- The optional source imports (survey/form platforms and Google Forms) still exist in the
+- The optional source imports (form platforms and Google Forms) still exist in the
   workspace, so they are disclosed neutrally in `/privacy` and `/cookies`. Delete those
   lines if the connectors are removed.
 
 ## Vulnerability reporting
 
-`static/.well-known/security.txt` follows RFC 9116 with `Contact`, `Expires`,
-`Preferred-Languages`, `Canonical` and `Policy`. `Contact` is GitHub private
-vulnerability reporting for the **public** `ArefinAlter/dynodoc-engine` repository
-(enabled; confirmed 12 October 2026). The application repository `ArefinAlter/dynodoc`
-is private, so its advisory URL is not reachable by outsiders and must not be used until
-that repository is public. `Expires` is under one year: renew it before 11 October 2027.
+`static/.well-known/security.txt` follows RFC 9116 with two `Contact` lines
+(`mailto:info@vernesystems.com` and GitHub private vulnerability reporting for the
+**public** `ArefinAlter/dynodoc-engine` repository, enabled and confirmed 12 October
+2026), `Expires`, `Preferred-Languages`, `Canonical` and `Policy`
+(`https://dynodoc.online/security#report`). The application repository
+`ArefinAlter/dynodoc` is private, so its advisory URL is not reachable by outsiders and
+must not be used. `Expires` is under one year: renew it before 11 October 2027.
 adapter-node serves `/.well-known/` through sirv (the directory is explicitly allowed);
 nginx only special-cases `/.well-known/acme-challenge/`; the Vercel deployment serves it
 as a static file.
@@ -100,6 +143,7 @@ removes live content/history/files/drafts/public copies, retaining a minimal aud
 receipt. Account erasure removes the profile/access/private drafts and preserves
 shared contributions under a deleted-user identity. Existing backups expire under
 the current retention schedule. Off-site backup is deferred by the owner. The
-operator identity/address/jurisdiction remain missing; the public legal pages stay
-marked as drafts. This is a record of product behavior and owner direction, not
-legal approval of the policy.
+operator identity and address are published as of 13 October 2026, but the policies
+are not adopted and have no effective date; the public legal pages stay marked as
+drafts pending counsel review. This is a record of product behavior and owner
+direction, not legal approval of the policy.

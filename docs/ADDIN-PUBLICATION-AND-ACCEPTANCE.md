@@ -82,9 +82,11 @@ URL origins, icon pixel sizes, scopes and Google manifest settings on every test
 
 ## Concrete publication work remaining
 
-1. Owner supplies the publishing identity and appropriate account access: Microsoft
-   Partner Center, Google Cloud/Workspace organization and responsible support
-   contact. Existing OAuth web sign-in credentials are not proof of publisher setup.
+1. Owner supplies the appropriate account access: Microsoft Partner Center, Google
+   Cloud/Workspace organization and responsible support contact. The publishing identity
+   is Verne Systems (trading as Verne), with support at info@vernesystems.com and
+   +880 1870 034384 (supplied 13 October 2026; the policies are still unadopted drafts).
+   Existing OAuth web sign-in credentials are not proof of publisher setup.
 2. Complete the host acceptance matrix below and retain exact app builds, manifest/
    script versions and evidence. Correct unsupported-platform declarations first.
 3. Capture host-specific screenshots from installed hosts and provision reviewer test

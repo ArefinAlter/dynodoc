@@ -19,9 +19,12 @@ the dashboard wins.
 
 ## 0. Decide first
 
-- [ ] Publisher identity: the legal operator name, postal address and jurisdiction. Both
-      stores show or verify these; the public legal pages are still drafts without them.
-- [ ] A **monitored support mailbox** and a public support page at
+- [ ] Publisher identity: Verne Systems (trading as Verne), 8/A, Sher-e-Bangla Road,
+      Zighatola, Dhaka-1209, Bangladesh, as supplied by the owner on 13 October 2026. Both
+      stores show or verify these; confirm they match the registration documents. The
+      public legal pages name the operator but are still unadopted drafts.
+- [ ] A **monitored support mailbox** (info@vernesystems.com; the owner must confirm it is
+      monitored) and a public support page at
       `https://dynodoc.online/support` (the Office manifests already point there; it must
       load without sign-in and say how to get help). The page is built by the site work,
       not by the add-ins: confirm it is live before any submission.
@@ -159,12 +162,12 @@ Launch plan).
 - Background capture, offline commits, formatting or structural sync, or proof of who
   typed a change.
 - Microsoft single sign-on or Google sign-in as the identity used by the add-in.
-- That the privacy policy or terms are final before the operator details exist.
+- That the privacy policy or terms are adopted or effective; they are drafts until the owner adopts them.
 
 ## 7. Known gaps to be aware of before submitting
 
 - Real-host acceptance has not been run for any of the six add-ins.
-- The legal operator details, the support page and the support mailbox are owner items.
+- Adopting the privacy policy and terms, and confirming the support mailbox is monitored, are owner items (the operator details are published).
 - Dynodoc sign-in for reviewers (email link) needs a reviewer mailbox or Google sign-in.
 - Google stores each user's queue in about 500 KB of script properties shared by all
   files; a full store stops capture with a message. There is no in-add-on clear or

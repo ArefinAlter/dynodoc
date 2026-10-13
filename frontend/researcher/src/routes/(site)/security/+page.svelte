@@ -2,6 +2,7 @@
   import LegalPage from '$lib/components/marketing/LegalPage.svelte';
   import Dino from '$lib/art/Dino.svelte';
   import Fossil from '$lib/art/Fossil.svelte';
+  import { EMAIL_HREF, ENGINE_ADVISORY_URL, ENGINE_REPO_URL, OPERATOR } from '$lib/site/operator';
   const sections = [
     { id: 'summary', title: 'Overview' },
     { id: 'status', title: 'What is live today' },
@@ -11,7 +12,7 @@
     { id: 'limits', title: 'Limits and what we do not claim' },
     { id: 'report', title: 'Report a vulnerability' }
   ];
-  const ADVISORY = 'https://github.com/ArefinAlter/dynodoc-engine/security/advisories/new';
+  const ADVISORY = ENGINE_ADVISORY_URL;
 </script>
 
 <LegalPage
@@ -113,9 +114,12 @@
               server, so they are not independent recovery.</td
             ><td><strong>Live</strong></td></tr
           ><tr
-            ><td>Published source</td><td
-              >The source archive of the deployed revision is downloadable from
-              <a href="/source" data-sveltekit-reload>/source</a>.</td
+            ><td>Open engine and API source</td><td
+              >The engine, API and command-line tools are published under the MIT license at
+              <a href={ENGINE_REPO_URL}>github.com/ArefinAlter/dynodoc-engine</a>, so the history,
+              verification and API logic can be inspected. The workspace and website are not
+              published, and the public repository is synchronized separately, so it can lag the
+              deployed revision.</td
             ><td><strong>Live</strong></td></tr
           ><tr
             ><td>Account signing keys</td><td
@@ -262,17 +266,17 @@
   <section id="report">
     <h2>Report a vulnerability</h2>
     <p>
-      Please report a suspected vulnerability privately and do not publish it. Use
-      <a href={ADVISORY}>GitHub private vulnerability reporting</a> for the public Dynodoc engine repository;
-      it is the only reporting channel with a confirmed owner today, and reports about any part of Dynodoc,
-      including this website and the add-ins, are welcome there. A dedicated security email address is
-      awaiting confirmation.
+      Please report a suspected vulnerability privately and do not publish it. Use either
+      <a href={ADVISORY}>GitHub private vulnerability reporting</a> for the public Dynodoc engine
+      repository or email <a href={EMAIL_HREF}>{OPERATOR.email}</a>. Reports about any part of
+      Dynodoc, including this website and the add-ins, are welcome through both. Security reports go
+      to the operator’s general address; there is no separate security mailbox.
     </p>
     <dl class="contact-details">
       <dt>Reporting channel</dt>
       <dd><a href={ADVISORY}>GitHub private vulnerability reporting</a></dd>
       <dt>Security email</dt>
-      <dd>Awaiting confirmation.</dd>
+      <dd><a href={EMAIL_HREF}>{OPERATOR.email}</a> ({OPERATOR.legalName})</dd>
       <dt>Machine-readable</dt>
       <dd>
         <a href="/.well-known/security.txt" data-sveltekit-reload>/.well-known/security.txt</a>

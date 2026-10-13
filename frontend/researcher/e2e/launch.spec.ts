@@ -22,7 +22,11 @@ test('canonical pages, sitemap, structured metadata and icons are available', as
   const metadata = JSON.parse(
     (await page.locator('script[type="application/ld+json"]').textContent()) || '{}'
   );
-  expect(metadata['@graph'][0].name).toBe('Dynodoc');
+  // The publisher is the operator; Dynodoc is its brand and the WebSite name.
+  expect(metadata['@graph'][0].name).toBe('Verne Systems');
+  expect(metadata['@graph'][0].brand.name).toBe('Dynodoc');
+  expect(metadata['@graph'][1].name).toBe('Dynodoc');
+  expect(JSON.stringify(metadata)).not.toMatch(/AGPL/);
   expect(metadata['@graph'].map((node: { '@type': string }) => node['@type'])).toEqual([
     'Organization',
     'WebSite',

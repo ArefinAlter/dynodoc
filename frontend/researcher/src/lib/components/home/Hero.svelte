@@ -29,8 +29,8 @@
         <Btn href="/add-ins" variant="secondary" size="lg">Get the add-ins</Btn>
       </div>
       <p class="note">
-        Add-ins ship as test installs today; marketplace listings are not live. Open source under
-        AGPL-3.0.
+        Add-ins ship as test installs today; marketplace listings are not live. The engine, API and
+        command-line tools are open source (MIT).
       </p>
     </div>
 
