@@ -313,7 +313,7 @@ impl Client {
                 16 * 1024,
             )
             .await
-            .map_err(|e| anyhow!("device sign-in refused ({e}); check that the key is enrolled and unrevoked and that the account can still access the project"))?;
+            .map_err(|e| anyhow!("device sign-in refused ({e}); check that the key is enrolled and unrevoked, that the account can still access the project, and that the key is granted this project and these scopes in your profile's signing keys"))?;
         ensure!(
             session.expires_in > 0 && session.expires_in <= TOKEN_TTL_SECONDS as u64,
             "unexpected device-session lifetime"

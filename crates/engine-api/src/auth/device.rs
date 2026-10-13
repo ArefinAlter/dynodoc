@@ -8,7 +8,8 @@
 //! The device path is fail closed and does not trust the token for authority:
 //! the signature/assertion is checked, then scope, then the route's `:id`
 //! equals the token's project, then the database must still show the key
-//! unrevoked and the account active in the same session generation. Project and
+//! unrevoked, the account active in the same session generation and (for a key
+//! that is not in `all` mode) an active grant for this project and scope. Project and
 //! file roles are read by the handler's existing checks. Transactional handlers
 //! recheck the key under the account row lock (`devices::account_lock`).
 
@@ -31,8 +32,11 @@ pub trait Need: Send + Sync + 'static {
 pub struct ProjectRead;
 /// Published commits, objects, refs, reviews, receipts, authority and storage reads.
 pub struct HistoryRead;
-/// Private staging, publication, review decisions and ref advancement.
+/// Private staging, publication and ref advancement.
 pub struct HistoryWrite;
+/// Recording a review decision. Separate from [`HistoryWrite`] so a key can be
+/// allowed to push without also being able to approve.
+pub struct HistoryReview;
 impl Need for ProjectRead {
     const SCOPE: &'static str = "project:read";
 }
@@ -41,6 +45,18 @@ impl Need for HistoryRead {
 }
 impl Need for HistoryWrite {
     const SCOPE: &'static str = "history:write";
+}
+impl Need for HistoryReview {
+    const SCOPE: &'static str = "history:review";
+}
+
+/// SQL boolean: may the key `k` (alias of `device_signing_key`) use every scope in
+/// the `text[]` expression `scopes` on the project expression `project`? A key in
+/// `all` mode may; a `granted` key (also a key with no access row at all) needs an
+/// active grant that lists every scope. Shared by the request extractor, the
+/// account lock and issuance so they can never disagree.
+pub(crate) fn key_reaches(project: &str, scopes: &str) -> String {
+    format!("(coalesce((select a.project_access from device_key_access a where a.key_id=k.id),'granted')='all' or exists(select 1 from device_key_project_grant g where g.key_id=k.id and g.project_id={project} and g.revoked_at is null and g.scopes @> {scopes}))")
 }
 
 /// The caller of an allow-listed project route. Dereferences to [`AuthContext`]
@@ -88,15 +104,27 @@ impl<S: Need> FromRequestParts<AppState> for ProjectAuth<S> {
         if route != Some(claims.project) {
             return Err(ApiError::Forbidden);
         }
-        let generation: Option<i64> = sqlx::query_scalar(
-            "select i.session_generation from identity i join device_signing_key k on k.identity_id=i.id where i.id=$1 and k.id=$2 and i.disabled_at is null and i.erased_at is null and not exists(select 1 from device_key_revocation r where r.key_id=k.id)",
-        )
+        // The key's reach (account-wide mode or an active grant for this project
+        // and this route's scope) is read again on every request: revoking or
+        // narrowing a grant applies to the next call, nothing is cached.
+        let current: Option<(i64, bool)> = sqlx::query_as(&format!(
+            "select i.session_generation,{} from identity i join device_signing_key k on k.identity_id=i.id where i.id=$1 and k.id=$2 and i.disabled_at is null and i.erased_at is null and not exists(select 1 from device_key_revocation r where r.key_id=k.id)",
+            key_reaches("$3", "$4::text[]")
+        ))
         .bind(claims.identity)
         .bind(claims.key)
+        .bind(claims.project)
+        .bind(vec![S::SCOPE])
         .fetch_optional(&state.pool)
         .await?;
-        if generation != Some(claims.generation) {
+        let Some((generation, reaches)) = current else {
             return Err(ApiError::Unauthorized);
+        };
+        if generation != claims.generation {
+            return Err(ApiError::Unauthorized);
+        }
+        if !reaches {
+            return Err(ApiError::Forbidden);
         }
         Ok(Self(
             AuthContext {
@@ -107,6 +135,7 @@ impl<S: Need> FromRequestParts<AppState> for ProjectAuth<S> {
                     key_id: claims.key,
                     project: claims.project,
                     session: claims.session,
+                    scope: S::SCOPE,
                 }),
             },
             PhantomData,

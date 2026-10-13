@@ -6,13 +6,16 @@ use clap::{Subcommand, ValueEnum};
 use engine_core::{
     repository::{
         local::{
-            GcPlanOptions, LocalRepository, ObjectKey, ObjectPacket, StorageLimits, SCHEMA_VERSION,
+            GcApplyOptions, GcPlanOptions, LocalRepository, ObjectKey, ObjectPacket, StorageLimits,
+            SCHEMA_VERSION,
         },
-        recovery, Commit, Head, SignedCommit,
+        project_merge::SameFile,
+        recovery, Commit, FileEntry, Head, SignedCommit,
     },
     shared_checkpoint::Address,
 };
 use engine_shared::DocumentId;
+use ring::signature::Ed25519KeyPair;
 use std::{
     collections::BTreeMap,
     io::Read,
@@ -40,6 +43,14 @@ pub enum PlanFormat {
     Text,
 }
 
+/// Opt-in same-file convergence for `merge`; omit the flag for explicit-only.
+#[derive(Clone, Copy, ValueEnum)]
+pub enum SameFileMerge {
+    /// Merge a path edited on both sides at node/field level when that merge is
+    /// clean in both orientations.
+    Clean,
+}
+
 #[derive(Subcommand)]
 pub enum Action {
     /// Initialize or verify the local project database.
@@ -65,9 +76,9 @@ pub enum Action {
     /// Read-only retention plan: what no branch head or recovery source reaches.
     ///
     /// Reports unreachable commits and objects (staged, orphaned, superseded)
-    /// with encoded byte totals, and what stays pinned and why. Deletes nothing;
-    /// there is no garbage collector. Opens the database read-only: it never
-    /// creates, upgrades or writes it.
+    /// with encoded byte totals, and what stays pinned and why. Deletes nothing.
+    /// Prints a deterministic `plan_hash` that `gc --plan-hash` requires. Opens
+    /// the database read-only: it never creates, upgrades or writes it.
     GcPlan {
         /// Largest pinned reasons to include (1-100).
         #[arg(long, default_value_t = 10)]
@@ -76,6 +87,26 @@ pub enum Action {
         #[arg(long, default_value_t = 10)]
         list: usize,
         /// Deterministic JSON, or a plain-text summary of the same facts.
+        #[arg(long, value_enum, default_value_t = PlanFormat::Json)]
+        format: PlanFormat,
+    },
+    /// Delete the staged objects of a reviewed gc-plan; nothing else.
+    ///
+    /// Recomputes the plan inside one write transaction and refuses unless its
+    /// hash equals --plan-hash (a branch moved or objects changed since the plan).
+    /// Deletes only stored objects that no stored commit references. Never deletes
+    /// commits, signatures, branch refs or any object a commit or recovery
+    /// source reaches. Repeating an applied hash changes nothing. --vacuum then
+    /// truncates the write-ahead log and runs VACUUM, which needs free disk space
+    /// about the size of the database file.
+    Gc {
+        /// The `plan_hash` printed by `gc-plan` for the state you reviewed.
+        #[arg(long)]
+        plan_hash: String,
+        /// Return freed pages to the filesystem after the deletion commits.
+        #[arg(long)]
+        vacuum: bool,
+        /// JSON report, or a plain-text summary of the same facts.
         #[arg(long, value_enum, default_value_t = PlanFormat::Json)]
         format: PlanFormat,
     },
@@ -127,6 +158,34 @@ pub enum Action {
         left: String,
         right: String,
     },
+    /// Sign/store a two-parent merge of LEFT (first parent) and RIGHT.
+    ///
+    /// The base is the unique best common ancestor; criss-cross and disconnected
+    /// histories are refused. Independent changes combine as in `compare`; every
+    /// conflicting path needs an explicit choice in --resolutions (FileEntry, or
+    /// null to delete). With --same-file-merge clean, a path edited on both sides
+    /// that keeps one document identity is merged node by node and field by field
+    /// when that is clean in both orientations: the merged state is stored first
+    /// and recorded in the signed commit (format v3). Paths with node or field
+    /// conflicts still need an explicit choice. Publish separately with set-head.
+    Merge {
+        left: String,
+        right: String,
+        /// Merge clean same-file edits automatically (off when omitted).
+        #[arg(long, value_enum)]
+        same_file_merge: Option<SameFileMerge>,
+        /// JSON object mapping each remaining conflict path to FileEntry or null.
+        #[arg(long)]
+        resolutions: Option<PathBuf>,
+        #[arg(long)]
+        key: PathBuf,
+        #[arg(long)]
+        message: String,
+        #[arg(long)]
+        authored_at_ms: i64,
+    },
+    /// Re-run the recorded strategy of a stored merge commit's same-file records.
+    VerifyMerge { commit: String },
     /// Preview a source commit's changes (or inverse) on an exact current commit.
     RecoveryPlan {
         source: String,
@@ -204,15 +263,73 @@ async fn compare_value(
     Ok(output)
 }
 
+struct MergeArgs {
+    left: Address,
+    right: Address,
+    same_file: SameFile,
+    resolutions: BTreeMap<String, Option<FileEntry>>,
+    message: String,
+    authored_at_ms: i64,
+}
+
+/// Prepare, sign and store one merge. Nothing is stored while a conflict is open.
+async fn merge_value(
+    repo: &LocalRepository,
+    args: MergeArgs,
+    key: &Ed25519KeyPair,
+) -> anyhow::Result<serde_json::Value> {
+    let merge = repo
+        .prepare_merge(
+            &args.left,
+            &args.right,
+            args.same_file,
+            &args.resolutions,
+            args.authored_at_ms,
+            args.message,
+        )
+        .await?;
+    let Some(commit) = merge.commit else {
+        let hint = if args.same_file == SameFile::Off {
+            " (or use --same-file-merge clean for edits to one document that merge cleanly)"
+        } else {
+            ""
+        };
+        anyhow::bail!(
+            "{} conflicting path(s) need an explicit resolution in --resolutions: {}{hint}",
+            merge.unresolved.len(),
+            merge.unresolved.join(", ")
+        );
+    };
+    let signed = SignedCommit::sign(commit, key)?;
+    let address = repo.import_commit(&signed).await?;
+    Ok(serde_json::json!({
+        "commit": address,
+        "version": signed.commit.version,
+        "parents": signed.commit.parents,
+        "base": merge.base,
+        "same_file_resolutions": signed.commit.same_file_resolutions,
+        "explicit_resolutions": merge.explicit,
+    }))
+}
+
 pub async fn run(path: PathBuf, project: uuid::Uuid, action: Action) -> anyhow::Result<()> {
     // The retention plan must not create, upgrade or write the database.
     let repo = if matches!(action, Action::GcPlan { .. }) {
         LocalRepository::open_read_only(&path, project).await?
     } else {
+        // A destructive command never creates the database it would collect.
+        if matches!(action, Action::Gc { .. }) {
+            anyhow::ensure!(
+                path.is_file(),
+                "no repository database at {}",
+                path.display()
+            );
+        }
         LocalRepository::open(&path, project).await?
     };
     let address = |s: String| Address::try_from(s);
     let mut text = None;
+    let mut vacuum_failure = None;
     let output = match action {
         Action::Init => serde_json::json!({"project":project,"local_schema":SCHEMA_VERSION}),
         Action::Storage => serde_json::to_value(repo.storage_usage().await?)?,
@@ -280,6 +397,26 @@ pub async fn run(path: PathBuf, project: uuid::Uuid, action: Action) -> anyhow::
                 }
             }
         }
+        Action::Gc {
+            plan_hash,
+            vacuum,
+            format,
+        } => {
+            let report = repo.gc_apply(&plan_hash, GcApplyOptions { vacuum }).await?;
+            // A failed shrink does not hide the deletion: print it, then fail.
+            vacuum_failure = report
+                .vacuum
+                .as_ref()
+                .and_then(|v| v.error.clone())
+                .map(|e| format!("deletion committed but VACUUM failed: {e}"));
+            match format {
+                PlanFormat::Json => serde_json::to_value(&report)?,
+                PlanFormat::Text => {
+                    text = Some(report.summary());
+                    serde_json::Value::Null
+                }
+            }
+        }
         Action::StorageLimits {
             bytes,
             objects,
@@ -339,6 +476,39 @@ pub async fn run(path: PathBuf, project: uuid::Uuid, action: Action) -> anyhow::
         Action::Compare { base, left, right } => {
             compare_value(&repo, address(base)?, address(left)?, address(right)?).await?
         }
+        Action::Merge {
+            left,
+            right,
+            same_file_merge,
+            resolutions,
+            key,
+            message,
+            authored_at_ms,
+        } => {
+            let resolutions = match resolutions {
+                Some(path) => read_json(&path, engine_core::repository::MAX_COMMIT_BYTES)?,
+                None => BTreeMap::new(),
+            };
+            // Load the key before anything is stored.
+            let key = crate::signing::load(&key)?;
+            let args = MergeArgs {
+                left: address(left)?,
+                right: address(right)?,
+                same_file: match same_file_merge {
+                    Some(SameFileMerge::Clean) => SameFile::Clean,
+                    None => SameFile::Off,
+                },
+                resolutions,
+                message,
+                authored_at_ms,
+            };
+            merge_value(&repo, args, &key).await?
+        }
+        Action::VerifyMerge { commit } => {
+            let commit = address(commit)?;
+            let verified = repo.verify_same_file_resolutions(&commit).await?;
+            serde_json::json!({"commit":commit,"verified_same_file_resolutions":verified})
+        }
         Action::RecoveryPlan {
             source,
             onto,
@@ -392,7 +562,10 @@ pub async fn run(path: PathBuf, project: uuid::Uuid, action: Action) -> anyhow::
             serde_json::to_string_pretty(&output).context("encoding local repository result")?
         ),
     }
-    Ok(())
+    match vacuum_failure {
+        Some(message) => anyhow::bail!(message),
+        None => Ok(()),
+    }
 }
 
 #[cfg(test)]
@@ -476,6 +649,7 @@ mod tests {
                 authored_at_ms: 1_700_000_000_000,
                 message: message.into(),
                 recovery: None,
+                same_file_resolutions: Vec::new(),
             };
             let key = Ed25519KeyPair::from_seed_unchecked(&[7; 32]).unwrap();
             self.repo
@@ -655,6 +829,321 @@ mod tests {
         assert!(result.is_err());
         assert!(!missing.exists());
         f.finish().await;
+    }
+
+    #[tokio::test]
+    async fn gc_collects_only_the_reviewed_plan_and_refuses_a_stale_one() {
+        let f = Fixture::new().await;
+        let (kept, staged) = (
+            DocumentId(uuid::Uuid::new_v4()),
+            DocumentId(uuid::Uuid::new_v4()),
+        );
+        let file = f.file(kept, &[]).await;
+        let head = f.commit(&[], vec![("Report.docx", file)], "base").await;
+        f.repo.compare_and_swap("main", None, &head).await.unwrap();
+        f.file(staged, &[(0, "never committed")]).await;
+        let (path, project) = (f.path.clone(), f.project);
+        let plan = f
+            .repo
+            .gc_plan(GcPlanOptions {
+                top_reasons: 1,
+                list: 0,
+            })
+            .await
+            .unwrap();
+        assert!(plan.unreachable.counts.objects > 0);
+        let run_gc = |hash: String, vacuum: bool, format: PlanFormat| {
+            run(
+                path.clone(),
+                project,
+                Action::Gc {
+                    plan_hash: hash,
+                    vacuum,
+                    format,
+                },
+            )
+        };
+        // A hash that is not the current plan changes nothing.
+        assert!(run_gc("0".repeat(64), false, PlanFormat::Json)
+            .await
+            .is_err());
+        // A missing database is an error and is never created by `gc`.
+        let missing = path.with_extension("absent");
+        assert!(run(
+            missing.clone(),
+            project,
+            Action::Gc {
+                plan_hash: plan.plan_hash.clone(),
+                vacuum: false,
+                format: PlanFormat::Json,
+            },
+        )
+        .await
+        .is_err());
+        assert!(!missing.exists());
+        let before = f.repo.storage_usage().await.unwrap();
+        assert_eq!(before.objects_used as u64, plan.retained.objects);
+        run_gc(plan.plan_hash.clone(), true, PlanFormat::Text)
+            .await
+            .unwrap();
+        let after = f.repo.storage_usage().await.unwrap();
+        assert_eq!(
+            after.objects_used as u64,
+            plan.retained.objects - plan.unreachable.counts.objects
+        );
+        // Replaying the same reviewed hash is a no-op, in either format.
+        run_gc(plan.plan_hash.clone(), false, PlanFormat::Json)
+            .await
+            .unwrap();
+        assert_eq!(f.repo.storage_usage().await.unwrap(), after);
+        // The kept state and the branch are intact.
+        let kept_file = &f.repo.commit(&head).await.unwrap().commit.files["Report.docx"];
+        assert_eq!(
+            f.repo
+                .read_state(kept_file.document, &kept_file.state)
+                .await
+                .unwrap(),
+            paragraphs(&[])
+        );
+        f.finish().await;
+    }
+
+    #[test]
+    fn gc_arguments_require_a_plan_hash_and_parse_options() {
+        let command = Action::augment_subcommands(Command::new("repository").no_binary_name(true));
+        let parse = |args: &[&str]| {
+            let matches = command.clone().try_get_matches_from(args).unwrap();
+            Action::from_arg_matches(&matches).unwrap()
+        };
+        assert!(command.clone().try_get_matches_from(["gc"]).is_err());
+        let hash = "ab".repeat(32);
+        match parse(&["gc", "--plan-hash", &hash]) {
+            Action::Gc {
+                plan_hash,
+                vacuum,
+                format,
+            } => {
+                assert_eq!(plan_hash, hash);
+                assert!(!vacuum);
+                assert!(matches!(format, PlanFormat::Json));
+            }
+            _ => panic!("expected gc"),
+        }
+        assert!(matches!(
+            parse(&["gc", "--plan-hash", &hash, "--vacuum", "--format", "text"]),
+            Action::Gc {
+                vacuum: true,
+                format: PlanFormat::Text,
+                ..
+            }
+        ));
+    }
+
+    async fn object_total(repo: &LocalRepository) -> usize {
+        repo.storage_usage().await.unwrap().objects_used as usize
+    }
+
+    fn merge_args(
+        left: &Address,
+        right: &Address,
+        same_file: SameFile,
+        resolutions: BTreeMap<String, Option<FileEntry>>,
+    ) -> MergeArgs {
+        MergeArgs {
+            left: left.clone(),
+            right: right.clone(),
+            same_file,
+            resolutions,
+            message: "merge".into(),
+            authored_at_ms: 1_700_000_000_500,
+        }
+    }
+
+    #[tokio::test]
+    async fn merge_needs_the_flag_for_same_file_edits_and_records_the_resolution() {
+        let f = Fixture::new().await;
+        let report = DocumentId(uuid::Uuid::new_v4());
+        let base = f
+            .commit(
+                &[],
+                vec![("Report.docx", f.file(report, &[]).await)],
+                "base",
+            )
+            .await;
+        let left = f
+            .commit(
+                &[&base],
+                vec![("Report.docx", f.file(report, &[(0, "left")]).await)],
+                "left",
+            )
+            .await;
+        let right = f
+            .commit(
+                &[&base],
+                vec![("Report.docx", f.file(report, &[(3, "right")]).await)],
+                "right",
+            )
+            .await;
+        let key = Ed25519KeyPair::from_seed_unchecked(&[7; 32]).unwrap();
+        // Without the flag the path is a conflict: an error and no new content.
+        let stored = object_total(&f.repo).await;
+        let error = merge_value(
+            &f.repo,
+            merge_args(&left, &right, SameFile::Off, BTreeMap::new()),
+            &key,
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("Report.docx"));
+        assert!(error.to_string().contains("--same-file-merge clean"));
+        assert_eq!(object_total(&f.repo).await, stored);
+        // With the flag: stored, signed as v3, recorded and independently verifiable.
+        let output = merge_value(
+            &f.repo,
+            merge_args(&left, &right, SameFile::Clean, BTreeMap::new()),
+            &key,
+        )
+        .await
+        .unwrap();
+        assert_eq!(output["version"], 3);
+        assert_eq!(output["base"], serde_json::to_value(&base).unwrap());
+        assert_eq!(output["parents"], serde_json::json!([left, right]));
+        assert_eq!(output["explicit_resolutions"], serde_json::json!([]));
+        let record = &output["same_file_resolutions"][0];
+        assert_eq!(record["path"], "Report.docx");
+        assert_eq!(record["strategy"], "dynodoc.same-file.node-field.v1");
+        let commit: Address = serde_json::from_value(output["commit"].clone()).unwrap();
+        let stored = f.repo.commit(&commit).await.unwrap();
+        assert_eq!(stored.verify().unwrap(), commit);
+        assert_eq!(
+            stored.commit.files["Report.docx"].state,
+            serde_json::from_value::<Address>(record["merged"].clone()).unwrap()
+        );
+        assert_eq!(
+            f.repo.verify_same_file_resolutions(&commit).await.unwrap(),
+            1
+        );
+        // The swapped merge produces the same merged state.
+        let swapped = merge_value(
+            &f.repo,
+            merge_args(&right, &left, SameFile::Clean, BTreeMap::new()),
+            &key,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            swapped["same_file_resolutions"][0]["merged"],
+            record["merged"]
+        );
+        assert_ne!(swapped["commit"], output["commit"]);
+        f.finish().await;
+    }
+
+    #[tokio::test]
+    async fn merge_keeps_overlapping_edits_explicit_and_uses_given_resolutions() {
+        let f = Fixture::new().await;
+        let report = DocumentId(uuid::Uuid::new_v4());
+        let base = f
+            .commit(
+                &[],
+                vec![("Report.docx", f.file(report, &[]).await)],
+                "base",
+            )
+            .await;
+        let left_file = f.file(report, &[(1, "left wording")]).await;
+        let left = f
+            .commit(&[&base], vec![("Report.docx", left_file.clone())], "left")
+            .await;
+        let right = f
+            .commit(
+                &[&base],
+                vec![("Report.docx", f.file(report, &[(1, "right wording")]).await)],
+                "right",
+            )
+            .await;
+        let key = Ed25519KeyPair::from_seed_unchecked(&[7; 32]).unwrap();
+        for same_file in [SameFile::Off, SameFile::Clean] {
+            assert!(merge_value(
+                &f.repo,
+                merge_args(&left, &right, same_file, BTreeMap::new()),
+                &key
+            )
+            .await
+            .is_err());
+        }
+        let output = merge_value(
+            &f.repo,
+            merge_args(
+                &left,
+                &right,
+                SameFile::Clean,
+                BTreeMap::from([("Report.docx".to_string(), Some(left_file.clone()))]),
+            ),
+            &key,
+        )
+        .await
+        .unwrap();
+        assert_eq!(output["version"], 1);
+        assert_eq!(output["same_file_resolutions"], serde_json::json!([]));
+        assert_eq!(
+            output["explicit_resolutions"],
+            serde_json::json!(["Report.docx"])
+        );
+        let commit: Address = serde_json::from_value(output["commit"].clone()).unwrap();
+        assert_eq!(
+            f.repo.commit(&commit).await.unwrap().commit.files["Report.docx"],
+            left_file
+        );
+        f.finish().await;
+    }
+
+    #[test]
+    fn merge_arguments_parse_and_the_flag_is_optional() {
+        let command = Action::augment_subcommands(Command::new("repository").no_binary_name(true));
+        let parse = |args: &[&str]| {
+            let matches = command.clone().try_get_matches_from(args).unwrap();
+            Action::from_arg_matches(&matches).unwrap()
+        };
+        let base = [
+            "merge",
+            "L",
+            "R",
+            "--key",
+            "k.der",
+            "--message",
+            "m",
+            "--authored-at-ms",
+            "1",
+        ];
+        assert!(matches!(
+            parse(&base),
+            Action::Merge {
+                same_file_merge: None,
+                resolutions: None,
+                ..
+            }
+        ));
+        let mut with_flag = base.to_vec();
+        with_flag.extend(["--same-file-merge", "clean", "--resolutions", "r.json"]);
+        assert!(matches!(
+            parse(&with_flag),
+            Action::Merge {
+                same_file_merge: Some(SameFileMerge::Clean),
+                resolutions: Some(_),
+                ..
+            }
+        ));
+        let mut bad = base.to_vec();
+        bad.extend(["--same-file-merge", "always"]);
+        assert!(command.clone().try_get_matches_from(bad).is_err());
+        assert!(command
+            .clone()
+            .try_get_matches_from(["merge", "L", "R"])
+            .is_err());
+        assert!(matches!(
+            parse(&["verify-merge", "abc"]),
+            Action::VerifyMerge { .. }
+        ));
     }
 
     #[test]

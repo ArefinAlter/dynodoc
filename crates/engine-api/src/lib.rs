@@ -183,6 +183,7 @@ async fn openapi_json() -> Json<Value> {
         profiles::save,
         profiles::storage,
         profiles::profile_activity,
+        profiles::starred,
         documents::routes::list_documents,
         documents::routes::get_document,
         documents::routes::get_node,
@@ -243,6 +244,11 @@ impl utoipa::Modify for WorkspaceDocs {
         api.merge(project_staging::ProjectStagingApi::openapi());
         api.merge(project_history::ProjectHistoryApi::openapi());
         api.merge(project_issues::ProjectIssuesApi::openapi());
+        // A workspace that declares no licence (`license-file` only) leaves the derived name
+        // empty; an empty licence object is invalid OpenAPI, so drop it.
+        if api.info.license.as_ref().is_some_and(|l| l.name.is_empty()) {
+            api.info.license = None;
+        }
         let components = api.components.get_or_insert_with(Default::default);
         components.add_security_scheme(
             "connector_key",
@@ -253,8 +259,9 @@ impl utoipa::Modify for WorkspaceDocs {
                     .build(),
             ),
         );
-        // Scopes are role names (OpenAPI 3.1): `project:read`, `history:read` and
-        // `history:write`. Only the allow-listed project operations list it.
+        // Scopes are role names (OpenAPI 3.1): `project:read`, `history:read`,
+        // `history:write` and `history:review`. Only the allow-listed project
+        // operations list it.
         components.add_security_scheme(
             "device_session",
             utoipa::openapi::security::SecurityScheme::Http(

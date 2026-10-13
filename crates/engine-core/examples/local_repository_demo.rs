@@ -90,6 +90,7 @@ async fn main() -> anyhow::Result<()> {
             authored_at_ms: 1,
             message: "Initial two-file project".into(),
             recovery: None,
+            same_file_resolutions: Vec::new(),
         },
         &key_a,
     )?;

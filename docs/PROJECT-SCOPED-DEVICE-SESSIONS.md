@@ -1,6 +1,8 @@
 # Project-scoped device sessions
 
-12 October 2026. Source schema 38; not deployed to the schema-29 pilot. Executed
+12 October 2026, revised 13 October 2026. Device sessions are schema 38 (released
+with schema 39). The per-project key grants and the separate `history:review` scope
+described below are schema 40: source only until a release records them. Executed
 checks are listed under Verification; the handoff records exact commands.
 
 This contract lets a command-line or native client that holds an **enrolled
@@ -15,14 +17,14 @@ OS keystore, an external witness or an end-user UI.
 | Question | Decision |
 |---|---|
 | Long-lived credential | The device private key file only. The server stores the public key binding it already had (migration 33). No renewable secret, refresh token or token hash is stored for a device session. |
-| Short-lived credential | A Paseto v4.local access token, 1 hour, one project, a subset of three scopes. Not written to disk by the CLI. |
+| Short-lived credential | A Paseto v4.local access token, 1 hour, one project, a subset of four scopes (`project:read`, `history:read`, `history:write`, `history:review`). Not written to disk by the CLI. |
 | Renewal | Sign a new one-use challenge. Possession of the key is the only renewal factor, so key revocation ends renewal immediately. |
-| Who authorises a key for a project? | **Chosen at request time by the key holder, limited by current membership** (no per-project key-grant table). The account holder already authorised the key account-wide by enrolling it in an interactive session; project access is whatever the account's role is *at each request*. See "Why no per-project key grant". |
+| Who authorises a key for a project? | **The account holder, per project and scope, from an authenticated browser session** (schema 40). A key in `granted` mode (the default for every key enrolled from schema 40 on) can only be issued a session for a project with an active grant, and only for the granted scopes; the key holder no longer picks the reach. A key enrolled before schema 40 is `all` until its owner changes it: it keeps its old reach (every project the account can currently access). See "Per-project key grants". |
 | Token confusion | A distinct Paseto **implicit assertion** and footer, distinct claim names and a `typ` claim. Every existing validator passes no implicit assertion and so fails closed at the authentication tag. |
 | Where accepted | Only handlers that declare a `ProjectAuth<Scope>` extractor (explicit allow-list below). All other routes keep the account extractor, which cannot decrypt the new token. |
-| Re-checks | Every request: key not revoked, account active and same session generation, token project equals the route project, scope, then the unchanged project/file role, policy, review and CAS checks. Membership removal or demotion applies on the next request; nothing but the 1 hour TTL is cached. |
-| Audit | One `device.session_issued` operation-audit row per issuance (key, session id, project, scopes, expiry). No row per request. |
-| Migration | `0038_device_sessions.sql`: one small mutable table, `device_session`, the one-use replay ledger and issuance-rate window. |
+| Re-checks | Every request: key not revoked, account active and same session generation, token project equals the route project, scope, **the key's mode or active grant for this project and scope**, then the unchanged project/file role, policy, review and CAS checks. Membership removal, demotion, grant revocation or scope narrowing applies on the next request; nothing but the 1 hour TTL is cached. |
+| Audit | One `device.session_issued` operation-audit row per issuance (key, session id, project, scopes, expiry). No row per request. Grant and mode changes have their own rows (`device.grant.set`, `device.grant.revoked`, `device.access.changed`; see the grants contract). |
+| Migrations | `0038_device_sessions.sql`: one small mutable table, `device_session`, the one-use replay ledger and issuance-rate window. `0040_device_key_project_grants.sql`: `device_key_access` (one mode row per key), `device_key_project_grant` (revoke-only grant rows) and the widened scope check on `device_session`. |
 
 ## Protocol
 
@@ -50,11 +52,14 @@ write or learn whether a public key is enrolled.
    server verifies, without touching the database: shape, path project equals
    challenge project, MAC, Ed25519 signature. Then, in one transaction: database
    clock expiry, installation, key binding present and not revoked, account active,
-   current project role (and a contributing role when `history:write` is
-   requested), per-key issuance budget, **insertion of the challenge id into
+   current project role (a contributing role when `history:write` is requested,
+   an approving role when `history:review` is requested), **the key's mode or an
+   active grant that lists every requested scope**, per-key issuance budget,
+   **insertion of the challenge id into
    `device_session`** (a conflict is a replay), one audit row. Only then it mints
    the token. Every failure before the transaction and most inside it return the
-   same `401`; role problems are `403`; budget exhaustion is `429`.
+   same `401`; role and grant problems are the same `403` (the caller is not told
+which); budget exhaustion is `429`.
 4. The device uses `Authorization: Bearer <token>`. Renewal repeats 1–3.
 
 ## Token
@@ -82,11 +87,15 @@ separating control and the tests prove the old verifier rejects the new token.
 |---|---|
 | `project:read` | `GET /files`, `GET /activity` |
 | `history:read` | `GET /history/commits/{address}`, `.../objects/{document}`, `.../objects/{document}/{object}`, `GET /history/refs`, `GET /history/reviews`, `GET /history/receipts`, `GET /history/authority`, `GET /history/storage` |
-| `history:write` | everything under `/staging/*`, `POST /history/commits`, `POST /history/commits/{address}/acknowledge`, `POST /history/refs`, `POST /history/reviews` |
+| `history:write` | everything under `/staging/*`, `POST /history/commits`, `POST /history/commits/{address}/acknowledge`, `POST /history/refs` |
+| `history:review` | `POST /history/reviews` (an approval or a request for changes) |
 
-Scopes are independent: `history:write` does not imply a read. `engine-cli sync`
-asks for `history:read` for plan/fetch/pull and `history:read history:write` for
-push. A token is **never** accepted by: account/profile/device-enrollment routes,
+Scopes are independent: `history:write` does not imply a read and does not allow a
+review decision; `history:review` does not allow a push. `engine-cli sync` chooses
+its scopes in one place (`device_scopes` in `sync.rs`): `history:read` for
+plan/fetch/pull and `history:read history:write` for push. It has no review
+command, so it never asks for `history:review`; a command that records a review
+decision must ask for exactly that scope. A token is **never** accepted by: account/profile/device-enrollment routes,
 documents/ops/drafts/change requests, project detail/settings/members/drafts,
 administration, connectors/provenance, `auth/*` (including refresh and logout),
 SSE streams or the public API. It confers no administrator, owner or member
@@ -98,32 +107,48 @@ disablement/erasure (revokes every key), or the administrator's *revoke sessions
 control, which now also revokes the account's device keys because a key can mint
 a session without any login. Re-enroll a fresh key afterwards.
 
-Review decisions and protected-`main` advancement are included in `history:write`
-and use the identical checks as a browser session: current project role, file
-floors, required independent approvals, publisher cannot self-approve, fast-forward
-CAS, receipt signing. A device session is the account acting; it has no extra
-authority and no exemption.
+Review decisions need `history:review` (before schema 40 they rode on
+`history:write`: a token issued earlier with only that scope gets `403` on
+`POST /history/reviews` until it expires, at most one hour after the upgrade;
+push, staging, publication and ref advancement are unaffected). Protected-`main`
+advancement stays `history:write`. Both use the identical server checks as a
+browser session: current project role, file floors, required independent approvals,
+publisher cannot self-approve, fast-forward CAS, receipt signing. A device session is
+the account acting; it has no extra authority and no exemption. A `history:review`
+session needs an approving rank (owner, manager, editor or approver) at issuance
+and again on every decision.
 
-## Why no per-project key grant
+## Per-project key grants
 
-A per-project grant table would let a leaked key reach only the projects it was
-granted. It would also need an interactive grant/revoke UI and API before the CLI
-could be used at all, and every key already exists with the account's authority
-(it can sign commits for any project the account contributes to). We therefore
-kept the smaller model and made its blast radius explicit:
+Schema 38 deliberately let the key holder choose the project and scopes at request
+time, limited by membership. An independent review found the consequence: an
+unencrypted key file was a single factor for account-wide history writes and review
+approval, and the holder, not the account owner, decided its reach. Schema 40 moves
+that decision to the account holder. Contract and screen behaviour:
+[device key grants API](DEVICE-KEY-GRANTS-API.md).
 
-- A leaked key file can mint sessions for **every project the account can
-  currently access**, until the key is revoked (Profile → Signing keys). Treat the
-  key file like an SSH private key; enroll one key per device (limit 20).
-- Role demotion/removal or account disablement stops the next request; key
-  revocation stops the next request *and* all renewals; sessions are not used as a
-  separate revocation unit.
-- Every issuance is audited with key, project and scopes, so administrators and
-  the account holder can see which projects a key opened.
+- Each key has a mode, `granted` or `all`. A key enrolled with schema 40 or later is
+  `granted` unless the enrolment explicitly says `all`: the safe state is the
+  default and the broad one needs a deliberate choice (and a confirmation field to
+  switch to it later). Keys that existed at migration time are `all`, so nothing
+  stops working; their owners can narrow them. A key with no mode row at all is
+  treated as `granted`.
+- A `granted` key is issued a session only for a project that has an **active
+  grant** (an account-chosen set of scopes) and only for scopes inside it. Changing
+  the scopes revokes the old row and inserts a new one; grant rows are never edited
+  or deleted (runtime role: insert and update; a trigger allows exactly one
+  `revoked_at` change). At most 50 active grants per key.
+- Grants are created, narrowed and revoked only through account-session routes. A
+  device token on those routes is `401`, and another account's key is `404`. The
+  account must be a current member of the project to add or change a grant.
+- A grant never exceeds the account: role, file floors, review rules and CAS are
+  rechecked on every request exactly as before.
+- Grant changes take the same account row lock as key revocation, so an in-flight
+  request is either finished before the change or sees it.
 
-A per-key project allow-list (append-only `device_key_project` rows) can be added
-later without changing token or protocol format: the issue step would add one
-check. It is deliberately not part of this increment.
+What this removes: a copied key file (not in `all` mode) can no longer open projects
+or scopes its owner did not grant, and cannot approve unless `history:review` was
+granted. What it does not remove is listed under "Security caveats and not done".
 
 ## Request-time checks
 
@@ -159,9 +184,18 @@ browser session.
 ## CLI
 
 `engine-cli device keygen --out FILE` creates a new unencrypted DER PKCS#8 Ed25519
-key (`create_new`, mode `0600` on Unix, fsynced; never overwrites; removes a
-partial file on error) and prints the public key. Enroll it in Profile → Signing
-keys as before.
+key (`create_new`, fsynced; never overwrites; removes a partial file on error) and
+prints the public key. It is created readable by the current user only: mode
+`0600` on Unix; on Windows the file's access list is replaced with a single entry
+for the current user (`icacls /inheritance:r /grant:r USER:F`, then read back and
+verified). If that cannot be applied or verified the file is removed and the
+command fails; `--allow-insecure-key-file` accepts the folder's permissions
+instead (with a warning). Token files written by `sync` (the interim account mode)
+use the same creation path, including the atomic replacement, so they keep the
+restricted access list. Loading a key on Unix refuses a file readable by group or
+others unless the same flag is given. Enroll the key in Profile → Signing keys as
+before, then grant it the project it should use; the key is `granted` with no
+projects until you do.
 
 ```text
 engine-cli sync REPO PROJECT --remote remote.json --journal pins.sqlite --branch main \
@@ -206,21 +240,57 @@ Source run on 12 October 2026 (Windows, restricted runtime role, PostgreSQL 16):
   protected `main`, required approval and owner approval through a device session,
   key revocation, membership removal.
 
+Schema 40 (13 October 2026, Windows, restricted runtime role, PostgreSQL 16):
+
+- `engine-api/tests/device_key_grants_test.rs`: grant/deny matrix (no grant, wrong
+  project, scope subset, widening), narrowing and revocation reaching a live token
+  on its next request, legacy `all` keys unchanged, `all` needing the explicit
+  confirmation and keeping grants, enrolment default and a retry that cannot widen,
+  review needing its own scope and an approving rank, push working with write
+  alone, owner-only and session-only management (device token and no login are
+  `401`, another account's key `404`), non-member and revoked-key cases, the
+  50-grant limit, membership removal and re-adding, concurrent issuance against
+  revocation and concurrent grants, forged service-key claims, revoke-only grant
+  rows and missing runtime DELETE, migration backfill of existing keys, audit rows,
+  and `GET /profiles/{id}/starred` visibility, counts and the 100 bound.
+- `engine-cli`: the real-HTTP flow with a granted key, the review step using its
+  own scope, scope selection per action; `private_file` unit tests for the
+  `icacls` arguments and output parsing, the Unix mode rule (compiled and run only
+  on Unix), and a real `icacls` run on this host showing a created file and an
+  atomically replaced file each carrying exactly one entry for the current user.
+
 Known unrelated failure on this Windows host: `sse_delivers_a_new_event_within_100ms`
 (a 100 ms wall-clock deadline) fails with or without this change.
 
 ## Security caveats and not done
 
-- The key file is unencrypted; there is no OS keystore, TPM or hardware token
-  integration. On Windows the file inherits its folder's ACL; store it in a private
-  directory.
+What remains after schema 40, precisely:
+
+- **The key file is still an unencrypted private key.** There is no passphrase, OS
+  keystore, TPM or hardware token. Owner-only file permissions stop other local
+  accounts, not malware or a backup that runs as the user, and they are not
+  checked again when a Windows key file is loaded (only files created by
+  `device keygen` carry the restricted access list; a key made elsewhere keeps
+  its folder's). On Unix a key readable by group or others is refused at load.
+- **`all` keys keep account-wide reach.** Keys enrolled before schema 40 are `all`
+  until their owner switches them; the profile should say so. Anyone with such a
+  file can still open any project the account can reach, with any scope the role
+  allows, including `history:review`. A key enrolled with `project_access: "all"`
+  is the same.
+- A `granted` key's holder can use every scope granted for a project the whole
+  time the key is valid; grants are not time-limited and a stolen token works until
+  it expires (one hour) or the grant/key is revoked.
+- Revoking a grant or key is by the account holder, from an authenticated session;
+  an administrator can still end an account's sessions, which also revokes its
+  keys.
 - A server impersonator that the user configured in `remote.json` can relay a
   challenge from the real server and obtain a token. The remote URL, TLS
   certificate and the independently verified authority are the trust anchor; the
   CLI checks authority, key, project and scopes before signing.
-- No per-project key grant, no per-session revocation, no session listing UI, no
-  interactive-only restriction for review approvals, no connector (Office/Google)
-  adoption, and no installed-editor or marketplace acceptance.
+- No per-session revocation, no session listing UI, no per-grant expiry, no
+  interactive-only restriction for review approvals (a granted `history:review`
+  scope can approve; the CLI has no approve command yet), no connector
+  (Office/Google) adoption, and no installed-editor or marketplace acceptance.
 - The sessions share the server's global Paseto key; rotating it ends all sessions.
 - Rate budgets are process-local admission plus a persistent per-key window
   (exact under concurrency through a per-key advisory lock), not a fleet-wide quota.

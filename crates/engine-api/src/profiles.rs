@@ -16,6 +16,7 @@ pub fn router() -> Router<AppState> {
         .route("/profile/storage", get(storage))
         .route("/profiles/:id", get(read))
         .route("/profiles/:id/activity", get(profile_activity))
+        .route("/profiles/:id/starred", get(starred))
 }
 /// $1 is the viewer and $2 the profile: the account itself or a shared project member.
 const VISIBLE: &str = "i.id=$2 and i.disabled_at is null and ($1=$2 or exists(select 1 from access_space s where s.kind='project' and inherited_space_role(s.id,$1) is not null and inherited_space_role(s.id,$2) is not null))";
@@ -45,6 +46,42 @@ async fn read(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>, ApiError> {
     profile(&state, auth.identity_id, id).await
+}
+/// Projects the profile's account starred that the viewer can also access. Counts
+/// follow the project's own rule: a star counts while its owner is still a member
+/// and not disabled. At most 100 are returned; `truncated` says whether more exist.
+#[utoipa::path(operation_id="profile_starred", get, path="/profiles/{id}/starred", params(("id"=Uuid,Path)), security(("paseto"=[])), responses((status=200,description="Projects this profile starred that you can access: id, name, star_count and open_issue_count, newest star first, at most 100 (truncated says more exist). Projects you cannot access are neither listed nor counted",body=Value),(status=404,description="Not accessible"),(status=429,description="Too many reads"),(status=504,description="Deadline exceeded")))]
+async fn starred(
+    State(state): State<AppState>,
+    auth: AuthContext,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Value>, ApiError> {
+    let visible: bool = sqlx::query_scalar(&format!(
+        "select exists(select 1 from identity i where {VISIBLE})"
+    ))
+    .bind(auth.identity_id)
+    .bind(id)
+    .fetch_one(&state.pool)
+    .await?;
+    if !visible {
+        return Err(ApiError::NotFound);
+    }
+    let _budget = state.workloads.enter(auth.identity_id, None)?;
+    let mut tx = state.pool.begin().await?;
+    sqlx::query("set local statement_timeout='3s'")
+        .execute(&mut *tx)
+        .await?;
+    // $1 viewer, $2 profile. The viewer's access is the project role they hold now;
+    // the profile's star counts only while they are still a direct member.
+    let mut items: Vec<Value> = sqlx::query_scalar("select jsonb_build_object('id',s.id,'name',s.name,'star_count',(select count(*) from project_star c join space_member cm on cm.space_id=c.project_id and cm.identity_id=c.identity_id join identity ci on ci.id=c.identity_id and ci.disabled_at is null where c.project_id=s.id),'open_issue_count',(select count(*) from project_issue q where q.project_id=s.id and q.state='open')) from project_star st join space_member sm on sm.space_id=st.project_id and sm.identity_id=st.identity_id join access_space s on s.id=st.project_id and s.kind='project' where st.identity_id=$2 and inherited_space_role(s.id,$1) is not null order by st.created_at desc,s.id limit 101")
+        .bind(auth.identity_id)
+        .bind(id)
+        .fetch_all(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    let truncated = items.len() > 100;
+    items.truncate(100);
+    Ok(Json(json!({"items":items,"truncated":truncated})))
 }
 #[derive(Deserialize)]
 struct ActivityYear {

@@ -31,6 +31,9 @@ pub struct DeviceBinding {
     pub key_id: Uuid,
     pub project: Uuid,
     pub session: Uuid,
+    /// The scope the route being served requires (`ProjectAuth<S>::SCOPE`). A key's
+    /// per-project grant is rechecked against it under the account row lock.
+    pub scope: &'static str,
 }
 
 pub struct AuthContext {

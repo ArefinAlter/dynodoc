@@ -12,7 +12,10 @@ use uuid::Uuid;
 pub enum Action {
     /// Create a new unencrypted DER PKCS#8 Ed25519 signing key and print its public
     /// key. Never overwrites a file. The file is the long-lived credential for
-    /// `sync --device-key`; keep it in a private directory and enroll it in your profile.
+    /// `sync --device-key`: it is created readable by you only (mode 0600; on
+    /// Windows an access list with just your account, verified) and creation fails
+    /// if that cannot be applied unless `--allow-insecure-key-file` is passed. Enroll
+    /// it in your profile, then grant it the projects it may use.
     Keygen {
         #[arg(long)]
         out: PathBuf,
@@ -33,8 +36,9 @@ pub enum Action {
     },
 }
 
-/// Generate a key with the system CSPRNG, store it exclusively (mode 0600 on Unix)
-/// and return its lowercase hexadecimal public key. The private key is never printed.
+/// Generate a key with the system CSPRNG, store it exclusively and owner-only
+/// (see `private_file`) and return its lowercase hexadecimal public key. The
+/// private key is never printed.
 fn keygen(out: &std::path::Path) -> anyhow::Result<String> {
     let pkcs8 = Ed25519KeyPair::generate_pkcs8(&SystemRandom::new())
         .map_err(|_| anyhow::anyhow!("system random generator failed"))?;

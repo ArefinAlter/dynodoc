@@ -47,7 +47,9 @@ pub struct Options {
     #[arg(long, conflicts_with = "device_key")]
     refresh_token_file: Option<PathBuf>,
     /// Enrolled Ed25519 key (unencrypted DER PKCS#8). Obtains and renews short-lived
-    /// tokens for this project in memory; no token or refresh secret is stored.
+    /// tokens for this project in memory; no token or refresh secret is stored. The
+    /// key must be granted this project in your profile (signing keys), unless it is
+    /// an older all-projects key. On Unix a key readable by group or others is refused.
     #[arg(long)]
     device_key: Option<PathBuf>,
     /// Separate durable client receipt journal (must not be the repository database).
@@ -102,15 +104,31 @@ struct Plan {
     /// Topological signed manifests: explicit disclosure of messages, paths and sources.
     publish: Vec<SignedCommit>,
 }
+/// The device-session scopes an action asks for: the least that works, chosen
+/// here and nowhere else. The key must also be *granted* them for this project by
+/// its account holder (profile -> signing keys); asking is not enough.
+///
+/// - plan, fetch, pull: `history:read`.
+/// - push (which may stage, publish and advance a branch): `history:read` and
+///   `history:write`.
+/// - `history:review` (recording an approval or a change request) is requested by
+///   no action: `sync` has no review command, so a pushing client can never approve
+///   by accident. A command that records a review decision must ask for exactly
+///   `history:review` and not `history:write`.
+fn device_scopes(action: &Action) -> Vec<String> {
+    let mut scopes = vec!["history:read".to_owned()];
+    if matches!(action, Action::Push { .. }) {
+        scopes.push("history:write".to_owned());
+    }
+    scopes
+}
+
 /// Build the network client. A device key asks only for the scopes this action
-/// needs: reads for plan/fetch/pull, reads and writes for push.
+/// needs (see [`device_scopes`]).
 fn credentials(options: &Options, remote: Remote) -> anyhow::Result<Client> {
     let loopback = options.allow_loopback_http;
     if let Some(path) = &options.device_key {
-        let mut scopes = vec!["history:read".to_owned()];
-        if matches!(options.action, Action::Push { .. }) {
-            scopes.push("history:write".to_owned());
-        }
+        let scopes = device_scopes(&options.action);
         let key = crate::signing::load(path)?;
         return Client::with_credential(
             remote,

@@ -16,6 +16,8 @@ legacy event sequences remain intact.
 with signed v2 source references and explicit conflict resolution. Ordinary v1
 commits remain unchanged; upgraded readers accept both versions. Source references
 are transfer dependencies, distinct from ancestry parents.
+[Applying clean same-file merges](#applying-clean-same-file-merges) adds an opt-in
+two-parent merge and commit format v3, with the same compatibility rule.
 
 ## Contract
 
@@ -41,7 +43,8 @@ a verified user identity. No existing database event hash is changed.
 ## Durable local operations
 
 `LocalRepository::open(path, project)` creates/reopens SQLite schema 2 with WAL,
-FULL synchronization and one-project binding. Object and commit rows are immutable.
+FULL synchronization and one-project binding. Object and commit rows are immutable
+to ordinary writes; only the explicit collector removes unreferenced object rows.
 Schema 1 upgrades transactionally; older schema-1-only clients reject schema 2.
 [Persistent local capacity](LOCAL-STORAGE-BUDGETS.md) bounds retained object/commit
 bytes and object/commit/branch counts, including staged objects. Exact retries and
@@ -77,9 +80,11 @@ SQLite guarantees depend on the filesystem and hardware honoring synchronization
 Reopen, transaction rollback and retry tests are not an OS power-loss experiment.
 Owner-level edits to the SQLite file are outside local trigger protection; hashes
 and signatures are checked on reads, but detecting removal of the newest history
-requires a previously retained head or independent witness. No garbage collection,
-key vault, native background capture, credential storage or marketplace publication
-is introduced by this module.
+requires a previously retained head or independent witness. No key vault, native
+background capture, credential storage or marketplace publication is introduced by
+this module. The only deletion is the explicit, hash-bound
+[staged-object collector](LOCAL-RETENTION-PLAN.md), which removes stored objects no
+commit references; commits, signatures and refs are never pruned.
 
 See [the evolution handoff](ENGINE-EVOLUTION-HANDOFF.md) for validation and the
 remaining integration work. Installed-editor testing remains the owner's local
@@ -108,9 +113,10 @@ for these local commands; this does not change the product's 3 MB native-upload 
 
 Project comparison uses roots to combine unchanged/equal/independent file changes.
 Competing edits, delete/edit, shared-document rename and path namespace conflicts
-remain explicit. Same-file rich-text resolution, cross-file semantic validators,
-criss-cross virtual bases and native application remain additional work. The
-planner never writes to a branch or native document on its own.
+remain explicit. Same-file node/field convergence is an opt-in merge (below);
+cross-file semantic validators, criss-cross virtual bases and native application
+remain additional work. The planner never writes to a branch or native document on
+its own.
 
 ## Same-file convergence report
 
@@ -135,8 +141,8 @@ agree on the address, but where a tie-break exists (for example two different ma
 added to the same words) the order of those marks is the canonical choice, not
 either user's.
 
-Limits. This is a report, not automatic resolution: a clean file still needs a
-signed commit, and every conflict still needs an explicit choice. It is not
+Limits. The report itself never writes or resolves anything; the opt-in merge
+below applies exactly this computation. It is not
 constraint-aware across documents (references between files, shared identity or
 namespace rules) and does not understand native structures the typed state does not
 represent. Nodes are compared by stable id; a node missing from one side's map is a
@@ -146,3 +152,67 @@ id is identical on all three commits are examined, at most 64 files per comparis
 (the rest are counted as `not_examined`), each bounded by the ordinary state read
 budgets. Criss-cross and disconnected histories are still refused before any file
 is read; virtual merge bases remain future work.
+
+## Applying clean same-file merges
+
+`engine-cli repository DATABASE PROJECT_UUID merge LEFT RIGHT --key KEY.der
+--message TEXT --authored-at-ms MS [--resolutions FILE] [--same-file-merge clean]`
+(library `LocalRepository::prepare_merge`) signs and stores a two-parent merge
+commit: `LEFT` is the first parent, the base is the unique best common ancestor, and
+criss-cross or disconnected histories are refused exactly as for `compare`. It does
+not move a branch; publish with `set-head` and the expected address and generation.
+Before this command a merge was composed by hand as a manifest for `commit`; the
+command computes the same file map, so without the flag the signed commit is
+byte-identical to that manual manifest (version 1, parents `[LEFT, RIGHT]`).
+
+Every path-level conflict needs an entry in `--resolutions`, a `FileEntry` or `null`
+to delete, as in `recover`. Unknown paths are refused and no content is written
+while a conflict is open (the error lists the paths).
+
+With `--same-file-merge clean`, a conflicting path whose document UUID is identical
+on base, left and right is read as three typed states and merged by the
+convergence algorithm above (node/field, rich-text runs, comments and suggestions).
+The path is merged only when that merge is **clean in both orientations**. The
+merged state is stored through the ordinary budgeted `write_state` (before the
+commit, staged exactly like `store-state` output if a later step fails), becomes the
+file's entry, and is recorded in the commit. Swapping `LEFT` and `RIGHT` yields the
+same merged state address (the commit addresses differ because parent order is
+signed). Paths with any node or field conflict, paths whose document identity
+changed, delete/edit and rename conflicts, and the paths beyond 64 per merge stay
+conflicts that need an explicit resolution. An explicit resolution for a path always
+wins over the automatic merge and leaves no record. The final file map is validated
+as for any commit, so shared document identity and path namespace constraints still
+apply. A merge with no automatic resolution is an ordinary v1 commit.
+
+### Commit format v3
+
+A merge with at least one automatic resolution is a version 3 commit: exactly two
+parents, no `recovery`, and a non-empty `same_file_resolutions` array. Each record
+is `{path, document, base, left, right, merged, strategy}`: the state roots at the
+base and the first and second parent, the stored merged root (equal to the file's
+entry) and the strategy id `dynodoc.same-file.node-field.v1`. Addresses are SHA-256
+of `dynodoc.project-commit\0v3\0` followed by sorted-key canonical JSON, and
+signatures cover `dynodoc.project-commit-signature\0v3\0` followed by the 32 raw
+address bytes. Version 1 and 2 serializations never contain the new field, so no
+existing address, signature or vector changes. `project-merge-v3.json` is an
+independent Python canonicalization/hashing and OpenSSL Ed25519 vector (public
+synthetic seed 7, placeholder dependencies); never regenerate it to accommodate a
+failed check. Readers that predate v3 reject these commits (unknown version and
+field): upgrade every participating reader and server before exchanging them.
+
+Import checks that each record names the commit's real parents, the unique merge
+base and the same document under that path, and rejects unknown strategy ids.
+It does **not** re-run the merge, so importing never depends on the algorithm
+staying unchanged. `verify-merge COMMIT` (`verify_same_file_resolutions`) reads the
+recorded inputs and requires the named strategy to reproduce the recorded merged
+address. A signature proves the author's key, not that the merge was automatic.
+
+### Limits
+
+No cross-file semantic validation, no virtual merge base, no three-or-more-parent
+merge, and no native-file application. A record covers whole typed states: it does
+not describe which individual nodes changed. Comments and suggestions are compared
+as whole collections, and where two different marks are added to the same words the
+mark order is the canonical choice, not either author's. Servers older than this
+format cannot accept v3 commits; the PostgreSQL service schema is unchanged and
+SQLite local schema 2 is unchanged.

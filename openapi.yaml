@@ -2,9 +2,6 @@ openapi: 3.1.0
 info:
   title: dynodoc engine API
   description: Document version control, collaborative review and authorized administration. Canonical content history is append-only except explicit audited whole-document erasure.
-  license:
-    name: AGPL-3.0-or-later
-    identifier: AGPL-3.0-or-later
   version: 0.1.0
 paths:
   /admin/actions:
@@ -342,7 +339,7 @@ paths:
       operationId: list
       responses:
         '200':
-          description: Own public signing keys, at most 128; never a directory of other members
+          description: Own public signing keys, at most 128, each with its project_access mode (granted or all) and active per-project grants (at most 50, scopes, current role); never a directory of other members
           content:
             application/json:
               schema: {}
@@ -361,12 +358,12 @@ paths:
         required: true
       responses:
         '200':
-          description: Enrolled device or exact active retry
+          description: 'Enrolled device or exact active retry. Body: the signed challenge and signature, plus optional project_access (granted by default; all is the account-wide mode). Returns id, public_key and the key''s project_access'
           content:
             application/json:
               schema: {}
         '400':
-          description: Invalid proof
+          description: Invalid proof or project_access
         '401':
           description: Sign in required
         '403':
@@ -448,6 +445,116 @@ paths:
           description: Sign in required
         '404':
           description: No such own device
+      security:
+      - paseto: []
+  /devices/{key_id}:
+    patch:
+      tags:
+      - devices
+      operationId: device_access_set
+      parameters:
+      - name: key_id
+        in: path
+        description: Own device key
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccessRequest'
+        required: true
+      responses:
+        '200':
+          description: The key's mode; changed is false when it already had this mode. Existing grants are kept
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Unknown mode, or all without confirm_all_projects
+        '401':
+          description: Account sign-in required; a device token is refused
+        '404':
+          description: No such own key
+        '409':
+          description: Key revoked
+      security:
+      - paseto: []
+  /devices/{key_id}/projects/{project_id}:
+    put:
+      tags:
+      - devices
+      operationId: device_grant_set
+      parameters:
+      - name: key_id
+        in: path
+        description: Own device key
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        description: Project the account is a member of
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantRequest'
+        required: true
+      responses:
+        '200':
+          description: The key's active grant for this project (idempotent); changed is false when the scopes were already these
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Empty or unknown scopes
+        '401':
+          description: Account sign-in required; a device token is refused
+        '403':
+          description: Not a current member of the project
+        '404':
+          description: No such own key
+        '409':
+          description: Key revoked or 50 active grants reached
+      security:
+      - paseto: []
+    delete:
+      tags:
+      - devices
+      operationId: device_grant_revoke
+      parameters:
+      - name: key_id
+        in: path
+        description: Own device key
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        description: Project
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: The active grant is revoked; applies to the key's next request. changed is false when there was none
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Account sign-in required; a device token is refused
+        '404':
+          description: No such own key
       security:
       - paseto: []
   /documents:
@@ -2487,6 +2594,36 @@ paths:
           description: Deadline exceeded
       security:
       - paseto: []
+  /profiles/{id}/starred:
+    get:
+      tags:
+      - profiles
+      summary: |-
+        Projects the profile's account starred that the viewer can also access. Counts
+        follow the project's own rule: a star counts while its owner is still a member
+        and not disabled. At most 100 are returned; `truncated` says whether more exist.
+      operationId: profile_starred
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 'Projects this profile starred that you can access: id, name, star_count and open_issue_count, newest star first, at most 100 (truncated says more exist). Projects you cannot access are neither listed nor counted'
+          content:
+            application/json:
+              schema: {}
+        '404':
+          description: Not accessible
+        '429':
+          description: Too many reads
+        '504':
+          description: Deadline exceeded
+      security:
+      - paseto: []
   /projects:
     get:
       tags: []
@@ -2655,7 +2792,7 @@ paths:
         '401':
           description: Challenge, signature, key or account is not current (uniform)
         '403':
-          description: Current project role does not allow the scopes
+          description: Current project role, or the key's per-project grant, does not allow the scopes (uniform; the reason is not disclosed)
         '429':
           description: Issuance budget reached
   /projects/{id}/device-sessions/challenge:
@@ -3102,16 +3239,18 @@ paths:
         required: true
       responses:
         '200':
-          description: Append approve/request_changes for exact branch base generation and candidate; independent current reviewer required
+          description: Append approve/request_changes for exact branch base generation and candidate; independent current reviewer required. A device token needs history:review (history:write does not suffice)
           content:
             application/json:
               schema: {}
+        '403':
+          description: Not a current reviewer, the publisher, or the token/key lacks history:review
         '409':
           description: Base changed
       security:
       - paseto: []
       - device_session:
-        - history:write
+        - history:review
   /projects/{id}/history/storage:
     get:
       tags:
@@ -4064,6 +4203,20 @@ paths:
       - paseto: []
 components:
   schemas:
+    AccessRequest:
+      type: object
+      required:
+      - project_access
+      properties:
+        confirm_all_projects:
+          type: boolean
+          description: Must be `true` to choose `all`; ignored for `granted`.
+        project_access:
+          type: string
+          description: |-
+            `granted` (only projects with an active grant) or `all` (every project the
+            account can access; requires `confirm_all_projects`).
+      additionalProperties: false
     Action:
       type: string
       enum:
@@ -4082,7 +4235,10 @@ components:
           type: array
           items:
             type: string
-          description: One or more of `history:read`, `history:write`, `project:read`.
+          description: |-
+            One or more of `history:read`, `history:review`, `history:write`,
+            `project:read`. A key that is not in `all` mode also needs an active grant
+            for this project that lists every scope.
       additionalProperties: false
     ChallengeResponse:
       type: object
@@ -4231,6 +4387,17 @@ components:
           - string
           - 'null'
           description: SHA-256 of a 256-bit secret held by the requesting editor. Never the secret.
+      additionalProperties: false
+    GrantRequest:
+      type: object
+      required:
+      - scopes
+      properties:
+        scopes:
+          type: array
+          items:
+            type: string
+          description: One or more of `project:read`, `history:read`, `history:write`, `history:review`.
       additionalProperties: false
     Issue:
       type: object

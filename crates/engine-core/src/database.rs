@@ -61,8 +61,15 @@ const MUTABLE: &[&str] = &[
 ];
 /// Rows are created and pruned but never edited: a replay ledger, not a record.
 const INSERT_DELETE: &[&str] = &["device_session", "project_issue_label", "project_star"];
-/// Rows are created and edited but never deleted by the runtime login.
-const INSERT_UPDATE: &[&str] = &["project_issue", "project_issue_counter"];
+/// Rows are created and edited but never deleted by the runtime login. Device key
+/// access mode is edited in place; a grant row only ever moves `revoked_at` (a
+/// trigger refuses any other change, so a changed scope set is revoke plus insert).
+const INSERT_UPDATE: &[&str] = &[
+    "project_issue",
+    "project_issue_counter",
+    "device_key_access",
+    "device_key_project_grant",
+];
 const FUNCTIONS: &[&str] = &[
     "access_role_rank(text)",
     "member_role_order(text)",

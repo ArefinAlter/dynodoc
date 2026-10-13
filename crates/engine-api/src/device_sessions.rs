@@ -2,9 +2,12 @@
 //! enrolled device key buys a one-hour token for one project and a few scopes.
 //! See docs/PROJECT-SCOPED-DEVICE-SESSIONS.md. Nothing renewable is stored; the
 //! `device_session` row is a replay ledger and issuance window, and project access
-//! is read from the live membership tables again on every request.
+//! is read from the live membership tables again on every request. A key that is
+//! not in `all` mode additionally needs a per-project grant from its account
+//! holder (docs/DEVICE-KEY-GRANTS-API.md), checked at issuance and on every request.
 use crate::{
     auth::{
+        device::key_reaches,
         random_token,
         token::{self, DeviceClaims, DEVICE_SESSION_TTL_SECONDS},
     },
@@ -105,7 +108,9 @@ fn current(challenge: &SessionChallenge, authority: Uuid, now_ms: i64) -> bool {
 struct ChallengeRequest {
     /// Lowercase hexadecimal Ed25519 public key of an enrolled device key.
     public_key: String,
-    /// One or more of `history:read`, `history:write`, `project:read`.
+    /// One or more of `history:read`, `history:review`, `history:write`,
+    /// `project:read`. A key that is not in `all` mode also needs an active grant
+    /// for this project that lists every scope.
     scopes: Vec<String>,
 }
 
@@ -151,7 +156,8 @@ async fn challenge(
         reason: "Use a lowercase hexadecimal Ed25519 public key".into(),
     })?;
     let scopes = normalize_scopes(&input.scopes).map_err(|_| ApiError::BadRequest {
-        reason: "Choose one or more of history:read, history:write, project:read".into(),
+        reason: "Choose one or more of history:read, history:review, history:write, project:read"
+            .into(),
     })?;
     let now_ms = now_ms();
     let challenge = SessionChallenge {
@@ -170,7 +176,7 @@ async fn challenge(
     Ok(Json(json!({"challenge":challenge,"mac":mac})))
 }
 
-#[utoipa::path(operation_id="device_session_issue", post, path="/projects/{id}/device-sessions", tag="device sessions", params(("id"=Uuid,Path,description="Project")), request_body=SessionAnswer, responses((status=200, description="One-hour bearer token for this project and the signed scopes; renew by signing a new challenge. Never cacheable", body=DeviceToken),(status=401, description="Challenge, signature, key or account is not current (uniform)"),(status=403, description="Current project role does not allow the scopes"),(status=429, description="Issuance budget reached")))]
+#[utoipa::path(operation_id="device_session_issue", post, path="/projects/{id}/device-sessions", tag="device sessions", params(("id"=Uuid,Path,description="Project")), request_body=SessionAnswer, responses((status=200, description="One-hour bearer token for this project and the signed scopes; renew by signing a new challenge. Never cacheable", body=DeviceToken),(status=401, description="Challenge, signature, key or account is not current (uniform)"),(status=403, description="Current project role, or the key's per-project grant, does not allow the scopes (uniform; the reason is not disclosed)"),(status=429, description="Issuance budget reached")))]
 async fn issue(
     State(state): State<AppState>,
     Path(project): Path<Uuid>,
@@ -227,8 +233,9 @@ async fn issue(
     let Some(generation) = generation.filter(|_| !revoked) else {
         return Err(refused());
     };
-    // The role is only checked here to avoid issuing a useless token and to give
-    // the key holder a readable refusal. Every request re-reads it.
+    // The role is only checked here to avoid issuing a useless token. Every
+    // request re-reads it. All refusals are the same 403: the key holder is not
+    // told whether the role, the review rank or the key's grant was missing.
     let role = projects::require(&mut tx, project, identity).await?;
     if c.scopes.iter().any(|s| s == "history:write")
         && !matches!(
@@ -236,6 +243,26 @@ async fn issue(
             "owner" | "manager" | "editor" | "reviewer" | "approver"
         )
     {
+        return Err(ApiError::Forbidden);
+    }
+    if c.scopes.iter().any(|s| s == "history:review")
+        && !matches!(role.as_str(), "owner" | "manager" | "editor" | "approver")
+    {
+        return Err(ApiError::Forbidden);
+    }
+    // The account holder's per-project grant (or the key's `all` mode). The
+    // account row is held FOR SHARE, so a concurrent grant change (FOR UPDATE)
+    // waits for this issuance and applies to the token's next request.
+    let reaches: bool = sqlx::query_scalar(&format!(
+        "select {} from device_signing_key k where k.id=$1",
+        key_reaches("$2", "$3::text[]")
+    ))
+    .bind(key_id)
+    .bind(project)
+    .bind(&c.scopes)
+    .fetch_one(&mut *tx)
+    .await?;
+    if !reaches {
         return Err(ApiError::Forbidden);
     }
     // Serialize this key's issuance so the budget is exact under concurrency.

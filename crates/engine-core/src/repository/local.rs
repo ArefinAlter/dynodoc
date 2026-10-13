@@ -1,7 +1,7 @@
 //! SQLite local history with immutable content, verified commits and transactional
 //! ref CAS. No remote permissions or automatic native-file writes are implied.
 
-use super::{recovery, Error, Head, SignedCommit, MAX_ANCESTORS, MAX_COMMIT_BYTES};
+use super::{recovery, Commit, Error, Head, SignedCommit, MAX_ANCESTORS, MAX_COMMIT_BYTES};
 use crate::{
     materializer::DocumentState,
     shared_checkpoint::{self, typed, Address, Limits, ObjectStore, WriteStats},
@@ -17,8 +17,10 @@ use std::{
     time::Duration,
 };
 
+mod collector;
 mod retention;
 mod storage;
+pub use collector::{GcApplyOptions, GcReport};
 pub use retention::{GcPlan, GcPlanOptions};
 pub use storage::{StorageLimits, StorageUsage, SCHEMA_VERSION};
 
@@ -160,6 +162,89 @@ async fn load_recovery_plan(
         &onto.commit,
         parent.as_ref().map(|p| &p.commit),
     )
+}
+
+/// Ancestry (parents only) of `head`, bounded by commit count and bytes.
+async fn collect_ancestors(
+    connection: &mut SqliteConnection,
+    project: uuid::Uuid,
+    head: &Address,
+) -> Result<BTreeMap<Address, Vec<Address>>, Error> {
+    let mut queue = VecDeque::from([head.clone()]);
+    let mut found = BTreeMap::new();
+    let mut bytes = 64 * 1024 * 1024usize;
+    while let Some(address) = queue.pop_front() {
+        if found.contains_key(&address) {
+            continue;
+        }
+        if found.len() == MAX_ANCESTORS {
+            return Err(Error::Limit("ancestor count"));
+        }
+        let (commit, _) = load_commit(connection, project, &address).await?;
+        bytes = bytes
+            .checked_sub(commit.commit.bytes()?.len())
+            .ok_or(Error::Limit("ancestor bytes"))?;
+        queue.extend(commit.commit.parents.iter().cloned());
+        found.insert(address, commit.commit.parents);
+    }
+    Ok(found)
+}
+
+/// Best common ancestors of two ancestry maps; criss-cross may yield several.
+fn best_common(
+    left: &BTreeMap<Address, Vec<Address>>,
+    right: &BTreeMap<Address, Vec<Address>>,
+) -> Vec<Address> {
+    let common: BTreeSet<_> = left
+        .keys()
+        .filter(|key| right.contains_key(*key))
+        .cloned()
+        .collect();
+    let dominated: BTreeSet<_> = common
+        .iter()
+        .flat_map(|key| left[key].iter().cloned())
+        .collect();
+    common.difference(&dominated).cloned().collect()
+}
+
+/// A v3 commit's records must describe its actual parents and their unique merge
+/// base. The merge algorithm itself is not re-run here (see `project_merge`):
+/// importing must not depend on the algorithm staying unchanged.
+async fn check_same_file_provenance(
+    connection: &mut SqliteConnection,
+    project: uuid::Uuid,
+    commit: &Commit,
+    parents: &[SignedCommit],
+) -> Result<(), Error> {
+    let [left, right] = parents else {
+        return Err(Error::Invalid("same-file resolution requires two parents"));
+    };
+    let left_ancestors = collect_ancestors(connection, project, &commit.parents[0]).await?;
+    let right_ancestors = collect_ancestors(connection, project, &commit.parents[1]).await?;
+    let bases = best_common(&left_ancestors, &right_ancestors);
+    let [base] = bases.as_slice() else {
+        return Err(Error::Invalid(
+            "same-file resolution requires a unique merge base",
+        ));
+    };
+    let base = load_commit(connection, project, base).await?.0;
+    for record in &commit.same_file_resolutions {
+        let matches = |side: &SignedCommit, state: &Address| {
+            side.commit
+                .files
+                .get(&record.path)
+                .is_some_and(|f| f.document == record.document && f.state == *state)
+        };
+        if !(matches(&base, &record.base)
+            && matches(left, &record.left)
+            && matches(right, &record.right))
+        {
+            return Err(Error::Invalid(
+                "same-file resolution does not match its parents",
+            ));
+        }
+    }
+    Ok(())
 }
 
 impl LocalRepository {
@@ -337,13 +422,18 @@ impl LocalRepository {
             .execute(&mut *tx)
             .await?;
         let mut height = 0;
+        let mut parents = Vec::new();
         for parent in &signed.commit.parents {
-            let (_, parent_height) = load_commit(&mut tx, self.project, parent).await?;
+            let (loaded, parent_height) = load_commit(&mut tx, self.project, parent).await?;
             height = height.max(
                 parent_height
                     .checked_add(1)
                     .ok_or(Error::Limit("commit height"))?,
             );
+            parents.push(loaded);
+        }
+        if !signed.commit.same_file_resolutions.is_empty() {
+            check_same_file_provenance(&mut tx, self.project, &signed.commit, &parents).await?;
         }
         if let Some(source) = &signed.commit.recovery {
             let plan = load_recovery_plan(
@@ -476,25 +566,8 @@ impl LocalRepository {
     }
 
     async fn ancestors(&self, head: &Address) -> Result<BTreeMap<Address, Vec<Address>>, Error> {
-        let mut queue = VecDeque::from([head.clone()]);
-        let mut found = BTreeMap::new();
         let mut connection = self.pool.acquire().await?;
-        let mut bytes = 64 * 1024 * 1024usize;
-        while let Some(address) = queue.pop_front() {
-            if found.contains_key(&address) {
-                continue;
-            }
-            if found.len() == MAX_ANCESTORS {
-                return Err(Error::Limit("ancestor count"));
-            }
-            let (commit, _) = load_commit(&mut connection, self.project, &address).await?;
-            bytes = bytes
-                .checked_sub(commit.commit.bytes()?.len())
-                .ok_or(Error::Limit("ancestor bytes"))?;
-            queue.extend(commit.commit.parents.iter().cloned());
-            found.insert(address, commit.commit.parents);
-        }
-        Ok(found)
+        collect_ancestors(&mut connection, self.project, head).await
     }
     /// Return all best common ancestors. Criss-cross histories may have several;
     /// callers must not silently choose one as the unique merge base.
@@ -505,16 +578,7 @@ impl LocalRepository {
     ) -> Result<Vec<Address>, Error> {
         let left = self.ancestors(left).await?;
         let right = self.ancestors(right).await?;
-        let common: BTreeSet<_> = left
-            .keys()
-            .filter(|key| right.contains_key(*key))
-            .cloned()
-            .collect();
-        let dominated: BTreeSet<_> = common
-            .iter()
-            .flat_map(|key| left[key].iter().cloned())
-            .collect();
-        Ok(common.difference(&dominated).cloned().collect())
+        Ok(best_common(&left, &right))
     }
 
     /// Bounded resumable inventory. A cursor is the last key in a successful page.
@@ -608,7 +672,11 @@ impl LocalRepository {
 }
 
 #[cfg(test)]
+mod collector_tests;
+#[cfg(test)]
 mod convergence_tests;
+#[cfg(test)]
+mod merge_tests;
 #[cfg(test)]
 mod retention_tests;
 #[cfg(test)]

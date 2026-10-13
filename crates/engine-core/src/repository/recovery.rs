@@ -120,6 +120,7 @@ impl Plan {
             authored_at_ms,
             message,
             recovery: Some(self.source.clone()),
+            same_file_resolutions: Vec::new(),
         };
         result.bytes()?; // Shared identity, namespace and size validation.
         Ok(result)

@@ -3,7 +3,7 @@
 use crate::{
     access::{self, MemberRole, Policy},
     auth::{
-        device::{HistoryRead, HistoryWrite, ProjectAuth},
+        device::{HistoryRead, HistoryReview, HistoryWrite, ProjectAuth},
         AuthContext,
     },
     devices,
@@ -706,10 +706,10 @@ struct Review {
     target: Target,
     decision: String,
 }
-#[utoipa::path(operation_id="project_history_review",post,path="/projects/{id}/history/reviews",tag="project history",params(("id"=Uuid,Path)),request_body=Value,security(("paseto"=[]),("device_session"=["history:write"])),responses((status=200,description="Append approve/request_changes for exact branch base generation and candidate; independent current reviewer required",body=Value),(status=409,description="Base changed")))]
+#[utoipa::path(operation_id="project_history_review",post,path="/projects/{id}/history/reviews",tag="project history",params(("id"=Uuid,Path)),request_body=Value,security(("paseto"=[]),("device_session"=["history:review"])),responses((status=200,description="Append approve/request_changes for exact branch base generation and candidate; independent current reviewer required. A device token needs history:review (history:write does not suffice)",body=Value),(status=403,description="Not a current reviewer, the publisher, or the token/key lacks history:review"),(status=409,description="Base changed")))]
 async fn review(
     State(state): State<AppState>,
-    auth: ProjectAuth<HistoryWrite>,
+    auth: ProjectAuth<HistoryReview>,
     Path(id): Path<Uuid>,
     Json(input): Json<Review>,
 ) -> Result<Json<Value>, ApiError> {

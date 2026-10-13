@@ -9,11 +9,13 @@ fn parse(bytes: &[u8]) -> anyhow::Result<Ed25519KeyPair> {
     Ed25519KeyPair::from_pkcs8_maybe_unchecked(bytes)
         .map_err(|_| anyhow::anyhow!("invalid unencrypted DER Ed25519 PKCS#8 key"))
 }
+/// Load a key file. On Unix a file that group or others can access is refused
+/// (see `private_file::check_key_file`); `--allow-insecure-key-file` accepts it.
 pub(crate) fn load(path: &Path) -> anyhow::Result<Ed25519KeyPair> {
     let mut bytes = Vec::new();
-    std::fs::File::open(path)?
-        .take(4097)
-        .read_to_end(&mut bytes)?;
+    let file = std::fs::File::open(path)?;
+    crate::private_file::check_key_file(&file, path)?;
+    file.take(4097).read_to_end(&mut bytes)?;
     parse(&bytes)
 }
 

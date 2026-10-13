@@ -270,6 +270,38 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/devices/{key_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch: operations['device_access_set'];
+    trace?: never;
+  };
+  '/devices/{key_id}/projects/{project_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put: operations['device_grant_set'];
+    post?: never;
+    delete: operations['device_grant_revoke'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/documents': {
     parameters: {
       query?: never;
@@ -1297,6 +1329,27 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/profiles/{id}/starred': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Projects the profile's account starred that the viewer can also access. Counts
+     *     follow the project's own rule: a star counts while its owner is still a member
+     *     and not disabled. At most 100 are returned; `truncated` says whether more exist.
+     */
+    get: operations['profile_starred'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/projects': {
     parameters: {
       query?: never;
@@ -1942,12 +1995,25 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    AccessRequest: {
+      /** @description Must be `true` to choose `all`; ignored for `granted`. */
+      confirm_all_projects?: boolean;
+      /**
+       * @description `granted` (only projects with an active grant) or `all` (every project the
+       *     account can access; requires `confirm_all_projects`).
+       */
+      project_access: string;
+    };
     /** @enum {string} */
     Action: 'preview' | 'create';
     ChallengeRequest: {
       /** @description Lowercase hexadecimal Ed25519 public key of an enrolled device key. */
       public_key: string;
-      /** @description One or more of `history:read`, `history:write`, `project:read`. */
+      /**
+       * @description One or more of `history:read`, `history:review`, `history:write`,
+       *     `project:read`. A key that is not in `all` mode also needs an active grant
+       *     for this project that lists every scope.
+       */
       scopes: string[];
     };
     /** @description Documentation shapes. The wire types are the engine-core session proof. */
@@ -2025,6 +2091,10 @@ export interface components {
       host: string;
       /** @description SHA-256 of a 256-bit secret held by the requesting editor. Never the secret. */
       key_challenge?: string | null;
+    };
+    GrantRequest: {
+      /** @description One or more of `project:read`, `history:read`, `history:write`, `history:review`. */
+      scopes: string[];
     };
     Issue: {
       assignee?: null | components['schemas']['IssueAssignee'];
@@ -2807,7 +2877,7 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description Own public signing keys, at most 128; never a directory of other members */
+      /** @description Own public signing keys, at most 128, each with its project_access mode (granted or all) and active per-project grants (at most 50, scopes, current role); never a directory of other members */
       200: {
         headers: {
           [name: string]: unknown;
@@ -2838,7 +2908,7 @@ export interface operations {
       };
     };
     responses: {
-      /** @description Enrolled device or exact active retry */
+      /** @description Enrolled device or exact active retry. Body: the signed challenge and signature, plus optional project_access (granted by default; all is the account-wide mode). Returns id, public_key and the key's project_access */
       200: {
         headers: {
           [name: string]: unknown;
@@ -2847,7 +2917,7 @@ export interface operations {
           'application/json': unknown;
         };
       };
-      /** @description Invalid proof */
+      /** @description Invalid proof or project_access */
       400: {
         headers: {
           [name: string]: unknown;
@@ -3003,6 +3073,164 @@ export interface operations {
         content?: never;
       };
       /** @description No such own device */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  device_access_set: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Own device key */
+        key_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['AccessRequest'];
+      };
+    };
+    responses: {
+      /** @description The key's mode; changed is false when it already had this mode. Existing grants are kept */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Unknown mode, or all without confirm_all_projects */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Account sign-in required; a device token is refused */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description No such own key */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Key revoked */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  device_grant_set: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Own device key */
+        key_id: string;
+        /** @description Project the account is a member of */
+        project_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['GrantRequest'];
+      };
+    };
+    responses: {
+      /** @description The key's active grant for this project (idempotent); changed is false when the scopes were already these */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Empty or unknown scopes */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Account sign-in required; a device token is refused */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Not a current member of the project */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description No such own key */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Key revoked or 50 active grants reached */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  device_grant_revoke: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Own device key */
+        key_id: string;
+        /** @description Project */
+        project_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The active grant is revoked; applies to the key's next request. changed is false when there was none */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Account sign-in required; a device token is refused */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description No such own key */
       404: {
         headers: {
           [name: string]: unknown;
@@ -5712,6 +5940,49 @@ export interface operations {
       };
     };
   };
+  profile_starred: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Projects this profile starred that you can access: id, name, star_count and open_issue_count, newest star first, at most 100 (truncated says more exist). Projects you cannot access are neither listed nor counted */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Not accessible */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Too many reads */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Deadline exceeded */
+      504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
   list: {
     parameters: {
       query?: never;
@@ -5932,7 +6203,7 @@ export interface operations {
         };
         content?: never;
       };
-      /** @description Current project role does not allow the scopes */
+      /** @description Current project role, or the key's per-project grant, does not allow the scopes (uniform; the reason is not disclosed) */
       403: {
         headers: {
           [name: string]: unknown;
@@ -6348,7 +6619,7 @@ export interface operations {
       };
     };
     responses: {
-      /** @description Append approve/request_changes for exact branch base generation and candidate; independent current reviewer required */
+      /** @description Append approve/request_changes for exact branch base generation and candidate; independent current reviewer required. A device token needs history:review (history:write does not suffice) */
       200: {
         headers: {
           [name: string]: unknown;
@@ -6356,6 +6627,13 @@ export interface operations {
         content: {
           'application/json': unknown;
         };
+      };
+      /** @description Not a current reviewer, the publisher, or the token/key lacks history:review */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
       /** @description Base changed */
       409: {

@@ -111,7 +111,7 @@ timestamp/witness service is introduced here.
 
 All paths begin `/projects/{id}/history` and require an ordinary account session or
 a [project device session](PROJECT-SCOPED-DEVICE-SESSIONS.md) for that project with
-`history:read` (reads) or `history:write` (publish, reviews, refs). The same current
+`history:read` (reads), `history:write` (publish, refs) or `history:review` (review decisions). The same current
 role, policy and review rules apply to both. File connector grants are not
 broadened to project authority.
 

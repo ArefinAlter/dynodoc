@@ -72,8 +72,29 @@ async fn enroll(url: &str, login: &str, actor: Uuid, seed: u8) -> Ed25519KeyPair
     )
     .unwrap();
     let proof = Proof::sign(challenge.clone(), challenge.authority, actor, &key).unwrap();
-    post(url, "devices", login, json!(proof)).await;
+    // Account-wide keys, as before per-project grants; `enroll_granted` is the new
+    // default mode.
+    let mut body = json!(proof);
+    body["project_access"] = json!("all");
+    post(url, "devices", login, body).await;
     key
+}
+async fn enroll_granted(url: &str, login: &str, actor: Uuid, seed: u8) -> (Ed25519KeyPair, Uuid) {
+    let key = key(seed);
+    let challenge: Challenge = serde_json::from_value(
+        post(
+            url,
+            "devices/challenge",
+            login,
+            json!({"public_key":hex::encode(key.public_key().as_ref())}),
+        )
+        .await,
+    )
+    .unwrap();
+    let proof = Proof::sign(challenge.clone(), challenge.authority, actor, &key).unwrap();
+    let enrolled = post(url, "devices", login, json!(proof)).await;
+    assert_eq!(enrolled["project_access"], "granted");
+    (key, challenge.id)
 }
 async fn repo(project: Uuid) -> (PathBuf, LocalRepository) {
     let path = std::env::temp_dir().join(format!("dynodoc-sync-{}.sqlite", Uuid::new_v4()));
@@ -138,6 +159,7 @@ async fn commit(
             authored_at_ms: 1,
             message: text.into(),
             recovery: None,
+            same_file_resolutions: Vec::new(),
         },
         key,
     )
@@ -1027,13 +1049,25 @@ async fn device_sessions_push_fetch_keep_policy_and_end_with_revocation_or_remov
         .await
         .unwrap_err();
     assert!(format!("{unreviewed:#}").contains("409"), "{unreviewed:#}");
-    owner_client
-        .post(
-            "history/reviews",
-            json!({"target":{"branch":"main","candidate":b,"expected":{"commit":a,"generation":1}},"decision":"approve"}),
-        )
+    // Approving is its own scope: a session that can push (history:write) cannot
+    // approve, and one that can approve (history:review) cannot push.
+    let decision = json!({"target":{"branch":"main","candidate":b,"expected":{"commit":a,"generation":1}},"decision":"approve"});
+    let refused = owner_client
+        .post("history/reviews", decision.clone())
         .await
-        .unwrap();
+        .unwrap_err();
+    assert!(format!("{refused:#}").contains("403"), "{refused:#}");
+    let approver = device(
+        &url,
+        authority,
+        project,
+        7,
+        &["history:read", "history:review"],
+    );
+    approver.post("history/reviews", decision).await.unwrap();
+    assert!(push(&r1, &approver, &journal1, &scope, merge.clone())
+        .await
+        .is_err());
     let merged = push(&r1, &owner_client, &journal1, &scope, merge)
         .await
         .unwrap();
@@ -1218,4 +1252,144 @@ async fn hostile_token_lifetimes_neither_panic_nor_lose_the_rotated_secret() {
     std::fs::remove_dir_all(dir).unwrap();
     server.abort();
     let _ = server.await;
+}
+
+async fn send(url: &str, method: &str, path: &str, login: &str, body: Value) -> (u16, Value) {
+    let response = reqwest::Client::new()
+        .request(method.parse().unwrap(), format!("{url}{path}"))
+        .bearer_auth(login)
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    let status = response.status().as_u16();
+    (status, response.json().await.unwrap_or(Value::Null))
+}
+
+#[test]
+fn device_scopes_are_the_least_the_action_needs_and_never_include_review() {
+    use clap::Parser;
+    #[derive(Parser)]
+    struct Cli {
+        #[command(flatten)]
+        options: Options,
+    }
+    let scopes = |action: &[&str]| {
+        let mut args = vec![
+            "sync",
+            "repo.sqlite",
+            "11111111-1111-4111-8111-111111111111",
+            "--remote",
+            "remote.json",
+            "--journal",
+            "pins.sqlite",
+            "--branch",
+            "main",
+            "--device-key",
+            "key.der",
+        ];
+        args.extend(action);
+        device_scopes(&Cli::try_parse_from(args).unwrap().options.action)
+    };
+    assert_eq!(scopes(&["fetch"]), ["history:read"]);
+    assert_eq!(scopes(&["pull", "main"]), ["history:read"]);
+    assert_eq!(scopes(&["plan", "ab", "--out", "p.json"]), ["history:read"]);
+    assert_eq!(
+        scopes(&["push", "plan.json"]),
+        ["history:read", "history:write"]
+    );
+    for action in [
+        &["fetch"][..],
+        &["push", "plan.json"],
+        &["plan", "ab", "--out", "p.json"],
+    ] {
+        assert!(!scopes(action).iter().any(|s| s == "history:review"));
+    }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_granted_key_signs_in_only_for_what_its_account_holder_granted(pool: PgPool) {
+    let authority = engine_core::repository::server_authority::install(
+        &pool,
+        &hex::encode(key(99).public_key().as_ref()),
+    )
+    .await
+    .unwrap();
+    let runtime = common::RuntimeDatabase::new(pool.clone()).await;
+    let (url, server) = api(&runtime.pool, None).await;
+    let (owner, login) = actor(&runtime.pool, "owner").await;
+    let project: Uuid = serde_json::from_value(
+        post(&url, "projects", &login, json!({"name":"Granted"})).await["id"].clone(),
+    )
+    .unwrap();
+    let (_, key_id) = enroll_granted(&url, &login, owner, 7).await;
+    let scope = Scope {
+        authority,
+        project,
+        branch: "main".into(),
+    };
+    let grant = format!("devices/{key_id}/projects/{project}");
+
+    // Possession of the key file alone is not enough, and the message says where
+    // to look.
+    let reader = device(&url, authority, project, 7, &["history:read"]);
+    let error = format!("{:#}", reader.authority().await.unwrap_err());
+    assert!(
+        error.contains("403") && error.contains("granted"),
+        "{error}"
+    );
+
+    // Only the signed-in account holder can grant; the grant is read-only.
+    let (code, _) = send(
+        &url,
+        "PUT",
+        &grant,
+        &login,
+        json!({"scopes":["history:read"]}),
+    )
+    .await;
+    assert_eq!(code, 200);
+    reader.authority().await.unwrap();
+    let writer = device(
+        &url,
+        authority,
+        project,
+        7,
+        &["history:read", "history:write"],
+    );
+    assert!(writer.authority().await.is_err());
+    let reviewer = device(
+        &url,
+        authority,
+        project,
+        7,
+        &["history:read", "history:review"],
+    );
+    assert!(reviewer.authority().await.is_err());
+
+    // Widening is picked up by the next sign-in; narrowing and revocation by the
+    // next request of a live session (the client does not retry a 403).
+    let (code, _) = send(
+        &url,
+        "PUT",
+        &grant,
+        &login,
+        json!({"scopes":["history:read","history:write"]}),
+    )
+    .await;
+    assert_eq!(code, 200);
+    writer.authority().await.unwrap();
+    assert!(reader.head(&scope).await.is_ok());
+    let (code, _) = send(&url, "DELETE", &grant, &login, Value::Null).await;
+    assert_eq!(code, 200);
+    for client in [&reader, &writer] {
+        let error = format!("{:#}", client.head(&scope).await.unwrap_err());
+        assert!(error.contains("403"), "{error}");
+    }
+    // The key cannot undo it: a device-session token is no account login.
+    let (code, _) = send(&url, "GET", "devices", &login, Value::Null).await;
+    assert_eq!(code, 200);
+    server.abort();
+    let _ = server.await;
+    runtime.close().await;
 }

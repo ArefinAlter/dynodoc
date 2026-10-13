@@ -1,5 +1,16 @@
 # Database runtime boundary
 
+Schema 40 adds two tables to the SELECT/INSERT/UPDATE class (no DELETE):
+`device_key_access`, one editable mode row per signing key (`all` or `granted`; no
+row means `granted`), and `device_key_project_grant`, per-project grants whose rows
+are created and revoked but never edited or deleted. A trigger allows exactly one
+change to a grant row (`revoked_at` from null to a time), so a changed scope set is
+a revocation plus a new row; `device_signing_key` itself stays immutable. The scope
+check on `device_session` now admits `history:review`. The startup check counts
+both new tables, so a missing grant or a wrong privilege fails closed. Re-run
+`grant-runtime`, then `check-runtime`, after migrating. See
+[device key grants](DEVICE-KEY-GRANTS-API.md).
+
 Schema 39 adds six project issue tables, each with an explicit allowlist (see
 [project issues](PROJECT-ISSUES-API.md)). `project_issue_comment` joins the
 SELECT/INSERT history list and also refuses UPDATE through a trigger. A new

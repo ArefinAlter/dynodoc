@@ -52,8 +52,9 @@ no in-place downgrade or format conversion of signed commits.
 This bounds admitted payload bytes and counts, **not physical disk use**. SQLite
 pages, indexes, WAL, temporary working space, backups, native documents, credentials
 and the separate receipt trust journal are outside this accounting. There is no
-whole-device quota, pack compression, garbage collector or retention/pruning
-policy. Local filesystem owners remain trusted and can alter a SQLite file;
+whole-device quota, pack compression or commit retention/pruning policy. The
+`gc` command removes only staged objects that no stored commit references, after
+an exact reviewed plan hash (see LOCAL-RETENTION-PLAN.md). Local filesystem owners remain trusted and can alter a SQLite file;
 triggers do not protect against that owner. Remote authorization and independently
 retained audit evidence are separate requirements.
 

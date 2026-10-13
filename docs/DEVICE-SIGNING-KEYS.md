@@ -1,6 +1,8 @@
 # Account-bound device signing keys
 
-12 October 2026. Source schema 33; not yet deployed to the schema-29 pilot.
+12 October 2026, revised 13 October 2026. Enrollment is schema 33. Per-project
+grants and key file protection are schema 40 (source only until a release records
+them): see [device key grants API](DEVICE-KEY-GRANTS-API.md).
 
 The portable project commit signature can now be checked against an authenticated
 account's active signing key. Enrollment proves possession of an Ed25519 private
@@ -28,6 +30,23 @@ public key. Secure native-host key storage is not implemented. An enrolled key c
 also sign in to one project at a time for short-lived `sync` tokens: see
 [project-scoped device sessions](PROJECT-SCOPED-DEVICE-SESSIONS.md).
 
+**Which projects a key may use is your choice, not the key file's.** A key enrolled
+now is in `granted` mode: it can open a session only for projects you add to it
+(each with the scopes you tick: `project:read`, `history:read`, `history:write`,
+`history:review`) and nothing else. Add or remove projects, narrow scopes or revoke
+a project from the same Signing keys screen; the change applies to the key's next
+request. Switching a key to `all` projects (the mode keys had before schema 40, and
+the mode they keep until you change it) asks you to confirm, because a copy of that
+file can then open every project your account can reach. The file is the only
+secret: the server stores no token or passphrase for it.
+
+`engine-cli device keygen` creates the file readable by you only (mode 0600 on
+Unix; on Windows an access list with just your account, verified with `icacls`) and
+fails if that cannot be applied, unless the global `--allow-insecure-key-file` is
+passed. On Unix every command that loads a key refuses a file readable by group or
+others without that flag. These protect against other local accounts; the key is
+still an unencrypted file with no keystore.
+
 Revoke keys from the same profile. Revocation is permanent, including after a
 lost-response retry or account restoration. Reconnect using a new key. Existing
 commit signatures remain independently verifiable; a revoked key cannot satisfy
@@ -41,9 +60,11 @@ do not authorize them; the restricted connector gateway remains unchanged.
 
 | Route | Behavior |
 |---|---|
-| `GET /devices` | Own installation/account IDs and at most 128 own public keys with registration/revocation dates. No other-account directory or proof bodies. |
+| `GET /devices` | Own installation/account IDs and at most 128 own public keys with registration/revocation dates, each key's `project_access` and active project grants. No other-account directory or proof bodies. |
 | `POST /devices/challenge` | Accepts `{public_key}`; returns a challenge valid for five minutes. |
-| `POST /devices` | Accepts `{challenge, signature}`. Atomically consumes the exact stored challenge, inserts an immutable key binding and writes an audit event. An exact active retry returns the same key. |
+| `POST /devices` | Accepts `{challenge, signature}` and optionally `project_access` (`granted`, the default, or `all`). Atomically consumes the exact stored challenge, inserts an immutable key binding and its access mode and writes an audit event. An exact active retry returns the same key and never changes its mode. |
+| `PUT` / `DELETE /devices/{key_id}/projects/{project_id}` | Set (idempotent) or revoke the key's grant for one project. Own key and a browser session only; a device token is 401. See the grants contract. |
+| `PATCH /devices/{key_id}` | Switch `project_access`; `all` needs `confirm_all_projects: true`. |
 | `POST /devices/{id}/revoke` | Permanently revokes an own key with one audit record; repeated requests are idempotent. Another account's ID returns 404. |
 | `POST /devices/verify-commit` | Checks a portable commit signature against an active key of the signed-in account. Returns its address and `published:false`. Does not store content, check project permission or publish a branch. |
 
@@ -72,7 +93,10 @@ Node/OpenSSL implementation with a **public synthetic** seed; do not regenerate
 it to conceal a protocol mismatch.
 
 Migration 0033 creates a read-only installation UUID, append-only key bindings
-and revocations, and mutable bounded pending challenges. Runtime grants are
+and revocations, and mutable bounded pending challenges. Migration 0040 keeps
+those bindings immutable and adds beside them one mutable mode row per key
+(`device_key_access`, no row meaning `granted`) and revoke-only grant rows
+(`device_key_project_grant`); existing keys are backfilled as `all`. Runtime grants are
 explicit and still reject DDL/ownership/trigger bypass. Normal owner DML also
 cannot edit key history through its immutability triggers. A database owner can
 disable those guards: external audit commitments remain a separate requirement.

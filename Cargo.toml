@@ -11,9 +11,10 @@ members = [
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.85"
-license = "AGPL-3.0-or-later"
+license-file = "LICENSE"
+publish = false
 repository = "https://github.com/vernehq/dynodoc"
-authors = ["dynodoc contributors"]
+authors = ["Verne Ltd."]
 
 # Shared dependency versions — crates reference these with `{ workspace = true }`
 # so the whole engine pins one version of each. Starter set per

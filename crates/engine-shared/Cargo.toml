@@ -3,7 +3,8 @@ name = "engine-shared"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license.workspace = true
+license-file.workspace = true
+publish.workspace = true
 description = "Types shared across the dynodoc engine (events, nodes, identity newtypes)."
 
 [dependencies]

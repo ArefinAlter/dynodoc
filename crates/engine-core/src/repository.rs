@@ -17,6 +17,7 @@ pub mod convergence;
 pub mod device;
 pub mod device_session;
 pub mod local;
+pub mod project_merge;
 pub mod receipt_journal;
 pub mod recovery;
 pub mod server_authority;
@@ -28,6 +29,8 @@ const COMMIT_DOMAIN: &[u8] = b"dynodoc.project-commit\0v1\0";
 const SIGNATURE_DOMAIN: &[u8] = b"dynodoc.project-commit-signature\0v1\0";
 const RECOVERY_COMMIT_DOMAIN: &[u8] = b"dynodoc.project-commit\0v2\0";
 const RECOVERY_SIGNATURE_DOMAIN: &[u8] = b"dynodoc.project-commit-signature\0v2\0";
+const MERGE_COMMIT_DOMAIN: &[u8] = b"dynodoc.project-commit\0v3\0";
+const MERGE_SIGNATURE_DOMAIN: &[u8] = b"dynodoc.project-commit-signature\0v3\0";
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -70,6 +73,11 @@ pub struct Commit {
     /// V2 only. Recovery references are signed provenance, not merge parents.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recovery: Option<recovery::Source>,
+    /// V3 only: one record per path merged automatically at node/field level.
+    /// Each binds the three input states and the merged result to a named
+    /// strategy; paths resolved by explicit choice carry no record.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub same_file_resolutions: Vec<convergence::Resolution>,
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -133,8 +141,12 @@ impl Commit {
     }
 
     pub fn validate(&self) -> Result<(), Error> {
-        if !matches!((self.version, &self.recovery), (1, None) | (2, Some(_)))
-            || (self.recovery.is_some() && self.parents.len() != 1)
+        let merged = !self.same_file_resolutions.is_empty();
+        if !matches!(
+            (self.version, &self.recovery, merged),
+            (1, None, false) | (2, Some(_), false) | (3, None, true)
+        ) || (self.recovery.is_some() && self.parents.len() != 1)
+            || (self.version == 3 && self.parents.len() != 2)
             || self.project.is_nil()
             || self.parents.len() > 2
             || (self.parents.len() == 2 && self.parents[0] == self.parents[1])
@@ -160,6 +172,27 @@ impl Commit {
                 return Err(Error::Invalid("file/directory collision"));
             }
         }
+        if self.same_file_resolutions.len() > convergence::MAX_REPORTED_FILES {
+            return Err(Error::Limit("same-file resolutions"));
+        }
+        let mut resolved = BTreeSet::new();
+        for record in &self.same_file_resolutions {
+            let file = self
+                .files
+                .get(&record.path)
+                .ok_or(Error::Invalid("same-file resolution path"))?;
+            // A real conflict needs both sides to differ from the base and each other.
+            if !resolved.insert(&record.path)
+                || file.document != record.document
+                || file.state != record.merged
+                || record.strategy != convergence::STRATEGY
+                || record.left == record.right
+                || record.base == record.left
+                || record.base == record.right
+            {
+                return Err(Error::Invalid("same-file resolution record"));
+            }
+        }
         Ok(())
     }
 
@@ -175,10 +208,10 @@ impl Commit {
     }
     pub fn address(&self) -> Result<Address, Error> {
         let mut hash = digest::Context::new(&digest::SHA256);
-        hash.update(if self.version == 1 {
-            COMMIT_DOMAIN
-        } else {
-            RECOVERY_COMMIT_DOMAIN
+        hash.update(match self.version {
+            1 => COMMIT_DOMAIN,
+            2 => RECOVERY_COMMIT_DOMAIN,
+            _ => MERGE_COMMIT_DOMAIN,
         });
         hash.update(&self.bytes()?);
         Ok(Address::try_from(hex(hash.finish().as_ref()))?)
@@ -215,10 +248,10 @@ impl SignedCommit {
 }
 
 fn signature_domain(version: u8) -> &'static [u8] {
-    if version == 1 {
-        SIGNATURE_DOMAIN
-    } else {
-        RECOVERY_SIGNATURE_DOMAIN
+    match version {
+        1 => SIGNATURE_DOMAIN,
+        2 => RECOVERY_SIGNATURE_DOMAIN,
+        _ => MERGE_SIGNATURE_DOMAIN,
     }
 }
 
@@ -249,6 +282,7 @@ mod tests {
                 authored_at_ms: 1_700_000_000_000,
                 message: message.into(),
                 recovery: None,
+                same_file_resolutions: Vec::new(),
             },
             &Ed25519KeyPair::from_seed_unchecked(&[7; 32]).unwrap(),
         )
@@ -331,5 +365,86 @@ mod tests {
         changed.files.remove("a/file");
         changed.files.insert("duplicate".into(), entry);
         assert!(changed.validate().is_err());
+    }
+
+    #[test]
+    fn independent_v3_vector_binds_same_file_records_without_changing_v1_or_v2() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/project-merge-v3.json")).unwrap();
+        let signed: SignedCommit = serde_json::from_value(fixture["signed"].clone()).unwrap();
+        assert_eq!(
+            signed.commit.bytes().unwrap(),
+            fixture["canonical"].as_str().unwrap().as_bytes()
+        );
+        assert_eq!(
+            signed.verify().unwrap().as_str(),
+            fixture["address"].as_str().unwrap()
+        );
+        // The public synthetic seed reproduces the independent OpenSSL signature.
+        assert_eq!(
+            SignedCommit::sign(
+                signed.commit.clone(),
+                &Ed25519KeyPair::from_seed_unchecked(&[7; 32]).unwrap()
+            )
+            .unwrap()
+            .signature,
+            signed.signature
+        );
+        // Every provenance field is signed.
+        let record = |f: &dyn Fn(&mut convergence::Resolution)| {
+            let mut changed = signed.clone();
+            f(&mut changed.commit.same_file_resolutions[0]);
+            changed
+        };
+        let other = Address::try_from("66".repeat(32)).unwrap();
+        for forged in [
+            record(&|r| r.base = other.clone()),
+            record(&|r| r.left = other.clone()),
+            record(&|r| r.right = other.clone()),
+            record(&|r| r.strategy.push('x')),
+            record(&|r| r.document = DocumentId(uuid::Uuid::from_u128(9))),
+        ] {
+            assert!(forged.verify().is_err());
+        }
+        // Version 3 is exactly: two parents, no recovery, at least one valid record.
+        let mut bad = signed.commit.clone();
+        bad.version = 1;
+        assert!(bad.validate().is_err());
+        bad = signed.commit.clone();
+        bad.version = 2;
+        assert!(bad.validate().is_err());
+        bad = signed.commit.clone();
+        bad.same_file_resolutions.clear();
+        assert!(bad.validate().is_err());
+        bad = signed.commit.clone();
+        bad.parents.pop();
+        assert!(bad.validate().is_err());
+        bad = signed.commit.clone();
+        bad.same_file_resolutions[0].merged = other.clone();
+        assert!(bad.validate().is_err());
+        bad = signed.commit.clone();
+        bad.same_file_resolutions[0].path = "Other.docx".into();
+        assert!(bad.validate().is_err());
+        bad = signed.commit.clone();
+        bad.same_file_resolutions[0].strategy = "unknown".into();
+        assert!(bad.validate().is_err());
+        bad = signed.commit.clone();
+        bad.same_file_resolutions[0].right = bad.same_file_resolutions[0].left.clone();
+        assert!(bad.validate().is_err());
+        bad = signed.commit.clone();
+        bad.same_file_resolutions
+            .push(bad.same_file_resolutions[0].clone());
+        assert!(bad.validate().is_err());
+        // The v1 and v2 serializations never mention the new field.
+        let v1 = signed_v1_for_serialization();
+        assert!(!serde_json::to_string(&v1).unwrap().contains("same_file"));
+        let v1_fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/project-commit-v1.json")).unwrap();
+        let parsed: Commit = serde_json::from_value(v1_fixture["commit"].clone()).unwrap();
+        assert!(parsed.same_file_resolutions.is_empty());
+    }
+
+    fn signed_v1_for_serialization() -> Commit {
+        signed(uuid::Uuid::from_u128(1), vec![], BTreeMap::new(), "plain").commit
     }
 }

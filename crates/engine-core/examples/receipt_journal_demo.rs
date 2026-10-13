@@ -46,6 +46,7 @@ async fn main() -> anyhow::Result<()> {
                 authored_at_ms: 1_700_000_000_000,
                 message: message.into(),
                 recovery: None,
+                same_file_resolutions: Vec::new(),
             },
             &actor,
         )

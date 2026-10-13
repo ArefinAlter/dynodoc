@@ -3,8 +3,9 @@
 //! The plan reports which retained commits and objects no branch head or recovery
 //! provenance reference can reach. It never deletes, rewrites, signs or publishes
 //! anything: every query runs in one read snapshot on a connection that SQLite
-//! itself opens with `query_only`. Deleting what the plan lists is a separate
-//! policy decision that is deliberately not implemented (docs/LOCAL-RETENTION-PLAN.md).
+//! itself opens with `query_only`. The only deletion built on it is the explicit,
+//! hash-bound collector in `collector.rs` (docs/LOCAL-RETENTION-PLAN.md), which
+//! recomputes this same analysis inside its own write transaction.
 //!
 //! Complexity, with C retained commits, O retained objects and F file entries
 //! summed over all commits: one pass over the commit table (C signature checks),
@@ -19,11 +20,14 @@ use crate::{
     repository::{hex, unhex, Error, SignedCommit},
     shared_checkpoint::{self, Address},
 };
+use ring::digest;
 use serde::Serialize;
 use sqlx::{Connection, SqliteConnection};
 use std::collections::{HashSet, VecDeque};
 
 pub const FORMAT: &str = "dynodoc.local-retention-plan.v1";
+/// Domain of the plan hash an operator hands back to the collector.
+const HASH_DOMAIN: &[u8] = b"dynodoc.local-retention-plan-hash\0v1\0";
 /// Retained objects the planner will track in memory; larger repositories need a
 /// streaming implementation with an external index and are refused explicitly.
 pub const MAX_TRACKED_OBJECTS: i64 = 4_000_000;
@@ -162,6 +166,10 @@ pub struct GcPlan {
     pub project: uuid::Uuid,
     /// Always true: this value describes data; no operation was performed.
     pub read_only: bool,
+    /// SHA-256 over the branch heads and generations, every unreachable commit and
+    /// object identifier (sorted) and the category totals. The collector refuses
+    /// unless a fresh recomputation inside its write transaction is identical.
+    pub plan_hash: String,
     pub local_schema: i64,
     pub branches: Vec<BranchHead>,
     pub retained: Counts,
@@ -185,8 +193,8 @@ impl GcPlan {
             )
         };
         let mut text = format!(
-            "Local retention plan (read-only: nothing was deleted, written or signed)\nproject {}\nlocal schema {}\n",
-            self.project, self.local_schema
+            "Local retention plan (read-only: nothing was deleted, written or signed)\nproject {}\nlocal schema {}\nplan hash {}\n",
+            self.project, self.local_schema, self.plan_hash
         );
         text.push_str(&format!("branches {}\n", self.branches.len()));
         for branch in &self.branches {
@@ -249,7 +257,7 @@ impl GcPlan {
     }
 }
 
-type ObjectKey = (u128, [u8; 32]);
+pub(super) type ObjectKey = (u128, [u8; 32]);
 /// Raw `(parents, recovery sources)` of one commit, before index resolution.
 type RawEdges = (Vec<[u8; 32]>, Vec<[u8; 32]>);
 
@@ -271,13 +279,13 @@ struct Bucket {
     counts: Counts,
 }
 
-fn raw(address: &Address) -> Result<[u8; 32], Error> {
+pub(super) fn raw(address: &Address) -> Result<[u8; 32], Error> {
     unhex(address.as_str(), 32)?
         .try_into()
         .map_err(|_| Error::Invalid("object address"))
 }
 
-fn address_of(raw: &[u8; 32]) -> Result<Address, Error> {
+pub(super) fn address_of(raw: &[u8; 32]) -> Result<Address, Error> {
     Ok(Address::try_from(hex(raw))?)
 }
 
@@ -319,6 +327,27 @@ async fn plan(
     options: GcPlanOptions,
 ) -> Result<GcPlan, Error> {
     let mut tx = connection.begin().await?;
+    let analysis = analyze(&mut tx, project, options).await?;
+    tx.rollback().await?;
+    Ok(analysis.plan)
+}
+
+/// A plan plus every `(document, address)` some stored commit's file graph
+/// reaches. The collector may delete only stored objects outside `visited`.
+pub(super) struct Analysis {
+    pub plan: GcPlan,
+    pub visited: HashSet<ObjectKey>,
+}
+
+/// Computes the plan inside the caller's transaction and only reads. The caller
+/// owns the transaction: the planner holds one read snapshot, the collector holds
+/// the writer lock, and both therefore see exactly the same rows.
+pub(super) async fn analyze(
+    tx: &mut SqliteConnection,
+    project: uuid::Uuid,
+    options: GcPlanOptions,
+) -> Result<Analysis, Error> {
+    options.validate()?;
     let (schema, bound): (i64, String) =
         sqlx::query_as("select version,project from local_meta where singleton=1")
             .fetch_one(&mut *tx)
@@ -528,9 +557,12 @@ async fn plan(
 
     // Phase 3: each commit's file roots, then every object not yet attributed.
     let mut visited: HashSet<ObjectKey> = HashSet::new();
+    // Objects only superseded / orphaned commits reach, for the plan hash.
+    let mut dead_objects: [Vec<(ObjectKey, u32)>; 2] = [Vec::new(), Vec::new()];
     for &commit in &visit_order {
         let node = &nodes[commit as usize];
-        let bucket = &mut buckets[class[commit as usize] as usize];
+        let class_of = class[commit as usize];
+        let bucket = &mut buckets[class_of as usize];
         bucket.counts.commit(node.bytes);
         let body: Vec<u8> = sqlx::query_scalar("select body from commits where address=?")
             .bind(hex(&node.address))
@@ -540,7 +572,14 @@ async fn plan(
         let signed: SignedCommit = serde_json::from_slice(&body)?;
         for file in signed.commit.files.values() {
             let root = (file.document.0.as_u128(), raw(&file.state)?);
-            walk(&mut tx, &mut visited, &mut bucket.counts, root).await?;
+            let record = if class_of == superseded {
+                Some(&mut dead_objects[0])
+            } else if class_of == orphaned {
+                Some(&mut dead_objects[1])
+            } else {
+                None
+            };
+            walk(&mut *tx, &mut visited, &mut bucket.counts, root, record).await?;
         }
     }
 
@@ -598,7 +637,9 @@ async fn plan(
     reasons.truncate(options.top_reasons);
     debug_assert_eq!(reachable.commits as usize, reachable_commits);
 
-    // Phase 5: bounded examples in key order.
+    // Phase 5: bounded examples in key order and the plan hash. The hash binds
+    // the branch heads and generations, every unreachable commit and object
+    // identifier in sorted order, the staged objects in key order and the totals.
     let mut examples = Examples {
         commits: Vec::new(),
         staged_objects: Vec::new(),
@@ -615,9 +656,46 @@ async fn plan(
             bytes: node.bytes as u64,
         });
     }
-    if options.list > 0 && categories[0].counts.objects > 0 {
+    let mut hash = digest::Context::new(&digest::SHA256);
+    hash.update(HASH_DOMAIN);
+    // The schema number is deliberately not hashed: `gc` upgrades a schema 1
+    // database when it opens it, and that must not invalidate a reviewed plan.
+    hash.update(project.as_bytes());
+    hash.update(&(branches.len() as u64).to_be_bytes());
+    for branch in &branches {
+        hash.update(&(branch.name.len() as u64).to_be_bytes());
+        hash.update(branch.name.as_bytes());
+        hash.update(&raw(&branch.commit)?);
+        hash.update(&branch.generation.to_be_bytes());
+    }
+    hash.update(&(unreachable_commits.len() as u64).to_be_bytes());
+    for &index in &unreachable_commits {
+        let node = &nodes[index as usize];
+        hash.update(&node.address);
+        hash.update(&[if class[index as usize] == superseded {
+            1
+        } else {
+            2
+        }]);
+        hash.update(&(node.bytes as u64).to_be_bytes());
+    }
+    for (tag, list) in dead_objects.iter_mut().enumerate() {
+        list.sort_unstable();
+        hash.update(&[tag as u8 + 1]);
+        hash.update(&(list.len() as u64).to_be_bytes());
+        for (key, bytes) in list.iter() {
+            hash.update(&key.0.to_be_bytes());
+            hash.update(&key.1);
+            hash.update(&u64::from(*bytes).to_be_bytes());
+        }
+    }
+    drop(dead_objects);
+    hash.update(&[0]);
+    hash.update(&categories[0].counts.objects.to_be_bytes());
+    if categories[0].counts.objects > 0 {
         let (mut document, mut address) = (String::new(), String::new());
-        'scan: loop {
+        let (mut seen, mut seen_bytes) = (0u64, 0u64);
+        loop {
             let rows: Vec<(String, String, i64)> = sqlx::query_as(
                 "select document,address,length(bytes) from objects where (document,address)>(?,?) order by document,address limit ?",
             )
@@ -632,21 +710,38 @@ async fn plan(
                 let parsed = uuid::Uuid::parse_str(&doc)
                     .map_err(|_| Error::Invalid("stored document id"))?;
                 let address = Address::try_from(addr)?;
-                if !visited.contains(&(parsed.as_u128(), raw(&address)?)) {
+                let raw_address = raw(&address)?;
+                if visited.contains(&(parsed.as_u128(), raw_address)) {
+                    continue;
+                }
+                seen += 1;
+                seen_bytes += bytes as u64;
+                hash.update(&parsed.as_u128().to_be_bytes());
+                hash.update(&raw_address);
+                hash.update(&(bytes as u64).to_be_bytes());
+                if examples.staged_objects.len() < options.list {
                     examples.staged_objects.push(ObjectExample {
                         document: parsed,
                         address,
                         bytes: bytes as u64,
                     });
-                    if examples.staged_objects.len() == options.list {
-                        break 'scan;
-                    }
                 }
             }
         }
+        if seen != categories[0].counts.objects || seen_bytes != categories[0].counts.object_bytes {
+            return Err(Error::Invalid("retention plan accounting"));
+        }
     }
+    // Category order is fixed: staged, orphaned, superseded.
+    for category in &categories {
+        let c = &category.counts;
+        for value in [c.objects, c.object_bytes, c.commits, c.commit_bytes] {
+            hash.update(&value.to_be_bytes());
+        }
+    }
+    let plan_hash = hex(hash.finish().as_ref());
     let accounting = if schema == storage::SCHEMA_VERSION {
-        let usage = storage::usage(&mut tx).await?;
+        let usage = storage::usage(&mut *tx).await?;
         let consistent = usage.bytes_used as u64 == retained.bytes
             && usage.objects_used as u64 == retained.objects
             && usage.commits_used as u64 == retained.commits
@@ -661,27 +756,30 @@ async fn plan(
             consistent: None,
         }
     };
-    tx.rollback().await?;
     let [staged, orphaned_category, superseded_category] = categories;
-    Ok(GcPlan {
-        format: FORMAT,
-        project,
-        read_only: true,
-        local_schema: schema,
-        branches,
-        retained,
-        reachable,
-        reclaimable_bytes_estimate: unreachable_counts.bytes,
-        unreachable: Unreachable {
-            counts: unreachable_counts,
-            categories: vec![staged, orphaned_category, superseded_category],
+    Ok(Analysis {
+        plan: GcPlan {
+            format: FORMAT,
+            project,
+            read_only: true,
+            plan_hash,
+            local_schema: schema,
+            branches,
+            retained,
+            reachable,
+            reclaimable_bytes_estimate: unreachable_counts.bytes,
+            unreachable: Unreachable {
+                counts: unreachable_counts,
+                categories: vec![staged, orphaned_category, superseded_category],
+            },
+            pinned: Pinned {
+                reasons,
+                omitted_reasons,
+            },
+            examples,
+            accounting,
         },
-        pinned: Pinned {
-            reasons,
-            omitted_reasons,
-        },
-        examples,
-        accounting,
+        visited,
     })
 }
 
@@ -692,6 +790,7 @@ async fn walk(
     visited: &mut HashSet<ObjectKey>,
     counts: &mut Counts,
     root: ObjectKey,
+    mut record: Option<&mut Vec<(ObjectKey, u32)>>,
 ) -> Result<(), Error> {
     if visited.contains(&root) {
         return Ok(());
@@ -711,6 +810,9 @@ async fn walk(
         .await?
         .ok_or_else(|| shared_checkpoint::Error::Missing(address.as_str().into()))?;
         counts.object(bytes.len());
+        if let Some(list) = record.as_deref_mut() {
+            list.push((key, bytes.len() as u32));
+        }
         for child in shared_checkpoint::references(&address, &bytes)? {
             let child = (key.0, raw(&child)?);
             if !visited.contains(&child) {

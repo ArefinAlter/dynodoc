@@ -12,7 +12,7 @@
 //! smaller state address is the "team" side), so swapping left and right gives the
 //! same address and the same conflicts with left/right values exchanged.
 
-use super::{compare::ProjectPlan, local::LocalRepository, Error};
+use super::{compare::ProjectPlan, local::LocalRepository, Error, FileEntry};
 use crate::{
     materializer::DocumentState,
     shared_checkpoint::{
@@ -29,6 +29,28 @@ use std::collections::BTreeMap;
 
 /// Same-document conflicting files examined per comparison; the rest are counted.
 pub const MAX_REPORTED_FILES: usize = 64;
+
+/// Strategy id signed into a v3 commit: the node/field three-way merge of this
+/// module (`converge`), clean in both orientations. A different algorithm needs a
+/// different id; importers accept only ids they know.
+pub const STRATEGY: &str = "dynodoc.same-file.node-field.v1";
+
+/// Signed provenance of one automatically merged path: the three input state
+/// roots under one stable document identity and the stored merged state root.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Resolution {
+    pub path: String,
+    pub document: DocumentId,
+    /// State at the unique best common ancestor.
+    pub base: Address,
+    /// State in the first parent.
+    pub left: Address,
+    /// State in the second parent.
+    pub right: Address,
+    pub merged: Address,
+    pub strategy: String,
+}
 
 /// One node/field (or document-level) disagreement. `node` is the stable node id;
 /// document-level collections (`$comments`, `$suggestions`) have none.
@@ -282,6 +304,28 @@ pub async fn state_address(document: DocumentId, state: &DocumentState) -> Resul
     .0)
 }
 
+/// One conflicting path that all three commits keep under one document id.
+pub(super) type Eligible<'a> = (&'a String, &'a FileEntry, &'a FileEntry, &'a FileEntry);
+
+/// Conflicts whose base, left and right all keep one document identity and whose
+/// two sides differ: the only paths convergence may examine.
+pub(super) fn same_document_conflicts(plan: &ProjectPlan) -> Vec<Eligible<'_>> {
+    plan.conflicts
+        .iter()
+        .filter_map(|conflict| {
+            let (base, left, right) = (
+                conflict.base.as_ref()?,
+                conflict.left.as_ref()?,
+                conflict.right.as_ref()?,
+            );
+            (base.document == left.document
+                && left.document == right.document
+                && left.state != right.state)
+                .then_some((&conflict.path, base, left, right))
+        })
+        .collect()
+}
+
 impl LocalRepository {
     /// Report same-document convergence for path conflicts of a project plan.
     /// Only conflicts whose base, left and right all keep one document id are
@@ -290,21 +334,7 @@ impl LocalRepository {
         &self,
         plan: &ProjectPlan,
     ) -> Result<Option<SameFileReport>, Error> {
-        let eligible: Vec<_> = plan
-            .conflicts
-            .iter()
-            .filter_map(|conflict| {
-                let (base, left, right) = (
-                    conflict.base.as_ref()?,
-                    conflict.left.as_ref()?,
-                    conflict.right.as_ref()?,
-                );
-                (base.document == left.document
-                    && left.document == right.document
-                    && left.state != right.state)
-                    .then_some((&conflict.path, base, left, right))
-            })
-            .collect();
+        let eligible = same_document_conflicts(plan);
         if eligible.is_empty() {
             return Ok(None);
         }

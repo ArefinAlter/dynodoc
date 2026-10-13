@@ -101,8 +101,13 @@ async fn enroll(app: &Router, login: &str, seed: u8) -> (Ed25519KeyPair, Uuid) {
         &key,
     )
     .unwrap();
-    let (status, body) = call(app, "POST", "/devices", Some(login), json!(proof)).await;
+    // These tests pin the legacy account-wide behaviour; per-project grants are
+    // covered by device_key_grants_test.rs, where the default (`granted`) is used.
+    let mut body = json!(proof);
+    body["project_access"] = json!("all");
+    let (status, body) = call(app, "POST", "/devices", Some(login), body).await;
     assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["project_access"], "all");
     (key, challenge.id)
 }
 async fn project(app: &Router, login: &str, name: &str) -> Uuid {

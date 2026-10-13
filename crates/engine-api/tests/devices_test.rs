@@ -197,7 +197,8 @@ fn commit(key: &Ed25519KeyPair) -> Value {
             author_key: String::new(),
             authored_at_ms: 1,
             message: "Local history".into(),
-            recovery: None
+            recovery: None,
+            same_file_resolutions: Vec::new(),
         },
         key
     )

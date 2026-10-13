@@ -27,6 +27,11 @@ mod sync;
 #[derive(Parser)]
 #[command(name = "engine-cli", version, about = "dynodoc admin tools")]
 struct Cli {
+    /// Accept a signing-key or token file whose access cannot be restricted to the
+    /// current user (Windows: the access list could not be applied; Unix: a key
+    /// file readable by group or others). Off by default.
+    #[arg(long, global = true)]
+    allow_insecure_key_file: bool,
     #[command(subcommand)]
     command: Command,
 }
@@ -115,6 +120,7 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let cli = Cli::parse();
+    private_file::allow_insecure(cli.allow_insecure_key_file);
     match cli.command {
         Command::Sync(options) => sync::run(options).await,
         Command::Device { action } => device::run(action),

@@ -16,7 +16,12 @@ use uuid::Uuid;
 const DOMAIN: &[u8] = b"dynodoc.device-session\0v1\0";
 pub const MAX_SESSION_BYTES: usize = 2048;
 /// Sorted. Scopes are independent; none implies another.
-pub const SCOPES: [&str; 3] = ["history:read", "history:write", "project:read"];
+pub const SCOPES: [&str; 4] = [
+    "history:read",
+    "history:review",
+    "history:write",
+    "project:read",
+];
 /// A challenge may be answered for two minutes.
 pub const CHALLENGE_TTL_MS: i64 = 120_000;
 /// The only token lifetime the device accepts and the service issues.
@@ -278,6 +283,10 @@ mod tests {
         assert_eq!(
             normalize_scopes(&["project:read", "history:read", "history:read"]).unwrap(),
             vec!["history:read", "project:read"]
+        );
+        assert_eq!(
+            normalize_scopes(&["history:write", "history:review"]).unwrap(),
+            vec!["history:review", "history:write"]
         );
         assert!(normalize_scopes::<&str>(&[]).is_err());
         assert!(normalize_scopes(&["history:read", "admin"]).is_err());
