@@ -24,7 +24,7 @@
       label: 'Live',
       heading: 'Running in the hosted pilot.',
       blurb:
-        'Deployed at application 0f67372 on database schema 40, activated on 13 October 2026 (UTC) after a verified backup and a rehearsal on a production copy.',
+        'Deployed at application f62d62c on database schema 41, activated on 14 October 2026 (UTC) after a verified backup and a rehearsal on a production copy.',
       items: [
         {
           title: 'Projects workspace',
@@ -60,6 +60,16 @@
           title: 'Per-project device-key grants and a review permission (schema 40)',
           body: 'A device key opens only the projects and permissions its owner grants, and approving reviews needs its own permission. Key-file permission hardening ships with the command-line tools.',
           when: '13 Oct 2026'
+        },
+        {
+          title: 'Receipt-authority rotation (schema 41)',
+          body: 'Dual-signed rotation of the receipt-signing authority, a recorded recovery path for a lost or leaked key, and clients that refuse a silent break. No authority is installed yet.',
+          when: '14 Oct 2026'
+        },
+        {
+          title: 'In-house spreadsheet formula engine',
+          body: 'Spreadsheet calculation no longer depends on a copyleft library; 458 function names, incremental recalculation and reference rebasing, checked against Excel-evaluated formulas.',
+          when: '14 Oct 2026'
         },
         {
           title: 'Shared-history schema and project-scoped device sessions',
@@ -106,11 +116,6 @@
           when: '13 Oct 2026'
         },
         {
-          title: 'Receipt-authority rotation (schema 41)',
-          body: 'Dual-signed rotation of the receipt-signing authority, a recorded recovery path for a lost or leaked key, and clients that refuse a silent break.',
-          when: '14 Oct 2026'
-        },
-        {
           title: 'Encrypted key files and compressed local storage',
           body: 'Passphrase-protected signing keys with optional Windows, macOS or Linux key storage, and transparent compression of objects in the local repository.',
           when: '14 Oct 2026'
@@ -131,7 +136,7 @@
       items: [
         {
           title: 'Receipt authority and shared writers',
-          body: 'Schema 41 adds server-side authority rotation and a recorded recovery path, so a lost or leaked key is an incident rather than a rebuild. Shared writers stay off and no signing key is installed until key custody is decided and rotation has been rehearsed on a production copy.'
+          body: 'Schema 41 is deployed and adds server-side authority rotation and a recorded recovery path, so a lost or leaked key is an incident rather than a rebuild. Shared writers stay off and no signing key is installed until key custody is decided and rotation has been rehearsed on a production copy.'
         },
         {
           title: 'Project-scoped sign-in',

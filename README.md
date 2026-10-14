@@ -1,6 +1,6 @@
 # Dynodoc — version control for documents
 
-Live release (13 October 2026): workspace/API `0f67372`, schema 40.
+Live release (14 October 2026): workspace/API `f62d62c`, schema 41.
 Revocable sessions, verified snapshots, restricted API database credentials,
 project policy floors/audited metadata, scoped CSP/HSTS and workload admission
 are deployed after upgrade/rollback rehearsal. Read [release evidence](docs/operations/2026-10-11-security-runtime-release.md)
@@ -14,7 +14,7 @@ a device key signs a one-use challenge and receives a one-hour token for one pro
 renewable without a stored refresh secret. The public site, Projects, profile and admin
 interfaces are rebuilt (see [the site design system](docs/SITE-DESIGN.md)), and the six
 editor add-ins carry a [marketplace listing kit](docs/listings/SUBMISSION-CHECKLIST.md).
-Production runs schema 40 ([release record](docs/operations/2026-10-13-schema40-release.md)); shared writers are off and no marketplace listing exists.
+Production runs schema 41 ([release record](docs/operations/2026-10-14-schema41-release.md)); shared writers are off and no marketplace listing exists.
 
 **Current direction (10 October 2026):** Local/remote document repositories around
 Word/Docs, Excel/Sheets and PowerPoint/Slides. The target is compact change transfer,

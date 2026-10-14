@@ -21,6 +21,22 @@
   // Newest first. Distilled from docs/PROJECT-STATUS.md; no dates beyond those recorded there.
   const entries: Entry[] = [
     {
+      id: 'schema-41-release',
+      iso: '2026-10-14',
+      date: '14 Oct 2026',
+      state: 'live',
+      title: 'Spreadsheets without a GPL dependency, and a way to rotate the receipt authority',
+      summary:
+        'The hosted pilot moved to application f62d62c on schema 41 after a verified backup and a rehearsal on a copy of production. The history digests before and after are identical.',
+      changes: [
+        'Spreadsheet calculation uses an in-house engine with 458 function names, checked against formulas evaluated by Excel. The browser download is about 650 KB smaller.',
+        'The receipt-signing authority can now be rotated with a dual-signed statement, and a lost or leaked key has a recorded recovery path that clients must accept explicitly. No authority is installed yet, so shared branch publication is still off.',
+        'The licences page lists the engine under MIT and no longer lists a copyleft formula library.',
+        'The command-line tools gain passphrase-protected signing keys and compressed local storage.'
+      ],
+      refs: 'Application f62d62c · schema 41 · engine ebf2319'
+    },
+    {
       id: 'schema-40-release',
       iso: '2026-10-13',
       date: '13 Oct 2026',
@@ -204,7 +220,7 @@
   <InfoHero
     eyebrow="CHANGELOG"
     title="Changelog"
-    lede="What changed, in plain language, newest first. Production runs application 0f67372 on schema 40. Entries marked In source describe work that was implemented before the 12 October release; the newest entry says which parts are now deployed."
+    lede="What changed, in plain language, newest first. Production runs application f62d62c on schema 41. Entries marked In source describe work that was implemented before the 12 October release; the newest entry says which parts are now deployed."
   >
     {#snippet actions()}
       <Btn href="/roadmap" arrow>See the roadmap</Btn>

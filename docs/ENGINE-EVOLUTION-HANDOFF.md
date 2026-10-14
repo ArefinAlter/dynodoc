@@ -1,9 +1,17 @@
 # Engine evolution handoff
 
+## Live: schema 41 release (14 October 2026, 08:45 UTC)
+
+The VPS workspace, API and admin site run application `f62d62c`, schema 41: receipt-authority
+epochs and rotation (no authority installed), and the in-house spreadsheet formula engine that
+replaced `hyperformula`. Rehearsal on a production copy, a verified backup and unchanged
+event/snapshot digests preceded activation. Evidence, rollback and an environment note:
+[release record](operations/2026-10-14-schema41-release.md).
+
 ## Source: formula engine, authority rotation, key files, compression and design suites (14 October 2026)
 
-Source is PostgreSQL schema 41 (migration 0041) and local repository schema 3. Production runs
-schema 40 until a newer live entry above says otherwise.
+Source is PostgreSQL schema 41 (migration 0041) and local repository schema 3; schema 41 was
+deployed to production the same day (see the entry above).
 
 **Formula engine.** `hyperformula` (GPL-3.0-only or commercial) is removed; spreadsheet
 calculation uses an in-house, dependency-free engine in
