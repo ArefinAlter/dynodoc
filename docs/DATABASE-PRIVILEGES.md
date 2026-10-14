@@ -1,5 +1,17 @@
 # Database runtime boundary
 
+Schema 41 adds two SELECT-only tables, `project_ref_authority_epoch` (receipt
+authority epochs with their stored signed statements) and
+`project_ref_authority_revocation` (immutable revocation markers). They join the
+read-only allowlist beside `project_ref_authority`; only the operator login, through
+`engine-cli`, appends to them, and both refuse UPDATE/DELETE/TRUNCATE by trigger for
+every login. Three non-security-definer trigger functions (genesis epoch, epoch
+consistency, issuer guard on `project_ref_event`) read these tables with the invoking
+login's SELECT privilege, so the runtime login cannot store a receipt signed by a
+non-active or revoked epoch. The startup check counts both tables; re-run
+`grant-runtime`, then `check-runtime`, after migrating. See
+[authority rotation](REF-AUTHORITY-ROTATION.md).
+
 Schema 40 adds two tables to the SELECT/INSERT/UPDATE class (no DELETE):
 `device_key_access`, one editable mode row per signing key (`all` or `granted`; no
 row means `granted`), and `device_key_project_grant`, per-project grants whose rows

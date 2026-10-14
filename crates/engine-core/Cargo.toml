@@ -22,6 +22,9 @@ tracing = { workspace = true }
 tokio = { workspace = true }
 futures = { workspace = true }
 similar = "=3.2.0"
+# Per-object compression at rest in the local SQLite repository (raw DEFLATE).
+# Pure Rust, MIT OR Zlib OR Apache-2.0, already in the build graph through flate2.
+miniz_oxide = "0.8"
 
 [dev-dependencies]
 proptest = { workspace = true }

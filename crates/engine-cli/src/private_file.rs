@@ -8,7 +8,8 @@
 //! system `icacls` right after creation and verified. If it cannot be applied the
 //! file is removed and creation fails, unless `--allow-insecure-key-file` was given.
 //! Loading a key on Unix refuses a file that group or others can access under the
-//! same opt-out. There is no OS keystore: the file is still an unencrypted key.
+//! same opt-out. These files hold unencrypted keys or tokens; encrypted key files
+//! (`dynodoc-key-v1`, see keyfile.rs) are written through the same functions.
 use anyhow::{anyhow, Context};
 use std::{
     fs::{File, OpenOptions},
@@ -247,6 +248,27 @@ impl Replacement {
         })
     }
 
+    /// Keep a narrower owner-only mode of the file being replaced (for example
+    /// 0400) instead of the 0600 the temporary file was created with. Never widens
+    /// it. Windows keeps the one-entry access list the temporary file already has.
+    pub fn keep_mode_of(&self, original: &Path) {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(meta) = std::fs::metadata(original) {
+                let mode = meta.permissions().mode() & 0o700;
+                if mode != 0o600 && mode & 0o400 != 0 {
+                    let _ =
+                        std::fs::set_permissions(&self.temp, std::fs::Permissions::from_mode(mode));
+                }
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = original;
+        }
+    }
+
     /// Write, fsync and rename over the target. The target is either the old
     /// complete content or the new complete content.
     pub fn commit(mut self, bytes: &[u8]) -> anyhow::Result<()> {
@@ -273,6 +295,28 @@ impl Drop for Replacement {
         // the handle. A successfully renamed temp file no longer exists.
         drop(self.file.take());
         let _ = std::fs::remove_file(&self.temp);
+    }
+}
+
+/// Test helper: the file is accessible by its owner only (Unix mode bits; on
+/// Windows the real `icacls` listing has exactly the current user).
+#[cfg(test)]
+pub(crate) fn assert_owner_only(path: &Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(path).unwrap().permissions().mode();
+        assert!(mode_is_private(mode & 0o7777), "{mode:o}");
+    }
+    #[cfg(windows)]
+    {
+        let root = std::env::var_os("SystemRoot").unwrap();
+        let exe = PathBuf::from(root).join("System32").join("icacls.exe");
+        let out = std::process::Command::new(exe).arg(path).output().unwrap();
+        let text = String::from_utf8_lossy(&out.stdout).into_owned();
+        let found = acl_principals(&text, path).unwrap();
+        let username = std::env::var("USERNAME").unwrap();
+        assert!(only_user(&found, &username), "{found:?}");
     }
 }
 
@@ -396,6 +440,21 @@ mod tests {
             std::fs::metadata(&created).unwrap().permissions().mode() & 0o777,
             0o600
         );
+        // A narrower original mode is kept, a wider one never is.
+        for (original, expected) in [(0o400, 0o400), (0o600, 0o600), (0o640, 0o600)] {
+            let target = dir.join(format!("mode-{original:o}"));
+            std::fs::write(&target, b"old").unwrap();
+            std::fs::set_permissions(&target, std::fs::Permissions::from_mode(original)).unwrap();
+            let replacement = Replacement::prepare(&target).unwrap();
+            replacement.keep_mode_of(&target);
+            replacement.commit(b"new").unwrap();
+            assert_eq!(
+                std::fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+                expected,
+                "{original:o}"
+            );
+            assert_eq!(std::fs::read(&target).unwrap(), b"new");
+        }
         std::fs::remove_dir_all(dir).unwrap();
     }
 

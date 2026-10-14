@@ -18,9 +18,12 @@ use std::{
 };
 
 mod collector;
+mod compact;
+mod pack;
 mod retention;
 mod storage;
 pub use collector::{GcApplyOptions, GcReport};
+pub use compact::{CompactOptions, CompactReport};
 pub use retention::{GcPlan, GcPlanOptions};
 pub use storage::{StorageLimits, StorageUsage, SCHEMA_VERSION};
 
@@ -39,6 +42,9 @@ create trigger if not exists commits_no_delete before delete on commits begin se
 pub struct LocalRepository {
     pool: SqlitePool,
     project: uuid::Uuid,
+    /// Local schema this handle opened: 3 after a writable open (which upgrades),
+    /// 1 to 3 for a read-only open, which never upgrades anything.
+    schema: i64,
     /// Connection settings, reused to open private read-only planning connections.
     options: SqliteConnectOptions,
 }
@@ -59,6 +65,8 @@ pub struct ObjectPacket {
 struct Store<'a> {
     connection: &'a mut SqliteConnection,
     read_budget: Option<Limits>,
+    /// Schema 3 rows carry a codec and a logical size; earlier rows are identity.
+    packed: bool,
 }
 impl ObjectStore for Store<'_> {
     async fn put(
@@ -68,8 +76,23 @@ impl ObjectStore for Store<'_> {
         bytes: &[u8],
     ) -> Result<bool, shared_checkpoint::Error> {
         shared_checkpoint::validate_stored(address, bytes)?;
-        let inserted = sqlx::query("insert into objects(document,address,bytes) values(?,?,?) on conflict(document,address) do nothing")
-            .bind(document.0.to_string()).bind(address.as_str()).bind(bytes).execute(&mut *self.connection).await.map_err(storage::object_error)?.rows_affected() == 1;
+        // The address and every quota are about `bytes`; only the row differs.
+        let query = if !self.packed {
+            sqlx::query("insert into objects(document,address,bytes) values(?,?,?) on conflict(document,address) do nothing")
+                .bind(document.0.to_string()).bind(address.as_str()).bind(bytes.to_vec())
+        } else if let Some(stored) = pack::pack(bytes) {
+            sqlx::query("insert into objects(document,address,bytes,codec,size) values(?,?,?,1,?) on conflict(document,address) do nothing")
+                .bind(document.0.to_string()).bind(address.as_str()).bind(stored).bind(bytes.len() as i64)
+        } else {
+            sqlx::query("insert into objects(document,address,bytes,codec,size) values(?,?,?,0,?) on conflict(document,address) do nothing")
+                .bind(document.0.to_string()).bind(address.as_str()).bind(bytes.to_vec()).bind(bytes.len() as i64)
+        };
+        let inserted = query
+            .execute(&mut *self.connection)
+            .await
+            .map_err(storage::object_error)?
+            .rows_affected()
+            == 1;
         if !inserted && self.get(document, address).await? != bytes {
             return Err(shared_checkpoint::Error::HashMismatch);
         }
@@ -83,14 +106,19 @@ impl ObjectStore for Store<'_> {
         if self.read_budget.is_some_and(|limit| limit.max_objects == 0) {
             return Err(shared_checkpoint::Error::Limit("objects"));
         }
-        let bytes: Vec<u8> = sqlx::query_scalar(
-            "select bytes from objects where document=? and address=? and length(bytes)<=1048576",
-        )
+        let (stored, codec, size): (Vec<u8>, i64, Option<i64>) = sqlx::query_as(if self.packed {
+            "select bytes,codec,size from objects where document=? and address=? and length(bytes)<=1048576"
+        } else {
+            "select bytes,0,null from objects where document=? and address=? and length(bytes)<=1048576"
+        })
         .bind(document.0.to_string())
         .bind(address.as_str())
         .fetch_optional(&mut *self.connection)
         .await?
         .ok_or_else(|| shared_checkpoint::Error::Missing(address.as_str().into()))?;
+        // Logical bytes from here on: the budget, the hash and the caller all see
+        // exactly what was written, whatever the row stores.
+        let bytes = pack::unpack(codec, stored, size)?;
         if let Some(budget) = &mut self.read_budget {
             budget.consume(bytes.len())?;
         }
@@ -273,19 +301,26 @@ impl LocalRepository {
             sqlx::query_as("select version,project from local_meta where singleton=1")
                 .fetch_one(&mut *tx)
                 .await?;
-        if !matches!(version, 1 | SCHEMA_VERSION) || actual != project.to_string() {
+        if !storage::supported(version) || actual != project.to_string() {
             return Err(Error::Invalid("local schema/project"));
         }
+        // Each step is transactional with the rest of this initialization. An
+        // older client rejects the number it does not know, and a failed step
+        // leaves the previous schema in place.
         if version == 1 {
             storage::upgrade(&mut tx).await?;
         }
+        if version <= 2 {
+            storage::upgrade_packed(&mut tx).await?;
+        }
         // Missing accounting state is corruption, never permission to admit
         // unbounded writes or to reconstruct lower usage on reopen.
-        storage::usage(&mut tx).await?;
+        storage::usage(&mut tx, SCHEMA_VERSION).await?;
         tx.commit().await?;
         Ok(Self {
             pool,
             project,
+            schema: SCHEMA_VERSION,
             options,
         })
     }
@@ -311,12 +346,13 @@ impl LocalRepository {
             sqlx::query_as("select version,project from local_meta where singleton=1")
                 .fetch_one(&pool)
                 .await?;
-        if !matches!(version, 1 | SCHEMA_VERSION) || actual != project.to_string() {
+        if !storage::supported(version) || actual != project.to_string() {
             return Err(Error::Invalid("local schema/project"));
         }
         Ok(Self {
             pool,
             project,
+            schema: version,
             options,
         })
     }
@@ -329,7 +365,7 @@ impl LocalRepository {
 
     pub async fn storage_usage(&self) -> Result<StorageUsage, Error> {
         let mut connection = self.pool.acquire().await?;
-        storage::usage(&mut connection).await
+        storage::usage(&mut connection, self.schema).await
     }
 
     /// Explicit local-owner action; never evicts history or permits limits below
@@ -345,7 +381,7 @@ impl LocalRepository {
         if changed != 1 {
             return Err(Error::Limit("local storage limits below retained usage"));
         }
-        let usage = storage::usage(&mut tx).await?;
+        let usage = storage::usage(&mut tx, self.schema).await?;
         tx.commit().await?;
         Ok(usage)
     }
@@ -360,6 +396,7 @@ impl LocalRepository {
         let mut store = Store {
             connection: &mut tx,
             read_budget: None,
+            packed: self.schema >= 3,
         };
         let (root, stats) = typed::write_state(
             &mut store,
@@ -394,6 +431,7 @@ impl LocalRepository {
             &mut Store {
                 connection: &mut connection,
                 read_budget: None,
+                packed: self.schema >= 3,
             },
             document,
             root,
@@ -455,6 +493,7 @@ impl LocalRepository {
         let mut store = Store {
             connection: &mut tx,
             read_budget: Some(Limits::default()),
+            packed: self.schema >= 3,
         };
         for file in signed.commit.files.values() {
             typed::read_state(
@@ -632,6 +671,7 @@ impl LocalRepository {
         let bytes = Store {
             connection: &mut connection,
             read_budget: None,
+            packed: self.schema >= 3,
         }
         .get(key.document, &key.address)
         .await?;
@@ -658,6 +698,7 @@ impl LocalRepository {
         let mut store = Store {
             connection: &mut tx,
             read_budget: None,
+            packed: self.schema >= 3,
         };
         for object in objects {
             count += usize::from(
@@ -677,6 +718,8 @@ mod collector_tests;
 mod convergence_tests;
 #[cfg(test)]
 mod merge_tests;
+#[cfg(test)]
+mod pack_tests;
 #[cfg(test)]
 mod retention_tests;
 #[cfg(test)]
@@ -1175,6 +1218,7 @@ mod tests {
         Store {
             connection: &mut tx,
             read_budget: None,
+            packed: true,
         }
         .put(good.key.document, &good.key.address, &good.bytes)
         .await

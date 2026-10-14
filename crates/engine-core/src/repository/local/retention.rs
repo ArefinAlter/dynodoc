@@ -15,7 +15,7 @@
 //! state is reconstructed and only one encoded object (at most 1 MiB) and one
 //! page of commit bodies are resident at a time.
 
-use super::{decode_commit, storage, LocalRepository, StorageUsage};
+use super::{decode_commit, pack, storage, LocalRepository, StorageUsage};
 use crate::{
     repository::{hex, unhex, Error, SignedCommit},
     shared_checkpoint::{self, Address},
@@ -152,7 +152,24 @@ pub struct Examples {
     pub staged_objects: Vec<ObjectExample>,
 }
 
-/// Cross-check against persistent capacity counters (schema 2 only).
+/// How the retained objects are physically stored (schema 3 compression at rest).
+/// Every other number in the plan is logical: canonical encoded bytes, unchanged
+/// by compression, so the plan and its hash do not depend on how rows are packed.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct Physical {
+    /// Payload bytes held by the object rows as stored.
+    pub stored_object_bytes: u64,
+    /// Payload bytes held by commit bodies (never compressed).
+    pub stored_commit_bytes: u64,
+    /// Object rows stored compressed, and the logical bytes they stand for.
+    pub compressed_objects: u64,
+    pub compressed_logical_bytes: u64,
+    /// `stored_object_bytes + stored_commit_bytes`, comparable to
+    /// `retained.bytes` (logical) and to the persisted `stored_bytes` counter.
+    pub stored_bytes: u64,
+}
+
+/// Cross-check against persistent capacity counters (schema 2 and later).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Accounting {
     pub recorded: Option<StorageUsage>,
@@ -173,6 +190,8 @@ pub struct GcPlan {
     pub local_schema: i64,
     pub branches: Vec<BranchHead>,
     pub retained: Counts,
+    /// Physical payload bytes of everything retained (see [`Physical`]).
+    pub physical: Physical,
     pub reachable: Counts,
     pub unreachable: Unreachable,
     /// Encoded payload bytes only (unreachable objects + commits). Physical file
@@ -207,6 +226,12 @@ impl GcPlan {
         }
         text.push_str("retained\n");
         text.push_str(&line("total", &self.retained));
+        text.push_str(&format!(
+            "  stored on disk: {} payload bytes ({} objects compressed, standing for {} bytes); counts above are logical\n",
+            self.physical.stored_bytes,
+            self.physical.compressed_objects,
+            self.physical.compressed_logical_bytes
+        ));
         text.push_str(&line("reachable", &self.reachable));
         text.push_str(&line("unreachable", &self.unreachable.counts));
         for category in &self.unreachable.categories {
@@ -352,13 +377,32 @@ pub(super) async fn analyze(
         sqlx::query_as("select version,project from local_meta where singleton=1")
             .fetch_one(&mut *tx)
             .await?;
-    if bound != project.to_string() || !matches!(schema, 1 | storage::SCHEMA_VERSION) {
+    if bound != project.to_string() || !storage::supported(schema) {
         return Err(Error::Invalid("local schema/project"));
     }
-    let (object_rows, object_bytes): (i64, i64) =
-        sqlx::query_as("select count(*),coalesce(sum(length(bytes)),0) from objects")
-            .fetch_one(&mut *tx)
-            .await?;
+    // Logical length of a row: the declared size for a packed schema-3 row, the
+    // stored length for everything written before it.
+    let packed = schema >= 3;
+    let logical_len = if packed {
+        "coalesce(size,length(bytes))"
+    } else {
+        "length(bytes)"
+    };
+    let (object_rows, object_bytes, stored_object_bytes, compressed_objects, compressed_logical): (
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+    ) = sqlx::query_as(&if packed {
+        format!(
+            "select count(*),coalesce(sum({logical_len}),0),coalesce(sum(length(bytes)),0),coalesce(sum(codec<>0),0),coalesce(sum(case when codec<>0 then size else 0 end),0) from objects"
+        )
+    } else {
+        "select count(*),coalesce(sum(length(bytes)),0),coalesce(sum(length(bytes)),0),0,0 from objects".to_owned()
+    })
+    .fetch_one(&mut *tx)
+    .await?;
     let commit_rows: i64 = sqlx::query_scalar("select count(*) from commits")
         .fetch_one(&mut *tx)
         .await?;
@@ -579,7 +623,15 @@ pub(super) async fn analyze(
             } else {
                 None
             };
-            walk(&mut *tx, &mut visited, &mut bucket.counts, root, record).await?;
+            walk(
+                &mut *tx,
+                packed,
+                &mut visited,
+                &mut bucket.counts,
+                root,
+                record,
+            )
+            .await?;
         }
     }
 
@@ -696,9 +748,9 @@ pub(super) async fn analyze(
         let (mut document, mut address) = (String::new(), String::new());
         let (mut seen, mut seen_bytes) = (0u64, 0u64);
         loop {
-            let rows: Vec<(String, String, i64)> = sqlx::query_as(
-                "select document,address,length(bytes) from objects where (document,address)>(?,?) order by document,address limit ?",
-            )
+            let rows: Vec<(String, String, i64)> = sqlx::query_as(&format!(
+                "select document,address,{logical_len} from objects where (document,address)>(?,?) order by document,address limit ?"
+            ))
             .bind(&document)
             .bind(&address)
             .bind(OBJECT_PAGE)
@@ -740,9 +792,17 @@ pub(super) async fn analyze(
         }
     }
     let plan_hash = hex(hash.finish().as_ref());
-    let accounting = if schema == storage::SCHEMA_VERSION {
-        let usage = storage::usage(&mut *tx).await?;
+    let physical = Physical {
+        stored_object_bytes: stored_object_bytes as u64,
+        stored_commit_bytes: retained.commit_bytes,
+        compressed_objects: compressed_objects as u64,
+        compressed_logical_bytes: compressed_logical as u64,
+        stored_bytes: stored_object_bytes as u64 + retained.commit_bytes,
+    };
+    let accounting = if schema >= 2 {
+        let usage = storage::usage(&mut *tx, schema).await?;
         let consistent = usage.bytes_used as u64 == retained.bytes
+            && usage.stored_bytes as u64 == physical.stored_bytes
             && usage.objects_used as u64 == retained.objects
             && usage.commits_used as u64 == retained.commits
             && usage.branches_used as usize == branches.len();
@@ -766,6 +826,7 @@ pub(super) async fn analyze(
             local_schema: schema,
             branches,
             retained,
+            physical,
             reachable,
             reclaimable_bytes_estimate: unreachable_counts.bytes,
             unreachable: Unreachable {
@@ -787,6 +848,7 @@ pub(super) async fn analyze(
 /// encoded object is resident at a time; shared subtrees are read once.
 async fn walk(
     connection: &mut SqliteConnection,
+    packed: bool,
     visited: &mut HashSet<ObjectKey>,
     counts: &mut Counts,
     root: ObjectKey,
@@ -801,14 +863,17 @@ async fn walk(
             continue;
         }
         let address = address_of(&key.1)?;
-        let bytes: Vec<u8> = sqlx::query_scalar(
-            "select bytes from objects where document=? and address=? and length(bytes)<=1048576",
-        )
+        let (stored, codec, size): (Vec<u8>, i64, Option<i64>) = sqlx::query_as(if packed {
+            "select bytes,codec,size from objects where document=? and address=? and length(bytes)<=1048576"
+        } else {
+            "select bytes,0,null from objects where document=? and address=? and length(bytes)<=1048576"
+        })
         .bind(uuid::Uuid::from_u128(key.0).to_string())
         .bind(address.as_str())
         .fetch_optional(&mut *connection)
         .await?
         .ok_or_else(|| shared_checkpoint::Error::Missing(address.as_str().into()))?;
+        let bytes = pack::unpack(codec, stored, size)?;
         counts.object(bytes.len());
         if let Some(list) = record.as_deref_mut() {
             list.push((key, bytes.len() as u32));

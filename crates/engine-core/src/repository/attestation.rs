@@ -1,7 +1,10 @@
 //! Signed ref receipts and client trust state. A signature proves key control;
 //! callers establish the authority key through an independent trusted channel.
 //! These primitives do not issue account grants or operate an external witness.
-use super::{hex, unhex, Error, Head};
+use super::{
+    authority_epoch::{Chain, Kind, SignedTransition, MAX_CHAIN_PAGE},
+    hex, unhex, Error, Head,
+};
 use crate::shared_checkpoint::{canonical::CanonicalValue, Address};
 use ring::{
     digest,
@@ -45,7 +48,7 @@ pub struct Receipt {
     pub issued_at_ms: i64,
     pub issuer_key: String,
 }
-fn hash<T: Serialize>(domain: &[u8], value: &T) -> Result<Address, Error> {
+pub(super) fn hash<T: Serialize>(domain: &[u8], value: &T) -> Result<Address, Error> {
     let value = serde_json::to_value(value)?;
     let bytes = serde_json::to_vec(&CanonicalValue(&value))?;
     if bytes.len() > MAX_RECEIPT_BYTES {
@@ -56,12 +59,12 @@ fn hash<T: Serialize>(domain: &[u8], value: &T) -> Result<Address, Error> {
     hash.update(&bytes);
     Ok(Address::try_from(hex(hash.finish().as_ref()))?)
 }
-fn message(domain: &[u8], address: &Address) -> Result<Vec<u8>, Error> {
+pub(super) fn message(domain: &[u8], address: &Address) -> Result<Vec<u8>, Error> {
     let mut message = domain.to_vec();
     message.extend(unhex(address.as_str(), 32)?);
     Ok(message)
 }
-fn verify(key: &str, signature: &str, message: &[u8]) -> Result<(), Error> {
+pub(super) fn verify(key: &str, signature: &str, message: &[u8]) -> Result<(), Error> {
     signature::UnparsedPublicKey::new(&signature::ED25519, unhex(key, 32)?)
         .verify(message, &unhex(signature, 64)?)
         .map_err(|_| Error::Invalid("receipt signature"))
@@ -241,6 +244,146 @@ impl Pin {
             return Err(Error::Invalid("authority rotation scope/position"));
         }
         self.next(next, &rotation.new_key)
+    }
+
+    /// The key this pin currently trusts (the issuer of its pinned receipt).
+    pub fn trusted_key(&self) -> &str {
+        &self.trusted_key
+    }
+
+    /// Follow dual-signed authority statements from the trusted key to a receipt
+    /// under their final key. A recorded break is never accepted here.
+    pub fn rotate_authority(
+        &self,
+        path: &[SignedTransition],
+        next: &SignedReceipt,
+    ) -> Result<Self, Error> {
+        self.validate()?;
+        if self.revoked {
+            return Err(Error::Invalid("receipt authority revoked"));
+        }
+        if path.is_empty() || path.len() > MAX_CHAIN_PAGE {
+            return Err(Error::Limit("authority rotation path"));
+        }
+        let mut key = self.trusted_key.as_str();
+        let mut epoch = None;
+        for statement in path {
+            statement.verify()?;
+            let t = &statement.transition;
+            if t.kind != Kind::Rotation {
+                return Err(Error::Invalid(
+                    "authority chain break needs explicit re-pin",
+                ));
+            }
+            if t.authority != self.scope().authority
+                || t.old_key != key
+                || epoch.is_some_and(|e| e != t.from_epoch)
+            {
+                return Err(Error::Invalid("authority rotation scope/position"));
+            }
+            key = &t.new_key;
+            epoch = Some(t.to_epoch);
+        }
+        self.next(next, key)
+    }
+
+    /// Explicit, independently trusted re-pin across a recorded break. The caller
+    /// supplies the new key from outside the server; the next receipt must still
+    /// extend this pin exactly, so continuity of the chain is checked.
+    pub fn accept_break(
+        &self,
+        statement: &SignedTransition,
+        trusted_new_key: &str,
+        next: &SignedReceipt,
+    ) -> Result<Self, Error> {
+        // Allowed on a locally revoked pin on purpose: a marker on the pinned key is
+        // exactly what makes recovery necessary, and this path needs the new key from
+        // outside the server, the recorded statement and an extending receipt.
+        self.validate()?;
+        statement.verify()?;
+        let t = &statement.transition;
+        if t.kind != Kind::Recovery
+            || t.authority != self.scope().authority
+            || t.old_key != self.trusted_key
+            || t.new_key != trusted_new_key
+        {
+            return Err(Error::Invalid("authority recovery scope/position"));
+        }
+        self.next(next, trusted_new_key)
+    }
+
+    /// Like [`Pin::advance`], additionally crossing key changes through verified
+    /// dual-signed statements of `chain`. Returns the statements it used so the
+    /// caller can store them with the receipts in one transaction.
+    pub fn advance_chain(
+        &self,
+        chain: &Chain,
+        proof: &[SignedReceipt],
+    ) -> Result<(Self, Vec<SignedTransition>), Error> {
+        self.validate()?;
+        if self.revoked {
+            return Err(Error::Invalid("receipt authority revoked"));
+        }
+        if proof.len() > MAX_PROOF_RECEIPTS {
+            return Err(Error::Limit("receipt proof"));
+        }
+        if chain.authority() != self.scope().authority {
+            return Err(Error::Invalid("authority chain identity"));
+        }
+        for (index, receipt) in proof.iter().enumerate() {
+            receipt.verify()?;
+            if receipt.receipt.scope != *self.scope() {
+                return Err(Error::Invalid("untrusted receipt scope/key"));
+            }
+            if index > 0 && receipt != &proof[index - 1] {
+                let previous = &proof[index - 1];
+                if receipt.receipt.previous.as_ref() != Some(&previous.verify()?)
+                    || Some(receipt.receipt.head.generation)
+                        != previous.receipt.head.generation.checked_add(1)
+                {
+                    return Err(Error::Invalid("noncontiguous receipt proof"));
+                }
+            }
+        }
+        let start = if proof
+            .first()
+            .is_some_and(|r| r.receipt.head.generation <= self.current.receipt.head.generation)
+        {
+            proof
+                .iter()
+                .position(|r| r == &self.current)
+                .ok_or(Error::Invalid("receipt rollback or fork"))?
+        } else {
+            0
+        };
+        let mut pin = self.clone();
+        let mut applied = Vec::new();
+        for receipt in &proof[start..] {
+            if receipt == &pin.current {
+                continue;
+            }
+            if receipt.receipt.issuer_key == pin.trusted_key {
+                let key = pin.trusted_key.clone();
+                pin = pin.next(receipt, &key)?;
+                continue;
+            }
+            let path = chain
+                .path(&pin.trusted_key, &receipt.receipt.issuer_key)
+                .map_err(|e| match e {
+                    super::authority_epoch::PathError::Break { .. } => {
+                        Error::Invalid("authority chain break needs explicit re-pin")
+                    }
+                    super::authority_epoch::PathError::UnknownKey => {
+                        Error::Invalid("receipt key is not on the authority chain")
+                    }
+                    super::authority_epoch::PathError::Backwards => {
+                        Error::Invalid("receipt key precedes the trusted key")
+                    }
+                })?;
+            pin = pin.rotate_authority(path, receipt)?;
+            applied.extend_from_slice(path);
+        }
+        Ok((pin, applied))
     }
 }
 

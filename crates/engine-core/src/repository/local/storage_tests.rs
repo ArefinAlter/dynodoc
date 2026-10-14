@@ -44,6 +44,7 @@ async fn upgrade_preserves_v1_graphs_commits_refs_and_above_default_usage() {
         &mut Store {
             connection: &mut tx,
             read_budget: None,
+            packed: false,
         },
         document,
         &original,
@@ -346,7 +347,7 @@ async fn newer_schema_and_missing_accounting_fail_closed() {
     let file = path();
     let project = uuid::Uuid::new_v4();
     let repo = LocalRepository::open(&file, project).await.unwrap();
-    sqlx::query("update local_meta set version=3")
+    sqlx::query("update local_meta set version=4")
         .execute(&repo.pool)
         .await
         .unwrap();

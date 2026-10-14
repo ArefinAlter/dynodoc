@@ -17,7 +17,11 @@ use sqlx::PgPool;
 use utoipa::OpenApi;
 use uuid::Uuid;
 
+mod authority;
 mod device;
+mod keyfile;
+mod keystore;
+mod passphrase;
 mod private_file;
 mod receipt;
 mod repository;
@@ -32,6 +36,12 @@ struct Cli {
     /// file readable by group or others). Off by default.
     #[arg(long, global = true)]
     allow_insecure_key_file: bool,
+    /// File holding the passphrase of an encrypted key file (one trailing newline
+    /// is ignored). Without it the DYNODOC_KEY_PASSPHRASE_FILE environment variable
+    /// (a file path) and then a hidden terminal prompt are tried. A passphrase is
+    /// never accepted as an argument.
+    #[arg(long, global = true, value_name = "FILE")]
+    passphrase_file: Option<std::path::PathBuf>,
     #[command(subcommand)]
     command: Command,
 }
@@ -67,6 +77,35 @@ enum Command {
     GrantRuntime { role: String },
     /// Install the public receipt key using operator credentials; never replaces a key.
     InstallRefAuthority { public_key: String },
+    /// Offline: dual-sign a receipt-authority rotation (or, with --recovery, sign a
+    /// recorded break with the new key). Writes a new statement file; never overwrites.
+    RotateRefAuthority(authority::Rotate),
+    /// Append a dual-signed rotation using operator credentials. An exact retry is a no-op.
+    InstallRefAuthorityRotation { statement: std::path::PathBuf },
+    /// Append a recovery statement (operator credentials). Records a break that every
+    /// client must re-pin explicitly; requires --confirm-break.
+    InstallRefAuthorityRecovery {
+        statement: std::path::PathBuf,
+        #[arg(long)]
+        confirm_break: bool,
+    },
+    /// Print the receipt-authority epochs, seal and revocation state. --out saves the
+    /// state file `rotate-ref-authority` signs (created exclusively).
+    ShowRefAuthority {
+        #[arg(long)]
+        out: Option<std::path::PathBuf>,
+    },
+    /// Record a revocation marker for the active epoch (or --epoch). It stops receipt
+    /// issuance at once and cannot be edited; recover with a new epoch.
+    RevokeRefAuthority {
+        #[arg(long)]
+        reason: String,
+        /// Best-known time of compromise or loss, RFC 3339 with a zone. Defaults to now.
+        #[arg(long)]
+        effective_at: Option<String>,
+        #[arg(long)]
+        epoch: Option<u32>,
+    },
     /// Check schema and runtime privileges using DATABASE_URL; makes no changes.
     CheckRuntime,
     /// Independently verify the event chain and all legacy snapshots.
@@ -121,6 +160,7 @@ async fn main() -> anyhow::Result<()> {
 
     let cli = Cli::parse();
     private_file::allow_insecure(cli.allow_insecure_key_file);
+    passphrase::set_file(cli.passphrase_file);
     match cli.command {
         Command::Sync(options) => sync::run(options).await,
         Command::Device { action } => device::run(action),
@@ -166,6 +206,33 @@ async fn main() -> anyhow::Result<()> {
             .await?;
             println!("Installed receipt authority {id}; distribute this identity and public key through a trusted channel.");
             Ok(())
+        }
+        Command::RotateRefAuthority(args) => authority::rotate(args),
+        Command::InstallRefAuthorityRotation { statement } => {
+            authority::install_rotation(&connect_migration().await?, &statement).await
+        }
+        Command::InstallRefAuthorityRecovery {
+            statement,
+            confirm_break,
+        } => {
+            authority::install_recovery(&connect_migration().await?, &statement, confirm_break)
+                .await
+        }
+        Command::ShowRefAuthority { out } => {
+            authority::show(&connect_migration().await?, out.as_deref()).await
+        }
+        Command::RevokeRefAuthority {
+            reason,
+            effective_at,
+            epoch,
+        } => {
+            authority::revoke(
+                &connect_migration().await?,
+                &reason,
+                effective_at.as_deref(),
+                epoch,
+            )
+            .await
         }
         Command::CheckRuntime => {
             engine_core::database::check_runtime(&connect().await?).await?;

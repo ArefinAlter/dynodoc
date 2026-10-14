@@ -92,13 +92,21 @@ engine-cli install-ref-authority PUBLIC_HEX
 
 `install-ref-authority` uses `MIGRATION_DATABASE_URL`, verifies the exact schema,
 and accepts an identical repeated installation. A different key is refused.
-The API checks the binding at startup and each ref mutation. The runtime database
-login has SELECT only on this immutable public binding. Server authority rotation
-and compromise recovery remain unfinished; client dual-signed rotation primitives
-already exist, but do not authorize overwriting this installation binding.
+The installed key is epoch 1. Schema 41 adds an append-only epoch chain: the
+operator rotates with `rotate-ref-authority` (offline, both keys sign) and
+`install-ref-authority-rotation`, or after loss/compromise records
+`revoke-ref-authority` then `install-ref-authority-recovery --confirm-break`. The
+installation binding itself is never overwritten. Key sequence on a rotation:
+stop writers, `show-ref-authority --out`, sign offline, install, mount the new key,
+start the API (it must match the active epoch or it exits). See
+[REF-AUTHORITY-ROTATION.md](REF-AUTHORITY-ROTATION.md).
+The API checks the active epoch at startup, on each ref mutation and again in a
+database trigger. The runtime database login has SELECT only on the epoch chain.
 
 Clients must independently verify the installation UUID and public key before
-pinning. The authority endpoint merely reports the server's claimed binding.
+pinning. The authority endpoint merely reports the server's claimed binding and
+epoch chain; clients check every statement signature locally and refuse a recorded
+break or revoked epoch unless explicitly re-pinned.
 Receipt pages feed the existing [client pin/journal](REF-RECEIPTS.md), which rejects
 rollback, gaps and incompatible forks relative to previously trusted receipts.
 Self-declared receipt time is not trusted time. Signatures do not independently
@@ -126,8 +134,9 @@ broadened to project authority.
 | GET `/refs` | Optional exact `branch`, exclusive `after` branch name, `limit` (1–256); heads and matching receipts. |
 | POST `/reviews` | `{target:{branch,candidate,expected},decision}`; decision is `approve` or `request_changes`. |
 | GET `/reviews` | Required `candidate`, exclusive numeric `after`, `limit` (1–256); append-only review history without emails. |
-| GET `/authority` | Installation UUID/public key; requires independent verification. |
-| GET `/receipts` | Required `branch`, exclusive `after_generation` (default 0), `limit` (1–256); signed receipts oldest first. |
+| GET `/authority` | Installation UUID, active key and epoch, revocation marker and signed epoch statements after `from_epoch` (`limit` 1-64); requires independent verification. |
+| GET `/authority/rotations` | Bounded page of the epoch statement chain (`from_epoch`, `limit`) with each epoch's marker. |
+| GET `/receipts` | Required `branch`, exclusive `after_generation` (default 0), `limit` (1–256); signed receipts oldest first, plus the active `epoch` and statements bridging the page's epochs. |
 | GET `/storage` | Logical published metadata usage and configured limits. |
 
 Branch names with `/` are JSON/query values. A refs page fails closed if any

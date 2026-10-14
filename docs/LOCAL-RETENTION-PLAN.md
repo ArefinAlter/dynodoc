@@ -4,9 +4,11 @@
 affect (`gc-plan`, read-only) and can delete exactly one class of data: stored
 objects that no stored commit references (`gc`). It never deletes a commit, a
 signature, a branch ref, receipt-journal data or any object a commit or a
-recovery source reaches. The SQLite schema number (2) and the PostgreSQL service
-schema are unchanged; the first deleting run adds one append-only log table (see
-"Idempotency and the log").
+recovery source reaches. The PostgreSQL service schema is unchanged; the local
+SQLite schema is now 3 because of compression at rest (see
+[local repository capacity](LOCAL-STORAGE-BUDGETS.md)), which retention only
+reports; the first deleting run adds one append-only log table (see "Idempotency
+and the log").
 
 ```text
 engine-cli repository DATABASE PROJECT_UUID gc-plan [--top N] [--list N] [--format json|text]
@@ -77,7 +79,13 @@ commit is attributed once, to the first reason in that order and, within a reaso
 type, to the first branch name in sorted order. `--list` (default 10) adds examples:
 unreachable commits and staged objects in address order.
 
-Counts are encoded payload bytes, the same quantity the capacity limits charge.
+Counts are encoded payload bytes, the same quantity the capacity limits charge:
+the canonical encoded length of each object, which compression at rest does not
+change, so the plan and its hash are the same before and after `repository ...
+compact`. The plan's `physical` section reports what the rows actually hold
+(`stored_object_bytes`, `stored_commit_bytes`, `compressed_objects` and the logical
+bytes they stand for) and the collector report gives `deleted.stored_bytes` and the
+`stored_bytes` counter before and after, beside the file sizes `--vacuum` reports.
 `reclaimable_bytes_estimate` is the unreachable object and commit bytes. It is an
 estimate of logical payload only: SQLite file size, indexes, WAL, free pages and the
 separate receipt journal are not included. **`gc` reclaims only the staged part of
@@ -108,9 +116,9 @@ object.
 `gc` runs one `BEGIN IMMEDIATE` transaction, so SQLite's writer lock is held before
 any read:
 
-1. It refuses a read-only handle and anything other than local schema 2 (opening
-   a schema 1 database with a writable handle upgrades it first, exactly as for
-   every other write; a missing database is an error, never created).
+1. It refuses a read-only handle and anything other than local schema 3 (opening
+   a schema 1 or 2 database with a writable handle upgrades it first, exactly as
+   for every other write; a missing database is an error, never created).
 2. It recomputes the plan from the rows it is about to modify and refuses when the
    capacity counters disagree with a fresh count of the stored rows.
 3. It compares the recomputed hash with `--plan-hash`. A mismatch is a stale
@@ -120,10 +128,11 @@ any read:
    same transaction, so no other connection ever observes it missing, and a
    rollback restores it. The stored definition is compared afterwards; a missing
    or altered guard fails the run. Commit and ref tables are never written.
-5. It lowers the persistent counters by exactly the deleted rows and bytes, then
-   checks that they equal a fresh recomputation (objects, bytes, commits,
-   branches) and that the surviving object count equals the number of objects some
-   commit reaches.
+5. It lowers the persistent counters by exactly the deleted rows and bytes (the
+   logical bytes the limits charge, and the physical bytes the rows held), then
+   checks that they equal a fresh recomputation (objects, bytes, stored bytes,
+   commits, branches) and that the surviving object count equals the number of
+   objects some commit reaches.
 6. It appends one row to `local_retention_log` and commits.
 
 Any error, including a failure at each of those steps, rolls the transaction back:
@@ -139,8 +148,8 @@ changes nothing, even though the repository's recomputed hash is now different.
 The record is the append-only table `local_retention_log` (sequence, plan hash,
 deleted objects and bytes, remaining objects and bytes, wall-clock milliseconds).
 It is created inside the first deleting run's transaction, its rows are protected
-by update/delete triggers, and local schema 2, the capacity counters and earlier
-clients do not depend on it. A run that has nothing to delete (a matching hash with
+by update/delete triggers, and the local schema number, the capacity counters and
+earlier clients do not depend on it. A run that has nothing to delete (a matching hash with
 no staged objects) writes nothing. Owner-level edits to the SQLite file remain
 outside any trigger's protection.
 

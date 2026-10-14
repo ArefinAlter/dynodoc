@@ -1,0 +1,23 @@
+{
+  "description": "dynodoc-key-v1 test vector. Every value is synthetic and public; the key must never be enrolled or trusted.",
+  "generator": "Python 3 hashlib.pbkdf2_hmac and cryptography ChaCha20Poly1305 (OpenSSL), no dynodoc code",
+  "passphrase": "dynodoc-key-v1 public test vector passphrase",
+  "pkcs8_hex": "302e020100300506032b6570042204200707070707070707070707070707070707070707070707070707070707070707",
+  "public_key": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+  "derived_key_hex": "fed7e9056f49dfd55abbf10eb2183376c22ed0ad4545fa71abff68c13e8e0d09",
+  "aad": "dynodoc-key-v1\npublic_key=ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c\nkdf=pbkdf2-hmac-sha256\niterations=600000\nsalt=oKGio6SlpqeoqaqrrK2urw\naead=chacha20-poly1305\nkeystore=none",
+  "file": {
+    "format": "dynodoc-key-v1",
+    "public_key": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+    "kdf": {
+      "name": "pbkdf2-hmac-sha256",
+      "iterations": 600000,
+      "salt": "oKGio6SlpqeoqaqrrK2urw"
+    },
+    "aead": {
+      "name": "chacha20-poly1305",
+      "nonce": "wMHCw8TFxsfIycrL"
+    },
+    "ciphertext": "KoOoXpSRGObuWGs3jfjJ81Gz6XvaTlnGdJig-n4NkIQJQbT9kUYV1nXQ59rLPYb_QoGPh3fmS74HrlKRNvuGXg"
+  }
+}

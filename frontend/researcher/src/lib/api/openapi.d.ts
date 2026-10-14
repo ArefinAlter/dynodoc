@@ -1510,6 +1510,22 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/projects/{id}/history/authority/rotations': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations['project_history_authority_rotations'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/projects/{id}/history/commits': {
     parameters: {
       query?: never;
@@ -6303,7 +6319,10 @@ export interface operations {
   };
   project_history_authority: {
     parameters: {
-      query?: never;
+      query?: {
+        from_epoch?: number;
+        limit?: number;
+      };
       header?: never;
       path: {
         id: string;
@@ -6312,7 +6331,32 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description Installed public receipt authority; clients must verify this binding through an independently trusted channel */
+      /** @description Active receipt authority epoch, its key, revocation marker and the statement chain after from_epoch (default 1, at most 64 per page). Clients must verify the key through an independently trusted channel and verify every statement locally */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+    };
+  };
+  project_history_authority_rotations: {
+    parameters: {
+      query?: {
+        from_epoch?: number;
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Bounded page of signed authority epoch statements after from_epoch, oldest first, with each epoch's revocation marker. Statements prove succession only to a client that already trusts an earlier key */
       200: {
         headers: {
           [name: string]: unknown;
@@ -6492,6 +6536,7 @@ export interface operations {
         branch: string;
         after_generation?: number;
         limit?: number;
+        from_epoch?: number;
       };
       header?: never;
       path: {
@@ -6501,7 +6546,7 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description At most 256 consecutive signed ref receipts, oldest first; current head scope must remain accessible */
+      /** @description At most 256 consecutive signed ref receipts, oldest first, each signed by its own authority epoch's key; adds the active epoch and the statements that bridge the epochs in the page; current head scope must remain accessible */
       200: {
         headers: {
           [name: string]: unknown;

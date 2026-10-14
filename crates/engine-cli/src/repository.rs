@@ -6,8 +6,8 @@ use clap::{Subcommand, ValueEnum};
 use engine_core::{
     repository::{
         local::{
-            GcApplyOptions, GcPlanOptions, LocalRepository, ObjectKey, ObjectPacket, StorageLimits,
-            SCHEMA_VERSION,
+            CompactOptions, GcApplyOptions, GcPlanOptions, LocalRepository, ObjectKey,
+            ObjectPacket, StorageLimits, SCHEMA_VERSION,
         },
         project_merge::SameFile,
         recovery, Commit, FileEntry, Head, SignedCommit,
@@ -56,7 +56,40 @@ pub enum Action {
     /// Initialize or verify the local project database.
     Init,
     /// Inspect retained encoded bytes/object/commit/branch counts and limits.
+    ///
+    /// `bytes_used` and the limit are logical (canonical encoded bytes);
+    /// `stored_bytes` is what the rows physically hold after compression at rest.
     Storage,
+    /// Compress existing object rows in place (local schema 3). Safe to repeat.
+    ///
+    /// New objects are compressed when written; this one-time command re-encodes
+    /// objects stored by earlier releases. Addresses, quotas and exported packets
+    /// do not change. Each batch is a short verified transaction: an object must
+    /// hash to its address and inflate back to the same bytes before its row is
+    /// replaced, and the persistent counters are checked against the batch. An
+    /// interrupted run keeps every committed batch; run it again to finish. It
+    /// does not shrink the database file by itself: add --vacuum for that. Needs a
+    /// writable repository.
+    Compact {
+        /// Rows examined per transaction (1-1024).
+        #[arg(long, default_value_t = 256)]
+        batch: usize,
+        /// Stop after about this many rows (use the printed `next` to resume).
+        #[arg(long)]
+        max_objects: Option<u64>,
+        #[arg(long, requires = "after_address")]
+        after_document: Option<uuid::Uuid>,
+        #[arg(long, requires = "after_document")]
+        after_address: Option<String>,
+        /// Return freed pages to the filesystem afterwards (checkpoint the
+        /// write-ahead log, then VACUUM); needs free disk space about the size
+        /// of the database file.
+        #[arg(long)]
+        vacuum: bool,
+        /// JSON report, or a plain-text summary of the same facts.
+        #[arg(long, value_enum, default_value_t = PlanFormat::Json)]
+        format: PlanFormat,
+    },
     /// Local private inventory; do not publish it as a shared remote listing.
     Objects {
         #[arg(long, requires = "after_address")]
@@ -76,7 +109,8 @@ pub enum Action {
     /// Read-only retention plan: what no branch head or recovery source reaches.
     ///
     /// Reports unreachable commits and objects (staged, orphaned, superseded)
-    /// with encoded byte totals, and what stays pinned and why. Deletes nothing.
+    /// with encoded (logical) byte totals, the physical bytes stored after
+    /// compression, and what stays pinned and why. Deletes nothing.
     /// Prints a deterministic `plan_hash` that `gc --plan-hash` requires. Opens
     /// the database read-only: it never creates, upgrades or writes it.
     GcPlan {
@@ -333,6 +367,42 @@ pub async fn run(path: PathBuf, project: uuid::Uuid, action: Action) -> anyhow::
     let output = match action {
         Action::Init => serde_json::json!({"project":project,"local_schema":SCHEMA_VERSION}),
         Action::Storage => serde_json::to_value(repo.storage_usage().await?)?,
+        Action::Compact {
+            batch,
+            max_objects,
+            after_document,
+            after_address,
+            vacuum,
+            format,
+        } => {
+            let after = match (after_document, after_address) {
+                (Some(document), Some(value)) => Some(ObjectKey {
+                    document: DocumentId(document),
+                    address: address(value)?,
+                }),
+                _ => None,
+            };
+            let report = repo
+                .compact(CompactOptions {
+                    batch_objects: batch,
+                    max_objects,
+                    after,
+                    vacuum,
+                })
+                .await?;
+            vacuum_failure = report
+                .vacuum
+                .as_ref()
+                .and_then(|v| v.error.clone())
+                .map(|e| format!("compaction committed but VACUUM failed: {e}"));
+            match format {
+                PlanFormat::Json => serde_json::to_value(&report)?,
+                PlanFormat::Text => {
+                    text = Some(report.summary());
+                    serde_json::Value::Null
+                }
+            }
+        }
         Action::Objects {
             after_document,
             after_address,

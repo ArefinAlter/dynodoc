@@ -128,11 +128,12 @@ fn object_keys(snapshot: &Snapshot) -> std::collections::BTreeSet<(String, Strin
 
 async fn usage_is_recomputed(repo: &LocalRepository) {
     let usage = repo.storage_usage().await.unwrap();
-    let (objects, object_bytes): (i64, i64) =
-        sqlx::query_as("select count(*),coalesce(sum(length(bytes)),0) from objects")
-            .fetch_one(&repo.pool)
-            .await
-            .unwrap();
+    let (objects, object_bytes, stored_object_bytes): (i64, i64, i64) = sqlx::query_as(
+        "select count(*),coalesce(sum(coalesce(size,length(bytes))),0),coalesce(sum(length(bytes)),0) from objects",
+    )
+    .fetch_one(&repo.pool)
+    .await
+    .unwrap();
     let (commits, commit_bytes): (i64, i64) =
         sqlx::query_as("select count(*),coalesce(sum(length(body)),0) from commits")
             .fetch_one(&repo.pool)
@@ -144,6 +145,7 @@ async fn usage_is_recomputed(repo: &LocalRepository) {
         .unwrap();
     assert_eq!(usage.objects_used, objects);
     assert_eq!(usage.bytes_used, object_bytes + commit_bytes);
+    assert_eq!(usage.stored_bytes, stored_object_bytes + commit_bytes);
     assert_eq!(usage.commits_used, commits);
     assert_eq!(usage.branches_used, branches);
 }
@@ -688,6 +690,7 @@ async fn a_writer_in_another_connection_makes_gc_wait_or_fail_cleanly() {
             &mut Store {
                 connection: &mut other,
                 read_budget: None,
+                packed: true,
             },
             late,
             &state("written by the other connection"),
@@ -720,6 +723,7 @@ async fn a_writer_in_another_connection_makes_gc_wait_or_fail_cleanly() {
             .await
             .unwrap(),
         project: repo.project,
+        schema: repo.schema,
         options: repo.options.clone(),
     };
     let hash = repo.gc_plan(all()).await.unwrap().plan_hash;
@@ -866,6 +870,7 @@ async fn a_large_synthetic_repository_collects_exactly_the_staged_objects() {
             &mut Store {
                 connection: &mut tx,
                 read_budget: None,
+                packed: true,
             },
             documents[i % 4],
             &paragraphs(40, &format!("staged{i}")),
@@ -957,6 +962,7 @@ async fn a_plan_taken_on_a_schema_one_database_survives_the_upgrade_on_open() {
             &mut Store {
                 connection: &mut tx,
                 read_budget: None,
+                packed: false,
             },
             document,
             &state(text),
@@ -1001,10 +1007,10 @@ async fn a_plan_taken_on_a_schema_one_database_survives_the_upgrade_on_open() {
         .await
         .is_err());
     reader.close().await;
-    // A writable open upgrades to schema 2; the same reviewed plan still applies.
+    // A writable open upgrades (1 -> 2 -> 3); the same reviewed plan still applies.
     let repo = LocalRepository::open(&file, project).await.unwrap();
     let fresh = repo.gc_plan(all()).await.unwrap();
-    assert_eq!(fresh.local_schema, 2);
+    assert_eq!(fresh.local_schema, 3);
     assert_eq!(fresh.plan_hash, plan.plan_hash);
     let report = repo
         .gc_apply(&plan.plan_hash, GcApplyOptions::default())

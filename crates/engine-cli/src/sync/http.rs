@@ -3,7 +3,10 @@
 //! (atomic rotation) or by signing a project-device challenge with an enrolled key.
 //! Access tokens are held in memory only and marked sensitive.
 use super::*;
-use engine_core::repository::device_session::{SessionChallenge, SessionProof, TOKEN_TTL_SECONDS};
+use engine_core::repository::{
+    authority_epoch::{Chain, Revocation, Served, SignedTransition},
+    device_session::{SessionChallenge, SessionProof, TOKEN_TTL_SECONDS},
+};
 use reqwest::{header, Method, StatusCode, Url};
 use ring::signature::{Ed25519KeyPair, KeyPair};
 use serde::de::DeserializeOwned;
@@ -66,6 +69,10 @@ pub struct Client {
     requests: AtomicUsize,
     transferred: AtomicUsize,
     started: Instant,
+    /// Epoch chain served by the remote, fetched once per run and verified locally.
+    server: tokio::sync::OnceCell<Served>,
+    /// Explicit, independently obtained key accepted across a recorded break.
+    break_key: Option<String>,
 }
 
 fn bearer(token: &str) -> anyhow::Result<header::HeaderValue> {
@@ -160,7 +167,19 @@ impl Client {
             requests: AtomicUsize::new(0),
             transferred: AtomicUsize::new(0),
             started: Instant::now(),
+            server: tokio::sync::OnceCell::new(),
+            break_key: None,
         })
+    }
+    /// Trust `key` as the successor across a recorded break for this run. Obtain it
+    /// independently of the server; the pinned receipt chain must still be extended.
+    pub fn accepting_break(mut self, key: String) -> anyhow::Result<Self> {
+        Address::try_from(key.clone())?;
+        self.break_key = Some(key);
+        Ok(self)
+    }
+    pub fn break_key(&self) -> Option<&str> {
+        self.break_key.as_deref()
     }
     fn renewable(&self) -> bool {
         !matches!(self.credential, Credential::Static)
@@ -476,6 +495,16 @@ impl Client {
             .await?
             .ok_or_else(|| anyhow!("missing response"))
     }
+    /// Like [`Client::get`], but a 404 answers `None`.
+    pub async fn get_optional<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        query: &[(&str, String)],
+        cap: usize,
+    ) -> anyhow::Result<Option<T>> {
+        self.request(Method::GET, path, query, None, cap, true)
+            .await
+    }
     pub async fn published(&self, address: &Address) -> anyhow::Result<Option<SignedCommit>> {
         let result: Option<SignedCommit> = self
             .request(
@@ -501,19 +530,129 @@ impl Client {
             .await?
             .unwrap())
     }
+    /// The independently configured key anchors trust. It must be a key of the
+    /// served epoch chain and reach the active key through dual-signed statements,
+    /// with no recorded break and no revocation marker. Fails closed otherwise.
     pub async fn authority(&self) -> anyhow::Result<()> {
+        let server = self.server().await?;
+        if let Some(new_key) = &self.break_key {
+            // NEW_KEY was supplied independently. It must be named by a recorded
+            // break, unrevoked from its own epoch, and linked to the active key;
+            // whether it follows a journal's pin is decided per branch by `proof`.
+            ensure!(
+                server.chain.statements().iter().any(|s| {
+                    s.transition.kind == engine_core::repository::authority_epoch::Kind::Recovery
+                        && &s.transition.new_key == new_key
+                }),
+                "the remote's chain records no break to that key"
+            );
+            return server
+                .vet(new_key, &server.active_key)
+                .map_err(|refusal| anyhow!("{refusal}"));
+        }
+        server
+            .vet(&self.remote.public_key, &server.active_key)
+            .map_err(|refusal| match refusal {
+                engine_core::repository::authority_epoch::Refusal::UnknownKey => anyhow!(
+                    "server authority differs from independently configured remote: the configured key is not part of its epoch chain"
+                ),
+                other => anyhow!("{other}"),
+            })
+    }
+    /// Every statement of the remote's authority chain (verified), the active key
+    /// and the revocation markers. Nothing here is trusted by itself.
+    pub async fn server(&self) -> anyhow::Result<&Served> {
+        self.server.get_or_try_init(|| self.fetch_served()).await
+    }
+    async fn fetch_served(&self) -> anyhow::Result<Served> {
         #[derive(Deserialize)]
-        struct Binding {
+        struct Item {
+            epoch: u32,
+            public_key: String,
+            statement: Option<SignedTransition>,
+            revocation: Option<Revocation>,
+        }
+        #[derive(Deserialize)]
+        struct Page {
             authority: Uuid,
             public_key: String,
+            epoch: u32,
+            revocation: Option<Revocation>,
+            genesis: Option<Item>,
+            rotations: Vec<Item>,
+            next_epoch: Option<u32>,
         }
-        let binding: Binding = self.get("history/authority", &[], 4096).await?;
-        ensure!(
-            binding.authority == self.remote.authority
-                && binding.public_key == self.remote.public_key,
-            "server authority differs from independently configured remote"
-        );
-        Ok(())
+        let mut statements = Vec::new();
+        let mut revoked = std::collections::BTreeMap::new();
+        let mut genesis_key = None;
+        let mut from = 1u32;
+        let mut active = None;
+        // At most 1024 epochs, 64 per page.
+        for _ in 0..17 {
+            let page: Page = self
+                .get(
+                    "history/authority",
+                    &[("from_epoch", from.to_string()), ("limit", "64".into())],
+                    512 * 1024,
+                )
+                .await?;
+            ensure!(
+                page.authority == self.remote.authority,
+                "server authority differs from independently configured remote"
+            );
+            if let Some(genesis) = page.genesis {
+                ensure!(genesis.epoch == 1, "unexpected genesis epoch");
+                genesis_key = Some(genesis.public_key);
+                if let Some(marker) = genesis.revocation {
+                    ensure!(marker.epoch == 1, "invalid revocation marker");
+                    revoked.insert(1, marker);
+                }
+            }
+            for item in page.rotations {
+                let statement = item
+                    .statement
+                    .ok_or_else(|| anyhow!("epoch {} lacks its statement", item.epoch))?;
+                ensure!(
+                    statement.transition.to_epoch == item.epoch
+                        && statement.transition.new_key == item.public_key,
+                    "epoch row differs from its statement"
+                );
+                if let Some(marker) = item.revocation {
+                    ensure!(marker.epoch == item.epoch, "invalid revocation marker");
+                    revoked.insert(item.epoch, marker);
+                }
+                statements.push(statement);
+            }
+            active = Some((page.public_key, page.epoch, page.revocation));
+            match page.next_epoch {
+                Some(next) if next > from => from = next,
+                Some(_) => anyhow::bail!("authority chain page made no progress"),
+                None => break,
+            }
+            ensure!(
+                statements.len() < 1024,
+                "authority chain exceeds 1024 epochs"
+            );
+        }
+        let (active_key, active_epoch, active_marker) =
+            active.ok_or_else(|| anyhow!("authority chain unavailable"))?;
+        if let Some(marker) = active_marker {
+            ensure!(marker.epoch == active_epoch, "invalid revocation marker");
+            revoked.insert(active_epoch, marker);
+        }
+        match statements.first() {
+            Some(first) => ensure!(
+                first.transition.from_epoch == 1
+                    && genesis_key.as_deref() == Some(first.transition.old_key.as_str()),
+                "authority chain does not start at epoch 1"
+            ),
+            None => ensure!(
+                genesis_key.as_deref() == Some(active_key.as_str()),
+                "authority genesis key differs from the active key"
+            ),
+        }
+        let chain = Chain::new(self.remote.authority, statements)?;
+        Ok(Served::new(chain, active_key, active_epoch, revoked)?)
     }
     pub async fn head(&self, scope: &Scope) -> anyhow::Result<Option<SignedReceipt>> {
         #[derive(Deserialize)]
@@ -539,7 +678,13 @@ impl Client {
         );
         if let Some(receipt) = result.receipts.into_iter().next() {
             let entry = &result.items[0];
-            Pin::trust_checkpoint(scope, &self.remote.public_key, receipt.clone())?;
+            // The key is vetted against the verified epoch chain by `proof`.
+            receipt.verify()?;
+            ensure!(
+                receipt.receipt.scope == *scope
+                    && self.server().await?.knows(&receipt.receipt.issuer_key),
+                "receipt scope or key is not part of the authority chain"
+            );
             ensure!(
                 entry.branch == scope.branch && entry.head == receipt.receipt.head,
                 "ref/receipt mismatch"

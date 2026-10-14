@@ -584,6 +584,7 @@ async fn schema_one_repository_is_planned_without_being_upgraded() {
         &mut Store {
             connection: &mut tx,
             read_budget: None,
+            packed: false,
         },
         document,
         &state("schema one"),

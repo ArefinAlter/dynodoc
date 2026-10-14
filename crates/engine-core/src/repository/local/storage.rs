@@ -1,10 +1,14 @@
 //! Persistent admission budgets for retained local history. These count encoded
 //! payloads and rows, not SQLite pages, WAL, backups or the separate trust journal.
+//!
+//! `bytes_used` and the limit are *logical*: the canonical encoded length of every
+//! object and commit, unchanged by compression at rest (schema 3). `stored_bytes`
+//! is the physical payload actually held in those rows.
 use crate::repository::Error;
 use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
 
-pub const SCHEMA_VERSION: i64 = 2;
+pub const SCHEMA_VERSION: i64 = 3;
 const CAPACITY: &str = "local repository capacity exceeded";
 const HELP: &str = "local storage capacity; inspect repository storage and explicitly increase limits to retain more history";
 
@@ -43,6 +47,11 @@ impl StorageLimits {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StorageUsage {
     pub bytes_used: i64,
+    /// Payload bytes physically stored: object rows as stored (compressed or not)
+    /// plus commit bodies. Never above `bytes_used`; equal on an uncompacted
+    /// schema-2 upgrade. Not SQLite file size.
+    #[serde(default)]
+    pub stored_bytes: i64,
     pub objects_used: i64,
     pub commits_used: i64,
     pub branches_used: i64,
@@ -73,6 +82,13 @@ fn is_capacity(error: &sqlx::Error) -> bool {
     })
 }
 
+/// Schemas this build opens. A client that predates a number rejects it, exactly
+/// as the schema-1-only clients reject 2 and the schema-2 clients reject 3.
+pub(super) fn supported(version: i64) -> bool {
+    (1..=SCHEMA_VERSION).contains(&version)
+}
+
+/// Schema 1 -> 2.
 pub(super) async fn upgrade(connection: &mut SqliteConnection) -> Result<(), Error> {
     sqlx::raw_sql(include_str!("storage_v2.sql"))
         .execute(connection)
@@ -80,13 +96,41 @@ pub(super) async fn upgrade(connection: &mut SqliteConnection) -> Result<(), Err
     Ok(())
 }
 
-pub(super) async fn usage(connection: &mut SqliteConnection) -> Result<StorageUsage, Error> {
-    let (bytes_used, objects_used, commits_used, branches_used, bytes, objects, commits, branches):
-        (i64,i64,i64,i64,i64,i64,i64,i64) = sqlx::query_as(
-            "select bytes_used,objects_used,commits_used,branches_used,byte_limit,object_limit,commit_limit,branch_limit from local_storage where singleton=1"
-        ).fetch_one(connection).await?;
+/// Schema 2 -> 3: per-object codec and logical size, physical byte counter.
+pub(super) async fn upgrade_packed(connection: &mut SqliteConnection) -> Result<(), Error> {
+    sqlx::raw_sql(include_str!("storage_v3.sql"))
+        .execute(connection)
+        .await?;
+    Ok(())
+}
+
+/// Persisted usage. `schema` is the handle's schema: a schema-2 database (read-only
+/// open) has no physical counter, and all of its rows are identity, so physical
+/// bytes equal logical bytes.
+pub(super) async fn usage(
+    connection: &mut SqliteConnection,
+    schema: i64,
+) -> Result<StorageUsage, Error> {
+    let sql = if schema >= 3 {
+        "select bytes_used,stored_bytes,objects_used,commits_used,branches_used,byte_limit,object_limit,commit_limit,branch_limit from local_storage where singleton=1"
+    } else {
+        "select bytes_used,bytes_used,objects_used,commits_used,branches_used,byte_limit,object_limit,commit_limit,branch_limit from local_storage where singleton=1"
+    };
+    let (
+        bytes_used,
+        stored_bytes,
+        objects_used,
+        commits_used,
+        branches_used,
+        bytes,
+        objects,
+        commits,
+        branches,
+    ): (i64, i64, i64, i64, i64, i64, i64, i64, i64) =
+        sqlx::query_as(sql).fetch_one(connection).await?;
     Ok(StorageUsage {
         bytes_used,
+        stored_bytes,
         objects_used,
         commits_used,
         branches_used,

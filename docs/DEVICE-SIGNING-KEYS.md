@@ -1,8 +1,11 @@
 # Account-bound device signing keys
 
-12 October 2026, revised 13 October 2026. Enrollment is schema 33. Per-project
-grants and key file protection are schema 40 (source only until a release records
-them): see [device key grants API](DEVICE-KEY-GRANTS-API.md).
+12 October 2026, revised 13 and 14 October 2026. Enrollment is schema 33.
+Per-project grants and key file protection are schema 40 (source only until a
+release records them): see [device key grants API](DEVICE-KEY-GRANTS-API.md).
+Passphrase-encrypted key files and an optional OS keystore binding (14 October)
+are client-side only, with no schema change: see
+[encrypted key files](KEY-FILE-FORMAT.md).
 
 The portable project commit signature can now be checked against an authenticated
 account's active signing key. Enrollment proves possession of an Ed25519 private
@@ -14,7 +17,8 @@ audit witness. Remote project exchange and protected publication remain open.
 ## User workflow
 
 Open your own Profile → Signing keys. Obtain the public key from an existing local
-unencrypted DER Ed25519 PKCS#8 key with:
+Ed25519 PKCS#8 key file (unencrypted DER, or an encrypted `dynodoc-key-v1` file,
+which asks for its passphrase) with:
 
 ```text
 engine-cli device public-key signing-key.der
@@ -26,7 +30,11 @@ IDs, checks the key matches, and writes a new proof file without overwriting an
 existing file. Select that proof JSON in the profile to finish enrollment. The
 private key stays local. Do not upload a private key. `engine-cli device keygen
 --out FILE` creates a new key (exclusive file, mode 0600 on Unix) and prints its
-public key. Secure native-host key storage is not implemented. An enrolled key can
+public key; add `--encrypt` for a passphrase-encrypted file, or `--encrypt
+--keystore` to let the operating system hold the wrapping secret instead of a
+passphrase. `engine-cli device protect FILE` encrypts an existing key without
+changing its public key, so it stays enrolled. A native host's own secure storage
+and hardware tokens are not implemented. An enrolled key can
 also sign in to one project at a time for short-lived `sync` tokens: see
 [project-scoped device sessions](PROJECT-SCOPED-DEVICE-SESSIONS.md).
 
@@ -44,8 +52,25 @@ secret: the server stores no token or passphrase for it.
 Unix; on Windows an access list with just your account, verified with `icacls`) and
 fails if that cannot be applied, unless the global `--allow-insecure-key-file` is
 passed. On Unix every command that loads a key refuses a file readable by group or
-others without that flag. These protect against other local accounts; the key is
-still an unencrypted file with no keystore.
+others without that flag. These protect against other local accounts. An
+unencrypted file is still the whole credential for anything running as you or any
+copy of the file; the encrypted forms below add protection at rest.
+
+**Encrypted key files (14 October).** `device keygen --encrypt` and `device
+protect` write a `dynodoc-key-v1` file: ChaCha20-Poly1305 under a key derived with
+PBKDF2-HMAC-SHA256 (600,000 iterations, parameters in the file). Every command
+that reads a key file decrypts it transparently, taking the passphrase from
+`--passphrase-file FILE`, the environment variable `DYNODOC_KEY_PASSPHRASE_FILE`
+(a path) or a hidden prompt; it is never accepted as an argument, and with no
+source a command fails rather than waiting. `device unprotect --i-understand`
+reverses it. With `--keystore` the wrapping secret is random and held by Windows
+DPAPI, the macOS login keychain (through `security`) or the Linux Secret Service
+(through `secret-tool`). The format, bounds, test vector and an exact list of
+what this does not protect against are in [KEY-FILE-FORMAT.md](KEY-FILE-FORMAT.md).
+In short: an encrypted file protects a stolen or backed-up copy as far as its
+passphrase is strong (PBKDF2 is not memory-hard); it does not protect against
+malware running as you while the key is unlocked, and it is not a hardware key.
+The macOS and Linux keystore paths have not been run on those systems.
 
 Revoke keys from the same profile. Revocation is permanent, including after a
 lost-response retry or account restoration. Reconnect using a new key. Existing

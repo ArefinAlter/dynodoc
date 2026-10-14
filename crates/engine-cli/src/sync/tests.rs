@@ -30,6 +30,16 @@ fn remote(url: String, authority: Uuid) -> Remote {
         public_key: hex::encode(key(99).public_key().as_ref()),
     }
 }
+/// What an installation that never rotated serves at `history/authority`.
+fn epoch_one(authority: Uuid) -> Value {
+    let public = hex::encode(key(99).public_key().as_ref());
+    json!({
+        "authority": authority, "public_key": public, "epoch": 1, "revocation": null,
+        "genesis": {"epoch": 1, "kind": "genesis", "public_key": public,
+                    "installed_at_ms": 0, "statement": null, "revocation": null},
+        "rotations": [], "next_epoch": null, "independent_verification_required": true
+    })
+}
 async fn serve(router: Router) -> (String, tokio::task::JoinHandle<()>) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}/", listener.local_addr().unwrap());
@@ -573,6 +583,7 @@ async fn up_to_date_push_rechecks_head_before_pinning_a_concurrent_unfetched_upd
     let count = Arc::new(AtomicUsize::new(0));
     let expected = first.receipt.head.clone();
     let (url,server) = serve(Router::new()
+        .route("/projects/:id/history/authority",get(move || async move { Json(epoch_one(authority)) }))
         .route("/projects/:id/history/refs",get(move || {
             let r = if count.fetch_add(1,Ordering::Relaxed) == 0 {first.clone()} else {next.clone()};
             async move { Json(json!({"items":[{"branch":"main","head":r.receipt.head}],"receipts":[r]})) }
@@ -619,13 +630,20 @@ async fn rollback_fork_wrong_key_revocation_and_gapped_receipts_never_replace_tr
     let second = receipt(scope.clone(), 2, Some(first.verify().unwrap()), b.clone());
     let gap = receipt(scope.clone(), 4, Some(second.verify().unwrap()), a.clone());
     let served = gap.clone();
-    let (url, server) = serve(Router::new().route(
-        "/projects/:id/history/receipts",
-        get(move || {
-            let r = served.clone();
-            async move { Json(json!({"items":[r]})) }
-        }),
-    ))
+    let (url, server) = serve(
+        Router::new()
+            .route(
+                "/projects/:id/history/authority",
+                get(move || async move { Json(epoch_one(authority)) }),
+            )
+            .route(
+                "/projects/:id/history/receipts",
+                get(move || {
+                    let r = served.clone();
+                    async move { Json(json!({"items":[r]})) }
+                }),
+            ),
+    )
     .await;
     let client = Client::new(remote(url, authority), project, "synthetic", true).unwrap();
     let (path, journal) = journal().await;
@@ -1391,5 +1409,426 @@ async fn a_granted_key_signs_in_only_for_what_its_account_holder_granted(pool: P
     assert_eq!(code, 200);
     server.abort();
     let _ = server.await;
+    runtime.close().await;
+}
+
+// ---- receipt-authority epochs (docs/REF-AUTHORITY-ROTATION.md) -------------------
+
+fn hexkey(seed: u8) -> String {
+    hex::encode(key(seed).public_key().as_ref())
+}
+async fn api_with(pool: &PgPool, signer: Option<u8>) -> (String, tokio::task::JoinHandle<()>) {
+    let mut api = AppState::new(
+        pool.clone(),
+        AuthConfig {
+            paseto_key: TOKEN_KEY,
+            service_key: None,
+            token_ttl_seconds: 3600,
+            public_base_url: "http://test.local".into(),
+        },
+    );
+    api.ref_signer = signer.map(|seed| Arc::new(key(seed)));
+    serve(app(api)).await
+}
+/// A statement for the database as it is now (operator view, writers stopped).
+async fn operator_statement(
+    pool: &PgPool,
+    kind: engine_core::repository::authority_epoch::Kind,
+    old: u8,
+    new: u8,
+) -> engine_core::repository::authority_epoch::SignedTransition {
+    use engine_core::repository::authority_epoch::{Kind, SignedTransition, Transition};
+    let state = engine_core::repository::server_authority::state(pool)
+        .await
+        .unwrap();
+    let transition = Transition {
+        version: 1,
+        kind,
+        authority: state.authority,
+        from_epoch: state.epoch,
+        to_epoch: state.epoch + 1,
+        old_key: hexkey(old),
+        new_key: hexkey(new),
+        sealed: state.sealed,
+        reason: match kind {
+            Kind::Recovery => "private key lost".into(),
+            Kind::Rotation => String::new(),
+        },
+        declared_at_ms: 1_700_000_000_000,
+    };
+    match kind {
+        Kind::Rotation => SignedTransition::sign_rotation(transition, &key(old), &key(new)),
+        Kind::Recovery => SignedTransition::sign_recovery(transition, &key(new)),
+    }
+    .unwrap()
+}
+async fn new_project(url: &str, pool: &PgPool, login: &str, owner: Uuid) -> (Uuid, Uuid) {
+    let project: Uuid = serde_json::from_value(
+        post(url, "projects", login, json!({"name":"Epochs"})).await["id"].clone(),
+    )
+    .unwrap();
+    let doc: Uuid = sqlx::query_scalar(
+        "insert into document(title,created_by,space_id) values('Report',$1,$2) returning id",
+    )
+    .bind(owner)
+    .bind(project)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    (project, doc)
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn sync_clients_follow_a_planned_rotation_and_refuse_retired_key_receipts(pool: PgPool) {
+    use engine_core::repository::{authority_epoch::Kind, server_authority};
+    let authority = server_authority::install(&pool, &hexkey(99)).await.unwrap();
+    let runtime = common::RuntimeDatabase::new(pool.clone()).await;
+    let (url, server) = api_with(&runtime.pool, Some(99)).await;
+    let (owner, login) = actor(&runtime.pool, "owner").await;
+    let (project, doc) = new_project(&url, &runtime.pool, &login, owner).await;
+    let owner_key = enroll(&url, &login, owner, 7).await;
+    let scope = Scope {
+        authority,
+        project,
+        branch: "main".into(),
+    };
+    let client = Client::new(remote(url.clone(), authority), project, &login, true).unwrap();
+    client.authority().await.unwrap();
+    let (p1, r1) = repo(project).await;
+    let (j1, journal1) = journal().await;
+    let a = commit(&r1, doc, &owner_key, vec![], "base").await;
+    let approved = plan(&r1, &client, &journal1, &scope, a.verify().unwrap(), true)
+        .await
+        .unwrap();
+    assert_eq!(
+        push(&r1, &client, &journal1, &scope, approved)
+            .await
+            .unwrap()["head"]["generation"],
+        1
+    );
+    // A second journal pins generation 1 under the epoch-1 key.
+    let (j2, journal2) = journal().await;
+    let reader = Client::new(remote(url.clone(), authority), project, &login, true).unwrap();
+    let head1 = reader.head(&scope).await.unwrap().unwrap();
+    track(&reader, &journal2, &scope, head1.clone())
+        .await
+        .unwrap();
+    assert_eq!(
+        journal2.pin(&scope).await.unwrap().unwrap().trusted_key(),
+        hexkey(99)
+    );
+
+    // Operator: writers stopped, rotate, mount the new key.
+    server.abort();
+    let _ = server.await;
+    let rotation = operator_statement(&pool, Kind::Rotation, 99, 98).await;
+    server_authority::install_rotation(&pool, &rotation)
+        .await
+        .unwrap();
+    let (url2, server2) = api_with(&runtime.pool, Some(98)).await;
+
+    // The independently configured epoch-1 key still anchors trust.
+    let client = Client::new(remote(url2.clone(), authority), project, &login, true).unwrap();
+    client.authority().await.unwrap();
+    let b = commit(
+        &r1,
+        doc,
+        &owner_key,
+        vec![a.verify().unwrap()],
+        "after rotation",
+    )
+    .await;
+    let approved = plan(&r1, &client, &journal1, &scope, b.verify().unwrap(), true)
+        .await
+        .unwrap();
+    let pushed = push(&r1, &client, &journal1, &scope, approved)
+        .await
+        .unwrap();
+    assert_eq!(pushed["head"]["generation"], 2);
+    let pin = journal1.pin(&scope).await.unwrap().unwrap();
+    assert_eq!(pin.trusted_key(), hexkey(98));
+    assert_eq!(pin.receipt().receipt.head.generation, 2);
+    assert_eq!(journal1.statements().await.unwrap(), vec![rotation.clone()]);
+
+    // The reader pinned before the rotation catches up through the statement.
+    let reader = Client::new(remote(url2.clone(), authority), project, &login, true).unwrap();
+    reader.authority().await.unwrap();
+    let head2 = reader.head(&scope).await.unwrap().unwrap();
+    assert_eq!(head2.receipt.issuer_key, hexkey(98));
+    track(&reader, &journal2, &scope, head2.clone())
+        .await
+        .unwrap();
+    let caught = journal2.pin(&scope).await.unwrap().unwrap();
+    assert_eq!(caught.receipt(), &head2);
+    assert_eq!(caught.trusted_key(), hexkey(98));
+    assert_eq!(journal2.statements().await.unwrap().len(), 1);
+    // The old receipt still verifies by itself and a fresh journal follows the chain.
+    head1.verify().unwrap();
+    let (j3, journal3) = journal().await;
+    track(&reader, &journal3, &scope, head2.clone())
+        .await
+        .unwrap();
+    assert_eq!(
+        journal3.pin(&scope).await.unwrap().unwrap().trusted_key(),
+        hexkey(98)
+    );
+    // A configured key that is not on the server's chain is refused.
+    let stranger = Remote {
+        public_key: hexkey(55),
+        ..remote(url2.clone(), authority)
+    };
+    assert!(Client::new(stranger, project, &login, true)
+        .unwrap()
+        .authority()
+        .await
+        .is_err());
+    // A receipt minted later with the retired key cannot extend the new pin.
+    let forged = SignedReceipt::sign(
+        Receipt {
+            version: 1,
+            scope: scope.clone(),
+            head: Head {
+                commit: b.verify().unwrap(),
+                generation: 3,
+            },
+            previous: Some(head2.verify().unwrap()),
+            issued_at_ms: 1,
+            issuer_key: String::new(),
+        },
+        &key(99),
+    )
+    .unwrap();
+    assert!(journal2
+        .advance_chain(
+            &scope,
+            &reader.server().await.unwrap().chain,
+            std::slice::from_ref(&forged)
+        )
+        .await
+        .is_err());
+    assert!(track(&reader, &journal2, &scope, forged).await.is_err());
+    assert_eq!(
+        journal2
+            .pin(&scope)
+            .await
+            .unwrap()
+            .unwrap()
+            .receipt()
+            .receipt
+            .head
+            .generation,
+        2
+    );
+    server2.abort();
+    let _ = server2.await;
+    for journal in [journal1, journal2, journal3] {
+        journal.close().await;
+    }
+    r1.close().await;
+    for path in [p1, j1, j2, j3] {
+        remove(path).await;
+    }
+    runtime.close().await;
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn revocation_refuses_clients_and_only_an_explicit_repin_crosses_the_recorded_break(
+    pool: PgPool,
+) {
+    use engine_core::repository::{authority_epoch::Kind, server_authority};
+    let authority = server_authority::install(&pool, &hexkey(99)).await.unwrap();
+    let runtime = common::RuntimeDatabase::new(pool.clone()).await;
+    let (url, server) = api_with(&runtime.pool, Some(99)).await;
+    let (owner, login) = actor(&runtime.pool, "owner").await;
+    let (project, doc) = new_project(&url, &runtime.pool, &login, owner).await;
+    let owner_key = enroll(&url, &login, owner, 7).await;
+    let scope = Scope {
+        authority,
+        project,
+        branch: "main".into(),
+    };
+    let client = Client::new(remote(url.clone(), authority), project, &login, true).unwrap();
+    client.authority().await.unwrap();
+    let (p1, r1) = repo(project).await;
+    let (j1, journal1) = journal().await;
+    let a = commit(&r1, doc, &owner_key, vec![], "base").await;
+    let approved = plan(&r1, &client, &journal1, &scope, a.verify().unwrap(), true)
+        .await
+        .unwrap();
+    push(&r1, &client, &journal1, &scope, approved)
+        .await
+        .unwrap();
+    let head1 = client.head(&scope).await.unwrap().unwrap();
+    // Two more readers pinned at generation 1.
+    let (j2, journal2) = journal().await;
+    let (j3, journal3) = journal().await;
+    for journal in [&journal2, &journal3] {
+        track(&client, journal, &scope, head1.clone())
+            .await
+            .unwrap();
+    }
+
+    // Compromise: marker recorded; the server and the clients both stop.
+    server_authority::revoke(&pool, "signing key leaked", None, None)
+        .await
+        .unwrap();
+    // The chain is fetched once per run, so every observation below is a new run.
+    let client = Client::new(remote(url.clone(), authority), project, &login, true).unwrap();
+    let message = format!("{:#}", client.authority().await.unwrap_err());
+    assert!(message.contains("revoked"), "{message}");
+    let b = commit(
+        &r1,
+        doc,
+        &owner_key,
+        vec![a.verify().unwrap()],
+        "after recovery",
+    )
+    .await;
+    let refused = plan(&r1, &client, &journal1, &scope, b.verify().unwrap(), true)
+        .await
+        .unwrap_err();
+    assert!(format!("{refused:#}").contains("revoked"), "{refused:#}");
+    assert!(
+        journal1.pin(&scope).await.unwrap().unwrap().revoked(),
+        "the marker on the pinned key's epoch revokes the local pin"
+    );
+
+    // Recovery: a recorded break to key 98, mounted by a restarted API.
+    server.abort();
+    let _ = server.await;
+    let recovery = operator_statement(&pool, Kind::Recovery, 99, 98).await;
+    server_authority::install_recovery(&pool, &recovery)
+        .await
+        .unwrap();
+    let (url2, server2) = api_with(&runtime.pool, Some(98)).await;
+    let with_key = |public_key: String| Remote {
+        public_key,
+        ..remote(url2.clone(), authority)
+    };
+    // The old configuration, a stranger key, and trusting the revoked epoch's
+    // head as a fresh checkpoint are all refused.
+    for seed in [99, 55] {
+        let refused = Client::new(with_key(hexkey(seed)), project, &login, true).unwrap();
+        assert!(refused.authority().await.is_err(), "key {seed}");
+    }
+    let fresh = Client::new(with_key(hexkey(98)), project, &login, true).unwrap();
+    fresh.authority().await.unwrap();
+    let revoked_head = fresh.head(&scope).await.unwrap().unwrap();
+    let (j4, journal4) = journal().await;
+    assert!(track(&fresh, &journal4, &scope, revoked_head)
+        .await
+        .is_err());
+    assert!(journal4.pin(&scope).await.unwrap().is_none());
+    let wrong = Client::new(with_key(hexkey(99)), project, &login, true)
+        .unwrap()
+        .accepting_break(hexkey(55))
+        .unwrap();
+    assert!(wrong.authority().await.is_err());
+
+    // Explicit re-pin: the journal that holds the pinned receipt can plan and push
+    // (an unchanged head trusts nothing new); the first new receipt must extend it.
+    let explicit = Client::new(with_key(hexkey(99)), project, &login, true)
+        .unwrap()
+        .accepting_break(hexkey(98))
+        .unwrap();
+    explicit.authority().await.unwrap();
+    let approved = plan(&r1, &explicit, &journal1, &scope, b.verify().unwrap(), true)
+        .await
+        .unwrap();
+    let pushed = push(&r1, &explicit, &journal1, &scope, approved)
+        .await
+        .unwrap();
+    assert_eq!(pushed["head"]["generation"], 2);
+    let pin = journal1.pin(&scope).await.unwrap().unwrap();
+    assert_eq!(pin.trusted_key(), hexkey(98));
+    assert!(!pin.revoked());
+    assert_eq!(journal1.statements().await.unwrap(), vec![recovery.clone()]);
+    // From then on an ordinary client configured with the new key keeps tracking.
+    let ordinary = Client::new(with_key(hexkey(98)), project, &login, true).unwrap();
+    ordinary.authority().await.unwrap();
+    let head2 = ordinary.head(&scope).await.unwrap().unwrap();
+    track(&ordinary, &journal1, &scope, head2.clone())
+        .await
+        .unwrap();
+
+    // The other readers: one through sync's explicit mode, one through the offline
+    // bundle and `receipt accept-break`, which needs the explicit confirmation.
+    track(&explicit, &journal2, &scope, head2.clone())
+        .await
+        .unwrap();
+    assert_eq!(
+        journal2.pin(&scope).await.unwrap().unwrap().trusted_key(),
+        hexkey(98)
+    );
+    let bundle = std::env::temp_dir().join(format!("dynodoc-authority-{}.json", Uuid::new_v4()));
+    let summary = authority_proof(&explicit, &journal3, &scope, &bundle)
+        .await
+        .unwrap();
+    assert_eq!(summary["applied"], false);
+    assert_eq!(summary["receipts_after_pin"], 1);
+    let action = |confirm_break: bool| crate::receipt::Action::AcceptBreak {
+        proof: bundle.clone(),
+        new_key: hexkey(98),
+        confirm_break,
+    };
+    assert!(
+        crate::receipt::run(j3.clone(), scope.clone(), action(false))
+            .await
+            .is_err()
+    );
+    let wrong_key = crate::receipt::Action::AcceptBreak {
+        proof: bundle.clone(),
+        new_key: hexkey(55),
+        confirm_break: true,
+    };
+    assert!(crate::receipt::run(j3.clone(), scope.clone(), wrong_key)
+        .await
+        .is_err());
+    // The plain offline advance refuses the break and the revoked epoch.
+    let advance = crate::receipt::Action::Advance {
+        proof: bundle.clone(),
+    };
+    assert!(crate::receipt::run(j3.clone(), scope.clone(), advance)
+        .await
+        .is_err());
+    assert!(journal3.pin(&scope).await.unwrap().unwrap().revoked());
+    crate::receipt::run(j3.clone(), scope.clone(), action(true))
+        .await
+        .unwrap();
+    let repinned = journal3.pin(&scope).await.unwrap().unwrap();
+    assert_eq!(repinned.receipt(), &head2);
+    assert_eq!(repinned.trusted_key(), hexkey(98));
+    assert!(!repinned.revoked());
+    assert!(journal3.statements().await.unwrap().contains(&recovery));
+    // A fresh client accepts nothing signed by the retired key afterwards.
+    let minted = SignedReceipt::sign(
+        Receipt {
+            version: 1,
+            scope: scope.clone(),
+            head: Head {
+                commit: b.verify().unwrap(),
+                generation: 3,
+            },
+            previous: Some(head2.verify().unwrap()),
+            issued_at_ms: 1,
+            issuer_key: String::new(),
+        },
+        &key(99),
+    )
+    .unwrap();
+    assert!(journal3
+        .advance_chain(&scope, &ordinary.server().await.unwrap().chain, &[minted])
+        .await
+        .is_err());
+    server2.abort();
+    let _ = server2.await;
+    for journal in [journal1, journal2, journal3, journal4] {
+        journal.close().await;
+    }
+    r1.close().await;
+    let _ = std::fs::remove_file(&bundle);
+    for path in [p1, j1, j2, j3, j4] {
+        remove(path).await;
+    }
     runtime.close().await;
 }

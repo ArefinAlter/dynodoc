@@ -1,0 +1,1255 @@
+{
+  "kind": "Local repository compression at rest (schema 3): synthetic graphs, codec choice and what packing could add",
+  "date": "2026-10-14",
+  "environment": {
+    "platform": "win32",
+    "arch": "x64",
+    "cpu": "12th Gen Intel(R) Core(TM) i7-1255U",
+    "node": "v24.12.0",
+    "cli_fixtures": "debug engine-cli builds; process startup and database reopen included in every timing; miniz_oxide is unoptimized in these builds, so their write timings overstate compression cost",
+    "microbenchmarks_and_in_process": "release builds (opt-level 3, LTO off), single thread, best of three where stated"
+  },
+  "policy": {
+    "format": "schema 3 objects(codec integer, size integer): codec 0 identity, codec 1 raw DEFLATE (miniz_oxide, level 6)",
+    "minimum_logical_bytes": 128,
+    "keep_compressed_only_if_stored_at_most_percent_of_logical": 90,
+    "declared_size_limit_bytes": 1048576,
+    "accounting": "bytes_used and limits stay logical (canonical encoded bytes); stored_bytes is physical payload"
+  },
+  "fixtures": [
+    {
+      "fixture": {
+        "name": "repetitive",
+        "nodes": 128,
+        "edits": 32,
+        "commits": 33,
+        "paragraph_pool": null
+      },
+      "logical_bytes_used": 273586,
+      "objects": 1075,
+      "commit_bytes_note": "bytes_used includes signed-commit bodies, which are never compressed",
+      "sum_full_state_json_bytes": 1896632,
+      "schema2_identity_rows": {
+        "stored_bytes": 273586,
+        "sqlite_files_bytes": 602112,
+        "state_write_ms": {
+          "min": 329.22119999999995,
+          "median": 445.1417000000001,
+          "p95": 887.1020000000008,
+          "max": 1064.9306000000006
+        },
+        "note": "written by a schema-2 CLI, then opened (upgraded) by the schema-3 CLI"
+      },
+      "schema3_written_compressed": {
+        "stored_bytes": 170872,
+        "compressed_objects": 594,
+        "sqlite_files_bytes": 491520,
+        "state_write_ms": {
+          "min": 545.5931000000019,
+          "median": 1580.8713999999964,
+          "p95": 3606.287199999999,
+          "max": 3717.9942999999985
+        },
+        "compact_rewrites_after_the_fact": 0,
+        "files_after_compact_vacuum": 483328,
+        "vacuum": {
+          "error": null,
+          "file_bytes_after": 483328,
+          "file_bytes_before": 516272
+        }
+      },
+      "schema2_compacted": {
+        "stored_bytes": 170872,
+        "compact_ms": 1043.6872999999905,
+        "rewritten_objects": 594,
+        "kept_identity_objects": 481,
+        "stored_bytes_saved": 102714,
+        "sqlite_files_bytes_after_vacuum": 483328,
+        "vacuum": {
+          "error": null,
+          "file_bytes_after": 483328,
+          "file_bytes_before": 2064744
+        },
+        "second_run_rewrites": 0
+      },
+      "ratios": {
+        "stored_over_logical_payload": 0.6245641224331654,
+        "sqlite_files_after_over_before": 0.8027210884353742
+      }
+    },
+    {
+      "fixture": {
+        "name": "repetitive",
+        "nodes": 512,
+        "edits": 32,
+        "commits": 33,
+        "paragraph_pool": null
+      },
+      "logical_bytes_used": 736893,
+      "objects": 3494,
+      "commit_bytes_note": "bytes_used includes signed-commit bodies, which are never compressed",
+      "sum_full_state_json_bytes": 7599032,
+      "schema2_identity_rows": {
+        "stored_bytes": 736893,
+        "sqlite_files_bytes": 1708032,
+        "state_write_ms": {
+          "min": 2872.7271,
+          "median": 6058.637699999992,
+          "p95": 9826.821099999972,
+          "max": 10044.778099999996
+        },
+        "note": "written by a schema-2 CLI, then opened (upgraded) by the schema-3 CLI"
+      },
+      "schema3_written_compressed": {
+        "stored_bytes": 462058,
+        "compressed_objects": 1861,
+        "sqlite_files_bytes": 1396736,
+        "state_write_ms": {
+          "min": 4511.684299999964,
+          "median": 7654.312399999995,
+          "p95": 14776.482300000032,
+          "max": 15298.32050000003
+        },
+        "compact_rewrites_after_the_fact": 0,
+        "files_after_compact_vacuum": 1347584,
+        "vacuum": {
+          "error": null,
+          "file_bytes_after": 1347584,
+          "file_bytes_before": 1458568
+        }
+      },
+      "schema2_compacted": {
+        "stored_bytes": 462058,
+        "compact_ms": 5871.891999999993,
+        "rewritten_objects": 1861,
+        "kept_identity_objects": 1633,
+        "stored_bytes_saved": 274835,
+        "sqlite_files_bytes_after_vacuum": 1347584,
+        "vacuum": {
+          "error": null,
+          "file_bytes_after": 1347584,
+          "file_bytes_before": 5856904
+        },
+        "second_run_rewrites": 0
+      },
+      "ratios": {
+        "stored_over_logical_payload": 0.6270354040545913,
+        "sqlite_files_after_over_before": 0.7889688249400479
+      }
+    },
+    {
+      "fixture": {
+        "name": "docs",
+        "nodes": 128,
+        "edits": 32,
+        "commits": 33,
+        "paragraph_pool": {
+          "paragraphs": 2020,
+          "sha256": "86e7c7fa045e2dee7c9139841d2297775d71a97ec370041030d0247fe0bc1ec3"
+        }
+      },
+      "logical_bytes_used": 292468,
+      "objects": 1075,
+      "commit_bytes_note": "bytes_used includes signed-commit bodies, which are never compressed",
+      "sum_full_state_json_bytes": 2448318,
+      "schema2_identity_rows": {
+        "stored_bytes": 292468,
+        "sqlite_files_bytes": 630784,
+        "state_write_ms": {
+          "min": 925.7543000000005,
+          "median": 2428.1880999999994,
+          "p95": 3252.1048999999985,
+          "max": 3254.4830999999976
+        },
+        "note": "written by a schema-2 CLI, then opened (upgraded) by the schema-3 CLI"
+      },
+      "schema3_written_compressed": {
+        "stored_bytes": 205682,
+        "compressed_objects": 594,
+        "sqlite_files_bytes": 532480,
+        "state_write_ms": {
+          "min": 833.5141000000003,
+          "median": 1515.6543999999994,
+          "p95": 4358.266800000012,
+          "max": 4415.7124000000185
+        },
+        "compact_rewrites_after_the_fact": 0,
+        "files_after_compact_vacuum": 520192,
+        "vacuum": {
+          "error": null,
+          "file_bytes_after": 520192,
+          "file_bytes_before": 581952
+        }
+      },
+      "schema2_compacted": {
+        "stored_bytes": 205682,
+        "compact_ms": 2725.6055999999808,
+        "rewritten_objects": 594,
+        "kept_identity_objects": 481,
+        "stored_bytes_saved": 86786,
+        "sqlite_files_bytes_after_vacuum": 516096,
+        "vacuum": {
+          "error": null,
+          "file_bytes_after": 516096,
+          "file_bytes_before": 2142856
+        },
+        "second_run_rewrites": 0
+      },
+      "ratios": {
+        "stored_over_logical_payload": 0.7032632629894553,
+        "sqlite_files_after_over_before": 0.8181818181818182
+      }
+    },
+    {
+      "fixture": {
+        "name": "docs",
+        "nodes": 512,
+        "edits": 32,
+        "commits": 33,
+        "paragraph_pool": {
+          "paragraphs": 2020,
+          "sha256": "86e7c7fa045e2dee7c9139841d2297775d71a97ec370041030d0247fe0bc1ec3"
+        }
+      },
+      "logical_bytes_used": 786027,
+      "objects": 3494,
+      "commit_bytes_note": "bytes_used includes signed-commit bodies, which are never compressed",
+      "sum_full_state_json_bytes": 9138943,
+      "schema2_identity_rows": {
+        "stored_bytes": 786027,
+        "sqlite_files_bytes": 1757184,
+        "state_write_ms": {
+          "min": 3788.948299999989,
+          "median": 6865.1877000000095,
+          "p95": 11088.945599999992,
+          "max": 30101.890500000038
+        },
+        "note": "written by a schema-2 CLI, then opened (upgraded) by the schema-3 CLI"
+      },
+      "schema3_written_compressed": {
+        "stored_bytes": 570958,
+        "compressed_objects": 1861,
+        "sqlite_files_bytes": 1507328,
+        "state_write_ms": {
+          "min": 3528.081099999952,
+          "median": 5066.232399999979,
+          "p95": 12885.563999999955,
+          "max": 13598.646899999992
+        },
+        "compact_rewrites_after_the_fact": 0,
+        "files_after_compact_vacuum": 1462272,
+        "vacuum": {
+          "error": null,
+          "file_bytes_after": 1462272,
+          "file_bytes_before": 1569160
+        }
+      },
+      "schema2_compacted": {
+        "stored_bytes": 570958,
+        "compact_ms": 3018.62229999993,
+        "rewritten_objects": 1861,
+        "kept_identity_objects": 1633,
+        "stored_bytes_saved": 215069,
+        "sqlite_files_bytes_after_vacuum": 1454080,
+        "vacuum": {
+          "error": null,
+          "file_bytes_after": 1454080,
+          "file_bytes_before": 5976096
+        },
+        "second_run_rewrites": 0
+      },
+      "ratios": {
+        "stored_over_logical_payload": 0.7263847170644265,
+        "sqlite_files_after_over_before": 0.8275058275058275
+      }
+    }
+  ],
+  "in_process_release_write_read_cost": [
+    {
+      "edits": 32,
+      "fixture": "repetitive",
+      "layouts": {
+        "identity": {
+          "bytes_used": 254532,
+          "objects": 1075,
+          "pack_microseconds_per_object": 20.422511627906978,
+          "read_first_root_ms": 120.05680000000001,
+          "read_last_root_ms": 124.55030000000001,
+          "stored_bytes": 254532,
+          "unpack_microseconds_per_compressed_object": 8.912626262626263,
+          "write_first_revision_ms": 232.1492,
+          "write_median_ms": 218.4469,
+          "write_total_ms": 8093.478
+        },
+        "packed": {
+          "bytes_used": 254532,
+          "objects": 1075,
+          "pack_microseconds_per_object": 37.75097674418605,
+          "read_first_root_ms": 159.1119,
+          "read_last_root_ms": 234.4864,
+          "stored_bytes": 151818,
+          "unpack_microseconds_per_compressed_object": 16.461616161616163,
+          "write_first_revision_ms": 187.5369,
+          "write_median_ms": 255.25949999999997,
+          "write_total_ms": 9925.963000000003
+        }
+      },
+      "nodes": 128
+    },
+    {
+      "edits": 32,
+      "fixture": "repetitive",
+      "layouts": {
+        "identity": {
+          "bytes_used": 717839,
+          "objects": 3494,
+          "pack_microseconds_per_object": 23.590297653119634,
+          "read_first_root_ms": 678.2108,
+          "read_last_root_ms": 696.1374000000001,
+          "stored_bytes": 717839,
+          "unpack_microseconds_per_compressed_object": 9.656367544331005,
+          "write_first_revision_ms": 743.8154000000001,
+          "write_median_ms": 664.9774000000001,
+          "write_total_ms": 23697.6983
+        },
+        "packed": {
+          "bytes_used": 717839,
+          "objects": 3494,
+          "pack_microseconds_per_object": 32.28663423010876,
+          "read_first_root_ms": 632.3639,
+          "read_last_root_ms": 689.5237,
+          "stored_bytes": 443004,
+          "unpack_microseconds_per_compressed_object": 13.199355185384203,
+          "write_first_revision_ms": 676.8132,
+          "write_median_ms": 763.8664,
+          "write_total_ms": 26966.366200000004
+        }
+      },
+      "nodes": 512
+    },
+    {
+      "edits": 32,
+      "fixture": "docs",
+      "layouts": {
+        "identity": {
+          "bytes_used": 274046,
+          "objects": 1075,
+          "pack_microseconds_per_object": 38.394232558139535,
+          "read_first_root_ms": 192.17409999999998,
+          "read_last_root_ms": 198.8358,
+          "stored_bytes": 274046,
+          "unpack_microseconds_per_compressed_object": 31.759595959595956,
+          "write_first_revision_ms": 216.6718,
+          "write_median_ms": 252.56669999999997,
+          "write_total_ms": 8267.2485
+        },
+        "packed": {
+          "bytes_used": 274046,
+          "objects": 1075,
+          "pack_microseconds_per_object": 25.371534883720933,
+          "read_first_root_ms": 165.0383,
+          "read_last_root_ms": 165.74620000000002,
+          "stored_bytes": 186879,
+          "unpack_microseconds_per_compressed_object": 11.253703703703703,
+          "write_first_revision_ms": 236.4761,
+          "write_median_ms": 260.9753,
+          "write_total_ms": 9274.2688
+        }
+      },
+      "nodes": 128
+    },
+    {
+      "edits": 32,
+      "fixture": "docs",
+      "layouts": {
+        "identity": {
+          "bytes_used": 765916,
+          "objects": 3494,
+          "pack_microseconds_per_object": 37.866685746994854,
+          "read_first_root_ms": 786.5486000000001,
+          "read_last_root_ms": 746.1871,
+          "stored_bytes": 765916,
+          "unpack_microseconds_per_compressed_object": 7.746856528747985,
+          "write_first_revision_ms": 632.0681000000001,
+          "write_median_ms": 857.936,
+          "write_total_ms": 29060.534399999997
+        },
+        "packed": {
+          "bytes_used": 765916,
+          "objects": 3494,
+          "pack_microseconds_per_object": 37.0759874069834,
+          "read_first_root_ms": 475.8247,
+          "read_last_root_ms": 516.5132,
+          "stored_bytes": 551101,
+          "unpack_microseconds_per_compressed_object": 14.546587855991403,
+          "write_first_revision_ms": 548.8279,
+          "write_median_ms": 949.1447,
+          "write_total_ms": 33082.65930000001
+        }
+      },
+      "nodes": 512
+    }
+  ],
+  "codec_microbenchmark": {
+    "results": [
+      {
+        "corpus": "corpus-repetitive-128.bin",
+        "codec": "deflate-miniz-l1",
+        "objects": 1075,
+        "logical_bytes": 254532,
+        "eligible_objects": 594,
+        "eligible_bytes": 206799,
+        "kept_compressed": 594,
+        "stored_bytes": 151948,
+        "stored_over_logical": 0.597,
+        "compress_ms": 212.29,
+        "decompress_ms": 8.12,
+        "compress_mb_s": 1.0,
+        "decompress_mb_s": 25.5
+      },
+      {
+        "corpus": "corpus-repetitive-128.bin",
+        "codec": "deflate-miniz-l3",
+        "objects": 1075,
+        "logical_bytes": 254532,
+        "eligible_objects": 594,
+        "eligible_bytes": 206799,
+        "kept_compressed": 594,
+        "stored_bytes": 151937,
+        "stored_over_logical": 0.5969,
+        "compress_ms": 67.53,
+        "decompress_ms": 8.53,
+        "compress_mb_s": 3.1,
+        "decompress_mb_s": 24.3
+      },
+      {
+        "corpus": "corpus-repetitive-128.bin",
+        "codec": "deflate-miniz-l6",
+        "objects": 1075,
+        "logical_bytes": 254532,
+        "eligible_objects": 594,
+        "eligible_bytes": 206799,
+        "kept_compressed": 594,
+        "stored_bytes": 151818,
+        "stored_over_logical": 0.5965,
+        "compress_ms": 52.52,
+        "decompress_ms": 7.64,
+        "compress_mb_s": 3.9,
+        "decompress_mb_s": 27.1
+      },
+      {
+        "corpus": "corpus-repetitive-128.bin",
+        "codec": "deflate-miniz-l9",
+        "objects": 1075,
+        "logical_bytes": 254532,
+        "eligible_objects": 594,
+        "eligible_bytes": 206799,
+        "kept_compressed": 594,
+        "stored_bytes": 151818,
+        "stored_over_logical": 0.5965,
+        "compress_ms": 53.63,
+        "decompress_ms": 7.27,
+        "compress_mb_s": 3.9,
+        "decompress_mb_s": 28.4
+      },
+      {
+        "corpus": "corpus-repetitive-128.bin",
+        "codec": "lz4-block",
+        "objects": 1075,
+        "logical_bytes": 254532,
+        "eligible_objects": 594,
+        "eligible_bytes": 206799,
+        "kept_compressed": 262,
+        "stored_bytes": 195129,
+        "stored_over_logical": 0.7666,
+        "compress_ms": 1.34,
+        "decompress_ms": 0.1,
+        "compress_mb_s": 153.8,
+        "decompress_mb_s": 1101.8
+      },
+      {
+        "corpus": "corpus-repetitive-128.bin",
+        "codec": "zstd-l1",
+        "objects": 1075,
+        "logical_bytes": 254532,
+        "eligible_objects": 594,
+        "eligible_bytes": 206799,
+        "kept_compressed": 496,
+        "stored_bytes": 156899,
+        "stored_over_logical": 0.6164,
+        "compress_ms": 9.99,
+        "decompress_ms": 2.46,
+        "compress_mb_s": 20.7,
+        "decompress_mb_s": 78.2
+      },
+      {
+        "corpus": "corpus-repetitive-128.bin",
+        "codec": "zstd-l3",
+        "objects": 1075,
+        "logical_bytes": 254532,
+        "eligible_objects": 594,
+        "eligible_bytes": 206799,
+        "kept_compressed": 492,
+        "stored_bytes": 157414,
+        "stored_over_logical": 0.6184,
+        "compress_ms": 11.52,
+        "decompress_ms": 1.94,
+        "compress_mb_s": 18.0,
+        "decompress_mb_s": 98.8
+      },
+      {
+        "corpus": "corpus-repetitive-128.bin",
+        "codec": "zstd-l9",
+        "objects": 1075,
+        "logical_bytes": 254532,
+        "eligible_objects": 594,
+        "eligible_bytes": 206799,
+        "kept_compressed": 492,
+        "stored_bytes": 157225,
+        "stored_over_logical": 0.6177,
+        "compress_ms": 21.78,
+        "decompress_ms": 2.97,
+        "compress_mb_s": 9.5,
+        "decompress_mb_s": 64.6
+      },
+      {
+        "corpus": "corpus-repetitive-128.bin",
+        "codec": "zstd-l19",
+        "objects": 1075,
+        "logical_bytes": 254532,
+        "eligible_objects": 594,
+        "eligible_bytes": 206799,
+        "kept_compressed": 593,
+        "stored_bytes": 153199,
+        "stored_over_logical": 0.6019,
+        "compress_ms": 76.18,
+        "decompress_ms": 2.8,
+        "compress_mb_s": 2.7,
+        "decompress_mb_s": 73.9
+      },
+      {
+        "corpus": "corpus-repetitive-512.bin",
+        "codec": "deflate-miniz-l1",
+        "objects": 3494,
+        "logical_bytes": 717839,
+        "eligible_objects": 1861,
+        "eligible_bytes": 555674,
+        "kept_compressed": 1861,
+        "stored_bytes": 443144,
+        "stored_over_logical": 0.6173,
+        "compress_ms": 48.71,
+        "decompress_ms": 14.46,
+        "compress_mb_s": 11.4,
+        "decompress_mb_s": 38.4
+      },
+      {
+        "corpus": "corpus-repetitive-512.bin",
+        "codec": "deflate-miniz-l3",
+        "objects": 3494,
+        "logical_bytes": 717839,
+        "eligible_objects": 1861,
+        "eligible_bytes": 555674,
+        "kept_compressed": 1861,
+        "stored_bytes": 443119,
+        "stored_over_logical": 0.6173,
+        "compress_ms": 42.75,
+        "decompress_ms": 10.75,
+        "compress_mb_s": 13.0,
+        "decompress_mb_s": 51.7
+      },
+      {
+        "corpus": "corpus-repetitive-512.bin",
+        "codec": "deflate-miniz-l6",
+        "objects": 3494,
+        "logical_bytes": 717839,
+        "eligible_objects": 1861,
+        "eligible_bytes": 555674,
+        "kept_compressed": 1861,
+        "stored_bytes": 443004,
+        "stored_over_logical": 0.6171,
+        "compress_ms": 41.09,
+        "decompress_ms": 10.41,
+        "compress_mb_s": 13.5,
+        "decompress_mb_s": 53.4
+      },
+      {
+        "corpus": "corpus-repetitive-512.bin",
+        "codec": "deflate-miniz-l9",
+        "objects": 3494,
+        "logical_bytes": 717839,
+        "eligible_objects": 1861,
+        "eligible_bytes": 555674,
+        "kept_compressed": 1861,
+        "stored_bytes": 443004,
+        "stored_over_logical": 0.6171,
+        "compress_ms": 40.8,
+        "decompress_ms": 12.07,
+        "compress_mb_s": 13.6,
+        "decompress_mb_s": 46.0
+      },
+      {
+        "corpus": "corpus-repetitive-512.bin",
+        "codec": "lz4-block",
+        "objects": 3494,
+        "logical_bytes": 717839,
+        "eligible_objects": 1861,
+        "eligible_bytes": 555674,
+        "kept_compressed": 717,
+        "stored_bytes": 544499,
+        "stored_over_logical": 0.7585,
+        "compress_ms": 1.62,
+        "decompress_ms": 0.15,
+        "compress_mb_s": 342.2,
+        "decompress_mb_s": 1862.6
+      },
+      {
+        "corpus": "corpus-repetitive-512.bin",
+        "codec": "zstd-l1",
+        "objects": 3494,
+        "logical_bytes": 717839,
+        "eligible_objects": 1861,
+        "eligible_bytes": 555674,
+        "kept_compressed": 1517,
+        "stored_bytes": 457857,
+        "stored_over_logical": 0.6378,
+        "compress_ms": 15.07,
+        "decompress_ms": 2.92,
+        "compress_mb_s": 36.9,
+        "decompress_mb_s": 173.3
+      },
+      {
+        "corpus": "corpus-repetitive-512.bin",
+        "codec": "zstd-l3",
+        "objects": 3494,
+        "logical_bytes": 717839,
+        "eligible_objects": 1861,
+        "eligible_bytes": 555674,
+        "kept_compressed": 1505,
+        "stored_bytes": 459475,
+        "stored_over_logical": 0.6401,
+        "compress_ms": 15.19,
+        "decompress_ms": 3.08,
+        "compress_mb_s": 36.6,
+        "decompress_mb_s": 163.5
+      },
+      {
+        "corpus": "corpus-repetitive-512.bin",
+        "codec": "zstd-l9",
+        "objects": 3494,
+        "logical_bytes": 717839,
+        "eligible_objects": 1861,
+        "eligible_bytes": 555674,
+        "kept_compressed": 1504,
+        "stored_bytes": 459188,
+        "stored_over_logical": 0.6397,
+        "compress_ms": 23.01,
+        "decompress_ms": 4.67,
+        "compress_mb_s": 24.1,
+        "decompress_mb_s": 107.9
+      },
+      {
+        "corpus": "corpus-repetitive-512.bin",
+        "codec": "zstd-l19",
+        "objects": 3494,
+        "logical_bytes": 717839,
+        "eligible_objects": 1861,
+        "eligible_bytes": 555674,
+        "kept_compressed": 1858,
+        "stored_bytes": 446477,
+        "stored_over_logical": 0.622,
+        "compress_ms": 104.04,
+        "decompress_ms": 3.7,
+        "compress_mb_s": 5.3,
+        "decompress_mb_s": 150.2
+      },
+      {
+        "corpus": "corpus-docs-128.bin",
+        "codec": "deflate-miniz-l1",
+        "objects": 1075,
+        "logical_bytes": 273414,
+        "eligible_objects": 594,
+        "eligible_bytes": 225681,
+        "kept_compressed": 594,
+        "stored_bytes": 187338,
+        "stored_over_logical": 0.6852,
+        "compress_ms": 16.22,
+        "decompress_ms": 5.32,
+        "compress_mb_s": 13.9,
+        "decompress_mb_s": 42.4
+      },
+      {
+        "corpus": "corpus-docs-128.bin",
+        "codec": "deflate-miniz-l3",
+        "objects": 1075,
+        "logical_bytes": 273414,
+        "eligible_objects": 594,
+        "eligible_bytes": 225681,
+        "kept_compressed": 594,
+        "stored_bytes": 186860,
+        "stored_over_logical": 0.6834,
+        "compress_ms": 25.05,
+        "decompress_ms": 4.55,
+        "compress_mb_s": 9.0,
+        "decompress_mb_s": 49.6
+      },
+      {
+        "corpus": "corpus-docs-128.bin",
+        "codec": "deflate-miniz-l6",
+        "objects": 1075,
+        "logical_bytes": 273414,
+        "eligible_objects": 594,
+        "eligible_bytes": 225681,
+        "kept_compressed": 594,
+        "stored_bytes": 186628,
+        "stored_over_logical": 0.6826,
+        "compress_ms": 25.31,
+        "decompress_ms": 12.71,
+        "compress_mb_s": 8.9,
+        "decompress_mb_s": 17.8
+      },
+      {
+        "corpus": "corpus-docs-128.bin",
+        "codec": "deflate-miniz-l9",
+        "objects": 1075,
+        "logical_bytes": 273414,
+        "eligible_objects": 594,
+        "eligible_bytes": 225681,
+        "kept_compressed": 594,
+        "stored_bytes": 186628,
+        "stored_over_logical": 0.6826,
+        "compress_ms": 26.37,
+        "decompress_ms": 4.47,
+        "compress_mb_s": 8.6,
+        "decompress_mb_s": 50.5
+      },
+      {
+        "corpus": "corpus-docs-128.bin",
+        "codec": "lz4-block",
+        "objects": 1075,
+        "logical_bytes": 273414,
+        "eligible_objects": 594,
+        "eligible_bytes": 225681,
+        "kept_compressed": 163,
+        "stored_bytes": 248881,
+        "stored_over_logical": 0.9103,
+        "compress_ms": 0.87,
+        "decompress_ms": 0.06,
+        "compress_mb_s": 260.6,
+        "decompress_mb_s": 1596.4
+      },
+      {
+        "corpus": "corpus-docs-128.bin",
+        "codec": "zstd-l1",
+        "objects": 1075,
+        "logical_bytes": 273414,
+        "eligible_objects": 594,
+        "eligible_bytes": 225681,
+        "kept_compressed": 486,
+        "stored_bytes": 194665,
+        "stored_over_logical": 0.712,
+        "compress_ms": 6.86,
+        "decompress_ms": 1.45,
+        "compress_mb_s": 32.9,
+        "decompress_mb_s": 145.2
+      },
+      {
+        "corpus": "corpus-docs-128.bin",
+        "codec": "zstd-l3",
+        "objects": 1075,
+        "logical_bytes": 273414,
+        "eligible_objects": 594,
+        "eligible_bytes": 225681,
+        "kept_compressed": 485,
+        "stored_bytes": 195401,
+        "stored_over_logical": 0.7147,
+        "compress_ms": 6.56,
+        "decompress_ms": 1.45,
+        "compress_mb_s": 34.4,
+        "decompress_mb_s": 144.7
+      },
+      {
+        "corpus": "corpus-docs-128.bin",
+        "codec": "zstd-l9",
+        "objects": 1075,
+        "logical_bytes": 273414,
+        "eligible_objects": 594,
+        "eligible_bytes": 225681,
+        "kept_compressed": 482,
+        "stored_bytes": 194846,
+        "stored_over_logical": 0.7126,
+        "compress_ms": 10.86,
+        "decompress_ms": 1.55,
+        "compress_mb_s": 20.8,
+        "decompress_mb_s": 134.9
+      },
+      {
+        "corpus": "corpus-docs-128.bin",
+        "codec": "zstd-l19",
+        "objects": 1075,
+        "logical_bytes": 273414,
+        "eligible_objects": 594,
+        "eligible_bytes": 225681,
+        "kept_compressed": 591,
+        "stored_bytes": 189907,
+        "stored_over_logical": 0.6946,
+        "compress_ms": 42.78,
+        "decompress_ms": 1.63,
+        "compress_mb_s": 5.3,
+        "decompress_mb_s": 137.8
+      },
+      {
+        "corpus": "corpus-docs-512.bin",
+        "codec": "deflate-miniz-l1",
+        "objects": 3494,
+        "logical_bytes": 766973,
+        "eligible_objects": 1861,
+        "eligible_bytes": 604808,
+        "kept_compressed": 1861,
+        "stored_bytes": 553919,
+        "stored_over_logical": 0.7222,
+        "compress_ms": 61.11,
+        "decompress_ms": 26.28,
+        "compress_mb_s": 9.9,
+        "decompress_mb_s": 23.0
+      },
+      {
+        "corpus": "corpus-docs-512.bin",
+        "codec": "deflate-miniz-l3",
+        "objects": 3494,
+        "logical_bytes": 766973,
+        "eligible_objects": 1861,
+        "eligible_bytes": 604808,
+        "kept_compressed": 1861,
+        "stored_bytes": 552264,
+        "stored_over_logical": 0.7201,
+        "compress_ms": 92.48,
+        "decompress_ms": 24.76,
+        "compress_mb_s": 6.5,
+        "decompress_mb_s": 24.4
+      },
+      {
+        "corpus": "corpus-docs-512.bin",
+        "codec": "deflate-miniz-l6",
+        "objects": 3494,
+        "logical_bytes": 766973,
+        "eligible_objects": 1861,
+        "eligible_bytes": 604808,
+        "kept_compressed": 1861,
+        "stored_bytes": 551904,
+        "stored_over_logical": 0.7196,
+        "compress_ms": 116.62,
+        "decompress_ms": 26.37,
+        "compress_mb_s": 5.2,
+        "decompress_mb_s": 22.9
+      },
+      {
+        "corpus": "corpus-docs-512.bin",
+        "codec": "deflate-miniz-l9",
+        "objects": 3494,
+        "logical_bytes": 766973,
+        "eligible_objects": 1861,
+        "eligible_bytes": 604808,
+        "kept_compressed": 1861,
+        "stored_bytes": 551904,
+        "stored_over_logical": 0.7196,
+        "compress_ms": 155.45,
+        "decompress_ms": 29.1,
+        "compress_mb_s": 3.9,
+        "decompress_mb_s": 20.8
+      },
+      {
+        "corpus": "corpus-docs-512.bin",
+        "codec": "lz4-block",
+        "objects": 3494,
+        "logical_bytes": 766973,
+        "eligible_objects": 1861,
+        "eligible_bytes": 604808,
+        "kept_compressed": 343,
+        "stored_bytes": 713625,
+        "stored_over_logical": 0.9304,
+        "compress_ms": 6.57,
+        "decompress_ms": 0.38,
+        "compress_mb_s": 92.0,
+        "decompress_mb_s": 560.4
+      },
+      {
+        "corpus": "corpus-docs-512.bin",
+        "codec": "zstd-l1",
+        "objects": 3494,
+        "logical_bytes": 766973,
+        "eligible_objects": 1861,
+        "eligible_bytes": 604808,
+        "kept_compressed": 1510,
+        "stored_bytes": 575833,
+        "stored_over_logical": 0.7508,
+        "compress_ms": 47.18,
+        "decompress_ms": 11.9,
+        "compress_mb_s": 12.8,
+        "decompress_mb_s": 46.5
+      },
+      {
+        "corpus": "corpus-docs-512.bin",
+        "codec": "zstd-l3",
+        "objects": 3494,
+        "logical_bytes": 766973,
+        "eligible_objects": 1861,
+        "eligible_bytes": 604808,
+        "kept_compressed": 1495,
+        "stored_bytes": 577734,
+        "stored_over_logical": 0.7533,
+        "compress_ms": 57.81,
+        "decompress_ms": 11.75,
+        "compress_mb_s": 10.5,
+        "decompress_mb_s": 47.0
+      },
+      {
+        "corpus": "corpus-docs-512.bin",
+        "codec": "zstd-l9",
+        "objects": 3494,
+        "logical_bytes": 766973,
+        "eligible_objects": 1861,
+        "eligible_bytes": 604808,
+        "kept_compressed": 1491,
+        "stored_bytes": 576745,
+        "stored_over_logical": 0.752,
+        "compress_ms": 82.28,
+        "decompress_ms": 10.31,
+        "compress_mb_s": 7.4,
+        "decompress_mb_s": 53.4
+      },
+      {
+        "corpus": "corpus-docs-512.bin",
+        "codec": "zstd-l19",
+        "objects": 3494,
+        "logical_bytes": 766973,
+        "eligible_objects": 1861,
+        "eligible_bytes": 604808,
+        "kept_compressed": 1851,
+        "stored_bytes": 561443,
+        "stored_over_logical": 0.732,
+        "compress_ms": 269.84,
+        "decompress_ms": 13.64,
+        "compress_mb_s": 2.2,
+        "decompress_mb_s": 44.2
+      }
+    ]
+  },
+  "minimum_size_sweep": {
+    "codec": "deflate-miniz-l6",
+    "sweep": [
+      {
+        "min_bytes": 48,
+        "corpus": "repetitive-512",
+        "objects_compressed": 1871,
+        "stored_over_logical": 0.617
+      },
+      {
+        "min_bytes": 48,
+        "corpus": "docs-512",
+        "objects_compressed": 1872,
+        "stored_over_logical": 0.7194
+      },
+      {
+        "min_bytes": 96,
+        "corpus": "repetitive-512",
+        "objects_compressed": 1871,
+        "stored_over_logical": 0.617
+      },
+      {
+        "min_bytes": 96,
+        "corpus": "docs-512",
+        "objects_compressed": 1872,
+        "stored_over_logical": 0.7194
+      },
+      {
+        "min_bytes": 128,
+        "corpus": "repetitive-512",
+        "objects_compressed": 1861,
+        "stored_over_logical": 0.6171
+      },
+      {
+        "min_bytes": 128,
+        "corpus": "docs-512",
+        "objects_compressed": 1861,
+        "stored_over_logical": 0.7196
+      },
+      {
+        "min_bytes": 192,
+        "corpus": "repetitive-512",
+        "objects_compressed": 1295,
+        "stored_over_logical": 0.6352
+      },
+      {
+        "min_bytes": 192,
+        "corpus": "docs-512",
+        "objects_compressed": 1256,
+        "stored_over_logical": 0.7389
+      },
+      {
+        "min_bytes": 256,
+        "corpus": "repetitive-512",
+        "objects_compressed": 751,
+        "stored_over_logical": 0.6829
+      },
+      {
+        "min_bytes": 256,
+        "corpus": "docs-512",
+        "objects_compressed": 593,
+        "stored_over_logical": 0.7931
+      }
+    ]
+  },
+  "large_text_chunks": {
+    "results": [
+      {
+        "corpus": "corpus-docs-chunks64k.bin",
+        "codec": "deflate-miniz-l1",
+        "objects": 24,
+        "logical_bytes": 1573104,
+        "eligible_objects": 24,
+        "eligible_bytes": 1573104,
+        "kept_compressed": 24,
+        "stored_bytes": 802118,
+        "stored_over_logical": 0.5099,
+        "compress_ms": 18.88,
+        "decompress_ms": 10.86,
+        "compress_mb_s": 83.3,
+        "decompress_mb_s": 144.9
+      },
+      {
+        "corpus": "corpus-docs-chunks64k.bin",
+        "codec": "deflate-miniz-l3",
+        "objects": 24,
+        "logical_bytes": 1573104,
+        "eligible_objects": 24,
+        "eligible_bytes": 1573104,
+        "kept_compressed": 24,
+        "stored_bytes": 621110,
+        "stored_over_logical": 0.3948,
+        "compress_ms": 38.41,
+        "decompress_ms": 8.27,
+        "compress_mb_s": 41.0,
+        "decompress_mb_s": 190.3
+      },
+      {
+        "corpus": "corpus-docs-chunks64k.bin",
+        "codec": "deflate-miniz-l6",
+        "objects": 24,
+        "logical_bytes": 1573104,
+        "eligible_objects": 24,
+        "eligible_bytes": 1573104,
+        "kept_compressed": 24,
+        "stored_bytes": 599786,
+        "stored_over_logical": 0.3813,
+        "compress_ms": 77.79,
+        "decompress_ms": 8.21,
+        "compress_mb_s": 20.2,
+        "decompress_mb_s": 191.6
+      },
+      {
+        "corpus": "corpus-docs-chunks64k.bin",
+        "codec": "deflate-miniz-l9",
+        "objects": 24,
+        "logical_bytes": 1573104,
+        "eligible_objects": 24,
+        "eligible_bytes": 1573104,
+        "kept_compressed": 24,
+        "stored_bytes": 599341,
+        "stored_over_logical": 0.381,
+        "compress_ms": 82.63,
+        "decompress_ms": 7.93,
+        "compress_mb_s": 19.0,
+        "decompress_mb_s": 198.3
+      },
+      {
+        "corpus": "corpus-docs-chunks64k.bin",
+        "codec": "lz4-block",
+        "objects": 24,
+        "logical_bytes": 1573104,
+        "eligible_objects": 24,
+        "eligible_bytes": 1573104,
+        "kept_compressed": 24,
+        "stored_bytes": 942599,
+        "stored_over_logical": 0.5992,
+        "compress_ms": 6.5,
+        "decompress_ms": 0.82,
+        "compress_mb_s": 242.0,
+        "decompress_mb_s": 1909.6
+      },
+      {
+        "corpus": "corpus-docs-chunks64k.bin",
+        "codec": "zstd-l1",
+        "objects": 24,
+        "logical_bytes": 1573104,
+        "eligible_objects": 24,
+        "eligible_bytes": 1573104,
+        "kept_compressed": 24,
+        "stored_bytes": 667080,
+        "stored_over_logical": 0.4241,
+        "compress_ms": 15.15,
+        "decompress_ms": 3.13,
+        "compress_mb_s": 103.8,
+        "decompress_mb_s": 502.4
+      },
+      {
+        "corpus": "corpus-docs-chunks64k.bin",
+        "codec": "zstd-l3",
+        "objects": 24,
+        "logical_bytes": 1573104,
+        "eligible_objects": 24,
+        "eligible_bytes": 1573104,
+        "kept_compressed": 24,
+        "stored_bytes": 623908,
+        "stored_over_logical": 0.3966,
+        "compress_ms": 21.58,
+        "decompress_ms": 2.98,
+        "compress_mb_s": 72.9,
+        "decompress_mb_s": 527.5
+      },
+      {
+        "corpus": "corpus-docs-chunks64k.bin",
+        "codec": "zstd-l9",
+        "objects": 24,
+        "logical_bytes": 1573104,
+        "eligible_objects": 24,
+        "eligible_bytes": 1573104,
+        "kept_compressed": 24,
+        "stored_bytes": 587887,
+        "stored_over_logical": 0.3737,
+        "compress_ms": 61.38,
+        "decompress_ms": 2.7,
+        "compress_mb_s": 25.6,
+        "decompress_mb_s": 581.7
+      },
+      {
+        "corpus": "corpus-docs-chunks64k.bin",
+        "codec": "zstd-l19",
+        "objects": 24,
+        "logical_bytes": 1573104,
+        "eligible_objects": 24,
+        "eligible_bytes": 1573104,
+        "kept_compressed": 24,
+        "stored_bytes": 568936,
+        "stored_over_logical": 0.3617,
+        "compress_ms": 591.52,
+        "decompress_ms": 7.82,
+        "compress_mb_s": 2.7,
+        "decompress_mb_s": 201.2
+      }
+    ]
+  },
+  "compressor_reuse": {
+    "note": "objects of at least 128 bytes; release build; this is what the store uses (one compressor per thread)",
+    "rows": [
+      {
+        "corpus": "repetitive-512",
+        "level": 1,
+        "objects": 1861,
+        "bytes": 555674,
+        "new_compressor_each_time_us_per_object": 66.2,
+        "reused_compressor_us_per_object": 13.5
+      },
+      {
+        "corpus": "repetitive-512",
+        "level": 6,
+        "objects": 1861,
+        "bytes": 555674,
+        "new_compressor_each_time_us_per_object": 31.7,
+        "reused_compressor_us_per_object": 16.5
+      },
+      {
+        "corpus": "docs-512",
+        "level": 1,
+        "objects": 1861,
+        "bytes": 604808,
+        "new_compressor_each_time_us_per_object": 28.1,
+        "reused_compressor_us_per_object": 15.1
+      },
+      {
+        "corpus": "docs-512",
+        "level": 6,
+        "objects": 1861,
+        "bytes": 604808,
+        "new_compressor_each_time_us_per_object": 30.2,
+        "reused_compressor_us_per_object": 17.0
+      }
+    ]
+  },
+  "dictionary_and_delta_potential": {
+    "shared_dictionary": {
+      "method": "zstd level 3 with a 16 KiB dictionary trained on every second object of a fixture and applied to the other half; every object counted, kept whenever smaller than the raw bytes",
+      "caveat": "train and test halves are interleaved objects of one synthetic fixture, so this is an optimistic bound on cross-object redundancy",
+      "results": [
+        {
+          "corpus": "corpus-repetitive-512.bin",
+          "test_objects": 1747,
+          "logical_bytes": 349373,
+          "dictionary_bytes": 16384,
+          "deflate6_per_object": 210717,
+          "zstd3_per_object": 219922,
+          "zstd3_with_shared_dictionary": 116857
+        },
+        {
+          "corpus": "corpus-docs-512.bin",
+          "test_objects": 1747,
+          "logical_bytes": 378645,
+          "dictionary_bytes": 16384,
+          "deflate6_per_object": 268718,
+          "zstd3_per_object": 282277,
+          "zstd3_with_shared_dictionary": 178266
+        }
+      ]
+    },
+    "delta_on_edited_text_chunks": {
+      "method": "each text chunk of at least 400 bytes with a 12-byte in-place edit and a 10-byte appended phrase: deflate level 6 alone versus zstd level 3 with the previous version as the dictionary",
+      "chunks": 174,
+      "raw_bytes": 97826,
+      "deflate6_alone": 58700,
+      "zstd3_with_previous_version_as_dictionary": 5878
+    }
+  },
+  "row_and_key_overhead": {
+    "method": "the objects of a finished schema-3 fixture re-created in three layouts and VACUUMed; payload bytes are identical in all three",
+    "fixtures": {
+      "repetitive-512": {
+        "objects": 3494,
+        "stored_object_payload_bytes": 443004,
+        "commit_bodies": 33,
+        "commit_body_bytes": 19054,
+        "file_bytes": {
+          "current_rowid_text_keys": 1282048,
+          "without_rowid_text_keys": 962560,
+          "without_rowid_binary_keys": 761856
+        },
+        "overhead_bytes_per_object": {
+          "current_rowid_text_keys": 240.1,
+          "without_rowid_text_keys": 148.7,
+          "without_rowid_binary_keys": 91.3
+        }
+      },
+      "docs-512": {
+        "objects": 3494,
+        "stored_object_payload_bytes": 551904,
+        "commit_bodies": 33,
+        "commit_body_bytes": 19054,
+        "file_bytes": {
+          "current_rowid_text_keys": 1396736,
+          "without_rowid_text_keys": 1081344,
+          "without_rowid_binary_keys": 876544
+        },
+        "overhead_bytes_per_object": {
+          "current_rowid_text_keys": 241.8,
+          "without_rowid_text_keys": 151.5,
+          "without_rowid_binary_keys": 92.9
+        }
+      }
+    }
+  },
+  "limitations": [
+    "one document of paragraph nodes with 32 single-paragraph revisions; no assets, formatting runs, comments or suggestions",
+    "the `repetitive` fixture is the earlier growth benchmark label and compresses unrealistically well per object; `docs` uses real prose paragraphs of this repository",
+    "SQLite file sizes include indexes, page fill and free pages; payload counters do not",
+    "single machine (Windows 11, i7-1255U) shared with other build jobs during the CLI timings",
+    "not PostgreSQL, HTTP transfer, concurrent writers or peak memory"
+  ]
+}

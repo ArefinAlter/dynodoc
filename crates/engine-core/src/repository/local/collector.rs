@@ -52,11 +52,14 @@ pub struct GcApplyOptions {
     pub vacuum: bool,
 }
 
-/// Rows and encoded payload bytes removed by this run.
+/// Rows and encoded payload bytes removed by this run. `object_bytes` is logical
+/// (canonical encoded bytes, what the capacity limits charge); `stored_bytes` is
+/// what those rows physically held after compression at rest.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct Deleted {
     pub objects: u64,
     pub object_bytes: u64,
+    pub stored_bytes: u64,
 }
 
 /// Physical file sizes (database file plus write-ahead log), not payload bytes.
@@ -109,17 +112,18 @@ impl GcReport {
             "result: nothing to delete; nothing changed\n"
         });
         text.push_str(&format!(
-            "deleted {} objects ({} encoded bytes)\nretained\n",
-            self.deleted.objects, self.deleted.object_bytes
+            "deleted {} objects ({} encoded bytes, {} stored bytes)\nretained\n",
+            self.deleted.objects, self.deleted.object_bytes, self.deleted.stored_bytes
         ));
         text.push_str(&line("total", &self.retained));
         text.push_str(&line("reachable", &self.reachable));
         text.push_str(&line("unreachable (kept)", &self.unreachable_retained));
         let usage = |name: &str, u: &StorageUsage| {
             format!(
-                "  {name:<8} bytes {} / {}  objects {} / {}  commits {} / {}  branches {} / {}\n",
+                "  {name:<8} bytes {} / {} (stored {})  objects {} / {}  commits {} / {}  branches {} / {}\n",
                 u.bytes_used,
                 u.limits.bytes,
+                u.stored_bytes,
                 u.objects_used,
                 u.limits.objects,
                 u.commits_used,
@@ -205,10 +209,10 @@ impl LocalRepository {
             .await?;
         if schema != storage::SCHEMA_VERSION {
             return Err(Error::Invalid(
-                "retention collection requires local schema 2",
+                "retention collection requires local schema 3",
             ));
         }
-        let before = storage::usage(&mut tx).await?;
+        let before = storage::usage(&mut tx, schema).await?;
         let analysis = retention::analyze(
             &mut tx,
             self.project,
@@ -284,9 +288,10 @@ impl LocalRepository {
         hook(Stage::Deleted)?;
 
         let changed = sqlx::query(
-            "update local_storage set bytes_used=bytes_used-?,objects_used=objects_used-? where singleton=1",
+            "update local_storage set bytes_used=bytes_used-?,stored_bytes=stored_bytes-?,objects_used=objects_used-? where singleton=1",
         )
         .bind(deleted.object_bytes as i64)
+        .bind(deleted.stored_bytes as i64)
         .bind(deleted.objects as i64)
         .execute(&mut *tx)
         .await?
@@ -294,11 +299,12 @@ impl LocalRepository {
         if changed != 1 {
             return Err(Error::Invalid("capacity accounting row missing"));
         }
-        let after = storage::usage(&mut tx).await?;
-        let (objects, object_bytes): (i64, i64) =
-            sqlx::query_as("select count(*),coalesce(sum(length(bytes)),0) from objects")
-                .fetch_one(&mut *tx)
-                .await?;
+        let after = storage::usage(&mut tx, schema).await?;
+        let (objects, object_bytes, stored_object_bytes): (i64, i64, i64) = sqlx::query_as(
+            "select count(*),coalesce(sum(coalesce(size,length(bytes))),0),coalesce(sum(length(bytes)),0) from objects",
+        )
+        .fetch_one(&mut *tx)
+        .await?;
         let (commits, commit_bytes): (i64, i64) =
             sqlx::query_as("select count(*),coalesce(sum(length(body)),0) from commits")
                 .fetch_one(&mut *tx)
@@ -308,6 +314,7 @@ impl LocalRepository {
             .await?;
         if after.objects_used != objects
             || after.bytes_used != object_bytes + commit_bytes
+            || after.stored_bytes != stored_object_bytes + commit_bytes
             || after.commits_used != commits
             || after.branches_used != branches
             || objects as u64 != analysis.visited.len() as u64
@@ -358,7 +365,7 @@ impl LocalRepository {
 
     /// Runs after the deletion has committed, on its own connection, so a failure
     /// here can never undo or hide the deletion.
-    async fn vacuum(&self) -> Vacuum {
+    pub(super) async fn vacuum(&self) -> Vacuum {
         let path = self.options.get_filename().to_path_buf();
         let size = |path: &Path| {
             let mut wal = path.as_os_str().to_owned();
@@ -416,8 +423,8 @@ async fn delete_staged(
     let (mut document, mut address) = (String::new(), String::new());
     let mut deleted = Deleted::default();
     loop {
-        let rows: Vec<(String, String, i64)> = sqlx::query_as(
-            "select document,address,length(bytes) from objects where (document,address)>(?,?) order by document,address limit ?",
+        let rows: Vec<(String, String, i64, i64)> = sqlx::query_as(
+            "select document,address,coalesce(size,length(bytes)),length(bytes) from objects where (document,address)>(?,?) order by document,address limit ?",
         )
         .bind(&document)
         .bind(&address)
@@ -426,7 +433,7 @@ async fn delete_staged(
         .await?;
         let Some(last) = rows.last() else { break };
         (document, address) = (last.0.clone(), last.1.clone());
-        for (doc, addr, bytes) in rows {
+        for (doc, addr, bytes, stored) in rows {
             let parsed =
                 uuid::Uuid::parse_str(&doc).map_err(|_| Error::Invalid("stored document id"))?;
             let key = (
@@ -447,6 +454,7 @@ async fn delete_staged(
             }
             deleted.objects += 1;
             deleted.object_bytes += bytes as u64;
+            deleted.stored_bytes += stored as u64;
         }
     }
     Ok(deleted)

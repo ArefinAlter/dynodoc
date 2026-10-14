@@ -2,6 +2,7 @@
 //! The local filesystem and the initial authority-key choice remain trusted.
 use super::{
     attestation::{Pin, Scope, SignedReceipt, SignedRotation},
+    authority_epoch::{Chain, SignedTransition},
     Error,
 };
 use sqlx::{
@@ -20,6 +21,9 @@ create trigger if not exists receipts_no_update before update on receipts begin 
 create trigger if not exists receipts_no_delete before delete on receipts begin select raise(abort,'immutable receipt'); end;
 create trigger if not exists rotations_no_update before update on rotations begin select raise(abort,'immutable rotation'); end;
 create trigger if not exists rotations_no_delete before delete on rotations begin select raise(abort,'immutable rotation'); end;
+create table if not exists authority_statements(address text primary key,body blob not null check(length(body)<=8192));
+create trigger if not exists authority_statements_no_update before update on authority_statements begin select raise(abort,'immutable authority statement'); end;
+create trigger if not exists authority_statements_no_delete before delete on authority_statements begin select raise(abort,'immutable authority statement'); end;
 ";
 
 #[derive(Clone)]
@@ -73,6 +77,30 @@ async fn record(connection: &mut SqliteConnection, receipt: &SignedReceipt) -> R
             .await?;
     if existing != bytes {
         return Err(Error::Invalid("stored receipt mismatch"));
+    }
+    Ok(())
+}
+async fn record_statement(
+    connection: &mut SqliteConnection,
+    statement: &SignedTransition,
+) -> Result<(), Error> {
+    let address = statement.verify()?;
+    let bytes = serde_json::to_vec(statement)?;
+    sqlx::query(
+        "insert into authority_statements(address,body) values(?,?) on conflict(address) do nothing",
+    )
+    .bind(address.as_str())
+    .bind(&bytes)
+    .execute(&mut *connection)
+    .await?;
+    let existing: Vec<u8> = sqlx::query_scalar(
+        "select body from authority_statements where address=? and length(body)<=8192",
+    )
+    .bind(address.as_str())
+    .fetch_one(connection)
+    .await?;
+    if existing != bytes {
+        return Err(Error::Invalid("stored authority statement mismatch"));
     }
     Ok(())
 }
@@ -204,6 +232,86 @@ impl ReceiptJournal {
         tx.commit().await?;
         Ok(next)
     }
+    /// Like [`ReceiptJournal::advance`], but receipts may cross authority epochs
+    /// through the verified dual-signed statements of `chain`. The statements used,
+    /// every receipt and the pin commit in one transaction; an exact retry is a no-op.
+    /// A recorded break is refused here; see [`ReceiptJournal::accept_break`].
+    pub async fn advance_chain(
+        &self,
+        scope: &Scope,
+        chain: &Chain,
+        proof: &[SignedReceipt],
+    ) -> Result<Pin, Error> {
+        let mut tx = self.write().await?;
+        let pin = load(&mut tx, scope)
+            .await?
+            .ok_or(Error::Invalid("untrusted receipt scope"))?;
+        let (next, applied) = pin.advance_chain(chain, proof)?;
+        for statement in &applied {
+            record_statement(&mut tx, statement).await?;
+        }
+        for receipt in proof {
+            record(&mut tx, receipt).await?;
+        }
+        save(&mut tx, &next).await?;
+        tx.commit().await?;
+        Ok(next)
+    }
+    /// Explicit re-pin across a recorded `recovery` statement. `trusted_new_key` must
+    /// come from outside the server. The statement is kept as the visible break.
+    pub async fn accept_break(
+        &self,
+        scope: &Scope,
+        statement: &SignedTransition,
+        trusted_new_key: &str,
+        receipt: &SignedReceipt,
+    ) -> Result<Pin, Error> {
+        let mut tx = self.write().await?;
+        let pin = load(&mut tx, scope)
+            .await?
+            .ok_or(Error::Invalid("untrusted receipt scope"))?;
+        let address = statement.verify()?;
+        let bytes = serde_json::to_vec(statement)?;
+        let existing: Option<Vec<u8>> = sqlx::query_scalar(
+            "select body from authority_statements where address=? and length(body)<=8192",
+        )
+        .bind(address.as_str())
+        .fetch_optional(&mut *tx)
+        .await?;
+        if existing.as_ref() == Some(&bytes)
+            && pin.receipt() == receipt
+            && pin.trusted_key() == trusted_new_key
+            && !pin.revoked()
+        {
+            tx.commit().await?;
+            return Ok(pin);
+        }
+        let next = pin.accept_break(statement, trusted_new_key, receipt)?;
+        record_statement(&mut tx, statement).await?;
+        record(&mut tx, receipt).await?;
+        save(&mut tx, &next).await?;
+        tx.commit().await?;
+        Ok(next)
+    }
+    /// Authority statements this journal accepted (rotations and recorded breaks),
+    /// in the order they were first stored.
+    pub async fn statements(&self) -> Result<Vec<SignedTransition>, Error> {
+        let rows: Vec<Vec<u8>> = sqlx::query_scalar(
+            "select body from authority_statements where length(body)<=8192 order by rowid limit 1025",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        if rows.len() > 1024 {
+            return Err(Error::Limit("authority statements"));
+        }
+        rows.iter()
+            .map(|bytes| {
+                let statement: SignedTransition = serde_json::from_slice(bytes)?;
+                statement.verify()?;
+                Ok(statement)
+            })
+            .collect()
+    }
     /// Durable local revocation. No receipt, retry or signed rotation can undo it.
     pub async fn revoke(&self, scope: &Scope) -> Result<Pin, Error> {
         let mut tx = self.write().await?;
@@ -328,6 +436,91 @@ mod tests {
             .await
             .is_err());
         journal.close().await;
+        remove(&path).await;
+    }
+    #[tokio::test]
+    async fn authority_chain_and_recorded_break_are_atomic_idempotent_and_durable() {
+        use crate::repository::authority_epoch::tests::{recovery, rotation};
+        let path = path();
+        let scope = scope(uuid::Uuid::new_v4());
+        let chain = Chain::new(
+            scope.authority,
+            vec![rotation(1, 7, 8), rotation(2, 8, 9), recovery(3, 9, 10)],
+        )
+        .unwrap();
+        let journal = ReceiptJournal::open(&path).await.unwrap();
+        let a = signed(scope.clone(), 1, None, 7);
+        journal
+            .trust_checkpoint(&scope, &hex(key(7).public_key().as_ref()), a.clone())
+            .await
+            .unwrap();
+        let b = signed(scope.clone(), 2, Some(a.verify().unwrap()), 8);
+        let c = signed(scope.clone(), 3, Some(b.verify().unwrap()), 9);
+        // The ordinary command still refuses a key change; the chain command allows it.
+        assert!(journal
+            .advance(&scope, &[b.clone(), c.clone()])
+            .await
+            .is_err());
+        let invalid = signed(scope.clone(), 3, Some(b.verify().unwrap()), 12);
+        assert!(journal
+            .advance_chain(&scope, &chain, &[b.clone(), invalid])
+            .await
+            .is_err());
+        assert_eq!(journal.statements().await.unwrap().len(), 0);
+        let pin = journal
+            .advance_chain(&scope, &chain, &[b.clone(), c.clone()])
+            .await
+            .unwrap();
+        assert_eq!(pin.receipt(), &c);
+        assert_eq!(journal.statements().await.unwrap().len(), 2);
+        assert_eq!(
+            journal
+                .advance_chain(&scope, &chain, &[a.clone(), b.clone(), c.clone()])
+                .await
+                .unwrap(),
+            pin,
+            "lost-ACK retry"
+        );
+        // The break is refused by chain following and needs an independent key.
+        let d = signed(scope.clone(), 4, Some(c.verify().unwrap()), 10);
+        assert!(journal
+            .advance_chain(&scope, &chain, std::slice::from_ref(&d))
+            .await
+            .is_err());
+        let statement = recovery(3, 9, 10);
+        let new_key = hex(key(10).public_key().as_ref());
+        assert!(journal
+            .accept_break(&scope, &statement, &hex(key(11).public_key().as_ref()), &d)
+            .await
+            .is_err());
+        assert_eq!(journal.pin(&scope).await.unwrap().unwrap(), pin);
+        let repinned = journal
+            .accept_break(&scope, &statement, &new_key, &d)
+            .await
+            .unwrap();
+        assert_eq!(repinned.trusted_key(), new_key);
+        assert_eq!(
+            journal
+                .accept_break(&scope, &statement, &new_key, &d)
+                .await
+                .unwrap(),
+            repinned
+        );
+        journal.close().await;
+        let reopened = ReceiptJournal::open(&path).await.unwrap();
+        let kept = reopened.statements().await.unwrap();
+        assert_eq!(kept.len(), 3);
+        assert!(kept.contains(&statement), "the break stays visible");
+        assert_eq!(reopened.pin(&scope).await.unwrap().unwrap(), repinned);
+        assert!(sqlx::query("delete from authority_statements")
+            .execute(&reopened.pool)
+            .await
+            .is_err());
+        // Local revocation also blocks the explicit paths.
+        reopened.revoke(&scope).await.unwrap();
+        let e = signed(scope.clone(), 5, Some(d.verify().unwrap()), 10);
+        assert!(reopened.advance_chain(&scope, &chain, &[e]).await.is_err());
+        reopened.close().await;
         remove(&path).await;
     }
     #[tokio::test]

@@ -23,6 +23,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use engine_core::{
     repository::{
         attestation::{Receipt, Scope, SignedReceipt},
+        authority_epoch::{MAX_CHAIN_PAGE, MAX_EPOCH},
         server_authority, valid_branch, Head, SignedCommit,
     },
     shared_checkpoint::{self, typed, Address},
@@ -33,6 +34,22 @@ use serde_json::{json, Value};
 use sqlx::PgConnection;
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
+
+/// Installation UUID and every key that ever signed receipts, with its epoch.
+/// A stored receipt must verify under one of them; only the active one may sign.
+struct Authority {
+    id: Uuid,
+    keys: BTreeMap<String, u32>,
+}
+async fn authority_keys(db: &mut PgConnection) -> Result<Authority, ApiError> {
+    let id: Uuid = sqlx::query_scalar("select id from device_authority where singleton")
+        .fetch_one(&mut *db)
+        .await?;
+    Ok(Authority {
+        id,
+        keys: server_authority::keys(db).await?,
+    })
+}
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -54,6 +71,7 @@ pub fn router() -> Router<AppState> {
         .route("/projects/:id/history/reviews", get(reviews).post(review))
         .route("/projects/:id/history/storage", get(storage))
         .route("/projects/:id/history/authority", get(authority))
+        .route("/projects/:id/history/authority/rotations", get(rotations))
         .route("/projects/:id/history/receipts", get(receipts))
         .layer(DefaultBodyLimit::max(20 * 1024))
 }
@@ -357,14 +375,14 @@ async fn latest_receipt(
     let row: Option<(String,i64,Vec<u8>,String)> = sqlx::query_as("select commit_address,generation,receipt,receipt_address from project_ref_event where project_id=$1 and branch=$2 order by generation desc limit 1")
         .bind(project).bind(branch).fetch_optional(&mut *db).await?;
     let Some(row) = row else { return Ok(None) };
-    let binding = server_authority::binding(db).await?;
-    Ok(Some(verify_receipt(project, branch, row, &binding)?))
+    let authority = authority_keys(db).await?;
+    Ok(Some(verify_receipt(project, branch, row, &authority)?))
 }
 fn verify_receipt(
     project: Uuid,
     branch: &str,
     row: (String, i64, Vec<u8>, String),
-    binding: &(Uuid, String),
+    authority: &Authority,
 ) -> Result<SignedReceipt, ApiError> {
     let signed: SignedReceipt =
         serde_json::from_slice(&row.2).map_err(|e| ApiError::Internal(e.to_string()))?;
@@ -374,8 +392,8 @@ fn verify_receipt(
     if address.as_str() != row.3
         || signed.receipt.scope.project != project
         || signed.receipt.scope.branch != branch
-        || signed.receipt.scope.authority != binding.0
-        || signed.receipt.issuer_key != binding.1
+        || signed.receipt.scope.authority != authority.id
+        || !authority.keys.contains_key(&signed.receipt.issuer_key)
         || signed.receipt.head.generation != row.1
         || signed.receipt.head.commit.as_str() != row.0
     {
@@ -589,12 +607,23 @@ async fn advance(
     }
     let generation = target.generation() + 1;
     let signer=state.ref_signer.as_deref().ok_or_else(||ApiError::Denied { reason:"The operator must configure shared-branch receipt signing before branches can advance".into() })?;
-    let (authority, public_key) = server_authority::binding(&mut tx).await?;
-    if public_key != hex::encode(signer.public_key().as_ref()) {
+    // The mounted key must belong to the newest authority epoch, which must not
+    // carry a revocation marker. The database repeats both checks on insert.
+    let active = server_authority::active(&mut tx).await?;
+    if let Some(marker) = &active.revocation {
+        return Err(ApiError::Denied {
+            reason: format!(
+                "The receipt authority epoch {} was revoked ({}); the operator must install a recovery epoch before branches can advance",
+                active.epoch, marker.reason
+            ),
+        });
+    }
+    if active.public_key != hex::encode(signer.public_key().as_ref()) {
         return Err(ApiError::Internal(
             "Receipt signing authority mismatch".into(),
         ));
     }
+    let authority = active.authority;
     let previous = latest_receipt(&mut tx, id, &target.branch)
         .await?
         .map(|r| r.verify().map_err(history_error))
@@ -660,7 +689,7 @@ async fn refs(
     let binding = if rows.is_empty() {
         None
     } else {
-        Some(server_authority::binding(&mut tx).await?)
+        Some(authority_keys(&mut tx).await?)
     };
     for (branch, address, generation, body, receipt_address) in &rows {
         issued.push(verify_receipt(
@@ -804,25 +833,88 @@ async fn storage(
     tx.commit().await?;
     Ok(Json(usage.unwrap_or(json!({"bytes_used":0,"rows_used":0,"branches_used":0,"byte_limit":1073741824,"row_limit":1000000,"branch_limit":4096}))))
 }
-#[utoipa::path(operation_id="project_history_authority",get,path="/projects/{id}/history/authority",tag="project history",params(("id"=Uuid,Path)),security(("paseto"=[]),("device_session"=["history:read"])),responses((status=200,description="Installed public receipt authority; clients must verify this binding through an independently trusted channel",body=Value)))]
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ChainPage {
+    from_epoch: Option<u32>,
+    limit: Option<usize>,
+}
+impl ChainPage {
+    /// `(trusted epoch, page size)`; statements after `from_epoch` (default 1).
+    fn bounds(&self) -> Result<(u32, usize), ApiError> {
+        let limit = self.limit.unwrap_or(MAX_CHAIN_PAGE);
+        let from = self.from_epoch.unwrap_or(1);
+        if !(1..=MAX_CHAIN_PAGE).contains(&limit) || !(1..=MAX_EPOCH).contains(&from) {
+            return Err(bad("from_epoch must be 1 to 1024 and limit 1 to 64"));
+        }
+        Ok((from, limit))
+    }
+}
+fn epoch_item(epoch: &server_authority::Epoch) -> Value {
+    json!({"epoch":epoch.epoch,"kind":epoch.kind,"public_key":epoch.public_key,"installed_at_ms":epoch.installed_at_ms,"statement":epoch.statement,"revocation":epoch.revocation})
+}
+fn not_installed(error: sqlx::Error) -> ApiError {
+    match error {
+        sqlx::Error::RowNotFound => ApiError::NotFound,
+        other => other.into(),
+    }
+}
+fn chain_error(error: engine_core::repository::Error) -> ApiError {
+    ApiError::Internal(error.to_string())
+}
+#[utoipa::path(operation_id="project_history_authority",get,path="/projects/{id}/history/authority",tag="project history",params(("id"=Uuid,Path),("from_epoch"=Option<u32>,Query),("limit"=Option<usize>,Query)),security(("paseto"=[]),("device_session"=["history:read"])),responses((status=200,description="Active receipt authority epoch, its key, revocation marker and the statement chain after from_epoch (default 1, at most 64 per page). Clients must verify the key through an independently trusted channel and verify every statement locally",body=Value)))]
 async fn authority(
     State(state): State<AppState>,
     auth: ProjectAuth<HistoryRead>,
     Path(id): Path<Uuid>,
+    Query(page): Query<ChainPage>,
 ) -> Result<Json<Value>, ApiError> {
+    let (from, limit) = page.bounds()?;
     let mut tx = start(&state, &auth).await?;
     authorize(&mut tx, &auth, id, &[], false).await?;
-    let (authority, public_key) =
-        server_authority::binding(&mut tx)
-            .await
-            .map_err(|e| match e {
-                sqlx::Error::RowNotFound => ApiError::NotFound,
-                other => other.into(),
-            })?;
+    let active = server_authority::active(&mut tx)
+        .await
+        .map_err(not_installed)?;
+    let genesis = server_authority::epochs(&mut tx, 0, Some(1), 1)
+        .await
+        .map_err(chain_error)?;
+    let items = server_authority::epochs(&mut tx, from, None, limit + 1)
+        .await
+        .map_err(chain_error)?;
     tx.commit().await?;
-    Ok(Json(
-        json!({"authority":authority,"public_key":public_key,"independent_verification_required":true}),
-    ))
+    let next = (items.len() > limit).then(|| items[limit - 1].epoch);
+    Ok(Json(json!({
+        "authority":active.authority,"public_key":active.public_key,"epoch":active.epoch,
+        "revocation":active.revocation,
+        "genesis":genesis.first().map(epoch_item),
+        "rotations":items.iter().take(limit).map(epoch_item).collect::<Vec<_>>(),
+        "next_epoch":next,
+        "independent_verification_required":true
+    })))
+}
+#[utoipa::path(operation_id="project_history_authority_rotations",get,path="/projects/{id}/history/authority/rotations",tag="project history",params(("id"=Uuid,Path),("from_epoch"=Option<u32>,Query),("limit"=Option<usize>,Query)),security(("paseto"=[]),("device_session"=["history:read"])),responses((status=200,description="Bounded page of signed authority epoch statements after from_epoch, oldest first, with each epoch's revocation marker. Statements prove succession only to a client that already trusts an earlier key",body=Value)))]
+async fn rotations(
+    State(state): State<AppState>,
+    auth: ProjectAuth<HistoryRead>,
+    Path(id): Path<Uuid>,
+    Query(page): Query<ChainPage>,
+) -> Result<Json<Value>, ApiError> {
+    let (from, limit) = page.bounds()?;
+    let mut tx = start(&state, &auth).await?;
+    authorize(&mut tx, &auth, id, &[], false).await?;
+    let active = server_authority::active(&mut tx)
+        .await
+        .map_err(not_installed)?;
+    let items = server_authority::epochs(&mut tx, from, None, limit + 1)
+        .await
+        .map_err(chain_error)?;
+    tx.commit().await?;
+    let next = (items.len() > limit).then(|| items[limit - 1].epoch);
+    Ok(Json(json!({
+        "authority":active.authority,"epoch":active.epoch,
+        "items":items.iter().take(limit).map(epoch_item).collect::<Vec<_>>(),
+        "next_epoch":next
+    })))
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -830,8 +922,9 @@ struct ReceiptPage {
     branch: String,
     after_generation: Option<i64>,
     limit: Option<i64>,
+    from_epoch: Option<u32>,
 }
-#[utoipa::path(operation_id="project_history_receipts",get,path="/projects/{id}/history/receipts",tag="project history",params(("id"=Uuid,Path),("branch"=String,Query),("after_generation"=Option<i64>,Query),("limit"=Option<i64>,Query)),security(("paseto"=[]),("device_session"=["history:read"])),responses((status=200,description="At most 256 consecutive signed ref receipts, oldest first; current head scope must remain accessible",body=Value),(status=409,description="Erased branch head or receipt gap")))]
+#[utoipa::path(operation_id="project_history_receipts",get,path="/projects/{id}/history/receipts",tag="project history",params(("id"=Uuid,Path),("branch"=String,Query),("after_generation"=Option<i64>,Query),("limit"=Option<i64>,Query),("from_epoch"=Option<u32>,Query)),security(("paseto"=[]),("device_session"=["history:read"])),responses((status=200,description="At most 256 consecutive signed ref receipts, oldest first, each signed by its own authority epoch's key; adds the active epoch and the statements that bridge the epochs in the page; current head scope must remain accessible",body=Value),(status=409,description="Erased branch head or receipt gap")))]
 async fn receipts(
     State(state): State<AppState>,
     auth: ProjectAuth<HistoryRead>,
@@ -860,19 +953,20 @@ async fn receipts(
     if after > current.receipt.head.generation {
         return Err(stale());
     }
-    let binding = server_authority::binding(&mut tx).await?;
+    let binding = authority_keys(&mut tx).await?;
     let rows:Vec<(String,i64,Vec<u8>,String)>=sqlx::query_as("select commit_address,generation,receipt,receipt_address from project_ref_event where project_id=$1 and branch=$2 and generation>$3 and generation<=$4 order by generation limit $5")
         .bind(id).bind(&page.branch).bind(after).bind(current.receipt.head.generation).bind(limit).fetch_all(&mut *tx).await?;
+    let mut last_epoch: Option<u32> = None;
+    let mut first_epoch: Option<u32> = None;
     let mut previous_address = if after == 0 {
         None
     } else {
         let raw:(String,i64,Vec<u8>,String)=sqlx::query_as("select commit_address,generation,receipt,receipt_address from project_ref_event where project_id=$1 and branch=$2 and generation=$3")
             .bind(id).bind(&page.branch).bind(after).fetch_optional(&mut *tx).await?.ok_or_else(||ApiError::Conflict{reason:"Receipt cursor is unavailable".into()})?;
-        Some(
-            verify_receipt(id, &page.branch, raw, &binding)?
-                .verify()
-                .map_err(history_error)?,
-        )
+        let cursor = verify_receipt(id, &page.branch, raw, &binding)?;
+        first_epoch = binding.keys.get(&cursor.receipt.issuer_key).copied();
+        last_epoch = first_epoch;
+        Some(cursor.verify().map_err(history_error)?)
     };
     let mut items = Vec::new();
     for (index, row) in rows.into_iter().enumerate() {
@@ -885,6 +979,13 @@ async fn receipts(
         if signed.receipt.previous != previous_address {
             return Err(ApiError::Internal("Stored receipt chain differs".into()));
         }
+        // A receipt may only be signed by its predecessor's epoch or a later one.
+        let epoch = binding.keys.get(&signed.receipt.issuer_key).copied();
+        if epoch < last_epoch {
+            return Err(ApiError::Internal("Stored receipt epochs differ".into()));
+        }
+        first_epoch = first_epoch.or(epoch);
+        last_epoch = epoch;
         previous_address = Some(signed.verify().map_err(history_error)?);
         items.push(signed);
     }
@@ -893,9 +994,21 @@ async fn receipts(
             reason: "Stored receipt history is unavailable".into(),
         });
     }
+    // Statements that cross epoch boundaries inside this page (at most 64); a
+    // client holding an older pin names it with from_epoch. The complete chain
+    // is always available from the authority endpoints.
+    let active = server_authority::active(&mut tx).await?;
+    let bridge = match (page.from_epoch.or(first_epoch), last_epoch) {
+        (Some(lo), Some(hi)) if lo < hi => {
+            server_authority::epochs(&mut tx, lo, Some(hi), MAX_CHAIN_PAGE)
+                .await
+                .map_err(chain_error)?
+        }
+        _ => Vec::new(),
+    };
     tx.commit().await?;
     Ok(Json(
-        json!({"next_generation":items.last().map(|r|r.receipt.head.generation),"items":items}),
+        json!({"next_generation":items.last().map(|r|r.receipt.head.generation),"items":items,"epoch":active.epoch,"revocation":active.revocation,"rotations":bridge.iter().map(epoch_item).collect::<Vec<_>>()}),
     ))
 }
 #[derive(utoipa::OpenApi)]
@@ -910,6 +1023,7 @@ async fn receipts(
     reviews,
     storage,
     authority,
+    rotations,
     receipts,
     acknowledge
 ))]

@@ -5,7 +5,8 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use clap::{Args, Subcommand};
 use engine_core::{
     repository::{
-        attestation::{Pin, Scope, SignedReceipt},
+        attestation::{Scope, SignedReceipt},
+        authority_epoch::{Kind, Refusal, SignedTransition},
         local::{LocalRepository, ObjectKey, ObjectPacket},
         receipt_journal::ReceiptJournal,
         Head, SignedCommit, MAX_COMMIT_BYTES,
@@ -46,10 +47,13 @@ pub struct Options {
     /// /auth/refresh and atomically replaces this file (and --token-file).
     #[arg(long, conflicts_with = "device_key")]
     refresh_token_file: Option<PathBuf>,
-    /// Enrolled Ed25519 key (unencrypted DER PKCS#8). Obtains and renews short-lived
-    /// tokens for this project in memory; no token or refresh secret is stored. The
-    /// key must be granted this project in your profile (signing keys), unless it is
-    /// an older all-projects key. On Unix a key readable by group or others is refused.
+    /// Enrolled Ed25519 key file: unencrypted DER PKCS#8 or an encrypted
+    /// dynodoc-key-v1 file (passphrase from --passphrase-file, the
+    /// DYNODOC_KEY_PASSPHRASE_FILE variable, a prompt, or an OS keystore binding).
+    /// Obtains and renews short-lived tokens for this project in memory; no token or
+    /// refresh secret is stored. The key must be granted this project in your
+    /// profile (signing keys), unless it is an older all-projects key. On Unix a key
+    /// readable by group or others is refused.
     #[arg(long)]
     device_key: Option<PathBuf>,
     /// Separate durable client receipt journal (must not be the repository database).
@@ -60,6 +64,11 @@ pub struct Options {
     /// Synthetic local tests only. HTTPS is required for other addresses.
     #[arg(long)]
     allow_loopback_http: bool,
+    /// Explicit re-pin across a recorded authority break: the new authority public
+    /// key (64 hex characters), obtained independently of the server. The next
+    /// receipt must extend this journal's pinned chain; the break stays recorded.
+    #[arg(long, value_name = "PUBLIC_KEY")]
+    accept_authority_break: Option<String>,
     #[command(subcommand)]
     action: Action,
 }
@@ -90,6 +99,13 @@ pub enum Action {
     },
     /// Read the last verified remote head offline, without contacting the server.
     Tracking,
+    /// Save the remote's authority epoch chain and the receipts after the pin to a new
+    /// file, for `receipt advance` / `receipt accept-break`. Changes nothing and does
+    /// not require the configured key to reach the remote's active key.
+    AuthorityProof {
+        #[arg(long)]
+        out: PathBuf,
+    },
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -202,8 +218,13 @@ pub async fn run(options: Options) -> anyhow::Result<()> {
     let journal = ReceiptJournal::open(&options.journal).await?;
     let result = async {
         if matches!(options.action, Action::Tracking) { return Ok(serde_json::to_value(journal.pin(&scope).await?)?); }
-        let client = credentials(&options, remote)?;
-        client.authority().await?;
+        let mut client = credentials(&options, remote)?;
+        if let Some(key) = options.accept_authority_break.clone() {
+            client = client.accepting_break(key)?;
+        }
+        if !matches!(options.action, Action::AuthorityProof { .. }) {
+            client.authority().await?;
+        }
         match options.action {
             Action::Plan { candidate, out, publish_only } => {
                 let plan = plan(&repo, &client, &journal, &scope, Address::try_from(candidate)?, !publish_only).await?;
@@ -234,6 +255,7 @@ pub async fn run(options: Options) -> anyhow::Result<()> {
                 };
                 pull(&repo,&client,&journal,&scope,&local_branch,expected.as_ref()).await
             }
+            Action::AuthorityProof { out } => authority_proof(&client, &journal, &scope, &out).await,
             Action::Tracking => unreachable!(),
         }
     }.await;
@@ -291,23 +313,103 @@ async fn pull(
     )
 }
 
+/// The recorded break that follows `pin_key` and names `new_key`.
+fn break_statement(
+    server: &engine_core::repository::authority_epoch::Served,
+    pin_key: &str,
+    new_key: &str,
+) -> anyhow::Result<SignedTransition> {
+    server
+        .chain
+        .statements()
+        .iter()
+        .find(|s| {
+            s.transition.kind == Kind::Recovery
+                && s.transition.old_key == pin_key
+                && s.transition.new_key == new_key
+        })
+        .cloned()
+        .ok_or_else(|| {
+            anyhow!("no recorded break leads from this journal's pinned key to that key")
+        })
+}
+
 /// Verify a bounded contiguous proof in memory before retaining its pages. An
 /// initial checkpoint trusts the independently supplied authority, not old history.
+///
+/// The configured key and the pin are trust anchors; the remote's epoch chain only
+/// connects them to the key that signed this head. A recorded break or a revocation
+/// marker is a refusal, never something the server can talk past. Only an explicit
+/// `--accept-authority-break NEW_KEY` crosses a break, and only with a receipt that
+/// extends the pinned chain.
 async fn proof(
     client: &Client,
     journal: &ReceiptJournal,
     scope: &Scope,
     target: &SignedReceipt,
 ) -> anyhow::Result<Vec<SignedReceipt>> {
-    Pin::trust_checkpoint(scope, &client.remote.public_key, target.clone())?;
+    let server = client.server().await?;
+    target.verify()?;
+    ensure!(
+        target.receipt.scope == *scope && server.knows(&target.receipt.issuer_key),
+        "untrusted receipt scope/key"
+    );
+    let configured = client.break_key().unwrap_or(&client.remote.public_key);
     let Some(mut pin) = journal.pin(scope).await? else {
+        server
+            .vet(configured, &target.receipt.issuer_key)
+            .map_err(|refusal| anyhow!("{refusal}"))?;
         return Ok(vec![]);
     };
-    ensure!(!pin.revoked(), "remote authority is locally revoked");
-    ensure!(
-        pin.receipt().receipt.issuer_key == client.remote.public_key,
-        "configured key differs from journal; use explicit authority rotation"
-    );
+    let mut breaking = None;
+    if let Some(new_key) = client.break_key() {
+        // A head the pin already holds changes nothing, whatever the key's state.
+        if pin.receipt() == target {
+            return Ok(vec![]);
+        }
+        if pin.trusted_key() != new_key {
+            breaking = Some(break_statement(server, pin.trusted_key(), new_key)?);
+        }
+    }
+    if let Some(statement) = &breaking {
+        // From the independently supplied key onward: dual-signed and unrevoked.
+        server
+            .vet(&statement.transition.new_key, &server.active_key)
+            .map_err(|refusal| anyhow!("{refusal}"))?;
+    } else {
+        ensure!(!pin.revoked(), "remote authority is locally revoked");
+        server
+            .related(configured, pin.trusted_key())
+            .map_err(|refusal| match refusal {
+                Refusal::UnknownKey => anyhow!(
+                    "configured key differs from journal and is not on the authority chain; update remote.json from an independent source"
+                ),
+                other => anyhow!("configured key and journal are separated: {other}"),
+            })?;
+        match server.vet(pin.trusted_key(), &server.active_key) {
+            Ok(()) => {}
+            Err(Refusal::Revoked { marker, own }) => {
+                if own {
+                    // The key this journal trusts is marked unsafe: no later
+                    // receipt, retry or statement may revive it implicitly.
+                    journal.revoke(scope).await?;
+                    let after = pin.receipt().receipt.issued_at_ms >= marker.effective_at_ms;
+                    anyhow::bail!(
+                        "{}; the pinned receipt was declared {} the stated compromise time{}",
+                        Refusal::Revoked { marker, own },
+                        if after { "at or after" } else { "before" },
+                        if after {
+                            ", so treat it as untrusted and re-verify out of band"
+                        } else {
+                            ""
+                        }
+                    );
+                }
+                anyhow::bail!("{}", Refusal::Revoked { marker, own });
+            }
+            Err(refusal) => anyhow::bail!("{refusal}"),
+        }
+    }
     ensure!(
         pin.receipt().receipt.head.generation <= target.receipt.head.generation,
         "remote rollback below pinned generation"
@@ -339,9 +441,19 @@ async fn proof(
                 && proof.len() + page.items.len() <= MAX_COMMITS,
             "receipt catch-up limit or missing proof; fetch in smaller trusted checkpoints"
         );
-        let next = pin.advance(&page.items)?;
+        let before = pin.receipt().receipt.head.generation;
+        let (first, rest) = page.items.split_first().expect("page is not empty");
+        let next = match breaking.take() {
+            Some(statement) => {
+                // The first receipt after the pin must be signed by NEW_KEY and
+                // extend the pinned chain exactly; the break stays recorded.
+                let after = pin.accept_break(&statement, &statement.transition.new_key, first)?;
+                after.advance_chain(&server.chain, rest)?.0
+            }
+            None => pin.advance_chain(&server.chain, &page.items)?.0,
+        };
         ensure!(
-            next.receipt().receipt.head.generation > pin.receipt().receipt.head.generation,
+            next.receipt().receipt.head.generation > before,
             "receipt proof made no progress"
         );
         proof.extend(page.items);
@@ -357,19 +469,86 @@ async fn track(
     receipt: SignedReceipt,
 ) -> anyhow::Result<()> {
     let checked = proof(client, journal, scope, &receipt).await?;
-    if journal.pin(scope).await?.is_none() {
+    let server = client.server().await?;
+    let Some(pin) = journal.pin(scope).await? else {
+        // `proof` connected the independently configured key to this issuer.
         journal
-            .trust_checkpoint(scope, &client.remote.public_key, receipt)
+            .trust_checkpoint(scope, &receipt.receipt.issuer_key.clone(), receipt)
             .await?;
-    } else if checked.is_empty() {
+        return Ok(());
+    };
+    if checked.is_empty() {
         // Recheck inside a transaction: another process may have advanced/revoked.
-        journal.advance(scope, &[receipt]).await?;
-    } else {
-        for page in checked.chunks(256) {
-            journal.advance(scope, page).await?;
+        journal
+            .advance_chain(scope, &server.chain, &[receipt])
+            .await?;
+        return Ok(());
+    }
+    let mut rest: &[SignedReceipt] = &checked;
+    if let Some(new_key) = client.break_key() {
+        if pin.trusted_key() != new_key && checked[0].receipt.issuer_key == new_key {
+            let statement = break_statement(server, pin.trusted_key(), new_key)?;
+            journal
+                .accept_break(scope, &statement, new_key, &checked[0])
+                .await?;
+            rest = &checked[1..];
         }
     }
+    for page in rest.chunks(256) {
+        journal.advance_chain(scope, &server.chain, page).await?;
+    }
     Ok(())
+}
+
+/// Offline-verifiable bundle for an explicit re-pin or a manual catch-up. Nothing
+/// is applied: `receipt advance` / `receipt accept-break` re-verify it all.
+async fn authority_proof(
+    client: &Client,
+    journal: &ReceiptJournal,
+    scope: &Scope,
+    out: &Path,
+) -> anyhow::Result<Value> {
+    #[derive(Deserialize)]
+    struct Page {
+        items: Vec<SignedReceipt>,
+    }
+    let server = client.server().await?;
+    let after = journal
+        .pin(scope)
+        .await?
+        .map_or(0, |pin| pin.receipt().receipt.head.generation);
+    let page: Option<Page> = client
+        .get_optional(
+            "history/receipts",
+            &[
+                ("branch", scope.branch.clone()),
+                ("after_generation", after.to_string()),
+                ("limit", "256".into()),
+            ],
+            2 * 1024 * 1024,
+        )
+        .await?;
+    let bundle = crate::authority::ChainProof {
+        version: 1,
+        authority: scope.authority,
+        active_key: server.active_key.clone(),
+        active_epoch: server.active_epoch,
+        revoked: server.revoked.values().cloned().collect(),
+        rotations: server.chain.statements().to_vec(),
+        receipts: page.map(|p| p.items).unwrap_or_default(),
+    };
+    let bytes = serde_json::to_vec_pretty(&bundle)?;
+    ensure!(bytes.len() <= MAX_PLAN_BYTES, "authority proof byte limit");
+    use std::io::Write;
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(out)?;
+    file.write_all(&bytes)?;
+    file.sync_all()?;
+    Ok(
+        json!({"active_epoch":server.active_epoch,"statements":bundle.rotations.len(),"receipts_after_pin":bundle.receipts.len(),"revocation_markers":bundle.revoked.len(),"applied":false}),
+    )
 }
 
 async fn plan(

@@ -1,0 +1,83 @@
+{
+  "generator": "Independent Python JSON/SHA-256 and OpenSSL Ed25519; public synthetic seeds 7, 8, 9 and 10",
+  "authority": "00000000-0000-0000-0000-000000000001",
+  "rotation_1_2": {
+    "signed": {
+      "transition": {
+        "version": 1,
+        "kind": "rotation",
+        "authority": "00000000-0000-0000-0000-000000000001",
+        "from_epoch": 1,
+        "to_epoch": 2,
+        "old_key": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+        "new_key": "1398f62c6d1a457c51ba6a4b5f3dbd2f69fca93216218dc8997e416bd17d93ca",
+        "sealed": {
+          "receipts": 3,
+          "digest": "55bf761169d19cc2226ed32f169506b7a03734cb91053ad503149f56f7c4a56e"
+        },
+        "reason": "",
+        "declared_at_ms": 1700000000000
+      },
+      "old_signature": "c7069b7b6c5cf77e3e0b3bbefbde85477533011bc0cbd45a097ac6f1f898fd65275ffa08af006733ca4c90633ea9c71f230c60f43d3349e42b65b59084e8eb05",
+      "new_signature": "fdc81fc32126402cae140df90215e76b7d029d9dd328d86eec2930b87728624f3b55ea1ca4474c1fd4ef47d09345746ad92de225f13decf1664168e049dc1f03"
+    },
+    "address": "addce94447585c5276482f52221a97c705dbbb7a87974a36bb2c79331fb2e99d",
+    "canonical": "{\"authority\":\"00000000-0000-0000-0000-000000000001\",\"declared_at_ms\":1700000000000,\"from_epoch\":1,\"kind\":\"rotation\",\"new_key\":\"1398f62c6d1a457c51ba6a4b5f3dbd2f69fca93216218dc8997e416bd17d93ca\",\"old_key\":\"ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c\",\"reason\":\"\",\"sealed\":{\"digest\":\"55bf761169d19cc2226ed32f169506b7a03734cb91053ad503149f56f7c4a56e\",\"receipts\":3},\"to_epoch\":2,\"version\":1}"
+  },
+  "rotation_2_3": {
+    "signed": {
+      "transition": {
+        "version": 1,
+        "kind": "rotation",
+        "authority": "00000000-0000-0000-0000-000000000001",
+        "from_epoch": 2,
+        "to_epoch": 3,
+        "old_key": "1398f62c6d1a457c51ba6a4b5f3dbd2f69fca93216218dc8997e416bd17d93ca",
+        "new_key": "fd1724385aa0c75b64fb78cd602fa1d991fdebf76b13c58ed702eac835e9f618",
+        "sealed": {
+          "receipts": 4,
+          "digest": "2abcc9b0546b814314d5411f586867df62646c8d6c968e7c0611d7e387593dad"
+        },
+        "reason": "scheduled rotation",
+        "declared_at_ms": 1700000100000
+      },
+      "old_signature": "19c771112d7bead678a879128cb2816342de95e940b289cdf82f324119c8f7455f13947f05e762e86865b30aed7653936c9891b6039ad5d2612e70fd2dedcd0b",
+      "new_signature": "fac9efc05a5a0109b1555dff5983c298e8bd195f9d05e897d39eb2efbf19e33f78d7258f2e6d065d419040045418f4a3b11d1e66412f20a5423b19444d97ab0e"
+    },
+    "address": "5e31505e18dd4c6ee25b53a66b45bfddbf43da637ee08c35b2847e86a019287c",
+    "canonical": "{\"authority\":\"00000000-0000-0000-0000-000000000001\",\"declared_at_ms\":1700000100000,\"from_epoch\":2,\"kind\":\"rotation\",\"new_key\":\"fd1724385aa0c75b64fb78cd602fa1d991fdebf76b13c58ed702eac835e9f618\",\"old_key\":\"1398f62c6d1a457c51ba6a4b5f3dbd2f69fca93216218dc8997e416bd17d93ca\",\"reason\":\"scheduled rotation\",\"sealed\":{\"digest\":\"2abcc9b0546b814314d5411f586867df62646c8d6c968e7c0611d7e387593dad\",\"receipts\":4},\"to_epoch\":3,\"version\":1}"
+  },
+  "recovery_3_4": {
+    "signed": {
+      "transition": {
+        "version": 1,
+        "kind": "recovery",
+        "authority": "00000000-0000-0000-0000-000000000001",
+        "from_epoch": 3,
+        "to_epoch": 4,
+        "old_key": "fd1724385aa0c75b64fb78cd602fa1d991fdebf76b13c58ed702eac835e9f618",
+        "new_key": "43a72e714401762df66b68c26dfbdf2682aaec9f2474eca4613e424a0fbafd3c",
+        "sealed": {
+          "receipts": 4,
+          "digest": "2abcc9b0546b814314d5411f586867df62646c8d6c968e7c0611d7e387593dad"
+        },
+        "reason": "private key lost (clé)",
+        "declared_at_ms": 1700000200000
+      },
+      "new_signature": "030555730fe54af611383c184669d59e30dee88fde13328212eeff7d380a379024153b96eec7753c51fe13c3b7c67255f9bd24684a8ad1fb6441c88de292b108"
+    },
+    "address": "5f33677bcdf14cf35f74fa103b1b82ce829821b525acb0fe2c127d0f78af8741",
+    "canonical": "{\"authority\":\"00000000-0000-0000-0000-000000000001\",\"declared_at_ms\":1700000200000,\"from_epoch\":3,\"kind\":\"recovery\",\"new_key\":\"43a72e714401762df66b68c26dfbdf2682aaec9f2474eca4613e424a0fbafd3c\",\"old_key\":\"fd1724385aa0c75b64fb78cd602fa1d991fdebf76b13c58ed702eac835e9f618\",\"reason\":\"private key lost (clé)\",\"sealed\":{\"digest\":\"2abcc9b0546b814314d5411f586867df62646c8d6c968e7c0611d7e387593dad\",\"receipts\":4},\"to_epoch\":4,\"version\":1}"
+  },
+  "seal": {
+    "addresses": [
+      "0d88e1d4dfe00ea87cb57668d21d8cb8cce27a8d6d94937e514927d819338a4f",
+      "c00339bef9492065fd5183bbde7fc4374ed0f8bacb9988942bddb00aa5122bcc",
+      "e8043a9975be210a3b7f602349e6478d898955c171315679a6c7cf96f6a0124a"
+    ],
+    "receipts": 3,
+    "digest": "55bf761169d19cc2226ed32f169506b7a03734cb91053ad503149f56f7c4a56e",
+    "empty_digest": "7e1218d6532013e6b81d3a4e03d617fabf4c614d7c666b3378a6df8e5aea97ab",
+    "order": "ascending project UUID bytes, branch UTF-8 bytes, generation; raw 32-byte receipt addresses"
+  }
+}

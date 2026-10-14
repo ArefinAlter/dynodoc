@@ -1,22 +1,26 @@
 # Project-scoped device sessions
 
-12 October 2026, revised 13 October 2026. Device sessions are schema 38 (released
-with schema 39). The per-project key grants and the separate `history:review` scope
-described below are schema 40: source only until a release records them. Executed
+12 October 2026, revised 13 and 14 October 2026. Device sessions are schema 38
+(released with schema 39). The per-project key grants and the separate
+`history:review` scope described below are schema 40: source only until a release
+records them. Encrypted key files (14 October) are client-side only and change
+nothing in this protocol: see [KEY-FILE-FORMAT.md](KEY-FILE-FORMAT.md). Executed
 checks are listed under Verification; the handoff records exact commands.
 
 This contract lets a command-line or native client that holds an **enrolled
 Ed25519 device key** sign in to exactly one project, use only the project-history
 routes, and renew without an email link, a browser cookie or a stored account
 token. It replaces the interim use of an ordinary account access token by
-`engine-cli sync`. It is not marketplace/installed-host acceptance, a hardware or
-OS keystore, an external witness or an end-user UI.
+`engine-cli sync`. It is not marketplace/installed-host acceptance, a hardware
+token, an external witness or an end-user UI. The CLI can hold the key in a
+passphrase-encrypted file or bind it to an operating-system keystore, which
+protects the file at rest and is described under "CLI" and in the format document.
 
 ## Decisions
 
 | Question | Decision |
 |---|---|
-| Long-lived credential | The device private key file only. The server stores the public key binding it already had (migration 33). No renewable secret, refresh token or token hash is stored for a device session. |
+| Long-lived credential | The device private key file only (unencrypted, or a `dynodoc-key-v1` encrypted file that the CLI unlocks with a passphrase or an OS keystore). The server stores the public key binding it already had (migration 33). No renewable secret, refresh token or token hash is stored for a device session. |
 | Short-lived credential | A Paseto v4.local access token, 1 hour, one project, a subset of four scopes (`project:read`, `history:read`, `history:write`, `history:review`). Not written to disk by the CLI. |
 | Renewal | Sign a new one-use challenge. Possession of the key is the only renewal factor, so key revocation ends renewal immediately. |
 | Who authorises a key for a project? | **The account holder, per project and scope, from an authenticated browser session** (schema 40). A key in `granted` mode (the default for every key enrolled from schema 40 on) can only be issued a session for a project with an active grant, and only for the granted scopes; the key holder no longer picks the reach. A key enrolled before schema 40 is `all` until its owner changes it: it keeps its old reach (every project the account can currently access). See "Per-project key grants". |
@@ -183,9 +187,11 @@ browser session.
 
 ## CLI
 
-`engine-cli device keygen --out FILE` creates a new unencrypted DER PKCS#8 Ed25519
-key (`create_new`, fsynced; never overwrites; removes a partial file on error) and
-prints the public key. It is created readable by the current user only: mode
+`engine-cli device keygen --out FILE` creates a new Ed25519 key (`create_new`,
+fsynced; never overwrites; removes a partial file on error) and prints the public
+key. By default it is unencrypted DER PKCS#8; `--encrypt` writes a
+passphrase-encrypted `dynodoc-key-v1` file instead and `--encrypt --keystore` binds
+a random wrapping secret to the operating system (see below). It is created readable by the current user only: mode
 `0600` on Unix; on Windows the file's access list is replaced with a single entry
 for the current user (`icacls /inheritance:r /grant:r USER:F`, then read back and
 verified). If that cannot be applied or verified the file is removed and the
@@ -196,6 +202,19 @@ restricted access list. Loading a key on Unix refuses a file readable by group o
 others unless the same flag is given. Enroll the key in Profile → Signing keys as
 before, then grant it the project it should use; the key is `granted` with no
 projects until you do.
+
+An encrypted key works in every place a key file is read, with the same
+`--device-key FILE`. The passphrase comes from `--passphrase-file FILE` (a global
+option), else the environment variable `DYNODOC_KEY_PASSPHRASE_FILE` (a path), else
+a hidden terminal prompt; it is never a command-line argument, and with no source
+the command fails before any network request. The key is decrypted once, in
+memory, for the life of the process, and every renewal signs with it; the short
+lived access tokens are still never written to disk. `device protect FILE` converts
+an existing key in place (atomic replacement, same owner-only access, same public
+key, so it stays enrolled) and `device unprotect FILE --i-understand` reverses it.
+A binding to Windows DPAPI, the macOS keychain or the Linux Secret Service
+(`--keystore`) removes the passphrase entirely and ties the file to that operating
+system account.
 
 ```text
 engine-cli sync REPO PROJECT --remote remote.json --journal pins.sqlite --branch main \
@@ -240,6 +259,17 @@ Source run on 12 October 2026 (Windows, restricted runtime role, PostgreSQL 16):
   protected `main`, required approval and owner approval through a device session,
   key revocation, membership removal.
 
+Encrypted key files (14 October 2026, Windows 11 host; no server schema change):
+`engine-cli` unit tests for the container, an independent Python/OpenSSL vector,
+tamper and bound checks, and DPAPI through the real Windows API; and
+`tests/key_files.rs`, which drives the built binary: encrypted keygen, every
+passphrase source and their order, wrong and missing passphrases, argument refusal,
+protect and unprotect (in place and to a new file), a signed local commit with an
+encrypted key, and `sync --device-key` with an encrypted key reaching a recording
+loopback socket with a challenge request for the key's public key. The sync test
+does not run a server; the device-session protocol itself is covered by the
+tests above with unencrypted keys.
+
 Schema 40 (13 October 2026, Windows, restricted runtime role, PostgreSQL 16):
 
 - `engine-api/tests/device_key_grants_test.rs`: grant/deny matrix (no grant, wrong
@@ -266,12 +296,23 @@ Known unrelated failure on this Windows host: `sse_delivers_a_new_event_within_1
 
 What remains after schema 40, precisely:
 
-- **The key file is still an unencrypted private key.** There is no passphrase, OS
-  keystore, TPM or hardware token. Owner-only file permissions stop other local
-  accounts, not malware or a backup that runs as the user, and they are not
-  checked again when a Windows key file is loaded (only files created by
-  `device keygen` carry the restricted access list; a key made elsewhere keeps
-  its folder's). On Unix a key readable by group or others is refused at load.
+- **An unencrypted key file is the whole credential.** It is the default of `device
+  keygen`; `--encrypt` is a choice and existing keys stay as they are until
+  `device protect` is run. Owner-only file permissions stop other local accounts,
+  not malware or a backup that runs as the user, and they are not checked again
+  when a Windows key file is loaded (only files created by `device keygen` carry
+  the restricted access list; a key made elsewhere keeps its folder's). On Unix a
+  key readable by group or others is refused at load.
+- **What the encrypted file does and does not give.** At rest, a stolen or backed
+  up file needs an offline guess of its passphrase, slowed by 600,000 PBKDF2
+  iterations but not memory-hard. While `engine-cli` runs the decrypted key is in
+  its memory (wiped best effort; `ring`'s key object and the OS may keep copies),
+  and same-account malware, a keylogger, or a passphrase file kept beside the key
+  defeats it. An OS keystore binding (DPAPI, keychain, Secret Service) answers to
+  every process of that account. None of this is a TPM, smart card or per-use
+  confirmation, and no hardware-backed key type exists yet. A plain conversion
+  (`protect`) cannot erase the old plaintext blocks. The macOS and Linux keystore
+  paths are implemented but have not been run on those systems.
 - **`all` keys keep account-wide reach.** Keys enrolled before schema 40 are `all`
   until their owner switches them; the profile should say so. Anyone with such a
   file can still open any project the account can reach, with any scope the role

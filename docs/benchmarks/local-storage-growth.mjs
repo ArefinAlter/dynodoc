@@ -61,7 +61,8 @@ let firstState;
 let expectedBytes = 0;
 let expectedObjects = 0;
 try {
-  assert.equal(run('init').value.local_schema, 2);
+  // Schema 3 adds compression at rest; the reports of 12 October were taken on 2.
+  assert.ok([2, 3].includes(run('init').value.local_schema));
   for (let revision = 0; revision <= edits; revision++) {
     if (revision > 0) nodes[ids[(revision - 1) % nodeCount]].current_fields.label = `Edit ${revision}: ${'y'.repeat(256)}`;
     const json = JSON.stringify(state);

@@ -55,16 +55,15 @@ async fn main() -> anyhow::Result<()> {
     let mut state = AppState::new(pool, config);
     if let Some(path) = std::env::var_os("DYNODOC_REF_SIGNING_KEY_FILE") {
         use engine_core::repository::server_authority;
-        use ring::signature::KeyPair;
         let key = server_authority::load_key(std::path::Path::new(&path))?;
         let mut authority_connection = state.pool.acquire().await?;
-        let (_, installed) = server_authority::binding(&mut authority_connection)
-            .await
-            .context("install the receipt public key with the separate operator command first")?;
-        anyhow::ensure!(
-            installed == hex::encode(key.public_key().as_ref()),
-            "receipt signing key does not match the installed authority"
-        );
+        // Fail closed: the mounted key must be the newest authority epoch's key.
+        // A revoked epoch still starts (everything else must keep working) but
+        // issues no receipt until the operator installs a recovery epoch.
+        let active = server_authority::check_signer(&mut authority_connection, &key).await?;
+        if let Some(marker) = &active.revocation {
+            tracing::warn!(epoch = active.epoch, reason = %marker.reason, "receipt authority epoch is revoked; shared branches cannot advance");
+        }
         state.ref_signer = Some(std::sync::Arc::new(key));
     }
     // Copy detection runs beside the edit path, never inside it.

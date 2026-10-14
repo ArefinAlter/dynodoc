@@ -42,10 +42,15 @@ a verified user identity. No existing database event hash is changed.
 
 ## Durable local operations
 
-`LocalRepository::open(path, project)` creates/reopens SQLite schema 2 with WAL,
+`LocalRepository::open(path, project)` creates/reopens SQLite schema 3 with WAL,
 FULL synchronization and one-project binding. Object and commit rows are immutable
-to ordinary writes; only the explicit collector removes unreferenced object rows.
-Schema 1 upgrades transactionally; older schema-1-only clients reject schema 2.
+to ordinary writes; only the explicit collector removes unreferenced object rows,
+and only `repository ... compact` changes how a row is stored (never its address or
+bytes). Schemas 1 and 2 upgrade transactionally; a client that predates a schema
+rejects it (a schema-2 client rejects 3, as schema-1-only clients rejected 2).
+Object rows are compressed at rest from schema 3; hashes, addresses, transfer
+packets and the quota counters are about the canonical encoded bytes and do not
+change.
 [Persistent local capacity](LOCAL-STORAGE-BUDGETS.md) bounds retained object/commit
 bytes and object/commit/branch counts, including staged objects. Exact retries and
 existing branch updates remain possible at capacity; no history is auto-pruned.

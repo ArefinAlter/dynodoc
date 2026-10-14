@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub mod attestation;
+pub mod authority_epoch;
 pub mod compare;
 pub mod convergence;
 pub mod device;
