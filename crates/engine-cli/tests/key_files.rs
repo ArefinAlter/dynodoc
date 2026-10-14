@@ -60,6 +60,12 @@ fn text(bytes: &[u8]) -> String {
 fn passphrase_file(dir: &Path, name: &str, value: &str) -> PathBuf {
     let path = dir.join(name);
     std::fs::write(&path, format!("{value}\n")).unwrap();
+    // The loaders refuse a secret file that other accounts can read.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    }
     path
 }
 

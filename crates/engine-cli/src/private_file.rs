@@ -300,6 +300,22 @@ impl Drop for Replacement {
 
 /// Test helper: the file is accessible by its owner only (Unix mode bits; on
 /// Windows the real `icacls` listing has exactly the current user).
+/// Write a test fixture the way the loaders require: owner-only on Unix (a default 0644 file
+/// is refused as over-permissive), unchanged on Windows.
+#[cfg(test)]
+pub(crate) fn write_private_test(
+    path: impl AsRef<Path>,
+    contents: impl AsRef<[u8]>,
+) -> std::io::Result<()> {
+    std::fs::write(path.as_ref(), contents)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path.as_ref(), std::fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) fn assert_owner_only(path: &Path) {
     #[cfg(unix)]

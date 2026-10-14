@@ -334,7 +334,7 @@ mod tests {
         FILE.get_or_init(|| {
             let path =
                 std::env::temp_dir().join(format!("dynodoc-test-passphrase-{}", Uuid::new_v4()));
-            std::fs::write(&path, [PASSPHRASE, b"\n"].concat()).unwrap();
+            crate::private_file::write_private_test(&path, [PASSPHRASE, b"\n"].concat()).unwrap();
             path
         })
     }
@@ -396,7 +396,7 @@ mod tests {
         assert!(error.contains("passphrase source"), "{error}");
         // A wrong passphrase file is the generic error.
         let wrong = dir.join("wrong");
-        std::fs::write(
+        crate::private_file::write_private_test(
             &wrong,
             "not the right passphrase at all
 ",
@@ -423,7 +423,7 @@ mod tests {
         assert_eq!(std::fs::read(&path).unwrap(), file);
         // A too-short new passphrase creates nothing.
         let short = dir.join("short");
-        std::fs::write(&short, "short\n").unwrap();
+        crate::private_file::write_private_test(&short, "short\n").unwrap();
         let target = dir.join("never.json");
         assert!(keygen(
             &target,
@@ -557,7 +557,8 @@ mod tests {
         chars[40] = if chars[40] == 'A' { 'B' } else { 'A' };
         value["keystore"]["blob"] = chars.into_iter().collect::<String>().into();
         let damaged = dir.join("damaged.json");
-        std::fs::write(&damaged, serde_json::to_vec(&value).unwrap()).unwrap();
+        crate::private_file::write_private_test(&damaged, serde_json::to_vec(&value).unwrap())
+            .unwrap();
         assert!(crate::signing::load_with(&damaged, &none).is_err());
         // Existing plain key -> DPAPI-bound -> plain, in place.
         let plain = dir.join("plain.der");

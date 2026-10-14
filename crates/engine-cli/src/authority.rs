@@ -292,7 +292,7 @@ mod tests {
             .public_key()
             .as_ref());
         let path = temp(&format!("key{seed}.der"));
-        std::fs::write(&path, der).unwrap();
+        crate::private_file::write_private_test(&path, der).unwrap();
         (path, public)
     }
     fn state(public: &str, revoked: bool) -> State {
@@ -327,7 +327,7 @@ mod tests {
         let (new, new_public) = key_file(8);
         let (other, _) = key_file(9);
         let state_path = temp("state.json");
-        std::fs::write(
+        crate::private_file::write_private_test(
             &state_path,
             serde_json::to_vec(&state(&old_public, false)).unwrap(),
         )
@@ -366,7 +366,7 @@ mod tests {
         })
         .is_err());
         std::fs::remove_file(&state_path).unwrap();
-        std::fs::write(
+        crate::private_file::write_private_test(
             &state_path,
             serde_json::to_vec(&state(&old_public, true)).unwrap(),
         )

@@ -307,8 +307,8 @@ mod tests {
         let dir = dir();
         let first = dir.join("first");
         let second = dir.join("second");
-        std::fs::write(&first, "first passphrase value\n").unwrap();
-        std::fs::write(&second, "second passphrase value").unwrap();
+        crate::private_file::write_private_test(&first, "first passphrase value\n").unwrap();
+        crate::private_file::write_private_test(&second, "second passphrase value").unwrap();
         let both = Sources {
             file: Some(first.clone()),
             env_file: Some(second.clone()),
@@ -346,13 +346,14 @@ mod tests {
     fn passphrase_files_are_bounded_and_new_passphrases_have_a_minimum() {
         let dir = dir();
         let empty = dir.join("empty");
-        std::fs::write(&empty, "\n").unwrap();
+        crate::private_file::write_private_test(&empty, "\n").unwrap();
         let huge = dir.join("huge");
-        std::fs::write(&huge, vec![b'a'; MAX_PASSPHRASE_BYTES + 1]).unwrap();
+        crate::private_file::write_private_test(&huge, vec![b'a'; MAX_PASSPHRASE_BYTES + 1])
+            .unwrap();
         let short = dir.join("short");
-        std::fs::write(&short, "too short").unwrap();
+        crate::private_file::write_private_test(&short, "too short").unwrap();
         let exact = dir.join("exact");
-        std::fs::write(&exact, vec![b'b'; MAX_PASSPHRASE_BYTES]).unwrap();
+        crate::private_file::write_private_test(&exact, vec![b'b'; MAX_PASSPHRASE_BYTES]).unwrap();
         let with = |p: &Path| Sources {
             file: Some(p.to_owned()),
             ..Default::default()
