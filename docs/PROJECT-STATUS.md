@@ -1,5 +1,44 @@
 # Dynodoc: intent, current implementation and remaining work
 
+## Source: formula engine, authority rotation, key files, compression and design suites (14 October 2026)
+
+Source is PostgreSQL schema 41 (migration 0041) and local repository schema 3. Production runs
+schema 40 until a newer live entry above says otherwise.
+
+**Formula engine.** `hyperformula` (GPL-3.0-only or commercial) is removed; spreadsheet
+calculation uses an in-house, dependency-free engine in
+`frontend/researcher/src/lib/workspace/formula/`. 458 function names, incremental
+recalculation, reference rebasing for structural edits, Excel-evaluated test corpus. Evidence,
+differences and bundle size (−646 KB): [FORMULA-ENGINE-REPLACEMENT.md](FORMULA-ENGINE-REPLACEMENT.md).
+Decision 013's open point is resolved.
+
+**Receipt-authority rotation (schema 41).** [REF-AUTHORITY-ROTATION.md](REF-AUTHORITY-ROTATION.md):
+authority epochs, dual-signed rotation statements, a recorded recovery path, revocation
+markers, API additions and client rules that refuse a silent break. The authority is still not
+installed in production ([decision](RECEIPT-AUTHORITY-DECISION.md)).
+
+**Key files and compression (CLI/local).** `dynodoc-key-v1` passphrase-encrypted key files with
+optional Windows DPAPI, macOS Keychain and Linux Secret Service binding
+([KEY-FILE-FORMAT.md](KEY-FILE-FORMAT.md)); local repository schema 3 stores objects compressed
+(addresses and quotas unchanged), `compact` re-encodes existing objects
+([LOCAL-STORAGE-BUDGETS.md](LOCAL-STORAGE-BUDGETS.md),
+[DESIGN-PHYSICAL-PACK-FILES.md](DESIGN-PHYSICAL-PACK-FILES.md)).
+
+**Design suites (not implemented).** [EXPANSION-ROADMAP.md](EXPANSION-ROADMAP.md) indexes about
+19,500 lines: self-hosted edition, AI-agent connectors (Claude first), end-to-end encryption,
+and the remaining engine items (commit pruning, cross-document merge, node-conflict resolution,
+witnesses, large-file and installed-host acceptance). Decision 015 records the customer profile
+and the copyright line (Verne Ltd.).
+
+**Verification.** Rust fmt and Clippy clean; all tests pass except the Windows-only SSE timing
+test. Frontend Prettier, ESLint and svelte-check clean; unit tests pass (461). The isolated
+authenticated browser suite result is recorded in the release record below.
+
+**Still open.** Pack files with shared dictionaries and commit pruning, memory-hard key
+derivation and hardware keys, cross-document merges and automatic resolution of real node
+conflicts, installing the receipt authority and witnesses, large-file and installed-editor
+acceptance, and all three planned products above.
+
 ## Live: schema 40 release (13 October 2026, 11:36 UTC)
 
 The VPS workspace, API and admin site run application `0f67372`, schema 40: per-project

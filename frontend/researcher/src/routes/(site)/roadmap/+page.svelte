@@ -106,6 +106,16 @@
           when: '13 Oct 2026'
         },
         {
+          title: 'Receipt-authority rotation (schema 41)',
+          body: 'Dual-signed rotation of the receipt-signing authority, a recorded recovery path for a lost or leaked key, and clients that refuse a silent break.',
+          when: '14 Oct 2026'
+        },
+        {
+          title: 'Encrypted key files and compressed local storage',
+          body: 'Passphrase-protected signing keys with optional Windows, macOS or Linux key storage, and transparent compression of objects in the local repository.',
+          when: '14 Oct 2026'
+        },
+        {
           title: 'Selected-history sync client',
           body: 'Plan, push, fetch and fast-forward pull from the command line, with verified objects and receipts.',
           when: '12 Oct 2026'
@@ -121,11 +131,11 @@
       items: [
         {
           title: 'Receipt authority and shared writers',
-          body: 'Schema 40 is deployed with shared writers off and no receipt-signing key installed. That is a deliberate decision: the key cannot be replaced once installed and server-side rotation does not exist yet, so enabling waits for key custody, rotation and a production-copy rehearsal.'
+          body: 'Schema 41 adds server-side authority rotation and a recorded recovery path, so a lost or leaked key is an incident rather than a rebuild. Shared writers stay off and no signing key is installed until key custody is decided and rotation has been rehearsed on a production copy.'
         },
         {
           title: 'Project-scoped sign-in',
-          body: 'Project-scoped sessions are live and per-project grants and a review scope are built. Operating-system key storage and encrypted key files remain.'
+          body: 'Project-scoped sessions, per-project grants and a review scope are live. Passphrase-encrypted key files and operating-system key storage exist in the command-line tools. Hardware keys and memory-hard key derivation remain.'
         },
         {
           title: 'Projects and add-in adoption',
@@ -133,7 +143,7 @@
         },
         {
           title: 'Storage packing and retention',
-          body: 'A retention plan and a collector for staged objects exist. Physical packing, publication of only changed nodes, and commit pruning with a retention policy do not.'
+          body: 'A retention plan, a collector for staged objects and transparent compression of local objects exist. Pack files with shared dictionaries, publication of only changed nodes, and commit pruning with a retention policy do not.'
         },
         {
           title: 'Same-file offline convergence',

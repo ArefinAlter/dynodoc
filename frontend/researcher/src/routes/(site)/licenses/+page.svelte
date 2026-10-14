@@ -114,11 +114,18 @@
   <section id="dependencies">
     <h2>Dependencies</h2>
     <p>
-      These are the direct runtime dependencies as of 12 October 2026, with licenses taken from the
+      These are the direct runtime dependencies as of 14 October 2026, with licenses taken from the
       lockfiles and installed package metadata. Each keeps its own license, and so do the transitive
       packages beneath them, which are not listed here. The authoritative record is the lockfile; in
       the engine repository, <code>cargo metadata --locked</code> prints the complete Rust set. Build
       and test tools are not shipped and are not listed.
+    </p>
+    <p>
+      Spreadsheet formulas are calculated by Dynodoc’s own formula engine, which is part of the
+      workspace and covered by its proprietary license. No third-party calculation library is
+      shipped. On this date none of the packages the web application ships, direct or transitive, is
+      available only under a GPL-family license; <code>jszip</code> is offered under the MIT license or
+      the GPL, and the MIT license applies here.
     </p>
     <h3>Workspace and website (npm)</h3>
     <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -137,11 +144,6 @@
             ><td>BSD-2-Clause</td><td><code>mammoth</code></td></tr
           ><tr><td>Apache-2.0</td><td><code>web-vitals</code></td></tr><tr
             ><td>MIT or GPL-3.0-or-later</td><td><code>jszip</code></td></tr
-          ><tr
-            ><td>GPL-3.0-only</td><td
-              ><code>hyperformula</code> (spreadsheet calculation), which its publisher offers under GPL-3.0
-              or a separate commercial license.</td
-            ></tr
           ></tbody
         >
       </table>

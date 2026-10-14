@@ -24,3 +24,15 @@ Date: 13 October 2026. Owner: Verne.
   replacement. This is recorded, not resolved, by this decision.
 - Legal pages must not describe the workspace as open source or as AGPL-licensed
   (see LEGAL-PAGES.md).
+
+## Resolution of the `hyperformula` point (14 October 2026)
+
+The open point above is resolved by removal, not by buying the commercial licence
+(owner decision, recorded as decision 015). `hyperformula` is out of `package.json` and
+`pnpm-lock.yaml`, together with the three packages only it pulled in. Spreadsheet formulas
+are calculated by an in-house engine in `frontend/researcher/src/lib/workspace/formula/`
+that has no third-party runtime dependency. An audit of the production dependency tree on
+that date (195 packages, direct and transitive) found no package that is available only
+under a GPL-family licence; `jszip` is offered under MIT or GPL-3.0-or-later and the MIT
+terms apply. The evidence, the candidate comparison and the known behavioural differences
+are in `FORMULA-ENGINE-REPLACEMENT.md`. The `/licenses` page was updated accordingly.

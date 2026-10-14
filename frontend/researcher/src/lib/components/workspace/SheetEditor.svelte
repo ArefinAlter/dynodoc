@@ -3,7 +3,7 @@
   import SheetRibbon from './SheetRibbon.svelte';
   import SheetChart from './SheetChart.svelte';
   import OfficeDialog, { type ToolDialog } from './OfficeDialog.svelte';
-  import { HyperFormula } from 'hyperformula';
+  import { FormulaEngine, formatGeneral } from '$lib/workspace/formula';
   import {
     sortSheet,
     sheetCharts,
@@ -411,6 +411,9 @@
           maximumFractionDigits: places
         });
     }
+    // Whole numbers keep every digit; fractions are trimmed the way Excel's General format does.
+    if (typeof result === 'number')
+      return Number.isSafeInteger(result) ? String(result) : formatGeneral(result);
     return result === null || result === undefined
       ? String(n.current_fields[`cell_${c}`] ?? '')
       : String(result);
@@ -1006,7 +1009,7 @@
   const printPage = $derived(
     pageSetup(sheet?.current_fields.page_setup || { ...defaultPage, landscape: true, margin: 15 })
   );
-  const functionNames = HyperFormula.getRegisteredFunctionNames('enGB').sort();
+  const functionNames = FormulaEngine.getRegisteredFunctionNames();
   function sheetField(field: string, value: unknown) {
     if (sheet && canEdit) onChange([{ type: 'FieldEdited', node_id: sheet.id, field, value }]);
   }

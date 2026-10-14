@@ -1,10 +1,10 @@
-import { HyperFormula } from 'hyperformula';
+import { FormulaEngine } from './formula';
 
 type Input = Record<string, (string | number | boolean)[][]>;
 /** Keep the formula graph alive for cell edits. Structural changes use the explicit
  * rebasing path; this cache rebuilds only when sheet names or dimensions change. */
 export class WorkbookCalculator {
-  private engine?: HyperFormula;
+  private engine?: FormulaEngine;
   private previous: Input = {};
   private names = '';
   calculate(input: Input, names: { name: string; expression: string }[] = []) {
@@ -15,7 +15,7 @@ export class WorkbookCalculator {
     const serializedNames = JSON.stringify(names);
     if (!this.engine || shape(input) !== shape(this.previous) || serializedNames !== this.names) {
       this.destroy();
-      this.engine = HyperFormula.buildFromSheets(input, { licenseKey: 'gpl-v3' }, names);
+      this.engine = FormulaEngine.buildFromSheets(input, names);
     } else {
       const engine = this.engine;
       engine.batch(() => {
@@ -24,7 +24,7 @@ export class WorkbookCalculator {
           rows.forEach((row, r) =>
             row.forEach((value, c) => {
               if (value !== this.previous[name]?.[r]?.[c])
-                engine.setCellContents({ sheet, row: r, col: c }, [[value]]);
+                engine.setCellContents({ sheet, row: r, col: c }, value);
             })
           );
         }

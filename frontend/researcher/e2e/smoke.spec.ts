@@ -154,7 +154,7 @@ test('legal pages are linked, readable on mobile and explicitly marked as drafts
   await expect(
     page.getByRole('contentinfo').getByRole('link', { name: 'Privacy policy' })
   ).toBeVisible();
-  await expect(page.getByRole('contentinfo')).toContainText('Verne Systems');
+  await expect(page.getByRole('contentinfo')).toContainText('Verne Ltd.');
   await expect(page.getByRole('contentinfo')).not.toContainText('AGPL');
   await expect(
     page.getByRole('contentinfo').getByRole('link', { name: 'Terms & conditions' })

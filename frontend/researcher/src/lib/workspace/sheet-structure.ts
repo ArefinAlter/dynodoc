@@ -1,6 +1,6 @@
 import { rebaseSheetMetadata } from './sheet-references';
 import { workbookNames } from './workbook-names';
-import { HyperFormula } from 'hyperformula';
+import { FormulaEngine } from './formula';
 import { workbookInput, sheetLayout } from './sheet-model';
 import { ulid } from 'ulid';
 import type { DocumentState, EventPayload } from '$lib/api/types';
@@ -12,7 +12,7 @@ export type SheetOperation =
   | 'delete-column'
   | 'rename'
   | 'delete-sheet';
-/** Rebase cell references through HyperFormula while retaining every surviving engine node ID. */
+/** Rebase cell references through the formula engine while retaining every surviving engine node ID. */
 export function sheetStructure(
   state: DocumentState,
   targetId: string,
@@ -46,11 +46,7 @@ export function sheetStructure(
     throw new Error('A sheet supports up to 100 columns.');
   if (action === 'delete-column' && width <= 1) throw new Error('Keep at least one column.');
   if (action === 'delete-row' && rows.length <= 1) throw new Error('Keep at least one row.');
-  const hf = HyperFormula.buildFromSheets(
-    workbookInput(state),
-    { licenseKey: 'gpl-v3' },
-    workbookNames(state)
-  );
+  const hf = FormulaEngine.buildFromSheets(workbookInput(state), workbookNames(state));
   const ids = new Map(
     sheets.map((s) => [s.id, hf.getSheetId(String(s.current_fields.label || s.id))!])
   );
@@ -89,7 +85,6 @@ export function sheetStructure(
       ops.push({ type: 'FieldEdited', node_id: targetId, field: 'label', value: name.trim() });
     }
     if (action === 'delete-sheet') {
-      hf.removeColumns(id, [0, hf.getConfig().maxColumns]);
       hf.removeSheet(id);
       ops.push(...rows.map((n) => ({ type: 'NodeDeleted', node_id: n.id }) as EventPayload), {
         type: 'NodeDeleted',

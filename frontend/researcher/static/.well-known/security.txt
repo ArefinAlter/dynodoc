@@ -1,5 +1,5 @@
 # Dynodoc security contact (RFC 9116).
-# Report vulnerabilities privately by email to Verne Systems, the operator, or through
+# Report vulnerabilities privately by email to Verne, the operator, or through
 # GitHub private vulnerability reporting for the public engine repository.
 # No bug bounty is offered.
 Contact: mailto:info@vernesystems.com

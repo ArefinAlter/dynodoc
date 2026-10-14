@@ -69,7 +69,8 @@ section rather than pretending to have precise character anchors.
 
 Preserve number/date/boolean/text types, formulas, common fonts/fills/alignment/
 number formats, cell notes, validations, widths/heights, hidden rows/columns,
-freeze panes and merged ranges through ExcelJS. HyperFormula recalculates changed
+freeze panes and merged ranges through ExcelJS. The in-house formula engine
+(`src/lib/workspace/formula/`, see FORMULA-ENGINE-REPLACEMENT.md) recalculates changed
 cells in a retained engine; style-only changes do not rebuild its graph. Relative
 fill uses formula-aware references. Row/column changes rebase references; copying
 sheets/documents remaps stable merge anchors. Merge refuses to discard nonempty
@@ -148,9 +149,9 @@ unsaved work and reload so they cannot strip marks/settings they do not understa
 - [Tiptap's DOCX matrix](https://tiptap.dev/docs/conversion/getting-started/feature-support-matrix)
   illustrates that conversion requires feature-specific fidelity claims. Dynodoc
   implements its own documented OOXML subset rather than claiming converter parity.
-- [ExcelJS](https://github.com/exceljs/exceljs) handles workbook interchange and
-  [HyperFormula](https://hyperformula.handsontable.com/guide/supported-features.html)
-  provides calculation; neither makes this UI a complete Excel replacement.
+- [ExcelJS](https://github.com/exceljs/exceljs) handles workbook interchange and the
+  in-house formula engine provides calculation (HyperFormula was replaced on 14 October
+  2026); neither makes this UI a complete Excel replacement.
 - [xmldom](https://github.com/xmldom/xmldom) 0.9.12 parses XML and
   [fflate](https://github.com/101arrowz/fflate) 0.8.3 enables bounded streaming unzip.
   Paged.js is pinned at 0.4.3. Dependency licenses remain applicable.

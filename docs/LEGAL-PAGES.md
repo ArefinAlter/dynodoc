@@ -45,7 +45,7 @@ published anywhere.
 The application repository stays private. Only the engine, HTTP API and command-line
 tools are open source (MIT, <https://github.com/ArefinAlter/dynodoc-engine>). The
 workspace and the website are not published as open source and no licence is asserted
-for them (the pages say they are (c) Verne Systems and "not published as open
+for them (the pages say they are (c) Verne Ltd. and "not published as open
 source"). The one sentence every public page uses is `OPEN_SOURCE_STATEMENT`: "The
 engine, API and command-line tools are open source under the MIT licence. The workspace
 and website are not published as open source." Do not use "AGPL", "open source" for the
@@ -56,11 +56,11 @@ Copyright: the engine repository is MIT with copyright held by Verne Ltd.; the
 application repository is proprietary (decision 013). `/licenses` says so and lists the
 third-party components under their own licences.
 
-Open licensing point for the owner and counsel (kept here, not on the public page): the
-workspace bundle ships `hyperformula`, which its publisher licenses as GPL-3.0-only or
-under a separate commercial licence. Distributing it in a closed application needs the
-commercial licence (or replacing the library). `/licenses` lists the library and both
-publisher options and does not say which applies.
+Resolved licensing point (decision 013, resolution of 14 October 2026): the workspace
+bundle no longer ships `hyperformula`, which its publisher licensed as GPL-3.0-only or
+under a separate commercial licence. Formulas are calculated by the in-house engine in
+`src/lib/workspace/formula/`; see `FORMULA-ENGINE-REPLACEMENT.md`. `/licenses` no longer
+lists the library and states that no third-party calculation library is shipped.
 
 ## Pages
 
@@ -93,7 +93,6 @@ decided, are none of them invented, and are **not mentioned** on any public page
 - Hosting provider name and storage location, domain registrar/DNS provider.
 - Representative or DPO, if required.
 - Web server log retention and administrative-log retention; legal bases per purpose.
-- Which hyperformula licence option applies to the workspace (see above).
 - Counsel review of the governing law and forum.
 - Data-processing items: instruction mechanism, subprocessor-change notice, incident
   and assistance timelines, audit right, transfer safeguards, liability allocation.

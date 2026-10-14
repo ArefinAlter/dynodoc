@@ -1,5 +1,5 @@
 import { workbookNames } from './workbook-names';
-import { HyperFormula } from 'hyperformula';
+import { FormulaEngine } from './formula';
 import type { DocumentState, EventPayload, MaterializedNode } from '$lib/api/types';
 import { rowsForSheet } from './files';
 import {
@@ -27,11 +27,7 @@ export function fillRange(
     ops: EventPayload[] = [];
   if ((range.r2 - range.r1 + 1) * (range.c2 - range.c1 + 1) > 2000)
     throw new Error('Fill up to 2,000 cells at a time.');
-  const hf = HyperFormula.buildFromSheets(
-    workbookInput(state),
-    { licenseKey: 'gpl-v3' },
-    workbookNames(state)
-  );
+  const hf = FormulaEngine.buildFromSheets(workbookInput(state), workbookNames(state));
   try {
     const id = hf.getSheetId(String(sheet.current_fields.label || sheet.id))!;
     for (let r = range.r1; r <= range.r2; r++)
@@ -40,11 +36,7 @@ export function fillRange(
           sourceC = direction === 'right' ? range.c1 : c;
         if (sourceR === r && sourceC === c) continue;
         if (!rows[r] || !rows[sourceR]) throw new Error('Select a valid range.');
-        hf.copy({
-          start: { sheet: id, row: sourceR, col: sourceC },
-          end: { sheet: id, row: sourceR, col: sourceC }
-        });
-        hf.paste({ sheet: id, row: r, col: c });
+        hf.copyCell({ sheet: id, row: sourceR, col: sourceC }, { sheet: id, row: r, col: c });
         const result = hf.getCellSerialized({ sheet: id, row: r, col: c });
         const original = String(rows[sourceR].current_fields[`cell_${sourceC}`] ?? '');
         const value = original.startsWith('=') ? String(result ?? '') : original;

@@ -1,4 +1,4 @@
-import { HyperFormula } from 'hyperformula';
+import { FormulaEngine } from './formula';
 import type { DocumentState, EventPayload } from '$lib/api/types';
 import { workbookInput } from './sheet-model';
 export interface WorkbookName {
@@ -44,7 +44,7 @@ export function namedRangeOps(
       );
     if (!expression.startsWith('=') || expression.length > 1000)
       throw new Error('Start the expression with = and use up to 1,000 characters.');
-    const hf = HyperFormula.buildFromSheets(workbookInput(state), { licenseKey: 'gpl-v3' }, next);
+    const hf = FormulaEngine.buildFromSheets(workbookInput(state), next);
     try {
       hf.addNamedExpression(name, expression);
     } finally {

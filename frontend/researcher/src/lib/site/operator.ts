@@ -6,6 +6,9 @@
 // placeholder row and no list of open items. Never invent one.
 
 export const OPERATOR = {
+  // Copyright holder of the software and the site (owner decision, 14 October 2026). The
+  // operator below is the registered entity that runs the hosted service.
+  copyrightHolder: 'Verne Ltd.',
   legalName: 'Verne Systems',
   tradingAs: 'Verne',
   website: 'https://vernesystems.com',

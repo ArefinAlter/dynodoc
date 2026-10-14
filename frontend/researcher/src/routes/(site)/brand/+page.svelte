@@ -93,7 +93,7 @@
   const short =
     'Dynodoc is a document provenance, review and synchronization platform for Word, Excel, PowerPoint and their Google equivalents.';
   const long =
-    'Dynodoc keeps a verifiable history of changes to documents edited in familiar tools. Every paragraph, cell and slide shape has a stable identity. Changes are recorded in an append-only, hash-chained log, reviewed as change requests, merged under project rules and recoverable without rewriting history. Dynodoc is a product of Verne Systems. The engine, API and command-line tools are open source under the MIT licence; the workspace and website are not published as open source. It is in active development: a hosted pilot is running, and the Microsoft and Google add-ins are available as test builds with no marketplace listing yet.';
+    'Dynodoc keeps a verifiable history of changes to documents edited in familiar tools. Every paragraph, cell and slide shape has a stable identity. Changes are recorded in an append-only, hash-chained log, reviewed as change requests, merged under project rules and recoverable without rewriting history. Dynodoc is a product of Verne Ltd. The engine, API and command-line tools are open source under the MIT licence; the workspace and website are not published as open source. It is in active development: a hosted pilot is running, and the Microsoft and Google add-ins are available as test builds with no marketplace listing yet.';
 
   const facts = [
     ['Name', 'Dynodoc'],

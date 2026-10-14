@@ -1,7 +1,7 @@
 import { byPosition } from './api';
 import { applyPayload } from '$lib/materializer';
 import { rebaseSheetMetadata } from './sheet-references';
-import { HyperFormula } from 'hyperformula';
+import { FormulaEngine } from './formula';
 import { ulid } from 'ulid';
 import type { DocumentState, EventPayload, MaterializedNode } from '$lib/api/types';
 import { rowsForSheet } from './files';
@@ -33,11 +33,7 @@ export function sortSheet(
   if (sheetLayout(sheet.current_fields.sheet_layout).merges.length)
     throw new Error('Unmerge cells before sorting.');
   const rows = rowsForSheet(state, sheet.id);
-  const hf = HyperFormula.buildFromSheets(
-    workbookInput(state),
-    { licenseKey: 'gpl-v3' },
-    workbookNames(state)
-  );
+  const hf = FormulaEngine.buildFromSheets(workbookInput(state), workbookNames(state));
   try {
     const id = hf.getSheetId(String(sheet.current_fields.label || sheet.id))!;
     const values = hf.getSheetValues(id);
@@ -352,11 +348,7 @@ export function removeDuplicateRows(
   const rows = rowsForSheet(state, sheet.id),
     seen = new Set<string>(),
     removed = new Set<number>();
-  const hf = HyperFormula.buildFromSheets(
-    workbookInput(state),
-    { licenseKey: 'gpl-v3' },
-    workbookNames(state)
-  );
+  const hf = FormulaEngine.buildFromSheets(workbookInput(state), workbookNames(state));
   try {
     const id = hf.getSheetId(String(sheet.current_fields.label || sheet.id))!,
       values = hf.getSheetValues(id);

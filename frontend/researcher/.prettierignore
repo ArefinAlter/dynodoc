@@ -6,3 +6,6 @@ node_modules/
 playwright-report/
 test-results/
 pnpm-lock.yaml
+
+# Excel-generated formula corpus (machine-written fixtures)
+src/lib/workspace/formula/fixtures/

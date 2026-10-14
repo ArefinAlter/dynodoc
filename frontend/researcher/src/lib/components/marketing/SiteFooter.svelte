@@ -61,9 +61,9 @@
 
   <div class="container bottom">
     <p class="legal">
-      <span>&copy; {year} {OPERATOR.legalName}</span>
+      <span>&copy; {year} {OPERATOR.copyrightHolder}</span>
       <span class="sep" aria-hidden="true">/</span>
-      <span>Dynodoc is a product of {OPERATOR.legalName}, Dhaka, Bangladesh</span>
+      <span>Dynodoc is a product of {OPERATOR.copyrightHolder}</span>
       <span class="sep" aria-hidden="true">/</span>
       <a href={href('/licenses')}>Open-source engine (MIT)</a>
     </p>
