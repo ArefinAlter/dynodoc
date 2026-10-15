@@ -61,6 +61,13 @@ fn select(
             return merged;
         }
     }
+    // Page setup holds independent settings, so it merges key by key.
+    if field == "page_setup" {
+        let base = (!base.is_null()).then_some(&base);
+        if let Ok(Some(merged)) = crate::richtext::merge_property(base, Some(&team), Some(&draft)) {
+            return merged;
+        }
+    }
     let key = format!("{}:{field}", id.0);
     match resolutions.get(&key).map(String::as_str) {
         Some("draft") => draft,
@@ -411,6 +418,62 @@ pub fn diff(from: &DocumentState, to: &DocumentState) -> Vec<EventPayload> {
     unlocks.extend(locks);
     unlocks
 }
+/// Extends a selection of changed nodes with what their operations need to apply:
+/// a parent that `ops` creates, restores or moves into place, and the children
+/// that must be deleted or moved out before a selected node is deleted.
+pub fn with_dependencies<'a>(
+    ops: &'a [EventPayload],
+    team: &DocumentState,
+    mut selected: BTreeSet<&'a str>,
+) -> BTreeSet<&'a str> {
+    let live = |id: &NodeId| {
+        team.nodes
+            .get(id)
+            .is_some_and(|n| !n.deleted && !team.removed_choices.contains(id))
+    };
+    let mut by_node: BTreeMap<&str, Vec<&EventPayload>> = BTreeMap::new();
+    for op in ops {
+        if let Some(id) = op.target_node_id() {
+            by_node.entry(id.0.as_str()).or_default().push(op);
+        }
+    }
+    let mut children: BTreeMap<&NodeId, Vec<&NodeId>> = BTreeMap::new();
+    for n in team.nodes.values().filter(|n| live(&n.id)) {
+        if let Some(parent) = &n.parent_id {
+            children.entry(parent).or_default().push(&n.id);
+        }
+    }
+    let mut pending: Vec<&str> = selected.iter().copied().collect();
+    while let Some(id) = pending.pop() {
+        for op in by_node.get(id).into_iter().flatten() {
+            let parent = match op {
+                EventPayload::NodeCreated {
+                    parent_id: Some(p), ..
+                }
+                | EventPayload::NodeMoved {
+                    new_parent_id: Some(p),
+                    ..
+                } => Some(p),
+                EventPayload::NodeRestored { node_id } => {
+                    team.nodes.get(node_id).and_then(|n| n.parent_id.as_ref())
+                }
+                _ => None,
+            };
+            let mut needs: Vec<&NodeId> = parent.into_iter().filter(|p| !live(p)).collect();
+            if let EventPayload::NodeDeleted { node_id } = op {
+                needs.extend(children.get(node_id).into_iter().flatten());
+            }
+            for need in needs {
+                if let Some((&changed, _)) = by_node.get_key_value(need.0.as_str()) {
+                    if selected.insert(changed) {
+                        pending.push(changed);
+                    }
+                }
+            }
+        }
+    }
+    selected
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -654,5 +717,98 @@ mod tests {
         let c = canonical(&s);
         assert!(matches!(c, Cow::Owned(_)));
         assert!(c.nodes[&NodeId("root".into())].deleted);
+    }
+    #[test]
+    fn selected_child_brings_its_new_parent() {
+        let mut team = state();
+        let add = |s: &mut DocumentState, id: &str, node_type: &str, parent: &str| {
+            let mut n = s.nodes[&NodeId("root".into())].clone();
+            n.id = NodeId(id.into());
+            n.node_type = node_type.into();
+            n.parent_id = Some(NodeId(parent.into()));
+            s.nodes.insert(n.id.clone(), n);
+        };
+        add(&mut team, "moved", "item", "root");
+        add(&mut team, "old", "section", "root");
+        add(&mut team, "restored", "item", "old");
+        add(&mut team, "gone", "section", "root");
+        add(&mut team, "kept", "item", "gone");
+        let mut target = team.clone();
+        for id in ["old", "restored"] {
+            team.nodes.get_mut(&NodeId(id.into())).unwrap().deleted = true;
+        }
+        for id in ["gone", "kept"] {
+            target.nodes.get_mut(&NodeId(id.into())).unwrap().deleted = true;
+        }
+        add(&mut target, "section", "section", "root");
+        add(&mut target, "child", "item", "section");
+        target
+            .nodes
+            .get_mut(&NodeId("moved".into()))
+            .unwrap()
+            .parent_id = Some(NodeId("section".into()));
+        let ops = diff(&team, &target);
+        for (selected, expected) in [
+            ("child", vec!["child", "section"]),
+            ("moved", vec!["moved", "section"]),
+            ("restored", vec!["old", "restored"]),
+            ("gone", vec!["gone", "kept"]),
+        ] {
+            let included = with_dependencies(&ops, &team, BTreeSet::from([selected]));
+            assert_eq!(included, BTreeSet::from_iter(expected));
+            let mut shared = team.clone();
+            for op in ops.iter().filter(|op| {
+                op.target_node_id()
+                    .is_some_and(|n| included.contains(n.0.as_str()))
+            }) {
+                crate::ops::validate_op(&shared, op).unwrap();
+                crate::materializer::apply_payload(&mut shared, op).unwrap();
+            }
+        }
+    }
+    #[test]
+    fn page_setup_merges_key_by_key() {
+        let ps = json!({"size":"A4","landscape":false,"margin":25.4,"pageNumbers":true});
+        let with = |page_setup: Value| {
+            let mut s = state();
+            s.nodes
+                .get_mut(&NodeId("root".into()))
+                .unwrap()
+                .current_fields["page_setup"] = page_setup;
+            s
+        };
+        let setup = |plan: &MergePlan| {
+            plan.state.nodes[&NodeId("root".into())].current_fields["page_setup"].clone()
+        };
+        let mut margin = ps.clone();
+        margin["margin"] = json!(20);
+        let mut landscape = ps.clone();
+        landscape["landscape"] = json!(true);
+        let plan = merge(
+            &with(ps.clone()),
+            &with(margin.clone()),
+            &with(landscape),
+            &BTreeMap::new(),
+        );
+        assert!(plan.conflicts.is_empty());
+        assert_eq!(
+            setup(&plan),
+            json!({"size":"A4","landscape":true,"margin":20,"pageNumbers":true})
+        );
+        // Both sides set it for the first time.
+        let plan = merge(
+            &state(),
+            &with(json!({"margin":20})),
+            &with(json!({"landscape":true})),
+            &BTreeMap::new(),
+        );
+        assert!(plan.conflicts.is_empty());
+        assert_eq!(setup(&plan), json!({"margin":20,"landscape":true}));
+        // The same setting changed to different values still needs a choice.
+        let mut other = ps.clone();
+        other["margin"] = json!(30);
+        let plan = merge(&with(ps), &with(margin), &with(other), &BTreeMap::new());
+        assert_eq!(plan.conflicts.len(), 1);
+        assert_eq!(plan.conflicts[0].key, "root:page_setup");
     }
 }

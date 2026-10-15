@@ -168,6 +168,118 @@ async fn draft_sharing_remembers_exclusions_until_explicitly_included(pool: PgPo
 }
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn sharing_a_new_block_brings_its_new_parent(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let owner = bearer(seed_identity(&pool, "new-parent@example.test").await);
+    let doc = create_document(&router, &owner, "New parents").await;
+    let root = ulid::Ulid::new().to_string();
+    let (status,result)=send(&router,auth_post(&format!("/documents/{doc}/batch"),&owner,&json!({"base_seq":0,"ops":[
+      {"type":"NodeCreated","node_id":root,"node_type":"form","pos":"a0","fields":{"label":"Root"}}
+    ]}))).await;
+    assert_eq!(status, StatusCode::OK, "{result}");
+    let (_, draft) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc}/drafts"),
+            &owner,
+            &json!({"name":"New section"}),
+        ),
+    )
+    .await;
+    let uri = format!("/documents/{doc}/drafts/{}", draft["id"].as_str().unwrap());
+    let section = ulid::Ulid::new().to_string();
+    let child = ulid::Ulid::new().to_string();
+    let (status,result)=send(&router,auth_post(&uri,&owner,&json!({"revision":0,"ops":[
+      {"type":"NodeCreated","node_id":section,"node_type":"section","parent_id":root,"pos":"a0","fields":{"label":"New section"}},
+      {"type":"NodeCreated","node_id":child,"node_type":"item","parent_id":section,"pos":"a0","fields":{"label":"New child","type":"text","name":"new_child"}}
+    ]}))).await;
+    assert_eq!(status, StatusCode::OK, "{result}");
+    let sync = format!("{uri}/sync");
+    let (_, preview) = send(
+        &router,
+        auth_post(&sync, &owner, &json!({"action":"preview"})),
+    )
+    .await;
+    let(status,result)=send(&router,auth_post(&sync,&owner,&json!({"action":"share","team_seq":preview["team_seq"],"revision":preview["revision"],"included_nodes":[child]}))).await;
+    assert_eq!(status, StatusCode::OK, "{result}");
+    assert_eq!(result["completed"], true);
+    let (_, team) = send(&router, auth_post_get(&format!("/documents/{doc}"), &owner)).await;
+    assert_eq!(team["state"]["nodes"][&child]["parent_id"], json!(section));
+}
+#[sqlx::test(migrations = "../../migrations")]
+async fn unreplayable_log_returns_specific_error(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let actor = seed_identity(&pool, "replay@example.test").await;
+    let owner = bearer(actor);
+    let doc = create_document(&router, &owner, "Broken history").await;
+    // No write path accepts this: it accepts a suggestion that never existed.
+    let accepted = engine_shared::EventPayload::SuggestionAccepted {
+        suggestion_id: "missing".into(),
+    };
+    engine_core::log::append(
+        &pool,
+        DocumentId(doc),
+        &accepted,
+        engine_shared::IdentityId(actor),
+    )
+    .await
+    .unwrap();
+    let root = ulid::Ulid::new().to_string();
+    let (status, body) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc}/batch"),
+            &owner,
+            &json!({"base_seq":1,"ops":[
+                {"type":"NodeCreated","node_id":root,"node_type":"form","pos":"a0","fields":{}}
+            ]}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(body["code"], "replay_failed", "{body}");
+    assert_eq!(body["details"], json!({"document_id": doc, "seq": 1}));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn admin_overview_counts_error_responses(pool: PgPool) {
+    let mut state = test_state(pool.clone());
+    state.admin_emails = "counters@example.test".into();
+    let router = app(state);
+    let actor = seed_identity(&pool, "counters@example.test").await;
+    let owner = bearer(actor);
+    let doc = create_document(&router, &owner, "Counted").await;
+    let root = ulid::Ulid::new().to_string();
+    let batch = |base_seq: i64| json!({"base_seq":base_seq,"ops":[{"type":"NodeCreated","node_id":root,"node_type":"form","pos":"a0","fields":{}}]});
+    let uri = format!("/documents/{doc}/batch");
+    let (status, body) = send(&router, auth_post(&uri, &owner, &batch(0))).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    // The same block again conflicts.
+    let (status, _) = send(&router, auth_post(&uri, &owner, &batch(1))).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let accepted = engine_shared::EventPayload::SuggestionAccepted {
+        suggestion_id: "missing".into(),
+    };
+    engine_core::log::append(
+        &pool,
+        DocumentId(doc),
+        &accepted,
+        engine_shared::IdentityId(actor),
+    )
+    .await
+    .unwrap();
+    let (status, _) = send(&router, auth_post(&uri, &owner, &batch(2))).await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    let (status, overview) = send(&router, auth_post_get("/admin/overview", &owner)).await;
+    assert_eq!(status, StatusCode::OK, "{overview}");
+    assert_eq!(
+        overview["errors"],
+        json!({"internal":0,"replay_failed":1,"conflict":1,"rate_limited":0,"busy":0})
+    );
+    assert_eq!(overview["counts"]["content_patches"], 0);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn shared_draft_bases_reuse_content_preserve_responses_and_enforce_scope(pool: PgPool) {
     let mut state = test_state(pool.clone());
     state.shared_draft_bases = true;
@@ -852,6 +964,61 @@ async fn rich_text_history_replays_compact_edits_and_rejects_stale_patches(pool:
         .body(Body::empty())
         .unwrap();
     assert_eq!(send(&router, request).await.0, StatusCode::FORBIDDEN);
+}
+
+/// Every node-table write path, checked as the runtime login: only the two documented
+/// encoding differences remain.
+#[sqlx::test(migrations = "../../migrations")]
+async fn node_table_matches_verified_replay(pool: PgPool) {
+    use engine_core::projection::{verify_projection, KNOWN_NULL_FIELDS, KNOWN_REMOVED_CHOICE};
+    let router = app(test_state(pool.clone()));
+    let token = bearer(seed_identity(&pool, "author@dynodoc.local").await);
+    let doc = create_document(&router, &token, "Projection").await;
+    let [root, section, question, notes, empty, keep, drop] =
+        std::array::from_fn(|_| ulid::Ulid::new().to_string());
+    let before = json!({"type":"paragraph","content":[{"type":"text","text":"Plain notes"}]});
+    let after =
+        json!({"type":"paragraph","content":[{"type":"text","text":"Plain notes, revised"}]});
+    for ops in [
+        json!([
+            {"type":"NodeCreated","node_id":root,"node_type":"form","pos":"a0","fields":{"title":"Survey"}},
+            {"type":"NodeCreated","node_id":section,"node_type":"section","parent_id":root,"pos":"a0","fields":{}},
+            {"type":"NodeCreated","node_id":question,"node_type":"item","parent_id":section,"pos":"a0","fields":{"label":"Age"},"var_name":"age"},
+            {"type":"NodeCreated","node_id":notes,"node_type":"item","parent_id":section,"pos":"a1","fields":{"label":"Plain notes","content":before}},
+            {"type":"NodeCreated","node_id":empty,"node_type":"item","parent_id":root,"pos":"a1","fields":null},
+            {"type":"ChoiceAdded","node_id":question,"choice_id":keep,"fields":{"label":"Under 18"}},
+            {"type":"ChoiceAdded","node_id":question,"choice_id":drop,"fields":{"label":"Unused"}},
+        ]),
+        json!([
+            {"type":"FieldEdited","node_id":notes,"field":"content","value":after},
+            {"type":"FieldEdited","node_id":question,"field":"var_name","value":"age_group"},
+            {"type":"NodeMoved","node_id":notes,"new_parent_id":root,"new_pos":"a2"},
+            {"type":"NodeDeleted","node_id":empty},
+            {"type":"NodeRestored","node_id":empty},
+            {"type":"ChoiceRemoved","node_id":question,"choice_id":drop},
+        ]),
+    ] {
+        let uri = format!("/documents/{doc}/batch");
+        let (status, body) = send(&router, auth_post(&uri, &token, &json!({ "ops": ops }))).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+
+    let runtime = common::RuntimeDatabase::new(pool).await;
+    let report = verify_projection(&runtime.pool, DocumentId(doc))
+        .await
+        .unwrap();
+    runtime.close().await;
+    let found: Vec<_> = report
+        .differences
+        .iter()
+        .map(|d| (d.node_id.0.as_str(), d.field, d.known))
+        .collect();
+    let mut expected = vec![
+        (drop.as_str(), "deleted", Some(KNOWN_REMOVED_CHOICE)),
+        (empty.as_str(), "current_fields", Some(KNOWN_NULL_FIELDS)),
+    ];
+    expected.sort();
+    assert_eq!(found, expected);
 }
 
 fn test_state(pool: PgPool) -> AppState {

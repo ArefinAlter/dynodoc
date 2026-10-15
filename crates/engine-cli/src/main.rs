@@ -112,12 +112,25 @@ enum Command {
     Verify {
         /// Document id (UUID).
         document_id: String,
+        /// Also fail unless the verified chain passes through this head (hex), such as
+        /// one recorded at an earlier check.
+        #[arg(long)]
+        expect_head: Option<String>,
     },
     /// Backfill legacy snapshot receipts by verified replay (schema 28). Atomic per document.
     VerifySnapshots {
         #[arg(required_unless_present = "all", conflicts_with = "all")]
         document_id: Option<String>,
         /// Visit every document in keyset order; stop at the first integrity error.
+        #[arg(long)]
+        all: bool,
+    },
+    /// Compare the node table with a verified replay (read-only); exits non-zero on an
+    /// unexplained difference.
+    VerifyProjection {
+        #[arg(required_unless_present = "all", conflicts_with = "all")]
+        document_id: Option<String>,
+        /// Visit every document in keyset order and report every failing one.
         #[arg(long)]
         all: bool,
     },
@@ -239,8 +252,12 @@ async fn main() -> anyhow::Result<()> {
             println!("Runtime schema and database privileges verified.");
             Ok(())
         }
-        Command::Verify { document_id } => verify(document_id).await,
+        Command::Verify {
+            document_id,
+            expect_head,
+        } => verify(document_id, expect_head).await,
         Command::VerifySnapshots { document_id, all } => verify_snapshots(document_id, all).await,
+        Command::VerifyProjection { document_id, all } => verify_projection(document_id, all).await,
         Command::Replay { document_id } => replay(document_id).await,
         Command::Snapshot { document_id } => snapshot(document_id).await,
         Command::SharedSnapshot {
@@ -296,14 +313,39 @@ async fn connect_migration() -> anyhow::Result<PgPool> {
         .context("could not connect for database administration")
 }
 
-async fn verify(document_id: String) -> anyhow::Result<()> {
+async fn verify(document_id: String, expect_head: Option<String>) -> anyhow::Result<()> {
     let doc = parse_document_id(&document_id)?;
     let pool = connect().await?;
 
     let report = engine_core::snapshot_verification::verify_document(&pool, doc, false)
         .await
         .context("event/snapshot verification failed")?;
-    println!("OK: event chain and {} legacy snapshots verified through seq {} for document {document_id}", report.snapshots, report.through_seq);
+    // Event rows are immutable, so the verified head can be read after the check.
+    let head: Vec<u8> =
+        sqlx::query_scalar("select chain_hash from event where document_id=$1 and seq=$2")
+            .bind(doc.0)
+            .bind(report.through_seq)
+            .fetch_optional(&pool)
+            .await?
+            .unwrap_or_else(|| log::ZERO_HASH.to_vec());
+    println!("OK: event chain and {} legacy snapshots verified through seq {} for document {document_id}; head {}", report.snapshots, report.through_seq, to_hex(&head));
+    if let Some(expected) = expect_head {
+        let seq: Option<i64> = sqlx::query_scalar(
+            "select seq from event where document_id=$1 and encode(chain_hash,'hex')=lower($2) and seq<=$3",
+        )
+        .bind(doc.0)
+        .bind(expected.trim())
+        .bind(report.through_seq)
+        .fetch_optional(&pool)
+        .await?;
+        let Some(seq) = seq else {
+            anyhow::bail!(
+                "expected head {expected} is not in the verified chain; its head is {}",
+                to_hex(&head)
+            );
+        };
+        println!("OK: expected head is the chain hash at seq {seq}");
+    }
     Ok(())
 }
 
@@ -340,6 +382,60 @@ async fn verify_snapshots(document_id: Option<String>, all: bool) -> anyhow::Res
             break;
         }
         cursor = Some(id);
+    }
+    Ok(())
+}
+
+async fn verify_projection(document_id: Option<String>, all: bool) -> anyhow::Result<()> {
+    let pool = connect().await?;
+    let mut cursor: Option<Uuid> = None;
+    let mut failed = 0usize;
+    loop {
+        let document = if all {
+            sqlx::query_scalar::<_, Uuid>(
+                "select id from document where ($1::uuid is null or id>$1) order by id limit 1",
+            )
+            .bind(cursor)
+            .fetch_optional(&pool)
+            .await?
+        } else {
+            Some(parse_document_id(document_id.as_deref().context("document id required")?)?.0)
+        };
+        let Some(id) = document else {
+            break;
+        };
+        match engine_core::projection::verify_projection(&pool, DocumentId(id)).await {
+            Err(err) => {
+                failed += 1;
+                println!("FAIL: document {id}: {err}");
+            }
+            Ok(report) => {
+                for d in &report.differences {
+                    let status = d
+                        .known
+                        .map_or("DIFF".to_string(), |why| format!("KNOWN ({why})"));
+                    println!(
+                        "{status}: document {id} node {} {}: replay={} table={}",
+                        d.node_id.0, d.field, d.replayed, d.stored
+                    );
+                }
+                let unexplained = report.unexplained().count();
+                let known = report.differences.len() - unexplained;
+                let verdict = if unexplained > 0 { "FAIL" } else { "OK" };
+                failed += usize::from(unexplained > 0);
+                println!(
+                    "{verdict}: document {id}; {} rows; {unexplained} unexplained, {known} known difference(s); through seq {}",
+                    report.stored_rows, report.through_seq
+                );
+            }
+        }
+        if !all {
+            break;
+        }
+        cursor = Some(id);
+    }
+    if failed > 0 {
+        anyhow::bail!("{failed} document(s) failed the projection check");
     }
     Ok(())
 }

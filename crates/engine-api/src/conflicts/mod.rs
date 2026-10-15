@@ -4,7 +4,7 @@
 //! more **concurrent pending suggestions** that edit the same `(node_id, field)` to
 //! *different* values — the PoC instantiation of the merge engine's `BothDifferent`
 //! classification, generalized to N proposals. Conflicts are derived from current state
-//! ([`derive`]), surfaced over HTTP ([`routes`]), and resolved by the author accepting a
+//! ([`mod@derive`]), surfaced over HTTP ([`routes`]), and resolved by the author accepting a
 //! proposal or entering a custom value ([`apply`]).
 
 pub mod apply;

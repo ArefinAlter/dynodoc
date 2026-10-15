@@ -958,9 +958,11 @@ async fn sync_draft(
         let excluded: std::collections::BTreeSet<String> =
             serde_json::from_value(row["excluded_nodes"].clone()).unwrap_or_default();
         let included = req.included_nodes.as_ref().map(|ids| {
-            ids.iter()
-                .map(|id| id.0.as_str())
-                .collect::<std::collections::BTreeSet<_>>()
+            engine_core::workspace_merge::with_dependencies(
+                &changes,
+                &team,
+                ids.iter().map(|id| id.0.as_str()).collect(),
+            )
         });
         if req.remember_selection {
             if let Some(included) = &included {

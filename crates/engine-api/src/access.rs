@@ -1,6 +1,6 @@
 //! The document role ladder and review rules.
 //!
-//! Engine capability ([`Role`]: author, reviewer, auditor) decides which operations
+//! Engine capability ([`Role`](engine_core::governance::Role): author, reviewer, auditor) decides which operations
 //! the governance gate accepts. Product roles name what a person may do with a
 //! document and its change requests:
 //!

@@ -16,8 +16,8 @@
 //!
 //! [`validate_integrity`] finds every such violation in a `DocumentState` in one pass.
 //! The governance gate (docs/16 part 3) runs it on every `Deployed` event and refuses
-//! the deploy if any violation exists, and the stage-21 three-way merge
-//! ([`crate::merge`]) runs it on every proposed merged state — the §C.3.6 "silent
+//! the deploy if any violation exists, and sharing a draft (`append_to_team` in
+//! engine-api) runs it on the combined document — the §C.3.6 "silent
 //! semantic breakage" defense. The richer stage-21 checks parse expressions via
 //! [`crate::expr`]; the existing `${var}` scan ([`extract_var_refs`]) still backs the
 //! dangling/cycle logic, and expressions outside the supported grammar block deployment explicitly.
@@ -458,7 +458,7 @@ fn canonical_cycle(nodes: &[NodeId]) -> Vec<NodeId> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{BTreeMap, HashSet};
+    use std::collections::{BTreeMap, BTreeSet};
 
     use serde_json::json;
 
@@ -498,7 +498,7 @@ mod tests {
             nodes: map,
             comments: Vec::new(),
             suggestions: BTreeMap::new(),
-            removed_choices: HashSet::new(),
+            removed_choices: BTreeSet::new(),
         }
     }
 
@@ -800,5 +800,52 @@ mod tests {
                 .count(),
             2
         );
+    }
+
+    /// Each side is valid on its own; only the merged document breaks.
+    fn merged(
+        base: &DocumentState,
+        team: &DocumentState,
+        draft: &DocumentState,
+    ) -> Vec<IntegrityViolation> {
+        assert!(validate_integrity(team).is_empty() && validate_integrity(draft).is_empty());
+        validate_integrity(
+            &crate::workspace_merge::merge(base, team, draft, &BTreeMap::new()).state,
+        )
+    }
+
+    #[test]
+    fn relevance_cycle_in_merged_state_is_caught() {
+        let base = state_of(vec![
+            node("0A", Some("a"), json!({})),
+            node("0B", Some("b"), json!({})),
+        ]);
+        let mut team = base.clone();
+        team.nodes
+            .get_mut(&NodeId("0A".into()))
+            .unwrap()
+            .current_fields = json!({ "relevance": "${b} = 1" });
+        let mut draft = base.clone();
+        draft
+            .nodes
+            .get_mut(&NodeId("0B".into()))
+            .unwrap()
+            .current_fields = json!({ "relevance": "${a} = 1" });
+        assert!(merged(&base, &team, &draft)
+            .iter()
+            .any(|v| matches!(v, IntegrityViolation::RelevanceCycle { .. })));
+    }
+
+    #[test]
+    fn reference_to_a_variable_renamed_on_the_other_side_dangles() {
+        let base = state_of(vec![node("01", Some("x"), json!({ "type": "integer" }))]);
+        let mut team = base.clone();
+        let added = node("02", Some("q2"), json!({ "relevance": "${x} > 5" }));
+        team.nodes.insert(added.id.clone(), added);
+        let mut draft = base.clone();
+        draft.nodes.get_mut(&NodeId("01".into())).unwrap().var_name = Some("y".into());
+        assert!(merged(&base, &team, &draft).iter().any(
+            |v| matches!(v, IntegrityViolation::DanglingReference { var_name, .. } if var_name == "x")
+        ));
     }
 }

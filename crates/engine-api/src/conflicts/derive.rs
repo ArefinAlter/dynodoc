@@ -3,14 +3,13 @@
 //! The PoC has no CRDT branch source (stage 20 was skipped per
 //! `docs/decisions/000-initial.md`). Conflicts are instead **concurrent pending
 //! suggestions on the same field**: when two or more *pending* suggestions
-//! ([`SuggestionState`] with `!accepted && rejected_reason.is_none()`) each wrap a
+//! ([`SuggestionState`](engine_core::materializer::SuggestionState) with `!accepted && rejected_reason.is_none()`) each wrap a
 //! `FieldEdited` targeting the same `(node_id, field)` but propose *distinct* values,
 //! that is a four-card conflict for the author to resolve.
 //!
-//! This is the PoC instantiation of the merge engine's `BothDifferent` classification
-//! (see [`engine_core::merge::FourCardConflict`]), generalized to *N* proposals;
-//! `engine_core::merge::three_way_merge` remains the pure 2-branch primitive for the
-//! engine. Conflicts are NOT stored — they are recomputed from current state on every
+//! This is the same-field divergence that [`engine_core::workspace_merge`] reports
+//! between two versions, generalized to *N* proposals.
+//! Conflicts are NOT stored — they are recomputed from current state on every
 //! `/conflicts` read and every `/resolve` call, so a `conflict_id` always re-derives the
 //! same live conflict (or 404s once it is gone).
 //!
@@ -169,7 +168,7 @@ pub fn find_conflict(state: &DocumentState, conflict_id: &str) -> Option<Conflic
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{BTreeMap, HashSet};
+    use std::collections::{BTreeMap, BTreeSet};
 
     use engine_core::materializer::{DocumentState, MaterializedNode, SuggestionState};
     use engine_shared::NodeId;
@@ -214,7 +213,7 @@ mod tests {
             nodes,
             comments: Vec::new(),
             suggestions: sug,
-            removed_choices: HashSet::new(),
+            removed_choices: BTreeSet::new(),
         }
     }
 

@@ -1,0 +1,12 @@
+{
+  "date": "2026-10-14",
+  "limitations": "Synthetic text; no storage, API, concurrency or memory measurement.",
+  "measurement": "Median of 9 in-memory workspace_merge::merge calls (after one warm-up), including the diff to operations",
+  "platform": "linux x86_64; release build; one thread",
+  "results": {
+    "blocks": 8000,
+    "edited_blocks_per_side": 80,
+    "merge_ms": 50.02982,
+    "operations": 107
+  }
+}

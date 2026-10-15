@@ -235,3 +235,19 @@ fn golden_browser_replay_fixture() {
         );
     }
 }
+
+#[test]
+fn image_attributes_merge_key_by_key() {
+    let img = json!({"type":"image","attrs":{"src":"a.png","width":100,"alt":""}});
+    let mut width = img.clone();
+    width["attrs"]["width"] = json!(200);
+    let mut alt = img.clone();
+    alt["attrs"]["alt"] = json!("A chart");
+    assert_eq!(
+        richtext::merge(&img, &width, &alt).unwrap()["attrs"],
+        json!({"src":"a.png","width":200,"alt":"A chart"})
+    );
+    let mut narrow = img.clone();
+    narrow["attrs"]["width"] = json!(50);
+    assert!(richtext::merge(&img, &width, &narrow).is_none());
+}

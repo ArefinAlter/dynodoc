@@ -19,6 +19,7 @@ pub mod audit;
 pub mod auth;
 pub mod conflicts;
 pub mod copies;
+pub mod counters;
 mod device_sessions;
 mod devices;
 mod discussions;
@@ -66,6 +67,8 @@ pub struct AppState {
     /// Wakes the background copy-detection indexer ([`copies::spawn`]).
     pub copy_index: copies::CopyIndex,
     pub workloads: workloads::Workloads,
+    /// Error responses counted by code since start (admin overview).
+    pub counters: counters::Counters,
     /// Explicitly loaded secret outside the database; required for shared ref writes.
     pub ref_signer: Option<std::sync::Arc<ring::signature::Ed25519KeyPair>>,
     /// Explicit opt-in; new draft/rebase bases use typed shared objects.
@@ -86,6 +89,7 @@ impl AppState {
             admin_emails: std::env::var("ADMIN_EMAILS").unwrap_or_default(),
             copy_index: copies::CopyIndex::default(),
             workloads: workloads::Workloads::default(),
+            counters: Default::default(),
             ref_signer: None,
             shared_draft_bases: std::env::var("DYNODOC_SHARED_DRAFT_BASES").as_deref()
                 == Ok("shared-v2"),
@@ -145,6 +149,10 @@ pub fn app(state: AppState) -> Router {
         .layer(axum::middleware::from_fn_with_state(
             state.workloads.clone(),
             workloads::admission,
+        ))
+        .layer(axum::middleware::from_fn_with_state(
+            state.counters.clone(),
+            counters::count,
         ))
         .layer(tower_http::limit::RequestBodyLimitLayer::new(
             16 * 1024 * 1024,

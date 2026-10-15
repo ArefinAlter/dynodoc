@@ -543,10 +543,13 @@ async fn merge(
             reason: "Choose which value to keep for each overlapping change.".into(),
         });
     }
-    let included = req
-        .included_nodes
-        .as_ref()
-        .map(|ids| ids.iter().map(|n| n.0.as_str()).collect::<BTreeSet<_>>());
+    let included = req.included_nodes.as_ref().map(|ids| {
+        engine_core::workspace_merge::with_dependencies(
+            &plan.ops,
+            &team,
+            ids.iter().map(|n| n.0.as_str()).collect(),
+        )
+    });
     let chosen: Vec<EventPayload> = plan
         .ops
         .iter()

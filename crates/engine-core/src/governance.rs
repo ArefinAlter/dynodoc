@@ -266,7 +266,7 @@ pub fn plan_acceptance(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{BTreeMap, HashSet};
+    use std::collections::{BTreeMap, BTreeSet};
 
     use engine_shared::EventPayload::{FieldEdited, NodeCreated, NodeMoved};
     use engine_shared::{NodeId, NodeType};
@@ -280,7 +280,7 @@ mod tests {
             nodes: BTreeMap::new(),
             comments: Vec::new(),
             suggestions: BTreeMap::new(),
-            removed_choices: HashSet::new(),
+            removed_choices: BTreeSet::new(),
         }
     }
 

@@ -23,8 +23,8 @@ mod pack;
 mod retention;
 mod storage;
 pub use collector::{GcApplyOptions, GcReport};
-pub use compact::{CompactOptions, CompactReport};
-pub use retention::{GcPlan, GcPlanOptions};
+pub use compact::{CompactOptions, CompactReport, MAX_BATCH_OBJECTS};
+pub use retention::{GcPlan, GcPlanOptions, Physical};
 pub use storage::{StorageLimits, StorageUsage, SCHEMA_VERSION};
 
 const SCHEMA: &str = "

@@ -37,7 +37,7 @@ pub fn router() -> Router<AppState> {
 /// `cursor`/`limit` are listed inline (not `#[serde(flatten)]` a [`PageParams`]):
 /// `serde_urlencoded` buffers flattened values as strings, so a flattened
 /// `limit: Option<i64>` fails to deserialize from `?limit=2`. Top-level fields coerce
-/// fine. [`ListQuery::page`] rebuilds the [`PageParams`] for its helper methods.
+/// fine. `ListQuery::page` rebuilds the [`PageParams`] for its helper methods.
 #[derive(Debug, Deserialize)]
 pub struct ListQuery {
     #[serde(default)]

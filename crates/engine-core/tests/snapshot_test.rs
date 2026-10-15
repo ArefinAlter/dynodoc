@@ -237,7 +237,7 @@ fn materializes_large_document_from_snapshot_plus_tail() -> anyhow::Result<()> {
         nodes,
         comments: Vec::new(),
         suggestions: std::collections::BTreeMap::new(),
-        removed_choices: std::collections::HashSet::new(),
+        removed_choices: std::collections::BTreeSet::new(),
     })?;
     let snapshot: engine_shared::Snapshot = engine_shared::Snapshot {
         id: engine_shared::SnapshotId(uuid::Uuid::nil()),

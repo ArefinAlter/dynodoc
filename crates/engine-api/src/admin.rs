@@ -38,7 +38,7 @@ async fn overview(
     if !is_admin(&email, &state.admin_emails) {
         return Err(ApiError::Forbidden);
     }
-    let counts: Value = sqlx::query_scalar("select jsonb_build_object('documents',(select count(*) from document),'events',(select count(*) from event),'versions',(select count(*) from document_version),'accounts',(select count(*) from identity),'uploads',(select count(*) from document_upload),'upload_bytes',(select coalesce(sum(octet_length(content)),0) from document_upload),'database_bytes',pg_database_size(current_database()),'connections',(select count(*) from pg_stat_activity where datname=current_database()),'migrations',(select count(*) from _sqlx_migrations where success))")
+    let counts: Value = sqlx::query_scalar("select jsonb_build_object('documents',(select count(*) from document),'events',(select count(*) from event),'versions',(select count(*) from document_version),'accounts',(select count(*) from identity),'uploads',(select count(*) from document_upload),'upload_bytes',(select coalesce(sum(octet_length(content)),0) from document_upload),'database_bytes',pg_database_size(current_database()),'connections',(select count(*) from pg_stat_activity where datname=current_database()),'migrations',(select count(*) from _sqlx_migrations where success),'content_patches',(select count(*) from event where type='RichTextPatched'),'content_full_edits',(select count(*) from event where type='FieldEdited' and payload->>'field'='content'))")
         .fetch_one(&state.pool).await?;
     let tables = sqlx::query("select relname, n_live_tup, pg_total_relation_size(relid) as bytes from pg_stat_user_tables order by pg_total_relation_size(relid) desc")
         .fetch_all(&state.pool).await?.iter().map(|r| json!({"name":r.get::<String,_>("relname"),"estimated_rows":r.get::<i64,_>("n_live_tup"),"bytes":r.get::<i64,_>("bytes")})).collect::<Vec<_>>();
@@ -47,7 +47,7 @@ async fn overview(
     let vitals = sqlx::query("select host,metric,count(*) as samples,percentile_cont(0.75) within group(order by value) as p75 from web_metric where metric<>'visit' and recorded_at>now()-interval '30 days' group by host,metric order by host,metric")
         .fetch_all(&state.pool).await?.iter().map(|r| json!({"host":r.get::<String,_>("host"),"metric":r.get::<String,_>("metric"),"samples":r.get::<i64,_>("samples"),"p75":r.get::<f64,_>("p75")})).collect::<Vec<_>>();
     Ok(Json(
-        json!({"checked_at":chrono::Utc::now(),"administrator":email,"counts":counts,"tables":tables,"traffic":traffic,"vitals":vitals}),
+        json!({"checked_at":chrono::Utc::now(),"administrator":email,"counts":counts,"errors":state.counters.snapshot(),"tables":tables,"traffic":traffic,"vitals":vitals}),
     ))
 }
 #[derive(Deserialize)]

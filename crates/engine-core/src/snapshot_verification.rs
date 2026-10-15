@@ -428,7 +428,8 @@ pub async fn verify_document(
             .fetch(&mut *tx);
             while let Some(event) = events.try_next().await? {
                 log::verify_event(&event, document, seq + 1, &chain)?;
-                Materializer::fold_into(&mut state, std::slice::from_ref(&event))?;
+                Materializer::fold_into(&mut state, std::slice::from_ref(&event))
+                    .map_err(|source| SnapshotError::Replay { document, source })?;
                 seq = event.seq;
                 chain = event.chain_hash;
             }

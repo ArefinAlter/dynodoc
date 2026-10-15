@@ -430,7 +430,7 @@ fn is_root_type(node_type: NodeType) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{BTreeMap, HashSet};
+    use std::collections::{BTreeMap, BTreeSet};
 
     use engine_shared::NodeType;
     use serde_json::json;
@@ -459,7 +459,7 @@ mod tests {
             nodes: map,
             comments: Vec::new(),
             suggestions: BTreeMap::new(),
-            removed_choices: HashSet::new(),
+            removed_choices: BTreeSet::new(),
         }
     }
 

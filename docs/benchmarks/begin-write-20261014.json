@@ -1,0 +1,20 @@
+{
+  "date": "2026-10-14",
+  "limitations": "One disposable local database, sequential reads, no concurrent writers, no lock wait; the document lock and role check that begin_write also takes are excluded.",
+  "measurement": "Median of 9 warm snapshot::read_current_state calls on one connection: latest sequence, checked legacy snapshot read and JSON parse, and a fold of the event tail",
+  "platform": "linux x86_64; release build; single-thread Tokio runtime; local PostgreSQL",
+  "results": [
+    {
+      "blocks": 1000,
+      "read_current_state_ms": 31.240588,
+      "snapshot_json_bytes": 1068086,
+      "tail_events": 500
+    },
+    {
+      "blocks": 8000,
+      "read_current_state_ms": 224.621167,
+      "snapshot_json_bytes": 9005124,
+      "tail_events": 500
+    }
+  ]
+}

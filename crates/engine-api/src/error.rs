@@ -21,6 +21,10 @@ use engine_core::snapshot::SnapshotError;
 
 use crate::auth::AuthError;
 
+/// The error code of a response, for counting ([`crate::counters`]).
+#[derive(Clone, Copy)]
+pub struct ErrorCode(pub &'static str);
+
 /// Everything an API handler can fail with, mapped to one HTTP status + JSON body.
 #[derive(Debug, thiserror::Error)]
 pub enum ApiError {
@@ -55,6 +59,13 @@ pub enum ApiError {
     /// Encoded shared history reached its retained-storage budget.
     #[error("Shared history storage limit reached. Your change was not saved. Ask the workspace operator to increase the storage budget.")]
     StorageLimit,
+    /// The document's event history no longer replays → 500, naming the document and
+    /// the event, so an operator can find and recover it.
+    #[error("document {document_id} does not replay at event {seq:?}")]
+    ReplayFailed {
+        document_id: uuid::Uuid,
+        seq: Option<i64>,
+    },
     /// An unexpected server-side failure → 500. The detail is logged, never returned.
     #[error("internal error: {0}")]
     Internal(String),
@@ -70,7 +81,9 @@ impl ApiError {
             ApiError::BadRequest { .. } => StatusCode::BAD_REQUEST,
             ApiError::Conflict { .. } => StatusCode::CONFLICT,
             ApiError::RateLimited { .. } => StatusCode::TOO_MANY_REQUESTS,
-            ApiError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            ApiError::Internal(_) | ApiError::ReplayFailed { .. } => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
             ApiError::Deadline => StatusCode::GATEWAY_TIMEOUT,
             ApiError::Busy => StatusCode::SERVICE_UNAVAILABLE,
             ApiError::StorageLimit => StatusCode::INSUFFICIENT_STORAGE,
@@ -87,6 +100,7 @@ impl ApiError {
             ApiError::Conflict { .. } => "conflict",
             ApiError::RateLimited { .. } => "rate_limited",
             ApiError::Internal(_) => "internal",
+            ApiError::ReplayFailed { .. } => "replay_failed",
             ApiError::Deadline => "deadline_exceeded",
             ApiError::Busy => "busy",
             ApiError::StorageLimit => "storage_limit",
@@ -102,6 +116,9 @@ impl ApiError {
                 json!({ "reason": reason })
             }
             ApiError::RateLimited { retry_after } => json!({ "retry_after": retry_after }),
+            ApiError::ReplayFailed { document_id, seq } => {
+                json!({ "document_id": document_id, "seq": seq })
+            }
             _ => json!({}),
         }
     }
@@ -114,9 +131,9 @@ impl IntoResponse for ApiError {
         if status == StatusCode::INTERNAL_SERVER_ERROR {
             tracing::error!(error = %self, "api internal error");
         }
-        // The public message is the generic status text for 500s, the variant message
-        // otherwise (the variant messages above are deliberately non-leaking).
-        let message = if status == StatusCode::INTERNAL_SERVER_ERROR {
+        // The public message is the generic status text for internal errors, the variant
+        // message otherwise (the variant messages above are deliberately non-leaking).
+        let message = if matches!(self, ApiError::Internal(_)) {
             "internal error".to_string()
         } else {
             self.to_string()
@@ -128,6 +145,7 @@ impl IntoResponse for ApiError {
         });
 
         let mut response = (status, Json(body)).into_response();
+        response.extensions_mut().insert(ErrorCode(self.code()));
         if let ApiError::RateLimited { retry_after } = self {
             if let Ok(value) = retry_after.to_string().parse() {
                 response.headers_mut().insert("retry-after", value);
@@ -226,6 +244,10 @@ impl From<SnapshotError> for ApiError {
             SnapshotError::Event(e) => e.into(),
             SnapshotError::Db(e) => e.into(),
             SnapshotError::Shared(e) => (*e).into(),
+            SnapshotError::Replay { document, source } => ApiError::ReplayFailed {
+                document_id: document.0,
+                seq: source.seq(),
+            },
             other => ApiError::Internal(other.to_string()),
         }
     }
