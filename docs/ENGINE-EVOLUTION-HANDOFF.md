@@ -14,9 +14,9 @@ counters by error code and edit kind, #33 generated-history property test. Indep
 touched neighbouring lines were resolved by hand; both sides of each test conflict were kept.
 
 The application tree carries the same change set (`projection.rs`, `counters.rs`, the benchmark
-examples, tower-http 0.7, no `merge.rs`) plus one test the engine copy lacks:
-`image_attributes_merge_key_by_key` in `richtext_test.rs`. Engine-only files stay as before
-(Taskfile, `ci.yml`, crate metadata).
+examples, tower-http 0.7, no `merge.rs`). Mirrored paths are identical apart from the known
+engine-only differences: crate and workspace metadata, `Taskfile.yml`, `ci.yml`, the
+`is_multiple_of` form in `audit.rs`, and the rich-text fixture path in `richtext_test.rs`.
 
 **Held back.** #13, #14, #16, #17, #27, #29, #30, #34 and #35 need changes or a rebase on the
 merged `main` (comments on #14 and #34). #22 (axum 0.8) needs the `async_trait` removal and a
