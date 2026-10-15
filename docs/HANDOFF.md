@@ -587,7 +587,7 @@ All paths in this section are relative to the repository root.
 | Area | Primary files |
 | --- | --- |
 | Event serialization and invariants | `crates/engine-core/src/log.rs`, `materializer.rs`, `snapshot.rs`; `crates/engine-shared/src/richtext.rs` |
-| Rich-text codec and mergers | `crates/engine-core/src/richtext.rs`, `workspace_merge.rs`, `merge.rs` |
+| Rich-text codec and mergers | `crates/engine-core/src/richtext.rs`, `workspace_merge.rs` |
 | Governance and questionnaire validation | `crates/engine-core/src/governance.rs`, `integrity.rs`, `expr.rs`, `ops.rs` |
 | Hosted documents/drafts/files/versions | `crates/engine-api/src/workspace.rs` |
 | Hierarchy/lifecycle/public projections | `crates/engine-api/src/product.rs` |

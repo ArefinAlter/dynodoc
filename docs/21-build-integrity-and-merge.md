@@ -13,7 +13,7 @@
 >    - Check type compatibility: if `${q1} > 5` and `q1` is type `text`, that's a `TypeMismatch`.
 >    - Check choice references: if a constraint references a choice value, the choice must exist on the referenced item.
 >    - Return all violations in one pass (don't stop at first error — users want to fix in batch).
-> 3. **The semantic merge engine** in `engine-core/src/merge.rs`:
+> 3. **The semantic merge engine** in `engine-core/src/merge.rs` (historical: the module was unused and was removed on 15 October 2026; workspace merging lives in `workspace_merge.rs`):
 >    - Three-way merge: given a common ancestor `O` and two branches `A` and `B` (each a sequence of events since `O`), produce a merged event sequence.
 >    - Phase 1: identify per-node, per-field changes in each branch (using stable IDs from §D.1).
 >    - Phase 2: for each node × field, classify the change pair: `BothAbsent`, `OnlyInA`, `OnlyInB`, `BothSame`, `BothDifferent`.

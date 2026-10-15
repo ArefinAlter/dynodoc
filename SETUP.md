@@ -568,7 +568,7 @@ implemented on top of the engine-core half above.
 source. A conflict is instead **two or more concurrent *pending* suggestions that edit
 the same `(node_id, field)` to different values** — the PoC instantiation of the merge
 engine's `BothDifferent` classification, generalized to N proposals (the pure
-`merge::three_way_merge` remains the 2-branch primitive). The author resolves by accepting
+three-way merge in `workspace_merge.rs` remains the 2-branch primitive). The author resolves by accepting
 one proposal (the others are rejected as "superseded by conflict resolution") or entering a
 custom value (all proposals rejected). Conflicts are **not stored** — they are recomputed
 from current state on every `/conflicts` read and `/resolve` call; `conflict_id` is a

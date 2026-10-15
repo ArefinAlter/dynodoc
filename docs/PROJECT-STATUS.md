@@ -1,5 +1,35 @@
 # Dynodoc: intent, current implementation and remaining work
 
+## Source: engine PR integration (15 October 2026)
+
+Reviewed all 24 open standalone-engine PRs. Fourteen were merged through one integration PR
+([#36](https://github.com/ArefinAlter/dynodoc-engine/pull/36), merge commits, authors kept) after
+a green engine CI run on the combination: #12 intra-doc links, #15 selected blocks bring new
+parents and required child deletions, #18 node table checked against verified replay, #19
+`verify --expect-head`, #20 unused `merge.rs` removed (its integrity cases are tests in
+`integrity.rs`), #21 sorted removed choices and size-bounded text diffs, #23 tower-http 0.7, #24
+proptest 1.12, #25 anyhow 1.0.104, #26 page setup and image attributes merge key by key, #28
+synthetic corpus and benchmarks, #31 `replay_failed` error naming document and event, #32 admin
+counters by error code and edit kind, #33 generated-history property test. Independent PRs that
+touched neighbouring lines were resolved by hand; both sides of each test conflict were kept.
+
+The application tree carries the same change set (`projection.rs`, `counters.rs`, the benchmark
+examples, tower-http 0.7, no `merge.rs`) plus one test the engine copy lacks:
+`image_attributes_merge_key_by_key` in `richtext_test.rs`. Engine-only files stay as before
+(Taskfile, `ci.yml`, crate metadata).
+
+**Held back.** #13, #14, #16, #17, #27, #29, #30, #34 and #35 need changes or a rebase on the
+merged `main` (comments on #14 and #34). #22 (axum 0.8) needs the `async_trait` removal and a
+route-syntax migration across about 99 routes. #5 (ulid 3) needs call-site migration.
+
+**Owner decision.** #21 changes the diff spans that `verify_same_file_resolutions` replays for
+strategy `dynodoc.same-file.node-field.v1` when a changed span exceeds 4,000 characters. No v3
+commits exist in production; decide before any are created whether old spans must keep replaying
+(then gate the new bound on a strategy revision).
+
+Not deployed: production still runs `f62d62c` at schema 41; none of these changes alter the
+schema.
+
 ## Live: schema 41 release (14 October 2026, 08:45 UTC)
 
 The VPS workspace, API and admin site run application `f62d62c`, schema 41: receipt-authority

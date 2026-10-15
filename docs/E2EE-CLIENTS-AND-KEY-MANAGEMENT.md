@@ -75,7 +75,7 @@ no browser clients and an offline CLI.
 | TypeScript port of the event fold | EXISTS | `frontend/researcher/src/lib/materializer.ts` (documented as mirroring `materializer.rs`; no cross-language fuzz parity harness) |
 | TypeScript rich-text patch application | EXISTS | `frontend/researcher/src/lib/workspace/richtext.ts` (`applyRichTextPatch`) |
 | Browser spreadsheet calculation | EXISTS (in-house engine since 14 Oct 2026, decision 015) | `frontend/researcher/src/lib/workspace/workbook-calculator.ts`; engine in `src/lib/workspace/formula/` |
-| Merge, diff, convergence, integrity, expressions in the browser | MISSING | Only in Rust: `workspace_merge.rs`, `merge.rs`, `repository/convergence.rs`, `integrity.rs`, `expr.rs` |
+| Merge, diff, convergence, integrity, expressions in the browser | MISSING | Only in Rust: `workspace_merge.rs`, `repository/convergence.rs`, `integrity.rs`, `expr.rs` |
 | Browser holds a signing key | MISSING by design | [decision 014](decisions/014-web-branch-authoring-and-follows.md), "No signing identity in the page" |
 | Enrolled Ed25519 device keys for CLI and native clients | EXISTS | [DEVICE-SIGNING-KEYS.md](DEVICE-SIGNING-KEYS.md); `engine-cli device keygen`, `device prove` |
 | Passphrase- or OS-keystore-encrypted CLI key file | PARTIAL (working tree) | `crates/engine-cli/src/keyfile.rs`, `keystore.rs`, `passphrase.rs` |
@@ -199,7 +199,6 @@ provided the build is practical. This section assesses that by reading the code.
 | `materializer.rs` (fold, `DocumentState`) | 493 | `engine_shared` rows (`Event`, `Snapshot`) | none | Ready after `engine-shared` is split |
 | `richtext.rs` (patch apply, text diff, merge) | 657 | `ring::digest`, `similar` (deadline), `crate::log::canonical_json` | none | Blocked by B4 and B5 below |
 | `workspace_merge.rs` (three-way merge, diff) | 658 | `materializer`, `richtext` | none | Ready after richtext |
-| `merge.rs` (event-branch merge) | 515 | `integrity`, `materializer` | none | Ready |
 | `integrity.rs`, `expr.rs`, `ops.rs`, `governance.rs` | 804, 762, 752, 773 | `engine_shared`, `materializer` | none | Ready |
 | `similarity.rs` | 726 | `materializer` | none | Ready |
 | `shared_checkpoint.rs`, `shared_checkpoint/canonical.rs`, `typed.rs`, `content.rs` | 1045, 448, 1090, 686 | `ring::digest`, `tokio::io` traits, `sqlx::Error` in `Error` | store trait only | Blocked by B3 and B9 |

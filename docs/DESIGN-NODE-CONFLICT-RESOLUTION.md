@@ -120,7 +120,7 @@ result; it cannot know what they meant.
 | Lists and tables: edits to different items conflict | EXISTS (as conflict) | `richtext_test.rs` (`bulletList` case); comment in `richtext::merge` |
 | Comments/suggestions merged as whole collections | EXISTS | `convergence.rs` `three_way` |
 | Symmetric orientation handling and clean-in-both rule | EXISTS | `convergence.rs` `converge` |
-| Four-card conflicts and integrity warnings for event branches | EXISTS | `crates/engine-core/src/merge.rs` |
+| Four-card conflicts for event branches | REMOVED 15 Oct 2026 (module was unused; its integrity cases are tests in `integrity.rs`) | was `crates/engine-core/src/merge.rs` |
 | Structural validity gate (cycle, containment, unique var_name) | EXISTS | `crates/engine-core/src/ops.rs` `validate_op` (applied on write, not inside state merge) |
 | Referential integrity pass (questionnaire references) | EXISTS | `crates/engine-core/src/integrity.rs` |
 | Sheet protection guard | EXISTS | `crates/engine-core/src/governance.rs` `check_sheet_protection` |
