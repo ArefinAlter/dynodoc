@@ -1,5 +1,36 @@
 # Engine evolution handoff
 
+## Source: transparency log core and verifier library (18 October 2026)
+
+Phases W0, W1 (core only) and W2 (verifier library only) of
+[DESIGN-WITNESSES-AND-TRANSPARENCY.md](DESIGN-WITNESSES-AND-TRANSPARENCY.md) are built as a pure module,
+`crates/engine-core/src/transparency/`: RFC 6962 Merkle tree with inclusion and consistency proofs,
+`tlog-tiles` storage (memory and directory stores, crash-safe size marker), signed-note
+checkpoints with log signatures and cosignatures, the six leaf types with blinded tags, the
+inclusion bundle, a validating trust-policy loader, and assurance levels L0 to L3 with rollback
+and split-view detection. **Nothing uses it yet**: no outbox, worker, migration, HTTP endpoint,
+CLI verb, journal v2, sync integration, witness service or monitor exists (W1-server, W2-sync,
+W3 to W7). No existing hash, signature, event or checkpoint format changed.
+
+Evidence: 79 tests (53 unit, 15 property including random sizes to 10^5 and a 10^6 case run on
+demand, 11 vector tests) plus Clippy and rustdoc with warnings denied. The vectors come from an
+independent pure-Python generator (own RFC 8032 and RFC 6962 implementations, checked against
+RFC 8032 vectors, the eight published RFC 6962 roots and the Go `note` package example) and the Rust
+code reproduces them byte for byte. Both implementations come from one author, so the vectors
+catch implementation bugs but not a shared misreading of a standard.
+
+**Unverified (no network text was available when written; check before any interoperability
+claim):** the cosignature type byte `0x04` and the `cosignature/v1` signed message and body layout,
+the `tlog-tiles` path spelling and entry-bundle framing, the signed-note forbidden-character set,
+and the RFC 9162 verification algorithms against a published proof vector. **Independent security
+review is required before the verifier makes any trust decision in the product.**
+
+Owner decisions raised by the build: whether fork evidence (split view, inconsistency) must always
+reject even when the policy says `warn`; whether a future-dated cosignature counts (today the
+freshness window is symmetric); which checkpoint L3 compares against (today only quorum-verified
+ones); how to express a log-only policy (threshold 0 is refused); fixing the `seq` (u64
+big-endian) and `doc_uuid` (16 raw bytes) tag encodings before any tag is published.
+
 ## Source: memory-hard key derivation for encrypted key files (18 October 2026)
 
 `dynodoc-key-v1` files written for a passphrase now use Argon2id (RFC 9106, 3 passes, 64 MiB,
