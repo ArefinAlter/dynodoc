@@ -22,4 +22,5 @@ pub mod shared_checkpoint;
 pub mod similarity;
 pub mod snapshot;
 pub mod snapshot_verification;
+pub mod transparency;
 pub mod workspace_merge;
