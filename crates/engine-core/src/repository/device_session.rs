@@ -22,6 +22,15 @@ pub const SCOPES: [&str; 4] = [
     "history:write",
     "project:read",
 ];
+/// Scopes of an AI-agent key (docs/AI-AGENT-PROTOCOL-SPEC.md section 14.2). Kept apart
+/// from [`SCOPES`]: they are never offered to a person's key and a person's key can
+/// never hold one (the service refuses the mix at grant and issuance time).
+pub const AGENT_SCOPES: [&str; 1] = ["content:read"];
+
+/// Is `scope` one of [`AGENT_SCOPES`]?
+pub fn is_agent_scope(scope: &str) -> bool {
+    AGENT_SCOPES.contains(&scope)
+}
 /// A challenge may be answered for two minutes.
 pub const CHALLENGE_TTL_MS: i64 = 120_000;
 /// The only token lifetime the device accepts and the service issues.
@@ -36,7 +45,7 @@ pub struct SessionChallenge {
     pub authority: Uuid,
     pub public_key: String,
     pub project: Uuid,
-    /// Sorted, unique, a non-empty subset of [`SCOPES`].
+    /// Sorted, unique, a non-empty subset of [`SCOPES`] and [`AGENT_SCOPES`].
     pub scopes: Vec<String>,
     /// A fresh cryptographically random 32-byte nonce, lowercase hexadecimal.
     pub nonce: String,
@@ -50,7 +59,11 @@ pub fn normalize_scopes<S: AsRef<str>>(requested: &[S]) -> Result<Vec<String>, E
     let mut scopes: Vec<String> = requested.iter().map(|s| s.as_ref().to_owned()).collect();
     scopes.sort();
     scopes.dedup();
-    if scopes.is_empty() || scopes.iter().any(|s| !SCOPES.contains(&s.as_str())) {
+    if scopes.is_empty()
+        || scopes
+            .iter()
+            .any(|s| !SCOPES.contains(&s.as_str()) && !is_agent_scope(s))
+    {
         return Err(Error::Invalid("device session scopes"));
     }
     Ok(scopes)
@@ -304,6 +317,35 @@ mod tests {
         value.expires_at_ms = value.issued_at_ms + 1;
         value.nonce = "A".repeat(64);
         assert!(value.validate().is_err());
+    }
+
+    #[test]
+    fn the_agent_read_scope_is_known_independent_and_sorted() {
+        assert_eq!(
+            normalize_scopes(&["project:read", "content:read", "content:read"]).unwrap(),
+            vec!["content:read", "project:read"]
+        );
+        assert!(is_agent_scope("content:read") && !is_agent_scope("history:read"));
+        // The specification's write scopes are not admitted until their routes exist.
+        assert!(normalize_scopes(&["content:propose"]).is_err());
+        assert!(normalize_scopes(&["content:submit"]).is_err());
+        assert!(normalize_scopes(&["content:*"]).is_err());
+        // The person-key scope list shown to the UI is unchanged.
+        assert!(SCOPES.iter().all(|s| !is_agent_scope(s)));
+        let key = signer(7);
+        let mut value = challenge(&key);
+        value.scopes = vec!["content:read".into()];
+        value.validate().unwrap();
+        let proof = SessionProof::sign(
+            value.clone(),
+            "ab".repeat(32),
+            value.authority,
+            value.project,
+            &value.scopes,
+            &key,
+        )
+        .unwrap();
+        proof.verify_signature().unwrap();
     }
 
     #[test]
