@@ -45,7 +45,7 @@ use crate::text::{body_lines, Inline};
 
 const PREVIEW_CHARS: usize = 48;
 /// Words of unchanged text kept around a change in an inline diff.
-const CONTEXT_WORDS: usize = 4;
+const CONTEXT_WORDS: usize = 3;
 /// Longer texts are shown as one replacement instead of a word diff.
 const WORD_DIFF_LIMIT: usize = 100_000;
 
@@ -758,25 +758,31 @@ mod tests {
             "The rules describe how the policy handles complaints in the first week",
             "The rules describe how the procedure handles complaints in the first week",
         );
-        assert_eq!(w.marked, "…describe how the [-policy-]{+procedure+} handles complaints in the first…");
+        // Three words of context each side (the spec example shows the same shape).
+        assert_eq!(w.marked, "…describe how the [-policy-]{+procedure+} handles complaints in…");
         assert_eq!((w.del, w.ins), (6, 9));
+        let w = word_diff("the policy handles it", "the procedure handles it");
+        assert_eq!(w.marked, "the [-policy-]{+procedure+} handles it");
     }
 
     #[test]
     fn contexts_and_elision() {
         let w = word_diff("a b c d e f g h i j k l m n", "A b c d e f g h i j k l m N");
-        assert_eq!(w.marked, "[-a-]{+A+} b c d e…");
-        let w = word_diff("a b c d e f g h i j k l m n", "a b c d e f g h i j k l m n");
-        assert_eq!(w.marked, "a b c d e f g h i j k l m n");
+        assert_eq!(w.marked, "[-a-]{+A+} b c d … k l m [-n-]{+N+}");
         let w = word_diff("x 1 2 3 4 5 6 7 8 9 10 y", "z 1 2 3 4 5 6 7 8 9 10 w");
-        assert_eq!(w.marked, "[-x-]{+z+} 1 2 3 4 … 7 8 9 10 [-y-]{+w+}");
+        assert_eq!(w.marked, "[-x-]{+z+} 1 2 3 … 8 9 10 [-y-]{+w+}");
+        // An insertion at the end keeps the text before it.
+        let w = word_diff("one two", "one two three");
+        assert_eq!(w.marked, "one two{+ three+}");
     }
 
     #[test]
     fn markers_in_text_are_escaped() {
+        // Brackets from the document are backslash-escaped, so only the server writes a
+        // bare `[-`, `-]`, `{+` or `+}`.
         let w = word_diff("a [-b-] c", "a {+d+} c");
-        assert!(!w.marked.contains("[-b"), "{}", w.marked);
-        assert!(w.marked.contains("\\[-"), "{}", w.marked);
+        assert_eq!(w.marked, "a [-\\[-b-\\]-]{+\\{+d+\\}+} c");
+        assert_eq!(crate::escape::unescape(&w.marked).unwrap(), "a [-[-b-]-]{+{+d+}+} c");
     }
 
     #[test]

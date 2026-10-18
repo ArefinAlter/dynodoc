@@ -1,0 +1,99 @@
+{
+  "deleted": [
+    "01K7Q9XM2A0000000000CD1234"
+  ],
+  "description": "Minimal unique suffix refs (protocol spec 5.3). `deleted` ids are tombstones: they still count for uniqueness. `later` is created after the revision: it never matches there.",
+  "ids": [
+    "01K7Q9XM2A0000000000AB1234",
+    "01K7Q9XM2A0000000000CD1234",
+    "01K7Q9XM2A0000000000EF5678",
+    "01K7Q9XM2A0000000000GH9ZZZ",
+    "01K7Q9XM2A0000000000XXAB12"
+  ],
+  "later": "01K7Q9XM2A0000000000QQ1234",
+  "refs": {
+    "01K7Q9XM2A0000000000AB1234": "B1234",
+    "01K7Q9XM2A0000000000CD1234": "D1234",
+    "01K7Q9XM2A0000000000EF5678": "5678",
+    "01K7Q9XM2A0000000000GH9ZZZ": "9ZZZ",
+    "01K7Q9XM2A0000000000XXAB12": "AB12"
+  },
+  "refs_after_later": {
+    "01K7Q9XM2A0000000000AB1234": "B1234",
+    "01K7Q9XM2A0000000000CD1234": "D1234",
+    "01K7Q9XM2A0000000000EF5678": "5678",
+    "01K7Q9XM2A0000000000GH9ZZZ": "9ZZZ",
+    "01K7Q9XM2A0000000000XXAB12": "AB12"
+  },
+  "resolve_after_later": {
+    "01K7Q9XM2A0000000000EF5678": {
+      "id": "01K7Q9XM2A0000000000EF5678"
+    },
+    "1234": {
+      "ambiguous": [
+        "B1234",
+        "D1234",
+        "Q1234"
+      ]
+    },
+    "5678": {
+      "id": "01K7Q9XM2A0000000000EF5678"
+    },
+    "9ZZZ": {
+      "id": "01K7Q9XM2A0000000000GH9ZZZ"
+    },
+    "AB12": {
+      "id": "01K7Q9XM2A0000000000XXAB12"
+    },
+    "AB1234": {
+      "id": "01K7Q9XM2A0000000000AB1234"
+    },
+    "EF5678": {
+      "id": "01K7Q9XM2A0000000000EF5678"
+    },
+    "QQ1234": {
+      "id": "01K7Q9XM2A0000000000QQ1234"
+    },
+    "XXAB12": {
+      "id": "01K7Q9XM2A0000000000XXAB12"
+    },
+    "ZZZZ": "unknown",
+    "ab1234": {
+      "id": "01K7Q9XM2A0000000000AB1234"
+    }
+  },
+  "resolve_at_rev": {
+    "01K7Q9XM2A0000000000EF5678": {
+      "id": "01K7Q9XM2A0000000000EF5678"
+    },
+    "1234": {
+      "ambiguous": [
+        "B1234",
+        "D1234"
+      ]
+    },
+    "5678": {
+      "id": "01K7Q9XM2A0000000000EF5678"
+    },
+    "9ZZZ": {
+      "id": "01K7Q9XM2A0000000000GH9ZZZ"
+    },
+    "AB12": {
+      "id": "01K7Q9XM2A0000000000XXAB12"
+    },
+    "AB1234": {
+      "id": "01K7Q9XM2A0000000000AB1234"
+    },
+    "EF5678": {
+      "id": "01K7Q9XM2A0000000000EF5678"
+    },
+    "QQ1234": "unknown",
+    "XXAB12": {
+      "id": "01K7Q9XM2A0000000000XXAB12"
+    },
+    "ZZZZ": "unknown",
+    "ab1234": {
+      "id": "01K7Q9XM2A0000000000AB1234"
+    }
+  }
+}

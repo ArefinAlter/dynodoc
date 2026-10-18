@@ -350,7 +350,7 @@ mod tests {
     fn snippets_cut_on_characters() {
         let t = "héllo the second clause of the agreement states more";
         let s = t.find("clause").unwrap();
-        assert_eq!(snippet(t, s, s + 6, 8), "…e second clause of the …");
+        assert_eq!(snippet(t, s, s + 6, 8), "… second clause of the …");
         assert_eq!(snippet(t, s, s + 6, 0), "…clause…");
         assert_eq!(snippet("clause", 0, 6, 30), "clause");
         let long = "a".repeat(300);
