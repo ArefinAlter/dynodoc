@@ -1,5 +1,34 @@
 # Engine evolution handoff
 
+## Source: agent connector read-path library (18 October 2026)
+
+The pure part of connector Phase 0 ([AI-AGENT-CONNECTORS.md](AI-AGENT-CONNECTORS.md)) is built as the MIT crate
+`crates/engine-agent`: refs, hashes, revision tokens, A1 and slide addressing, Dynodoc Compact Text
+(DCT v1) with escaping and byte budgets, strict body parsers, and the `files`, `outline`, `read`,
+`find` and `diff` tools over a document state (documents, workbooks, decks), with a JSON mirror and
+the 26-code `AgentError`. It does no I/O. **No route, MCP transport, plugin, migration or agent
+identity exists yet**; propose, submit and status (Phase 1) are not built.
+
+Evidence: 83 tests (41 unit, 16 conformance, 2 golden with 55 committed transcripts, 12 hostile-text
+parse-back tests over 49 known injection strings, 12 property tests at fixed seeds) plus Clippy and
+rustdoc with warnings denied, in both repositories. Mutation checks (breaking the `@` guard or the
+TAB escape) make the hostile and golden tests fail. Dependencies added: `regex` (linear-time `find`,
+spec 7.5) and `similar` 3.2.0 (same pin as `engine-core`).
+
+Byte benchmark (one release run, [agent-dct-bytes-20261018.json](benchmarks/agent-dct-bytes-20261018.json)):
+over the 49 golden calls DCT is 19,467 bytes against 40,654 for the crate's own JSON mirror (2.09 times).
+That is a payload ratio only. It is not a token saving and not a comparison with another tool; no
+tokenizer or model was run, and the file says so.
+
+Decisions made where the spec contradicts itself or the code (all in the crate rustdoc, 17 in total):
+a header never holds document text (the spec's own examples put a sheet name there); TAB is escaped
+everywhere; control, tag, bidi, zero-width-space, word-joiner and byte-order-mark characters are
+dropped while ZWJ, ZWNJ, LRM and RLM are kept because Bengali, Persian and emoji need them; a list is
+one block (`UL<n>`/`OL<n>`) because that is what the engine stores; `more` is absent when a response
+is complete. Not implemented: markdown cell-format annotations on ranges. Owner questions: whether
+zero-width characters may ever be stripped, whether reading a cell should cover only its first text
+container, and the spec's diff for sheets and decks (left undefined; the crate extends it).
+
 ## Source: transparency log core and verifier library (18 October 2026)
 
 Phases W0, W1 (core only) and W2 (verifier library only) of
