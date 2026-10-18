@@ -50,6 +50,10 @@
 //! pure-Python implementation (`gen_transparency_vectors.py`) written from the same
 //! recollection of the specifications, so they catch implementation bugs, not a
 //! shared misreading of a standard.
+// The application builds with an older minimum Rust version than the standalone engine, whose
+// Clippy asks for `is_multiple_of`; one source serves both, so the lint is allowed here.
+#![allow(clippy::manual_is_multiple_of)]
+
 pub mod assurance;
 pub mod bundle;
 mod encoding;
