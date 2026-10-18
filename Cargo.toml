@@ -59,7 +59,7 @@ chrono = { version = "0.4", features = ["serde"] }
 # the laptop, so the engine is built/run on a SAC-free machine (home PC / WSL2 / CI).
 ring = "0.17"
 # Memory-hard key derivation for encrypted key files (RFC 9106 Argon2id). RustCrypto;
-# MIT OR Apache-2.0; no unsafe in the default build.
+# MIT OR Apache-2.0.
 argon2 = { version = "0.5", default-features = false, features = ["alloc"] }
 
 # Auth: Paseto v4 local tokens (symmetric AEAD) instead of JWT — no alg-confusion or
