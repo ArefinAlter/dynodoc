@@ -1,6 +1,6 @@
 # Encrypted signing key files: `dynodoc-key-v1`
 
-14 October 2026. Source only: no release records this format yet. It changes the
+14 October 2026; Argon2id added 18 October 2026. Source only: no release records this format yet. It changes the
 local file `engine-cli` uses for a device signing key. It adds no PostgreSQL
 migration, no server route and no enrollment change: an encrypted key has the same
 Ed25519 public key as the unencrypted key it came from, so an enrolled key stays
@@ -32,18 +32,38 @@ derivation runs.
 padding; a spelling that does not re-encode to itself is rejected, so one file has
 one meaning.
 
+**Two key derivations.** Since 18 October 2026 a passphrase is stretched with
+Argon2id (RFC 9106, memory-hard, version 0x13); the `kdf` object then reads
+
+```json
+"kdf": { "name": "argon2id", "iterations": 3, "memory_kib": 65536, "parallelism": 4, "salt": "<base64url>" }
+```
+
+where `iterations` is the number of Argon2 passes. PBKDF2 files written before that
+date stay readable, and a key-store-bound file keeps PBKDF2 on purpose: its wrapping
+secret is a random 256-bit value that no key derivation can improve. `memory_kib` and
+`parallelism` exist only for Argon2id and are rejected on a PBKDF2 file.
+
 | Field | Accepted |
 |---|---|
 | file size | at most 16,384 bytes |
-| `iterations` | 600,000 to 5,000,000 inclusive |
+| `iterations` (PBKDF2) | 600,000 to 5,000,000 inclusive |
+| `iterations` (Argon2id passes) | 2 to 6 inclusive |
+| `memory_kib` (Argon2id only) | 19,456 to 262,144 inclusive (19 MiB to 256 MiB) |
+| `parallelism` (Argon2id only) | 1 to 8 inclusive |
 | `salt` | 16 to 64 bytes (written files use 16) |
 | `nonce` | exactly 12 bytes (random per file) |
 | `ciphertext` | 17 to 4,112 bytes (the PKCS#8 plaintext is at most 4,096) |
 | `keystore.provider` | `windows-dpapi`, `macos-keychain`, `linux-secret-service` |
 | `keystore.blob` | required and at most 2,048 bytes for `windows-dpapi`; absent otherwise |
 
-The iteration floor is 600,000 so a file cannot quietly weaken the key
-derivation; the ceiling keeps a hostile file from holding the process. On the
+The floors are OWASP's minimums (PBKDF2 600,000 iterations; Argon2id 19 MiB and two
+passes) so a file cannot quietly weaken the key derivation; this program writes
+RFC 9106's second recommended option (3 passes, 64 MiB, 4 lanes). The ceilings keep a
+hostile file from holding the process or its memory: the reference C implementation
+took 0.09 s for the written parameters and 0.48 s for the largest accepted ones on the
+development host (indicative; the Rust crate was not timed separately).
+For PBKDF2, the ceiling keeps a hostile file from holding the process. On the
 development host (release build, one core) 600,000 iterations take about 0.22
 seconds and the 5,000,000 ceiling about 1.8 seconds.
 
@@ -53,7 +73,10 @@ seconds and the 5,000,000 ceiling about 1.8 seconds.
    from the file; no Unicode normalization is applied, so use the same bytes every
    time), or for a keystore-bound file the 64 lowercase hex characters of a random
    256-bit secret held by the operating system.
-2. `key = PBKDF2-HMAC-SHA256(secret, salt, iterations, 32 bytes)`.
+2. PBKDF2 file: `key = PBKDF2-HMAC-SHA256(secret, salt, iterations, 32 bytes)`.
+   Argon2id file: `key = Argon2id(secret, salt, t = iterations, m = memory_kib KiB,
+   p = parallelism, version 0x13, 32 bytes)` with no secret or associated-data input
+   to Argon2 itself.
 3. `ciphertext = ChaCha20-Poly1305(key, nonce, aad, plaintext)` where `plaintext` is
    the unencrypted DER PKCS#8 Ed25519 private key and `aad` is the following
    ASCII text, exactly, joined by single `\n` characters with no trailing newline:
@@ -67,6 +90,19 @@ salt=<the salt field, as written>
 aead=chacha20-poly1305
 keystore=none | <provider> | <provider>:<blob field, as written>
 ```
+
+For an Argon2id file the `kdf=` line and what follows it read, in this order:
+
+```text
+kdf=argon2id
+iterations=<passes>
+memory_kib=<memory in KiB>
+parallelism=<lanes>
+salt=<the salt field, as written>
+```
+
+The PBKDF2 text above is unchanged, so every earlier file and the first vector still
+verify.
 
 The format identifier, the KDF parameters, the public-key fingerprint and the
 keystore binding are therefore authenticated: editing any of them, or moving a
@@ -143,7 +179,21 @@ and re-encrypts with its salt and nonce to the identical file.
 }
 ```
 
-The independent generator, in full:
+**Argon2id vector.** `crates/engine-core/tests/fixtures/dynodoc-key-v1-argon2id.json`,
+the same key and passphrase, salt `a0..af`, nonce `c0..cb`, 3 passes, 64 MiB, 4 lanes.
+It was produced by `crates/engine-core/tests/fixtures/gen_dynodoc_key_v1_argon2id.py`,
+which uses the reference Argon2 C implementation (`argon2-cffi`) and OpenSSL
+ChaCha20-Poly1305 (`cryptography`) and no dynodoc code; the CLI test decrypts it and
+re-encrypts to the identical file, so the Rust `argon2` crate and the reference code
+agree on this input.
+
+```json
+"derived_key_hex": "95771d452c625b47eb0f87c4843a2af227134115d16a3d7c28f4dc756a15daee",
+"kdf": { "name": "argon2id", "iterations": 3, "memory_kib": 65536, "parallelism": 4, "salt": "oKGio6SlpqeoqaqrrK2urw" },
+"ciphertext": "CrtXPxyE-DLJ3txGlXKnaDrti7WtqTszeOc5fAWjfB7JV4Cm1G1sQfiiVCEQPYJQHhzLlJzUDM3ZFwQtmSkHQA"
+```
+
+The independent PBKDF2 generator, in full:
 
 ```python
 import base64, hashlib
@@ -171,6 +221,7 @@ print(b64(ciphertext))
 ```text
 engine-cli device keygen --out KEY --encrypt [--keystore] [--passphrase-file FILE]
 engine-cli device protect KEY [--out NEW] [--keystore] [--passphrase-file FILE]
+engine-cli device rewrap KEY [--out NEW] [--passphrase-file FILE]
 engine-cli device unprotect KEY --i-understand [--out NEW] [--passphrase-file FILE]
 engine-cli device public-key KEY [--passphrase-file FILE]
 ```
@@ -186,16 +237,22 @@ printed is unchanged. `unprotect` is the reverse and refuses without
 `--i-understand`. All three check, before changing anything, that what they write
 decrypts to the same key.
 
+`rewrap` re-encrypts a passphrase-protected file under the current key derivation
+(Argon2id) without the key ever being written in the clear. It asks for the current
+passphrase and then for the new one from the same sources, so with
+`--passphrase-file` the passphrase stays the same and only the derivation changes. It
+refuses a plain key (use `protect`) and a key-store-bound file (nothing to rewrap).
+Replacement is atomic and keeps the file's access as `protect` does.
+
 ## Residual risks, precisely
 
 - **The strength is the passphrase.** A stolen encrypted file can be attacked
-  offline. PBKDF2-HMAC-SHA256 at 600,000 iterations is deliberately slow but is
-  not memory-hard, so GPUs and ASICs gain more against it than against Argon2id.
-  Argon2id would need a new dependency; none was added because `ring` is already
-  the only crypto dependency of the workspace. The `kdf.name` field makes a later
-  `dynodoc-key-v2` or an added name possible without breaking v1 files. Use a long
-  random passphrase (several random words); a short passphrase is weak whatever the
-  iteration count.
+  offline. Argon2id makes each guess cost memory as well as time, which narrows the
+  advantage of GPUs and ASICs over PBKDF2, but it does not make a short passphrase
+  safe: use a long random passphrase (several random words). Files written before
+  18 October 2026 still use PBKDF2-HMAC-SHA256 at 600,000 iterations; run `device rewrap`
+  to move them to Argon2id. Key-store-bound files keep PBKDF2 because their
+  secret is not a passphrase.
 - **Unlocked means exposed.** While a command runs, the decrypted key is in this
   process. Zeroisation is best effort: passphrase and PKCS#8 buffers are
   overwritten on drop, but `ring`'s key object, the terminal, the kernel and a
@@ -214,6 +271,6 @@ decrypts to the same key.
   smart card or Secure Enclave key and does not ask the user before each use.
 - **Prompt echo and interruption.** The hidden prompt turns terminal echo off and
   restores it; a process killed mid-prompt on Unix can leave echo off (`stty sane`).
-- **Not done:** key rotation inside a file, multiple recipients, a key-agent
+- **Not done:** hardware-token keys, key rotation inside a file, multiple recipients, a key-agent
   process, an encrypted token file for the interim account sync mode, native host
   adoption, and running the macOS and Linux keystore paths on those systems.

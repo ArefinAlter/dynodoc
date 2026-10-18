@@ -1,5 +1,23 @@
 # Dynodoc: intent, current implementation and remaining work
 
+## Source: memory-hard key derivation for encrypted key files (18 October 2026)
+
+`dynodoc-key-v1` files written for a passphrase now use Argon2id (RFC 9106, 3 passes, 64 MiB,
+4 lanes, version 0x13) instead of PBKDF2. PBKDF2 files stay readable, and key-store-bound files
+keep PBKDF2 because their wrapping secret is a random 256-bit value. The Argon2id parameters are
+bounded when read (19 to 256 MiB, 2 to 6 passes, 1 to 8 lanes) and authenticated in the
+associated data; the PBKDF2 associated data is unchanged, so earlier files and the first vector
+still verify. A new `device rewrap` command moves an existing passphrase file to Argon2id without
+the key touching the disk unencrypted. One dependency was added (`argon2` 0.5, RustCrypto,
+MIT OR Apache-2.0) and the dev profile optimises it, since key derivation is unusably slow
+unoptimised.
+
+Evidence: an independent vector produced by the reference Argon2 C implementation and OpenSSL
+(`gen_dynodoc_key_v1_argon2id.py`) is decrypted and reproduced byte for byte by the Rust code;
+bound, authentication and format tests; the whole engine-cli suite and
+Clippy pass. Format, bounds, timings and residual risks: [KEY-FILE-FORMAT.md](KEY-FILE-FORMAT.md).
+Not done: hardware-token keys (needs a device and a platform API to test against).
+
 ## Source: engine PR integration and dependency migrations (18 October 2026)
 
 Reviewed the thirteen open standalone-engine PRs with four independent read-only reviews, then
@@ -121,8 +139,8 @@ and the copyright line (Verne Ltd.).
 test. Frontend Prettier, ESLint and svelte-check clean; unit tests pass (461). The isolated
 authenticated browser suite result is recorded in the release record below.
 
-**Still open.** Pack files with shared dictionaries and commit pruning, memory-hard key
-derivation and hardware keys, cross-document merges and automatic resolution of real node
+**Still open.** Pack files with shared dictionaries and commit pruning, hardware keys
+(memory-hard derivation shipped 18 October 2026), cross-document merges and automatic resolution of real node
 conflicts, installing the receipt authority and witnesses, large-file and installed-editor
 acceptance, and all three planned products above.
 

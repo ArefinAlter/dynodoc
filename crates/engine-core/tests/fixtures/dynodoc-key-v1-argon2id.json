@@ -1,0 +1,25 @@
+{
+  "description": "dynodoc-key-v1 Argon2id test vector. Every value is synthetic and public; the key must never be enrolled or trusted.",
+  "generator": "Python 3 argon2-cffi (reference Argon2 C code, version 0x13) and cryptography ChaCha20Poly1305 (OpenSSL), no dynodoc code",
+  "passphrase": "dynodoc-key-v1 public test vector passphrase",
+  "pkcs8_hex": "302e020100300506032b6570042204200707070707070707070707070707070707070707070707070707070707070707",
+  "public_key": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+  "derived_key_hex": "95771d452c625b47eb0f87c4843a2af227134115d16a3d7c28f4dc756a15daee",
+  "aad": "dynodoc-key-v1\npublic_key=ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c\nkdf=argon2id\niterations=3\nmemory_kib=65536\nparallelism=4\nsalt=oKGio6SlpqeoqaqrrK2urw\naead=chacha20-poly1305\nkeystore=none",
+  "file": {
+    "format": "dynodoc-key-v1",
+    "public_key": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+    "kdf": {
+      "name": "argon2id",
+      "iterations": 3,
+      "memory_kib": 65536,
+      "parallelism": 4,
+      "salt": "oKGio6SlpqeoqaqrrK2urw"
+    },
+    "aead": {
+      "name": "chacha20-poly1305",
+      "nonce": "wMHCw8TFxsfIycrL"
+    },
+    "ciphertext": "CrtXPxyE-DLJ3txGlXKnaDrti7WtqTszeOc5fAWjfB7JV4Cm1G1sQfiiVCEQPYJQHhzLlJzUDM3ZFwQtmSkHQA"
+  }
+}

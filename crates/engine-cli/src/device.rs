@@ -68,6 +68,17 @@ pub enum Action {
         #[arg(long)]
         keystore: bool,
     },
+    /// Re-encrypt a passphrase-protected key file with the current key derivation
+    /// (Argon2id), for example one written before it existed. The new passphrase
+    /// comes from the same sources as the current one, so with --passphrase-file the
+    /// passphrase stays the same. The key never touches the disk unencrypted, and
+    /// the public key does not change.
+    Rewrap {
+        key: PathBuf,
+        /// Write the re-encrypted copy here and leave KEY untouched.
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
     /// Write the unencrypted key back to disk (the opposite of protect). The
     /// private key will again be readable by anyone who can read the file.
     Unprotect {
@@ -204,6 +215,40 @@ fn protect(
     Ok(public)
 }
 
+/// Re-encrypt a passphrase-protected key file under the current key derivation
+/// (in place, or into a new `out`).
+fn rewrap(path: &Path, out: Option<&Path>, sources: &Sources) -> anyhow::Result<String> {
+    let bytes = crate::signing::read_key_file(path)?;
+    anyhow::ensure!(
+        keyfile::is_container(&bytes),
+        "{} is not an encrypted key file",
+        path.display()
+    );
+    let parsed = keyfile::Container::parse(&bytes)?;
+    anyhow::ensure!(
+        parsed.keystore().is_none(),
+        "{} is bound to an operating-system key store; it has no passphrase to rewrap",
+        path.display()
+    );
+    let pkcs8 = crate::signing::unlock(&parsed, path, sources)?;
+    let public = parsed.public_key().to_owned();
+    let replacement = match out {
+        Some(_) => None,
+        None => {
+            let replacement = crate::private_file::Replacement::prepare(path)?;
+            replacement.keep_mode_of(path);
+            Some(replacement)
+        }
+    };
+    let (encrypted, _) = container(pkcs8.as_bytes(), None, sources, &path.display().to_string())?;
+    match (out, replacement) {
+        (Some(out), _) => crate::private_file::write_new(out, &encrypted)?,
+        (None, Some(replacement)) => replacement.commit(&encrypted)?,
+        (None, None) => unreachable!("in-place rewrap always has a replacement"),
+    }
+    Ok(public)
+}
+
 /// Decrypt an encrypted key file back to plain DER (in place, or into `out`).
 fn unprotect(
     path: &Path,
@@ -304,6 +349,13 @@ pub fn run(action: Action) -> anyhow::Result<()> {
             let public = protect(&key, out.as_deref(), provider, &Sources::current())?;
             eprintln!(
                 "The key file is now encrypted (dynodoc-key-v1). Its public key is unchanged:"
+            );
+            println!("{public}");
+        }
+        Action::Rewrap { key, out } => {
+            let public = rewrap(&key, out.as_deref(), &Sources::current())?;
+            eprintln!(
+                "The key file is re-encrypted with the current key derivation. Its public key is unchanged:"
             );
             println!("{public}");
         }
@@ -436,6 +488,45 @@ mod tests {
         )
         .is_err());
         assert!(!target.exists());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn rewrap_moves_a_pbkdf2_file_to_argon2id_and_keeps_the_key() {
+        let dir = dir();
+        let path = dir.join("old-key.json");
+        let key = Ed25519KeyPair::generate_pkcs8(&SystemRandom::new()).unwrap();
+        let public = keyfile::public_key_of(key.as_ref()).unwrap();
+        let old = keyfile::seal_with(
+            key.as_ref(),
+            PASSPHRASE,
+            None,
+            keyfile::KdfParams::Pbkdf2 {
+                iterations: keyfile::MIN_ITERATIONS,
+            },
+            &[3u8; keyfile::SALT_BYTES],
+            [4u8; keyfile::NONCE_BYTES],
+        )
+        .unwrap();
+        crate::private_file::write_new(&path, &old).unwrap();
+        let kdf_of = |bytes: &[u8]| {
+            serde_json::from_slice::<serde_json::Value>(bytes).unwrap()["kdf"]["name"].clone()
+        };
+        assert_eq!(kdf_of(&old), keyfile::KDF_NAME);
+
+        assert_eq!(rewrap(&path, None, &sources()).unwrap(), public);
+        let new = std::fs::read(&path).unwrap();
+        assert_eq!(kdf_of(&new), keyfile::ARGON2ID_NAME);
+        crate::private_file::assert_owner_only(&path);
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        // Same passphrase, same key.
+        let loaded = crate::signing::load_with(&path, &sources()).unwrap();
+        assert_eq!(public_of(&loaded), public);
+        // A plain key, and a key-store-bound file, are not rewrapped.
+        let plain = dir.join("plain.der");
+        keygen(&plain, false, None, &Sources::default()).unwrap();
+        let error = rewrap(&plain, None, &sources()).unwrap_err().to_string();
+        assert!(error.contains("not an encrypted key file"), "{error}");
         std::fs::remove_dir_all(dir).unwrap();
     }
 

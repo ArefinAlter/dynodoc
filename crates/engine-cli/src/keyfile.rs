@@ -1,8 +1,11 @@
 //! `dynodoc-key-v1`: a passphrase- or keystore-encrypted Ed25519 signing key file.
 //! The wire format and the independent test vector are in docs/KEY-FILE-FORMAT.md.
 //!
-//! - KDF: PBKDF2-HMAC-SHA256 (`ring::pbkdf2`), at least 600,000 iterations, the
-//!   parameters stored in the file and bounded when read.
+//! - KDF: Argon2id (memory-hard; the `argon2` crate) for passphrases, or
+//!   PBKDF2-HMAC-SHA256 (`ring::pbkdf2`, at least 600,000 iterations) for files
+//!   written before Argon2id and for key-store-bound files, whose wrapping secret
+//!   is a random 256-bit value that needs no hardening. The parameters are stored
+//!   in the file, authenticated, and bounded when read.
 //! - AEAD: ChaCha20-Poly1305 (`ring::aead`) over the PKCS#8 DER private key.
 //! - Associated data binds the format id, the KDF parameters, the key-store
 //!   binding and the public key, so none of them can be edited without detection.
@@ -25,6 +28,7 @@ use std::num::NonZeroU32;
 
 pub const FORMAT: &str = "dynodoc-key-v1";
 pub const KDF_NAME: &str = "pbkdf2-hmac-sha256";
+pub const ARGON2ID_NAME: &str = "argon2id";
 pub const AEAD_NAME: &str = "chacha20-poly1305";
 /// Iterations written by this program (OWASP's PBKDF2-HMAC-SHA256 guidance).
 pub const ITERATIONS: u32 = 600_000;
@@ -32,6 +36,18 @@ pub const ITERATIONS: u32 = 600_000;
 /// a hostile file cannot keep the process busy for long.
 pub const MIN_ITERATIONS: u32 = 600_000;
 pub const MAX_ITERATIONS: u32 = 5_000_000;
+/// Argon2id parameters written by this program: RFC 9106's second recommended
+/// option (3 passes, 64 MiB, 4 lanes).
+pub const ARGON2_TIME: u32 = 3;
+pub const ARGON2_MEMORY_KIB: u32 = 65_536;
+pub const ARGON2_LANES: u32 = 4;
+/// Bounds accepted when reading: no weaker than OWASP's minimum (19 MiB, 2 passes),
+/// and low enough that a hostile file cannot hold the process or its memory.
+pub const ARGON2_MIN_MEMORY_KIB: u32 = 19_456;
+pub const ARGON2_MAX_MEMORY_KIB: u32 = 262_144;
+pub const ARGON2_MIN_TIME: u32 = 2;
+pub const ARGON2_MAX_TIME: u32 = 6;
+pub const ARGON2_MAX_LANES: u32 = 8;
 pub const SALT_BYTES: usize = 16;
 pub const MIN_SALT_BYTES: usize = 16;
 pub const MAX_SALT_BYTES: usize = 64;
@@ -58,8 +74,91 @@ pub struct Keystore {
 #[serde(deny_unknown_fields)]
 struct Kdf {
     name: String,
+    /// PBKDF2 iterations, or Argon2id passes.
     iterations: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    memory_kib: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    parallelism: Option<u32>,
     salt: String,
+}
+
+/// Which key derivation a file asks for, with its checked parameters.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KdfParams {
+    Pbkdf2 {
+        iterations: u32,
+    },
+    Argon2id {
+        time: u32,
+        memory_kib: u32,
+        lanes: u32,
+    },
+}
+
+impl KdfParams {
+    /// What this program writes for a passphrase.
+    pub const DEFAULT_PASSPHRASE: Self = Self::Argon2id {
+        time: ARGON2_TIME,
+        memory_kib: ARGON2_MEMORY_KIB,
+        lanes: ARGON2_LANES,
+    };
+    /// What this program writes when a key store holds a random wrapping secret.
+    pub const DEFAULT_KEYSTORE: Self = Self::Pbkdf2 {
+        iterations: ITERATIONS,
+    };
+
+    fn wire(self, salt: String) -> Kdf {
+        match self {
+            Self::Pbkdf2 { iterations } => Kdf {
+                name: KDF_NAME.into(),
+                iterations,
+                memory_kib: None,
+                parallelism: None,
+                salt,
+            },
+            Self::Argon2id {
+                time,
+                memory_kib,
+                lanes,
+            } => Kdf {
+                name: ARGON2ID_NAME.into(),
+                iterations: time,
+                memory_kib: Some(memory_kib),
+                parallelism: Some(lanes),
+                salt,
+            },
+        }
+    }
+
+    /// Reject a parameter set outside the accepted bounds before any derivation runs.
+    fn from_wire(kdf: &Kdf) -> anyhow::Result<Self> {
+        match (kdf.name.as_str(), kdf.memory_kib, kdf.parallelism) {
+            (KDF_NAME, None, None) => {
+                ensure!(
+                    (MIN_ITERATIONS..=MAX_ITERATIONS).contains(&kdf.iterations),
+                    "{MALFORMED}: iteration count outside {MIN_ITERATIONS}..={MAX_ITERATIONS}"
+                );
+                Ok(Self::Pbkdf2 {
+                    iterations: kdf.iterations,
+                })
+            }
+            (ARGON2ID_NAME, Some(memory_kib), Some(lanes)) => {
+                ensure!(
+                    (ARGON2_MIN_TIME..=ARGON2_MAX_TIME).contains(&kdf.iterations)
+                        && (ARGON2_MIN_MEMORY_KIB..=ARGON2_MAX_MEMORY_KIB).contains(&memory_kib)
+                        && (1..=ARGON2_MAX_LANES).contains(&lanes),
+                    "{MALFORMED}: Argon2id parameters outside the accepted bounds"
+                );
+                Ok(Self::Argon2id {
+                    time: kdf.iterations,
+                    memory_kib,
+                    lanes,
+                })
+            }
+            _ => Err(anyhow!("{MALFORMED}: unsupported KDF")),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -84,7 +183,7 @@ struct Wire {
 /// A parsed and bounds-checked container; nothing here is secret.
 pub struct Container {
     public_key: String,
-    iterations: u32,
+    kdf: KdfParams,
     salt: Vec<u8>,
     salt_text: String,
     nonce: [u8; NONCE_BYTES],
@@ -127,11 +226,7 @@ impl Container {
                     .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')),
             MALFORMED
         );
-        ensure!(wire.kdf.name == KDF_NAME, "{MALFORMED}: unsupported KDF");
-        ensure!(
-            (MIN_ITERATIONS..=MAX_ITERATIONS).contains(&wire.kdf.iterations),
-            "{MALFORMED}: iteration count outside {MIN_ITERATIONS}..={MAX_ITERATIONS}"
-        );
+        let kdf = KdfParams::from_wire(&wire.kdf)?;
         let salt = decode(&wire.kdf.salt).ok_or_else(|| anyhow!(MALFORMED))?;
         ensure!(
             (MIN_SALT_BYTES..=MAX_SALT_BYTES).contains(&salt.len()),
@@ -166,7 +261,7 @@ impl Container {
         }
         Ok(Self {
             public_key: wire.public_key,
-            iterations: wire.kdf.iterations,
+            kdf,
             salt,
             salt_text: wire.kdf.salt,
             nonce,
@@ -198,7 +293,7 @@ impl Container {
     fn aad(&self) -> Vec<u8> {
         aad(
             &self.public_key,
-            self.iterations,
+            self.kdf,
             &self.salt_text,
             self.keystore.as_ref(),
         )
@@ -207,7 +302,7 @@ impl Container {
     /// Decrypt with the wrapping secret. The error is the same generic message for
     /// a wrong secret and for any modification of the file.
     pub fn open(&self, secret: &[u8]) -> anyhow::Result<Secret> {
-        let key = derive(secret, &self.salt, self.iterations)?;
+        let key = derive(secret, &self.salt, self.kdf)?;
         let mut plain = Secret::new(self.ciphertext.clone());
         let opened = key
             .open_in_place(
@@ -227,7 +322,7 @@ impl Container {
     }
 }
 
-fn aad(public_key: &str, iterations: u32, salt: &str, keystore: Option<&Keystore>) -> Vec<u8> {
+fn aad(public_key: &str, kdf: KdfParams, salt: &str, keystore: Option<&Keystore>) -> Vec<u8> {
     let binding = match keystore {
         None => "none".to_owned(),
         Some(Keystore {
@@ -239,22 +334,49 @@ fn aad(public_key: &str, iterations: u32, salt: &str, keystore: Option<&Keystore
             blob: Some(blob),
         }) => format!("{provider}:{blob}"),
     };
-    format!(
-        "{FORMAT}\npublic_key={public_key}\nkdf={KDF_NAME}\niterations={iterations}\nsalt={salt}\naead={AEAD_NAME}\nkeystore={binding}"
-    )
-    .into_bytes()
+    // The PBKDF2 text is frozen by the published vector; Argon2id adds its two
+    // parameters between the pass count and the salt.
+    let kdf = match kdf {
+        KdfParams::Pbkdf2 { iterations } => {
+            format!("kdf={KDF_NAME}\niterations={iterations}")
+        }
+        KdfParams::Argon2id {
+            time,
+            memory_kib,
+            lanes,
+        } => format!(
+            "kdf={ARGON2ID_NAME}\niterations={time}\nmemory_kib={memory_kib}\nparallelism={lanes}"
+        ),
+    };
+    format!("{FORMAT}\npublic_key={public_key}\n{kdf}\nsalt={salt}\naead={AEAD_NAME}\nkeystore={binding}")
+        .into_bytes()
 }
 
-fn derive(secret: &[u8], salt: &[u8], iterations: u32) -> anyhow::Result<LessSafeKey> {
-    let iterations = NonZeroU32::new(iterations).ok_or_else(|| anyhow!(MALFORMED))?;
+fn derive(secret: &[u8], salt: &[u8], kdf: KdfParams) -> anyhow::Result<LessSafeKey> {
     let mut raw = [0u8; 32];
-    pbkdf2::derive(
-        pbkdf2::PBKDF2_HMAC_SHA256,
-        iterations,
-        salt,
-        secret,
-        &mut raw,
-    );
+    match kdf {
+        KdfParams::Pbkdf2 { iterations } => {
+            let iterations = NonZeroU32::new(iterations).ok_or_else(|| anyhow!(MALFORMED))?;
+            pbkdf2::derive(
+                pbkdf2::PBKDF2_HMAC_SHA256,
+                iterations,
+                salt,
+                secret,
+                &mut raw,
+            );
+        }
+        KdfParams::Argon2id {
+            time,
+            memory_kib,
+            lanes,
+        } => {
+            let params = argon2::Params::new(memory_kib, time, lanes, Some(raw.len()))
+                .map_err(|_| anyhow!(MALFORMED))?;
+            argon2::Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params)
+                .hash_password_into(secret, salt, &mut raw)
+                .map_err(|_| anyhow!("key derivation failed"))?;
+        }
+    }
     let key = UnboundKey::new(&CHACHA20_POLY1305, &raw);
     wipe_slice(&mut raw);
     Ok(LessSafeKey::new(
@@ -270,7 +392,13 @@ pub fn seal(pkcs8: &[u8], secret: &[u8], keystore: Option<Keystore>) -> anyhow::
     rng.fill(&mut salt)
         .and_then(|()| rng.fill(&mut nonce))
         .map_err(|_| anyhow!("system random generator failed"))?;
-    seal_with(pkcs8, secret, keystore, ITERATIONS, &salt, nonce)
+    // A key store holds a random 256-bit secret, which memory-hardness cannot improve.
+    let kdf = if keystore.is_some() {
+        KdfParams::DEFAULT_KEYSTORE
+    } else {
+        KdfParams::DEFAULT_PASSPHRASE
+    };
+    seal_with(pkcs8, secret, keystore, kdf, &salt, nonce)
 }
 
 /// Deterministic form for the published test vector and parameter tests.
@@ -278,7 +406,7 @@ pub fn seal_with(
     pkcs8: &[u8],
     secret: &[u8],
     keystore: Option<Keystore>,
-    iterations: u32,
+    kdf: KdfParams,
     salt: &[u8],
     nonce: [u8; NONCE_BYTES],
 ) -> anyhow::Result<Vec<u8>> {
@@ -291,8 +419,8 @@ pub fn seal_with(
         .map_err(|_| anyhow!("invalid Ed25519 PKCS#8 key"))?;
     let public_key = public_key_hex(&pair);
     let salt_text = URL_SAFE_NO_PAD.encode(salt);
-    let aad = aad(&public_key, iterations, &salt_text, keystore.as_ref());
-    let key = derive(secret, salt, iterations)?;
+    let aad = aad(&public_key, kdf, &salt_text, keystore.as_ref());
+    let key = derive(secret, salt, kdf)?;
     let mut buffer = Secret::new(Vec::with_capacity(pkcs8.len() + TAG_BYTES));
     buffer.as_mut_vec().extend_from_slice(pkcs8);
     key.seal_in_place_append_tag(
@@ -304,11 +432,7 @@ pub fn seal_with(
     let wire = Wire {
         format: FORMAT.into(),
         public_key,
-        kdf: Kdf {
-            name: KDF_NAME.into(),
-            iterations,
-            salt: salt_text,
-        },
+        kdf: kdf.wire(salt_text),
         aead: Cipher {
             name: AEAD_NAME.into(),
             nonce: URL_SAFE_NO_PAD.encode(nonce),
@@ -376,7 +500,9 @@ mod tests {
             &expected,
             passphrase.as_bytes(),
             None,
-            file["kdf"]["iterations"].as_u64().unwrap() as u32,
+            KdfParams::Pbkdf2 {
+                iterations: file["kdf"]["iterations"].as_u64().unwrap() as u32,
+            },
             &salt,
             nonce,
         )
@@ -386,6 +512,159 @@ mod tests {
         // The documented associated data and key match the vector's debug fields.
         let aad = String::from_utf8(container.aad()).unwrap();
         assert_eq!(aad, vector["aad"].as_str().unwrap());
+    }
+
+    const ARGON2_VECTOR: &str =
+        include_str!("../../engine-core/tests/fixtures/dynodoc-key-v1-argon2id.json");
+
+    /// A file written with the older PBKDF2 derivation, at the minimum cost.
+    fn pbkdf2_file(pkcs8: &[u8], secret: &[u8]) -> Vec<u8> {
+        seal_with(
+            pkcs8,
+            secret,
+            None,
+            KdfParams::Pbkdf2 {
+                iterations: MIN_ITERATIONS,
+            },
+            &[7u8; SALT_BYTES],
+            [9u8; NONCE_BYTES],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn argon2id_independent_vector_decrypts_and_reencrypts_identically() {
+        // Generated by the reference Argon2 C code and OpenSSL; see
+        // crates/engine-core/tests/fixtures/gen_dynodoc_key_v1_argon2id.py.
+        let vector: serde_json::Value = serde_json::from_str(ARGON2_VECTOR).unwrap();
+        let file = &vector["file"];
+        let container = Container::parse(&serde_json::to_vec(file).unwrap()).unwrap();
+        assert_eq!(
+            container.kdf,
+            KdfParams::Argon2id {
+                time: 3,
+                memory_kib: 65_536,
+                lanes: 4
+            }
+        );
+        let passphrase = vector["passphrase"].as_str().unwrap();
+        let plain = container.open(passphrase.as_bytes()).unwrap();
+        let expected: Vec<u8> = (0..vector["pkcs8_hex"].as_str().unwrap().len() / 2)
+            .map(|i| {
+                u8::from_str_radix(&vector["pkcs8_hex"].as_str().unwrap()[2 * i..2 * i + 2], 16)
+                    .unwrap()
+            })
+            .collect();
+        assert_eq!(plain.as_bytes(), expected);
+        // The documented associated data is exactly what the vector authenticated.
+        assert_eq!(
+            String::from_utf8(container.aad()).unwrap(),
+            vector["aad"].as_str().unwrap()
+        );
+        // Re-encrypting with the vector's salt and nonce reproduces the file.
+        let salt = URL_SAFE_NO_PAD
+            .decode(file["kdf"]["salt"].as_str().unwrap())
+            .unwrap();
+        let nonce: [u8; 12] = URL_SAFE_NO_PAD
+            .decode(file["aead"]["nonce"].as_str().unwrap())
+            .unwrap()
+            .try_into()
+            .unwrap();
+        let sealed = seal_with(
+            &expected,
+            passphrase.as_bytes(),
+            None,
+            container.kdf,
+            &salt,
+            nonce,
+        )
+        .unwrap();
+        let sealed: serde_json::Value = serde_json::from_slice(&sealed).unwrap();
+        assert_eq!(&sealed, file);
+    }
+
+    #[test]
+    fn passphrases_get_argon2id_and_key_store_secrets_keep_pbkdf2() {
+        let key = pkcs8();
+        let file = seal(&key, b"a long enough passphrase", None).unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&file).unwrap();
+        assert_eq!(v["kdf"]["name"], ARGON2ID_NAME);
+        assert_eq!(v["kdf"]["iterations"], ARGON2_TIME);
+        assert_eq!(v["kdf"]["memory_kib"], ARGON2_MEMORY_KIB);
+        assert_eq!(v["kdf"]["parallelism"], ARGON2_LANES);
+        let secret = keystore::random_secret().unwrap();
+        let bound = Keystore {
+            provider: "macos-keychain".into(),
+            blob: None,
+        };
+        let file = seal(&key, secret.as_bytes(), Some(bound)).unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&file).unwrap();
+        assert_eq!(v["kdf"]["name"], KDF_NAME);
+        assert!(v["kdf"].get("memory_kib").is_none());
+    }
+
+    #[test]
+    fn argon2id_parameters_are_authenticated_and_bounded_before_any_derivation() {
+        type Edit = dyn Fn(&mut serde_json::Value);
+        let key = pkcs8();
+        let file = seal(&key, b"right passphrase", None).unwrap();
+        let original: serde_json::Value = serde_json::from_slice(&file).unwrap();
+        let parse = |edit: &Edit| {
+            let mut v = original.clone();
+            edit(&mut v);
+            Container::parse(&serde_json::to_vec(&v).unwrap())
+        };
+        // A valid-looking edit of any parameter changes the associated data.
+        let valid: [&Edit; 3] = [
+            &|v| v["kdf"]["memory_kib"] = (ARGON2_MEMORY_KIB / 2).into(),
+            &|v| v["kdf"]["parallelism"] = (ARGON2_LANES - 1).into(),
+            &|v| v["kdf"]["iterations"] = (ARGON2_TIME - 1).into(),
+        ];
+        for edit in valid {
+            let container = parse(edit).unwrap();
+            assert_eq!(
+                container.open(b"right passphrase").unwrap_err().to_string(),
+                GENERIC
+            );
+        }
+        // Outside the bounds, or the wrong shape, is refused without deriving.
+        let started = std::time::Instant::now();
+        let refused: [&Edit; 9] = [
+            &|v| v["kdf"]["memory_kib"] = (ARGON2_MIN_MEMORY_KIB - 1).into(),
+            &|v| v["kdf"]["memory_kib"] = (ARGON2_MAX_MEMORY_KIB + 1).into(),
+            &|v| v["kdf"]["memory_kib"] = u64::from(u32::MAX).into(),
+            &|v| v["kdf"]["iterations"] = (ARGON2_MIN_TIME - 1).into(),
+            &|v| v["kdf"]["iterations"] = (ARGON2_MAX_TIME + 1).into(),
+            &|v| v["kdf"]["parallelism"] = 0.into(),
+            &|v| v["kdf"]["parallelism"] = (ARGON2_MAX_LANES + 1).into(),
+            &|v| {
+                v["kdf"].as_object_mut().unwrap().remove("memory_kib");
+            },
+            &|v| {
+                v["kdf"].as_object_mut().unwrap().remove("parallelism");
+            },
+        ];
+        for edit in refused {
+            assert!(parse(edit).is_err());
+        }
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
+        // The extremes of the range are accepted by the parser.
+        assert!(parse(&|v| {
+            v["kdf"]["memory_kib"] = ARGON2_MAX_MEMORY_KIB.into();
+            v["kdf"]["iterations"] = ARGON2_MAX_TIME.into();
+            v["kdf"]["parallelism"] = ARGON2_MAX_LANES.into();
+        })
+        .is_ok());
+        // PBKDF2 files must not carry Argon2id fields.
+        let old = pbkdf2_file(&key, b"right passphrase");
+        let mut v: serde_json::Value = serde_json::from_slice(&old).unwrap();
+        v["kdf"]["memory_kib"] = ARGON2_MEMORY_KIB.into();
+        assert!(Container::parse(&serde_json::to_vec(&v).unwrap()).is_err());
+        // And an old file still opens.
+        assert!(Container::parse(&old)
+            .unwrap()
+            .open(b"right passphrase")
+            .is_ok());
     }
 
     #[test]
@@ -505,7 +784,7 @@ mod tests {
     #[test]
     fn iteration_salt_and_size_bounds_are_enforced_before_any_derivation() {
         let key = pkcs8();
-        let file = seal(&key, b"right passphrase", None).unwrap();
+        let file = pbkdf2_file(&key, b"right passphrase");
         let original: serde_json::Value = serde_json::from_slice(&file).unwrap();
         let with = |iterations: u64| {
             let mut v = original.clone();
