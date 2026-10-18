@@ -1,12 +1,54 @@
 # Design: commit pruning with signed history horizons
 
-> **Status: design, not implemented.** 14 October 2026. Nothing in this document
-> exists in source. It changes no commit format, migration, hash, API or CLI in the
-> current repository. Part of the [remaining-engine-designs index](ENGINE-REMAINING-DESIGNS.md).
+> **Status: design, with phases P0 and P1 built on 18 October 2026 as a library and one
+> read-only CLI verb; everything else is not implemented.** Written 14 October 2026. See
+> the [implementation note](#implementation-note-18-october-2026) for exactly what exists.
+> Nothing here changes a commit format, migration, hash or API, and nothing deletes data.
+> Part of the [remaining-engine-designs index](ENGINE-REMAINING-DESIGNS.md).
 > Item: `E-PRUNE`. Depends on: nothing mandatory; strongly benefits from
 > [witnesses and transparency](DESIGN-WITNESSES-AND-TRANSPARENCY.md) (publish horizon
 > records) and from the receipt authority being installed
 > ([decision](RECEIPT-AUTHORITY-DECISION.md)) before any shared use.
+
+## Implementation note (18 October 2026)
+
+**Exists** (specification [HORIZON-RECORD-V1.md](HORIZON-RECORD-V1.md); code in
+`crates/engine-core/src/repository/horizon.rs`, `horizon/` and `local/horizon_plan.rs`;
+no code path outside the new verb calls it; no schema, migration or commit change):
+
+- P0: the horizon record v1 field-level specification, canonical form, address, signature
+  domain and Merkle roots (section 5.1), the ten invariants as checks (5.2), the retention
+  policy schema `dynodoc.retention-policy.v1` with a strict loader returning every problem
+  by code and JSON pointer (section 4), and the vectors
+  `crates/engine-core/tests/fixtures/horizon-v1.json`, written by the independent
+  standard-library Python generator `gen_horizon_vectors.py` beside it and reproduced
+  byte for byte by `tests/horizon_vectors_test.rs` (records, envelopes, roots, policies and
+  ten planner scenarios).
+- P1: the read-only planner `plan(view, policy)` (retained set, skeleton, frontier, released
+  states and objects, v2/v3 closure, merge-base pins, holds, both tiers, canonical plan JSON
+  and plan hash), `LocalRepository::horizon_plan` over a read-only snapshot, and
+  `engine-cli repository DB PROJECT horizon-plan`. Property tests run random linear,
+  branchy, criss-cross and v2/v3-heavy histories (invariants I2, I3 on the skeleton-augmented
+  graph, I5, plan determinism and idempotence); real SQLite repositories are planned and
+  compared with the repository's own `merge_bases` and with re-materialized states.
+
+**Does not exist:** local schema 4 and every horizon, skeleton and progress table, the
+applier and its crash safety, skeleton-aware `import_commit` / `merge_bases` / `read_state`,
+`horizon-apply`, `horizon-show`, `horizon-verify`, the archive writer and
+`horizon-rehydrate`, signing flows (the signature domain and verifier exist; nothing
+produces a signature), holds storage and the `hold` verbs, sync, the PostgreSQL migration,
+guard and routes, the object collector, the transparency-log leaf, the Projects UI, and any
+deletion of a commit or object. The design's YAML policy form and its `retention-policy
+validate` verb are not built (the loader reads JSON, and `horizon-plan` reports policy
+problems); `policy.archive_unreachable` is reserved because the planner cannot test a
+destination. The plan-time target of section 1.5 and the reclaim target are not measured.
+
+**Differences from this design as written** (details and the open questions in
+HORIZON-RECORD-V1.md section 11): the verb has no `--top` and adds `--as-of-ms`; the
+frontier and skeleton of a horizon cover only what it released; the record gains no
+`topology` field (`topology:drop` goes in `evidence`); the planner needs an explicit instant
+for `keep_within_days`; `recovery_sources` and `holds` cannot be switched off; the merge-base
+equivalence of 11.3 I3 is asserted on the skeleton-augmented graph, not on bodies alone.
 
 ## 0. Summary
 
@@ -139,8 +181,8 @@ resolution record) must declare their evidence-pinning rules here before they sh
 | Quota release on object delete under erasure | PARTIAL | `migrations/0034_shared_storage_budgets.sql` (`account_shared_object_delete`); only reachable through the erasure guard |
 | Safe garbage collection of shared `checkpoint_object` bytes | MISSING | [SHARED-STORAGE-BUDGETS.md](SHARED-STORAGE-BUDGETS.md): "No garbage collector" |
 | Deleting a commit locally or on the service | MISSING | no code path; triggers forbid it |
-| Horizon record, skeleton rows, tombstone-aware import | MISSING | none |
-| Retention policy language | MISSING | none (only CLI flags `--top`, `--list`) |
+| Horizon record, skeleton rows, tombstone-aware import | PARTIAL | library only: record, roots, invariant checks and read-only planner (`crates/engine-core/src/repository/horizon.rs`, [HORIZON-RECORD-V1.md](HORIZON-RECORD-V1.md)); no skeleton rows or tables, no tombstone-aware import |
+| Retention policy language | PARTIAL | JSON schema and strict loader only (`.../horizon/policy.rs`); consumed by the read-only `horizon-plan`, never by a deleting operation; no YAML, no `validate` verb |
 | Archive bundle and re-hydration | MISSING | none |
 | Retention scope on device keys (`history:retention`) | MISSING | scopes are `project:read`, `history:read`, `history:write`, `history:review` (`migrations/0040_device_key_project_grants.sql`) |
 
