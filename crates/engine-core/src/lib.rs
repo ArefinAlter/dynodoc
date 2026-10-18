@@ -14,6 +14,7 @@ pub mod governance;
 pub mod integrity;
 pub mod log;
 pub mod materializer;
+pub mod merge_policy;
 pub mod ops;
 pub mod projection;
 pub mod repository;

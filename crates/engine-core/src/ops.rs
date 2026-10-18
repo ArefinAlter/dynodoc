@@ -408,14 +408,14 @@ fn var_name_taken(state: &DocumentState, var_name: &str, exclude: Option<&NodeId
     })
 }
 
-fn parse_node_type(raw: &str) -> Option<NodeType> {
+pub(crate) fn parse_node_type(raw: &str) -> Option<NodeType> {
     raw.parse().ok()
 }
 
 /// Containment rules for the instrument tree (docs/04 §D.1). Form/Section organize;
 /// Items hold Choices; Clause/Paragraph are the policy-document kinds the engine
 /// stays compatible with. A Choice and a Paragraph are leaves — they contain nothing.
-fn can_contain(parent: NodeType, child: NodeType) -> bool {
+pub(crate) fn can_contain(parent: NodeType, child: NodeType) -> bool {
     use NodeType::*;
     matches!(
         (parent, child),
@@ -430,7 +430,7 @@ fn can_contain(parent: NodeType, child: NodeType) -> bool {
 }
 
 /// Document-root-eligible node types (a parentless node must be one of these).
-fn is_root_type(node_type: NodeType) -> bool {
+pub(crate) fn is_root_type(node_type: NodeType) -> bool {
     matches!(node_type, NodeType::Form | NodeType::Clause)
 }
 

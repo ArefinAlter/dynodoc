@@ -2,6 +2,7 @@
 //! Deletion versus editing is a conflict, including structural edits. Canonical
 //! history is never replaced: `diff` emits new semantic operations only.
 use crate::materializer::{DocumentState, MaterializedNode};
+use crate::merge_policy::{self, MergeEvidence, MergePolicy, Registry};
 use engine_shared::{EventPayload, NodeId};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -87,11 +88,91 @@ fn select(
         }
     }
 }
+/// Where a three-way difference is decided.
+pub(crate) struct At<'a> {
+    pub id: &'a NodeId,
+    pub node_type: &'a str,
+    pub field: &'a str,
+}
+/// How `merge_with` settles one field. The plain `merge` uses [`select`] directly;
+/// a policy supplies strategies and records the decision.
+pub(crate) trait Selector {
+    fn select(
+        &mut self,
+        at: At<'_>,
+        base: Value,
+        team: Value,
+        draft: Value,
+        resolutions: &BTreeMap<String, String>,
+        conflicts: &mut Vec<Conflict>,
+    ) -> Value;
+}
+struct Direct;
+impl Selector for Direct {
+    fn select(
+        &mut self,
+        at: At<'_>,
+        base: Value,
+        team: Value,
+        draft: Value,
+        resolutions: &BTreeMap<String, String>,
+        conflicts: &mut Vec<Conflict>,
+    ) -> Value {
+        select(at.id, at.field, base, team, draft, resolutions, conflicts)
+    }
+}
 pub fn merge(
     base: &DocumentState,
     team: &DocumentState,
     draft: &DocumentState,
     resolutions: &BTreeMap<String, String>,
+) -> MergePlan {
+    merge_with(base, team, draft, resolutions, &mut Direct)
+}
+/// The same merge, with the decision for each differing field taken by the default
+/// policy `dynodoc.default.v1`, which reproduces [`merge`] exactly, or by `policy`.
+/// The plan has the same fields; the evidence says which rule and strategy decided
+/// each field and which invariants the merged state breaks. Unless the policy asks
+/// for it (`defaults.invariants: conflict`, or a gate that is not `auto`) the plan
+/// is the one `merge` returns.
+pub fn merge_with_policy(
+    base: &DocumentState,
+    team: &DocumentState,
+    draft: &DocumentState,
+    resolutions: &BTreeMap<String, String>,
+    policy: &MergePolicy,
+) -> (MergePlan, MergeEvidence) {
+    merge_with_registry(base, team, draft, resolutions, policy, &Registry::builtin())
+}
+/// [`merge_with_policy`] with the strategies of `registry`. A rule that names a
+/// strategy the registry lacks makes its decisions conflicts.
+pub fn merge_with_registry(
+    base: &DocumentState,
+    team: &DocumentState,
+    draft: &DocumentState,
+    resolutions: &BTreeMap<String, String>,
+    policy: &MergePolicy,
+    registry: &Registry,
+) -> (MergePlan, MergeEvidence) {
+    let family = merge_policy::Family::of(&[base, team, draft]);
+    let mut engine = merge_policy::engine::Engine::new(policy, registry, family);
+    let mut plan = merge_with(base, team, draft, resolutions, &mut engine);
+    let mut evidence = engine.finish();
+    merge_policy::invariants::apply(
+        &mut plan,
+        &canonical(team),
+        &canonical(draft),
+        policy.defaults.invariants,
+        &mut evidence,
+    );
+    (plan, evidence)
+}
+fn merge_with<S: Selector>(
+    base: &DocumentState,
+    team: &DocumentState,
+    draft: &DocumentState,
+    resolutions: &BTreeMap<String, String>,
+    selector: &mut S,
 ) -> MergePlan {
     let base = canonical(base);
     let team = canonical(team);
@@ -111,9 +192,12 @@ pub fn merge(
             || b.is_some_and(|b| b.deleted != d.deleted)
             || t.zip(b).is_some_and(|(t, b)| t.deleted != b.deleted)
         {
-            let picked = select(
-                id,
-                "$node",
+            let picked = selector.select(
+                At {
+                    id,
+                    node_type: &d.node_type,
+                    field: "$node",
+                },
                 value(b),
                 value(t),
                 value(Some(d)),
@@ -128,9 +212,13 @@ pub fn merge(
         let b = b.unwrap();
         let t = t.unwrap();
         let mut n = t.clone();
-        let loc = select(
+        let at = |field| At {
             id,
-            "$location",
+            node_type: &t.node_type,
+            field,
+        };
+        let loc = selector.select(
+            at("$location"),
             location(b),
             location(t),
             location(d),
@@ -139,9 +227,8 @@ pub fn merge(
         );
         n.parent_id = serde_json::from_value(loc["parent_id"].clone()).unwrap_or(None);
         n.pos = loc["pos"].as_str().unwrap_or(&t.pos).into();
-        n.var_name = serde_json::from_value(select(
-            id,
-            "var_name",
+        n.var_name = serde_json::from_value(selector.select(
+            at("var_name"),
             json!(b.var_name),
             json!(t.var_name),
             json!(d.var_name),
@@ -176,9 +263,8 @@ pub fn merge(
             {
                 continue;
             }
-            let v = select(
-                id,
-                key,
+            let v = selector.select(
+                at(key),
                 b.current_fields[key].clone(),
                 t.current_fields[key].clone(),
                 d.current_fields[key].clone(),
@@ -269,7 +355,7 @@ pub fn merge_strict(
 }
 
 /// The first parent cycle, walking each parent chain once without copying ids.
-fn find_parent_cycle(state: &DocumentState) -> Option<Vec<NodeId>> {
+pub(crate) fn find_parent_cycle(state: &DocumentState) -> Option<Vec<NodeId>> {
     let mut visited: BTreeSet<&NodeId> = BTreeSet::new();
     for start in state.nodes.keys() {
         let (mut path, mut on_path) = (Vec::new(), BTreeSet::new());
@@ -572,7 +658,7 @@ fn var_name_conflict(
 }
 /// A resolution that is a typed variable name: not a side, not empty, no stray
 /// whitespace, and bounded in length.
-fn is_new_name(name: &str) -> bool {
+pub(crate) fn is_new_name(name: &str) -> bool {
     !matches!(name, "team" | "draft")
         && !name.is_empty()
         && name.trim() == name
