@@ -91,7 +91,10 @@ fn respelled_policies_share_a_canonical_form_and_distinct_ones_do_not() {
         let other = by_name(v["same_as"].as_str().unwrap());
         assert_eq!(v["canonical"], other["canonical"]);
         assert_eq!(v["sha256"], other["sha256"]);
-        assert_ne!(v["input"], other["input"], "a respelling must differ in text");
+        assert_ne!(
+            v["input"], other["input"],
+            "a respelling must differ in text"
+        );
         pairs += 1;
     }
     assert!(pairs >= 1);

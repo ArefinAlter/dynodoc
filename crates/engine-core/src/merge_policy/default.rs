@@ -9,7 +9,7 @@
 use super::{
     policy::MergePolicy,
     registry::Registry,
-    strategy::{Context, Inputs, Reason, Resolved, Strategy},
+    strategy::{Context, Inputs, Laws, Reason, Resolved, Strategy},
 };
 use serde_json::Value;
 use std::sync::OnceLock;
@@ -97,6 +97,15 @@ pub struct RichText;
 impl Strategy for RichText {
     fn id(&self) -> &'static str {
         "dynodoc.default.richtext.v1"
+    }
+    /// Symmetry holds only up to the order of marks on a run: when both sides add a
+    /// mark to the same run, the merged marks are listed in the team's order first
+    /// (`richtext::merge_marks`). The set of marks is the same either way, which
+    /// `tests/merge_policy_laws_test.rs` checks; `convergence` hides the order by
+    /// merging from one canonical orientation. Frozen behaviour, so it is not a
+    /// promise here.
+    fn promises(&self) -> Laws {
+        Laws::ALL.without(Laws::SYMMETRY)
     }
     fn resolve(&self, i: &Inputs<'_>, _: &Context<'_>) -> Resolved {
         if let Some(done) = unchanged_side(i) {
