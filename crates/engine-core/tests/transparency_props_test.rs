@@ -245,6 +245,20 @@ fn transparency_tamper_any_byte_of_a_proof_or_root_or_leaf_fails() {
             assert!(verify_inclusion(&leaf, index, size, &proof, &bad_root).is_err());
         }
     }
+    // A path belongs to one index: no other index (or one past the end) verifies with it.
+    for size in [13u64, 70] {
+        let root = tree_root(&tree, size).unwrap();
+        for index in 0..size {
+            let leaf = tree.node(0, index).unwrap();
+            let proof = inclusion_proof(&tree, index, size).unwrap();
+            for other in (0..size + 3).filter(|o| *o != index) {
+                assert!(
+                    verify_inclusion(&leaf, other, size, &proof, &root).is_err(),
+                    "path of {index} accepted for {other} of {size}"
+                );
+            }
+        }
+    }
     for (first, second) in [(1u64, 70u64), (6, 21), (32, 70), (33, 70), (69, 70)] {
         let (r1, r2) = (
             tree_root(&tree, first).unwrap(),
