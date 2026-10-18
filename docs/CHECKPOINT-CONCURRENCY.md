@@ -30,7 +30,7 @@ no staged objects, new migrations, changed hash bytes or new recovery obligation
 |---|---|
 | Core append | NO KEY UPDATE; allocate consecutive sequence/hash after acquiring the writer lock. |
 | API operations, batch/merge/draft/version/publication paths through `begin_write` | NO KEY UPDATE; read permissions/state and validate after locking. |
-| Workspace membership/settings through `begin_write` | Same writer lock; access changes and content writes remain mutually exclusive. |
+| Workspace membership, settings and draft saves through `begin_write_locked` | Same writer lock without reconstructing canonical state; access changes and content writes remain mutually exclusive. |
 | Explicit and periodic checkpoints, exact shared load | KEY SHARE; protect against erasure while reading a pinned immutable revision. |
 | `provenance::read_checkpoint` export | Existing SHARE; continues excluding content/permission writers through its authorized read. |
 | People policies/ownership, connector grants/revocation, product move/trash/public-link listing/revocation | Existing UPDATE locks remain; these paths may still wait for a checkpoint. |

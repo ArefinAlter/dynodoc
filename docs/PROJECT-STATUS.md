@@ -1,5 +1,54 @@
 # Dynodoc: intent, current implementation and remaining work
 
+## Source: engine PR integration and dependency migrations (18 October 2026)
+
+Reviewed the thirteen open standalone-engine PRs with four independent read-only reviews, then
+merged twelve through one integration PR (merge commits, authors kept): #14, #16, #17 (conflict
+handling for parent cycles, blocks placed in deleted containers and clashing variable names),
+#29 (names freed in the same change), #30 (merge-law property tests), #38 (restore a moved or
+renamed block), #27 (inline atoms in the rich-text merge), #34 (node rows follow the event fold),
+#35 (per-link pseudonyms in public copies), #37 (no canonical replay for member settings,
+metadata and draft saves), and the two dependency PRs #5 (ulid 3) and #22 (axum 0.8), which
+needed code migrations (`Ulid::generate`, brace path parameters, native async extractors).
+#13 was closed by its author. **#39 (keep each side's insert runs together) is held**; see below.
+
+Patches added on top of the contributor work, each with a test that fails without it:
+
+| PR | Problem found in review | Fix |
+|---|---|---|
+| #34 | every op read `current_fields` and created blocks did a lookup; property test still accepted the null-field difference | creates skip the lookup, only field edits read fields; the test accepts only the removed-choice marker; hand test for a removed choice that is edited, deleted and restored |
+| #27 | atoms align by position, so a deletion or swap on one side plus an edit on the other moved the edit to a different image | both sides changing the atom at one slot differently is a conflict; a literal U+FFFC is refused |
+| #35 | nested editor `blockId`s and an orphan `parent_id` still carried a real ULID into every link; unlabelled HMAC | those ids get the same pseudonyms; the HMAC input is domain-separated |
+| #14 | a cycle through a draft-new block could not be repaired with "team" | the repair picks a block the team also has |
+| #16 | one scan per orphaned block under the document lock | all blocks in the missing container leave in one pass |
+| #17 | typed names unchecked; rejecting a draft-only block orphaned its children | names must be non-empty, trimmed, at most 128 bytes; the draft-only subtree is removed with it |
+| #14, #16, #17 | contradictory explicit choices ran to the 2N+1 pass budget under the lock | meeting the same repair twice reports the conflict and stops |
+| #30 | random seeds (red runs not reproducible), thin laws, no proof the generator reaches its cases | fixed seed with environment override; identity, label-conflict, determinism and replay laws; coverage floors |
+| #38 | a second nameless restore failed; a restore that kept its name came before its holder's deletion | clearing a name is never a clash; such a restore waits for the holder to leave |
+
+Behaviour to know. Public-copy node ids change per link (clients must use ids from the response).
+Member settings, metadata and draft saves now succeed when canonical history does not replay;
+content reads and review transitions still return `replay_failed`
+([HISTORY-RECOVERY.md](HISTORY-RECOVERY.md)). Deleted blocks may be moved and renamed (not edited)
+so a restore can bring them back elsewhere.
+Siblings with exactly equal position keys may render in a different order in a shared link than
+in the owner's view, because a public copy lists blocks by pseudonym and the viewer breaks ties by
+list order; the viewer does not sort by id.
+
+**Held: #39.** It flips insert runs that do not interleave, loses deleted or moved siblings as
+separators and grows keys on every pull, and its "team run first" rule contradicts the
+documented tie-break (order same-position inserts by node id and mark them for review). It needs
+a design decision and fixes before it can merge.
+
+**Owner decision still open.** The merge changes (#14 to #17, #21, #27, #38) alter the result of
+`merge` for existing inputs, and `verify_same_file_resolutions` re-runs it for strategy
+`dynodoc.same-file.node-field.v1`. No v3 commits exist in production, so nothing breaks today.
+Before the first v3 commit is created anywhere, either bump the strategy id (the
+[node-conflict design](DESIGN-NODE-CONFLICT-RESOLUTION.md) requires a new id for a different
+algorithm) or freeze merge behaviour.
+
+Not deployed. Production runs the schema 41 release; none of these changes alter the schema.
+
 ## Source: engine PR integration (15 October 2026)
 
 Reviewed all 24 open standalone-engine PRs. Fourteen were merged through one integration PR

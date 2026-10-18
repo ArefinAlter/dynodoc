@@ -100,6 +100,21 @@ Historical checkpoint downloads are full JSON; native exports reconstruct the
 supported subset in browser memory. Source title/kind and access metadata are current metadata;
 the content state and chain anchor refer to the requested revision.
 
+## A document whose history no longer replays
+
+Reads of its current state, content writes and review transitions fail with
+`replay_failed`, naming the document and the first event that does not apply; the
+admin overview counts them by error code. Member access, title and settings, and
+private draft saves still work, but a request cannot be submitted, reviewed or
+closed while its content cannot be reconstructed. Events are never edited or deleted.
+
+1. Confirm it with `engine-cli verify DOC`, which replays from the first event and
+   names the failing seq N.
+2. Recover the content: `GET /documents/{id}/state?through_seq=N-1` still returns the
+   last good revision, which can be recreated as a new document. Recovery drafts
+   (above) cannot be used, because they start from the current head.
+3. Tell the document's owner and point people to the recovered copy.
+
 ## Remaining work
 
 - Hosted/native adoption of local commit-addressed cherry-pick/revert, field/run-level selection and
