@@ -22,21 +22,21 @@ use uuid::Uuid;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route(
-            "/documents/:id/provenance",
+            "/documents/{id}/provenance",
             get(checkpoint)
                 .post(push)
                 .layer(axum::extract::DefaultBodyLimit::max(16 * 1024 * 1024)),
         )
-        .route("/documents/:id/provenance/bundles/:bundle", get(bundle))
-        .route("/documents/:id/connectors", get(grants).post(grant))
-        .route("/documents/:id/connectors/:grant/revoke", post(revoke))
+        .route("/documents/{id}/provenance/bundles/{bundle}", get(bundle))
+        .route("/documents/{id}/connectors", get(grants).post(grant))
+        .route("/documents/{id}/connectors/{grant}/revoke", post(revoke))
         .route("/connector/connection", get(connection))
         .route(
-            "/connector/documents/:id/checkpoint",
+            "/connector/documents/{id}/checkpoint",
             get(connector_checkpoint),
         )
         .route(
-            "/connector/documents/:id/bundles",
+            "/connector/documents/{id}/bundles",
             post(connector_push).layer(axum::extract::DefaultBodyLimit::max(16 * 1024 * 1024)),
         )
 }
@@ -428,7 +428,6 @@ struct Connector {
     grant: Uuid,
     host: String,
 }
-#[axum::async_trait]
 impl FromRequestParts<AppState> for Connector {
     type Rejection = ApiError;
     async fn from_request_parts(parts: &mut Parts, s: &AppState) -> Result<Self, ApiError> {

@@ -16,6 +16,8 @@ use std::collections::BTreeMap;
 use crate::materializer::DocumentState;
 
 const MAX_SCALARS: usize = 100_000;
+/// One scalar standing for a leaf inline node in a merge (U+FFFC OBJECT REPLACEMENT).
+const ATOM: char = '\u{FFFC}';
 const MAX_DEPTH: usize = 64;
 
 pub fn plain_text(value: &Value) -> String {
@@ -84,7 +86,9 @@ fn props(value: &Value) -> Option<Value> {
     map.remove("content");
     Some(Value::Object(map))
 }
-fn inline(value: &Value, styles: &mut Styles) -> Option<Vec<Scalar>> {
+/// With `atoms`, which only merges use, a leaf inline node such as a hard break,
+/// equation or footnote reference is one [`ATOM`] scalar whose style is the node.
+fn inline(value: &Value, styles: &mut Styles, atoms: bool) -> Option<Vec<Scalar>> {
     // Only known text containers may be interpreted as an empty inline sequence.
     if !matches!(
         value["type"].as_str(),
@@ -100,14 +104,25 @@ fn inline(value: &Value, styles: &mut Styles) -> Option<Vec<Scalar>> {
     let mut out = Vec::new();
     for child in children {
         if child["type"] != "text" || child.get("content").is_some() {
-            return None;
+            if !atoms || !child["type"].is_string() || child.get("content").is_some() {
+                return None;
+            }
+            if out.len() == MAX_SCALARS {
+                return None;
+            }
+            out.push(Scalar {
+                ch: ATOM,
+                style: styles.intern(child.clone()),
+            });
+            continue;
         }
         let text = child["text"].as_str()?;
         let mut metadata = child.as_object()?.clone();
         metadata.remove("text");
         let style = styles.intern(Value::Object(metadata));
         for ch in text.chars() {
-            if out.len() == MAX_SCALARS {
+            // A literal object-replacement character would align with an atom.
+            if out.len() == MAX_SCALARS || (atoms && ch == ATOM) {
                 return None;
             }
             out.push(Scalar { ch, style });
@@ -115,7 +130,7 @@ fn inline(value: &Value, styles: &mut Styles) -> Option<Vec<Scalar>> {
     }
     Some(out)
 }
-fn children(tokens: &[Scalar], styles: &[Value]) -> Result<Vec<Value>, PatchError> {
+fn children(tokens: &[Scalar], styles: &[Value], atoms: bool) -> Result<Vec<Value>, PatchError> {
     let mut out = Vec::new();
     let mut i = 0;
     while i < tokens.len() {
@@ -125,6 +140,11 @@ fn children(tokens: &[Scalar], styles: &[Value]) -> Result<Vec<Value>, PatchErro
             .and_then(Value::as_object)
             .cloned()
             .ok_or(PatchError("unknown style"))?;
+        if atoms && tokens[i].ch == ATOM && metadata.get("type") != Some(&json!("text")) {
+            out.push(Value::Object(metadata));
+            i += 1;
+            continue;
+        }
         if metadata.get("type") != Some(&json!("text"))
             || metadata.contains_key("text")
             || metadata.contains_key("content")
@@ -234,7 +254,7 @@ fn build(
     }
     if path.len() < MAX_DEPTH && a["type"] == b["type"] && props(a).is_some() && props(b).is_some()
     {
-        if let (Some(x), Some(y)) = (inline(a, styles), inline(b, styles)) {
+        if let (Some(x), Some(y)) = (inline(a, styles, false), inline(b, styles, false)) {
             if props(a) != props(b) {
                 edits.push(RichTextEdit::Props {
                     path: path.clone(),
@@ -340,7 +360,7 @@ pub fn apply_patch(before: &Value, patch: &RichTextPatch) -> Result<Value, Patch
             }
             RichTextEdit::Text { ops, .. } => {
                 let mut styles = Styles::default();
-                let input = inline(target, &mut styles)
+                let input = inline(target, &mut styles, false)
                     .ok_or(PatchError("not an inline text container"))?;
                 let added: Vec<_> = patch
                     .styles
@@ -386,7 +406,7 @@ pub fn apply_patch(before: &Value, patch: &RichTextPatch) -> Result<Value, Patch
                 if cursor != input.len() {
                     return Err(PatchError("incomplete consumption"));
                 }
-                target["content"] = json!(children(&result, &styles.values)?);
+                target["content"] = json!(children(&result, &styles.values, false)?);
             }
         }
     }
@@ -551,9 +571,9 @@ fn overlaps(a: &Hunk, b: &Hunk) -> bool {
 }
 fn merge_inline(base: &Value, team: &Value, draft: &Value) -> Option<Value> {
     let mut styles = Styles::default();
-    let b = inline(base, &mut styles)?;
-    let t = inline(team, &mut styles)?;
-    let d = inline(draft, &mut styles)?;
+    let b = inline(base, &mut styles, true)?;
+    let t = inline(team, &mut styles, true)?;
+    let d = inline(draft, &mut styles, true)?;
     let bp = props(base)?;
     let tp = props(team)?;
     let dp = props(draft)?;
@@ -601,6 +621,11 @@ fn merge_inline(base: &Value, team: &Value, draft: &Value) -> Option<Value> {
         for i in cursor..h.start {
             let ts = t[*tm.get(i)?.as_ref()?].style;
             let ds = d[*dm.get(i)?.as_ref()?].style;
+            // Atoms align by position, not identity: if both sides changed the one at
+            // this slot differently they may be different atoms, so never merge them.
+            if b[i].ch == ATOM && ts != b[i].style && ds != b[i].style && ts != ds {
+                return None;
+            }
             let metadata = merge_property(
                 Some(&styles.values[b[i].style]),
                 Some(&styles.values[ts]),
@@ -615,7 +640,7 @@ fn merge_inline(base: &Value, team: &Value, draft: &Value) -> Option<Value> {
         result.extend(h.insert);
         cursor = h.end;
     }
-    out["content"] = json!(children(&result, &styles.values).ok()?);
+    out["content"] = json!(children(&result, &styles.values, true).ok()?);
     Some(out)
 }
 

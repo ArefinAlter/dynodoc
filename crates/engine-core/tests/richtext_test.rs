@@ -251,3 +251,68 @@ fn image_attributes_merge_key_by_key() {
     narrow["attrs"]["width"] = json!(50);
     assert!(richtext::merge(&img, &width, &narrow).is_none());
 }
+
+#[test]
+fn edits_around_an_inline_atom_merge() {
+    let para = |c: Value| json!({"type":"paragraph","content":c});
+    let t = |s: &str| json!({"type":"text","text":s});
+    for atom in [
+        json!({"type":"hardBreak"}),
+        json!({"type":"inlineMath","attrs":{"latex":"x^2"}}),
+        json!({"type":"footnoteReference","attrs":{"id":"1"}}),
+    ] {
+        let base = para(json!([t("first line"), atom.clone(), t("second line")]));
+        let team = para(json!([t("FIRST line"), atom.clone(), t("second line")]));
+        let draft = para(json!([t("first line"), atom.clone(), t("second LINE")]));
+        assert_eq!(
+            richtext::merge(&base, &team, &draft),
+            Some(para(json!([
+                t("FIRST line"),
+                atom.clone(),
+                t("second LINE")
+            ]))),
+            "{atom}"
+        );
+    }
+}
+
+#[test]
+fn same_atom_edited_differently_conflicts() {
+    let para = |c: Value| json!({"type":"paragraph","content":c});
+    let t = |s: &str| json!({"type":"text","text":s});
+    let math = |latex: &str| json!({"type":"inlineMath","attrs":{"latex":latex}});
+    let base = para(json!([t("alpha "), math("x^2"), t(" omega")]));
+    let squared = para(json!([t("alpha "), math("x^3"), t(" omega")]));
+    let cubed = para(json!([t("alpha "), math("x^4"), t(" omega")]));
+    assert!(richtext::merge(&base, &squared, &cubed).is_none());
+    // One side's change to the atom still combines with the other side's wording.
+    let reworded = para(json!([t("alpha "), math("x^2"), t(" OMEGA")]));
+    assert_eq!(
+        richtext::merge(&base, &squared, &reworded),
+        Some(para(json!([t("alpha "), math("x^3"), t(" OMEGA")])))
+    );
+}
+
+#[test]
+fn adjacent_or_reordered_atoms_are_not_merged_by_position() {
+    let para = |c: Value| json!({"type":"paragraph","content":c});
+    let img = |s: &str, w: u32| json!({"type":"image","attrs":{"src":s,"width":w}});
+    let base = para(json!([img("a.png", 100), img("b.png", 100)]));
+    let resized = para(json!([img("a.png", 200), img("b.png", 100)]));
+    // One side deletes the first image while the other resizes it.
+    let deleted = para(json!([img("b.png", 100)]));
+    assert!(richtext::merge(&base, &deleted, &resized).is_none());
+    // One side swaps the images while the other resizes the first.
+    let swapped = para(json!([img("b.png", 100), img("a.png", 100)]));
+    assert!(richtext::merge(&base, &swapped, &resized).is_none());
+}
+
+#[test]
+fn a_literal_object_replacement_character_is_not_an_atom() {
+    let para = |c: Value| json!({"type":"paragraph","content":c});
+    let t = |s: &str| json!({"type":"text","text":s});
+    let base = para(json!([t("a\u{fffc}b"), json!({"type":"hardBreak"})]));
+    let team = para(json!([t("A\u{fffc}b"), json!({"type":"hardBreak"})]));
+    let draft = para(json!([t("a\u{fffc}B"), json!({"type":"hardBreak"})]));
+    assert!(richtext::merge(&base, &team, &draft).is_none());
+}

@@ -25,9 +25,9 @@ use engine_shared::IdentityId;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/documents", get(list_documents).post(create_document))
-        .route("/documents/:id", get(get_document))
-        .route("/documents/:id/node/:node_id", get(get_node))
-        .route("/documents/:id/events", get(list_events))
+        .route("/documents/{id}", get(get_document))
+        .route("/documents/{id}/node/{node_id}", get(get_node))
+        .route("/documents/{id}/events", get(list_events))
 }
 
 // --- list -----------------------------------------------------------------------

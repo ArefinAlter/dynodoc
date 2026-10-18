@@ -34,9 +34,9 @@ use engine_shared::IdentityId;
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/documents/:id/verify", get(verify))
-        .route("/documents/:id/snapshot/:snapshot_id", get(get_snapshot))
-        .route("/documents/:id/merkle-proof/:event_id", get(merkle_proof))
+        .route("/documents/{id}/verify", get(verify))
+        .route("/documents/{id}/snapshot/{snapshot_id}", get(get_snapshot))
+        .route("/documents/{id}/merkle-proof/{event_id}", get(merkle_proof))
 }
 
 // --- verify ---------------------------------------------------------------------

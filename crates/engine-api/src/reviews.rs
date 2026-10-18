@@ -33,29 +33,29 @@ use uuid::Uuid;
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/documents/:id/history-points", get(history_points))
-        .route("/documents/:id/state", get(state_at))
+        .route("/documents/{id}/history-points", get(history_points))
+        .route("/documents/{id}/state", get(state_at))
         .route(
-            "/documents/:id/change-requests",
+            "/documents/{id}/change-requests",
             get(list)
                 .post(create)
                 .layer(axum::extract::DefaultBodyLimit::max(16 * 1024 * 1024)),
         )
-        .route("/documents/:id/change-requests/:draft_id", get(detail))
+        .route("/documents/{id}/change-requests/{draft_id}", get(detail))
         .route(
-            "/documents/:id/change-requests/:draft_id/merge",
+            "/documents/{id}/change-requests/{draft_id}/merge",
             post(merge),
         )
         .route(
-            "/documents/:id/change-requests/:draft_id/decline",
+            "/documents/{id}/change-requests/{draft_id}/decline",
             post(decline),
         )
         .route(
-            "/documents/:id/change-requests/:draft_id/reviews",
+            "/documents/{id}/change-requests/{draft_id}/reviews",
             post(review),
         )
-        .route("/documents/:id/drafts/:draft_id/submit", post(submit))
-        .route("/documents/:id/drafts/:draft_id/withdraw", post(withdraw))
+        .route("/documents/{id}/drafts/{draft_id}/submit", post(submit))
+        .route("/documents/{id}/drafts/{draft_id}/withdraw", post(withdraw))
 }
 
 fn bad(reason: &str) -> ApiError {

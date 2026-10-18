@@ -30,7 +30,7 @@ async fn seed(pool: &PgPool) -> anyhow::Result<(IdentityId, DocumentId, NodeId)>
     .bind(actor)
     .fetch_one(pool)
     .await?;
-    let node = NodeId(ulid::Ulid::new().to_string());
+    let node = NodeId(ulid::Ulid::generate().to_string());
     sqlx::query(
         "insert into node(id,document_id,type,pos,current_fields) values($1,$2,'form','a0','{}')",
     )

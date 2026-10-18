@@ -29,7 +29,7 @@ async fn seed(pool: &PgPool) -> anyhow::Result<(IdentityId, DocumentId, NodeId)>
     // system the stage-16 op handlers insert the node row in the same transaction as
     // the NodeCreated event; here (stage-15 in isolation) we insert it directly so
     // the append FK is satisfied. The fold itself works purely off the event stream.
-    let root = NodeId(ulid::Ulid::new().to_string());
+    let root = NodeId(ulid::Ulid::generate().to_string());
     sqlx::query(
         "insert into node (id, document_id, parent_id, type, pos, current_fields, var_name)
          values ($1, $2, null, 'form', 'a0', '{}'::jsonb, null)",

@@ -104,7 +104,7 @@ pub struct StreamParams {
 }
 
 pub fn router() -> Router<AppState> {
-    Router::new().route("/documents/:id/stream", get(document_stream))
+    Router::new().route("/documents/{id}/stream", get(document_stream))
 }
 
 /// Subscribe to a document's live event stream. Authenticated (a live socket is for

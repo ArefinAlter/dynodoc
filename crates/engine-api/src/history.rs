@@ -19,7 +19,7 @@ use uuid::Uuid;
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/documents/:id/history-recovery", post(recover))
+        .route("/documents/{id}/history-recovery", post(recover))
         .layer(axum::extract::DefaultBodyLimit::max(256 * 1024))
 }
 

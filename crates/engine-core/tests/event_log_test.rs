@@ -32,7 +32,7 @@ async fn seed(pool: &PgPool) -> sqlx::Result<(IdentityId, DocumentId, NodeId)> {
             .fetch_one(pool)
             .await?;
 
-    let node_id = ulid::Ulid::new().to_string();
+    let node_id = ulid::Ulid::generate().to_string();
     sqlx::query(
         "insert into node (id, document_id, parent_id, type, pos, current_fields, var_name)
          values ($1, $2, null, 'item', 'a0', '{}'::jsonb, $3)",
@@ -247,7 +247,7 @@ async fn full_chain_verification_rejects_negative_sequence_rows(
          (id, document_id, seq, type, actor_id, payload, content_hash, prev_chain_hash, chain_hash)
          values ($1, $2, -1, 'FieldEdited', $3, '{}'::jsonb, $4, $5, $6)",
     )
-    .bind(ulid::Ulid::new().to_string())
+    .bind(ulid::Ulid::generate().to_string())
     .bind(doc.0)
     .bind(actor.0)
     .bind(ZERO_HASH.as_slice())

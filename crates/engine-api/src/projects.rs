@@ -21,12 +21,12 @@ use uuid::Uuid;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/projects", get(list).post(create))
-        .route("/projects/:id", get(detail))
-        .route("/projects/:id/files", get(files))
-        .route("/projects/:id/change-requests", get(requests))
-        .route("/projects/:id/drafts", get(drafts))
-        .route("/projects/:id/settings", post(settings))
-        .route("/projects/:id/watch", post(watch))
+        .route("/projects/{id}", get(detail))
+        .route("/projects/{id}/files", get(files))
+        .route("/projects/{id}/change-requests", get(requests))
+        .route("/projects/{id}/drafts", get(drafts))
+        .route("/projects/{id}/settings", post(settings))
+        .route("/projects/{id}/watch", post(watch))
 }
 fn bad(reason: &str) -> ApiError {
     ApiError::BadRequest {

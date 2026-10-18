@@ -53,26 +53,26 @@ async fn authority_keys(db: &mut PgConnection) -> Result<Authority, ApiError> {
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/projects/:id/history/commits", post(publish))
-        .route("/projects/:id/history/commits/:address", get(commit))
+        .route("/projects/{id}/history/commits", post(publish))
+        .route("/projects/{id}/history/commits/{address}", get(commit))
         .route(
-            "/projects/:id/history/commits/:address/acknowledge",
+            "/projects/{id}/history/commits/{address}/acknowledge",
             post(acknowledge),
         )
         .route(
-            "/projects/:id/history/commits/:address/objects/:document",
+            "/projects/{id}/history/commits/{address}/objects/{document}",
             get(inventory),
         )
         .route(
-            "/projects/:id/history/commits/:address/objects/:document/:object",
+            "/projects/{id}/history/commits/{address}/objects/{document}/{object}",
             get(object),
         )
-        .route("/projects/:id/history/refs", get(refs).post(advance))
-        .route("/projects/:id/history/reviews", get(reviews).post(review))
-        .route("/projects/:id/history/storage", get(storage))
-        .route("/projects/:id/history/authority", get(authority))
-        .route("/projects/:id/history/authority/rotations", get(rotations))
-        .route("/projects/:id/history/receipts", get(receipts))
+        .route("/projects/{id}/history/refs", get(refs).post(advance))
+        .route("/projects/{id}/history/reviews", get(reviews).post(review))
+        .route("/projects/{id}/history/storage", get(storage))
+        .route("/projects/{id}/history/authority", get(authority))
+        .route("/projects/{id}/history/authority/rotations", get(rotations))
+        .route("/projects/{id}/history/receipts", get(receipts))
         .layer(DefaultBodyLimit::max(20 * 1024))
 }
 

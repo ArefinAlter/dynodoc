@@ -17,10 +17,10 @@ use uuid::Uuid;
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/documents/:id/people", get(people))
-        .route("/documents/:id/policy", post(set_policy))
-        .route("/documents/:id/policy/inherit", post(inherit_policy))
-        .route("/documents/:id/owner", post(transfer))
+        .route("/documents/{id}/people", get(people))
+        .route("/documents/{id}/policy", post(set_policy))
+        .route("/documents/{id}/policy/inherit", post(inherit_policy))
+        .route("/documents/{id}/owner", post(transfer))
 }
 
 fn bad(reason: &str) -> ApiError {

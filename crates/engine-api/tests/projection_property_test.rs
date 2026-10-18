@@ -1,5 +1,5 @@
 //! Generated operations of every type, sent through the API one at a time. After each,
-//! the node table must match a verified replay apart from the two known encodings.
+//! the node table must match a verified replay apart from the known removed-choice marker.
 #[path = "../../engine-core/tests/support/gen.rs"]
 mod gen;
 
@@ -9,7 +9,7 @@ use axum::Router;
 use engine_api::auth::{store as auth_store, token, AuthConfig};
 use engine_api::{app, AppState};
 use engine_core::materializer::DocumentState;
-use engine_core::projection::verify_projection;
+use engine_core::projection::{verify_projection, KNOWN_REMOVED_CHOICE};
 use engine_shared::{DocumentId, EventPayload};
 use serde_json::{json, Value};
 use sqlx::PgPool;
@@ -148,10 +148,15 @@ async fn node_table_matches_replay_after_every_generated_operation(pool: PgPool)
             .await;
             state = serde_json::from_value(current["state"].clone()).unwrap();
             let report = verify_projection(&pool, DocumentId(doc)).await.unwrap();
-            let unexplained: Vec<_> = report.unexplained().collect();
+            // Only a removed choice may differ from replay; null-field rows no longer do.
+            let unexpected: Vec<_> = report
+                .differences
+                .iter()
+                .filter(|d| d.known != Some(KNOWN_REMOVED_CHOICE))
+                .collect();
             assert!(
-                unexplained.is_empty(),
-                "seed {seed}, after {kind}: {unexplained:?}"
+                unexpected.is_empty(),
+                "seed {seed}, after {kind}: {unexpected:?}"
             );
             sent += 1;
         }

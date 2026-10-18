@@ -19,8 +19,8 @@ async fn history_ranges_reverse_and_reapply_deltas_with_overlap_choices(pool: Pg
     let owner = identity(&pool, "ranges@example.test").await;
     let (_, doc) = post(&router, "/documents", &owner, json!({"title":"Ranges"})).await;
     let doc = doc["id"].as_str().unwrap();
-    let root = ulid::Ulid::new().to_string();
-    let node = ulid::Ulid::new().to_string();
+    let root = ulid::Ulid::generate().to_string();
+    let node = ulid::Ulid::generate().to_string();
     let (status, data) = post(&router, &format!("/documents/{doc}/batch"), &owner, json!({"base_seq":0,"ops":[
         {"type":"NodeCreated","node_id":root,"node_type":"form","pos":"a0","fields":{}},
         {"type":"NodeCreated","node_id":node,"node_type":"item","parent_id":root,"pos":"a0","fields":{"label":"A"}},
@@ -168,9 +168,9 @@ async fn recovery_fixture(pool: &PgPool) -> (Router, String, Uuid, String, Strin
     let (status, doc) = post(&router, "/documents", &owner, json!({"title":"Recovery"})).await;
     assert_eq!(status, StatusCode::OK, "{doc}");
     let doc = Uuid::parse_str(doc["id"].as_str().unwrap()).unwrap();
-    let root = ulid::Ulid::new().to_string();
-    let old = ulid::Ulid::new().to_string();
-    let live = ulid::Ulid::new().to_string();
+    let root = ulid::Ulid::generate().to_string();
+    let old = ulid::Ulid::generate().to_string();
+    let live = ulid::Ulid::generate().to_string();
     let (status, body) = post(&router, &format!("/documents/{doc}/batch"), &owner, json!({"base_seq":0,"ops":[
         {"type":"NodeCreated","node_id":root,"node_type":"form","pos":"a0","fields":{}},
         {"type":"NodeCreated","node_id":old,"node_type":"item","parent_id":root,"pos":"a0","fields":{"label":"Bring this paragraph back"}},
@@ -566,8 +566,8 @@ async fn pushed_files_become_reviewable_change_requests(pool: PgPool) {
         .await;
         assert_eq!(status, StatusCode::OK, "{body}");
     }
-    let root = ulid::Ulid::new().to_string();
-    let p: Vec<String> = (0..3).map(|_| ulid::Ulid::new().to_string()).collect();
+    let root = ulid::Ulid::generate().to_string();
+    let p: Vec<String> = (0..3).map(|_| ulid::Ulid::generate().to_string()).collect();
     let mut ops = vec![
         json!({"type":"NodeCreated","node_id":root,"node_type":"form","pos":"000000","fields":{"label":"Group report"}}),
     ];
@@ -613,7 +613,7 @@ async fn pushed_files_become_reviewable_change_requests(pool: PgPool) {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
     // Alice (comment-and-suggest role) pushes her copy from revision 4.
-    let added = ulid::Ulid::new().to_string();
+    let added = ulid::Ulid::generate().to_string();
     let mut alice_ops = edit(&p[1], "Alice method");
     alice_ops.push(json!({"type":"NodeCreated","node_id":added,"node_type":"item","parent_id":root,"pos":"00000003","fields":{"label":"Alice appendix","content":para("Alice appendix")}}));
     let (status, alice_cr) = post(&router, &format!("/documents/{doc}/change-requests"), &alice, json!({"name":"Alice edits","note":"From my laptop","base_seq":4,"ops":alice_ops,"submit":true,"source":{"kind":"file","filename":"report.docx"}})).await;
@@ -831,7 +831,7 @@ async fn viewers_cannot_push_and_outsiders_cannot_see_requests(pool: PgPool) {
         json!({"email":"viewer-view@example.test","role":"auditor"}),
     )
     .await;
-    let root = ulid::Ulid::new().to_string();
+    let root = ulid::Ulid::generate().to_string();
     let op = json!({"type":"NodeCreated","node_id":root,"node_type":"form","pos":"000000","fields":{"label":"Private"}});
     post(
         &router,

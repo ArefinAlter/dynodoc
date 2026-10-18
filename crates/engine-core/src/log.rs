@@ -93,7 +93,7 @@ pub async fn append_in_tx(
 ) -> Result<Event, EventError> {
     // Generate the event id outside the lock-sensitive work (a ULID embeds its own
     // creation time, so it is correct here and keeps the lock window short).
-    let event_id = ulid::Ulid::new().to_string();
+    let event_id = ulid::Ulid::generate().to_string();
 
     let event_type = payload.event_type();
     let target_node_id = payload.target_node_id().map(|n| n.0.clone());

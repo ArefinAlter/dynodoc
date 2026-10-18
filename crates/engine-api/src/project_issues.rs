@@ -23,21 +23,21 @@ use uuid::Uuid;
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/projects/:id/issues", get(list_issues).post(create_issue))
+        .route("/projects/{id}/issues", get(list_issues).post(create_issue))
         .route(
-            "/projects/:id/issues/:number",
+            "/projects/{id}/issues/{number}",
             get(get_issue).patch(update_issue),
         )
         .route(
-            "/projects/:id/issues/:number/comments",
+            "/projects/{id}/issues/{number}/comments",
             post(create_comment),
         )
-        .route("/projects/:id/labels", get(list_labels).post(create_label))
+        .route("/projects/{id}/labels", get(list_labels).post(create_label))
         .route(
-            "/projects/:id/labels/:label",
+            "/projects/{id}/labels/{label}",
             axum::routing::patch(update_label).delete(delete_label),
         )
-        .route("/projects/:id/star", put(star).delete(unstar))
+        .route("/projects/{id}/star", put(star).delete(unstar))
         .layer(DefaultBodyLimit::max(128 * 1024))
 }
 

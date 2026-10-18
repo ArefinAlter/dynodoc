@@ -33,16 +33,16 @@ pub(crate) const READ_LIMIT: Limits = Limits {
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/projects/:id/staging/objects", post(upload))
-        .route("/projects/:id/staging/objects/missing", post(missing))
-        .route("/projects/:id/staging/objects/:document", get(inventory))
+        .route("/projects/{id}/staging/objects", post(upload))
+        .route("/projects/{id}/staging/objects/missing", post(missing))
+        .route("/projects/{id}/staging/objects/{document}", get(inventory))
         .route(
-            "/projects/:id/staging/objects/:document/:address",
+            "/projects/{id}/staging/objects/{document}/{address}",
             get(object),
         )
-        .route("/projects/:id/staging/commits", post(stage))
-        .route("/projects/:id/staging/commits/:address", get(commit))
-        .route("/projects/:id/staging/storage", get(storage))
+        .route("/projects/{id}/staging/commits", post(stage))
+        .route("/projects/{id}/staging/commits/{address}", get(commit))
+        .route("/projects/{id}/staging/storage", get(storage))
         .layer(DefaultBodyLimit::max(1_500_000))
 }
 pub(crate) fn bad(reason: &str) -> ApiError {

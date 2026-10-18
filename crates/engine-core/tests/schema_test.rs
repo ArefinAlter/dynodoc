@@ -43,7 +43,7 @@ async fn seed(pool: &PgPool) -> sqlx::Result<Seed> {
             .fetch_one(pool)
             .await?;
 
-    let node_id = ulid::Ulid::new().to_string();
+    let node_id = ulid::Ulid::generate().to_string();
     sqlx::query(
         "insert into node (id, document_id, parent_id, type, pos, current_fields, var_name)
          values ($1, $2, null, 'item', 'a0', $3, $4)",
@@ -55,7 +55,7 @@ async fn seed(pool: &PgPool) -> sqlx::Result<Seed> {
     .execute(pool)
     .await?;
 
-    let event_id = ulid::Ulid::new().to_string();
+    let event_id = ulid::Ulid::generate().to_string();
     // Genesis event: prev_chain_hash is 32 zero bytes; chain_hash folds it in.
     sqlx::query(
         "insert into event
@@ -172,7 +172,7 @@ async fn rejects_wrong_length_hash(pool: PgPool) -> sqlx::Result<()> {
            (id, document_id, seq, type, actor_id, payload, content_hash, prev_chain_hash, chain_hash)
          values ($1, $2, 2, 'FieldEdited', $3, '{}'::jsonb, $4, $5, $6)",
     )
-    .bind(ulid::Ulid::new().to_string())
+    .bind(ulid::Ulid::generate().to_string())
     .bind(s.document_id)
     .bind(s.identity_id)
     .bind(&bad[..])
@@ -269,7 +269,7 @@ async fn node_id_is_immutable(pool: PgPool) -> sqlx::Result<()> {
 
     // Reassigning id raises.
     let res = sqlx::query("update node set id = $1 where id = $2")
-        .bind(ulid::Ulid::new().to_string())
+        .bind(ulid::Ulid::generate().to_string())
         .bind(&s.node_id)
         .execute(&pool)
         .await;
@@ -287,7 +287,7 @@ async fn content_hash_is_not_null(pool: PgPool) -> sqlx::Result<()> {
            (id, document_id, seq, type, actor_id, payload, prev_chain_hash, chain_hash)
          values ($1, $2, 2, 'FieldEdited', $3, '{}'::jsonb, $4, $5)",
     )
-    .bind(ulid::Ulid::new().to_string())
+    .bind(ulid::Ulid::generate().to_string())
     .bind(s.document_id)
     .bind(s.identity_id)
     .bind(&digest(0x00)[..])

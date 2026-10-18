@@ -19,8 +19,8 @@
 
 use engine_core::governance::{self, Role};
 use engine_core::log;
-use engine_core::materializer::DocumentState;
-use engine_shared::{DocumentId, Event, EventPayload, IdentityId, NodeId, NodeType};
+use engine_core::materializer::{apply_payload, ApplyError, DocumentState, MaterializedNode};
+use engine_shared::{DocumentId, Event, EventPayload, IdentityId, NodeId};
 use serde_json::Value;
 use sqlx::{PgPool, Postgres, Transaction};
 
@@ -175,133 +175,25 @@ pub async fn reject_proposal(
 }
 
 /// Apply an op's effect to the materialized `node` table inside the append transaction,
-/// so the `event.target_node_id → node(id)` FK holds when the event is inserted, and so
-/// later reads from a fresh snapshot match the log. Suggestion/comment/deploy ops touch
-/// no node row (`CommentAdded` may anchor to a node that already exists; nothing to do).
+/// so the `event.target_node_id → node(id)` FK holds when the event is inserted. Rows
+/// follow the fold: the op is applied with [`apply_payload`] to the stored rows it
+/// touches, and those rows are written back; a removed choice stays `deleted` in the
+/// table. Suggestion/comment/deploy ops touch no node row. The caller must hold the
+/// document writer lock (`begin_write*`); the row lookup does not lock the rows itself.
 pub(crate) async fn materialize_node_change(
     tx: &mut Transaction<'_, Postgres>,
     document_id: DocumentId,
     op: &EventPayload,
 ) -> Result<(), ApiError> {
-    match op {
-        EventPayload::RichTextPatched { node_id, patch } => {
-            let fields: Value = sqlx::query_scalar(
-                "select current_fields from node where id=$1 and document_id=$2",
-            )
-            .bind(&node_id.0)
-            .bind(document_id.0)
-            .fetch_one(&mut **tx)
-            .await?;
-            let content =
-                engine_core::richtext::apply_patch(&fields["content"], patch).map_err(|e| {
-                    ApiError::BadRequest {
-                        reason: e.to_string(),
-                    }
-                })?;
-            let label = engine_core::richtext::plain_text(&content);
-            sqlx::query("update node set current_fields=current_fields || jsonb_build_object('content',$3::jsonb,'label',$4::text),updated_at=now() where id=$1 and document_id=$2")
-                .bind(&node_id.0).bind(document_id.0).bind(content).bind(label).execute(&mut **tx).await?;
-        }
-        EventPayload::NodeCreated {
-            node_id,
-            node_type,
-            parent_id,
-            pos,
-            fields,
-            var_name,
-        } => {
-            insert_node(
-                tx,
-                document_id,
-                node_id,
-                node_type.as_str(),
-                parent_id.as_ref(),
-                pos,
-                &object_or_empty(fields),
-                var_name.as_deref(),
-            )
-            .await?;
-        }
-        EventPayload::ChoiceAdded {
-            node_id,
-            choice_id,
-            fields,
-        } => {
-            // A choice is a node row parented to the item, keyed by its own id/pos.
-            insert_node(
-                tx,
-                document_id,
-                choice_id,
-                NodeType::Choice.as_str(),
-                Some(node_id),
-                &choice_id.0,
-                &object_or_empty(fields),
-                None,
-            )
-            .await?;
-        }
-        EventPayload::FieldEdited {
-            node_id,
-            field,
-            value,
-        } => {
-            if field == "var_name" || field == "varName" {
-                sqlx::query("update node set var_name=$2 where id=$1 and document_id=$3")
-                    .bind(&node_id.0)
-                    .bind(value.as_str())
-                    .bind(document_id.0)
-                    .execute(&mut **tx)
-                    .await?;
-            }
-            sqlx::query(
-                "update node
-                 set current_fields = jsonb_set(coalesce(current_fields, '{}'::jsonb), array[$2], $3, true),
-                     updated_at = now()
-                 where id = $1",
-            )
-            .bind(&node_id.0)
-            .bind(field)
-            .bind(value)
-            .execute(&mut **tx)
-            .await?;
-        }
-        EventPayload::NodeMoved {
-            node_id,
-            new_parent_id,
-            new_pos,
-        } => {
-            sqlx::query(
-                "update node set parent_id = $2, pos = $3, updated_at = now() where id = $1",
-            )
-            .bind(&node_id.0)
-            .bind(new_parent_id.as_ref().map(|n| n.0.clone()))
-            .bind(new_pos)
-            .execute(&mut **tx)
-            .await?;
-        }
-        EventPayload::NodeRestored { node_id } => {
-            sqlx::query(
-                "update node set deleted=false,updated_at=now() where id=$1 and document_id=$2",
-            )
-            .bind(&node_id.0)
-            .bind(document_id.0)
-            .execute(&mut **tx)
-            .await?;
-        }
-        EventPayload::NodeDeleted { node_id } => {
-            sqlx::query("update node set deleted = true, updated_at = now() where id = $1")
-                .bind(&node_id.0)
-                .execute(&mut **tx)
-                .await?;
-        }
-        EventPayload::ChoiceRemoved { choice_id, .. } => {
-            sqlx::query("update node set deleted = true, updated_at = now() where id = $1")
-                .bind(&choice_id.0)
-                .execute(&mut **tx)
-                .await?;
-        }
-        // Comment/suggestion/deploy events carry no node-table mutation. (A comment may
-        // target an existing node; its row already exists.)
+    let ids = match op {
+        EventPayload::NodeCreated { node_id, .. }
+        | EventPayload::FieldEdited { node_id, .. }
+        | EventPayload::RichTextPatched { node_id, .. }
+        | EventPayload::NodeMoved { node_id, .. }
+        | EventPayload::NodeRestored { node_id }
+        | EventPayload::NodeDeleted { node_id } => vec![node_id.0.clone()],
+        EventPayload::ChoiceAdded { choice_id, .. }
+        | EventPayload::ChoiceRemoved { choice_id, .. } => vec![choice_id.0.clone()],
         EventPayload::CommentReplied { thread_id, .. }
         | EventPayload::CommentResolved { thread_id, .. } => {
             let exists: bool=sqlx::query_scalar("select exists(select 1 from event where id=$1 and document_id=$2 and type='CommentAdded')")
@@ -311,12 +203,113 @@ pub(crate) async fn materialize_node_change(
                     reason: "Discussion not found in this document".into(),
                 });
             }
+            return Ok(());
         }
         EventPayload::CommentAdded { .. }
         | EventPayload::SuggestionProposed { .. }
         | EventPayload::SuggestionAccepted { .. }
         | EventPayload::SuggestionRejected { .. }
-        | EventPayload::Deployed { .. } => {}
+        | EventPayload::Deployed { .. } => return Ok(()),
+    };
+    type Row = (
+        String,
+        Option<String>,
+        String,
+        String,
+        Value,
+        Option<String>,
+        bool,
+    );
+    let created = matches!(
+        op,
+        EventPayload::NodeCreated { .. } | EventPayload::ChoiceAdded { .. }
+    );
+    // Moves, deletes and restores leave the (possibly large) fields untouched, so
+    // they are neither read nor written.
+    let fields = matches!(
+        op,
+        EventPayload::FieldEdited { .. } | EventPayload::RichTextPatched { .. }
+    );
+    // A create has no stored row to fold onto; only field edits read `current_fields`.
+    let rows: Vec<Row> = if created {
+        Vec::new()
+    } else {
+        sqlx::query_as(
+            "select id, parent_id, type, pos,
+                    case when $3 then current_fields else '{}'::jsonb end,
+                    var_name, deleted
+             from node where document_id = $1 and id = any($2)",
+        )
+        .bind(document_id.0)
+        .bind(&ids)
+        .bind(fields)
+        .fetch_all(&mut **tx)
+        .await?
+    };
+    let mut state = DocumentState::default();
+    for (id, parent_id, node_type, pos, current_fields, var_name, deleted) in rows {
+        state.nodes.insert(
+            NodeId(id.clone()),
+            MaterializedNode {
+                id: NodeId(id),
+                parent_id: parent_id.map(NodeId),
+                node_type,
+                pos,
+                current_fields,
+                var_name,
+                deleted,
+            },
+        );
+    }
+    apply_payload(&mut state, op).map_err(|e| match e {
+        // A patch that does not apply to the stored content is the caller's to fix;
+        // anything else means the table broke its own invariants.
+        ApplyError::RichText(_) => ApiError::BadRequest {
+            reason: e.to_string(),
+        },
+        _ => ApiError::Internal(e.to_string()),
+    })?;
+    for id in &ids {
+        let Some(node) = state.nodes.get(&NodeId(id.clone())) else {
+            return Err(ApiError::Internal(format!(
+                "node {id} has no row in document {}",
+                document_id.0
+            )));
+        };
+        if created {
+            insert_node(
+                tx,
+                document_id,
+                &node.id,
+                &node.node_type,
+                node.parent_id.as_ref(),
+                &node.pos,
+                &node.current_fields,
+                node.var_name.as_deref(),
+            )
+            .await?;
+            continue;
+        }
+        let sql = if fields {
+            "update node set parent_id = $3, pos = $4, var_name = $5, deleted = $6,
+                 current_fields = $7, updated_at = now()
+             where id = $1 and document_id = $2"
+        } else {
+            "update node set parent_id = $3, pos = $4, var_name = $5, deleted = $6,
+                 updated_at = now()
+             where id = $1 and document_id = $2"
+        };
+        let mut query = sqlx::query(sql)
+            .bind(&node.id.0)
+            .bind(document_id.0)
+            .bind(node.parent_id.as_ref().map(|p| p.0.as_str()))
+            .bind(&node.pos)
+            .bind(node.var_name.as_deref())
+            .bind(node.deleted || state.removed_choices.contains(&node.id));
+        if fields {
+            query = query.bind(&node.current_fields);
+        }
+        query.execute(&mut **tx).await?;
     }
     Ok(())
 }
@@ -346,16 +339,6 @@ async fn insert_node(
     .execute(&mut **tx)
     .await?;
     Ok(())
-}
-
-/// The materializer stores non-object `fields` under a `"value"` key; mirror that so a
-/// fresh snapshot fold matches the node row. Objects pass through unchanged.
-fn object_or_empty(fields: &Value) -> Value {
-    match fields {
-        Value::Object(_) => fields.clone(),
-        Value::Null => serde_json::json!({}),
-        other => serde_json::json!({ "value": other }),
-    }
 }
 
 /// Every write path takes this lock before reading state or validating a proposal.

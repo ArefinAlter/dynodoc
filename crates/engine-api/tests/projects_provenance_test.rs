@@ -632,8 +632,8 @@ async fn document(router: &Router, owner: &str) -> (Uuid, String) {
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let doc = Uuid::parse_str(body["id"].as_str().unwrap()).unwrap();
-    let root = ulid::Ulid::new().to_string();
-    let block = ulid::Ulid::new().to_string();
+    let root = ulid::Ulid::generate().to_string();
+    let block = ulid::Ulid::generate().to_string();
     assert_eq!(
         post(
             router,
@@ -1176,7 +1176,7 @@ async fn bundles_are_atomic_idempotent_anchored_and_credentials_are_scoped(pool:
         StatusCode::CONFLICT
     );
     let mut invalid = input.clone();
-    invalid["bundle"]["changes"].as_array_mut().unwrap().push(json!({"id":Uuid::new_v4(),"observed_at":"2026-10-06T01:02:04Z","operation":{"type":"FieldEdited","node_id":ulid::Ulid::new().to_string(),"field":"label","value":"Missing node"}}));
+    invalid["bundle"]["changes"].as_array_mut().unwrap().push(json!({"id":Uuid::new_v4(),"observed_at":"2026-10-06T01:02:04Z","operation":{"type":"FieldEdited","node_id":ulid::Ulid::generate().to_string(),"field":"label","value":"Missing node"}}));
     assert_ne!(
         post(&router, &endpoint, &connector, invalid).await.0,
         StatusCode::OK

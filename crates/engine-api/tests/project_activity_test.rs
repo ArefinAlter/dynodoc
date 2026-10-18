@@ -80,8 +80,8 @@ async fn document(router: &Router, owner: &str, title: &str) -> (Uuid, String) {
     let (status, body) = post(router, "/documents", owner, json!({"title":title})).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let doc = Uuid::parse_str(body["id"].as_str().unwrap()).unwrap();
-    let root = ulid::Ulid::new().to_string();
-    let block = ulid::Ulid::new().to_string();
+    let root = ulid::Ulid::generate().to_string();
+    let block = ulid::Ulid::generate().to_string();
     assert_eq!(
         post(
             router,
@@ -383,7 +383,7 @@ async fn activity_contributors_and_last_change_are_member_only_ordered_and_paged
     // and sorts after everything newer.
     for (n, age) in [40, 400, 401].into_iter().enumerate() {
         sqlx::query("insert into event(id,document_id,seq,type,actor_id,payload,content_hash,prev_chain_hash,chain_hash,created_at) select $1,$2,coalesce(max(seq),0)+1,'FieldEdited',$3,'{}'::jsonb,decode(repeat('01',32),'hex'),decode(repeat('02',32),'hex'),decode(repeat($4,32),'hex'),now()-make_interval(days=>$5) from event where document_id=$2")
-            .bind(ulid::Ulid::new().to_string())
+            .bind(ulid::Ulid::generate().to_string())
             .bind(doc)
             .bind(maya_id)
             .bind(format!("{:02x}", 32 + n))
@@ -537,7 +537,7 @@ async fn profile_calendar_counts_only_files_both_people_can_access(pool: PgPool)
     .enumerate()
     {
         sqlx::query("insert into event(id,document_id,seq,type,actor_id,payload,content_hash,prev_chain_hash,chain_hash,created_at) values($1,$2,$3,'FieldEdited',$4,'{}'::jsonb,decode(repeat('01',32),'hex'),decode(repeat('02',32),'hex'),decode(repeat($5,32),'hex'),$6::timestamptz)")
-            .bind(ulid::Ulid::new().to_string())
+            .bind(ulid::Ulid::generate().to_string())
             .bind(shared_doc)
             .bind(100 + n as i64)
             .bind(maya_id)

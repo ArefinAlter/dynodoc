@@ -29,8 +29,8 @@ use uuid::Uuid;
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/projects/:id/activity", get(project_activity_feed))
-        .route("/projects/:id/contributors", get(project_contributors))
+        .route("/projects/{id}/activity", get(project_activity_feed))
+        .route("/projects/{id}/contributors", get(project_contributors))
 }
 
 const DEFAULT_LIMIT: i64 = 50;

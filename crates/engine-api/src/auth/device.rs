@@ -71,7 +71,6 @@ impl<S: Need> Deref for ProjectAuth<S> {
     }
 }
 
-#[axum::async_trait]
 impl<S: Need> FromRequestParts<AppState> for ProjectAuth<S> {
     type Rejection = ApiError;
 

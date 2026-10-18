@@ -24,7 +24,7 @@ authors = ["Verne Ltd."]
 tokio = { version = "1.40", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 futures = "0.3"
-axum = "0.7"
+axum = "0.8"
 tower = "0.5"
 tower-http = { version = "0.7", features = ["cors", "compression-gzip", "trace", "limit"] }
 
@@ -50,7 +50,7 @@ base64 = "0.22"
 utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid", "yaml"] }
 
 # Identity + time
-ulid = "1"
+ulid = "3"
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 

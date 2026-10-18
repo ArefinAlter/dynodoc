@@ -220,11 +220,11 @@ fn explicit_origin_and_token_rules_reject_credential_urls_and_insecure_hosts() {
 async fn redirects_and_oversize_bodies_are_rejected_without_reflecting_remote_secrets() {
     let router = Router::new()
         .route(
-            "/projects/:id/redirect",
+            "/projects/{id}/redirect",
             get(|| async { axum::response::Redirect::temporary("/secret") }),
         )
         .route(
-            "/projects/:id/large",
+            "/projects/{id}/large",
             get(|| async { Json(json!({"value":"private-remote-content".repeat(300)})) }),
         );
     let (url, server) = serve(router).await;
@@ -583,12 +583,12 @@ async fn up_to_date_push_rechecks_head_before_pinning_a_concurrent_unfetched_upd
     let count = Arc::new(AtomicUsize::new(0));
     let expected = first.receipt.head.clone();
     let (url,server) = serve(Router::new()
-        .route("/projects/:id/history/authority",get(move || async move { Json(epoch_one(authority)) }))
-        .route("/projects/:id/history/refs",get(move || {
+        .route("/projects/{id}/history/authority",get(move || async move { Json(epoch_one(authority)) }))
+        .route("/projects/{id}/history/refs",get(move || {
             let r = if count.fetch_add(1,Ordering::Relaxed) == 0 {first.clone()} else {next.clone()};
             async move { Json(json!({"items":[{"branch":"main","head":r.receipt.head}],"receipts":[r]})) }
         }))
-        .route("/projects/:id/history/commits/:commit",get(move || {let signed = signed.clone();async move {Json(json!(signed))}}))
+        .route("/projects/{id}/history/commits/{commit}",get(move || {let signed = signed.clone();async move {Json(json!(signed))}}))
     ).await;
     let client = Client::new(remote(url, authority), project, "synthetic", true).unwrap();
     let (pin_path, journal) = journal().await;
@@ -633,11 +633,11 @@ async fn rollback_fork_wrong_key_revocation_and_gapped_receipts_never_replace_tr
     let (url, server) = serve(
         Router::new()
             .route(
-                "/projects/:id/history/authority",
+                "/projects/{id}/history/authority",
                 get(move || async move { Json(epoch_one(authority)) }),
             )
             .route(
-                "/projects/:id/history/receipts",
+                "/projects/{id}/history/receipts",
                 get(move || {
                     let r = served.clone();
                     async move { Json(json!({"items":[r]})) }
@@ -696,14 +696,14 @@ async fn interrupted_or_corrupt_download_retains_verified_objects_and_never_impo
     let source = r1.clone();
     let router = Router::new()
         .route(
-            "/projects/:id/history/commits/:address",
+            "/projects/{id}/history/commits/{address}",
             get(move || {
                 let c = selected.clone();
                 async move { Json(json!(c)) }
             }),
         )
         .route(
-            "/projects/:id/history/commits/:commit/objects/:doc/:address",
+            "/projects/{id}/history/commits/{commit}/objects/{doc}/{address}",
             get(
                 move |axum::extract::Path((_id, _commit, _doc, object)): axum::extract::Path<(
                     String,
@@ -1223,7 +1223,7 @@ async fn hostile_token_lifetimes_neither_panic_nor_lose_the_rotated_secret() {
             }),
         )
         .route(
-            "/projects/:id/files",
+            "/projects/{id}/files",
             get(|headers: axum::http::HeaderMap| async move {
                 let bearer = headers.get("authorization").and_then(|v| v.to_str().ok());
                 if bearer == Some("Bearer fresh-token") {

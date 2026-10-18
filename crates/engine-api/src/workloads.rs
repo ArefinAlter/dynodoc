@@ -220,7 +220,7 @@ mod tests {
         let router = Router::new()
             .route("/read", get(|| async { "ok" }))
             .route("/healthz", get(|| async { "ok" }))
-            .route("/documents/:id/stream", get(|| async { "stream" }))
+            .route("/documents/{id}/stream", get(|| async { "stream" }))
             .layer(middleware::from_fn_with_state(b.clone(), admission));
         let request = |path| Request::builder().uri(path).body(Body::empty()).unwrap();
         let mut held = Vec::new();

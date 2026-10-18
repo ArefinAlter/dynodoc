@@ -28,10 +28,10 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/devices", get(list).post(register))
         .route("/devices/challenge", post(challenge))
-        .route("/devices/:id/revoke", post(revoke))
-        .route("/devices/:id", patch(set_access))
+        .route("/devices/{id}/revoke", post(revoke))
+        .route("/devices/{id}", patch(set_access))
         .route(
-            "/devices/:id/projects/:project",
+            "/devices/{id}/projects/{project}",
             put(set_grant).delete(clear_grant),
         )
         .layer(DefaultBodyLimit::max(MAX_PROOF_BYTES))

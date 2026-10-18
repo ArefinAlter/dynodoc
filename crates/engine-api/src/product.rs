@@ -20,19 +20,19 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/spaces", get(spaces).post(create_space))
         .route(
-            "/spaces/:id/members",
+            "/spaces/{id}/members",
             get(space_members).post(set_space_member),
         )
         .route("/workspace/index", get(index))
-        .route("/documents/:id/access", get(document_access))
-        .route("/documents/:id/location", post(move_document))
-        .route("/documents/:id/trash", post(trash_document))
+        .route("/documents/{id}/access", get(document_access))
+        .route("/documents/{id}/location", post(move_document))
+        .route("/documents/{id}/trash", post(trash_document))
         .route(
-            "/documents/:id/public-links",
+            "/documents/{id}/public-links",
             get(public_links).post(publish),
         )
-        .route("/documents/:id/public-links/:link/revoke", post(revoke))
-        .route("/public/documents/:token", get(public_document))
+        .route("/documents/{id}/public-links/{link}/revoke", post(revoke))
+        .route("/public/documents/{token}", get(public_document))
 }
 fn bad(reason: &str) -> ApiError {
     ApiError::BadRequest {
@@ -500,6 +500,12 @@ async fn public_document(
         .filter_map(|id| id.as_str().map(str::to_owned))
         .collect();
     content["removed_choices"] = json!([]);
+    // Every id in the snapshot, hidden ones included, gets a pseudonym below.
+    let mut ids: Vec<String> = content["nodes"]
+        .as_object()
+        .map(|nodes| nodes.keys().cloned().collect())
+        .unwrap_or_default();
+    reference_ids(&content, &mut ids);
     if let Some(nodes) = content.get_mut("nodes").and_then(Value::as_object_mut) {
         for (id, node) in nodes.iter() {
             if node.get("deleted").and_then(Value::as_bool) == Some(true) {
@@ -546,7 +552,154 @@ async fn public_document(
             }
         }
     }
+    // Structural ids and recognized references become stable per-link pseudonyms.
+    // The bearer token is also available to readers: this is not an anonymity
+    // guarantee against a reader who already knows a candidate real block id.
+    // Do not replace arbitrary strings: document text is allowed to equal a block id.
+    let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA256, token.as_bytes());
+    let pseudonyms: std::collections::HashMap<String, String> = ids
+        .into_iter()
+        .map(|id| {
+            let pseudonym = pseudonym(&key, &id);
+            (id, pseudonym)
+        })
+        .collect();
+    replace_node_ids(&mut content, &pseudonyms);
     Ok(Json(json!({"title":title,"kind":kind,"state":content})))
+}
+
+/// Identifiers that are not node-map keys but still carry a real id (and its creation
+/// time): a parent the map no longer holds, and ULID-shaped references nested in fields,
+/// such as the `blockId` of a paragraph inside a list. Semantic ids like "intro" stay.
+fn reference_ids(content: &Value, out: &mut Vec<String>) {
+    fn nested(value: &Value, out: &mut Vec<String>) {
+        match value {
+            Value::Array(items) => items.iter().for_each(|item| nested(item, out)),
+            Value::Object(map) => {
+                for (field, item) in map {
+                    match item {
+                        Value::String(id)
+                            if is_node_reference(field) && ulid::Ulid::from_string(id).is_ok() =>
+                        {
+                            out.push(id.clone())
+                        }
+                        _ => nested(item, out),
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    for node in content
+        .get("nodes")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flat_map(|nodes| nodes.values())
+    {
+        if let Some(parent) = node["parent_id"].as_str() {
+            out.push(parent.to_owned());
+        }
+        nested(&node["current_fields"], out);
+    }
+}
+
+/// A ULID-shaped stand-in for a block id: the first 128 bits of its HMAC, labelled so the
+/// same key could never produce a tag that means something else.
+fn pseudonym(key: &ring::hmac::Key, id: &str) -> String {
+    const CROCKFORD: &[u8] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+    let tag = ring::hmac::sign(
+        key,
+        &[b"dynodoc.public-node-id\0v1\0".as_slice(), id.as_bytes()].concat(),
+    );
+    let bits = u128::from_be_bytes(tag.as_ref()[..16].try_into().unwrap());
+    (0..26)
+        .rev()
+        .map(|i| CROCKFORD[((bits >> (5 * i)) & 31) as usize] as char)
+        .collect()
+}
+
+/// Replace node-map keys, each node's own identity/location and identity-bearing
+/// references inside fields. Arbitrary prose and host values remain unchanged.
+fn replace_node_ids(content: &mut Value, ids: &std::collections::HashMap<String, String>) {
+    let Some(nodes) = content.get_mut("nodes").and_then(Value::as_object_mut) else {
+        return;
+    };
+    for (id, mut node) in std::mem::take(nodes) {
+        for field in ["id", "parent_id"] {
+            if let Some(value) = node.get_mut(field) {
+                replace_reference(value, ids);
+            }
+        }
+        if let Some(fields) = node.get_mut("current_fields") {
+            replace_declared_references(fields, ids);
+        }
+        nodes.insert(ids.get(&id).cloned().unwrap_or(id), node);
+    }
+}
+
+/// References supported by the public document formats. Keep this explicit so
+/// user-authored text that happens to equal a node id is never changed.
+fn is_node_reference(field: &str) -> bool {
+    matches!(
+        field,
+        "blockId"
+            | "nodeId"
+            | "node_id"
+            | "parentId"
+            | "parent_id"
+            | "targetNodeId"
+            | "target_node_id"
+            | "choiceId"
+            | "choice_id"
+            | "rowId"
+            | "row_id"
+            | "columnId"
+            | "column_id"
+            | "sheetId"
+            | "sheet_id"
+            | "slideId"
+            | "slide_id"
+            | "shapeId"
+            | "shape_id"
+            | "fromRow"
+            | "toRow"
+            | "fromCol"
+            | "toCol"
+            | "fromColumn"
+            | "toColumn"
+    )
+}
+
+fn replace_declared_references(value: &mut Value, ids: &std::collections::HashMap<String, String>) {
+    match value {
+        Value::Array(items) => items
+            .iter_mut()
+            .for_each(|item| replace_declared_references(item, ids)),
+        Value::Object(map) => {
+            for (field, item) in map {
+                if is_node_reference(field) {
+                    replace_reference(item, ids);
+                } else {
+                    replace_declared_references(item, ids);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn replace_reference(value: &mut Value, ids: &std::collections::HashMap<String, String>) {
+    match value {
+        Value::String(id) => {
+            if let Some(pseudonym) = ids.get(id.as_str()) {
+                *id = pseudonym.clone();
+            }
+        }
+        Value::Array(items) => items
+            .iter_mut()
+            .for_each(|item| replace_reference(item, ids)),
+        _ => {}
+    }
 }
 
 fn has_text_revisions(value: &Value) -> bool {
@@ -596,6 +749,64 @@ fn strip_private_review(value: &mut Value) {
 #[cfg(test)]
 mod office_public_tests {
     use super::*;
+
+    #[test]
+    fn public_identity_projection_preserves_literal_text_and_custom_keys() {
+        let ids = std::collections::HashMap::from([
+            ("real-root".to_owned(), "public-root".to_owned()),
+            ("real-row".to_owned(), "public-row".to_owned()),
+        ]);
+        let mut state = json!({"nodes": {
+            "real-root": {"id":"real-root", "parent_id":null, "current_fields":{}},
+            "real-row": {"id":"real-row", "parent_id":"real-root", "current_fields":{
+                "label":"real-row", "real-row":"real-root",
+                "content":{"type":"paragraph", "attrs":{"blockId":"real-row"},
+                    "content":[{"type":"text", "text":"real-row"}]},
+                "sheet_layout":{"merges":[{"fromRow":"real-row", "toRow":"real-row"}]}
+            }}
+        }});
+        replace_node_ids(&mut state, &ids);
+        let row = &state["nodes"]["public-row"];
+        assert_eq!(row["id"], "public-row");
+        assert_eq!(row["parent_id"], "public-root");
+        let fields = &row["current_fields"];
+        assert_eq!(fields["content"]["attrs"]["blockId"], "public-row");
+        assert_eq!(fields["sheet_layout"]["merges"][0]["fromRow"], "public-row");
+        assert_eq!(fields["label"], "real-row");
+        assert_eq!(fields["content"]["content"][0]["text"], "real-row");
+        assert_eq!(fields["real-row"], "real-root");
+        assert!(state["nodes"].get("real-row").is_none());
+    }
+
+    #[test]
+    fn nested_block_ids_and_orphan_parents_get_pseudonyms_too() {
+        let real = ulid::Ulid::generate().to_string();
+        let orphan_parent = ulid::Ulid::generate().to_string();
+        let mut state = json!({"nodes": {
+            "root": {"id":"root", "parent_id":orphan_parent, "current_fields":{
+                "content":{"type":"bulletList","content":[
+                    {"type":"paragraph","attrs":{"blockId":real},"content":[{"type":"text","text":real}]},
+                    {"type":"paragraph","attrs":{"blockId":"intro"}}
+                ]}
+            }}
+        }});
+        let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA256, b"token");
+        let mut ids = vec!["root".to_owned()];
+        reference_ids(&state, &mut ids);
+        let map: std::collections::HashMap<_, _> = ids
+            .into_iter()
+            .map(|id| (id.clone(), pseudonym(&key, &id)))
+            .collect();
+        replace_node_ids(&mut state, &map);
+        let text = state.to_string();
+        assert!(!text.contains(&orphan_parent), "{text}");
+        let nested = &state["nodes"][&map["root"]]["current_fields"]["content"]["content"];
+        assert_eq!(nested[0]["attrs"]["blockId"], map[&real]);
+        assert_ne!(nested[0]["attrs"]["blockId"], real);
+        // Prose that equals the id, and non-ULID semantic ids, are left alone.
+        assert_eq!(nested[0]["content"][0]["text"], real);
+        assert_eq!(nested[1]["attrs"]["blockId"], "intro");
+    }
 
     #[test]
     fn embedded_review_metadata_stays_out_of_public_copies() {

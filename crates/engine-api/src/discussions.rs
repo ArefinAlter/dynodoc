@@ -18,8 +18,8 @@ use uuid::Uuid;
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/documents/:id/discussions", get(list))
-        .route("/documents/:id/discussions/:thread", post(change))
+        .route("/documents/{id}/discussions", get(list))
+        .route("/documents/{id}/discussions/{thread}", post(change))
 }
 #[derive(Deserialize)]
 struct Page {

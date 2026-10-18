@@ -30,9 +30,9 @@ use engine_core::snapshot::SnapshotEngine;
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/documents/:id/conflicts", get(list_conflicts))
+        .route("/documents/{id}/conflicts", get(list_conflicts))
         .route(
-            "/documents/:id/conflicts/:conflict_id/resolve",
+            "/documents/{id}/conflicts/{conflict_id}/resolve",
             post(resolve),
         )
 }

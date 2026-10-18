@@ -91,8 +91,8 @@ async fn draft_sharing_remembers_exclusions_until_explicitly_included(pool: PgPo
     let router = app(shared_state);
     let owner = bearer(seed_identity(&pool, "selection@example.test").await);
     let doc = create_document(&router, &owner, "Selections").await;
-    let root = ulid::Ulid::new().to_string();
-    let child = ulid::Ulid::new().to_string();
+    let root = ulid::Ulid::generate().to_string();
+    let child = ulid::Ulid::generate().to_string();
     let (status,result)=send(&router,auth_post(&format!("/documents/{doc}/batch"),&owner,&json!({"base_seq":0,"ops":[
       {"type":"NodeCreated","node_id":root,"node_type":"form","pos":"a0","fields":{"label":"Original root"}},
       {"type":"NodeCreated","node_id":child,"node_type":"item","parent_id":root,"pos":"a0","fields":{"label":"Original child","type":"text","name":"question"}}
@@ -172,7 +172,7 @@ async fn sharing_a_new_block_brings_its_new_parent(pool: PgPool) {
     let router = app(test_state(pool.clone()));
     let owner = bearer(seed_identity(&pool, "new-parent@example.test").await);
     let doc = create_document(&router, &owner, "New parents").await;
-    let root = ulid::Ulid::new().to_string();
+    let root = ulid::Ulid::generate().to_string();
     let (status,result)=send(&router,auth_post(&format!("/documents/{doc}/batch"),&owner,&json!({"base_seq":0,"ops":[
       {"type":"NodeCreated","node_id":root,"node_type":"form","pos":"a0","fields":{"label":"Root"}}
     ]}))).await;
@@ -187,8 +187,8 @@ async fn sharing_a_new_block_brings_its_new_parent(pool: PgPool) {
     )
     .await;
     let uri = format!("/documents/{doc}/drafts/{}", draft["id"].as_str().unwrap());
-    let section = ulid::Ulid::new().to_string();
-    let child = ulid::Ulid::new().to_string();
+    let section = ulid::Ulid::generate().to_string();
+    let child = ulid::Ulid::generate().to_string();
     let (status,result)=send(&router,auth_post(&uri,&owner,&json!({"revision":0,"ops":[
       {"type":"NodeCreated","node_id":section,"node_type":"section","parent_id":root,"pos":"a0","fields":{"label":"New section"}},
       {"type":"NodeCreated","node_id":child,"node_type":"item","parent_id":section,"pos":"a0","fields":{"label":"New child","type":"text","name":"new_child"}}
@@ -224,7 +224,7 @@ async fn unreplayable_log_returns_specific_error(pool: PgPool) {
     )
     .await
     .unwrap();
-    let root = ulid::Ulid::new().to_string();
+    let root = ulid::Ulid::generate().to_string();
     let (status, body) = send(
         &router,
         auth_post(
@@ -242,6 +242,99 @@ async fn unreplayable_log_returns_specific_error(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn content_neutral_settings_skip_replay_but_review_transitions_fail_closed(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let actor = seed_identity(&pool, "no-replay@example.test").await;
+    let owner = bearer(actor);
+    let doc = create_document(&router, &owner, "Broken history").await;
+    let (_, draft) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc}/drafts"),
+            &owner,
+            &json!({"name":"Kept"}),
+        ),
+    )
+    .await;
+    let draft = format!("/documents/{doc}/drafts/{}", draft["id"].as_str().unwrap());
+    let request = draft.replace("/drafts/", "/change-requests/");
+    let draft_id: Uuid = draft.rsplit('/').next().unwrap().parse().unwrap();
+    let (status, body) = send(
+        &router,
+        auth_post(
+            &format!("{draft}/submit"),
+            &owner,
+            &json!({"note":"Before corruption"}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let accepted = engine_shared::EventPayload::SuggestionAccepted {
+        suggestion_id: "missing".into(),
+    };
+    engine_core::log::append(
+        &pool,
+        DocumentId(doc),
+        &accepted,
+        engine_shared::IdentityId(actor),
+    )
+    .await
+    .unwrap();
+    let root = ulid::Ulid::generate().to_string();
+    for (uri, body) in [
+        (
+            format!("/documents/{doc}/members"),
+            json!({"email":"reader@example.test","role":"viewer"}),
+        ),
+        (
+            format!("/documents/{doc}/metadata"),
+            json!({"title":"Renamed"}),
+        ),
+        (
+            draft.clone(),
+            json!({"revision":0,"ops":[{"type":"NodeCreated","node_id":root,"node_type":"form","pos":"a0","fields":{}}]}),
+        ),
+    ] {
+        let (status, body) = send(&router, auth_post(&uri, &owner, &body)).await;
+        assert_eq!(status, StatusCode::OK, "{uri}: {body}");
+    }
+    // Review state must not advance when nobody can reconstruct the content being
+    // submitted, reviewed or closed.
+    for (uri, body) in [
+        (format!("{draft}/submit"), json!({"note":"Ready"})),
+        (
+            format!("{request}/reviews"),
+            json!({"verdict":"commented","note":"Noted"}),
+        ),
+        (format!("{request}/reviews"), json!({"verdict":"approved"})),
+        (format!("{draft}/withdraw"), json!({})),
+        (format!("{request}/decline"), json!({"note":"Declined"})),
+    ] {
+        let (status, body) = send(&router, auth_post(&uri, &owner, &body)).await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{uri}: {body}");
+        assert_eq!(body["code"], "replay_failed", "{uri}: {body}");
+    }
+    let (note, outcome): (String, Option<String>) =
+        sqlx::query_as("select submission_note,review_outcome from workspace_draft where id=$1")
+            .bind(draft_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(note, "Before corruption");
+    assert!(outcome.is_none());
+    let reviews: i64 =
+        sqlx::query_scalar("select count(*) from change_request_review where draft_id=$1")
+            .bind(draft_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(reviews, 0);
+    // Reading the content still replays it.
+    let (_, body) = send(&router, auth_post_get(&format!("/documents/{doc}"), &owner)).await;
+    assert_eq!(body["code"], "replay_failed", "{body}");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn admin_overview_counts_error_responses(pool: PgPool) {
     let mut state = test_state(pool.clone());
     state.admin_emails = "counters@example.test".into();
@@ -249,7 +342,7 @@ async fn admin_overview_counts_error_responses(pool: PgPool) {
     let actor = seed_identity(&pool, "counters@example.test").await;
     let owner = bearer(actor);
     let doc = create_document(&router, &owner, "Counted").await;
-    let root = ulid::Ulid::new().to_string();
+    let root = ulid::Ulid::generate().to_string();
     let batch = |base_seq: i64| json!({"base_seq":base_seq,"ops":[{"type":"NodeCreated","node_id":root,"node_type":"form","pos":"a0","fields":{}}]});
     let uri = format!("/documents/{doc}/batch");
     let (status, body) = send(&router, auth_post(&uri, &owner, &batch(0))).await;
@@ -910,8 +1003,8 @@ async fn rich_text_history_replays_compact_edits_and_rejects_stale_patches(pool:
     let owner = seed_identity(&pool, "richtext@example.test").await;
     let token = bearer(owner);
     let doc = create_document(&router, &token, "Research protocol").await;
-    let node = ulid::Ulid::new().to_string();
-    let root = ulid::Ulid::new().to_string();
+    let node = ulid::Ulid::generate().to_string();
+    let root = ulid::Ulid::generate().to_string();
     let content = json!({"type":"paragraph","content":[{"type":"text","text":"Research evidence. ".repeat(1200)}]});
     let (status, _) = send(&router, auth_post(&format!("/documents/{doc}/batch"), &token, &json!({"base_seq":0,"ops":[{"type":"NodeCreated","node_id":root,"node_type":"form","pos":"a","fields":{}},{"type":"NodeCreated","node_id":node,"node_type":"item","parent_id":root,"pos":"a","fields":{"content":content,"label":engine_core::richtext::plain_text(&content)}}]}))).await;
     assert_eq!(status, StatusCode::OK);
@@ -966,16 +1059,16 @@ async fn rich_text_history_replays_compact_edits_and_rejects_stale_patches(pool:
     assert_eq!(send(&router, request).await.0, StatusCode::FORBIDDEN);
 }
 
-/// Every node-table write path, checked as the runtime login: only the two documented
-/// encoding differences remain.
+/// Every node-table write path, checked as the runtime login: only the removed-choice
+/// encoding differs. Rows written now follow the fold, so null fields match replay.
 #[sqlx::test(migrations = "../../migrations")]
 async fn node_table_matches_verified_replay(pool: PgPool) {
-    use engine_core::projection::{verify_projection, KNOWN_NULL_FIELDS, KNOWN_REMOVED_CHOICE};
+    use engine_core::projection::{verify_projection, KNOWN_REMOVED_CHOICE};
     let router = app(test_state(pool.clone()));
     let token = bearer(seed_identity(&pool, "author@dynodoc.local").await);
     let doc = create_document(&router, &token, "Projection").await;
     let [root, section, question, notes, empty, keep, drop] =
-        std::array::from_fn(|_| ulid::Ulid::new().to_string());
+        std::array::from_fn(|_| ulid::Ulid::generate().to_string());
     let before = json!({"type":"paragraph","content":[{"type":"text","text":"Plain notes"}]});
     let after =
         json!({"type":"paragraph","content":[{"type":"text","text":"Plain notes, revised"}]});
@@ -1013,12 +1106,126 @@ async fn node_table_matches_verified_replay(pool: PgPool) {
         .iter()
         .map(|d| (d.node_id.0.as_str(), d.field, d.known))
         .collect();
-    let mut expected = vec![
-        (drop.as_str(), "deleted", Some(KNOWN_REMOVED_CHOICE)),
-        (empty.as_str(), "current_fields", Some(KNOWN_NULL_FIELDS)),
-    ];
-    expected.sort();
-    assert_eq!(found, expected);
+    assert_eq!(
+        found,
+        [(drop.as_str(), "deleted", Some(KNOWN_REMOVED_CHOICE))]
+    );
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn node_rows_follow_restored_choices_and_report_missing_rows(pool: PgPool) {
+    use engine_core::projection::verify_projection;
+    let router = app(test_state(pool.clone()));
+    let token = bearer(seed_identity(&pool, "rows@example.test").await);
+    let doc = create_document(&router, &token, "Rows").await;
+    let [root, question, kept, lost] = std::array::from_fn(|_| ulid::Ulid::generate().to_string());
+    let uri = format!("/documents/{doc}/batch");
+    for ops in [
+        json!([
+            {"type":"NodeCreated","node_id":root,"node_type":"form","pos":"a0","fields":{}},
+            {"type":"NodeCreated","node_id":question,"node_type":"item","parent_id":root,"pos":"a0","fields":{"label":"Q"}},
+            {"type":"ChoiceAdded","node_id":question,"choice_id":kept,"fields":{"label":"Kept"}},
+            {"type":"ChoiceAdded","node_id":question,"choice_id":lost,"fields":{"label":"Lost"}},
+        ]),
+        // Restoring a removed choice clears the table's deleted flag, as replay does.
+        json!([
+            {"type":"ChoiceRemoved","node_id":question,"choice_id":kept},
+            {"type":"NodeRestored","node_id":kept},
+        ]),
+    ] {
+        let (status, body) = send(&router, auth_post(&uri, &token, &json!({ "ops": ops }))).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+    let deleted: bool = sqlx::query_scalar("select deleted from node where id=$1")
+        .bind(&kept)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(!deleted);
+    let report = verify_projection(&pool, DocumentId(doc)).await.unwrap();
+    assert_eq!(report.differences, []);
+
+    // A row the table lost (here moved to another document) is a server fault, not a panic.
+    let other = create_document(&router, &token, "Elsewhere").await;
+    sqlx::query("update node set document_id=$2 where id=$1")
+        .bind(&lost)
+        .bind(other)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let before: i64 =
+        sqlx::query_scalar("select coalesce(max(seq),0) from event where document_id=$1")
+            .bind(doc)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let removal = json!({"ops":[
+        {"type":"FieldEdited","node_id":question,"field":"label","value":"Must roll back"},
+        {"type":"ChoiceRemoved","node_id":question,"choice_id":lost}
+    ]});
+    let (status, body) = send(&router, auth_post(&uri, &token, &removal)).await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{body}");
+    let edit =
+        json!({"ops":[{"type":"FieldEdited","node_id":lost,"field":"label","value":"Edited"}]});
+    let (status, body) = send(&router, auth_post(&uri, &token, &edit)).await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{body}");
+    let after: i64 =
+        sqlx::query_scalar("select coalesce(max(seq),0) from event where document_id=$1")
+            .bind(doc)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(after, before, "projection failures must append no event");
+    let question_fields: Value = sqlx::query_scalar("select current_fields from node where id=$1")
+        .bind(&question)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        question_fields["label"], "Q",
+        "earlier batch writes roll back"
+    );
+    let fields: Value = sqlx::query_scalar("select current_fields from node where id=$1")
+        .bind(&lost)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(fields["label"], "Lost", "another document stays untouched");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn removed_choices_stay_consistent_when_edited_deleted_and_restored(pool: PgPool) {
+    use engine_core::projection::{verify_projection, KNOWN_REMOVED_CHOICE};
+    let router = app(test_state(pool.clone()));
+    let token = bearer(seed_identity(&pool, "choices@example.test").await);
+    let doc = create_document(&router, &token, "Choices").await;
+    let [root, question, choice] = std::array::from_fn(|_| ulid::Ulid::generate().to_string());
+    let uri = format!("/documents/{doc}/batch");
+    for (step, op) in [
+        json!({"type":"NodeCreated","node_id":root,"node_type":"form","pos":"a0","fields":{}}),
+        json!({"type":"NodeCreated","node_id":question,"node_type":"item","parent_id":root,"pos":"a0","fields":{"label":"Q"}}),
+        json!({"type":"ChoiceAdded","node_id":question,"choice_id":choice,"fields":{"label":"C"}}),
+        json!({"type":"ChoiceRemoved","node_id":question,"choice_id":choice}),
+        json!({"type":"FieldEdited","node_id":choice,"field":"label","value":"Edited after removal"}),
+        json!({"type":"NodeDeleted","node_id":choice}),
+        json!({"type":"NodeRestored","node_id":choice}),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let (status, body) = send(&router, auth_post(&uri, &token, &json!({ "ops": [op] }))).await;
+        assert_eq!(status, StatusCode::OK, "step {step}: {body}");
+        // The table may differ from replay only by the known removed-choice marker.
+        let report = verify_projection(&pool, DocumentId(doc)).await.unwrap();
+        assert!(
+            report
+                .differences
+                .iter()
+                .all(|d| d.known == Some(KNOWN_REMOVED_CHOICE)),
+            "step {step}: {:?}",
+            report.differences
+        );
+    }
 }
 
 fn test_state(pool: PgPool) -> AppState {
@@ -1980,7 +2187,7 @@ async fn batch_rolls_back_and_deploy_pins_its_exact_state(pool: PgPool) {
     let owner = seed_identity(&pool, "owner@example.test").await;
     let token = bearer(owner);
     let doc = create_document(&router, &token, "Study").await;
-    let node = engine_shared::NodeId(ulid::Ulid::new().to_string());
+    let node = engine_shared::NodeId(ulid::Ulid::generate().to_string());
     let create = json!({"type":"NodeCreated","node_id":node,"node_type":"form","pos":"a0","fields":{"label":"Study"}});
     let bad = json!({"type":"FieldEdited","node_id":"missing","field":"label","value":"bad"});
     let (status, _) = send(
@@ -2273,7 +2480,7 @@ async fn file_import_batches_can_exceed_the_framework_default_limit(pool: PgPool
     let text = "a".repeat(2 * 1024 * 1024 + 1);
     let (status, response) = send(&router, auth_post(
         &format!("/documents/{doc}/batch"), &token,
-        &json!({"base_seq":0,"ops":[{"type":"NodeCreated","node_id":ulid::Ulid::new().to_string(),"node_type":"form","pos":"a0","fields":{"label":text}}]})
+        &json!({"base_seq":0,"ops":[{"type":"NodeCreated","node_id":ulid::Ulid::generate().to_string(),"node_type":"form","pos":"a0","fields":{"label":text}}]})
     )).await;
     assert_eq!(status, StatusCode::OK, "{response}");
     assert_eq!(response["events"].as_array().unwrap().len(), 1);
@@ -2495,8 +2702,8 @@ async fn office_review_is_private_and_unresolved_changes_cannot_be_published(poo
     let router = app(test_state(pool.clone()));
     let owner = bearer(seed_identity(&pool, "office-privacy@example.org").await);
     let doc = create_document(&router, &owner, "Office review").await;
-    let root = ulid::Ulid::new().to_string();
-    let node = ulid::Ulid::new().to_string();
+    let root = ulid::Ulid::generate().to_string();
+    let node = ulid::Ulid::generate().to_string();
     let content = json!({"type":"paragraph","content":[{"type":"text","text":"Public wording","marks":[{"type":"sourceComment","attrs":{"body":"Private Word comment","author":"Private author"}}]}]});
     let (status, body) = send(&router, auth_post(&format!("/documents/{doc}/batch"), &owner, &json!({"base_seq":0,"ops":[
       {"type":"NodeCreated","node_id":root,"node_type":"form","pos":"a","fields":{"fonts":[{"family":"Private font","uploadId":"secret-file"}]}},
@@ -2527,10 +2734,13 @@ async fn office_review_is_private_and_unresolved_changes_cannot_be_published(poo
         "{encoded}"
     );
     assert!(encoded.contains("Public wording"));
-    assert_eq!(
-        public["state"]["nodes"][node.as_str()]["current_fields"]["format_0"]["bold"],
-        true
-    );
+    let formatted = public["state"]["nodes"]
+        .as_object()
+        .unwrap()
+        .values()
+        .find(|n| n["current_fields"].get("format_0").is_some())
+        .unwrap();
+    assert_eq!(formatted["current_fields"]["format_0"]["bold"], true);
     let mut tracked = content.clone();
     tracked["content"][0]["marks"] =
         json!([{"type":"trackedChange","attrs":{"kind":"insert","id":"revision"}}]);
@@ -2546,6 +2756,71 @@ async fn office_review_is_private_and_unresolved_changes_cannot_be_published(poo
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert!(body.to_string().contains("Accept or reject"));
+}
+
+/// A block of a public copy by label; public copies use pseudonymous block ids.
+fn public_block<'a>(public: &'a Value, label: &str) -> Option<&'a Value> {
+    public["state"]["nodes"]
+        .as_object()?
+        .values()
+        .find(|n| n["current_fields"]["label"] == label)
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn public_copy_pseudonymizes_structural_ids_without_changing_content(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let owner = bearer(seed_identity(&pool, "pseudonyms@example.org").await);
+    let doc = create_document(&router, &owner, "Pseudonyms").await;
+    let [root, row, gone] = std::array::from_fn(|_| ulid::Ulid::generate().to_string());
+    let content = json!({"type":"paragraph","attrs":{"blockId":row},"content":[{"type":"text","text":"Row"}]});
+    let (status, body) = send(&router, auth_post(&format!("/documents/{doc}/batch"), &owner, &json!({"base_seq":0,"ops":[
+      {"type":"NodeCreated","node_id":root,"node_type":"form","pos":"a","fields":{"sheet_layout":{"merges":[{"fromRow":row,"toRow":gone}]}}},
+      {"type":"NodeCreated","node_id":row,"node_type":"item","parent_id":root,"pos":"a","fields":{"content":content,"literal":row}},
+      {"type":"NodeCreated","node_id":gone,"node_type":"item","parent_id":root,"pos":"b","fields":{"label":"Gone"}},
+      {"type":"NodeDeleted","node_id":gone}
+    ]}))).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let publish = || async {
+        let (status, link) = send(
+            &router,
+            auth_post(
+                &format!("/documents/{doc}/public-links"),
+                &owner,
+                &json!({"base_seq":4}),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{link}");
+        format!("/public/documents/{}", link["token"].as_str().unwrap())
+    };
+    let path = publish().await;
+    let (status, public) = send(&router, get(&path)).await;
+    assert_eq!(status, StatusCode::OK);
+    let encoded = public.to_string();
+    for id in [&root, &gone] {
+        assert!(!encoded.contains(id.as_str()), "{encoded}");
+    }
+    let nodes = public["state"]["nodes"].as_object().unwrap();
+    assert!(nodes.get(&row).is_none());
+    let (row_key, row_node) = nodes
+        .iter()
+        .find(|(_, n)| n["current_fields"]["label"] == "Row")
+        .unwrap();
+    assert_eq!(
+        row_node["current_fields"]["content"]["attrs"]["blockId"],
+        json!(row_key)
+    );
+    // A user's text may happen to equal a real id; it is content, not a reference.
+    assert_eq!(row_node["current_fields"]["literal"], json!(row));
+    let root_node = nodes.values().find(|n| n["parent_id"].is_null()).unwrap();
+    assert_eq!(
+        root_node["current_fields"]["sheet_layout"]["merges"][0]["fromRow"],
+        json!(row_key)
+    );
+    // Stable for one link, different for another.
+    assert_eq!(send(&router, get(&path)).await.1, public);
+    let (_, other) = send(&router, get(&publish().await)).await;
+    assert!(other["state"]["nodes"].get(row_key.as_str()).is_none());
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -2605,15 +2880,10 @@ async fn product_public_copy_is_frozen_private_and_revocable(pool: PgPool) {
     let path = format!("/public/documents/{}", link["token"].as_str().unwrap());
     let (status, public) = send(&router, get(&path)).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        public["state"]["nodes"][item]["current_fields"]["label"],
-        "Original question"
-    );
-    assert!(public["state"]["nodes"][item]["current_fields"]
-        .get("research_source")
-        .is_none());
-    assert!(public["state"]["nodes"].get(hidden).is_none());
-    assert!(public["state"]["nodes"].get(child).is_none());
+    let original = public_block(&public, "Original question").unwrap();
+    assert!(original["current_fields"].get("research_source").is_none());
+    assert!(public_block(&public, "Removed private group").is_none());
+    assert!(public_block(&public, "Descendant private content").is_none());
     assert_eq!(public["state"]["comments"], json!([]));
     let update = json!({"base_seq":seq,"ops":[{"type":"FieldEdited","node_id":item,"field":"label","value":"Private later edit"}]});
     assert_eq!(
@@ -2640,10 +2910,7 @@ async fn product_public_copy_is_frozen_private_and_revocable(pool: PgPool) {
     );
     let (_, public) = send(&router, get(&path)).await;
     assert_eq!(public["title"], "Published protocol");
-    assert_eq!(
-        public["state"]["nodes"][item]["current_fields"]["label"],
-        "Original question"
-    );
+    assert!(public_block(&public, "Original question").is_some());
     assert_eq!(
         send(
             &router,
@@ -2790,7 +3057,7 @@ async fn corrupt_snapshot_boundaries(pool: PgPool, shared: bool) {
     let owner = bearer(seed_identity(&pool, "snapshot-owner@example.test").await);
     let outsider = bearer(seed_identity(&pool, "snapshot-outsider@example.test").await);
     let doc = create_document(&router, &owner, "Verified history").await;
-    let node = ulid::Ulid::new().to_string();
+    let node = ulid::Ulid::generate().to_string();
     let (status, body) = send(&router, auth_post(&format!("/documents/{doc}/batch"), &owner,
         &json!({"base_seq":0,"ops":[{"type":"NodeCreated","node_id":node,"node_type":"form","pos":"a0","fields":{"label":"Original"}}]}))).await;
     assert_eq!(status, StatusCode::OK, "{body}");

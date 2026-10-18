@@ -28,30 +28,30 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/search", get(search))
         .route(
-            "/documents/:id/uploads",
+            "/documents/{id}/uploads",
             get(uploads)
                 .post(upload)
                 .layer(axum::extract::DefaultBodyLimit::max(
                     MAX_UPLOAD_BASE64 + 65_536,
                 )),
         )
-        .route("/documents/:id/uploads/:upload_id", get(download_upload))
-        .route("/documents/:id/batch", post(batch))
-        .route("/documents/:id/structure", get(structure))
-        .route("/documents/:id/drafts/:draft_id/sync", post(sync_draft))
+        .route("/documents/{id}/uploads/{upload_id}", get(download_upload))
+        .route("/documents/{id}/batch", post(batch))
+        .route("/documents/{id}/structure", get(structure))
+        .route("/documents/{id}/drafts/{draft_id}/sync", post(sync_draft))
         .route(
-            "/documents/:id/versions/:version_id/restore",
+            "/documents/{id}/versions/{version_id}/restore",
             post(restore_version),
         )
-        .route("/documents/:id/members", get(members).post(share))
-        .route("/documents/:id/versions", get(versions).post(save_version))
+        .route("/documents/{id}/members", get(members).post(share))
+        .route("/documents/{id}/versions", get(versions).post(save_version))
         .route(
-            "/documents/:id/metadata",
+            "/documents/{id}/metadata",
             post(metadata).layer(axum::extract::DefaultBodyLimit::max(80 * 1024)),
         )
-        .route("/documents/:id/drafts", get(drafts).post(create_draft))
+        .route("/documents/{id}/drafts", get(drafts).post(create_draft))
         .route(
-            "/documents/:id/drafts/:draft_id",
+            "/documents/{id}/drafts/{draft_id}",
             get(get_draft).post(edit_draft),
         )
         .layer(axum::extract::DefaultBodyLimit::max(16 * 1024 * 1024))
@@ -192,8 +192,8 @@ async fn share(
     auth: AuthContext,
     Json(req): Json<ShareRequest>,
 ) -> Result<Json<Value>, ApiError> {
-    let (mut tx, role, _) =
-        apply::begin_write(&state, DocumentId(id), IdentityId(auth.identity_id)).await?;
+    let (mut tx, role) =
+        apply::begin_write_locked(&state, DocumentId(id), IdentityId(auth.identity_id)).await?;
     if role != Role::Author
         || !sqlx::query_scalar::<_, bool>("select can_manage_document($1,$2)")
             .bind(id)
@@ -392,8 +392,8 @@ async fn metadata(
     auth: AuthContext,
     Json(req): Json<Metadata>,
 ) -> Result<Json<Value>, ApiError> {
-    let (mut tx, role, _) =
-        apply::begin_write(&state, DocumentId(id), IdentityId(auth.identity_id)).await?;
+    let (mut tx, role) =
+        apply::begin_write_locked(&state, DocumentId(id), IdentityId(auth.identity_id)).await?;
     if role != Role::Author {
         return Err(ApiError::Forbidden);
     }
@@ -580,8 +580,8 @@ async fn edit_draft(
     if req.ops.is_empty() || req.ops.len() > 5000 {
         return Err(bad("A draft save must contain 1–5000 changes"));
     }
-    let (mut tx, role, _) =
-        apply::begin_write(&state, DocumentId(id), IdentityId(auth.identity_id)).await?;
+    let (mut tx, role) =
+        apply::begin_write_locked(&state, DocumentId(id), IdentityId(auth.identity_id)).await?;
     if role == Role::Auditor {
         return Err(ApiError::Forbidden);
     }

@@ -23,7 +23,8 @@ pub enum OpError {
     /// The op targets a node that does not exist in the current state.
     #[error("node {0} does not exist")]
     NodeNotFound(String),
-    /// The op targets a tombstoned node (deleted nodes are immutable).
+    /// The op targets a tombstoned node. A deleted block's content cannot be edited;
+    /// it can only be moved or renamed so that a restore brings it back elsewhere.
     #[error("node {0} is deleted")]
     NodeDeleted(String),
     #[error("move or remove the children of node {0} before removing it")]
@@ -99,14 +100,18 @@ pub fn validate_op(state: &DocumentState, op: &EventPayload) -> Result<(), OpErr
             field,
             value,
         } => {
-            require_live(state, node_id)?;
             if field == "var_name" || field == "varName" {
+                // A deleted block may take the name it comes back with; the restore
+                // checks it.
+                require_present(state, node_id)?;
                 let name = value.as_str().ok_or_else(|| {
                     OpError::InvalidWrappedOp("Variable name must be text".into())
                 })?;
-                if var_name_taken(state, name, Some(node_id)) {
+                if !name.is_empty() && var_name_taken(state, name, Some(node_id)) {
                     return Err(OpError::DuplicateVarName(name.into()));
                 }
+            } else {
+                require_live(state, node_id)?;
             }
             Ok(())
         }
@@ -295,7 +300,8 @@ fn validate_node_moved(
     node_id: &NodeId,
     new_parent_id: Option<&NodeId>,
 ) -> Result<(), OpError> {
-    let node = require_live(state, node_id)?;
+    // A deleted block may move to where it comes back; the restore checks the parent.
+    let node = require_present(state, node_id)?;
     let Some(new_parent_id) = new_parent_id else {
         // Moving to the root: legal only for a root-eligible type.
         let node_type = parse_node_type(&node.node_type);
@@ -472,6 +478,62 @@ mod tests {
             fields: json!({}),
             var_name: var.map(str::to_string),
         }
+    }
+
+    #[test]
+    fn a_deleted_block_may_move_and_rename_but_not_change_content() {
+        let mut gone = n("01G", NodeType::Item, Some("01S"), Some("old"));
+        gone.deleted = true;
+        let mut dead_section = n("01D", NodeType::Section, Some("01F"), None);
+        dead_section.deleted = true;
+        let s = state(vec![
+            n("01F", NodeType::Form, None, None),
+            n("01S", NodeType::Section, Some("01F"), None),
+            n("01T", NodeType::Section, Some("01F"), None),
+            n("01H", NodeType::Item, Some("01S"), Some("held")),
+            dead_section,
+            gone,
+        ]);
+        let moved = |id: &str, parent: &str| EventPayload::NodeMoved {
+            node_id: NodeId(id.into()),
+            new_parent_id: Some(NodeId(parent.into())),
+            new_pos: "b0".into(),
+        };
+        let name = |id: &str, value: &str| EventPayload::FieldEdited {
+            node_id: NodeId(id.into()),
+            field: "var_name".into(),
+            value: json!(value),
+        };
+        // Accepted: move to a live container, take a free name, clear the name.
+        validate_op(&s, &moved("01G", "01T")).unwrap();
+        validate_op(&s, &name("01G", "fresh")).unwrap();
+        validate_op(&s, &name("01G", "")).unwrap();
+        // Rejected: content, a deleted parent, a held name, a missing block, a cycle.
+        let label = EventPayload::FieldEdited {
+            node_id: NodeId("01G".into()),
+            field: "label".into(),
+            value: json!("x"),
+        };
+        assert!(matches!(
+            validate_op(&s, &label),
+            Err(OpError::NodeDeleted(_))
+        ));
+        assert!(matches!(
+            validate_op(&s, &moved("01G", "01D")),
+            Err(OpError::NodeDeleted(_))
+        ));
+        assert!(matches!(
+            validate_op(&s, &name("01G", "held")),
+            Err(OpError::DuplicateVarName(_))
+        ));
+        assert!(matches!(
+            validate_op(&s, &moved("missing", "01T")),
+            Err(OpError::NodeNotFound(_))
+        ));
+        assert!(matches!(
+            validate_op(&s, &moved("01S", "01H")),
+            Err(OpError::MoveCreatesCycle { .. }) | Err(OpError::IllegalContainment { .. })
+        ));
     }
 
     #[test]

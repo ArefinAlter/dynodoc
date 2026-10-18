@@ -31,13 +31,13 @@ use crate::{idempotency, AppState};
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/documents/:id/ops/node-create", post(op_node_create))
-        .route("/documents/:id/ops/field-edit", post(op_field_edit))
-        .route("/documents/:id/ops/comment", post(op_comment))
-        .route("/documents/:id/ops/suggest", post(op_suggest))
-        .route("/documents/:id/proposals/:event_id/accept", post(accept))
-        .route("/documents/:id/proposals/:event_id/reject", post(reject))
-        .route("/documents/:id/deploy", post(deploy))
+        .route("/documents/{id}/ops/node-create", post(op_node_create))
+        .route("/documents/{id}/ops/field-edit", post(op_field_edit))
+        .route("/documents/{id}/ops/comment", post(op_comment))
+        .route("/documents/{id}/ops/suggest", post(op_suggest))
+        .route("/documents/{id}/proposals/{event_id}/accept", post(accept))
+        .route("/documents/{id}/proposals/{event_id}/reject", post(reject))
+        .route("/documents/{id}/deploy", post(deploy))
 }
 
 // --- request bodies -------------------------------------------------------------
@@ -111,7 +111,10 @@ pub async fn op_node_create(
     Json(req): Json<NodeCreateRequest>,
 ) -> Result<Json<Value>, ApiError> {
     let document_id = DocumentId(id);
-    let node_id = NodeId(req.node_id.unwrap_or_else(|| ulid::Ulid::new().to_string()));
+    let node_id = NodeId(
+        req.node_id
+            .unwrap_or_else(|| ulid::Ulid::generate().to_string()),
+    );
     let op = EventPayload::NodeCreated {
         node_id,
         node_type: req.node_type,
@@ -199,7 +202,7 @@ pub async fn op_suggest(
     let op = EventPayload::SuggestionProposed {
         suggestion_id: req
             .suggestion_id
-            .unwrap_or_else(|| ulid::Ulid::new().to_string()),
+            .unwrap_or_else(|| ulid::Ulid::generate().to_string()),
         target_node_id: req.target_node_id.map(NodeId),
         detail: req.detail,
     };

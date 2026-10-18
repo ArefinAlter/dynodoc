@@ -39,8 +39,8 @@ const DAILY: i64 = 240;
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/projects/:id/device-sessions/challenge", post(challenge))
-        .route("/projects/:id/device-sessions", post(issue))
+        .route("/projects/{id}/device-sessions/challenge", post(challenge))
+        .route("/projects/{id}/device-sessions", post(issue))
         .layer(DefaultBodyLimit::max(MAX_SESSION_BYTES * 2))
 }
 

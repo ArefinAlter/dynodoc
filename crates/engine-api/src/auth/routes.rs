@@ -44,7 +44,6 @@ pub struct AuthContext {
     pub device: Option<DeviceBinding>,
 }
 
-#[axum::async_trait]
 impl FromRequestParts<AppState> for AuthContext {
     type Rejection = AuthError;
 

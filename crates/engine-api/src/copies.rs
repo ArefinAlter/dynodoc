@@ -37,8 +37,8 @@ pub fn router() -> Router<AppState> {
             "/similarity/check",
             post(check).layer(axum::extract::DefaultBodyLimit::max(8 * 1024 * 1024)),
         )
-        .route("/documents/:id/copies", get(copies))
-        .route("/copies/:match_id", post(respond))
+        .route("/documents/{id}/copies", get(copies))
+        .route("/copies/{match_id}", post(respond))
 }
 
 /// Wakes the background indexer early, e.g. right after a file import.

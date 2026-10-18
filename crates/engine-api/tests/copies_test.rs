@@ -107,10 +107,10 @@ async fn document(
         let (status, body) = post(router, &format!("/documents/{doc}/uploads"), token, json!({"filename":filename,"content_type":"application/vnd.openxmlformats-officedocument.wordprocessingml.document","content":"UEsDBA==","report":{}})).await;
         assert_eq!(status, StatusCode::OK, "{body}");
     }
-    let root = ulid::Ulid::new().to_string();
+    let root = ulid::Ulid::generate().to_string();
     let ids: Vec<String> = paragraphs
         .iter()
-        .map(|_| ulid::Ulid::new().to_string())
+        .map(|_| ulid::Ulid::generate().to_string())
         .collect();
     let mut ops = vec![
         json!({"type":"NodeCreated","node_id":root,"node_type":"form","pos":"000000","fields":{"label":title}}),
@@ -347,7 +347,7 @@ async fn an_original_still_being_typed_stays_the_original(pool: PgPool) {
     let ops: Vec<Value> = REPORT[1..]
         .iter()
         .enumerate()
-        .map(|(i, text)| json!({"type":"NodeCreated","node_id":ulid::Ulid::new().to_string(),"node_type":"item","parent_id":root,"pos":format!("0001{i:04}"),"fields":{"label":text,"content":para(text)}}))
+        .map(|(i, text)| json!({"type":"NodeCreated","node_id":ulid::Ulid::generate().to_string(),"node_type":"item","parent_id":root,"pos":format!("0001{i:04}"),"fields":{"label":text,"content":para(text)}}))
         .collect();
     let (status, body) = post(
         &router,
@@ -704,7 +704,7 @@ async fn unrelated_content_under_the_same_name_needs_explicit_choices(pool: PgPo
         json!({"type":"FieldEdited","node_id":ids[0],"field":"content","value":para(BUDGET[0])}),
     );
     for (i, text) in BUDGET[1..].iter().enumerate() {
-        ops.push(json!({"type":"NodeCreated","node_id":ulid::Ulid::new().to_string(),"node_type":"item","parent_id":root,"pos":format!("0000{:04}",20+i),"fields":{"label":text,"content":para(text)}}));
+        ops.push(json!({"type":"NodeCreated","node_id":ulid::Ulid::generate().to_string(),"node_type":"item","parent_id":root,"pos":format!("0000{:04}",20+i),"fields":{"label":text,"content":para(text)}}));
     }
     let (status, created) = post(&router, &format!("/documents/{doc}/change-requests"), &owner, json!({"name":"report.docx","base_seq":seq,"ops":ops,"submit":true,"source":{"kind":"file","filename":"report.docx"}})).await;
     assert_eq!(status, StatusCode::OK, "{created}");

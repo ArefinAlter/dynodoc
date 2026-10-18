@@ -14,9 +14,9 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/profile", get(own).post(save))
         .route("/profile/storage", get(storage))
-        .route("/profiles/:id", get(read))
-        .route("/profiles/:id/activity", get(profile_activity))
-        .route("/profiles/:id/starred", get(starred))
+        .route("/profiles/{id}", get(read))
+        .route("/profiles/{id}/activity", get(profile_activity))
+        .route("/profiles/{id}/starred", get(starred))
 }
 /// $1 is the viewer and $2 the profile: the account itself or a shared project member.
 const VISIBLE: &str = "i.id=$2 and i.disabled_at is null and ($1=$2 or exists(select 1 from access_space s where s.kind='project' and inherited_space_role(s.id,$1) is not null and inherited_space_role(s.id,$2) is not null))";
