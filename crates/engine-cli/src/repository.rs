@@ -387,12 +387,47 @@ fn load_policy(path: &Path) -> anyhow::Result<Policy> {
         .with_context(|| format!("opening {}", path.display()))?
         .take(MAX_POLICY_BYTES as u64 + 1)
         .read_to_end(&mut bytes)?;
-    Policy::load(&bytes, LoadOptions::default()).map_err(|errors| {
-        anyhow::anyhow!(
-            "invalid retention policy {}:
-{errors}",
-            path.display()
-        )
+    Policy::load(&bytes, LoadOptions::default())
+        .map_err(|errors| anyhow::anyhow!("invalid retention policy {}:\n{errors}", path.display()))
+}
+
+/// The text `horizon-plan` prints on stdout; the other rendering goes to stderr.
+async fn horizon_plan(
+    repo: &LocalRepository,
+    policy: &Path,
+    list: usize,
+    as_of_ms: Option<i64>,
+    out: Option<PathBuf>,
+    format: PlanFormat,
+) -> anyhow::Result<String> {
+    let policy = load_policy(policy)?;
+    // A time rule needs an instant; the plan carries it, never an ambient clock.
+    let as_of_ms = match (policy.window.keep_within_days, as_of_ms) {
+        (Some(_), None) => Some(today_start_ms()?),
+        (_, given) => given,
+    };
+    let plan = repo
+        .horizon_plan(&policy, &PlanOptions { as_of_ms, list })
+        .await?;
+    let canonical = String::from_utf8(plan.canonical_bytes()?)?;
+    if let Some(out) = out {
+        use std::io::Write;
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&out)
+            .with_context(|| format!("creating {}", out.display()))?
+            .write_all(canonical.as_bytes())?;
+    }
+    Ok(match format {
+        PlanFormat::Json => {
+            eprint!("{}", plan.summary());
+            format!(
+                "{canonical}
+"
+            )
+        }
+        PlanFormat::Text => plan.summary(),
     })
 }
 
@@ -533,35 +568,7 @@ pub async fn run(path: PathBuf, project: uuid::Uuid, action: Action) -> anyhow::
             out,
             format,
         } => {
-            let policy = load_policy(&policy)?;
-            // A time rule needs an instant; the plan carries it, never an ambient clock.
-            let as_of_ms = match (policy.window.keep_within_days, as_of_ms) {
-                (Some(_), None) => Some(today_start_ms()?),
-                (_, given) => given,
-            };
-            let plan = repo
-                .horizon_plan(&policy, &PlanOptions { as_of_ms, list })
-                .await?;
-            let canonical = String::from_utf8(plan.canonical_bytes()?)?;
-            if let Some(out) = out {
-                use std::io::Write;
-                std::fs::OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .open(&out)
-                    .with_context(|| format!("creating {}", out.display()))?
-                    .write_all(canonical.as_bytes())?;
-            }
-            match format {
-                PlanFormat::Json => {
-                    eprint!("{}", plan.summary());
-                    text = Some(format!(
-                        "{canonical}
-"
-                    ));
-                }
-                PlanFormat::Text => text = Some(plan.summary()),
-            }
+            text = Some(horizon_plan(&repo, &policy, list, as_of_ms, out, format).await?);
             serde_json::Value::Null
         }
         Action::Gc {

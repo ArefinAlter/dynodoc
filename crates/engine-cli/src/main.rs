@@ -163,8 +163,24 @@ enum Command {
     },
 }
 
+/// Stack of the thread that runs the CLI. In a debug build the derived argument
+/// parser and the command futures need almost exactly the 1 MiB a Windows main
+/// thread has (adding one subcommand overflowed it before parsing finished), so the
+/// work runs on a thread with room to spare.
+const CLI_STACK_BYTES: usize = 32 * 1024 * 1024;
+
+fn main() -> anyhow::Result<()> {
+    let worker = std::thread::Builder::new()
+        .name("engine-cli".into())
+        .stack_size(CLI_STACK_BYTES)
+        .spawn(run)?;
+    worker
+        .join()
+        .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+}
+
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn run() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),

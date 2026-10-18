@@ -423,11 +423,14 @@ impl HorizonPlan {
     /// Stable plain-text rendering of the same facts, for terminals and logs.
     pub fn summary(&self) -> String {
         let mut text = format!(
-            "Horizon plan (read-only: nothing was deleted, written or signed)\nproject {}\npolicy {} ({})\ntier {:?}, topology {}\nplan hash {}\n",
+            "Horizon plan (read-only: nothing was deleted, written or signed)\nproject {}\npolicy {} ({})\ntier {}, topology {}\nplan hash {}\n",
             self.project,
             self.policy.id,
             self.policy.hash.as_str(),
-            self.tier,
+            match self.tier {
+                Tier::Content => "content",
+                Tier::History => "history",
+            },
             self.topology,
             self.plan_hash
         );
@@ -987,10 +990,8 @@ pub fn plan(
         .filter_map(|n| keep[n].map(|r| (address_of(&graph.addr[n]), r.label())))
         .collect();
     let mut by_reason: BTreeMap<Reason, u64> = BTreeMap::new();
-    for node in 0..bodies {
-        if let Some(reason) = keep[node] {
-            *by_reason.entry(reason).or_default() += 1;
-        }
+    for reason in keep.iter().take(bodies).flatten() {
+        *by_reason.entry(*reason).or_default() += 1;
     }
     let mut evidence_words: BTreeSet<String> = BTreeSet::new();
     evidence_words.insert("recovery_sources".into());
