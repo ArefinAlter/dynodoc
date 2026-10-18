@@ -1,0 +1,5 @@
+dd/1 read file=7034d450 rev=35 chain=0689b723 fmt=md n=2 trust=data ~tok=81
+@CMCQ P #8130cc {m=1,lnk=1}
+This review covers the **third quarter** and links to the [policy site](https://example.org/policy).
+@98WX P #8477df {fn=1,math=1,rich=1}
+Footnote here⟦fn:01K7Q9XM2AFOOTNOTE0000000A⟧ and math ⟦math:a^2+b^2=c^2⟧.

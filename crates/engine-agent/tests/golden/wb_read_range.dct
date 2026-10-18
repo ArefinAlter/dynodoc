@@ -1,0 +1,8 @@
+dd/1 read file=5c1d0f4e rev=47 chain=fd6f696e range=609T!A1:H6 h=c73ad7 calc=none trust=data ~tok=108
+	A	B	C	D	E	F	G	H
+1	Region	Product	Owner	Date	Q1	Q2	Notes	Total
+2	West	Gamma	Tomás	2026-05-26	10338	65885		=SUM(E2:F2)
+3	East	Alpha	Ana	2026-01-24	83718	12588		=SUM(E3:F3)
+4	West	Beta	Ana	2026-01-09	28969	58962		=SUM(E4:F4)
+5	West	Gamma	Ana	2026-04-10	75473	62468		=SUM(E5:F5)
+6	East	Beta	Raj	2026-08-12	59822	75157		=SUM(E6:F6)

@@ -1,0 +1,6 @@
+dd/1 outline file=9aa2c3d1 rev=17 chain=562cd4db kind=presentation slides=5 oh=7d6a3d depth=0 trust=data ~tok=90
+s1 FP4D title "Board update" body=1b notes=0w
+s2 J051 title-content "Highlights" body=1b notes=5w img=1(118B omitted)
+s3 BEQA section "Risks" body=1b notes=3w
+s4 Y4A0 two-content "Plan" body=2b notes=0w
+s5 N96R blank "" body=0b notes=13w hidden=1

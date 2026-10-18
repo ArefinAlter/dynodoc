@@ -1,0 +1,6 @@
+dd/1 find file=5c1d0f4e rev=47 chain=fd6f696e q="E2" n=5 total=11 more=c_2f.5 warn=truncated trust=data ~tok=55
+609T!H2 =SUM(E2:F2)
+609T!H20 =SUM(E20:F20)
+609T!H21 =SUM(E21:F21)
+609T!H22 =SUM(E22:F22)
+609T!H23 =E23+F23

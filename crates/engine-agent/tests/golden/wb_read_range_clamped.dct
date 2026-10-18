@@ -1,0 +1,4 @@
+dd/1 read file=5c1d0f4e rev=47 chain=fd6f696e range=609T!G40:H41 h=654d7c calc=none trust=data ~tok=36
+	G	H
+40		=SUM(E40:F40)
+41		=SUM(E41:F41)

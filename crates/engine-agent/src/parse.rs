@@ -615,8 +615,8 @@ pub fn read_slides(lines: &[&str]) -> Result<Vec<SlideBody>, ParseError> {
             let Some(slide) = out.last_mut() else {
                 return err(i, "notes before any slide");
             };
-            let (h, text) = notes.split_once(": ").or_else(|| notes.split_once(':')).ok_or(ParseError { at: i, message: "bad notes line".into() })?;
-            slide.notes = Some((hash6(i, h)?, unesc(i, text.strip_prefix(' ').unwrap_or(text))?));
+            let (h, text) = notes.split_once(": ").ok_or(ParseError { at: i, message: "bad notes line".into() })?;
+            slide.notes = Some((hash6(i, h)?, unesc(i, text)?));
         } else {
             return err(i, format!("unrecognised line {line:?}"));
         }

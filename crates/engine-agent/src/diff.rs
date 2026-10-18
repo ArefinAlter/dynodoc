@@ -592,12 +592,14 @@ fn diff_slides(
                         e.pos = Some(p + 1);
                         let mut lines = Vec::new();
                         let mut dropped = Dropped::default();
-                        if detail == Detail::Text && fv.notes != tv.notes {
+                        if fv.notes != tv.notes {
                             let w = word_diff(&fv.notes, &tv.notes);
-                            lines.push(format!("notes\t{}", w.marked));
-                            e.detail = vec![format!("notes\t{}", plain_marked(&w))];
                             e.chars = Some((w.del, w.ins));
-                            dropped.add(w.dropped);
+                            if detail == Detail::Text {
+                                lines.push(format!("notes\t{}", w.marked));
+                                e.detail = vec![format!("notes\t{}", plain_marked(&w))];
+                                dropped.add(w.dropped);
+                            }
                         }
                         out.push(finish(e, None, lines, dropped, sids.clone()));
                     } else if fv.node.pos != tv.node.pos {

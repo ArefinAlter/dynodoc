@@ -12,7 +12,7 @@ use crate::a1::{column_name, MAX_COLS};
 use crate::budget::Unit;
 use crate::dct::quote_counted;
 use crate::error::AgentError;
-use crate::escape::Dropped;
+use crate::escape::{escape, sanitize, Dropped};
 use crate::hash::{range_hash, Hash};
 use crate::model::{field_string, Tree};
 use crate::refs::{Ref, RefIndex, ResolveError};
@@ -324,6 +324,9 @@ pub struct ColumnProfile {
     /// Row numbers (first 10) whose cell does not follow the pattern.
     pub exceptions: Vec<u32>,
     pub exceptions_more: usize,
+    /// Characters dropped from the header, top values and pattern while sanitising.
+    #[serde(skip)]
+    pub dropped: Dropped,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -399,7 +402,9 @@ pub fn profile(view: &SheetView) -> Profile {
             [one] => one.name(),
             _ => "mixed",
         };
-        let textual = matches!(ty, "text" | "date" | "bool" | "mixed");
+        // Distinct counts and top values describe text; a column that holds formulas is
+        // described by its pattern instead.
+        let textual = matches!(ty, "text" | "date" | "bool") || (ty == "mixed" && !cats.contains(&Cat::Formula));
         let distinct = (textual && !over).then_some(counts.len());
         let mut top = Vec::new();
         if textual && !over && counts.len() <= TOP_MAX_DISTINCT {
@@ -422,25 +427,35 @@ pub fn profile(view: &SheetView) -> Profile {
             exceptions = bad;
             pattern = Some(pat);
         }
+        // Typed strings are sanitised; what that drops is kept so the text can report it.
+        let raw_header = if header_row > 0 { grid[header_row - 1][c].clone() } else { String::new() };
+        let mut dropped = escape(&raw_header).1;
+        for (k, _) in &top {
+            dropped.add(escape(k).1);
+        }
+        if let Some(p) = &pattern {
+            dropped.add(escape(p).1);
+        }
         columns.push(ColumnProfile {
             col: column_name(c as u16),
-            header: if header_row > 0 { grid[header_row - 1][c].clone() } else { String::new() },
+            header: sanitize(&raw_header),
             ty,
             n,
             blank: (rows - header_row).saturating_sub(n),
             distinct,
             distinct_over: over,
-            top,
+            top: top.into_iter().map(|(k, v)| (sanitize(&k), v)).collect(),
             min: (nums > 0 && matches!(ty, "num" | "mixed")).then_some(min),
             max: (nums > 0 && matches!(ty, "num" | "mixed")).then_some(max),
             sum: (nums > 0 && matches!(ty, "num" | "mixed")).then_some(sum),
-            pattern,
+            pattern: pattern.map(|p| sanitize(&p)),
             exceptions,
             exceptions_more: more,
+            dropped,
         });
     }
     Profile {
-        name: view.name.clone(),
+        name: sanitize(&view.name),
         rows,
         cols: view.cols,
         header,
@@ -452,7 +467,7 @@ pub fn profile(view: &SheetView) -> Profile {
 
 /// One profile line: `A "Region" text n=479 distinct=4 top="North":131,...`.
 pub fn profile_unit(col: &ColumnProfile) -> Unit {
-    let mut dropped = Dropped::default();
+    let mut dropped = col.dropped;
     let mut q = |s: &str| {
         let (t, d) = quote_counted(s);
         dropped.add(d);
