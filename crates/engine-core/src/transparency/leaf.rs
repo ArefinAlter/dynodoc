@@ -7,7 +7,9 @@
 //! (domain included) in entry bundles lets generic tlog tooling recompute leaf
 //! hashes from bundles.
 //!
-//! Tags are `HMAC-SHA256(key, message)`, hex encoded. The messages are the design's
+//! The `receipt` field of a `ref-receipt` leaf is the 32-byte receipt address that
+//! `repository::attestation::Receipt::address` already computes (this module does
+//! not call it). Tags are `HMAC-SHA256(key, message)`, hex encoded. The messages are the design's
 //! `"ref\0" || branch || "\0" || generation_u64be`, `"rot"`,
 //! `"hzn\0" || seq_u64be` and `"ver\0" || doc_uuid`. Where the design leaves the
 //! encoding open, this module fixes it: `seq` is a big-endian `u64` like

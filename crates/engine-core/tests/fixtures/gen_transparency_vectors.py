@@ -21,8 +21,10 @@ Cross-checks run on every execution (the script aborts if any fails):
     Transparency test roots (leaves "", 00, 10, 2021, 3031, 40..43, 50..57,
     60..6f), recalled from memory;
   * every proof this script emits against the RFC 9162 verification algorithms;
-  * the signed-note key-id and signature layout against the well-known Go
-    golang.org/x/mod/sumdb/note example (PeterNeumann), if recalled correctly.
+  * the signed-note key id and signature line against the well-known Go
+    golang.org/x/mod/sumdb/note example (key PeterNeumann, id c74f20a3), recalled
+    from memory; the example's vkey string was not recalled exactly, so only the
+    key id and the signature line are asserted (both reproduce).
 """
 import base64
 import hashlib

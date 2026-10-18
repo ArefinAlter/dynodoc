@@ -51,8 +51,10 @@ impl InclusionBundle {
         }))
     }
 
-    /// Parse a bundle. Whitespace is tolerated; unknown, missing or duplicate fields,
-    /// another version, malformed hex or an unknown leaf are not.
+    /// Parse a bundle. Whitespace is tolerated; unknown, missing or duplicate
+    /// top-level fields, another version, malformed hex or an unknown leaf are not.
+    /// (A key repeated inside the `leaf` object is not detected: the last one wins,
+    /// and the leaf hash is over the typed value, so the proof still binds it.)
     pub fn from_json(bytes: &[u8]) -> Result<Self, Error> {
         let wire: Wire = serde_json::from_slice(bytes).map_err(|_| {
             Error::InvalidBundle("not a bundle object with exactly the defined fields")

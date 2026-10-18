@@ -28,7 +28,10 @@
 //!
 //! * C2SP `signed-note`: line format (em dash, space, name, space, base64 of key id
 //!   and signature), key id = first four bytes of `SHA-256(name || 0x0A || type ||
-//!   key)`, Ed25519 type `0x01`, `vkey` text form, forbidden characters.
+//!   key)`, Ed25519 type `0x01`, `vkey` text form, forbidden characters. The key id
+//!   and signature line of the well-known Go `golang.org/x/mod/sumdb/note` example
+//!   (key `PeterNeumann`, id `c74f20a3`) reproduce in the Python generator, which
+//!   checks the log-signature layout; the forbidden-character set is still unchecked.
 //! * C2SP `tlog-checkpoint`: origin, decimal size, base64 root, no extension lines.
 //! * C2SP `tlog-cosignature` `cosignature/v1`: type byte `0x04`, signed message
 //!   `cosignature/v1\ntime <decimal>\n<checkpoint text>`, signature-line body of an
