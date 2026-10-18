@@ -1,11 +1,56 @@
 # Design: independent witnesses and a transparency log for signed heads
 
-> **Status: design, not implemented.** 14 October 2026. Nothing here exists in
-> source. It adds no migration, key, endpoint or file format to the current
-> repository. Part of the [remaining-engine-designs index](ENGINE-REMAINING-DESIGNS.md).
+> **Status: design, with phases W0, W1 (core) and W2 (verifier library) built as an
+> unused library on 18 October 2026; everything else is not implemented.** Written
+> 14 October 2026. See the [implementation note](#implementation-note-18-october-2026)
+> for exactly what exists. The library adds no migration, key, endpoint or file
+> format to the running system. Part of the
+> [remaining-engine-designs index](ENGINE-REMAINING-DESIGNS.md).
 > Item: `E-WITNESS`. Needs the receipt authority to be installed for its main leaf
 > type ([decision](RECEIPT-AUTHORITY-DECISION.md)); event-chain anchoring
 > (section 4.3) does not.
+
+## Implementation note (18 October 2026)
+
+**Exists** (`crates/engine-core/src/transparency/`, a pure library that no existing
+code path calls; no database, network, clock or thread):
+
+- W0: leaf encodings and blinded tags (4.1), checkpoint, signed-note and cosignature
+  formats (4.2), the inclusion bundle (4.4), and the vectors
+  `crates/engine-core/tests/fixtures/transparency-v1.json`, written by the
+  independent pure-Python generator `gen_transparency_vectors.py` beside it and
+  reproduced byte for byte by `tests/transparency_vectors_test.rs`.
+- W1 core: the RFC 6962 tree with inclusion and consistency proofs, the `tlog-tiles`
+  layout (height 8) behind a `TileStore` trait with memory and directory stores,
+  and `Log` (append, checkpoint, sign, bundle). Property tests run to 10^5 leaves in
+  the normal suite and 10^6 as an ignored test; tile-store restart safety is tested.
+- W2 verifier library: the trust policy and its validating loader (4.5), assurance
+  levels L1 to L3 (4.6) from a bundle, a policy and the known checkpoints, with
+  split-view, rollback and fork rejection.
+
+**Does not exist:** the PostgreSQL outbox, leader worker and migration (4.7), HTTP
+endpoints (4.8), CLI verbs, journal v2 (4.11), `sync` integration (4.10), the
+witness protocol, service and log-side submission (W3), the monitor and `k_project`
+distribution (W4), event-chain anchoring (W5), operations (W6) and the fault matrix
+(W7). No log has been created in any environment and no witness has cosigned
+anything. L0 (receipt signature, chain and pin) is not computed by the library; the
+caller supplies it.
+
+**Not checked against published text** (unverified: check at build time): the
+signature type byte `0x04` for witness keys, the `cosignature/v1` message layout and
+signature-line body, the tile path spelling and entry-bundle framing, and the exact
+forbidden-character set of signed notes. The log signature format reproduces the
+published Go `note` package example, and the eight published RFC 6962 test roots
+reproduce.
+
+**Decisions where the design was open:** entry bundles store the full leaf entry
+(domain prefix then data) so generic tooling can recompute leaf hashes; `seq` in a
+`history-horizon` tag is a big-endian `u64` and `doc_uuid` in a `named-version` tag
+is the 16 raw bytes; a cosignature counts when its time is within `max_age_seconds`
+of now on either side; duplicate signature lines and checkpoint extension lines are
+rejected; the bundle size must equal the checkpoint size; a policy needs a threshold
+of at least 1 that its witnesses (and distinct operators, when counted once) can
+meet.
 
 ## 0. Summary
 
@@ -118,9 +163,9 @@ necessary and visible to monitors that look.
 | Selected-history sync verifying receipt chains and pinning remote heads | EXISTS | [SELECTED-HISTORY-SYNC.md](SELECTED-HISTORY-SYNC.md) |
 | Per-document event hash chain and Merkle snapshot roots | EXISTS | `crates/engine-core/src/log.rs`, `snapshot.rs` |
 | Any external anchoring of event-chain heads | MISSING | none |
-| Merkle log over receipts, checkpoints, consistency proofs | MISSING | none |
+| Merkle log over receipts, checkpoints, consistency proofs | PARTIAL | library only: `crates/engine-core/src/transparency/` (tree, tiles, checkpoints, bundles); no outbox, worker, endpoint or receipt-leaf producer |
 | Witness protocol, witness service, monitor | MISSING | none |
-| Client trust policy with quorum | MISSING | pin has one `trusted_key` |
+| Client trust policy with quorum | PARTIAL | library only: `transparency::policy` and `transparency::assurance` (loader, levels L1 to L3); pins still hold one `trusted_key`; no journal, CLI or sync wiring |
 | Gossip between clients or services | MISSING | none |
 
 ## 3. Architecture
