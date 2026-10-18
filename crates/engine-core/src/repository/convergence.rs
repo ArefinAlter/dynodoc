@@ -14,7 +14,12 @@
 
 use super::{compare::ProjectPlan, local::LocalRepository, Error, FileEntry};
 use crate::{
-    materializer::DocumentState,
+    materializer::{CommentState, DocumentState, SuggestionState},
+    merge_policy::{
+        engine::{Collected, Engine},
+        evidence::Labels,
+        Aspect, Family, MergeEvidence, MergePolicy, Registry,
+    },
     shared_checkpoint::{
         self,
         typed::{self, SemanticLimits},
@@ -113,10 +118,170 @@ fn three_way<T: Clone + PartialEq>(base: &T, team: &T, draft: &T) -> Option<T> {
     }
 }
 
+/// The parts of a merge a policy can change. `Whole` is the merge as it was before
+/// policies: node fields by `workspace_merge::merge`, each collection as one value.
+trait Merger {
+    fn plan(
+        &mut self,
+        base: &DocumentState,
+        team: &DocumentState,
+        draft: &DocumentState,
+    ) -> workspace_merge::MergePlan;
+    /// `None` is a conflict on the whole collection.
+    fn comments(
+        &mut self,
+        base: &DocumentState,
+        team: &DocumentState,
+        draft: &DocumentState,
+    ) -> Option<Vec<CommentState>>;
+    fn suggestions(
+        &mut self,
+        base: &DocumentState,
+        team: &DocumentState,
+        draft: &DocumentState,
+    ) -> Option<BTreeMap<String, SuggestionState>>;
+}
+
+struct Whole;
+
+impl Merger for Whole {
+    fn plan(
+        &mut self,
+        base: &DocumentState,
+        team: &DocumentState,
+        draft: &DocumentState,
+    ) -> workspace_merge::MergePlan {
+        workspace_merge::merge(base, team, draft, &BTreeMap::new())
+    }
+    fn comments(
+        &mut self,
+        base: &DocumentState,
+        team: &DocumentState,
+        draft: &DocumentState,
+    ) -> Option<Vec<CommentState>> {
+        three_way(&base.comments, &team.comments, &draft.comments)
+    }
+    fn suggestions(
+        &mut self,
+        base: &DocumentState,
+        team: &DocumentState,
+        draft: &DocumentState,
+    ) -> Option<BTreeMap<String, SuggestionState>> {
+        three_way(&base.suggestions, &team.suggestions, &draft.suggestions)
+    }
+}
+
+/// Merges through a policy and keeps the evidence of the decisions it took.
+struct Policied<'a> {
+    policy: &'a MergePolicy,
+    registry: &'a Registry,
+    evidence: Option<MergeEvidence>,
+    collections: Option<Engine<'a>>,
+}
+
+impl<'a> Policied<'a> {
+    fn new(policy: &'a MergePolicy, registry: &'a Registry) -> Self {
+        Self {
+            policy,
+            registry,
+            evidence: None,
+            collections: None,
+        }
+    }
+
+    /// The evidence of everything this merger decided; empty if it decided nothing.
+    fn finish(mut self) -> MergeEvidence {
+        let mut evidence = self
+            .evidence
+            .take()
+            .unwrap_or_else(|| MergeEvidence::new(self.policy, Family::Document));
+        if let Some(engine) = self.collections {
+            evidence.decisions.extend(engine.finish().decisions);
+        }
+        evidence
+    }
+
+    /// A collection decided by its rule, or `Err(())` when no rule applied and the
+    /// whole-collection choice stands.
+    fn collection<T: serde::de::DeserializeOwned + Serialize>(
+        &mut self,
+        aspect: Aspect,
+        sides: [&T; 3],
+    ) -> Result<Option<T>, ()> {
+        let Some(engine) = self.collections.as_mut() else {
+            return Err(());
+        };
+        let [base, team, draft] = sides.map(|v| json!(v));
+        match engine.collection(aspect, &base, &team, &draft) {
+            Collected::Whole => Err(()),
+            Collected::Merged(value) => Ok(serde_json::from_value(value).ok()),
+            Collected::Conflict => Ok(None),
+        }
+    }
+}
+
+impl Merger for Policied<'_> {
+    fn plan(
+        &mut self,
+        base: &DocumentState,
+        team: &DocumentState,
+        draft: &DocumentState,
+    ) -> workspace_merge::MergePlan {
+        let (plan, evidence) = workspace_merge::merge_with_registry(
+            base,
+            team,
+            draft,
+            &BTreeMap::new(),
+            self.policy,
+            self.registry,
+        );
+        self.collections = Some(Engine::new(self.policy, self.registry, evidence.family));
+        self.evidence = Some(evidence);
+        plan
+    }
+    fn comments(
+        &mut self,
+        base: &DocumentState,
+        team: &DocumentState,
+        draft: &DocumentState,
+    ) -> Option<Vec<CommentState>> {
+        match self.collection(
+            Aspect::Comments,
+            [&base.comments, &team.comments, &draft.comments],
+        ) {
+            Ok(decided) => decided,
+            Err(()) => three_way(&base.comments, &team.comments, &draft.comments),
+        }
+    }
+    fn suggestions(
+        &mut self,
+        base: &DocumentState,
+        team: &DocumentState,
+        draft: &DocumentState,
+    ) -> Option<BTreeMap<String, SuggestionState>> {
+        match self.collection(
+            Aspect::Suggestions,
+            [&base.suggestions, &team.suggestions, &draft.suggestions],
+        ) {
+            Ok(decided) => decided,
+            Err(()) => three_way(&base.suggestions, &team.suggestions, &draft.suggestions),
+        }
+    }
+}
+
 /// Node/field merge with the symmetric handling workspace_merge omits: it only
 /// visits the draft's nodes, so a node missing from the draft and the draft's
 /// removed choices, comments and suggestions would otherwise depend on side order.
 fn merge_states(base: &DocumentState, team: &DocumentState, draft: &DocumentState) -> Merged {
+    merge_states_with(base, team, draft, &mut Whole)
+}
+
+fn merge_states_with(
+    base: &DocumentState,
+    team: &DocumentState,
+    draft: &DocumentState,
+    merger: &mut dyn Merger,
+) -> Merged {
     let mut conflicts = Vec::new();
     // The merge indexes into field maps; refuse shapes it cannot handle.
     for id in base
@@ -173,7 +338,7 @@ fn merge_states(base: &DocumentState, team: &DocumentState, draft: &DocumentStat
         }
     }
     let team = adjusted.as_ref().unwrap_or(team);
-    let plan = workspace_merge::merge(base, team, draft, &BTreeMap::new());
+    let plan = merger.plan(base, team, draft);
     conflicts.extend(plan.conflicts.into_iter().map(|c| RawConflict {
         node: Some(c.node_id),
         field: c.field,
@@ -182,7 +347,7 @@ fn merge_states(base: &DocumentState, team: &DocumentState, draft: &DocumentStat
         draft: c.draft,
     }));
     let mut state = plan.state;
-    match three_way(&base.comments, &team.comments, &draft.comments) {
+    match merger.comments(base, team, draft) {
         Some(comments) => state.comments = comments,
         None => conflicts.push(RawConflict {
             node: None,
@@ -192,7 +357,7 @@ fn merge_states(base: &DocumentState, team: &DocumentState, draft: &DocumentStat
             draft: json!(draft.comments),
         }),
     }
-    match three_way(&base.suggestions, &team.suggestions, &draft.suggestions) {
+    match merger.suggestions(base, team, draft) {
         Some(suggestions) => state.suggestions = suggestions,
         None => conflicts.push(RawConflict {
             node: None,
@@ -226,14 +391,103 @@ pub fn converge(
     left_root: &Address,
     right_root: &Address,
 ) -> Convergence {
+    converge_by(base, left, right, left_root, right_root, &mut |b, t, d| {
+        merge_states(b, t, d)
+    })
+}
+
+/// [`converge`] with every decision taken through `policy`, and the evidence of the
+/// canonical orientation, the one that decides the merged state and its address.
+/// `dynodoc.default.v1` gives the result `converge` gives. A policy that selects
+/// `dynodoc.collection.element-wise.v1` for comments or suggestions can merge states
+/// that `converge` reports as conflicts, and a v3 commit cannot record that
+/// strategy: use this to preview, not to produce a signed merge.
+pub fn converge_with_policy(
+    base: &DocumentState,
+    left: &DocumentState,
+    right: &DocumentState,
+    left_root: &Address,
+    right_root: &Address,
+    policy: &MergePolicy,
+) -> (Convergence, ConvergenceEvidence) {
+    converge_with_registry(
+        base,
+        left,
+        right,
+        left_root,
+        right_root,
+        policy,
+        &Registry::builtin(),
+    )
+}
+
+/// [`converge_with_policy`] with the strategies of `registry`.
+pub fn converge_with_registry(
+    base: &DocumentState,
+    left: &DocumentState,
+    right: &DocumentState,
+    left_root: &Address,
+    right_root: &Address,
+    policy: &MergePolicy,
+    registry: &Registry,
+) -> (Convergence, ConvergenceEvidence) {
+    let mut canonical = None;
+    let convergence = converge_by(base, left, right, left_root, right_root, &mut |b, t, d| {
+        let mut merger = Policied::new(policy, registry);
+        let merged = merge_states_with(b, t, d, &mut merger);
+        // The first call is the canonical orientation; the second only checks it.
+        if canonical.is_none() {
+            canonical = Some(merger.finish());
+        }
+        merged
+    });
+    let evidence = canonical.unwrap_or_else(|| MergeEvidence::new(policy, Family::Document));
+    let team_is_left = left_root <= right_root;
+    (
+        convergence,
+        ConvergenceEvidence {
+            team: if team_is_left { "left" } else { "right" },
+            evidence,
+        },
+    )
+}
+
+/// What decided a converged document: the evidence of the canonical orientation and
+/// which input played the team side in it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ConvergenceEvidence {
+    /// `left` or `right`: the input that was the team in `evidence`.
+    pub team: &'static str,
+    pub evidence: MergeEvidence,
+}
+
+impl ConvergenceEvidence {
+    /// The text rendering with the sides named as the caller's inputs.
+    pub fn render_text(&self) -> String {
+        let (team, draft) = match self.team {
+            "left" => ("left", "right"),
+            _ => ("right", "left"),
+        };
+        self.evidence.render_text(Labels { team, draft })
+    }
+}
+
+fn converge_by(
+    base: &DocumentState,
+    left: &DocumentState,
+    right: &DocumentState,
+    left_root: &Address,
+    right_root: &Address,
+    merge: &mut dyn FnMut(&DocumentState, &DocumentState, &DocumentState) -> Merged,
+) -> Convergence {
     let team_is_left = left_root <= right_root;
     let (team, draft) = if team_is_left {
         (left, right)
     } else {
         (right, left)
     };
-    let forward = merge_states(base, team, draft);
-    let backward = merge_states(base, draft, team);
+    let forward = merge(base, team, draft);
+    let backward = merge(base, draft, team);
     let mut conflicts: BTreeMap<(Option<NodeId>, String), StateConflict> = BTreeMap::new();
     // `team_value` is the value on the forward team side.
     let mut add = |raw: RawConflict, forward_orientation: bool| {
@@ -769,5 +1023,180 @@ mod tests {
                 assert_eq!(report.merged.as_ref().unwrap(), &changed);
             }
         }
+    }
+
+    fn policy(rules: &str) -> MergePolicy {
+        let text = format!(r#"{{"version":1,"id":"t","rules":[{rules}]}}"#);
+        MergePolicy::from_json(text.as_bytes(), &Registry::builtin()).unwrap()
+    }
+
+    /// Comments and suggestions merged element by element, the rest as the default.
+    fn element_wise_policy() -> MergePolicy {
+        policy(
+            r#"{"id":"c","match":{"aspect":"comments"},"strategy":"dynodoc.collection.element-wise.v1","gate":"auto"},
+               {"id":"s","match":{"aspect":"suggestions"},"strategy":"dynodoc.collection.element-wise.v1","gate":"auto-with-review"},
+               {"id":"content","match":{"field":"content"},"strategy":"dynodoc.default.richtext.v1","gate":"auto"},
+               {"id":"page","match":{"field":"page_setup"},"strategy":"dynodoc.default.property.v1","gate":"auto"},
+               {"id":"rest","match":{},"strategy":"dynodoc.default.whole-value.v1","gate":"auto"}"#,
+        )
+    }
+
+    async fn run_with(
+        policy: &MergePolicy,
+        base: &DocumentState,
+        left: &DocumentState,
+        right: &DocumentState,
+    ) -> (Report, ConvergenceEvidence) {
+        let (lr, rr) = (
+            state_address(doc_id(), left).await.unwrap(),
+            state_address(doc_id(), right).await.unwrap(),
+        );
+        let (result, evidence) = converge_with_policy(base, left, right, &lr, &rr, policy);
+        let address = match &result.merged {
+            Some(state) => Some(state_address(doc_id(), state).await.unwrap()),
+            None => None,
+        };
+        (
+            Report {
+                clean: result.merged.is_some(),
+                address,
+                merged: result.merged,
+                conflicts: result.conflicts,
+            },
+            evidence,
+        )
+    }
+
+    #[tokio::test]
+    async fn the_default_policy_converges_exactly_like_converge() {
+        let mut rng = Lcg(0xD15C0 ^ 0x77);
+        let (mut clean, mut conflicted) = (0, 0);
+        for _ in 0..600 {
+            let base = random_base(5);
+            let (mut left, mut right) = (base.clone(), base.clone());
+            for _ in 0..rng.next(4) {
+                random_edit(&mut rng, &mut left, true);
+            }
+            for _ in 0..rng.next(4) {
+                random_edit(&mut rng, &mut right, true);
+            }
+            let plain = run(&base, &left, &right).await;
+            let (policied, evidence) =
+                run_with(crate::merge_policy::default::policy(), &base, &left, &right).await;
+            assert_eq!(plain.clean, policied.clean);
+            assert_eq!(plain.address, policied.address);
+            assert_eq!(plain.merged, policied.merged);
+            assert_eq!(plain.conflicts, policied.conflicts);
+            assert_eq!(evidence.evidence.policy.id, "dynodoc.default.v1");
+            if plain.clean {
+                clean += 1;
+            } else {
+                conflicted += 1;
+            }
+        }
+        assert!(clean > 60 && conflicted > 60, "{clean}/{conflicted}");
+    }
+
+    #[tokio::test]
+    async fn element_wise_comments_and_suggestions_merge_what_converge_reports_as_conflicts() {
+        let base = document(vec![node("a", plain("A", ""))]);
+        let comment = |body: &str| CommentState {
+            node_id: None,
+            body: body.into(),
+        };
+        let mut left = base.clone();
+        left.comments.push(comment("from left"));
+        let mut right = base.clone();
+        right.comments.push(comment("from right"));
+        // Whole-collection choice: both added a comment, so the file is not clean.
+        assert!(!run(&base, &left, &right).await.clean);
+        let policy = element_wise_policy();
+        let (forward, evidence) = run_with(&policy, &base, &left, &right).await;
+        let (reverse, mirrored_evidence) = run_with(&policy, &base, &right, &left).await;
+        assert!(forward.clean, "{:?}", forward.conflicts);
+        assert_eq!(forward.address, reverse.address);
+        assert_eq!(forward.merged, reverse.merged);
+        let bodies: Vec<_> = forward
+            .merged
+            .as_ref()
+            .unwrap()
+            .comments
+            .iter()
+            .map(|c| c.body.as_str())
+            .collect();
+        assert_eq!(bodies, ["from left", "from right"]);
+        // The decision is recorded, and the evidence names which input was the team.
+        let decision = evidence
+            .evidence
+            .decisions
+            .iter()
+            .find(|d| d.field == "$comments")
+            .unwrap();
+        assert_eq!(
+            decision.strategy.as_deref(),
+            Some("dynodoc.collection.element-wise.v1")
+        );
+        assert_eq!(decision.node, None);
+        assert_eq!(
+            evidence.evidence.decisions,
+            mirrored_evidence.evidence.decisions
+        );
+        assert_ne!(evidence.team, mirrored_evidence.team);
+        assert!(evidence.render_text().contains("$comments: merged"));
+
+        // Suggestions: different ids merge; the same id changed differently conflicts.
+        let suggestion = |value: i64| SuggestionState {
+            target_node_id: None,
+            detail: json!({"a": value}),
+            accepted: false,
+            rejected_reason: None,
+        };
+        let mut left = base.clone();
+        left.suggestions.insert("s1".into(), suggestion(1));
+        let mut right = base.clone();
+        right.suggestions.insert("s2".into(), suggestion(2));
+        assert!(!run(&base, &left, &right).await.clean);
+        let (report, evidence) = run_with(&policy, &base, &left, &right).await;
+        assert!(report.clean);
+        assert_eq!(report.merged.unwrap().suggestions.len(), 2);
+        let decision = &evidence.evidence.decisions[0];
+        assert_eq!(decision.field, "$suggestions");
+        assert!(decision.needs_review);
+        right.suggestions.insert("s1".into(), suggestion(9));
+        let (report, evidence) = run_with(&policy, &base, &left, &right).await;
+        assert!(!report.clean);
+        assert_eq!(report.conflicts[0].field, "$suggestions");
+        assert_eq!(report.conflicts[0].node, None);
+        assert!(evidence.evidence.decisions[0].notes[0].contains("`s1`"));
+    }
+
+    #[tokio::test]
+    async fn a_collection_gate_that_is_not_automatic_keeps_the_whole_collection_choice() {
+        let base = document(vec![node("a", plain("A", ""))]);
+        let comment = |body: &str| CommentState {
+            node_id: None,
+            body: body.into(),
+        };
+        let mut left = base.clone();
+        left.comments.push(comment("l"));
+        let mut right = base.clone();
+        right.comments.push(comment("r"));
+        let manual = policy(
+            r#"{"id":"c","match":{"aspect":"comments"},"strategy":"dynodoc.collection.element-wise.v1","gate":"manual"},
+               {"id":"rest","match":{},"strategy":"dynodoc.default.whole-value.v1","gate":"auto"}"#,
+        );
+        let (report, evidence) = run_with(&manual, &base, &left, &right).await;
+        assert!(!report.clean);
+        assert_eq!(report.conflicts[0].field, "$comments");
+        let decision = &evidence.evidence.decisions[0];
+        assert_eq!(decision.reason, "manual-gate");
+        assert_eq!(
+            decision.outcome,
+            crate::merge_policy::evidence::DecisionOutcome::Legacy
+        );
+        // One-sided changes are the whole-collection choice and are not decisions.
+        let (report, evidence) = run_with(&element_wise_policy(), &base, &left, &base).await;
+        assert!(report.clean);
+        assert!(evidence.evidence.decisions.is_empty());
     }
 }
