@@ -92,6 +92,11 @@ insta = { version = "1", features = ["json"] }
 opt-level = 3
 [profile.dev.package.blake2]
 opt-level = 3
+# engine-cli's generated argument parser needs about 1 MiB of stack at opt-level 0, the
+# whole main-thread stack of a Windows debug build, so adding one option to a
+# subcommand made `engine-cli --help` overflow it. Level 1 needs under a quarter.
+[profile.dev.package.engine-cli]
+opt-level = 1
 
 [profile.release]
 lto = "thin"

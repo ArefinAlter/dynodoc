@@ -1,11 +1,74 @@
 # Design: automatic resolution of node and field conflicts
 
-> **Status: design, not implemented.** 14 October 2026. Nothing here exists in
-> source. It proposes a strategy framework, a policy-as-data format and new merge
+> **Status: design; phases N0 and N1 implemented as a behavioural no-op, N2 onwards
+> not implemented.** 14 October 2026; implementation note of 18 October 2026 below.
+> It proposes a strategy framework, a policy-as-data format and new merge
 > strategies; it changes no stored hash, event or applied migration. Part of the
 > [remaining-engine-designs index](ENGINE-REMAINING-DESIGNS.md). Item: `E-NODERES`.
 > This is the foundation the [cross-document merge design](DESIGN-CROSS-DOCUMENT-MERGE.md)
 > calls for per-document decisions. Recommended to build first among the merge items.
+
+### Implementation note, 18 October 2026: phases N0 and N1
+
+What exists, in `crates/engine-core/src/merge_policy/` (and the seams in
+`workspace_merge.rs` and `repository/convergence.rs`, and `--explain` in
+`crates/engine-cli/src/repository.rs`):
+
+- **Policy data.** `dynodoc.merge-policy.v1` as typed Rust, a strict JSON loader
+  (unknown or duplicate keys, `null`, unknown strategies and parameters, shadowed
+  rules, a rule weaker than its own `floors` block and every other deviation are
+  errors with a path), the canonical form and the hash of 6.3. The loader reads JSON;
+  the YAML of 6.1 is illustrative, there is no YAML dependency. The hash is pinned by
+  `tests/fixtures/merge-policy-v1.json`, written by the independent
+  `tests/fixtures/gen_merge_policy_vectors.py` and reproduced by
+  `tests/merge_policy_vectors_test.rs`.
+- **Strategy framework.** The `Strategy` trait (`Merged` / `Prefer` / `Conflict`
+  plus what the strategy used), a laws harness for L1 to L8 of 4.1 (`laws::check`),
+  and a registry. Built strategies: `dynodoc.default.richtext.v1`,
+  `dynodoc.default.property.v1` and `dynodoc.default.whole-value.v1`, which call the
+  logic `workspace_merge::select` has always called, and
+  `dynodoc.collection.element-wise.v1` (comments and suggestions, 4.8), which is new
+  behaviour and opt-in.
+- **`dynodoc.default.v1`** routes every decision of `workspace_merge::merge` through
+  those three strategies. `merge_with_policy` under it returns the plan `merge`
+  returns (`tests/merge_policy_noop_test.rs`: random histories, byte-equal state,
+  conflicts and operations for four resolution sets each; `converge_with_policy`
+  likewise in `convergence.rs`). `merge` itself is unchanged in behaviour: its body
+  now runs through a field selector whose plain implementation calls the unchanged
+  `select`.
+- **Evidence.** `merge_with_policy(base, team, draft, resolutions, &policy)` returns
+  `(MergePlan, MergeEvidence)`; the plan's fields are untouched. Each decision that
+  needed a strategy records the node, field, matching rule, strategy, effective gate,
+  outcome, reason and a digest and preview of the three inputs; differences settled
+  without a strategy are counted. `--explain` on `compare`, `merge` and
+  `verify-merge` renders it as JSON and as text.
+- **Invariants.** INV-G1 to INV-G8 as post-merge checks: a violation the merged state
+  has and neither input had is reported as evidence (`defaults.invariants: flag`, the
+  default) or also as a `$invariant` conflict (`conflict`). Nothing is repaired. For
+  G8 only the state-level part (flag shape and placement) is checked; the edit
+  guards act on operations.
+- **Gates.** `blocked` stops the strategy from running and `manual` turns its result
+  into a conflict, in both cases the caller's explicit resolutions still apply;
+  `auto-with-review` applies the merge and records `needs_review` in the evidence.
+
+What does not exist: every strategy of N2 to N4 (grapheme text, marks, same-shape
+lists and tables, formulas and sheets, slides, shift certificates); loser
+preservation (a strategy that returns `Prefer` is refused and the decision stays a
+conflict); the resolution-set hash, review binding and `needs_review` on commits (N5);
+project or organization floors and policy storage, API and audit (only the policy's
+own `floors` block is checked); INV-T, INV-S and INV-P; a policy-aware
+`merge_strict`; commit format v4. `--merge-policy` is accepted by `compare --explain`
+only: `merge` always uses the default policy, because a v3 commit records only
+`dynodoc.same-file.node-field.v1` and `verify-merge` re-runs that. Element-wise comments and
+suggestions therefore cannot yet be part of a signed merge.
+
+Additions to 6.1 made while building: `defaults.invariants`; the rule `match.aspect`
+values `comments` and `suggestions` (`marks` and `structure` are accepted and reserved,
+no built strategy decides them); `match.type` also matches the block type of the
+`content` value. Findings: `richtext::merge` is symmetric only up to the order of
+marks on a run (L1 holds after sorting them), so `dynodoc.default.richtext.v1` does
+not promise L1; the family of a document is derived from its section kinds, there is
+no stored flag.
 
 ## 0. Summary
 
@@ -118,7 +181,8 @@ result; it cannot know what they meant.
 | Mark property merge by type then property | EXISTS | `richtext.rs` `merge_property`, `merge_marks` |
 | Competing same-gap insertions, delete versus format: conflict | EXISTS (as conflict) | `richtext_test.rs` |
 | Lists and tables: edits to different items conflict | EXISTS (as conflict) | `richtext_test.rs` (`bulletList` case); comment in `richtext::merge` |
-| Comments/suggestions merged as whole collections | EXISTS | `convergence.rs` `three_way` |
+| Comments/suggestions merged as whole collections | EXISTS (the default) | `convergence.rs` `three_way` |
+| Comments/suggestions merged element by element | EXISTS (opt-in by policy; not recordable in a v3 commit) | `merge_policy/collections.rs`, `convergence.rs` `converge_with_policy` |
 | Symmetric orientation handling and clean-in-both rule | EXISTS | `convergence.rs` `converge` |
 | Four-card conflicts for event branches | REMOVED 15 Oct 2026 (module was unused; its integrity cases are tests in `integrity.rs`) | was `crates/engine-core/src/merge.rs` |
 | Structural validity gate (cycle, containment, unique var_name) | EXISTS | `crates/engine-core/src/ops.rs` `validate_op` (applied on write, not inside state merge) |
@@ -126,12 +190,13 @@ result; it cannot know what they meant.
 | Sheet protection guard | EXISTS | `crates/engine-core/src/governance.rs` `check_sheet_protection` |
 | Property tests for text patches | PARTIAL | `crates/engine-core/tests/richtext_test.rs` (`proptest!` for round trip only) |
 | Grapheme-cluster aware text alignment | MISSING | scalar tokens in `richtext.rs` |
-| Strategy registry, policy data, loser preservation | MISSING | none |
+| Strategy registry, policy data, evidence | EXISTS (N0, N1; the strategies are the existing logic) | `crates/engine-core/src/merge_policy/`, `workspace_merge::merge_with_policy` |
+| Loser preservation | MISSING | none; a `Prefer` outcome is refused |
 | Same-shape table and list merge | MISSING | none |
 | Spreadsheet formula-aware merge, structural shift normalization | MISSING | none; column identity is positional (`cell_<n>`) |
 | Slide shape strategies beyond per-field three-way | MISSING | none |
-| Post-merge invariant suite for state-level merge | MISSING | `ops::validate_op` runs only on event apply |
-| Policy floors for merge automation | MISSING | review floors exist (`PROJECT-POLICY-AND-METADATA.md`), none for merge strategy |
+| Post-merge invariant suite for state-level merge | PARTIAL (INV-G1 to G8 as flags or conflicts; INV-T, S, P missing) | `merge_policy/invariants.rs`; `ops::validate_op` still runs only on event apply |
+| Policy floors for merge automation | PARTIAL (a policy's own `floors` block is enforced; project and organization floors missing) | `merge_policy/policy.rs`; review floors exist (`PROJECT-POLICY-AND-METADATA.md`) |
 
 ## 3. Architecture
 
