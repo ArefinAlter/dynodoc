@@ -798,7 +798,6 @@ fn shape_lines(s: &ShapeView, text: &mut String, dropped: &mut Dropped) {
 }
 
 /// One slide, or only `only` of its shapes.
-#[allow(clippy::too_many_arguments)]
 fn slide_unit(
     idx: &RefIndex,
     pos: usize,

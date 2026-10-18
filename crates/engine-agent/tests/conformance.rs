@@ -1202,6 +1202,46 @@ fn have_hashes_and_formats() {
 }
 
 #[test]
+fn block_hashes_equal_the_structure_route() {
+    // `GET /documents/{id}/structure` reports `fingerprint(content)` per live block as
+    // `revision_hash`; the outline's `h` is its first 6 characters (spec 5.4, 17 "Hash vectors").
+    let d = fixtures::document();
+    let fx = &d.base;
+    let r = outline(
+        &fx.meta,
+        &fx.state,
+        &OutlineOptions {
+            max_bytes: Some(64_000),
+            limit: Some(1000),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let idx = RefIndex::from_state(&fx.state);
+    let by_ref: BTreeMap<String, String> = fx
+        .state
+        .nodes
+        .values()
+        .filter(|n| !n.deleted && n.current_fields["content"].is_object())
+        .map(|n| {
+            (
+                idx.ref_of(&n.id).unwrap().to_string(),
+                engine_core::richtext::fingerprint(&n.current_fields["content"]),
+            )
+        })
+        .collect();
+    let rows = r.data.blocks.unwrap();
+    assert_eq!(rows.len(), by_ref.len());
+    for row in rows {
+        assert_eq!(row.h, by_ref[&row.r][..6], "{}", row.r);
+    }
+    assert_eq!(
+        fx.meta.rev_token().etag(),
+        format!("\"{}:{}\"", fx.meta.rev, &fx.meta.chain[..8])
+    );
+}
+
+#[test]
 fn tool_output_is_deterministic() {
     let render = || {
         let d = fixtures::document();

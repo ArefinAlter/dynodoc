@@ -47,7 +47,7 @@
       },
       "read": {
         "calls": 19,
-        "dct_bytes": 7758,
+        "dct_bytes": 7759,
         "dct_est_tokens_bytes4": 1940,
         "dct_est_tokens_chars4": 1854,
         "json_mirror_bytes": 15981,
@@ -263,10 +263,10 @@
       },
       {
         "dct": {
-          "bytes": 838,
-          "chars": 804,
+          "bytes": 839,
+          "chars": 805,
           "est_tokens_bytes4": 210,
-          "est_tokens_chars4": 201
+          "est_tokens_chars4": 202
         },
         "json_mirror": {
           "bytes": 1817,
@@ -274,7 +274,7 @@
           "est_tokens_bytes4": 455,
           "est_tokens_chars4": 446
         },
-        "json_over_dct_bytes": 2.168,
+        "json_over_dct_bytes": 2.166,
         "name": "doc_read_hostile",
         "tool": "read"
       },
@@ -894,7 +894,7 @@
     "note": "The calls of tests/golden/ (error lines excluded: they have no JSON mirror, the HTTP envelope differs). Small files: 28 to 32 blocks, 41 rows, 5 slides.",
     "totals": {
       "calls": 49,
-      "dct_bytes": 19466,
+      "dct_bytes": 19467,
       "dct_est_tokens_bytes4": 4867,
       "dct_est_tokens_chars4": 4675,
       "json_mirror_bytes": 40654,

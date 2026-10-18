@@ -125,6 +125,10 @@ fn needs_line_escape(escaped: &str, ctx: Ctx) -> bool {
 pub fn guard_line_start(mut escaped: String, ctx: Ctx) -> String {
     if needs_line_escape(&escaped, ctx) {
         escaped.insert(0, '\\');
+    } else if escaped.starts_with("dd/1") {
+        // A line that opens like a header (`dd/1 read ...`) is escaped in every context
+        // (`dd\/1`), so document text cannot forge the first line of a response.
+        escaped.insert(2, '\\');
     }
     escaped
 }
@@ -203,6 +207,9 @@ mod tests {
         assert_eq!(e(">9F1A", Ctx::Diff), "\\>9F1A");
         assert_eq!(e(">9F1A", Ctx::Block), ">9F1A");
         assert_eq!(e("\\@", Ctx::Block), "\\\\@");
+        assert_eq!(e("dd/1 read file=0", Ctx::Block), "dd\\/1 read file=0");
+        assert_eq!(e("add/1", Ctx::Block), "add/1");
+        assert_eq!(unescape("dd\\/1 read").unwrap(), "dd/1 read");
     }
 
     #[test]

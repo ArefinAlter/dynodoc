@@ -18,7 +18,7 @@ use engine_core::materializer::{DocumentState, MaterializedNode};
 use engine_shared::{DocumentId, NodeId};
 use serde_json::Value;
 
-use crate::rev::Chain8;
+use crate::rev::{Chain8, RevToken};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FileKind {
@@ -72,6 +72,11 @@ impl FileMeta {
 
     pub fn chain8(&self) -> Chain8 {
         Chain8::from_hex(&self.chain).unwrap_or_else(|_| Chain8::zero())
+    }
+
+    /// The `(rev, chain8)` pair of the HTTP ETag (spec 5.2).
+    pub fn rev_token(&self) -> RevToken {
+        RevToken::new(self.rev, self.chain8())
     }
 }
 

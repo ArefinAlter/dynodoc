@@ -141,6 +141,7 @@ proptest! {
         for ctx in [Ctx::Block, Ctx::Slide, Ctx::Diff] {
             let (l, _) = escape_line(&x, ctx, "");
             prop_assert_eq!(unescape(&l).unwrap(), sanitize(&x));
+            prop_assert!(!l.starts_with("dd/1"));
             let mut it = l.chars();
             let first = it.next();
             let second = it.next();
@@ -215,7 +216,10 @@ fn document_from(texts: &[String]) -> (Builder, Fixture) {
 }
 
 fn lines_of(text: &str) -> (engine_agent::dct::ParsedHeader, Vec<&str>) {
-    split_response(text).unwrap_or_else(|e| panic!("{e}\n{text:?}"))
+    let (h, lines) = split_response(text).unwrap_or_else(|e| panic!("{e}\n{text:?}"));
+    // Only the first line of a response is a header: no body line may open like one.
+    assert!(lines.iter().all(|l| !l.starts_with("dd/1")), "{text}");
+    (h, lines)
 }
 
 fn verify_document(texts: &[String]) {
