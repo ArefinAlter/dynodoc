@@ -718,6 +718,8 @@ mod collector_tests;
 #[cfg(test)]
 mod convergence_tests;
 #[cfg(test)]
+mod horizon_plan_tests;
+#[cfg(test)]
 mod merge_tests;
 #[cfg(test)]
 mod pack_tests;
