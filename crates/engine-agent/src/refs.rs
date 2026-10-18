@@ -76,7 +76,9 @@ fn reversed_upper(id: &str) -> String {
 }
 
 fn addressable(id: &str) -> bool {
-    id.len() >= MIN_REF_LEN && id.len() <= MAX_REF_LEN && id.bytes().all(|b| b.is_ascii_alphanumeric())
+    id.len() >= MIN_REF_LEN
+        && id.len() <= MAX_REF_LEN
+        && id.bytes().all(|b| b.is_ascii_alphanumeric())
 }
 
 /// Suffix index over node ids. Keys are `(reversed uppercase id, id)`, so nodes that
@@ -194,13 +196,10 @@ impl Tail {
 }
 
 fn plain_number(s: &str, max: u32) -> Option<u32> {
-    (!s.is_empty()
-        && !s.starts_with('0')
-        && s.len() <= 5
-        && s.bytes().all(|b| b.is_ascii_digit()))
-    .then(|| s.parse().ok())
-    .flatten()
-    .filter(|n| *n <= max)
+    (!s.is_empty() && !s.starts_with('0') && s.len() <= 5 && s.bytes().all(|b| b.is_ascii_digit()))
+        .then(|| s.parse().ok())
+        .flatten()
+        .filter(|n| *n <= max)
 }
 
 impl FromStr for Tail {
@@ -352,10 +351,20 @@ mod tests {
 
     #[test]
     fn resolve_unknown_ambiguous_exact() {
-        let all = ids(&["01J9ZQ00000000000000XAB123", "01J9ZQ00000000000000YAB123", "01J9ZQ0000000000000000ZZZZ"]);
+        let all = ids(&[
+            "01J9ZQ00000000000000XAB123",
+            "01J9ZQ00000000000000YAB123",
+            "01J9ZQ0000000000000000ZZZZ",
+        ]);
         let idx = RefIndex::build(&all);
-        assert_eq!(idx.resolve(&Ref::parse("zzzz").unwrap()), Ok(all[2].clone()));
-        assert_eq!(idx.resolve(&Ref::parse("QQQQ").unwrap()), Err(ResolveError::Unknown));
+        assert_eq!(
+            idx.resolve(&Ref::parse("zzzz").unwrap()),
+            Ok(all[2].clone())
+        );
+        assert_eq!(
+            idx.resolve(&Ref::parse("QQQQ").unwrap()),
+            Err(ResolveError::Unknown)
+        );
         match idx.resolve(&Ref::parse("AB123").unwrap()) {
             Err(ResolveError::Ambiguous(c)) => {
                 let c: Vec<_> = c.iter().map(Ref::as_str).collect();
@@ -363,7 +372,10 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
-        assert_eq!(idx.resolve(&Ref::parse("XAB123").unwrap()), Ok(all[0].clone()));
+        assert_eq!(
+            idx.resolve(&Ref::parse("XAB123").unwrap()),
+            Ok(all[0].clone())
+        );
         assert_eq!(
             idx.resolve(&Ref::parse("01J9ZQ00000000000000XAB123").unwrap()),
             Ok(all[0].clone())
@@ -379,9 +391,15 @@ mod tests {
         let new = RefIndex::build(&after);
         let r = old.ref_of(&before[0]).unwrap();
         assert_eq!(r.as_str(), "AB12");
-        assert_eq!(old.resolve(&Ref::parse("B12X").unwrap()), Err(ResolveError::Unknown));
+        assert_eq!(
+            old.resolve(&Ref::parse("B12X").unwrap()),
+            Err(ResolveError::Unknown)
+        );
         // The later node did not exist at the old revision, so it cannot be matched there.
-        assert_eq!(old.resolve(&Ref::parse("XB12").unwrap()), Err(ResolveError::Unknown));
+        assert_eq!(
+            old.resolve(&Ref::parse("XB12").unwrap()),
+            Err(ResolveError::Unknown)
+        );
         assert_eq!(new.resolve(&r), Ok(before[0].clone()));
     }
 
@@ -389,7 +407,10 @@ mod tests {
     fn tombstones_count_for_uniqueness() {
         use engine_core::materializer::MaterializedNode;
         let mut state = DocumentState::default();
-        for (id, deleted) in [("01J9ZQ00000000000000XAB123", false), ("01J9ZQ00000000000000YAB123", true)] {
+        for (id, deleted) in [
+            ("01J9ZQ00000000000000XAB123", false),
+            ("01J9ZQ00000000000000YAB123", true),
+        ] {
             state.nodes.insert(
                 NodeId(id.into()),
                 MaterializedNode {
@@ -404,7 +425,12 @@ mod tests {
             );
         }
         let idx = RefIndex::from_state(&state);
-        assert_eq!(idx.ref_of(&NodeId("01J9ZQ00000000000000XAB123".into())).unwrap().as_str(), "XAB123");
+        assert_eq!(
+            idx.ref_of(&NodeId("01J9ZQ00000000000000XAB123".into()))
+                .unwrap()
+                .as_str(),
+            "XAB123"
+        );
     }
 
     #[test]
@@ -424,11 +450,17 @@ mod tests {
         }
         assert_eq!(
             "7C02.3".parse::<Address>().unwrap(),
-            Address::Sub { base: Ref::parse("7C02").unwrap(), tail: Tail::Item(3) }
+            Address::Sub {
+                base: Ref::parse("7C02").unwrap(),
+                tail: Tail::Item(3)
+            }
         );
         assert!(matches!(
             "W2SK.1234".parse::<Address>().unwrap(),
-            Address::Sub { tail: Tail::Shape(_), .. }
+            Address::Sub {
+                tail: Tail::Shape(_),
+                ..
+            }
         ));
         // A shape ref spelled like a cell stays recoverable.
         let t: Tail = "R1C1".parse().unwrap();
@@ -436,9 +468,14 @@ mod tests {
         // `r0c1` is not a cell (rows start at 1) so it reads as a shape ref.
         assert!(matches!(
             "7C02.r0c1".parse::<Address>().unwrap(),
-            Address::Sub { tail: Tail::Shape(_), .. }
+            Address::Sub {
+                tail: Tail::Shape(_),
+                ..
+            }
         ));
-        for bad in ["", "abc", "7C02.", "7C02.0", "!B7", "R91W!", "R91W!B0", "7C02.3.4", "7C0 2"] {
+        for bad in [
+            "", "abc", "7C02.", "7C02.0", "!B7", "R91W!", "R91W!B0", "7C02.3.4", "7C0 2",
+        ] {
             assert!(bad.parse::<Address>().is_err(), "{bad}");
         }
     }
@@ -446,8 +483,14 @@ mod tests {
     #[test]
     fn slide_selectors() {
         assert_eq!("s2".parse::<SlideSel>().unwrap(), SlideSel::Position(2));
-        assert_eq!("W2SK".parse::<SlideSel>().unwrap(), SlideSel::Ref(Ref::parse("W2SK").unwrap()));
-        assert_eq!("S123".parse::<SlideSel>().unwrap(), SlideSel::Ref(Ref::parse("S123").unwrap()));
+        assert_eq!(
+            "W2SK".parse::<SlideSel>().unwrap(),
+            SlideSel::Ref(Ref::parse("W2SK").unwrap())
+        );
+        assert_eq!(
+            "S123".parse::<SlideSel>().unwrap(),
+            SlideSel::Ref(Ref::parse("S123").unwrap())
+        );
         assert!("s0".parse::<SlideSel>().is_err());
         assert!("s".parse::<SlideSel>().is_err());
     }

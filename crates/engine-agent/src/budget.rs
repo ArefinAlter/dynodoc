@@ -118,7 +118,9 @@ impl FromStr for Cursor {
         fn hex(part: &str) -> Result<u64, CursorParseError> {
             let canonical = !part.is_empty()
                 && part.len() <= 16
-                && part.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+                && part
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
                 && (part == "0" || !part.starts_with('0'));
             if !canonical {
                 return Err(CursorParseError);
@@ -140,7 +142,10 @@ impl FromStr for Cursor {
 }
 
 /// Parse an optional cursor string and pin it to `rev`; returns the start position.
-pub fn start_position(cursor: Option<&str>, rev: u64) -> Result<(usize, Option<Cursor>), AgentError> {
+pub fn start_position(
+    cursor: Option<&str>,
+    rev: u64,
+) -> Result<(usize, Option<Cursor>), AgentError> {
     match cursor {
         None => Ok((0, None)),
         Some(raw) => {
@@ -148,7 +153,8 @@ pub fn start_position(cursor: Option<&str>, rev: u64) -> Result<(usize, Option<C
                 .parse()
                 .map_err(|_| AgentError::BadRequest { field: "cursor" })?;
             c.check_rev(rev)?;
-            let pos = usize::try_from(c.pos).map_err(|_| AgentError::BadRequest { field: "cursor" })?;
+            let pos =
+                usize::try_from(c.pos).map_err(|_| AgentError::BadRequest { field: "cursor" })?;
             Ok((pos, Some(c)))
         }
     }
@@ -208,11 +214,30 @@ mod tests {
 
     #[test]
     fn cursor_round_trip_and_strictness() {
-        for c in [Cursor::new(0, 0), Cursor::new(412, 200), Cursor { rev: 9, pos: 3, aux: Some(7) }] {
+        for c in [
+            Cursor::new(0, 0),
+            Cursor::new(412, 200),
+            Cursor {
+                rev: 9,
+                pos: 3,
+                aux: Some(7),
+            },
+        ] {
             assert_eq!(c.to_string().parse::<Cursor>(), Ok(c));
         }
         assert_eq!(Cursor::new(412, 200).to_string(), "c_19c.c8");
-        for bad in ["", "c_", "c_1", "c_1.", "c_01.2", "c_1.2.3.4", "x_1.2", "c_g.1", "c_1.-2", "c_1.2."] {
+        for bad in [
+            "",
+            "c_",
+            "c_1",
+            "c_1.",
+            "c_01.2",
+            "c_1.2.3.4",
+            "x_1.2",
+            "c_g.1",
+            "c_1.-2",
+            "c_1.2.",
+        ] {
             assert!(bad.parse::<Cursor>().is_err(), "{bad}");
         }
     }
@@ -227,7 +252,8 @@ mod tests {
     fn hdr(taken: usize, more: bool) -> HeaderBuilder {
         let h = HeaderBuilder::new(Tool::Outline).kv("n", taken);
         if more {
-            h.kv("more", Cursor::new(1, taken as u64)).kv("warn", "truncated")
+            h.kv("more", Cursor::new(1, taken as u64))
+                .kv("warn", "truncated")
         } else {
             h
         }
@@ -254,7 +280,11 @@ mod tests {
     fn fit_reports_a_unit_that_never_fits() {
         let units = vec![unit(2_000)];
         match fit(&units, 0, 10, 500, 0, hdr) {
-            Err(AgentError::LimitExceeded { field, limit, value }) => {
+            Err(AgentError::LimitExceeded {
+                field,
+                limit,
+                value,
+            }) => {
                 assert_eq!((field, limit), ("max_bytes", 500));
                 assert!(value > 2_000);
             }
@@ -276,7 +306,13 @@ mod tests {
         assert_eq!(resolve_max_bytes(None, 16_000), Ok(16_000));
         assert_eq!(resolve_max_bytes(Some(500), 1), Ok(500));
         assert_eq!(resolve_max_bytes(Some(64_000), 1), Ok(64_000));
-        assert!(matches!(resolve_max_bytes(Some(499), 1), Err(AgentError::BadRequest { .. })));
-        assert!(matches!(resolve_max_bytes(Some(64_001), 1), Err(AgentError::LimitExceeded { .. })));
+        assert!(matches!(
+            resolve_max_bytes(Some(499), 1),
+            Err(AgentError::BadRequest { .. })
+        ));
+        assert!(matches!(
+            resolve_max_bytes(Some(64_001), 1),
+            Err(AgentError::LimitExceeded { .. })
+        ));
     }
 }

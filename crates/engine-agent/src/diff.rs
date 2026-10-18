@@ -368,13 +368,20 @@ fn diff_documents(
     let fb = doc_blocks(&ft, idx, false);
     let tb = doc_blocks(&tt, idx, false);
     let fmap: BTreeMap<&NodeId, &DocBlock> = fb.iter().map(|b| (&b.node.id, b)).collect();
-    let tmap: BTreeMap<&NodeId, usize> = tb.iter().enumerate().map(|(i, b)| (&b.node.id, i)).collect();
+    let tmap: BTreeMap<&NodeId, usize> = tb
+        .iter()
+        .enumerate()
+        .map(|(i, b)| (&b.node.id, i))
+        .collect();
     let mut out = Vec::new();
     for (i, b) in tb.iter().enumerate() {
         if !touched.contains(&b.node.id) {
             continue;
         }
-        let after = Some(i.checked_sub(1).map_or("first".to_string(), |p| tb[p].r.to_string()));
+        let after = Some(
+            i.checked_sub(1)
+                .map_or("first".to_string(), |p| tb[p].r.to_string()),
+        );
         let ids = vec![(b.r.clone(), b.node.id.clone())];
         match fmap.get(&b.node.id) {
             None => {
@@ -389,7 +396,10 @@ fn diff_documents(
                     let (ls, d) = body_lines(&b.text, false, Ctx::Diff);
                     dropped.add(d);
                     e.detail = ls.iter().map(|l| crate::escape::sanitize(l)).collect();
-                    lines = ls.into_iter().map(|l| guard_line_start(l, Ctx::Diff)).collect();
+                    lines = ls
+                        .into_iter()
+                        .map(|l| guard_line_start(l, Ctx::Diff))
+                        .collect();
                 }
                 let q = quoted_preview(&inline);
                 out.push(finish(e, Some(q), lines, dropped, ids));
@@ -419,7 +429,10 @@ fn diff_documents(
             }
         }
     }
-    for b in fb.iter().filter(|b| touched.contains(&b.node.id) && !tmap.contains_key(&b.node.id)) {
+    for b in fb
+        .iter()
+        .filter(|b| touched.contains(&b.node.id) && !tmap.contains_key(&b.node.id))
+    {
         let mut e = DiffEntry::new("-", &b.r, &tag_of(&b.text.label));
         e.old = Some(b.hash.h6().into());
         let inline = b.text.preview_inline();
@@ -464,19 +477,29 @@ fn diff_sheets(
     let (frows, trows) = (locate(&fviews), locate(&tviews));
     let mut out = Vec::new();
     for tv in &tviews {
-        let Some(sref) = idx.ref_of(&tv.node.id) else { continue };
+        let Some(sref) = idx.ref_of(&tv.node.id) else {
+            continue;
+        };
         if touched.contains(&tv.node.id) && !fviews.iter().any(|f| f.node.id == tv.node.id) {
             let mut e = DiffEntry::new("+", &sref, "SHEET");
             e.new = Some(tv.hash().h6().into());
             e.cells = Some(tv.rows.len());
             let q = quoted_preview(&Inline::text(tv.name.clone()));
-            out.push(finish(e, Some(q), Vec::new(), Dropped::default(), vec![(sref.clone(), tv.node.id.clone())]));
+            out.push(finish(
+                e,
+                Some(q),
+                Vec::new(),
+                Dropped::default(),
+                vec![(sref.clone(), tv.node.id.clone())],
+            ));
         }
         for (r, row) in tv.rows.iter().enumerate() {
             if !touched.contains(&row.id) {
                 continue;
             }
-            let Some(rref) = idx.ref_of(&row.id) else { continue };
+            let Some(rref) = idx.ref_of(&row.id) else {
+                continue;
+            };
             let ids = vec![(rref.clone(), row.id.clone())];
             let prior = frows.get(&row.id).map(|&(s, rr)| (&fviews[s], rr));
             match prior {
@@ -489,10 +512,13 @@ fn diff_sheets(
                 }
                 Some((fv, fr)) => {
                     let width = fv.cols.max(tv.cols);
-                    let cells = |v: &SheetView, i: usize| -> Vec<String> { (0..width).map(|c| v.cell(i, c)).collect() };
+                    let cells = |v: &SheetView, i: usize| -> Vec<String> {
+                        (0..width).map(|c| v.cell(i, c)).collect()
+                    };
                     let (old, new) = (cells(fv, fr), cells(tv, r));
                     if old != new {
-                        let changed: Vec<usize> = (0..width).filter(|&c| old[c] != new[c]).collect();
+                        let changed: Vec<usize> =
+                            (0..width).filter(|&c| old[c] != new[c]).collect();
                         let mut e = DiffEntry::new("~", &rref, "ROW");
                         e.old = Some(crate::hash::row_hash(&old).h6().into());
                         e.new = Some(crate::hash::row_hash(&new).h6().into());
@@ -503,7 +529,10 @@ fn diff_sheets(
                         let mut lines = Vec::new();
                         if detail == Detail::Text {
                             for c in changed {
-                                let at = CellRef { col: c as u16, row: r as u32 + 1 };
+                                let at = CellRef {
+                                    col: c as u16,
+                                    row: r as u32 + 1,
+                                };
                                 let (o, d1) = crate::escape::escape(&old[c]);
                                 let (n, d2) = crate::escape::escape(&new[c]);
                                 dropped.add(d1);
@@ -529,22 +558,38 @@ fn diff_sheets(
         }
     }
     for fv in &fviews {
-        let Some(sref) = idx.ref_of(&fv.node.id) else { continue };
+        let Some(sref) = idx.ref_of(&fv.node.id) else {
+            continue;
+        };
         if touched.contains(&fv.node.id) && !tviews.iter().any(|t| t.node.id == fv.node.id) {
             let mut e = DiffEntry::new("-", &sref, "SHEET");
             e.old = Some(fv.hash().h6().into());
             let q = quoted_preview(&Inline::text(fv.name.clone()));
-            out.push(finish(e, Some(q), Vec::new(), Dropped::default(), vec![(sref.clone(), fv.node.id.clone())]));
+            out.push(finish(
+                e,
+                Some(q),
+                Vec::new(),
+                Dropped::default(),
+                vec![(sref.clone(), fv.node.id.clone())],
+            ));
         }
         for (r, row) in fv.rows.iter().enumerate() {
             if !touched.contains(&row.id) || trows.contains_key(&row.id) {
                 continue;
             }
-            let Some(rref) = idx.ref_of(&row.id) else { continue };
+            let Some(rref) = idx.ref_of(&row.id) else {
+                continue;
+            };
             let mut e = DiffEntry::new("-", &rref, "ROW");
             e.old = Some(crate::hash::row_hash(&fv.row_cells(r)).h6().into());
             e.scope = Some(sref.to_string());
-            out.push(finish(e, None, Vec::new(), Dropped::default(), vec![(rref.clone(), row.id.clone())]));
+            out.push(finish(
+                e,
+                None,
+                Vec::new(),
+                Dropped::default(),
+                vec![(rref.clone(), row.id.clone())],
+            ));
         }
     }
     out
@@ -569,10 +614,13 @@ fn diff_slides(
     let (ft, tt) = (Tree::new(from), Tree::new(to));
     let fviews: Vec<SlideView> = ft.slides().iter().map(|s| SlideView::new(&ft, s)).collect();
     let tviews: Vec<SlideView> = tt.slides().iter().map(|s| SlideView::new(&tt, s)).collect();
-    let find = |views: &'_ [SlideView<'_>], id: &NodeId| views.iter().position(|v| &v.node.id == id);
+    let find =
+        |views: &'_ [SlideView<'_>], id: &NodeId| views.iter().position(|v| &v.node.id == id);
     let mut out = Vec::new();
     for (p, tv) in tviews.iter().enumerate() {
-        let Some(sref) = idx.ref_of(&tv.node.id) else { continue };
+        let Some(sref) = idx.ref_of(&tv.node.id) else {
+            continue;
+        };
         let sids = vec![(sref.clone(), tv.node.id.clone())];
         if touched.contains(&tv.node.id) {
             match find(&fviews, &tv.node.id) {
@@ -580,7 +628,13 @@ fn diff_slides(
                     let mut e = DiffEntry::new("+", &sref, "SLIDE");
                     e.new = Some(slide_own_hash(tv).h6().into());
                     e.pos = Some(p + 1);
-                    out.push(finish(e, None, Vec::new(), Dropped::default(), sids.clone()));
+                    out.push(finish(
+                        e,
+                        None,
+                        Vec::new(),
+                        Dropped::default(),
+                        sids.clone(),
+                    ));
                 }
                 Some(fp) => {
                     let fv = &fviews[fp];
@@ -606,7 +660,13 @@ fn diff_slides(
                         let mut e = DiffEntry::new(">", &sref, "SLIDE");
                         e.new = Some(nh.h6().into());
                         e.pos = Some(p + 1);
-                        out.push(finish(e, None, Vec::new(), Dropped::default(), sids.clone()));
+                        out.push(finish(
+                            e,
+                            None,
+                            Vec::new(),
+                            Dropped::default(),
+                            sids.clone(),
+                        ));
                     }
                 }
             }
@@ -615,18 +675,27 @@ fn diff_slides(
             if !touched.contains(&s.node.id) {
                 continue;
             }
-            let Some(shr) = idx.ref_of(&s.node.id) else { continue };
-            let ids = vec![(shr.clone(), s.node.id.clone()), (sref.clone(), tv.node.id.clone())];
+            let Some(shr) = idx.ref_of(&s.node.id) else {
+                continue;
+            };
+            let ids = vec![
+                (shr.clone(), s.node.id.clone()),
+                (sref.clone(), tv.node.id.clone()),
+            ];
             let tag = s.role.unwrap_or(s.kind);
-            let prior = fviews
-                .iter()
-                .find_map(|fv| fv.shapes.iter().find(|x| x.node.id == s.node.id).map(|x| (fv, x)));
+            let prior = fviews.iter().find_map(|fv| {
+                fv.shapes
+                    .iter()
+                    .find(|x| x.node.id == s.node.id)
+                    .map(|x| (fv, x))
+            });
             match prior {
                 None => {
                     let mut e = DiffEntry::new("+", &shr, tag);
                     e.new = Some(s.hash().h6().into());
                     e.scope = Some(sref.to_string());
-                    let q = (s.kind == "text").then(|| quoted_preview(&Inline::text(s.text.clone())));
+                    let q =
+                        (s.kind == "text").then(|| quoted_preview(&Inline::text(s.text.clone())));
                     out.push(finish(e, q, Vec::new(), Dropped::default(), ids));
                 }
                 Some((fv, old)) => {
@@ -654,22 +723,40 @@ fn diff_slides(
         }
     }
     for fv in &fviews {
-        let Some(sref) = idx.ref_of(&fv.node.id) else { continue };
+        let Some(sref) = idx.ref_of(&fv.node.id) else {
+            continue;
+        };
         if touched.contains(&fv.node.id) && find(&tviews, &fv.node.id).is_none() {
             let mut e = DiffEntry::new("-", &sref, "SLIDE");
             e.old = Some(slide_own_hash(fv).h6().into());
-            out.push(finish(e, None, Vec::new(), Dropped::default(), vec![(sref.clone(), fv.node.id.clone())]));
+            out.push(finish(
+                e,
+                None,
+                Vec::new(),
+                Dropped::default(),
+                vec![(sref.clone(), fv.node.id.clone())],
+            ));
         }
         for s in &fv.shapes {
-            let gone = !tviews.iter().any(|tv| tv.shapes.iter().any(|x| x.node.id == s.node.id));
+            let gone = !tviews
+                .iter()
+                .any(|tv| tv.shapes.iter().any(|x| x.node.id == s.node.id));
             if !touched.contains(&s.node.id) || !gone {
                 continue;
             }
-            let Some(shr) = idx.ref_of(&s.node.id) else { continue };
+            let Some(shr) = idx.ref_of(&s.node.id) else {
+                continue;
+            };
             let mut e = DiffEntry::new("-", &shr, s.role.unwrap_or(s.kind));
             e.old = Some(s.hash().h6().into());
             e.scope = Some(sref.to_string());
-            out.push(finish(e, None, Vec::new(), Dropped::default(), vec![(shr.clone(), s.node.id.clone())]));
+            out.push(finish(
+                e,
+                None,
+                Vec::new(),
+                Dropped::default(),
+                vec![(shr.clone(), s.node.id.clone())],
+            ));
         }
     }
     out
@@ -690,7 +777,9 @@ pub fn diff(
     let start = match opts.cursor.as_deref() {
         None => 0,
         Some(raw) => {
-            let c: Cursor = raw.parse().map_err(|_| AgentError::BadRequest { field: "cursor" })?;
+            let c: Cursor = raw
+                .parse()
+                .map_err(|_| AgentError::BadRequest { field: "cursor" })?;
             c.check_rev(file.rev)?;
             if c.aux != Some(from_rev) {
                 return Err(AgentError::BadRequest { field: "cursor" });
@@ -699,7 +788,10 @@ pub fn diff(
         }
     };
     let ops = workspace_merge::diff(from, to);
-    let touched: BTreeSet<NodeId> = ops.iter().filter_map(|op| op.target_node_id().cloned()).collect();
+    let touched: BTreeSet<NodeId> = ops
+        .iter()
+        .filter_map(|op| op.target_node_id().cloned())
+        .collect();
     let idx = RefIndex::from_states(&[from, to]);
     let pending = match file.kind {
         FileKind::Document => diff_documents(&idx, from, to, &touched, opts.detail),
@@ -721,7 +813,8 @@ pub fn diff(
     if moved > 0 {
         lead.push(("moved", moved.to_string()));
     }
-    let (units, entries): (Vec<Unit>, Vec<DiffEntry>) = pending.into_iter().map(|p| (p.unit, p.entry)).unzip();
+    let (units, entries): (Vec<Unit>, Vec<DiffEntry>) =
+        pending.into_iter().map(|p| (p.unit, p.entry)).unzip();
     let spec = PagedSpec {
         tool: Tool::Diff,
         file: Some(file),
@@ -735,17 +828,24 @@ pub fn diff(
         fixed_dropped: Dropped::default(),
         cursor_aux: Some(from_rev),
     };
-    paged(spec, &units, start, usize::MAX, max_bytes, move |taken, cursor| DiffData {
-        from: from_rev,
-        to: file.rev,
-        blocks: total,
-        changed,
-        added,
-        removed,
-        moved,
-        more: cursor.map(|c| c.to_string()),
-        entries: entries.into_iter().skip(start).take(taken).collect(),
-    })
+    paged(
+        spec,
+        &units,
+        start,
+        usize::MAX,
+        max_bytes,
+        move |taken, cursor| DiffData {
+            from: from_rev,
+            to: file.rev,
+            blocks: total,
+            changed,
+            added,
+            removed,
+            moved,
+            more: cursor.map(|c| c.to_string()),
+            entries: entries.into_iter().skip(start).take(taken).collect(),
+        },
+    )
 }
 
 #[cfg(test)]
@@ -759,7 +859,10 @@ mod tests {
             "The rules describe how the procedure handles complaints in the first week",
         );
         // Three words of context each side (the spec example shows the same shape).
-        assert_eq!(w.marked, "…describe how the [-policy-]{+procedure+} handles complaints in…");
+        assert_eq!(
+            w.marked,
+            "…describe how the [-policy-]{+procedure+} handles complaints in…"
+        );
         assert_eq!((w.del, w.ins), (6, 9));
         let w = word_diff("the policy handles it", "the procedure handles it");
         assert_eq!(w.marked, "the [-policy-]{+procedure+} handles it");
@@ -782,7 +885,10 @@ mod tests {
         // bare `[-`, `-]`, `{+` or `+}`.
         let w = word_diff("a [-b-] c", "a {+d+} c");
         assert_eq!(w.marked, "a [-\\[-b-\\]-]{+\\{+d+\\}+} c");
-        assert_eq!(crate::escape::unescape(&w.marked).unwrap(), "a [-[-b-]-]{+{+d+}+} c");
+        assert_eq!(
+            crate::escape::unescape(&w.marked).unwrap(),
+            "a [-[-b-]-]{+{+d+}+} c"
+        );
     }
 
     #[test]

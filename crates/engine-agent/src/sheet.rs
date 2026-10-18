@@ -39,7 +39,10 @@ impl<'a> SheetView<'a> {
         for row in &rows {
             if let Some(obj) = row.current_fields.as_object() {
                 for (k, v) in obj {
-                    let Some(n) = k.strip_prefix("cell_").and_then(|n| n.parse::<usize>().ok()) else {
+                    let Some(n) = k
+                        .strip_prefix("cell_")
+                        .and_then(|n| n.parse::<usize>().ok())
+                    else {
                         continue;
                     };
                     if n < usize::from(MAX_COLS) && !field_string(v).is_empty() {
@@ -149,7 +152,9 @@ impl Cat {
 pub fn parse_number(s: &str) -> Option<f64> {
     let t = s.trim();
     if t.is_empty()
-        || !t.bytes().all(|b| b.is_ascii_digit() || matches!(b, b'+' | b'-' | b'.' | b'e' | b'E'))
+        || !t
+            .bytes()
+            .all(|b| b.is_ascii_digit() || matches!(b, b'+' | b'-' | b'.' | b'e' | b'E'))
         || !t.bytes().any(|b| b.is_ascii_digit())
         || t.starts_with(['e', 'E'])
     {
@@ -165,7 +170,10 @@ fn is_iso_date(s: &str) -> bool {
     }
     let num = |r: std::ops::Range<usize>| -> Option<u32> {
         let part = &s[r];
-        part.bytes().all(|c| c.is_ascii_digit()).then(|| part.parse().ok()).flatten()
+        part.bytes()
+            .all(|c| c.is_ascii_digit())
+            .then(|| part.parse().ok())
+            .flatten()
     };
     let (Some(y), Some(m), Some(d)) = (num(0..4), num(5..7), num(8..10)) else {
         return false;
@@ -266,7 +274,9 @@ fn reference_at(c: &[char], i: usize, row: u32) -> Option<(usize, String)> {
     if digits.is_empty() || digits.len() > 7 {
         return None;
     }
-    if c.get(j).is_some_and(|n| n.is_alphanumeric() || matches!(n, '_' | '(' | '!' | '.' | '\'')) {
+    if c.get(j)
+        .is_some_and(|n| n.is_alphanumeric() || matches!(n, '_' | '(' | '!' | '.' | '\''))
+    {
         return None;
     }
     let mut text = String::new();
@@ -356,7 +366,11 @@ pub fn profile(view: &SheetView) -> Profile {
     };
     let (header_row, header) = if frozen >= 1 && frozen as usize <= rows {
         (frozen as usize, frozen.to_string())
-    } else if rows >= 2 && all_text(&grid[0]) && !all_text(&grid[1]) && grid[1].iter().any(|s| !s.trim().is_empty()) {
+    } else if rows >= 2
+        && all_text(&grid[0])
+        && !all_text(&grid[1])
+        && grid[1].iter().any(|s| !s.trim().is_empty())
+    {
         (1, "guess".to_string())
     } else {
         (0, "0".to_string())
@@ -404,11 +418,13 @@ pub fn profile(view: &SheetView) -> Profile {
         };
         // Distinct counts and top values describe text; a column that holds formulas is
         // described by its pattern instead.
-        let textual = matches!(ty, "text" | "date" | "bool") || (ty == "mixed" && !cats.contains(&Cat::Formula));
+        let textual = matches!(ty, "text" | "date" | "bool")
+            || (ty == "mixed" && !cats.contains(&Cat::Formula));
         let distinct = (textual && !over).then_some(counts.len());
         let mut top = Vec::new();
         if textual && !over && counts.len() <= TOP_MAX_DISTINCT {
-            let mut all: Vec<(String, usize)> = counts.iter().map(|(k, v)| (k.clone(), *v)).collect();
+            let mut all: Vec<(String, usize)> =
+                counts.iter().map(|(k, v)| (k.clone(), *v)).collect();
             all.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
             top = all.into_iter().take(5).collect();
         }
@@ -428,7 +444,11 @@ pub fn profile(view: &SheetView) -> Profile {
             pattern = Some(pat);
         }
         // Typed strings are sanitised; what that drops is kept so the text can report it.
-        let raw_header = if header_row > 0 { grid[header_row - 1][c].clone() } else { String::new() };
+        let raw_header = if header_row > 0 {
+            grid[header_row - 1][c].clone()
+        } else {
+            String::new()
+        };
         let mut dropped = escape(&raw_header).1;
         for (k, _) in &top {
             dropped.add(escape(k).1);
@@ -483,11 +503,20 @@ pub fn profile_unit(col: &ColumnProfile) -> Unit {
         line.push_str(&format!(" distinct={d}"));
     }
     if !col.top.is_empty() {
-        let top: Vec<String> = col.top.iter().map(|(v, n)| format!("{}:{n}", q(v))).collect();
+        let top: Vec<String> = col
+            .top
+            .iter()
+            .map(|(v, n)| format!("{}:{n}", q(v)))
+            .collect();
         line.push_str(&format!(" top={}", top.join(",")));
     }
     if let (Some(min), Some(max), Some(sum)) = (col.min, col.max, col.sum) {
-        line.push_str(&format!(" min={} max={} sum={}", format_number(min), format_number(max), format_number(sum)));
+        line.push_str(&format!(
+            " min={} max={} sum={}",
+            format_number(min),
+            format_number(max),
+            format_number(sum)
+        ));
     }
     if let Some(p) = &col.pattern {
         let ex = if col.exceptions.is_empty() {
@@ -537,7 +566,10 @@ mod tests {
         assert_eq!(normalize_formula("=$A$1+B2", 2), "=$A$1+B{r}");
         assert_eq!(normalize_formula("=LOG10(A2)", 2), "=LOG10(A{r})");
         assert_eq!(normalize_formula("=\"A1\"&A2", 2), "=\"A1\"&A{r}");
-        assert_eq!(normalize_formula("='My Sheet'!A2+Other!B2", 2), "='My Sheet'!A{r}+Other!B{r}");
+        assert_eq!(
+            normalize_formula("='My Sheet'!A2+Other!B2", 2),
+            "='My Sheet'!A{r}+Other!B{r}"
+        );
         assert_eq!(normalize_formula("=SUM(D2:G2)", 5), "=SUM(D{r-3}:G{r-3})");
     }
 }

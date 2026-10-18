@@ -66,7 +66,11 @@ impl Tool {
 
 /// Characters a value may contain without quotes.
 pub fn is_bare_char(c: char) -> bool {
-    c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | ':' | '/' | '!' | '+' | '~' | '@' | '%' | ',' | '-')
+    c.is_ascii_alphanumeric()
+        || matches!(
+            c,
+            '_' | '.' | ':' | '/' | '!' | '+' | '~' | '@' | '%' | ',' | '-'
+        )
 }
 
 /// `"text"` with `\"`, `\\`, `\n`, `\t`, `⟦`/`⟧` escaped. Never contains a raw quote.
@@ -400,11 +404,15 @@ mod tests {
     #[test]
     fn tok_is_exact_at_digit_boundaries() {
         for body_len in 0..400usize {
-            let body = "x".repeat(body_len.saturating_sub(1)) + if body_len > 0 { "\n" } else { "" };
+            let body =
+                "x".repeat(body_len.saturating_sub(1)) + if body_len > 0 { "\n" } else { "" };
             let h = HeaderBuilder::new(Tool::Outline).kv("rev", 7);
             let text = h.assemble(&body);
             let (p, _) = split_response(&text).unwrap();
-            assert_eq!(p.get("~tok").unwrap().parse::<u64>().unwrap(), estimate_tokens(text.len()));
+            assert_eq!(
+                p.get("~tok").unwrap().parse::<u64>().unwrap(),
+                estimate_tokens(text.len())
+            );
         }
     }
 

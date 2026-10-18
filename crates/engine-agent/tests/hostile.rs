@@ -25,10 +25,13 @@ use proptest::test_runner::RngSeed;
 use serde_json::json;
 
 fn config() -> ProptestConfig {
-    let cases = std::env::var("PROPTEST_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(300);
+    let cases = std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(300);
     let mut config = ProptestConfig::with_cases(cases);
     if std::env::var_os("PROPTEST_RNG_SEED").is_none() {
-        config.rng_seed = RngSeed::Fixed(0x6473_7463_6f64_65);
+        config.rng_seed = RngSeed::Fixed(0x0064_7374_636f_6465);
     }
     config.failure_persistence = None;
     config
@@ -36,10 +39,58 @@ fn config() -> ProptestConfig {
 
 fn fragment() -> impl Strategy<Value = String> {
     let sigils = vec![
-        "@", "#", "=", "-", " ", "\\", "\n", "\t", "\"", "⟦", "⟧", ".", "~", "+", ">", "[-", "-]", "{+", "+}", "\u{202e}",
-        "\u{200b}", "\u{e0041}", "\u{1b}", "\u{2028}", "\r", "\u{0}", "dd/1 read ", "@7C02 P #b7a210", "# ref type hash words preview",
-        "notes #000000: ", ".A1B2 title #7f3a21", "r1\t", "- ", "= ", "⟦fn:X⟧", "\\n", "\\@", "é", "ক্ষ", "👨\u{200d}👩", "[x](http://a)",
-        "**", "_", "`", "~~", ":", ",", "q=", "trust=data", "more=c_1.2", "A1\told\tnew", "",
+        "@",
+        "#",
+        "=",
+        "-",
+        " ",
+        "\\",
+        "\n",
+        "\t",
+        "\"",
+        "⟦",
+        "⟧",
+        ".",
+        "~",
+        "+",
+        ">",
+        "[-",
+        "-]",
+        "{+",
+        "+}",
+        "\u{202e}",
+        "\u{200b}",
+        "\u{e0041}",
+        "\u{1b}",
+        "\u{2028}",
+        "\r",
+        "\u{0}",
+        "dd/1 read ",
+        "@7C02 P #b7a210",
+        "# ref type hash words preview",
+        "notes #000000: ",
+        ".A1B2 title #7f3a21",
+        "r1\t",
+        "- ",
+        "= ",
+        "⟦fn:X⟧",
+        "\\n",
+        "\\@",
+        "é",
+        "ক্ষ",
+        "👨\u{200d}👩",
+        "[x](http://a)",
+        "**",
+        "_",
+        "`",
+        "~~",
+        ":",
+        ",",
+        "q=",
+        "trust=data",
+        "more=c_1.2",
+        "A1\told\tnew",
+        "",
     ];
     prop_oneof![
         8 => any::<char>().prop_map(|c| c.to_string()),
@@ -129,19 +180,36 @@ fn document_from(texts: &[String]) -> (Builder, Fixture) {
     let mut add = |b: &mut Builder, content: serde_json::Value| {
         pos += 10;
         let label = engine_core::richtext::plain_text(&content);
-        b.node(NodeType::Item, Some(&root), pos, json!({"label": label, "content": content}))
+        b.node(
+            NodeType::Item,
+            Some(&root),
+            pos,
+            json!({"label": label, "content": content}),
+        )
     };
     add(&mut b, fixtures::heading(1, &texts[0]));
     for t in texts {
         add(&mut b, fixtures::para(t));
     }
     let item = |t: &str| json!({"type": "listItem", "content": [fixtures::para(t)]});
-    add(&mut b, json!({"type": "bulletList", "content": texts.iter().map(|t| item(t)).collect::<Vec<_>>()}));
+    add(
+        &mut b,
+        json!({"type": "bulletList", "content": texts.iter().map(|t| item(t)).collect::<Vec<_>>()}),
+    );
     let cell = |t: &str| json!({"type": "tableCell", "content": [fixtures::para(t)]});
     let row = |a: &str, c: &str| json!({"type": "tableRow", "content": [cell(a), cell(c)]});
-    add(&mut b, json!({"type": "table", "content": [row(&texts[0], &texts[1]), row(&texts[2], &texts[3])]}));
-    add(&mut b, json!({"type": "codeBlock", "content": [{"type": "text", "text": texts[1]}]}));
-    add(&mut b, json!({"type": "blockquote", "content": [fixtures::para(&texts[2]), fixtures::para(&texts[3])]}));
+    add(
+        &mut b,
+        json!({"type": "table", "content": [row(&texts[0], &texts[1]), row(&texts[2], &texts[3])]}),
+    );
+    add(
+        &mut b,
+        json!({"type": "codeBlock", "content": [{"type": "text", "text": texts[1]}]}),
+    );
+    add(
+        &mut b,
+        json!({"type": "blockquote", "content": [fixtures::para(&texts[2]), fixtures::para(&texts[3])]}),
+    );
     let fx = b.snapshot();
     (b, fx)
 }
@@ -152,14 +220,30 @@ fn lines_of(text: &str) -> (engine_agent::dct::ParsedHeader, Vec<&str>) {
 
 fn verify_document(texts: &[String]) {
     let (mut b, base) = document_from(texts);
-    let all = |o: OutlineOptions| outline(&base.meta, &base.state, &OutlineOptions { limit: Some(1000), max_bytes: Some(64_000), ..o });
+    let all = |o: OutlineOptions| {
+        outline(
+            &base.meta,
+            &base.state,
+            &OutlineOptions {
+                limit: Some(1000),
+                max_bytes: Some(64_000),
+                ..o
+            },
+        )
+    };
 
     // outline depth 1 and 0
     for depth in [1u8, 0] {
-        let r = all(OutlineOptions { depth: Some(depth), preview: Some(120), ..Default::default() }).unwrap();
+        let r = all(OutlineOptions {
+            depth: Some(depth),
+            preview: Some(120),
+            ..Default::default()
+        })
+        .unwrap();
         let (h, lines) = lines_of(&r.text);
         assert_eq!(h.tool, Tool::Outline);
-        let rows = parse::outline_blocks(&lines, depth).unwrap_or_else(|e| panic!("{e}\n{}", r.text));
+        let rows =
+            parse::outline_blocks(&lines, depth).unwrap_or_else(|e| panic!("{e}\n{}", r.text));
         let typed = r.data.blocks.as_ref().unwrap();
         assert_eq!(rows.len(), typed.len());
         for (p, t) in rows.iter().zip(typed) {
@@ -180,7 +264,17 @@ fn verify_document(texts: &[String]) {
         .map(|n| idx.ref_of(&n.id).unwrap().to_string())
         .collect();
     for fmt in [engine_agent::text::Fmt::Plain, engine_agent::text::Fmt::Md] {
-        let r = read(&base.meta, &base.state, &ReadOptions { refs: refs.clone(), fmt, max_bytes: Some(64_000), ..Default::default() }).unwrap();
+        let r = read(
+            &base.meta,
+            &base.state,
+            &ReadOptions {
+                refs: refs.clone(),
+                fmt,
+                max_bytes: Some(64_000),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         let (_, lines) = lines_of(&r.text);
         let blocks = parse::read_blocks(&lines).unwrap_or_else(|e| panic!("{e}\n{}", r.text));
         assert_eq!(blocks.len(), refs.len());
@@ -188,14 +282,29 @@ fn verify_document(texts: &[String]) {
             assert_eq!((&p.label, &p.t, p.h.as_ref()), (&t.r, &t.t, t.h.as_ref()));
             if fmt == engine_agent::text::Fmt::Plain {
                 match p.t.as_str() {
-                    "P" | "H1" | "CODE" | "QUOTE" => assert_eq!(p.text().unwrap(), t.lines[0], "text of {}", p.label),
+                    "P" | "H1" | "CODE" | "QUOTE" => {
+                        assert_eq!(p.text().unwrap(), t.lines[0], "text of {}", p.label)
+                    }
                     t if t.starts_with("UL") => {
-                        let items: Vec<String> = parse::list_items(p).unwrap().into_iter().map(|(_, s)| s).collect();
+                        let items: Vec<String> = parse::list_items(p)
+                            .unwrap()
+                            .into_iter()
+                            .map(|(_, s)| s)
+                            .collect();
                         assert_eq!(items, sanitized(texts));
                     }
                     t if t.starts_with("TBL") => {
-                        let cells: Vec<String> = parse::table_rows(p).unwrap().into_iter().flatten().collect();
-                        let want = sanitized(&[texts[0].clone(), texts[1].clone(), texts[2].clone(), texts[3].clone()]);
+                        let cells: Vec<String> = parse::table_rows(p)
+                            .unwrap()
+                            .into_iter()
+                            .flatten()
+                            .collect();
+                        let want = sanitized(&[
+                            texts[0].clone(),
+                            texts[1].clone(),
+                            texts[2].clone(),
+                            texts[3].clone(),
+                        ]);
                         assert_eq!(cells, want);
                     }
                     _ => {}
@@ -205,34 +314,84 @@ fn verify_document(texts: &[String]) {
     }
 
     // find: literal search for a piece of the first non-empty text
-    let probe: String = texts.iter().map(|t| sanitize(t)).find(|t| !t.trim().is_empty()).map(|t| t.chars().take(3).collect()).unwrap_or_default();
+    let probe: String = texts
+        .iter()
+        .map(|t| sanitize(t))
+        .find(|t| !t.trim().is_empty())
+        .map(|t| t.chars().take(3).collect())
+        .unwrap_or_default();
     if !probe.is_empty() {
-        let r = find(&base.meta, &base.state, &FindOptions { q: probe.clone(), limit: Some(100), max_bytes: Some(64_000), ..Default::default() }).unwrap();
+        let r = find(
+            &base.meta,
+            &base.state,
+            &FindOptions {
+                q: probe.clone(),
+                limit: Some(100),
+                max_bytes: Some(64_000),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         let (h, lines) = lines_of(&r.text);
         let hits = parse::find_hits(&lines).unwrap_or_else(|e| panic!("{e}\n{}", r.text));
         assert_eq!(hits.len(), r.data.hits.len());
         for (p, t) in hits.iter().zip(&r.data.hits) {
-            assert_eq!((p.at.as_str(), p.snippet.as_str()), (t.at.as_str(), t.snippet.as_str()));
+            assert_eq!(
+                (p.at.as_str(), p.snippet.as_str()),
+                (t.at.as_str(), t.snippet.as_str())
+            );
         }
         assert_eq!(h.get("q").unwrap(), probe);
     }
 
     // diff after an edit session
-    let ids: Vec<_> = base.state.nodes.values().filter(|n| n.current_fields["content"].is_object()).map(|n| n.id.clone()).collect();
+    let ids: Vec<_> = base
+        .state
+        .nodes
+        .values()
+        .filter(|n| n.current_fields["content"].is_object())
+        .map(|n| n.id.clone())
+        .collect();
     b.rewrite_content(&ids[0], fixtures::para(&texts[texts.len() - 1]));
     let victim = ids[ids.len() - 1].clone();
     b.delete(&victim);
-    let root = base.state.nodes.values().find(|n| n.node_type == "form").unwrap().id.clone();
-    b.node(NodeType::Item, Some(&root), 5, json!({"label": "x", "content": fixtures::para(&texts[1])}));
+    let root = base
+        .state
+        .nodes
+        .values()
+        .find(|n| n.node_type == "form")
+        .unwrap()
+        .id
+        .clone();
+    b.node(
+        NodeType::Item,
+        Some(&root),
+        5,
+        json!({"label": "x", "content": fixtures::para(&texts[1])}),
+    );
     let edited = b.snapshot();
     for detail in [Detail::Summary, Detail::Text] {
-        let r = diff(&edited.meta, base.meta.rev, &base.state, &edited.state, &DiffOptions { detail, max_bytes: Some(64_000), ..Default::default() }).unwrap();
+        let r = diff(
+            &edited.meta,
+            base.meta.rev,
+            &base.state,
+            &edited.state,
+            &DiffOptions {
+                detail,
+                max_bytes: Some(64_000),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         let (_, lines) = lines_of(&r.text);
         let entries = parse::diff_lines(&lines).unwrap_or_else(|e| panic!("{e}\n{}", r.text));
         assert_eq!(entries.len(), r.data.entries.len(), "{}", r.text);
         for (p, t) in entries.iter().zip(&r.data.entries) {
             assert_eq!((p.op.to_string(), &p.r, &p.t), (t.op.clone(), &t.r, &t.t));
-            assert_eq!((p.old.as_ref(), p.new.as_ref()), (t.old.as_ref(), t.new.as_ref()));
+            assert_eq!(
+                (p.old.as_ref(), p.new.as_ref()),
+                (t.old.as_ref(), t.new.as_ref())
+            );
         }
     }
 }
@@ -266,16 +425,38 @@ proptest! {
 fn verify_workbook(texts: &[String]) {
     let mut b = Builder::new(FileKind::Spreadsheet, "hostile-workbook", 0xB2);
     let root = b.node(NodeType::Form, None, 0, json!({"label": "Hostile"}));
-    let sheet = b.node(NodeType::Section, Some(&root), 1, json!({"label": texts[0], "kind": "sheet", "sheet_layout": {"frozenRows": 1}}));
+    let sheet = b.node(
+        NodeType::Section,
+        Some(&root),
+        1,
+        json!({"label": texts[0], "kind": "sheet", "sheet_layout": {"frozenRows": 1}}),
+    );
     let mut rows = Vec::new();
     for (i, t) in texts.iter().enumerate() {
-        let cells = [t.clone(), texts[(i + 1) % texts.len()].clone(), format!("={}", t)];
-        let id = b.node(NodeType::Item, Some(&sheet), i as u64, json!({"cell_0": cells[0], "cell_1": cells[1], "cell_2": cells[2]}));
+        let cells = [
+            t.clone(),
+            texts[(i + 1) % texts.len()].clone(),
+            format!("={}", t),
+        ];
+        let id = b.node(
+            NodeType::Item,
+            Some(&sheet),
+            i as u64,
+            json!({"cell_0": cells[0], "cell_1": cells[1], "cell_2": cells[2]}),
+        );
         rows.push((id, cells));
     }
     let base = b.snapshot();
 
-    let r = outline(&base.meta, &base.state, &OutlineOptions { depth: Some(0), ..Default::default() }).unwrap();
+    let r = outline(
+        &base.meta,
+        &base.state,
+        &OutlineOptions {
+            depth: Some(0),
+            ..Default::default()
+        },
+    )
+    .unwrap();
     let (_, lines) = lines_of(&r.text);
     let listed = parse::outline_sheets(&lines).unwrap_or_else(|e| panic!("{e}\n{}", r.text));
     assert_eq!(listed.len(), 1);
@@ -290,23 +471,44 @@ fn verify_workbook(texts: &[String]) {
 
     for row_refs in [false, true] {
         let range = format!("A1:C{}", texts.len());
-        let r = read(&base.meta, &base.state, &ReadOptions { range: Some(range), row_refs, max_bytes: Some(64_000), ..Default::default() });
+        let r = read(
+            &base.meta,
+            &base.state,
+            &ReadOptions {
+                range: Some(range),
+                row_refs,
+                max_bytes: Some(64_000),
+                ..Default::default()
+            },
+        );
         // A range over 2,000 cells cannot happen here (at most 8 rows).
         let r = r.unwrap();
         let (h, lines) = lines_of(&r.text);
-        let body = parse::range_body(&lines, row_refs).unwrap_or_else(|e| panic!("{e}\n{}", r.text));
+        let body =
+            parse::range_body(&lines, row_refs).unwrap_or_else(|e| panic!("{e}\n{}", r.text));
         assert_eq!(body.rows.len(), texts.len());
         for (p, (_, cells)) in body.rows.iter().zip(&rows) {
             assert_eq!(p.2, sanitized(cells));
         }
-        assert!(parse_header(&r.text.lines().next().unwrap().to_string()).is_ok());
+        assert!(parse_header(r.text.lines().next().unwrap()).is_ok());
         assert_eq!(h.get("calc"), Some("none"));
     }
 
     let probe: String = sanitize(&texts[0]).chars().take(2).collect();
     if !probe.trim().is_empty() {
         for scope in [Scope::Text, Scope::Formulas] {
-            let r = find(&base.meta, &base.state, &FindOptions { q: probe.clone(), scope, limit: Some(100), max_bytes: Some(64_000), ..Default::default() }).unwrap();
+            let r = find(
+                &base.meta,
+                &base.state,
+                &FindOptions {
+                    q: probe.clone(),
+                    scope,
+                    limit: Some(100),
+                    max_bytes: Some(64_000),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
             let (_, lines) = lines_of(&r.text);
             let hits = parse::find_hits(&lines).unwrap_or_else(|e| panic!("{e}\n{}", r.text));
             assert_eq!(hits.len(), r.data.hits.len());
@@ -317,7 +519,18 @@ fn verify_workbook(texts: &[String]) {
     b.delete(&rows[2].0);
     let edited = b.snapshot();
     for detail in [Detail::Summary, Detail::Text] {
-        let r = diff(&edited.meta, base.meta.rev, &base.state, &edited.state, &DiffOptions { detail, max_bytes: Some(64_000), ..Default::default() }).unwrap();
+        let r = diff(
+            &edited.meta,
+            base.meta.rev,
+            &base.state,
+            &edited.state,
+            &DiffOptions {
+                detail,
+                max_bytes: Some(64_000),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         let (_, lines) = lines_of(&r.text);
         let entries = parse::diff_lines(&lines).unwrap_or_else(|e| panic!("{e}\n{}", r.text));
         assert_eq!(entries.len(), r.data.entries.len());
@@ -348,22 +561,57 @@ proptest! {
 fn verify_deck(texts: &[String]) {
     let mut b = Builder::new(FileKind::Presentation, "hostile-deck", 0xC3);
     let root = b.node(NodeType::Form, None, 0, json!({"label": "Hostile"}));
-    let slide = b.node(NodeType::Section, Some(&root), 1, json!({"label": texts[0], "kind": "slide", "layout": "title-content", "notes": texts[1]}));
+    let slide = b.node(
+        NodeType::Section,
+        Some(&root),
+        1,
+        json!({"label": texts[0], "kind": "slide", "layout": "title-content", "notes": texts[1]}),
+    );
     let mk = |role: Option<&str>, kind: &str, text: &str, bullets: bool| {
-        let mut f = json!({"kind": kind, "text": text, "label": text, "style": {"bullets": bullets}});
+        let mut f =
+            json!({"kind": kind, "text": text, "label": text, "style": {"bullets": bullets}});
         if let Some(r) = role {
             f["role"] = json!(r);
         }
         f
     };
-    b.node(NodeType::Item, Some(&slide), 1, mk(Some("title"), "text", &texts[0], false));
-    let body = b.node(NodeType::Item, Some(&slide), 2, mk(Some("body"), "text", &texts[2], false));
-    let bullets = b.node(NodeType::Item, Some(&slide), 3, mk(Some("body"), "text", &texts[3], true));
-    b.node(NodeType::Item, Some(&slide), 4, mk(None, "image", "", false));
+    b.node(
+        NodeType::Item,
+        Some(&slide),
+        1,
+        mk(Some("title"), "text", &texts[0], false),
+    );
+    let body = b.node(
+        NodeType::Item,
+        Some(&slide),
+        2,
+        mk(Some("body"), "text", &texts[2], false),
+    );
+    let bullets = b.node(
+        NodeType::Item,
+        Some(&slide),
+        3,
+        mk(Some("body"), "text", &texts[3], true),
+    );
+    b.node(
+        NodeType::Item,
+        Some(&slide),
+        4,
+        mk(None, "image", "", false),
+    );
     let base = b.snapshot();
 
     for depth in [0u8, 1] {
-        let r = outline(&base.meta, &base.state, &OutlineOptions { depth: Some(depth), preview: Some(60), ..Default::default() }).unwrap();
+        let r = outline(
+            &base.meta,
+            &base.state,
+            &OutlineOptions {
+                depth: Some(depth),
+                preview: Some(60),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         let (_, lines) = lines_of(&r.text);
         let rows = parse::outline_slides(&lines).unwrap_or_else(|e| panic!("{e}\n{}", r.text));
         assert_eq!(rows.len(), 1);
@@ -372,13 +620,28 @@ fn verify_deck(texts: &[String]) {
             assert_eq!(rows[0].shapes.len(), 4);
         }
     }
-    let r = read(&base.meta, &base.state, &ReadOptions { slides: vec!["s1".into()], max_bytes: Some(64_000), ..Default::default() }).unwrap();
+    let r = read(
+        &base.meta,
+        &base.state,
+        &ReadOptions {
+            slides: vec!["s1".into()],
+            max_bytes: Some(64_000),
+            ..Default::default()
+        },
+    )
+    .unwrap();
     let (_, lines) = lines_of(&r.text);
     let slides = parse::read_slides(&lines).unwrap_or_else(|e| panic!("{e}\n{}", r.text));
     assert_eq!(slides.len(), 1);
     let s = &slides[0];
     assert_eq!(s.shapes.len(), 4);
-    let join = |sb: &parse::ShapeBody| sb.lines.iter().map(|(_, t)| t.clone()).collect::<Vec<_>>().join("\n");
+    let join = |sb: &parse::ShapeBody| {
+        sb.lines
+            .iter()
+            .map(|(_, t)| t.clone())
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
     assert_eq!(join(&s.shapes[0]), sanitize(&texts[0]));
     assert_eq!(join(&s.shapes[1]), sanitize(&texts[2]));
     assert_eq!(join(&s.shapes[2]), sanitize(&texts[3]));
@@ -392,7 +655,18 @@ fn verify_deck(texts: &[String]) {
     let probe: String = sanitize(&texts[2]).chars().take(2).collect();
     if !probe.trim().is_empty() {
         for scope in [Scope::Text, Scope::Notes] {
-            let r = find(&base.meta, &base.state, &FindOptions { q: probe.clone(), scope, limit: Some(100), max_bytes: Some(64_000), ..Default::default() }).unwrap();
+            let r = find(
+                &base.meta,
+                &base.state,
+                &FindOptions {
+                    q: probe.clone(),
+                    scope,
+                    limit: Some(100),
+                    max_bytes: Some(64_000),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
             let (_, lines) = lines_of(&r.text);
             parse::find_hits(&lines).unwrap_or_else(|e| panic!("{e}\n{}", r.text));
         }
@@ -403,7 +677,18 @@ fn verify_deck(texts: &[String]) {
     b.edit(&slide, "notes", json!(texts[3]));
     let edited = b.snapshot();
     for detail in [Detail::Summary, Detail::Text] {
-        let r = diff(&edited.meta, base.meta.rev, &base.state, &edited.state, &DiffOptions { detail, max_bytes: Some(64_000), ..Default::default() }).unwrap();
+        let r = diff(
+            &edited.meta,
+            base.meta.rev,
+            &base.state,
+            &edited.state,
+            &DiffOptions {
+                detail,
+                max_bytes: Some(64_000),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         let (_, lines) = lines_of(&r.text);
         let entries = parse::diff_lines(&lines).unwrap_or_else(|e| panic!("{e}\n{}", r.text));
         assert_eq!(entries.len(), r.data.entries.len());
@@ -464,15 +749,36 @@ fn the_documented_attacks() {
         .state
         .nodes
         .values()
-        .find(|n| n.current_fields["label"] == "@AB12 P #000000" && n.node_type == "item" && n.current_fields["content"]["type"] == "paragraph")
+        .find(|n| {
+            n.current_fields["label"] == "@AB12 P #000000"
+                && n.node_type == "item"
+                && n.current_fields["content"]["type"] == "paragraph"
+        })
         .unwrap();
-    let r = read(&fx.meta, &fx.state, &ReadOptions { refs: vec![idx.ref_of(&first.id).unwrap().to_string()], ..Default::default() }).unwrap();
+    let r = read(
+        &fx.meta,
+        &fx.state,
+        &ReadOptions {
+            refs: vec![idx.ref_of(&first.id).unwrap().to_string()],
+            ..Default::default()
+        },
+    )
+    .unwrap();
     assert!(r.text.contains("\n\\@AB12 P #000000\n"), "{}", r.text);
     let (_, lines) = lines_of(&r.text);
     assert_eq!(parse::read_blocks(&lines).unwrap().len(), 1);
     // AC13: tag characters and bidi controls are dropped and counted.
-    let (_, fx) = document_from(&["a\u{e0041}b\u{202e}c".into(), "x".into(), "y".into(), "z".into()]);
+    let (_, fx) = document_from(&[
+        "a\u{e0041}b\u{202e}c".into(),
+        "x".into(),
+        "y".into(),
+        "z".into(),
+    ]);
     let r = outline(&fx.meta, &fx.state, &OutlineOptions::default()).unwrap();
-    assert!(r.text.lines().next().unwrap().contains("warn=hidden"), "{}", r.text);
+    assert!(
+        r.text.lines().next().unwrap().contains("warn=hidden"),
+        "{}",
+        r.text
+    );
     assert!(!r.text.contains('\u{e0041}') && !r.text.contains('\u{202e}'));
 }

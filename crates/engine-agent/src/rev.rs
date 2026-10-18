@@ -125,7 +125,17 @@ mod tests {
 
     #[test]
     fn rejects_malformed() {
-        for bad in ["", "412", "412:", "412:9f3a1c0", "412:9f3a1c0g", "-1:9f3a1c04", "0412:9f3a1c04", "\"412:9f3a1c04", "412:9f3a1c04:1"] {
+        for bad in [
+            "",
+            "412",
+            "412:",
+            "412:9f3a1c0",
+            "412:9f3a1c0g",
+            "-1:9f3a1c04",
+            "0412:9f3a1c04",
+            "\"412:9f3a1c04",
+            "412:9f3a1c04:1",
+        ] {
             assert!(RevToken::parse_etag(bad).is_err(), "{bad}");
         }
     }

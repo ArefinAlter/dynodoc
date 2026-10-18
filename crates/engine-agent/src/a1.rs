@@ -77,7 +77,9 @@ impl FromStr for CellRef {
             || digits.starts_with('0')
             || digits.len() > 4
         {
-            return Err(A1Error("row must be a positive number without leading zeros"));
+            return Err(A1Error(
+                "row must be a positive number without leading zeros",
+            ));
         }
         let row: u32 = digits.parse().map_err(|_| A1Error("bad row"))?;
         if row > MAX_ROWS {
@@ -228,7 +230,10 @@ mod tests {
         let r: A1Range = "'My ''Q3'' sheet'!B2".parse().unwrap();
         assert_eq!(r.sheet.as_deref(), Some("My 'Q3' sheet"));
         assert_eq!(r.to_string(), "'My ''Q3'' sheet'!B2");
-        for bad in ["", "A0", "A3001", "CW1", "A1:", ":A1", "!A1", "'x!A1", "'x'A1", "A01", "1A", "A1:B2:C3", "it's!A1"] {
+        for bad in [
+            "", "A0", "A3001", "CW1", "A1:", ":A1", "!A1", "'x!A1", "'x'A1", "A01", "1A",
+            "A1:B2:C3", "it's!A1",
+        ] {
             assert!(bad.parse::<A1Range>().is_err(), "{bad}");
         }
     }

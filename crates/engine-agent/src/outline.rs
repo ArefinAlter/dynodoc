@@ -161,12 +161,22 @@ fn common(file: &FileMeta, opts: &OutlineOptions) -> Result<Common, AgentError> 
 fn parse_inm(opts: &OutlineOptions) -> Result<Option<ShortHash>, AgentError> {
     opts.if_none_match
         .as_deref()
-        .map(|s| ShortHash::parse(s).map_err(|_| AgentError::BadRequest { field: "if_none_match" }))
+        .map(|s| {
+            ShortHash::parse(s).map_err(|_| AgentError::BadRequest {
+                field: "if_none_match",
+            })
+        })
         .transpose()
 }
 
 /// `dd/1 outline file=… rev=… chain=… unchanged=1 oh=…`
-fn unchanged_response(file: &FileMeta, kind: FileKind, depth: u8, oh: &Hash, max_bytes: usize) -> Response<OutlineData> {
+fn unchanged_response(
+    file: &FileMeta,
+    kind: FileKind,
+    depth: u8,
+    oh: &Hash,
+    max_bytes: usize,
+) -> Response<OutlineData> {
     let h = HeaderBuilder::new(Tool::Outline)
         .kv("file", file.short_id())
         .kv("rev", file.rev)
@@ -177,7 +187,14 @@ fn unchanged_response(file: &FileMeta, kind: FileKind, depth: u8, oh: &Hash, max
     let mut data = OutlineData::empty(kind.as_str(), depth, 0);
     data.unchanged = true;
     data.oh = Some(oh.h6().to_string());
-    let meta = Meta::new(file, text.len(), max_bytes, None, Default::default(), &Warnings::default());
+    let meta = Meta::new(
+        file,
+        text.len(),
+        max_bytes,
+        None,
+        Default::default(),
+        &Warnings::default(),
+    );
     Response { text, meta, data }
 }
 
@@ -216,7 +233,13 @@ fn outline_document(
     let pairs: Vec<(Ref, Hash)> = sel.iter().map(|b| (b.r.clone(), b.hash.clone())).collect();
     let oh = outline_hash(&pairs);
     if parse_inm(opts)?.is_some_and(|s| s.matches(&oh)) {
-        return Ok(unchanged_response(file, FileKind::Document, c.depth, &oh, c.max_bytes));
+        return Ok(unchanged_response(
+            file,
+            FileKind::Document,
+            c.depth,
+            &oh,
+            c.max_bytes,
+        ));
     }
     let words: usize = sel.iter().map(|b| b.text.words()).sum();
 
@@ -235,9 +258,18 @@ fn outline_document(
         let under = (c.depth == 0).then(|| {
             let end = section_end(&blocks, from + k);
             let inner = &blocks[from + k + 1..end];
-            (inner.len(), inner.iter().map(|x| x.text.words()).sum::<usize>())
+            (
+                inner.len(),
+                inner.iter().map(|x| x.text.words()).sum::<usize>(),
+            )
         });
-        let mut line = format!("{} {} {} {}w", b.r, b.text.label, b.hash.h6(), b.text.words());
+        let mut line = format!(
+            "{} {} {} {}w",
+            b.r,
+            b.text.label,
+            b.hash.h6(),
+            b.text.words()
+        );
         if !preview.is_empty() {
             line.push(' ');
             line.push_str(&preview);
@@ -251,7 +283,11 @@ fn outline_document(
             t: b.text.label.clone(),
             h: b.hash.h6().to_string(),
             w: b.text.words(),
-            p: if c.preview == 0 { String::new() } else { inline.preview_raw(c.preview) },
+            p: if c.preview == 0 {
+                String::new()
+            } else {
+                inline.preview_raw(c.preview)
+            },
             under,
         });
         units.push(Unit {
@@ -282,14 +318,21 @@ fn outline_document(
     };
     let (depth, count, oh6) = (c.depth, sel.len(), oh.h6().to_string());
     let start = c.start;
-    paged(spec, &units, start, c.limit, c.max_bytes, move |taken, cursor| {
-        let mut d = OutlineData::empty("document", depth, count);
-        d.words = Some(words);
-        d.oh = Some(oh6);
-        d.more = cursor.map(|c| c.to_string());
-        d.blocks = Some(rows.into_iter().skip(start).take(taken).collect());
-        d
-    })
+    paged(
+        spec,
+        &units,
+        start,
+        c.limit,
+        c.max_bytes,
+        move |taken, cursor| {
+            let mut d = OutlineData::empty("document", depth, count);
+            d.words = Some(words);
+            d.oh = Some(oh6);
+            d.more = cursor.map(|c| c.to_string());
+            d.blocks = Some(rows.into_iter().skip(start).take(taken).collect());
+            d
+        },
+    )
 }
 
 fn outline_sheets(
@@ -306,18 +349,28 @@ fn outline_sheets(
             Some(u) => select_sheet(tree, idx, u, "under")?,
             None => sheets[0],
         };
-        let view = views.iter().find(|v| v.node.id == node.id).expect("sheet of this tree");
+        let view = views
+            .iter()
+            .find(|v| v.node.id == node.id)
+            .expect("sheet of this tree");
         return profile_response(file, idx, view, opts, c);
     }
     let mut rows = Vec::new();
     let mut units = Vec::new();
     let mut pairs = Vec::new();
     for v in &views {
-        let Some(r) = idx.ref_of(&v.node.id) else { continue };
+        let Some(r) = idx.ref_of(&v.node.id) else {
+            continue;
+        };
         let h = v.hash();
         let (name, dropped) = quote_counted(&v.name);
         units.push(Unit {
-            text: format!("{r} {name} rows={} cols={} h={}\n", v.rows.len(), v.cols, h.h6()),
+            text: format!(
+                "{r} {name} rows={} cols={} h={}\n",
+                v.rows.len(),
+                v.cols,
+                h.h6()
+            ),
             dropped,
             ids: vec![(r.clone(), v.node.id.clone())],
         });
@@ -332,7 +385,13 @@ fn outline_sheets(
     }
     let oh = outline_hash(&pairs);
     if parse_inm(opts)?.is_some_and(|s| s.matches(&oh)) {
-        return Ok(unchanged_response(file, FileKind::Spreadsheet, c.depth, &oh, c.max_bytes));
+        return Ok(unchanged_response(
+            file,
+            FileKind::Spreadsheet,
+            c.depth,
+            &oh,
+            c.max_bytes,
+        ));
     }
     let spec = PagedSpec {
         tool: Tool::Outline,
@@ -353,13 +412,20 @@ fn outline_sheets(
         cursor_aux: None,
     };
     let (depth, count, oh6, start) = (c.depth, pairs.len(), oh.h6().to_string(), c.start);
-    paged(spec, &units, start, c.limit, c.max_bytes, move |taken, cursor| {
-        let mut d = OutlineData::empty("spreadsheet", depth, count);
-        d.oh = Some(oh6);
-        d.more = cursor.map(|c| c.to_string());
-        d.sheets = Some(rows.into_iter().skip(start).take(taken).collect());
-        d
-    })
+    paged(
+        spec,
+        &units,
+        start,
+        c.limit,
+        c.max_bytes,
+        move |taken, cursor| {
+            let mut d = OutlineData::empty("spreadsheet", depth, count);
+            d.oh = Some(oh6);
+            d.more = cursor.map(|c| c.to_string());
+            d.sheets = Some(rows.into_iter().skip(start).take(taken).collect());
+            d
+        },
+    )
 }
 
 /// The column profile of one sheet as an `outline` response (spec 6.7).
@@ -372,7 +438,13 @@ fn profile_response(
 ) -> Result<Response<OutlineData>, AgentError> {
     let h = view.hash();
     if parse_inm(opts)?.is_some_and(|s| s.matches(&h)) {
-        return Ok(unchanged_response(file, FileKind::Spreadsheet, c.depth, &h, c.max_bytes));
+        return Ok(unchanged_response(
+            file,
+            FileKind::Spreadsheet,
+            c.depth,
+            &h,
+            c.max_bytes,
+        ));
     }
     let depth = c.depth;
     profile_paged(
@@ -426,7 +498,9 @@ pub(crate) fn profile_paged<T>(
         fixed_dropped: name_dropped,
         cursor_aux: None,
     };
-    paged(spec, &units, start, limit, max_bytes, move |_, cursor| data(p, h, cursor))
+    paged(spec, &units, start, limit, max_bytes, move |_, cursor| {
+        data(p, h, cursor)
+    })
 }
 
 /// Header pairs of a profile response.
@@ -457,7 +531,9 @@ fn outline_slides(
     let mut units = Vec::new();
     let mut pairs = Vec::new();
     for (i, v) in views.iter().enumerate() {
-        let Some(r) = idx.ref_of(&v.node.id) else { continue };
+        let Some(r) = idx.ref_of(&v.node.id) else {
+            continue;
+        };
         let (title_q, mut dropped) = quote_counted(&v.title());
         let (imgs, bytes) = v.images();
         let mut line = format!(
@@ -478,7 +554,9 @@ fn outline_slides(
         let mut ids = vec![(r.clone(), v.node.id.clone())];
         if c.depth == 1 {
             for s in &v.shapes {
-                let Some(sr) = idx.ref_of(&s.node.id) else { continue };
+                let Some(sr) = idx.ref_of(&s.node.id) else {
+                    continue;
+                };
                 ids.push((sr.clone(), s.node.id.clone()));
                 let tag = s.role.unwrap_or(s.kind);
                 let h = s.hash();
@@ -499,7 +577,9 @@ fn outline_slides(
                         }
                         line.push('\n');
                     }
-                    "image" => line.push_str(&format!(" .{sr} image {} omitted\n", human_size(s.src_len))),
+                    "image" => {
+                        line.push_str(&format!(" .{sr} image {} omitted\n", human_size(s.src_len)))
+                    }
                     _ => line.push_str(&format!(" .{sr} shape\n")),
                 }
                 shape_rows.push(ShapeRow {
@@ -508,7 +588,11 @@ fn outline_slides(
                     role: s.role.map(String::from),
                     h: h.h6().to_string(),
                     w: words,
-                    p: if s.kind == "text" && c.preview > 0 { inline.preview_raw(c.preview) } else { String::new() },
+                    p: if s.kind == "text" && c.preview > 0 {
+                        inline.preview_raw(c.preview)
+                    } else {
+                        String::new()
+                    },
                 });
             }
         }
@@ -533,7 +617,13 @@ fn outline_slides(
     }
     let oh = outline_hash(&pairs);
     if parse_inm(opts)?.is_some_and(|s| s.matches(&oh)) {
-        return Ok(unchanged_response(file, FileKind::Presentation, c.depth, &oh, c.max_bytes));
+        return Ok(unchanged_response(
+            file,
+            FileKind::Presentation,
+            c.depth,
+            &oh,
+            c.max_bytes,
+        ));
     }
     let spec = PagedSpec {
         tool: Tool::Outline,
@@ -554,11 +644,18 @@ fn outline_slides(
         cursor_aux: None,
     };
     let (depth, count, oh6, start) = (c.depth, pairs.len(), oh.h6().to_string(), c.start);
-    paged(spec, &units, start, c.limit, c.max_bytes, move |taken, cursor| {
-        let mut d = OutlineData::empty("presentation", depth, count);
-        d.oh = Some(oh6);
-        d.more = cursor.map(|c| c.to_string());
-        d.slides = Some(rows.into_iter().skip(start).take(taken).collect());
-        d
-    })
+    paged(
+        spec,
+        &units,
+        start,
+        c.limit,
+        c.max_bytes,
+        move |taken, cursor| {
+            let mut d = OutlineData::empty("presentation", depth, count);
+            d.oh = Some(oh6);
+            d.more = cursor.map(|c| c.to_string());
+            d.slides = Some(rows.into_iter().skip(start).take(taken).collect());
+            d
+        },
+    )
 }

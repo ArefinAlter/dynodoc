@@ -68,7 +68,10 @@ fn short(id: &DocumentId) -> String {
 }
 
 /// The tool. Entries are ordered by title, then id, so a page is stable for a fixed list.
-pub fn files(entries: &[FileEntry], opts: &FilesOptions) -> Result<Response<FilesData>, AgentError> {
+pub fn files(
+    entries: &[FileEntry],
+    opts: &FilesOptions,
+) -> Result<Response<FilesData>, AgentError> {
     let limit = resolve_limit(opts.limit, FILES_DEFAULT_LIMIT, FILES_MAX_LIMIT)?;
     let max_bytes = resolve_max_bytes(opts.max_bytes, DEFAULT_MAX_BYTES)?;
     let (start, _) = start_position(opts.cursor.as_deref(), 0)?;
@@ -87,7 +90,11 @@ pub fn files(entries: &[FileEntry], opts: &FilesOptions) -> Result<Response<File
         .iter()
         .filter(|e| opts.project.is_none_or(|p| p == e.project_id))
         .filter(|e| opts.kind.is_none_or(|k| k == e.kind))
-        .filter(|e| needle.as_ref().is_none_or(|n| e.title.to_lowercase().contains(n)))
+        .filter(|e| {
+            needle
+                .as_ref()
+                .is_none_or(|n| e.title.to_lowercase().contains(n))
+        })
         .collect();
     list.sort_by(|a, b| (&a.title, a.id.0).cmp(&(&b.title, b.id.0)));
 
@@ -132,11 +139,18 @@ pub fn files(entries: &[FileEntry], opts: &FilesOptions) -> Result<Response<File
         fixed_dropped: Dropped::default(),
         cursor_aux: None,
     };
-    paged(spec, &units, start, limit, max_bytes, move |taken, cursor| FilesData {
-        n: taken,
-        more: cursor.map(|c| c.to_string()),
-        files: rows.into_iter().skip(start).take(taken).collect(),
-    })
+    paged(
+        spec,
+        &units,
+        start,
+        limit,
+        max_bytes,
+        move |taken, cursor| FilesData {
+            n: taken,
+            more: cursor.map(|c| c.to_string()),
+            files: rows.into_iter().skip(start).take(taken).collect(),
+        },
+    )
 }
 
 /// A bare token when `text` allows it, otherwise quoted; counts what quoting drops.

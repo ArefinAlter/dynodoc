@@ -152,9 +152,7 @@ impl AgentError {
     pub fn code(&self) -> &'static str {
         match self {
             Self::Unauthorized => "unauthorized",
-            Self::Forbidden
-            | Self::PolicyDenied { .. }
-            | Self::RedactedBlock { .. } => "forbidden",
+            Self::Forbidden | Self::PolicyDenied { .. } | Self::RedactedBlock { .. } => "forbidden",
             Self::NotFound { .. } => "not_found",
             Self::BadRequest { .. }
             | Self::UnsupportedOp
@@ -257,7 +255,9 @@ impl AgentError {
             Self::BudgetExceeded { .. } => "Budget used up; retry after the delay.",
             Self::RateLimited { .. } => "Too many requests; retry after the delay.",
             Self::Busy => "Server busy; retry.",
-            Self::DeadlineExceeded => "Deadline exceeded; retry reads, retry writes with the same request id.",
+            Self::DeadlineExceeded => {
+                "Deadline exceeded; retry reads, retry writes with the same request id."
+            }
             Self::StorageLimit => "Shared history budget is full.",
             Self::Internal => "Internal error; detail is logged, not returned.",
         }
@@ -266,12 +266,7 @@ impl AgentError {
     /// `dd/1 error code=<agent_code> ...` (one line, no body).
     pub fn to_dct(&self) -> String {
         let mut h = HeaderBuilder::new(Tool::Error).kv("code", self.agent_code());
-        let join = |refs: &[Ref]| {
-            refs.iter()
-                .map(Ref::as_str)
-                .collect::<Vec<_>>()
-                .join(",")
-        };
+        let join = |refs: &[Ref]| refs.iter().map(Ref::as_str).collect::<Vec<_>>().join(",");
         match self {
             Self::PolicyDenied { policy } => h = h.kv("policy", policy),
             Self::BadRequest { field } => h = h.kv("field", field),

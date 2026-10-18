@@ -15,7 +15,10 @@ use proptest::test_runner::RngSeed;
 use serde_json::{json, Value};
 
 fn config() -> ProptestConfig {
-    let cases = std::env::var("PROPTEST_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(1000);
+    let cases = std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1000);
     let mut config = ProptestConfig::with_cases(cases);
     if std::env::var_os("PROPTEST_RNG_SEED").is_none() {
         config.rng_seed = RngSeed::Fixed(0x7072_6f70_7300);
@@ -29,8 +32,11 @@ fn ref_text() -> impl Strategy<Value = String> {
 }
 
 fn crockford(n: usize) -> impl Strategy<Value = String> {
-    proptest::collection::vec(proptest::sample::select(b"0123456789ABCDEFGHJKMNPQRSTVWXYZ".to_vec()), n)
-        .prop_map(|v| v.into_iter().map(char::from).collect())
+    proptest::collection::vec(
+        proptest::sample::select(b"0123456789ABCDEFGHJKMNPQRSTVWXYZ".to_vec()),
+        n,
+    )
+    .prop_map(|v| v.into_iter().map(char::from).collect())
 }
 
 fn cell() -> impl Strategy<Value = CellRef> {
@@ -38,7 +44,10 @@ fn cell() -> impl Strategy<Value = CellRef> {
 }
 
 fn sheet_name() -> impl Strategy<Value = Option<String>> {
-    let pieces = vec!["Budget", " ", "'", "''", "!", "A1", ":", "$", "Q3 plan", "é", "ক", "\n", "\t", "\\", "\"", ".", "_", "[", "]", "-"];
+    let pieces = vec![
+        "Budget", " ", "'", "''", "!", "A1", ":", "$", "Q3 plan", "é", "ক", "\n", "\t", "\\", "\"",
+        ".", "_", "[", "]", "-",
+    ];
     proptest::option::of(
         proptest::collection::vec(proptest::sample::select(pieces), 0..5).prop_map(|v| v.concat()),
     )
@@ -223,7 +232,11 @@ fn reversed_keys(v: &Value) -> Value {
         Value::Object(m) => {
             let mut keys: Vec<_> = m.keys().cloned().collect();
             keys.reverse();
-            Value::Object(keys.into_iter().map(|k| (k.clone(), reversed_keys(&m[&k]))).collect())
+            Value::Object(
+                keys.into_iter()
+                    .map(|k| (k.clone(), reversed_keys(&m[&k])))
+                    .collect(),
+            )
         }
         Value::Array(a) => Value::Array(a.iter().map(reversed_keys).collect()),
         other => other.clone(),

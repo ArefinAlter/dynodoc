@@ -39,7 +39,11 @@ pub struct SlideView<'a> {
 }
 
 fn is_inline_raster(src: &str) -> bool {
-    let lower: String = src.chars().take(32).collect::<String>().to_ascii_lowercase();
+    let lower: String = src
+        .chars()
+        .take(32)
+        .collect::<String>()
+        .to_ascii_lowercase();
     ["png", "jpeg", "gif", "webp"]
         .iter()
         .any(|t| lower.starts_with(&format!("data:image/{t};base64,")))
@@ -120,15 +124,16 @@ impl<'a> SlideView<'a> {
     /// `(image shapes, total omitted bytes)`.
     pub fn images(&self) -> (usize, usize) {
         let imgs = self.shapes.iter().filter(|s| s.kind == "image");
-        (
-            imgs.clone().count(),
-            imgs.map(|s| s.src_len).sum(),
-        )
+        (imgs.clone().count(), imgs.map(|s| s.src_len).sum())
     }
 
     /// Hash of everything the protocol shows about the slide (for `oh` and `diff`).
     pub fn hash(&self) -> Hash {
-        let shapes: Vec<String> = self.shapes.iter().map(|s| s.hash().as_hex().to_string()).collect();
+        let shapes: Vec<String> = self
+            .shapes
+            .iter()
+            .map(|s| s.hash().as_hex().to_string())
+            .collect();
         Hash::of(&serde_json::json!({
             "label": field_string(&self.node.current_fields["label"]),
             "layout": self.layout,
@@ -152,8 +157,12 @@ pub fn select_slide<'a>(
                 .iter()
                 .position(|s| s.id == id)
                 .map(|i| (i, slides[i]))
-                .ok_or(AgentError::UnknownRef { refs: vec![r.clone()] }),
-            Err(ResolveError::Unknown) => Err(AgentError::UnknownRef { refs: vec![r.clone()] }),
+                .ok_or(AgentError::UnknownRef {
+                    refs: vec![r.clone()],
+                }),
+            Err(ResolveError::Unknown) => Err(AgentError::UnknownRef {
+                refs: vec![r.clone()],
+            }),
             Err(ResolveError::Ambiguous(c)) => Err(AgentError::AmbiguousRef { refs: c }),
         }
     };

@@ -302,7 +302,9 @@ fn sub_unit(
     if opts.redacted.contains(&b.node.id) {
         return Ok(redacted_unit(label, &b.r, &b.node.id));
     }
-    let unknown = || AgentError::UnknownRef { refs: vec![b.r.clone()] };
+    let unknown = || AgentError::UnknownRef {
+        refs: vec![b.r.clone()],
+    };
     let inline: &Inline = match (&b.text.body, tail) {
         (Body::List(items), Tail::Item(n)) => &items.get(*n as usize - 1).ok_or_else(unknown)?.text,
         (Body::Table(rows), Tail::Cell { row, col }) => rows
@@ -358,7 +360,11 @@ fn read_document(
     ctl: &Ctl,
 ) -> Result<Response<ReadData>, AgentError> {
     let blocks = doc_blocks(tree, idx, opts.fmt == Fmt::Md);
-    let by_id: BTreeMap<&NodeId, usize> = blocks.iter().enumerate().map(|(i, b)| (&b.node.id, i)).collect();
+    let by_id: BTreeMap<&NodeId, usize> = blocks
+        .iter()
+        .enumerate()
+        .map(|(i, b)| (&b.node.id, i))
+        .collect();
     let mut sel: Vec<(Address, usize)> = Vec::new();
     if let Some(s) = &opts.section {
         let i = find_heading(&blocks, idx, "section", s)?;
@@ -376,7 +382,8 @@ fn read_document(
         }
         let (mut unknown, mut ambiguous, mut gone) = (Vec::new(), Vec::new(), Vec::new());
         for raw in &opts.refs {
-            let addr = Address::from_str(raw).map_err(|_| AgentError::BadRequest { field: "refs" })?;
+            let addr =
+                Address::from_str(raw).map_err(|_| AgentError::BadRequest { field: "refs" })?;
             if matches!(addr, Address::SheetCell { .. }) {
                 return Err(AgentError::BadRequest { field: "refs" });
             }
@@ -436,16 +443,25 @@ fn read_document(
         cursor_aux: None,
     };
     let start = ctl.start;
-    paged(spec, &units, start, usize::MAX, ctl.max_bytes, move |taken, cursor| {
-        let mut d = ReadData::new(taken, cursor.map(|c| c.to_string()));
-        d.items = items.into_iter().skip(start).take(taken).collect();
-        d
-    })
+    paged(
+        spec,
+        &units,
+        start,
+        usize::MAX,
+        ctl.max_bytes,
+        move |taken, cursor| {
+            let mut d = ReadData::new(taken, cursor.map(|c| c.to_string()));
+            d.items = items.into_iter().skip(start).take(taken).collect();
+            d
+        },
+    )
 }
 
 fn sheet_ref_error(r: &Ref, e: ResolveError) -> AgentError {
     match e {
-        ResolveError::Unknown => AgentError::UnknownRef { refs: vec![r.clone()] },
+        ResolveError::Unknown => AgentError::UnknownRef {
+            refs: vec![r.clone()],
+        },
         ResolveError::Ambiguous(c) => AgentError::AmbiguousRef { refs: c },
     }
 }
@@ -472,7 +488,10 @@ fn read_sheet_refs(
         let id = idx.resolve(&r).map_err(|e| sheet_ref_error(&r, e))?;
         resolved.push((r, id));
     }
-    if let Some((_, id)) = resolved.iter().find(|(_, id)| sheets.iter().any(|s| &s.id == id)) {
+    if let Some((_, id)) = resolved
+        .iter()
+        .find(|(_, id)| sheets.iter().any(|s| &s.id == id))
+    {
         if resolved.len() != 1 {
             return Err(AgentError::BadRequest { field: "refs" });
         }
@@ -497,7 +516,9 @@ fn read_sheet_refs(
     for (r, id) in &resolved {
         let node = tree.state.nodes.get(id).filter(|n| !n.deleted);
         let Some(node) = node else {
-            return Err(AgentError::NotFound { refs: vec![r.clone()] });
+            return Err(AgentError::NotFound {
+                refs: vec![r.clone()],
+            });
         };
         let sheet = node
             .parent_id
@@ -558,7 +579,11 @@ fn read_sheet_refs(
             equal: false,
             redacted: false,
             features: String::new(),
-            lines: vec![cells.iter().map(|c| sanitize(c)).collect::<Vec<_>>().join("\t")],
+            lines: vec![cells
+                .iter()
+                .map(|c| sanitize(c))
+                .collect::<Vec<_>>()
+                .join("\t")],
         });
     }
     let spec = PagedSpec {
@@ -578,11 +603,18 @@ fn read_sheet_refs(
         cursor_aux: None,
     };
     let start = ctl.start;
-    paged(spec, &units, start, usize::MAX, ctl.max_bytes, move |taken, cursor| {
-        let mut d = ReadData::new(taken, cursor.map(|c| c.to_string()));
-        d.items = items.into_iter().skip(start).take(taken).collect();
-        d
-    })
+    paged(
+        spec,
+        &units,
+        start,
+        usize::MAX,
+        ctl.max_bytes,
+        move |taken, cursor| {
+            let mut d = ReadData::new(taken, cursor.map(|c| c.to_string()));
+            d.items = items.into_iter().skip(start).take(taken).collect();
+            d
+        },
+    )
 }
 
 fn read_range(
@@ -628,7 +660,11 @@ fn read_range(
         });
     }
     let grid: Vec<Vec<String>> = (0..rows)
-        .map(|r| (0..cols).map(|c| view.cell(first_row - 1 + r, first_col + c)).collect())
+        .map(|r| {
+            (0..cols)
+                .map(|c| view.cell(first_row - 1 + r, first_col + c))
+                .collect()
+        })
         .collect();
     let h = range_hash(&grid);
     let effective = if rows == 0 {
@@ -650,7 +686,9 @@ fn read_range(
             },
         }
     };
-    let letters: Vec<String> = (0..cols).map(|c| column_name((first_col + c) as u16)).collect();
+    let letters: Vec<String> = (0..cols)
+        .map(|c| column_name((first_col + c) as u16))
+        .collect();
     let mut units = Vec::with_capacity(rows);
     let mut typed = Vec::with_capacity(rows);
     for (r, row) in grid.iter().enumerate() {
@@ -659,7 +697,11 @@ fn read_range(
         let mut line = row_no.to_string();
         let mut dropped = Dropped::default();
         let mut ids = Vec::new();
-        let rref = if opts.row_refs { idx.ref_of(&node_id) } else { None };
+        let rref = if opts.row_refs {
+            idx.ref_of(&node_id)
+        } else {
+            None
+        };
         if opts.row_refs {
             line.push('\t');
             if let Some(rr) = &rref {
@@ -718,18 +760,25 @@ fn read_range(
     let start = ctl.start;
     let range_text = effective.to_string();
     let (sheet, h6) = (sref.to_string(), h.h6().to_string());
-    paged(spec, &units, start, usize::MAX, ctl.max_bytes, move |taken, cursor| {
-        let mut d = ReadData::new(taken, cursor.map(|c| c.to_string()));
-        d.range = Some(RangeRead {
-            sheet,
-            range: range_text,
-            h: h6,
-            calc: "none",
-            columns: letters,
-            rows: typed.into_iter().skip(start).take(taken).collect(),
-        });
-        d
-    })
+    paged(
+        spec,
+        &units,
+        start,
+        usize::MAX,
+        ctl.max_bytes,
+        move |taken, cursor| {
+            let mut d = ReadData::new(taken, cursor.map(|c| c.to_string()));
+            d.range = Some(RangeRead {
+                sheet,
+                range: range_text,
+                h: h6,
+                calc: "none",
+                columns: letters,
+                rows: typed.into_iter().skip(start).take(taken).collect(),
+            });
+            d
+        },
+    )
 }
 
 fn shape_tag(s: &ShapeView) -> &'static str {
@@ -783,7 +832,11 @@ fn slide_unit(
             typed,
         ));
     }
-    let mut text = format!("@s{pos} {sref} {} hidden={}\n", v.layout, u8::from(v.hidden));
+    let mut text = format!(
+        "@s{pos} {sref} {} hidden={}\n",
+        v.layout,
+        u8::from(v.hidden)
+    );
     for s in &v.shapes {
         if only.is_some_and(|o| o != &s.node.id) {
             continue;
@@ -857,9 +910,21 @@ fn read_slides(
     opts: &ReadOptions,
     ctl: &Ctl,
 ) -> Result<Response<ReadData>, AgentError> {
-    let raw: &[String] = if opts.slides.is_empty() { &opts.refs } else { &opts.slides };
-    let field = if opts.slides.is_empty() { "refs" } else { "slides" };
-    let cap = if opts.slides.is_empty() { MAX_REFS } else { MAX_SLIDES };
+    let raw: &[String] = if opts.slides.is_empty() {
+        &opts.refs
+    } else {
+        &opts.slides
+    };
+    let field = if opts.slides.is_empty() {
+        "refs"
+    } else {
+        "slides"
+    };
+    let cap = if opts.slides.is_empty() {
+        MAX_REFS
+    } else {
+        MAX_SLIDES
+    };
     if raw.len() > cap {
         return Err(AgentError::LimitExceeded {
             field,
@@ -881,7 +946,9 @@ fn read_slides(
                     // A tail spelled like `R1C1` parses as a table cell; here it is a shape ref.
                     let shape = tail.as_ref_text().ok_or(AgentError::UnsupportedStructure)?;
                     let (i, n) = select_slide(tree, idx, &SlideSel::Ref(base))?;
-                    let sid = idx.resolve(&shape).map_err(|e| sheet_ref_error(&shape, e))?;
+                    let sid = idx
+                        .resolve(&shape)
+                        .map_err(|e| sheet_ref_error(&shape, e))?;
                     (i, n, Some((shape, sid)))
                 }
                 Address::SheetCell { .. } => return Err(AgentError::BadRequest { field }),
@@ -894,10 +961,19 @@ fn read_slides(
         let view = SlideView::new(tree, node);
         if let Some((shape, sid)) = &only {
             if !view.shapes.iter().any(|x| &x.node.id == sid) {
-                return Err(AgentError::UnknownRef { refs: vec![shape.clone()] });
+                return Err(AgentError::UnknownRef {
+                    refs: vec![shape.clone()],
+                });
             }
         }
-        let (u, t) = slide_unit(idx, pos + 1, &view, only.as_ref().map(|(_, id)| id), ctl, opts)?;
+        let (u, t) = slide_unit(
+            idx,
+            pos + 1,
+            &view,
+            only.as_ref().map(|(_, id)| id),
+            ctl,
+            opts,
+        )?;
         labels.push(format!("s{}", pos + 1));
         units.push(u);
         typed.push(t);
@@ -926,9 +1002,16 @@ fn read_slides(
         cursor_aux: None,
     };
     let start = ctl.start;
-    paged(spec, &units, start, usize::MAX, ctl.max_bytes, move |taken, cursor| {
-        let mut d = ReadData::new(taken, cursor.map(|c| c.to_string()));
-        d.slides = typed.into_iter().skip(start).take(taken).collect();
-        d
-    })
+    paged(
+        spec,
+        &units,
+        start,
+        usize::MAX,
+        ctl.max_bytes,
+        move |taken, cursor| {
+            let mut d = ReadData::new(taken, cursor.map(|c| c.to_string()));
+            d.slides = typed.into_iter().skip(start).take(taken).collect();
+            d
+        },
+    )
 }

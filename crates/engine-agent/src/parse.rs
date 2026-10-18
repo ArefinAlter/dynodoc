@@ -26,7 +26,10 @@ fn num(at: usize, s: &str) -> Result<usize, ParseError> {
 }
 
 fn hash6(at: usize, s: &str) -> Result<String, ParseError> {
-    if s.len() == 6 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
+    if s.len() == 6
+        && s.bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
         Ok(s.to_string())
     } else {
         err(at, format!("not a 6-hex hash: {s:?}"))
@@ -34,7 +37,10 @@ fn hash6(at: usize, s: &str) -> Result<String, ParseError> {
 }
 
 fn ref_token(at: usize, s: &str) -> Result<String, ParseError> {
-    if (4..=26).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_digit() || b.is_ascii_uppercase()) {
+    if (4..=26).contains(&s.len())
+        && s.bytes()
+            .all(|b| b.is_ascii_digit() || b.is_ascii_uppercase())
+    {
         Ok(s.to_string())
     } else {
         err(at, format!("not a ref: {s:?}"))
@@ -69,21 +75,36 @@ pub fn outline_blocks(lines: &[&str], depth: u8) -> Result<Vec<OutlineRow>, Pars
         let h = hash6(0, s.word()?)?;
         s.space()?;
         let words = s.word()?;
-        let w = num(0, words.strip_suffix('w').ok_or(ParseError { at: 0, message: "words need a w".into() })?)?;
+        let w = num(
+            0,
+            words.strip_suffix('w').ok_or(ParseError {
+                at: 0,
+                message: "words need a w".into(),
+            })?,
+        )?;
         let mut rest = s.take_rest();
         let mut under = None;
         if depth == 0 {
             // The last group is the tail; a preview that looks like one is followed by the real one.
-            let idx = rest.rfind(" [").or(if rest.starts_with('[') { Some(0) } else { None });
-            let idx = idx.ok_or(ParseError { at: 0, message: "depth 0 row without [Nb Nw]".into() })?;
+            let idx = rest
+                .rfind(" [")
+                .or(if rest.starts_with('[') { Some(0) } else { None });
+            let idx = idx.ok_or(ParseError {
+                at: 0,
+                message: "depth 0 row without [Nb Nw]".into(),
+            })?;
             let tail = rest[idx..].trim_start();
             let inner = tail
                 .strip_prefix('[')
                 .and_then(|t| t.strip_suffix(']'))
-                .ok_or(ParseError { at: 0, message: "bad tail".into() })?;
-            let (b, w) = inner
-                .split_once(' ')
-                .ok_or(ParseError { at: 0, message: "bad tail".into() })?;
+                .ok_or(ParseError {
+                    at: 0,
+                    message: "bad tail".into(),
+                })?;
+            let (b, w) = inner.split_once(' ').ok_or(ParseError {
+                at: 0,
+                message: "bad tail".into(),
+            })?;
             under = Some((
                 num(0, b.strip_suffix('b').unwrap_or("x"))?,
                 num(0, w.strip_suffix('w').unwrap_or("x"))?,
@@ -95,7 +116,14 @@ pub fn outline_blocks(lines: &[&str], depth: u8) -> Result<Vec<OutlineRow>, Pars
             None if rest.is_empty() => String::new(),
             None => return err(0, "expected a space before the preview"),
         };
-        rows.push(OutlineRow { r, t, h, w, preview, under });
+        rows.push(OutlineRow {
+            r,
+            t,
+            h,
+            w,
+            preview,
+            under,
+        });
     }
     Ok(rows)
 }
@@ -126,14 +154,21 @@ pub fn outline_sheets(lines: &[&str]) -> Result<Vec<SheetListRow>, ParseError> {
                 s.space()?;
                 let at = s.pos();
                 let w = s.word()?;
-                w.strip_prefix(key)
-                    .map(str::to_string)
-                    .ok_or(ParseError { at, message: format!("expected {key}") })
+                w.strip_prefix(key).map(str::to_string).ok_or(ParseError {
+                    at,
+                    message: format!("expected {key}"),
+                })
             };
             let rows = num(0, &kv("rows=")?)?;
             let cols = num(0, &kv("cols=")?)?;
             let h = hash6(0, &kv("h=")?)?;
-            Ok(SheetListRow { r, name, rows, cols, h })
+            Ok(SheetListRow {
+                r,
+                name,
+                rows,
+                cols,
+                h,
+            })
         })
         .collect()
 }
@@ -187,12 +222,22 @@ pub fn profile(lines: &[&str]) -> Result<(String, Vec<ProfileRow>), ParseError> 
         let header = s.quoted()?;
         s.space()?;
         let ty = s.word()?.to_string();
-        let mut row = ProfileRow { col, header, ty, stats: Vec::new(), top: Vec::new(), pattern: None };
+        let mut row = ProfileRow {
+            col,
+            header,
+            ty,
+            stats: Vec::new(),
+            top: Vec::new(),
+            pattern: None,
+        };
         while !s.is_done() {
             s.space()?;
             let at = s.pos();
             let rest = s.rest();
-            let eq = rest.find('=').ok_or(ParseError { at, message: "stat without =".into() })?;
+            let eq = rest.find('=').ok_or(ParseError {
+                at,
+                message: "stat without =".into(),
+            })?;
             let key = rest[..eq].to_string();
             s.eat(&key);
             s.eat("=");
@@ -253,7 +298,14 @@ pub fn outline_slides(lines: &[&str]) -> Result<Vec<SlideOutlineRow>, ParseError
             let r = ref_token(0, s.word()?)?;
             s.space()?;
             let tag = s.word()?.to_string();
-            let mut row = ShapeOutlineRow { r, tag: tag.clone(), h: None, w: None, preview: String::new(), omitted: None };
+            let mut row = ShapeOutlineRow {
+                r,
+                tag: tag.clone(),
+                h: None,
+                w: None,
+                preview: String::new(),
+                omitted: None,
+            };
             if tag == "image" {
                 s.space()?;
                 row.omitted = Some(s.word()?.to_string());
@@ -286,17 +338,42 @@ pub fn outline_slides(lines: &[&str]) -> Result<Vec<SlideOutlineRow>, ParseError
         let layout = s.word()?.to_string();
         s.space()?;
         let title = s.quoted()?;
-        let mut row = SlideOutlineRow { pos, r, layout, title, body: 0, notes_words: 0, images: None, hidden: false, shapes: Vec::new() };
+        let mut row = SlideOutlineRow {
+            pos,
+            r,
+            layout,
+            title,
+            body: 0,
+            notes_words: 0,
+            images: None,
+            hidden: false,
+            shapes: Vec::new(),
+        };
         s.space()?;
-        row.body = num(0, s.word()?.strip_prefix("body=").and_then(|b| b.strip_suffix('b')).unwrap_or("x"))?;
+        row.body = num(
+            0,
+            s.word()?
+                .strip_prefix("body=")
+                .and_then(|b| b.strip_suffix('b'))
+                .unwrap_or("x"),
+        )?;
         s.space()?;
-        row.notes_words = num(0, s.word()?.strip_prefix("notes=").and_then(|b| b.strip_suffix('w')).unwrap_or("x"))?;
+        row.notes_words = num(
+            0,
+            s.word()?
+                .strip_prefix("notes=")
+                .and_then(|b| b.strip_suffix('w'))
+                .unwrap_or("x"),
+        )?;
         while !s.is_done() {
             s.space()?;
             if s.eat("img=") {
                 let at = s.pos();
                 let w = s.word()?;
-                let (n, rest) = w.split_once('(').ok_or(ParseError { at, message: "bad img".into() })?;
+                let (n, rest) = w.split_once('(').ok_or(ParseError {
+                    at,
+                    message: "bad img".into(),
+                })?;
                 s.space()?;
                 if s.word()? != "omitted)" {
                     return err(at, "img must end with `omitted)`");
@@ -343,7 +420,10 @@ fn expected_lines(t: &str) -> Result<(usize, &'static str), ParseError> {
         return Ok((num(0, n)?, "list"));
     }
     if let Some(dims) = t.strip_prefix("TBL") {
-        let (r, _) = dims.split_once('x').ok_or(ParseError { at: 0, message: "bad table type".into() })?;
+        let (r, _) = dims.split_once('x').ok_or(ParseError {
+            at: 0,
+            message: "bad table type".into(),
+        })?;
         return Ok((num(0, r)?, "table"));
     }
     Ok((1, "text"))
@@ -406,9 +486,16 @@ pub fn read_blocks(lines: &[&str]) -> Result<Vec<ReadBlock>, ParseError> {
             }
             continue;
         }
-        let (n, kind) = if b.label.contains('.') { (1, "text") } else { expected_lines(&b.t)? };
+        let (n, kind) = if b.label.contains('.') {
+            (1, "text")
+        } else {
+            expected_lines(&b.t)?
+        };
         if b.lines.len() != n {
-            return err(i, format!("block {} wants {n} lines, has {}", b.label, b.lines.len()));
+            return err(
+                i,
+                format!("block {} wants {n} lines, has {}", b.label, b.lines.len()),
+            );
         }
         match kind {
             "list" => {
@@ -421,7 +508,11 @@ pub fn read_blocks(lines: &[&str]) -> Result<Vec<ReadBlock>, ParseError> {
             }
             "table" => {
                 for (k, l) in b.lines.iter().enumerate() {
-                    if !l.starts_with(&format!("r{}", k + 1)) || l.as_bytes().get(format!("r{}", k + 1).len()).is_some_and(|c| *c != b'\t') {
+                    if !l.starts_with(&format!("r{}", k + 1))
+                        || l.as_bytes()
+                            .get(format!("r{}", k + 1).len())
+                            .is_some_and(|c| *c != b'\t')
+                    {
                         return err(i, "table row without its r<n> prefix");
                     }
                 }
@@ -440,7 +531,10 @@ pub fn list_items(block: &ReadBlock) -> Result<Vec<(usize, String)>, ParseError>
         .map(|l| {
             let t = l.trim_start_matches(' ');
             let depth = (l.len() - t.len()) / 2;
-            let text = t.strip_prefix("- ").ok_or(ParseError { at: 0, message: "no `- `".into() })?;
+            let text = t.strip_prefix("- ").ok_or(ParseError {
+                at: 0,
+                message: "no `- `".into(),
+            })?;
             Ok((depth, unesc(0, text)?))
         })
         .collect()
@@ -489,14 +583,24 @@ pub fn range_body(lines: &[&str], row_refs: bool) -> Result<RangeBody, ParseErro
         let mut parts = line.split('\t');
         let n = num(i, parts.next().unwrap_or(""))? as u32;
         let r = if row_refs {
-            let t = parts.next().ok_or(ParseError { at: i, message: "missing ref column".into() })?;
+            let t = parts.next().ok_or(ParseError {
+                at: i,
+                message: "missing ref column".into(),
+            })?;
             (!t.is_empty()).then(|| ref_token(i, t)).transpose()?
         } else {
             None
         };
         let cells: Vec<String> = parts.map(|c| unesc(i, c)).collect::<Result<_, _>>()?;
         if cells.len() != cols.len() {
-            return err(i, format!("row {n} has {} cells for {} columns", cells.len(), cols.len()));
+            return err(
+                i,
+                format!(
+                    "row {n} has {} cells for {} columns",
+                    cells.len(),
+                    cols.len()
+                ),
+            );
         }
         rows.push((n, r, cells));
     }
@@ -540,7 +644,15 @@ pub fn read_slides(lines: &[&str]) -> Result<Vec<SlideBody>, ParseError> {
             let r = ref_token(i, s.word()?)?;
             s.space()?;
             let layout = s.word()?.to_string();
-            let mut slide = SlideBody { pos, r, layout: layout.clone(), hidden: false, redacted: false, shapes: Vec::new(), notes: None };
+            let mut slide = SlideBody {
+                pos,
+                r,
+                layout: layout.clone(),
+                hidden: false,
+                redacted: false,
+                shapes: Vec::new(),
+                notes: None,
+            };
             if layout == "X" {
                 if s.take_rest() != " redacted" {
                     return err(i, "bad redacted slide");
@@ -567,7 +679,16 @@ pub fn read_slides(lines: &[&str]) -> Result<Vec<SlideBody>, ParseError> {
             let r = ref_token(i, s.word()?)?;
             s.space()?;
             let tag = s.word()?.to_string();
-            let mut sb = ShapeBody { r, tag: tag.clone(), h: None, equal: false, redacted: false, alt: None, omitted: None, lines: Vec::new() };
+            let mut sb = ShapeBody {
+                r,
+                tag: tag.clone(),
+                h: None,
+                equal: false,
+                redacted: false,
+                alt: None,
+                omitted: None,
+                lines: Vec::new(),
+            };
             match tag.as_str() {
                 "=" => {
                     s.space()?;
@@ -615,7 +736,10 @@ pub fn read_slides(lines: &[&str]) -> Result<Vec<SlideBody>, ParseError> {
             let Some(slide) = out.last_mut() else {
                 return err(i, "notes before any slide");
             };
-            let (h, text) = notes.split_once(": ").ok_or(ParseError { at: i, message: "bad notes line".into() })?;
+            let (h, text) = notes.split_once(": ").ok_or(ParseError {
+                at: i,
+                message: "bad notes line".into(),
+            })?;
             slide.notes = Some((hash6(i, h)?, unesc(i, text)?));
         } else {
             return err(i, format!("unrecognised line {line:?}"));
@@ -638,10 +762,16 @@ pub fn find_hits(lines: &[&str]) -> Result<Vec<FindHit>, ParseError> {
         .enumerate()
         .map(|(i, line)| {
             let body = line.strip_prefix('@').unwrap_or(line);
-            let (at, snippet) = body.split_once(' ').ok_or(ParseError { at: i, message: "hit without snippet".into() })?;
+            let (at, snippet) = body.split_once(' ').ok_or(ParseError {
+                at: i,
+                message: "hit without snippet".into(),
+            })?;
             let base = at.split(['.', '!']).next().unwrap_or("");
             ref_token(i, base)?;
-            Ok(FindHit { at: at.to_string(), snippet: unesc(i, snippet)? })
+            Ok(FindHit {
+                at: at.to_string(),
+                snippet: unesc(i, snippet)?,
+            })
         })
         .collect()
 }
@@ -685,7 +815,14 @@ pub fn files_lines(lines: &[&str]) -> Result<Vec<FileLine>, ParseError> {
             if !s.is_done() {
                 return err(i, "trailing text");
             }
-            Ok(FileLine { file, kind, rev, project, role, title })
+            Ok(FileLine {
+                file,
+                kind,
+                rev,
+                project,
+                role,
+                title,
+            })
         })
         .collect()
 }
@@ -714,7 +851,10 @@ pub fn diff_lines(lines: &[&str]) -> Result<Vec<DiffLine>, ParseError> {
         let sigil = line.chars().next();
         if let Some(op @ ('~' | '+' | '-' | '>')) = sigil {
             let mut s = Scanner::new(&line[1..]);
-            let mut d = DiffLine { op, ..DiffLine::default() };
+            let mut d = DiffLine {
+                op,
+                ..DiffLine::default()
+            };
             d.r = ref_token(i, s.word()?)?;
             s.space()?;
             d.t = s.word()?.to_string();
@@ -749,7 +889,11 @@ pub fn diff_lines(lines: &[&str]) -> Result<Vec<DiffLine>, ParseError> {
                 } else if w == "after" {
                     s.space()?;
                     let a = s.word()?;
-                    d.after = Some(if a == "first" { a.to_string() } else { ref_token(at, a)? });
+                    d.after = Some(if a == "first" {
+                        a.to_string()
+                    } else {
+                        ref_token(at, a)?
+                    });
                 } else if let Some(n) = w.strip_prefix('-') {
                     let del = num(at, n)?;
                     s.space()?;

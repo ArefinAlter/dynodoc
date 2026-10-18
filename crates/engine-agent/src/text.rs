@@ -210,7 +210,10 @@ impl Inline {
                     dropped.add(d);
                 }
                 other => {
-                    let (e, d) = Inline { segs: vec![other.clone()] }.render(false);
+                    let (e, d) = Inline {
+                        segs: vec![other.clone()],
+                    }
+                    .render(false);
                     text.push_str(&e);
                     dropped.add(d);
                 }
@@ -283,7 +286,11 @@ impl Inline {
 fn percent_encode_href(href: &str) -> Option<String> {
     let lower = href.trim().to_ascii_lowercase();
     let scheme_ok = match lower.split_once(':') {
-        Some((scheme, _)) if scheme.chars().all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-' || c == '.') => {
+        Some((scheme, _))
+            if scheme
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-' || c == '.') =>
+        {
             matches!(scheme, "http" | "https" | "mailto")
         }
         _ => true,
@@ -308,7 +315,10 @@ fn wrap_run(text: &str, marks: &[Value], md: bool, segs: &mut Vec<Seg>, f: &mut 
     if kinds.contains(&"link") {
         f.lnk += 1;
     }
-    if kinds.iter().any(|k| matches!(*k, "sourceComment" | "comment")) {
+    if kinds
+        .iter()
+        .any(|k| matches!(*k, "sourceComment" | "comment"))
+    {
         f.cm += 1;
     }
     if kinds
@@ -395,7 +405,11 @@ fn walk_inline(container: &Value, md: bool, segs: &mut Vec<Seg>, f: &mut Feature
             }
             "documentNote" => {
                 let id = child["attrs"]["id"].as_str().unwrap_or("").to_string();
-                let kind = if child["attrs"]["kind"] == "endnote" { "en" } else { "fn" };
+                let kind = if child["attrs"]["kind"] == "endnote" {
+                    "en"
+                } else {
+                    "fn"
+                };
                 f.fn_ += 1;
                 f.rich = true;
                 segs.push(Seg::Atom {
@@ -409,7 +423,12 @@ fn walk_inline(container: &Value, md: bool, segs: &mut Vec<Seg>, f: &mut Feature
                 f.rich = true;
                 segs.push(Seg::Atom {
                     kind: "img".into(),
-                    value: child["attrs"]["alt"].as_str().unwrap_or("").chars().take(40).collect(),
+                    value: child["attrs"]["alt"]
+                        .as_str()
+                        .unwrap_or("")
+                        .chars()
+                        .take(40)
+                        .collect(),
                     plain: String::new(),
                 });
             }
@@ -568,13 +587,18 @@ pub fn analyze_block(content: &Value, md: bool) -> BlockText {
         "paragraph" => ("P".to_string(), Body::Text(flatten(content, md, &mut f))),
         "heading" => {
             let level = content["attrs"]["level"].as_u64().unwrap_or(1).clamp(1, 6);
-            (format!("H{level}"), Body::Text(flatten(content, md, &mut f)))
+            (
+                format!("H{level}"),
+                Body::Text(flatten(content, md, &mut f)),
+            )
         }
         "codeBlock" => ("CODE".into(), Body::Text(flatten(content, md, &mut f))),
         "blockquote" => ("QUOTE".into(), Body::Text(flatten(content, md, &mut f))),
         "blockMath" => (
             "MATH".into(),
-            Body::Text(Inline::text(content["attrs"]["latex"].as_str().unwrap_or(""))),
+            Body::Text(Inline::text(
+                content["attrs"]["latex"].as_str().unwrap_or(""),
+            )),
         ),
         "image" => (
             "IMG".into(),
@@ -706,7 +730,10 @@ mod tests {
         assert_eq!(lines, ["a **bold** [site](https://x.test/a%20b%29)js2\\*3"]);
         assert_eq!(b.features.render(), "{m=1,lnk=2}");
         let plain = analyze_block(&c, false);
-        assert_eq!(body_lines(&plain, false, Ctx::Block).0, ["a bold sitejs2*3"]);
+        assert_eq!(
+            body_lines(&plain, false, Ctx::Block).0,
+            ["a bold sitejs2*3"]
+        );
     }
 
     #[test]
@@ -719,7 +746,10 @@ mod tests {
         ]});
         let b = analyze_block(&list, false);
         assert_eq!(b.label, "UL3");
-        assert_eq!(body_lines(&b, false, Ctx::Block).0, ["- one", "  - nested", "- two"]);
+        assert_eq!(
+            body_lines(&b, false, Ctx::Block).0,
+            ["- one", "  - nested", "- two"]
+        );
         let table = json!({"type": "table", "content": [
             {"type": "tableRow", "content": [
                 {"type": "tableHeader", "content": [para(json!([{"type": "text", "text": "Name"}]))]},
@@ -730,9 +760,15 @@ mod tests {
         ]});
         let b = analyze_block(&table, false);
         assert_eq!(b.label, "TBL2x2");
-        assert_eq!(body_lines(&b, false, Ctx::Block).0, ["r1\tName\tOwner", "r2\tIntake\ta\\tb"]);
+        assert_eq!(
+            body_lines(&b, false, Ctx::Block).0,
+            ["r1\tName\tOwner", "r2\tIntake\ta\\tb"]
+        );
         let q = json!({"type": "blockquote", "content": [para(json!([{"type": "text", "text": "x"}])), para(json!([{"type": "text", "text": "y"}]))]});
-        assert_eq!(body_lines(&analyze_block(&q, false), false, Ctx::Block).0, ["x\\ny"]);
+        assert_eq!(
+            body_lines(&analyze_block(&q, false), false, Ctx::Block).0,
+            ["x\\ny"]
+        );
     }
 
     #[test]
@@ -747,7 +783,10 @@ mod tests {
 
     #[test]
     fn unknown_blocks_are_x_and_rich() {
-        let b = analyze_block(&json!({"type": "tableOfContents", "attrs": {"entries": []}}), false);
+        let b = analyze_block(
+            &json!({"type": "tableOfContents", "attrs": {"entries": []}}),
+            false,
+        );
         assert_eq!(b.label, "X");
         assert!(b.features.rich);
     }

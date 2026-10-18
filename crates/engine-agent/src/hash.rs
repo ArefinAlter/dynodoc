@@ -169,11 +169,11 @@ mod tests {
         let a = row_hash(&["a".into(), "b".into()]);
         assert_eq!(a, Hash::of(&json!({"cell_1": "b", "cell_0": "a"})));
         assert_ne!(a, row_hash(&["a".into(), "b".into(), String::new()]));
-        assert_eq!(
-            range_hash(&[vec!["1".into()]]),
-            Hash::of(&json!([["1"]]))
+        assert_eq!(range_hash(&[vec!["1".into()]]), Hash::of(&json!([["1"]])));
+        assert_ne!(
+            shape_hash("text", None, "x"),
+            shape_hash("text", Some("title"), "x")
         );
-        assert_ne!(shape_hash("text", None, "x"), shape_hash("text", Some("title"), "x"));
         assert_ne!(notes_hash("a"), notes_hash("b"));
     }
 }

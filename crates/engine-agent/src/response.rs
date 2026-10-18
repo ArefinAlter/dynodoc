@@ -4,12 +4,9 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 
-use crate::budget::Unit;
 use crate::dct::{estimate_tokens, HeaderBuilder};
 use crate::escape::Dropped;
 use crate::model::FileMeta;
-use crate::refs::Ref;
-use engine_shared::NodeId;
 
 /// `warn=` codes (spec 6.2, plus `ctrl` and `hidden` from 6.5 and AI-AGENT-SECURITY P3).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -128,20 +125,30 @@ pub struct Response<T> {
     pub data: T,
 }
 
-/// Sum the dropped-character counts and collect the ids of the units that were taken.
-pub fn tally(units: &[Unit]) -> (Dropped, BTreeMap<String, String>) {
-    let mut dropped = Dropped::default();
-    let mut ids = BTreeMap::new();
-    for u in units {
-        dropped.add(u.dropped);
-        for (r, id) in &u.ids {
-            ids.insert(r.as_str().to_string(), id.0.clone());
+impl<T: Serialize> Response<T> {
+    /// The JSON mirror of spec 12.3: the same information as the DCT text, as compact JSON,
+    /// for programmatic callers and for the size comparison of the byte benchmark.
+    ///
+    /// `{"protocol":"dynodoc.agent/1","tool":..,"file":<uuid>,"rev":..,"chain":<8 hex>,
+    /// "trust":"data", ..typed fields..}`. The typed fields use the short keys of the spec
+    /// (`ref`, `t`, `h`, `w`, `p`).
+    pub fn json_mirror(&self, tool: crate::dct::Tool) -> String {
+        let mut map = serde_json::Map::new();
+        map.insert("protocol".into(), "dynodoc.agent/1".into());
+        map.insert("tool".into(), tool.as_str().into());
+        if let Some(f) = &self.meta.file {
+            map.insert("file".into(), f.clone().into());
         }
+        if let Some(r) = self.meta.rev {
+            map.insert("rev".into(), r.into());
+        }
+        if let Some(c) = &self.meta.chain {
+            map.insert("chain".into(), c.chars().take(8).collect::<String>().into());
+        }
+        map.insert("trust".into(), "data".into());
+        if let Ok(serde_json::Value::Object(fields)) = serde_json::to_value(&self.data) {
+            map.extend(fields);
+        }
+        serde_json::to_string(&serde_json::Value::Object(map)).expect("JSON mirror serialises")
     }
-    (dropped, ids)
-}
-
-/// A ref and the node it names, for `ids` bookkeeping.
-pub fn id_pair(r: &Ref, id: &NodeId) -> (Ref, NodeId) {
-    (r.clone(), id.clone())
 }

@@ -103,8 +103,16 @@ fn raw(s: &str) -> String {
 }
 
 fn build_regex(o: &FindOptions) -> Result<Regex, AgentError> {
-    let base = if o.regex { o.q.clone() } else { regex::escape(&o.q) };
-    let pattern = if o.word { format!(r"\b(?:{base})\b") } else { base };
+    let base = if o.regex {
+        o.q.clone()
+    } else {
+        regex::escape(&o.q)
+    };
+    let pattern = if o.word {
+        format!(r"\b(?:{base})\b")
+    } else {
+        base
+    };
     RegexBuilder::new(&pattern)
         .case_insensitive(!o.case)
         .size_limit(1 << 20)
@@ -159,11 +167,17 @@ fn targets(
         }
         (FileKind::Spreadsheet, Scope::Text | Scope::Formulas | Scope::Notes) => {
             for sheet in tree.sheets() {
-                let Some(sref) = idx.ref_of(&sheet.id) else { continue };
+                let Some(sref) = idx.ref_of(&sheet.id) else {
+                    continue;
+                };
                 let view = SheetView::new(tree, sheet);
                 for (r, row) in view.rows.iter().enumerate() {
                     // Notes can sit on cells beyond the used columns.
-                    let width = if scope == Scope::Notes { 100 } else { view.cols };
+                    let width = if scope == Scope::Notes {
+                        100
+                    } else {
+                        view.cols
+                    };
                     for c in 0..width {
                         let text = if scope == Scope::Notes {
                             field_string(&row.current_fields[&format!("format_{c}")]["note"])
@@ -178,7 +192,13 @@ fn targets(
                         };
                         if wanted {
                             out.push(Target {
-                                at: format!("{sref}!{}", CellRef { col: c as u16, row: r as u32 + 1 }),
+                                at: format!(
+                                    "{sref}!{}",
+                                    CellRef {
+                                        col: c as u16,
+                                        row: r as u32 + 1
+                                    }
+                                ),
                                 prefix: "",
                                 text: raw(&text),
                                 id: (sref.clone(), sheet.id.clone()),
@@ -190,7 +210,9 @@ fn targets(
         }
         (FileKind::Presentation, Scope::Text | Scope::Notes) => {
             for slide in tree.slides() {
-                let Some(sref) = idx.ref_of(&slide.id) else { continue };
+                let Some(sref) = idx.ref_of(&slide.id) else {
+                    continue;
+                };
                 let view = SlideView::new(tree, slide);
                 if scope == Scope::Notes {
                     if !view.notes.is_empty() {
@@ -204,7 +226,9 @@ fn targets(
                     continue;
                 }
                 for s in view.shapes.iter().filter(|s| s.kind == "text") {
-                    let Some(shape) = idx.ref_of(&s.node.id) else { continue };
+                    let Some(shape) = idx.ref_of(&s.node.id) else {
+                        continue;
+                    };
                     out.push(Target {
                         at: format!("{sref}.{shape}"),
                         prefix: "@",
@@ -224,7 +248,12 @@ fn snippet(text: &str, s: usize, e: usize, ctx: usize) -> String {
     let left_start = if ctx == 0 {
         s
     } else {
-        text[..s].char_indices().rev().take(ctx).last().map_or(s, |(i, _)| i)
+        text[..s]
+            .char_indices()
+            .rev()
+            .take(ctx)
+            .last()
+            .map_or(s, |(i, _)| i)
     };
     let mut matched: String = text[s..e].chars().take(MATCH_CHARS + 1).collect();
     let long = matched.chars().count() > MATCH_CHARS;
@@ -234,7 +263,10 @@ fn snippet(text: &str, s: usize, e: usize, ctx: usize) -> String {
     let right_end = if long {
         e
     } else {
-        text[e..].char_indices().nth(ctx).map_or(text.len(), |(i, _)| e + i)
+        text[e..]
+            .char_indices()
+            .nth(ctx)
+            .map_or(text.len(), |(i, _)| e + i)
     };
     let mut out = String::new();
     if left_start > 0 {
@@ -319,7 +351,11 @@ pub fn find(
         }
     }
     let total = units.len();
-    let total_text = if capped { format!("{total}+") } else { total.to_string() };
+    let total_text = if capped {
+        format!("{total}+")
+    } else {
+        total.to_string()
+    };
     let spec = PagedSpec {
         tool: Tool::Find,
         file: Some(file),
@@ -333,13 +369,20 @@ pub fn find(
         fixed_dropped: Dropped::default(),
         cursor_aux: None,
     };
-    paged(spec, &units, start, limit, max_bytes, move |taken, cursor| FindData {
-        n: taken,
-        total,
-        total_capped: capped,
-        more: cursor.map(|c| c.to_string()),
-        hits: hits.into_iter().skip(start).take(taken).collect(),
-    })
+    paged(
+        spec,
+        &units,
+        start,
+        limit,
+        max_bytes,
+        move |taken, cursor| FindData {
+            n: taken,
+            total,
+            total_capped: capped,
+            more: cursor.map(|c| c.to_string()),
+            hits: hits.into_iter().skip(start).take(taken).collect(),
+        },
+    )
 }
 
 #[cfg(test)]
