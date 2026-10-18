@@ -625,6 +625,98 @@ impl LocalRepository {
             not_examined: eligible.len().saturating_sub(MAX_REPORTED_FILES),
         }))
     }
+
+    /// How `policy` decides each same-document conflicting path of a project plan:
+    /// the evidence for each, and what its merge would be. Reads the states and
+    /// writes nothing. Under `dynodoc.default.v1` the verdict is the one
+    /// [`LocalRepository::same_file_convergence`] reports.
+    pub async fn explain_same_file(
+        &self,
+        plan: &ProjectPlan,
+        policy: &MergePolicy,
+    ) -> Result<Vec<FileExplain>, Error> {
+        let mut out = Vec::new();
+        for (path, base, left, right) in same_document_conflicts(plan)
+            .iter()
+            .take(MAX_REPORTED_FILES)
+        {
+            let document = base.document;
+            out.push(
+                self.explain_one(
+                    (*path).clone(),
+                    document,
+                    [&base.state, &left.state, &right.state],
+                    policy,
+                )
+                .await?,
+            );
+        }
+        Ok(out)
+    }
+
+    /// The same account for stored same-file resolutions, such as those of a merge
+    /// that was just prepared or of a commit being verified.
+    pub async fn explain_resolutions(
+        &self,
+        records: &[Resolution],
+        policy: &MergePolicy,
+    ) -> Result<Vec<FileExplain>, Error> {
+        let mut out = Vec::new();
+        for record in records {
+            out.push(
+                self.explain_one(
+                    record.path.clone(),
+                    record.document,
+                    [&record.base, &record.left, &record.right],
+                    policy,
+                )
+                .await?,
+            );
+        }
+        Ok(out)
+    }
+
+    async fn explain_one(
+        &self,
+        path: String,
+        document: DocumentId,
+        [base, left, right]: [&Address; 3],
+        policy: &MergePolicy,
+    ) -> Result<FileExplain, Error> {
+        let base_state = self.read_state(document, base).await?;
+        let left_state = self.read_state(document, left).await?;
+        let right_state = self.read_state(document, right).await?;
+        let (result, convergence) =
+            converge_with_policy(&base_state, &left_state, &right_state, left, right, policy);
+        let merged_state = match &result.merged {
+            Some(state) => Some(state_address(document, state).await?),
+            None => None,
+        };
+        Ok(FileExplain {
+            path,
+            document,
+            clean: result.merged.is_some(),
+            merged_state,
+            conflicts: result.conflicts.len(),
+            text: convergence.render_text(),
+            convergence,
+        })
+    }
+}
+
+/// One path's merge under a policy, with the account of how it was decided.
+#[derive(Debug, Serialize)]
+pub struct FileExplain {
+    pub path: String,
+    pub document: DocumentId,
+    pub clean: bool,
+    /// Present only when `clean`: the root the merged state would have.
+    pub merged_state: Option<Address>,
+    /// Node and field conflicts (the details are in `same_file_convergence`).
+    pub conflicts: usize,
+    pub convergence: ConvergenceEvidence,
+    /// `convergence.evidence` as readable text, with the sides named left and right.
+    pub text: String,
 }
 
 #[cfg(test)]

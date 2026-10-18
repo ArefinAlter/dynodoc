@@ -4,7 +4,9 @@ use anyhow::Context;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use clap::{Subcommand, ValueEnum};
 use engine_core::{
+    merge_policy::{self, MergePolicy, Registry},
     repository::{
+        convergence::FileExplain,
         local::{
             CompactOptions, GcApplyOptions, GcPlanOptions, LocalRepository, ObjectKey,
             ObjectPacket, StorageLimits, SCHEMA_VERSION,
@@ -186,11 +188,22 @@ pub enum Action {
     /// Paths edited on both sides stay whole-file conflicts. When both sides keep
     /// the same document, `same_file_convergence` also reports a dry-run
     /// node/field merge: clean or not, the address it would have, and conflicts.
-    /// Nothing is stored or signed.
+    /// With --explain, `same_file_explain` also says, for each such path, which
+    /// rule and strategy of the merge policy decided each field and why (JSON and
+    /// readable text), and which invariants the merged state breaks. Nothing is
+    /// stored or signed.
     Compare {
         base: String,
         left: String,
         right: String,
+        /// Explain how the merge policy decides each same-document conflicting path.
+        #[arg(long)]
+        explain: bool,
+        /// A `dynodoc.merge-policy.v1` JSON file to explain with, instead of the
+        /// built-in `dynodoc.default.v1`. A preview only: `merge` always uses the
+        /// default policy, because a signed commit cannot yet record another.
+        #[arg(long, requires = "explain")]
+        merge_policy: Option<PathBuf>,
     },
     /// Sign/store a two-parent merge of LEFT (first parent) and RIGHT.
     ///
@@ -202,6 +215,9 @@ pub enum Action {
     /// when that is clean in both orientations: the merged state is stored first
     /// and recorded in the signed commit (format v3). Paths with node or field
     /// conflicts still need an explicit choice. Publish separately with set-head.
+    /// With --explain, `explain` lists how the default merge policy decided each
+    /// path merged this way, as `compare --explain` does; it is printed only when
+    /// the merge succeeds.
     Merge {
         left: String,
         right: String,
@@ -217,9 +233,17 @@ pub enum Action {
         message: String,
         #[arg(long)]
         authored_at_ms: i64,
+        /// Explain how each automatically merged path was decided.
+        #[arg(long)]
+        explain: bool,
     },
     /// Re-run the recorded strategy of a stored merge commit's same-file records.
-    VerifyMerge { commit: String },
+    /// With --explain, also print how the default merge policy decides each.
+    VerifyMerge {
+        commit: String,
+        #[arg(long)]
+        explain: bool,
+    },
     /// Preview a source commit's changes (or inverse) on an exact current commit.
     RecoveryPlan {
         source: String,
@@ -275,13 +299,52 @@ struct TransferObject {
     bytes: String,
 }
 
-/// Project comparison: unique-base check, path-level plan and, only when a
-/// conflicting path keeps one document identity, the report-only same-file merge.
+/// The merge policy to explain with: the file given, or the built-in default.
+fn load_policy(path: Option<&Path>) -> anyhow::Result<MergePolicy> {
+    let Some(path) = path else {
+        return Ok(merge_policy::default::policy().clone());
+    };
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)
+        .and_then(|f| {
+            f.take(merge_policy::policy::MAX_INPUT_BYTES as u64 + 1)
+                .read_to_end(&mut bytes)
+        })
+        .with_context(|| format!("reading merge policy {}", path.display()))?;
+    MergePolicy::from_json(&bytes, &Registry::builtin())
+        .with_context(|| format!("merge policy {}", path.display()))
+}
+
+/// The `explain` report: the policy and the account of each path.
+fn explain_value(
+    policy: &MergePolicy,
+    files: Vec<FileExplain>,
+) -> anyhow::Result<serde_json::Value> {
+    Ok(serde_json::json!({
+        "policy": {"id": policy.id, "hash": policy.hash_hex()},
+        "files": serde_json::to_value(files)?,
+    }))
+}
+
+#[cfg(test)]
 async fn compare_value(
     repo: &LocalRepository,
     base: Address,
     left: Address,
     right: Address,
+) -> anyhow::Result<serde_json::Value> {
+    compare_explained(repo, base, left, right, None).await
+}
+
+/// Project comparison: unique-base check, path-level plan and, only when a
+/// conflicting path keeps one document identity, the report-only same-file merge.
+/// With a policy, the same paths are also explained under it.
+async fn compare_explained(
+    repo: &LocalRepository,
+    base: Address,
+    left: Address,
+    right: Address,
+    explain: Option<&MergePolicy>,
 ) -> anyhow::Result<serde_json::Value> {
     let base = repo.commit(&base).await?;
     let left = repo.commit(&left).await?;
@@ -294,6 +357,10 @@ async fn compare_value(
     if let Some(report) = repo.same_file_convergence(&plan).await? {
         output["same_file_convergence"] = serde_json::to_value(report)?;
     }
+    if let Some(policy) = explain {
+        let files = repo.explain_same_file(&plan, policy).await?;
+        output["same_file_explain"] = explain_value(policy, files)?;
+    }
     Ok(output)
 }
 
@@ -304,6 +371,7 @@ struct MergeArgs {
     resolutions: BTreeMap<String, Option<FileEntry>>,
     message: String,
     authored_at_ms: i64,
+    explain: bool,
 }
 
 /// Prepare, sign and store one merge. Nothing is stored while a conflict is open.
@@ -334,16 +402,29 @@ async fn merge_value(
             merge.unresolved.join(", ")
         );
     };
+    let explain = if args.explain {
+        let policy = merge_policy::default::policy();
+        Some(explain_value(
+            policy,
+            repo.explain_resolutions(&merge.applied, policy).await?,
+        )?)
+    } else {
+        None
+    };
     let signed = SignedCommit::sign(commit, key)?;
     let address = repo.import_commit(&signed).await?;
-    Ok(serde_json::json!({
+    let mut output = serde_json::json!({
         "commit": address,
         "version": signed.commit.version,
         "parents": signed.commit.parents,
         "base": merge.base,
         "same_file_resolutions": signed.commit.same_file_resolutions,
         "explicit_resolutions": merge.explicit,
-    }))
+    });
+    if let Some(explain) = explain {
+        output["explain"] = explain;
+    }
+    Ok(output)
 }
 
 pub async fn run(path: PathBuf, project: uuid::Uuid, action: Action) -> anyhow::Result<()> {
@@ -543,8 +624,24 @@ pub async fn run(path: PathBuf, project: uuid::Uuid, action: Action) -> anyhow::
         Action::MergeBases { left, right } => {
             serde_json::to_value(repo.merge_bases(&address(left)?, &address(right)?).await?)?
         }
-        Action::Compare { base, left, right } => {
-            compare_value(&repo, address(base)?, address(left)?, address(right)?).await?
+        Action::Compare {
+            base,
+            left,
+            right,
+            explain,
+            merge_policy,
+        } => {
+            let policy = explain
+                .then(|| load_policy(merge_policy.as_deref()))
+                .transpose()?;
+            compare_explained(
+                &repo,
+                address(base)?,
+                address(left)?,
+                address(right)?,
+                policy.as_ref(),
+            )
+            .await?
         }
         Action::Merge {
             left,
@@ -554,6 +651,7 @@ pub async fn run(path: PathBuf, project: uuid::Uuid, action: Action) -> anyhow::
             key,
             message,
             authored_at_ms,
+            explain,
         } => {
             let resolutions = match resolutions {
                 Some(path) => read_json(&path, engine_core::repository::MAX_COMMIT_BYTES)?,
@@ -571,13 +669,22 @@ pub async fn run(path: PathBuf, project: uuid::Uuid, action: Action) -> anyhow::
                 resolutions,
                 message,
                 authored_at_ms,
+                explain,
             };
             merge_value(&repo, args, &key).await?
         }
-        Action::VerifyMerge { commit } => {
+        Action::VerifyMerge { commit, explain } => {
             let commit = address(commit)?;
             let verified = repo.verify_same_file_resolutions(&commit).await?;
-            serde_json::json!({"commit":commit,"verified_same_file_resolutions":verified})
+            let mut output =
+                serde_json::json!({"commit":commit,"verified_same_file_resolutions":verified});
+            if explain {
+                let policy = merge_policy::default::policy();
+                let records = repo.commit(&commit).await?.commit.same_file_resolutions;
+                output["explain"] =
+                    explain_value(policy, repo.explain_resolutions(&records, policy).await?)?;
+            }
+            output
         }
         Action::RecoveryPlan {
             source,
@@ -1026,6 +1133,7 @@ mod tests {
             resolutions,
             message: "merge".into(),
             authored_at_ms: 1_700_000_000_500,
+            explain: false,
         }
     }
 
@@ -1167,6 +1275,202 @@ mod tests {
         f.finish().await;
     }
 
+    #[tokio::test]
+    async fn compare_explain_says_how_each_same_file_conflict_is_decided() {
+        let f = Fixture::new().await;
+        let report = DocumentId(uuid::Uuid::new_v4());
+        let base = f
+            .commit(
+                &[],
+                vec![("Report.docx", f.file(report, &[]).await)],
+                "base",
+            )
+            .await;
+        let left = f
+            .commit(
+                &[&base],
+                vec![(
+                    "Report.docx",
+                    f.file(report, &[(0, "left"), (1, "same")]).await,
+                )],
+                "left",
+            )
+            .await;
+        let right = f
+            .commit(
+                &[&base],
+                vec![(
+                    "Report.docx",
+                    f.file(report, &[(0, "right"), (2, "other")]).await,
+                )],
+                "right",
+            )
+            .await;
+        let plain = compare_value(&f.repo, base.clone(), left.clone(), right.clone())
+            .await
+            .unwrap();
+        let policy = merge_policy::default::policy();
+        let explained = compare_explained(
+            &f.repo,
+            base.clone(),
+            left.clone(),
+            right.clone(),
+            Some(policy),
+        )
+        .await
+        .unwrap();
+        // Additive: every key of the plain report is unchanged.
+        for (key, value) in plain.as_object().unwrap() {
+            assert_eq!(&explained[key], value, "{key}");
+        }
+        let report = &explained["same_file_explain"];
+        assert_eq!(report["policy"]["id"], "dynodoc.default.v1");
+        assert_eq!(report["policy"]["hash"], policy.hash_hex());
+        let file = &report["files"][0];
+        assert_eq!(file["path"], "Report.docx");
+        // Same verdict as the report that was already there.
+        let known = &explained["same_file_convergence"]["files"][0];
+        assert_eq!(file["clean"], known["clean"]);
+        assert_eq!(file["clean"], false);
+        assert_eq!(file["conflicts"], 1);
+        let evidence = &file["convergence"]["evidence"];
+        let decisions = evidence["decisions"].as_array().unwrap();
+        assert_eq!(decisions.len(), 1);
+        assert_eq!(decisions[0]["field"], "label");
+        assert_eq!(decisions[0]["reason"], "both-changed");
+        assert_eq!(decisions[0]["strategy"], "dynodoc.default.whole-value.v1");
+        let text = file["text"].as_str().unwrap();
+        assert!(text.contains(".label: conflict (both-changed)"), "{text}");
+        assert!(text.contains("    left  \"left\""), "{text}");
+        assert!(text.contains("    right \"right\""), "{text}");
+        // Swapping the inputs swaps the labels, not the decisions.
+        let swapped = compare_explained(&f.repo, base, right, left, Some(policy))
+            .await
+            .unwrap();
+        let other = &swapped["same_file_explain"]["files"][0];
+        assert_eq!(
+            other["convergence"]["evidence"]["decisions"][0]["conflict_key"],
+            decisions[0]["conflict_key"]
+        );
+        assert!(other["text"]
+            .as_str()
+            .unwrap()
+            .contains("    left  \"right\""));
+        f.finish().await;
+    }
+
+    #[tokio::test]
+    async fn merge_explain_accounts_for_the_paths_it_merged() {
+        let f = Fixture::new().await;
+        let report = DocumentId(uuid::Uuid::new_v4());
+        let base = f
+            .commit(
+                &[],
+                vec![("Report.docx", f.file(report, &[]).await)],
+                "base",
+            )
+            .await;
+        let left = f
+            .commit(
+                &[&base],
+                vec![("Report.docx", f.file(report, &[(0, "left")]).await)],
+                "left",
+            )
+            .await;
+        let right = f
+            .commit(
+                &[&base],
+                vec![("Report.docx", f.file(report, &[(3, "right")]).await)],
+                "right",
+            )
+            .await;
+        let key = Ed25519KeyPair::from_seed_unchecked(&[7; 32]).unwrap();
+        let mut args = merge_args(&left, &right, SameFile::Clean, BTreeMap::new());
+        args.explain = true;
+        let output = merge_value(&f.repo, args, &key).await.unwrap();
+        let file = &output["explain"]["files"][0];
+        assert_eq!(output["explain"]["policy"]["id"], "dynodoc.default.v1");
+        assert_eq!(file["path"], "Report.docx");
+        assert_eq!(file["clean"], true);
+        assert_eq!(
+            file["merged_state"],
+            output["same_file_resolutions"][0]["merged"]
+        );
+        assert_eq!(
+            file["convergence"]["evidence"]["decisions"],
+            serde_json::json!([])
+        );
+        assert!(
+            file["convergence"]["evidence"]["shortcuts"]["draft_only"]
+                .as_u64()
+                .unwrap()
+                + file["convergence"]["evidence"]["shortcuts"]["unchanged_or_team_only"]
+                    .as_u64()
+                    .unwrap()
+                > 0
+        );
+        // Without the flag the output has no such key.
+        let plain = merge_value(
+            &f.repo,
+            merge_args(&left, &right, SameFile::Clean, BTreeMap::new()),
+            &key,
+        )
+        .await
+        .unwrap();
+        assert!(plain.get("explain").is_none());
+        // A stored merge can be explained afterwards from its records.
+        let commit: Address = serde_json::from_value(output["commit"].clone()).unwrap();
+        let records = f
+            .repo
+            .commit(&commit)
+            .await
+            .unwrap()
+            .commit
+            .same_file_resolutions;
+        let again = f
+            .repo
+            .explain_resolutions(&records, merge_policy::default::policy())
+            .await
+            .unwrap();
+        assert_eq!(serde_json::to_value(&again[0]).unwrap(), *file);
+        f.finish().await;
+    }
+
+    #[test]
+    fn a_merge_policy_file_is_loaded_strictly_and_named_in_errors() {
+        let dir = std::env::temp_dir();
+        let write = |name: &str, text: &str| {
+            let path = dir.join(format!("{name}-{}.json", uuid::Uuid::new_v4()));
+            std::fs::write(&path, text).unwrap();
+            path
+        };
+        assert_eq!(
+            load_policy(None).unwrap().hash_hex(),
+            merge_policy::default::policy().hash_hex()
+        );
+        let good = write(
+            "policy-good",
+            r#"{"version":1,"id":"mine","rules":[{"id":"all","match":{},"strategy":"dynodoc.default.whole-value.v1","gate":"manual"}]}"#,
+        );
+        let policy = load_policy(Some(&good)).unwrap();
+        assert_eq!(policy.id, "mine");
+        let bad = write(
+            "policy-bad",
+            r#"{"version":1,"id":"mine","rules":[{"id":"all","match":{},"strategy":"nope.v1","gate":"manual"}]}"#,
+        );
+        let error = format!("{:#}", load_policy(Some(&bad)).unwrap_err());
+        assert!(error.contains("policy-bad"), "{error}");
+        assert!(error.contains("rules[0].strategy"), "{error}");
+        let missing = format!(
+            "{:#}",
+            load_policy(Some(&dir.join("no-such-policy.json"))).unwrap_err()
+        );
+        assert!(missing.contains("no-such-policy.json"), "{missing}");
+        for path in [good, bad] {
+            std::fs::remove_file(path).unwrap();
+        }
+    }
+
     #[test]
     fn merge_arguments_parse_and_the_flag_is_optional() {
         let command = Action::augment_subcommands(Command::new("repository").no_binary_name(true));
@@ -1212,8 +1516,52 @@ mod tests {
             .is_err());
         assert!(matches!(
             parse(&["verify-merge", "abc"]),
-            Action::VerifyMerge { .. }
+            Action::VerifyMerge { explain: false, .. }
         ));
+        assert!(matches!(
+            parse(&["verify-merge", "abc", "--explain"]),
+            Action::VerifyMerge { explain: true, .. }
+        ));
+        assert!(matches!(
+            parse(&["compare", "B", "L", "R"]),
+            Action::Compare {
+                explain: false,
+                merge_policy: None,
+                ..
+            }
+        ));
+        assert!(matches!(
+            parse(&[
+                "compare",
+                "B",
+                "L",
+                "R",
+                "--explain",
+                "--merge-policy",
+                "p.json"
+            ]),
+            Action::Compare {
+                explain: true,
+                merge_policy: Some(_),
+                ..
+            }
+        ));
+        // A policy without --explain would be silently unused.
+        assert!(command
+            .clone()
+            .try_get_matches_from(["compare", "B", "L", "R", "--merge-policy", "p.json"])
+            .is_err());
+        let mut explained = base.to_vec();
+        explained.push("--explain");
+        assert!(matches!(
+            parse(&explained),
+            Action::Merge { explain: true, .. }
+        ));
+        // The commit-producing merge takes no policy: a v3 commit records only the
+        // default strategy.
+        let mut with_policy = base.to_vec();
+        with_policy.extend(["--merge-policy", "p.json"]);
+        assert!(command.clone().try_get_matches_from(with_policy).is_err());
     }
 
     #[test]
