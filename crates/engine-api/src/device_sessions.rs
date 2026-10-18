@@ -25,7 +25,8 @@ use axum::{
 use engine_core::repository::{
     device::validate_public_key,
     device_session::{
-        normalize_scopes, SessionChallenge, SessionProof, CHALLENGE_TTL_MS, MAX_SESSION_BYTES,
+        is_agent_scope, normalize_scopes, SessionChallenge, SessionProof, CHALLENGE_TTL_MS,
+        MAX_SESSION_BYTES,
     },
 };
 use ring::hmac;
@@ -109,8 +110,10 @@ struct ChallengeRequest {
     /// Lowercase hexadecimal Ed25519 public key of an enrolled device key.
     public_key: String,
     /// One or more of `history:read`, `history:review`, `history:write`,
-    /// `project:read`. A key that is not in `all` mode also needs an active grant
-    /// for this project that lists every scope.
+    /// `project:read` (a person's key) or `content:read` (a key enrolled for an AI
+    /// agent; the two sets never mix). A key that is not in `all` mode also needs an
+    /// active grant for this project that lists every scope, and an agent scope always
+    /// does.
     scopes: Vec<String>,
 }
 
@@ -156,7 +159,7 @@ async fn challenge(
         reason: "Use a lowercase hexadecimal Ed25519 public key".into(),
     })?;
     let scopes = normalize_scopes(&input.scopes).map_err(|_| ApiError::BadRequest {
-        reason: "Choose one or more of history:read, history:review, history:write, project:read"
+        reason: "Choose one or more of history:read, history:review, history:write, project:read, or content:read for an agent key"
             .into(),
     })?;
     let now_ms = now_ms();
@@ -253,8 +256,8 @@ async fn issue(
     // The account holder's per-project grant (or the key's `all` mode). The
     // account row is held FOR SHARE, so a concurrent grant change (FOR UPDATE)
     // waits for this issuance and applies to the token's next request.
-    let reaches: bool = sqlx::query_scalar(&format!(
-        "select {} from device_signing_key k where k.id=$1",
+    let (reaches, agent_key): (bool, bool) = sqlx::query_as(&format!(
+        "select {},exists(select 1 from device_key_class c where c.key_id=k.id and c.class='agent') from device_signing_key k where k.id=$1",
         key_reaches("$2", "$3::text[]")
     ))
     .bind(key_id)
@@ -262,7 +265,11 @@ async fn issue(
     .bind(&c.scopes)
     .fetch_one(&mut *tx)
     .await?;
-    if !reaches {
+    // An agent key obtains agent scopes only, and only an agent key obtains them: the
+    // same uniform refusal as a missing grant.
+    let agent_scopes = c.scopes.iter().any(|s| is_agent_scope(s));
+    let other_scopes = c.scopes.iter().any(|s| !is_agent_scope(s));
+    if !reaches || (agent_key && other_scopes) || (!agent_key && agent_scopes) {
         return Err(ApiError::Forbidden);
     }
     // Serialize this key's issuance so the budget is exact under concurrency.

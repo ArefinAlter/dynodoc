@@ -66,10 +66,14 @@ create trigger agent_call_no_update before update on agent_call
 create function agent_call_erasure_guard() returns trigger
 language plpgsql set search_path = pg_catalog, public as $$
 begin
+    -- The delete arrives as the foreign-key cascade of the document delete, which the
+    -- document's own erasure trigger already allows only for a trashed document with a
+    -- same-transaction receipt. The document row is gone by then, so only the receipt
+    -- is checked here; the nesting depth rules out a direct DELETE.
     if pg_trigger_depth() > 1 and exists(
-        select 1 from public.erasure_receipt r join public.document d on d.id = r.resource_id
+        select 1 from public.erasure_receipt r
         where r.resource_id = old.document_id and r.kind = 'documents'
-          and r.transaction_id = txid_current() and d.deleted_at is not null
+          and r.transaction_id = txid_current()
     ) then return old; end if;
     raise exception 'agent calls are immutable outside audited whole-document erasure';
 end;

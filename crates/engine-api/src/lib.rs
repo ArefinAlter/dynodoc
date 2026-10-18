@@ -15,6 +15,7 @@
 pub mod access;
 pub mod admin;
 mod admin_controls;
+pub mod agent;
 pub mod audit;
 pub mod auth;
 pub mod conflicts;
@@ -75,6 +76,11 @@ pub struct AppState {
     pub shared_draft_bases: bool,
     /// Explicit opt-in; named versions, public pins and deploys share typed state.
     pub named_snapshot_storage: engine_core::snapshot::NamedStorage,
+    /// `AGENT_GATEWAY=on` mounts the agent data plane ([`agent`]); anything else leaves
+    /// its routes absent. Off by default.
+    pub agent_gateway: bool,
+    /// Bounded cache of verified document states for the agent routes.
+    pub agent_cache: agent::StateCache,
     /// The immutable installation ID, read once for device-session challenges.
     device_authority: std::sync::Arc<tokio::sync::OnceCell<uuid::Uuid>>,
 }
@@ -100,6 +106,8 @@ impl AppState {
             } else {
                 engine_core::snapshot::NamedStorage::Legacy
             },
+            agent_gateway: std::env::var("AGENT_GATEWAY").as_deref() == Ok("on"),
+            agent_cache: Default::default(),
             device_authority: Default::default(),
         }
     }
@@ -119,7 +127,7 @@ pub fn app(state: AppState) -> Router {
         .allow_headers(Any)
         .allow_origin(Any);
 
-    Router::new()
+    let routes = Router::new()
         .route("/healthz", get(healthz))
         .route("/openapi.json", get(openapi_json))
         .merge(auth::router())
@@ -145,7 +153,15 @@ pub fn app(state: AppState) -> Router {
         .merge(discussions::router())
         .merge(notifications::router())
         .merge(copies::router())
-        .merge(people::router())
+        .merge(people::router());
+    // Off (the default): the agent routes are not mounted at all, so they answer exactly
+    // as a path that never existed.
+    let routes = if state.agent_gateway {
+        routes.merge(agent::router())
+    } else {
+        routes
+    };
+    routes
         .layer(axum::middleware::from_fn_with_state(
             state.workloads.clone(),
             workloads::admission,
@@ -252,6 +268,7 @@ impl utoipa::Modify for WorkspaceDocs {
         api.merge(project_staging::ProjectStagingApi::openapi());
         api.merge(project_history::ProjectHistoryApi::openapi());
         api.merge(project_issues::ProjectIssuesApi::openapi());
+        api.merge(agent::AgentApi::openapi());
         // A workspace that declares no licence (`license-file` only) leaves the derived name
         // empty; an empty licence object is invalid OpenAPI, so drop it.
         if api.info.license.as_ref().is_some_and(|l| l.name.is_empty()) {

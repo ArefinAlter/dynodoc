@@ -80,6 +80,7 @@ clap = { version = "4", features = ["derive"] }
 # Internal crates
 engine-shared = { path = "crates/engine-shared" }
 engine-core = { path = "crates/engine-core" }
+engine-agent = { path = "crates/engine-agent" }
 engine-api = { path = "crates/engine-api" }
 
 # Dev / test

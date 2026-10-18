@@ -126,6 +126,14 @@ impl ApiError {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
+        self.respond(Value::Null)
+    }
+}
+
+impl ApiError {
+    /// The response, with the members of the object `extra` merged into `details`
+    /// (the agent routes add `agent_code`; docs/AI-AGENT-PROTOCOL-SPEC.md 12.4).
+    pub(crate) fn respond(self, extra: Value) -> Response {
         let status = self.status();
         // Internal errors carry detail that must not reach the client; log it here.
         if status == StatusCode::INTERNAL_SERVER_ERROR {
@@ -138,10 +146,14 @@ impl IntoResponse for ApiError {
         } else {
             self.to_string()
         };
+        let mut details = self.details();
+        if let (Some(into), Value::Object(extra)) = (details.as_object_mut(), extra) {
+            into.extend(extra);
+        }
         let body = json!({
             "error": message,
             "code": self.code(),
-            "details": self.details(),
+            "details": details,
         });
 
         let mut response = (status, Json(body)).into_response();

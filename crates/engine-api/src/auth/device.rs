@@ -54,9 +54,10 @@ impl Need for HistoryReview {
 /// the `text[]` expression `scopes` on the project expression `project`? A key in
 /// `all` mode may; a `granted` key (also a key with no access row at all) needs an
 /// active grant that lists every scope. Shared by the request extractor, the
-/// account lock and issuance so they can never disagree.
+/// account lock and issuance so they can never disagree. The `all` mode never covers
+/// an agent scope: `content:*` always needs an explicit grant for the project.
 pub(crate) fn key_reaches(project: &str, scopes: &str) -> String {
-    format!("(coalesce((select a.project_access from device_key_access a where a.key_id=k.id),'granted')='all' or exists(select 1 from device_key_project_grant g where g.key_id=k.id and g.project_id={project} and g.revoked_at is null and g.scopes @> {scopes}))")
+    format!("((coalesce((select a.project_access from device_key_access a where a.key_id=k.id),'granted')='all' and not ({scopes} && array['content:read']::text[])) or exists(select 1 from device_key_project_grant g where g.key_id=k.id and g.project_id={project} and g.revoked_at is null and g.scopes @> {scopes}))")
 }
 
 /// The caller of an allow-listed project route. Dereferences to [`AuthContext`]
