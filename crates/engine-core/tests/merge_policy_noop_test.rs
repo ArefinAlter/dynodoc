@@ -185,7 +185,7 @@ fn resolution_sets(plan: &MergePlan) -> Vec<BTreeMap<String, String>> {
         pick(&|i, field| {
             if field == "var_name" {
                 format!("renamed_{i}")
-            } else if i % 2 == 0 {
+            } else if i & 1 == 0 {
                 "draft".into()
             } else {
                 "team".into()

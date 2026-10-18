@@ -465,7 +465,7 @@ impl MergePolicy {
                 ));
             }
         }
-        for (strategy, _) in &self.floors.gate_at_least.0 {
+        for strategy in self.floors.gate_at_least.0.keys() {
             if registry.get(strategy).is_none() {
                 return Err(err(
                     ErrorKind::UnknownFloorStrategy,

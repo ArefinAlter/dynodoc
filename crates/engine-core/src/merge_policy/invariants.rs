@@ -156,11 +156,11 @@ pub fn check(state: &DocumentState) -> Vec<Violation> {
         }
         // INV-G8 (state part): the protection flag is a boolean on a worksheet.
         let flag = &node.current_fields["sheet_protected"];
-        if !flag.is_null()
-            && !(flag.is_boolean()
+        let allowed = flag.is_null()
+            || (flag.is_boolean()
                 && node.node_type == "section"
-                && node.current_fields["kind"] == "sheet")
-        {
+                && node.current_fields["kind"] == "sheet");
+        if !allowed {
             found.insert(violation(
                 "INV-G8",
                 &node.id.0,

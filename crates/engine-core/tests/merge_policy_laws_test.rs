@@ -218,7 +218,7 @@ fn whole_value_keeps_every_law() {
     let report = run(
         &WholeValue,
         &Setup::field("label"),
-        0x6c61_7773_01,
+        0x006c_6177_7301,
         whole_values,
     );
     assert!(report.merged > 200 && report.conflicts > 200, "{report:?}");
@@ -231,7 +231,7 @@ fn page_setup_property_merge_keeps_every_law() {
     let report = run(
         &PropertyMerge,
         &Setup::field("page_setup"),
-        0x6c61_7773_02,
+        0x006c_6177_7302,
         page_setup,
     );
     assert!(report.merged > 200 && report.conflicts > 200, "{report:?}");
@@ -267,7 +267,7 @@ fn marks_sorted(v: &Value) -> Value {
 
 #[test]
 fn rich_text_hunk_merge_is_symmetric_up_to_the_order_of_marks_on_a_run() {
-    let mut rng = Rng(0x6c61_7773_07);
+    let mut rng = Rng(0x006c_6177_7307);
     let (mut merged, mut reordered) = (0, 0);
     for _ in 0..CASES {
         let t = rich_text(&mut rng);
@@ -293,7 +293,7 @@ fn rich_text_hunk_merge_keeps_every_law_and_returns_canonical_paragraphs() {
         valid: Some(&valid),
         ..Setup::field("content")
     };
-    let report = run(&RichText, &setup, 0x6c61_7773_03, rich_text);
+    let report = run(&RichText, &setup, 0x006c_6177_7303, rich_text);
     assert!(report.merged > 500 && report.conflicts > 500, "{report:?}");
     assert!(report.checked.contains(&"L6 invariants"));
     assert!(report.skipped.contains(&"L1 symmetry"));
@@ -304,10 +304,10 @@ fn element_wise_comments_and_suggestions_keep_every_law() {
     for (aspect, seed, gen) in [
         (
             Aspect::Comments,
-            0x6c61_7773_04,
+            0x006c_6177_7304,
             comments as fn(&mut Rng) -> Triple,
         ),
-        (Aspect::Suggestions, 0x6c61_7773_05, suggestions),
+        (Aspect::Suggestions, 0x006c_6177_7305, suggestions),
     ] {
         let setup = Setup {
             aspect: Some(aspect),
@@ -324,6 +324,6 @@ fn element_wise_comments_and_suggestions_keep_every_law() {
         field: "$suggestions",
         ..Setup::field("x")
     };
-    let report = run(&ElementWise, &setup, 0x6c61_7773_06, suggestions);
+    let report = run(&ElementWise, &setup, 0x006c_6177_7306, suggestions);
     assert!(report.conflicts > 100, "{report:?}");
 }

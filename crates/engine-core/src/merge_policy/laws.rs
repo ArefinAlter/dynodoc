@@ -130,12 +130,14 @@ pub fn check(
     strategy: &dyn Strategy,
     setup: &Setup<'_>,
     cases: impl IntoIterator<Item = Triple>,
-) -> Result<Report, Violation> {
+) -> Result<Report, Box<Violation>> {
     let promises = strategy.promises();
-    let fail = |law, detail: String, case: &Triple| Violation {
-        law,
-        detail,
-        case: case.clone(),
+    let fail = |law, detail: String, case: &Triple| -> Box<Violation> {
+        Box::new(Violation {
+            law,
+            detail,
+            case: case.clone(),
+        })
     };
     let mut report = Report::default();
     let bound = strategy
@@ -397,16 +399,19 @@ mod tests {
     ));
     strategy!(Panics, Laws::ALL, |_| panic!("boom"));
     // Prefers the side whose text sorts first, so only the missing evidence is wrong.
-    strategy!(Forgets, Laws::ALL, |i| Resolved {
-        outcome: Outcome::Prefer(if i.team.to_string() <= i.draft.to_string() {
-            Side::Team
-        } else {
-            Side::Draft
-        }),
-        used: crate::merge_policy::Used {
-            basis: "prefer",
-            ..Default::default()
-        },
+    strategy!(Forgets, Laws::ALL, |i| {
+        let (team, draft) = (i.team.to_string(), i.draft.to_string());
+        Resolved {
+            outcome: Outcome::Prefer(if team <= draft {
+                Side::Team
+            } else {
+                Side::Draft
+            }),
+            used: crate::merge_policy::Used {
+                basis: "prefer",
+                ..Default::default()
+            },
+        }
     });
     strategy!(Invalid, Laws::ALL, |_| Resolved::merged(
         Value::Null,
@@ -430,7 +435,7 @@ mod tests {
 
     #[test]
     fn each_law_catches_a_strategy_that_breaks_it() {
-        let law = |r: Result<Report, Violation>| r.unwrap_err().law;
+        let law = |r: Result<Report, Box<Violation>>| r.unwrap_err().law;
         assert_eq!(law(check(&Asymmetric, &setup(), cases())), "L1 symmetry");
         assert_eq!(law(check(&Panics, &setup(), cases())), "L4 totality");
         assert_eq!(law(check(&Forgets, &setup(), cases())), "L7 no silent loss");
