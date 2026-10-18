@@ -1,6 +1,8 @@
 //! Reproduces `fixtures/transparency-v1.json` byte for byte. The fixture is written
 //! by `fixtures/gen_transparency_vectors.py`, an independent pure-Python
 //! implementation; never regenerate it to make one of these checks pass.
+// See the note in `transparency/mod.rs`: one source serves two minimum Rust versions.
+#![allow(clippy::manual_is_multiple_of)]
 use engine_core::transparency::merkle::{
     consistency_proof, inclusion_proof, tree_root, verify_consistency, verify_inclusion,
 };
