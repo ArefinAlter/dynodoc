@@ -330,6 +330,8 @@ pub struct PlanSets {
     pub skeleton: Vec<SkeletonEntry>,
     pub frontier: Vec<FrontierEdge>,
     pub released_states: Vec<StateKey>,
+    /// Why each kept body stays (the first reason that applies), sorted by address.
+    pub kept: Vec<(Address, &'static str)>,
 }
 
 /// Deterministic, side-effect-free description of a horizon. Its canonical JSON
@@ -981,6 +983,9 @@ pub fn plan(
     if numbers.iter().any(|n| *n > MAX_JSON_INT) {
         return Err(Error::Limit("horizon counts"));
     }
+    let kept_reasons: Vec<(Address, &'static str)> = (0..bodies)
+        .filter_map(|n| keep[n].map(|r| (address_of(&graph.addr[n]), r.label())))
+        .collect();
     let mut by_reason: BTreeMap<Reason, u64> = BTreeMap::new();
     for node in 0..bodies {
         if let Some(reason) = keep[node] {
@@ -1069,6 +1074,7 @@ pub fn plan(
             skeleton: skeleton_out,
             frontier,
             released_states,
+            kept: kept_reasons,
         },
     };
     result.plan_hash = result.compute_hash()?;

@@ -1030,10 +1030,15 @@ def plan_scenarios():
     add("topology_drop", view, dict(base, id="drop-3", topology="drop", acknowledge_unmergeable_history=True))
     add("time_window", view, {
         "version": 1, "id": "days-3", "tier": "history", "window": {"keep_within_days": 3},
-        "protect": {"branch_heads": True}}, as_of=12 * DAY_MS + DAY_MS // 2)
+        "protect": {"branch_heads": True}}, as_of=12 * DAY_MS)
     add("merge_inputs_none_content", view, dict(base, id="content-none", tier="content", protect=dict(base["protect"], merge_inputs="none")))
     add("no_window_only_heads_and_floor", view, {
         "version": 1, "id": "floor-1", "tier": "history", "window": {"min_commits_kept": 1},
+        "protect": {"branch_heads": True}})
+    # No hold: the v3 merge commit e is released, so its skeleton row has two parents.
+    no_holds = dict(view, holds=[])
+    add("released_merge_keeps_parent_order", no_holds, {
+        "version": 1, "id": "floor-2", "tier": "history", "window": {"min_commits_kept": 1},
         "protect": {"branch_heads": True}})
     ghost_view = dict(view, holds=view["holds"] + [{"commit": label("commit:ghost"), "reason": "no such commit"}])
     add("warnings", ghost_view, dict(base, id="warn", protect={
