@@ -1,0 +1,13 @@
+dd/1 read file=7034d450 rev=35 chain=0689b723 fmt=plain n=6 trust=data ~tok=77
+@RS5T QUOTE #28bc04
+Quality is remembering what you forgot.\nSecond quoted paragraph.
+@P368 MATH #38a13c
+\\int_0^1 x^2\\,dx = \\frac{1}{3}
+@76VW IMG #ec77c0
+Org chart
+@8YQ0 HR #f7030e
+
+@0TE9 X #c25c9a {rich=1}
+
+@A8FT P #dc12ef
+

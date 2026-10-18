@@ -1,0 +1,8 @@
+dd/1 diff file=5c1d0f4e from=47 to=52 chain=794d1654 blocks=4 changed=2 added=1 removed=1 trust=data ~tok=83
+~F0DJ ROW #5e81c9>72e92c r6 in 609T cells=1
+E6	59822	999
+~SRNK ROW #053e2e>a1ec86 r9 in 609T cells=2
+A9	East	North-East
+G9	tab\there\nnewline \\ slash	moved region
++QEVQ ROW #b76125 r41 in 609T
+-9V1M ROW #420056 in 609T

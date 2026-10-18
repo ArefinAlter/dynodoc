@@ -1,0 +1,5 @@
+dd/1 read file=7034d450 rev=35 chain=0689b723 fmt=plain n=3 trust=data ~tok=43
+@CMCQ = #8130cc
+@07PM = #3264bf
+@X4H9 CODE #ffae46
+fn main() {\n    println!("hello");\n}

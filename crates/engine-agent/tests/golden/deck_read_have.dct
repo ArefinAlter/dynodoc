@@ -1,0 +1,7 @@
+dd/1 read file=9aa2c3d1 rev=17 chain=562cd4db slides=s2 n=1 trust=data ~tok=62
+@s2 J051 title-content hidden=0
+ .DS3S title #0498ce
+ Highlights
+ .E4V1 = #c14d5a
+ .EBW3 image alt="chart" 118B omitted
+notes #89f3ba: Mention the audit finding first.

@@ -1,0 +1,5 @@
+dd/1 read file=5c1d0f4e rev=47 chain=fd6f696e range=609T!D16:H18 h=21ec49 calc=none rows=refs trust=data ~tok=64
+		D	E	F	G	H
+16	8ZGN	2026-08-24	69562	76457		=SUM(E16:F16)
+17	QYKF	2026-08-05	10925	5933		12345
+18	F9BK	2026-05-08	88661	50505		=SUM(E18:F18)

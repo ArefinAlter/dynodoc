@@ -1,0 +1,11 @@
+dd/1 outline file=5c1d0f4e rev=47 chain=fd6f696e kind=spreadsheet s=609T rows=41 cols=8 header=1 freeze=1x0 merges=0 calc=none h=2faded depth=1 trust=data ~tok=190
+sheet "Budget"
+# col "header" type stats
+A "Region" text n=40 distinct=4 top="East":13,"West":13,"North":8,"South":6
+B "Product" text n=40 distinct=3 top="Beta":15,"Alpha":13,"Gamma":12
+C "Owner" text n=40 distinct=4 top="Raj":13,"Ana":11,"Tomás":9,"Mei":7
+D "Date" date n=40 distinct=38
+E "Q1" num n=40 min=754 max=88661 sum=1684374
+F "Q2" num n=40 min=2030 max=84618 sum=1773764
+G "Notes" text n=7 blank=33 distinct=3 top="check with finance":3,"see \"annex\" A":2,"tab\there\nnewline \\ slash":2
+H "Total" mixed n=40 min=12345 max=12345 sum=12345 pattern="=SUM(E{r}:F{r})" exceptions=r17,r23

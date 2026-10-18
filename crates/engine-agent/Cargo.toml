@@ -1,0 +1,24 @@
+[package]
+name = "engine-agent"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+publish.workspace = true
+description = "dynodoc agent protocol read path: refs, hashes, Dynodoc Compact Text, outline/read/find/diff."
+
+[dependencies]
+engine-shared = { workspace = true }
+engine-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+thiserror = { workspace = true }
+# Linear-time regular expressions for `find` (protocol spec 7.5 forbids backtracking).
+# MIT OR Apache-2.0; already in Cargo.lock through sqlx and tracing-subscriber.
+regex = "1"
+# Word-level diff for `diff detail=text`. Same exact pin as engine-core.
+similar = "=3.2.0"
+
+[dev-dependencies]
+proptest = { workspace = true }

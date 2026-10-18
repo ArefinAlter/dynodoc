@@ -1,0 +1,1210 @@
+{
+  "benchmark": "agent-dct-bytes",
+  "build": "release",
+  "command": "cargo run -p engine-agent --example byte_benchmark -- --date <YYYY-MM-DD> --out <path>",
+  "date": "2026-10-18",
+  "golden": {
+    "by_tool": {
+      "diff": {
+        "calls": 6,
+        "dct_bytes": 2136,
+        "dct_est_tokens_bytes4": 534,
+        "dct_est_tokens_chars4": 531,
+        "json_mirror_bytes": 6502,
+        "json_mirror_est_tokens_bytes4": 1626,
+        "json_mirror_est_tokens_chars4": 1623,
+        "json_over_dct_bytes": 3.044
+      },
+      "files": {
+        "calls": 4,
+        "dct_bytes": 723,
+        "dct_est_tokens_bytes4": 181,
+        "dct_est_tokens_chars4": 181,
+        "json_mirror_bytes": 1486,
+        "json_mirror_est_tokens_bytes4": 372,
+        "json_mirror_est_tokens_chars4": 372,
+        "json_over_dct_bytes": 2.055
+      },
+      "find": {
+        "calls": 8,
+        "dct_bytes": 1976,
+        "dct_est_tokens_bytes4": 494,
+        "dct_est_tokens_chars4": 479,
+        "json_mirror_bytes": 3708,
+        "json_mirror_est_tokens_bytes4": 927,
+        "json_mirror_est_tokens_chars4": 912,
+        "json_over_dct_bytes": 1.877
+      },
+      "outline": {
+        "calls": 12,
+        "dct_bytes": 6873,
+        "dct_est_tokens_bytes4": 1719,
+        "dct_est_tokens_chars4": 1630,
+        "json_mirror_bytes": 12977,
+        "json_mirror_est_tokens_bytes4": 3245,
+        "json_mirror_est_tokens_chars4": 3156,
+        "json_over_dct_bytes": 1.888
+      },
+      "read": {
+        "calls": 19,
+        "dct_bytes": 7759,
+        "dct_est_tokens_bytes4": 1940,
+        "dct_est_tokens_chars4": 1854,
+        "json_mirror_bytes": 15981,
+        "json_mirror_est_tokens_bytes4": 3996,
+        "json_mirror_est_tokens_chars4": 3916,
+        "json_over_dct_bytes": 2.06
+      }
+    },
+    "calls": [
+      {
+        "dct": {
+          "bytes": 1881,
+          "chars": 1735,
+          "est_tokens_bytes4": 471,
+          "est_tokens_chars4": 434
+        },
+        "json_mirror": {
+          "bytes": 2945,
+          "chars": 2799,
+          "est_tokens_bytes4": 737,
+          "est_tokens_chars4": 700
+        },
+        "json_over_dct_bytes": 1.566,
+        "name": "doc_outline_d1",
+        "tool": "outline"
+      },
+      {
+        "dct": {
+          "bytes": 354,
+          "chars": 354,
+          "est_tokens_bytes4": 89,
+          "est_tokens_chars4": 89
+        },
+        "json_mirror": {
+          "bytes": 631,
+          "chars": 631,
+          "est_tokens_bytes4": 158,
+          "est_tokens_chars4": 158
+        },
+        "json_over_dct_bytes": 1.782,
+        "name": "doc_outline_d0",
+        "tool": "outline"
+      },
+      {
+        "dct": {
+          "bytes": 249,
+          "chars": 249,
+          "est_tokens_bytes4": 63,
+          "est_tokens_chars4": 63
+        },
+        "json_mirror": {
+          "bytes": 446,
+          "chars": 446,
+          "est_tokens_bytes4": 112,
+          "est_tokens_chars4": 112
+        },
+        "json_over_dct_bytes": 1.791,
+        "name": "doc_outline_preview0",
+        "tool": "outline"
+      },
+      {
+        "dct": {
+          "bytes": 527,
+          "chars": 433,
+          "est_tokens_bytes4": 132,
+          "est_tokens_chars4": 109
+        },
+        "json_mirror": {
+          "bytes": 773,
+          "chars": 679,
+          "est_tokens_bytes4": 194,
+          "est_tokens_chars4": 170
+        },
+        "json_over_dct_bytes": 1.467,
+        "name": "doc_outline_under",
+        "tool": "outline"
+      },
+      {
+        "dct": {
+          "bytes": 71,
+          "chars": 71,
+          "est_tokens_bytes4": 18,
+          "est_tokens_chars4": 18
+        },
+        "json_mirror": {
+          "bytes": 230,
+          "chars": 230,
+          "est_tokens_bytes4": 58,
+          "est_tokens_chars4": 58
+        },
+        "json_over_dct_bytes": 3.239,
+        "name": "doc_outline_unchanged",
+        "tool": "outline"
+      },
+      {
+        "dct": {
+          "bytes": 661,
+          "chars": 565,
+          "est_tokens_bytes4": 166,
+          "est_tokens_chars4": 142
+        },
+        "json_mirror": {
+          "bytes": 946,
+          "chars": 850,
+          "est_tokens_bytes4": 237,
+          "est_tokens_chars4": 213
+        },
+        "json_over_dct_bytes": 1.431,
+        "name": "doc_outline_page1",
+        "tool": "outline"
+      },
+      {
+        "dct": {
+          "bytes": 579,
+          "chars": 571,
+          "est_tokens_bytes4": 145,
+          "est_tokens_chars4": 143
+        },
+        "json_mirror": {
+          "bytes": 866,
+          "chars": 858,
+          "est_tokens_bytes4": 217,
+          "est_tokens_chars4": 215
+        },
+        "json_over_dct_bytes": 1.496,
+        "name": "doc_outline_page2",
+        "tool": "outline"
+      },
+      {
+        "dct": {
+          "bytes": 1032,
+          "chars": 886,
+          "est_tokens_bytes4": 258,
+          "est_tokens_chars4": 222
+        },
+        "json_mirror": {
+          "bytes": 2062,
+          "chars": 1924,
+          "est_tokens_bytes4": 516,
+          "est_tokens_chars4": 481
+        },
+        "json_over_dct_bytes": 1.998,
+        "name": "doc_read_blocks",
+        "tool": "read"
+      },
+      {
+        "dct": {
+          "bytes": 324,
+          "chars": 316,
+          "est_tokens_bytes4": 81,
+          "est_tokens_chars4": 79
+        },
+        "json_mirror": {
+          "bytes": 481,
+          "chars": 481,
+          "est_tokens_bytes4": 121,
+          "est_tokens_chars4": 121
+        },
+        "json_over_dct_bytes": 1.485,
+        "name": "doc_read_md",
+        "tool": "read"
+      },
+      {
+        "dct": {
+          "bytes": 163,
+          "chars": 163,
+          "est_tokens_bytes4": 41,
+          "est_tokens_chars4": 41
+        },
+        "json_mirror": {
+          "bytes": 476,
+          "chars": 476,
+          "est_tokens_bytes4": 119,
+          "est_tokens_chars4": 119
+        },
+        "json_over_dct_bytes": 2.92,
+        "name": "doc_read_sub",
+        "tool": "read"
+      },
+      {
+        "dct": {
+          "bytes": 643,
+          "chars": 643,
+          "est_tokens_bytes4": 161,
+          "est_tokens_chars4": 161
+        },
+        "json_mirror": {
+          "bytes": 956,
+          "chars": 956,
+          "est_tokens_bytes4": 239,
+          "est_tokens_chars4": 239
+        },
+        "json_over_dct_bytes": 1.487,
+        "name": "doc_read_section",
+        "tool": "read"
+      },
+      {
+        "dct": {
+          "bytes": 169,
+          "chars": 169,
+          "est_tokens_bytes4": 43,
+          "est_tokens_chars4": 43
+        },
+        "json_mirror": {
+          "bytes": 485,
+          "chars": 485,
+          "est_tokens_bytes4": 122,
+          "est_tokens_chars4": 122
+        },
+        "json_over_dct_bytes": 2.87,
+        "name": "doc_read_have",
+        "tool": "read"
+      },
+      {
+        "dct": {
+          "bytes": 839,
+          "chars": 805,
+          "est_tokens_bytes4": 210,
+          "est_tokens_chars4": 202
+        },
+        "json_mirror": {
+          "bytes": 1817,
+          "chars": 1783,
+          "est_tokens_bytes4": 455,
+          "est_tokens_chars4": 446
+        },
+        "json_over_dct_bytes": 2.166,
+        "name": "doc_read_hostile",
+        "tool": "read"
+      },
+      {
+        "dct": {
+          "bytes": 830,
+          "chars": 684,
+          "est_tokens_bytes4": 208,
+          "est_tokens_chars4": 171
+        },
+        "json_mirror": {
+          "bytes": 1376,
+          "chars": 1238,
+          "est_tokens_bytes4": 344,
+          "est_tokens_chars4": 310
+        },
+        "json_over_dct_bytes": 1.658,
+        "name": "doc_read_truncated1",
+        "tool": "read"
+      },
+      {
+        "dct": {
+          "bytes": 307,
+          "chars": 307,
+          "est_tokens_bytes4": 77,
+          "est_tokens_chars4": 77
+        },
+        "json_mirror": {
+          "bytes": 850,
+          "chars": 850,
+          "est_tokens_bytes4": 213,
+          "est_tokens_chars4": 213
+        },
+        "json_over_dct_bytes": 2.769,
+        "name": "doc_read_truncated2",
+        "tool": "read"
+      },
+      {
+        "dct": {
+          "bytes": 258,
+          "chars": 258,
+          "est_tokens_bytes4": 65,
+          "est_tokens_chars4": 65
+        },
+        "json_mirror": {
+          "bytes": 549,
+          "chars": 549,
+          "est_tokens_bytes4": 138,
+          "est_tokens_chars4": 138
+        },
+        "json_over_dct_bytes": 2.128,
+        "name": "doc_read_redacted",
+        "tool": "read"
+      },
+      {
+        "dct": {
+          "bytes": 467,
+          "chars": 451,
+          "est_tokens_bytes4": 117,
+          "est_tokens_chars4": 113
+        },
+        "json_mirror": {
+          "bytes": 762,
+          "chars": 746,
+          "est_tokens_bytes4": 191,
+          "est_tokens_chars4": 187
+        },
+        "json_over_dct_bytes": 1.632,
+        "name": "doc_find_literal",
+        "tool": "find"
+      },
+      {
+        "dct": {
+          "bytes": 533,
+          "chars": 501,
+          "est_tokens_bytes4": 134,
+          "est_tokens_chars4": 126
+        },
+        "json_mirror": {
+          "bytes": 945,
+          "chars": 913,
+          "est_tokens_bytes4": 237,
+          "est_tokens_chars4": 229
+        },
+        "json_over_dct_bytes": 1.773,
+        "name": "doc_find_regex",
+        "tool": "find"
+      },
+      {
+        "dct": {
+          "bytes": 111,
+          "chars": 111,
+          "est_tokens_bytes4": 28,
+          "est_tokens_chars4": 28
+        },
+        "json_mirror": {
+          "bytes": 245,
+          "chars": 245,
+          "est_tokens_bytes4": 62,
+          "est_tokens_chars4": 62
+        },
+        "json_over_dct_bytes": 2.207,
+        "name": "doc_find_word_case",
+        "tool": "find"
+      },
+      {
+        "dct": {
+          "bytes": 207,
+          "chars": 197,
+          "est_tokens_bytes4": 52,
+          "est_tokens_chars4": 50
+        },
+        "json_mirror": {
+          "bytes": 385,
+          "chars": 375,
+          "est_tokens_bytes4": 97,
+          "est_tokens_chars4": 94
+        },
+        "json_over_dct_bytes": 1.86,
+        "name": "doc_find_limited",
+        "tool": "find"
+      },
+      {
+        "dct": {
+          "bytes": 346,
+          "chars": 344,
+          "est_tokens_bytes4": 87,
+          "est_tokens_chars4": 86
+        },
+        "json_mirror": {
+          "bytes": 1130,
+          "chars": 1128,
+          "est_tokens_bytes4": 283,
+          "est_tokens_chars4": 282
+        },
+        "json_over_dct_bytes": 3.266,
+        "name": "doc_diff_summary",
+        "tool": "diff"
+      },
+      {
+        "dct": {
+          "bytes": 500,
+          "chars": 492,
+          "est_tokens_bytes4": 125,
+          "est_tokens_chars4": 123
+        },
+        "json_mirror": {
+          "bytes": 1286,
+          "chars": 1278,
+          "est_tokens_bytes4": 322,
+          "est_tokens_chars4": 320
+        },
+        "json_over_dct_bytes": 2.572,
+        "name": "doc_diff_text",
+        "tool": "diff"
+      },
+      {
+        "dct": {
+          "bytes": 222,
+          "chars": 222,
+          "est_tokens_bytes4": 56,
+          "est_tokens_chars4": 56
+        },
+        "json_mirror": {
+          "bytes": 379,
+          "chars": 379,
+          "est_tokens_bytes4": 95,
+          "est_tokens_chars4": 95
+        },
+        "json_over_dct_bytes": 1.707,
+        "name": "wb_outline_d0",
+        "tool": "outline"
+      },
+      {
+        "dct": {
+          "bytes": 760,
+          "chars": 759,
+          "est_tokens_bytes4": 190,
+          "est_tokens_chars4": 190
+        },
+        "json_mirror": {
+          "bytes": 2095,
+          "chars": 2094,
+          "est_tokens_bytes4": 524,
+          "est_tokens_chars4": 524
+        },
+        "json_over_dct_bytes": 2.757,
+        "name": "wb_profile",
+        "tool": "outline"
+      },
+      {
+        "dct": {
+          "bytes": 458,
+          "chars": 454,
+          "est_tokens_bytes4": 115,
+          "est_tokens_chars4": 114
+        },
+        "json_mirror": {
+          "bytes": 889,
+          "chars": 885,
+          "est_tokens_bytes4": 223,
+          "est_tokens_chars4": 222
+        },
+        "json_over_dct_bytes": 1.941,
+        "name": "wb_profile_notes",
+        "tool": "outline"
+      },
+      {
+        "dct": {
+          "bytes": 431,
+          "chars": 430,
+          "est_tokens_bytes4": 108,
+          "est_tokens_chars4": 108
+        },
+        "json_mirror": {
+          "bytes": 793,
+          "chars": 792,
+          "est_tokens_bytes4": 199,
+          "est_tokens_chars4": 198
+        },
+        "json_over_dct_bytes": 1.84,
+        "name": "wb_read_range",
+        "tool": "read"
+      },
+      {
+        "dct": {
+          "bytes": 254,
+          "chars": 254,
+          "est_tokens_bytes4": 64,
+          "est_tokens_chars4": 64
+        },
+        "json_mirror": {
+          "bytes": 504,
+          "chars": 504,
+          "est_tokens_bytes4": 126,
+          "est_tokens_chars4": 126
+        },
+        "json_over_dct_bytes": 1.984,
+        "name": "wb_read_range_refs",
+        "tool": "read"
+      },
+      {
+        "dct": {
+          "bytes": 275,
+          "chars": 271,
+          "est_tokens_bytes4": 69,
+          "est_tokens_chars4": 68
+        },
+        "json_mirror": {
+          "bytes": 476,
+          "chars": 472,
+          "est_tokens_bytes4": 119,
+          "est_tokens_chars4": 118
+        },
+        "json_over_dct_bytes": 1.731,
+        "name": "wb_read_range_hostile",
+        "tool": "read"
+      },
+      {
+        "dct": {
+          "bytes": 144,
+          "chars": 144,
+          "est_tokens_bytes4": 36,
+          "est_tokens_chars4": 36
+        },
+        "json_mirror": {
+          "bytes": 335,
+          "chars": 335,
+          "est_tokens_bytes4": 84,
+          "est_tokens_chars4": 84
+        },
+        "json_over_dct_bytes": 2.326,
+        "name": "wb_read_range_clamped",
+        "tool": "read"
+      },
+      {
+        "dct": {
+          "bytes": 154,
+          "chars": 154,
+          "est_tokens_bytes4": 39,
+          "est_tokens_chars4": 39
+        },
+        "json_mirror": {
+          "bytes": 313,
+          "chars": 313,
+          "est_tokens_bytes4": 79,
+          "est_tokens_chars4": 79
+        },
+        "json_over_dct_bytes": 2.032,
+        "name": "wb_read_row",
+        "tool": "read"
+      },
+      {
+        "dct": {
+          "bytes": 447,
+          "chars": 443,
+          "est_tokens_bytes4": 112,
+          "est_tokens_chars4": 111
+        },
+        "json_mirror": {
+          "bytes": 806,
+          "chars": 802,
+          "est_tokens_bytes4": 202,
+          "est_tokens_chars4": 201
+        },
+        "json_over_dct_bytes": 1.803,
+        "name": "wb_read_sheet",
+        "tool": "read"
+      },
+      {
+        "dct": {
+          "bytes": 171,
+          "chars": 171,
+          "est_tokens_bytes4": 43,
+          "est_tokens_chars4": 43
+        },
+        "json_mirror": {
+          "bytes": 371,
+          "chars": 371,
+          "est_tokens_bytes4": 93,
+          "est_tokens_chars4": 93
+        },
+        "json_over_dct_bytes": 2.17,
+        "name": "wb_find_text",
+        "tool": "find"
+      },
+      {
+        "dct": {
+          "bytes": 219,
+          "chars": 219,
+          "est_tokens_bytes4": 55,
+          "est_tokens_chars4": 55
+        },
+        "json_mirror": {
+          "bytes": 463,
+          "chars": 463,
+          "est_tokens_bytes4": 116,
+          "est_tokens_chars4": 116
+        },
+        "json_over_dct_bytes": 2.114,
+        "name": "wb_find_formulas",
+        "tool": "find"
+      },
+      {
+        "dct": {
+          "bytes": 253,
+          "chars": 253,
+          "est_tokens_bytes4": 64,
+          "est_tokens_chars4": 64
+        },
+        "json_mirror": {
+          "bytes": 876,
+          "chars": 876,
+          "est_tokens_bytes4": 219,
+          "est_tokens_chars4": 219
+        },
+        "json_over_dct_bytes": 3.462,
+        "name": "wb_diff_summary",
+        "tool": "diff"
+      },
+      {
+        "dct": {
+          "bytes": 329,
+          "chars": 329,
+          "est_tokens_bytes4": 83,
+          "est_tokens_chars4": 83
+        },
+        "json_mirror": {
+          "bytes": 962,
+          "chars": 962,
+          "est_tokens_bytes4": 241,
+          "est_tokens_chars4": 241
+        },
+        "json_over_dct_bytes": 2.924,
+        "name": "wb_diff_text",
+        "tool": "diff"
+      },
+      {
+        "dct": {
+          "bytes": 360,
+          "chars": 360,
+          "est_tokens_bytes4": 90,
+          "est_tokens_chars4": 90
+        },
+        "json_mirror": {
+          "bytes": 945,
+          "chars": 945,
+          "est_tokens_bytes4": 237,
+          "est_tokens_chars4": 237
+        },
+        "json_over_dct_bytes": 2.625,
+        "name": "deck_outline_d0",
+        "tool": "outline"
+      },
+      {
+        "dct": {
+          "bytes": 751,
+          "chars": 747,
+          "est_tokens_bytes4": 188,
+          "est_tokens_chars4": 187
+        },
+        "json_mirror": {
+          "bytes": 1832,
+          "chars": 1828,
+          "est_tokens_bytes4": 458,
+          "est_tokens_chars4": 457
+        },
+        "json_over_dct_bytes": 2.439,
+        "name": "deck_outline_d1",
+        "tool": "outline"
+      },
+      {
+        "dct": {
+          "bytes": 763,
+          "chars": 763,
+          "est_tokens_bytes4": 191,
+          "est_tokens_chars4": 191
+        },
+        "json_mirror": {
+          "bytes": 1724,
+          "chars": 1724,
+          "est_tokens_bytes4": 431,
+          "est_tokens_chars4": 431
+        },
+        "json_over_dct_bytes": 2.26,
+        "name": "deck_read_slides",
+        "tool": "read"
+      },
+      {
+        "dct": {
+          "bytes": 299,
+          "chars": 299,
+          "est_tokens_bytes4": 75,
+          "est_tokens_chars4": 75
+        },
+        "json_mirror": {
+          "bytes": 786,
+          "chars": 786,
+          "est_tokens_bytes4": 197,
+          "est_tokens_chars4": 197
+        },
+        "json_over_dct_bytes": 2.629,
+        "name": "deck_read_by_ref",
+        "tool": "read"
+      },
+      {
+        "dct": {
+          "bytes": 180,
+          "chars": 180,
+          "est_tokens_bytes4": 45,
+          "est_tokens_chars4": 45
+        },
+        "json_mirror": {
+          "bytes": 450,
+          "chars": 450,
+          "est_tokens_bytes4": 113,
+          "est_tokens_chars4": 113
+        },
+        "json_over_dct_bytes": 2.5,
+        "name": "deck_read_shape",
+        "tool": "read"
+      },
+      {
+        "dct": {
+          "bytes": 247,
+          "chars": 247,
+          "est_tokens_bytes4": 62,
+          "est_tokens_chars4": 62
+        },
+        "json_mirror": {
+          "bytes": 742,
+          "chars": 742,
+          "est_tokens_bytes4": 186,
+          "est_tokens_chars4": 186
+        },
+        "json_over_dct_bytes": 3.004,
+        "name": "deck_read_have",
+        "tool": "read"
+      },
+      {
+        "dct": {
+          "bytes": 142,
+          "chars": 140,
+          "est_tokens_bytes4": 36,
+          "est_tokens_chars4": 35
+        },
+        "json_mirror": {
+          "bytes": 275,
+          "chars": 273,
+          "est_tokens_bytes4": 69,
+          "est_tokens_chars4": 69
+        },
+        "json_over_dct_bytes": 1.937,
+        "name": "deck_find_text",
+        "tool": "find"
+      },
+      {
+        "dct": {
+          "bytes": 126,
+          "chars": 126,
+          "est_tokens_bytes4": 32,
+          "est_tokens_chars4": 32
+        },
+        "json_mirror": {
+          "bytes": 262,
+          "chars": 262,
+          "est_tokens_bytes4": 66,
+          "est_tokens_chars4": 66
+        },
+        "json_over_dct_bytes": 2.079,
+        "name": "deck_find_notes",
+        "tool": "find"
+      },
+      {
+        "dct": {
+          "bytes": 282,
+          "chars": 282,
+          "est_tokens_bytes4": 71,
+          "est_tokens_chars4": 71
+        },
+        "json_mirror": {
+          "bytes": 1051,
+          "chars": 1051,
+          "est_tokens_bytes4": 263,
+          "est_tokens_chars4": 263
+        },
+        "json_over_dct_bytes": 3.727,
+        "name": "deck_diff_summary",
+        "tool": "diff"
+      },
+      {
+        "dct": {
+          "bytes": 426,
+          "chars": 424,
+          "est_tokens_bytes4": 107,
+          "est_tokens_chars4": 106
+        },
+        "json_mirror": {
+          "bytes": 1197,
+          "chars": 1195,
+          "est_tokens_bytes4": 300,
+          "est_tokens_chars4": 299
+        },
+        "json_over_dct_bytes": 2.81,
+        "name": "deck_diff_text",
+        "tool": "diff"
+      },
+      {
+        "dct": {
+          "bytes": 280,
+          "chars": 280,
+          "est_tokens_bytes4": 70,
+          "est_tokens_chars4": 70
+        },
+        "json_mirror": {
+          "bytes": 578,
+          "chars": 578,
+          "est_tokens_bytes4": 145,
+          "est_tokens_chars4": 145
+        },
+        "json_over_dct_bytes": 2.064,
+        "name": "files",
+        "tool": "files"
+      },
+      {
+        "dct": {
+          "bytes": 103,
+          "chars": 103,
+          "est_tokens_bytes4": 26,
+          "est_tokens_chars4": 26
+        },
+        "json_mirror": {
+          "bytes": 239,
+          "chars": 239,
+          "est_tokens_bytes4": 60,
+          "est_tokens_chars4": 60
+        },
+        "json_over_dct_bytes": 2.32,
+        "name": "files_filtered",
+        "tool": "files"
+      },
+      {
+        "dct": {
+          "bytes": 237,
+          "chars": 237,
+          "est_tokens_bytes4": 60,
+          "est_tokens_chars4": 60
+        },
+        "json_mirror": {
+          "bytes": 430,
+          "chars": 430,
+          "est_tokens_bytes4": 108,
+          "est_tokens_chars4": 108
+        },
+        "json_over_dct_bytes": 1.814,
+        "name": "files_page1",
+        "tool": "files"
+      },
+      {
+        "dct": {
+          "bytes": 103,
+          "chars": 103,
+          "est_tokens_bytes4": 26,
+          "est_tokens_chars4": 26
+        },
+        "json_mirror": {
+          "bytes": 239,
+          "chars": 239,
+          "est_tokens_bytes4": 60,
+          "est_tokens_chars4": 60
+        },
+        "json_over_dct_bytes": 2.32,
+        "name": "files_page2",
+        "tool": "files"
+      }
+    ],
+    "note": "The calls of tests/golden/ (error lines excluded: they have no JSON mirror, the HTTP envelope differs). Small files: 28 to 32 blocks, 41 rows, 5 slides.",
+    "totals": {
+      "calls": 49,
+      "dct_bytes": 19467,
+      "dct_est_tokens_bytes4": 4867,
+      "dct_est_tokens_chars4": 4675,
+      "json_mirror_bytes": 40654,
+      "json_mirror_est_tokens_bytes4": 10164,
+      "json_mirror_est_tokens_chars4": 9978,
+      "json_over_dct_bytes": 2.088
+    }
+  },
+  "limitations": [
+    "Payload bytes are not tokens: model tokenisers split JSON punctuation, identifiers and non-Latin text differently from prose, and neither estimator was calibrated against one.",
+    "Per the claims policy of docs/AI-AGENT-TOKEN-EFFICIENCY.md section 9, no figure here may be quoted as a token saving; the byte ratios overstate real savings because tool definitions, system prompts and history are fixed costs per turn (section 3.4 of that document).",
+    "The JSON mirror is this crate's own serialisation of its typed results, not a measured competitor: another JSON encoding of the same facts could be smaller or larger. It is not the raw REST response (B0) and not a plain-text wrapper (B1); the scaled `references` give raw-state and plain-text sizes for scale only.",
+    "Golden corpus: small synthetic files, mixed English, Bengali, hostile strings and escapes; outline previews and structure lines dominate, so ratios differ from large real documents. The scaled files use a word list of 40 words with uniform 35 to 55 word paragraphs, no tables or lists, 8 percent formatted runs; real files differ.",
+    "The scaled files resemble, but are not, the fixture of the token-efficiency document (different text); compare orders of magnitude only.",
+    "Sizes depend on the format version dd/1 at this commit; any format change changes them (golden files make that visible)."
+  ],
+  "measurement": "UTF-8 byte and Unicode scalar counts of the text each tool call returns (DCT) and of the JSON mirror of the same typed answer (protocol spec 12.3, compact serde_json). One deterministic run; sizes do not vary between runs. No tokeniser was run.",
+  "platform": "windows x86_64",
+  "scaled": {
+    "deck": {
+      "calls": [
+        {
+          "dct": {
+            "bytes": 1031,
+            "chars": 1031,
+            "est_tokens_bytes4": 258,
+            "est_tokens_chars4": 258
+          },
+          "json_mirror": {
+            "bytes": 2427,
+            "chars": 2427,
+            "est_tokens_bytes4": 607,
+            "est_tokens_chars4": 607
+          },
+          "json_over_dct_bytes": 2.354,
+          "name": "outline depth 0 (14 slides)",
+          "tool": "outline"
+        },
+        {
+          "dct": {
+            "bytes": 2798,
+            "chars": 2770,
+            "est_tokens_bytes4": 700,
+            "est_tokens_chars4": 693
+          },
+          "json_mirror": {
+            "bytes": 5650,
+            "chars": 5622,
+            "est_tokens_bytes4": 1413,
+            "est_tokens_chars4": 1406
+          },
+          "json_over_dct_bytes": 2.019,
+          "name": "outline depth 1 (shapes)",
+          "tool": "outline"
+        },
+        {
+          "dct": {
+            "bytes": 1294,
+            "chars": 1294,
+            "est_tokens_bytes4": 324,
+            "est_tokens_chars4": 324
+          },
+          "json_mirror": {
+            "bytes": 2364,
+            "chars": 2364,
+            "est_tokens_bytes4": 591,
+            "est_tokens_chars4": 591
+          },
+          "json_over_dct_bytes": 1.827,
+          "name": "read 3 slides",
+          "tool": "read"
+        }
+      ],
+      "references": [
+        {
+          "name": "raw state",
+          "size": {
+            "bytes": 129705,
+            "chars": 129705,
+            "est_tokens_bytes4": 32427,
+            "est_tokens_chars4": 32427
+          },
+          "what": "serde_json of DocumentState (inline images dominate)"
+        },
+        {
+          "name": "slide text",
+          "size": {
+            "bytes": 2108,
+            "chars": 2108,
+            "est_tokens_bytes4": 527,
+            "est_tokens_chars4": 527
+          },
+          "what": "the text of every text shape, one line each"
+        }
+      ],
+      "slides": 14
+    },
+    "diff": {
+      "dct": {
+        "bytes": 346,
+        "chars": 344,
+        "est_tokens_bytes4": 87,
+        "est_tokens_chars4": 86
+      },
+      "json_mirror": {
+        "bytes": 1130,
+        "chars": 1128,
+        "est_tokens_bytes4": 283,
+        "est_tokens_chars4": 282
+      },
+      "json_over_dct_bytes": 3.266,
+      "name": "diff summary of the edit session",
+      "tool": "diff"
+    },
+    "document": {
+      "blocks": 200,
+      "calls": [
+        {
+          "dct": {
+            "bytes": 13703,
+            "chars": 13329,
+            "est_tokens_bytes4": 3426,
+            "est_tokens_chars4": 3333
+          },
+          "json_mirror": {
+            "bytes": 19993,
+            "chars": 19619,
+            "est_tokens_bytes4": 4999,
+            "est_tokens_chars4": 4905
+          },
+          "json_over_dct_bytes": 1.459,
+          "name": "outline depth 1 (200 blocks, 48-char previews)",
+          "tool": "outline"
+        },
+        {
+          "dct": {
+            "bytes": 757,
+            "chars": 757,
+            "est_tokens_bytes4": 190,
+            "est_tokens_chars4": 190
+          },
+          "json_mirror": {
+            "bytes": 1329,
+            "chars": 1329,
+            "est_tokens_bytes4": 333,
+            "est_tokens_chars4": 333
+          },
+          "json_over_dct_bytes": 1.756,
+          "name": "outline depth 0 (headings only)",
+          "tool": "outline"
+        },
+        {
+          "dct": {
+            "bytes": 1886,
+            "chars": 1886,
+            "est_tokens_bytes4": 472,
+            "est_tokens_chars4": 472
+          },
+          "json_mirror": {
+            "bytes": 2583,
+            "chars": 2583,
+            "est_tokens_bytes4": 646,
+            "est_tokens_chars4": 646
+          },
+          "json_over_dct_bytes": 1.37,
+          "name": "read 8 blocks",
+          "tool": "read"
+        },
+        {
+          "dct": {
+            "bytes": 208,
+            "chars": 208,
+            "est_tokens_bytes4": 52,
+            "est_tokens_chars4": 52
+          },
+          "json_mirror": {
+            "bytes": 891,
+            "chars": 891,
+            "est_tokens_bytes4": 223,
+            "est_tokens_chars4": 223
+          },
+          "json_over_dct_bytes": 4.284,
+          "name": "re-read the same 8 blocks with have",
+          "tool": "read"
+        },
+        {
+          "dct": {
+            "bytes": 1648,
+            "chars": 1572,
+            "est_tokens_bytes4": 412,
+            "est_tokens_chars4": 393
+          },
+          "json_mirror": {
+            "bytes": 2379,
+            "chars": 2303,
+            "est_tokens_bytes4": 595,
+            "est_tokens_chars4": 576
+          },
+          "json_over_dct_bytes": 1.444,
+          "name": "find 'clause' (20 hits)",
+          "tool": "find"
+        }
+      ],
+      "references": [
+        {
+          "name": "raw state",
+          "size": {
+            "bytes": 145683,
+            "chars": 145683,
+            "est_tokens_bytes4": 36421,
+            "est_tokens_chars4": 36421
+          },
+          "what": "serde_json of DocumentState (about what the current document route returns as `state`)"
+        },
+        {
+          "name": "plain text",
+          "size": {
+            "bytes": 45334,
+            "chars": 45334,
+            "est_tokens_bytes4": 11334,
+            "est_tokens_chars4": 11334
+          },
+          "what": "every block's text, one line per block (a thoughtful wrapper's best case)"
+        }
+      ],
+      "words": 8226
+    },
+    "workbook": {
+      "calls": [
+        {
+          "dct": {
+            "bytes": 897,
+            "chars": 896,
+            "est_tokens_bytes4": 225,
+            "est_tokens_chars4": 224
+          },
+          "json_mirror": {
+            "bytes": 2872,
+            "chars": 2871,
+            "est_tokens_bytes4": 718,
+            "est_tokens_chars4": 718
+          },
+          "json_over_dct_bytes": 3.202,
+          "name": "profile (480 rows x 12 columns)",
+          "tool": "outline"
+        },
+        {
+          "dct": {
+            "bytes": 2067,
+            "chars": 2062,
+            "est_tokens_bytes4": 517,
+            "est_tokens_chars4": 516
+          },
+          "json_mirror": {
+            "bytes": 3586,
+            "chars": 3581,
+            "est_tokens_bytes4": 897,
+            "est_tokens_chars4": 896
+          },
+          "json_over_dct_bytes": 1.735,
+          "name": "range A2:H41 (40 x 8)",
+          "tool": "read"
+        },
+        {
+          "dct": {
+            "bytes": 605,
+            "chars": 605,
+            "est_tokens_bytes4": 152,
+            "est_tokens_chars4": 152
+          },
+          "json_mirror": {
+            "bytes": 1324,
+            "chars": 1324,
+            "est_tokens_bytes4": 331,
+            "est_tokens_chars4": 331
+          },
+          "json_over_dct_bytes": 2.188,
+          "name": "find formulas 'SUM(D4'",
+          "tool": "find"
+        }
+      ],
+      "columns": 12,
+      "references": [
+        {
+          "name": "raw state",
+          "size": {
+            "bytes": 195960,
+            "chars": 195857,
+            "est_tokens_bytes4": 48990,
+            "est_tokens_chars4": 48965
+          },
+          "what": "serde_json of DocumentState"
+        },
+        {
+          "name": "whole sheet as CSV",
+          "size": {
+            "bytes": 40495,
+            "chars": 40392,
+            "est_tokens_bytes4": 10124,
+            "est_tokens_chars4": 10098
+          },
+          "what": "stored cell strings, no evaluation (a thoughtful wrapper's best case)"
+        }
+      ],
+      "rows": 481
+    }
+  },
+  "token_estimators": {
+    "bytes4": "ceil(utf8 bytes / 4): the ~tok estimate of the DCT header (spec 6.2, 11); the ratio of two such estimates equals the byte ratio, so it adds no information beyond bytes",
+    "chars4": "ceil(Unicode scalar values / 4): shown to expose the effect of non-ASCII text (Bengali and emoji take 3 to 4 bytes per character in UTF-8 and are typically tokenised differently)"
+  },
+  "version": 1
+}

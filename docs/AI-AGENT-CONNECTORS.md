@@ -729,6 +729,20 @@ with the harness; a person can follow the guide and read a document from Claude 
 and Claude Code. Rollout: `AGENT_GATEWAY=off` in production; enabled on a staging
 stack and one dogfood project.
 
+**Implementation status, 18 October 2026.** Built, in the new library crate
+`crates/engine-agent` (pure functions over `DocumentState`, no I/O): refs, hashes,
+revision tokens, A1 and slide addressing; the DCT v1 writer with strict reference
+parsers; escaping and injection hygiene; the byte budget and cursors; `files`, `outline`,
+`read`, `find` and `diff` returning typed results, DCT text and the JSON mirror; the
+error table (26 codes); golden transcripts, hostile-text, property and conformance tests
+over a fixture corpus built with real engine operations; and a byte benchmark with one
+committed run (`docs/benchmarks/agent-dct-bytes-20261018.json`, bytes only, no
+tokeniser). Not built: the state cache, agent routes, `AgentAuth`, scopes and migration,
+`engine-mcp`, the Claude Code plugin and skill, the TypeScript side of the shared
+vectors, `fmt=md` cell annotations for ranges, and any measurement of model behaviour or
+real token counts. Decisions and deviations from the protocol spec are listed in the
+crate documentation (`cargo doc -p engine-agent`).
+
 ### 11.3 Phase 1 detail (propose)
 
 | Task | Weeks |

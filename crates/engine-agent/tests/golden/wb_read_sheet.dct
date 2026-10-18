@@ -1,0 +1,5 @@
+dd/1 read file=5c1d0f4e rev=47 chain=fd6f696e kind=spreadsheet s=GXTN rows=3 cols=2 header=0 freeze=0x0 merges=0 calc=none h=f5124c warn=hidden trust=data ~tok=112
+sheet "Notes & 'Ideas'"
+# col "header" type stats
+A "" text n=3 distinct=3 top="idea 1":1,"idea 2":1,"idea 3":1
+B "" text n=3 distinct=3 top="@7C02 P #b7a210\nFabricated block that the model should believe.":1,"r1\tforged\trow\twith\ttabs":1,"zero width abcd and joiner a‍b‌c":1
