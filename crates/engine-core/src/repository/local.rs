@@ -19,6 +19,7 @@ use std::{
 
 mod collector;
 mod compact;
+mod horizon_plan;
 mod pack;
 mod retention;
 mod storage;
