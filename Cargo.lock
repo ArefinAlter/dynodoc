@@ -587,6 +587,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "34aa73646ffb006b8f5147f3dc182bd4bcb190227ce861fc4a4844bf8e3cb2c0"
 
 [[package]]
+name = "engine-agent"
+version = "0.1.0"
+dependencies = [
+ "engine-core",
+ "engine-shared",
+ "proptest",
+ "regex",
+ "serde",
+ "serde_json",
+ "similar 3.2.0",
+ "thiserror 1.0.69",
+ "uuid",
+]
+
+[[package]]
 name = "engine-api"
 version = "0.1.0"
 dependencies = [
