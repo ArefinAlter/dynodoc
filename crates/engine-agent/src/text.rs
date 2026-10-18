@@ -194,12 +194,32 @@ impl Inline {
     /// First `max` characters, `…` appended when cut (spec 6.3 `preview`). Atoms count as
     /// one character and show as `⟦kind⟧`. Returns the escaped preview.
     pub fn preview(&self, max: usize) -> (String, Dropped) {
+        self.preview_with(max, "")
+    }
+
+    /// [`preview`](Self::preview) that also escapes the `extra` characters (for quotes).
+    pub fn preview_with(&self, max: usize, extra: &str) -> (String, Dropped) {
         let (segs, cut) = self.preview_segs(max);
-        let (mut text, d) = Inline { segs }.render(false);
+        let mut text = String::new();
+        let mut dropped = Dropped::default();
+        for seg in &segs {
+            match seg {
+                Seg::Text(t) | Seg::Code(t) => {
+                    let (e, d) = escape_with(t, extra);
+                    text.push_str(&e);
+                    dropped.add(d);
+                }
+                other => {
+                    let (e, d) = Inline { segs: vec![other.clone()] }.render(false);
+                    text.push_str(&e);
+                    dropped.add(d);
+                }
+            }
+        }
         if cut {
             text.push('…');
         }
-        (text, d)
+        (text, dropped)
     }
 
     /// The same preview as sanitised plain text, for the typed data and the JSON mirror.
@@ -285,7 +305,7 @@ fn percent_encode_href(href: &str) -> Option<String> {
 fn wrap_run(text: &str, marks: &[Value], md: bool, segs: &mut Vec<Seg>, f: &mut Features) {
     let kinds: Vec<&str> = marks.iter().filter_map(|m| m["type"].as_str()).collect();
     let has = |k: &str| kinds.contains(&k);
-    if kinds.iter().any(|k| *k == "link") {
+    if kinds.contains(&"link") {
         f.lnk += 1;
     }
     if kinds.iter().any(|k| matches!(*k, "sourceComment" | "comment")) {

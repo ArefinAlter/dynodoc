@@ -17,6 +17,10 @@ pub struct PagedSpec<'a> {
     pub file: Option<&'a FileMeta>,
     /// Pairs after `file rev chain`.
     pub lead: Vec<(&'static str, String)>,
+    /// Pairs after `lead` that are always written quoted (`q="clause"`).
+    pub quoted: Vec<(&'static str, String)>,
+    /// Write `rev=` and `chain=` after `file=` (`diff` has `from` and `to` instead).
+    pub header_rev: bool,
     /// Add `n=<units in this page>` after `lead`.
     pub show_n: bool,
     /// Pairs after `n`, before `more`.
@@ -57,10 +61,16 @@ pub fn paged<T>(
     let header = |taken: usize, more: bool| -> HeaderBuilder {
         let mut h = HeaderBuilder::new(spec.tool);
         if let Some(f) = spec.file {
-            h = h.kv("file", f.short_id()).kv("rev", f.rev).kv("chain", f.chain8());
+            h = h.kv("file", f.short_id());
+            if spec.header_rev {
+                h = h.kv("rev", f.rev).kv("chain", f.chain8());
+            }
         }
         for (k, v) in &spec.lead {
             h = h.kv(k, v);
+        }
+        for (k, v) in &spec.quoted {
+            h = h.kv_quoted(k, v);
         }
         if spec.show_n {
             h = h.kv("n", taken);
