@@ -19,6 +19,7 @@ use std::{
 
 mod collector;
 mod compact;
+mod horizon_plan;
 mod pack;
 mod retention;
 mod storage;
@@ -716,6 +717,8 @@ impl LocalRepository {
 mod collector_tests;
 #[cfg(test)]
 mod convergence_tests;
+#[cfg(test)]
+mod horizon_plan_tests;
 #[cfg(test)]
 mod merge_tests;
 #[cfg(test)]

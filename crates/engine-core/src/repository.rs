@@ -17,6 +17,7 @@ pub mod compare;
 pub mod convergence;
 pub mod device;
 pub mod device_session;
+pub mod horizon;
 pub mod local;
 pub mod project_merge;
 pub mod receipt_journal;

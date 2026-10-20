@@ -7,6 +7,10 @@ use engine_core::{
     merge_policy::{self, MergePolicy, Registry},
     repository::{
         convergence::FileExplain,
+        horizon::{
+            plan::PlanOptions,
+            policy::{LoadOptions, Policy, MAX_POLICY_BYTES},
+        },
         local::{
             CompactOptions, GcApplyOptions, GcPlanOptions, LocalRepository, ObjectKey,
             ObjectPacket, StorageLimits, SCHEMA_VERSION,
@@ -123,6 +127,36 @@ pub enum Action {
         #[arg(long, default_value_t = 10)]
         list: usize,
         /// Deterministic JSON, or a plain-text summary of the same facts.
+        #[arg(long, value_enum, default_value_t = PlanFormat::Json)]
+        format: PlanFormat,
+    },
+    /// Read-only horizon plan: what a history horizon under a retention policy
+    /// would release (docs/HORIZON-RECORD-V1.md). Deletes, signs and writes nothing.
+    ///
+    /// Heads, held and policy-pinned commits, merge bases, the recent window and the
+    /// recovery (v2) and same-file merge (v3) provenance they need stay; under tier
+    /// `history` every other commit would become a skeleton entry, under tier
+    /// `content` every commit stays and only unneeded file states are released.
+    /// Prints the canonical plan JSON on stdout and a short summary on stderr
+    /// (`--format text` prints only the summary). The plan hash binds the policy,
+    /// the branch heads and the three horizon roots, never the example count. Opens
+    /// the database read-only: it never creates, upgrades or writes it.
+    HorizonPlan {
+        /// Retention policy JSON (`dynodoc.retention-policy.v1`).
+        #[arg(long)]
+        policy: PathBuf,
+        /// Released and pinned commits to list as examples (0-1000).
+        #[arg(long, default_value_t = 10)]
+        list: usize,
+        /// Instant, in milliseconds since the epoch, that `keep_within_days` counts
+        /// back from. Defaults to the current time rounded down to a UTC day, so a
+        /// plan repeated on the same day is the same plan. Echoed in the plan.
+        #[arg(long)]
+        as_of_ms: Option<i64>,
+        /// Also write the canonical plan JSON to this new file (never overwrites).
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Canonical JSON plus a stderr summary, or the plain-text summary alone.
         #[arg(long, value_enum, default_value_t = PlanFormat::Json)]
         format: PlanFormat,
     },
@@ -427,9 +461,69 @@ async fn merge_value(
     Ok(output)
 }
 
+/// A policy file, parsed and validated; every problem is listed in the error.
+fn load_policy(path: &Path) -> anyhow::Result<Policy> {
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)
+        .with_context(|| format!("opening {}", path.display()))?
+        .take(MAX_POLICY_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)?;
+    Policy::load(&bytes, LoadOptions::default())
+        .map_err(|errors| anyhow::anyhow!("invalid retention policy {}:\n{errors}", path.display()))
+}
+
+/// The text `horizon-plan` prints on stdout; the other rendering goes to stderr.
+async fn horizon_plan(
+    repo: &LocalRepository,
+    policy: &Path,
+    list: usize,
+    as_of_ms: Option<i64>,
+    out: Option<PathBuf>,
+    format: PlanFormat,
+) -> anyhow::Result<String> {
+    let policy = load_policy(policy)?;
+    // A time rule needs an instant; the plan carries it, never an ambient clock.
+    let as_of_ms = match (policy.window.keep_within_days, as_of_ms) {
+        (Some(_), None) => Some(today_start_ms()?),
+        (_, given) => given,
+    };
+    let plan = repo
+        .horizon_plan(&policy, &PlanOptions { as_of_ms, list })
+        .await?;
+    let canonical = String::from_utf8(plan.canonical_bytes()?)?;
+    if let Some(out) = out {
+        use std::io::Write;
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&out)
+            .with_context(|| format!("creating {}", out.display()))?
+            .write_all(canonical.as_bytes())?;
+    }
+    Ok(match format {
+        PlanFormat::Json => {
+            eprint!("{}", plan.summary());
+            format!(
+                "{canonical}
+"
+            )
+        }
+        PlanFormat::Text => plan.summary(),
+    })
+}
+
+/// The current time in milliseconds since the epoch, rounded down to a UTC day.
+fn today_start_ms() -> anyhow::Result<i64> {
+    const DAY_MS: i64 = 86_400_000;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .context("system clock before 1970")?;
+    Ok(now.as_millis() as i64 / DAY_MS * DAY_MS)
+}
+
 pub async fn run(path: PathBuf, project: uuid::Uuid, action: Action) -> anyhow::Result<()> {
-    // The retention plan must not create, upgrade or write the database.
-    let repo = if matches!(action, Action::GcPlan { .. }) {
+    // The retention and horizon plans must not create, upgrade or write the database.
+    let repo = if matches!(action, Action::GcPlan { .. } | Action::HorizonPlan { .. }) {
         LocalRepository::open_read_only(&path, project).await?
     } else {
         // A destructive command never creates the database it would collect.
@@ -547,6 +641,16 @@ pub async fn run(path: PathBuf, project: uuid::Uuid, action: Action) -> anyhow::
                     serde_json::Value::Null
                 }
             }
+        }
+        Action::HorizonPlan {
+            policy,
+            list,
+            as_of_ms,
+            out,
+            format,
+        } => {
+            text = Some(horizon_plan(&repo, &policy, list, as_of_ms, out, format).await?);
+            serde_json::Value::Null
         }
         Action::Gc {
             plan_hash,
@@ -1562,6 +1666,189 @@ mod tests {
         let mut with_policy = base.to_vec();
         with_policy.extend(["--merge-policy", "p.json"]);
         assert!(command.clone().try_get_matches_from(with_policy).is_err());
+    }
+
+    #[test]
+    fn horizon_plan_arguments_require_a_policy_and_parse_options() {
+        let command = Action::augment_subcommands(Command::new("repository").no_binary_name(true));
+        let parse = |args: &[&str]| {
+            let matches = command.clone().try_get_matches_from(args).unwrap();
+            Action::from_arg_matches(&matches).unwrap()
+        };
+        assert!(command
+            .clone()
+            .try_get_matches_from(["horizon-plan"])
+            .is_err());
+        assert!(matches!(
+            parse(&["horizon-plan", "--policy", "p.json"]),
+            Action::HorizonPlan {
+                list: 10,
+                as_of_ms: None,
+                out: None,
+                format: PlanFormat::Json,
+                ..
+            }
+        ));
+        assert!(matches!(
+            parse(&[
+                "horizon-plan",
+                "--policy",
+                "p.json",
+                "--list",
+                "0",
+                "--as-of-ms",
+                "5",
+                "--out",
+                "plan.json",
+                "--format",
+                "text",
+            ]),
+            Action::HorizonPlan {
+                list: 0,
+                as_of_ms: Some(5),
+                out: Some(_),
+                format: PlanFormat::Text,
+                ..
+            }
+        ));
+        assert!(command
+            .clone()
+            .try_get_matches_from(["horizon-plan", "--policy", "p", "--format", "xml"])
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn horizon_plan_is_read_only_lists_every_policy_problem_and_never_overwrites() {
+        let f = Fixture::new().await;
+        let document = DocumentId(uuid::Uuid::new_v4());
+        let first = f.file(document, &[]).await;
+        let mut head = f.commit(&[], vec![("a", first)], "c0").await;
+        for i in 1..5 {
+            let file = f.file(document, &[(0, &format!("edit {i}"))]).await;
+            head = f
+                .commit(&[&head], vec![("a", file)], &format!("c{i}"))
+                .await;
+        }
+        f.repo.compare_and_swap("main", None, &head).await.unwrap();
+        let (path, project) = (f.path.clone(), f.project);
+        let dir =
+            std::env::temp_dir().join(format!("dynodoc-horizon-cli-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let policy = dir.join("policy.json");
+        std::fs::write(
+            &policy,
+            r#"{"version":1,"id":"cli","tier":"history","window":{"keep_last_commits":2},"protect":{"branch_heads":true}}"#,
+        )
+        .unwrap();
+        let wal = PathBuf::from(format!("{}-wal", path.display()));
+        let snapshot = || {
+            (
+                std::fs::read(&path).unwrap(),
+                std::fs::read(&wal).unwrap_or_default(),
+            )
+        };
+        let before = snapshot();
+        let plan_args = |out: Option<PathBuf>, format| Action::HorizonPlan {
+            policy: policy.clone(),
+            list: 2,
+            as_of_ms: None,
+            out,
+            format,
+        };
+        run(path.clone(), project, plan_args(None, PlanFormat::Text))
+            .await
+            .unwrap();
+        let out = dir.join("plan.json");
+        run(
+            path.clone(),
+            project,
+            plan_args(Some(out.clone()), PlanFormat::Json),
+        )
+        .await
+        .unwrap();
+        assert!(snapshot() == before, "planning wrote to the database");
+        // The file is the library's canonical plan for the same inputs.
+        let expected = f
+            .repo
+            .horizon_plan(
+                &Policy::load(&std::fs::read(&policy).unwrap(), LoadOptions::default()).unwrap(),
+                &PlanOptions {
+                    as_of_ms: None,
+                    list: 2,
+                },
+            )
+            .await
+            .unwrap();
+        let written = std::fs::read(&out).unwrap();
+        assert_eq!(written, expected.canonical_bytes().unwrap());
+        let value: serde_json::Value = serde_json::from_slice(&written).unwrap();
+        assert_eq!(value["commits"]["released"], 3);
+        assert_eq!(value["read_only"], true);
+        // A second run to the same file refuses and leaves it untouched.
+        assert!(run(
+            path.clone(),
+            project,
+            plan_args(Some(out.clone()), PlanFormat::Json)
+        )
+        .await
+        .is_err());
+        assert_eq!(std::fs::read(&out).unwrap(), written);
+        // An invalid policy lists every problem; a missing one is an error too.
+        std::fs::write(
+            &policy,
+            r#"{"version":1,"id":"cli","tier":"history","window":{},"protect":{"branch_heads":false},"x":1}"#,
+        )
+        .unwrap();
+        let error = run(path.clone(), project, plan_args(None, PlanFormat::Json))
+            .await
+            .unwrap_err()
+            .to_string();
+        for code in [
+            "policy.window_empty",
+            "policy.heads_unprotected",
+            "policy.unknown_field",
+        ] {
+            assert!(error.contains(code), "{error}");
+        }
+        std::fs::remove_file(&policy).unwrap();
+        assert!(
+            run(path.clone(), project, plan_args(None, PlanFormat::Json))
+                .await
+                .is_err()
+        );
+        // A missing database is an error and is never created.
+        let missing = path.with_extension("absent");
+        assert!(
+            run(missing.clone(), project, plan_args(None, PlanFormat::Json))
+                .await
+                .is_err()
+        );
+        assert!(!missing.exists());
+        // A time rule takes the instant from the flag, not from a clock.
+        std::fs::write(
+            &policy,
+            r#"{"version":1,"id":"days","tier":"content","window":{"keep_within_days":1}}"#,
+        )
+        .unwrap();
+        let timed_out = dir.join("timed.json");
+        run(
+            path.clone(),
+            project,
+            Action::HorizonPlan {
+                policy: policy.clone(),
+                list: 0,
+                as_of_ms: Some(1_700_000_000_000),
+                out: Some(timed_out.clone()),
+                format: PlanFormat::Text,
+            },
+        )
+        .await
+        .unwrap();
+        let timed: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&timed_out).unwrap()).unwrap();
+        assert_eq!(timed["as_of_ms"], 1_700_000_000_000i64);
+        std::fs::remove_dir_all(&dir).unwrap();
+        f.finish().await;
     }
 
     #[test]
