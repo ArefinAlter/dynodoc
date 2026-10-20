@@ -461,8 +461,8 @@ async fn merge_value(
     Ok(output)
 }
 
-/// A policy file, parsed and validated; every problem is listed in the error.
-fn load_policy(path: &Path) -> anyhow::Result<Policy> {
+/// A retention policy file, parsed and validated; every problem is listed in the error.
+fn load_retention_policy(path: &Path) -> anyhow::Result<Policy> {
     let mut bytes = Vec::new();
     std::fs::File::open(path)
         .with_context(|| format!("opening {}", path.display()))?
@@ -481,7 +481,7 @@ async fn horizon_plan(
     out: Option<PathBuf>,
     format: PlanFormat,
 ) -> anyhow::Result<String> {
-    let policy = load_policy(policy)?;
+    let policy = load_retention_policy(policy)?;
     // A time rule needs an instant; the plan carries it, never an ambient clock.
     let as_of_ms = match (policy.window.keep_within_days, as_of_ms) {
         (Some(_), None) => Some(today_start_ms()?),
