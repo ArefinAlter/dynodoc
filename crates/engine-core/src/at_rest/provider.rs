@@ -599,6 +599,8 @@ mod tests {
 
         fn write(&self, name: &str, contents: &[u8], mode: u32) -> PathBuf {
             let path = self.0.join(name);
+            // A file written earlier may have been made read-only; replace it, not write through it.
+            let _ = std::fs::remove_file(&path);
             std::fs::write(&path, contents).unwrap();
             #[cfg(unix)]
             {
