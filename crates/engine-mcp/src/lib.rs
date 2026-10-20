@@ -101,6 +101,7 @@
 
 pub mod backend;
 pub mod error;
+pub mod notes;
 pub mod request;
 pub mod rpc;
 pub mod schema;

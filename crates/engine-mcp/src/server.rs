@@ -287,7 +287,7 @@ impl<B: Backend> Server<B> {
                 return Err(failure(rpc::INVALID_PARAMS, "arguments must be an object"));
             }
         };
-        if let Err(error) = tool.validate(&args) {
+        if let Err(error) = self.inner.profile.validate(tool, &args) {
             return Ok(tool_result(ToolOutput::error(&error)));
         }
         let ctx = CallContext {

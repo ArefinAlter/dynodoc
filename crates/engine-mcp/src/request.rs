@@ -13,15 +13,26 @@
 //! | `read` slides | `GET files/{file}/slides` |
 //! | `find` | `GET files/{file}/find` |
 //! | `diff` | `GET files/{file}/diff` |
-//! | `status` | `GET access` |
+//! | `propose` | `POST files/{file}/propose` (the service's name; the spec says `proposals`) |
+//! | `submit` | `POST proposals/{proposal}/submit`, or `.../withdraw` for `action=withdraw` |
+//! | `status` | `GET proposals/{proposal}` for a proposal, else `GET access` |
 //!
 //! The sheet-profile route (6) is not used: the outline route answers a sheet's profile
 //! for `under=<sheet>`, which is what the `outline` tool's `under` argument carries.
+//!
+//! The planner is pure, so it cannot invent the `request_id` of a `propose`: the backend adds
+//! one to the arguments when the model gave none, before planning, and keeps the plan for the
+//! whole call (a renewal or a retry sends the same body).
 
 use serde_json::{json, Map, Value};
 use uuid::Uuid;
 
 use crate::{error::ToolError, tools::Tool};
+
+/// `ops` per `propose` (protocol spec 11; the service refuses more).
+pub const MAX_OPS: usize = 200;
+/// The request body of a `propose` (protocol spec 11: 1 MiB).
+pub const MAX_BODY_BYTES: usize = 1 << 20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Method {
@@ -43,6 +54,9 @@ pub struct Plan {
     pub if_none_match: Option<String>,
     /// First 8 hex characters of the file, for answers the client builds itself.
     pub file: Option<String>,
+    /// The `request_id` a `propose` carries in its body: the key under which a lost answer
+    /// can be asked for again, named in the error of a call whose outcome is unknown.
+    pub request_id: Option<String>,
 }
 
 type Args = Map<String, Value>;
@@ -124,6 +138,7 @@ pub fn plan(tool: Tool, args: &Args, project: Uuid) -> Result<Plan, ToolError> {
         query,
         body: None,
         if_none_match: None,
+        request_id: None,
         file: None,
     };
     match tool {
@@ -139,7 +154,9 @@ pub fn plan(tool: Tool, args: &Args, project: Uuid) -> Result<Plan, ToolError> {
                 pairs(args, &["q", "kind", "limit", "cursor"]),
             ))
         }
-        Tool::Status => Ok(get(format!("{root}/access"), Vec::new())),
+        Tool::Status => status(args, &root),
+        Tool::Propose => propose(args, &root),
+        Tool::Submit => submit(args, &root),
         Tool::Find => {
             // The routes search one file; there is no project-wide search route.
             if text(args, "file").is_none() {
@@ -259,6 +276,7 @@ fn read(args: &Args, root: &str) -> Result<Plan, ToolError> {
             query: Vec::new(),
             body: Some(Value::Object(body)),
             if_none_match: None,
+            request_id: None,
             file: None,
         }
     } else if let Some(range) = range {
@@ -270,6 +288,7 @@ fn read(args: &Args, root: &str) -> Result<Plan, ToolError> {
             query: q,
             body: None,
             if_none_match: None,
+            request_id: None,
             file: None,
         }
     } else if !slides.is_empty() {
@@ -281,6 +300,7 @@ fn read(args: &Args, root: &str) -> Result<Plan, ToolError> {
             query: q,
             body: None,
             if_none_match: None,
+            request_id: None,
             file: None,
         }
     } else {
@@ -298,11 +318,119 @@ fn read(args: &Args, root: &str) -> Result<Plan, ToolError> {
             query: q,
             body: None,
             if_none_match: None,
+            request_id: None,
             file: None,
         }
     };
     plan.file = Some(file8);
     Ok(plan)
+}
+
+/// A full UUID argument, written canonically; `None` when the argument is absent.
+fn uuid_arg(args: &Args, key: &'static str) -> Result<Option<Uuid>, ToolError> {
+    match args.get(key) {
+        None => Ok(None),
+        Some(Value::String(raw)) if raw.len() == 36 => Uuid::parse_str(raw)
+            .map(Some)
+            .map_err(|_| ToolError::bad_request(key)),
+        Some(_) => Err(ToolError::bad_request(key)),
+    }
+}
+
+fn post(path: String, body: Map<String, Value>) -> Plan {
+    Plan {
+        method: Method::Post,
+        path,
+        query: Vec::new(),
+        body: Some(Value::Object(body)),
+        if_none_match: None,
+        request_id: None,
+        file: None,
+    }
+}
+
+/// `propose`: the body is the service's, minus `file` (the path names it). The service wants
+/// a `request_id`; planning refuses a call without one rather than make one up. A call over
+/// the protocol's size limits is refused here, before anything is sent.
+fn propose(args: &Args, root: &str) -> Result<Plan, ToolError> {
+    let file = file_segment(args)?;
+    let request_id = uuid_arg(args, "request_id")?
+        .ok_or_else(|| ToolError::bad_request("request_id"))?
+        .to_string();
+    let rev = args
+        .get("rev")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| ToolError::bad_request("rev"))?;
+    let ops = args
+        .get("ops")
+        .and_then(Value::as_array)
+        .filter(|ops| !ops.is_empty())
+        .ok_or_else(|| ToolError::bad_request("ops"))?;
+    if ops.len() > MAX_OPS {
+        return Err(ToolError::new("limit_exceeded")
+            .with("field", "ops")
+            .with_number("limit", MAX_OPS as u64)
+            .with_number("value", ops.len() as u64));
+    }
+    let mut body = Map::new();
+    body.insert("rev".into(), json!(rev));
+    body.insert("request_id".into(), json!(request_id));
+    if let Some(proposal) = uuid_arg(args, "proposal")? {
+        body.insert("proposal".into(), json!(proposal.to_string()));
+    }
+    for key in ["name", "ops", "dry_run", "strict", "return"] {
+        if let Some(value) = args.get(key) {
+            body.insert(key.into(), value.clone());
+        }
+    }
+    let size = serde_json::to_vec(&body).map_or(usize::MAX, |bytes| bytes.len());
+    if size > MAX_BODY_BYTES {
+        return Err(ToolError::new("limit_exceeded")
+            .with("field", "body")
+            .with_number("limit", MAX_BODY_BYTES as u64)
+            .with_number("value", size as u64));
+    }
+    let mut plan = post(format!("{root}/files/{file}/propose"), body);
+    plan.file = Some(file[..8].to_owned());
+    plan.request_id = Some(request_id);
+    Ok(plan)
+}
+
+/// `submit` and `withdraw` are two routes of one tool; both take an optional note.
+fn submit(args: &Args, root: &str) -> Result<Plan, ToolError> {
+    let proposal = uuid_arg(args, "proposal")?.ok_or_else(|| ToolError::bad_request("proposal"))?;
+    let action = match text(args, "action") {
+        Some(action @ ("submit" | "withdraw")) => action,
+        _ => return Err(ToolError::bad_request("action")),
+    };
+    let mut body = Map::new();
+    if let Some(note) = text(args, "note") {
+        body.insert("note".into(), json!(note));
+    }
+    Ok(post(format!("{root}/proposals/{proposal}/{action}"), body))
+}
+
+/// `status`: one proposal when one is named (or `what=proposal`), else the connection's own
+/// access. `what=proposal` without a proposal, and `what=access` with one, are refused.
+fn status(args: &Args, root: &str) -> Result<Plan, ToolError> {
+    let proposal = uuid_arg(args, "proposal")?;
+    let get = |path: String| Plan {
+        method: Method::Get,
+        path,
+        query: Vec::new(),
+        body: None,
+        if_none_match: None,
+        request_id: None,
+        file: None,
+    };
+    match (text(args, "what"), proposal) {
+        (None | Some("access"), None) => Ok(get(format!("{root}/access"))),
+        (None | Some("proposal"), Some(proposal)) => {
+            Ok(get(format!("{root}/proposals/{proposal}")))
+        }
+        (Some("proposal" | "access"), _) => Err(ToolError::bad_request("proposal")),
+        (Some(_), _) => Err(ToolError::bad_request("what")),
+    }
 }
 
 #[cfg(test)]

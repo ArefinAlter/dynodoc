@@ -77,8 +77,10 @@ pub fn hint(code: &str) -> &'static str {
     }
 }
 
-/// The order `AgentError::to_dct` writes the optional fields in.
-const FIELD_ORDER: [&str; 10] = [
+/// The order `AgentError::to_dct` writes the optional fields in, then `CompileError`'s `op`
+/// and `id` (the failing op of a `propose`), then this crate's own `request_id` (the id of a
+/// `propose` whose outcome is unknown, so that a retry can reuse it).
+const FIELD_ORDER: [&str; 13] = [
     "policy",
     "field",
     "ref",
@@ -89,6 +91,9 @@ const FIELD_ORDER: [&str; 10] = [
     "limit",
     "value",
     "retry_after",
+    "op",
+    "id",
+    "request_id",
 ];
 
 /// Characters of a token this crate will repeat: enough for refs (and lists of them),
@@ -165,6 +170,12 @@ impl ToolError {
         self.code
     }
 
+    /// Could the call have taken effect although the caller never learned of it? A write
+    /// that fails this way is named by its `request_id` so that a retry can reuse it.
+    pub fn outcome_unknown(&self) -> bool {
+        matches!(self.code, "deadline_exceeded" | "internal")
+    }
+
     /// `dd/1 error code=<code> [fields] hint="..."` and a line feed, byte for byte what
     /// `engine_agent::error::AgentError::to_dct` writes.
     pub fn to_dct(&self) -> String {
@@ -218,10 +229,13 @@ impl ToolError {
                 .collect();
             error = error.with("refs", refs.join(","));
         }
-        for key in ["limit", "value", "retry_after"] {
+        for key in ["limit", "value", "retry_after", "op"] {
             if let Some(value) = number(key) {
                 error = error.with_number(key, value);
             }
+        }
+        if let Some(label) = text("id") {
+            error = error.with("id", label);
         }
         error.with_retry_header(retry_after)
     }
@@ -279,6 +293,27 @@ mod tests {
             ToolError::from_http(418, b"<html>", None).code(),
             "internal"
         );
+    }
+
+    #[test]
+    fn the_failing_op_of_a_propose_is_named_after_the_other_fields() {
+        let body = br#"{"details":{"agent_code":"bad_request","field":"text","op":2,"id":"a1"}}"#;
+        assert_eq!(
+            ToolError::from_http(400, body, None).to_dct(),
+            "dd/1 error code=bad_request field=text op=2 id=a1 hint=\"Fix the named field and retry.\"\n"
+        );
+        let hostile = br#"{"details":{"agent_code":"bad_request","op":"x y","id":"a\" hint=\"b"}}"#;
+        assert_eq!(
+            ToolError::from_http(400, hostile, None).to_dct(),
+            "dd/1 error code=bad_request id=ahintb hint=\"Fix the named field and retry.\"\n"
+        );
+        let unknown = ToolError::new("deadline_exceeded")
+            .with("request_id", "0a1b2c3d-0000-4000-8000-000000000001");
+        assert!(unknown.outcome_unknown());
+        assert!(unknown
+            .to_dct()
+            .contains(" request_id=0a1b2c3d-0000-4000-8000-000000000001 hint="));
+        assert!(!ToolError::new("busy").outcome_unknown());
     }
 
     #[test]

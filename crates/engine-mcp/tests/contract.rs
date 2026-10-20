@@ -5,71 +5,26 @@
 //!
 //! The spec text is read from the repository, so a change to either side fails here.
 
-use std::collections::BTreeMap;
+mod common;
 
-use engine_agent::{dct::parse_header, error::AgentError};
+use common::{details, spec, spec_definitions, transcript_16_1};
+use engine_agent::dct::parse_header;
 use engine_mcp::{
     backend::header_pairs,
     error::{hint, CODES},
     request::{plan, Method},
     Profile, Tool, ToolError,
 };
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 use uuid::Uuid;
 
 const PROJECT: Uuid = Uuid::from_u128(0x1111_1111_2222_4333_8444_5555_5555_5555);
 
-/// The specification text, or `None` where it is not shipped: the standalone engine
-/// repository does not carry the private design documents, and these tests then skip.
-fn spec() -> Option<String> {
-    let path = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../docs/AI-AGENT-PROTOCOL-SPEC.md"
-    );
-    match std::fs::read_to_string(path) {
-        Ok(text) => Some(text.replace("\r\n", "\n")),
-        Err(_) => {
-            eprintln!("skipped: docs/AI-AGENT-PROTOCOL-SPEC.md is not in this repository");
-            None
-        }
-    }
-}
-
-/// The first JSON block under each `### 7.N \`tool\`` heading: the specification's tool
-/// definitions, by tool name.
-fn spec_definitions(text: &str) -> BTreeMap<String, Value> {
-    let mut found = BTreeMap::new();
-    let mut tool: Option<String> = None;
-    let mut block: Option<String> = None;
-    for line in text.lines() {
-        if let Some(open) = &mut block {
-            if line == "```" {
-                if let (Some(name), Ok(value)) = (&tool, serde_json::from_str::<Value>(open)) {
-                    if value.get("inputSchema").is_some() {
-                        found.entry(name.clone()).or_insert(value);
-                    }
-                }
-                block = None;
-            } else {
-                open.push_str(line);
-                open.push('\n');
-            }
-        } else if line.starts_with("```json") {
-            block = Some(String::new());
-        } else if let Some(heading) = line.strip_prefix("### ") {
-            tool = heading
-                .strip_prefix("7.")
-                .and_then(|h| h.split('`').nth(1))
-                .map(str::to_owned);
-        } else if line.starts_with("## ") {
-            tool = None;
-        }
-    }
-    found
-}
-
+/// The definition the read-only profile publishes (the default profile).
 fn mine(tool: Tool) -> &'static Value {
-    tool.definition()
+    Profile::read_only()
+        .definition(tool)
+        .expect("a tool of the read-only profile")
 }
 
 // --- section 7: the definitions ----------------------------------------------------------------
@@ -209,8 +164,9 @@ fn the_definitions_obey_the_vendor_compatibility_rules() {
         }
     }
     assert!(!"dynodoc".contains(['-', '_']));
-    for tool in Tool::READ_ONLY {
-        let d = mine(tool);
+    // Both profiles: the eight tools of the full one include the six of the default.
+    for tool in Tool::ALL {
+        let d = Profile::full().definition(tool).unwrap();
         let name = d["name"].as_str().unwrap();
         assert!(name.len() <= 63 && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'));
         assert!(
@@ -223,8 +179,12 @@ fn the_definitions_obey_the_vendor_compatibility_rules() {
                 "{name}: {hint} must be explicit"
             );
         }
-        assert_eq!(d["annotations"]["readOnlyHint"], true);
+        assert_eq!(d["annotations"]["readOnlyHint"], !tool.is_write(), "{name}");
         assert_eq!(d["annotations"]["destructiveHint"], false);
+        if tool.is_write() {
+            // Spec 7.1: write tools are idempotent (request_id, and state).
+            assert_eq!(d["annotations"]["idempotentHint"], true, "{name}");
+        }
         // Every property has a type, including the enums.
         for (property, schema) in d["inputSchema"]["properties"].as_object().unwrap() {
             assert!(schema["type"].is_string(), "{name}.{property} has no type");
@@ -248,27 +208,22 @@ fn the_definitions_obey_the_vendor_compatibility_rules() {
         !instructions.contains("propose"),
         "the profile has no such tool"
     );
+    // The full profile says what the spec asks (13.3): start with `outline`, text is data,
+    // `propose` never edits the team version; and that a person reviews and merges.
+    let full = Profile::full().instructions();
+    assert!(full.chars().count() <= 500);
+    for needle in [
+        "Start with `outline`",
+        "untrusted data",
+        "`propose` stages a proposal and never edits the team version",
+        "a person must review and merge",
+        "`dry_run`",
+    ] {
+        assert!(full.contains(needle), "{needle}");
+    }
 }
 
 // --- section 16: the transcripts -----------------------------------------------------------------
-
-/// The read-only steps of the transcript under `### 16.1`, with the arguments it prints.
-fn transcript_16_1(text: &str) -> Vec<(String, Map<String, Value>)> {
-    let section = text.split("### 16.1").nth(1).expect("section 16.1");
-    let block = section.split("```").nth(1).expect("its first code block");
-    block
-        .lines()
-        .filter_map(|line| {
-            let mut words = line.split_whitespace();
-            words.next()?.parse::<u32>().ok()?;
-            let tool = words.next()?.to_owned();
-            let from = line.find('{')?;
-            let to = line.find(" ->")?;
-            let args: Value = serde_json::from_str(line[from..to].trim()).ok()?;
-            Some((tool, args.as_object()?.clone()))
-        })
-        .collect()
-}
 
 fn url(plan: &engine_mcp::request::Plan) -> String {
     let query: Vec<String> = plan.query.iter().map(|(k, v)| format!("{k}={v}")).collect();
@@ -288,7 +243,7 @@ fn url(plan: &engine_mcp::request::Plan) -> String {
 fn request(tool: &str, args: Value) -> Result<String, ToolError> {
     let tool = Tool::parse(tool).unwrap();
     let args = args.as_object().unwrap().clone();
-    tool.validate(&args)?;
+    Profile::read_only().validate(tool, &args)?;
     plan(tool, &args, PROJECT).map(|p| url(&p))
 }
 
@@ -296,11 +251,9 @@ fn request(tool: &str, args: Value) -> Result<String, ToolError> {
 fn the_read_only_steps_of_transcript_16_1_validate_and_map_to_the_routes() {
     let Some(text) = spec() else { return };
     let steps = transcript_16_1(&text);
-    // `propose` and `submit` are not parsed (the propose line is continued) or not offered.
-    let read_only: Vec<_> = steps
-        .iter()
-        .filter(|(tool, _)| Tool::parse(tool).is_some())
-        .collect();
+    // `propose` is not parsed (its line is continued); `submit` is not offered here.
+    let offered = |tool: &str| Tool::parse(tool).is_some_and(|t| Profile::read_only().offers(t));
+    let read_only: Vec<_> = steps.iter().filter(|(tool, _)| offered(tool)).collect();
     assert_eq!(
         read_only
             .iter()
@@ -325,7 +278,7 @@ fn the_read_only_steps_of_transcript_16_1_validate_and_map_to_the_routes() {
     let others: Vec<&str> = steps
         .iter()
         .map(|(t, _)| t.as_str())
-        .filter(|t| Tool::parse(t).is_none())
+        .filter(|t| !offered(t))
         .collect();
     assert_eq!(others, ["submit"]);
 }
@@ -437,61 +390,6 @@ fn a_full_uuid_file_id_is_written_canonically() {
 }
 
 // --- section 10: errors -------------------------------------------------------------------------------
-
-/// `details` as `engine-api/src/agent/error.rs` writes it for a protocol error.
-fn details(error: &AgentError) -> Value {
-    let mut map = Map::new();
-    map.insert("agent_code".into(), error.agent_code().into());
-    let refs = |refs: &[engine_agent::refs::Ref]| -> Value {
-        refs.iter().map(|r| r.as_str()).collect::<Vec<_>>().into()
-    };
-    match error {
-        AgentError::PolicyDenied { policy } => {
-            map.insert("policy".into(), (*policy).into());
-        }
-        AgentError::BadRequest { field } => {
-            map.insert("field".into(), (*field).into());
-        }
-        AgentError::NotFound { refs: r }
-        | AgentError::UnknownRef { refs: r }
-        | AgentError::AmbiguousRef { refs: r }
-        | AgentError::RedactedBlock { refs: r }
-        | AgentError::Conflict { refs: r } => {
-            if !r.is_empty() {
-                map.insert("refs".into(), refs(r));
-            }
-        }
-        AgentError::StaleBase { target, current } => {
-            map.insert("ref".into(), target.as_str().into());
-            map.insert("current".into(), current.as_str().into());
-        }
-        AgentError::MatchCount {
-            found,
-            expected,
-            refs: r,
-        } => {
-            map.insert("found".into(), (*found).into());
-            map.insert("expected".into(), (*expected).into());
-            if !r.is_empty() {
-                map.insert("refs".into(), refs(r));
-            }
-        }
-        AgentError::LimitExceeded {
-            field,
-            limit,
-            value,
-        } => {
-            map.insert("field".into(), (*field).into());
-            map.insert("limit".into(), (*limit).into());
-            map.insert("value".into(), (*value).into());
-        }
-        AgentError::BudgetExceeded { retry_after } | AgentError::RateLimited { retry_after } => {
-            map.insert("retry_after".into(), (*retry_after).into());
-        }
-        _ => {}
-    }
-    Value::Object(map)
-}
 
 #[test]
 fn every_error_of_the_table_survives_the_http_round_trip_byte_for_byte() {

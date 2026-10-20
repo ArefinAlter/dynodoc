@@ -18,8 +18,8 @@ use axum::{
     Router,
 };
 use engine_mcp::{
-    parse_base, Backend, BackendConfig, CallContext, HttpBackend, Session, SessionError, Token,
-    Tool, ToolCall, ToolOutput,
+    parse_base, Backend, BackendConfig, CallContext, HttpBackend, Profile, Session, SessionError,
+    Token, Tool, ToolCall, ToolOutput,
 };
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -895,7 +895,9 @@ async fn the_read_only_transcript_of_spec_16_1_runs_end_to_end() {
         ),
     ];
     for (tool, args, expected) in steps {
-        tool.validate(args.as_object().unwrap()).unwrap();
+        Profile::read_only()
+            .validate(tool, args.as_object().unwrap())
+            .unwrap();
         let out = run(&backend, tool, args).await;
         assert!(!out.is_error, "{}", out.text);
         assert_eq!(&out.text, expected);
