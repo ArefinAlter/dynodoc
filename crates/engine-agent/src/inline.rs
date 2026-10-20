@@ -192,6 +192,17 @@ impl Runs {
         let mut at = 0usize;
         for &(s, e) in matches {
             cells.extend_from_slice(&self.cells[at..s]);
+            // Replacing a span with the very same text changes nothing, formatting included.
+            let same = self.cells[s..e].iter().map(|c| match c {
+                Cell::Ch { ch, .. } => *ch,
+                Cell::Obj(v) if is_hard_break(v) => '\n',
+                Cell::Obj(_) => OBJECT,
+            });
+            if same.eq(with.chars()) {
+                cells.extend_from_slice(&self.cells[s..e]);
+                at = e;
+                continue;
+            }
             let style = self.cells[s..e]
                 .iter()
                 .find_map(|c| match c {
@@ -825,6 +836,23 @@ mod tests {
         // Deleting a match.
         let a = runs.replace_ranges(&r[..1], "");
         assert_eq!(a.plain(), "The  site and the policy page");
+    }
+
+    #[test]
+    fn replacing_a_span_with_itself_changes_nothing_even_over_mixed_styles() {
+        let before = para(vec![run("del", bold()), run("ta force", None)]);
+        let runs = Runs::parse(&before).unwrap();
+        let r = Matcher::new("delta", true, false)
+            .unwrap()
+            .ranges(&runs.plain());
+        assert_eq!(r, [(0, 5)]);
+        assert_eq!(runs.replace_ranges(&r, "delta").cells, runs.cells);
+        // A different text over the same span takes the style of its first character.
+        let a = runs.replace_ranges(&r, "deltas");
+        assert_eq!(
+            spans(&a.to_container(&before))[0],
+            ("deltas force".to_string(), true)
+        );
     }
 
     #[test]
