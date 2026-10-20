@@ -16,11 +16,19 @@ use super::AuthError;
 
 /// Find-or-create the identity for `email` (case-insensitive). A returning user keeps
 /// their row. Provider names update only until the person saves their own profile.
+///
+/// This is the one door through which an address becomes an account: sign-in, magic links,
+/// provider exchange, sharing a file and adding a project member all come through it. The
+/// reserved domain of the AI-agent identities is refused here, so nobody can sign in as, mail
+/// or share with an agent identity (the database refuses the address as well).
 pub async fn upsert_identity(
     pool: &PgPool,
     email: &str,
     display_name: Option<&str>,
 ) -> Result<Identity, AuthError> {
+    if crate::agent::identity::is_reserved_email(email) {
+        return Err(AuthError::Forbidden);
+    }
     let identity = sqlx::query_as::<_, Identity>(
         "insert into identity (email, display_name)
          values ($1, $2)

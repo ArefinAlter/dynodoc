@@ -1,5 +1,34 @@
 # Database runtime boundary
 
+Schema 44 adds two tables for the review-gated write path of AI agents. `agent_identity`
+joins the SELECT/INSERT/UPDATE class (no DELETE): the sidecar of an agent identity (the
+`identity` row under which an agent's drafts and audit rows are recorded), created once and
+moved only by one `revoked_at` transition; a trigger refuses every other change and every
+delete, for every login. `agent_proposal_receipt` joins the SELECT/INSERT history class (no
+UPDATE, no DELETE): one append-only row per `propose` call that stored edits and per `submit`
+or `withdraw` that changed state (counts, the stale refs, the agent's own reasons, the request
+digest; no document text). It refuses UPDATE by trigger and DELETE except as the cascade of an
+audited whole-document erasure or of the erasure of the person the agent acted for
+(`agent_proposal_receipt_erasure_guard`, which checks the same-transaction receipt and the
+trigger depth). Triggers also keep the agent identity out of `document_access`, `space_member`,
+`change_request_review`, `connector_grant` and `device_signing_key`
+(`refuse_agent_identity`), keep the reserved `agents.invalid` address domain for agent
+identities alone (`agent_identity_domain_guard`, a deferred constraint trigger on `identity`),
+refuse to enable or erase an agent identity as an account, and revoke a person's agent
+identities when the person is disabled or erased (`revoke_removed_account_agents`, beside
+`revoke_removed_account_devices` of schema 33). `erase_agent_children` is a second
+`SECURITY DEFINER` trigger entry point, like `erased_identity_guard`: it deletes the drafts of
+the erased person's agent identities in the erasure transaction, after that guard has accepted
+the erasure receipt; `document_erasure_child_guard` is replaced (one clause added) so that it
+lets those `draft_edit` rows go. The runtime login has no EXECUTE on any of these functions.
+The migration also widens the scope checks with `content:propose` and `content:submit` (each
+needs `content:read` in the same array; a CHECK on both scope arrays says so),
+`agent_call.tool` with `propose` and `submit` (added `NOT VALID`: the new set only adds
+values, so the exclusive lock does not wait for a scan of the ledger), adds `client_kind` to `device_key_class` and
+the write fields to `project_agent_policy`. The startup check counts both new tables;
+re-run `grant-runtime`, then `check-runtime`, after migrating. See
+[AI agent connectors](AI-AGENT-CONNECTORS.md).
+
 Schema 43 adds two tables to the SELECT/INSERT/UPDATE class (no DELETE for the runtime login):
 `project_agent_policy`, the current agent policy of a project (no row means agents are
 disabled; `enabled` defaults to false), and `file_agent_policy`, the per-file override. They

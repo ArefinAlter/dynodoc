@@ -11,7 +11,7 @@ use axum::{
 };
 use engine_core::repository::{
     device::{validate_public_key, Challenge, Proof, MAX_PROOF_BYTES},
-    device_session::{is_agent_scope, normalize_scopes, SCOPES},
+    device_session::{is_agent_scope, normalize_scopes, write_scope_without_read, SCOPES},
     SignedCommit,
 };
 use serde::Deserialize;
@@ -203,16 +203,25 @@ struct Register {
     class: Option<String>,
     /// Display name of the key, 1 to 80 characters, no control characters. Never a secret.
     label: Option<String>,
+    /// The AI product the key is for (agent keys only): `claude`, `chatgpt`, `gemini`,
+    /// `copilot`, `cursor`, `codex`, `device` (the default) or `generic`. It names the agent
+    /// identity that proposals made with the key are recorded under. A claim, never authority.
+    client_kind: Option<String>,
 }
 
-/// The class a request names, if any. A label needs a class.
+/// What a request says about a key's class: the class, the label and the product.
+type KeyClass = (&'static str, Option<String>, Option<&'static str>);
+
+/// The class a request names, if any. A label or a product needs a class, and a product
+/// needs the agent class.
 fn key_class(
     class: Option<&str>,
     label: Option<&str>,
-) -> Result<Option<(&'static str, Option<String>)>, ApiError> {
+    client_kind: Option<&str>,
+) -> Result<Option<KeyClass>, ApiError> {
     let class = match class {
-        None if label.is_none() => return Ok(None),
-        None => return Err(bad("A label needs a class")),
+        None if label.is_none() && client_kind.is_none() => return Ok(None),
+        None => return Err(bad("A label or client_kind needs a class")),
         Some("person") => "person",
         Some("agent") => "agent",
         Some(_) => return Err(bad("class must be person or agent")),
@@ -223,7 +232,21 @@ fn key_class(
             "label must be 1 to 80 characters without control characters",
         ));
     }
-    Ok(Some((class, label.map(str::to_owned))))
+    let kind = match client_kind {
+        None => None,
+        Some(_) if class != "agent" => {
+            return Err(bad("client_kind belongs to a key enrolled for an AI agent"))
+        }
+        Some(kind) => Some(
+            *crate::agent::identity::CLIENT_KINDS
+                .iter()
+                .find(|known| **known == kind)
+                .ok_or_else(|| {
+                    bad("client_kind must be claude, chatgpt, gemini, copilot, cursor, codex, device or generic")
+                })?,
+        ),
+    };
+    Ok(Some((class, label.map(str::to_owned), kind)))
 }
 
 fn access_mode(value: &str) -> Result<&'static str, ApiError> {
@@ -241,7 +264,11 @@ async fn register(
     Json(input): Json<Register>,
 ) -> Result<Json<Value>, ApiError> {
     let mode = access_mode(input.project_access.as_deref().unwrap_or("granted"))?;
-    let class = key_class(input.class.as_deref(), input.label.as_deref())?;
+    let class = key_class(
+        input.class.as_deref(),
+        input.label.as_deref(),
+        input.client_kind.as_deref(),
+    )?;
     let proof = Proof {
         challenge: input.challenge,
         signature: input.signature,
@@ -295,14 +322,20 @@ async fn register(
         .await?;
     // Same transaction again: a key is never an agent key for a moment before its row.
     let mut detail = json!({"public_key":proof.challenge.public_key,"project_access":mode});
-    if let Some((class, label)) = &class {
-        sqlx::query("insert into device_key_class(key_id,class,label) values($1,$2,$3)")
-            .bind(proof.challenge.id)
-            .bind(class)
-            .bind(label)
-            .execute(&mut *tx)
-            .await?;
+    if let Some((class, label, kind)) = &class {
+        sqlx::query(
+            "insert into device_key_class(key_id,class,label,client_kind) values($1,$2,$3,$4)",
+        )
+        .bind(proof.challenge.id)
+        .bind(class)
+        .bind(label)
+        .bind(kind)
+        .execute(&mut *tx)
+        .await?;
         detail["class"] = json!(class);
+        if let Some(kind) = kind {
+            detail["client_kind"] = json!(kind);
+        }
     }
     crate::product::audit(
         &mut tx,
@@ -314,14 +347,14 @@ async fn register(
     .await?;
     tx.commit().await?;
     Ok(Json(
-        json!({"id":proof.challenge.id,"public_key":proof.challenge.public_key,"project_access":mode,"class":class.map_or("person", |(class, _)| class)}),
+        json!({"id":proof.challenge.id,"public_key":proof.challenge.public_key,"project_access":mode,"class":class.map_or("person", |(class, _, _)| class)}),
     ))
 }
 
 /// One key: binding, revocation, access mode and its active grants (a revoked key
 /// lists none). `$1` is the account; the project name and role are only exposed
 /// while the account is still a member.
-const KEY_ROW: &str = "jsonb_build_object('id',k.id,'public_key',k.public_key,'registered_at',k.registered_at,'revoked_at',r.revoked_at,'project_access',coalesce(a.project_access,'granted'),'class',coalesce(c.class,'person'),'label',c.label,'grants',case when r.key_id is not null then '[]'::jsonb else coalesce((select jsonb_agg(jsonb_build_object('project_id',x.project_id,'project_name',case when x.role is not null then x.name end,'role',x.role,'scopes',to_jsonb(x.scopes),'created_at',x.created_at) order by x.created_at desc,x.id) from (select g.id,g.project_id,g.scopes,g.created_at,s.name,inherited_space_role(g.project_id,$1) as role from device_key_project_grant g join access_space s on s.id=g.project_id where g.key_id=k.id and g.revoked_at is null order by g.created_at desc,g.id limit 50) x),'[]'::jsonb) end)";
+const KEY_ROW: &str = "jsonb_build_object('id',k.id,'public_key',k.public_key,'registered_at',k.registered_at,'revoked_at',r.revoked_at,'project_access',coalesce(a.project_access,'granted'),'class',coalesce(c.class,'person'),'label',c.label,'client_kind',c.client_kind,'grants',case when r.key_id is not null then '[]'::jsonb else coalesce((select jsonb_agg(jsonb_build_object('project_id',x.project_id,'project_name',case when x.role is not null then x.name end,'role',x.role,'scopes',to_jsonb(x.scopes),'created_at',x.created_at) order by x.created_at desc,x.id) from (select g.id,g.project_id,g.scopes,g.created_at,s.name,inherited_space_role(g.project_id,$1) as role from device_key_project_grant g join access_space s on s.id=g.project_id where g.key_id=k.id and g.revoked_at is null order by g.created_at desc,g.id limit 50) x),'[]'::jsonb) end)";
 
 #[utoipa::path(get, path="/devices", tag="devices", security(("paseto"=[])), responses((status=200, description="Own public signing keys, at most 128, each with its project_access mode (granted or all), class (person or agent) and optional label, and active per-project grants (at most 50, scopes, current role); never a directory of other members", body=Value),(status=401, description="Sign in required")))]
 async fn list(State(state): State<AppState>, auth: AuthContext) -> Result<Json<Value>, ApiError> {
@@ -386,19 +419,25 @@ async fn own_key(
 #[serde(deny_unknown_fields)]
 struct GrantRequest {
     /// A person's key: one or more of `project:read`, `history:read`, `history:write`,
-    /// `history:review`. An agent key: `content:read` only. The two sets never mix.
+    /// `history:review`. An agent key: `content:read`, alone or with `content:propose` and
+    /// `content:submit` (which imply neither each other nor the read scope, but need it: a
+    /// preview shows the text it changes). The two sets never mix.
     scopes: Vec<String>,
 }
 
-#[utoipa::path(operation_id="device_grant_set", put, path="/devices/{key_id}/projects/{project_id}", tag="devices", params(("key_id"=Uuid,Path,description="Own device key"),("project_id"=Uuid,Path,description="Project the account is a member of")), request_body=GrantRequest, security(("paseto"=[])), responses((status=200, description="The key's active grant for this project (idempotent); changed is false when the scopes were already these", body=Value),(status=400, description="Empty or unknown scopes, or a scope that does not match the key's class"),(status=401, description="Account sign-in required; a device token is refused"),(status=403, description="Not a current member of the project"),(status=404, description="No such own key"),(status=409, description="Key revoked or 50 active grants reached")))]
+#[utoipa::path(operation_id="device_grant_set", put, path="/devices/{key_id}/projects/{project_id}", tag="devices", params(("key_id"=Uuid,Path,description="Own device key"),("project_id"=Uuid,Path,description="Project the account is a member of")), request_body=GrantRequest, security(("paseto"=[])), responses((status=200, description="The key's active grant for this project (idempotent); changed is false when the scopes were already these", body=Value),(status=400, description="Empty or unknown scopes, a scope that does not match the key's class, or content:propose or content:submit without content:read"),(status=401, description="Account sign-in required; a device token is refused"),(status=403, description="Not a current member of the project"),(status=404, description="No such own key"),(status=409, description="Key revoked or 50 active grants reached")))]
 async fn set_grant(
     State(state): State<AppState>,
     auth: AuthContext,
     Path((key, project)): Path<(Uuid, Uuid)>,
     Json(input): Json<GrantRequest>,
 ) -> Result<Json<Value>, ApiError> {
+    // A preview of a proposal shows the text it changes, so a write scope is a read scope.
+    if write_scope_without_read(&input.scopes) {
+        return Err(bad("content:propose and content:submit need content:read: a preview shows the text it changes"));
+    }
     let scopes = normalize_scopes(&input.scopes).map_err(|_| {
-        bad("Choose one or more of project:read, history:read, history:write, history:review, or content:read for an agent key")
+        bad("Choose one or more of project:read, history:read, history:write, history:review, or content:read, content:propose and content:submit for an agent key")
     })?;
     let _permit = state.workloads.enter(auth.identity_id, None)?;
     let mut tx = state.pool.begin().await?;
@@ -414,7 +453,7 @@ async fn set_grant(
     .fetch_one(&mut *tx)
     .await?;
     if agent_key && scopes.iter().any(|s| !is_agent_scope(s)) {
-        return Err(bad("An agent key can hold only the content:read scope"));
+        return Err(bad("An agent key can hold only the content scopes"));
     }
     if !agent_key && scopes.iter().any(|s| is_agent_scope(s)) {
         return Err(bad(
@@ -453,6 +492,15 @@ async fn set_grant(
     }
     let created_at: chrono::DateTime<chrono::Utc> = sqlx::query_scalar("insert into device_key_project_grant(key_id,project_id,scopes,created_at,created_by) values($1,$2,$3,clock_timestamp(),$4) returning created_at")
         .bind(key).bind(project).bind(&scopes).bind(auth.identity_id).fetch_one(&mut *tx).await?;
+    // The first write grant for a product makes the agent identity its proposals are
+    // recorded under. The account row lock held since `account_lock` keeps two grants from
+    // making two.
+    if scopes
+        .iter()
+        .any(|s| matches!(s.as_str(), "content:propose" | "content:submit"))
+    {
+        crate::agent::identity::ensure(&mut tx, auth.identity_id, key).await?;
+    }
     crate::product::audit(
         &mut tx,
         auth.identity_id,

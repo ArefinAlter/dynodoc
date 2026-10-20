@@ -25,8 +25,8 @@ use axum::{
 use engine_core::repository::{
     device::validate_public_key,
     device_session::{
-        is_agent_scope, normalize_scopes, SessionChallenge, SessionProof, CHALLENGE_TTL_MS,
-        MAX_SESSION_BYTES,
+        is_agent_scope, normalize_scopes, write_scope_without_read, SessionChallenge, SessionProof,
+        CHALLENGE_TTL_MS, MAX_SESSION_BYTES,
     },
 };
 use ring::hmac;
@@ -110,10 +110,11 @@ struct ChallengeRequest {
     /// Lowercase hexadecimal Ed25519 public key of an enrolled device key.
     public_key: String,
     /// One or more of `history:read`, `history:review`, `history:write`,
-    /// `project:read` (a person's key) or `content:read` (a key enrolled for an AI
-    /// agent; the two sets never mix). A key that is not in `all` mode also needs an
-    /// active grant for this project that lists every scope, and an agent scope always
-    /// does.
+    /// `project:read` (a person's key) or `content:read`, `content:propose`,
+    /// `content:submit` (a key enrolled for an AI agent; the two sets never mix; the write
+    /// scopes need `content:read` beside them, a preview shows text). A key
+    /// that is not in `all` mode also needs an active grant for this project that lists
+    /// every scope, and an agent scope always does.
     scopes: Vec<String>,
 }
 
@@ -158,8 +159,14 @@ async fn challenge(
     validate_public_key(&input.public_key).map_err(|_| ApiError::BadRequest {
         reason: "Use a lowercase hexadecimal Ed25519 public key".into(),
     })?;
+    if write_scope_without_read(&input.scopes) {
+        return Err(ApiError::BadRequest {
+            reason: "content:propose and content:submit need content:read: a preview shows the text it changes"
+                .into(),
+        });
+    }
     let scopes = normalize_scopes(&input.scopes).map_err(|_| ApiError::BadRequest {
-        reason: "Choose one or more of history:read, history:review, history:write, project:read, or content:read for an agent key"
+        reason: "Choose one or more of history:read, history:review, history:write, project:read, or content:read, content:propose and content:submit for an agent key"
             .into(),
     })?;
     let now_ms = now_ms();
@@ -250,6 +257,18 @@ async fn issue(
     }
     if c.scopes.iter().any(|s| s == "history:review")
         && !matches!(role.as_str(), "owner" | "manager" | "editor" | "approver")
+    {
+        return Err(ApiError::Forbidden);
+    }
+    // A viewer cannot stage drafts (`create_draft` refuses auditors), so a token that could
+    // only ever be refused is not issued. Every request reads the role again.
+    if c.scopes
+        .iter()
+        .any(|s| s == "content:propose" || s == "content:submit")
+        && !matches!(
+            role.as_str(),
+            "owner" | "manager" | "editor" | "reviewer" | "approver"
+        )
     {
         return Err(ApiError::Forbidden);
     }

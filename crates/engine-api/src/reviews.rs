@@ -7,6 +7,7 @@
 //! events through the same governance gate as every other write.
 use crate::{
     access::{self, MemberRole, Policy},
+    agent::identity::owned_by,
     auth::AuthContext,
     error::ApiError,
     notifications,
@@ -134,7 +135,7 @@ fn plan(
 /// Reviews on a request, and whether the document's rules allow merging it now.
 /// Approvals count while the contributor has not changed the request since, and
 /// only from people who still hold a reviewer role or above.
-async fn review_state(
+pub(crate) async fn review_state(
     db: &mut sqlx::PgConnection,
     id: Uuid,
     draft: Uuid,
@@ -147,14 +148,23 @@ async fn review_state(
         .fetch_all(&mut *db)
         .await?;
     let contributor = request["author"]["id"].as_str().unwrap_or_default();
-    let latest: Vec<(Uuid, String)> = sqlx::query_as("select distinct on (r.reviewer_id) r.reviewer_id,r.verdict from change_request_review r join workspace_draft w on w.id=r.draft_id where r.draft_id=$1 and r.verdict in ('approved','changes_requested') and r.created_at>coalesce(w.content_changed_at,'-infinity'::timestamptz) and document_member_role($2,r.reviewer_id) in ('reviewer','editor','manager','owner') order by r.reviewer_id,r.created_at desc")
+    // I5 (docs/AI-AGENT-PROTOCOL-SPEC.md 9.5): for a request an AI agent wrote, the person
+    // it acts for is the contributor too, so cannot be one of the approvers it needs.
+    let principal = request["agent"]["principal"]["id"]
+        .as_str()
+        .unwrap_or_default();
+    // I4: an agent identity never counts, whatever a row says (it holds no membership, so
+    // the role test already excludes it, and the database refuses its review rows).
+    let latest: Vec<(Uuid, String)> = sqlx::query_as("select distinct on (r.reviewer_id) r.reviewer_id,r.verdict from change_request_review r join workspace_draft w on w.id=r.draft_id where r.draft_id=$1 and r.verdict in ('approved','changes_requested') and r.created_at>coalesce(w.content_changed_at,'-infinity'::timestamptz) and document_member_role($2,r.reviewer_id) in ('reviewer','editor','manager','owner') and not exists(select 1 from agent_identity ai where ai.identity_id=r.reviewer_id) order by r.reviewer_id,r.created_at desc")
         .bind(draft)
         .bind(id)
         .fetch_all(&mut *db)
         .await?;
     let approved: Vec<String> = latest
         .iter()
-        .filter(|(who, verdict)| verdict == "approved" && who.to_string() != contributor)
+        .filter(|(who, verdict)| {
+            verdict == "approved" && who.to_string() != contributor && who.to_string() != principal
+        })
         .map(|(who, _)| who.to_string())
         .collect();
     let blocked: Vec<String> = latest
@@ -173,9 +183,16 @@ async fn review_state(
         "required_approvals": required,
         "satisfied": satisfied,
         "can_merge": rules.can_merge(role),
-        "can_override": role.can_manage() && !satisfied,
+        "can_override": role.can_manage() && !satisfied && !own_agent_request(request),
         "can_approve": role.can_approve() && request["mine"] != true,
     }))
+}
+
+/// Is this the viewer's own agent's request? (I5: the person an AI agent acts for is its
+/// contributor, so what a contributor may not do to their own request they may not do to this
+/// one either; here, bypass its approvals.)
+fn own_agent_request(request: &Value) -> bool {
+    request["agent"].is_object() && request["mine"] == true
 }
 
 /// Revisions a pushed file may have started from: the latest team version, the first
@@ -400,7 +417,14 @@ pub(crate) async fn create(
     Ok(Json(receipt))
 }
 
-pub(crate) const REQUEST_JSON: &str = "jsonb_build_object('id',d.id,'name',d.name,'note',d.submission_note,'source',d.source,'base_seq',d.base_seq,'created_at',d.created_at,'submitted_at',d.submitted_at,'merged_at',d.merged_at,'review_outcome',d.review_outcome,'reviewed_at',d.reviewed_at,'review_note',d.review_note,'revision',d.revision,'author',jsonb_build_object('id',a.id,'name',a.display_name,'email',a.email),'reviewer',case when r.id is null then null else jsonb_build_object('id',r.id,'name',r.display_name,'email',r.email) end,'edits',(select count(*) from draft_edit e where e.draft_id=d.id),'status',case when d.merged_at is not null then 'merged' when d.review_outcome is not null then d.review_outcome else 'open' end)";
+/// The JSON of one request row (aliases `d` the draft, `a` its author, `r` its reviewer).
+/// A request an AI agent wrote gains an `agent` object (its identity, client product, display
+/// name and the person it acts for, docs/AI-AGENT-CONNECTORS.md 6.2) and an agent identity's
+/// email is null wherever it appears as author or as the reviewer who closed the request (the
+/// address is the placeholder of the reserved domain). Every other request is
+/// exactly what it was. The `agent` part is `identity::agent_json("d")`, written out because
+/// this is a constant; a test keeps the two equal.
+pub(crate) const REQUEST_JSON: &str = "(jsonb_build_object('id',d.id,'name',d.name,'note',d.submission_note,'source',d.source,'base_seq',d.base_seq,'created_at',d.created_at,'submitted_at',d.submitted_at,'merged_at',d.merged_at,'review_outcome',d.review_outcome,'reviewed_at',d.reviewed_at,'review_note',d.review_note,'revision',d.revision,'author',jsonb_build_object('id',a.id,'name',a.display_name,'email',case when lower(a.email) like '%@agents.invalid' then null else a.email end),'reviewer',case when r.id is null then null else jsonb_build_object('id',r.id,'name',r.display_name,'email',case when lower(r.email) like '%@agents.invalid' then null else r.email end) end,'edits',(select count(*) from draft_edit e where e.draft_id=d.id),'status',case when d.merged_at is not null then 'merged' when d.review_outcome is not null then d.review_outcome else 'open' end)||coalesce((select jsonb_build_object('agent',jsonb_build_object('id',ai.identity_id,'client_kind',ai.client_kind,'display_name',ag.display_name,'principal',jsonb_build_object('id',pr.id,'name',pr.display_name),'revoked',ai.revoked_at is not null)) from agent_identity ai join identity ag on ag.id=ai.identity_id join identity pr on pr.id=ai.principal_id where ai.identity_id=d.created_by),'{}'::jsonb))";
 
 /// Submitted change requests are visible to every member; unsubmitted drafts stay private.
 #[utoipa::path(get, path="/documents/{id}/change-requests", tag="reviews", params(("id" = Uuid, Path, description = "Document identifier")), responses((status=200, description="Open and recently closed change requests", body=Value),(status=403, description="Document membership required")))]
@@ -410,7 +434,9 @@ async fn list(
     auth: AuthContext,
 ) -> Result<Json<Value>, ApiError> {
     apply::require_role(&state.pool, DocumentId(id), IdentityId(auth.identity_id)).await?;
-    let items: Vec<Value> = sqlx::query_scalar(&format!("select {REQUEST_JSON}||jsonb_build_object('mine',d.created_by=$2) from workspace_draft d join identity a on a.id=d.created_by left join identity r on r.id=d.reviewed_by where d.document_id=$1 and d.submitted_at is not null order by (d.merged_at is null and d.review_outcome is null) desc, d.submitted_at desc limit 200"))
+    // `mine`: yours, or written by an AI agent acting for you (so that you cannot approve it).
+    let owned = owned_by("d", "$2");
+    let items: Vec<Value> = sqlx::query_scalar(&format!("select {REQUEST_JSON}||jsonb_build_object('mine',{owned}) from workspace_draft d join identity a on a.id=d.created_by left join identity r on r.id=d.reviewed_by where d.document_id=$1 and d.submitted_at is not null order by (d.merged_at is null and d.review_outcome is null) desc, d.submitted_at desc limit 200"))
         .bind(id)
         .bind(auth.identity_id)
         .fetch_all(&state.pool)
@@ -424,7 +450,8 @@ async fn request_row(
     draft: Uuid,
     viewer: Uuid,
 ) -> Result<Value, ApiError> {
-    sqlx::query_scalar(&format!("select {REQUEST_JSON}||jsonb_build_object('mine',d.created_by=$3) from workspace_draft d join identity a on a.id=d.created_by left join identity r on r.id=d.reviewed_by where d.id=$1 and d.document_id=$2 and (d.submitted_at is not null or d.created_by=$3)"))
+    let owned = owned_by("d", "$3");
+    sqlx::query_scalar(&format!("select {REQUEST_JSON}||jsonb_build_object('mine',{owned}) from workspace_draft d join identity a on a.id=d.created_by left join identity r on r.id=d.reviewed_by where d.id=$1 and d.document_id=$2 and (d.submitted_at is not null or {owned})"))
         .bind(draft)
         .bind(id)
         .bind(viewer)
@@ -507,6 +534,7 @@ async fn merge(
     if role != Role::Author {
         return Err(ApiError::Forbidden);
     }
+    refuse_agent(&mut tx, auth.identity_id).await?;
     let request = request_row(&mut tx, id, draft, auth.identity_id).await?;
     if request["status"] != "open" || request["submitted_at"].is_null() {
         return Err(ApiError::Conflict {
@@ -522,6 +550,13 @@ async fn merge(
     }
     let review = review_state(&mut tx, id, draft, &request, member, &rules).await?;
     let overridden = review["satisfied"] != true;
+    // I5 (docs/AI-AGENT-PROTOCOL-SPEC.md 9.5): the bypass of the approvals is not for the
+    // person whose agent wrote the request. Another manager's bypass is as for any request.
+    if overridden && req.override_rules && own_agent_request(&request) {
+        return Err(ApiError::Denied {
+            reason: "Your AI agent wrote this change request, so you cannot approve it or bypass its approvals. Ask another reviewer to approve it, or another manager to merge it.".into(),
+        });
+    }
     if overridden && !(req.override_rules && member.can_manage()) {
         return Err(ApiError::Denied {
             reason: format!(
@@ -573,18 +608,20 @@ async fn merge(
         crate::draft_storage::encode(&mut tx, doc, &team, state.shared_draft_bases).await?;
     sqlx::query("update workspace_draft set merge_base_state=$2,base_seq=$3,revision=revision+1,merged_at=case when $4 then now() end,review_outcome=case when $4 then 'merged' end,reviewed_by=$5,reviewed_at=now(),review_note=$6 where id=$1")
         .bind(draft).bind(stored).bind(next_seq).bind(completed).bind(auth.identity_id).bind(req.note.trim()).execute(&mut *tx).await?;
+    let mut detail = json!({"draft_id":draft,"contributor":request["author"]["id"],"events":events.len(),"from_seq":events.first().map(|e|e.seq),"through_seq":events.last().map(|e|e.seq),"completed":completed,"rules_overridden":overridden,"approvals":review["approvals"]});
+    // Attribution layer B (docs/AI-AGENT-PROTOCOL-SPEC.md 9.5): the contributor of an agent's
+    // request is the agent identity (as above); say so, and for whom it acted. The events
+    // themselves keep the merger as `actor_id`, unchanged.
+    name_agent(&mut detail, &request);
     crate::product::audit(
         &mut tx,
         auth.identity_id,
         "document.change_request_merged",
         id,
-        json!({"draft_id":draft,"contributor":request["author"]["id"],"events":events.len(),"from_seq":events.first().map(|e|e.seq),"through_seq":events.last().map(|e|e.seq),"completed":completed,"rules_overridden":overridden,"approvals":review["approvals"]}),
+        detail,
     )
     .await?;
-    if let Some(contributor) = request["author"]["id"]
-        .as_str()
-        .and_then(|v| v.parse().ok())
-    {
+    if let Some(contributor) = contributor_of(&request) {
         notifications::notify(
             &mut tx,
             contributor,
@@ -632,6 +669,7 @@ async fn close_request(
         return Err(ApiError::Forbidden);
     }
     if outcome == "declined" {
+        refuse_agent(&mut tx, auth.identity_id).await?;
         let member = access::governance_role(&mut tx, id, auth.identity_id).await?;
         if !access::policy(&mut tx, id).await?.can_merge(member) {
             return Err(ApiError::Denied {
@@ -647,19 +685,18 @@ async fn close_request(
     }
     sqlx::query("update workspace_draft set review_outcome=$2,reviewed_by=$3,reviewed_at=now(),review_note=$4 where id=$1")
         .bind(draft).bind(outcome).bind(auth.identity_id).bind(note.trim()).execute(&mut *tx).await?;
+    let mut detail = json!({"draft_id":draft,"contributor":request["author"]["id"]});
+    name_agent(&mut detail, &request);
     crate::product::audit(
         &mut tx,
         auth.identity_id,
         &format!("document.change_request_{outcome}"),
         id,
-        json!({"draft_id":draft,"contributor":request["author"]["id"]}),
+        detail,
     )
     .await?;
     if outcome == "declined" {
-        if let Some(contributor) = request["author"]["id"]
-            .as_str()
-            .and_then(|v| v.parse().ok())
-        {
+        if let Some(contributor) = contributor_of(&request) {
             notifications::notify(
                 &mut tx,
                 contributor,
@@ -710,30 +747,93 @@ async fn submit(
     if role == Role::Auditor {
         return Err(ApiError::Forbidden);
     }
-    let updated = sqlx::query("update workspace_draft set submitted_at=case when submitted_at is null or review_outcome is not null then now() else submitted_at end,source=case when source ? 'start_seq' then source else source||jsonb_build_object('start_seq',base_seq) end,submission_note=$4,review_outcome=null,reviewed_by=null,reviewed_at=null,review_note='' where id=$1 and document_id=$2 and created_by=$3 and merged_at is null")
-        .bind(draft).bind(id).bind(auth.identity_id).bind(req.note.trim()).execute(&mut *tx).await?;
-    if updated.rows_affected() == 0 {
+    // Your draft, or one an AI agent made for you.
+    if !mark_submitted(&mut tx, id, draft, auth.identity_id, req.note.trim(), true).await? {
         return Err(ApiError::NotFound);
     }
-    crate::product::audit(
-        &mut tx,
-        auth.identity_id,
-        "document.change_request_submitted",
-        id,
-        json!({"draft_id":draft}),
-    )
-    .await?;
+    tx.commit().await?;
+    Ok(Json(json!({"status":"open"})))
+}
+
+/// Submit the unmerged draft `draft` of `actor` (or of an agent identity acting for
+/// `actor`) for review: stamp it, audit it and tell the reviewers. `false` when there is no
+/// such draft. `reopen` lets a closed (declined or withdrawn) request be submitted again, as a
+/// person may; an agent's own route passes `false`. The caller holds the document lock and
+/// has checked the role. This is the one submit path of people and agents.
+pub(crate) async fn mark_submitted(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    id: Uuid,
+    draft: Uuid,
+    actor: Uuid,
+    note: &str,
+    reopen: bool,
+) -> Result<bool, ApiError> {
+    let owned = owned_by("workspace_draft", "$3");
+    let closed = if reopen {
+        ""
+    } else {
+        " and review_outcome is null"
+    };
+    let updated = sqlx::query(&format!("update workspace_draft set submitted_at=case when submitted_at is null or review_outcome is not null then now() else submitted_at end,source=case when source ? 'start_seq' then source else source||jsonb_build_object('start_seq',base_seq) end,submission_note=$4,review_outcome=null,reviewed_by=null,reviewed_at=null,review_note='' where id=$1 and document_id=$2 and {owned} and merged_at is null{closed}"))
+        .bind(draft).bind(id).bind(actor).bind(note).execute(&mut **tx).await?;
+    if updated.rows_affected() == 0 {
+        return Ok(false);
+    }
+    // A person submitting the draft of their AI agent is named as such, like the agent itself.
+    let agent: Option<(Uuid, String, Uuid)> = sqlx::query_as("select ai.identity_id,ai.client_kind,ai.principal_id from workspace_draft w join agent_identity ai on ai.identity_id=w.created_by where w.id=$1")
+        .bind(draft)
+        .fetch_optional(&mut **tx)
+        .await?;
+    let mut detail = json!({"draft_id":draft});
+    if let Some((identity, client_kind, principal)) = agent {
+        detail["contributor"] = json!(identity);
+        detail["contributor_kind"] = json!("agent");
+        detail["agent"] = json!({"client_kind":client_kind,"principal":principal});
+    }
+    crate::product::audit(tx, actor, "document.change_request_submitted", id, detail).await?;
     notifications::notify_reviewers(
-        &mut tx,
+        tx,
         id,
-        auth.identity_id,
+        actor,
         "change_request_submitted",
         Some(draft),
         json!({}),
     )
     .await?;
-    tx.commit().await?;
-    Ok(Json(json!({"status":"open"})))
+    Ok(true)
+}
+
+/// For a request an AI agent wrote, say so in an audit detail (an object): the contributor is
+/// an agent, of which client product, acting for whom. Other requests add nothing.
+fn name_agent(detail: &mut Value, request: &Value) {
+    if request["agent"].is_object() {
+        detail["contributor_kind"] = json!("agent");
+        detail["agent"] = json!({"client_kind":request["agent"]["client_kind"],"principal":request["agent"]["principal"]["id"]});
+    }
+}
+
+/// Who hears about what happens to a request: its author, or the person its AI agent acts
+/// for (the agent identity receives nothing).
+fn contributor_of(request: &Value) -> Option<Uuid> {
+    request["agent"]["principal"]["id"]
+        .as_str()
+        .or_else(|| request["author"]["id"].as_str())
+        .and_then(|v| v.parse().ok())
+}
+
+/// Invariant I4, as an explicit check on the paths that decide: an agent identity never
+/// approves, comments on, merges or declines a request. It cannot sign in, so none of those
+/// routes can be reached as one; this is the second lock on the door.
+async fn refuse_agent(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    actor: Uuid,
+) -> Result<(), ApiError> {
+    if crate::agent::identity::is_agent(tx, actor).await? {
+        return Err(ApiError::Denied {
+            reason: "AI agents propose changes; people review them.".into(),
+        });
+    }
+    Ok(())
 }
 
 #[derive(Deserialize)]
@@ -767,6 +867,7 @@ async fn review(
     }
     let (mut tx, _, _) =
         apply::begin_write(&state, DocumentId(id), IdentityId(auth.identity_id)).await?;
+    refuse_agent(&mut tx, auth.identity_id).await?;
     let request = request_row(&mut tx, id, draft, auth.identity_id).await?;
     if request["status"] != "open" || request["submitted_at"].is_null() {
         return Err(ApiError::Conflict {
@@ -795,10 +896,7 @@ async fn review(
         .bind(req.note.trim())
         .fetch_one(&mut *tx)
         .await?;
-    if let Some(contributor) = request["author"]["id"]
-        .as_str()
-        .and_then(|v| v.parse().ok())
-    {
+    if let Some(contributor) = contributor_of(&request) {
         notifications::notify(
             &mut tx,
             contributor,
@@ -838,3 +936,61 @@ async fn review(
     submit
 ))]
 pub struct ReviewApi;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_request_json_carries_the_shared_agent_badge_and_hides_the_placeholder_address() {
+        // The constant is written out; it must stay the shared definition.
+        assert!(REQUEST_JSON.contains(&crate::agent::identity::agent_json("d")));
+        assert!(REQUEST_JSON.contains("like '%@agents.invalid' then null"));
+        assert!(REQUEST_JSON.starts_with('(') && REQUEST_JSON.ends_with(')'));
+    }
+
+    #[test]
+    fn only_the_viewers_own_agents_request_is_closed_to_their_override() {
+        let agent_theirs = json!({"agent":{"principal":{"id":"p"}},"mine":true});
+        let agent_others = json!({"agent":{"principal":{"id":"p"}},"mine":false});
+        let ordinary_theirs = json!({"mine":true});
+        let ordinary_others = json!({"mine":false});
+        assert!(own_agent_request(&agent_theirs));
+        assert!(!own_agent_request(&agent_others));
+        assert!(!own_agent_request(&ordinary_theirs));
+        assert!(!own_agent_request(&ordinary_others));
+        assert!(!own_agent_request(&json!({})));
+    }
+
+    #[test]
+    fn an_audit_detail_names_the_agent_only_for_its_request() {
+        let mut ordinary = json!({"draft_id":"d"});
+        name_agent(&mut ordinary, &json!({"author":{"id":"a"}}));
+        assert_eq!(ordinary, json!({"draft_id":"d"}));
+        let mut by_agent = json!({"draft_id":"d"});
+        name_agent(
+            &mut by_agent,
+            &json!({"agent":{"client_kind":"claude","principal":{"id":"p","name":"P"}}}),
+        );
+        assert_eq!(
+            by_agent,
+            json!({"draft_id":"d","contributor_kind":"agent","agent":{"client_kind":"claude","principal":"p"}})
+        );
+    }
+
+    #[test]
+    fn the_closing_reviewer_hides_the_placeholder_address_too() {
+        assert!(REQUEST_JSON.contains("'reviewer',case when r.id is null then null else jsonb_build_object('id',r.id,'name',r.display_name,'email',case when lower(r.email) like '%@agents.invalid' then null else r.email end) end"));
+    }
+
+    #[test]
+    fn the_contributor_to_tell_is_the_person_an_agent_acts_for() {
+        let person = Uuid::from_u128(1);
+        let agent = Uuid::from_u128(2);
+        let by_person = json!({"author":{"id":person}});
+        assert_eq!(contributor_of(&by_person), Some(person));
+        let by_agent = json!({"author":{"id":agent},"agent":{"principal":{"id":person}}});
+        assert_eq!(contributor_of(&by_agent), Some(person));
+        assert_eq!(contributor_of(&json!({})), None);
+    }
+}

@@ -42,6 +42,13 @@ pub const ROLES: [&str; 6] = [
 /// [`crate::workloads`]; a budget above it could never be reached.
 pub const CALLS_PER_MINUTE: (i64, i64) = (1, 600);
 pub const READ_BYTES_PER_DAY: (i64, i64) = (10_000, 1_000_000_000);
+/// What the project may let an agent write (migration 0044): nothing, drafts a person
+/// submits, or drafts the agent may itself submit (unless `submit_requires_person`).
+pub const WRITE_MODES: [&str; 3] = ["none", "draft", "change_request"];
+/// Proposal budgets, inclusive. The ceiling of `ops_per_proposal` is the compiler's own cap.
+pub const PROPOSALS_PER_DAY: (i64, i64) = (0, 1000);
+pub const OPEN_PROPOSALS: (i64, i64) = (0, 100);
+pub const OPS_PER_PROPOSAL: (i64, i64) = (1, 10_000);
 
 /// The enforceable fields of spec 5.2.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -52,6 +59,27 @@ pub struct Policy {
     pub kinds: Vec<String>,
     pub calls_per_minute: i32,
     pub read_bytes_per_day: i64,
+    /// One of [`WRITE_MODES`]. `none` (the default) means agents only read.
+    pub write_mode: String,
+    /// A person must press submit even when `write_mode` is `change_request`.
+    pub submit_requires_person: bool,
+    /// Proposals one agent identity may open per UTC day in the project.
+    pub proposals_per_day: i32,
+    /// Proposals one agent identity may have open (not merged, declined or withdrawn).
+    pub open_proposals: i32,
+    /// Engine operations one proposal may hold in all.
+    pub ops_per_proposal: i32,
+}
+
+impl Policy {
+    /// May an agent stage drafts at all?
+    pub fn can_propose(&self) -> bool {
+        self.write_mode != "none"
+    }
+    /// May an agent itself turn a draft into a change request? Otherwise a person must.
+    pub fn agent_may_submit(&self) -> bool {
+        self.write_mode == "change_request" && !self.submit_requires_person
+    }
 }
 
 impl Default for Policy {
@@ -63,6 +91,11 @@ impl Default for Policy {
             kinds: KINDS.iter().map(|k| (*k).to_owned()).collect(),
             calls_per_minute: 60,
             read_bytes_per_day: 20_000_000,
+            write_mode: WRITE_MODES[0].to_owned(),
+            submit_requires_person: true,
+            proposals_per_day: 20,
+            open_proposals: 5,
+            ops_per_proposal: 500,
         }
     }
 }
@@ -84,6 +117,11 @@ struct Row {
     kinds: Vec<String>,
     calls_per_minute: i32,
     read_bytes_per_day: i64,
+    write_mode: String,
+    submit_requires_person: bool,
+    proposals_per_day: i32,
+    open_proposals: i32,
+    ops_per_proposal: i32,
     revision: i64,
     updated_at: DateTime<Utc>,
     sessions_valid_after: Option<DateTime<Utc>>,
@@ -96,9 +134,25 @@ pub async fn load(
     project: Uuid,
     lock: bool,
 ) -> Result<Option<Stored>, sqlx::Error> {
+    load_locked(db, project, if lock { " for update" } else { "" }).await
+}
+
+/// The policy read under `FOR SHARE`, for a write transaction: a change of the policy or the
+/// kill switch (they update the row) waits for the write to commit, or is seen by it.
+pub async fn load_shared(
+    db: &mut PgConnection,
+    project: Uuid,
+) -> Result<Option<Stored>, sqlx::Error> {
+    load_locked(db, project, " for share").await
+}
+
+async fn load_locked(
+    db: &mut PgConnection,
+    project: Uuid,
+    lock: &str,
+) -> Result<Option<Stored>, sqlx::Error> {
     let row: Option<Row> = sqlx::query_as(&format!(
-        "select enabled,min_role,kinds,calls_per_minute,read_bytes_per_day,revision,updated_at,sessions_valid_after from project_agent_policy where project_id=$1{}",
-        if lock { " for update" } else { "" }
+        "select enabled,min_role,kinds,calls_per_minute,read_bytes_per_day,write_mode,submit_requires_person,proposals_per_day,open_proposals,ops_per_proposal,revision,updated_at,sessions_valid_after from project_agent_policy where project_id=$1{lock}"
     ))
     .bind(project)
     .fetch_optional(db)
@@ -110,6 +164,11 @@ pub async fn load(
             kinds: row.kinds,
             calls_per_minute: row.calls_per_minute,
             read_bytes_per_day: row.read_bytes_per_day,
+            write_mode: row.write_mode,
+            submit_requires_person: row.submit_requires_person,
+            proposals_per_day: row.proposals_per_day,
+            open_proposals: row.open_proposals,
+            ops_per_proposal: row.ops_per_proposal,
         },
         revision: row.revision,
         updated_at: row.updated_at,
@@ -132,6 +191,12 @@ fn rank(product: &str) -> usize {
         .iter()
         .position(|r| *r == product)
         .map_or(0, |at| at + 1)
+}
+
+/// Is a person with the stored project role `stored_role` at or above the policy's floor?
+/// Used again inside a write transaction, where the policy row is locked.
+pub fn role_allowed(stored_role: &str, policy: &Policy) -> bool {
+    rank(product_role(stored_role)) >= rank(&policy.min_role)
 }
 
 /// SQL predicate on a `document d` row: not hidden from agents by its file policy. The
@@ -210,7 +275,7 @@ pub const BYTES_TODAY_SQL: &str = "select coalesce(sum(bytes_out),0)::bigint fro
 const MINUTE_RETRY_SQL: &str = "select extract(epoch from (at+interval '1 minute'-now()))::float8 from agent_call where key_id=$1 and project_id=$2 and at>now()-interval '1 minute' and outcome not in ('budget_exceeded','policy_denied') order by at desc offset $3 limit 1";
 
 /// Seconds until the next midnight UTC, when the day's bytes are spent.
-const DAY_RETRY_SQL: &str = "select extract(epoch from (date_trunc('day',now() at time zone 'utc') at time zone 'utc' + interval '1 day' - now()))::float8";
+pub(super) const DAY_RETRY_SQL: &str = "select extract(epoch from (date_trunc('day',now() at time zone 'utc') at time zone 'utc' + interval '1 day' - now()))::float8";
 
 /// The project policy for one request of the grant `key`, whose person has the stored
 /// project role `stored_role`. Reads the policy and the ledger now; called after the
@@ -229,7 +294,7 @@ pub async fn check(
         Some(stored) if stored.policy.enabled => stored.policy,
         _ => return Err(Gate::Refused(Refusal::Policy)),
     };
-    if rank(product_role(stored_role)) < rank(&policy.min_role) {
+    if !role_allowed(stored_role, &policy) {
         return Err(Gate::Refused(Refusal::Policy));
     }
     let (calls, bytes): (i64, i64) = sqlx::query_as(&format!(
@@ -291,6 +356,41 @@ mod tests {
             (60, 20_000_000)
         );
         assert!((CALLS_PER_MINUTE.0..=CALLS_PER_MINUTE.1).contains(&60));
+    }
+
+    #[test]
+    fn writing_is_off_by_default_and_submitting_needs_a_mode_and_no_rule_of_a_person() {
+        let mut policy = Policy::default();
+        assert_eq!(policy.write_mode, "none");
+        assert!(!policy.can_propose() && !policy.agent_may_submit());
+        assert_eq!(
+            (
+                policy.proposals_per_day,
+                policy.open_proposals,
+                policy.ops_per_proposal
+            ),
+            (20, 5, 500)
+        );
+        policy.write_mode = "draft".into();
+        assert!(policy.can_propose());
+        assert!(!policy.agent_may_submit(), "draft: a person submits");
+        policy.write_mode = "change_request".into();
+        assert!(
+            !policy.agent_may_submit(),
+            "submit_requires_person is the default"
+        );
+        policy.submit_requires_person = false;
+        assert!(policy.agent_may_submit());
+        policy.write_mode = "draft".into();
+        assert!(
+            !policy.agent_may_submit(),
+            "draft never lets an agent submit"
+        );
+        assert!(WRITE_MODES.contains(&"none") && WRITE_MODES.contains(&"change_request"));
+        // The floor is the one the reads use.
+        policy.min_role = "editor".into();
+        assert!(role_allowed("editor", &policy) && role_allowed("owner", &policy));
+        assert!(!role_allowed("reviewer", &policy) && !role_allowed("viewer", &policy));
     }
 
     #[test]

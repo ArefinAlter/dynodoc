@@ -1168,6 +1168,16 @@ route's `:id` to equal the token's project: `crates/engine-api/src/auth/device.r
 | 14 | `GET /projects/{id}/agent/access` | `status` | any `content:*` | grants, policy, budgets | new tables |
 | 15 | `GET /.well-known/dynodoc-agent` | none | none | static | discovery document (15.2) |
 
+**Implementation note, routes 10 to 13 (20 October 2026).** Built in `crates/engine-api`
+(`agent::write`, `agent::proposal`), with two departures from this table: route 10 is
+`POST /projects/{id}/agent/files/{file}/propose` (a Phase 0 test pins `.../proposals` as
+absent), and the proposal id is chosen by the server (the draft's id), not taken from the first
+`request_id`, which is the idempotency key kept in the receipt. `submit` answers
+`state=awaiting_person` (and changes nothing) unless the project's `write_mode` is
+`change_request` and `submit_requires_person` is false; `withdraw` needs no `write_mode`. The
+other departures are listed in the module documentation (`cargo doc -p engine-api --no-deps`,
+module `agent::write`) and in [AI-AGENT-CONNECTORS.md](AI-AGENT-CONNECTORS.md) section 11.3.
+
 Routes 4 and 5 exist because a GET query string cannot carry a `have` map or a
 100-ref list reliably through every proxy; the existing nginx templates raise proxy
 header buffers to 16 KiB for a different reason
@@ -1295,7 +1305,14 @@ An account access token, a connector key or a device token without agent scopes 
 refused on these routes, and an agent token is refused everywhere else, using the same
 fail-closed separation device sessions already use (implicit assertion).
 
-### 14.2 Scopes (proposed; independent, none implies another)
+### 14.2 Scopes (proposed; none implies another, but a write scope is held beside `content:read`)
+
+*Implementation note (20 October 2026, after the independent review):* the three scopes
+imply nothing of each other, but a grant or session that holds `content:propose` or
+`content:submit` must hold `content:read` too, because the preview of `propose` and the
+answers to a bad ref show document text. The grant, the session challenge and the database
+refuse the other sets. The implementation also prints the whole proposal id in DCT headers
+(the proposal routes take nothing shorter) where the examples below show eight characters.
 
 | Scope | Grants | Never grants |
 |---|---|---|

@@ -7,7 +7,7 @@
 //! the call:
 //!
 //! ```text
-//! dd/1 propose file=7034d450 proposal=4d0e9b1c rev=412 applied=3 expanded=3 stale=0 state=draft revision=2 trust=data ~tok=60
+//! dd/1 propose file=7034d450 proposal=4d0e9b1c-5f2a-4b8e-9c31-0a7d6e2f8b14 rev=412 applied=3 expanded=3 stale=0 state=draft revision=2 trust=data ~tok=60
 //! ~7C02 P #b7a210>a41c07 -6 +9
 //! +B200 P #3e0001 after A19D "New paragraph preview…"
 //! ```
@@ -46,7 +46,8 @@ pub struct PreviewOptions {
     pub max_bytes: Option<usize>,
     /// A dry run: nothing is stored, `applied=0 would_apply=<n>`.
     pub dry_run: bool,
-    /// The proposal the call belongs to (its first 8 hex characters go in the header).
+    /// The proposal the call belongs to (its whole id goes in the header: the proposal
+    /// routes take nothing shorter, so a client that reads only DCT must be given it).
     pub proposal: Option<Uuid>,
     /// `draft`, `submitted`, ... (the server's word; absent in a dry run).
     pub state: Option<&'static str>,
@@ -166,7 +167,7 @@ pub fn preview(
         };
         let mut h = HeaderBuilder::new(Tool::Propose).kv("file", file.short_id());
         if let Some(p) = opts.proposal {
-            h = h.kv("proposal", &p.simple().to_string()[..8]);
+            h = h.kv("proposal", p);
         }
         h = h.kv("rev", file.rev);
         h = if opts.dry_run {

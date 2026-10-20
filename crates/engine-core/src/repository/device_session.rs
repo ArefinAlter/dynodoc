@@ -15,7 +15,8 @@ use uuid::Uuid;
 
 const DOMAIN: &[u8] = b"dynodoc.device-session\0v1\0";
 pub const MAX_SESSION_BYTES: usize = 2048;
-/// Sorted. Scopes are independent; none implies another.
+/// Sorted. Scopes are independent; none implies another (the agent scopes below have one
+/// further rule).
 pub const SCOPES: [&str; 4] = [
     "history:read",
     "history:review",
@@ -24,12 +25,24 @@ pub const SCOPES: [&str; 4] = [
 ];
 /// Scopes of an AI-agent key (docs/AI-AGENT-PROTOCOL-SPEC.md section 14.2). Kept apart
 /// from [`SCOPES`]: they are never offered to a person's key and a person's key can
-/// never hold one (the service refuses the mix at grant and issuance time).
-pub const AGENT_SCOPES: [&str; 1] = ["content:read"];
+/// never hold one (the service refuses the mix at grant and issuance time). Sorted.
+/// `content:propose` and `content:submit` need `content:read` beside them (see
+/// [`write_scope_without_read`]); `content:propose` and `content:submit` imply neither
+/// each other nor `content:read`.
+pub const AGENT_SCOPES: [&str; 3] = ["content:propose", "content:read", "content:submit"];
 
 /// Is `scope` one of [`AGENT_SCOPES`]?
 pub fn is_agent_scope(scope: &str) -> bool {
     AGENT_SCOPES.contains(&scope)
+}
+
+/// Does `scopes` hold `content:propose` or `content:submit` without `content:read`? A
+/// preview of a proposal, and the answers to a bad ref, show the text of the file, so a
+/// write scope without the read scope would be a read scope under another name. The
+/// database refuses such a set too (migration 0044).
+pub fn write_scope_without_read<S: AsRef<str>>(scopes: &[S]) -> bool {
+    let has = |wanted: &str| scopes.iter().any(|s| s.as_ref() == wanted);
+    (has("content:propose") || has("content:submit")) && !has("content:read")
 }
 /// A challenge may be answered for two minutes.
 pub const CHALLENGE_TTL_MS: i64 = 120_000;
@@ -63,6 +76,7 @@ pub fn normalize_scopes<S: AsRef<str>>(requested: &[S]) -> Result<Vec<String>, E
         || scopes
             .iter()
             .any(|s| !SCOPES.contains(&s.as_str()) && !is_agent_scope(s))
+        || write_scope_without_read(&scopes)
     {
         return Err(Error::Invalid("device session scopes"));
     }
@@ -320,16 +334,41 @@ mod tests {
     }
 
     #[test]
-    fn the_agent_read_scope_is_known_independent_and_sorted() {
+    fn the_agent_scopes_are_known_sorted_and_the_write_scopes_need_the_read_scope() {
         assert_eq!(
             normalize_scopes(&["project:read", "content:read", "content:read"]).unwrap(),
             vec!["content:read", "project:read"]
         );
         assert!(is_agent_scope("content:read") && !is_agent_scope("history:read"));
-        // The specification's write scopes are not admitted until their routes exist.
+        // The write scopes are admitted since migration 0044, each beside the read scope
+        // (a preview and the answer to a bad ref show text, so they cannot be had alone).
+        assert_eq!(
+            normalize_scopes(&["content:submit", "content:propose", "content:read"]).unwrap(),
+            vec!["content:propose", "content:read", "content:submit"]
+        );
+        assert_eq!(
+            normalize_scopes(&["content:propose", "content:read"]).unwrap(),
+            vec!["content:propose", "content:read"]
+        );
         assert!(normalize_scopes(&["content:propose"]).is_err());
         assert!(normalize_scopes(&["content:submit"]).is_err());
+        assert!(normalize_scopes(&["content:submit", "content:propose"]).is_err());
+        assert!(normalize_scopes(&["content:submit", "project:read"]).is_err());
+        assert!(write_scope_without_read(&["content:propose"]));
+        assert!(write_scope_without_read(&[
+            "content:submit",
+            "project:read"
+        ]));
+        assert!(!write_scope_without_read(&[
+            "content:read",
+            "content:submit"
+        ]));
+        assert!(!write_scope_without_read(&["content:read"]));
+        assert!(!write_scope_without_read::<&str>(&[]));
+        assert!(is_agent_scope("content:propose") && is_agent_scope("content:submit"));
+        assert!(AGENT_SCOPES.windows(2).all(|pair| pair[0] < pair[1]));
         assert!(normalize_scopes(&["content:*"]).is_err());
+        assert!(normalize_scopes(&["content:write"]).is_err());
         // The person-key scope list shown to the UI is unchanged.
         assert!(SCOPES.iter().all(|s| !is_agent_scope(s)));
         let key = signer(7);

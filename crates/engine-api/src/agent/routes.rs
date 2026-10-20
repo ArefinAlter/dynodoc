@@ -63,14 +63,14 @@ use super::{
     state::{self, Point},
 };
 use crate::{
-    auth::agent::{AgentAuth, ContentRead},
+    auth::agent::{AgentAuth, AgentScope, ContentRead},
     error::ApiError,
     projects,
     workloads::ReadPermit,
     AppState,
 };
 
-type Out = Result<Response, AgentFail>;
+pub(super) type Out = Result<Response, AgentFail>;
 
 /// Request bodies of the one POST route are tiny (at most 100 refs and their hashes).
 const BODY_LIMIT: usize = 256 * 1024;
@@ -97,54 +97,70 @@ pub fn router() -> Router<AppState> {
         .route("/projects/{id}/agent/files/{file}/diff", get(diff))
         .route("/projects/{id}/agent/access", get(access))
         .route("/.well-known/dynodoc-agent", get(discovery))
+        // The review-gated write routes (docs/AI-AGENT-PROTOCOL-SPEC.md 12.1, 10 to 13).
+        .merge(super::write::routes())
 }
 
 // --- request plumbing ---------------------------------------------------------------
 
 /// What the request has done so far, for the ledger.
 #[derive(Default)]
-struct Call {
+pub(super) struct Call {
     /// Past the membership check and the admission budget: worth a ledger row.
-    admitted: bool,
-    document: Option<Uuid>,
-    rev: Option<u64>,
+    pub(super) admitted: bool,
+    pub(super) document: Option<Uuid>,
+    pub(super) rev: Option<u64>,
     /// The ledger outcome of a request the project policy stopped (`policy_denied`,
     /// `budget_exceeded`). Such a request is recorded although it resolved no file, so an
     /// owner sees the attempts, but at most one row a minute per grant and outcome
     /// ([`ledger::record`]); the caller sees the uniform answer of [`policy::Refusal`].
-    refused: Option<&'static str>,
+    pub(super) refused: Option<&'static str>,
+    /// The outcome to record when the call succeeded and `ok` is not the word (a submit that
+    /// a person must confirm).
+    pub(super) outcome: Option<&'static str>,
+    /// The digest of the request once it is parsed (a write's canonical digest); until
+    /// then the one the context started with.
+    pub(super) digest: Option<[u8; 32]>,
 }
 
 /// A finished response and the size of its body.
-struct Served {
-    response: Response,
-    bytes: usize,
+pub(super) struct Served {
+    pub(super) response: Response,
+    pub(super) bytes: usize,
 }
 
 /// A connection with the caller's project role checked and an admission permit held.
-struct Admitted {
-    db: PoolConnection<Postgres>,
+pub(super) struct Admitted {
+    pub(super) db: PoolConnection<Postgres>,
     /// The stored project role (`owner`, `manager`, `editor`, `approver`, `reviewer`, `viewer`).
-    role: String,
+    pub(super) role: String,
     /// The project policy read for this request, and what the grant has used.
-    allowed: Allowed,
-    _permit: ReadPermit,
+    pub(super) allowed: Allowed,
+    pub(super) _permit: ReadPermit,
 }
 
-struct Ctx<'a> {
-    state: &'a AppState,
-    auth: &'a AgentAuth<ContentRead>,
-    project: Uuid,
-    headers: &'a HeaderMap,
-    tool: Tool,
-    digest: [u8; 32],
-    format: Format,
+pub(super) struct Ctx<'a> {
+    pub(super) state: &'a AppState,
+    /// The person the key belongs to (the principal), and the key itself.
+    pub(super) identity: Uuid,
+    pub(super) key: Uuid,
+    /// The session and the generation it was issued in, re-checked inside write
+    /// transactions ([`crate::auth::agent::verify_current`]).
+    pub(super) session: Uuid,
+    pub(super) generation: i64,
+    /// The scope the route required of the token.
+    pub(super) scope: &'static str,
+    pub(super) project: Uuid,
+    pub(super) headers: &'a HeaderMap,
+    pub(super) tool: Tool,
+    pub(super) digest: [u8; 32],
+    pub(super) format: Format,
 }
 
 impl<'a> Ctx<'a> {
-    fn new(
+    pub(super) fn new<S: AgentScope>(
         state: &'a AppState,
-        auth: &'a AgentAuth<ContentRead>,
+        auth: &'a AgentAuth<S>,
         project: Uuid,
         headers: &'a HeaderMap,
         tool: Tool,
@@ -152,7 +168,11 @@ impl<'a> Ctx<'a> {
     ) -> Result<Self, AgentFail> {
         Ok(Self {
             state,
-            auth,
+            identity: auth.identity_id,
+            key: auth.binding().key_id,
+            session: auth.binding().session,
+            generation: auth.session_generation,
+            scope: S::SCOPE,
             project,
             headers,
             tool,
@@ -161,8 +181,8 @@ impl<'a> Ctx<'a> {
         })
     }
 
-    async fn admit(&self, call: &mut Call) -> Result<Admitted, AgentFail> {
-        let identity = self.auth.identity_id;
+    pub(super) async fn admit(&self, call: &mut Call) -> Result<Admitted, AgentFail> {
+        let identity = self.identity;
         let mut db = self.state.pool.acquire().await?;
         let role = projects::require(&mut db, self.project, identity).await?;
         // Called only after the membership check, as `Workloads::enter` requires.
@@ -171,15 +191,14 @@ impl<'a> Ctx<'a> {
         // Read now, never cached: a policy change or the kill switch applies to this very
         // request. After the admission permit so a refused loop is rate limited like any
         // other, and after membership so a non-member cannot tell enabled from disabled.
-        let allowed =
-            match policy::check(&mut db, self.project, self.auth.binding().key_id, &role).await {
-                Ok(allowed) => allowed,
-                Err(Gate::Refused(refusal)) => {
-                    call.refused = Some(refusal.outcome());
-                    return Err(refusal.into_fail());
-                }
-                Err(Gate::Db(error)) => return Err(error.into()),
-            };
+        let allowed = match policy::check(&mut db, self.project, self.key, &role).await {
+            Ok(allowed) => allowed,
+            Err(Gate::Refused(refusal)) => {
+                call.refused = Some(refusal.outcome());
+                return Err(refusal.into_fail());
+            }
+            Err(Gate::Db(error)) => return Err(error.into()),
+        };
         Ok(Admitted {
             db,
             role,
@@ -193,7 +212,7 @@ impl<'a> Ctx<'a> {
     /// for every way a file can be unavailable: absent, trashed, another project, a kind
     /// agents do not read (or the policy's `kinds` leaves out), a file policy of `none`,
     /// or no role for the caller. `kinds` is the project policy's list.
-    async fn find_file(
+    pub(super) async fn find_file(
         &self,
         db: &mut PgConnection,
         call: &mut Call,
@@ -201,7 +220,7 @@ impl<'a> Ctx<'a> {
         kinds: &[String],
     ) -> Result<(Uuid, FileKind), AgentFail> {
         let visible = format!("d.deleted_at is null and coalesce(d.settings->>'kind','questionnaire')=any($4::text[]) and document_member_role(d.id,$2) is not null and {}", policy::FILE_VISIBLE);
-        let identity = self.auth.identity_id;
+        let identity = self.identity;
         let rows: Vec<(Uuid, String)> = if let Ok(id) = Uuid::parse_str(segment) {
             sqlx::query_as(&format!("select d.id,d.settings->>'kind' from document d where d.id=$1 and document_project(d.id)=$3 and {visible}"))
                 .bind(id)
@@ -280,26 +299,26 @@ impl<'a> Ctx<'a> {
     }
 
     /// Record the call and turn the result into the response.
-    async fn finish(&self, call: Call, result: Result<Served, AgentFail>) -> Out {
+    pub(super) async fn finish(&self, call: Call, result: Result<Served, AgentFail>) -> Out {
         // A probe that never resolved a file (a random id) is rate-limited but not recorded,
         // so the ledger cannot be filled by guessing. A request the project policy stopped
         // is recorded (the owner should see it) but throttled to one row a minute per grant
         // and outcome, so repeating it cannot fill the ledger either.
         if call.admitted && (result.is_ok() || call.document.is_some() || call.refused.is_some()) {
             let (outcome, bytes_out) = match &result {
-                Ok(served) => ("ok", served.bytes),
+                Ok(served) => (call.outcome.unwrap_or("ok"), served.bytes),
                 Err(error) => (call.refused.unwrap_or_else(|| error.agent_code()), 0),
             };
             ledger::record(
                 &self.state.pool,
                 CallRow {
-                    principal: self.auth.identity_id,
-                    key: self.auth.binding().key_id,
+                    principal: self.identity,
+                    key: self.key,
                     project: self.project,
                     document: call.document,
                     tool: self.tool.as_str(),
                     rev: call.rev,
-                    digest: self.digest,
+                    digest: call.digest.unwrap_or(self.digest),
                     bytes_out,
                     outcome,
                     client: http::client_claim(self.headers),
@@ -1096,12 +1115,16 @@ pub(super) struct AccessView {
     role: String,
     /// The scopes of the grant that is active right now.
     scopes: Vec<String>,
-    /// No write exists in this version: `none`.
-    write_mode: &'static str,
+    /// The project's `write_mode`: `none` (the default), `draft` or `change_request`.
+    write_mode: String,
+    /// A person must submit an agent's draft even in `change_request` mode.
+    submit_requires_person: bool,
     /// The grant's budgets in this project, from the project policy and the call ledger:
     /// `calls_per_minute` and `read_bytes_per_day`, each with its `limit` and what is
-    /// `used`. Other budgets (proposals) do not exist yet.
+    /// `used`; when writing is on, also `proposals_per_day` and `open_proposals` (what the
+    /// agent identity has used) and `ops_per_proposal`.
     budget: Option<Value>,
+    /// What this credential can do now.
     capabilities: Value,
 }
 
@@ -1129,25 +1152,45 @@ async fn access(
             .bind(project)
             .fetch_optional(&mut *admitted.db)
             .await?;
+        let scopes = scopes.unwrap_or_default();
+        let granted = |scope: &str| scopes.iter().any(|s| s == scope);
+        let policy = &admitted.allowed.policy;
+        let mut budget = json!({
+            "calls_per_minute": {
+                "limit": policy.calls_per_minute,
+                "used": admitted.allowed.calls_used
+            },
+            "read_bytes_per_day": {
+                "limit": policy.read_bytes_per_day,
+                "used": admitted.allowed.bytes_used
+            }
+        });
+        // With writing on, what the person's agents have used of the proposal budgets (they
+        // are the person's, over all client products).
+        if policy.can_propose() {
+            let (today, open) =
+                super::write::proposal_use(&mut admitted.db, auth.identity_id, project)
+                    .await
+                    .map_err(ApiError::from)?;
+            budget["proposals_per_day"] =
+                json!({"limit": policy.proposals_per_day, "used": today});
+            budget["open_proposals"] = json!({"limit": policy.open_proposals, "used": open});
+            budget["ops_per_proposal"] = json!({"limit": policy.ops_per_proposal});
+        }
         let view = AccessView {
             protocol: "dynodoc.agent/1",
             tool: "status",
             what: "access",
             project,
             role: product_role(&admitted.role).to_owned(),
-            scopes: scopes.unwrap_or_default(),
-            write_mode: "none",
-            budget: Some(json!({
-                "calls_per_minute": {
-                    "limit": admitted.allowed.policy.calls_per_minute,
-                    "used": admitted.allowed.calls_used
-                },
-                "read_bytes_per_day": {
-                    "limit": admitted.allowed.policy.read_bytes_per_day,
-                    "used": admitted.allowed.bytes_used
-                }
-            })),
-            capabilities: capabilities(),
+            write_mode: policy.write_mode.clone(),
+            submit_requires_person: policy.submit_requires_person,
+            budget: Some(budget),
+            capabilities: capabilities(
+                policy.can_propose() && granted("content:propose"),
+                policy.agent_may_submit() && granted("content:submit"),
+            ),
+            scopes: scopes.clone(),
         };
         let body = match ctx.format {
             Format::Json => serde_json::to_string(&view)
@@ -1157,7 +1200,7 @@ async fn access(
                 .kv("project", project)
                 .kv("role", &view.role)
                 .kv("scopes", view.scopes.join(","))
-                .kv("write_mode", view.write_mode)
+                .kv("write_mode", &view.write_mode)
                 .kv("calc", "none")
                 .assemble(""),
         };
@@ -1171,17 +1214,20 @@ async fn access(
     ctx.finish(call, result).await
 }
 
-/// What this server version can and cannot do, for the discovery document and `access`.
-fn capabilities() -> Value {
+/// What this server version can and cannot do, and for `access` what the credential can do
+/// now (`propose` and `submit` say whether this grant and this project's policy allow them;
+/// the discovery document, which knows neither, says whether the server has the routes).
+/// `attribution` names the layers recorded: the draft and the merge audit (spec 9.5 A, B).
+fn capabilities(propose: bool, submit: bool) -> Value {
     json!({
         "read": true,
-        "propose": false,
-        "submit": false,
+        "propose": propose,
+        "submit": submit,
         "calc": "none",
         "fill": false,
         "sort": false,
         "add_slide": false,
-        "attribution": null,
+        "attribution": "draft_and_merge_audit",
         "dlp": false
     })
 }
@@ -1204,6 +1250,7 @@ async fn discovery(State(state): State<AppState>) -> Response {
         "mcp_revisions": [],
         "protected_resource_metadata": null,
         "scopes": ["content:read"],
+        "write_scopes": ["content:propose", "content:submit"],
         "limits": {
             "read_max_bytes": MAX_MAX_BYTES,
             "read_default_bytes": DEFAULT_MAX_BYTES,
@@ -1214,10 +1261,10 @@ async fn discovery(State(state): State<AppState>) -> Response {
             "files_max_limit": FILES_MAX_LIMIT,
             "refs_per_read": MAX_REFS,
             "slides_per_read": MAX_SLIDES,
-            "ops_per_call": null
+            "ops_per_call": engine_agent::grammar::MAX_OPS
         },
         "profiles": [],
-        "capabilities": capabilities()
+        "capabilities": capabilities(true, true)
     });
     let mut response = Response::new(axum::body::Body::from(body.to_string()));
     let headers = response.headers_mut();
