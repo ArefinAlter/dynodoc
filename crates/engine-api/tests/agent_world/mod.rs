@@ -550,3 +550,115 @@ pub async fn person(pool: &PgPool, email: &str) -> (Uuid, String) {
         .0;
     (id, token::mint(&KEY, id, 3600).unwrap())
 }
+
+/// Every key of `value` is described by `schema`, and every property the schema
+/// requires is present; nested objects and arrays are followed. A small subset of JSON
+/// Schema: `$ref`, `allOf`, `oneOf` (null or a type), `properties`, `items`.
+pub fn conforms(spec: &Value, schema: &Value, value: &Value, at: &str, problems: &mut Vec<String>) {
+    if let Some(reference) = schema.get("$ref").and_then(Value::as_str) {
+        let name = reference.rsplit('/').next().unwrap();
+        return conforms(
+            spec,
+            &spec["components"]["schemas"][name],
+            value,
+            at,
+            problems,
+        );
+    }
+    if let Some(all) = schema.get("allOf").and_then(Value::as_array) {
+        // The described keys are the union of the parts.
+        let mut described = std::collections::BTreeSet::new();
+        let mut required = std::collections::BTreeSet::new();
+        for part in all {
+            collect(spec, part, &mut described, &mut required);
+        }
+        if let Some(object) = value.as_object() {
+            for key in object.keys() {
+                if !described.contains(key) {
+                    problems.push(format!("{at}.{key} is not described"));
+                }
+            }
+            for key in &required {
+                if !object.contains_key(key) {
+                    problems.push(format!("{at}.{key} is required but missing"));
+                }
+            }
+        }
+        for part in all {
+            descend(spec, part, value, at, problems);
+        }
+        return;
+    }
+    if let Some(options) = schema.get("oneOf").and_then(Value::as_array) {
+        if value.is_null() {
+            return;
+        }
+        let real: Vec<&Value> = options.iter().filter(|o| o["type"] != "null").collect();
+        if let Some(option) = real.first() {
+            conforms(spec, option, value, at, problems);
+        }
+        return;
+    }
+    if let (Some(properties), Some(object)) = (
+        schema.get("properties").and_then(Value::as_object),
+        value.as_object(),
+    ) {
+        for key in object.keys() {
+            if !properties.contains_key(key) {
+                problems.push(format!("{at}.{key} is not described"));
+            }
+        }
+        if let Some(required) = schema.get("required").and_then(Value::as_array) {
+            for key in required.iter().filter_map(Value::as_str) {
+                if !object.contains_key(key) {
+                    problems.push(format!("{at}.{key} is required but missing"));
+                }
+            }
+        }
+        for (key, child) in object {
+            if let Some(child_schema) = properties.get(key) {
+                conforms(spec, child_schema, child, &format!("{at}.{key}"), problems);
+            }
+        }
+    }
+    if let (Some(items), Some(array)) = (schema.get("items"), value.as_array()) {
+        for (i, element) in array.iter().enumerate() {
+            conforms(spec, items, element, &format!("{at}[{i}]"), problems);
+        }
+    }
+}
+
+pub fn descend(spec: &Value, part: &Value, value: &Value, at: &str, problems: &mut Vec<String>) {
+    let resolved = match part.get("$ref").and_then(Value::as_str) {
+        Some(reference) => &spec["components"]["schemas"][reference.rsplit('/').next().unwrap()],
+        None => part,
+    };
+    if let (Some(properties), Some(object)) = (
+        resolved.get("properties").and_then(Value::as_object),
+        value.as_object(),
+    ) {
+        for (key, child) in object {
+            if let Some(child_schema) = properties.get(key) {
+                conforms(spec, child_schema, child, &format!("{at}.{key}"), problems);
+            }
+        }
+    }
+}
+
+pub fn collect(
+    spec: &Value,
+    part: &Value,
+    described: &mut std::collections::BTreeSet<String>,
+    required: &mut std::collections::BTreeSet<String>,
+) {
+    let resolved = match part.get("$ref").and_then(Value::as_str) {
+        Some(reference) => &spec["components"]["schemas"][reference.rsplit('/').next().unwrap()],
+        None => part,
+    };
+    if let Some(properties) = resolved.get("properties").and_then(Value::as_object) {
+        described.extend(properties.keys().cloned());
+    }
+    if let Some(list) = resolved.get("required").and_then(Value::as_array) {
+        required.extend(list.iter().filter_map(Value::as_str).map(str::to_owned));
+    }
+}

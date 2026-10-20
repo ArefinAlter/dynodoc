@@ -1,7 +1,9 @@
-//! The agent call ledger (migration 0042, protocol spec 9.6): one metadata row per
-//! admitted agent read. Metadata only (credential, project, file, tool, revision, a
-//! digest of the request, byte counts and the outcome code), never document text, titles
-//! or request values. It is the only thing an agent read writes.
+//! The agent call ledger (migrations 0042 and 0044, protocol spec 9.6): one metadata row per
+//! admitted agent call, read or write. Metadata only (credential, project, file, tool,
+//! revision, a digest of the request, byte counts and the outcome code), never document
+//! text, titles, `why` or request values. It is the only thing an agent read writes, and the
+//! budgets of calls and bytes are counted from it. What a write call proposed (the proposal,
+//! the counts of ops, the stale refs) is in its receipt, `agent_proposal_receipt`.
 
 use ring::digest::{digest, SHA256};
 use sqlx::PgPool;

@@ -113,12 +113,15 @@
 pub mod cache;
 pub mod error;
 pub mod http;
+pub mod identity;
 pub mod ledger;
 pub mod manage;
 pub mod policy;
+pub mod proposal;
 pub mod routes;
 pub mod schema;
 pub mod state;
+pub mod write;
 
 pub use cache::StateCache;
 pub use manage::{router as manage_router, AgentManageApi};

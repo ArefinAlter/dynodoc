@@ -38,7 +38,10 @@ use serde_json::{json, Map, Value};
 use sqlx::{PgConnection, Postgres, Transaction};
 use uuid::Uuid;
 
-use super::policy::{self, Policy, Stored, CALLS_PER_MINUTE, KINDS, READ_BYTES_PER_DAY, ROLES};
+use super::policy::{
+    self, Policy, Stored, CALLS_PER_MINUTE, KINDS, OPEN_PROPOSALS, OPS_PER_PROPOSAL,
+    PROPOSALS_PER_DAY, READ_BYTES_PER_DAY, ROLES, WRITE_MODES,
+};
 use crate::{auth::AuthContext, error::ApiError, product::audit, projects, AppState};
 
 /// Policy bodies are a few hundred bytes.
@@ -168,6 +171,18 @@ pub(super) struct PolicyView {
     /// Response bytes per UTC day for each agent grant (10,000 to 1,000,000,000).
     /// Default 20,000,000.
     read_bytes_per_day: i64,
+    /// What agents may write: `none` (the default: they only read), `draft` (they stage
+    /// drafts that a person submits) or `change_request` (they may submit, unless
+    /// `submit_requires_person`). The kill switch sets it back to `none`.
+    write_mode: String,
+    /// A person must submit an agent's draft even in `change_request` mode. Default true.
+    submit_requires_person: bool,
+    /// Proposals one agent identity may open per UTC day (0 to 1000). Default 20.
+    proposals_per_day: i32,
+    /// Proposals one agent identity may have open at once (0 to 100). Default 5.
+    open_proposals: i32,
+    /// Engine operations in one proposal (1 to 10,000). Default 500.
+    ops_per_proposal: i32,
     /// Zero until the first save; then increases by one with every change. Send it back
     /// in `If-Match`.
     revision: i64,
@@ -208,6 +223,11 @@ async fn view(
         kinds: current.kinds,
         calls_per_minute: current.calls_per_minute,
         read_bytes_per_day: current.read_bytes_per_day,
+        write_mode: current.write_mode,
+        submit_requires_person: current.submit_requires_person,
+        proposals_per_day: current.proposals_per_day,
+        open_proposals: current.open_proposals,
+        ops_per_proposal: current.ops_per_proposal,
         revision: stored.map_or(0, |s| s.revision),
         updated_at: stored.map(|s| s.updated_at),
         killed_at: stored.and_then(|s| s.killed_at),
@@ -269,6 +289,16 @@ pub(super) struct PolicyBody {
     calls_per_minute: Option<i64>,
     /// 10,000 to 1,000,000,000 (default 20,000,000).
     read_bytes_per_day: Option<i64>,
+    /// `none` (default), `draft` or `change_request`.
+    write_mode: Option<String>,
+    /// Default true.
+    submit_requires_person: Option<bool>,
+    /// 0 to 1000 (default 20).
+    proposals_per_day: Option<i64>,
+    /// 0 to 100 (default 5).
+    open_proposals: Option<i64>,
+    /// 1 to 10,000 (default 500).
+    ops_per_proposal: Option<i64>,
 }
 
 impl PolicyBody {
@@ -312,12 +342,46 @@ impl PolicyBody {
         if !(READ_BYTES_PER_DAY.0..=READ_BYTES_PER_DAY.1).contains(&bytes) {
             return Err(bad("read_bytes_per_day must be 10,000 to 1,000,000,000"));
         }
+        let write_mode = self.write_mode.unwrap_or_else(|| base.write_mode.clone());
+        if !WRITE_MODES.contains(&write_mode.as_str()) {
+            return Err(bad("write_mode must be none, draft or change_request"));
+        }
+        let in_range = |value: Option<i64>, current: i32, (low, high): (i64, i64), what: &str| {
+            let value = value.unwrap_or_else(|| i64::from(current));
+            if (low..=high).contains(&value) {
+                Ok(value as i32)
+            } else {
+                Err(bad(&format!("{what} must be {low} to {high}")))
+            }
+        };
         Ok(Policy {
             enabled: self.enabled,
             min_role,
             kinds,
             calls_per_minute: calls as i32,
             read_bytes_per_day: bytes,
+            write_mode,
+            submit_requires_person: self
+                .submit_requires_person
+                .unwrap_or(base.submit_requires_person),
+            proposals_per_day: in_range(
+                self.proposals_per_day,
+                base.proposals_per_day,
+                PROPOSALS_PER_DAY,
+                "proposals_per_day",
+            )?,
+            open_proposals: in_range(
+                self.open_proposals,
+                base.open_proposals,
+                OPEN_PROPOSALS,
+                "open_proposals",
+            )?,
+            ops_per_proposal: in_range(
+                self.ops_per_proposal,
+                base.ops_per_proposal,
+                OPS_PER_PROPOSAL,
+                "ops_per_proposal",
+            )?,
         })
     }
 }
@@ -364,6 +428,31 @@ fn diff(before: &Policy, after: &Policy) -> (Vec<&'static str>, Value, Value) {
         json!(before.read_bytes_per_day),
         json!(after.read_bytes_per_day),
     );
+    note(
+        "write_mode",
+        json!(before.write_mode),
+        json!(after.write_mode),
+    );
+    note(
+        "submit_requires_person",
+        json!(before.submit_requires_person),
+        json!(after.submit_requires_person),
+    );
+    note(
+        "proposals_per_day",
+        json!(before.proposals_per_day),
+        json!(after.proposals_per_day),
+    );
+    note(
+        "open_proposals",
+        json!(before.open_proposals),
+        json!(after.open_proposals),
+    );
+    note(
+        "ops_per_proposal",
+        json!(before.ops_per_proposal),
+        json!(after.ops_per_proposal),
+    );
     (names, Value::Object(from), Value::Object(to))
 }
 
@@ -399,7 +488,7 @@ async fn put_policy(
         return Ok(reply(out));
     }
     let saved: Option<(i64, DateTime<Utc>)> = if current.is_some() {
-        sqlx::query_as("update project_agent_policy set enabled=$2,min_role=$3,kinds=$4,calls_per_minute=$5,read_bytes_per_day=$6,revision=revision+1,updated_by=$7,updated_at=clock_timestamp() where project_id=$1 returning revision,updated_at")
+        sqlx::query_as("update project_agent_policy set enabled=$2,min_role=$3,kinds=$4,calls_per_minute=$5,read_bytes_per_day=$6,write_mode=$8,submit_requires_person=$9,proposals_per_day=$10,open_proposals=$11,ops_per_proposal=$12,revision=revision+1,updated_by=$7,updated_at=clock_timestamp() where project_id=$1 returning revision,updated_at")
             .bind(project)
             .bind(wanted.enabled)
             .bind(&wanted.min_role)
@@ -407,11 +496,16 @@ async fn put_policy(
             .bind(wanted.calls_per_minute)
             .bind(wanted.read_bytes_per_day)
             .bind(auth.identity_id)
+            .bind(&wanted.write_mode)
+            .bind(wanted.submit_requires_person)
+            .bind(wanted.proposals_per_day)
+            .bind(wanted.open_proposals)
+            .bind(wanted.ops_per_proposal)
             .fetch_optional(&mut *tx)
             .await?
     } else {
         // Nothing to lock yet: of two first saves, the second inserts nothing.
-        sqlx::query_as("insert into project_agent_policy(project_id,enabled,min_role,kinds,calls_per_minute,read_bytes_per_day,updated_by,updated_at) values($1,$2,$3,$4,$5,$6,$7,clock_timestamp()) on conflict(project_id) do nothing returning revision,updated_at")
+        sqlx::query_as("insert into project_agent_policy(project_id,enabled,min_role,kinds,calls_per_minute,read_bytes_per_day,updated_by,updated_at,write_mode,submit_requires_person,proposals_per_day,open_proposals,ops_per_proposal) values($1,$2,$3,$4,$5,$6,$7,clock_timestamp(),$8,$9,$10,$11,$12) on conflict(project_id) do nothing returning revision,updated_at")
             .bind(project)
             .bind(wanted.enabled)
             .bind(&wanted.min_role)
@@ -419,6 +513,11 @@ async fn put_policy(
             .bind(wanted.calls_per_minute)
             .bind(wanted.read_bytes_per_day)
             .bind(auth.identity_id)
+            .bind(&wanted.write_mode)
+            .bind(wanted.submit_requires_person)
+            .bind(wanted.proposals_per_day)
+            .bind(wanted.open_proposals)
+            .bind(wanted.ops_per_proposal)
             .fetch_optional(&mut *tx)
             .await?
     };
@@ -491,7 +590,7 @@ async fn kill(
     // so the only sessions it can miss are those whose issuance began in the few
     // milliseconds between this statement and the commit; they die with the grants, and
     // come back only if the key holder grants again before they expire.
-    let revision: i64 = sqlx::query_scalar("insert into project_agent_policy(project_id,enabled,updated_by,updated_at,sessions_valid_after) values($1,false,$2,clock_timestamp(),clock_timestamp()) on conflict(project_id) do update set enabled=false,revision=project_agent_policy.revision+1,updated_by=$2,updated_at=clock_timestamp(),sessions_valid_after=greatest(project_agent_policy.sessions_valid_after,clock_timestamp()) returning revision")
+    let revision: i64 = sqlx::query_scalar("insert into project_agent_policy(project_id,enabled,updated_by,updated_at,sessions_valid_after) values($1,false,$2,clock_timestamp(),clock_timestamp()) on conflict(project_id) do update set enabled=false,write_mode='none',revision=project_agent_policy.revision+1,updated_by=$2,updated_at=clock_timestamp(),sessions_valid_after=greatest(project_agent_policy.sessions_valid_after,clock_timestamp()) returning revision")
         .bind(project)
         .bind(auth.identity_id)
         .fetch_one(&mut *tx)

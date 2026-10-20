@@ -32,10 +32,71 @@ use crate::{agent::error::AgentFail, error::ApiError, AppState};
 pub trait AgentScope: Send + Sync + 'static {
     const SCOPE: &'static str;
 }
-/// Every read route of the agent data plane.
+/// Every read route of the agent data plane, and the status of a proposal.
 pub struct ContentRead;
 impl AgentScope for ContentRead {
     const SCOPE: &'static str = "content:read";
+}
+/// `propose`: staging edits in a draft owned by the agent identity.
+pub struct ContentPropose;
+impl AgentScope for ContentPropose {
+    const SCOPE: &'static str = "content:propose";
+}
+/// `submit` and `withdraw` of the agent's own proposals. Independent of the other scopes.
+pub struct ContentSubmit;
+impl AgentScope for ContentSubmit {
+    const SCOPE: &'static str = "content:submit";
+}
+
+/// What a session token claims; none of it is trusted until [`verify_current`] has read it
+/// back from the database.
+pub(crate) struct Claimed {
+    pub identity: Uuid,
+    pub key: Uuid,
+    pub project: Uuid,
+    pub session: Uuid,
+    pub generation: i64,
+    pub scope: &'static str,
+}
+
+/// The facts the database must show now for a session to be honoured: the account active and
+/// in the session's generation, the key unrevoked and enrolled for an AI agent, an active
+/// grant of the key for the project that lists the scope (`all` mode never covers an agent
+/// scope), and the session issued after the project's last kill switch. The last column of
+/// the query is that kill switch (migration 0043): once pulled, only a session issued
+/// strictly after it counts (a session stamped with the very same instant is treated as
+/// older), and a session with no ledger row cannot show that it was.
+///
+/// `lock` takes the account row `FOR SHARE`. A write transaction passes it, so that a
+/// revocation, a grant change, a disablement or an erasure (they take the row `FOR UPDATE`)
+/// waits for the write to commit or is seen by it, and no write lands after the change.
+pub(crate) async fn verify_current(
+    db: &mut sqlx::PgConnection,
+    claimed: &Claimed,
+    lock: bool,
+) -> Result<(), ApiError> {
+    let current: Option<(i64, bool, bool, bool)> = sqlx::query_as(&format!(
+        "select i.session_generation,exists(select 1 from device_key_class c where c.key_id=k.id and c.class='agent'),{},coalesce((select p.sessions_valid_after is null or exists(select 1 from device_session s where s.id=$5 and s.issued_at>p.sessions_valid_after) from project_agent_policy p where p.project_id=$3),true) from identity i join device_signing_key k on k.identity_id=i.id where i.id=$1 and k.id=$2 and i.disabled_at is null and i.erased_at is null and not exists(select 1 from device_key_revocation r where r.key_id=k.id){}",
+        key_reaches("$3", "$4::text[]"),
+        if lock { " for share of i" } else { "" }
+    ))
+    .bind(claimed.identity)
+    .bind(claimed.key)
+    .bind(claimed.project)
+    .bind(vec![claimed.scope])
+    .bind(claimed.session)
+    .fetch_optional(&mut *db)
+    .await?;
+    let Some((generation, agent_key, reaches, not_cut_off)) = current else {
+        return Err(ApiError::Unauthorized);
+    };
+    if generation != claimed.generation {
+        return Err(ApiError::Unauthorized);
+    }
+    if !agent_key || !reaches || !not_cut_off {
+        return Err(ApiError::Forbidden);
+    }
+    Ok(())
 }
 
 /// The caller of an agent route. Dereferences to [`AuthContext`]; `device` is always set.
@@ -92,31 +153,21 @@ impl<S: AgentScope> FromRequestParts<AppState> for AgentAuth<S> {
             return Err(ApiError::Forbidden.into());
         }
         // Read again on every request: nothing is cached but the token's lifetime.
-        // The last column is the kill switch of the project (migration 0043): once pulled,
-        // only a session issued strictly after it counts (a session stamped with the very
-        // same instant is treated as older), and a session with no ledger row cannot show
-        // that it was.
-        let current: Option<(i64, bool, bool, bool)> = sqlx::query_as(&format!(
-            "select i.session_generation,exists(select 1 from device_key_class c where c.key_id=k.id and c.class='agent'),{},coalesce((select p.sessions_valid_after is null or exists(select 1 from device_session s where s.id=$5 and s.issued_at>p.sessions_valid_after) from project_agent_policy p where p.project_id=$3),true) from identity i join device_signing_key k on k.identity_id=i.id where i.id=$1 and k.id=$2 and i.disabled_at is null and i.erased_at is null and not exists(select 1 from device_key_revocation r where r.key_id=k.id)",
-            key_reaches("$3", "$4::text[]")
-        ))
-        .bind(claims.identity)
-        .bind(claims.key)
-        .bind(claims.project)
-        .bind(vec![S::SCOPE])
-        .bind(claims.session)
-        .fetch_optional(&state.pool)
-        .await
-        .map_err(ApiError::from)?;
-        let Some((generation, agent_key, reaches, not_cut_off)) = current else {
-            return Err(ApiError::Unauthorized.into());
-        };
-        if generation != claims.generation {
-            return Err(ApiError::Unauthorized.into());
-        }
-        if !agent_key || !reaches || !not_cut_off {
-            return Err(ApiError::Forbidden.into());
-        }
+        let mut db = state.pool.acquire().await.map_err(ApiError::from)?;
+        verify_current(
+            &mut db,
+            &Claimed {
+                identity: claims.identity,
+                key: claims.key,
+                project: claims.project,
+                session: claims.session,
+                generation: claims.generation,
+                scope: S::SCOPE,
+            },
+            false,
+        )
+        .await?;
+        drop(db);
         Ok(Self(
             AuthContext {
                 identity_id: claims.identity,

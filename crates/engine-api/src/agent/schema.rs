@@ -324,14 +324,208 @@ pub struct AgentAccess {
     role: String,
     /// Scopes of the grant that is active now.
     scopes: Vec<String>,
-    /// `none`: no write exists in this version.
+    /// The project's `write_mode`: `none` (agents only read), `draft` or `change_request`.
     write_mode: String,
+    /// Whether a person must submit an agent's draft even in `change_request` mode.
+    submit_requires_person: bool,
     /// The grant's budgets in this project: `calls_per_minute` and `read_bytes_per_day`,
-    /// each `{limit, used}`.
+    /// each `{limit, used}`; and, when writing is on, `proposals_per_day` and
+    /// `open_proposals` (`{limit, used}`, counted for the agent identity) and
+    /// `ops_per_proposal` (`{limit}`).
     #[schema(value_type = Object)]
     budget: Option<serde_json::Value>,
+    /// What this credential can do now: `propose` and `submit` are true only when its grant
+    /// has the scope and the project's policy lets the agent do it.
     #[schema(value_type = Object)]
     capabilities: serde_json::Value,
+}
+
+/// Body of `propose` (docs/AI-AGENT-PROTOCOL-SPEC.md 7.7). The file is the one in the path.
+/// Unknown fields are refused. `ops` items are flat objects validated strictly against
+/// the operation grammar (spec 8): `op` is one of `set_text`, `replace`, `replace_all`,
+/// `insert`, `delete`, `move`, `set_type`, `set_cells`, `clear`, `set_shape`, `set_notes`;
+/// the others (`fill`, `add_slide`, `delete_slide`, `macro`) are `unsupported_op`.
+#[derive(ToSchema, Serialize)]
+#[allow(dead_code)]
+pub struct AgentProposeBody {
+    /// The file again (optional); if given it must be the file of the path.
+    file: Option<String>,
+    /// The revision the refs and hashes in `ops` came from (0 up to the head).
+    rev: u64,
+    /// A new UUID per call; reuse it only to retry. With the same canonical body it returns
+    /// the stored receipt; with another body it is `idempotency_conflict`.
+    request_id: String,
+    /// An existing proposal of this agent to extend; omit to start one.
+    proposal: Option<String>,
+    /// A short title for reviewers (at most 200 characters; no control or hidden characters).
+    name: Option<String>,
+    /// One to 200 ops, each `{op, ref|sheet|slide..., text|find|with|values..., base, why, id}`.
+    #[schema(value_type = Vec<Object>)]
+    ops: Vec<serde_json::Value>,
+    /// Compile and preview only: nothing is stored, no receipt is written.
+    dry_run: Option<bool>,
+    /// Refuse an op whose `base` hash differs from the team's current hash (`stale_base`)
+    /// instead of recording a warning.
+    strict: Option<bool>,
+    /// `summary` (default) or `diff`.
+    #[serde(rename = "return")]
+    return_kind: Option<String>,
+}
+
+#[derive(ToSchema, Serialize)]
+#[allow(dead_code)]
+pub struct AgentPreviewChange {
+    #[serde(rename = "ref")]
+    r: String,
+    /// `changed`, `created`, `deleted` or `moved`.
+    kind: String,
+    old: Option<String>,
+    new: Option<String>,
+}
+
+#[derive(ToSchema, Serialize)]
+#[allow(dead_code)]
+pub struct AgentPreviewOp {
+    index: usize,
+    /// The agent's own label for the op.
+    id: Option<String>,
+    op: String,
+    /// The agent's reason (untrusted text).
+    why: Option<String>,
+    engine_ops: usize,
+    changes: Vec<AgentPreviewChange>,
+    more_changes: usize,
+}
+
+#[derive(ToSchema, Serialize)]
+#[allow(dead_code)]
+pub struct AgentStale {
+    /// The index of the op (absent in a replay).
+    op: Option<usize>,
+    /// The ref or range the op named.
+    at: String,
+    /// The team's hash now (absent in a replay, or when the target is gone).
+    current: Option<String>,
+}
+
+/// `propose`: the preview of the call (or of a dry run), or the stored receipt of a call
+/// already made (`replayed`; then `ops`, `entries`, `entries_total`, `would_apply` and
+/// `truncated` are absent).
+#[derive(ToSchema, Serialize)]
+#[allow(dead_code)]
+pub struct AgentPropose {
+    #[serde(flatten)]
+    envelope: AgentEnvelope,
+    /// The proposal's id (absent in a dry run of a new proposal).
+    proposal: Option<String>,
+    request_id: Option<String>,
+    /// `draft`, `open`, `merged`, `declined` or `withdrawn` (absent in a dry run).
+    state: Option<String>,
+    /// The draft's revision after the call.
+    revision: Option<i64>,
+    /// The proposal's base revision, the team's head, and how far behind it is.
+    base: i64,
+    head: u64,
+    behind: u64,
+    /// Ops applied (0 in a dry run).
+    applied: u64,
+    would_apply: Option<u64>,
+    /// Engine operations the ops became.
+    expanded: u64,
+    entries_total: Option<usize>,
+    ops: Option<Vec<AgentPreviewOp>>,
+    /// The ops whose `base` was out of date (at most five in a replay).
+    stale: Vec<AgentStale>,
+    stale_total: u64,
+    entries: Option<Vec<AgentDiffEntry>>,
+    truncated: Option<bool>,
+    /// Whether this call opened the proposal (a replay only).
+    opened: Option<bool>,
+    dry_run: Option<bool>,
+    replayed: bool,
+    /// `stale`, `behind`, `truncated`.
+    warn: Vec<String>,
+}
+
+/// Optional note on `submit` and `withdraw`.
+#[derive(ToSchema, Serialize)]
+#[allow(dead_code)]
+pub struct AgentNoteBody {
+    /// At most 1000 characters; no control or hidden characters.
+    note: Option<String>,
+}
+
+/// `submit` and `withdraw`.
+#[derive(ToSchema, Serialize)]
+#[allow(dead_code)]
+pub struct AgentSubmit {
+    protocol: String,
+    tool: String,
+    /// `submit` or `withdraw`.
+    action: String,
+    proposal: String,
+    file: String,
+    /// `open`, `awaiting_person` (a person must submit it) or `withdrawn`.
+    state: String,
+    /// Whether this call changed anything.
+    changed: bool,
+    behind: u64,
+    trust: String,
+}
+
+#[derive(ToSchema, Serialize)]
+#[allow(dead_code)]
+pub struct AgentReviewNote {
+    /// `approved`, `changes_requested` or `commented`.
+    verdict: String,
+    /// The reviewer's display name (untrusted text, at most 80 characters).
+    by: String,
+    /// The reviewer's note (untrusted text, at most 400 characters).
+    note: String,
+    /// The proposal changed after this review.
+    stale: bool,
+    /// The node the comment is on, when it is on one.
+    node: Option<String>,
+}
+
+#[derive(ToSchema, Serialize)]
+#[allow(dead_code)]
+pub struct AgentConflict {
+    #[serde(rename = "ref")]
+    r: Option<String>,
+    /// The engine field both sides changed.
+    field: String,
+    /// Six-hex hashes of the team's and the draft's value; never the values.
+    team: String,
+    draft: String,
+}
+
+/// `status` of a proposal.
+#[derive(ToSchema, Serialize)]
+#[allow(dead_code)]
+pub struct AgentProposalStatus {
+    protocol: String,
+    tool: String,
+    what: String,
+    proposal: String,
+    file: String,
+    /// `draft`, `open`, `changes_requested`, `declined`, `merged` or `withdrawn`.
+    state: String,
+    base: i64,
+    head: u64,
+    behind: u64,
+    revision: i64,
+    /// Engine operations in the proposal.
+    edits: u64,
+    approvals: i64,
+    required: i64,
+    satisfied: bool,
+    /// Same-field overlaps a merge would meet (the first 20 are in `conflict_list`).
+    conflicts: usize,
+    reviews: Vec<AgentReviewNote>,
+    conflict_list: Vec<AgentConflict>,
+    merged_at: Option<String>,
+    trust: String,
 }
 
 /// The discovery document.
@@ -347,7 +541,11 @@ pub struct AgentDiscovery {
     mcp: Option<serde_json::Value>,
     mcp_revisions: Vec<String>,
     protected_resource_metadata: Option<String>,
+    /// The read scope (`content:read`), which every tool needs.
     scopes: Vec<String>,
+    /// The write scopes (`content:propose`, `content:submit`), independent of each other and
+    /// of the read scope. A project must also set `write_mode`.
+    write_scopes: Vec<String>,
     #[schema(value_type = Object)]
     limits: serde_json::Value,
     profiles: Vec<String>,
@@ -368,7 +566,11 @@ pub struct AgentDiscovery {
         super::routes::find,
         super::routes::diff,
         super::routes::access,
-        super::routes::discovery
+        super::routes::discovery,
+        super::write::propose,
+        super::proposal::submit,
+        super::proposal::withdraw,
+        super::proposal::status
     ),
     components(schemas(
         AgentEnvelope,
@@ -393,7 +595,17 @@ pub struct AgentDiscovery {
         AgentDiffEntry,
         AgentAccess,
         AgentDiscovery,
-        BlocksReadBody
+        BlocksReadBody,
+        AgentProposeBody,
+        AgentPreviewChange,
+        AgentPreviewOp,
+        AgentStale,
+        AgentPropose,
+        AgentNoteBody,
+        AgentSubmit,
+        AgentReviewNote,
+        AgentConflict,
+        AgentProposalStatus
     ))
 )]
 pub struct AgentApi;

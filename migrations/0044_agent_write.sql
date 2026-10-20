@@ -272,7 +272,7 @@ create table agent_proposal_receipt (
     request_digest bytea not null check (octet_length(request_digest) = 32),
     outcome text not null check (outcome ~ '^[a-z_]{2,40}$'),
     why jsonb not null default '[]'::jsonb
-        check (jsonb_typeof(why) = 'array' and octet_length(why::text) <= 65536),
+        check (jsonb_typeof(why) = 'array' and octet_length(why::text) <= 262144),
     at timestamptz not null default now(),
     check ((kind = 'propose') = (request_id is not null)),
     check (kind = 'propose' or not opened)
@@ -304,16 +304,14 @@ end $$;
 create trigger agent_proposal_receipt_no_delete before delete on agent_proposal_receipt
     for each row execute function agent_proposal_receipt_erasure_guard();
 
--- 7. The call ledger learns the write tools and, for them, what was proposed (counts and the
---    proposal id; never text, why or ops). status of a proposal is the existing 'status'.
+-- 7. The call ledger learns the write tools. Its columns are unchanged: the proposal, the
+--    counts of ops and the digest that spec 9.6 asks of a write call are in the receipt
+--    (section 6), which a call that stored or changed something always has; the ledger row
+--    says only that the call was made, its tool, file, revision, digest and outcome. The status
+--    of a proposal is the existing 'status'; withdraw is a 'submit'.
 alter table agent_call drop constraint agent_call_tool_check;
 alter table agent_call add constraint agent_call_tool_check
     check (tool in ('files', 'outline', 'read', 'find', 'diff', 'status', 'propose', 'submit'));
-alter table agent_call
-    add column proposal_id uuid,
-    add column ops_in integer check (ops_in is null or ops_in >= 0),
-    add column ops_engine integer check (ops_engine is null or ops_engine >= 0),
-    add column bytes_in integer check (bytes_in is null or bytes_in >= 0);
 
 -- 8. The project policy learns the write fields (spec 5.2). Writing is OFF by default:
 --    write_mode 'none' means a project that enables agents for reading enables nothing

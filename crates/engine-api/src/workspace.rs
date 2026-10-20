@@ -1,5 +1,6 @@
 //! Researcher workspace: atomic batches, sharing and named versions.
 use crate::{
+    agent::identity::{agent_json, owned_by},
     auth::{store, AuthContext},
     error::ApiError,
     ops::apply,
@@ -534,7 +535,9 @@ async fn drafts(
     auth: AuthContext,
 ) -> Result<Json<Value>, ApiError> {
     apply::require_role(&state.pool, DocumentId(id), IdentityId(auth.identity_id)).await?;
-    let items:Vec<Value>=sqlx::query_scalar("select to_jsonb(d)-'base_state' from workspace_draft d where document_id=$1 and created_by=$2 order by created_at desc").bind(id).bind(auth.identity_id).fetch_all(&state.pool).await?;
+    // Your drafts and those your AI agents made for you (docs/AI-AGENT-CONNECTORS.md 6.1);
+    // `agent` appears on the latter only.
+    let items:Vec<Value>=sqlx::query_scalar(&format!("select (to_jsonb(d)-'base_state')||{} from workspace_draft d where document_id=$1 and {} order by created_at desc",agent_json("d"),owned_by("d","$2"))).bind(id).bind(auth.identity_id).fetch_all(&state.pool).await?;
     Ok(Json(json!({"items":items})))
 }
 #[utoipa::path(get, path="/documents/{id}/drafts/{draft_id}", tag="workspace", params(("id" = Uuid, Path, description = "Resource identifier"), ("draft_id" = Uuid, Path, description = "Resource identifier")), responses((status=200, description="Success; requires document membership", body=Value),(status=401, description="Sign in required"),(status=403, description="Insufficient access"),(status=409, description="Review a concurrent change before retrying")))]
@@ -544,7 +547,17 @@ async fn get_draft(
     auth: AuthContext,
 ) -> Result<Json<Value>, ApiError> {
     apply::require_role(&state.pool, DocumentId(id), IdentityId(auth.identity_id)).await?;
-    let mut row:Value=sqlx::query_scalar("select to_jsonb(d) from workspace_draft d where id=$1 and document_id=$2 and created_by=$3").bind(draft).bind(id).bind(auth.identity_id).fetch_optional(&state.pool).await?.ok_or(ApiError::NotFound)?;
+    let mut row: Value = sqlx::query_scalar(&format!(
+        "select to_jsonb(d)||{} from workspace_draft d where id=$1 and document_id=$2 and {}",
+        agent_json("d"),
+        owned_by("d", "$3")
+    ))
+    .bind(draft)
+    .bind(id)
+    .bind(auth.identity_id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or(ApiError::NotFound)?;
     let mut connection = state.pool.acquire().await?;
     let mut current =
         crate::draft_storage::decode(&mut connection, DocumentId(id), &row["base_state"]).await?;
@@ -585,13 +598,14 @@ async fn edit_draft(
     if role == Role::Auditor {
         return Err(ApiError::Forbidden);
     }
-    let revision:i64=sqlx::query_scalar("select revision from workspace_draft where id=$1 and document_id=$2 and created_by=$3 for update").bind(draft).bind(id).bind(auth.identity_id).fetch_optional(&mut *tx).await?.ok_or(ApiError::NotFound)?;
+    let owned = owned_by("workspace_draft", "$3");
+    let revision:i64=sqlx::query_scalar(&format!("select revision from workspace_draft where id=$1 and document_id=$2 and {owned} for update")).bind(draft).bind(id).bind(auth.identity_id).fetch_optional(&mut *tx).await?.ok_or(ApiError::NotFound)?;
     if req.revision != Some(revision) {
         return Err(ApiError::Conflict {
             reason: "This draft changed in another tab. Reopen it before saving.".into(),
         });
     }
-    let base:Value=sqlx::query_scalar("select base_state from workspace_draft where id=$1 and document_id=$2 and created_by=$3 and merged_at is null for update").bind(draft).bind(id).bind(auth.identity_id).fetch_optional(&mut *tx).await?.ok_or(ApiError::NotFound)?;
+    let base:Value=sqlx::query_scalar(&format!("select base_state from workspace_draft where id=$1 and document_id=$2 and {owned} and merged_at is null for update")).bind(draft).bind(id).bind(auth.identity_id).fetch_optional(&mut *tx).await?.ok_or(ApiError::NotFound)?;
     let mut current = crate::draft_storage::decode(&mut tx, DocumentId(id), &base).await?;
     let prior: Vec<Value> =
         sqlx::query_scalar("select payload from draft_edit where draft_id=$1 order by id")
@@ -794,25 +808,40 @@ pub(crate) struct DraftContext {
     pub revision: i64,
 }
 
-/// Lock and replay an unmerged draft. `creator` restricts it to one owner; reviewers of
-/// a submitted change request load any creator's draft after their own access check.
+/// Lock and replay an unmerged draft. `creator` restricts it to one owner (the person, or
+/// the agent identity whose own routes pass its id); reviewers of a submitted change
+/// request load any creator's draft after their own access check.
 pub(crate) async fn load_draft(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     id: Uuid,
     draft: Uuid,
     creator: Option<Uuid>,
 ) -> Result<DraftContext, ApiError> {
-    let row:Value=sqlx::query_scalar("select to_jsonb(d) from workspace_draft d where id=$1 and document_id=$2 and ($3::uuid is null or created_by=$3) and merged_at is null for update").bind(draft).bind(id).bind(creator).fetch_optional(&mut **tx).await?.ok_or(ApiError::NotFound)?;
-    let mut local = crate::draft_storage::decode(tx, DocumentId(id), &row["base_state"]).await?;
+    let row:Value=sqlx::query_scalar(&format!("select to_jsonb(d) from workspace_draft d where id=$1 and document_id=$2 and ($3::uuid is null or {}) and merged_at is null for update",owned_by("d","$3"))).bind(draft).bind(id).bind(creator).fetch_optional(&mut **tx).await?.ok_or(ApiError::NotFound)?;
+    replay_draft(&mut **tx, id, row).await
+}
+
+/// A draft's ancestor and current state from its stored row: the base, then every
+/// `draft_edit` in order. Takes no lock; [`load_draft`] adds one.
+pub(crate) async fn replay_draft(
+    db: &mut sqlx::PgConnection,
+    id: Uuid,
+    row: Value,
+) -> Result<DraftContext, ApiError> {
+    let draft = row["id"]
+        .as_str()
+        .and_then(|v| v.parse::<Uuid>().ok())
+        .ok_or_else(|| ApiError::Internal("draft row without an id".into()))?;
+    let mut local = crate::draft_storage::decode(db, DocumentId(id), &row["base_state"]).await?;
     let base = if row["merge_base_state"].is_null() {
         local.clone()
     } else {
-        crate::draft_storage::decode(tx, DocumentId(id), &row["merge_base_state"]).await?
+        crate::draft_storage::decode(db, DocumentId(id), &row["merge_base_state"]).await?
     };
     let edits: Vec<Value> =
         sqlx::query_scalar("select payload from draft_edit where draft_id=$1 order by id")
             .bind(draft)
-            .fetch_all(&mut **tx)
+            .fetch_all(&mut *db)
             .await?;
     for edit in edits {
         apply_payload(

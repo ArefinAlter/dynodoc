@@ -10,7 +10,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use engine_agent::error::AgentError;
+use engine_agent::error::{AgentError, CompileError};
 use serde_json::{json, Value};
 
 use crate::error::{ApiError, ErrorCode};
@@ -22,6 +22,9 @@ pub enum AgentFail {
     Api(ApiError),
     /// A protocol error produced by `engine-agent` or by request validation.
     Agent(AgentError),
+    /// A protocol error of `propose` with the op that caused it: `details.op` is its index
+    /// and `details.id` the agent's own label for it, when it gave one (spec 7.7).
+    Compile(CompileError),
 }
 
 impl From<ApiError> for AgentFail {
@@ -32,6 +35,11 @@ impl From<ApiError> for AgentFail {
 impl From<AgentError> for AgentFail {
     fn from(error: AgentError) -> Self {
         Self::Agent(error)
+    }
+}
+impl From<CompileError> for AgentFail {
+    fn from(error: CompileError) -> Self {
+        Self::Compile(error)
     }
 }
 impl From<sqlx::Error> for AgentFail {
@@ -51,6 +59,7 @@ impl AgentFail {
         match self {
             AgentFail::Api(error) => api_agent_code(error),
             AgentFail::Agent(error) => error.agent_code(),
+            AgentFail::Compile(error) => error.error.agent_code(),
         }
     }
 }
@@ -128,6 +137,30 @@ fn agent_details(error: &AgentError) -> Value {
     details
 }
 
+/// The response of a protocol error, `details` as built by the caller.
+fn agent_response(error: &AgentError, details: Value) -> Response {
+    if matches!(error, AgentError::Internal) {
+        tracing::error!("agent route internal error");
+    }
+    let status =
+        StatusCode::from_u16(error.http_status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    let body = json!({
+        "error": error.hint(),
+        "code": error.code(),
+        "details": details,
+    });
+    let mut response = (status, Json(body)).into_response();
+    response.extensions_mut().insert(ErrorCode(error.code()));
+    if let AgentError::BudgetExceeded { retry_after } | AgentError::RateLimited { retry_after } =
+        error
+    {
+        if let Ok(value) = retry_after.to_string().parse() {
+            response.headers_mut().insert("retry-after", value);
+        }
+    }
+    response
+}
+
 impl IntoResponse for AgentFail {
     fn into_response(self) -> Response {
         match self {
@@ -135,27 +168,20 @@ impl IntoResponse for AgentFail {
                 let code = api_agent_code(&error);
                 error.respond(json!({ "agent_code": code }))
             }
-            AgentFail::Agent(error) => {
-                if matches!(error, AgentError::Internal) {
-                    tracing::error!("agent route internal error");
-                }
-                let status = StatusCode::from_u16(error.http_status())
-                    .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-                let body = json!({
-                    "error": error.hint(),
-                    "code": error.code(),
-                    "details": agent_details(&error),
-                });
-                let mut response = (status, Json(body)).into_response();
-                response.extensions_mut().insert(ErrorCode(error.code()));
-                if let AgentError::BudgetExceeded { retry_after }
-                | AgentError::RateLimited { retry_after } = error
-                {
-                    if let Ok(value) = retry_after.to_string().parse() {
-                        response.headers_mut().insert("retry-after", value);
+            AgentFail::Agent(error) => agent_response(&error, agent_details(&error)),
+            AgentFail::Compile(failed) => {
+                let mut details = agent_details(&failed.error);
+                if let Some(map) = details.as_object_mut() {
+                    if let Some(op) = failed.op {
+                        map.insert("op".into(), op.into());
+                    }
+                    // The label was restricted to `A-Za-z0-9_.:-` by the grammar, so it is a
+                    // token, not text.
+                    if let Some(id) = &failed.id {
+                        map.insert("id".into(), id.clone().into());
                     }
                 }
-                response
+                agent_response(&failed.error, details)
             }
         }
     }
