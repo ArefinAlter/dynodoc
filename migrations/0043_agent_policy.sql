@@ -38,6 +38,10 @@ create table project_agent_policy (
     -- Optimistic concurrency, as project_settings.revision. A new row is revision 1; the
     -- application treats "no row" as revision 0.
     revision bigint not null default 1 check (revision >= 1),
+    -- Set by the kill switch only: an agent session issued before this moment is refused,
+    -- whatever grant or policy exists later, so enabling or granting again restores
+    -- nothing that was ended. Null until the switch is first pulled. Never moves back.
+    sessions_valid_after timestamptz,
     updated_by uuid not null references identity(id),
     updated_at timestamptz not null default now()
 );
@@ -61,6 +65,9 @@ begin
     end if;
     if new.revision is distinct from old.revision + 1 then
         raise exception 'project_agent_policy.revision must increase by exactly one';
+    end if;
+    if new.sessions_valid_after < old.sessions_valid_after then
+        raise exception 'project_agent_policy.sessions_valid_after cannot move back';
     end if;
     return new;
 end $$;

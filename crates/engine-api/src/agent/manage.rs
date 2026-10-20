@@ -153,6 +153,9 @@ pub(super) struct PolicyView {
     /// in `If-Match`.
     revision: i64,
     updated_at: Option<DateTime<Utc>>,
+    /// When the kill switch was last pulled (null if never). Agent sessions issued before
+    /// it are refused, whatever is granted or enabled afterwards.
+    killed_at: Option<DateTime<Utc>>,
     /// Whether this server serves the agent routes at all (`AGENT_GATEWAY=on`). The
     /// policy can be saved either way; it has no effect while this is false.
     gateway: bool,
@@ -188,6 +191,7 @@ async fn view(
         read_bytes_per_day: current.read_bytes_per_day,
         revision: stored.map_or(0, |s| s.revision),
         updated_at: stored.map(|s| s.updated_at),
+        killed_at: stored.and_then(|s| s.killed_at),
         gateway: state.agent_gateway,
         file_overrides: rows
             .into_iter()
@@ -418,6 +422,7 @@ async fn put_policy(
         policy: wanted.clone(),
         revision: saved_revision,
         updated_at,
+        killed_at: current.as_ref().and_then(|c| c.killed_at),
     };
     let out = view(&mut tx, &state, project, Some(&saved), Some(true)).await?;
     tx.commit().await?;
@@ -434,7 +439,8 @@ pub(super) struct KillView {
     project_id: Uuid,
     /// Always false after this call.
     enabled: bool,
-    /// The policy revision now (0 when no policy was ever saved).
+    /// The policy revision now. Every pull is a change of the policy row, so it moves by
+    /// one (the first pull on a project with no saved policy creates the row, revision 1).
     revision: i64,
     /// Whether the policy was enabled when the switch was pulled.
     was_enabled: bool,
@@ -442,7 +448,7 @@ pub(super) struct KillView {
     revoked_grants: i64,
 }
 
-#[utoipa::path(operation_id="agent_policy_kill", post, path="/projects/{id}/agent-policy/kill", tag="agent policy", params(("id"=Uuid,Path,description="Project")), security(("paseto"=[])), responses((status=200, description="Agents are disabled for the project and every active grant of an agent key for it is revoked, in one transaction, and the project's cached document states are purged. Takes effect on the very next agent request, and every outstanding agent session token stops working (they are re-checked against the grant on each request). Re-enabling the policy restores no revoked grant: the key holders grant again. Idempotent; always audited (agent.killswitch, plus device.grant.revoked per grant)", body=KillView),(status=401, description="Account sign-in required; a device, agent or connector token is refused"),(status=403, description="Not a project owner or manager")))]
+#[utoipa::path(operation_id="agent_policy_kill", post, path="/projects/{id}/agent-policy/kill", tag="agent policy", params(("id"=Uuid,Path,description="Project")), security(("paseto"=[])), responses((status=200, description="Agents are disabled for the project and every active grant of an agent key for it is revoked, in one transaction, and the project's cached document states are purged. Takes effect on the very next agent request. Every agent session issued before the call is refused for good (sessions are stateless tokens, so this is recorded as a cut-off time on the policy, killed_at): enabling the policy or granting a key again restores none of them, and the key holders must grant again and open a new session. Each pull moves the policy revision and is audited (agent.killswitch, plus device.grant.revoked per grant); pulling it again is harmless", body=KillView),(status=401, description="Account sign-in required; a device, agent or connector token is refused"),(status=403, description="Not a project owner or manager")))]
 async fn kill(
     State(state): State<AppState>,
     auth: AuthContext,
@@ -454,14 +460,14 @@ async fn kill(
     require_manager(&mut tx, project, auth.identity_id).await?;
     let current = policy::load(&mut tx, project, true).await?;
     let was_enabled = current.as_ref().is_some_and(|c| c.policy.enabled);
-    let mut revision = current.as_ref().map_or(0, |c| c.revision);
-    if was_enabled {
-        revision = sqlx::query_scalar("update project_agent_policy set enabled=false,revision=revision+1,updated_by=$2,updated_at=clock_timestamp() where project_id=$1 returning revision")
-            .bind(project)
-            .bind(auth.identity_id)
-            .fetch_one(&mut *tx)
-            .await?;
-    }
+    // Disable, and mark the moment: sessions issued before it are refused for good (the
+    // extractor compares them with sessions_valid_after), so enabling or granting again
+    // revives none of them. The row is created if the project never saved a policy.
+    let revision: i64 = sqlx::query_scalar("insert into project_agent_policy(project_id,enabled,updated_by,updated_at,sessions_valid_after) values($1,false,$2,clock_timestamp(),clock_timestamp()) on conflict(project_id) do update set enabled=false,revision=project_agent_policy.revision+1,updated_by=$2,updated_at=clock_timestamp(),sessions_valid_after=greatest(project_agent_policy.sessions_valid_after,clock_timestamp()) returning revision")
+        .bind(project)
+        .bind(auth.identity_id)
+        .fetch_one(&mut *tx)
+        .await?;
     // Only agent keys: a person's key holds no agent grant. One audit row per ended grant,
     // under the grant's own action, so the key holder's trail explains the change.
     let revoked: i64 = sqlx::query_scalar("with revoked as (update device_key_project_grant g set revoked_at=clock_timestamp() where g.project_id=$1 and g.revoked_at is null and exists(select 1 from device_key_class c where c.key_id=g.key_id and c.class='agent') returning g.key_id,g.scopes), logged as (insert into operation_audit(actor_id,action,resource_id,detail) select $2::uuid,'device.grant.revoked',r.key_id,jsonb_build_object('key_id',r.key_id,'project_id',$1::uuid,'scopes',to_jsonb(r.scopes),'reason','agent_killswitch') from revoked r returning 1) select count(*) from logged")

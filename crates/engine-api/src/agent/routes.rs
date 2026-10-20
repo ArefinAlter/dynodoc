@@ -7,12 +7,13 @@
 //! Order of every request, none of it cached beyond the token's own lifetime:
 //!
 //! 1. [`AgentAuth`]: a device token with `content:read` for this project, whose key is
-//!    unrevoked, enrolled as an agent key and holds an active grant.
+//!    unrevoked, enrolled as an agent key and holds an active grant, and whose session
+//!    is not older than the project's last kill switch.
 //! 2. The caller's current project role (`403` for a non-member, the same answer for an
-//!    unknown project) and the process-local admission budget.
-//! 2b. The project policy ([`policy::check`]): agents enabled, the role at or above the
-//!    floor, and room in the grant's per-minute and per-day budgets. Disabled and
-//!    below-floor are the same `403` as a non-member; a budget is `429`.
+//!    unknown project) and the process-local admission budget; then the project policy
+//!    ([`policy::check`]): agents enabled, the role at or above the floor, and room in
+//!    the grant's per-minute and per-day budgets. Disabled and below-floor are the same
+//!    `403` as a non-member; a budget is `429`.
 //! 3. For a file route, the file in this project with a role for the caller, a kind the
 //!    policy admits and no `none` file policy (`404` otherwise, one answer for every
 //!    reason).

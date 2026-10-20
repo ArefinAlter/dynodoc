@@ -73,6 +73,20 @@ pub struct Stored {
     pub policy: Policy,
     pub revision: i64,
     pub updated_at: DateTime<Utc>,
+    /// When the kill switch was last pulled; agent sessions issued before it are refused.
+    pub killed_at: Option<DateTime<Utc>>,
+}
+
+#[derive(sqlx::FromRow)]
+struct Row {
+    enabled: bool,
+    min_role: String,
+    kinds: Vec<String>,
+    calls_per_minute: i32,
+    read_bytes_per_day: i64,
+    revision: i64,
+    updated_at: DateTime<Utc>,
+    sessions_valid_after: Option<DateTime<Utc>>,
 }
 
 /// The project's saved policy, or `None` when it never set one (which means disabled).
@@ -82,29 +96,25 @@ pub async fn load(
     project: Uuid,
     lock: bool,
 ) -> Result<Option<Stored>, sqlx::Error> {
-    let row: Option<(bool, String, Vec<String>, i32, i64, i64, DateTime<Utc>)> =
-        sqlx::query_as(&format!(
-            "select enabled,min_role,kinds,calls_per_minute,read_bytes_per_day,revision,updated_at from project_agent_policy where project_id=$1{}",
-            if lock { " for update" } else { "" }
-        ))
-        .bind(project)
-        .fetch_optional(db)
-        .await?;
-    Ok(row.map(
-        |(enabled, min_role, kinds, calls_per_minute, read_bytes_per_day, revision, updated_at)| {
-            Stored {
-                policy: Policy {
-                    enabled,
-                    min_role,
-                    kinds,
-                    calls_per_minute,
-                    read_bytes_per_day,
-                },
-                revision,
-                updated_at,
-            }
-        },
+    let row: Option<Row> = sqlx::query_as(&format!(
+        "select enabled,min_role,kinds,calls_per_minute,read_bytes_per_day,revision,updated_at,sessions_valid_after from project_agent_policy where project_id=$1{}",
+        if lock { " for update" } else { "" }
     ))
+    .bind(project)
+    .fetch_optional(db)
+    .await?;
+    Ok(row.map(|row| Stored {
+        policy: Policy {
+            enabled: row.enabled,
+            min_role: row.min_role,
+            kinds: row.kinds,
+            calls_per_minute: row.calls_per_minute,
+            read_bytes_per_day: row.read_bytes_per_day,
+        },
+        revision: row.revision,
+        updated_at: row.updated_at,
+        killed_at: row.sessions_valid_after,
+    }))
 }
 
 /// The product name of a stored project role (`document_member_role`'s vocabulary).
