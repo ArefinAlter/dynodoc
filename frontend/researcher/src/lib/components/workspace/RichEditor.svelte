@@ -262,7 +262,7 @@
       }
     } catch {
       feedback =
-        'Your browser blocked clipboard access. Use Ctrl+C, Ctrl+X or Ctrl+V in the document.';
+        'Your browser blocked clipboard access. Use Ctrl+C, Ctrl+X or Ctrl+V on a keyboard, or press and hold in the document on a touch screen.';
     }
   }
   function contextMenu(event: MouseEvent) {
@@ -1101,6 +1101,7 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
+    -webkit-user-select: none;
     user-select: none;
   }
   .page-sheet {
@@ -1322,6 +1323,7 @@
     display: grid;
     place-items: center;
     z-index: 100;
+    -webkit-backdrop-filter: blur(3px);
     backdrop-filter: blur(3px);
   }
   .popover form {

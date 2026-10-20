@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { Check, Copy } from '@lucide/svelte';
+  import { copyText } from '$lib/clipboard';
   /**
    * A command with a copy button. The button copies `code` exactly (the `$` prompt is
    * only decoration) and confirms with "Copied", announced politely to screen readers.
@@ -26,26 +27,7 @@
     return () => clearTimeout(timer);
   });
   async function copy() {
-    let done = false;
-    try {
-      await navigator.clipboard.writeText(code);
-      done = true;
-    } catch {
-      // Insecure origins and some embedded browsers refuse the async API.
-      const area = document.createElement('textarea');
-      area.value = code;
-      area.setAttribute('readonly', '');
-      area.style.position = 'fixed';
-      area.style.opacity = '0';
-      document.body.append(area);
-      area.select();
-      try {
-        done = document.execCommand('copy');
-      } catch {
-        done = false;
-      }
-      area.remove();
-    }
+    const done = await copyText(code);
     if (!done) return;
     copied = true;
     clearTimeout(timer);
@@ -93,6 +75,7 @@
   }
   .prompt {
     color: var(--color-muted);
+    -webkit-user-select: none;
     user-select: none;
   }
   .copy {

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { workspaceRequest as request } from '$lib/workspace/api';
+  import { copyText } from '$lib/clipboard';
   import type { Space } from '$lib/workspace/access';
   let { documentId, prepare }: { documentId: string; prepare: () => Promise<number> } = $props();
   let canManage = $state(false),
@@ -73,7 +74,8 @@
       ><button
         onclick={() =>
           void run(async () => {
-            await navigator.clipboard.writeText(url);
+            if (!(await copyText(url)))
+              throw new Error('Could not copy the link. Select it above and copy it by hand.');
           })}>Copy public link</button
       >{/if}{#each links as link}<div class="link">
         <span

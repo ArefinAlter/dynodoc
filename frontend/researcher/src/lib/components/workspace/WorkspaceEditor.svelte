@@ -1,5 +1,6 @@
 <script lang="ts">
   import ThemeToggle from '$lib/components/ThemeToggle.svelte';
+  import { copyText } from '$lib/clipboard';
   import {
     recoveryCopies,
     saveRecovery,
@@ -1339,7 +1340,8 @@
             class="secondary"
             onclick={() =>
               void run(async () => {
-                await navigator.clipboard.writeText(location.href);
+                if (!(await copyText(location.href)))
+                  throw new Error('Could not copy the link. Copy it from the address bar.');
                 saved = 'Link copied';
               })}><Copy size={14} /> Copy document link</button
           >
@@ -2373,6 +2375,7 @@
     position: fixed;
     inset: 0;
     background: var(--color-overlay);
+    -webkit-backdrop-filter: blur(4px);
     backdrop-filter: blur(4px);
     z-index: 100;
     display: grid;

@@ -1,19 +1,14 @@
 <script lang="ts">
   import { Copy, Check } from '@lucide/svelte';
+  import { copyText } from '$lib/clipboard';
   let { value, label = 'Copy' }: { value: string; label?: string } = $props();
   let copied = $state(false);
   let failed = $state(false);
   let timer: ReturnType<typeof setTimeout> | undefined;
   async function copy() {
     clearTimeout(timer);
-    try {
-      await navigator.clipboard.writeText(value);
-      copied = true;
-      failed = false;
-    } catch {
-      copied = false;
-      failed = true;
-    }
+    copied = await copyText(value);
+    failed = !copied;
     timer = setTimeout(() => {
       copied = false;
       failed = false;
