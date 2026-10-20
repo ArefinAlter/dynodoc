@@ -6,8 +6,8 @@
 //! module is the HTTP shell: the routes ([`routes`]), the bounded state cache ([`cache`]),
 //! content negotiation and headers ([`http`]), the error envelope ([`error`]), the call
 //! ledger ([`ledger`]) and the OpenAPI description ([`schema`]). The write half is
-//! [`write`] (`propose`, and the routes) and [`proposal`] (`submit`, `withdraw`, status),
-//! over the agent identity of [`identity`]; read [`write`] first: it states what an agent can
+//! [`write`](mod@write) (`propose`, and the routes) and [`proposal`] (`submit`, `withdraw`, status),
+//! over the agent identity of [`identity`]; read [`write`](mod@write) first: it states what an agent can
 //! and cannot do and why nothing it does reaches the team version. The routes are mounted only when the operator
 //! turns the gateway on (`AGENT_GATEWAY=on`); otherwise they do not exist and every
 //! request, whatever its credential, gets the router's ordinary `404`.
@@ -30,7 +30,7 @@
 //!
 //! 1. The agent scopes are `content:read`, `content:propose` and `content:submit` (migrations
 //!    0042 and 0044): independent, none implies another. Writing also needs the project's
-//!    `write_mode`, which is `none` until an owner changes it ([`write`]).
+//!    `write_mode`, which is `none` until an owner changes it ([`write`](mod@write)).
 //! 2. An ordinary account login, a connector key or any non-device token is `401` on these
 //!    routes (14.1 says "refused"; `401` matches the management routes' rule for a
 //!    credential of the wrong class). A device token without the scope, for another
@@ -57,7 +57,7 @@
 //!
 //! **Routes (spec 12)**
 //!
-//! 6. Route 13 (proposal `status`), routes 10 to 12 and their names are in [`write`]. `diff`
+//! 6. Route 13 (proposal `status`), routes 10 to 12 and their names are in [`write`](mod@write). `diff`
 //!    still accepts `proposal=` and always answers `404`, after the file check; use
 //!    `status` for a proposal.
 //! 7. `GET .../diff` requires `from` (or a cursor carrying it); the spec leaves "neither"

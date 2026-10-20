@@ -4,7 +4,7 @@
 //!
 //! | Route | Scope | |
 //! |---|---|---|
-//! | `POST /projects/{id}/agent/files/{file}/propose` | `content:propose` | stage ops in a draft owned by the agent identity ([`propose`]) |
+//! | `POST /projects/{id}/agent/files/{file}/propose` | `content:propose` | stage ops in a draft owned by the agent identity (`propose`) |
 //! | `POST /projects/{id}/agent/proposals/{proposal}/submit` | `content:submit` | make the draft a change request, if the policy lets an agent ([`proposal`]) |
 //! | `POST /projects/{id}/agent/proposals/{proposal}/withdraw` | `content:submit` | close the agent's own proposal ([`proposal`]) |
 //! | `GET /projects/{id}/agent/proposals/{proposal}` | `content:read` | its state, reviews and conflicts ([`proposal`]) |
@@ -27,13 +27,13 @@
 //!    is active in the session's generation and whose session post-dates the project's last
 //!    kill switch. Re-read on every request.
 //! 2. The person's project role, the admission permit and the project policy
-//!    ([`Ctx::admit`]): enabled, role at or above the floor, room in the grant's call and byte
+//!    (`Ctx::admit`): enabled, role at or above the floor, room in the grant's call and byte
 //!    budgets. Then, for `propose`, `write_mode` is not `none`.
 //! 3. The file: in this project, a kind the policy admits, not hidden by its file policy (`404`
 //!    for every reason), then a file policy of `read` refuses writes (`policy_denied`).
 //! 4. The agent identity of the key's product ([`super::identity::resolve`]).
 //! 5. Inside the write transaction, with the document and project locked and the account, policy
-//!    and file-policy rows `FOR SHARE` ([`verify_write`]): everything above once more, so that a
+//!    and file-policy rows `FOR SHARE` (`verify_write`): everything above once more, so that a
 //!    kill switch, a revoked grant, a disabled or erased account, a changed policy or a demoted
 //!    person either finishes after this write commits or is seen by it. The person's file role
 //!    is `effective_document_role` as `create_draft` reads it: a viewer cannot stage drafts.
@@ -48,7 +48,7 @@
 //! 1. **Route names.** `POST .../files/{file}/propose` rather than the spec's
 //!    `.../proposals`: a Phase 0 test pins `POST .../files/{file}/proposals` as absent. A
 //!    proposal id that is not a UUID is `404` before the credential is looked at
-//!    ([`ProposalId`]), which keeps the other Phase 0 assertion about `.../proposals/x/...`.
+//!    (`ProposalId`), which keeps the other Phase 0 assertion about `.../proposals/x/...`.
 //! 2. **The proposal id is the draft's id, chosen by the server**, not the first
 //!    `request_id`. A client-chosen primary key in a table shared with every draft would let
 //!    two clients that reuse a request id collide, and tell each other that a draft exists.
