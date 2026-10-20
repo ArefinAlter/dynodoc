@@ -16,6 +16,10 @@ uuid = { workspace = true }
 # routes are plain HTTPS GET and POST, so nothing else is needed.
 reqwest = { version = "0.12.28", default-features = false, features = ["rustls-tls"] }
 
+[[test]]
+name = "stdio_process"
+harness = false
+
 [dev-dependencies]
 # Contract tests: the error table, the DCT header parser and the golden transcripts of
 # the read path are the specification this crate must agree with.
