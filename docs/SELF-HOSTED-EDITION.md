@@ -1479,6 +1479,46 @@ on arm64.
 defaults to `hosted`. No schema change is required in Phase 0 (P0-8 is code only). The
 bundle is offered only to design partners (section 15).
 
+**Implementation status (20 October 2026): P0-2 API half and P0-8 only.** Source and
+tests in the application repository; nothing here is deployed or released, and every
+other Phase 0 task is untouched.
+
+- *P0-2, API half, built.* `crates/engine-api/src/secrets.rs` loads a secret from `NAME`
+  or `NAME_FILE` (both non-empty is an error; plain variables behave exactly as before;
+  files are size-bounded to 16 KiB, UTF-8, trailing line breaks trimmed, refused on Unix
+  when group or others can access them unless `DYNODOC_ALLOW_OPEN_SECRET_FILES=true`).
+  `crates/engine-api/src/config.rs` validates `PASETO_LOCAL_KEY`, `WEB_SERVICE_KEY`,
+  `DATABASE_URL` (shape only), the refusal of `MIGRATION_DATABASE_URL` (plain or `_FILE`)
+  and the retention settings before any database connection, and stops with one error
+  listing every problem; no message contains a secret value. The API reads no other
+  secret: the receipt-signing key was already a file (`DYNODOC_REF_SIGNING_KEY_FILE`).
+  Section 3.1 row 12 is closed for the API only.
+- *P0-2, not built.* The web process (`SESSION_SECRET` is still checked lazily, and no
+  `*_FILE` there), `engine-cli` (still reads `DATABASE_URL` and `MIGRATION_DATABASE_URL`
+  from plain variables), the environment-file generator, and the compose wiring of the
+  new variables. The Unix permission check has no Windows equivalent; its tests, the
+  start-up tests and the retention tests were also run on Linux (container, pinned and
+  current stable toolchains).
+- *P0-8, built.* `crates/engine-api/src/retention.rs`: a loop in every API process that
+  prunes in bounded batches under a PostgreSQL session advisory lock held on a
+  dedicated, per-pass connection (one replica at a time; a crashed holder releases the
+  lock with its session). Settings `RETENTION_JOBS`, `RETENTION_INTERVAL_SECONDS`,
+  `RETENTION_BATCH_ROWS`, `RETENTION_AUTH_DAYS`, `RETENTION_METRICS_DAYS` (defaults and
+  bounds in the deployment guide 7.1). Per-table counters, pass, skip and failure counts
+  appear in `GET /admin/overview` under `retention` (per process); info log lines carry
+  counts only. The runtime login already holds SELECT, UPDATE and DELETE on the six
+  tables, so **no migration** was added and `check-runtime` is unchanged.
+- *P0-8, deviations from section 6.5.* A rotated refresh token that has not expired is
+  kept (it can still end its login through `revoke_login`); only expired or revoked rows
+  past the window go. Request windows are pruned as soon as their 15-minute window ends
+  (a pruned and a reset row behave the same). The job runs by default in every mode,
+  including hosted, so the first pass after an upgrade removes the backlog.
+- *P0-8, not built.* A lease table or `/readyz` job state (the advisory lock is
+  per-pass, so no lease state exists to report), a Prometheus endpoint, removal of the
+  host-side `web_metric` prune in `collect-status.py`, an index on `refresh_token.expires_at`
+  (a table scan per batch, acceptable at the sizes in section 9 and not worth a
+  migration today), and the copy-indexer lease of row 33.
+
 ### 13.3 Phase 1: identity
 
 Goal: a university or company connects its identity provider and maps groups to roles;

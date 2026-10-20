@@ -47,7 +47,7 @@ async fn overview(
     let vitals = sqlx::query("select host,metric,count(*) as samples,percentile_cont(0.75) within group(order by value) as p75 from web_metric where metric<>'visit' and recorded_at>now()-interval '30 days' group by host,metric order by host,metric")
         .fetch_all(&state.pool).await?.iter().map(|r| json!({"host":r.get::<String,_>("host"),"metric":r.get::<String,_>("metric"),"samples":r.get::<i64,_>("samples"),"p75":r.get::<f64,_>("p75")})).collect::<Vec<_>>();
     Ok(Json(
-        json!({"checked_at":chrono::Utc::now(),"administrator":email,"counts":counts,"errors":state.counters.snapshot(),"tables":tables,"traffic":traffic,"vitals":vitals}),
+        json!({"checked_at":chrono::Utc::now(),"administrator":email,"counts":counts,"errors":state.counters.snapshot(),"retention":state.retention.snapshot(),"tables":tables,"traffic":traffic,"vitals":vitals}),
     ))
 }
 #[derive(Deserialize)]

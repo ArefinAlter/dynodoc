@@ -103,6 +103,14 @@ view are SELECT-only. Two identity sequences permit usage but not `setval`.
 Seven read-only access helpers are executable; new tables/functions need an explicit
 allowlist and schema update. Effective column and PUBLIC grants are checked as well.
 
+The API retention loop (`crates/engine-api/src/retention.rs`) depends on the grants
+that already exist: SELECT, UPDATE (for `FOR UPDATE SKIP LOCKED`) and DELETE on the mutable
+tables `magic_link`, `refresh_token`, `auth_request_window`, `device_enrollment_challenge`,
+`web_metric` and `idempotency_key`, and nothing on history. It needs no migration and no
+grant change; moving one of these six tables out of the mutable class would stop the
+loop (a failed pass is logged and counted, never fatal), and its test asserts the
+privileges.
+
 Migration 0029 revokes PUBLIC privileges on application relations/functions and
 database CREATE/TEMP, plus public-schema CREATE. It also removes automatic PUBLIC
 function execution from the migration owner's future defaults. Use a dedicated

@@ -373,6 +373,44 @@ async fn admin_overview_counts_error_responses(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn admin_overview_reports_rows_pruned_by_retention(pool: PgPool) {
+    let mut state = test_state(pool.clone());
+    state.admin_emails = "retention@example.test".into();
+    let actor = seed_identity(&pool, "retention@example.test").await;
+    for age in ["40 days", "1 day"] {
+        sqlx::query("insert into web_metric(page_id,metric,host,page,value,recorded_at) values(gen_random_uuid(),'visit','homepage','home',1,now()-$1::interval)")
+            .bind(age).execute(&pool).await.unwrap();
+    }
+    let stats = state.retention.clone();
+    let router = app(state);
+    let (_, overview) = send(&router, auth_post_get("/admin/overview", &bearer(actor))).await;
+    assert_eq!(overview["retention"]["runs"], 0);
+    assert_eq!(overview["retention"]["last_run_at"], Value::Null);
+    let outcome = engine_api::retention::run_once(&pool, &Default::default(), &stats)
+        .await
+        .unwrap();
+    assert!(matches!(outcome, engine_api::retention::Outcome::Ran(_)));
+    let (status, overview) = send(&router, auth_post_get("/admin/overview", &bearer(actor))).await;
+    assert_eq!(status, StatusCode::OK, "{overview}");
+    let retention = &overview["retention"];
+    assert_eq!(retention["runs"], 1);
+    assert_eq!(retention["failures"], 0);
+    assert_eq!(retention["pruned"]["web_metric"], 1);
+    assert_eq!(retention["pruned"]["magic_link"], 0);
+    assert!(retention["last_run_at"].is_string(), "{retention}");
+    // Counts only: nothing but table names and numbers.
+    let names: std::collections::BTreeSet<&str> = retention["pruned"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    let expected: std::collections::BTreeSet<&str> =
+        engine_api::retention::table_names().into_iter().collect();
+    assert_eq!(names, expected);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn shared_draft_bases_reuse_content_preserve_responses_and_enforce_scope(pool: PgPool) {
     let mut state = test_state(pool.clone());
     state.shared_draft_bases = true;

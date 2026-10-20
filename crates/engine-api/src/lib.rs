@@ -18,6 +18,7 @@ mod admin_controls;
 pub mod agent;
 pub mod audit;
 pub mod auth;
+pub mod config;
 pub mod conflicts;
 pub mod copies;
 pub mod counters;
@@ -41,7 +42,9 @@ mod project_issues;
 mod project_staging;
 pub mod projects;
 pub mod provenance;
+pub mod retention;
 pub mod reviews;
+pub mod secrets;
 pub mod stream;
 pub mod workloads;
 pub mod workspace;
@@ -70,6 +73,8 @@ pub struct AppState {
     pub workloads: workloads::Workloads,
     /// Error responses counted by code since start (admin overview).
     pub counters: counters::Counters,
+    /// Rows pruned by the retention loop since start (admin overview).
+    pub retention: retention::Stats,
     /// Explicitly loaded secret outside the database; required for shared ref writes.
     pub ref_signer: Option<std::sync::Arc<ring::signature::Ed25519KeyPair>>,
     /// Explicit opt-in; new draft/rebase bases use typed shared objects.
@@ -96,6 +101,7 @@ impl AppState {
             copy_index: copies::CopyIndex::default(),
             workloads: workloads::Workloads::default(),
             counters: Default::default(),
+            retention: Default::default(),
             ref_signer: None,
             shared_draft_bases: std::env::var("DYNODOC_SHARED_DRAFT_BASES").as_deref()
                 == Ok("shared-v2"),
