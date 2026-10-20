@@ -1,5 +1,43 @@
 # Engine evolution handoff
 
+## Source: processor and operating-system parity, prebuilt command-line tools (21 October 2026)
+
+First slice of decision 016 (devices, processors, desktop and mobile apps). The public engine repository now runs
+`platforms.yml` (push to main, pull requests, manual) on Linux aarch64, macOS aarch64, macOS x86-64, Windows x86-64 and Windows
+aarch64 (tier 2, non-blocking), next to the existing Linux x86-64 CI. Each job builds the workspace and runs the whole test suite
+against PostgreSQL 16 (a service container on Linux, Homebrew on macOS, the image's PostgreSQL 17 on Windows x86-64, the pinned
+EDB 16 zip under emulation on Windows aarch64); clippy with `-D warnings` runs on macOS aarch64 and Windows x86-64 because of
+`cfg` code. `release-cli.yml` (tag `cli-v*` or manual) builds `engine-cli` and `engine-api` natively for six targets and packs
+tar.gz/zip archives with `SHA256SUMS`, unsigned. The support matrix, what CI proves per platform and the limits are in
+[PLATFORM-SUPPORT.md](PLATFORM-SUPPORT.md).
+
+Evidence (engine run 39493540615, all six jobs green): 1,285 tests passed on Linux aarch64, macOS aarch64, Windows x86-64 and
+Windows aarch64, 1,284 on macOS x86-64 (the timing test below excluded), 4 ignored everywhere. The three key-store providers were
+run for real: Secret Service through a private gnome-keyring on Linux x86-64 and aarch64, a temporary keychain on both macOS
+architectures (the login keychain is checked to stay clean), DPAPI on both Windows architectures. Release run 39493540654: all
+six targets built, each ran `--version`/`--help` and an `engine-api` no-config refusal, then again from the unpacked archive.
+Archives were also downloaded and run here for Windows x86-64, Linux x86-64 (ubuntu:22.04 container) and Linux aarch64 (QEMU).
+Linux builds target glibc 2.34, macOS 11.0, Windows uses the static CRT.
+
+Real defects found by running on the other platforms and fixed (ported to this repository; same files in both): on Windows the
+key-file access check failed closed for any folder or user name with letters outside the console code page (icacls prints `?`);
+an Administrator process left explicit SYSTEM and Administrators entries on key and token files, so 12 tests failed on the runner.
+`private_file.rs` now compares non-ASCII names by their ASCII letters and the positions of the others, and removes those two
+entries by well-known SID before granting the user. **Known limit of the first fix:** two different local accounts whose names
+differ only in non-ASCII letters at the same positions cannot be told apart by that check; an ASCII name is still compared exactly,
+and several entries or none still fail closed. Not applicable here: the `integrations/**` line-ending rule (this repository already
+normalises to LF for everything).
+
+**Not verified:** the tag path (`gh release create`) never ran, because it would publish in the public repository; a manual run
+of a workflow that is not on the default branch cannot be started, so the release workflow became dispatchable only at the merge.
+The macOS and Windows aarch64 archives ran only inside their own build jobs. A hidden passphrase prompt needs a terminal and was
+not tested. The test `sse_delivers_a_new_event_within_100ms` (a 100 ms bound, not weakened) is excluded from the blocking run on
+Windows x86-64 (failed 3 of 3), Windows aarch64 (2 of 2) and macOS x86-64 (flaky, 1 in 5) and recorded in its own non-blocking step;
+it passed on every Linux aarch64 and macOS aarch64 run and still blocks there. Questions for the owner: test the tag path once
+with a throwaway tag and delete that release; use the pinned PostgreSQL 16 on Windows x86-64 too; rework the SSE test to a
+CI-tolerant bound or keep the exclusion; keep the glibc 2.34 floor (ubuntu-22.04 builders will be retired eventually). Container
+images for linux/arm64 are not built yet (decision 016 item 4 still lists them as the goal).
+
 ## Source: MCP write tools, connector Phase 1 client side (20 October 2026)
 
 The MCP server gains `propose`, `submit` (also `action=withdraw`) and `status` for the proposals of the merged write path, as an
