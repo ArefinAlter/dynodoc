@@ -1,5 +1,41 @@
 # Dynodoc: intent, current implementation and remaining work
 
+## Source: agent connector Phase 0, read-only server, MCP and Claude Code plugin (20 October 2026)
+
+Connector Phase 0 ([AI-AGENT-CONNECTORS.md](AI-AGENT-CONNECTORS.md)) now exists end to end in source, read-only and **off by
+default**.
+
+**Server (schema 42 source).** Migration `0042_agent_read.sql` adds the `content:read` scope to device sessions and grants,
+`device_key_class` (one immutable row per key enrolled as an agent) and the append-only `agent_call` metadata ledger (no
+text, no tokens; rows leave with an audited document erasure, or after 90 days by the owner role; a request that never
+resolved a file is rate-limited but not recorded). `AgentAuth` accepts only a project device session from an agent-class
+key with an active `content:read` grant for that project, re-reading everything per request. Routes under
+`/projects/{id}/agent/` (files, outline, blocks, `blocks:read`, cells, sheet profile, slides, find, diff, access) and
+`/.well-known/dynodoc-agent` are mounted only when `AGENT_GATEWAY=on`; off, they and the OpenAPI entries are absent. They call
+the `engine-agent` library, answer JSON by default and Dynodoc Compact Text on request, honour ETag and `If-None-Match` after
+authorisation, and verify the event chain exactly as the other read routes do. A bounded state cache (64 states, 32 MiB,
+5-minute expiry, purged on erasure) is keyed by document, revision and chain hash.
+
+**MCP and plugin.** The new `engine-mcp` library is a hand-written MCP server over stdio (six read-only tools, no new
+third-party crate) and `engine-cli mcp --remote … --project … --device-key …` runs it, getting a project device session
+through the existing challenge protocol. The Claude Code plugin is in `integrations/claude-code/dynodoc/` and the setup guide
+in [AI-AGENT-CLAUDE-SETUP.md](AI-AGENT-CLAUDE-SETUP.md).
+
+**Review.** An independent read-only security review of the routes found no Critical or High issue. Fixed from it: the
+ledger could be filled by guessing file ids and could not be pruned; repeated refs multiplied rendering work before the byte
+budget applied; a disconnected client freed its admission slot while its work ran; the public OpenAPI document advertised the
+gateway while off; erased text could linger in a process cache; request spans logged search text. Left open and recorded: the
+file listing does per-file role work in Rust, agent reads share the per-project budget with people, class rules for keys are
+enforced in code rather than by constraints, and permissive CORS also covers these routes (bearer-only, no cookies).
+
+**Not built, and what to know before using it.** Propose, submit and status for proposals (Phase 1), OAuth and remote MCP
+(Phase 2), ChatGPT and other clients. **There is no project or file agent policy yet**: with the gateway on, any project
+member, even a viewer, can enrol an agent key and read what they can already read, so keep `AGENT_GATEWAY` off outside a
+staging stack until a default-deny policy exists. The Signing keys screen has no "use for an AI agent" option (the API
+accepts the class). Nothing was run against a real MCP client or a production-copy database, and migration 0042 has not been
+rehearsed or released: it needs a schema-42 release by the usual routine. Vendor-specific plugin facts are marked unverified
+in the guide.
+
 ## Source: horizon record specification and read-only planner, pruning P0 and P1 (20 October 2026)
 
 Phases P0 and P1 of [DESIGN-COMMIT-PRUNING.md](DESIGN-COMMIT-PRUNING.md) are built; **nothing deletes,
