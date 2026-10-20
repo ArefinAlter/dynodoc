@@ -221,6 +221,9 @@ mod tests {
             "a@x.agents.invalid",
             "  a@agents.invalid  ",
             "\"b@example.com\"@agents.invalid",
+            "a@agents.invalid\n",
+            " a@Agents.Invalid.. \r\n",
+            "a@x.AGENTS.invalid\t",
         ] {
             assert!(is_reserved_email(reserved), "{reserved}");
         }

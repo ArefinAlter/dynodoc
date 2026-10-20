@@ -2460,8 +2460,8 @@ export interface components {
       /** @description The read scope (`content:read`), which every tool needs. */
       scopes: string[];
       /**
-       * @description The write scopes (`content:propose`, `content:submit`), independent of each other and
-       *     of the read scope. A project must also set `write_mode`.
+       * @description The write scopes (`content:propose`, `content:submit`), independent of each other, and
+       *     each held beside the read scope. A project must also set `write_mode`.
        */
       write_scopes: string[];
     };
@@ -2838,7 +2838,8 @@ export interface components {
       /**
        * @description One or more of `history:read`, `history:review`, `history:write`,
        *     `project:read` (a person's key) or `content:read`, `content:propose`,
-       *     `content:submit` (a key enrolled for an AI agent; the two sets never mix). A key
+       *     `content:submit` (a key enrolled for an AI agent; the two sets never mix; the write
+       *     scopes need `content:read` beside them, a preview shows text). A key
        *     that is not in `all` mode also needs an active grant for this project that lists
        *     every scope, and an agent scope always does.
        */
@@ -2948,8 +2949,9 @@ export interface components {
     GrantRequest: {
       /**
        * @description A person's key: one or more of `project:read`, `history:read`, `history:write`,
-       *     `history:review`. An agent key: one or more of `content:read`, `content:propose`,
-       *     `content:submit` (independent; none implies another). The two sets never mix.
+       *     `history:review`. An agent key: `content:read`, alone or with `content:propose` and
+       *     `content:submit` (which imply neither each other nor the read scope, but need it: a
+       *     preview shows the text it changes). The two sets never mix.
        */
       scopes: string[];
     };
@@ -4217,7 +4219,7 @@ export interface operations {
           'application/json': unknown;
         };
       };
-      /** @description Empty or unknown scopes, or a scope that does not match the key's class */
+      /** @description Empty or unknown scopes, a scope that does not match the key's class, or content:propose or content:submit without content:read */
       400: {
         headers: {
           [name: string]: unknown;

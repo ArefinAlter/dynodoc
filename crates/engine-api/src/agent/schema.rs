@@ -543,8 +543,8 @@ pub struct AgentDiscovery {
     protected_resource_metadata: Option<String>,
     /// The read scope (`content:read`), which every tool needs.
     scopes: Vec<String>,
-    /// The write scopes (`content:propose`, `content:submit`), independent of each other and
-    /// of the read scope. A project must also set `write_mode`.
+    /// The write scopes (`content:propose`, `content:submit`), independent of each other, and
+    /// each held beside the read scope. A project must also set `write_mode`.
     write_scopes: Vec<String>,
     #[schema(value_type = Object)]
     limits: serde_json::Value,

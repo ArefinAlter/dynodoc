@@ -941,6 +941,16 @@ async fn sync_draft(
         mut local,
         revision,
     } = load_draft(&mut tx, id, draft, Some(auth.identity_id)).await?;
+    // An AI agent's draft goes to review (docs/AI-AGENT-CONNECTORS.md 6.1). Its principal may
+    // read, edit, pull and rebase it, but `share` would put the agent's content in the team
+    // log as the principal, with no review, no approval count and no audit row naming the
+    // agent. Submit it; another reviewer merges it.
+    if req.action == "share" && row["created_by"].as_str() != Some(&auth.identity_id.to_string()) {
+        return Err(ApiError::Denied {
+            reason: "An AI agent's draft goes to review. Submit it; another reviewer merges it."
+                .into(),
+        });
+    }
     let seq: i64 =
         sqlx::query_scalar("select coalesce(max(seq),0) from event where document_id=$1")
             .bind(id)

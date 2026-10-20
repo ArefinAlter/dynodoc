@@ -1165,21 +1165,13 @@ async fn access(
                 "used": admitted.allowed.bytes_used
             }
         });
-        // With writing on, what the agent identity of this key has used of the proposal
-        // budgets (nothing before its first write grant made it).
+        // With writing on, what the person's agents have used of the proposal budgets (they
+        // are the person's, over all client products).
         if policy.can_propose() {
-            let agent =
-                super::identity::resolve(&mut admitted.db, auth.identity_id, auth.binding().key_id)
+            let (today, open) =
+                super::write::proposal_use(&mut admitted.db, auth.identity_id, project)
                     .await
                     .map_err(ApiError::from)?;
-            let (today, open) = match agent {
-                Some(agent) => {
-                    super::write::proposal_use(&mut admitted.db, agent.id, project)
-                        .await
-                        .map_err(ApiError::from)?
-                }
-                None => (0, 0),
-            };
             budget["proposals_per_day"] =
                 json!({"limit": policy.proposals_per_day, "used": today});
             budget["open_proposals"] = json!({"limit": policy.open_proposals, "used": open});

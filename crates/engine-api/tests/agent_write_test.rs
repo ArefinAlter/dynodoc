@@ -653,15 +653,21 @@ async fn t2_authority_is_an_intersection_read_again_on_every_request(pool: PgPoo
     );
     assert_eq!(get(&w.app, &w.url("/access"), &s.token).await.code(), 200);
     assert_eq!(drafts().await, kept);
-    // Granted only propose (no read, no submit): a propose-only session writes.
-    let (status, _) = w.grant(&s.agent, w.project, &["content:propose"]).await;
+    // Granted read and propose (no submit): the session writes, and cannot submit.
+    let (status, _) = w
+        .grant(&s.agent, w.project, &["content:read", "content:propose"])
+        .await;
     assert_eq!(status, StatusCode::OK);
-    let only = w.token(&s.agent, w.project, &["content:propose"]).await;
+    let only = w
+        .token(&s.agent, w.project, &["content:read", "content:propose"])
+        .await;
     assert_eq!(propose(w, &only, doc, attempt(3)).await.code(), 200);
     assert_eq!(
-        get(&w.app, &w.url("/access"), &only).await.code(),
+        submit_p(w, &only, Uuid::parse_str(&p1).unwrap(), json!({}))
+            .await
+            .code(),
         403,
-        "the scopes are independent"
+        "propose does not imply submit"
     );
     let (status, _) = w.grant(&s.agent, w.project, &WRITE).await;
     assert_eq!(status, StatusCode::OK);
@@ -811,11 +817,15 @@ async fn t2_authority_is_an_intersection_read_again_on_every_request(pool: PgPoo
     // neither hold nor be issued one.
     let broad = w.agent_key(&s.login, 21, Some("all")).await;
     assert_eq!(
-        w.open(&broad, w.project, &["content:propose"]).await.0,
+        w.open(&broad, w.project, &["content:read", "content:propose"])
+            .await
+            .0,
         StatusCode::FORBIDDEN
     );
     assert_eq!(
-        w.open(&broad, w.project, &["content:submit"]).await.0,
+        w.open(&broad, w.project, &["content:read", "content:submit"])
+            .await
+            .0,
         StatusCode::FORBIDDEN
     );
     let (key, key_id, _, status, body) = w.enroll(&s.login, 22, json!({})).await;
@@ -825,10 +835,14 @@ async fn t2_authority_is_an_intersection_read_again_on_every_request(pool: PgPoo
         key,
         key_id,
     };
-    let (status, _) = w.grant(&person_key, w.project, &["content:propose"]).await;
+    let (status, _) = w
+        .grant(&person_key, w.project, &["content:read", "content:propose"])
+        .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(
-        w.open(&person_key, w.project, &["content:propose"]).await.0,
+        w.open(&person_key, w.project, &["content:read", "content:propose"])
+            .await
+            .0,
         StatusCode::FORBIDDEN
     );
 
@@ -3140,7 +3154,9 @@ async fn the_agent_identity_is_made_on_the_first_write_grant_one_per_person_and_
     // A second key of the same product shares it; another product has its own.
     let second = enroll_claude(&w, &login, 8).await;
     assert_eq!(
-        w.grant(&second, w.project, &["content:submit"]).await.0,
+        w.grant(&second, w.project, &["content:read", "content:submit"])
+            .await
+            .0,
         StatusCode::OK
     );
     assert_eq!(live().await.len(), 1);
@@ -3156,7 +3172,9 @@ async fn the_agent_identity_is_made_on_the_first_write_grant_one_per_person_and_
     assert_eq!(w.grant(&codex, w.project, &WRITE).await.0, StatusCode::OK);
     let plain = w.agent_key(&login, 10, None).await;
     assert_eq!(
-        w.grant(&plain, w.project, &["content:propose"]).await.0,
+        w.grant(&plain, w.project, &["content:read", "content:propose"])
+            .await
+            .0,
         StatusCode::OK
     );
     assert_eq!(
@@ -3173,8 +3191,8 @@ async fn the_agent_identity_is_made_on_the_first_write_grant_one_per_person_and_
         enroll_claude(&w, &login, 12).await,
     );
     let (x, y) = tokio::join!(
-        w.grant(&a, w.project, &["content:propose"]),
-        w.grant(&b, w.project, &["content:propose"])
+        w.grant(&a, w.project, &["content:read", "content:propose"]),
+        w.grant(&b, w.project, &["content:read", "content:propose"])
     );
     assert_eq!((x.0, y.0), (StatusCode::OK, StatusCode::OK));
     assert_eq!(
@@ -3221,7 +3239,9 @@ async fn the_agent_identity_is_made_on_the_first_write_grant_one_per_person_and_
         .await
         .unwrap();
     assert_eq!(
-        w.open(&claude, w.project, &["content:propose"]).await.0,
+        w.open(&claude, w.project, &["content:read", "content:propose"])
+            .await
+            .0,
         StatusCode::FORBIDDEN
     );
     assert_eq!(
@@ -3262,6 +3282,50 @@ async fn the_scope_checks_admit_exactly_the_three_content_scopes(pool: PgPool) {
     assert!(put("array['content:write']").await.is_err());
     assert!(put("array['content:read','content:*']").await.is_err());
     assert!(put("array['content:read','project:read','history:read','history:write','history:review','content:propose','content:submit']").await.is_ok());
+    sqlx::query("update device_key_project_grant set revoked_at=now() where key_id=$1 and revoked_at is null").bind(s.agent.key_id).execute(owner).await.unwrap();
+
+    // A write scope needs the read scope beside it (a preview shows the text it changes), in
+    // the grant table and in the session table: the database refuses the other sets, so no
+    // code path can issue one by mistake.
+    for lacking in [
+        "array['content:propose']",
+        "array['content:submit']",
+        "array['content:propose','content:submit']",
+        "array['project:read','content:propose']",
+        "array['history:read','content:submit']",
+    ] {
+        assert!(put(lacking).await.is_err(), "grant {lacking}");
+    }
+    assert!(put("array['content:read','content:submit']").await.is_ok());
+    sqlx::query("update device_key_project_grant set revoked_at=now() where key_id=$1 and revoked_at is null").bind(s.agent.key_id).execute(owner).await.unwrap();
+    assert!(put("array['content:read']").await.is_ok());
+    let session = |scopes: &'static str| {
+        let (key, project, who) = (s.agent.key_id, s.w.project, s.olivia);
+        async move {
+            sqlx::query(&format!("insert into device_session(id,key_id,identity_id,project_id,scopes,expires_at) values(gen_random_uuid(),$1,$3,$2,{scopes},now()+interval '10 minutes')"))
+                .bind(key)
+                .bind(project)
+                .bind(who)
+                .execute(owner)
+                .await
+        }
+    };
+    for lacking in [
+        "array['content:propose']",
+        "array['content:submit']",
+        "array['content:propose','content:submit']",
+        "array['project:read','content:propose']",
+    ] {
+        assert!(session(lacking).await.is_err(), "session {lacking}");
+    }
+    for fine in [
+        "array['content:read']",
+        "array['content:read','content:propose']",
+        "array['content:submit','content:read']",
+    ] {
+        let stored = session(fine).await;
+        assert!(stored.is_ok(), "session {fine}: {stored:?}");
+    }
     s.w.close().await;
 }
 
@@ -3763,5 +3827,817 @@ async fn ac17_conflicting_proposals_of_two_agents_never_overwrite_each_other(poo
     let st = status_of(w, &s.token, mine).await.json();
     assert_eq!(st["state"], "open");
     assert!(st["conflicts"].as_u64().unwrap() >= 1, "{st}");
+    s.w.close().await;
+}
+
+// ===================================================================== after the security review
+
+/// One `sync` call of the app's draft route as `login`, after the preview that gives it the
+/// team head and the draft's revision (as the app does).
+async fn sync_as(
+    w: &World,
+    login: &str,
+    doc: Uuid,
+    draft: Uuid,
+    action: &str,
+) -> (StatusCode, Value) {
+    let uri = format!("/documents/{doc}/drafts/{draft}/sync");
+    let (status, preview) = call(
+        &w.app,
+        "POST",
+        &uri,
+        Some(login),
+        json!({"action":"preview"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{preview}");
+    call(
+        &w.app,
+        "POST",
+        &uri,
+        Some(login),
+        json!({"action":action,"team_seq":preview["team_seq"],"revision":preview["revision"]}),
+    )
+    .await
+}
+
+/// A personal draft of `login` with one edit (the label of the second block). Returns its id.
+async fn own_draft(w: &World, login: &str, doc: Uuid, label: &str) -> Uuid {
+    let (status, made) = call(
+        &w.app,
+        "POST",
+        &format!("/documents/{doc}/drafts"),
+        Some(login),
+        json!({"name":"Own draft"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{made}");
+    let id = Uuid::parse_str(made["id"].as_str().unwrap()).unwrap();
+    let uri = format!("/documents/{doc}/drafts/{id}");
+    let (_, got) = call(&w.app, "GET", &uri, Some(login), Value::Null).await;
+    let revision = got["draft"]["revision"].as_i64().unwrap();
+    let node = node_ids(w, doc).await.remove(1);
+    let mut ops = Ops::default();
+    ops.edit(&node, "content", para(label));
+    ops.edit(&node, "label", json!(label));
+    let (status, edited) = call(
+        &w.app,
+        "POST",
+        &uri,
+        Some(login),
+        json!({"revision":revision,"ops":ops.0}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{edited}");
+    id
+}
+
+/// Review item 1. The person an agent acts for reads, edits, pulls and rebases its draft, but
+/// `share` (which would put the agent's content in the team log as them, unreviewed) is
+/// refused whether the draft is still private or already a change request; no action moves
+/// the log. Their own ordinary draft still shares.
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_principal_cannot_share_an_agents_draft_into_the_team_log(pool: PgPool) {
+    let s = setup(pool, full()).await;
+    let w = &s.w;
+    let doc = standard(w).await;
+    // The team version is not protected, so that `share` would work for an ordinary draft
+    // (a protected project refuses it for editors, which would hide the check under test).
+    sqlx::query("update project_settings set protect_team_version=false where space_id=$1")
+        .bind(w.project)
+        .execute(&w.runtime.owner)
+        .await
+        .unwrap();
+    let mine = open_one(&s, doc, "Alpha shared paragraph.").await;
+    let before = team_log(w).await;
+    let merged_before = audit_count(w, "document.change_request_merged").await;
+
+    for stage in ["private", "open"] {
+        if stage == "open" {
+            assert_eq!(submit_p(w, &s.token, mine, json!({})).await.code(), 200);
+        }
+        let (status, body) = sync_as(w, &s.login, doc, mine, "share").await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{stage}: {body}");
+        assert!(
+            body["details"]["reason"]
+                .as_str()
+                .unwrap()
+                .contains("goes to review"),
+            "{body}"
+        );
+        assert_eq!(team_log(w).await, before, "share {stage} moved the log");
+        // The other actions edit the draft and never the team's log.
+        for action in ["pull", "rebase", "preview"] {
+            let (status, body) = sync_as(w, &s.login, doc, mine, action).await;
+            assert_eq!(status, StatusCode::OK, "{stage}: {action}: {body}");
+            assert_eq!(team_log(w).await, before, "{action} {stage} moved the log");
+        }
+    }
+    assert_eq!(
+        audit_count(w, "document.change_request_merged").await,
+        merged_before
+    );
+
+    // An ordinary draft of the same person is unchanged: it shares, and the log moves.
+    let own = own_draft(w, &s.login, doc, "Beta budget (shared)").await;
+    let (status, shared) = sync_as(w, &s.login, doc, own, "share").await;
+    assert_eq!(status, StatusCode::OK, "{shared}");
+    assert!(shared["events"].as_array().is_some_and(|e| !e.is_empty()));
+    assert!(w.head(doc).await > before.1.iter().find(|h| h.0 == doc).map_or(0, |h| h.1));
+    s.w.close().await;
+}
+
+/// Review item 2(b). A dry run takes no document lock and opens no write transaction: with
+/// the document's write lock held by someone else it answers at once, while a call that
+/// stores waits for the lock and gives up.
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_dry_run_takes_no_document_lock_and_a_write_needs_it(pool: PgPool) {
+    let s = setup(pool, full()).await;
+    let w = &s.w;
+    let doc = standard(w).await;
+    let o = outline(w, &s.token, doc).await;
+    let rev = o["rev"].as_u64().unwrap();
+    let (r0, h0) = block(&o, 0);
+    let (r1, _) = block(&o, 1);
+    let mut holder = w.runtime.owner.begin().await.unwrap();
+    sqlx::query("select id from document where id=$1 for no key update")
+        .bind(doc)
+        .fetch_one(&mut *holder)
+        .await
+        .unwrap();
+    let ops = json!([{"op":"set_text","ref":r0,"text":"Alpha locked paragraph.","base":h0}]);
+    let mut dry = call_body(rev, ops.clone());
+    dry["dry_run"] = json!(true);
+    // (Bounded here so that a dry run that did wait for the lock fails the test, not hangs it.)
+    let reply = tokio::time::timeout(
+        std::time::Duration::from_millis(2500),
+        propose(w, &s.token, doc, dry),
+    )
+    .await
+    .expect("the dry run waited for the document lock");
+    assert_eq!(reply.code(), 200, "{}", reply.text());
+    assert_eq!(reply.json()["dry_run"], true);
+    // The same call, stored, queues for the lock and goes through once it is free.
+    {
+        let write = propose(w, &s.token, doc, call_body(rev, ops));
+        tokio::pin!(write);
+        let queued = tokio::time::timeout(std::time::Duration::from_millis(1500), &mut write).await;
+        assert!(queued.is_err(), "a write went through a held document lock");
+        assert_eq!(count(w, "workspace_draft").await, 0);
+        holder.rollback().await.unwrap();
+        let stored = write.await;
+        assert_eq!(stored.code(), 200, "{}", stored.text());
+    }
+    assert_eq!(count(w, "workspace_draft").await, 1);
+
+    // A dry run of an extension shows the extension and stores nothing.
+    let p = open_one(&s, doc, "Alpha first proposal.").await;
+    let mut again = call_body(
+        rev,
+        json!([{"op":"set_text","ref":r1,"text":"Beta second paragraph."}]),
+    );
+    again["dry_run"] = json!(true);
+    again["proposal"] = json!(p);
+    let edits_before = count(w, "draft_edit").await;
+    let reply = propose(w, &s.token, doc, again).await;
+    assert_eq!(reply.code(), 200, "{}", reply.text());
+    assert_eq!(reply.json()["proposal"], json!(p));
+    assert_eq!(count(w, "draft_edit").await, edits_before);
+    s.w.close().await;
+}
+
+/// Review item 2(c). `submit` and `withdraw` take the lock and nothing else: they never
+/// read the whole file. Shown by breaking the file's chain, which stops anything that
+/// materialises it (a `propose` among them) while both still work.
+#[sqlx::test(migrations = "../../migrations")]
+async fn submit_and_withdraw_do_not_materialize_the_file(pool: PgPool) {
+    let s = setup(pool, full()).await;
+    let w = &s.w;
+    let doc = standard(w).await;
+    let o = outline(w, &s.token, doc).await;
+    let rev = o["rev"].as_u64().unwrap();
+    let (r0, _) = block(&o, 0);
+    let first = open_one(&s, doc, "Alpha first proposal.").await;
+    let second = open_one(&s, doc, "Alpha second proposal.").await;
+    sqlx::query("alter table event disable trigger user")
+        .execute(&w.runtime.owner)
+        .await
+        .unwrap();
+    sqlx::query("update event set chain_hash=decode(repeat('00',32),'hex') where document_id=$1 and seq=(select max(seq) from event where document_id=$1)")
+        .bind(doc)
+        .execute(&w.runtime.owner)
+        .await
+        .unwrap();
+    // A call that has to read the file fails now.
+    let blocked = propose(
+        w,
+        &s.token,
+        doc,
+        call_body(
+            rev,
+            json!([{"op":"set_text","ref":r0,"text":"Alpha third proposal."}]),
+        ),
+    )
+    .await;
+    assert!(blocked.code() >= 500, "{}", blocked.text());
+    // These do not.
+    let sent = submit_p(w, &s.token, first, json!({})).await;
+    assert_eq!(sent.code(), 200, "{}", sent.text());
+    assert_eq!(sent.json()["state"], "open");
+    assert_eq!(sent.json()["changed"], true);
+    let withdrawn = post_to(
+        w,
+        &s.token,
+        &format!("/proposals/{second}/withdraw"),
+        json!({}),
+    )
+    .await;
+    assert_eq!(withdrawn.code(), 200, "{}", withdrawn.text());
+    assert_eq!(withdrawn.json()["state"], "withdrawn");
+    s.w.close().await;
+}
+
+/// Review item 3. A write scope without the read scope would read the text through the
+/// preview, so it is refused: at the grant, at the session challenge, and (in the scope
+/// test above) by the database.
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_write_scope_needs_the_read_scope_at_the_grant_and_the_challenge(pool: PgPool) {
+    use ring::signature::KeyPair;
+    let s = setup(pool, full()).await;
+    let w = &s.w;
+    for scopes in [
+        vec!["content:propose"],
+        vec!["content:submit"],
+        vec!["content:propose", "content:submit"],
+        vec!["project:read", "content:propose"],
+    ] {
+        let (status, body) = w.grant(&s.agent, w.project, &scopes).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{scopes:?}: {body}");
+        assert!(
+            body["details"]["reason"]
+                .as_str()
+                .unwrap()
+                .contains("need content:read"),
+            "{body}"
+        );
+        let (status, body) = call(
+            &w.app,
+            "POST",
+            &format!("/projects/{}/device-sessions/challenge", w.project),
+            None,
+            json!({"public_key":hex::encode(s.agent.key.public_key().as_ref()),"scopes":scopes}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{scopes:?}: {body}");
+        assert!(
+            body["details"]["reason"]
+                .as_str()
+                .unwrap()
+                .contains("need content:read"),
+            "{body}"
+        );
+    }
+    // The grant is as it was, and read with either write scope still works.
+    let held: Vec<String> = sqlx::query_scalar("select scopes from device_key_project_grant where key_id=$1 and project_id=$2 and revoked_at is null")
+        .bind(s.agent.key_id)
+        .bind(w.project)
+        .fetch_one(w.pool())
+        .await
+        .unwrap();
+    assert_eq!(
+        held,
+        vec!["content:propose", "content:read", "content:submit"]
+    );
+    for scopes in [
+        vec!["content:read", "content:propose"],
+        vec!["content:read", "content:submit"],
+    ] {
+        assert_eq!(
+            w.grant(&s.agent, w.project, &scopes).await.0,
+            StatusCode::OK
+        );
+        assert_eq!(w.open(&s.agent, w.project, &scopes).await.0, StatusCode::OK);
+    }
+    s.w.close().await;
+}
+
+/// Review item 4 (I5). The person whose agent wrote a request cannot bypass its approvals:
+/// `override_rules` is refused for them, whatever their role, and not offered; another
+/// manager's override, and the override of an ordinary request by its own author, are as
+/// they were. (With no approvals required nothing needs bypassing, as for any request.)
+#[sqlx::test(migrations = "../../migrations")]
+async fn t5_the_principal_cannot_bypass_the_approvals_of_their_agents_request(pool: PgPool) {
+    let w = World::new(pool, true).await;
+    assert_eq!(set_policy(&w, full()).await.code(), 200);
+    let agent = enroll_claude(&w, &w.owner_login.clone(), 7).await;
+    assert_eq!(w.grant(&agent, w.project, &WRITE).await.0, StatusCode::OK);
+    let token = w.token(&agent, w.project, &WRITE).await;
+    let rules = "insert into document_policy(document_id,protect_team_version,required_approvals,merge_roles) values($1,false,1,'editors')";
+    let doc = standard(&w).await;
+    sqlx::query(rules)
+        .bind(doc)
+        .execute(&w.runtime.owner)
+        .await
+        .unwrap();
+    let o = outline(&w, &token, doc).await;
+    let (r, _) = block(&o, 0);
+    let reply = propose(
+        &w,
+        &token,
+        doc,
+        call_body(
+            o["rev"].as_u64().unwrap(),
+            json!([{"op":"set_text","ref":r,"text":"Alpha procedure paragraph."}]),
+        ),
+    )
+    .await;
+    assert_eq!(reply.code(), 200, "{}", reply.text());
+    let p = Uuid::parse_str(reply.json()["proposal"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        submit_p(&w, &token, p, json!({})).await.json()["state"],
+        "open"
+    );
+    let base = format!("/documents/{doc}/change-requests/{p}");
+    let head = w.head(doc).await;
+
+    // The owner is the principal, a manager by role: not offered, and refused.
+    let d = request_detail(&w, &base).await;
+    assert_eq!(d["request"]["mine"], true);
+    assert_eq!(d["review"]["satisfied"], false);
+    assert_eq!(d["review"]["can_override"], false, "{d}");
+    let merge = |login: String, revision: Value| {
+        let (app, uri) = (w.app.clone(), format!("{base}/merge"));
+        async move {
+            call(
+                &app,
+                "POST",
+                &uri,
+                Some(&login),
+                json!({"team_seq":head,"revision":revision,"override_rules":true}),
+            )
+            .await
+        }
+    };
+    let (status, body) = merge(w.owner_login.clone(), d["revision"].clone()).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    assert!(
+        body["details"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("Your AI agent wrote"),
+        "{body}"
+    );
+    assert_eq!(w.head(doc).await, head, "nothing merged");
+
+    // Another manager is a different person: their override is the audited bypass it was.
+    let (mia, mia_login) = person(w.pool(), "mia@example.test").await;
+    w.member(w.project, mia, "manager").await;
+    let (_, as_mia) = call(&w.app, "GET", &base, Some(&mia_login), Value::Null).await;
+    assert_eq!(as_mia["request"]["mine"], false);
+    assert_eq!(as_mia["review"]["can_override"], true, "{as_mia}");
+    let (status, body) = merge(mia_login.clone(), as_mia["revision"].clone()).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(w.head(doc).await > head);
+    let audit: Value = sqlx::query_scalar("select detail from operation_audit where action='document.change_request_merged' and resource_id=$1")
+        .bind(doc)
+        .fetch_one(w.pool())
+        .await
+        .unwrap();
+    assert_eq!(audit["rules_overridden"], true);
+    assert_eq!(audit["contributor_kind"], "agent");
+
+    // An ordinary request: its author, the owner, still overrides the rules for it.
+    let other = standard(&w).await;
+    sqlx::query(rules)
+        .bind(other)
+        .execute(&w.runtime.owner)
+        .await
+        .unwrap();
+    let own = own_draft(&w, &w.owner_login, other, "Beta budget (own)").await;
+    let (status, body) = call(
+        &w.app,
+        "POST",
+        &format!("/documents/{other}/drafts/{own}/submit"),
+        Some(&w.owner_login),
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let own_base = format!("/documents/{other}/change-requests/{own}");
+    let d = request_detail(&w, &own_base).await;
+    assert_eq!(d["request"]["mine"], true);
+    assert!(d["request"]["agent"].is_null());
+    assert_eq!(d["review"]["can_override"], true, "{d}");
+    let (status, body) = call(
+        &w.app,
+        "POST",
+        &format!("{own_base}/merge"),
+        Some(&w.owner_login),
+        json!({"team_seq":w.head(other).await,"revision":d["revision"],"override_rules":true}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    w.close().await;
+}
+
+/// Review item 6. The proposal budgets are the person's over all of their agent identities:
+/// a second client product shares the allowance of the first instead of adding its own.
+#[sqlx::test(migrations = "../../migrations")]
+async fn t8_the_proposal_budgets_are_the_persons_over_all_their_client_products(pool: PgPool) {
+    let s = setup(pool, full()).await;
+    let w = &s.w;
+    let (key, key_id, _, status, body) = w
+        .enroll(&s.login, 9, json!({"class":"agent","client_kind":"codex"}))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let codex = Agent {
+        login: s.login.clone(),
+        key,
+        key_id,
+    };
+    assert_eq!(w.grant(&codex, w.project, &WRITE).await.0, StatusCode::OK);
+    let codex_token = w.token(&codex, w.project, &WRITE).await;
+    assert_ne!(
+        agent_identity_of_kind(w, s.olivia, "claude").await,
+        agent_identity_of_kind(w, s.olivia, "codex").await
+    );
+    let doc = standard(w).await;
+    let o = outline(w, &s.token, doc).await;
+    let rev = o["rev"].as_u64().unwrap();
+    let (r0, _) = block(&o, 0);
+    let attempt = |token: String, n: u32| {
+        let ops = json!([{"op":"set_text","ref":r0.clone(),"text":format!("Alpha variant {n}.")}]);
+        async move { propose(w, &token, doc, call_body(rev, ops)).await }
+    };
+
+    // Two a day, whoever asks: one each, then neither may.
+    let mut policy = full();
+    policy["proposals_per_day"] = json!(2);
+    assert_eq!(set_policy(w, policy).await.code(), 200);
+    assert_eq!(attempt(s.token.clone(), 1).await.code(), 200);
+    assert_eq!(attempt(codex_token.clone(), 2).await.code(), 200);
+    for (who, token) in [("claude", &s.token), ("codex", &codex_token)] {
+        let third = attempt(token.clone(), 3).await;
+        assert_eq!(
+            (third.code(), code_of(&third)),
+            (429, "budget_exceeded".to_owned()),
+            "{who}: {}",
+            third.text()
+        );
+    }
+    let used = get(&w.app, &w.url("/access"), &s.token).await.json()["budget"]["proposals_per_day"]
+        ["used"]
+        .clone();
+    assert_eq!(used, 2, "the access view counts the person's");
+
+    // Three open at a time, whoever opened them.
+    let mut policy = full();
+    policy["open_proposals"] = json!(3);
+    assert_eq!(set_policy(w, policy).await.code(), 200);
+    assert_eq!(attempt(codex_token.clone(), 4).await.code(), 200);
+    for (who, token) in [("claude", &s.token), ("codex", &codex_token)] {
+        let fourth = attempt(token.clone(), 5).await;
+        assert_eq!(
+            (fourth.code(), code_of(&fourth)),
+            (429, "budget_exceeded".to_owned()),
+            "{who}: {}",
+            fourth.text()
+        );
+    }
+    assert_eq!(count(w, "workspace_draft").await, 3);
+    s.w.close().await;
+}
+
+/// The live agent identity of `principal` for a client product.
+async fn agent_identity_of_kind(w: &World, principal: Uuid, kind: &str) -> Uuid {
+    sqlx::query_scalar("select identity_id from agent_identity where principal_id=$1 and client_kind=$2 and revoked_at is null")
+        .bind(principal)
+        .bind(kind)
+        .fetch_one(w.pool())
+        .await
+        .unwrap()
+}
+
+/// Wait until some session is blocked on a lock (the write under test has passed every check
+/// that is made before the lock and is now queued behind the holder).
+async fn wait_for_a_lock_waiter(w: &World) {
+    for _ in 0..100 {
+        let waiting: i64 = sqlx::query_scalar("select count(*) from pg_stat_activity where wait_event_type='Lock' and datname=current_database()")
+            .fetch_one(&w.runtime.owner)
+            .await
+            .unwrap();
+        if waiting > 0 {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    panic!("the write never waited for the document lock");
+}
+
+/// A `propose` that is queued for the document lock while `change` (SQL on the document, `$1`
+/// its id, `$2` `other` if given) is committed by the holder of the lock.
+async fn write_raced_by(
+    w: &World,
+    token: &str,
+    doc: Uuid,
+    body: Value,
+    change: &str,
+    other: Option<Uuid>,
+) -> Reply {
+    let mut holder = w.runtime.owner.begin().await.unwrap();
+    sqlx::query("select id from document where id=$1 for no key update")
+        .bind(doc)
+        .fetch_one(&mut *holder)
+        .await
+        .unwrap();
+    let write = propose(w, token, doc, body);
+    let release = async {
+        wait_for_a_lock_waiter(w).await;
+        let query = sqlx::query(change).bind(doc);
+        let query = match other {
+            Some(other) => query.bind(other),
+            None => query,
+        };
+        query.execute(&mut *holder).await.unwrap();
+        holder.commit().await.unwrap();
+    };
+    let (reply, ()) = tokio::join!(write, release);
+    reply
+}
+
+/// Review item 7. The file is looked up before the write takes the lock; a trashing, a move
+/// to another project or a change of kind that commits while the write is queued is seen
+/// once it has the lock: `404`, nothing stored.
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_file_trashed_moved_or_re_kinded_while_a_write_waits_is_not_found(pool: PgPool) {
+    let mut policy = full();
+    policy["kinds"] = json!(["document"]);
+    let s = setup(pool, policy).await;
+    let w = &s.w;
+    let elsewhere = w.project("Elsewhere").await;
+    for (what, change, other) in [
+        (
+            "trashed",
+            "update document set deleted_at=now() where id=$1",
+            None,
+        ),
+        (
+            "moved to another project",
+            "update document set space_id=$2 where id=$1",
+            Some(elsewhere),
+        ),
+        (
+            "changed to a kind the policy leaves out",
+            "update document set settings=settings||'{\"kind\":\"spreadsheet\"}'::jsonb where id=$1",
+            None,
+        ),
+    ] {
+        let doc = standard(w).await;
+        let o = outline(w, &s.token, doc).await;
+        let (r0, _) = block(&o, 0);
+        let body = call_body(
+            o["rev"].as_u64().unwrap(),
+            json!([{"op":"set_text","ref":r0,"text":"Alpha raced paragraph."}]),
+        );
+        let drafts = count(w, "workspace_draft").await;
+        let reply = write_raced_by(w, &s.token, doc, body, change, other).await;
+        assert_eq!(reply.code(), 404, "{what}: {}", reply.text());
+        assert_eq!(code_of(&reply), "not_found", "{what}");
+        assert_eq!(count(w, "workspace_draft").await, drafts, "{what}");
+        assert_eq!(count(w, "agent_proposal_receipt").await, 0, "{what}");
+    }
+    s.w.close().await;
+}
+
+/// Review item 8(b) and (c). The reserved address domain is refused in any case, with blanks
+/// or a final line break around it (as for the sign-in code), and the migration refuses a
+/// database that already holds such an address.
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_reserved_domain_guard_ignores_case_blanks_and_a_final_newline(pool: PgPool) {
+    let w = World::new(pool, true).await;
+    let owner = &w.runtime.owner;
+    for email in [
+        "a@AGENTS.invalid",
+        "b@Agents.Invalid.",
+        "c@agents.invalid\n",
+        " d@agents.invalid \t",
+        "e@agents.invalid..",
+        "f@x.AGENTS.INVALID\r\n",
+        "\"g@example.com\"@agents.invalid\n",
+    ] {
+        let stored = sqlx::query("insert into identity(email) values($1)")
+            .bind(email)
+            .execute(owner)
+            .await;
+        let error = stored.expect_err(email);
+        assert!(error.to_string().contains("reserved"), "{email:?}: {error}");
+    }
+    for email in [
+        "h@agents.invalid.example.com",
+        "i@notagents.invalid",
+        "agents.invalid@example.com",
+        "\"j@agents.invalid\"@example.com",
+        "k@example.com",
+    ] {
+        sqlx::query("insert into identity(email) values($1)")
+            .bind(email)
+            .execute(owner)
+            .await
+            .unwrap_or_else(|error| panic!("{email:?}: {error}"));
+    }
+
+    // The migration's own pre-check: quiet on this database, loud when an address is there.
+    let source = include_str!("../../../migrations/0044_agent_write.sql");
+    let start = source.find("do $$").unwrap();
+    let end = start + source[start..].find("end $$;").unwrap() + "end $$;".len();
+    let check = &source[start..end];
+    sqlx::query(check).execute(owner).await.unwrap();
+    sqlx::query("alter table identity disable trigger identity_agent_domain")
+        .execute(owner)
+        .await
+        .unwrap();
+    sqlx::query("insert into identity(email) values('Squatter@AGENTS.invalid')")
+        .execute(owner)
+        .await
+        .unwrap();
+    let refused = sqlx::query(check).execute(owner).await.unwrap_err();
+    assert!(
+        refused.to_string().contains("already has an address"),
+        "{refused}"
+    );
+    w.close().await;
+}
+
+/// The header token `name=` of a DCT response, if present.
+fn dct_value(text: &str, name: &str) -> Option<String> {
+    text.lines()
+        .next()?
+        .split_whitespace()
+        .find_map(|t| t.strip_prefix(&format!("{name}=")))
+        .map(str::to_owned)
+}
+
+/// Review item 9. A client that reads only DCT is given the whole proposal id, which is what
+/// the proposal routes take: the id of `propose` (new, replayed and dry-run extension), of
+/// `submit`, `withdraw` and of the status all parse as UUIDs and work.
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_dct_client_is_given_the_whole_proposal_id(pool: PgPool) {
+    let s = setup(pool, full()).await;
+    let w = &s.w;
+    let doc = standard(w).await;
+    let o = outline(w, &s.token, doc).await;
+    let rev = o["rev"].as_u64().unwrap();
+    let (r0, _) = block(&o, 0);
+    let (r1, _) = block(&o, 1);
+    let body = call_body(
+        rev,
+        json!([{"op":"set_text","ref":r0,"text":"Alpha proposed by DCT."}]),
+    );
+    let made = propose_dct(w, &s.token, doc, body.clone()).await;
+    assert_eq!(made.code(), 200, "{}", made.text());
+    let id = dct_value(&made.text(), "proposal").expect("proposal in the header");
+    let proposal = Uuid::parse_str(&id).unwrap_or_else(|_| panic!("not a whole id: {id}"));
+    let replay = propose_dct(w, &s.token, doc, body).await;
+    assert_eq!(dct_value(&replay.text(), "proposal"), Some(id.clone()));
+    let mut dry = call_body(
+        rev,
+        json!([{"op":"set_text","ref":r1,"text":"Beta by DCT too."}]),
+    );
+    dry["dry_run"] = json!(true);
+    dry["proposal"] = json!(proposal);
+    let dry = propose_dct(w, &s.token, doc, dry).await;
+    assert_eq!(dct_value(&dry.text(), "proposal"), Some(id.clone()));
+
+    let dct = |method: &'static str, path: String| {
+        let (app, token) = (w.app.clone(), s.token.clone());
+        async move {
+            raw(
+                &app,
+                method,
+                &path,
+                Some(&token),
+                &[("accept", DCT)],
+                (method == "POST").then(|| json!({})),
+            )
+            .await
+        }
+    };
+    let status = dct("GET", w.url(&format!("/proposals/{proposal}"))).await;
+    assert_eq!(status.code(), 200, "{}", status.text());
+    assert_eq!(dct_value(&status.text(), "proposal"), Some(id.clone()));
+    let sent = dct("POST", w.url(&format!("/proposals/{proposal}/submit"))).await;
+    assert_eq!(sent.code(), 200, "{}", sent.text());
+    assert_eq!(dct_value(&sent.text(), "proposal"), Some(id.clone()));
+    // The id read from the header is the one the withdraw route takes.
+    let id = dct_value(&sent.text(), "proposal").unwrap();
+    let closed = dct("POST", w.url(&format!("/proposals/{id}/withdraw"))).await;
+    assert_eq!(closed.code(), 200, "{}", closed.text());
+    assert_eq!(dct_value(&closed.text(), "state"), Some("withdrawn".into()));
+    s.w.close().await;
+}
+
+/// Review item 9. The audit rows of everything a person does to a request their agent wrote
+/// name the agent like the merge row does, and the request never shows the agent's
+/// placeholder address, not even as the reviewer who closed it.
+#[sqlx::test(migrations = "../../migrations")]
+async fn every_audit_row_of_an_agents_request_names_the_agent(pool: PgPool) {
+    let s = setup(pool, full()).await;
+    let w = &s.w;
+    let doc = standard(w).await;
+    let agent = agent_identity_of(w, s.olivia).await;
+    let detail_of = |action: &'static str, draft: Uuid| {
+        let pool = w.pool().clone();
+        async move {
+            let rows: Vec<(Uuid, Value)> = sqlx::query_as("select actor_id,detail from operation_audit where action=$1 and detail->>'draft_id'=$2")
+                .bind(action)
+                .bind(draft.to_string())
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+            assert_eq!(rows.len(), 1, "{action}: {rows:?}");
+            rows.into_iter().next().unwrap()
+        }
+    };
+    let names_the_agent = |detail: &Value| {
+        detail["contributor_kind"] == "agent"
+            && detail["agent"]["client_kind"] == "claude"
+            && detail["agent"]["principal"] == json!(s.olivia)
+    };
+
+    // The person submits their agent's draft: their own row, naming the agent.
+    let adopted = open_one(&s, doc, "Alpha adopted paragraph.").await;
+    let (status, body) = call(
+        &w.app,
+        "POST",
+        &format!("/documents/{doc}/drafts/{adopted}/submit"),
+        Some(&s.login),
+        json!({"note":"Mine now."}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (actor, detail) = detail_of("document.change_request_submitted", adopted).await;
+    assert_eq!(actor, s.olivia);
+    assert!(names_the_agent(&detail), "{detail}");
+    assert_eq!(detail["contributor"], json!(agent));
+
+    // The agent submits another itself: the agent's row, naming itself.
+    let own = open_one(&s, doc, "Alpha agent paragraph.").await;
+    assert_eq!(submit_p(w, &s.token, own, json!({})).await.code(), 200);
+    let (actor, detail) = detail_of("document.change_request_submitted", own).await;
+    assert_eq!(actor, agent);
+    assert!(names_the_agent(&detail), "{detail}");
+
+    // A manager declines the first: the decline row names the agent too.
+    let (status, body) = call(
+        &w.app,
+        "POST",
+        &format!("/documents/{doc}/change-requests/{adopted}/decline"),
+        Some(&w.owner_login),
+        json!({"note":"No."}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (actor, detail) = detail_of("document.change_request_declined", adopted).await;
+    assert_eq!(actor, w.owner);
+    assert!(names_the_agent(&detail), "{detail}");
+
+    // The person withdraws the second: their row names the agent.
+    let (status, body) = call(
+        &w.app,
+        "POST",
+        &format!("/documents/{doc}/drafts/{own}/withdraw"),
+        Some(&s.login),
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (actor, detail) = detail_of("document.change_request_withdrawn", own).await;
+    assert_eq!(actor, s.olivia);
+    assert!(names_the_agent(&detail), "{detail}");
+
+    // The agent withdraws a third itself; the request shows the agent as the one who closed
+    // it, by name and with no address.
+    let third = open_one(&s, doc, "Alpha third paragraph.").await;
+    assert_eq!(submit_p(w, &s.token, third, json!({})).await.code(), 200);
+    let closed = post_to(
+        w,
+        &s.token,
+        &format!("/proposals/{third}/withdraw"),
+        json!({}),
+    )
+    .await;
+    assert_eq!(closed.code(), 200, "{}", closed.text());
+    let (actor, detail) = detail_of("document.change_request_withdrawn", third).await;
+    assert_eq!(actor, agent);
+    assert!(names_the_agent(&detail), "{detail}");
+    let seen = request_detail(w, &format!("/documents/{doc}/change-requests/{third}")).await;
+    assert_eq!(seen["request"]["reviewer"]["id"], json!(agent));
+    assert_eq!(seen["request"]["reviewer"]["name"], "Claude for Tester");
+    assert!(seen["request"]["reviewer"]["email"].is_null(), "{seen}");
+    assert!(seen["request"]["author"]["email"].is_null());
+    assert!(
+        !seen.to_string().contains("agents.invalid"),
+        "the placeholder address leaks: {seen}"
+    );
     s.w.close().await;
 }

@@ -10,20 +10,39 @@
 -- then is stage a draft: no table below is read by the event log, and no route of the
 -- write path appends to it.
 --
+-- 0. The reserved address domain (section 3) must be free. A database that already holds an
+--    identity in it cannot take this migration; resolve the account by hand first.
+do $$
+begin
+    if exists(select 1 from identity
+              where lower(btrim(email, E' \t\r\n\f\v') collate "C")
+                    ~ '@([^@]*[.])?agents[.]invalid[.]*\Z') then
+        raise exception 'an identity already has an address in the reserved agents.invalid domain';
+    end if;
+end $$;
+
 -- 1. The write scopes. content:propose and content:submit join the device-session and
---    key-grant scope sets as independent scopes (none implies another). Only an agent key
---    can hold them; the application enforces that, as for content:read in 0042.
+--    key-grant scope sets. Neither implies the other or the read scope, but each needs
+--    content:read beside it: a preview shows the text it changes, and so do the answers to a
+--    bad ref, so a write scope without the read scope would be the read scope under another
+--    name. Only an agent key can hold them; the application enforces that, as for
+--    content:read in 0042. The new CHECKs only narrow what the application already
+--    accepts, and no row holds a write scope yet.
 alter table device_session drop constraint device_session_scopes_check;
 alter table device_session add constraint device_session_scopes_check check (
     cardinality(scopes) between 1 and 7
     and scopes <@ array['project:read', 'history:read', 'history:write', 'history:review',
                         'content:read', 'content:propose', 'content:submit']::text[]
+    and (not (scopes && array['content:propose', 'content:submit']::text[])
+         or scopes @> array['content:read']::text[])
 );
 alter table device_key_project_grant drop constraint device_key_project_grant_scopes_check;
 alter table device_key_project_grant add constraint device_key_project_grant_scopes_check check (
     cardinality(scopes) between 1 and 7
     and scopes <@ array['project:read', 'history:read', 'history:write', 'history:review',
                         'content:read', 'content:propose', 'content:submit']::text[]
+    and (not (scopes && array['content:propose', 'content:submit']::text[])
+         or scopes @> array['content:read']::text[])
 );
 
 -- 2. The client product of an agent key, chosen by the person at enrolment, beside the
@@ -99,11 +118,15 @@ create trigger agent_identity_guard before insert or update or delete on agent_i
 -- The reserved domain is for agent identities and for nothing else: not at sign-up, not by
 -- sharing a file with an invented address, not by editing an address later. Checked at
 -- commit (the identity row is made before its sidecar, in one transaction). The pattern
--- covers the domain, its subdomains and the trailing-dot spelling.
+-- covers the domain, its subdomains and the trailing-dot spellings. Case is folded in the
+-- "C" collation (ASCII only, so no database locale can make 'I' something else), blanks and
+-- line breaks around the address are ignored, and \Z anchors at the end of the text, not
+-- before a final newline.
 create function agent_identity_domain_guard() returns trigger
 language plpgsql set search_path = pg_catalog, public as $$
 declare
-    reserved boolean := lower(new.email) ~ '@([^@]*[.])?agents[.]invalid[.]?$';
+    reserved boolean := lower(btrim(new.email, E' \t\r\n\f\v') collate "C")
+                        ~ '@([^@]*[.])?agents[.]invalid[.]*\Z';
     sidecar boolean := exists(select 1 from public.agent_identity a where a.identity_id = new.id);
 begin
     if reserved and not (sidecar and new.email = 'agent+' || new.id::text || '@agents.invalid') then
@@ -280,8 +303,9 @@ create table agent_proposal_receipt (
 create unique index agent_proposal_receipt_request on agent_proposal_receipt(agent_identity_id, request_id)
     where request_id is not null;
 create index agent_proposal_receipt_draft on agent_proposal_receipt(draft_id, at);
--- The proposal budgets count the identity's openings: per UTC day and still open.
-create index agent_proposal_receipt_opened on agent_proposal_receipt(agent_identity_id, project_id, at)
+-- The proposal budgets count the person's openings, over all of their agent identities: per
+-- UTC day and still open.
+create index agent_proposal_receipt_opened on agent_proposal_receipt(principal_id, project_id, at)
     where opened;
 create trigger agent_proposal_receipt_no_update before update on agent_proposal_receipt
     for each row execute function event_immutable();
@@ -308,18 +332,22 @@ create trigger agent_proposal_receipt_no_delete before delete on agent_proposal_
 --    counts of ops and the digest that spec 9.6 asks of a write call are in the receipt
 --    (section 6), which a call that stored or changed something always has; the ledger row
 --    says only that the call was made, its tool, file, revision, digest and outcome. The status
---    of a proposal is the existing 'status'; withdraw is a 'submit'.
+--    of a proposal is the existing 'status'; withdraw is a 'submit'. The new set is a superset
+--    of the old one, so every existing row satisfies it: the constraint is added NOT VALID,
+--    which checks new rows only and does not scan the (large) ledger under an exclusive lock.
 alter table agent_call drop constraint agent_call_tool_check;
 alter table agent_call add constraint agent_call_tool_check
-    check (tool in ('files', 'outline', 'read', 'find', 'diff', 'status', 'propose', 'submit'));
+    check (tool in ('files', 'outline', 'read', 'find', 'diff', 'status', 'propose', 'submit'))
+    not valid;
 
 -- 8. The project policy learns the write fields (spec 5.2). Writing is OFF by default:
 --    write_mode 'none' means a project that enables agents for reading enables nothing
 --    else, and the kill switch sets it back to 'none' (application). 'draft': proposals
 --    stay private drafts until a person submits. 'change_request': an agent may submit,
 --    unless submit_requires_person (default true) says a person must. The proposal budgets
---    count per agent identity and project (stricter than per key: more keys of one product
---    do not multiply them): proposals opened per UTC day, proposals still open, and engine
+--    count per person and project (over all of the person's agent identities, so more keys
+--    or more client products do not multiply them): proposals opened per UTC day, proposals
+--    still open, and engine
 --    operations in one proposal (hard cap 10,000, the compiler's own). The spec's defaults
 --    are used; they apply only once write_mode is set. The existing triggers (revision
 --    moves by one, project fixed, cut-off never moves back) cover the new columns.

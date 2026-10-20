@@ -37,7 +37,6 @@ use engine_agent::{
     refs::RefIndex,
 };
 use engine_core::governance::Role;
-use engine_shared::{DocumentId, IdentityId};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::{PgConnection, Postgres, Transaction};
@@ -51,13 +50,12 @@ use super::{
     policy::{self, Policy},
     routes::{Call, Ctx, Out, Served},
     state,
-    write::{answer, denied, not_found, short, state_word, verify_write, ProposalId},
+    write::{answer, begin_locked, denied, not_found, short, state_word, verify_write, ProposalId},
 };
 use crate::{
     access,
     auth::agent::{AgentAuth, ContentRead, ContentSubmit},
     error::ApiError,
-    ops::apply,
     product::audit,
     reviews, AppState,
 };
@@ -245,14 +243,8 @@ fn outcome_body(
         Tool::Submit,
         vec![
             ("action", json!(tool_action)),
-            (
-                "proposal",
-                if dct {
-                    json!(short(found.id))
-                } else {
-                    json!(found.id)
-                },
-            ),
+            // The routes take the whole id, so a DCT-only client must be shown it.
+            ("proposal", json!(found.id)),
             (
                 "file",
                 if dct {
@@ -334,13 +326,9 @@ async fn submit_call(
         )));
     }
 
-    let (mut tx, role, _) = apply::begin_write(
-        ctx.state,
-        DocumentId(found.document),
-        IdentityId(ctx.identity),
-    )
-    .await?;
-    sqlx::query("set local statement_timeout='30s'")
+    // The lock, not the state: nothing here reads the file's content.
+    let (mut tx, role) = begin_locked(ctx, found.document).await?;
+    sqlx::query("set local statement_timeout='10s'")
         .execute(&mut *tx)
         .await
         .map_err(ApiError::from)?;
@@ -462,13 +450,9 @@ async fn withdraw_call(
     if found.closed() {
         return Err(AgentError::ProposalClosed.into());
     }
-    let (mut tx, role, _) = apply::begin_write(
-        ctx.state,
-        DocumentId(found.document),
-        IdentityId(ctx.identity),
-    )
-    .await?;
-    sqlx::query("set local statement_timeout='30s'")
+    // The lock, not the state: nothing here reads the file's content.
+    let (mut tx, role) = begin_locked(ctx, found.document).await?;
+    sqlx::query("set local statement_timeout='10s'")
         .execute(&mut *tx)
         .await
         .map_err(ApiError::from)?;
@@ -521,7 +505,7 @@ async fn withdraw_call(
             "document.draft_withdrawn"
         },
         found.document,
-        json!({"draft_id":found.id,"contributor":agent.id}),
+        json!({"draft_id":found.id,"contributor":agent.id,"contributor_kind":"agent","agent":{"client_kind":agent.client_kind,"principal":ctx.identity}}),
     )
     .await?;
     receipt(&mut tx, ctx, agent, found, "withdraw", head, revision, "ok").await?;
@@ -665,14 +649,7 @@ async fn status_call(ctx: &Ctx<'_>, call: &mut Call, proposal: Uuid) -> Result<S
     let dct = ctx.format == http::Format::Dct;
     let mut fields = vec![
         ("what", json!("proposal")),
-        (
-            "proposal",
-            if dct {
-                json!(short(found.id))
-            } else {
-                json!(found.id)
-            },
-        ),
+        ("proposal", json!(found.id)),
         (
             "file",
             if dct {

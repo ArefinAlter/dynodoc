@@ -29,8 +29,11 @@
 //! **Credentials and permission (spec 14)**
 //!
 //! 1. The agent scopes are `content:read`, `content:propose` and `content:submit` (migrations
-//!    0042 and 0044): independent, none implies another. Writing also needs the project's
-//!    `write_mode`, which is `none` until an owner changes it ([`write`](mod@write)).
+//!    0042 and 0044): `content:propose` and `content:submit` imply neither each other nor the
+//!    read scope, but a set that holds either must hold `content:read` too (a preview shows
+//!    the text it changes, and so do the answers to a bad ref; a grant, a session and the
+//!    database refuse the other sets). Writing also needs the project's `write_mode`, which
+//!    is `none` until an owner changes it ([`write`](mod@write)).
 //! 2. An ordinary account login, a connector key or any non-device token is `401` on these
 //!    routes (14.1 says "refused"; `401` matches the management routes' rule for a
 //!    credential of the wrong class). A device token without the scope, for another

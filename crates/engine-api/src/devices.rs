@@ -11,7 +11,7 @@ use axum::{
 };
 use engine_core::repository::{
     device::{validate_public_key, Challenge, Proof, MAX_PROOF_BYTES},
-    device_session::{is_agent_scope, normalize_scopes, SCOPES},
+    device_session::{is_agent_scope, normalize_scopes, write_scope_without_read, SCOPES},
     SignedCommit,
 };
 use serde::Deserialize;
@@ -419,18 +419,23 @@ async fn own_key(
 #[serde(deny_unknown_fields)]
 struct GrantRequest {
     /// A person's key: one or more of `project:read`, `history:read`, `history:write`,
-    /// `history:review`. An agent key: one or more of `content:read`, `content:propose`,
-    /// `content:submit` (independent; none implies another). The two sets never mix.
+    /// `history:review`. An agent key: `content:read`, alone or with `content:propose` and
+    /// `content:submit` (which imply neither each other nor the read scope, but need it: a
+    /// preview shows the text it changes). The two sets never mix.
     scopes: Vec<String>,
 }
 
-#[utoipa::path(operation_id="device_grant_set", put, path="/devices/{key_id}/projects/{project_id}", tag="devices", params(("key_id"=Uuid,Path,description="Own device key"),("project_id"=Uuid,Path,description="Project the account is a member of")), request_body=GrantRequest, security(("paseto"=[])), responses((status=200, description="The key's active grant for this project (idempotent); changed is false when the scopes were already these", body=Value),(status=400, description="Empty or unknown scopes, or a scope that does not match the key's class"),(status=401, description="Account sign-in required; a device token is refused"),(status=403, description="Not a current member of the project"),(status=404, description="No such own key"),(status=409, description="Key revoked or 50 active grants reached")))]
+#[utoipa::path(operation_id="device_grant_set", put, path="/devices/{key_id}/projects/{project_id}", tag="devices", params(("key_id"=Uuid,Path,description="Own device key"),("project_id"=Uuid,Path,description="Project the account is a member of")), request_body=GrantRequest, security(("paseto"=[])), responses((status=200, description="The key's active grant for this project (idempotent); changed is false when the scopes were already these", body=Value),(status=400, description="Empty or unknown scopes, a scope that does not match the key's class, or content:propose or content:submit without content:read"),(status=401, description="Account sign-in required; a device token is refused"),(status=403, description="Not a current member of the project"),(status=404, description="No such own key"),(status=409, description="Key revoked or 50 active grants reached")))]
 async fn set_grant(
     State(state): State<AppState>,
     auth: AuthContext,
     Path((key, project)): Path<(Uuid, Uuid)>,
     Json(input): Json<GrantRequest>,
 ) -> Result<Json<Value>, ApiError> {
+    // A preview of a proposal shows the text it changes, so a write scope is a read scope.
+    if write_scope_without_read(&input.scopes) {
+        return Err(bad("content:propose and content:submit need content:read: a preview shows the text it changes"));
+    }
     let scopes = normalize_scopes(&input.scopes).map_err(|_| {
         bad("Choose one or more of project:read, history:read, history:write, history:review, or content:read, content:propose and content:submit for an agent key")
     })?;

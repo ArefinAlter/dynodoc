@@ -35,8 +35,18 @@
 //! 5. Inside the write transaction, with the document and project locked and the account, policy
 //!    and file-policy rows `FOR SHARE` (`verify_write`): everything above once more, so that a
 //!    kill switch, a revoked grant, a disabled or erased account, a changed policy or a demoted
-//!    person either finishes after this write commits or is seen by it. The person's file role
-//!    is `effective_document_role` as `create_draft` reads it: a viewer cannot stage drafts.
+//!    person either finishes after this write commits or is seen by it. The file is looked up
+//!    again too (it may have been trashed, moved to another project or lost its kind since).
+//!    The person's file role is `effective_document_role` as `create_draft` reads it: a viewer
+//!    cannot stage drafts.
+//!
+//! # What a call may hold
+//!
+//! A call that stores holds the document write lock and one pool connection, so it is bounded:
+//! statements at most 10 s, the lock wait 3 s, and the compiler `COMPILE_DEADLINE` (2 s,
+//! then `deadline_exceeded`). A `dry_run` stores nothing and so holds neither: it reads the
+//! state the read routes read and compiles, with no lock and no transaction. `submit` and
+//! `withdraw` take the lock but do not materialise the file.
 //!
 //! Which proposal a path or body names is never trusted: a proposal is found by `created_by =
 //! the agent identity` and the document's project, and every other case (a person's draft,
@@ -70,14 +80,15 @@
 //!    refuses to proceed until each is resolved. The spec's `conflict` error at submit is not
 //!    raised.
 //! 7. **Budgets.** `proposals_per_day` (proposals opened per UTC day) and `open_proposals` are
-//!    counted per agent identity and project, under an advisory lock so concurrent proposals
+//!    counted per person and project (over all of the person's agent identities, so that more
+//!    client products do not multiply them), under an advisory lock so concurrent proposals
 //!    cannot overrun them; `ops_per_proposal` bounds the engine ops of one proposal in all. A
 //!    refusal stores nothing.
 //! 8. **Review link.** The API does not know the web app's address; responses give the
 //!    document and proposal ids instead of a URL.
 //! 9. **Withheld blocks.** No DLP exists, so the compiler is given no redaction set.
 
-use std::{collections::BTreeSet, sync::Arc};
+use std::{collections::BTreeSet, sync::Arc, time::Duration};
 
 use axum::{
     extract::{
@@ -92,15 +103,15 @@ use engine_agent::{
     dct::{HeaderBuilder, Tool},
     diff::Detail,
     error::{AgentError, CompileError},
-    grammar::{parse_propose, ProposeArgs, ReturnKind, MAX_BODY_BYTES},
+    grammar::{parse_propose, Op, ProposeArgs, ReturnKind, MAX_BODY_BYTES},
     hash::Hash,
     model::{FileKind, FileMeta},
     preview::{preview, PreviewOptions},
 };
-use engine_core::governance::Role;
+use engine_core::{governance::Role, materializer::DocumentState};
 use engine_shared::{DocumentId, IdentityId};
 use serde_json::{json, Map, Value};
-use sqlx::{PgConnection, Postgres, Transaction};
+use sqlx::{pool::PoolConnection, PgConnection, Postgres, Transaction};
 use uuid::Uuid;
 
 use super::{
@@ -118,11 +129,17 @@ use crate::{
     error::ApiError,
     ops::apply,
     product::audit,
-    projects, reviews, AppState,
+    projects, reviews,
+    workloads::ReadPermit,
+    AppState,
 };
 
 /// The submit and withdraw bodies hold one short note.
 const NOTE_BODY_LIMIT: usize = 16 * 1024;
+/// The most time the compiler may take on one call. A write holds the document lock and a
+/// pool connection meanwhile, so a call that would take longer is `deadline_exceeded`
+/// (`504`, the protocol's nearest code: a write is retried with the same `request_id`).
+const COMPILE_DEADLINE: Duration = Duration::from_secs(2);
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -313,6 +330,50 @@ where
     }
 }
 
+/// The document write lock and the person's role in the file, as `apply::begin_write_locked`
+/// takes them, except that a file that has gone while the call waited for the lock (trashed,
+/// or moved to a project the person is not in, so that they have no role in it) is the same
+/// `404` as every other way a file can be unavailable, not a `403`.
+pub(super) async fn begin_locked<'a>(
+    ctx: &Ctx<'a>,
+    document: Uuid,
+) -> Result<(Transaction<'a, Postgres>, Role), AgentFail> {
+    match apply::begin_write_locked(ctx.state, DocumentId(document), IdentityId(ctx.identity)).await
+    {
+        Ok(begun) => Ok(begun),
+        Err(ApiError::Forbidden) => {
+            let present: bool = sqlx::query_scalar("select exists(select 1 from document d where d.id=$1 and d.deleted_at is null and document_project(d.id)=$2)")
+                .bind(document)
+                .bind(ctx.project)
+                .fetch_one(&ctx.state.pool)
+                .await
+                .map_err(ApiError::from)?;
+            Err(if present {
+                ApiError::Forbidden.into()
+            } else {
+                not_found()
+            })
+        }
+        Err(other) => Err(other.into()),
+    }
+}
+
+/// [`blocking`] with a deadline. The work is not cancelled (a blocking task cannot be), but
+/// the caller stops waiting for it, so the document lock and the connection it holds are
+/// released; anything the work captured, such as the admission permit, is released only when
+/// it really ends.
+pub(super) async fn within<T, E, F>(deadline: Duration, work: F) -> Result<T, AgentFail>
+where
+    F: FnOnce() -> Result<T, E> + Send + 'static,
+    T: Send + 'static,
+    E: Into<AgentFail> + Send + 'static,
+{
+    match tokio::time::timeout(deadline, blocking(work)).await {
+        Ok(done) => done,
+        Err(_) => Err(AgentError::DeadlineExceeded.into()),
+    }
+}
+
 // --- the transaction's second look ------------------------------------------------------
 
 /// The facts `admit` read, read again inside a write transaction that holds the document and
@@ -355,6 +416,18 @@ pub(super) async fn verify_write(
         }
         .into());
     }
+    // The file is looked up before the lock is taken; a move to another project, a trashing
+    // or a change of the policy's kinds in between is seen here (the lock holds the row).
+    let reachable: bool = sqlx::query_scalar("select exists(select 1 from document d where d.id=$1 and d.deleted_at is null and document_project(d.id)=$2 and coalesce(d.settings->>'kind','questionnaire')=any($3::text[]))")
+        .bind(document)
+        .bind(ctx.project)
+        .bind(&policy.kinds)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(ApiError::from)?;
+    if !reachable {
+        return Err(not_found());
+    }
     let access: Option<String> =
         sqlx::query_scalar("select access from file_agent_policy where document_id=$1 for share")
             .bind(document)
@@ -392,15 +465,16 @@ async fn require_writable_file(
 
 // --- proposal budgets ------------------------------------------------------------------
 
-/// What one agent identity has used in a project: proposals opened since midnight UTC and
-/// proposals still open (not merged, declined or withdrawn).
+/// What one person's agents have used in a project: proposals opened since midnight UTC and
+/// proposals still open (not merged, declined or withdrawn), over all of the person's agent
+/// identities, so that more client products do not multiply the limit.
 pub(super) async fn proposal_use(
     db: &mut PgConnection,
-    agent: Uuid,
+    principal: Uuid,
     project: Uuid,
 ) -> Result<(i64, i64), sqlx::Error> {
-    sqlx::query_as("select (select count(*) from agent_proposal_receipt where agent_identity_id=$1 and project_id=$2 and opened and at>=date_trunc('day',now() at time zone 'utc') at time zone 'utc'),(select count(*) from agent_proposal_receipt r join workspace_draft d on d.id=r.draft_id where r.agent_identity_id=$1 and r.project_id=$2 and r.opened and d.merged_at is null and d.review_outcome is null)")
-        .bind(agent)
+    sqlx::query_as("select (select count(*) from agent_proposal_receipt where principal_id=$1 and project_id=$2 and opened and at>=date_trunc('day',now() at time zone 'utc') at time zone 'utc'),(select count(*) from agent_proposal_receipt r join workspace_draft d on d.id=r.draft_id where r.principal_id=$1 and r.project_id=$2 and r.opened and d.merged_at is null and d.review_outcome is null)")
+        .bind(principal)
         .bind(project)
         .fetch_one(db)
         .await
@@ -502,30 +576,320 @@ async fn propose_call(
     let args = parse_call(&body, document)?;
     let digest = request_digest(document, args.rev, args.proposal, &body["ops"], args.strict);
     call.digest = Some(digest);
-    // The connection goes back to the pool; the permit is held to the end of the request.
+    // The permit is held until the compiler is done, even if the caller gives up.
     let permit = admitted._permit;
-    drop(admitted.db);
-    let body = write_proposal(ctx, call, &agent, document, kind, args, digest).await?;
-    drop(permit);
+    let body = if args.dry_run {
+        // A dry run stores nothing, so it takes no document lock and opens no write
+        // transaction: it reads what the read routes read.
+        dry_run_proposal(
+            ctx,
+            call,
+            &agent,
+            document,
+            kind,
+            args,
+            admitted.db,
+            &admitted.allowed.policy,
+            permit,
+        )
+        .await?
+    } else {
+        // The connection goes back to the pool.
+        drop(admitted.db);
+        write_proposal(ctx, call, &agent, document, kind, args, digest, permit).await?
+    };
     Ok(Served {
         bytes: body.len(),
         response: http::reply(ctx.format, body, None),
     })
 }
 
-/// The transaction of one `propose` call.
+/// The draft a call extends, as its row says now.
+struct Existing {
+    id: Uuid,
+    revision: i64,
+    base_seq: i64,
+    submitted: bool,
+    /// The engine operations it holds already.
+    ops: i64,
+}
+
+/// The proposal `id` of the agent identity `agent` in `document`, open. Only the agent
+/// identity's own draft, in this file: a person's draft, another agent's, another file's and
+/// an invented id are all the same `404`. `lock` takes the row `FOR UPDATE` (a write).
+async fn find_existing(
+    db: &mut PgConnection,
+    id: Uuid,
+    document: Uuid,
+    agent: Uuid,
+    lock: bool,
+) -> Result<Existing, AgentFail> {
+    let sql = format!("select revision,base_seq,submitted_at is not null,merged_at is not null,review_outcome from workspace_draft where id=$1 and document_id=$2 and created_by=$3{}", if lock { " for update" } else { "" });
+    let row: Option<(i64, i64, bool, bool, Option<String>)> = sqlx::query_as(&sql)
+        .bind(id)
+        .bind(document)
+        .bind(agent)
+        .fetch_optional(&mut *db)
+        .await
+        .map_err(ApiError::from)?;
+    let Some((revision, base_seq, submitted, merged, outcome)) = row else {
+        return Err(not_found());
+    };
+    if merged || outcome.is_some() {
+        return Err(AgentError::ProposalClosed.into());
+    }
+    let ops: i64 = sqlx::query_scalar("select count(*) from draft_edit where draft_id=$1")
+        .bind(id)
+        .fetch_one(&mut *db)
+        .await
+        .map_err(ApiError::from)?;
+    Ok(Existing {
+        id,
+        revision,
+        base_seq,
+        submitted,
+        ops,
+    })
+}
+
+/// What one call compiles from.
+struct Stage<'a> {
+    agent: &'a AgentIdentity,
+    document: Uuid,
+    kind: FileKind,
+    point: &'a state::Point,
+    /// The id timestamp of the revision the agent read.
+    stamp: u64,
+    /// What the ops apply to: the state the agent read for a new proposal, the proposal's own
+    /// current state for an extension (spec 9.1).
+    before: Arc<DocumentState>,
+    /// The team's head, for the `base` comparison.
+    head: Arc<DocumentState>,
+    policy: &'a Policy,
+    existing: Option<&'a Existing>,
+    proposal_id: Uuid,
+    revision_after: i64,
+}
+
+/// A call compiled and previewed, not yet stored. The permit comes back so that the caller
+/// holds it as long as it did.
+struct Staged {
+    compiled: engine_agent::compile::Compiled,
+    shown: engine_agent::response::Response<engine_agent::preview::PreviewData>,
+    base_seq: i64,
+    extras: Value,
+    _permit: ReadPermit,
+}
+
+/// Compile and preview a call, with at most `COMPILE_DEADLINE` spent on it, and apply the
+/// per-proposal operation cap.
+async fn stage(
+    s: Stage<'_>,
+    args: &ProposeArgs,
+    ops: Vec<Op>,
+    permit: ReadPermit,
+) -> Result<Staged, AgentFail> {
+    let meta = FileMeta {
+        id: DocumentId(s.document),
+        kind: s.kind,
+        rev: s.point.rev,
+        chain: s.point.chain_hex(),
+    };
+    let state_now = s
+        .existing
+        .map_or("draft", |e| if e.submitted { "open" } else { "draft" });
+    let options = PreviewOptions {
+        detail: if args.ret == ReturnKind::Diff {
+            Detail::Text
+        } else {
+            Detail::Summary
+        },
+        max_bytes: None,
+        dry_run: args.dry_run,
+        proposal: (!args.dry_run || s.existing.is_some()).then_some(s.proposal_id),
+        state: (!args.dry_run).then_some(state_now),
+        revision: (!args.dry_run).then_some(s.revision_after as u64),
+    };
+    let seed = format!("{}:{}", s.agent.id, args.request_id);
+    let (strict, stamp) = (args.strict, s.stamp);
+    let (compiled, shown, permit) = {
+        let (before, head, meta) = (s.before.clone(), s.head.clone(), meta.clone());
+        // The permit goes with the work: a call that times out frees the document, not the
+        // slot, until the compiler is really done.
+        within(COMPILE_DEADLINE, move || {
+            let mut input = CompileInput::new(&meta, &before, Role::Author);
+            input.head = Some(&*head);
+            input.strict = strict;
+            input.redacted = BTreeSet::new();
+            let mut ids = DerivedIds::new(stamp, &seed);
+            let compiled = compile(&input, &ops, &mut ids)?;
+            let shown = preview(&meta, &before, &compiled, &options).map_err(CompileError::from)?;
+            Ok::<_, CompileError>((compiled, shown, permit))
+        })
+        .await?
+    };
+    if compiled.ops.is_empty() {
+        return Err(AgentError::NoChange.into());
+    }
+    let existing_ops = s.existing.map_or(0, |e| e.ops);
+    let total = existing_ops + compiled.ops.len() as i64;
+    if total > i64::from(s.policy.ops_per_proposal) {
+        return Err(AgentError::LimitExceeded {
+            field: "engine_ops",
+            limit: s.policy.ops_per_proposal as u64,
+            value: total as u64,
+        }
+        .into());
+    }
+
+    let base_seq = s.existing.map_or(s.point.rev as i64, |e| e.base_seq);
+    let behind = s.point.head.saturating_sub(base_seq as u64);
+    let mut warn: Vec<&str> = Vec::new();
+    if !compiled.stale.is_empty() {
+        warn.push("stale");
+    }
+    if behind > 0 {
+        warn.push("behind");
+    }
+    if shown.data.truncated {
+        warn.push("truncated");
+    }
+    let extras = json!({
+        "proposal": (!args.dry_run || s.existing.is_some()).then_some(s.proposal_id),
+        "request_id": args.request_id,
+        "state": (!args.dry_run).then_some(state_now),
+        "revision": (!args.dry_run).then_some(s.revision_after),
+        "base": base_seq,
+        "head": s.point.head,
+        "behind": behind,
+        "stale_total": compiled.stale.len(),
+        "dry_run": args.dry_run,
+        "replayed": false,
+        "warn": warn,
+    });
+    Ok(Staged {
+        compiled,
+        shown,
+        base_seq,
+        extras,
+        _permit: permit,
+    })
+}
+
+/// The answer of a `propose` call in the negotiated form.
+fn render(
+    ctx: &Ctx<'_>,
+    shown: &engine_agent::response::Response<engine_agent::preview::PreviewData>,
+    extras: &Value,
+) -> String {
+    match ctx.format {
+        Format::Dct => shown.text.clone(),
+        Format::Json => add_fields(&shown.json_mirror(Tool::Propose), extras.clone()),
+    }
+}
+
+/// A `dry_run` call: what the ops would do, from the state the read routes read. Nothing is
+/// locked, stored or counted, and no write transaction is open, so a flood of dry runs
+/// cannot hold the document lock or a transaction against the writers. The admission checks
+/// are those of the call (`admit`), and the viewer rule of the write.
+#[allow(clippy::too_many_arguments)]
+async fn dry_run_proposal(
+    ctx: &Ctx<'_>,
+    call: &mut Call,
+    agent: &AgentIdentity,
+    document: Uuid,
+    kind: FileKind,
+    mut args: ProposeArgs,
+    mut db: PoolConnection<Postgres>,
+    policy: &Policy,
+    permit: ReadPermit,
+) -> Result<String, AgentFail> {
+    let role: Option<String> = sqlx::query_scalar("select effective_document_role($1,$2)")
+        .bind(document)
+        .bind(ctx.identity)
+        .fetch_one(&mut *db)
+        .await
+        .map_err(ApiError::from)?;
+    match role.and_then(|r| r.parse::<Role>().ok()) {
+        None | Some(Role::Auditor) => return Err(ApiError::Forbidden.into()),
+        Some(_) => {}
+    }
+    let point = state::point(&mut db, document, Some(args.rev), None).await?;
+    call.rev = Some(point.rev);
+    let existing = match args.proposal {
+        None => None,
+        Some(id) => Some(find_existing(&mut db, id, document, agent.id, false).await?),
+    };
+    let head_point = if point.rev == point.head {
+        point.clone()
+    } else {
+        state::point(&mut db, document, None, None).await?
+    };
+    let cache = &ctx.state.agent_cache;
+    let head = state::load(cache, &mut db, &head_point).await?;
+    let (before, proposal_id, revision_after) = match &existing {
+        None if point.rev == point.head => (head.clone(), Uuid::new_v4(), 1),
+        None => (
+            state::load(cache, &mut db, &point).await?,
+            Uuid::new_v4(),
+            1,
+        ),
+        Some(e) => {
+            let row: Value =
+                sqlx::query_scalar("select to_jsonb(d) from workspace_draft d where d.id=$1")
+                    .bind(e.id)
+                    .fetch_one(&mut *db)
+                    .await
+                    .map_err(ApiError::from)?;
+            let drafted = crate::workspace::replay_draft(&mut db, document, row).await?;
+            (Arc::new(drafted.local), e.id, e.revision + 1)
+        }
+    };
+    let stamp = id_timestamp(&mut db, document, point.rev)
+        .await
+        .map_err(ApiError::from)?;
+    // The connection goes back to the pool before the compiler runs.
+    drop(db);
+    let ops = std::mem::take(&mut args.ops);
+    let staged = stage(
+        Stage {
+            agent,
+            document,
+            kind,
+            point: &point,
+            stamp,
+            before,
+            head,
+            policy,
+            existing: existing.as_ref(),
+            proposal_id,
+            revision_after,
+        },
+        &args,
+        ops,
+        permit,
+    )
+    .await?;
+    Ok(render(ctx, &staged.shown, &staged.extras))
+}
+
+/// The transaction of one `propose` call that stores (a dry run is [`dry_run_proposal`]).
+#[allow(clippy::too_many_arguments)]
 async fn write_proposal(
     ctx: &Ctx<'_>,
     call: &mut Call,
     agent: &AgentIdentity,
     document: Uuid,
     kind: FileKind,
-    args: ProposeArgs,
+    mut args: ProposeArgs,
     digest: [u8; 32],
+    permit: ReadPermit,
 ) -> Result<String, AgentFail> {
-    let (mut tx, role, head) =
-        apply::begin_write(ctx.state, DocumentId(document), IdentityId(ctx.identity)).await?;
-    sqlx::query("set local statement_timeout='30s'")
+    let (mut tx, role) = begin_locked(ctx, document).await?;
+    let (head, _) = engine_core::snapshot::read_current_state(&mut tx, DocumentId(document))
+        .await
+        .map_err(ApiError::from)?;
+    sqlx::query("set local statement_timeout='10s'")
         .execute(&mut *tx)
         .await
         .map_err(ApiError::from)?;
@@ -541,72 +905,34 @@ async fn write_proposal(
     let point = state::point(&mut tx, document, Some(args.rev), None).await?;
     call.rev = Some(point.rev);
 
-    // The same request again: a replay of its receipt, or a conflict. A dry run reads and
-    // writes no receipt.
-    if !args.dry_run {
-        let found: Option<Receipt> = sqlx::query_as("select draft_id,request_digest,rev,ops_in,ops_engine,stale,stale_refs,revision,opened,document_id,base_seq from agent_proposal_receipt where agent_identity_id=$1 and request_id=$2 and kind='propose'")
-            .bind(agent.id)
-            .bind(args.request_id)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(ApiError::from)?;
-        if let Some(receipt) = found {
-            if receipt.request_digest != digest || receipt.document_id != document {
-                return Err(AgentError::IdempotencyConflict.into());
-            }
-            return replay(&mut tx, ctx, &receipt, head_seq(&point)).await;
+    // The same request again: a replay of its receipt, or a conflict.
+    let found: Option<Receipt> = sqlx::query_as("select draft_id,request_digest,rev,ops_in,ops_engine,stale,stale_refs,revision,opened,document_id,base_seq from agent_proposal_receipt where agent_identity_id=$1 and request_id=$2 and kind='propose'")
+        .bind(agent.id)
+        .bind(args.request_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(ApiError::from)?;
+    if let Some(receipt) = found {
+        if receipt.request_digest != digest || receipt.document_id != document {
+            return Err(AgentError::IdempotencyConflict.into());
         }
+        return replay(&mut tx, ctx, &receipt, head_seq(&point)).await;
     }
 
     // The draft this call extends, or the budgets for a new one.
-    struct Existing {
-        id: Uuid,
-        revision: i64,
-        base_seq: i64,
-        submitted: bool,
-        ops: i64,
-    }
     let existing = match args.proposal {
         None => None,
-        Some(id) => {
-            // Only the agent identity's own draft, in this file: a person's draft, another
-            // agent's, another file's and an invented id are all the same `404`.
-            let row: Option<(i64, i64, bool, bool, Option<String>)> = sqlx::query_as("select revision,base_seq,submitted_at is not null,merged_at is not null,review_outcome from workspace_draft where id=$1 and document_id=$2 and created_by=$3 for update")
-                .bind(id)
-                .bind(document)
-                .bind(agent.id)
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(ApiError::from)?;
-            let Some((revision, base_seq, submitted, merged, outcome)) = row else {
-                return Err(not_found());
-            };
-            if merged || outcome.is_some() {
-                return Err(AgentError::ProposalClosed.into());
-            }
-            let ops: i64 = sqlx::query_scalar("select count(*) from draft_edit where draft_id=$1")
-                .bind(id)
-                .fetch_one(&mut *tx)
-                .await
-                .map_err(ApiError::from)?;
-            Some(Existing {
-                id,
-                revision,
-                base_seq,
-                submitted,
-                ops,
-            })
-        }
+        Some(id) => Some(find_existing(&mut tx, id, document, agent.id, true).await?),
     };
-    if existing.is_none() && !args.dry_run {
-        // One budget check at a time per identity and project, so that two concurrent
+    if existing.is_none() {
+        // One budget check at a time per person and project, so that two concurrent
         // proposals cannot both take the last place.
         sqlx::query("select pg_advisory_xact_lock(hashtextextended($1::text,384))")
-            .bind(format!("agent_proposals:{}:{}", agent.id, ctx.project))
+            .bind(format!("agent_proposals:{}:{}", ctx.identity, ctx.project))
             .execute(&mut *tx)
             .await
             .map_err(ApiError::from)?;
-        let used = proposal_use(&mut tx, agent.id, ctx.project)
+        let used = proposal_use(&mut tx, ctx.identity, ctx.project)
             .await
             .map_err(ApiError::from)?;
         if let Some(refusal) = budget_refusal(&mut tx, &policy, used)
@@ -636,96 +962,35 @@ async fn write_proposal(
             (Arc::new(ctxd.local), e.id, e.revision + 1)
         }
     };
-    let meta = FileMeta {
-        id: DocumentId(document),
-        kind,
-        rev: point.rev,
-        chain: point.chain_hex(),
-    };
     let stamp = id_timestamp(&mut tx, document, point.rev)
         .await
         .map_err(ApiError::from)?;
-    let state_now = existing
-        .as_ref()
-        .map_or("draft", |e| if e.submitted { "open" } else { "draft" });
-    let options = PreviewOptions {
-        detail: if args.ret == ReturnKind::Diff {
-            Detail::Text
-        } else {
-            Detail::Summary
+    let ops = std::mem::take(&mut args.ops);
+    let Staged {
+        compiled,
+        shown,
+        base_seq,
+        extras,
+        _permit,
+    } = stage(
+        Stage {
+            agent,
+            document,
+            kind,
+            point: &point,
+            stamp,
+            before: before.clone(),
+            head,
+            policy: &policy,
+            existing: existing.as_ref(),
+            proposal_id,
+            revision_after,
         },
-        max_bytes: None,
-        dry_run: args.dry_run,
-        proposal: (!args.dry_run || existing.is_some()).then_some(proposal_id),
-        state: (!args.dry_run).then_some(state_now),
-        revision: (!args.dry_run).then_some(revision_after as u64),
-    };
-    let seed = format!("{}:{}", agent.id, args.request_id);
-    let (strict, ops) = (args.strict, args.ops);
-    let (compiled, shown) = {
-        let (before, head, meta) = (before.clone(), head.clone(), meta.clone());
-        blocking(move || {
-            let mut input = CompileInput::new(&meta, &before, Role::Author);
-            input.head = Some(&*head);
-            input.strict = strict;
-            input.redacted = BTreeSet::new();
-            let mut ids = DerivedIds::new(stamp, &seed);
-            let compiled = compile(&input, &ops, &mut ids)?;
-            let shown = preview(&meta, &before, &compiled, &options).map_err(CompileError::from)?;
-            Ok::<_, CompileError>((compiled, shown))
-        })
-        .await?
-    };
-    if compiled.ops.is_empty() {
-        return Err(AgentError::NoChange.into());
-    }
-    let existing_ops = existing.as_ref().map_or(0, |e| e.ops);
-    let total = existing_ops + compiled.ops.len() as i64;
-    if total > i64::from(policy.ops_per_proposal) {
-        return Err(AgentError::LimitExceeded {
-            field: "engine_ops",
-            limit: policy.ops_per_proposal as u64,
-            value: total as u64,
-        }
-        .into());
-    }
-
-    let base_seq = existing.as_ref().map_or(point.rev as i64, |e| e.base_seq);
-    let behind = point.head.saturating_sub(base_seq as u64);
-    let mut warn: Vec<&str> = Vec::new();
-    if !compiled.stale.is_empty() {
-        warn.push("stale");
-    }
-    if behind > 0 {
-        warn.push("behind");
-    }
-    if shown.data.truncated {
-        warn.push("truncated");
-    }
-    let extras = json!({
-        "proposal": (!args.dry_run || existing.is_some()).then_some(proposal_id),
-        "request_id": args.request_id,
-        "state": (!args.dry_run).then_some(state_now),
-        "revision": (!args.dry_run).then_some(revision_after),
-        "base": base_seq,
-        "head": point.head,
-        "behind": behind,
-        "stale_total": compiled.stale.len(),
-        "dry_run": args.dry_run,
-        "replayed": false,
-        "warn": warn,
-    });
-    let render =
-        |shown: &engine_agent::response::Response<engine_agent::preview::PreviewData>| match ctx
-            .format
-        {
-            Format::Dct => shown.text.clone(),
-            Format::Json => add_fields(&shown.json_mirror(Tool::Propose), extras.clone()),
-        };
-    if args.dry_run {
-        // Nothing is stored: the transaction ends unchanged.
-        return Ok(render(&shown));
-    }
+        &args,
+        ops,
+        permit,
+    )
+    .await?;
 
     // Store. A new proposal is a new draft owned by the agent identity, with the base state
     // the agent read; every proposal gets the compiled ops, in order, as draft edits by it.
@@ -851,7 +1116,7 @@ async fn write_proposal(
     )
     .await?;
     tx.commit().await.map_err(ApiError::from)?;
-    Ok(render(&shown))
+    Ok(render(ctx, &shown, &extras))
 }
 
 fn head_seq(point: &state::Point) -> u64 {
@@ -897,14 +1162,8 @@ async fn replay(
                 json!(receipt.document_id)
             },
         ),
-        (
-            "proposal",
-            if dct {
-                json!(short(receipt.draft_id))
-            } else {
-                json!(receipt.draft_id)
-            },
-        ),
+        // The whole id: the proposal routes take nothing shorter.
+        ("proposal", json!(receipt.draft_id)),
         ("rev", json!(receipt.rev)),
         ("applied", json!(receipt.ops_in)),
         ("expanded", json!(receipt.ops_engine)),
@@ -997,6 +1256,42 @@ mod tests {
         let mut extra = body;
         extra["surprise"] = json!(1);
         assert!(parse_call(&extra, doc).is_err());
+    }
+
+    #[tokio::test]
+    async fn a_slow_compile_is_deadline_exceeded_and_holds_what_it_captured_until_it_ends() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        // Stands for the admission permit: freed when the work really ends, not when the
+        // caller stops waiting.
+        struct Held(Arc<AtomicBool>);
+        impl Drop for Held {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::SeqCst);
+            }
+        }
+        let freed = Arc::new(AtomicBool::new(false));
+        let held = Held(freed.clone());
+        let slow = within(Duration::from_millis(50), move || {
+            let _held = held;
+            std::thread::sleep(Duration::from_millis(400));
+            Ok::<_, AgentError>(1)
+        })
+        .await;
+        assert_eq!(slow.unwrap_err().agent_code(), "deadline_exceeded");
+        assert!(
+            !freed.load(Ordering::SeqCst),
+            "the permit was freed while the work still ran"
+        );
+        tokio::time::sleep(Duration::from_millis(700)).await;
+        assert!(freed.load(Ordering::SeqCst));
+        // Work inside the deadline is untouched, and its own errors keep their code.
+        let quick = within(Duration::from_secs(2), || Ok::<_, AgentError>(7)).await;
+        assert_eq!(quick.unwrap(), 7);
+        let refused = within(Duration::from_secs(2), || {
+            Err::<u8, _>(AgentError::NoChange)
+        })
+        .await;
+        assert_eq!(refused.unwrap_err().agent_code(), "no_change");
     }
 
     #[test]

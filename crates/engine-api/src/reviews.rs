@@ -183,9 +183,16 @@ pub(crate) async fn review_state(
         "required_approvals": required,
         "satisfied": satisfied,
         "can_merge": rules.can_merge(role),
-        "can_override": role.can_manage() && !satisfied,
+        "can_override": role.can_manage() && !satisfied && !own_agent_request(request),
         "can_approve": role.can_approve() && request["mine"] != true,
     }))
+}
+
+/// Is this the viewer's own agent's request? (I5: the person an AI agent acts for is its
+/// contributor, so what a contributor may not do to their own request they may not do to this
+/// one either; here, bypass its approvals.)
+fn own_agent_request(request: &Value) -> bool {
+    request["agent"].is_object() && request["mine"] == true
 }
 
 /// Revisions a pushed file may have started from: the latest team version, the first
@@ -412,11 +419,12 @@ pub(crate) async fn create(
 
 /// The JSON of one request row (aliases `d` the draft, `a` its author, `r` its reviewer).
 /// A request an AI agent wrote gains an `agent` object (its identity, client product, display
-/// name and the person it acts for, docs/AI-AGENT-CONNECTORS.md 6.2) and its author's email is
-/// null (the address is the placeholder of the reserved domain). Every other request is
+/// name and the person it acts for, docs/AI-AGENT-CONNECTORS.md 6.2) and an agent identity's
+/// email is null wherever it appears as author or as the reviewer who closed the request (the
+/// address is the placeholder of the reserved domain). Every other request is
 /// exactly what it was. The `agent` part is `identity::agent_json("d")`, written out because
 /// this is a constant; a test keeps the two equal.
-pub(crate) const REQUEST_JSON: &str = "(jsonb_build_object('id',d.id,'name',d.name,'note',d.submission_note,'source',d.source,'base_seq',d.base_seq,'created_at',d.created_at,'submitted_at',d.submitted_at,'merged_at',d.merged_at,'review_outcome',d.review_outcome,'reviewed_at',d.reviewed_at,'review_note',d.review_note,'revision',d.revision,'author',jsonb_build_object('id',a.id,'name',a.display_name,'email',case when lower(a.email) like '%@agents.invalid' then null else a.email end),'reviewer',case when r.id is null then null else jsonb_build_object('id',r.id,'name',r.display_name,'email',r.email) end,'edits',(select count(*) from draft_edit e where e.draft_id=d.id),'status',case when d.merged_at is not null then 'merged' when d.review_outcome is not null then d.review_outcome else 'open' end)||coalesce((select jsonb_build_object('agent',jsonb_build_object('id',ai.identity_id,'client_kind',ai.client_kind,'display_name',ag.display_name,'principal',jsonb_build_object('id',pr.id,'name',pr.display_name),'revoked',ai.revoked_at is not null)) from agent_identity ai join identity ag on ag.id=ai.identity_id join identity pr on pr.id=ai.principal_id where ai.identity_id=d.created_by),'{}'::jsonb))";
+pub(crate) const REQUEST_JSON: &str = "(jsonb_build_object('id',d.id,'name',d.name,'note',d.submission_note,'source',d.source,'base_seq',d.base_seq,'created_at',d.created_at,'submitted_at',d.submitted_at,'merged_at',d.merged_at,'review_outcome',d.review_outcome,'reviewed_at',d.reviewed_at,'review_note',d.review_note,'revision',d.revision,'author',jsonb_build_object('id',a.id,'name',a.display_name,'email',case when lower(a.email) like '%@agents.invalid' then null else a.email end),'reviewer',case when r.id is null then null else jsonb_build_object('id',r.id,'name',r.display_name,'email',case when lower(r.email) like '%@agents.invalid' then null else r.email end) end,'edits',(select count(*) from draft_edit e where e.draft_id=d.id),'status',case when d.merged_at is not null then 'merged' when d.review_outcome is not null then d.review_outcome else 'open' end)||coalesce((select jsonb_build_object('agent',jsonb_build_object('id',ai.identity_id,'client_kind',ai.client_kind,'display_name',ag.display_name,'principal',jsonb_build_object('id',pr.id,'name',pr.display_name),'revoked',ai.revoked_at is not null)) from agent_identity ai join identity ag on ag.id=ai.identity_id join identity pr on pr.id=ai.principal_id where ai.identity_id=d.created_by),'{}'::jsonb))";
 
 /// Submitted change requests are visible to every member; unsubmitted drafts stay private.
 #[utoipa::path(get, path="/documents/{id}/change-requests", tag="reviews", params(("id" = Uuid, Path, description = "Document identifier")), responses((status=200, description="Open and recently closed change requests", body=Value),(status=403, description="Document membership required")))]
@@ -542,6 +550,13 @@ async fn merge(
     }
     let review = review_state(&mut tx, id, draft, &request, member, &rules).await?;
     let overridden = review["satisfied"] != true;
+    // I5 (docs/AI-AGENT-PROTOCOL-SPEC.md 9.5): the bypass of the approvals is not for the
+    // person whose agent wrote the request. Another manager's bypass is as for any request.
+    if overridden && req.override_rules && own_agent_request(&request) {
+        return Err(ApiError::Denied {
+            reason: "Your AI agent wrote this change request, so you cannot approve it or bypass its approvals. Ask another reviewer to approve it, or another manager to merge it.".into(),
+        });
+    }
     if overridden && !(req.override_rules && member.can_manage()) {
         return Err(ApiError::Denied {
             reason: format!(
@@ -597,10 +612,7 @@ async fn merge(
     // Attribution layer B (docs/AI-AGENT-PROTOCOL-SPEC.md 9.5): the contributor of an agent's
     // request is the agent identity (as above); say so, and for whom it acted. The events
     // themselves keep the merger as `actor_id`, unchanged.
-    if request["agent"].is_object() {
-        detail["contributor_kind"] = json!("agent");
-        detail["agent"] = json!({"client_kind":request["agent"]["client_kind"],"principal":request["agent"]["principal"]["id"]});
-    }
+    name_agent(&mut detail, &request);
     crate::product::audit(
         &mut tx,
         auth.identity_id,
@@ -673,12 +685,14 @@ async fn close_request(
     }
     sqlx::query("update workspace_draft set review_outcome=$2,reviewed_by=$3,reviewed_at=now(),review_note=$4 where id=$1")
         .bind(draft).bind(outcome).bind(auth.identity_id).bind(note.trim()).execute(&mut *tx).await?;
+    let mut detail = json!({"draft_id":draft,"contributor":request["author"]["id"]});
+    name_agent(&mut detail, &request);
     crate::product::audit(
         &mut tx,
         auth.identity_id,
         &format!("document.change_request_{outcome}"),
         id,
-        json!({"draft_id":draft,"contributor":request["author"]["id"]}),
+        detail,
     )
     .await?;
     if outcome == "declined" {
@@ -765,14 +779,18 @@ pub(crate) async fn mark_submitted(
     if updated.rows_affected() == 0 {
         return Ok(false);
     }
-    crate::product::audit(
-        tx,
-        actor,
-        "document.change_request_submitted",
-        id,
-        json!({"draft_id":draft}),
-    )
-    .await?;
+    // A person submitting the draft of their AI agent is named as such, like the agent itself.
+    let agent: Option<(Uuid, String, Uuid)> = sqlx::query_as("select ai.identity_id,ai.client_kind,ai.principal_id from workspace_draft w join agent_identity ai on ai.identity_id=w.created_by where w.id=$1")
+        .bind(draft)
+        .fetch_optional(&mut **tx)
+        .await?;
+    let mut detail = json!({"draft_id":draft});
+    if let Some((identity, client_kind, principal)) = agent {
+        detail["contributor"] = json!(identity);
+        detail["contributor_kind"] = json!("agent");
+        detail["agent"] = json!({"client_kind":client_kind,"principal":principal});
+    }
+    crate::product::audit(tx, actor, "document.change_request_submitted", id, detail).await?;
     notifications::notify_reviewers(
         tx,
         id,
@@ -783,6 +801,15 @@ pub(crate) async fn mark_submitted(
     )
     .await?;
     Ok(true)
+}
+
+/// For a request an AI agent wrote, say so in an audit detail (an object): the contributor is
+/// an agent, of which client product, acting for whom. Other requests add nothing.
+fn name_agent(detail: &mut Value, request: &Value) {
+    if request["agent"].is_object() {
+        detail["contributor_kind"] = json!("agent");
+        detail["agent"] = json!({"client_kind":request["agent"]["client_kind"],"principal":request["agent"]["principal"]["id"]});
+    }
 }
 
 /// Who hears about what happens to a request: its author, or the person its AI agent acts
@@ -920,6 +947,40 @@ mod tests {
         assert!(REQUEST_JSON.contains(&crate::agent::identity::agent_json("d")));
         assert!(REQUEST_JSON.contains("like '%@agents.invalid' then null"));
         assert!(REQUEST_JSON.starts_with('(') && REQUEST_JSON.ends_with(')'));
+    }
+
+    #[test]
+    fn only_the_viewers_own_agents_request_is_closed_to_their_override() {
+        let agent_theirs = json!({"agent":{"principal":{"id":"p"}},"mine":true});
+        let agent_others = json!({"agent":{"principal":{"id":"p"}},"mine":false});
+        let ordinary_theirs = json!({"mine":true});
+        let ordinary_others = json!({"mine":false});
+        assert!(own_agent_request(&agent_theirs));
+        assert!(!own_agent_request(&agent_others));
+        assert!(!own_agent_request(&ordinary_theirs));
+        assert!(!own_agent_request(&ordinary_others));
+        assert!(!own_agent_request(&json!({})));
+    }
+
+    #[test]
+    fn an_audit_detail_names_the_agent_only_for_its_request() {
+        let mut ordinary = json!({"draft_id":"d"});
+        name_agent(&mut ordinary, &json!({"author":{"id":"a"}}));
+        assert_eq!(ordinary, json!({"draft_id":"d"}));
+        let mut by_agent = json!({"draft_id":"d"});
+        name_agent(
+            &mut by_agent,
+            &json!({"agent":{"client_kind":"claude","principal":{"id":"p","name":"P"}}}),
+        );
+        assert_eq!(
+            by_agent,
+            json!({"draft_id":"d","contributor_kind":"agent","agent":{"client_kind":"claude","principal":"p"}})
+        );
+    }
+
+    #[test]
+    fn the_closing_reviewer_hides_the_placeholder_address_too() {
+        assert!(REQUEST_JSON.contains("'reviewer',case when r.id is null then null else jsonb_build_object('id',r.id,'name',r.display_name,'email',case when lower(r.email) like '%@agents.invalid' then null else r.email end) end"));
     }
 
     #[test]
