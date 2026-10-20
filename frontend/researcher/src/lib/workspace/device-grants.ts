@@ -6,13 +6,23 @@
  * The generated OpenAPI types describe these bodies only as `unknown`, so the shapes below
  * mirror the contract. Parsers are tolerant: a malformed key or grant is skipped, never
  * guessed at, and a server without grants (before schema 40) simply has no access mode.
+ *
+ * A key is connected for a person or for an AI agent (schema 42); the choice is fixed. An agent
+ * key can hold only `content:read`, a person's key never can, and the server refuses a mix.
  */
 import { API_BASE_URL, EDITOR_HEADERS } from '$lib/api/config';
 
-export type DeviceScope = 'project:read' | 'history:read' | 'history:write' | 'history:review';
+export type DeviceScope =
+  | 'project:read'
+  | 'history:read'
+  | 'history:write'
+  | 'history:review'
+  | 'content:read';
 export type ProjectAccess = 'granted' | 'all';
+/** Fixed when a key is connected: for a person, or for an AI agent that can only read. */
+export type KeyClass = 'person' | 'agent';
 
-/** Display order, plain-language names and what each scope lets a key do. */
+/** A person's scopes: display order, plain-language names and what each lets a key do. */
 export const SCOPES: readonly { id: DeviceScope; label: string; help: string }[] = [
   {
     id: 'project:read',
@@ -35,10 +45,28 @@ export const SCOPES: readonly { id: DeviceScope; label: string; help: string }[]
     help: 'Record approvals and requests for changes. Needs an approving role.'
   }
 ];
-const SCOPE_IDS = SCOPES.map((s) => s.id);
-export const scopeLabel = (scope: string) => SCOPES.find((s) => s.id === scope)?.label ?? scope;
+/** The one scope of an AI agent's key. It never mixes with a person's scopes. */
+export const AGENT_SCOPES: readonly { id: DeviceScope; label: string; help: string }[] = [
+  {
+    id: 'content:read',
+    label: 'Read documents',
+    help: 'List the project’s files and read their text, cells and slides, and compare versions. Read only: the agent cannot change anything.'
+  }
+];
+const SCOPE_IDS = [...SCOPES, ...AGENT_SCOPES].map((s) => s.id);
+export const scopeLabel = (scope: string) =>
+  [...SCOPES, ...AGENT_SCOPES].find((s) => s.id === scope)?.label ?? scope;
+/** Which kind of key may hold a scope; null for a name this page does not know. */
+export const scopeClass = (scope: string): KeyClass | null =>
+  AGENT_SCOPES.some((s) => s.id === scope)
+    ? 'agent'
+    : SCOPES.some((s) => s.id === scope)
+      ? 'person'
+      : null;
+export const scopesFor = (keyClass: KeyClass) => (keyClass === 'agent' ? AGENT_SCOPES : SCOPES);
 /** What a new grant starts with: enough for the command line to pull and push, no review. */
 export const DEFAULT_SCOPES: readonly DeviceScope[] = ['history:read', 'history:write'];
+export const DEFAULT_AGENT_SCOPES: readonly DeviceScope[] = ['content:read'];
 /** The server's per-key limit when an older response does not say. */
 export const GRANT_LIMIT = 50;
 
@@ -62,6 +90,10 @@ export interface DeviceKey {
   revokedAt: string | null;
   /** Null from a server that predates per-project grants. */
   projectAccess: ProjectAccess | null;
+  /** A server that predates key classes lists none: every key is then a person's. */
+  keyClass: KeyClass;
+  /** The name given at enrolment; null when none. */
+  label: string | null;
   grants: DeviceGrant[];
 }
 export interface DeviceRegistry {
@@ -82,6 +114,7 @@ export interface Enrolled {
   id: string;
   publicKey: string;
   projectAccess: ProjectAccess | null;
+  keyClass: KeyClass;
 }
 
 const record = (value: unknown): Record<string, unknown> | null =>
@@ -93,6 +126,7 @@ const whole = (value: unknown) =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
 const access = (value: unknown): ProjectAccess | null =>
   value === 'granted' || value === 'all' ? value : null;
+const keyClassOf = (value: unknown): KeyClass => (value === 'agent' ? 'agent' : 'person');
 
 /** Known scopes only, without duplicates, in display order. */
 export function normalizeScopes(values: readonly unknown[]): DeviceScope[] {
@@ -128,6 +162,8 @@ function parseKey(raw: unknown): DeviceKey | null {
     registeredAt,
     revokedAt: text(row.revoked_at),
     projectAccess: access(row.project_access),
+    keyClass: keyClassOf(row.class),
+    label: text(row.label)?.trim() || null,
     grants: (Array.isArray(row.grants) ? row.grants : [])
       .map(parseGrant)
       .filter((g): g is DeviceGrant => !!g)
@@ -206,11 +242,38 @@ export const challengeRequest = (publicKey: string): DeviceRequest => ({
   path: '/devices/challenge',
   body: { public_key: publicKey.trim() }
 });
-export const enrollRequest = (proof: unknown): DeviceRequest => ({
-  method: 'POST',
-  path: '/devices',
-  body: proof
-});
+/** What the person chose for a key they are connecting. A label only means something for an agent. */
+export interface EnrollChoice {
+  keyClass: KeyClass;
+  label?: string;
+}
+/**
+ * Why a key's name cannot be used, or null. The server's rule: 1 to 80 characters, no control
+ * characters. Checked here so the person is told before the one-time proof is sent.
+ */
+export function labelProblem(label: string): string | null {
+  const name = label.trim();
+  if (!name) return 'Give the key a name so you can tell it from your other keys.';
+  if ([...name].length > 80) return 'Use at most 80 characters.';
+  if (/\p{Cc}/u.test(name)) return 'Remove line breaks and other control characters.';
+  return null;
+}
+/**
+ * The proof is sent as it is for a person's key, so connecting one is unchanged and still works
+ * against a server that predates key classes. An agent key adds `class` and `label`, which are
+ * not part of the signed proof.
+ */
+export function enrollRequest(proof: unknown, choice?: EnrollChoice): DeviceRequest {
+  const signed = record(proof);
+  if (choice?.keyClass !== 'agent' || !signed)
+    return { method: 'POST', path: '/devices', body: proof };
+  const label = choice.label?.trim();
+  return {
+    method: 'POST',
+    path: '/devices',
+    body: { ...signed, class: 'agent', ...(label ? { label } : {}) }
+  };
+}
 export const revokeKeyRequest = (keyId: string): DeviceRequest => ({
   method: 'POST',
   path: `/devices/${seg(keyId)}/revoke`,
@@ -220,11 +283,17 @@ export const grantRequest = (
   keyId: string,
   projectId: string,
   scopes: readonly DeviceScope[]
-): DeviceRequest => ({
-  method: 'PUT',
-  path: `/devices/${seg(keyId)}/projects/${seg(projectId)}`,
-  body: { scopes: normalizeScopes(scopes) }
-});
+): DeviceRequest => {
+  const known = normalizeScopes(scopes);
+  // The server refuses a mix of a person's scopes and the agent scope; so does this builder.
+  if (new Set(known.map(scopeClass)).size > 1)
+    throw new Error('A key holds either a person’s permissions or Read documents, never both.');
+  return {
+    method: 'PUT',
+    path: `/devices/${seg(keyId)}/projects/${seg(projectId)}`,
+    body: { scopes: known }
+  };
+};
 export const revokeGrantRequest = (keyId: string, projectId: string): DeviceRequest => ({
   method: 'DELETE',
   path: `/devices/${seg(keyId)}/projects/${seg(projectId)}`
@@ -308,7 +377,18 @@ export function deviceMessage(error: unknown, subject: Subject): string {
     return 'This changed while you were working. Reload the page and try again.';
   }
   if (status === 400) {
-    if (subject === 'grant') return 'Choose at least one permission for the project.';
+    if (subject === 'grant') {
+      // A person's permission on an AI agent's key, or the reverse: the key's type is fixed.
+      if (/agent key can hold only/i.test(reason))
+        return 'A key for an AI agent can only be given Read documents.';
+      if (/content scopes need|enrolled for an AI agent/i.test(reason))
+        return 'Only a key set up for an AI agent can be given Read documents. A key’s type is fixed when it is connected.';
+      return 'Choose at least one permission for the project.';
+    }
+    if (subject === 'enroll' && /label must/i.test(reason))
+      return 'The key name must be 1 to 80 characters, with no line breaks.';
+    if (subject === 'enroll' && /class/i.test(reason))
+      return 'Choose whether this key is for you or for an AI agent, then try again.';
     if (subject === 'mode')
       return 'Confirm that this key may open every project you can access, then try again.';
     if (subject === 'challenge')
@@ -319,7 +399,9 @@ export function deviceMessage(error: unknown, subject: Subject): string {
   }
   if (status === 413) return 'That file is too large to send.';
   if (status === 422)
-    return 'The server did not understand that request. Reload the page and try again.';
+    return subject === 'enroll'
+      ? 'The server did not accept that. Keys for an AI agent may not be available on this installation yet.'
+      : 'The server did not understand that request. Reload the page and try again.';
   if (status === 429) return 'Too many requests. Wait a moment, then try again.';
   if (status >= 500 && status < 600)
     return WRITES.includes(subject)
@@ -362,12 +444,13 @@ export async function createChallenge(publicKey: string): Promise<Record<string,
   if (!challenge) throw unexpected();
   return challenge;
 }
-export async function enrollKey(proof: unknown): Promise<Enrolled> {
-  const body = record(await send(enrollRequest(proof)));
+export async function enrollKey(proof: unknown, choice?: EnrollChoice): Promise<Enrolled> {
+  const body = record(await send(enrollRequest(proof, choice)));
   return {
     id: text(body?.id) ?? '',
     publicKey: text(body?.public_key) ?? '',
-    projectAccess: access(body?.project_access)
+    projectAccess: access(body?.project_access),
+    keyClass: keyClassOf(body?.class)
   };
 }
 export async function revokeKey(keyId: string): Promise<void> {

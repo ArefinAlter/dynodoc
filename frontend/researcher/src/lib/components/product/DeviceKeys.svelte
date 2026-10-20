@@ -1,22 +1,31 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { Bot } from '@lucide/svelte';
   import {
     GRANT_LIMIT,
     ProofFileError,
     createChallenge,
     deviceMessage,
     enrollKey,
+    labelProblem,
     loadProjectChoices,
     loadRegistry,
     revokeKey,
     type DeviceRegistry,
+    type KeyClass,
     type ProjectChoice,
     type Subject
   } from '$lib/workspace/device-grants';
   import DeviceKeyAccess from './DeviceKeyAccess.svelte';
 
+  const uid = $props.id();
   let registry = $state<DeviceRegistry | null>(null);
   let publicKey = $state('');
+  /** Who the key being connected is for. Sent with the proof; it is fixed once connected. */
+  let keyClass = $state<KeyClass>('person');
+  let keyLabel = $state('');
+  /** The file names the setup guide uses for an agent's key and for a person's. */
+  const keyFile = $derived(keyClass === 'agent' ? 'agent.key' : 'signing-key.der');
   let challenge = $state<Record<string, unknown> | null>(null);
   let error = $state('');
   let notice = $state('');
@@ -86,9 +95,15 @@
       busy = false;
     }
   }
+  /** An agent key needs a name; checked before anything is sent. */
+  function checkChoice() {
+    const problem = keyClass === 'agent' ? labelProblem(keyLabel) : null;
+    if (problem) throw new ProofFileError(problem);
+  }
   async function requestChallenge() {
     challenge = null;
     await act(async () => {
+      checkChoice();
       challenge = await createChallenge(publicKey);
     }, 'challenge');
   }
@@ -136,12 +151,19 @@
           'This proof does not match the challenge from your current account.'
         );
       }
-      const enrolled = await enrollKey(proof);
+      checkChoice();
+      const enrolled = await enrollKey(proof, { keyClass, label: keyLabel });
       challenge = null;
       publicKey = '';
+      keyClass = 'person';
+      keyLabel = '';
       enrolOpen = false;
       freshKey = enrolled.id || String(proof?.challenge?.id ?? '');
-      notice = await reload('Signing key connected to your account.');
+      notice = await reload(
+        enrolled.keyClass === 'agent'
+          ? 'AI agent key connected to your account. It can read nothing until you grant it a project.'
+          : 'Signing key connected to your account.'
+      );
     }, 'enroll');
   }
   async function revoke(id: string) {
@@ -168,7 +190,8 @@
     <h2 id="signing-keys-title">Signing keys</h2>
     <p class="repo-muted">
       Connect keys used to sign your local project history. Your keys are visible only to you. A new
-      key can open no project until you grant it one.
+      key can open no project until you grant it one. A key can also be set up for an AI agent,
+      which can only read the projects you grant it.
     </p>
     {#if error}<p class="repo-alert" role="alert">{error}</p>{/if}
     {#if notice}<p class="repo-notice" role="status">{notice}</p>{/if}
@@ -176,6 +199,14 @@
       {#if registry.keys.length === 0}<p>No signing keys connected.</p>{/if}
       {#each registry.keys as device (device.id)}
         <div class="repo-panel-body key-row">
+          {#if device.keyClass === 'agent' || device.label}
+            <p class="key-head">
+              {#if device.keyClass === 'agent'}<span class="repo-badge agent"
+                  ><Bot size={14} aria-hidden="true" />AI agent</span
+                >{/if}
+              {#if device.label}<strong class="key-label">{device.label}</strong>{/if}
+            </p>
+          {/if}
           <code class="key-value">{device.publicKey}</code>
           <p class="repo-small repo-muted">
             Connected {new Date(device.registeredAt).toLocaleDateString()}
@@ -195,8 +226,10 @@
             {/if}
             {#if pendingRevoke === device.id}
               <p>
-                Revoke this key permanently? Its past signatures remain in history. You will need a
-                new key to reconnect.
+                Revoke this key permanently? Its past signatures remain in history.
+                {#if device.keyClass === 'agent'}The AI agent using it is refused from its next
+                  request.{/if}
+                You will need a new key to reconnect.
               </p>
               <button disabled={busy} onclick={() => void revoke(device.id)}
                 >Confirm revocation</button
@@ -228,6 +261,58 @@
             void requestChallenge();
           }}
         >
+          <fieldset class="key-for">
+            <legend>Who is this key for?</legend>
+            <label class="choice">
+              <input
+                type="radio"
+                name={`${uid}-key-for`}
+                value="person"
+                bind:group={keyClass}
+                disabled={busy}
+              />
+              <span class="choice-text"
+                ><span class="choice-name">This key is for me</span><span
+                  class="repo-small repo-muted">I will use it myself from the command line.</span
+                ></span
+              >
+            </label>
+            <label class="choice">
+              <input
+                type="radio"
+                name={`${uid}-key-for`}
+                value="agent"
+                bind:group={keyClass}
+                disabled={busy}
+              />
+              <span class="choice-text"
+                ><span class="choice-name">This key is for an AI agent</span><span
+                  class="repo-small repo-muted"
+                  >An AI assistant such as Claude will use it to read documents in projects I
+                  choose. It cannot change anything.</span
+                ></span
+              >
+            </label>
+          </fieldset>
+          {#if keyClass === 'agent'}
+            <p class="repo-small repo-muted">
+              Make a new key just for the agent; do not reuse a key you use to sync. Whoever holds
+              the key file can act as the agent, so keep it as private as a password.
+            </p>
+            <label
+              >Name for this key<input
+                bind:value={keyLabel}
+                required
+                maxlength="80"
+                autocomplete="off"
+                aria-describedby={`${uid}-label-help`}
+              /></label
+            >
+            <p class="repo-small repo-muted" id={`${uid}-label-help`}>
+              Shown in your list of keys, for example “Claude on my laptop”. Up to 80 characters. Do
+              not put a secret in it.
+            </p>
+          {/if}
           <label
             >Public key<input
               bind:value={publicKey}
@@ -244,10 +329,13 @@
           <p>
             Download the challenge, sign it locally within five minutes, then select the resulting
             proof file.
+            {#if keyClass === 'agent'}It will be connected as an AI agent key{keyLabel.trim()
+                ? ` named “${keyLabel.trim()}”`
+                : ''}.{/if}
           </p>
           <button disabled={busy} onclick={downloadChallenge}>Download challenge</button>
           <pre
-            class="key-command">engine-cli device prove dynodoc-device-challenge.json --authority {registry.authority} --identity {registry.identity} --key signing-key.der --out device-proof.json</pre>
+            class="key-command">engine-cli device prove dynodoc-device-challenge.json --authority {registry.authority} --identity {registry.identity} --key {keyFile} --out device-proof.json</pre>
           <label
             >Enrollment proof JSON<input
               type="file"
@@ -281,5 +369,49 @@
   }
   #signing-keys {
     scroll-margin-top: 16px;
+  }
+  .key-head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 8px;
+    margin: 0 0 6px;
+  }
+  .key-label {
+    overflow-wrap: anywhere;
+  }
+  .agent {
+    color: var(--rp-fg);
+    border-color: var(--rp-accent-border);
+    background: var(--rp-accent-bg);
+  }
+  .key-for {
+    margin: 0 0 12px;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+  }
+  .key-for legend {
+    padding: 0;
+    font-weight: 600;
+  }
+  .key-for label.choice {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin: 8px 0;
+    font-weight: 400;
+  }
+  .key-for .choice input {
+    flex: none;
+    width: auto;
+    margin-top: 3px;
+  }
+  .choice-text {
+    display: grid;
+    min-width: 0;
+  }
+  .choice-name {
+    font-weight: 600;
   }
 </style>

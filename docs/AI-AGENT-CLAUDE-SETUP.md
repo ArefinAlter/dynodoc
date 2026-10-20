@@ -7,10 +7,12 @@ It covers Claude Code and Claude Desktop. 20 October 2026.
 > and the Claude Code plugin ([integrations/claude-code/dynodoc](../integrations/claude-code/dynodoc)).
 > The Dynodoc server side is built separately and is switched off until your operator turns
 > the agent connector on, and then stays off for each project until that project's owner
-> turns agents on (step 0). Three screens in the Dynodoc web app that this guide mentions
-> ("Use for an AI agent", the read-access tick box and the owner's agent settings) are **not
-> built yet**; each step says so where it matters. Nothing here has been tried with a real Claude client yet. Vendor
-> details that could not be checked offline are marked **unverified: check at build time**.
+> turns agents on (step 0). The three screens in the Dynodoc web app that this guide uses
+> (the choice "This key is for an AI agent", the "Read documents" permission and the
+> **AI agents** section of a project's settings) are built. They were tried only in automated
+> browser tests on a test installation with the agent connector switched off, never with a real
+> Claude client. Vendor details that could not be checked offline are marked **unverified:
+> check at build time**.
 > Design background: [AI-AGENT-CONNECTORS.md](AI-AGENT-CONNECTORS.md).
 
 ## What you get
@@ -67,53 +69,57 @@ choice for the project: not a member, not the agent itself, not the person who m
 Switching the connector on for the installation (the operator's setting) does not turn on any
 project.
 
-What the owner or manager decides, in plain words:
+How to do it: open the project, choose the **Settings** tab and scroll to the **AI agents**
+section (below "People"). Only an owner or manager sees the controls; everyone else sees one
+line saying so. At the top of the section Dynodoc says whether your installation serves AI
+agents at all: "AI agents are turned on in this installation." or "AI agents are not available
+on this installation yet." In the second case you can still prepare the settings, but they do
+nothing until your operator turns the agent connector on.
 
-- **On or off.** The master switch. New projects start off.
-- **Who.** The lowest project role whose assistants may read. The default is everyone,
-  viewers included. Choosing, say, "editor" means a viewer's key reads nothing.
-- **Which kinds of files.** Documents, spreadsheets, presentations, or any mix.
-- **How much.** Reads per minute (default 60) and bytes per day (default 20 million) for each
-  key, so one runaway assistant cannot pull a whole project. Past the limit Claude is told to
-  wait, and the wait ends by itself.
-- **Single files.** A file can be hidden from assistants altogether (for example a
-  contract) while the rest of the project stays open. A hidden file looks, to the assistant,
-  as if it did not exist. The owner of the file, or a manager, can do this. Only a project
-  owner or manager can undo it again, so a file's creator who is only an editor, or no longer
-  a member, can hide a file but cannot reopen one a manager hid.
+What the owner or manager decides, in plain words, with the name of each control:
 
-*The screen for these settings is not built yet.* Today an owner (or whoever runs your
-installation) does it through the Dynodoc API, signed in as the owner. `<token>` is the
-owner's sign-in token, `<project>` the project's id and `<file>` a file's id:
+- **On or off: "Let AI agents read this project".** The master switch. New projects start off.
+- **Who: "Lowest role that can use an AI agent".** The lowest project role whose assistants may
+  read. The default is Viewer, so every member. Choosing, say, Editor means a viewer's key
+  reads nothing.
+- **Which kinds of files: "Kinds of file an AI agent may read".** Documents, Spreadsheets,
+  Presentations, or any mix. At least one must stay ticked.
+- **How much: "Reads per minute for each AI agent key" and "Data read per day for each AI
+  agent key, in MB".** From 1 to 600 reads a minute (default 60) and from 0.01 MB to 1,000 MB a
+  day (default 20 MB), for each key, so one runaway assistant cannot pull a whole project. Past
+  the limit Claude is told to wait, and the wait ends by itself. A value outside these ranges is
+  not sent; the page says why.
+
+Press **Save AI agent settings**. The whole form is saved at once, so switching agents on or off
+from this screen never changes the other settings behind your back. If someone else saved
+first, you see "Someone else changed these settings while you were editing", the form shows
+what is saved now, and you decide whether to make your change again. Every change is recorded
+with who made it and what it changed.
+
+**Single files.** A file can be hidden from assistants altogether (for example a contract)
+while the rest of the project stays open. A hidden file looks, to the assistant, as if it did
+not exist. The owner of the file, or a manager, can do this. Only a project owner or manager
+can undo it again, so a file's creator who is only an editor, or no longer a member, can hide a
+file but cannot reopen one a manager hid. **The screen only lists** the files that have such a
+setting, under "Files with their own setting"; it cannot change them yet. Until it can, do it
+through the Dynodoc API, signed in as the owner. `<token>` is the owner's sign-in token and
+`<file>` a file's id:
 
 ```text
-# See the current settings (and the number to send back: "revision")
-curl -H "Authorization: Bearer <token>" https://dynodoc.example.org/api/projects/<project>/agent-policy
-
-# Turn agents on with the defaults (send the revision you just saw; 0 if none was ever saved)
-curl -X PUT -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
-  -H 'If-Match: "0"' -d '{"enabled":true}' \
-  https://dynodoc.example.org/api/projects/<project>/agent-policy
-
 # Hide one file from assistants ("inherit" brings it back)
 curl -X PUT -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
   -d '{"access":"none"}' https://dynodoc.example.org/api/documents/<file>/agent-policy
 ```
 
-A save must say `enabled`; any other field you leave out keeps its current value, so
-switching agents on or off never changes who may read, which kinds of file or how much.
-If two people save at once, the second is told the settings changed and must look again before
-saving. Every change is recorded with who made it and
-what it changed. The full list of routes and values is in the API description
-(`openapi.yaml`, tag "agent policy"); the design is in
-[AI-AGENT-CONNECTORS.md](AI-AGENT-CONNECTORS.md) section 5.
+The same section shows what assistants did, under **Usage, last 7 days**: for each day (UTC),
+how many calls were made, how much data was sent back and how many calls were refused. It holds
+no file text. The clients of a day are added together on the screen; the API lists them
+separately, by the name each assistant gave itself, which proves nothing. A burst of refused
+calls from one key is recorded once a minute, not once per attempt, so the refusal count shows
+that an assistant tried, not how often.
 
-Owners and managers can also see what assistants did: `GET .../projects/<project>/agent-usage`
-shows, for each day and each client name the assistant gave, how many calls it made, how many
-bytes it received and how many calls were refused. It holds no file text. The client name is
-what the assistant says about itself and proves nothing. A burst of refused calls from one key
-is recorded once a minute, not once per attempt, so the refusal count shows that an assistant
-tried, not how often.
+The full list of routes and values, for anyone who prefers the API, is in `openapi.yaml`, tag
+"agent policy"; the design is in [AI-AGENT-CONNECTORS.md](AI-AGENT-CONNECTORS.md) section 5.
 
 ## Step 1. Make a key for the agent
 
@@ -135,23 +141,28 @@ are asked for a password twice, and later you must give the program a file that 
 
 ## Step 2. Enrol the key as an agent key
 
-In Dynodoc, open your **Profile**, then **Signing keys**, and follow the usual steps: paste
-the public key, download the challenge, run the `engine-cli device prove ...` command that
-the page shows, and upload the proof file. The page is described in
-[DEVICE-SIGNING-KEYS.md](DEVICE-SIGNING-KEYS.md).
+In Dynodoc, open your **Profile**, then **Signing keys**, and open **Connect a local signing
+key**. Under "Who is this key for?" choose **This key is for an AI agent** (the default is
+"This key is for me"; choose the agent option for this key). Give the key a **Name for this
+key**, for example "Claude on my laptop" (1 to 80 characters; do not put a secret in it).
+Then follow the usual steps: paste the public key, press **Create enrollment challenge**,
+download the challenge, run the `engine-cli device prove ...` command that the page shows, and
+select the proof file. The page is described in [DEVICE-SIGNING-KEYS.md](DEVICE-SIGNING-KEYS.md).
 
-When you enrol, the key must be marked **"Use for an AI agent"**. *This choice is not on the
-screen yet.* The server already accepts it (the key's class is `agent`), but the screen to
-tick it is a later piece of work. Until then, ask whoever runs your installation to enrol
-the key with the class `agent`. A key that is not marked this way cannot read files for
-agents, and an agent key cannot be used for anything else.
+When it is connected the key appears in the list with an **AI agent** badge and its name. The
+choice cannot be changed afterwards: a key that was not connected as an AI agent cannot read
+files for agents, and an agent key cannot be used for anything else. If you chose wrongly,
+revoke the key and make and connect a new one (a revoked key cannot be connected again).
 
 ## Step 3. Give the key one project, read only
 
-Still under **Signing keys**, add the project you want Claude to read to this key, with
-read access to its files only (the scope is named `content:read`). *The tick box for this
-scope is not built yet either*; the same person who enrolled the key can set it. An agent
-key can hold nothing but this one scope, and it works for the project you add and no other.
+Still under **Signing keys**, on the new key, press **Grant a project** (or **Add project**),
+choose the project you want Claude to read and press **Save grant**. The only permission on
+offer for an agent key is **Read documents** (the scope is named `content:read`): it lets the
+agent list the project's files and read them, and it lets it change nothing. The screen says
+so and does not show the permissions of a person's key. An agent key can hold nothing but this
+one permission, and it works for the project you add and no other. The screen has no "all
+projects" choice for an agent key: each project must be granted.
 
 Because you choose the project here, not in the key file, a copy of the file is not a way
 into your other projects.
@@ -264,16 +275,19 @@ the session: they only read.
 
 Do any of these; the first three act at once, on Claude's very next request.
 
-1. **Remove the project from the key**, or **revoke the key**, under Profile, Signing keys.
-   Dynodoc checks the key and its project on every request, so Claude stops seeing the
-   project immediately, even though a short-lived pass (one hour) may already have been
-   issued.
-2. **A project owner or manager can stop every assistant in the project at once**: turn
-   agents off in the settings of step 0, or use the stop button (`POST .../agent-policy/kill`).
-   The stop button also ends every agent key's access to that project and every pass issued
-   until then, for good: turning agents back on, or giving a key the project again, brings
-   none of them back. Each key's holder must give the key the project again and Claude must
-   start a new session.
+1. **Remove the project from the key** (**Revoke grant**), or **revoke the key** (**Revoke
+   key**, then **Confirm revocation**), under Profile, Signing keys. Dynodoc checks the key and
+   its project on every request, so Claude stops seeing the project immediately, even though a
+   short-lived pass (one hour) may already have been issued.
+2. **A project owner or manager can stop every assistant in the project at once**: in the
+   project's **Settings**, section **AI agents**, either switch "Let AI agents read this
+   project" off and press **Save AI agent settings**, or press **Stop all AI agents now**. The
+   stop button asks you to confirm, and says what it does: it turns agents off, ends every AI
+   agent key's access to this project and every open agent session, and leaves people's own
+   keys untouched. Turning agents back on does not bring the old access back: each agent key
+   must be given the project again (step 3) and Claude must start a new session. (The switch
+   alone stops new requests by turning the project off, but does not end the keys' grants; the
+   stop button does.)
 3. **Your operator can switch the connector off** for everyone (`AGENT_GATEWAY=off`).
 4. **Remove the `dynodoc` entry** from Claude Desktop's file, or run `claude mcp remove
    dynodoc` (**unverified: check at build time**), or disable the plugin. This only stops
@@ -306,6 +320,11 @@ definition against the written specification, the requests it sends, error handl
 nothing but protocol messages ever leaves the program's standard output, and that the
 key's token never appears in messages or logs). The tests use a stand-in Dynodoc server.
 
-**Not done:** running Claude Code or Claude Desktop against it, running against the real
-Dynodoc server routes, and any measurement of how the AI behaves with these tools. The vendor
-facts above marked "unverified" must be re-checked when this is first installed.
+The web screens have their own automated tests (the settings form, the usage table, the stop
+button and the agent-key choice), and a browser test that ran them against a local test
+installation with the agent connector switched off.
+
+**Not done:** running Claude Code or Claude Desktop against it, running the screens against an
+installation with the agent connector switched on, and any measurement of how the AI behaves
+with these tools. The vendor facts above marked "unverified" must be re-checked when this is
+first installed.

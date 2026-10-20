@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import MoveProjectFile from './MoveProjectFile.svelte';
+  import ProjectAgentPolicy from './ProjectAgentPolicy.svelte';
   import RepositoryShell from '$lib/components/product/RepositoryShell.svelte';
   import {
     FolderGit2,
@@ -913,6 +914,11 @@
                 ><label>Short message<textarea bind:value={note} maxlength="500"></textarea></label
                 ><button class="repo-primary" disabled={busy}>Add person</button>
               </form>{/if}
+            <ProjectAgentPolicy
+              projectId={id}
+              canManage={!!manage}
+              fileTitles={Object.fromEntries(files.map((f) => [f.id, f.title]))}
+            />
           {/if}
           {#if tab !== 'settings' && tab !== 'activity' && tab !== 'branches' && tab !== 'issues' && (offsets[tab === 'editors' ? 'files' : (tab as Listing)] > 0 || mores[tab === 'editors' ? 'files' : (tab as Listing)])}<footer
               class="repo-pagination"

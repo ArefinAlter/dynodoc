@@ -1,8 +1,10 @@
 <script lang="ts">
   import { tick } from 'svelte';
-  import { Plus, ShieldAlert, ShieldCheck, TriangleAlert } from '@lucide/svelte';
+  import { Bot, Plus, ShieldAlert, ShieldCheck, TriangleAlert } from '@lucide/svelte';
   import {
     ACCESS_LABEL,
+    AGENT_SCOPES,
+    DEFAULT_AGENT_SCOPES,
     DEFAULT_SCOPES,
     SCOPES,
     clearGrant,
@@ -41,7 +43,10 @@
   const uid = $props.id();
 
   const short = $derived(shortKey(device.publicKey));
-  const mode = $derived(device.projectAccess ?? 'granted');
+  const isAgent = $derived(device.keyClass === 'agent');
+  // The "all projects" mode never covers an agent's scope: it needs a grant for every project.
+  const mode = $derived(isAgent ? 'granted' : (device.projectAccess ?? 'granted'));
+  const verb = $derived(isAgent ? 'read' : 'open');
   const grants = $derived(device.grants);
   const available = $derived(grantableProjects(projects, grants));
   const full = $derived(grants.length >= grantLimit);
@@ -109,7 +114,7 @@
     error = '';
     message = '';
     adding = true;
-    addScopes = [...DEFAULT_SCOPES];
+    addScopes = [...(isAgent ? DEFAULT_AGENT_SCOPES : DEFAULT_SCOPES)];
     addProject = available.length === 1 ? available[0].id : '';
     await tick();
     projectSelect?.focus();
@@ -244,6 +249,19 @@
   </div>
   {#if error}<p class="repo-alert" role="alert">{error}</p>{/if}
 
+  {#if isAgent}
+    <p class="agent-note">
+      <Bot size={16} aria-hidden="true" />
+      <span
+        ><strong>For an AI agent.</strong> It can only read documents, only in the projects you grant
+        below, and only once that project’s owner or manager has turned on AI agents in the project’s
+        settings. An AI agent can only ever propose changes, which a person reviews; in this release it
+        can only read. You can take its access away at any time. Whatever it reads is sent to the AI service
+        it is connected to.</span
+      >
+    </p>
+  {/if}
+
   {#if mode === 'all'}
     <p class="broad-note">
       <TriangleAlert size={16} aria-hidden="true" />
@@ -256,7 +274,7 @@
     {#if fresh}
       <div class="next-step">
         <p class="next-title">Next step: grant a project</p>
-        <p>This key can't open any project yet. Grant it a project.</p>
+        <p>This key can't {verb} any project yet. Grant it a project.</p>
         <button
           type="button"
           class="repo-primary"
@@ -268,7 +286,7 @@
         >
       </div>
     {:else}
-      <p class="repo-muted">This key can't open any project yet.</p>
+      <p class="repo-muted">This key can't {verb} any project yet.</p>
     {/if}
   {/if}
 
@@ -347,7 +365,7 @@
               </p>
             {/if}
             <div class="actions">
-              {#if mode === 'granted' && grant.projectName}
+              {#if mode === 'granted' && grant.projectName && !isAgent}
                 <button
                   type="button"
                   id={`${uid}-edit-${grant.projectId}`}
@@ -410,18 +428,29 @@
             Your projects could not be loaded. Reload the page to try again.
           </p>
         {/if}
-        {@render scopePicker(
-          `${uid}-add`,
-          `Permissions for the new project on key ${short}`,
-          addScopes,
-          (scope) => {
-            addScopes = toggle(addScopes, scope);
-          }
-        )}
-        <p class="repo-small repo-muted">
-          The command line needs Read history to pull and Write history to push. Review is only
-          needed to record approvals.
-        </p>
+        {#if isAgent}
+          <div
+            class="scopes"
+            role="group"
+            aria-label={`Permission for the new project on key ${short}`}
+          >
+            <p class="scope-name">Permission: {AGENT_SCOPES[0].label}</p>
+            <p class="repo-muted repo-small">{AGENT_SCOPES[0].help}</p>
+          </div>
+        {:else}
+          {@render scopePicker(
+            `${uid}-add`,
+            `Permissions for the new project on key ${short}`,
+            addScopes,
+            (scope) => {
+              addScopes = toggle(addScopes, scope);
+            }
+          )}
+          <p class="repo-small repo-muted">
+            The command line needs Read history to pull and Write history to push. Review is only
+            needed to record approvals.
+          </p>
+        {/if}
         {#if chosen && addUnusable.length}<p class="repo-small repo-muted">
             Your role in {chosen.name} ({projectRoleName(chosen.role)}) does not include {names(
               addUnusable
@@ -452,46 +481,48 @@
     {/if}
   {/if}
 
-  <div class="mode-switch">
-    {#if mode === 'granted'}
-      {#if confirmingAll}
-        <div class="confirm" role="group" aria-label={`Confirm all projects for key ${short}`}>
-          <p>
-            <strong>Allow every project you can access?</strong> A copy of this key file could then open
-            any of them, with any permission your role allows, including review decisions. Grants you
-            saved are kept but not used.
-          </p>
-          <div class="actions">
-            <button
-              type="button"
-              bind:this={cancelAllButton}
-              disabled={busy}
-              onclick={() => void cancelAll()}>Cancel</button
-            >
-            <button type="button" class="danger" disabled={busy} onclick={() => void allowAll()}
-              >{busy ? 'Saving…' : 'Allow all projects'}</button
-            >
+  {#if !isAgent}
+    <div class="mode-switch">
+      {#if mode === 'granted'}
+        {#if confirmingAll}
+          <div class="confirm" role="group" aria-label={`Confirm all projects for key ${short}`}>
+            <p>
+              <strong>Allow every project you can access?</strong> A copy of this key file could then
+              open any of them, with any permission your role allows, including review decisions. Grants
+              you saved are kept but not used.
+            </p>
+            <div class="actions">
+              <button
+                type="button"
+                bind:this={cancelAllButton}
+                disabled={busy}
+                onclick={() => void cancelAll()}>Cancel</button
+              >
+              <button type="button" class="danger" disabled={busy} onclick={() => void allowAll()}
+                >{busy ? 'Saving…' : 'Allow all projects'}</button
+              >
+            </div>
           </div>
-        </div>
+        {:else}
+          <button
+            type="button"
+            bind:this={allowButton}
+            disabled={busy}
+            aria-label={`Allow all projects for key ${short}`}
+            onclick={() => void askAll()}>Allow all projects</button
+          >
+        {/if}
       {:else}
         <button
           type="button"
-          bind:this={allowButton}
+          class="repo-primary"
           disabled={busy}
-          aria-label={`Allow all projects for key ${short}`}
-          onclick={() => void askAll()}>Allow all projects</button
+          aria-label={`Use only granted projects for key ${short}`}
+          onclick={() => void limitToGranted()}>Use only projects I grant</button
         >
       {/if}
-    {:else}
-      <button
-        type="button"
-        class="repo-primary"
-        disabled={busy}
-        aria-label={`Use only granted projects for key ${short}`}
-        onclick={() => void limitToGranted()}>Use only projects I grant</button
-      >
-    {/if}
-  </div>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -526,6 +557,22 @@
   }
   .live :global(.repo-notice) {
     margin-bottom: 10px;
+  }
+  .agent-note {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    margin: 0 0 10px;
+    padding: 8px 10px;
+    border: 1px solid var(--rp-accent-border);
+    border-radius: 6px;
+    background: var(--rp-accent-bg);
+    color: var(--rp-fg);
+  }
+  .agent-note :global(svg) {
+    flex: none;
+    margin-top: 2px;
+    color: var(--rp-accent);
   }
   .broad-note {
     display: flex;
