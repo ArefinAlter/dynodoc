@@ -121,8 +121,30 @@ The documents give dependency detail; this is the product order.
 | Log key custody, public or private transparency log | DESIGN-WITNESSES | Private log with one external witness first |
 | iPad: test or exclude | DESIGN-INSTALLED-HOST-ACCEPTANCE | Exclude until PowerPoint API 1.4 exists there |
 
-## 6. What this round did build
+## 6. Build status
 
-Receipt-authority rotation, passphrase-encrypted key files with optional OS key storage, and
-transparent compression of local repository objects were built the same day; see their records in
-[PROJECT-STATUS.md](PROJECT-STATUS.md). Everything else on this page is design only.
+On 14 October 2026 receipt-authority rotation, passphrase-encrypted key files with optional OS key
+storage, and transparent compression of local repository objects were built the same day as the
+designs. Between 18 and 20 October 2026 the pieces below were built **in source**. Nothing here is
+deployed: production runs the schema 41 release, and schemas 42 and 43 (and 44 when the write path
+lands) need the usual rehearsal and release. Each row links to its ledger entry in
+[PROJECT-STATUS.md](PROJECT-STATUS.md), which says exactly what exists, what was verified and what was not.
+
+| Roadmap item | State | What exists | What does not |
+|---|---|---|---|
+| Agent connectors, read path | Built, off by default | `engine-agent` library, read routes under `AGENT_GATEWAY=on`, migration 0042, `AgentAuth`, `engine-mcp` over stdio, Claude Code plugin files, setup guide | Never run with a real MCP client or a production copy |
+| Agent connectors, policy | Built | Migration 0043: default-deny project policy, role floor, budgets, file overrides, kill switch, usage; independent review applied | Policy for write fields; file override editing screen |
+| Agent connectors, screens | Built | Agent keys on Signing keys; "AI agents" in project settings (policy, usage, kill switch) | Run only with the gateway off; no copy review by a non-technical admin |
+| Agent connectors, propose path | Compiler built; server in progress | `engine-agent` operation compiler with a Rust port of the editor's position keys | Propose, submit, agent drafts, receipts, reviewer badges, MCP write tools |
+| Agent connectors, OAuth and remote MCP, ChatGPT | Designed only | none | everything |
+| Self-hosted, Phase 0 | Partly built | API retention job, `*_FILE` secrets and startup validation | Web-tier parametrisation, SMTP, bundle, `dynodoctl`, image pipeline, add-in manifests, air-gap harness |
+| Self-hosted, Phase 1 (identity) | Designed only | none | OIDC, SAML, SCIM, group mapping |
+| End-to-end encryption | Phase 0 core only | `DYNOENC` at-rest envelope, key hierarchy, file key provider, vectors (not end-to-end; claims level 1) | Storage wrapper, KMS providers, backfill; all of Phases 1 to 3 |
+| Commit pruning | P0 and P1 | Horizon record specification, policy loader, read-only planner and `horizon-plan` | Applier, schema 4, archive, sync, shared service |
+| Node conflict resolution | N0 and N1 | Policy format, strategy trait, laws harness, evidence, `--explain`, a behavioural no-op | New strategies (N2 on), review gating |
+| Witnesses and transparency | W0, W1 core, W2 verifier | Merkle log, tiles, signed checkpoints, verifier and policy, vectors | Outbox, worker, endpoints, witness service, sync integration; needs independent review |
+| Cross-document merge | Designed only | none | everything |
+| Large-file acceptance, installed-host acceptance | Designed only | benchmark corpus tools (PR #28) | The runs themselves (the host runs are the owner's) |
+| Key files | Argon2id added | memory-hard derivation, `device rewrap` | hardware-token keys |
+
+The owner decisions in section 5 are unchanged; the ledger entries add the new questions each build raised.
