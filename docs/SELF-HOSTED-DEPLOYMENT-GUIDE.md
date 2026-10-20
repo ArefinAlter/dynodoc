@@ -403,17 +403,19 @@ with the output of the capacity programme (P2-11) when it exists.
 Today every setting is an environment variable. Variables the code reads are listed
 with their source; proposed variables are marked **(proposed)** with the task that would
 add them. Secrets should come from files or a secret store, never from images or Helm
-values; the `*_FILE` convention (read the value from the named file) is proposed for
-every secret variable (P0-2).
+values. The API implements the `*_FILE` convention (read the value from the named file)
+for every secret it reads: `DATABASE_URL`, `PASETO_LOCAL_KEY` and `WEB_SERVICE_KEY`
+(P0-2, API half, 20 October 2026; see "Secret files" below). The web process still reads
+plain variables only.
 
 ### 7.1 API process (`engine-api`)
 
 | Variable | Req. | Code default | Compose default | Meaning and notes |
 |---|---|---|---|---|
-| `DATABASE_URL` | yes | none | `${RUNTIME_DATABASE_URL}` | Runtime login only. The API refuses owner, superuser, role members, DDL/temporary-object privileges. For TLS use `?sslmode=verify-full&sslrootcert=/path/ca.pem` (sqlx URL parameters). |
-| `MIGRATION_DATABASE_URL` | must be absent | none | not set | Startup aborts if present (`main.rs`). Only the operator tool uses it. |
-| `PASETO_LOCAL_KEY` | yes | none | required | 32 bytes as 64 hex characters; all zeros rejected. Identical on every replica. Rotation ends all sessions (until the key ring, P2-10). |
-| `WEB_SERVICE_KEY` | yes | none | required | At least 32 characters; compared with HMAC in constant time. Shared with the web process. |
+| `DATABASE_URL` or `DATABASE_URL_FILE` | yes | none | `${RUNTIME_DATABASE_URL}` | Runtime login only. Must parse as a PostgreSQL URL. The API refuses owner, superuser, role members, DDL/temporary-object privileges. For TLS use `?sslmode=verify-full&sslrootcert=/path/ca.pem` (sqlx URL parameters). |
+| `MIGRATION_DATABASE_URL` / `_FILE` | must be absent | none | not set | Startup aborts if either form is present. Only the operator tool uses it. |
+| `PASETO_LOCAL_KEY` or `PASETO_LOCAL_KEY_FILE` | yes | none | required | 32 bytes as 64 hex characters; all zeros rejected. Identical on every replica. Rotation ends all sessions (until the key ring, P2-10). |
+| `WEB_SERVICE_KEY` or `WEB_SERVICE_KEY_FILE` | yes | none | required | At least 32 characters; compared with HMAC in constant time. Shared with the web process. |
 | `TOKEN_TTL_SECONDS` | no | 86400 | 3600 | Access-token lifetime. Production uses 3600. Recommended default for self-hosted: 3600. |
 | `PUBLIC_API_BASE_URL` | no | `http://127.0.0.1:8080` | `${ORIGIN}` | Base for the `verify_url` returned by `/auth/magic-link`. The web process builds its own link; set it to the public origin anyway. |
 | `API_HOST` / `API_PORT` | no | `127.0.0.1` / `8080` | `0.0.0.0` / `8080` | Bind address. Never publish this port to user networks. |
@@ -422,8 +424,52 @@ every secret variable (P0-2).
 | `DYNODOC_SHARED_DRAFT_BASES` | no | off | not set | `shared-v2` enables shared draft bases. Keep off until accepted. |
 | `DYNODOC_NAMED_SNAPSHOT_STORAGE` | no | `legacy` | not set | `shared-v2` enables shared named snapshots. Keep off. |
 | `DYNODOC_PERIODIC_CHECKPOINT_STORAGE` | no | `legacy` | not set | `shared-v1` or `shared-v2`. Keep off. |
+| `DYNODOC_ALLOW_OPEN_SECRET_FILES` | no | unset | not set | `true` accepts a `*_FILE` secret that group or others can read (Unix). Needed where the platform fixes the mode, such as Docker and Kubernetes secret mounts. |
+| `RETENTION_JOBS` | no | `on` | not set | `on` or `off`. Master switch of the retention loop (below). Anything else stops startup. |
+| `RETENTION_INTERVAL_SECONDS` | no | `3600` | not set | Time between passes, 60 to 86,400. The first pass runs after at most 60 s. |
+| `RETENTION_BATCH_ROWS` | no | `1000` | not set | Rows removed per DELETE statement, 10 to 10,000. |
+| `RETENTION_AUTH_DAYS` | no | `7` | not set | Days an expired or used sign-in link, expired or revoked refresh-token row and expired device-enrollment challenge is kept, 1 to 365. |
+| `RETENTION_METRICS_DAYS` | no | `30` | not set | Days a `web_metric` row is kept, 1 to 3,650. The admin overview reads the last 30 days, so a shorter window shortens what it shows. |
 | `RUST_LOG` | no | `info,engine_api=debug` | `info` | `tracing` filter. |
 | `APP_ENV` | no | not read | `production` | Present in compose; no code reads it. Do not rely on it. |
+
+**Secret files (API).** For each secret above, set `NAME` or `NAME_FILE`, not both: both
+non-empty is a startup error, and an empty value of either counts as unset (so a template
+line `WEB_SERVICE_KEY=` does not collide with `WEB_SERVICE_KEY_FILE`). A plain `NAME` is
+used exactly as it always was. The file must be a regular file of at most 16 KiB holding
+UTF-8 text; trailing line breaks are removed, nothing else. On Unix a file readable or
+writable by group or others is refused (use mode 0400 or 0600) unless
+`DYNODOC_ALLOW_OPEN_SECRET_FILES=true`; Windows has no mode check. The API validates every
+secret and retention setting before it opens a database connection and stops with one
+error that lists all problems, for example:
+
+```text
+invalid configuration (2 problems):
+  - WEB_SERVICE_KEY_FILE (/run/secrets/web_service_key): cannot open: No such file or directory (os error 2)
+  - RETENTION_AUTH_DAYS must be a whole number from 1 to 365
+```
+
+Messages name the variable and the path, never the value or part of it.
+
+**Retention (API).** Every replica runs the loop; a PostgreSQL session advisory lock taken
+on a dedicated connection lets one replica prune per pass while the others skip. Rows are
+removed in batches of `RETENTION_BATCH_ROWS` with `FOR UPDATE SKIP LOCKED`, and only
+rows no code path can use any more:
+
+| Table | Pruned when |
+|---|---|
+| `magic_link` | expired, or consumed, more than `RETENTION_AUTH_DAYS` ago |
+| `refresh_token` | expired, or revoked, more than `RETENTION_AUTH_DAYS` ago (a rotated token that has not expired is kept, because it can still end its login) |
+| `auth_request_window` | older than its 15-minute window |
+| `device_enrollment_challenge` | expired more than `RETENTION_AUTH_DAYS` ago |
+| `web_metric` | recorded more than `RETENTION_METRICS_DAYS` ago |
+| `idempotency_key` | older than the 24-hour replay window |
+
+No history, event, snapshot, audit or erasure table is touched, and the runtime login
+needs no new privilege. Counters of rows pruned per table, passes, skipped passes and
+failures are in the `retention` object of `GET /admin/overview` (per process, since
+start). An info log line with counts per table is written after each pass that removed
+rows. A failed pass is logged and retried within five minutes.
 
 Fixed in code today (candidates to expose): pool of 8 connections, 5 s acquire timeout,
 15 s statement timeout, 5 s lock timeout, 30 s idle-in-transaction timeout
@@ -480,7 +526,6 @@ request body (`lib.rs`); refresh lifetime of 30 days and link lifetime of 15 min
 | `API_CORS_ORIGINS` | P2-14 | Allowed browser origins for the API port (default none) |
 | `METRICS_ADDR`, `LOG_FORMAT=json\|text`, `OTEL_EXPORTER_OTLP_ENDPOINT` | P2-6 | Observability |
 | `OFFICEJS_LOCAL_PATH` | P0-7 | Directory with a local Office.js copy |
-| `RETENTION_AUTH_DAYS`, `RETENTION_METRICS_DAYS` | P0-8 | Pruning windows |
 | `RESEARCH_ALLOWED_HOSTS` | Q14 | Private research servers |
 | `DYNODOC_LICENSE_FILE` | P3-3 | Licence file path |
 
@@ -945,7 +990,7 @@ records.
 | API exits: `MIGRATION_DATABASE_URL must not be present` | Owner URL in the API environment | Remove it; operator tool only |
 | API exits: `database schema differs from this binary` | Image does not match the applied migrations (older image on newer schema, or the reverse) | Use the matching build; never edit migration records; restore if needed |
 | API exits: runtime role has DDL/temporary-object/ownership issues | Role has extra privileges or the database ACL still grants PUBLIC | Re-create the role without privileges; `REVOKE ALL ON DATABASE ... FROM PUBLIC`; run `grant-runtime`, `check-runtime` |
-| API exits: `WEB_SERVICE_KEY of at least 32 characters is required` / `PASETO_LOCAL_KEY must be 32 bytes` | Missing or malformed secret | Generate per 7.5 |
+| API exits: `invalid configuration (N problems)` followed by lines such as `WEB_SERVICE_KEY of at least 32 characters is required`, `PASETO_LOCAL_KEY must be 32 bytes`, `X and X_FILE are both set` or `X_FILE (path): cannot open` | Missing, malformed or doubly specified secret, unreadable secret file, or an out-of-range `RETENTION_*` value | Fix each listed line; generate secrets per 7.5; see "Secret files" in 7.1 |
 | Users logged out at random with several web replicas | Different `SESSION_SECRET` per replica, or the refresh race | Same secret everywhere; sticky routing or reuse interval (master 6.4) |
 | Editors do not see each other's changes live, page reload shows them | Several API replicas without event fan-out | Enable `DYNODOC_EVENT_FANOUT=postgres` (when shipped) or run one API replica |
 | Add-in pane blank in Office | Untrusted certificate, mixed content, CSP blocking Office.js (CDN not reachable), wrong `CONNECTOR_ORIGINS` | Check TLS trust on the endpoint; use a local Office.js path; run `verify-delivery` |
