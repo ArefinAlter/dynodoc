@@ -1,8 +1,9 @@
 # End-to-end encryption and customer-managed encryption: master design
 
-Status: design, not implemented. Date: 14 October 2026. Owner: Verne Ltd. This set is
-documentation only. It changes no code, schema, API or public wording. Anything described here
-as a capability is **proposed** unless a row cites existing code.
+Status: design; one library module of Phase 0 is built and unused (section 7.11). Date: 14
+October 2026. Owner: Verne Ltd. This set is documentation only. It changes no schema, API or
+public wording. Anything described here as a capability is **proposed** unless a row cites
+existing code.
 
 Decision [015](decisions/015-customers-formula-engine-and-planned-products.md) (14 October
 2026) records end-to-end encryption, with customer-managed at-rest encryption as Phase 0, as a
@@ -133,7 +134,7 @@ What Verne may and may not say, now and per phase. This is the single source for
 | TLS in transit, sessions, restricted DB role, immutable history, signatures, receipts | EXISTS | [SECURITY-HARDENING.md](SECURITY-HARDENING.md), [DATABASE-PRIVILEGES.md](DATABASE-PRIVILEGES.md) |
 | Encrypted backups, off-site copy | MISSING | `infra/demo/backup.sh` (plain dump, same host); owner-deferred off-site |
 | Disk or volume encryption configuration | MISSING (not claimed; provider-dependent) | `/security` page |
-| KMS integration, per-project data keys, key rotation | MISSING | This document, section 7 |
+| KMS integration, per-project data keys, key rotation | MISSING in the product; library core only, used by nothing | Section 7.11 status note; `crates/engine-core/src/at_rest/` |
 | Typed, chunked, content-addressed state with structural records separate from payloads | EXISTS | [TYPED-CHECKPOINTS.md](TYPED-CHECKPOINTS.md), [CHUNKED-CONTENT.md](CHUNKED-CONTENT.md) |
 | Client-side merge over typed state (CLI) | EXISTS | `repository/convergence.rs`, `project_merge.rs` |
 | Browser import, export, fold and spreadsheet calculation | EXISTS | `frontend/researcher/src/lib/workspace/`, `materializer.ts` |
@@ -435,6 +436,33 @@ test infrastructure. Confidence: medium (range 18 to 30 person-weeks). Excludes:
 KMS providers beyond the references (about 2 person-weeks each), tier 0c (about 8
 person-weeks), PKCS#11 vendor qualification, FIPS-validated module integration, performance
 tuning for 100 MB files, external review of the envelope design.
+
+**Implementation status, at-rest envelope library core (P0-2 and P0-3 in part), 20 October
+2026.** Built, in `crates/engine-core/src/at_rest/` and nowhere else (one `pub mod at_rest;`
+line in `lib.rs`; no new dependency; no storage, API, CLI or migration code calls it): the
+`DYNOENC` stored form of 7.4 (`seal`, `seal_content_addressed`, `open`, `Header::parse`), with
+a per-value key and nonce derived by HKDF-SHA-256 from the data key, AES-256-GCM through
+`ring`, a length-framed AAD, strict parsing with a distinct error per rule, and the
+deterministic salt of 7.4 for content-addressed tables; the `KeyProvider` trait (`wrap`,
+`unwrap`, `rewrap`, `describe`), `FileKeyProvider` (KEK versions in owner-only files, bounded,
+rotation by adding a version), a deterministic `TestKeyProvider`, and a `DekCache` with a
+lifetime and a size bound on an injectable clock; zeroising `Dek`/`Kek`/`DataKey`. Evidence:
+68 tests (48 unit, 13 property and tamper, 7 vector) including every-byte tamper, AAD binding,
+key and nonce uniqueness, fixed-seed parser runs on arbitrary bytes, and a KEK rotation, DEK
+rotation and kill-switch walk-through; `tests/fixtures/at-rest-v1.json` from the independent
+Python generator `gen_at_rest_vectors.py` (PyPI `cryptography`, `hmac`, `hashlib`),
+reproduced byte for byte by the Rust tests. Refinements of 7.4 (length-framed AAD that also
+binds `version`, `dek_id` and `kek_version`; framed salt input) and four owner questions are
+in [AT-REST-ENVELOPE.md](AT-REST-ENVELOPE.md). **Not built:** `EnvelopeStore` and any use
+by `PgStore`, snapshots, uploads or drafts; the `kms_key` and `data_key` tables and every
+migration; backfill (M-a, M-c) and the `engine-cli kms` commands; the Vault Transit and cloud
+KMS providers and any asynchronous provider interface; the configuration of 7.7; tiers 0a
+and 0c; the restore drill; observability and failure injection. Nothing here is a public
+claim: claims level 1 still needs Phase 0 shipped and a passed restore drill. **Not
+verified:** the access list of a key file is not checked on Windows (the Unix mode check
+is); macOS was not run; the vectors share a reading of the design with the Rust code, no
+external review of the construction has taken place, and the cache and wipe behaviour were
+not measured under load.
 
 ## 8. Phase 1: encrypted projects
 

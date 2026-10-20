@@ -162,7 +162,7 @@ fn an_envelope_cut_or_extended_never_decrypts() {
     }
     for extra in 1..40 {
         let mut longer = stored.clone();
-        longer.extend(std::iter::repeat(0u8).take(extra));
+        longer.extend(std::iter::repeat_n(0u8, extra));
         assert_eq!(
             open(&key, &row, &longer).unwrap_err(),
             Error::Authentication

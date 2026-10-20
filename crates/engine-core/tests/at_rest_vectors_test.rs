@@ -28,6 +28,9 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+// The application builds with an older minimum Rust version than the standalone engine, whose
+// Clippy asks for `is_multiple_of`; one source serves both, so the lint is allowed here.
+#[allow(clippy::manual_is_multiple_of)]
 fn unhex(text: &str) -> Vec<u8> {
     assert!(text.len() % 2 == 0, "odd hex {text}");
     (0..text.len())

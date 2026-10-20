@@ -854,7 +854,7 @@ mod tests {
         let dir = TempDir::new();
         let secret = hex_of(0xAB);
         let cases: Vec<(&str, Vec<u8>)> = vec![
-            ("short", secret[..63].as_bytes().to_vec()),
+            ("short", secret.as_bytes()[..63].to_vec()),
             ("long", format!("{secret}00").into_bytes()),
             ("upper", secret.to_uppercase().into_bytes()),
             ("nonhex", format!("{}zz", &secret[..62]).into_bytes()),

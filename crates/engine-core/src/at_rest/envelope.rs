@@ -504,7 +504,7 @@ mod tests {
         }
         for extra in [1usize, 2, 16, 17, 100] {
             let mut longer = stored.clone();
-            longer.extend(std::iter::repeat(0x5A).take(extra));
+            longer.extend(std::iter::repeat_n(0x5A, extra));
             assert_eq!(
                 open(&key, &ctx(), &longer).unwrap_err(),
                 Error::Authentication,
