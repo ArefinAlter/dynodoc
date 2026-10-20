@@ -370,7 +370,7 @@ describe('requests over the wire', () => {
   afterEach(() => vi.unstubAllGlobals());
   const reply = (body: unknown, status = 200) =>
     vi.fn(
-      async (..._args: unknown[]) =>
+      async () =>
         new Response(JSON.stringify(body), {
           status,
           headers: { 'content-type': 'application/json' }
