@@ -78,11 +78,12 @@ test('Word workflow: direction, tracked text, undo, saved page setup and actual 
   });
   await expect(preview.locator('.pagedjs_page')).toHaveCount(2);
   expect(
-    await preview
-      .locator('body')
-      .evaluate(() =>
-        [...document.fonts].some((f) => f.family === 'Noto Sans Bengali' && f.status === 'loaded')
+    await preview.locator('body').evaluate(() =>
+      // WebKit serialises a family name with spaces in quotes; Chromium and Firefox do not.
+      [...document.fonts].some(
+        (f) => f.family.replace(/^"|"$/g, '') === 'Noto Sans Bengali' && f.status === 'loaded'
       )
+    )
   ).toBeTruthy();
   await page.getByRole('button', { name: 'Close preview', exact: true }).click();
   expect(errors).toEqual([]);

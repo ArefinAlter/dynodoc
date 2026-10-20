@@ -86,6 +86,7 @@
     writeLightPages
   } from '$lib/workspace/theme-colors';
   import { theme } from '$lib/theme.svelte';
+  import { mapPositionAcrossReplace } from '$lib/workspace/selection-map';
   import {
     pageSetup,
     pageDimensions,
@@ -572,9 +573,19 @@
       const next = stableJson(content);
       if (next !== stableJson(editor.getJSON())) {
         applyingRemote = true;
+        // Replacing the document drops the caret at its end, so what the person is typing
+        // would continue in the last paragraph. Keep it where it was, mapped across the change.
+        const before = editor.state.doc,
+          { from, to } = editor.state.selection,
+          focused = editor.view.hasFocus();
         try {
           editor.commands.setContent(content, { emitUpdate: false });
           seedSerialization(content);
+          if (focused)
+            editor.commands.setTextSelection({
+              from: mapPositionAcrossReplace(before, editor.state.doc, from),
+              to: mapPositionAcrossReplace(before, editor.state.doc, to)
+            });
         } finally {
           applyingRemote = false;
         }
