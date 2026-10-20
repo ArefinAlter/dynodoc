@@ -1,5 +1,46 @@
 # Dynodoc: intent, current implementation and remaining work
 
+## Source: browser and device compatibility, installable web app (21 October 2026)
+
+Second slice of decision 016. The researcher app now has a browser matrix in Playwright (Chromium, Firefox, WebKit, a Pixel-class
+and an iPhone-class emulation; the extra projects are opt-in through `BROWSER_MATRIX`), a new `browsers` job in `ci-frontend.yml`
+that runs a 14-test smoke subset on those four (estimated 10 to 12 runner minutes warm, about 20 cold, in parallel; not measured on
+CI), and an installable web app: a complete `site.webmanifest` (id, scope, standalone, shortcuts, 192, 512 and maskable 512
+icons), an offline page, a service worker, an "Install app" entry in the profile, and iOS and Android head tags. Support, install
+steps per system and limits are in [BROWSER-SUPPORT.md](BROWSER-SUPPORT.md).
+
+Service worker, in five rules: it precaches only the offline page and two icons; it stores only a 200, same-origin, public,
+non-HTML file under `/_app/immutable` or `/fonts` (never a `Set-Cookie`, `private` or `no-store` reply); it never answers a
+non-GET request, `/api`, `/auth`, `/admin`, the Office panes, `/view`, `/print`, telemetry, event streams, range or authorization
+requests (the browser handles them as if no worker existed); no page is ever stored, and only a missing network gets the offline
+page; caches are versioned and cleaned on activate, and an update waits for the person to press Update now, through the existing
+leave-page warning, so an editor is never swapped under unsaved work. **One policy line added:** `manifest-src 'self'` in the
+SvelteKit CSP (without it the page's `default-src 'none'` blocked the manifest on every engine, so the app could never install);
+the `worker-src` line is unchanged. The demo nginx config gained entries so the worker script and offline page get a policy that
+lets the worker fetch the app's own files; without them the worker does not install and the site keeps working. Any other front
+end (Vercel) needs the same rule.
+
+Defects found by running the other engines and phones, and fixed: on phones the comments, version history and help were hidden
+below 700 px with no other way in, the bell overlapped command icons, seven dialogs ran off the right edge, 14 to 20 fields were
+under 16 px (iOS zooms the page on focus), controls were 22 to 36 px, the ribbon heights were fixed; a spreadsheet cell could not
+be edited on iOS (no double-click on touch); 27 `100vh` uses got a `100dvh` partner; copy falls back to `execCommand`; in WebKit
+and Firefox a remote update replaced the whole document and threw the caret to the end, so typing split across paragraphs
+(fixed with a selection map, 7 unit tests). A new touch layer gives 16 px fields and 44 px controls on coarse pointers only.
+
+Evidence (Windows host; Chromium 148, Firefox 150, WebKit 26.4): gates pass on the merged tree (prettier, eslint, svelte-check
+0/0, vitest 60 files and 580 tests, production build with the worker and manifest in the output). Playwright: Chromium full 121
+passed, 2 skipped of 123 (baseline was 108 of 108); Firefox full 117 passed, 3 failed that pass alone, 3 skipped; WebKit full per
+file, all pass except two; Pixel 46 passed; iPhone 45 passed, 1 skipped. New: `pwa.spec` 10 tests and `browsers.spec` 5, green on
+all five projects; behind an nginx 1.27 container the 8 worker tests passed. **Not fixed:** WebKit `changes.spec` "teammates
+push" (multi-user editing) fails every run at varying steps, unexplained beyond the caret bug; WebKit `office.spec` "live pages
+reflow" fails by a line 1/16 px above a page boundary. **Not verified:** any real device, Safari itself, WKWebView, Android
+WebView, the operating systems' install flows, the iOS keyboard, zoom and notch behaviour, the `-webkit-` and `dvh` additions
+(inspection only), Linux WebKit, and `check-proxy-headers.mjs` (needs Linux). Playwright emulation is not a device. Documented
+limits: the phone toolbar plus ribbon leave about two sheet rows; spreadsheet editing on a phone is read, select and formula bar
+or double tap; presentation editing on a phone was not exercised; Firefox desktop cannot install. Questions for the owner: accept
+`manifest-src`; a host-specific manifest (the start URL `/workspace?source=pwa` suits the app host and redirects off-scope from
+the marketing host); a compact phone toolbar; a real-device pass; real screenshots for the manifest.
+
 ## Source: processor and operating-system parity, prebuilt command-line tools (21 October 2026)
 
 First slice of decision 016 (devices, processors, desktop and mobile apps). The public engine repository now runs
