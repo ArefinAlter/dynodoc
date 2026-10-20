@@ -18,6 +18,7 @@
     width: 100%;
     container-type: size;
     overflow: hidden;
+    -webkit-user-select: none;
     user-select: none;
   }
 </style>

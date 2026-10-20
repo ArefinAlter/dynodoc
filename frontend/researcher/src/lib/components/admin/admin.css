@@ -36,6 +36,7 @@
     'Apple Color Emoji', 'Segoe UI Emoji';
   --a-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
   min-height: 100vh;
+  min-height: 100dvh;
   background: var(--a-canvas);
   color: var(--a-fg);
   font-family: var(--a-font);

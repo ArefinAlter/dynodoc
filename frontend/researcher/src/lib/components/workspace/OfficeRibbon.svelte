@@ -1175,6 +1175,13 @@
   .style-picker option {
     font-size: 13px;
   }
+  /* On a touch screen the icon-only select would still zoom the page, so show its name. */
+  @media (pointer: coarse) {
+    .style-picker {
+      width: 104px;
+      max-width: 104px;
+    }
+  }
   .group .color {
     position: relative;
     width: 26px;

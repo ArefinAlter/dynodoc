@@ -1,14 +1,21 @@
 <script lang="ts">
   import '../app.css';
+  import '$lib/styles/touch.css';
   import { page } from '$app/stores';
   import { env } from '$env/dynamic/public';
   import { observeVitals } from '$lib/telemetry';
   import { onMount } from 'svelte';
   import { loadSession } from '$lib/stores/session.svelte';
+  import { pwa } from '$lib/pwa/client.svelte';
+  import { trackKeyboard } from '$lib/viewport';
+  import { theme } from '$lib/theme.svelte';
+  import PwaUpdate from '$lib/components/PwaUpdate.svelte';
   onMount(() => {
     if (window.location.pathname === '/print') return;
     void loadSession();
     void observeVitals().catch(() => {});
+    pwa.start();
+    return trackKeyboard();
   });
   import { beforeNavigate, goto } from '$app/navigation';
   import { isOfficePane } from '$lib/security-policy';
@@ -34,6 +41,12 @@
 
   let { children } = $props();
 
+  // Browser bar colour. The public site sets its own; here the OS decides unless the person
+  // picked day or night mode in the app, in which case both entries follow that choice.
+  const bar = { light: '#f8f9fc', dark: '#0e141b' };
+  const barByDay = $derived(theme.preference === 'dark' ? bar.dark : bar.light);
+  const barByNight = $derived(theme.preference === 'light' ? bar.light : bar.dark);
+
   // When a 401 can't be recovered (refresh failed), the API client clears the session
   // and calls this handler; route the user to login.
   setUnauthorizedHandler(() => {
@@ -47,6 +60,10 @@
 </script>
 
 <svelte:head>
+  {#if !$page.route.id?.startsWith('/(site)')}
+    <meta name="theme-color" content={barByDay} media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content={barByNight} media="(prefers-color-scheme: dark)" />
+  {/if}
   {#if isIndexablePath($page.url.pathname)}
     <link rel="canonical" href={canonicalUrl($page.url.pathname)} />
     <!-- Allow full snippets and large image previews, so search and answer
@@ -81,4 +98,5 @@
 </svelte:head>
 {@render children()}
 <ToastHost />
+<PwaUpdate />
 {#if $page.url.pathname !== '/print'}<HelpGuide />{/if}

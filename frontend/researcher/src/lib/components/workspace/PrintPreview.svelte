@@ -60,6 +60,7 @@
     width: calc(100vw - 32px);
     max-width: 1180px;
     height: calc(100vh - 32px);
+    height: calc(100dvh - 32px);
     padding: 0;
     border: 1px solid var(--color-border-strong);
     border-radius: 10px;

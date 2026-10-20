@@ -161,6 +161,7 @@
 <style>
   .auth-page {
     min-height: 100vh;
+    min-height: 100dvh;
     background: var(--color-parchment);
     font-family: var(--font-ui);
     padding: 32px;
@@ -172,6 +173,11 @@
     color: var(--color-ink-soft);
     text-decoration: none;
     font-size: 13px;
+  }
+  @media (pointer: coarse) {
+    .back {
+      min-height: 44px;
+    }
   }
   .card {
     margin: 40px auto 24px;

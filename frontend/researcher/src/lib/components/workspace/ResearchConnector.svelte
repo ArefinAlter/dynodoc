@@ -233,6 +233,7 @@
     border: 0;
     width: min(550px, 100%);
     max-height: 90vh;
+    max-height: 90dvh;
     overflow: auto;
     padding: 28px;
     background: var(--color-surface-raised);

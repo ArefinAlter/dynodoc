@@ -100,6 +100,7 @@
     padding: 30px 3vw;
     background: var(--color-canvas);
     min-height: 100vh;
+    min-height: 100dvh;
   }
   h1,
   .notice {
@@ -141,6 +142,7 @@
     display: flex;
     flex-direction: column;
     height: min(760px, 82vh);
+    height: min(760px, 82dvh);
     max-width: 1180px;
     margin: auto;
     border: 1px solid var(--color-border);

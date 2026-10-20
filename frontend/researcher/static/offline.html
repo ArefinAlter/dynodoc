@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Offline · Dynodoc</title>
+    <style>
+      /* Kept inline and self-contained: the service worker answers a failed page load with
+         this file and its own policy, so it cannot depend on the app's styles or scripts. */
+      :root {
+        --paper: #f8f9fc;
+        --ink: #263e53;
+        --ink-strong: #1d2f40;
+        --muted: #5f7386;
+        --accent: #205bb0;
+        --on-accent: #ffffff;
+        --rule: #dce3e8;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --paper: #0e141b;
+          --ink: #dde6ef;
+          --ink-strong: #f1f5f9;
+          --muted: #93a5b7;
+          --accent: #2f6fd6;
+          --rule: #2a3746;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        min-height: 100dvh;
+        display: grid;
+        place-items: center;
+        padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right))
+          max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+        background: var(--paper);
+        color: var(--ink);
+        font:
+          400 1rem/1.6 'Public Sans',
+          'Segoe UI',
+          'Helvetica Neue',
+          Arial,
+          sans-serif;
+        -webkit-text-size-adjust: 100%;
+      }
+      main {
+        width: 100%;
+        max-width: 28rem;
+      }
+      svg {
+        width: 56px;
+        height: 56px;
+        display: block;
+        margin-bottom: 24px;
+      }
+      h1 {
+        margin: 0 0 12px;
+        color: var(--ink-strong);
+        font-size: 1.5rem;
+        line-height: 1.25;
+      }
+      p {
+        margin: 0 0 12px;
+      }
+      p.note {
+        color: var(--muted);
+        font-size: 0.9375rem;
+      }
+      button {
+        min-height: 44px;
+        margin-top: 12px;
+        padding: 0 22px;
+        border: 0;
+        border-radius: 10px;
+        background: var(--accent);
+        color: var(--on-accent);
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 3px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <svg viewBox="0 0 64 64" fill="none" role="img" aria-label="Dynodoc">
+        <rect x="5" y="3" width="45" height="54" rx="9" fill="#bed9f4" />
+        <path
+          d="M24 11h18c11 0 18 8 18 20v13c0 11-7 17-18 17H24c-8 0-13-5-13-13V24c0-8 4-13 11-13Z"
+          fill="#2059b0"
+        />
+        <path
+          d="M44 25H33c-7 0-11 4-11 11s4 11 11 11h11V25Z"
+          stroke="#fffdf7"
+          stroke-width="6"
+          stroke-linejoin="round"
+        />
+        <path d="M44 25v-7" stroke="#fffdf7" stroke-width="6" stroke-linecap="round" />
+        <rect x="17" y="45" width="15" height="11" rx="4" fill="#217346" />
+        <path
+          d="m21 50 3 3 5-5"
+          stroke="#fffdf7"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </svg>
+      <h1>You are offline</h1>
+      <p>Dynodoc could not reach the network, so this page could not load.</p>
+      <p class="note">
+        Your documents and their history are kept on the server and are not stored in this app.
+        Changes you already saved are safe. Check your connection, then try again.
+      </p>
+      <form method="get">
+        <button type="submit">Try again</button>
+      </form>
+    </main>
+  </body>
+</html>

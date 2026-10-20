@@ -212,6 +212,17 @@ ${sites.join('\n')}
     assert.equal(response.status, status);
     checkSecurity(response);
   }
+  // The service worker runs under the policy of its own script response. It must be allowed
+  // to fetch the app's own files, or its install would fail (or, worse, every page load
+  // through it would). The offline page keeps its inline styles for a direct visit.
+  const worker = await request(`${appURL}/service-worker.js`);
+  assert.equal(worker.status, 200);
+  checkSecurity(worker);
+  assert.match(worker.headers['content-security-policy'], /connect-src 'self'(?:;|$)/);
+  const offline = await request(`${appURL}/offline.html`);
+  assert.equal(offline.status, 200);
+  checkSecurity(offline);
+  assert.match(offline.headers['content-security-policy'], /style-src 'unsafe-inline'/);
   assert.doesNotMatch(nginxErrors, /upstream sent too big header/);
   console.log('Production proxy header regression passed. No account or document was accessed.');
 } finally {

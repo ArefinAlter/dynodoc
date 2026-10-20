@@ -86,6 +86,7 @@
     writeLightPages
   } from '$lib/workspace/theme-colors';
   import { theme } from '$lib/theme.svelte';
+  import { mapPositionAcrossReplace } from '$lib/workspace/selection-map';
   import {
     pageSetup,
     pageDimensions,
@@ -149,7 +150,11 @@
   let ribbon = $state('Home'),
     tracking = $state(false),
     preview = $state(false),
-    paginated = $state(true),
+    // A phone cannot show a printed page at a readable size, so it opens in continuous view,
+    // which reflows to the screen. Print layout is one tap away.
+    paginated = $state(
+      typeof window === 'undefined' || !window.matchMedia('(max-width: 700px)').matches
+    ),
     lightPages = $state(readLightPages()),
     layout = $state<PageLayout>({ pages: 1, current: 1, overflow: false });
   $effect(() => writeLightPages(lightPages));
@@ -262,7 +267,7 @@
       }
     } catch {
       feedback =
-        'Your browser blocked clipboard access. Use Ctrl+C, Ctrl+X or Ctrl+V in the document.';
+        'Your browser blocked clipboard access. Use Ctrl+C, Ctrl+X or Ctrl+V on a keyboard, or press and hold in the document on a touch screen.';
     }
   }
   function contextMenu(event: MouseEvent) {
@@ -568,9 +573,19 @@
       const next = stableJson(content);
       if (next !== stableJson(editor.getJSON())) {
         applyingRemote = true;
+        // Replacing the document drops the caret at its end, so what the person is typing
+        // would continue in the last paragraph. Keep it where it was, mapped across the change.
+        const before = editor.state.doc,
+          { from, to } = editor.state.selection,
+          focused = editor.view.hasFocus();
         try {
           editor.commands.setContent(content, { emitUpdate: false });
           seedSerialization(content);
+          if (focused)
+            editor.commands.setTextSelection({
+              from: mapPositionAcrossReplace(before, editor.state.doc, from),
+              to: mapPositionAcrossReplace(before, editor.state.doc, to)
+            });
         } finally {
           applyingRemote = false;
         }
@@ -1101,6 +1116,7 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
+    -webkit-user-select: none;
     user-select: none;
   }
   .page-sheet {
@@ -1321,7 +1337,9 @@
     background: var(--color-overlay);
     display: grid;
     place-items: center;
+    grid-template-columns: minmax(0, 1fr);
     z-index: 100;
+    -webkit-backdrop-filter: blur(3px);
     backdrop-filter: blur(3px);
   }
   .popover form {
@@ -1369,12 +1387,26 @@
     background: var(--color-accent-solid);
     color: var(--color-on-accent);
   }
+  @media (max-width: 700px) {
+    .paper:not(.paginated) {
+      width: auto !important;
+      max-width: 100%;
+      padding-inline: 16px !important;
+    }
+    .ruler {
+      display: none;
+    }
+  }
   @media (max-width: 600px) {
     .paper-area {
       padding: 0 12px 18px;
     }
     .document-foot {
       gap: 10px;
+      flex-wrap: wrap;
+    }
+    .document-foot > span {
+      white-space: nowrap;
     }
     .view-controls input {
       width: 55px;

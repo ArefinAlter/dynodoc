@@ -23,6 +23,9 @@
     overflow-x: auto;
     scrollbar-width: none;
   }
+  .profile-nav::-webkit-scrollbar {
+    display: none;
+  }
   .profile-nav a {
     position: relative;
     display: inline-flex;

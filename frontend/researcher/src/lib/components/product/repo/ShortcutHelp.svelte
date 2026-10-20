@@ -56,6 +56,7 @@
   .help {
     width: min(460px, calc(100vw - 24px));
     margin: 14vh auto auto;
+    margin: 14dvh auto auto;
     padding: 0 20px 18px;
     border: 1px solid var(--rp-border);
     border-radius: 12px;

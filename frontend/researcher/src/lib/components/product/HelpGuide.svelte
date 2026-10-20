@@ -100,8 +100,8 @@
 <style>
   .help {
     position: fixed;
-    right: 20px;
-    bottom: 18px;
+    right: calc(20px + env(safe-area-inset-right, 0px));
+    bottom: calc(18px + env(safe-area-inset-bottom, 0px) + var(--keyboard-inset, 0px));
     z-index: 80;
     display: flex;
     align-items: center;
@@ -136,11 +136,13 @@
     max-width: 610px;
     width: calc(100% - 32px);
     max-height: 90vh;
+    max-height: 90dvh;
     color: var(--color-ink);
     background: var(--color-surface-raised);
   }
   dialog::backdrop {
     background: var(--color-overlay);
+    -webkit-backdrop-filter: blur(3px);
     backdrop-filter: blur(3px);
   }
   header,

@@ -13,8 +13,8 @@
 <style>
   .toast-host {
     position: fixed;
-    bottom: 1.2rem;
-    right: 1.2rem;
+    bottom: calc(1.2rem + env(safe-area-inset-bottom, 0px) + var(--keyboard-inset, 0px));
+    right: calc(1.2rem + env(safe-area-inset-right, 0px));
     z-index: 100;
     display: flex;
     flex-direction: column;

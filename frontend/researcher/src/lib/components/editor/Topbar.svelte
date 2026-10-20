@@ -68,6 +68,7 @@
     padding: 1rem 1.5rem;
     background: color-mix(in srgb, var(--color-surface) 92%, var(--color-surface-raised));
     border-bottom: 1px solid var(--color-border);
+    -webkit-backdrop-filter: blur(14px);
     backdrop-filter: blur(14px);
   }
 

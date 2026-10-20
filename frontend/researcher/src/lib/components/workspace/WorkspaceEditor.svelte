@@ -1,5 +1,6 @@
 <script lang="ts">
   import ThemeToggle from '$lib/components/ThemeToggle.svelte';
+  import { copyText } from '$lib/clipboard';
   import {
     recoveryCopies,
     saveRecovery,
@@ -1339,7 +1340,8 @@
             class="secondary"
             onclick={() =>
               void run(async () => {
-                await navigator.clipboard.writeText(location.href);
+                if (!(await copyText(location.href)))
+                  throw new Error('Could not copy the link. Copy it from the address bar.');
                 saved = 'Link copied';
               })}><Copy size={14} /> Copy document link</button
           >
@@ -2350,7 +2352,7 @@
     display: flex;
     align-items: center;
     gap: 7px;
-    padding: 6px 22px;
+    padding: 6px 22px calc(6px + env(safe-area-inset-bottom, 0px));
     background: var(--editor-chrome);
     border-top: 1px solid var(--color-border-soft);
     font-size: 13px;
@@ -2373,10 +2375,12 @@
     position: fixed;
     inset: 0;
     background: var(--color-overlay);
+    -webkit-backdrop-filter: blur(4px);
     backdrop-filter: blur(4px);
     z-index: 100;
     display: grid;
     place-items: center;
+    grid-template-columns: minmax(0, 1fr);
     padding: 30px;
   }
   .sync-modal {
@@ -2384,6 +2388,7 @@
     width: 780px;
     max-width: 100%;
     max-height: 90vh;
+    max-height: 90dvh;
     overflow: auto;
     padding: 30px;
     border-radius: 12px;
@@ -2503,39 +2508,19 @@
       font-size: 13px;
       padding: 3px;
     }
-    .actions .round {
-      display: none;
-    }
-    .share {
-      padding: 9px 13px;
-    }
-    .title-row input {
-      width: 180px;
-    }
-    .cloud {
-      display: none;
-    }
-    .back {
-      padding: 3px;
-    }
-    .heading {
-      overflow: visible;
-    }
+    /* The panels (comments, history, sharing...) take the whole screen, like a sheet. */
     aside {
       position: fixed;
-      right: 0;
-      top: 82px;
-      bottom: 26px;
-      width: 300px;
+      inset: 0;
+      width: auto;
+      min-width: 0;
       z-index: 45;
+      padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px));
       box-shadow: -5px 0 25px var(--editor-side-shadow);
     }
     .draft-banner {
       padding: 8px 15px;
       flex-wrap: wrap;
-    }
-    .draft-banner span {
-      display: none;
     }
     .sync-modal {
       padding: 22px;
@@ -2652,6 +2637,58 @@
     }
     .heading nav {
       gap: 0;
+    }
+  }
+  /*
+   * Phone width: three rows and nothing hidden. Back, title and Share; then the document
+   * commands; then notifications, day/night, help, comments and version history. This
+   * comes last so it wins over the compact desktop chrome above.
+   */
+  @media (max-width: 700px) {
+    header {
+      height: auto;
+      min-height: 0;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 4px 8px;
+      padding: 6px 12px;
+    }
+    .heading,
+    .actions {
+      display: contents;
+    }
+    .back {
+      order: 1;
+      width: 44px;
+      height: 44px;
+      padding: 0;
+    }
+    .title-row {
+      order: 2;
+      flex: 1 1 0;
+      min-width: 0;
+    }
+    .title-row input {
+      flex: 1 1 0;
+      min-width: 0;
+      width: auto;
+      font-size: 16px;
+    }
+    .share {
+      order: 3;
+      padding: 0 14px;
+    }
+    .heading nav {
+      order: 4;
+      flex: 1 1 100%;
+      justify-content: space-between;
+    }
+    .actions > :global(*):not(.share) {
+      order: 5;
+    }
+    .round {
+      width: 44px;
+      height: 44px;
     }
   }
 </style>
