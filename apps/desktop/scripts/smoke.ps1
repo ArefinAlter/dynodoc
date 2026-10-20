@@ -109,25 +109,37 @@ function Close-Clean($process, [string]$phase) {
   if ($exited) { Check ($process.ExitCode -eq 0) "$phase`: exit code is 0 (got $($process.ExitCode))" }
 }
 
-# Read the first request line a client sends to the listener, and answer it.
+# Wait for the next PAGE request to the listener, answer it, and return its request line.
+# Empty connections (the web view opens spare ones) and /favicon.ico are answered and ignored.
 function Read-Request($listener, [int]$seconds) {
   $deadline = (Get-Date).AddSeconds($seconds)
   while ((Get-Date) -lt $deadline) {
     if ($listener.Pending()) {
       $client = $listener.AcceptTcpClient()
+      $line = $null
       try {
         $stream = $client.GetStream()
-        $stream.ReadTimeout = 3000
+        $stream.ReadTimeout = 1500
         $buffer = New-Object byte[] 8192
-        $read = $stream.Read($buffer, 0, $buffer.Length)
-        $text = [System.Text.Encoding]::ASCII.GetString($buffer, 0, $read)
-        $body = '<!doctype html><title>smoke server</title><h1>smoke server</h1><p>Hello from the smoke test.</p>'
-        $reply = "HTTP/1.1 200 OK`r`nContent-Type: text/html; charset=utf-8`r`nContent-Length: $($body.Length)`r`nConnection: close`r`n`r`n$body"
-        $bytes = [System.Text.Encoding]::ASCII.GetBytes($reply)
-        $stream.Write($bytes, 0, $bytes.Length)
-        $stream.Flush()
-        return ($text -split "`r?`n")[0]
+        $read = 0
+        try { $read = $stream.Read($buffer, 0, $buffer.Length) } catch { $read = 0 }
+        if ($read -gt 0) {
+          $text = [System.Text.Encoding]::ASCII.GetString($buffer, 0, $read)
+          $first = ($text -split "`r?`n")[0]
+          $path = ($first -split ' ')[1]
+          if ($path -eq '/favicon.ico') {
+            $reply = "HTTP/1.1 404 Not Found`r`nContent-Length: 0`r`nConnection: close`r`n`r`n"
+          } else {
+            $line = $first
+            $body = '<!doctype html><title>smoke server</title><h1>smoke server</h1><p>Hello from the smoke test.</p>'
+            $reply = "HTTP/1.1 200 OK`r`nContent-Type: text/html; charset=utf-8`r`nContent-Length: $($body.Length)`r`nConnection: close`r`n`r`n$body"
+          }
+          $bytes = [System.Text.Encoding]::ASCII.GetBytes($reply)
+          $stream.Write($bytes, 0, $bytes.Length)
+          $stream.Flush()
+        }
       } finally { $client.Close() }
+      if ($line) { return $line }
     }
     Start-Sleep -Milliseconds 100
   }

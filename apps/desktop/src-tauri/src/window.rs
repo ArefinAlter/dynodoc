@@ -10,6 +10,18 @@ use url::Url;
 
 pub const MAIN: &str = "main";
 
+/// Makes a click on `<a target="_blank">` reach the new-window rule (see the file).
+const LINK_TARGETS: &str = include_str!("link_targets.js");
+
+/// Debug builds print each navigation decision to standard error (the security probe reads
+/// it). Release builds print nothing.
+fn trace(what: &str, url: &Url, decision: &dyn std::fmt::Debug) {
+    #[cfg(debug_assertions)]
+    eprintln!("dynodoc: {what} {url} -> {decision:?}");
+    #[cfg(not(debug_assertions))]
+    let _ = (what, url, decision);
+}
+
 /// Create the window: on the configured server when there is one, otherwise on the launcher.
 pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     let state = app.state::<AppState>();
@@ -24,9 +36,12 @@ pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         .title("Dynodoc")
         // The inspector exists only in debug builds (the `devtools` cargo feature is off).
         .devtools(cfg!(debug_assertions))
+        .initialization_script(LINK_TARGETS)
         .on_navigation(move |url| {
             let state = navigation_app.state::<AppState>();
-            match nav::decide(url, state.server().as_ref(), &nav::launcher_origin()) {
+            let decision = nav::decide(url, state.server().as_ref(), &nav::launcher_origin());
+            trace("navigation", url, &decision);
+            match decision {
                 Decision::Allow => true,
                 Decision::OpenExternal => {
                     open_external(&navigation_app, url);
@@ -37,7 +52,9 @@ pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         })
         .on_new_window(move |url, _features| {
             let state = new_window_app.state::<AppState>();
-            match nav::new_window(&url, state.server().as_ref(), &nav::launcher_origin()) {
+            let action = nav::new_window(&url, state.server().as_ref(), &nav::launcher_origin());
+            trace("new window", &url, &action);
+            match action {
                 NewWindow::NavigateHere(target) => navigate_main(&new_window_app, target),
                 NewWindow::OpenExternal(target) => open_external(&new_window_app, &target),
                 NewWindow::Ignore => {}

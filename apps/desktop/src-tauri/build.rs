@@ -12,6 +12,10 @@ const COMMANDS: &[&str] = &[
 ];
 
 fn main() {
+    // The sidecar's file name carries the target triple; the sidecar tests need it.
+    if let Ok(target) = std::env::var("TARGET") {
+        println!("cargo:rustc-env=DYNODOC_TARGET={target}");
+    }
     tauri_build::try_build(
         tauri_build::Attributes::new()
             .app_manifest(tauri_build::AppManifest::new().commands(COMMANDS)),

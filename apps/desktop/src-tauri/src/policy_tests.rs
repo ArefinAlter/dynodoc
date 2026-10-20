@@ -370,3 +370,27 @@ fn the_workflow_never_runs_on_push() {
     let push = &triggers[triggers.find("push:").unwrap()..];
     assert!(push.contains("tags:"), "push is for tags only");
 }
+
+#[test]
+fn the_script_injected_into_every_page_cannot_reach_the_app() {
+    // It runs in the pages of the configured server too, so it must do nothing but turn a
+    // target=_blank click into the page's own window.open.
+    let js = read("src/link_targets.js");
+    for never in [
+        "__TAURI",
+        "invoke",
+        "fetch(",
+        "XMLHttpRequest",
+        "eval(",
+        "Function(",
+        "innerHTML",
+        "postMessage",
+        "localStorage",
+        "cookie",
+        "location",
+    ] {
+        assert!(!js.contains(never), "link_targets.js has {never}");
+    }
+    assert!(js.contains("window.open(link.href, '_blank')"));
+    assert!(read("src/window.rs").contains("include_str!(\"link_targets.js\")"));
+}

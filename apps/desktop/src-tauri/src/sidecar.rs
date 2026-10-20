@@ -144,12 +144,16 @@ pub fn program_path() -> Result<PathBuf, SidecarError> {
 
 /// Run one allowed operation. Blocking; call from a worker thread.
 pub fn run(op: Operation, key: &KeyPath) -> Result<Output, SidecarError> {
-    let program = program_path()?;
+    run_program(&program_path()?, op, key)
+}
+
+/// `run` with the program's location given (tests use the copy in `binaries/`).
+fn run_program(program: &Path, op: Operation, key: &KeyPath) -> Result<Output, SidecarError> {
     if !program.is_file() {
-        return Err(SidecarError::Missing(program));
+        return Err(SidecarError::Missing(program.to_path_buf()));
     }
     let args = arguments(op, key);
-    run_checked(&program, &args, key, op.timeout(), MAX_OUTPUT)
+    run_checked(program, &args, key, op.timeout(), MAX_OUTPUT)
 }
 
 fn run_checked(
@@ -623,5 +627,64 @@ mod tests {
             ),
             Err(SidecarError::Start(_))
         ));
+    }
+
+    /// The copy of engine-cli that tauri-build requires in `binaries/` (it refuses to
+    /// compile without it), so these tests run the real program through the real code path.
+    fn bundled_program() -> PathBuf {
+        let suffix = if cfg!(windows) { ".exe" } else { "" };
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("binaries")
+            .join(format!("engine-cli-{}{suffix}", env!("DYNODOC_TARGET")))
+    }
+
+    #[test]
+    fn the_real_engine_cli_reports_its_version() {
+        let out = run_program(&bundled_program(), Operation::Version, &key())
+            .expect("engine-cli --version");
+        let version = parse_version(&out.stdout).expect("a version line");
+        assert!(version.starts_with("engine-cli "), "{version}");
+    }
+
+    // Key creation uses the operating system's key store, so it runs only where that is
+    // Windows data protection (no prompt; the secret lives inside the file). On macOS and
+    // Linux it would touch the user's Keychain or Secret Service.
+    #[cfg(windows)]
+    #[test]
+    fn the_real_engine_cli_creates_and_reads_back_a_device_key() {
+        let program = bundled_program();
+        let dir = std::env::temp_dir().join(format!(
+            "dynodoc-desktop-key-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let key = KeyPath::in_dir(&dir).unwrap();
+
+        let created = run_program(&program, Operation::CreateKey, &key).expect("keygen");
+        let public = parse_public_key(&created.stdout).expect("public key on stdout");
+        assert!(key.as_path().is_file());
+        let file = std::fs::read_to_string(key.as_path()).unwrap();
+        assert!(
+            file.contains("dynodoc-key-v1") && file.contains("windows-dpapi"),
+            "{file}"
+        );
+
+        let again = run_program(&program, Operation::PublicKey, &key).expect("public-key");
+        assert_eq!(parse_public_key(&again.stdout).unwrap(), public);
+
+        // Never overwrites: a second creation fails and leaves the file as it was.
+        let before = std::fs::read(key.as_path()).unwrap();
+        match run_program(&program, Operation::CreateKey, &key) {
+            Err(SidecarError::Failed { message, .. }) => {
+                assert!(message.contains("overwritten"), "{message}")
+            }
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(std::fs::read(key.as_path()).unwrap(), before);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
