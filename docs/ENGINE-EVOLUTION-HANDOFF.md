@@ -1,5 +1,40 @@
 # Engine evolution handoff
 
+## Source: merge-policy framework, phases N0 and N1 (18 October 2026)
+
+[DESIGN-NODE-CONFLICT-RESOLUTION.md](DESIGN-NODE-CONFLICT-RESOLUTION.md) phases N0 and N1 are built as a
+**behavioural no-op**. `engine-core` gains a `merge_policy` module: the `dynodoc.merge-policy.v1`
+data format with a strict JSON loader, canonical form and SHA-256 hash; the `Strategy` trait
+(merged, prefer, conflict, plus the evidence used); a registry; a laws harness (L1 to L8) that every
+strategy is held to; evidence recording; the general invariants INV-G1 to G8 as flags (or conflicts
+on request, never silent repairs); and the default policy `dynodoc.default.v1`, whose three
+strategies call the existing logic. `workspace_merge::merge_with_policy` and
+`convergence::converge_with_policy` return the usual plan plus the evidence. `merge` itself now runs
+through a field selector whose plain form calls the unchanged `select`. The CLI gains `--explain`
+on `repository compare`, `merge` and `verify-merge` (JSON plus a text rendering per file);
+`--merge-policy FILE` works with `compare --explain` only.
+
+Proof of no change: 1,500 random histories with four resolution sets each (6,000 comparisons) give a
+byte-equal state, conflict list and operation list for `merge_with_policy` and `merge`; the generator
+reaches every decision path (430 conflicted merges, 2,568 decisions, 1,377 explicit resolutions), and
+making the rich-text strategy always conflict fails the test. `converge_with_policy` equals `converge`
+over 600 random states. The four built-in strategies hold their promised laws over 4,000 cases each.
+Policy hashes are pinned by six vectors from an independent Python generator.
+
+Not built: any new strategy (N2 onwards), review gating (N5), a policy-aware `merge_strict`, commit
+format v4, `merge-policy validate|hash` subcommands. One opt-in rule, element-wise comments and
+suggestions (the N1 row asks for it), does change merge results, and a v3 commit can record only
+`dynodoc.same-file.node-field.v1`, so `merge` accepts no policy yet. The debug `engine-cli` binary
+needed `opt-level = 1` in the dev profile because its argument parser used nearly the whole 1 MiB
+Windows main-thread stack.
+
+Raised for the owner: `richtext::merge` is symmetric only up to mark order (frozen behaviour, so the
+default rich-text strategy does not promise L1); the design's `type` filter names editor block types
+but node types differ, so it matches either; a document's family (document, spreadsheet,
+presentation) is not stored and is derived from section kinds, which N3 will need as a stored flag;
+`CommentState` has no id, so element-wise comments compare full content; `validate_integrity` runs
+three times per policy merge, a cost for N6.
+
 ## Source: agent connector read-path library (18 October 2026)
 
 The pure part of connector Phase 0 ([AI-AGENT-CONNECTORS.md](AI-AGENT-CONNECTORS.md)) is built as the MIT crate
