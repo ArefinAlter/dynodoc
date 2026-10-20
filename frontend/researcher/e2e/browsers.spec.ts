@@ -137,8 +137,10 @@ test('on a phone the spreadsheet says plainly that a larger screen is easier, an
   expect(await noSideways(page)).toBe(true);
   // Double tap edits in place. iOS Safari never sends dblclick, so the editor listens for taps.
   const first = page.getByRole('button', { name: /^A1:/ });
-  await first.tap();
-  await first.tap();
+  const box = (await first.boundingBox())!;
+  // Two raw taps in a row; locator.tap() twice can take longer than a real double tap.
+  await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+  await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
   await expect(page.getByLabel('Edit A1', { exact: true })).toBeVisible();
   await page.getByLabel('Edit A1', { exact: true }).press('Escape');
   await first.tap();
@@ -149,4 +151,28 @@ test('on a phone the spreadsheet says plainly that a larger screen is easier, an
   await expect(page.getByRole('button', { name: /^A1: 5$/ })).toBeVisible();
   await notice.getByRole('button', { name: 'Got it' }).tap();
   await expect(notice).toHaveCount(0);
+});
+
+test('the project page tabs sit side by side without overlapping @smoke', async ({ page }) => {
+  test.skip(!signedIn, 'Requires the isolated signed-in development stack.');
+  await signIn(page);
+  await page.getByRole('button', { name: 'New project', exact: true }).click();
+  await page.getByLabel('Project name').fill(`Tabs ${Date.now()}`);
+  await page.getByRole('button', { name: 'Create project' }).click();
+  await expect(page.getByRole('button', { name: 'Files', exact: true })).toBeVisible();
+  // A squeezed tab bar once drew the labels on top of each other, so a tap hit the wrong tab.
+  const overlaps = await page.evaluate(() => {
+    const tabs = [...document.querySelectorAll<HTMLElement>('.tabnav button')];
+    const found: string[] = [];
+    tabs.forEach((tab, i) => {
+      const box = tab.getBoundingClientRect();
+      const name = tab.textContent?.trim();
+      // The label must fit inside its own button, and the next one must start after it.
+      if (tab.scrollWidth > Math.ceil(box.width) + 1) found.push(`${name} is clipped`);
+      const next = tabs[i + 1]?.getBoundingClientRect();
+      if (next && next.left < box.right - 1) found.push(`${name} overlaps the next tab`);
+    });
+    return found;
+  });
+  expect(overlaps).toEqual([]);
 });

@@ -52,8 +52,15 @@
   ):not(.touch-dense, .touch-dense *) {
     min-height: 44px !important;
   }
-  :is(button, [role='button'], [role='tab']):not(.touch-dense, .touch-dense *) {
+  /*
+   * Width only for buttons that carry an icon (icon-only buttons are the narrow ones). A
+   * min-width alone would replace the automatic minimum, their text width, and let a flex row
+   * squeeze labels until they overlap, so they also stop shrinking. Text-only buttons keep
+   * their natural width, which is already wide enough.
+   */
+  :is(button, [role='button']):has(> svg:only-child):not(.touch-dense, .touch-dense *) {
     min-width: 44px !important;
+    flex-shrink: 0 !important;
   }
   /* Colour pickers are an invisible input over a small swatch; grow the swatch. */
   label:has(> input[type='color']) {

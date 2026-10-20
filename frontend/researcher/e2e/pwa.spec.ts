@@ -5,6 +5,8 @@ import { expect, test, type Page } from '@playwright/test';
 // The installable app: manifest, service worker, offline page and update flow. The signed-in
 // checks need the isolated stack (DEV_AUTH); the rest run against any build.
 const signedIn = process.env.PILOT_E2E === 'true';
+// The WebKit projects block workers for the other specs (playwright.config.ts); these need one.
+test.use({ serviceWorkers: 'allow' });
 const AXE_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'];
 
 /** A pass-through proxy in front of the app, so a test can take the "server" away. */

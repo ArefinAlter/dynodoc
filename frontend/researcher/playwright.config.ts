@@ -6,12 +6,16 @@ const external = process.env.PLAYWRIGHT_BASE_URL;
 // tagged @smoke, which is what CI runs on them. Emulation is not a real device.
 const matrix = process.env.BROWSER_MATRIX;
 const phoneSpecs = /(smoke|editorial-pages|ux|workspace|projects|browsers|pwa)\.spec\.ts$/;
+// Playwright's WebKit does not apply page.route() mocks to a page a service worker controls,
+// even when the worker lets the request through, which breaks the specs that mock the network.
+// The WebKit projects therefore block workers, except pwa.spec.ts, which turns them back on.
+const noWorker = { serviceWorkers: 'block' as const };
 const extra = matrix
   ? [
       { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
-      { name: 'webkit', use: { ...devices['Desktop Safari'] } },
+      { name: 'webkit', use: { ...devices['Desktop Safari'], ...noWorker } },
       { name: 'pixel', use: { ...devices['Pixel 7'] }, testMatch: phoneSpecs },
-      { name: 'iphone', use: { ...devices['iPhone 15'] }, testMatch: phoneSpecs }
+      { name: 'iphone', use: { ...devices['iPhone 15'], ...noWorker }, testMatch: phoneSpecs }
     ].map((project) => ({
       ...project,
       grep: matrix === 'smoke' ? /@smoke/ : undefined,
