@@ -1224,6 +1224,57 @@ project policy, budgets"; its other items stand.) Built, in `crates/engine-api` 
   that has gone; (9) the old domain guard; (10) no CHECK on the session scopes; (11) an eight character
   proposal id in DCT; (12) the placeholder reviewer address: each fails its test.
 
+**Implementation status, MCP write tools (Phase 1, connector side), 20 October 2026.** (This paragraph
+supersedes "The MCP `propose`, `submit` and `status` tools and the setup of a client for them" in the
+"Not built, or not decided" item above; its other items stand.) Built, in `crates/engine-mcp`,
+`crates/engine-cli` (`mcp`) and `integrations/claude-code/dynodoc`; no server, migration, OpenAPI or app
+change:
+
+- *Two profiles.* The default is unchanged: six read tools, their definitions pinned byte for byte against
+  a golden copy (4,983 bytes published, 4,845 by the spec's measure). `Profile::full` has eight tools
+  (`propose`, `submit`, and a `status` that also reports one proposal): **8,580 bytes published, 8,396 by
+  the spec's measure** against the spec's own 7,799 for eight; `propose` alone is 2,811, `submit` 510,
+  `status` 553. The eight-tool size is pinned in a test; a change in it is a decision.
+- *Opt-in.* `engine-cli mcp --write` (or `DYNODOC_WRITE` set to on, yes, true or 1; anything else is off) lists
+  the eight tools and asks the session for `content:read`, `content:propose` and `content:submit`. Without it
+  the session asks for `content:read` and nothing else, the write tools are not listed, and a `tools/call`
+  of one is the protocol error `-32602`. If the service refuses the write set (key not granted), the
+  session falls back to `content:read`, logs that on standard error, and a write tool answers `forbidden
+  policy=write_scope` without sending a request. The Claude Code plugin passes `DYNODOC_WRITE` as
+  `${DYNODOC_WRITE:-off}`; any text that is not a clear yes is off.
+- *Mapping.* `propose` posts to `.../files/{file}/propose` with the call's body (without `file`); `submit` is
+  one tool over `.../proposals/{id}/submit` and `.../withdraw` (`action`); `status` reads
+  `.../proposals/{id}` or `.../access`. The backend gives every logical `propose` its own random
+  `request_id` (the model may pass one) and keeps it across a session renewal and the one resend of a
+  request lost in transit, so a propose cut off after the service stored it is answered with its receipt
+  (`replayed=1`); an error whose outcome is unknown names the id. `dry_run` is passed on. Refusals map to the
+  uniform error lines, now with `op=` and `id=` for the failing op.
+- *Safety.* Each has a test: the token is in no log, result or error; nothing is sent unless the client calls a
+  tool (a `propose` is never followed by a `submit`); oversized `ops` (over 200) or a body over 1 MiB never
+  leave the process; unknown fields are rejected at any depth by the schema validator (the failing op is
+  named); every `propose`, `submit` and proposal `status` answer ends with a `note "..."` line that says the
+  change is only a proposal and not live (`waiting for a person to submit; nothing is live` for
+  `awaiting_person`, and the stale refs to read again); standard output carries protocol messages only,
+  also for write errors, in a real process.
+- *Plugin and guide.* The skill teaches when to propose and when only to read, the op grammar with three
+  examples (which a test validates against the schema), a dry run first for bulk edits, reading again after
+  a stale base, telling the user the whole proposal id and that a person must review, and never saying a
+  change is merged. The setup guide explains the project `write_mode`, the key's write grants and `--write`.
+- *Evidence.* About 48 new tests: 36 in `engine-mcp` (106 in all, with the stdio check; unit tests, a mock
+  service for every case above including a dropped connection and a renewed session, protocol tests for both
+  profiles, contract tests against the spec text and a real preview) and 12 in `engine-cli` (the session's
+  scopes and fallback, and real-process tests of `mcp` against a stand-in service,
+  `tests/mcp_write_stdio.rs`). `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt
+  --all` and `cargo doc --workspace --no-deps` with warnings denied are clean. Deviations from the spec are
+  items 11 to 20 of the `engine-mcp` crate documentation (`cargo doc -p engine-mcp --no-deps`): among them the
+  optional `request_id`, whole proposal ids, the ops the service does not compile left out of the schema,
+  and no `what=proposals`.
+- *Not verified.* No real MCP client (Claude Code or Desktop) and no model used these tools, and the connector
+  program was never run against `engine-api`: its tests use stand-ins written from the routes' code and tests.
+  The `${VAR:-default}` form in the plugin's `.mcp.json`, `--plugin-dir` and the plugin layout are vendor facts
+  not checked. The resend after a lost connection was exercised only on Windows. Whether a model proposes
+  well, keeps to the note's wording or pays for 3.6 KB more of definitions on every turn is not measured.
+
 ### 11.4 Phase 2 detail (remote MCP and OAuth)
 
 | Task | Weeks |

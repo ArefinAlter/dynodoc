@@ -1,7 +1,7 @@
 {
   "name": "dynodoc",
-  "version": "0.1.0",
-  "description": "Read Dynodoc documents, spreadsheets and presentations from Claude Code through a read-only connection you control. Phase 0: no tool can change anything.",
+  "version": "0.2.0",
+  "description": "Read Dynodoc documents, spreadsheets and presentations from Claude Code through a connection you control. Read-only unless you switch proposals on; Claude can then propose edits, and a person always reviews and merges them.",
   "author": {
     "name": "Verne Ltd."
   },

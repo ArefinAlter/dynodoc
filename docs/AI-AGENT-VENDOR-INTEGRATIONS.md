@@ -821,6 +821,7 @@ snapshot was read; the snapshot date is in the research record and is marked [V-
 |---|---|
 | Whether claude.ai negotiates MCP 2026-07-28; elicitation on claude.ai; organisation URL allow or deny list; tool-count cap | Anthropic |
 | Claude Desktop on Linux | Anthropic (conflicting pages) |
+| Claude Code plugin `.mcp.json`: whether the `${VAR:-default}` form expands (the plugin's write switch relies on it; text left unexpanded is not a clear yes, so the switch stays off, but an error instead would stop the plugin from starting), whether `env` values expand, and whether the started program receives them | Anthropic |
 | Whether Plus and Free can add custom MCP servers; tool count, result size and timeout limits for custom MCP servers | OpenAI |
 | OpenAPI version and size cap for Actions; domain ownership verification | OpenAI |
 | Cursor tool cap and current OAuth registration behaviour; VS Code CIMD; top-level keys in `mcp.json` files | Cursor, GitHub, Microsoft |

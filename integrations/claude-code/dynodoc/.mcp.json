@@ -10,7 +10,10 @@
         "${DYNODOC_PROJECT}",
         "--device-key",
         "${DYNODOC_KEY}"
-      ]
+      ],
+      "env": {
+        "DYNODOC_WRITE": "${DYNODOC_WRITE:-off}"
+      }
     }
   }
 }

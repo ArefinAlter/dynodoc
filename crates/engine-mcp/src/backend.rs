@@ -18,6 +18,20 @@
 //! * Nothing the server wrote is passed on except the DCT body of a `200` whose content type
 //!   is `text/vnd.dynodoc.dct` and which starts with `dd/1 `. Errors are re-derived from
 //!   typed fields ([`crate::error`]).
+//!
+//! The write tools add these, each pinned by a test:
+//!
+//! * A write is made only when the model calls it: one call makes one logical request, and
+//!   nothing here follows a `propose` with a `submit` or any other call.
+//! * A `propose` has one `request_id` per logical call, added here when the model gave none.
+//!   The plan holds it, so a `401` renewal and the one resend of a request lost in transit
+//!   send the same body; the next call gets a new one. An error whose outcome is unknown
+//!   names it, so that the model's retry can reuse it.
+//! * A write whose key was not granted the write scopes is refused without a request
+//!   (`forbidden policy=write_scope`).
+//! * The answer of a write tool ends with a line that says a change is a proposal for a
+//!   person to review and is not live ([`crate::notes`]); the service's text comes first and
+//!   is unchanged.
 
 use std::{fmt, future::Future, net::IpAddr, time::Duration};
 
@@ -30,6 +44,7 @@ use uuid::Uuid;
 
 use crate::{
     error::ToolError,
+    notes,
     request::{self, Method, Plan},
     session::{Session, SessionError, Token},
     tools::Tool,
@@ -178,21 +193,38 @@ impl<S: Session> HttpBackend<S> {
 
     async fn execute(&self, ctx: &CallContext, tool: Tool, plan: &Plan) -> ToolOutput {
         let Ok(mut url) = self.config.base.join(&plan.path) else {
-            return ToolOutput::error(&ToolError::new("internal"));
+            return failure(plan, ToolError::new("internal"));
         };
         if !plan.query.is_empty() {
             url.query_pairs_mut()
                 .extend_pairs(plan.query.iter().map(|(k, v)| (*k, v.as_str())));
         }
         let mut renewed = false;
+        let mut resent = false;
         loop {
             let token = match self.session.token().await {
                 Ok(token) => token,
                 Err(error) => return session_failure(error),
             };
+            if tool.is_write() && !token.writes() {
+                // The key was not granted the write scopes, so the service issued a
+                // read-only session: say so instead of sending a request that must fail.
+                return failure(
+                    plan,
+                    ToolError::new("forbidden").with("policy", "write_scope"),
+                );
+            }
             let response = match self.send(ctx, plan, &url, &token).await {
                 Ok(response) => response,
-                Err(failure) => return failure,
+                // The request may or may not have arrived. A write is sent once more,
+                // unchanged: its `request_id` (a propose) or its state (a submit) makes
+                // the repeat harmless. Nothing else is repeated.
+                Err(failed) if failed.transport && tool.is_write() && !resent => {
+                    resent = true;
+                    tokio::time::sleep(RESEND_PAUSE).await;
+                    continue;
+                }
+                Err(failed) => return failed.output,
             };
             if response.status() == StatusCode::UNAUTHORIZED && !renewed {
                 renewed = true;
@@ -211,8 +243,11 @@ impl<S: Session> HttpBackend<S> {
         plan: &Plan,
         url: &Url,
         token: &Token,
-    ) -> Result<reqwest::Response, ToolOutput> {
-        let internal = || ToolOutput::error(&ToolError::new("internal"));
+    ) -> Result<reqwest::Response, Failed> {
+        let internal = || Failed {
+            output: failure(plan, ToolError::new("internal")),
+            transport: false,
+        };
         let mut authorization = HeaderValue::from_str(&format!("Bearer {}", token.expose()))
             .map_err(|_| {
                 tracing::error!("the session token is not a valid header value");
@@ -246,11 +281,17 @@ impl<S: Session> HttpBackend<S> {
                 "request"
             };
             tracing::warn!(kind, "agent request failed");
-            ToolOutput::error(&ToolError::new(if error.is_timeout() {
-                "deadline_exceeded"
-            } else {
-                "internal"
-            }))
+            Failed {
+                output: failure(
+                    plan,
+                    ToolError::new(if error.is_timeout() {
+                        "deadline_exceeded"
+                    } else {
+                        "internal"
+                    }),
+                ),
+                transport: true,
+            }
         })
     }
 
@@ -269,11 +310,10 @@ impl<S: Session> HttpBackend<S> {
             let retry_after = header_text(&response, RETRY_AFTER.as_str());
             let cap = ERROR_BODY_BYTES.min(self.config.max_response_bytes);
             let body = read_body(&mut response, cap).await.unwrap_or_default();
-            return ToolOutput::error(&ToolError::from_http(
-                status.as_u16(),
-                &body,
-                retry_after.as_deref(),
-            ));
+            return failure(
+                plan,
+                ToolError::from_http(status.as_u16(), &body, retry_after.as_deref()),
+            );
         }
         let dct = header_text(&response, CONTENT_TYPE.as_str()).is_some_and(|t| {
             t.trim_start()
@@ -285,30 +325,31 @@ impl<S: Session> HttpBackend<S> {
             Ok(body) => body,
             Err(BodyError::TooLarge(seen)) => {
                 tracing::warn!(tool = tool.name(), cap, "agent response over the byte cap");
-                return ToolOutput::error(
-                    &ToolError::new("limit_exceeded")
+                return failure(
+                    plan,
+                    ToolError::new("limit_exceeded")
                         .with("field", "response")
                         .with_number("limit", cap as u64)
                         .with_number("value", seen as u64),
                 );
             }
             Err(BodyError::TimedOut) => {
-                return ToolOutput::error(&ToolError::new("deadline_exceeded"));
+                return failure(plan, ToolError::new("deadline_exceeded"));
             }
-            Err(BodyError::Failed) => return ToolOutput::error(&ToolError::new("internal")),
+            Err(BodyError::Failed) => return failure(plan, ToolError::new("internal")),
         };
         match String::from_utf8(body) {
             Ok(text) if dct && text.starts_with("dd/1 ") => {
                 let meta = meta_of(&text, etag.as_deref());
                 ToolOutput {
-                    text,
+                    text: notes::annotate(tool, text),
                     is_error: false,
                     meta,
                 }
             }
             _ => {
                 tracing::warn!(tool = tool.name(), "agent response is not DCT");
-                ToolOutput::error(&ToolError::new("internal"))
+                failure(plan, ToolError::new("internal"))
             }
         }
     }
@@ -316,23 +357,48 @@ impl<S: Session> HttpBackend<S> {
 
 impl<S: Session> Backend for HttpBackend<S> {
     async fn call(&self, ctx: CallContext, call: ToolCall) -> ToolOutput {
-        let plan = match request::plan(call.tool, &call.args, self.config.project) {
+        let ToolCall { tool, mut args } = call;
+        // One idempotency key per logical call, chosen here and nowhere else: the plan below
+        // carries it, and a renewal or a resend sends that same plan. A key the model passed
+        // is used as given (that is how it retries a call whose answer it lost).
+        if tool == Tool::Propose && !args.contains_key("request_id") {
+            args.insert("request_id".into(), json!(Uuid::new_v4().to_string()));
+        }
+        let plan = match request::plan(tool, &args, self.config.project) {
             Ok(plan) => plan,
             Err(error) => return ToolOutput::error(&error),
         };
-        match tokio::time::timeout(
-            self.config.call_deadline,
-            self.execute(&ctx, call.tool, &plan),
-        )
-        .await
+        match tokio::time::timeout(self.config.call_deadline, self.execute(&ctx, tool, &plan)).await
         {
             Ok(output) => output,
             Err(_) => {
-                tracing::warn!(tool = call.tool.name(), "agent call deadline exceeded");
-                ToolOutput::error(&ToolError::new("deadline_exceeded"))
+                tracing::warn!(tool = tool.name(), "agent call deadline exceeded");
+                failure(&plan, ToolError::new("deadline_exceeded"))
             }
         }
     }
+}
+
+/// A request that failed on the way: the answer to give, and whether the request may or
+/// may not have arrived (a connection that broke or timed out, as opposed to one this
+/// process refused to make).
+struct Failed {
+    output: ToolOutput,
+    transport: bool,
+}
+
+/// How long a write waits before it is sent a second time after a lost connection.
+const RESEND_PAUSE: Duration = Duration::from_millis(250);
+
+/// The error result of a call. When the outcome of a `propose` is unknown (a timeout, a
+/// broken connection, an answer that could not be read), the error names the call's
+/// `request_id`: sending the same `propose` again with it returns the first call's receipt
+/// instead of staging the edits twice.
+fn failure(plan: &Plan, mut error: ToolError) -> ToolOutput {
+    if let (Some(id), true) = (&plan.request_id, error.outcome_unknown()) {
+        error = error.with("request_id", id);
+    }
+    ToolOutput::error(&error)
 }
 
 fn session_failure(error: SessionError) -> ToolOutput {
@@ -486,7 +552,8 @@ pub fn header_pairs(line: &str) -> Vec<(String, String)> {
 }
 
 /// `_meta["dynodoc/v1"]` from the header line (spec 7.1): `rev`, `chain`, `file`, the
-/// continuation `cursor` (`more` in the header), and the response's `etag`.
+/// continuation `cursor` (`more` in the header), the `proposal` a write tool names, and the
+/// response's `etag`.
 fn meta_of(text: &str, etag: Option<&str>) -> Option<Value> {
     let pairs = header_pairs(text.lines().next().unwrap_or(""));
     let get = |key: &str| {
@@ -499,7 +566,12 @@ fn meta_of(text: &str, etag: Option<&str>) -> Option<Value> {
     if let Some(rev) = get("rev").and_then(|r| r.parse::<u64>().ok()) {
         meta.insert("rev".into(), json!(rev));
     }
-    for (header, key) in [("chain", "chain"), ("file", "file"), ("more", "cursor")] {
+    for (header, key) in [
+        ("chain", "chain"),
+        ("file", "file"),
+        ("proposal", "proposal"),
+        ("more", "cursor"),
+    ] {
         if let Some(value) = get(header) {
             meta.insert(key.into(), json!(value));
         }

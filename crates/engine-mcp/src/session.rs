@@ -9,11 +9,13 @@
 
 use std::{fmt, future::Future, sync::Arc};
 
-/// A bearer token and the generation of the session that issued it.
+/// A bearer token, the generation of the session that issued it and whether it carries the
+/// write scopes.
 #[derive(Clone)]
 pub struct Token {
     secret: Arc<str>,
     generation: u64,
+    writes: bool,
 }
 
 impl Token {
@@ -23,11 +25,26 @@ impl Token {
         Self {
             secret: Arc::from(secret.into()),
             generation,
+            writes: true,
         }
+    }
+
+    /// Mark the token as one the service issued for the read scope only (a key that was not
+    /// granted the write scopes). The backend then refuses the write tools itself, with a
+    /// message that says why, instead of sending a request that is certain to fail.
+    pub fn without_writes(mut self) -> Self {
+        self.writes = false;
+        self
     }
 
     pub fn generation(&self) -> u64 {
         self.generation
+    }
+
+    /// Does the token carry `content:propose` and `content:submit`? Tokens are assumed to
+    /// unless the session says otherwise; the service decides in any case.
+    pub fn writes(&self) -> bool {
+        self.writes
     }
 
     /// The secret, for the `Authorization` header and nothing else.
@@ -84,5 +101,6 @@ mod tests {
         let shown = format!("{token:?} {:?}", Some(&token));
         assert!(!shown.contains("SECRET"), "{shown}");
         assert!(shown.contains("generation 3"));
+        assert!(token.writes() && !token.without_writes().writes());
     }
 }

@@ -91,6 +91,7 @@ fn mcp(s: &Setup, extra: &[&str]) -> Command {
         .arg(&s.key)
         .args(extra)
         .env_remove("DYNODOC_KEY_PASSPHRASE_FILE")
+        .env_remove("DYNODOC_WRITE")
         .env("RUST_LOG", "trace");
     command
 }
@@ -275,6 +276,7 @@ fn help_lists_the_options_and_the_whole_cli_still_starts() {
         "--project",
         "--device-key",
         "--allow-loopback-http",
+        "--write",
     ] {
         assert!(help.contains(flag), "{flag} missing from:\n{help}");
     }
