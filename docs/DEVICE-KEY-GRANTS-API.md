@@ -223,11 +223,17 @@ key may ever hold, so a signing key file cannot be re-purposed.
 ## The write scopes and the agent identity (schema 44)
 
 An agent key may also hold `content:propose` and `content:submit` (docs/AI-AGENT-PROTOCOL-SPEC.md
-section 14.2). The three agent scopes are independent: none implies another, and a
-`content:read` session cannot propose.
+section 14.2). `content:propose` and `content:submit` imply neither each other nor
+`content:read`, and a `content:read` session cannot propose. But a write scope is held only
+beside `content:read`: a preview of a proposal shows the text it changes, and so do the answers
+to a bad ref, so a write scope alone would be a read scope under another name. A grant, a
+session challenge and the database (a CHECK on both scope arrays) refuse a set with
+`content:propose` or `content:submit` and no `content:read`: 400 with the reason
+"content:propose and content:submit need content:read: a preview shows the text it changes".
 
-- `PUT /devices/{key}/projects/{project}` accepts any non-empty subset of `content:read`,
-  `content:propose` and `content:submit` on an agent key (and none of them on a person's key,
+- `PUT /devices/{key}/projects/{project}` accepts `content:read`, alone or with
+  `content:propose` and `content:submit` (the 4 valid sets: read; read and propose; read and
+  submit; all three) on an agent key (and none of them on a person's key,
   which is 400). Issuance of a session with `content:propose` or `content:submit` additionally
   needs a project role that may stage drafts (not a viewer): the uniform `403`. The `all` mode
   never covers any of the three.

@@ -31,8 +31,8 @@ name limits; accept plain-hex KEK files (a passphrase-wrapped variant is listed 
 ## Source: agent review-gated write path, connector Phase 1 server side (20 October 2026)
 
 An AI agent can now **propose** changes on the server, and nothing it does reaches the team version. Migration
-`0044_agent_write.sql` (schema 44) adds the `content:propose` and `content:submit` scopes (independent of `content:read` and of
-each other), `agent_identity` (the identity row under which an agent's drafts are recorded: born disabled, address in the
+`0044_agent_write.sql` (schema 44) adds the `content:propose` and `content:submit` scopes (each held beside `content:read`, which
+a preview needs; neither implies the other), `agent_identity` (the identity row under which an agent's drafts are recorded: born disabled, address in the
 reserved `agents.invalid` domain, one live per person and client product, revoked with the person, never a member, reviewer or
 key holder), `agent_proposal_receipt` (append-only: counts, stale refs, the agent's own reasons, request digest; no document
 text), `device_key_class.client_kind`, and the write fields of the project policy: `write_mode` (**`none` by default**, then
@@ -42,22 +42,29 @@ the others under `AGENT_GATEWAY=on`): `POST files/{file}/propose` (the spec's na
 one as absent), `POST proposals/{id}/submit`, `POST proposals/{id}/withdraw`, `GET proposals/{id}`. A proposal is a
 `workspace_draft` created by the agent identity with the compiler's output stored as `draft_edit` rows; **no route of this
 slice appends to the event log** (the gate test compares row counts and chain heads). The person an agent acts for sees, edits,
-submits and withdraws those drafts through the existing routes (six queries accept the agent's principal), nobody else sees an
+submits and withdraws those drafts through the existing routes (seven consumers accept the agent's principal; `share` into the team
+log is refused for an agent's draft), nobody else sees an
 unsubmitted agent draft, a request an agent wrote is `mine` for its principal so that **the principal cannot approve it (I5)**
 and an approval forced in some other way is not counted, the agent identity is refused as an approver (I4) by the database and by
 an explicit check, and requests carry an additive `agent` object. The merge audit row names the agent as contributor (layer B);
-the events keep the merger as actor (layer C, sealed attribution, is not built). Evidence: `tests/agent_write_test.rs` (22 tests
+the events keep the merger as actor (layer C, sealed attribution, is not built). Evidence: `tests/agent_write_test.rs` (32 tests
 under the restricted runtime login: gate, authority re-read per request, ownership and uniform answers, route table, I5 with one
 other reviewer and with none, stale bases, idempotency with concurrent duplicates, budgets and kill switch, hostile text,
 identity, disable/erase/document-erasure cascade, a seeded differential test of the route against `engine_agent::compile`,
-OpenAPI conformance) plus unit tests; five or more controls were removed one at a time to see their tests fail (listed in
-[AI-AGENT-CONNECTORS.md](AI-AGENT-CONNECTORS.md) section 11.3). **Not built:** MCP write tools, the app (no screen: badges,
+OpenAPI conformance) plus unit tests; controls were removed one at a time to see their tests fail (listed in
+[AI-AGENT-CONNECTORS.md](AI-AGENT-CONNECTORS.md) section 11.3). An independent adversarial review found no Critical or High issue;
+its fixes (no `share` of an agent's draft, bounded write locks and a lock-free dry run, a write scope only beside the read scope,
+no bypass of the approvals by the principal, per-person budgets, a file that moved while a write waited, the reserved-domain test
+and migration 0044's checks, whole proposal ids in DCT, audit attribution) are in and tested. **Not built:** MCP write tools, the app (no screen: badges,
 inbox, adopt action, policy tab), OAuth, layer C, the evals, macros, `agent.denied` audit rows, `diff proposal=`, DLP.
 **Not run** against a real client, under load, or on a production copy; migration 0044 has not been rehearsed or released.
-Raised for the owner: an owner or manager can still merge their own agent's request with the existing `override_rules`
-(approvals themselves cannot be self-given); the proposal id is server-chosen, not the first `request_id`; the proposal budgets
-are per agent identity and project, not per key; the budget defaults are the spec's numbers and apply only once `write_mode` is
-set.
+Also not built: an approval bound to the revision the reviewer saw (a contributor who changes a request between a reviewer's page
+load and click gets the approval counted; to be closed with the reviewer screens).
+Raised for the owner: the approvals a file requires apply to an agent's request as configured, zero included (the project
+default), and its principal cannot bypass them (`override_rules` is refused for them, another manager's is not) - say if agent
+requests should always need one other approver, which would leave a one-person project unable to merge its agent's work; the
+proposal id is server-chosen, not the first `request_id`; the proposal budgets are per person and project over all client
+products; the budget defaults are the spec's numbers and apply only once `write_mode` is set.
 
 ## Source: agent project policy v0 and management routes, connector Phase 1 (20 October 2026)
 

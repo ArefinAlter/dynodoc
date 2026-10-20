@@ -1305,7 +1305,14 @@ An account access token, a connector key or a device token without agent scopes 
 refused on these routes, and an agent token is refused everywhere else, using the same
 fail-closed separation device sessions already use (implicit assertion).
 
-### 14.2 Scopes (proposed; independent, none implies another)
+### 14.2 Scopes (proposed; none implies another, but a write scope is held beside `content:read`)
+
+*Implementation note (20 October 2026, after the independent review):* the three scopes
+imply nothing of each other, but a grant or session that holds `content:propose` or
+`content:submit` must hold `content:read` too, because the preview of `propose` and the
+answers to a bad ref show document text. The grant, the session challenge and the database
+refuse the other sets. The implementation also prints the whole proposal id in DCT headers
+(the proposal routes take nothing shorter) where the examples below show eight characters.
 
 | Scope | Grants | Never grants |
 |---|---|---|

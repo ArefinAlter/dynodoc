@@ -4641,3 +4641,20 @@ async fn every_audit_row_of_an_agents_request_names_the_agent(pool: PgPool) {
     );
     s.w.close().await;
 }
+
+/// Review item 8(a). The widened tool CHECK of the call ledger is added `NOT VALID`: it holds
+/// for new rows and the migration did not scan the ledger under an exclusive lock.
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_ledgers_tool_check_is_not_valid_and_names_the_write_tools(pool: PgPool) {
+    let w = World::new(pool, true).await;
+    let (validated, definition): (bool, String) = sqlx::query_as("select convalidated,pg_get_constraintdef(oid) from pg_constraint where conname='agent_call_tool_check'")
+        .fetch_one(&w.runtime.owner)
+        .await
+        .unwrap();
+    assert!(!validated, "{definition}");
+    assert!(
+        definition.contains("propose") && definition.contains("submit"),
+        "{definition}"
+    );
+    w.close().await;
+}

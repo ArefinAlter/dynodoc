@@ -296,7 +296,8 @@ or manager of the project sets `write_mode` in the same agent settings as step 0
   true (it is by default), in which case a person must.
 
 The same settings carry the proposal limits: `proposals_per_day` (default 20) and
-`open_proposals` (default 5) for each assistant identity in the project, and
+`open_proposals` (default 5) for each person in the project (all of their assistants
+together, whatever the product), and
 `ops_per_proposal` (default 500 stored operations in one proposal). A single file can stay read
 only for assistants (`{"access":"read"}`) or be hidden (`none`). The stop button also sets
 `write_mode` back to `none`, so turning agents on again does not turn writing on again.
@@ -304,7 +305,9 @@ only for assistants (`{"access":"read"}`) or be hidden (`none`). The stop button
 **How a person allows it.** Enrol the key as an agent key (step 2, optionally naming the
 product with `client_kind`, for example `claude`), then give it the project with the write
 scopes you want: `content:propose` to stage drafts and `content:submit` to submit or withdraw
-them. They are separate from `content:read` and from each other. Only a project role that can
+them. Always give `content:read` with them (a preview of a proposal shows the text it changes,
+so Dynodoc refuses a write scope without it); the two write scopes are separate from each
+other. Only a project role that can
 write drafts (not a viewer) is issued a write session, and the role is checked again on every
 call, so a person who loses their role or is removed stops their assistants at once. When the
 person is disabled or erased, their assistants' identities end with them.

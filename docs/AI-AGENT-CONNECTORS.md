@@ -1043,8 +1043,11 @@ project policy, budgets"; its other items stand.) Built, in `crates/engine-api` 
   anything else is the same `404`) or checks the proposal budgets under an advisory lock, compiles
   against the state the agent read (new) or the draft's own state (extension) with the team's head for the
   `base` comparison, applies `ops_per_proposal`, and stores the draft, the compiled engine ops as
-  `draft_edit` rows by the agent identity, the receipt and an audit row. `dry_run` does all but store.
-  A stale `base` is a `stale` entry, `behind` and `warn`; `strict` is `stale_base` and stores nothing.
+  `draft_edit` rows by the agent identity, the receipt and an audit row. `dry_run` compiles and previews
+  from the state the read routes read, with no document lock and no write transaction, and stores
+  nothing. A stale `base` is a `stale` entry, `behind` and `warn`; `strict` is `stale_base` and stores
+  nothing. Where it holds the lock, a write is bounded: statements 10 s, the lock wait 3 s, the compiler 2 s
+  (`deadline_exceeded`, `504`, the nearest existing code).
 - *`submit`, `withdraw`, status.* `submit` makes the draft a change request through the review code a
   person's submit uses (`reviews::mark_submitted`, audit row and reviewer notifications as the agent
   identity) only when `write_mode` is `change_request` and `submit_requires_person` is false; otherwise it
@@ -1055,7 +1058,9 @@ project policy, budgets"; its other items stand.) Built, in `crates/engine-api` 
   reviews (reviewer name and note cleaned of control and hidden characters and cut to 80 and 400
   characters) and, while open, the same-field conflicts of the three-way merge by ref, field and short
   hashes.
-- *Credential and identity.* The scopes are independent; the `all` mode never covers any of them; a viewer
+- *Credential and identity.* `content:propose` and `content:submit` imply neither each other nor the read
+  scope, but each is held only beside `content:read` (a grant, a session challenge and a CHECK on both
+  scope arrays say so: a preview shows the text it changes); the `all` mode never covers any of them; a viewer
   is not issued a write session. The first write grant for a key makes the person's agent identity for the
   key's product (`client_kind`, fixed at enrolment, `device` by default), named "Claude for Olivia". It is an
   `identity` row born disabled (so it cannot sign in, receive a magic link, a session or a notification), with
@@ -1067,7 +1072,7 @@ project policy, budgets"; its other items stand.) Built, in `crates/engine-api` 
   agents' drafts, edits and receipts and scrubs the name.
 - *Policy.* `write_mode` (`none` by default, `draft`, `change_request`), `submit_requires_person` (true),
   `proposals_per_day` (0 to 1000, default 20), `open_proposals` (0 to 100, default 5) and `ops_per_proposal`
-  (1 to 10,000, default 500), counted per agent identity and project. The kill switch also sets
+  (1 to 10,000, default 500), counted per person and project over all of the person's agent identities. The kill switch also sets
   `write_mode` back to `none`; the audit rows of the policy gain the fields; `access` reports the mode, the
   proposal budgets and what this credential can do now.
 - *Visibility (spec 6.1, 7.3).* One SQL definition (`identity::owned_by`) of "whose draft": the creator, or
@@ -1088,7 +1093,7 @@ project policy, budgets"; its other items stand.) Built, in `crates/engine-api` 
   `propose`, `submit` (withdraw too) and `status`. Layer B: the `document.change_request_merged` audit row
   names the contributor and, for an agent's request, adds `contributor_kind` and the principal and client
   product. The event vocabulary, the hashes and `append_to_team` are unchanged; layer C is not built.
-- *Evidence.* `tests/agent_write_test.rs`, 22 tests under the restricted runtime login (the harness of
+- *Evidence.* `tests/agent_write_test.rs`, 32 tests under the restricted runtime login (the harness of
   `tests/agent_world/`), each threat of the task named in its test: T1 the gate (row counts of `event`,
   `snapshot`, `snapshot_verification`, `shared_checkpoint`, `checkpoint_object`, `document_version`, `node`
   and every chain head are unchanged by propose, extend, dry run, replay, a refused call, submit, withdraw,
@@ -1109,10 +1114,11 @@ project policy, budgets"; its other items stand.) Built, in `crates/engine-api` 
   ignores `submit_requires_person`: the T4 submission test and a policy unit test fail; (4) a replay that
   ignores the request digest: T7 fails; (5) `upsert_identity` admits the reserved domain: both T10 tests
   fail (the database trigger alone then answers with an internal error, not the clean refusal); (6) no
-  viewer test in `write_proposal`: T2 fails; (7) `key_reaches` lets an `all`-mode key reach
-  `content:propose`: T2 fails; (8) `owned_by` without the principal clause: 8 tests fail; (9) `owned_by`
-  matching every agent draft for every viewer: 4 tests fail (the merge flow, T3, T5, T9); (10) `can_propose`
-  always true: both T8 tests fail.
+  viewer test in `write_proposal`: T2 fails; (7) `owned_by` without the principal clause: 8 tests fail;
+  (8) `owned_by` matching every agent draft for every viewer: 4 tests fail (the merge flow, T3, T5, T9);
+  (9) `can_propose` always true: both T8 tests fail. (An earlier check removed `content:propose` from the
+  `all`-mode exclusion of `key_reaches`; since a write scope now comes only with `content:read`, which the
+  exclusion also names, that entry is defence in depth and no test can tell it apart.)
 - *Deviations and decisions.* (1) Route 10 is `.../propose`, not `.../proposals` (a Phase 0 test pins the
   latter as absent); a proposal id that is not a UUID is `404` before the credential is read, which keeps the
   Phase 0 assertions about `.../proposals/x/...`. (2) The proposal id is the server's, not the first
@@ -1122,8 +1128,8 @@ project policy, budgets"; its other items stand.) Built, in `crates/engine-api` 
   and withdraw (idempotent by state). (5) `submit` with `write_mode` `draft`, or with a person required, is
   `200 awaiting_person`, not an error. (6) Conflicts are reported by `status`, not refused at submit. (7) The
   agent identity's display name is the identity row's `display_name` (scrubbed at erasure), not a sidecar
-  column; the sidecar's `client_ref` is the first key that needed it. (8) Proposal budgets are per agent
-  identity and project (more keys of one product do not multiply them); the defaults are the spec's and
+  column; the sidecar's `client_ref` is the first key that needed it. (8) Proposal budgets are per person
+  and project (more keys, or more client products, do not multiply them); the defaults are the spec's and
   apply only once `write_mode` is set. (9) The file policy values are unchanged (`inherit`, `none`, `read`):
   `read` is what refuses writes; `propose` is not a value. (10) The discovery document's `scopes` stays
   `["content:read"]` (a Phase 0 test pins it) and gains `write_scopes`; `access.capabilities` reports what
@@ -1137,12 +1143,51 @@ project policy, budgets"; its other items stand.) Built, in `crates/engine-api` 
   OAuth, API keys, layer C, the evals, the reviewer usability test; macros, `fill`, `add_slide`,
   `delete_slide` and the other ops the compiler refuses; `diff proposal=` (still `404`); `agent.denied`
   audit rows; `status what=proposals`; the `Idempotency-Key` ledger on submit and withdraw; DLP, client
-  allow-lists, retention and pruning of receipts. An owner or manager can still merge their own agent's
-  request with the existing `override_rules` (an approval cannot be self-given, an override is the
-  existing audited bypass). **Not verified:** no real MCP client or model produced a proposal; nothing was
-  measured under load (the document lock is held while ops are compiled, which a 200-op call on a large file
-  makes long); migration 0044 has not been rehearsed on a production copy or released; the review-screen
-  behaviour is only the data it will read.
+  allow-lists, retention and pruning of receipts; an approval bound to the revision the reviewer saw (see
+  below). **Not verified:** no real MCP client or model produced a proposal; nothing was measured under
+  load (a write holds the document lock while its ops compile, now for at most 2 s); migration 0044 has not
+  been rehearsed on a production copy or released; the review-screen behaviour is only the data it will read.
+- *Changes after the independent review of the write path (20 October 2026; it found no Critical or High
+  issue; each item below has a test that fails without its control, and was mutation-checked).* (1) *Share.*
+  `sync_draft` matched an agent's draft for its principal (a seventh consumer of `owned_by`), so the
+  principal could `share` it into the team log as themselves, unreviewed, with no audit row naming the agent.
+  `share` of a draft not created by the caller is now `403` ("An AI agent's draft goes to review"); the
+  other actions (`preview`, `pull`, `rebase`) edit the draft and never the log, and no other caller of
+  `load_draft` or `owned_by` lands content without review (`review` and `merge` pass no owner and need the
+  approvals). (2) *Locks.* A write that stores holds the lock for at most: statements 10 s (was 30), the
+  compiler 2 s (`deadline_exceeded`; the admission permit goes with the compiler task, so a timeout frees the
+  document, not the slot); a `dry_run` opens no write transaction and takes no lock (it reads the cached
+  state and the proposal's draft); `submit` and `withdraw` take the lock without materialising the file.
+  (3) *Scopes.* `content:propose` and `content:submit` need `content:read` beside them: a preview shows the
+  text it changes, and so do `match_count`, `no_match` and the `ambiguous_ref` candidates. A grant and a
+  session challenge are `400` without it, `normalize_scopes` refuses the set, and a CHECK on both scope arrays
+  of 0044 does (tested through the runtime login). (4) *I5.* The person whose agent wrote a request cannot
+  bypass its approvals: `override_rules` is refused for them (`403`) and `can_override` is false; another
+  manager's override and an ordinary request's override by its own author are unchanged. **Decision:** the
+  approvals the file's rules require still apply as configured, including zero (the project default): a
+  request an agent wrote does not need an extra approval of its own. Requiring one approver other than the
+  principal always would make an agent useless in a project of one person, and a person who sets no
+  approvals has accepted that whoever merges is the review. **Open for the owner:** say if agent requests
+  should always need one. (5) *Deferred, not built:* an approval is not bound to the revision the reviewer
+  saw (the web app sends none), so a contributor who changes a request between a reviewer's page load and
+  click gets the approval counted; to be closed with the reviewer screens (also a row in
+  [AI-AGENT-SECURITY.md](AI-AGENT-SECURITY.md)). (6) *Budgets* are the person's over all of their agent
+  identities (the advisory lock and the index follow): eight client products no longer give eight times the
+  limit. (7) *File gone.* The write transaction looks the file up again once it holds the lock (trashed,
+  moved to another project or out of the policy's kinds: the uniform `404`; a trashed or moved file has no
+  role for the caller, which `begin_write_locked` answered `403`, so the answer is mapped back). (8)
+  *Migration 0044.* The `agent_call` tool CHECK is added `NOT VALID` (a superset: no scan under the
+  exclusive lock); the reserved-domain test folds case in the `"C"` collation, ignores blanks and line breaks
+  around the address and anchors with `\Z`; a `DO` block at the top refuses a database that already holds an
+  address in the reserved domain. (9) *Smaller.* DCT headers and answers print the whole proposal id (a
+  client that reads only DCT could not submit or withdraw); a request closed by an agent shows no placeholder
+  address for its reviewer; the declined and withdrawn audit rows, the agent's own withdraw row and a
+  person's submit of their agent's draft carry `contributor_kind`, `agent.client_kind` and the principal like
+  the merge row. Mutation checks of these: (1) no `share` check; (2) a dry run that takes the lock; (3)
+  `submit`/`withdraw` materialising the file; (4) no read-scope rule at the grant; (5) no refusal of the
+  principal's override; (6) budgets by identity; (7) no re-check under the lock, and (8) a `403` for the file
+  that has gone; (9) the old domain guard; (10) no CHECK on the session scopes; (11) an eight character
+  proposal id in DCT; (12) the placeholder reviewer address: each fails its test.
 
 ### 11.4 Phase 2 detail (remote MCP and OAuth)
 

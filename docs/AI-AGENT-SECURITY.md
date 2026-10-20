@@ -80,6 +80,7 @@ not and cannot claim.
 | OAuth authorisation server (PKCE, resource binding, rotation) | MISSING | none |
 | Agent identity class; delegation record | PARTIAL | migration 0044: `agent_identity` sidecar (disabled `identity` row, reserved `agents.invalid` address, one live per person and product, revoked with the person), key class `client_kind`; no OAuth authorisation record, no `device_key_class` for a person's key |
 | Review-gated writes: an agent can only stage a draft; gate test (no event, snapshot or checkpoint row moves); I4, I5; receipts and idempotency | EXISTS (layers A and B) | `crates/engine-api/src/agent/{write,proposal,identity}.rs`, `tests/agent_write_test.rs` (T1 to T12). Layer C (sealed attribution) and the review screen are not built |
+| An approval bound to the revision the reviewer saw (requests an agent wrote) | MISSING | an approval row carries a time, not a revision, and the web app sends no revision: a contributor who changes a request between a reviewer's page load and click gets the approval counted (edits after the click still make it stale). To be closed together with the reviewer screens |
 | Project and file agent policy, default deny; per-grant call and byte budgets; kill switch | PARTIAL | migrations 0043 and 0044: read fields, `write_mode` (default `none`), `submit_requires_person`, proposal budgets; no clients allow-list, DLP or egress |
 | DLP | MISSING | none |
 | Output hygiene for model-facing text | PARTIAL | DCT escaping on reads (Phase 0); on writes, text with control, hidden or bidirectional characters is refused and sizes are bounded; reviewers' words come back cleaned and cut (`status`). No DLP |
@@ -522,8 +523,13 @@ identity, T11 erasure, plus the two-agents conflict case). AC6 to AC9 belong to 
 AC12, AC13 and AC19 are covered for reads by `agent_read_test.rs` and, for text in a
 proposal, by T9 (the grammar refuses hidden and control characters, it does not flag them).
 The server-side items of the Phase 1 gate of 6.8 have tests; the gate is not passed: the
-review screen's agent badge is not built (the app is untouched) and no external review has
-been done.
+review screen's agent badge is not built (the app is untouched) and no external penetration
+test has been done. An independent adversarial review of the server side found no Critical or
+High issue; what it found (a `share` of an agent's draft by its principal, a bypass of the
+approvals by the principal, write scopes that could read, lock and pool pressure, budgets
+multiplied by client products, a file moved while a write waited, the reserved-domain test)
+is closed and each has a test, see the dated status in
+[AI-AGENT-CONNECTORS.md](AI-AGENT-CONNECTORS.md) 11.3. Open from it: the approval row above.
 
 ### 9.2 Other testing
 

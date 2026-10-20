@@ -64,7 +64,11 @@ fn the_preview_reads_like_the_spec_example() {
     let r = preview(&d.base.meta, &d.base.state, &c, &opts).unwrap();
     let (h, lines) = split_response(&r.text).unwrap();
     assert_eq!(h.get("file"), Some("7034d450"));
-    assert_eq!(h.get("proposal"), Some("4d0e9b1c"));
+    // The whole id: the proposal routes take nothing shorter.
+    assert_eq!(
+        h.get("proposal"),
+        Some("4d0e9b1c-0000-4000-8000-000000000001")
+    );
     assert_eq!(h.get("rev"), Some(d.base.meta.rev.to_string().as_str()));
     assert_eq!(h.get("applied"), Some("3"));
     assert_eq!(h.get("expanded"), Some(c.ops.len().to_string().as_str()));
