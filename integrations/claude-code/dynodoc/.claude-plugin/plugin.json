@@ -1,0 +1,9 @@
+{
+  "name": "dynodoc",
+  "version": "0.1.0",
+  "description": "Read Dynodoc documents, spreadsheets and presentations from Claude Code through a read-only connection you control. Phase 0: no tool can change anything.",
+  "author": {
+    "name": "Verne Ltd."
+  },
+  "keywords": ["dynodoc", "documents", "spreadsheets", "presentations", "mcp"]
+}

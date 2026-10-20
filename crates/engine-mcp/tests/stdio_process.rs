@@ -81,21 +81,40 @@ fn parent() {
     let ids: Vec<&Value> = messages.iter().map(|m| &m["id"]).collect();
     assert_eq!(
         ids,
-        [&json!(1), &Value::Null, &json!(2), &Value::Null, &json!(3), &json!(4), &json!(5)]
+        [
+            &json!(1),
+            &Value::Null,
+            &json!(2),
+            &Value::Null,
+            &json!(3),
+            &json!(4),
+            &json!(5)
+        ]
     );
     // Both panicking calls became tool errors, and the connection went on.
     for index in [2, 5] {
         assert_eq!(messages[index]["result"]["isError"], true);
-        let text = messages[index]["result"]["content"][0]["text"].as_str().unwrap();
+        let text = messages[index]["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap();
         assert!(text.starts_with("dd/1 error code=internal "), "{text}");
     }
     assert_eq!(messages[6]["result"]["tools"].as_array().unwrap().len(), 6);
     // The panic is reported where a person can see it, and only there.
-    assert!(stderr.contains("recognisable-panic-text"), "the panic is not on stderr:\n{stderr}");
-    assert!(stderr.contains("tool call failed"), "no log line on stderr:\n{stderr}");
+    assert!(
+        stderr.contains("recognisable-panic-text"),
+        "the panic is not on stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("tool call failed"),
+        "no log line on stderr:\n{stderr}"
+    );
     assert!(!stdout.contains("recognisable-panic-text") && !stdout.contains("tool call failed"));
     assert!(!stdout.contains("WARN"), "input was echoed");
-    eprintln!("stdio_process: ok ({} protocol messages, panic text on stderr only)", messages.len());
+    eprintln!(
+        "stdio_process: ok ({} protocol messages, panic text on stderr only)",
+        messages.len()
+    );
 }
 
 fn main() {
