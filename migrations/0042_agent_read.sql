@@ -41,8 +41,9 @@ create trigger device_key_class_no_delete before delete on device_key_class
 --    document text is ever stored here; `client` and `traceparent` are the caller's
 --    own claims and are never used for authorisation. Rows are append-only and leave
 --    only with their document, in an audited whole-document erasure (as for
---    provenance bundles); an account is anonymised, never deleted, so principal_id
---    stays valid.
+--    provenance bundles), or when older than the 90-day retention window and
+--    removed by the owner role (the runtime role has no DELETE grant); an account
+--    is anonymised, never deleted, so principal_id stays valid.
 create table agent_call (
     id uuid primary key default gen_random_uuid(),
     at timestamptz not null default now(),
@@ -66,6 +67,9 @@ create trigger agent_call_no_update before update on agent_call
 create function agent_call_erasure_guard() returns trigger
 language plpgsql set search_path = pg_catalog, public as $$
 begin
+    -- Rows past the retention window may be pruned; only the owner role can, because
+    -- the runtime role has no DELETE grant on this table.
+    if old.at < now() - interval '90 days' then return old; end if;
     -- The delete arrives as the foreign-key cascade of the document delete, which the
     -- document's own erasure trigger already allows only for a trashed document with a
     -- same-transaction receipt. The document row is gone by then, so only the receipt
@@ -75,7 +79,7 @@ begin
         where r.resource_id = old.document_id and r.kind = 'documents'
           and r.transaction_id = txid_current()
     ) then return old; end if;
-    raise exception 'agent calls are immutable outside audited whole-document erasure';
+    raise exception 'agent calls are immutable outside audited whole-document erasure and retention';
 end;
 $$;
 create trigger agent_call_no_delete before delete on agent_call

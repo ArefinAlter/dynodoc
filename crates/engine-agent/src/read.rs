@@ -381,6 +381,9 @@ fn read_document(
             });
         }
         let (mut unknown, mut ambiguous, mut gone) = (Vec::new(), Vec::new(), Vec::new());
+        // The same address asked twice (in any spelling of its ref) is read once, so a short
+        // request cannot multiply the work before the byte budget applies.
+        let mut seen = std::collections::BTreeSet::new();
         for raw in &opts.refs {
             let addr =
                 Address::from_str(raw).map_err(|_| AgentError::BadRequest { field: "refs" })?;
@@ -389,7 +392,15 @@ fn read_document(
             }
             match idx.resolve(addr.base()) {
                 Ok(id) => match by_id.get(&id) {
-                    Some(&i) => sel.push((addr, i)),
+                    Some(&i) => {
+                        let tail = match &addr {
+                            Address::Sub { tail, .. } => format!("{tail:?}"),
+                            _ => String::new(),
+                        };
+                        if seen.insert((id.clone(), tail)) {
+                            sel.push((addr, i));
+                        }
+                    }
                     None if tree.state.nodes.get(&id).is_some_and(|n| n.deleted) => {
                         gone.push(addr.base().clone());
                     }

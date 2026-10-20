@@ -176,7 +176,12 @@ pub fn app(state: AppState) -> Router {
         .with_state(state)
         .layer(cors)
         .layer(CompressionLayer::new())
-        .layer(TraceLayer::new_for_http())
+        // The span records the path only: a query can hold search text.
+        .layer(
+            TraceLayer::new_for_http().make_span_with(|request: &axum::http::Request<_>| {
+                tracing::info_span!("http", method = %request.method(), path = %request.uri().path())
+            }),
+        )
 }
 
 /// Liveness probe. Returns 200 with a small JSON body.
@@ -186,8 +191,17 @@ async fn healthz() -> Json<Value> {
 
 /// Serve the generated OpenAPI document as JSON (the committed `openapi.yaml` is the
 /// source of truth for codegen; this endpoint is a convenience for tooling).
-async fn openapi_json() -> Json<Value> {
-    Json(serde_json::to_value(ApiDoc::openapi()).unwrap_or_else(|_| json!({})))
+async fn openapi_json(axum::extract::State(state): axum::extract::State<AppState>) -> Json<Value> {
+    let mut doc = serde_json::to_value(ApiDoc::openapi()).unwrap_or_else(|_| json!({}));
+    // With the agent gateway off, the document must not advertise it.
+    if !state.agent_gateway {
+        if let Some(paths) = doc.get_mut("paths").and_then(Value::as_object_mut) {
+            paths.retain(|path, _| {
+                !path.contains("/agent/") && path != "/.well-known/dynodoc-agent"
+            });
+        }
+    }
+    Json(doc)
 }
 
 /// The OpenAPI document, derived from the annotated handlers (docs/18 §3). `engine-cli

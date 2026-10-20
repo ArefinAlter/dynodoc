@@ -230,9 +230,16 @@ impl<'a> Ctx<'a> {
         }
         let loaded = state::load(&self.state.agent_cache, &mut admitted.db, &point).await?;
         drop(admitted.db);
+        let permit = admitted._permit;
         let meta = file_meta(&point, kind);
         let format = self.format;
-        let body = compute(move || run(meta, loaded, format)).await?;
+        // The permit moves into the blocking task: a client that disconnects must not free
+        // a slot while its work is still running.
+        let body = compute(move || {
+            let _permit = permit;
+            run(meta, loaded, format)
+        })
+        .await?;
         let bytes = body.len();
         Ok(Served {
             response: http::reply(format, body, Some(&token)),
@@ -242,7 +249,9 @@ impl<'a> Ctx<'a> {
 
     /// Record the call and turn the result into the response.
     async fn finish(&self, call: Call, result: Result<Served, AgentFail>) -> Out {
-        if call.admitted {
+        // A probe that never resolved a file (a random id) is rate-limited but not recorded,
+        // so the ledger cannot be filled by guessing.
+        if call.admitted && (result.is_ok() || call.document.is_some()) {
             let (outcome, bytes_out) = match &result {
                 Ok(served) => ("ok", served.bytes),
                 Err(error) => (error.agent_code(), 0),
@@ -408,6 +417,7 @@ async fn files(
             .fetch_one(&mut *admitted.db)
             .await?;
         drop(admitted.db);
+        let permit = admitted._permit;
         let entries: Vec<FileEntry> = rows
             .into_iter()
             .filter_map(|(id, title, kind, role, rev)| {
@@ -424,6 +434,7 @@ async fn files(
             .collect();
         let format = ctx.format;
         let body = compute(move || {
+            let _permit = permit;
             engine_agent::files::files(&entries, &opts).map(|r| render(r, Tool::Files, format))
         })
         .await?;
@@ -1028,9 +1039,11 @@ async fn diff_tool(
     let from_state = state::load(&ctx.state.agent_cache, &mut admitted.db, &earlier).await?;
     let to_state = state::load(&ctx.state.agent_cache, &mut admitted.db, &later).await?;
     drop(admitted.db);
+    let permit = admitted._permit;
     let meta = file_meta(&later, kind);
     let format = ctx.format;
     let body = compute(move || {
+        let _permit = permit;
         engine_agent::diff::diff(&meta, from, &from_state, &to_state, &opts)
             .map(|r| render(r, Tool::Diff, format))
     })

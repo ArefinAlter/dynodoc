@@ -1118,6 +1118,13 @@ async fn with_the_gateway_off_every_agent_route_is_absent(pool: PgPool) {
         .code(),
         200
     );
+    // The public OpenAPI document advertises the feature only while it is on.
+    let spec_off = raw(&off, "GET", "/openapi.json", None, &[], None).await;
+    assert_eq!(spec_off.code(), 200);
+    let spec_off = spec_off.text();
+    assert!(!spec_off.contains("/agent/") && !spec_off.contains("dynodoc-agent"));
+    let spec_on = raw(&on.app, "GET", "/openapi.json", None, &[], None).await;
+    assert!(spec_on.text().contains("/agent/files"));
     on.close().await;
 }
 
@@ -2002,7 +2009,8 @@ async fn reads_write_nothing_but_call_metadata(pool: PgPool) {
     // Nothing but the ledger changed.
     assert_eq!(footprint(&w).await, before, "a read changed state");
     assert_eq!(heads(&w).await, heads_before);
-    assert_eq!(calls(&w).await - calls_before, sent.len() as i64);
+    // The request for a file that does not exist is admitted but not recorded.
+    assert_eq!(calls(&w).await - calls_before, sent.len() as i64 - 1);
 
     // The ledger holds metadata only.
     let rows: Vec<Value> =
@@ -2059,7 +2067,7 @@ async fn reads_write_nothing_but_call_metadata(pool: PgPool) {
             by_tool("diff"),
             by_tool("status")
         ),
-        (1, 3, 3, 1, 1, 1)
+        (1, 2, 3, 1, 1, 1)
     );
     for r in &rows {
         assert_eq!(r["principal_id"], json!(w.owner));
@@ -2080,9 +2088,10 @@ async fn reads_write_nothing_but_call_metadata(pool: PgPool) {
         .map(|r| r["outcome"].as_str().unwrap())
         .collect();
     assert!(
+        // Failures of a resolved file are recorded; a guessed file id is not.
         outcomes.contains(&"ok")
-            && outcomes.contains(&"not_found")
-            && outcomes.contains(&"unknown_ref"),
+            && outcomes.contains(&"unknown_ref")
+            && !outcomes.contains(&"not_found"),
         "{outcomes:?}"
     );
     let ok_bytes: i64 = rows
@@ -2139,6 +2148,53 @@ async fn reads_write_nothing_but_call_metadata(pool: PgPool) {
         owner_error.to_string().contains("immutable"),
         "{owner_error}"
     );
+    w.close().await;
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn guessed_files_leave_no_ledger_row_and_old_rows_can_be_pruned(pool: PgPool) {
+    let w = World::new(pool, true).await;
+    let doc = policy(&w).await;
+    let (_, token) = w.owner_reader().await;
+    // A request that never resolved a file is not recorded, however often it is made.
+    let guess = Uuid::new_v4();
+    for _ in 0..3 {
+        let reply = get(&w.app, &w.url(&format!("/files/{guess}/outline")), &token).await;
+        assert_eq!(reply.code(), 404);
+    }
+    assert_eq!(calls(&w).await, 0);
+    // A real file is.
+    assert_eq!(
+        get(&w.app, &w.url(&format!("/files/{doc}/outline")), &token)
+            .await
+            .code(),
+        200
+    );
+    assert_eq!(calls(&w).await, 1);
+
+    // The runtime role cannot delete a row at all; the owner role cannot delete a recent
+    // one, but can prune one past the 90-day window.
+    let runtime_delete = sqlx::query("delete from agent_call")
+        .execute(&w.runtime.pool)
+        .await;
+    assert!(runtime_delete.is_err());
+    let recent = sqlx::query("delete from agent_call")
+        .execute(&w.runtime.owner)
+        .await
+        .unwrap_err();
+    assert!(recent.to_string().contains("immutable"), "{recent}");
+    // `at` cannot be edited (the row is immutable), so age a copy of the row instead.
+    sqlx::query("insert into agent_call(at,principal_id,key_id,project_id,document_id,tool,rev,request_digest,bytes_out,tok_est,outcome) select now() - interval '91 days',principal_id,key_id,project_id,document_id,tool,rev,request_digest,bytes_out,tok_est,outcome from agent_call")
+        .execute(&w.runtime.owner)
+        .await
+        .unwrap();
+    assert_eq!(calls(&w).await, 2);
+    let pruned = sqlx::query("delete from agent_call where at < now() - interval '90 days'")
+        .execute(&w.runtime.owner)
+        .await
+        .unwrap();
+    assert_eq!(pruned.rows_affected(), 1);
+    assert_eq!(calls(&w).await, 1);
     w.close().await;
 }
 

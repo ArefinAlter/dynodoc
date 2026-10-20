@@ -493,6 +493,39 @@ fn ambiguous_refs_name_their_candidates() {
     assert_eq!(ok.data.n, 2);
 }
 
+#[test]
+fn the_same_block_asked_for_twice_is_read_once() {
+    let mut b = fixtures::Builder::new(FileKind::Document, "duplicates", 0xD5);
+    let root = b.node(
+        engine_shared::NodeType::Form,
+        None,
+        0,
+        json!({"label": "t"}),
+    );
+    let id = "01K7Q9XM2A0000000000XAB123";
+    b.apply(engine_shared::EventPayload::NodeCreated {
+        node_id: NodeId(id.into()),
+        node_type: engine_shared::NodeType::Item,
+        parent_id: Some(root.clone()),
+        pos: "00000000".into(),
+        fields: json!({"label": "x", "content": fixtures::para("x")}),
+        var_name: None,
+    });
+    let fx = b.snapshot();
+    // The full id, the short ref, and its lower-case spelling are one address.
+    let r = read(
+        &fx.meta,
+        &fx.state,
+        &ReadOptions {
+            refs: vec![id.into(), id.into(), "XAB123".into(), "xab123".into()],
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(r.data.n, 1);
+    assert_eq!(r.data.items.len(), 1);
+}
+
 // ---------------------------------------------------------------- budgets and paging
 
 fn rows_of(text: &str, depth: u8) -> Vec<parse::OutlineRow> {

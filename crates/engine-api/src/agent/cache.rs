@@ -44,7 +44,12 @@ struct Entry {
     state: Arc<DocumentState>,
     bytes: usize,
     used: u64,
+    born: std::time::Instant,
 }
+
+/// An entry older than this is dropped on its next use, so erased or rewritten text cannot
+/// linger in a process that never saw the erasure.
+pub const MAX_AGE: std::time::Duration = std::time::Duration::from_secs(300);
 
 #[derive(Default)]
 struct Inner {
@@ -89,6 +94,13 @@ impl StateCache {
             inner.misses += 1;
             return None;
         };
+        if entry.born.elapsed() > MAX_AGE {
+            if let Some(old) = inner.entries.remove(key) {
+                inner.bytes -= old.bytes;
+            }
+            inner.misses += 1;
+            return None;
+        }
         entry.used = tick;
         let state = entry.state.clone();
         inner.hits += 1;
@@ -123,7 +135,15 @@ impl StateCache {
         inner.tick += 1;
         let used = inner.tick;
         inner.bytes += bytes;
-        inner.entries.insert(key, Entry { state, bytes, used });
+        inner.entries.insert(
+            key,
+            Entry {
+                state,
+                bytes,
+                used,
+                born: std::time::Instant::now(),
+            },
+        );
         true
     }
 
@@ -186,6 +206,22 @@ mod tests {
         assert!(cache.get(&other_chain).is_none());
         assert!(cache.get(&key(1, 4)).is_none());
         assert_eq!(cache.usage(), (1, 100));
+    }
+
+    #[test]
+    fn an_entry_older_than_the_maximum_age_is_dropped_on_its_next_use() {
+        let cache = StateCache::default();
+        assert!(cache.insert(key(1, 3), state(), 100));
+        // Age the entry past the limit without waiting for it.
+        {
+            let mut inner = cache.0.lock().unwrap();
+            let entry = inner.entries.get_mut(&key(1, 3)).unwrap();
+            entry.born = std::time::Instant::now()
+                .checked_sub(MAX_AGE + std::time::Duration::from_secs(1))
+                .expect("the monotonic clock has run for longer than the maximum age");
+        }
+        assert!(cache.get(&key(1, 3)).is_none());
+        assert_eq!(cache.usage(), (0, 0));
     }
 
     #[test]
