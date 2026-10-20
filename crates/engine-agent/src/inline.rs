@@ -210,7 +210,7 @@ impl Runs {
 
     /// The container with its `content` rebuilt from the cells (adjacent characters of one
     /// style form one `text` node, as `richtext::apply_patch` builds them).
-    pub fn into_container(&self, container: &Value) -> Value {
+    pub fn to_container(&self, container: &Value) -> Value {
         let mut children: Vec<Value> = Vec::new();
         let mut run: Option<(usize, String)> = None;
         let flush =
@@ -353,7 +353,7 @@ fn placeholders(runs: &Runs, objects: &[&Value]) -> Vec<String> {
     if objects.is_empty() {
         return Vec::new();
     }
-    let container = runs.into_container(&json!({"type": "paragraph"}));
+    let container = runs.to_container(&json!({"type": "paragraph"}));
     let (inline, _) = inline_of(&container, false);
     inline
         .segs
@@ -630,7 +630,7 @@ mod tests {
 
     /// Apply an edit the way the compiler does: rebuild, make_patch, apply the patch.
     fn edited(before: &Value, after: &Runs) -> Value {
-        let after = after.into_container(before);
+        let after = after.to_container(before);
         let patch = make_patch(before, &after).expect("a checked patch exists");
         let applied = apply_patch(before, &patch).unwrap();
         assert_eq!(applied, after);
@@ -689,23 +689,23 @@ mod tests {
         // after "Bold" is part of the bold run, so the new "!" lands inside it.
         let a = runs.set_text("Bold! plain text").unwrap().unwrap();
         assert_eq!(
-            spans(&a.into_container(&before)),
+            spans(&a.to_container(&before)),
             [("Bold! ".into(), true), ("plain text".into(), false)]
         );
         let a = runs.set_text("Bold plain text!").unwrap().unwrap();
         assert_eq!(
-            spans(&a.into_container(&before)),
+            spans(&a.to_container(&before)),
             [("Bold ".into(), true), ("plain text!".into(), false)]
         );
         // At the start of the block: the following retained character.
         let a = runs.set_text(">>Bold plain text").unwrap().unwrap();
         assert_eq!(
-            spans(&a.into_container(&before))[0],
+            spans(&a.to_container(&before))[0],
             (">>Bold ".to_string(), true)
         );
         // The whole text replaced: the dominant run (plain, 10 characters against 5).
         let a = runs.set_text("zzz").unwrap().unwrap();
-        assert_eq!(spans(&a.into_container(&before)), [("zzz".into(), false)]);
+        assert_eq!(spans(&a.to_container(&before)), [("zzz".into(), false)]);
         // Deleting everything leaves an empty container.
         let a = runs.set_text("").unwrap().unwrap();
         let p = edited(&before, &a);
@@ -731,7 +731,7 @@ mod tests {
             .set_text("one\ntwo")
             .unwrap()
             .unwrap();
-        let p = a.into_container(&before);
+        let p = a.to_container(&before);
         assert_eq!(
             p["content"],
             json!([run("one", None), {"type": "hardBreak"}, run("two", None)])
@@ -746,10 +746,7 @@ mod tests {
             .set_text("a\nb")
             .unwrap()
             .unwrap();
-        assert_eq!(
-            a.into_container(&code)["content"],
-            json!([run("a\nb", None)])
-        );
+        assert_eq!(a.to_container(&code)["content"], json!([run("a\nb", None)]));
     }
 
     #[test]
@@ -784,7 +781,7 @@ mod tests {
             .set_text("Look⟦fn:N1⟧ and then ⟦math:a^2⟧!")
             .unwrap()
             .unwrap();
-        let p = a.into_container(&before);
+        let p = a.to_container(&before);
         let kinds: Vec<&str> = p["content"]
             .as_array()
             .unwrap()

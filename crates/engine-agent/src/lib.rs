@@ -156,6 +156,7 @@
 
 pub mod a1;
 pub mod budget;
+pub mod compile;
 pub mod corpus;
 pub mod dct;
 pub mod diff;

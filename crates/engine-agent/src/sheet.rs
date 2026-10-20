@@ -35,22 +35,7 @@ impl<'a> SheetView<'a> {
             .copied()
             .filter(|n| n.node_type == "item")
             .collect();
-        let mut cols = 0usize;
-        for row in &rows {
-            if let Some(obj) = row.current_fields.as_object() {
-                for (k, v) in obj {
-                    let Some(n) = k
-                        .strip_prefix("cell_")
-                        .and_then(|n| n.parse::<usize>().ok())
-                    else {
-                        continue;
-                    };
-                    if n < usize::from(MAX_COLS) && !field_string(v).is_empty() {
-                        cols = cols.max(n + 1);
-                    }
-                }
-            }
-        }
+        let cols = used_cols(&rows);
         Self {
             node,
             name: field_string(&node.current_fields["label"]),
@@ -94,6 +79,27 @@ impl<'a> SheetView<'a> {
             .as_array()
             .map_or(0, Vec::len)
     }
+}
+
+/// Highest non-empty `cell_N` index plus one over `rows` (the width of a sheet as read).
+pub fn used_cols(rows: &[&MaterializedNode]) -> usize {
+    let mut cols = 0usize;
+    for row in rows {
+        if let Some(obj) = row.current_fields.as_object() {
+            for (k, v) in obj {
+                let Some(n) = k
+                    .strip_prefix("cell_")
+                    .and_then(|n| n.parse::<usize>().ok())
+                else {
+                    continue;
+                };
+                if n < usize::from(MAX_COLS) && !field_string(v).is_empty() {
+                    cols = cols.max(n + 1);
+                }
+            }
+        }
+    }
+    cols
 }
 
 /// A sheet by name (exact) or by ref. A name wins over a ref spelled the same.

@@ -41,6 +41,8 @@ fn rust_reproduces_every_typescript_case() {
 }
 
 #[test]
+// The mirror's newer Clippy prefers is_multiple_of, which the 1.85 baseline lacks.
+#[allow(clippy::manual_is_multiple_of)]
 fn rust_reproduces_every_typescript_chain() {
     let v = vectors();
     let mut longest_of_all = 0;
