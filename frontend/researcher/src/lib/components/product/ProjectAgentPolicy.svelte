@@ -218,13 +218,15 @@
         </p>
       {/if}
 
+      <!-- No role here: the project page already has its own status region, and a second one
+           would be announced twice. -->
       <div aria-live="polite" class="live">
         {#if notice}<p class="repo-notice">{notice}</p>{/if}
       </div>
       {#if error}<p class="repo-alert" role="alert">{error}</p>{/if}
 
       {#if loadState === 'loading'}
-        <p role="status">Loading AI agent settings…</p>
+        <p class="repo-muted">Loading AI agent settings…</p>
       {:else if loadState !== 'unavailable'}
         {#if loadState === 'ready' && policy}
           <form
@@ -365,7 +367,7 @@
 
         <h4 id={`${uid}-usage`}>Usage, last 7 days</h4>
         {#if usageState === 'loading'}
-          <p role="status">Loading usage…</p>
+          <p class="repo-muted">Loading usage…</p>
         {:else if usageState === 'failed'}
           <p class="repo-alert" role="alert">{usageError}</p>
         {:else if !days.length}

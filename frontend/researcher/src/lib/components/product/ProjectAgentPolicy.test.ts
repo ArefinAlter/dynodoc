@@ -182,7 +182,9 @@ describe('ProjectAgentPolicy: reading the settings', () => {
       const named = control.closest('label') || control.getAttribute('aria-label');
       expect(named, control.outerHTML).toBeTruthy();
     }
-    expect(target.querySelector('[aria-live="polite"]')).toBeTruthy();
+    // A polite live region without a role: the project page has its own status region.
+    expect(target.querySelector('div.live')?.getAttribute('aria-live')).toBe('polite');
+    expect(target.querySelector('[role="status"]')).toBeNull();
     expect(target.querySelector('form')?.getAttribute('aria-label')).toBe('AI agent settings');
     expect(sw().getAttribute('role')).toBe('switch');
   });
