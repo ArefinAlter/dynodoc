@@ -17,6 +17,8 @@ const device = (extra: Partial<DeviceKey> = {}): DeviceKey => ({
   registeredAt: '2026-10-13T09:00:00Z',
   revokedAt: null,
   projectAccess: 'granted',
+  keyClass: 'person',
+  label: null,
   grants: [],
   ...extra
 });
@@ -248,5 +250,104 @@ describe('DeviceKeyAccess', () => {
     await render({ device: device({ grants: [boardGrant] }), grantLimit: 1 });
     expect(button(/Add project/)).toBeUndefined();
     expect(target.textContent).toContain('limit of 1 project grants');
+  });
+
+  it('says nothing about AI agents on a person’s key', async () => {
+    await render({ device: device({ grants: [boardGrant] }) });
+    expect(target.textContent).not.toContain('For an AI agent');
+    expect(target.textContent).not.toContain('Read documents');
+  });
+});
+
+describe('DeviceKeyAccess for an AI agent’s key', () => {
+  const agent = (extra: Partial<DeviceKey> = {}) =>
+    device({ keyClass: 'agent', label: 'Claude', ...extra });
+  const readGrant = { ...boardGrant, scopes: ['content:read'] as typeof boardGrant.scopes };
+
+  it('says plainly what an agent key allows and what it does not', async () => {
+    await render({ device: agent() });
+    const text = (target.textContent ?? '').replace(/\s+/g, ' ');
+    expect(text).toContain('For an AI agent.');
+    expect(text).toMatch(/only read documents/);
+    expect(text).toMatch(/owner or manager has turned on AI agents/);
+    expect(text).toMatch(/can only ever propose changes, which a person reviews/);
+    expect(text).toMatch(/in this release it can only read/);
+    expect(text).toMatch(/take its access away at any time/);
+    expect(text).toMatch(/sent to the AI service/);
+    // It never claims the agent is safe, private or end to end.
+    expect(text).not.toMatch(/end-to-end|safe|secure/i);
+    expect(text).toContain("This key can't read any project yet.");
+  });
+
+  it('offers the one agent permission and never a person’s permissions', async () => {
+    await render({ device: agent() });
+    await click(button('Add project to key ab12cd34'));
+    expect(target.textContent).toContain('Permission: Read documents');
+    expect(target.textContent).toMatch(/Read only/);
+    expect(target.querySelectorAll('input[type="checkbox"]')).toHaveLength(0);
+    for (const person of ['Read project data', 'Read history', 'Write history', 'Review'])
+      expect(target.textContent).not.toContain(person);
+    expect(target.textContent).not.toContain('The command line needs');
+  });
+
+  it('grants a project with the agent scope and nothing else', async () => {
+    const { calls, onChanged } = await render({ device: agent() });
+    await click(button('Add project to key ab12cd34'));
+    const select = target.querySelector('select') as HTMLSelectElement;
+    select.value = LAUNCH;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    await click(button('Save grant'));
+    expect(calls).toEqual([
+      {
+        method: 'PUT',
+        path: `/devices/${KEY}/projects/${LAUNCH}`,
+        body: { scopes: ['content:read'] }
+      }
+    ]);
+    expect(onChanged).toHaveBeenCalledTimes(1);
+    expect(target.querySelector('.repo-notice')?.textContent).toContain('Launch plan');
+  });
+
+  it('shows a grant as Read documents, with nothing to change but removing it', async () => {
+    const { calls } = await render({ device: agent({ grants: [readGrant] }) });
+    expect(target.querySelector('ul.chips')?.textContent).toContain('Read documents');
+    expect(target.querySelector('ul.chips')?.textContent).not.toContain('history');
+    expect(button(/^Change permissions/)).toBeUndefined();
+    await click(button(/^Revoke grant for Board packs/));
+    expect(calls).toEqual([
+      { method: 'DELETE', path: `/devices/${KEY}/projects/${BOARD}`, body: undefined }
+    ]);
+  });
+
+  it('never offers the all-projects mode, even for a key stored in that mode', async () => {
+    await render({ device: agent({ projectAccess: 'all', grants: [readGrant] }) });
+    expect(target.textContent).toContain('Only projects you grant');
+    expect(target.textContent).not.toContain('All projects you can access');
+    expect(target.textContent).not.toContain('Not used while all projects are allowed');
+    expect(button(/Allow all projects/)).toBeUndefined();
+    expect(button(/Use only granted projects/)).toBeUndefined();
+    expect(button(/^Add project/)).toBeTruthy();
+  });
+
+  it('turns the server’s refusal of a mixed key into a plain sentence', async () => {
+    await render({ device: agent() }, () =>
+      json(
+        {
+          error: 'bad request',
+          details: { reason: 'An agent key can hold only the content:read scope' }
+        },
+        400
+      )
+    );
+    await click(button('Add project to key ab12cd34'));
+    const select = target.querySelector('select') as HTMLSelectElement;
+    select.value = LAUNCH;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    await click(button('Save grant'));
+    expect(target.querySelector('[role="alert"]')?.textContent).toBe(
+      'A key for an AI agent can only be given Read documents.'
+    );
   });
 });

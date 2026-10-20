@@ -1,19 +1,25 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  AGENT_SCOPES,
   DeviceError,
   ProofFileError,
   SCOPES,
   accessRequest,
   deviceMessage,
+  enrollKey,
+  enrollRequest,
   grantRequest,
   grantableProjects,
   isUnavailable,
+  labelProblem,
   normalizeScopes,
   parseProjectChoices,
   parseRegistry,
   revokeGrantRequest,
+  scopeClass,
   scopeLabel,
   scopeUsable,
+  scopesFor,
   shortKey,
   unusableScopes
 } from './device-grants';
@@ -259,5 +265,163 @@ describe('deviceMessage', () => {
 describe('shortKey', () => {
   it('names a key by its first eight characters', () => {
     expect(shortKey(PUBLIC)).toBe('ab12cd34');
+  });
+});
+
+describe('keys for an AI agent', () => {
+  it('has one agent scope, kept apart from a person’s scopes', () => {
+    expect(AGENT_SCOPES.map((s) => s.id)).toEqual(['content:read']);
+    expect(scopeLabel('content:read')).toBe('Read documents');
+    expect(scopesFor('agent')).toBe(AGENT_SCOPES);
+    expect(scopesFor('person')).toBe(SCOPES);
+    expect(SCOPES.map((s) => s.id)).not.toContain('content:read');
+    expect(scopeClass('content:read')).toBe('agent');
+    expect(scopeClass('history:write')).toBe('person');
+    expect(scopeClass('something:new')).toBeNull();
+    expect(normalizeScopes(['content:read', 'history:read', 'content:read'])).toEqual([
+      'history:read',
+      'content:read'
+    ]);
+  });
+  it('reads the class and name of each key, and treats a missing class as a person', () => {
+    const old = key({ id: 'old' });
+    const parsed = parseRegistry(
+      registry([
+        key({
+          class: 'agent',
+          label: '  Claude on my laptop ',
+          grants: [
+            {
+              project_id: PROJECT,
+              project_name: 'Board packs',
+              role: 'viewer',
+              scopes: ['content:read'],
+              created_at: '2026-10-20T09:30:00Z'
+            }
+          ]
+        }),
+        key({ id: 'blank', class: 'person', label: '   ' }),
+        key({ id: 'odd', class: 'robot' }),
+        old
+      ])
+    );
+    expect(parsed?.keys.map((k) => [k.keyClass, k.label])).toEqual([
+      ['agent', 'Claude on my laptop'],
+      ['person', null],
+      ['person', null],
+      ['person', null]
+    ]);
+    expect(parsed?.keys[0].grants[0].scopes).toEqual(['content:read']);
+  });
+  it('checks a key name the way the server does', () => {
+    expect(labelProblem('Claude on my laptop')).toBeNull();
+    expect(labelProblem('x'.repeat(80))).toBeNull();
+    expect(labelProblem('é'.repeat(80))).toBeNull();
+    expect(labelProblem('x'.repeat(81))).toMatch(/at most 80/);
+    expect(labelProblem('   ')).toMatch(/name/i);
+    expect(labelProblem('two\nlines')).toMatch(/control characters/);
+  });
+  it('sends a person’s proof exactly as before, and adds class and name for an agent', () => {
+    const proof = { challenge: { id: 'c' }, signature: 'ab' };
+    expect(enrollRequest(proof).body).toBe(proof);
+    expect(enrollRequest(proof, { keyClass: 'person', label: 'ignored' }).body).toBe(proof);
+    expect(enrollRequest(proof, { keyClass: 'agent', label: '  Claude  ' })).toEqual({
+      method: 'POST',
+      path: '/devices',
+      body: { challenge: { id: 'c' }, signature: 'ab', class: 'agent', label: 'Claude' }
+    });
+    expect(enrollRequest(proof, { keyClass: 'agent', label: ' ' }).body).toEqual({
+      ...proof,
+      class: 'agent'
+    });
+    // Not an object: nothing to add to, and the server will say it is not a proof.
+    expect(enrollRequest('nope', { keyClass: 'agent', label: 'x' }).body).toBe('nope');
+  });
+  it('builds a grant of the agent scope and refuses to mix it with a person’s scopes', () => {
+    expect(grantRequest(KEY, PROJECT, ['content:read'])).toEqual({
+      method: 'PUT',
+      path: `/devices/${KEY}/projects/${PROJECT}`,
+      body: { scopes: ['content:read'] }
+    });
+    expect(() => grantRequest(KEY, PROJECT, ['content:read', 'history:read'])).toThrow(
+      /never both/
+    );
+  });
+  it('explains the class errors in plain words, never with the server text', () => {
+    const message = (subject: Parameters<typeof deviceMessage>[1], reason: string) =>
+      deviceMessage(new DeviceError(400, reason), subject);
+    expect(message('grant', 'An agent key can hold only the content:read scope')).toBe(
+      'A key for an AI agent can only be given Read documents.'
+    );
+    expect(
+      message('grant', 'content scopes need a key enrolled for an AI agent (class agent)')
+    ).toMatch(/Only a key set up for an AI agent can be given Read documents/);
+    expect(message('grant', 'Choose one or more of project:read')).toBe(
+      'Choose at least one permission for the project.'
+    );
+    expect(message('enroll', 'class must be person or agent')).toMatch(
+      /for you or for an AI agent/
+    );
+    expect(message('enroll', 'A label needs a class')).toMatch(/for you or for an AI agent/);
+    expect(message('enroll', 'label must be 1 to 80 characters without control characters')).toBe(
+      'The key name must be 1 to 80 characters, with no line breaks.'
+    );
+    expect(message('enroll', 'something else')).toMatch(/proof was not accepted/);
+    expect(deviceMessage(new DeviceError(422, ''), 'enroll')).toMatch(/may not be available/);
+    expect(deviceMessage(new DeviceError(422, ''), 'grant')).toMatch(/did not understand/);
+    for (const text of [
+      message('grant', 'An agent key can hold only the content:read scope'),
+      message('enroll', 'class must be person or agent')
+    ])
+      expect(text).not.toMatch(/content:read|class must/);
+  });
+});
+
+describe('enrollKey', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const reply = (body: unknown) =>
+    vi.fn(
+      async () =>
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+    );
+  it('posts the proof with the agent choice and reads the class back', async () => {
+    const fetchMock = reply({
+      id: KEY,
+      public_key: PUBLIC,
+      project_access: 'granted',
+      class: 'agent'
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const enrolled = await enrollKey(
+      { challenge: { id: 'c' }, signature: 'ab' },
+      { keyClass: 'agent', label: 'Claude' }
+    );
+    expect(enrolled).toEqual({
+      id: KEY,
+      publicKey: PUBLIC,
+      projectAccess: 'granted',
+      keyClass: 'agent'
+    });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/engine/devices');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({
+      challenge: { id: 'c' },
+      signature: 'ab',
+      class: 'agent',
+      label: 'Claude'
+    });
+  });
+  it('sends nothing extra for a person’s key, and treats a missing class as a person', async () => {
+    const fetchMock = reply({ id: KEY, public_key: PUBLIC, project_access: 'granted' });
+    vi.stubGlobal('fetch', fetchMock);
+    const proof = { challenge: { id: 'c' }, signature: 'ab' };
+    const enrolled = await enrollKey(proof, { keyClass: 'person', label: '' });
+    expect(enrolled.keyClass).toBe('person');
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual(proof);
   });
 });
