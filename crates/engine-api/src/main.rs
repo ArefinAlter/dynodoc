@@ -9,7 +9,7 @@
 use std::net::SocketAddr;
 
 use anyhow::Context as _;
-use engine_api::{app, AppState, AuthConfig};
+use engine_api::{app, config::StartupConfig, AppState};
 use sqlx::postgres::PgPoolOptions;
 
 #[tokio::main]
@@ -21,13 +21,13 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
-    // Fail before connecting: missing configuration is never a dev bypass.
-    let config = load_auth_config()?;
-    if std::env::var_os("MIGRATION_DATABASE_URL").is_some() {
-        anyhow::bail!("MIGRATION_DATABASE_URL must not be present in the API environment");
-    }
-    let database_url =
-        std::env::var("DATABASE_URL").context("DATABASE_URL is not set (see .env / SETUP.md)")?;
+    // Fail before connecting, listing every configuration problem at once: missing
+    // configuration is never a dev bypass.
+    let StartupConfig {
+        auth: config,
+        database_url,
+        retention,
+    } = StartupConfig::from_env()?;
     let pool = PgPoolOptions::new()
         .max_connections(8)
         .acquire_timeout(std::time::Duration::from_secs(5))
@@ -44,7 +44,7 @@ async fn main() -> anyhow::Result<()> {
                 Ok(())
             })
         })
-        .connect(&database_url)
+        .connect(database_url.expose())
         .await
         .context("could not connect to Postgres")?;
 
@@ -68,6 +68,8 @@ async fn main() -> anyhow::Result<()> {
     }
     // Copy detection runs beside the edit path, never inside it.
     engine_api::copies::spawn(state.clone());
+    // Expired sign-in rows and old metrics are pruned on one replica at a time.
+    let _ = engine_api::retention::spawn(state.clone(), retention);
 
     let host = std::env::var("API_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
     let port: u16 = std::env::var("API_PORT")
@@ -80,40 +82,4 @@ async fn main() -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app(state)).await?;
     Ok(())
-}
-
-/// Load the auth configuration from the environment (Paseto key + token lifetimes).
-fn load_auth_config() -> anyhow::Result<AuthConfig> {
-    let key_hex = std::env::var("PASETO_LOCAL_KEY")
-        .context("PASETO_LOCAL_KEY is not set (32 bytes, hex-encoded)")?;
-    let key_bytes = hex::decode(key_hex.trim()).context("PASETO_LOCAL_KEY must be hex-encoded")?;
-    let paseto_key: [u8; 32] = key_bytes
-        .as_slice()
-        .try_into()
-        .map_err(|_| anyhow::anyhow!("PASETO_LOCAL_KEY must be 32 bytes (64 hex chars)"))?;
-    if paseto_key == [0u8; 32] {
-        anyhow::bail!("A random PASETO_LOCAL_KEY is required in every environment");
-    }
-
-    let service_key = std::env::var("WEB_SERVICE_KEY").ok();
-    if service_key
-        .as_ref()
-        .is_none_or(|s| s.len() < 32 || s.trim().is_empty())
-    {
-        anyhow::bail!("WEB_SERVICE_KEY of at least 32 characters is required in every environment");
-    }
-
-    let token_ttl_seconds = std::env::var("TOKEN_TTL_SECONDS")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(86_400);
-    let public_base_url = std::env::var("PUBLIC_API_BASE_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:8080".to_string());
-
-    Ok(AuthConfig {
-        paseto_key,
-        service_key,
-        token_ttl_seconds,
-        public_base_url,
-    })
 }
