@@ -369,6 +369,22 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/documents/{id}/agent-policy': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put: operations['agent_file_policy_put'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/documents/{id}/batch': {
     parameters: {
       query?: never;
@@ -1414,6 +1430,54 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/projects/{id}/agent-policy': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations['agent_policy_get'];
+    put: operations['agent_policy_put'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/projects/{id}/agent-policy/kill': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations['agent_policy_kill'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/projects/{id}/agent-usage': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations['agent_usage'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/projects/{id}/agent/access': {
     parameters: {
       query?: never;
@@ -2200,7 +2264,10 @@ export interface components {
     Action: 'preview' | 'create';
     /** @description `access` (`status what=access`). */
     AgentAccess: {
-      /** @description Always null in this version. */
+      /**
+       * @description The grant's budgets in this project: `calls_per_minute` and `read_bytes_per_day`,
+       *     each `{limit, used}`.
+       */
       budget: Record<string, never>;
       capabilities: Record<string, never>;
       project: string;
@@ -2559,6 +2626,31 @@ export interface components {
       node_id: string;
       value: unknown;
     };
+    /** @description A file whose policy is not `inherit`. */
+    FileOverride: {
+      /** @description `none` or `read`. */
+      access: string;
+      /** Format: uuid */
+      document_id: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    FilePolicyBody: {
+      /**
+       * @description `inherit` (the project policy decides), `none` (agents cannot see the file) or
+       *     `read` (accepted for the day writes exist; it never widens the project's policy).
+       */
+      access: string;
+    };
+    FilePolicyView: {
+      access: string;
+      /** @description False when the file already had this value; nothing was written. */
+      changed: boolean;
+      /** Format: uuid */
+      document_id: string;
+      /** Format: uuid */
+      project_id: string;
+    };
     GrantInput: {
       /**
        * Format: int64
@@ -2710,6 +2802,25 @@ export interface components {
       /** @description The caller's project role. */
       role: string;
     };
+    KillView: {
+      /** @description Always false after this call. */
+      enabled: boolean;
+      /** Format: uuid */
+      project_id: string;
+      /**
+       * Format: int64
+       * @description The policy revision now. Every pull is a change of the policy row, so it moves by
+       *     one (the first pull on a project with no saved policy creates the row, revision 1).
+       */
+      revision: number;
+      /**
+       * Format: int64
+       * @description Active agent grants of this project ended by this call.
+       */
+      revoked_grants: number;
+      /** @description Whether the policy was enabled when the switch was pulled. */
+      was_enabled: boolean;
+    };
     LabelChange: {
       color?: string | null;
       description?: string | null;
@@ -2768,6 +2879,82 @@ export interface components {
       parent_id?: string | null;
       pos: string;
       var_name?: string | null;
+    };
+    /**
+     * @description The whole policy; a field left out takes its default (so `enabled` is false unless
+     *     the body says true).
+     */
+    PolicyBody: {
+      /**
+       * Format: int64
+       * @description 1 to 600 (default 60).
+       */
+      calls_per_minute?: number | null;
+      /** @description Master switch. Default false. */
+      enabled?: boolean;
+      /** @description One or more of `document`, `spreadsheet`, `presentation` (default: all three). */
+      kinds?: string[] | null;
+      /** @description `viewer` (default), `contributor`, `reviewer`, `editor`, `manager` or `owner`. */
+      min_role?: string | null;
+      /**
+       * Format: int64
+       * @description 10,000 to 1,000,000,000 (default 20,000,000).
+       */
+      read_bytes_per_day?: number | null;
+    };
+    /** @description The project's agent policy as saved, or the defaults when none was ever saved. */
+    PolicyView: {
+      /**
+       * Format: int32
+       * @description Reads per minute for each agent grant (1 to 600). Default 60.
+       */
+      calls_per_minute: number;
+      /** @description On `PUT`: false when the body equalled the saved policy and nothing was written. */
+      changed?: boolean | null;
+      /**
+       * @description False until an owner or manager first saves a policy. A project with no saved
+       *     policy has agents disabled.
+       */
+      configured: boolean;
+      /** @description Master switch. Default false. */
+      enabled: boolean;
+      /** @description Files with a policy of `none` or `read`, newest first, at most 100. */
+      file_overrides: components['schemas']['FileOverride'][];
+      file_overrides_truncated: boolean;
+      /**
+       * @description Whether this server serves the agent routes at all (`AGENT_GATEWAY=on`). The
+       *     policy can be saved either way; it has no effect while this is false.
+       */
+      gateway: boolean;
+      /**
+       * Format: date-time
+       * @description When the kill switch was last pulled (null if never). Agent sessions issued before
+       *     it are refused, whatever is granted or enabled afterwards.
+       */
+      killed_at?: string | null;
+      /** @description File kinds agents may read: any of `document`, `spreadsheet`, `presentation`. */
+      kinds: string[];
+      /**
+       * @description Lowest project role whose agents may read: `viewer`, `contributor`, `reviewer`,
+       *     `editor`, `manager` or `owner`. Default `viewer` (every member).
+       */
+      min_role: string;
+      /** Format: uuid */
+      project_id: string;
+      /**
+       * Format: int64
+       * @description Response bytes per UTC day for each agent grant (10,000 to 1,000,000,000).
+       *     Default 20,000,000.
+       */
+      read_bytes_per_day: number;
+      /**
+       * Format: int64
+       * @description Zero until the first save; then increases by one with every change. Send it back
+       *     in `If-Match`.
+       */
+      revision: number;
+      /** Format: date-time */
+      updated_at?: string | null;
     };
     RecoveryRequest: {
       /** @description Preview by default. Create makes a private draft, never a canonical edit. */
@@ -2835,6 +3022,45 @@ export interface components {
       detail: unknown;
       suggestion_id?: string | null;
       target_node_id?: string | null;
+    };
+    /** @description One day of one client claim. */
+    UsageRow: {
+      /** Format: int64 */
+      bytes_out: number;
+      /** Format: int64 */
+      calls: number;
+      /**
+       * @description The caller's own `X-Dynodoc-Client` claim (null when it sent none). Untrusted
+       *     text; never used for authorisation.
+       */
+      client?: string | null;
+      /**
+       * Format: date
+       * @description UTC calendar day.
+       */
+      day: string;
+      /**
+       * Format: int64
+       * @description Calls the policy or a grant check refused (`forbidden`, `policy_denied`,
+       *     `budget_exceeded`).
+       */
+      denials: number;
+      /**
+       * Format: int64
+       * @description Calls that failed for another reason (bad request, replay failure and so on).
+       */
+      errors: number;
+    };
+    UsageView: {
+      /** Format: date */
+      from: string;
+      /** @description Newest day first, then most calls; at most 500. */
+      items: components['schemas']['UsageRow'][];
+      /** Format: uuid */
+      project_id: string;
+      /** Format: date */
+      to: string;
+      truncated: boolean;
     };
   };
   responses: never;
@@ -3871,6 +4097,61 @@ export interface operations {
       };
       /** @description Refresh the current revision */
       409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  agent_file_policy_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description File */
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['FilePolicyBody'];
+      };
+    };
+    responses: {
+      /** @description The file's agent access. none hides the file from agents entirely (404 on every agent route, absent from the listing and the 8-character lookup) and purges its cached state. A file override can only narrow the project policy. Audited (agent.file_policy.changed) when it changes. Needs the file's owner or a project manager */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['FilePolicyView'];
+        };
+      };
+      /** @description access is not inherit, none or read */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Account sign-in required; a device, agent or connector token is refused */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The caller can open the file but is neither its owner nor a manager */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description No such file, or not one the caller can open, or not in a project */
+      404: {
         headers: {
           [name: string]: unknown;
         };
@@ -6597,6 +6878,194 @@ export interface operations {
       };
       /** @description Deadline exceeded */
       504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  agent_policy_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Project */
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The project's agent policy (agents are disabled until an owner or manager enables them; configured=false means none was ever saved). Sets ETag to the revision. Works whether or not the agent gateway is switched on; gateway says which */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PolicyView'];
+        };
+      };
+      /** @description Account sign-in required; a device, agent or connector token is refused */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Not a project owner or manager (the same answer for a non-member and an unknown project) */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  agent_policy_put: {
+    parameters: {
+      query?: never;
+      header: {
+        /** @description The revision from the last read, for example "3"; 0 when no policy was saved. Required */
+        'If-Match': string;
+      };
+      path: {
+        /** @description Project */
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PolicyBody'];
+      };
+    };
+    responses: {
+      /** @description The saved policy (full replacement; a field left out takes its default). changed=false and nothing written when it equalled the saved policy. Each effective change writes an audit row (agent.policy.changed) with the changed fields before and after. Disabling purges the project's cached document states */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PolicyView'];
+        };
+      };
+      /** @description If-Match missing or malformed, or a value out of range */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Account sign-in required; a device, agent or connector token is refused */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Not a project owner or manager */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The policy changed since the revision in If-Match */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Malformed body or an unknown field */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  agent_policy_kill: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Project */
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Agents are disabled for the project and every active grant of an agent key for it is revoked, in one transaction, and the project's cached document states are purged. Takes effect on the very next agent request. Every agent session issued before the call is refused for good (sessions are stateless tokens, so this is recorded as a cut-off time on the policy, killed_at): enabling the policy or granting a key again restores none of them, and the key holders must grant again and open a new session. Each pull moves the policy revision and is audited (agent.killswitch, plus device.grant.revoked per grant); pulling it again is harmless */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['KillView'];
+        };
+      };
+      /** @description Account sign-in required; a device, agent or connector token is refused */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Not a project owner or manager */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  agent_usage: {
+    parameters: {
+      query?: {
+        /** @description First UTC day, YYYY-MM-DD (default: six days before to) */
+        from?: string;
+        /** @description Last UTC day, inclusive (default: today) */
+        to?: string;
+      };
+      header?: never;
+      path: {
+        /** @description Project */
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Calls, response bytes and denials of the project's agent grants by UTC day and client claim, from the call ledger (metadata only: no document text, title or request value). The range is at most 31 days and 500 rows */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['UsageView'];
+        };
+      };
+      /** @description Bad date, from after to, or a range over 31 days */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Account sign-in required; a device, agent or connector token is refused */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Not a project owner or manager */
+      403: {
         headers: {
           [name: string]: unknown;
         };

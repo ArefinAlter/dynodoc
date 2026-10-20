@@ -6,9 +6,10 @@ It covers Claude Code and Claude Desktop. 20 October 2026.
 > **Status.** The part that runs on your computer is built: the `engine-cli mcp` program
 > and the Claude Code plugin ([integrations/claude-code/dynodoc](../integrations/claude-code/dynodoc)).
 > The Dynodoc server side is built separately and is switched off until your operator turns
-> the agent connector on. Two screens in the Dynodoc web app that this guide mentions
-> ("Use for an AI agent" and the read-access tick box) are **not built yet**; each step says
-> so where it matters. Nothing here has been tried with a real Claude client yet. Vendor
+> the agent connector on, and then stays off for each project until that project's owner
+> turns agents on (step 0). Three screens in the Dynodoc web app that this guide mentions
+> ("Use for an AI agent", the read-access tick box and the owner's agent settings) are **not
+> built yet**; each step says so where it matters. Nothing here has been tried with a real Claude client yet. Vendor
 > details that could not be checked offline are marked **unverified: check at build time**.
 > Design background: [AI-AGENT-CONNECTORS.md](AI-AGENT-CONNECTORS.md).
 
@@ -53,7 +54,61 @@ You need:
    (release packaging).
 3. Your operator has switched the agent connector on for your Dynodoc installation (the
    server setting `AGENT_GATEWAY=on`). Ask them; it is off by default.
-4. Claude Code, or Claude Desktop, installed.
+4. An owner or manager of the project has turned agents on for it (step 0). That is a
+   different person's decision if you are not an owner or manager yourself.
+5. Claude Code, or Claude Desktop, installed.
+
+## Step 0. A project owner turns agents on
+
+Agents are **off in every project** until an owner or manager of that project turns them on.
+Until then even a correctly made key reads nothing: every request is refused, with the same
+plain "no access" answer you would get if you were not a member. Nobody else can make this
+choice for the project: not a member, not the agent itself, not the person who made the key.
+Switching the connector on for the installation (the operator's setting) does not turn on any
+project.
+
+What the owner or manager decides, in plain words:
+
+- **On or off.** The master switch. New projects start off.
+- **Who.** The lowest project role whose assistants may read. The default is everyone,
+  viewers included. Choosing, say, "editor" means a viewer's key reads nothing.
+- **Which kinds of files.** Documents, spreadsheets, presentations, or any mix.
+- **How much.** Reads per minute (default 60) and bytes per day (default 20 million) for each
+  key, so one runaway assistant cannot pull a whole project. Past the limit Claude is told to
+  wait, and the wait ends by itself.
+- **Single files.** A file can be hidden from assistants altogether (for example a
+  contract) while the rest of the project stays open. A hidden file looks, to the assistant,
+  as if it did not exist. The owner of the file, or a manager, can do this.
+
+*The screen for these settings is not built yet.* Today an owner (or whoever runs your
+installation) does it through the Dynodoc API, signed in as the owner. `<token>` is the
+owner's sign-in token, `<project>` the project's id and `<file>` a file's id:
+
+```text
+# See the current settings (and the number to send back: "revision")
+curl -H "Authorization: Bearer <token>" https://dynodoc.example.org/api/projects/<project>/agent-policy
+
+# Turn agents on with the defaults (send the revision you just saw; 0 if none was ever saved)
+curl -X PUT -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+  -H 'If-Match: "0"' -d '{"enabled":true}' \
+  https://dynodoc.example.org/api/projects/<project>/agent-policy
+
+# Hide one file from assistants ("inherit" brings it back)
+curl -X PUT -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+  -d '{"access":"none"}' https://dynodoc.example.org/api/documents/<file>/agent-policy
+```
+
+A save replaces the whole setting; a field you leave out goes back to its default, so send
+everything you want to keep. If two people save at once, the second is told the settings
+changed and must look again before saving. Every change is recorded with who made it and
+what it changed. The full list of routes and values is in the API description
+(`openapi.yaml`, tag "agent policy"); the design is in
+[AI-AGENT-CONNECTORS.md](AI-AGENT-CONNECTORS.md) section 5.
+
+Owners and managers can also see what assistants did: `GET .../projects/<project>/agent-usage`
+shows, for each day and each client name the assistant gave, how many calls it made, how many
+bytes it received and how many calls were refused. It holds no file text. The client name is
+what the assistant says about itself and proves nothing.
 
 ## Step 1. Make a key for the agent
 
@@ -202,17 +257,23 @@ the session: they only read.
 
 ## Taking access away
 
-Do any of these; the first two act at once, on Claude's very next request.
+Do any of these; the first three act at once, on Claude's very next request.
 
 1. **Remove the project from the key**, or **revoke the key**, under Profile, Signing keys.
    Dynodoc checks the key and its project on every request, so Claude stops seeing the
    project immediately, even though a short-lived pass (one hour) may already have been
    issued.
-2. **Your operator can switch the connector off** for everyone (`AGENT_GATEWAY=off`).
-3. **Remove the `dynodoc` entry** from Claude Desktop's file, or run `claude mcp remove
+2. **A project owner or manager can stop every assistant in the project at once**: turn
+   agents off in the settings of step 0, or use the stop button (`POST .../agent-policy/kill`).
+   The stop button also ends every agent key's access to that project and every pass issued
+   until then, for good: turning agents back on, or giving a key the project again, brings
+   none of them back. Each key's holder must give the key the project again and Claude must
+   start a new session.
+3. **Your operator can switch the connector off** for everyone (`AGENT_GATEWAY=off`).
+4. **Remove the `dynodoc` entry** from Claude Desktop's file, or run `claude mcp remove
    dynodoc` (**unverified: check at build time**), or disable the plugin. This only stops
    *your* Claude from asking.
-4. **Delete the key file.** If the file may have been copied, also do step 1.
+5. **Delete the key file.** If the file may have been copied, also do step 1.
 
 If you suspect the key file was copied, do step 1 first: it works whatever happens to the
 copies.
@@ -224,8 +285,8 @@ Claude shows the message from the server in a line starting `dd/1 error`. What t
 | Message | What it means and what to do |
 |---|---|
 | `code=unauthorized` | The key was refused: it was revoked, is not enrolled as an agent key, or has no access to this project. Check steps 2 and 3. |
-| `code=forbidden` or `code=not_found` | The file or project is not available to this connection. The two look the same on purpose. Check the file id, the project and your own access. If *every* call says `not_found`, including `status`, the connector is probably switched off on the server (see "Before you start"). |
-| `code=rate_limited` (with `retry_after`) | Too many requests. Wait that many seconds. |
+| `code=forbidden` or `code=not_found` | The file or project is not available to this connection. The two look the same on purpose. Check the file id, the project and your own access. If `forbidden` comes for *every* call, including `status`, the likely reasons are that no owner has turned agents on for the project (step 0), your project role is below the owner's minimum, or the stop button was used. A file an owner has hidden from assistants is `not_found`. If *every* call says `not_found`, including `status`, the connector is probably switched off on the server (see "Before you start"). |
+| `code=rate_limited` or `code=budget_exceeded` (with `retry_after`) | Too many requests, or this key has used its reads for the minute or the day (step 0). Wait that many seconds. |
 | `code=busy`, `code=deadline_exceeded`, `code=internal` | Dynodoc is busy or unreachable. Check the web address in `remote.json`, then try again. |
 | `code=bad_request field=...` | Claude gave a wrong value for that field. It usually corrects itself. |
 | Claude does not list Dynodoc tools | The program did not start. Run the same command in a terminal; any problem (wrong path, a key it cannot open, a web address that is not `https://`) is printed there, because the program writes its messages to the terminal's error output and never to Claude. |

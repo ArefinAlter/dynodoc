@@ -1,5 +1,30 @@
 # Dynodoc: intent, current implementation and remaining work
 
+## Source: agent project policy v0 and management routes, connector Phase 1 (20 October 2026)
+
+The main open risk of the Phase 0 read routes is closed in source: **agents are disabled until a project owner enables them.**
+Migration `0043_agent_policy.sql` (schema 43) adds `project_agent_policy` (no row means disabled; `enabled` defaults to false;
+`min_role` floor, `kinds`, `calls_per_minute`, `read_bytes_per_day`, `revision`, and `sessions_valid_after` for the kill
+switch) and `file_agent_policy` (`inherit`, `none`, `read`). Both are current-value tables in the runtime select/insert/update
+class (no delete); history is the `operation_audit` row of every change. With `AGENT_GATEWAY=on`, every agent read route and
+the access view is refused with the same `403` as a non-member unless the project is enabled, the member's role is at or above
+the floor and the grant has room in its per-minute and per-day budgets (counted from the call ledger; `429` otherwise); a file
+set to `none`, or of a kind the policy leaves out, is the same `404` as an absent file everywhere, including `files`, `find` and
+the 8-hex lookup. The policy is read on every request. This supersedes the warning below that any member, even a viewer, can
+read once the gateway is on.
+
+Management routes (account session only, `401` for any other token, mounted whether or not the gateway is on):
+`GET`/`PUT /projects/{id}/agent-policy` (owner or manager, `If-Match` revision, `409` on conflict), `POST
+/projects/{id}/agent-policy/kill` (disables, revokes every agent-class grant of the project, cuts off every earlier session,
+purges the process's cached states, audited), `GET /projects/{id}/agent-usage` (calls, bytes, denials by UTC day and client
+claim), `PUT /documents/{id}/agent-policy` (file owner or manager). The web app has no screen for any of it, token issuance is
+not refused for a disabled project, and the write-side policy fields (`write_mode`, clients, proposal budgets, DLP, egress,
+retention) are not built. Evidence: `tests/agent_policy_test.rs` (16 tests under the restricted runtime login) and the unchanged
+18 read-route tests, whose setup now enables agents. **Not run** against a real client or under load. Raised for the owner: the
+role field is a floor (`min_role`), not the ceiling the brief named, because every role may read; the caller is told `forbidden`,
+not a distinct `policy_denied`; whether token issuance and key grants should also be refused while agents are disabled; the
+file value is the spec's `none`, not `deny`; a file's owner can lift a manager's `none`.
+
 ## Source: agent operation compiler, connector Phase 1 library (20 October 2026)
 
 The pure core of connector Phase 1 is built in `engine-agent`: a strict parser for the operation grammar of
