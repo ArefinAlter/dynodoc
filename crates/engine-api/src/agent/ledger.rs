@@ -37,13 +37,27 @@ pub fn request_digest(parts: &[&[u8]]) -> [u8; 32] {
     out
 }
 
+/// Outcomes of a request the project policy stopped. A caller can repeat one at the
+/// admission rate for as long as it likes (the file need not exist), and the runtime login
+/// cannot delete a ledger row, so these are written at most once a minute per grant and
+/// outcome ([`record`]).
+const THROTTLED: [&str; 2] = ["policy_denied", "budget_exceeded"];
+
 /// Append the row. A ledger failure is logged and never fails the read that was already
 /// served: the content did not depend on it, and a read-only route has no state to roll
 /// back. (A database outage fails the read itself before this point.)
+///
+/// A throttled outcome (`policy_denied`, `budget_exceeded`) is skipped when the same key,
+/// project and outcome already has a row from the last minute (the index
+/// `agent_call_key_project_at` serves the lookup), so a flood of refusals leaves one row
+/// per minute, not one per request. Concurrent requests of one grant (at most two) can
+/// both pass the test; the table stays bounded by that. Admitted calls are never
+/// throttled.
 pub async fn record(pool: &PgPool, row: CallRow) {
     let bytes = i32::try_from(row.bytes_out).unwrap_or(i32::MAX);
     let tokens = i32::try_from(row.bytes_out.div_ceil(4)).unwrap_or(i32::MAX);
-    let result = sqlx::query("insert into agent_call(principal_id,key_id,project_id,document_id,tool,rev,request_digest,bytes_out,tok_est,outcome,client,traceparent) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)")
+    let throttled = THROTTLED.contains(&row.outcome);
+    let result = sqlx::query("insert into agent_call(principal_id,key_id,project_id,document_id,tool,rev,request_digest,bytes_out,tok_est,outcome,client,traceparent) select $1::uuid,$2::uuid,$3::uuid,$4::uuid,$5::text,$6::bigint,$7::bytea,$8::int,$9::int,$10::text,$11::text,$12::text where not $13::bool or not exists(select 1 from agent_call where key_id=$2::uuid and project_id=$3::uuid and outcome=$10::text and at>now()-interval '1 minute')")
         .bind(row.principal)
         .bind(row.key)
         .bind(row.project)
@@ -56,6 +70,7 @@ pub async fn record(pool: &PgPool, row: CallRow) {
         .bind(row.outcome)
         .bind(row.client)
         .bind(row.traceparent)
+        .bind(throttled)
         .execute(pool)
         .await;
     if let Err(error) = result {

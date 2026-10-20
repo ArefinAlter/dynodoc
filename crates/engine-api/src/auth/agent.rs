@@ -12,8 +12,10 @@
 //! active account in the same session generation, and holds an active grant for this
 //! route's project that lists the scope. An `all`-mode key never reaches an agent scope
 //! without a grant (`super::device::key_reaches`). Revoking a grant or the key, or
-//! disabling the account, therefore ends access at the next request. The project and
-//! file roles are read by the handler.
+//! disabling the account, therefore ends access at the next request. After the project's
+//! kill switch has been pulled, only a session issued after it is accepted, so granting
+//! again revives none that existed before (`project_agent_policy.sessions_valid_after`).
+//! The project policy, the project and the file roles are read by the handler.
 
 use std::{marker::PhantomData, ops::Deref};
 
@@ -90,24 +92,29 @@ impl<S: AgentScope> FromRequestParts<AppState> for AgentAuth<S> {
             return Err(ApiError::Forbidden.into());
         }
         // Read again on every request: nothing is cached but the token's lifetime.
-        let current: Option<(i64, bool, bool)> = sqlx::query_as(&format!(
-            "select i.session_generation,exists(select 1 from device_key_class c where c.key_id=k.id and c.class='agent'),{} from identity i join device_signing_key k on k.identity_id=i.id where i.id=$1 and k.id=$2 and i.disabled_at is null and i.erased_at is null and not exists(select 1 from device_key_revocation r where r.key_id=k.id)",
+        // The last column is the kill switch of the project (migration 0043): once pulled,
+        // only a session issued strictly after it counts (a session stamped with the very
+        // same instant is treated as older), and a session with no ledger row cannot show
+        // that it was.
+        let current: Option<(i64, bool, bool, bool)> = sqlx::query_as(&format!(
+            "select i.session_generation,exists(select 1 from device_key_class c where c.key_id=k.id and c.class='agent'),{},coalesce((select p.sessions_valid_after is null or exists(select 1 from device_session s where s.id=$5 and s.issued_at>p.sessions_valid_after) from project_agent_policy p where p.project_id=$3),true) from identity i join device_signing_key k on k.identity_id=i.id where i.id=$1 and k.id=$2 and i.disabled_at is null and i.erased_at is null and not exists(select 1 from device_key_revocation r where r.key_id=k.id)",
             key_reaches("$3", "$4::text[]")
         ))
         .bind(claims.identity)
         .bind(claims.key)
         .bind(claims.project)
         .bind(vec![S::SCOPE])
+        .bind(claims.session)
         .fetch_optional(&state.pool)
         .await
         .map_err(ApiError::from)?;
-        let Some((generation, agent_key, reaches)) = current else {
+        let Some((generation, agent_key, reaches, not_cut_off)) = current else {
             return Err(ApiError::Unauthorized.into());
         };
         if generation != claims.generation {
             return Err(ApiError::Unauthorized.into());
         }
-        if !agent_key || !reaches {
+        if !agent_key || !reaches || !not_cut_off {
             return Err(ApiError::Forbidden.into());
         }
         Ok(Self(

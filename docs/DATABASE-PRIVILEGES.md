@@ -1,5 +1,19 @@
 # Database runtime boundary
 
+Schema 43 adds two tables to the SELECT/INSERT/UPDATE class (no DELETE for the runtime login):
+`project_agent_policy`, the current agent policy of a project (no row means agents are
+disabled; `enabled` defaults to false), and `file_agent_policy`, the per-file override. They
+hold the current value only, edited in place; the history of every change is its
+`operation_audit` row, written in the same transaction (the audit table is append-only). A
+trigger lets the policy revision move by exactly one per update, never change the project and
+never move `sessions_valid_after` (the kill-switch cut-off) back or clear it; another keeps the
+file override's document fixed. A CHECK keeps `kinds` to one to three distinct known values. Both tables are removed only by the cascade of their project or
+document (whole-document erasure removes the file override; the audit row stays). The
+migration also adds a covering index on `agent_call(key_id, project_id, at)` for the per-grant
+budgets (built inside the migration, not concurrently; the API refuses a newer schema, so a
+rollback restores the dump). The startup check counts both tables; re-run `grant-runtime`, then `check-runtime`,
+after migrating. See [AI agent connectors](AI-AGENT-CONNECTORS.md).
+
 Schema 42 adds two tables to the SELECT/INSERT history class (no UPDATE, no DELETE for the
 runtime login): `device_key_class`, one immutable row per signing key enrolled with a class
 (`person` or `agent`; no row means a person's key), and `agent_call`, the append-only

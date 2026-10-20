@@ -210,6 +210,15 @@ key may ever hold, so a signing key file cannot be re-purposed.
   (`/projects/{id}/agent/...`, behind `AGENT_GATEWAY=on`); every other route refuses it, and
   the agent routes refuse every other credential.
 - `device.enrolled` audit rows carry `class` when the enrolment named one.
+- Schema 43: a grant and a session are necessary but not sufficient. The agent routes also
+  need the project's agent policy to be enabled by an owner or manager (`PUT
+  /projects/{id}/agent-policy`); until then every request is the uniform `403`, whoever holds
+  the key. Creating a key or a grant, and opening a session, are not refused meanwhile. The
+  project's kill switch (`POST /projects/{id}/agent-policy/kill`) revokes every active grant of
+  an agent key for the project (one `device.grant.revoked` audit row each, detail `reason:
+  agent_killswitch`, actor the manager) and refuses every session not issued strictly after it,
+  so granting the key again does not revive them. An ordinary revocation (`DELETE`) does not cut sessions
+  off: granting again revives an unexpired session.
 
 ## Not in this contract
 

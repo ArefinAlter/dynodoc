@@ -8,8 +8,13 @@
 //! turns the gateway on (`AGENT_GATEWAY=on`); otherwise they do not exist and every
 //! request, whatever its credential, gets the router's ordinary `404`.
 //!
-//! What is not here: `propose`, `submit`, proposal `status`, project and file policy,
-//! budgets, OAuth, API keys and the MCP server.
+//! Beside them, always mounted, is the management plane ([`manage`]): the routes with
+//! which an account session (never an agent or device token) reads and changes the
+//! project and file policy ([`policy`]), pulls the kill switch and reads the usage ledger.
+//! A project can be prepared before the gateway is switched on.
+//!
+//! What is not here: `propose`, `submit`, proposal `status`, the policy fields that
+//! govern writes, OAuth, API keys and the MCP server.
 //!
 //! # Decisions and deviations from the specification
 //!
@@ -32,11 +37,18 @@
 //!    is written only when enrolment names one and never changes.
 //! 4. The `all` project-access mode never covers `content:read`: it always needs a grant
 //!    for the project (`crate::auth::device::key_reaches`).
-//! 5. With no project or file policy table yet (spec 5.2, 5.3), the effective permission is
-//!    the gateway flag, the grant and the person's current project and file role. The spec's
-//!    default of "agents disabled until a project owner enables them" is therefore not
-//!    enforced; any member can grant their own agent key read access to a project.
-//!    Every role, viewer included, may read (spec 14.3).
+//! 5. The effective permission is the gateway flag, the grant, the person's current
+//!    project and file role and the project and file policy of migration 0043 (spec 5.1 to
+//!    5.3, 14.3): **default deny**. A project with no policy row, or `enabled = false`,
+//!    serves no agent request; any member can still create an agent key and a grant, but
+//!    both are inert until a project owner or manager enables agents. Every role, viewer
+//!    included, may read (spec 14.3) unless the policy's `min_role` floor says otherwise.
+//!    The policy is read on every request ([`policy::check`], [`policy::FILE_VISIBLE`]) and
+//!    a disabled project, a role below the floor and a grant-less caller get the same
+//!    `403`; a file with `agent_access = none` or of a kind the policy leaves out is the
+//!    same `404` as a file that does not exist. The refused request is recorded in the
+//!    ledger as `policy_denied` (it is internal; the caller cannot tell). Budgets are the
+//!    `429` `budget_exceeded` of an already admitted caller.
 //!
 //! **Routes (spec 12)**
 //!
@@ -66,7 +78,8 @@
 //! 14. `files` lists at most 10,000 files per project and refuses a larger project with
 //!     `limit_exceeded field=files` rather than truncating.
 //! 15. `access` describes this credential in this project: the grant now active, the
-//!     person's role, `write_mode=none`, `budget=null` and the capabilities of this server
+//!     person's role, `write_mode=none`, the grant's budgets with what they have used (JSON
+//!     only; the DCT header does not carry them) and the capabilities of this server
 //!     version (`calc=none`, no propose). The discovery document advertises no MCP URL and
 //!     no profiles because none exists.
 //!
@@ -82,7 +95,10 @@
 //!     500, `details.agent_code=internal`). Events inside the checkpoint are covered by
 //!     the checkpoint's own verification, not re-hashed per request.
 //! 18. Every admitted read is a ledger row, not a sample, with outcome `ok` or the
-//!     `agent_code` of the failure. Requests refused before admission (no membership,
+//!     `agent_code` of the failure (`policy_denied` or `budget_exceeded` when the project
+//!     policy stopped it; those two are written at most once a minute per key, project
+//!     and outcome, because a refusal can be repeated at the admission rate and a ledger
+//!     row cannot be deleted). Requests refused before admission (no membership,
 //!     admission budget, bad credential) write nothing. A ledger failure is logged and does
 //!     not fail the read. The runtime login cannot delete; pruning by retention is not
 //!     built.
@@ -98,10 +114,13 @@ pub mod cache;
 pub mod error;
 pub mod http;
 pub mod ledger;
+pub mod manage;
+pub mod policy;
 pub mod routes;
 pub mod schema;
 pub mod state;
 
 pub use cache::StateCache;
+pub use manage::{router as manage_router, AgentManageApi};
 pub use routes::router;
 pub use schema::AgentApi;

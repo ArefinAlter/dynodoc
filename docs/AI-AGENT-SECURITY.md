@@ -79,7 +79,8 @@ not and cannot claim.
 | Per-grant expiry | MISSING | same |
 | OAuth authorisation server (PKCE, resource binding, rotation) | MISSING | none |
 | Agent identity class; delegation record | MISSING | none |
-| Agent policy, DLP, per-grant budgets | MISSING | none |
+| Project and file agent policy, default deny; per-grant call and byte budgets; kill switch | PARTIAL | migration 0043; read-path fields only (no write policy, clients, DLP or egress) |
+| DLP | MISSING | none |
 | Output hygiene for model-facing text | MISSING | none |
 | External witnesses for chain heads | MISSING | receipt authority not installed ([RECEIPT-AUTHORITY-DECISION.md](RECEIPT-AUTHORITY-DECISION.md)) |
 | Compliance and security contacts | EXISTS | operator email on legal pages ([LEGAL-PAGES.md](LEGAL-PAGES.md)) |

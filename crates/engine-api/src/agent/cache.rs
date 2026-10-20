@@ -10,6 +10,12 @@
 //! file role); nothing in it is a credential or a decision. A hit therefore never
 //! widens access.
 //!
+//! **Policy.** The project and file policy are read from the database before every lookup
+//! ([`super::policy`]), so a hidden file or a disabled project is refused before the cache
+//! is consulted. Disabling a project, the kill switch and a file set to `none` also drop
+//! the affected entries ([`StateCache::documents`], [`StateCache::purge_document`]): the
+//! cache never decides access, so that is hygiene for text that was just withdrawn.
+//!
 //! **Bounds.** At most [`MAX_ENTRIES`] states and [`MAX_BYTES`] in total, measured as
 //! the size of each state serialised as JSON (a deterministic proxy; resident memory is
 //! a small multiple of it). A state larger than [`MAX_ENTRY_BYTES`] is served but never
@@ -164,6 +170,17 @@ impl StateCache {
             }
         }
         doomed.len()
+    }
+
+    /// The distinct documents that have at least one entry, for purging a whole project.
+    pub fn documents(&self) -> Vec<Uuid> {
+        let Ok(inner) = self.0.lock() else {
+            return Vec::new();
+        };
+        let mut docs: Vec<Uuid> = inner.entries.keys().map(|k| k.0).collect();
+        docs.sort_unstable();
+        docs.dedup();
+        docs
     }
 
     /// `(hits, misses)` of [`get`](Self::get) since the process started.

@@ -672,6 +672,44 @@ paths:
           description: Refresh the current revision
       security:
       - paseto: []
+  /documents/{id}/agent-policy:
+    put:
+      tags:
+      - agent policy
+      operationId: agent_file_policy_put
+      parameters:
+      - name: id
+        in: path
+        description: File
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FilePolicyBody'
+        required: true
+      responses:
+        '200':
+          description: The file's agent access. none hides the file from agents entirely (404 on every agent route, absent from the listing and the 8-character lookup) and purges its cached state. A file override can only narrow the project policy. Audited (agent.file_policy.changed) when it changes. Needs the file's owner or a project manager; loosening it (none to read or inherit, read to inherit) needs a project owner or manager, so a file's creator who is only an editor or viewer can tighten but not undo a manager's choice
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FilePolicyView'
+        '400':
+          description: access is not inherit, none or read
+        '401':
+          description: Account sign-in required; a device, agent or connector token is refused
+        '403':
+          description: The caller can open the file but is neither its owner nor a manager, or is loosening an override without being a project owner or manager
+        '404':
+          description: No such file, or not one the caller can open, or not in a project
+        '429':
+          description: The caller's management budget (120 a minute, 2 at once) is used up
+      security:
+      - paseto: []
   /documents/{id}/batch:
     post:
       tags:
@@ -2725,6 +2763,147 @@ paths:
       - paseto: []
       - device_session:
         - project:read
+  /projects/{id}/agent-policy:
+    get:
+      tags:
+      - agent policy
+      operationId: agent_policy_get
+      parameters:
+      - name: id
+        in: path
+        description: Project
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: The project's agent policy (agents are disabled until an owner or manager enables them; configured=false means none was ever saved). Sets ETag to the revision. Works whether or not the agent gateway is switched on; gateway says which
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyView'
+        '401':
+          description: Account sign-in required; a device, agent or connector token is refused
+        '403':
+          description: Not a project owner or manager (the same answer for a non-member and an unknown project)
+      security:
+      - paseto: []
+    put:
+      tags:
+      - agent policy
+      operationId: agent_policy_put
+      parameters:
+      - name: id
+        in: path
+        description: Project
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: If-Match
+        in: header
+        description: The revision from the last read, for example "3"; 0 when no policy was saved. Required
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PolicyBody'
+        required: true
+      responses:
+        '200':
+          description: The saved policy. enabled is required; a field left out keeps its saved value (the defaults when none was saved), so flipping enabled never widens the role floor, kinds or budgets. changed=false and nothing written when the result equalled the saved policy. Each effective change writes an audit row (agent.policy.changed) with the changed fields before and after. Disabling purges the project's cached document states
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyView'
+        '400':
+          description: If-Match missing or malformed, or a value out of range
+        '401':
+          description: Account sign-in required; a device, agent or connector token is refused
+        '403':
+          description: Not a project owner or manager
+        '409':
+          description: The policy changed since the revision in If-Match
+        '422':
+          description: Malformed body, a missing enabled or an unknown field
+        '429':
+          description: The caller's management budget (120 a minute, 2 at once) is used up
+      security:
+      - paseto: []
+  /projects/{id}/agent-policy/kill:
+    post:
+      tags:
+      - agent policy
+      operationId: agent_policy_kill
+      parameters:
+      - name: id
+        in: path
+        description: Project
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 'Agents are disabled for the project and every active grant of an agent key for it is revoked, in one transaction, and the project''s cached document states are purged. Takes effect on the very next agent request. Every agent session issued before the call is refused for good (sessions are stateless tokens, so this is recorded as a cut-off time on the policy, killed_at): enabling the policy or granting a key again restores none of them, and the key holders must grant again and open a new session. Each pull moves the policy revision and is audited (agent.killswitch, plus device.grant.revoked per grant); pulling it again is harmless'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KillView'
+        '401':
+          description: Account sign-in required; a device, agent or connector token is refused
+        '403':
+          description: Not a project owner or manager
+        '429':
+          description: The caller's management budget (120 a minute, 2 at once) is used up
+      security:
+      - paseto: []
+  /projects/{id}/agent-usage:
+    get:
+      tags:
+      - agent policy
+      operationId: agent_usage
+      parameters:
+      - name: id
+        in: path
+        description: Project
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: from
+        in: query
+        description: 'First UTC day, YYYY-MM-DD (default: six days before to)'
+        required: false
+        schema:
+          type: string
+      - name: to
+        in: query
+        description: 'Last UTC day, inclusive (default: today)'
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: 'Calls, response bytes and denials of the project''s agent grants by UTC day and client claim, from the call ledger (metadata only: no document text, title or request value). The range is at most 31 days and 500 rows'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsageView'
+        '400':
+          description: Bad date, a year outside 2000 to 2200, from after to, or a range over 31 days
+        '401':
+          description: Account sign-in required; a device, agent or connector token is refused
+        '403':
+          description: Not a project owner or manager
+        '429':
+          description: The caller's management budget (120 a minute, 2 at once) is used up
+      security:
+      - paseto: []
   /projects/{id}/agent/access:
     get:
       tags:
@@ -5019,7 +5198,9 @@ components:
       properties:
         budget:
           type: object
-          description: Always null in this version.
+          description: |-
+            The grant's budgets in this project: `calls_per_minute` and `read_bytes_per_day`,
+            each `{limit, used}`.
         capabilities:
           type: object
         project:
@@ -5974,6 +6155,53 @@ components:
         node_id:
           type: string
         value: {}
+    FileOverride:
+      type: object
+      description: A file whose policy is not `inherit`.
+      required:
+      - document_id
+      - access
+      - updated_at
+      properties:
+        access:
+          type: string
+          description: '`none` or `read`.'
+        document_id:
+          type: string
+          format: uuid
+        updated_at:
+          type: string
+          format: date-time
+    FilePolicyBody:
+      type: object
+      required:
+      - access
+      properties:
+        access:
+          type: string
+          description: |-
+            `inherit` (the project policy decides), `none` (agents cannot see the file) or
+            `read` (accepted for the day writes exist; it never widens the project's policy).
+      additionalProperties: false
+    FilePolicyView:
+      type: object
+      required:
+      - document_id
+      - project_id
+      - access
+      - changed
+      properties:
+        access:
+          type: string
+        changed:
+          type: boolean
+          description: False when the file already had this value; nothing was written.
+        document_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
     GrantInput:
       type: object
       required:
@@ -6300,6 +6528,34 @@ components:
         role:
           type: string
           description: The caller's project role.
+    KillView:
+      type: object
+      required:
+      - project_id
+      - enabled
+      - revision
+      - was_enabled
+      - revoked_grants
+      properties:
+        enabled:
+          type: boolean
+          description: Always false after this call.
+        project_id:
+          type: string
+          format: uuid
+        revision:
+          type: integer
+          format: int64
+          description: |-
+            The policy revision now. Every pull is a change of the policy row, so it moves by
+            one (the first pull on a project with no saved policy creates the row, revision 1).
+        revoked_grants:
+          type: integer
+          format: int64
+          description: Active agent grants of this project ended by this call.
+        was_enabled:
+          type: boolean
+          description: Whether the policy was enabled when the switch was pulled.
     LabelChange:
       type: object
       properties:
@@ -6439,6 +6695,126 @@ components:
           type:
           - string
           - 'null'
+    PolicyBody:
+      type: object
+      description: |-
+        The new policy. `enabled` must be said; every other field left out keeps its SAVED value
+        (the defaults when nothing was saved), so a request that only flips `enabled` cannot
+        silently widen the role floor, the kinds or the budgets.
+      required:
+      - enabled
+      properties:
+        calls_per_minute:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: 1 to 600 (default 60).
+        enabled:
+          type: boolean
+          description: Master switch. Required.
+        kinds:
+          type:
+          - array
+          - 'null'
+          items:
+            type: string
+          description: 'One or more of `document`, `spreadsheet`, `presentation` (default: all three).'
+        min_role:
+          type:
+          - string
+          - 'null'
+          description: '`viewer` (default), `contributor`, `reviewer`, `editor`, `manager` or `owner`.'
+        read_bytes_per_day:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: 10,000 to 1,000,000,000 (default 20,000,000).
+      additionalProperties: false
+    PolicyView:
+      type: object
+      description: The project's agent policy as saved, or the defaults when none was ever saved.
+      required:
+      - project_id
+      - configured
+      - enabled
+      - min_role
+      - kinds
+      - calls_per_minute
+      - read_bytes_per_day
+      - revision
+      - gateway
+      - file_overrides
+      - file_overrides_truncated
+      properties:
+        calls_per_minute:
+          type: integer
+          format: int32
+          description: Reads per minute for each agent grant (1 to 600). Default 60.
+        changed:
+          type:
+          - boolean
+          - 'null'
+          description: 'On `PUT`: false when the body equalled the saved policy and nothing was written.'
+        configured:
+          type: boolean
+          description: |-
+            False until an owner or manager first saves a policy. A project with no saved
+            policy has agents disabled.
+        enabled:
+          type: boolean
+          description: Master switch. Default false.
+        file_overrides:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileOverride'
+          description: Files with a policy of `none` or `read`, newest first, at most 100.
+        file_overrides_truncated:
+          type: boolean
+        gateway:
+          type: boolean
+          description: |-
+            Whether this server serves the agent routes at all (`AGENT_GATEWAY=on`). The
+            policy can be saved either way; it has no effect while this is false.
+        killed_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: |-
+            When the kill switch was last pulled (null if never). Agent sessions issued before
+            it are refused, whatever is granted or enabled afterwards.
+        kinds:
+          type: array
+          items:
+            type: string
+          description: 'File kinds agents may read: any of `document`, `spreadsheet`, `presentation`.'
+        min_role:
+          type: string
+          description: |-
+            Lowest project role whose agents may read: `viewer`, `contributor`, `reviewer`,
+            `editor`, `manager` or `owner`. Default `viewer` (every member).
+        project_id:
+          type: string
+          format: uuid
+        read_bytes_per_day:
+          type: integer
+          format: int64
+          description: |-
+            Response bytes per UTC day for each agent grant (10,000 to 1,000,000,000).
+            Default 20,000,000.
+        revision:
+          type: integer
+          format: int64
+          description: |-
+            Zero until the first save; then increases by one with every change. Send it back
+            in `If-Match`.
+        updated_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
     RecoveryRequest:
       type: object
       required:
@@ -6556,6 +6932,68 @@ components:
           type:
           - string
           - 'null'
+    UsageRow:
+      type: object
+      description: One day of one client claim.
+      required:
+      - day
+      - calls
+      - bytes_out
+      - denials
+      - errors
+      properties:
+        bytes_out:
+          type: integer
+          format: int64
+        calls:
+          type: integer
+          format: int64
+        client:
+          type:
+          - string
+          - 'null'
+          description: |-
+            The caller's own `X-Dynodoc-Client` claim (null when it sent none). Untrusted
+            text; never used for authorisation.
+        day:
+          type: string
+          format: date
+          description: UTC calendar day.
+        denials:
+          type: integer
+          format: int64
+          description: |-
+            Calls the policy or a grant check refused (`forbidden`, `policy_denied`,
+            `budget_exceeded`).
+        errors:
+          type: integer
+          format: int64
+          description: Calls that failed for another reason (bad request, replay failure and so on).
+    UsageView:
+      type: object
+      required:
+      - project_id
+      - from
+      - to
+      - items
+      - truncated
+      properties:
+        from:
+          type: string
+          format: date
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/UsageRow'
+          description: Newest day first, then most calls; at most 500.
+        project_id:
+          type: string
+          format: uuid
+        to:
+          type: string
+          format: date
+        truncated:
+          type: boolean
   securitySchemes:
     connector_key:
       type: http
