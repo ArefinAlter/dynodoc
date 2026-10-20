@@ -6,6 +6,9 @@ export default {
   preprocess: vitePreprocess(),
   kit: {
     adapter: process.env.VERCEL ? vercel() : node(),
+    // The page registers /service-worker.js itself ($lib/pwa/client.svelte.ts) so it can
+    // skip private areas and hold updates until the person accepts them.
+    serviceWorker: { register: false },
     csp: {
       mode: 'auto',
       directives: {
