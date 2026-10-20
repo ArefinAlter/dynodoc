@@ -1,0 +1,25 @@
+[package]
+name = "engine-mcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+publish.workspace = true
+description = "dynodoc read-only MCP server: protocol layer, tool definitions and the HTTP backend of the agent protocol."
+
+[dependencies]
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+# The client engine-cli already uses for sync (rustls, no default features). The agent
+# routes are plain HTTPS GET and POST, so nothing else is needed.
+reqwest = { version = "0.12.28", default-features = false, features = ["rustls-tls"] }
+
+[dev-dependencies]
+# Contract tests: the error table, the DCT header parser and the golden transcripts of
+# the read path are the specification this crate must agree with.
+engine-agent = { path = "../engine-agent" }
+axum = { workspace = true }
+futures = { workspace = true }
+tracing-subscriber = { workspace = true }

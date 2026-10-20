@@ -4,6 +4,7 @@ members = [
     "crates/engine-shared",
     "crates/engine-core",
     "crates/engine-agent",
+    "crates/engine-mcp",
     "crates/engine-api",
     "crates/engine-cli",
 ]
@@ -81,6 +82,7 @@ clap = { version = "4", features = ["derive"] }
 engine-shared = { path = "crates/engine-shared" }
 engine-core = { path = "crates/engine-core" }
 engine-api = { path = "crates/engine-api" }
+engine-mcp = { path = "crates/engine-mcp" }
 
 # Dev / test
 proptest = "1"
