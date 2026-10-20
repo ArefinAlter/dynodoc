@@ -123,6 +123,7 @@
     place-items: center;
     padding: 1rem;
     background: var(--color-overlay);
+    -webkit-backdrop-filter: blur(6px);
     backdrop-filter: blur(6px);
     z-index: 40;
   }

@@ -35,6 +35,7 @@
     top: 5.5rem;
     width: min(24rem, calc(100vw - 2rem));
     max-height: calc(100vh - 7rem);
+    max-height: calc(100dvh - 7rem);
     transform: translateX(calc(100% + 2rem));
     transition: transform 0.2s ease;
     border: 1px solid var(--color-border);
@@ -68,6 +69,7 @@
 
   .events {
     max-height: calc(100vh - 12rem);
+    max-height: calc(100dvh - 12rem);
     overflow: auto;
   }
 

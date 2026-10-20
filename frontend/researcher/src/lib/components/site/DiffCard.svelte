@@ -134,6 +134,7 @@
     padding-right: 0.5em;
     text-align: right;
     color: var(--color-muted);
+    -webkit-user-select: none;
     user-select: none;
   }
   .txt {

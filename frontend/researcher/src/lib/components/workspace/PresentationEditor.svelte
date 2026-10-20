@@ -895,6 +895,7 @@
       0 0 0 1px var(--color-border);
     overflow: visible;
     touch-action: none;
+    -webkit-user-select: none;
     user-select: none;
   }
   .thumb:focus-visible,
@@ -925,6 +926,7 @@
     line-height: inherit;
     text-align: inherit;
     cursor: text;
+    -webkit-user-select: text;
     user-select: text;
   }
   .handle {
@@ -1000,6 +1002,7 @@
   }
   .frame {
     width: min(100vw, calc(100vh * var(--ratio)));
+    width: min(100vw, calc(100dvh * var(--ratio)));
     padding: 0;
     border: 0;
     background: none;

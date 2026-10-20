@@ -155,6 +155,7 @@
     height: 100%;
     display: block;
     object-fit: fill;
+    -webkit-user-select: none;
     user-select: none;
     pointer-events: none;
   }

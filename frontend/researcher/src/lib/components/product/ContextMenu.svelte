@@ -67,6 +67,7 @@
     z-index: 3000;
     width: 235px;
     max-height: calc(100vh - 16px);
+    max-height: calc(100dvh - 16px);
     overflow: auto;
     background: var(--color-surface-raised);
     border: 1px solid var(--color-border-strong);

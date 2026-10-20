@@ -216,6 +216,7 @@ body {
 }
 body {
   min-height: 100vh;
+  min-height: 100dvh;
   background: var(--color-parchment);
   color: var(--color-ink);
   font-family: var(--font-body);

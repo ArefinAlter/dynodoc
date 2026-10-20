@@ -100,6 +100,7 @@
     padding: 30px 3vw;
     background: var(--color-canvas);
     min-height: 100vh;
+    min-height: 100dvh;
   }
   h1,
   .notice {

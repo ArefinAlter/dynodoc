@@ -276,6 +276,7 @@
     position: fixed;
     inset: 0;
     background: var(--color-overlay);
+    -webkit-backdrop-filter: blur(4px);
     backdrop-filter: blur(4px);
     z-index: 100;
     display: grid;
