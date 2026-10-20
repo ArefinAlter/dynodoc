@@ -580,6 +580,15 @@
     await tick();
     document.querySelector<HTMLInputElement>('.cell-entry')?.focus();
   }
+  // iOS Safari never sends dblclick for a double tap, so touch gets its own: a second tap on
+  // the same cell within 600 ms starts editing, as in other spreadsheet apps.
+  let lastTap = { r: -1, c: -1, at: 0 };
+  function tapped(e: PointerEvent, r: number, c: number) {
+    if (e.pointerType !== 'touch') return;
+    const again = lastTap.r === r && lastTap.c === c && e.timeStamp - lastTap.at < 600;
+    lastTap = { r, c, at: again ? 0 : e.timeStamp };
+    if (again) void edit();
+  }
   function commit() {
     if (!editing) return;
     const n = shown[selected.r];
@@ -1854,8 +1863,11 @@
                         if (e.button !== 0) return;
                         e.preventDefault();
                         choose(r, c, e.shiftKey);
-                        (e.currentTarget.closest('table') as HTMLElement)?.focus();
+                        (e.currentTarget.closest('table') as HTMLElement)?.focus({
+                          preventScroll: true
+                        });
                       }}
+                      onpointerup={(e) => tapped(e, r, c)}
                       oncontextmenu={(e) => openCellMenu(e, r, c)}
                       ondblclick={() => void edit()}>{display(n, c)}</button
                     >{#if editing && r === selected.r && c === selected.c}<input
@@ -1869,7 +1881,9 @@
                             e.preventDefault();
                             commit();
                             choose(r + (e.key === 'Enter' ? 1 : 0), c + (e.key === 'Tab' ? 1 : 0));
-                            (e.currentTarget.closest('table') as HTMLElement)?.focus();
+                            (e.currentTarget.closest('table') as HTMLElement)?.focus({
+                              preventScroll: true
+                            });
                           }
                           if (e.key === 'Escape') {
                             editing = false;

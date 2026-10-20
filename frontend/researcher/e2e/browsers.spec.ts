@@ -135,7 +135,13 @@ test('on a phone the spreadsheet says plainly that a larger screen is easier, an
   const notice = page.getByRole('note').filter({ hasText: 'easier to edit on a larger screen' });
   await expect(notice).toBeVisible();
   expect(await noSideways(page)).toBe(true);
-  await page.getByRole('button', { name: 'A1: ', exact: false }).first().tap();
+  // Double tap edits in place. iOS Safari never sends dblclick, so the editor listens for taps.
+  const first = page.getByRole('button', { name: /^A1:/ });
+  await first.tap();
+  await first.tap();
+  await expect(page.getByLabel('Edit A1', { exact: true })).toBeVisible();
+  await page.getByLabel('Edit A1', { exact: true }).press('Escape');
+  await first.tap();
   const formula = page.getByLabel('Formula bar');
   await formula.tap();
   await formula.fill('=2+3');
