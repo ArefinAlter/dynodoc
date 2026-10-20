@@ -1,5 +1,28 @@
 # Dynodoc: intent, current implementation and remaining work
 
+## Source: MCP write tools, connector Phase 1 client side (20 October 2026)
+
+The MCP server gains `propose`, `submit` (also `action=withdraw`) and `status` for the proposals of the merged write path, as an
+**opt-in**: `engine-cli mcp --write` or `DYNODOC_WRITE=on` (the plugin's `.mcp.json` passes it as off by default). Without it the
+server asks for the read scope only, lists the six read-only tools (their definitions are pinned byte for byte by a golden file,
+4,983 bytes) and refuses a call to a write tool. With it the session asks for read, propose and submit together, falling back to
+read if the service refuses the set. The eight-tool profile is 8,580 bytes of definitions per turn (about 3.6 KB more than the
+read profile). Every propose, submit and status answer says the change is a proposal awaiting review and that nothing is live;
+`awaiting_person` says a person must submit; stale refs are listed with the instruction to read again. A fresh `request_id` is
+made per logical call and kept across the 401 renewal and the single resend after a dropped connection, so a retried propose is
+idempotent. More than 200 operations or a 1 MiB body is refused before any request; unknown fields are rejected at any depth. The
+Claude Code plugin skill (now 0.2.0) teaches when to propose and when only to read, the compact operations with examples, dry run
+first for bulk edits, re-reading after a stale base, and never saying a change is merged.
+
+Evidence: about 36 new `engine-mcp` tests (definitions, contract against the spec's section 16 transcripts where the spec file is
+present, mock-server cases for success, dry run, stale base, idempotent retry, 429, policy refusals, token never in a log or result,
+nothing called unprompted) and about 12 new `engine-cli` tests including a real-process write session; three manual mutations each
+failed their test. **Not verified:** no real MCP client or model has used these tools, the connector has not run against the
+real `engine-api` (the tests use stand-ins written from the route code), and the plugin's `${VAR:-default}` expansion in Claude
+Code is unchecked. Questions for the owner: is 8.6 KB of definitions per turn acceptable or should the write tools be deferred or
+trimmed; split `--write` into propose-only and propose-plus-submit; whether the model may pass `request_id`; a "list my proposals"
+route so `status what=proposals` can exist; amend the protocol spec with the listed deviations.
+
 ## Source: AI agent screens in the web app (20 October 2026)
 
 Two screens now sit on the merged agent APIs; nothing on the server changed. **Signing keys:** enrolment asks "Who is this key for?"
