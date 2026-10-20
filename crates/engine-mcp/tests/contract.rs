@@ -19,13 +19,20 @@ use uuid::Uuid;
 
 const PROJECT: Uuid = Uuid::from_u128(0x1111_1111_2222_4333_8444_5555_5555_5555);
 
-fn spec() -> String {
-    std::fs::read_to_string(concat!(
+/// The specification text, or `None` where it is not shipped: the standalone engine
+/// repository does not carry the private design documents, and these tests then skip.
+fn spec() -> Option<String> {
+    let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../docs/AI-AGENT-PROTOCOL-SPEC.md"
-    ))
-    .expect("the protocol specification is in the repository")
-    .replace("\r\n", "\n")
+    );
+    match std::fs::read_to_string(path) {
+        Ok(text) => Some(text.replace("\r\n", "\n")),
+        Err(_) => {
+            eprintln!("skipped: docs/AI-AGENT-PROTOCOL-SPEC.md is not in this repository");
+            None
+        }
+    }
 }
 
 /// The first JSON block under each `### 7.N \`tool\`` heading: the specification's tool
@@ -103,7 +110,7 @@ fn adjusted(tool: Tool, spec: &Value) -> Value {
 
 #[test]
 fn the_definitions_are_the_specifications_apart_from_the_stated_deviations() {
-    let text = spec();
+    let Some(text) = spec() else { return };
     let specified = spec_definitions(&text);
     for tool in Tool::READ_ONLY {
         let ours = mine(tool);
@@ -287,7 +294,8 @@ fn request(tool: &str, args: Value) -> Result<String, ToolError> {
 
 #[test]
 fn the_read_only_steps_of_transcript_16_1_validate_and_map_to_the_routes() {
-    let steps = transcript_16_1(&spec());
+    let Some(text) = spec() else { return };
+    let steps = transcript_16_1(&text);
     // `propose` and `submit` are not parsed (the propose line is continued) or not offered.
     let read_only: Vec<_> = steps
         .iter()
