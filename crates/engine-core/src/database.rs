@@ -65,12 +65,15 @@ const MUTABLE: &[&str] = &[
 const INSERT_DELETE: &[&str] = &["device_session", "project_issue_label", "project_star"];
 /// Rows are created and edited but never deleted by the runtime login. Device key
 /// access mode is edited in place; a grant row only ever moves `revoked_at` (a
-/// trigger refuses any other change, so a changed scope set is revoke plus insert).
+/// trigger refuses any other change, so a changed scope set is revoke plus insert). The
+/// agent policies hold the current value only; every change has an audit row.
 const INSERT_UPDATE: &[&str] = &[
     "project_issue",
     "project_issue_counter",
     "device_key_access",
     "device_key_project_grant",
+    "project_agent_policy",
+    "file_agent_policy",
 ];
 const FUNCTIONS: &[&str] = &[
     "access_role_rank(text)",
