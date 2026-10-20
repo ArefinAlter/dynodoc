@@ -276,26 +276,28 @@ impl hkdf::KeyType for OutLen {
     }
 }
 
-/// The derived single-use AES-256-GCM key and nonce for one value.
-pub(crate) struct RowKey {
-    key: LessSafeKey,
-    nonce: [u8; NONCE_LEN],
-}
-
-pub(crate) fn derive_row_key(dek: &Dek, salt: &Salt, ctx: &Context<'_>) -> Result<RowKey, Error> {
+/// The 44 bytes derived for one value: a single-use AES-256 key, then its 96-bit nonce.
+fn derive_okm(
+    dek: &Dek,
+    salt: &Salt,
+    ctx: &Context<'_>,
+) -> Result<Wiped<{ KEY_LEN + NONCE_LEN }>, Error> {
     let prk = hkdf::Salt::new(hkdf::HKDF_SHA256, &salt.0).extract(dek.as_bytes());
     let info = ctx.key_info();
     let mut okm = Wiped::<{ KEY_LEN + NONCE_LEN }>::zero();
     prk.expand(&[&info], OutLen(KEY_LEN + NONCE_LEN))
         .and_then(|expanded| expanded.fill(&mut okm.0))
         .map_err(|_| Error::Cipher)?;
+    Ok(okm)
+}
+
+/// The AES-256-GCM key and nonce of one value.
+fn row_cipher(dek: &Dek, salt: &Salt, ctx: &Context<'_>) -> Result<(LessSafeKey, Nonce), Error> {
+    let okm = derive_okm(dek, salt, ctx)?;
     let key = UnboundKey::new(&AES_256_GCM, &okm.0[..KEY_LEN]).map_err(|_| Error::Cipher)?;
     let mut nonce = [0u8; NONCE_LEN];
     nonce.copy_from_slice(&okm.0[KEY_LEN..]);
-    Ok(RowKey {
-        key: LessSafeKey::new(key),
-        nonce,
-    })
+    Ok((LessSafeKey::new(key), Nonce::assume_unique_for_key(nonce)))
 }
 
 /// Encrypt `plaintext` for the value at `ctx`, with a fresh random salt.
@@ -338,17 +340,12 @@ pub fn seal_with_salt(
         kek_version: key.kek_version(),
         salt: *salt,
     };
-    let row = derive_row_key(key.dek(), salt, ctx)?;
+    let (cipher, nonce) = row_cipher(key.dek(), salt, ctx)?;
     let mut out = Vec::with_capacity(MIN_ENVELOPE_LEN + plaintext.len());
     header.write(&mut out);
     out.extend_from_slice(plaintext);
-    let tag = row
-        .key
-        .seal_in_place_separate_tag(
-            Nonce::assume_unique_for_key(row.nonce),
-            Aad::from(ctx.aad(&header)),
-            &mut out[HEADER_LEN..],
-        )
+    let tag = cipher
+        .seal_in_place_separate_tag(nonce, Aad::from(ctx.aad(&header)), &mut out[HEADER_LEN..])
         .map_err(|_| Error::Cipher)?;
     out.extend_from_slice(tag.as_ref());
     Ok(out)
@@ -366,15 +363,10 @@ pub fn open(key: &DataKey, ctx: &Context<'_>, stored: &[u8]) -> Result<Vec<u8>, 
             found: header.dek_id,
         });
     }
-    let row = derive_row_key(key.dek(), &header.salt, ctx)?;
+    let (cipher, nonce) = row_cipher(key.dek(), &header.salt, ctx)?;
     let mut buffer = stored[HEADER_LEN..].to_vec();
-    let plain_len = row
-        .key
-        .open_in_place(
-            Nonce::assume_unique_for_key(row.nonce),
-            Aad::from(ctx.aad(&header)),
-            &mut buffer,
-        )
+    let plain_len = cipher
+        .open_in_place(nonce, Aad::from(ctx.aad(&header)), &mut buffer)
         .map_err(|_| Error::Authentication)?
         .len();
     buffer.truncate(plain_len);
@@ -626,6 +618,56 @@ mod tests {
         // The pair cannot be re-split: ("do", "caddr") is not ("doc", "addr").
         assert_ne!(base, Salt::content_addressed(&dek, b"do", b"caddr"));
         assert_ne!(base, Salt::content_addressed(&dek, b"docaddr", b""));
+    }
+
+    fn unhex(text: &str) -> Vec<u8> {
+        (0..text.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&text[i..i + 2], 16).unwrap())
+            .collect()
+    }
+
+    /// The internals the public API hides, checked against the independent Python
+    /// generator's fixture: the associated data, the HKDF info and the derived key and
+    /// nonce of every vector. Ciphertexts and tags are checked in
+    /// `tests/at_rest_vectors_test.rs`.
+    #[test]
+    fn derived_keys_aad_and_info_match_the_independent_vectors() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/at-rest-v1.json")).unwrap();
+        let mut checked = 0;
+        for group in ["envelopes", "content_addressed"] {
+            for v in fixture[group].as_array().unwrap() {
+                let text = |name: &str| v[name].as_str().unwrap();
+                let installation = Uuid::from_slice(&unhex(text("installation_hex"))).unwrap();
+                let row_key = unhex(text("row_key_hex"));
+                let ctx =
+                    Context::new(installation, text("table"), text("column"), &row_key).unwrap();
+                let dek = Dek::from_slice(&unhex(text("dek_hex"))).unwrap();
+                let salt = Salt::from_slice(&unhex(text("salt_hex"))).unwrap();
+                let header = Header {
+                    dek_id: v["dek_id"].as_u64().unwrap() as u32,
+                    kek_version: v["kek_version"].as_u64().unwrap() as u32,
+                    salt,
+                };
+                let name = text("name");
+                assert_eq!(ctx.aad(&header), unhex(text("aad_hex")), "{name} aad");
+                assert_eq!(ctx.key_info(), unhex(text("key_info_hex")), "{name} info");
+                let okm = derive_okm(&dek, &salt, &ctx).unwrap();
+                assert_eq!(
+                    okm.0[..32],
+                    unhex(text("derived_key_hex"))[..],
+                    "{name} key"
+                );
+                assert_eq!(
+                    okm.0[32..],
+                    unhex(text("derived_nonce_hex"))[..],
+                    "{name} nonce"
+                );
+                checked += 1;
+            }
+        }
+        assert_eq!(checked, 13 + 4);
     }
 
     #[test]
