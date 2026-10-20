@@ -1,5 +1,32 @@
 # Engine evolution handoff
 
+## Source: agent operation compiler, connector Phase 1 library (20 October 2026)
+
+The pure core of connector Phase 1 is built in `engine-agent`: a strict parser for the operation grammar of
+[AI-AGENT-PROTOCOL-SPEC.md](AI-AGENT-PROTOCOL-SPEC.md) section 8, `compile` (resolves refs and sub-addresses, applies
+the stale-base rules of section 9, turns text edits into minimal rich-text patches that keep marks, makes stable ids and position
+keys, and validates every produced operation with `ops::validate_op` and `governance::authorize` against the state as it
+evolves, so what comes out always applies), `preview` (a bounded dry-run DCT diff) and a Rust port of the editor's position-key
+function `between()`. Operations compiled: `set_text`, `replace`, `replace_all`, `insert`, `delete`, `move`, `set_type`,
+`set_cells`, `clear`, `set_shape`, `set_notes`. Output equals what `edit_draft` stores. **It stores nothing and nothing calls it
+yet**: no propose route, agent identity, draft, receipt, idempotency, submit, review badge, policy or MCP tool exists (the rest of
+Phase 1). Not compiled (reported as `unsupported_op`): `fill`, adding or deleting slides, deleting a sheet or any container,
+macros, and `set_text` with `fmt=md`.
+
+Evidence: 93 new tests (183 in the crate): grammar and limits, per-operation behaviour, a differential suite that applies compiled
+operations with `apply_payload` and compares text and structure to an independent reference model over deterministic random edit
+scripts (a one-off scale run covered 1,500 document and 1,000 sheet scripts), hostile-input tests, previews bounded by the byte
+budget, and position-key properties. The `between()` vectors (10,000 pairs plus five 1,600-step chains) were produced by running the
+real TypeScript function (TypeScript 5.9.3 transpiling `changes.ts` under Node 24) with a committed generator; the Rust port reproduces
+every one, and a test fails if `changes.ts` changes. The TypeScript original has two quirks, mirrored and guarded: a key pair can
+sort at or above its right neighbour, and after 200 positions the fallback grows one character per call at the end of a list, so
+`key_between` refuses with `limit_exceeded` after about 1,000 inserts at one spot.
+
+Never run against `edit_draft`, a database or a change-request merge, and no model has produced operations; no token saving is
+measured. Raised for the owner: how `$n` handles several blocks created by one `insert`; whether `replace` is case-sensitive by
+default (the compiler: yes; `find`: no); the style of inserted replacement text; rejecting versus flagging hidden characters in
+agent writes (the compiler rejects); the missing `cycle` error in the section 10 table; the grammar for `fmt=md`.
+
 ## Source: self-hosted Phase 0, API retention job and secret files (20 October 2026)
 
 Two API-side tasks of [SELF-HOSTED-EDITION.md](SELF-HOSTED-EDITION.md) Phase 0 are built: **P0-8**, the retention job, and the
