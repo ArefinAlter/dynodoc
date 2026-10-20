@@ -152,6 +152,12 @@ a {
   display: none !important;
 }
 
+/* Live regions are always in the page; with no text they take no room. */
+.notice:empty {
+  padding: 0;
+  background: none;
+}
+
 code {
   font-family: ui-monospace, 'Cascadia Mono', Consolas, Menlo, monospace;
   font-size: 0.9em;

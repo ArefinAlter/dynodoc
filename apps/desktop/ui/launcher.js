@@ -15,7 +15,8 @@
   function say(id, text) {
     var el = $(id);
     el.textContent = text || '';
-    show(el, Boolean(text));
+    // A live region (role alert or status) stays in the page so that filling it is announced.
+    if (!el.getAttribute('role')) show(el, Boolean(text));
   }
   function message(e) {
     return typeof e === 'string' ? e : (e && e.message) || 'Something went wrong. Please try again.';

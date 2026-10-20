@@ -27,7 +27,8 @@ notarised, in a store, or tried on a Mac, an iPhone or a physical device.
 | `src-tauri/src/sidecar.rs` | Runs the bundled `engine-cli` with a fixed argument list, a time limit and an output limit. |
 | `src-tauri/src/commands.rs` | The seven commands the launcher page may call. |
 | `src-tauri/src/config.rs` | Saves the chosen server in the app's config folder (atomic, re-validated on read). |
-| `src-tauri/src/window.rs` | Creates the window and hooks navigation, new-window and deep-link events to the policy. |
+| `src-tauri/src/window.rs` | Creates the window and hooks navigation, new-window and deep-link events to the policy. In debug builds it prints each decision to standard error. |
+| `src-tauri/src/link_targets.js` | A 20-line script the shell injects into every page of the window: WebView2 raises no event for a click on `<a target="_blank">`, so it turns that click into `window.open`, which the new-window rule then handles. It has no access to the app. |
 | `src-tauri/src/menu.rs` | The native menu (desktop only). |
 | `src-tauri/src/policy_tests.rs` | Tests of the configuration files: capabilities, CSP, dependencies, launcher page, workflow triggers. |
 | `src-tauri/tauri.conf.json` | Product name, identifier, CSP, bundle settings, deep-link scheme. |
@@ -37,6 +38,7 @@ notarised, in a store, or tried on a Mac, an iPhone or a physical device.
 | `ui/` | The launcher page: plain HTML, CSS and JavaScript shipped inside the app. No framework, no remote scripts. |
 | `scripts/prepare-sidecar.mjs` | Builds `engine-cli` from the repository root and copies it to `src-tauri/binaries/engine-cli-<triple>[.exe]` (git-ignored). |
 | `scripts/smoke.ps1` | Windows smoke test of a debug build (starts, config folder, saved server, deep link, clean exit). |
+| `scripts/security-probe.mjs` | Windows black-box probe of a debug build: drives WebView2 through its debugging port and tries, from inside the web view, what a hostile server page would try (see "Security model"). Not part of CI. |
 | `package.json` | Holds `@tauri-apps/cli` only. Nothing in it ships. |
 | `../../.github/workflows/desktop.yml` | Manual or tag-only builds: desktop bundles, Android debug APK, iOS simulator. |
 
@@ -90,7 +92,10 @@ On this repository's machines set `CARGO_TARGET_DIR`, `CARGO_PROFILE_DEV_DEBUG=0
 the repository root does not see this project.
 
 Smoke test (Windows, debug build; it uses a throw-away home folder and a local listener, never
-your real profile): `powershell -ExecutionPolicy Bypass -File scripts\smoke.ps1`.
+your real profile): `powershell -ExecutionPolicy Bypass -File scripts\smoke.ps1`. Security probe
+(Windows, debug build, same throw-away home; it opens a few tabs in your system browser on
+purpose, because that is what a blocked in-window link must do): `node scripts\security-probe.mjs`.
+Both honour `DYNODOC_DESKTOP_HOME`, which only debug builds read.
 
 **Why `@tauri-apps/cli` from npm rather than `cargo install tauri-cli`:** it is pinned by a
 lockfile, installs in seconds with no compile (the native binary comes as an optional platform
@@ -131,9 +136,10 @@ no analytics. The window remembers its size, position and maximised state, follo
 light or dark theme, and is high-DPI aware.
 
 **Links.** `dynodoc://open/workspace`, `dynodoc://open/projects/<uuid>` and
-`dynodoc://open/documents/<uuid>` open that page on the configured server. Installed builds register
-the scheme (the Windows and macOS installers and the Linux packages do; a bare AppImage or a debug
-build does not).
+`dynodoc://open/documents/<uuid>` open that page on the configured server. The Windows installers
+register the scheme (visible in the generated NSIS script and WiX source; the installers were built
+and never installed). macOS and Linux package registration is configured the same way and
+unverified; a bare AppImage or a debug build does not register it.
 
 ## Security model, in plain words
 
@@ -167,7 +173,33 @@ and tested.
 
 Not covered: a page you chose to open can still do what any website can do inside its own window
 (it is your server's responsibility; its own Content-Security-Policy is unchanged), and malware on
-your computer is outside what any of this can stop.
+your computer is outside what any of this can stop. One behaviour of WebView2 found by the probe:
+when a page navigates the window to another address, WebView2 sends the request for it (with the
+page's origin as referrer) before the shell cancels the navigation, so a refused navigation can still
+cause one request that is never shown. A page can already send requests to other addresses, so this
+adds no new ability; it means "refused" is about what loads and what gets opened, not about the
+network. Other web views (WKWebView, WebKitGTK, Android) were not tested.
+
+### How this was tested
+
+- **Pure functions, unit tests** (`cargo test`): the address validator, the sign-in link rule, the
+  navigation and new-window decisions, the deep-link parser and the sidecar argument allowlist, with
+  hostile inputs (`https://app.dynodoc.online@evil.example`, punycode look-alikes, trailing dots,
+  ports, IPv6, `javascript:`/`data:`/`file:`/`blob:`, backslashes, percent-encoding, very long
+  input). The sidecar runner is tested against a child process for the time limit, the output limit
+  and closed standard input, and against the real `engine-cli` (version everywhere; real key
+  creation, read-back and refusal to overwrite on Windows).
+- **Configuration tests** (`policy_tests.rs`): no `remote` capability anywhere, the exact permission
+  lists, phones get no tool commands, the CSP has no unsafe source, no dangerous Tauri switches,
+  banned plugins and features absent, the launcher page has no inline or remote code, the workflow
+  never triggers on a push to a branch.
+- **Black-box probe** (`scripts/security-probe.mjs`, Windows debug build): from inside the web view a
+  server page's call to every command and plugin command is refused; a real mouse click on
+  `target=_blank` and plain links to other origins opens the system browser and the window stays;
+  `javascript:`, `file:`, `data:`, `blob:` and credential URLs do not load; location, camera,
+  microphone and notifications are denied; the launcher's CSP blocks `eval` and injected scripts; the
+  launcher itself cannot call opener, window or deep-link plugin commands; the real device-key
+  operations work through the real sidecar.
 
 ### Server address rules
 
