@@ -184,6 +184,9 @@ pub struct OpResult {
     pub index: usize,
     pub id: Option<String>,
     pub op: &'static str,
+    /// The reason the agent gave, for the reviewer (untrusted text of at most 280
+    /// characters, without control or hidden characters).
+    pub why: Option<String>,
     /// Engine operations the op expanded into.
     pub engine_ops: usize,
     /// At most [`MAX_RESULT_CHANGES`], in the order the op touched them. Refs are valid in
@@ -214,6 +217,7 @@ struct Touch {
 struct Raw {
     index: usize,
     id: Option<String>,
+    why: Option<String>,
     op: &'static str,
     engine_ops: usize,
     touched: Vec<Touch>,
@@ -444,6 +448,7 @@ impl<'a> Work<'a> {
         self.done.push(Raw {
             index: op.index,
             id: op.id.clone(),
+            why: op.why.clone(),
             op: op.kind.name(),
             engine_ops: self.out.len() - self.start,
             touched: std::mem::take(&mut self.touched),
@@ -525,6 +530,7 @@ impl<'a> Work<'a> {
                 OpResult {
                     index: raw.index,
                     id: raw.id,
+                    why: raw.why,
                     op: raw.op,
                     engine_ops: raw.engine_ops,
                     changes,

@@ -70,6 +70,8 @@ pub struct PreviewOp {
     pub index: usize,
     pub id: Option<String>,
     pub op: &'static str,
+    /// The agent's reason, untrusted text.
+    pub why: Option<String>,
     pub engine_ops: usize,
     pub changes: Vec<PreviewChange>,
     pub more_changes: usize,
@@ -227,6 +229,7 @@ pub fn preview(
                 index: r.index,
                 id: r.id.clone(),
                 op: r.op,
+                why: r.why.clone(),
                 engine_ops: r.engine_ops,
                 changes: r
                     .changes

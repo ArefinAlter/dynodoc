@@ -850,8 +850,8 @@ mod tests {
         // A different text over the same span takes the style of its first character.
         let a = runs.replace_ranges(&r, "deltas");
         assert_eq!(
-            spans(&a.to_container(&before))[0],
-            ("deltas force".to_string(), true)
+            spans(&a.to_container(&before)),
+            [("deltas".to_string(), true), (" force".to_string(), false)]
         );
     }
 

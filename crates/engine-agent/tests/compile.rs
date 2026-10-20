@@ -220,6 +220,7 @@ fn set_text_keeps_the_marks_of_unchanged_spans() {
         (r.index, r.id.as_deref(), r.op, r.engine_ops),
         (0, Some("intro"), "set_text", c.ops.len())
     );
+    assert_eq!(r.why.as_deref(), Some("tone"));
     assert_eq!(r.changes.len(), 1);
     assert_eq!(r.changes[0].kind, ChangeKind::Changed);
     assert_eq!(r.changes[0].old, Some(block_hash(&before)));

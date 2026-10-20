@@ -529,7 +529,45 @@ fn run(fx: &Fixture, ops: &[Value]) -> Result<Compiled, CompileError> {
     )
 }
 
+/// The engine ops a compile may emit, and the fields they may touch: no variable names, no
+/// node types but items, nothing outside content, label, cells, columns, text and notes.
+fn assert_vocabulary(ops: &[EventPayload]) {
+    let cell = |k: &str| {
+        k.strip_prefix("cell_")
+            .and_then(|n| n.parse::<u32>().ok())
+            .is_some_and(|n| n < 100)
+    };
+    for op in ops {
+        match op {
+            EventPayload::NodeCreated {
+                node_type,
+                fields,
+                var_name,
+                ..
+            } => {
+                assert_eq!(*node_type, NodeType::Item);
+                assert!(var_name.is_none());
+                for k in fields.as_object().unwrap().keys() {
+                    assert!(k == "content" || k == "label" || cell(k), "{k}");
+                }
+            }
+            EventPayload::FieldEdited { field, .. } => assert!(
+                matches!(
+                    field.as_str(),
+                    "content" | "label" | "columns" | "text" | "notes"
+                ) || cell(field),
+                "{field}"
+            ),
+            EventPayload::RichTextPatched { .. }
+            | EventPayload::NodeMoved { .. }
+            | EventPayload::NodeDeleted { .. } => {}
+            other => panic!("{other:?}"),
+        }
+    }
+}
+
 fn check_ops(fx: &Fixture, c: &Compiled) {
+    assert_vocabulary(&c.ops);
     let mut state = fx.state.clone();
     for op in &c.ops {
         authorize(Role::Author, op, &state).unwrap_or_else(|e| panic!("{e}: {op:?}"));
