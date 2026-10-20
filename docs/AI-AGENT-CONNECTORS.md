@@ -853,8 +853,8 @@ named); `compile::compile` turns the ops `set_text`, `replace`, `replace_all`, `
 port of the editor's position-key function, byte-identical to it on `tests/vectors/between.json`
 (10,000 pairs and five long chains produced by running the real `changes.ts` function with
 the repository's TypeScript compiler, `tests/vectors/between-gen.mjs`); `preview::preview`
-renders the `dd/1 propose` response and the dry run, bounded by `max_bytes`. Evidence: 181
-tests in `engine-agent`, 91 of them new (22 unit tests, and the files `compile`, `compile_differential`,
+renders the `dd/1 propose` response and the dry run, bounded by `max_bytes`. Evidence: 183
+tests in `engine-agent`, 93 of them new (22 unit tests, and the files `compile`, `compile_differential`,
 `compile_hostile`, `position` and `preview`): every op against the fixture corpus, fixed-seed
 random edit scripts checked against a reference model, hostile input (the injection corpus,
 hidden characters, huge counts, malformed refs), the position-key vectors and laws, and the byte

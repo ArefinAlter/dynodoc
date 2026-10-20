@@ -179,6 +179,14 @@ fn splice(chars: &[(char, usize)], picked: &[(usize, usize)], with: &str) -> Vec
     out
 }
 
+/// Seeds per test; set DIFFERENTIAL_SCALE=10 to run ten times as many.
+fn scaled(n: u64) -> u64 {
+    n * std::env::var("DIFFERENTIAL_SCALE")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1)
+}
+
 /// Length of the longest common subsequence.
 fn lcs<T: PartialEq>(a: &[T], b: &[T]) -> usize {
     let mut row = vec![0usize; b.len() + 1];
@@ -611,7 +619,7 @@ fn check_ops(fx: &Fixture, c: &Compiled) {
 fn random_document_scripts_match_the_reference_model() {
     let mut calls = 0;
     let mut kinds: BTreeMap<String, usize> = BTreeMap::new();
-    for seed in 1..=60u64 {
+    for seed in 1..=scaled(60) {
         let mut rng = Rng::new(seed);
         let n = 3 + rng.below(8);
         let mut model: Vec<Block> = (0..n)
@@ -726,7 +734,7 @@ fn run_with_ids(
 fn set_text_keeps_every_unchanged_character_styled_as_it_was() {
     // Random rewrites of styled paragraphs: the common prefix and suffix keep their styles,
     // the text is exactly the new text, and no style outside the original ones appears.
-    for seed in 1..=200u64 {
+    for seed in 1..=scaled(200) {
         let mut rng = Rng::new(seed + 1000);
         let block = random_block(&mut rng, fixtures::ulid(1));
         let fx = fixture_of(std::slice::from_ref(&block), u128::from(seed));
@@ -778,7 +786,7 @@ fn set_text_keeps_every_unchanged_character_styled_as_it_was() {
 
 #[test]
 fn replace_all_is_idempotent_and_matches_its_expansion() {
-    for seed in 1..=60u64 {
+    for seed in 1..=scaled(60) {
         let mut rng = Rng::new(seed + 5000);
         let model: Vec<Block> = (0..6)
             .map(|i| random_block(&mut rng, fixtures::ulid(200 + i)))
@@ -846,7 +854,7 @@ fn replace_all_is_idempotent_and_matches_its_expansion() {
 
 #[test]
 fn move_keeps_ids_and_the_order_of_the_rest() {
-    for seed in 1..=60u64 {
+    for seed in 1..=scaled(60) {
         let mut rng = Rng::new(seed + 9000);
         let model: Vec<Block> = (0..8)
             .map(|i| random_block(&mut rng, fixtures::ulid(300 + i)))
@@ -934,7 +942,7 @@ fn random_sheet_scripts_match_a_grid_model() {
         "0",
     ];
     let mut calls = 0;
-    for seed in 1..=40u64 {
+    for seed in 1..=scaled(40) {
         let mut rng = Rng::new(seed + 20_000);
         let mut b = fixtures::Builder::new(
             FileKind::Spreadsheet,

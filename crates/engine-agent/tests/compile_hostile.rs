@@ -784,3 +784,230 @@ fn the_state_of_a_failed_call_is_untouched() {
     assert_eq!((e.op, e.error), (Some(2), AgentError::NoMatch));
     assert_eq!(d.base.state, before);
 }
+
+// ---------------------------------------------------------------- random ops
+
+struct Seed(u64);
+
+impl Seed {
+    fn next(&mut self) -> u64 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 7;
+        self.0 ^= self.0 << 17;
+        self.0
+    }
+
+    fn below(&mut self, n: usize) -> usize {
+        (self.next() % n as u64) as usize
+    }
+
+    fn pick<'a, T>(&mut self, xs: &'a [T]) -> &'a T {
+        &xs[self.below(xs.len())]
+    }
+}
+
+/// A mostly plausible op of kind `kind` (an index into the op names), with `"7C02"` standing
+/// for a real ref of the file in play, then sometimes corrupted: a field dropped, a value
+/// replaced by one of the wrong type, a field the op does not take.
+fn build_op(kind: usize, seed: u64) -> Value {
+    let mut s = Seed(seed | 1);
+    let texts = [
+        "",
+        "x",
+        "policy",
+        "The",
+        "a b c",
+        "line\nbreak",
+        "ক্ষ",
+        "é",
+        "=SUM(A1:A2)",
+        "=SUM(A1",
+        "tab\there",
+        "Revenue",
+        "2026",
+    ];
+    let refs = [
+        "7C02",
+        "7C02",
+        "7C02",
+        "7C02",
+        "7C02",
+        "7C02",
+        "$1",
+        "$2",
+        "ZZZZ",
+        "7C02.1",
+        "7C02.r1c1",
+        "no",
+    ];
+    let r = |s: &mut Seed| json!(*s.pick(&refs));
+    let t = |s: &mut Seed| json!(*s.pick(&texts));
+    let n = |s: &mut Seed| json!(s.below(6));
+    let mut op = match kind {
+        0 => json!({"op": "set_text", "ref": r(&mut s), "text": t(&mut s)}),
+        1 => json!({"op": "replace", "ref": r(&mut s), "find": t(&mut s), "with": t(&mut s)}),
+        2 => json!({"op": "replace_all", "find": t(&mut s), "with": t(&mut s)}),
+        3 => {
+            json!({"op": "insert", "after": r(&mut s), "blocks": [{"t": *s.pick(&["p", "h2", "li", "code"]), "text": t(&mut s)}]})
+        }
+        4 => json!({"op": "delete", "ref": r(&mut s)}),
+        5 => json!({"op": "move", "ref": r(&mut s), "before": r(&mut s)}),
+        6 => json!({"op": "set_type", "ref": r(&mut s), "t": *s.pick(&["p", "h1", "h3", "li"])}),
+        7 => {
+            json!({"op": "set_cells", "sheet": *s.pick(&["Budget", "7C02", "Nope"]), "at": *s.pick(&["A1", "B3", "7C02:B", "H9"]), "values": [[t(&mut s), t(&mut s)], [t(&mut s)]]})
+        }
+        8 => json!({"op": "clear", "sheet": "Budget", "range": *s.pick(&["A1:B2", "C3", "E2:F9"])}),
+        9 => {
+            json!({"op": "set_shape", "slide": *s.pick(&["s1", "s2", "7C02"]), "shape": r(&mut s), "text": t(&mut s)})
+        }
+        10 => {
+            json!({"op": "set_notes", "slide": *s.pick(&["s1", "s2", "7C02"]), "text": t(&mut s)})
+        }
+        11 => json!({"op": "fill", "sheet": "Budget", "from": "A1", "to": "A9", "dir": "down"}),
+        _ => json!({"op": "macro", "name": "sort_rows", "args": {}}),
+    };
+    // Optional parameters a model might add.
+    if s.below(4) == 0 {
+        op["nth"] = n(&mut s);
+    }
+    if s.below(4) == 0 {
+        op["expect"] = n(&mut s);
+    }
+    if s.below(5) == 0 {
+        op["all"] = json!(s.below(2) == 0);
+    }
+    if s.below(5) == 0 {
+        op["base"] = json!(*s.pick(&["abcdef", "000000", "0123456789ab", "xyz"]));
+    }
+    if s.below(6) == 0 {
+        op["why"] = t(&mut s);
+    }
+    // Corruption.
+    if s.below(8) == 0 {
+        let keys: Vec<String> = op.as_object().unwrap().keys().cloned().collect();
+        let k = s.pick(&keys).clone();
+        match s.below(3) {
+            0 => {
+                op.as_object_mut().unwrap().remove(&k);
+            }
+            1 => op[&k] = json!([{"x": null}]),
+            _ => op["force"] = json!(true),
+        }
+    }
+    op
+}
+
+proptest! {
+    #![proptest_config(config())]
+
+    /// Whatever ops arrive, parsing and compiling never panic; a call that compiles applies,
+    /// stays in the vocabulary and has a preview within its budget.
+    #[test]
+    fn random_ops_never_panic_and_what_compiles_applies(
+        recipe in proptest::collection::vec((0usize..13, any::<u64>()), 1..5),
+        which in 0usize..3,
+    ) {
+        let d = fixtures::document();
+        let w = fixtures::workbook();
+        let k = fixtures::deck();
+        let fx = [&d.base, &w.base, &k.base][which];
+        // Real refs of the file in play stand in for the placeholder, so that many ops get
+        // past ref resolution.
+        let idx = RefIndex::from_state(&fx.state);
+        let mut real: Vec<String> = fx
+            .state
+            .nodes
+            .values()
+            .filter(|n| !n.deleted && n.node_type != "form")
+            .take(60)
+            .filter_map(|n| idx.ref_of(&n.id))
+            .map(|r| r.to_string())
+            .collect();
+        real.sort();
+        let ops: Vec<Value> = recipe
+            .iter()
+            .enumerate()
+            .map(|(i, (kind, seed))| {
+                let mut op = build_op(*kind, *seed);
+                for field in ["ref", "after", "before", "shape", "slide", "sheet", "at"] {
+                    let plain = op.get(field).and_then(Value::as_str).map(str::to_string);
+                    match plain.as_deref() {
+                        Some("7C02") => op[field] = json!(real[(seed_mix(*seed, i)) % real.len()]),
+                        Some("7C02:B") => op[field] = json!(format!("{}:B", real[(seed_mix(*seed, i)) % real.len()])),
+                        _ => {}
+                    }
+                }
+                op
+            })
+            .collect();
+        let Ok(parsed) = parse_ops(&Value::Array(ops)) else {
+            return Ok(());
+        };
+        let mut source = ids();
+        let input = CompileInput::new(&fx.meta, &fx.state, Role::Author);
+        if let Ok(c) = compile(&input, &parsed, &mut source) {
+            let mut state = fx.state.clone();
+            for op in &c.ops {
+                engine_core::governance::authorize(Role::Author, op, &state).unwrap();
+                engine_core::materializer::apply_payload(&mut state, op).unwrap();
+            }
+            prop_assert_eq!(&state, &c.after);
+            assert_safe(fx, &c.ops);
+            let p = preview(
+                &fx.meta,
+                &fx.state,
+                &c,
+                &PreviewOptions { max_bytes: Some(1_000), ..Default::default() },
+            )
+            .unwrap();
+            prop_assert!(p.text.len() <= 1_000);
+        }
+    }
+}
+
+fn seed_mix(seed: u64, i: usize) -> usize {
+    (seed.rotate_left(17) ^ (i as u64).wrapping_mul(0x9E37_79B9)) as usize % 4096
+}
+
+/// The random calls above are not all rejected before they reach the compiler: a fixed number
+/// of fixed-seed calls must produce compiled ones, or the property would prove nothing.
+#[test]
+fn the_random_ops_reach_the_compiler() {
+    let d = fixtures::document();
+    let mut compiled = 0;
+    let mut parsed_ok = 0;
+    let real: Vec<String> = {
+        let idx = RefIndex::from_state(&d.base.state);
+        d.base
+            .state
+            .nodes
+            .values()
+            .filter(|n| n.current_fields["content"].is_object())
+            .filter_map(|n| idx.ref_of(&n.id))
+            .map(|r| r.to_string())
+            .collect()
+    };
+    for seed in 1..=400u64 {
+        let mut op = build_op(
+            (seed % 7) as usize,
+            seed.wrapping_mul(0x2545_F491_4F6C_DD1D),
+        );
+        for field in ["ref", "after", "before"] {
+            if op.get(field).and_then(Value::as_str) == Some("7C02") {
+                op[field] = json!(real[seed as usize % real.len()]);
+            }
+        }
+        let Ok(parsed) = parse_ops(&json!([op])) else {
+            continue;
+        };
+        parsed_ok += 1;
+        let input = CompileInput::new(&d.base.meta, &d.base.state, Role::Author);
+        if compile(&input, &parsed, &mut ids()).is_ok() {
+            compiled += 1;
+        }
+    }
+    assert!(
+        parsed_ok >= 120 && compiled >= 25,
+        "{parsed_ok} parsed, {compiled} compiled of 400"
+    );
+}

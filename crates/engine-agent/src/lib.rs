@@ -92,7 +92,9 @@
 //! * `tests/compile_hostile.rs`: huge counts, deep and malformed refs, the injection corpus and
 //!   generated hostile text through every op that carries text (stored as data or refused, and
 //!   every later `read`, `outline` and preview parses back), the vocabulary of engine ops, the
-//!   things an op must not reach, an untouched input state after a failed call.
+//!   things an op must not reach, an untouched input state after a failed call, and a property
+//!   test over random, partly corrupted ops (no panic; what compiles applies).
+//!   `DIFFERENTIAL_SCALE=25` and `PROPTEST_CASES` run the random tests longer.
 //! * `tests/preview.rs`: the preview header and body, the dry-run form, and the byte bound at
 //!   every budget from 500 to 64,000.
 //!
