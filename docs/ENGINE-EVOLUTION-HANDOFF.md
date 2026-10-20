@@ -1,5 +1,39 @@
 # Engine evolution handoff
 
+## Source: self-hosted Phase 0, API retention job and secret files (20 October 2026)
+
+Two API-side tasks of [SELF-HOSTED-EDITION.md](SELF-HOSTED-EDITION.md) Phase 0 are built: **P0-8**, the retention job, and the
+API half of **P0-2**, `*_FILE` secret loading with startup validation. Nothing else in Phase 0 exists (web tier parametrisation,
+SMTP, the bundle, `dynodoctl`, image pipeline, add-in manifest generator, air-gap harness).
+
+**Retention job** (`engine-api/src/retention.rs`). Every API process runs a loop; each pass takes a PostgreSQL session advisory
+lock on its own connection, so one replica prunes and the others skip (a crashed holder releases it by closing the connection).
+It deletes in bounded batches (`for update skip locked`, a pause between batches, a time budget per pass), one table at a time,
+and a failing table does not stop the rest. It prunes only expired rows: magic links, refresh tokens (expired or revoked beyond
+the window), request-rate windows, device enrollment challenges, `web_metric` and idempotency keys. It never touches a history,
+event, snapshot, audit or erasure table, and needs no migration (the runtime role already holds delete on exactly these tables;
+a test asserts it). Settings: `RETENTION_JOBS` (on), `RETENTION_INTERVAL_SECONDS` (3600), `RETENTION_BATCH_ROWS` (1000),
+`RETENTION_AUTH_DAYS` (7), `RETENTION_METRICS_DAYS` (30); bad values stop startup. Per-process counters appear under `retention`
+in `GET /admin/overview`. Rotated but unexpired refresh rows are kept, because `revoke_login` still accepts such a secret to end
+its login.
+
+**Secret files and validation** (`secrets.rs`, `config.rs`). `DATABASE_URL`, `PASETO_LOCAL_KEY` and `WEB_SERVICE_KEY` accept
+`NAME_FILE` (regular file, at most 16 KiB, trailing newline trimmed; setting both is an error; on Unix a group- or
+world-readable file is refused unless `DYNODOC_ALLOW_OPEN_SECRET_FILES=true`, which exists because Docker and Kubernetes secret
+mounts are 0444 or 0644). Startup validates every secret and setting and reports all problems in one error; errors name the
+variable and never print a value. Plain variables behave byte for byte as before, so the live environment file is unaffected.
+
+Evidence: 22 unit tests, 8 database tests under the restricted runtime login (expired versus live rows of every kind, batch
+bounds, a row-count diff of every other table, two concurrent passes giving one run and one skip, master switch, survival of a
+missing table), startup tests, and the Unix permission checks run in a Linux container.
+
+**Before the next production release:** retention is on by default, so the first pass after deployment will delete the whole
+backlog of expired authentication rows in batches (rehearse it on the production copy, or release with `RETENTION_JOBS=off` and
+switch it on afterwards). Owner questions: keep that default; keep rotated-but-unexpired refresh rows; keep the open-secret-file
+escape hatch or require mode 0400; whether the counters belong in `/admin/overview` or in a future `/metrics`. Not done: the web
+tier's `_FILE` loading and eager `SESSION_SECRET` check, `_FILE` in `engine-cli`, the env-file generator, passing the new
+variables through `infra/demo/compose.yml`, and removing the host script's own `web_metric` prune.
+
 ## Source: agent connector Phase 0, read-only server, MCP and Claude Code plugin (20 October 2026)
 
 Connector Phase 0 ([AI-AGENT-CONNECTORS.md](AI-AGENT-CONNECTORS.md)) now exists end to end in source, read-only and **off by
