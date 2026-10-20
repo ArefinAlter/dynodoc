@@ -41,7 +41,8 @@ guard and routes, the object collector, the transparency-log leaf, the Projects 
 deletion of a commit or object. The design's YAML policy form and its `retention-policy
 validate` verb are not built (the loader reads JSON, and `horizon-plan` reports policy
 problems); `policy.archive_unreachable` is reserved because the planner cannot test a
-destination. The plan-time target of section 1.5 and the reclaim target are not measured.
+destination. The plan-time target of section 1.5 is not measured end to end (only the pure planner: 12.7 s in a debug
+build for 100,000 in-memory commits without objects) and the reclaim target is not measured.
 
 **Differences from this design as written** (details and the open questions in
 HORIZON-RECORD-V1.md section 11): the verb has no `--top` and adds `--as-of-ms`; the

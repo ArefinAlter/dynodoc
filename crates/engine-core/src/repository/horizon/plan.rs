@@ -685,6 +685,20 @@ pub fn plan(
     if view.holds.len() > MAX_HOLDS {
         return Err(Error::Limit("horizon holds"));
     }
+    let objects = &view.objects;
+    if objects.sizes.len() != objects.children.len()
+        || objects
+            .children
+            .iter()
+            .flatten()
+            .any(|child| *child as usize >= objects.sizes.len())
+        || view
+            .state_objects
+            .values()
+            .any(|object| *object as usize >= objects.sizes.len())
+    {
+        return Err(Error::Format("object graph"));
+    }
     let cutoff = match (policy.window.keep_within_days, options.as_of_ms) {
         (Some(days), Some(as_of)) => Some(as_of.saturating_sub(i64::from(days) * DAY_MS)),
         (Some(_), None) => return Err(Error::Plan("keep_within_days needs an explicit as_of_ms")),

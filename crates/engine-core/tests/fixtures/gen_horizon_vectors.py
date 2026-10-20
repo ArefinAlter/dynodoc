@@ -424,6 +424,7 @@ INVALID_POLICIES = [
     ("window_absent", '{"version":1,"id":"t","tier":"content"}', 1, [("/window", "policy.window_empty")]),
     ("window_zero_days", '{"version":1,"id":"t","tier":"content","window":{"keep_within_days":0}}', 1, [("/window/keep_within_days", "policy.invalid_value")]),
     ("signatures_below_service_floor", "{" + SCAFFOLD + ',"signatures":{"required":1}}', 2, [("/signatures/required", "policy.signatures_below_floor")]),
+    ("signatures_empty_object_below_service_floor", "{" + SCAFFOLD + ',"signatures":{}}', 2, [("/signatures/required", "policy.signatures_below_floor")]),
     ("signatures_zero", "{" + SCAFFOLD + ',"signatures":{"required":0}}', 1, [("/signatures/required", "policy.signatures_below_floor")]),
     ("signatures_absent_below_service_floor", "{" + SCAFFOLD + "}", 2, [("/signatures/required", "policy.signatures_below_floor")]),
     ("drop_unacknowledged", "{" + SCAFFOLD + ',"topology":"drop"}', 1, [("/topology", "policy.topology_drop_unacknowledged")]),

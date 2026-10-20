@@ -921,18 +921,354 @@ fn the_generator_reaches_the_cases_the_laws_guard() {
     assert!(shared_states >= 200, "shared states {shared_states}");
 }
 
+// ---- refusals, edge cases and one counter-example ------------------------------------
+
+fn key() -> Ed25519KeyPair {
+    Ed25519KeyPair::from_seed_unchecked(&[7; 32]).unwrap()
+}
+
+fn project() -> Uuid {
+    Uuid::from_u128(0x77)
+}
+
+/// A v1 commit without files; `tag` makes it distinct.
+fn plain(parents: &[&Address], tag: i64) -> (Address, Commit) {
+    let commit = Commit {
+        version: 1,
+        project: project(),
+        parents: parents.iter().map(|a| (*a).clone()).collect(),
+        files: BTreeMap::new(),
+        author_key: String::new(),
+        authored_at_ms: tag,
+        message: format!("c{tag}"),
+        recovery: None,
+        same_file_resolutions: Vec::new(),
+    };
+    let signed = SignedCommit::sign(commit, &key()).unwrap();
+    (signed.verify().unwrap(), signed.commit)
+}
+
+fn load(json: &str) -> Policy {
+    Policy::load(json.as_bytes(), LoadOptions::default()).unwrap()
+}
+
+const FLOOR: &str = r#"{"version":1,"id":"floor","tier":"history","window":{"min_commits_kept":1},"protect":{"branch_heads":true}}"#;
+
+fn view_with(commits: &[&(Address, Commit)], heads: &[(&str, &Address)]) -> HistoryView {
+    let mut view = HistoryView::new(project());
+    for (branch, commit) in heads {
+        view.add_branch(HeadRef {
+            branch: (*branch).into(),
+            commit: (*commit).clone(),
+            generation: 1,
+        })
+        .unwrap();
+    }
+    for (address, commit) in commits {
+        view.add_commit(address, commit, 100, None).unwrap();
+    }
+    view
+}
+
 #[test]
-fn a_one_commit_history_and_a_head_only_policy_plan_cleanly() {
-    let h = generate(5, Shape::Linear);
-    let json = r#"{"version":1,"id":"floor","tier":"history","window":{"min_commits_kept":1},"protect":{"branch_heads":true}}"#;
-    let policy = Policy::load(json.as_bytes(), LoadOptions::default()).unwrap();
-    let p = plan(
-        &view_of(&h, &(0..h.nodes.len()).collect::<Vec<_>>(), true),
-        &policy,
-        &PlanOptions::default(),
-    )
-    .unwrap();
-    // Only the head stays (holds absent for this seed on a linear chain).
-    assert_eq!(p.sets.released.len(), h.nodes.len() - p.sets.retained.len());
-    assert!(p.sets.retained.contains(&h.nodes.last().unwrap().address));
+fn a_head_only_policy_on_a_chain_keeps_exactly_the_head() {
+    let a = plain(&[], 1);
+    let b = plain(&[&a.0], 2);
+    let c = plain(&[&b.0], 3);
+    let view = view_with(&[&c, &a, &b], &[("main", &c.0)]);
+    let p = plan(&view, &load(FLOOR), &PlanOptions::default()).unwrap();
+    assert_eq!(p.sets.retained, vec![c.0.clone()]);
+    let mut released = vec![a.0.clone(), b.0.clone()];
+    released.sort();
+    assert_eq!(p.sets.released, released);
+    // The frontier is the one edge from the head into the skeleton, at b's height.
+    let edge = &p.sets.frontier[0];
+    assert_eq!(p.sets.frontier.len(), 1);
+    assert_eq!(
+        (&edge.child, &edge.parent, edge.parent_height),
+        (&c.0, &b.0, 1)
+    );
+    let skeleton: BTreeMap<&Address, (&Vec<Address>, u64)> = p
+        .sets
+        .skeleton
+        .iter()
+        .map(|e| (&e.address, (&e.parents, e.height)))
+        .collect();
+    assert_eq!(skeleton[&a.0], (&vec![], 0));
+    assert_eq!(skeleton[&b.0], (&vec![a.0.clone()], 1));
+    // No branch at all: nothing is a head, so everything is released.
+    let none = view_with(&[&a], &[]);
+    let p = plan(&none, &load(FLOOR), &PlanOptions::default()).unwrap();
+    assert!(p.sets.retained.is_empty() && p.sets.released == vec![a.0.clone()]);
+    assert!(p.heads.is_empty());
+}
+
+#[test]
+fn the_planner_refuses_inputs_it_cannot_plan_and_says_why() {
+    use engine_core::repository::horizon::{Error, Invariant, SkeletonEntry};
+    let a = plain(&[], 1);
+    let b = plain(&[&a.0], 2);
+    let ghost = address(&[99]);
+    let timed = load(
+        r#"{"version":1,"id":"t","tier":"history","window":{"keep_within_days":3},"protect":{"branch_heads":true}}"#,
+    );
+    let floor = load(FLOOR);
+    let defaults = PlanOptions::default();
+    let good = view_with(&[&a, &b], &[("main", &b.0)]);
+    // A time rule without an instant is refused; with one it plans.
+    assert!(matches!(
+        plan(&good, &timed, &defaults),
+        Err(Error::Plan(_))
+    ));
+    let at_zero = PlanOptions {
+        as_of_ms: Some(0),
+        list: 0,
+    };
+    plan(&good, &timed, &at_zero).unwrap();
+    let too_many = PlanOptions {
+        as_of_ms: None,
+        list: 1001,
+    };
+    assert!(matches!(
+        plan(&good, &floor, &too_many),
+        Err(Error::Limit(_))
+    ));
+    // A head, a parent or a recovery source that is nowhere.
+    let lost_head = view_with(&[&a, &b], &[("main", &ghost)]);
+    assert!(matches!(
+        plan(&lost_head, &floor, &defaults),
+        Err(Error::Missing(_))
+    ));
+    let orphan = plain(&[&ghost], 3);
+    let lost_parent = view_with(&[&a, &orphan], &[("main", &orphan.0)]);
+    assert!(matches!(
+        plan(&lost_parent, &floor, &defaults),
+        Err(Error::Missing(_))
+    ));
+    let (address, mut v2) = plain(&[&a.0], 4);
+    v2.version = 2;
+    v2.recovery = Some(Source {
+        kind: Kind::Revert,
+        commit: ghost.clone(),
+        mainline: None,
+    });
+    let mut lost_source = HistoryView::new(project());
+    lost_source.add_commit(&a.0, &a.1, 1, None).unwrap();
+    lost_source.add_commit(&address, &v2, 1, None).unwrap();
+    assert!(matches!(
+        plan(&lost_source, &floor, &defaults),
+        Err(Error::Missing(_))
+    ));
+    // A head that an earlier horizon released, and a commit both stored and released.
+    let row = |c: &(Address, Commit), height| SkeletonEntry {
+        address: c.0.clone(),
+        parents: c.1.parents.clone(),
+        height,
+    };
+    let mut released_head = view_with(&[&a], &[("main", &b.0)]);
+    released_head.add_prior_skeleton(row(&b, 1));
+    assert!(matches!(
+        plan(&released_head, &floor, &defaults),
+        Err(Error::Violated(Invariant::H6, _))
+    ));
+    let mut both = view_with(&[&a, &b], &[("main", &b.0)]);
+    both.add_prior_skeleton(row(&a, 0));
+    assert!(matches!(
+        plan(&both, &floor, &defaults),
+        Err(Error::Violated(Invariant::H7, _))
+    ));
+    // A stored height that is not parent + 1, and an inconsistent object graph.
+    let mut wrong_height = HistoryView::new(project());
+    wrong_height.add_commit(&a.0, &a.1, 1, Some(0)).unwrap();
+    wrong_height.add_commit(&b.0, &b.1, 1, Some(5)).unwrap();
+    assert!(matches!(
+        plan(&wrong_height, &floor, &defaults),
+        Err(Error::Format(_))
+    ));
+    let mut bad_objects = view_with(&[&a, &b], &[("main", &b.0)]);
+    bad_objects.objects.sizes = vec![1, 2];
+    bad_objects.objects.children = vec![vec![7], vec![]];
+    assert!(matches!(
+        plan(&bad_objects, &floor, &defaults),
+        Err(Error::Format(_))
+    ));
+    let mut short_objects = view_with(&[&a, &b], &[("main", &b.0)]);
+    short_objects.objects.sizes = vec![1, 2];
+    assert!(matches!(
+        plan(&short_objects, &floor, &defaults),
+        Err(Error::Format(_))
+    ));
+    // Building a view is checked too.
+    let mut view = HistoryView::new(project());
+    let foreign = Commit {
+        project: Uuid::from_u128(1),
+        ..a.1.clone()
+    };
+    assert!(view.add_commit(&a.0, &foreign, 1, None).is_err());
+    let head = |name: &str, generation| HeadRef {
+        branch: name.into(),
+        commit: a.0.clone(),
+        generation,
+    };
+    view.add_branch(head("main", 1)).unwrap();
+    assert!(
+        view.add_branch(head("main", 2)).is_err(),
+        "duplicate branch"
+    );
+    assert!(view.add_branch(head("a b", 1)).is_err(), "invalid name");
+    assert!(view.add_branch(head("dev", 0)).is_err(), "generation");
+    let hold = |reason: &str| Hold {
+        commit: a.0.clone(),
+        reason: reason.into(),
+    };
+    assert!(view.add_hold(hold("")).is_err());
+    assert!(view.add_hold(hold("tab\there")).is_err());
+    view.add_hold(hold("fine")).unwrap();
+}
+
+#[test]
+fn a_merge_commit_without_a_unique_base_cannot_be_kept_and_is_refused() {
+    use engine_core::repository::horizon::Error;
+    // a; b and c on a; d = (b, c) and e = (c, b): the bases of d and e are b and c.
+    let a = plain(&[], 1);
+    let b = plain(&[&a.0], 2);
+    let c = plain(&[&a.0], 3);
+    let d = plain(&[&b.0, &c.0], 4);
+    let e = plain(&[&c.0, &b.0], 5);
+    let document = DocumentId(Uuid::from_u128(5));
+    let state = address(&[1]);
+    let merge = Commit {
+        version: 3,
+        parents: vec![d.0.clone(), e.0.clone()],
+        files: BTreeMap::from([(
+            "a".to_owned(),
+            FileEntry {
+                document,
+                state: state.clone(),
+            },
+        )]),
+        message: "merge".into(),
+        authored_at_ms: 6,
+        same_file_resolutions: vec![Resolution {
+            path: "a".into(),
+            document,
+            base: address(&[2]),
+            left: address(&[3]),
+            right: address(&[4]),
+            merged: state,
+            strategy: STRATEGY.into(),
+        }],
+        ..plain(&[], 6).1
+    };
+    let signed = SignedCommit::sign(merge, &key()).unwrap();
+    let m = (signed.verify().unwrap(), signed.commit);
+    let all = [&a, &b, &c, &d, &e, &m];
+    let kept = view_with(&all, &[("main", &m.0)]);
+    assert!(matches!(
+        plan(&kept, &load(FLOOR), &PlanOptions::default()),
+        Err(Error::Plan(_))
+    ));
+    // Not kept for its own sake (the head is d), the same commit is just history.
+    let other = view_with(&all, &[("main", &d.0)]);
+    let p = plan(&other, &load(FLOOR), &PlanOptions::default()).unwrap();
+    assert!(p.sets.released.contains(&m.0));
+}
+
+/// The design's I3 asks for the same merge bases "on the retained graph". Bodies
+/// alone cannot give them even when the base is retained: with `k` released, `a`
+/// still names `k` as a parent but nothing says that `k` leads on to `x`, the base
+/// of `a` and `b`. The skeleton row of `k` supplies that edge.
+#[test]
+fn merge_bases_need_the_skeleton_not_the_bodies_alone() {
+    let x = plain(&[], 1);
+    let k = plain(&[&x.0], 2);
+    let a = plain(&[&k.0], 3);
+    let b = plain(&[&x.0], 4);
+    let view = view_with(&[&x, &k, &a, &b], &[("main", &a.0), ("dev", &b.0)]);
+    let pin = load(
+        r#"{"version":1,"id":"pin","tier":"history","window":{"min_commits_kept":1},"protect":{"branch_heads":true,"merge_bases":{"against":"main","branches":["*"]}}}"#,
+    );
+    let p = plan(&view, &pin, &PlanOptions::default()).unwrap();
+    let kept: BTreeSet<&Address> = p.sets.retained.iter().collect();
+    assert!(kept.contains(&x.0), "the base of the two heads is pinned");
+    assert!(!kept.contains(&k.0), "k is released");
+    let commits = [&x, &k, &a, &b];
+    let index: BTreeMap<&Address, usize> =
+        commits.iter().enumerate().map(|(i, c)| (&c.0, i)).collect();
+    let parents =
+        |c: &(Address, Commit)| -> Vec<usize> { c.1.parents.iter().map(|p| index[p]).collect() };
+    let full: Vec<Vec<usize>> = commits.iter().map(|c| parents(c)).collect();
+    assert_eq!(
+        naive_bases(&full, 2, 3),
+        vec![0],
+        "x is the base in the full graph"
+    );
+    // Bodies only: a released commit is a node with no known parents.
+    let bodies_only: Vec<Vec<usize>> = commits
+        .iter()
+        .map(|c| {
+            if kept.contains(&c.0) {
+                parents(c)
+            } else {
+                vec![]
+            }
+        })
+        .collect();
+    assert!(naive_bases(&bodies_only, 2, 3).is_empty());
+    // Bodies plus the plan's skeleton agree with the full graph.
+    let mut with_skeleton = bodies_only.clone();
+    for entry in &p.sets.skeleton {
+        with_skeleton[index[&entry.address]] = entry.parents.iter().map(|p| index[p]).collect();
+    }
+    assert_eq!(naive_bases(&with_skeleton, 2, 3), vec![0]);
+}
+
+/// Timing, not a correctness check: `cargo test --test horizon_plan_props_test --
+/// --ignored --nocapture`. Plan time at the design's local limit of 100,000 commits,
+/// with a fork every 50 commits and a merge every 10, in a debug build.
+#[test]
+#[ignore]
+fn planning_a_hundred_thousand_commits_takes_seconds() {
+    let mut commits: Vec<(Address, Commit)> = Vec::new();
+    let mut rng = Rng(0x1234_5678_9abc_def1);
+    let build = std::time::Instant::now();
+    for i in 0..100_000usize {
+        let parents: Vec<Address> = match i {
+            0 => vec![],
+            _ if i % 10 == 0 && i >= 20 => {
+                let other = i - 2 - rng.below(18);
+                vec![commits[i - 1].0.clone(), commits[other].0.clone()]
+            }
+            _ if i % 50 == 0 => vec![commits[rng.below(i)].0.clone()],
+            _ => vec![commits[i - 1].0.clone()],
+        };
+        let refs: Vec<&Address> = parents.iter().collect();
+        commits.push(plain(&refs, i as i64 + 1));
+    }
+    eprintln!("built {} commits in {:?}", commits.len(), build.elapsed());
+    let mut view = HistoryView::new(project());
+    for (branch, at) in [("main", 99_999), ("dev", 99_000)] {
+        view.add_branch(HeadRef {
+            branch: branch.into(),
+            commit: commits[at].0.clone(),
+            generation: 1,
+        })
+        .unwrap();
+    }
+    for (address, commit) in &commits {
+        view.add_commit(address, commit, 600, None).unwrap();
+    }
+    let policy = load(
+        r#"{"version":1,"id":"big","tier":"history","window":{"keep_last_commits":500},"protect":{"branch_heads":true,"merge_bases":{"against":"main","branches":["*"]}}}"#,
+    );
+    let started = std::time::Instant::now();
+    let p = plan(&view, &policy, &PlanOptions::default()).unwrap();
+    eprintln!(
+        "planned {} commits in {:?}: retained {}, released {}",
+        p.commits.total,
+        started.elapsed(),
+        p.commits.retained,
+        p.commits.released
+    );
+    assert_eq!(p.commits.total, 100_000);
 }

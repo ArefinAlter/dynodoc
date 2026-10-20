@@ -795,7 +795,7 @@ pub fn check_state(
                     ),
                 )
             })?;
-            expected = expected.max(parent_height + 1);
+            expected = expected.max(parent_height.saturating_add(1));
         }
         if entry.parents.len() > 2 || entry.height != expected {
             return Err(violated(

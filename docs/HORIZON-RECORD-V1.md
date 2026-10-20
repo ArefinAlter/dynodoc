@@ -213,7 +213,7 @@ planner is read-only, so nothing emits it before the archive writer (P3). Added 
 `policy.malformed_json`, `policy.too_large` (over 64 KiB), `policy.duplicate_field`,
 `policy.unsupported_version`, `policy.missing_field`, `policy.invalid_value`,
 `policy.protection_not_optional` (`recovery_sources` or `holds` false: both are hard-coded
-protections) and `policy.archive_destination_missing`. 30 hand-written invalid policies in the
+protections) and `policy.archive_destination_missing`. 31 hand-written invalid policies in the
 vectors state the exact `(path, code)` set the loader must return.
 
 ## 9. The planner
@@ -287,7 +287,10 @@ are at most eight reasons).
 **Cost** with `C` commits, `E` edges, `V` v3 commits and `O` objects: `O(C + E)` graph work, one
 ancestry walk (capped at 100,000 ancestors, as the importer's) per v3 commit and per matching
 branch, so `O(V * C)` worst case, and `O(O)` object accounting. The design's 60 s target at
-100,000 commits / 1,000,000 objects has not been measured.
+100,000 commits / 1,000,000 objects has not been met or missed: the ignored test
+`planning_a_hundred_thousand_commits_takes_seconds` measured 12.7 s in a debug build for the pure
+planner over 100,000 in-memory commits with no object graph (forks every 50, merges every 10);
+loading from SQLite, the object walk and a release build were not measured.
 
 ## 10. Vectors and what they prove
 
@@ -303,7 +306,7 @@ python -I gen_horizon_vectors.py     # rewrites horizon-v1.json; `git diff` stay
 `tests/horizon_vectors_test.rs` reproduces, byte for byte: 36 Merkle roots (four leaf kinds,
 nine sizes, fed unsorted), heads digests, three records (canonical text, address, signing
 input), eleven envelopes (accepted and refused, including domain confusion), a two-record
-chain, four valid and 30 invalid policies, and 10 planner scenarios (history, content, dropped
+chain, four valid and 31 invalid policies, and 10 planner scenarios (history, content, dropped
 topology, time window, merge-input modes, floor, released merge commit, warnings, explicit
 pins, a second horizon over the first's output) as canonical plan text and hash. Because the
 generator and the Rust code were written from the same specification, the vectors catch
@@ -356,11 +359,12 @@ Ambiguities for the owner:
 
 * **I3 wording.** "Merge bases computed on the retained graph equal the full-graph result"
   holds when the graph includes skeleton parents (what P2 will walk). It does not hold on bodies
-  alone: a retained common ancestor reachable only through a released commit disappears, and a
-  retained commit can look like a best base only because the released commit that dominated it
-  is gone. So `topology: drop` gives up merge-base answers across the horizon, as the design says;
-  the tests assert the skeleton-augmented statement and the pin rule (all bases of live branch
-  pairs are retained).
+  alone, even when the base is retained: `a` still names a released parent `k`, but without `k`'s
+  skeleton row nothing says `k` leads on to the retained base `x` (test
+  `merge_bases_need_the_skeleton_not_the_bodies_alone`). So `topology: drop` gives up merge-base
+  answers across the horizon, as the design says; the tests assert the skeleton-augmented
+  statement for every pair of commits, and the pin rule (all bases of live branch pairs are
+  retained).
 * **`merge_inputs: none` versus `bodies`** behave identically (the closure always retains the
   bodies); the difference exists only as an `evidence` word. `states` matters only in tier
   `content`.

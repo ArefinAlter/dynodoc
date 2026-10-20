@@ -759,30 +759,23 @@ impl Policy {
         }
 
         // signatures and quarantine
-        let mut signatures_required = 1;
+        let floor = options.min_signatures.max(1);
+        let mut signatures_required = Some(1);
         if let Some(value) = top.get("signatures") {
-            if let Some(map) = issues.object(value, "/signatures", &["required"]) {
-                match issues.number(map, "/signatures", "required", 0..=MAX_SIGNATURES as u64) {
-                    Some(n) if n >= options.min_signatures.max(1) => signatures_required = n,
-                    Some(_) => issues.add(
-                        "/signatures/required",
-                        code::SIGNATURES_BELOW_FLOOR,
-                        format!(
-                            "at least {} distinct signers are required here",
-                            options.min_signatures.max(1)
-                        ),
-                    ),
-                    None => {}
+            signatures_required = match issues.object(value, "/signatures", &["required"]) {
+                Some(map) if map.contains_key("required") => {
+                    issues.number(map, "/signatures", "required", 0..=MAX_SIGNATURES as u64)
                 }
-            }
-        } else if options.min_signatures > 1 {
+                Some(_) => Some(1),
+                None => None,
+            };
+        }
+        // A missing or too small count is below the floor wherever it came from.
+        if signatures_required.is_some_and(|n| n < floor) {
             issues.add(
                 "/signatures/required",
                 code::SIGNATURES_BELOW_FLOOR,
-                format!(
-                    "at least {} distinct signers are required here",
-                    options.min_signatures
-                ),
+                format!("at least {floor} distinct signers are required here"),
             );
         }
         let quarantine_days = issues
@@ -798,7 +791,7 @@ impl Policy {
             topology,
             acknowledge_unmergeable_history: acknowledged,
             archive,
-            signatures_required,
+            signatures_required: signatures_required?,
             quarantine_days,
         })
     }
