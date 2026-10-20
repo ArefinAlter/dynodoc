@@ -326,7 +326,8 @@ pub struct AgentAccess {
     scopes: Vec<String>,
     /// `none`: no write exists in this version.
     write_mode: String,
-    /// Always null in this version.
+    /// The grant's budgets in this project: `calls_per_minute` and `read_bytes_per_day`,
+    /// each `{limit, used}`.
     #[schema(value_type = Object)]
     budget: Option<serde_json::Value>,
     #[schema(value_type = Object)]

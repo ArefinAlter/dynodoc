@@ -10,8 +10,12 @@
 //!    unrevoked, enrolled as an agent key and holds an active grant.
 //! 2. The caller's current project role (`403` for a non-member, the same answer for an
 //!    unknown project) and the process-local admission budget.
-//! 3. For a file route, the file in this project with a role for the caller and a
-//!    supported kind (`404` otherwise, one answer for every reason).
+//! 2b. The project policy ([`policy::check`]): agents enabled, the role at or above the
+//!    floor, and room in the grant's per-minute and per-day budgets. Disabled and
+//!    below-floor are the same `403` as a non-member; a budget is `429`.
+//! 3. For a file route, the file in this project with a role for the caller, a kind the
+//!    policy admits and no `none` file policy (`404` otherwise, one answer for every
+//!    reason).
 //! 4. The head, the revision asked for and its stored chain hash; `If-None-Match` is
 //!    answered here, before any state is read.
 //! 5. The verified state (cache or checkpoint plus tail), then the tool, off the async
@@ -53,6 +57,7 @@ use super::{
     error::AgentFail,
     http::{self, Format},
     ledger::{self, CallRow},
+    policy::{self, product_role, Allowed, Gate},
     schema,
     state::{self, Point},
 };
@@ -102,6 +107,10 @@ struct Call {
     admitted: bool,
     document: Option<Uuid>,
     rev: Option<u64>,
+    /// The ledger outcome of a request the project policy stopped (`policy_denied`,
+    /// `budget_exceeded`). Such a request is recorded although it resolved no file, so an
+    /// owner sees the attempts; the caller sees the uniform answer of [`policy::Refusal`].
+    refused: Option<&'static str>,
 }
 
 /// A finished response and the size of its body.
@@ -115,6 +124,8 @@ struct Admitted {
     db: PoolConnection<Postgres>,
     /// The stored project role (`owner`, `manager`, `editor`, `approver`, `reviewer`, `viewer`).
     role: String,
+    /// The project policy read for this request, and what the grant has used.
+    allowed: Allowed,
     _permit: ReadPermit,
 }
 
@@ -155,9 +166,22 @@ impl<'a> Ctx<'a> {
         // Called only after the membership check, as `Workloads::enter` requires.
         let permit = self.state.workloads.enter(identity, Some(self.project))?;
         call.admitted = true;
+        // Read now, never cached: a policy change or the kill switch applies to this very
+        // request. After the admission permit so a refused loop is rate limited like any
+        // other, and after membership so a non-member cannot tell enabled from disabled.
+        let allowed =
+            match policy::check(&mut db, self.project, self.auth.binding().key_id, &role).await {
+                Ok(allowed) => allowed,
+                Err(Gate::Refused(refusal)) => {
+                    call.refused = Some(refusal.outcome());
+                    return Err(refusal.into_fail());
+                }
+                Err(Gate::Db(error)) => return Err(error.into()),
+            };
         Ok(Admitted {
             db,
             role,
+            allowed,
             _permit: permit,
         })
     }
@@ -165,27 +189,31 @@ impl<'a> Ctx<'a> {
     /// The file named by a path segment: a full UUID, or the first 8 hex characters when
     /// they are unique among the caller's files in this project (spec 6.2). One answer
     /// for every way a file can be unavailable: absent, trashed, another project, a kind
-    /// agents do not read, or no role for the caller.
+    /// agents do not read (or the policy's `kinds` leaves out), a file policy of `none`,
+    /// or no role for the caller. `kinds` is the project policy's list.
     async fn find_file(
         &self,
         db: &mut PgConnection,
         call: &mut Call,
         segment: &str,
+        kinds: &[String],
     ) -> Result<(Uuid, FileKind), AgentFail> {
-        const VISIBLE: &str = "d.deleted_at is null and coalesce(d.settings->>'kind','questionnaire') in ('document','spreadsheet','presentation') and document_member_role(d.id,$2) is not null";
+        let visible = format!("d.deleted_at is null and coalesce(d.settings->>'kind','questionnaire')=any($4::text[]) and document_member_role(d.id,$2) is not null and {}", policy::FILE_VISIBLE);
         let identity = self.auth.identity_id;
         let rows: Vec<(Uuid, String)> = if let Ok(id) = Uuid::parse_str(segment) {
-            sqlx::query_as(&format!("select d.id,d.settings->>'kind' from document d where d.id=$1 and document_project(d.id)=$3 and {VISIBLE}"))
+            sqlx::query_as(&format!("select d.id,d.settings->>'kind' from document d where d.id=$1 and document_project(d.id)=$3 and {visible}"))
                 .bind(id)
                 .bind(identity)
                 .bind(self.project)
+                .bind(kinds)
                 .fetch_all(&mut *db)
                 .await?
         } else if segment.len() == 8 && segment.bytes().all(|b| b.is_ascii_hexdigit()) {
-            sqlx::query_as(&format!("with recursive tree as (select id from access_space where id=$1 union select s.id from access_space s join tree t on s.parent_id=t.id) select d.id,d.settings->>'kind' from document d join tree t on t.id=d.space_id where replace(d.id::text,'-','') like $3::text||'%' and {VISIBLE} limit 2"))
+            sqlx::query_as(&format!("with recursive tree as (select id from access_space where id=$1 union select s.id from access_space s join tree t on s.parent_id=t.id) select d.id,d.settings->>'kind' from document d join tree t on t.id=d.space_id where replace(d.id::text,'-','') like $3::text||'%' and {visible} limit 2"))
                 .bind(self.project)
                 .bind(identity)
                 .bind(segment.to_ascii_lowercase())
+                .bind(kinds)
                 .fetch_all(&mut *db)
                 .await?
         } else {
@@ -218,7 +246,9 @@ impl<'a> Ctx<'a> {
             + 'static,
     {
         let mut admitted = self.admit(call).await?;
-        let (document, kind) = self.find_file(&mut admitted.db, call, file).await?;
+        let (document, kind) = self
+            .find_file(&mut admitted.db, call, file, &admitted.allowed.policy.kinds)
+            .await?;
         let point = state::point(&mut admitted.db, document, rev, cursor).await?;
         call.rev = Some(point.rev);
         let token = point.token();
@@ -251,10 +281,10 @@ impl<'a> Ctx<'a> {
     async fn finish(&self, call: Call, result: Result<Served, AgentFail>) -> Out {
         // A probe that never resolved a file (a random id) is rate-limited but not recorded,
         // so the ledger cannot be filled by guessing.
-        if call.admitted && (result.is_ok() || call.document.is_some()) {
+        if call.admitted && (result.is_ok() || call.document.is_some() || call.refused.is_some()) {
             let (outcome, bytes_out) = match &result {
                 Ok(served) => ("ok", served.bytes),
-                Err(error) => (error.agent_code(), 0),
+                Err(error) => (call.refused.unwrap_or_else(|| error.agent_code()), 0),
             };
             ledger::record(
                 &self.state.pool,
@@ -355,15 +385,6 @@ pub(super) struct FilesQuery {
     max_bytes: Option<usize>,
 }
 
-/// The product role vocabulary of `document_member_role`, from a stored project role.
-fn product_role(stored: &str) -> &str {
-    match stored {
-        "approver" => "reviewer",
-        "reviewer" => "contributor",
-        other => other,
-    }
-}
-
 #[utoipa::path(operation_id="agent_files", get, path="/projects/{id}/agent/files", tag="agent", params(("id"=Uuid,Path,description="Project"),("q"=Option<String>,Query,description="Title substring, at most 200 characters"),("kind"=Option<String>,Query,description="document, spreadsheet or presentation"),("limit"=Option<usize>,Query,description="Files per page (1 to 50, default 20)"),("cursor"=Option<String>,Query,description="Continuation from a previous page"),("max_bytes"=Option<usize>,Query,description="Response budget in bytes (500 to 64000, default 16000)")), security(("device_session"=["content:read"])), responses((status=200, description="Files of the project the caller may open, ordered by title. Titles are untrusted text", content((schema::AgentFiles="application/json"),(String="text/vnd.dynodoc.dct; v=1"))),(status=401, description="Not a project device session"),(status=403, description="Scope, grant, key class or project membership missing (uniform)"),(status=429, description="Admission budget")))]
 async fn files(
     State(state): State<AppState>,
@@ -398,10 +419,11 @@ async fn files(
             max_bytes: q.max_bytes,
         };
         let mut admitted = ctx.admit(&mut call).await?;
-        let rows: Vec<(Uuid, String, String, Option<String>, i64)> = sqlx::query_as("with recursive tree as (select id from access_space where id=$1 union select s.id from access_space s join tree t on s.parent_id=t.id) select d.id,d.title,d.settings->>'kind',document_member_role(d.id,$2),(select coalesce(max(seq),0) from event where document_id=d.id) from document d join tree t on t.id=d.space_id where d.deleted_at is null and coalesce(d.settings->>'kind','questionnaire') in ('document','spreadsheet','presentation') and document_member_role(d.id,$2) is not null order by d.title,d.id limit $3")
+        let rows: Vec<(Uuid, String, String, Option<String>, i64)> = sqlx::query_as(&format!("with recursive tree as (select id from access_space where id=$1 union select s.id from access_space s join tree t on s.parent_id=t.id) select d.id,d.title,d.settings->>'kind',document_member_role(d.id,$2),(select coalesce(max(seq),0) from event where document_id=d.id) from document d join tree t on t.id=d.space_id where d.deleted_at is null and coalesce(d.settings->>'kind','questionnaire')=any($4::text[]) and document_member_role(d.id,$2) is not null and {} order by d.title,d.id limit $3", policy::FILE_VISIBLE))
             .bind(project)
             .bind(auth.identity_id)
             .bind(MAX_LISTED_FILES + 1)
+            .bind(&admitted.allowed.policy.kinds)
             .fetch_all(&mut *admitted.db)
             .await?;
         if rows.len() as i64 > MAX_LISTED_FILES {
@@ -1018,7 +1040,9 @@ async fn diff_tool(
     opts: DiffOptions,
 ) -> Result<Served, AgentFail> {
     let mut admitted = ctx.admit(call).await?;
-    let (document, kind) = ctx.find_file(&mut admitted.db, call, file).await?;
+    let (document, kind) = ctx
+        .find_file(&mut admitted.db, call, file, &admitted.allowed.policy.kinds)
+        .await?;
     if wants_proposal {
         // The file exists for this caller; there is simply no proposal of any agent.
         return Err(AgentError::NotFound { refs: Vec::new() }.into());
@@ -1070,7 +1094,9 @@ pub(super) struct AccessView {
     scopes: Vec<String>,
     /// No write exists in this version: `none`.
     write_mode: &'static str,
-    /// Always null in this version: budgets are not built.
+    /// The grant's budgets in this project, from the project policy and the call ledger:
+    /// `calls_per_minute` and `read_bytes_per_day`, each with its `limit` and what is
+    /// `used`. Other budgets (proposals) do not exist yet.
     budget: Option<Value>,
     capabilities: Value,
 }
@@ -1107,7 +1133,16 @@ async fn access(
             role: product_role(&admitted.role).to_owned(),
             scopes: scopes.unwrap_or_default(),
             write_mode: "none",
-            budget: None,
+            budget: Some(json!({
+                "calls_per_minute": {
+                    "limit": admitted.allowed.policy.calls_per_minute,
+                    "used": admitted.allowed.calls_used
+                },
+                "read_bytes_per_day": {
+                    "limit": admitted.allowed.policy.read_bytes_per_day,
+                    "used": admitted.allowed.bytes_used
+                }
+            })),
             capabilities: capabilities(),
         };
         let body = match ctx.format {

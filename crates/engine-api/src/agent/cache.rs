@@ -166,6 +166,17 @@ impl StateCache {
         doomed.len()
     }
 
+    /// The distinct documents that have at least one entry, for purging a whole project.
+    pub fn documents(&self) -> Vec<Uuid> {
+        let Ok(inner) = self.0.lock() else {
+            return Vec::new();
+        };
+        let mut docs: Vec<Uuid> = inner.entries.keys().map(|k| k.0).collect();
+        docs.sort_unstable();
+        docs.dedup();
+        docs
+    }
+
     /// `(hits, misses)` of [`get`](Self::get) since the process started.
     pub fn lookups(&self) -> (u64, u64) {
         self.0
