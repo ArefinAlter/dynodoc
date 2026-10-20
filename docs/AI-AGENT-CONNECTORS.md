@@ -1014,6 +1014,41 @@ of the crate documentation (`cargo doc -p engine-agent --no-deps`).
   claims that an older API build leaves the new objects unused (the API refuses a newer schema, so
   rollback means restoring the dump) and says the index is not built concurrently.
 
+**Implementation status, owner screens in the web app (Phase 1), 20 October 2026.** (This
+paragraph supersedes "No screen for any of this (the SvelteKit app is untouched)" in the
+project policy note above.) Built, in `frontend/researcher`, on the management routes that
+already existed; no server, migration or OpenAPI change:
+
+- *Signing keys (profile).* Connecting a key asks "Who is this key for?": "This key is for me"
+  (the default; the proof is sent exactly as before) or "This key is for an AI agent", which asks
+  for a name (1 to 80 characters) and sends `class: "agent"` and `label` with the proof. The list
+  shows an "AI agent" badge and the name. On an agent key the project block offers one
+  permission, "Read documents" (`content:read`), never a person's scopes, has no "all projects"
+  mode (that mode never covers an agent scope) and no permission editor (only "Revoke grant"). The
+  class errors of the server (an unknown class, a label without a class, a person's scope on an agent
+  key or the reverse) are mapped to plain sentences.
+- *Project settings, "AI agents" section.* Shown to every member; only an owner or manager sees
+  the controls, because `GET /projects/{id}/agent-policy` is refused to everyone else, so a
+  member below manager sees one explanatory line and not the current state. For owners and
+  managers: whether this installation serves agents (the `gateway` flag, stated either way), the
+  on/off switch, the role floor, the file kinds and the two budgets (in MB), saved as one full
+  replacement with the revision it loaded in `If-Match` (a `409` reloads the form and says so);
+  a read-only list of the files that have their own setting; a "Usage, last 7 days" table (day,
+  calls, data read, refused, clients of a day added together); and "Stop all AI agents now" behind
+  a confirmation that says what it does, then its result.
+- *Proxy.* The same-origin engine proxy did not forward `If-Match`, so a browser could not have
+  saved the policy; it now does (with a test).
+- *Evidence.* Unit tests for the new client modules and components, and a Playwright spec
+  (`e2e/agent-policy.spec.ts`) that ran on a local copy of the isolated stack **with
+  `AGENT_GATEWAY` off**: enrolling an agent key and granting `content:read`, saving the policy
+  and a conflict, the kill switch, and that an editor sees no controls; with an axe scan of both
+  sections.
+- *Not built.* No screen to hide or show a single file (the API only; the list is read-only);
+  no per-client allow list or approval; no list of an agent key's sessions; usage is a seven-day
+  table, not a chart or an export; the section has no write settings because none exist yet.
+  **Not verified:** nothing was tried with a real AI client or a real browser session of a person,
+  and the wording of the screens has not been reviewed by a non-technical administrator.
+
 ### 11.4 Phase 2 detail (remote MCP and OAuth)
 
 | Task | Weeks |
