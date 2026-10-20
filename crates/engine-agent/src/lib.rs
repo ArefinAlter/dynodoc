@@ -170,6 +170,7 @@ pub mod model;
 pub mod outline;
 pub mod paging;
 pub mod parse;
+pub mod pos;
 pub mod read;
 pub mod refs;
 pub mod response;
