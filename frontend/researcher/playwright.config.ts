@@ -1,5 +1,19 @@
-import { defineConfig } from '@playwright/test';
+import { defineConfig, devices } from '@playwright/test';
 const external = process.env.PLAYWRIGHT_BASE_URL;
+// Chromium always runs the whole suite. BROWSER_MATRIX adds Firefox, WebKit and two phone
+// emulations (docs/BROWSER-SUPPORT.md): `full` runs the authenticated specs on the desktop
+// engines and the public and workspace specs on the phones; `smoke` keeps only the tests
+// tagged @smoke, which is what CI runs on them. Emulation is not a real device.
+const matrix = process.env.BROWSER_MATRIX;
+const phoneSpecs = /(smoke|editorial-pages|ux|workspace|projects|browsers|pwa)\.spec\.ts$/;
+const extra = matrix
+  ? [
+      { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
+      { name: 'webkit', use: { ...devices['Desktop Safari'] } },
+      { name: 'pixel', use: { ...devices['Pixel 7'] }, testMatch: phoneSpecs },
+      { name: 'iphone', use: { ...devices['iPhone 15'] }, testMatch: phoneSpecs }
+    ].map((project) => ({ ...project, grep: matrix === 'smoke' ? /@smoke/ : undefined }))
+  : [];
 export default defineConfig({
   testDir: 'e2e',
   timeout: 60000,
@@ -19,5 +33,6 @@ export default defineConfig({
     baseURL: external || 'http://localhost:4173',
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure'
-  }
+  },
+  projects: [{ name: 'chromium' }, ...extra]
 });
