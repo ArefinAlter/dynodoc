@@ -165,6 +165,7 @@ pub mod escape;
 pub mod files;
 pub mod find;
 pub mod fixtures;
+pub mod grammar;
 pub mod hash;
 pub mod model;
 pub mod outline;
