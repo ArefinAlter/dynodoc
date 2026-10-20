@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license-file.workspace = true
 publish.workspace = true
-description = "dynodoc read-only MCP server: protocol layer, tool definitions and the HTTP backend of the agent protocol."
+description = "dynodoc MCP server: protocol layer, tool definitions (read-only by default, propose and submit on request) and the HTTP backend of the agent protocol."
 
 [dependencies]
 serde_json = { workspace = true }
@@ -24,6 +24,8 @@ harness = false
 # Contract tests: the error table, the DCT header parser and the golden transcripts of
 # the read path are the specification this crate must agree with.
 engine-agent = { path = "../engine-agent" }
+# The role a compiled proposal is authorised as, to render a real `propose` answer.
+engine-core = { workspace = true }
 axum = { workspace = true }
 futures = { workspace = true }
 tracing-subscriber = { workspace = true }

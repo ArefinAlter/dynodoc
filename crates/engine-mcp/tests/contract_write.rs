@@ -468,6 +468,77 @@ fn a_propose_without_its_request_id_is_not_planned_and_one_over_the_limits_is_re
     );
 }
 
+// --- the note follows the words the library writes ---------------------------------------------------
+
+#[test]
+fn the_note_reads_the_header_words_of_a_real_preview() {
+    use engine_agent::{
+        compile::{compile, CompileInput},
+        dct::split_response,
+        fixtures,
+        grammar::parse_ops,
+        preview::{preview, PreviewOptions},
+        refs::RefIndex,
+    };
+    use engine_core::governance::Role;
+
+    let d = fixtures::document();
+    let target = RefIndex::from_state(&d.base.state)
+        .ref_of(&d.ids["purpose"])
+        .unwrap()
+        .to_string();
+    let ops = parse_ops(
+        &json!([{"op": "replace", "ref": target, "find": "policy", "with": "procedure"}]),
+    )
+    .unwrap();
+    let mut n = 0u64;
+    let mut ids = move || {
+        n += 1;
+        fixtures::ulid(8_000_000 + n)
+    };
+    let compiled = compile(
+        &CompileInput::new(&d.base.meta, &d.base.state, Role::Author),
+        &ops,
+        &mut ids,
+    )
+    .unwrap();
+    let stored = PreviewOptions {
+        proposal: Some(Uuid::parse_str(PROPOSAL).unwrap()),
+        state: Some("draft"),
+        revision: Some(1),
+        ..PreviewOptions::default()
+    };
+    let dry = PreviewOptions {
+        dry_run: true,
+        ..PreviewOptions::default()
+    };
+    for (options, expected) in [
+        (
+            stored,
+            "proposal only, still a private draft; nothing is live.",
+        ),
+        (
+            dry,
+            "dry run: nothing was stored and there is no proposal yet.",
+        ),
+    ] {
+        let answer = preview(&d.base.meta, &d.base.state, &compiled, &options)
+            .unwrap()
+            .text;
+        let noted = engine_mcp::notes::annotate(Tool::Propose, answer.clone());
+        assert!(
+            noted.starts_with(&answer),
+            "the library's text is kept whole"
+        );
+        let last = noted.lines().last().unwrap();
+        assert!(last.starts_with(&format!("note \"{expected}")), "{last}");
+        // The annotated answer is still DCT: a header, then lines.
+        let (header, lines) = split_response(&noted).unwrap();
+        assert_eq!(header.get("trust"), Some("data"));
+        assert_eq!(lines.last(), Some(&last));
+    }
+}
+
 // --- section 10: the failing op ---------------------------------------------------------------------
 
 #[test]

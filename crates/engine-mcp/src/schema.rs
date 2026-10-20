@@ -49,9 +49,16 @@ pub fn validate(schema: &Value, args: &Map<String, Value>) -> Result<(), ToolErr
 /// missing, one the schema does not list (when it is closed) or one whose value fails.
 fn broken_key(schema: &Value, map: &Map<String, Value>) -> Option<String> {
     let properties = schema.get("properties").and_then(Value::as_object);
+    // The required properties first, missing or wrong, so that an op with a name the service
+    // does not know is blamed on `op` and not on a field that only that op would have used.
     if let Some(required) = schema.get("required").and_then(Value::as_array) {
         for name in required.iter().filter_map(Value::as_str) {
-            if !map.contains_key(name) {
+            let wrong = match (map.get(name), properties.and_then(|p| p.get(name))) {
+                (None, _) => true,
+                (Some(value), Some(property)) => !accepts(property, value),
+                (Some(_), None) => false,
+            };
+            if wrong {
                 return Some(name.to_owned());
             }
         }

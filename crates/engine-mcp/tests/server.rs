@@ -18,7 +18,13 @@ struct Scripted {
 
 impl Backend for Scripted {
     async fn call(&self, ctx: CallContext, call: ToolCall) -> ToolOutput {
-        let query = call.args.get("q").and_then(Value::as_str).unwrap_or("");
+        // `q` of the read tools; the `name` of a proposal does the same for the write tools.
+        let query = call
+            .args
+            .get("q")
+            .or_else(|| call.args.get("name"))
+            .and_then(Value::as_str)
+            .unwrap_or("");
         let output = match query {
             "panic" => panic!("scripted failure with a recognisable message"),
             "fail" => ToolOutput::error(&ToolError::new("not_found")),
@@ -36,6 +42,12 @@ impl Backend for Scripted {
 fn server() -> (Server<Scripted>, Scripted) {
     let backend = Scripted::default();
     (Server::new(backend.clone(), Profile::read_only()), backend)
+}
+
+/// The profile of `engine-cli mcp --write`.
+fn full_server() -> (Server<Scripted>, Scripted) {
+    let backend = Scripted::default();
+    (Server::new(backend.clone(), Profile::full()), backend)
 }
 
 /// Feed `input` and return every line the server wrote.
@@ -343,9 +355,13 @@ async fn bad_arguments_are_tool_errors_naming_the_field() {
 
 #[tokio::test]
 async fn malformed_calls_are_protocol_errors() {
-    let (server, _) = server();
+    let (server, backend) = server();
     for (params, label) in [
         (json!({"name": "propose", "arguments": {}}), "write tool"),
+        (
+            json!({"name": "submit", "arguments": {"proposal": "4d0e9b1c-5f2a-4b8e-9c31-0a7d6e2f8b14", "action": "submit"}}),
+            "write tool with valid arguments",
+        ),
         (json!({"name": "nope"}), "unknown tool"),
         (json!({"arguments": {}}), "no name"),
         (json!({"name": 5}), "name not a string"),
@@ -364,6 +380,11 @@ async fn malformed_calls_are_protocol_errors() {
         assert_eq!(reply["error"]["code"], -32602, "{label}");
         assert_eq!(reply["id"], 8, "{label}");
     }
+    // A hidden tool is refused before anything else happens: the backend never saw one.
+    assert!(
+        backend.seen.lock().unwrap().is_empty(),
+        "a write tool of the default profile reached the backend"
+    );
     // Arguments may be omitted or null when nothing is required.
     for arguments in [json!(null), json!({})] {
         let reply = one(&server, call(1, "status", arguments)).await;
@@ -462,4 +483,299 @@ async fn the_loop_ends_cleanly_at_end_of_input() {
     let (server, _) = server();
     assert!(run(&server, "").await.is_empty());
     assert!(run(&server, "\n\n").await.is_empty());
+}
+
+// --- the full profile (`--write`) ---------------------------------------------------------------
+
+const PROPOSAL: &str = "4d0e9b1c-5f2a-4b8e-9c31-0a7d6e2f8b14";
+
+fn propose_call(ops: Value) -> Value {
+    json!({"file": "7034d450", "rev": 412, "ops": ops})
+}
+
+#[tokio::test]
+async fn the_full_profile_lists_eight_tools_and_the_default_still_lists_six() {
+    let (server, _) = full_server();
+    let first = one(&server, request(1, "tools/list", json!({}))).await;
+    let again = one(&server, request(1, "tools/list", json!({}))).await;
+    assert_eq!(first.to_string(), again.to_string());
+    let tools = first["result"]["tools"].as_array().unwrap();
+    let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
+    assert_eq!(
+        names,
+        ["files", "outline", "read", "find", "diff", "propose", "submit", "status"]
+    );
+    for tool in tools {
+        let write = matches!(tool["name"].as_str().unwrap(), "propose" | "submit");
+        let hints = &tool["annotations"];
+        assert_eq!(hints["readOnlyHint"], !write, "{tool}");
+        assert_eq!(hints["destructiveHint"], false);
+        assert_eq!(hints["openWorldHint"], false);
+        assert_eq!(hints["idempotentHint"] == true, write, "{tool}");
+        assert_eq!(tool["inputSchema"]["additionalProperties"], false);
+    }
+    // The handshake says what this connection is.
+    let reply = one(
+        &server,
+        request(2, "initialize", json!({"protocolVersion": "2025-11-25"})),
+    )
+    .await;
+    let instructions = reply["result"]["instructions"].as_str().unwrap();
+    assert!(instructions.chars().count() <= 500);
+    assert!(instructions.contains("never edits the team version"));
+    assert_eq!(reply["result"]["_meta"]["dynodoc/v1"]["profile"], "write");
+    // The default profile, on its own server, is untouched.
+    let (read_only, _) = server_with_read_only_profile();
+    let list = one(&read_only, request(3, "tools/list", json!({}))).await;
+    assert_eq!(list["result"]["tools"].as_array().unwrap().len(), 6);
+}
+
+fn server_with_read_only_profile() -> (Server<Scripted>, Scripted) {
+    server()
+}
+
+#[tokio::test]
+async fn nothing_is_called_unless_the_client_calls_it() {
+    let (server, backend) = full_server();
+    let input = [
+        request(1, "initialize", json!({"protocolVersion": "2026-07-28"})),
+        json!({"jsonrpc": "2.0", "method": "notifications/initialized"}),
+        request(2, "tools/list", json!({})),
+        request(3, "server/discover", json!({})),
+        request(4, "ping", json!({})),
+        json!({"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": 3}}),
+    ]
+    .map(|m| format!("{m}\n"))
+    .concat();
+    run(&server, &input).await;
+    assert!(
+        backend.seen.lock().unwrap().is_empty(),
+        "the server called a tool by itself"
+    );
+    // One call from the client is one call to the backend, and a propose is not followed by
+    // a submit.
+    let ops = json!([{"op": "delete", "ref": "7C02"}]);
+    let reply = one(&server, call(5, "propose", propose_call(ops))).await;
+    assert!(reply["result"].get("isError").is_none(), "{reply}");
+    let seen = backend.seen.lock().unwrap();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0].1.tool, Tool::Propose);
+}
+
+#[tokio::test]
+async fn bad_write_arguments_are_tool_errors_naming_the_field_and_never_reach_the_backend() {
+    let (server, backend) = full_server();
+    let op = || json!({"op": "delete", "ref": "7C02"});
+    let with = |key: &str, value: Value| {
+        let mut a = propose_call(json!([op()]));
+        a[key] = value;
+        a
+    };
+    let many: Vec<Value> = (0..201).map(|_| op()).collect();
+    let cases: Vec<(&str, Value, &str)> = vec![
+        // Unknown fields, at the top and inside an op.
+        ("propose", with("surprise", json!(1)), "field=surprise "),
+        (
+            "propose",
+            propose_call(json!([op(), {"op": "delete", "ref": "7C02", "surprise": 1}])),
+            "field=surprise op=1 ",
+        ),
+        // Missing or malformed.
+        (
+            "propose",
+            json!({"file": "7034d450", "rev": 412}),
+            "field=ops ",
+        ),
+        (
+            "propose",
+            json!({"file": "7034d450", "ops": [op()]}),
+            "field=rev ",
+        ),
+        ("propose", propose_call(json!([])), "field=ops "),
+        ("propose", propose_call(json!(many)), "field=ops "),
+        (
+            "propose",
+            propose_call(json!([op(), {"op": "merge", "ref": "7C02"}])),
+            "field=op op=1 ",
+        ),
+        (
+            "propose",
+            propose_call(json!([{"ref": "7C02"}])),
+            "field=op op=0 ",
+        ),
+        (
+            "propose",
+            propose_call(json!([{"op": "replace_all", "find": "x", "with": "y", "nth": 0}])),
+            "field=nth op=0 ",
+        ),
+        (
+            "propose",
+            propose_call(json!([{"op": "insert", "after": "7C02", "blocks": [{"t": "p"}]}])),
+            "field=blocks op=0 ",
+        ),
+        (
+            "propose",
+            with("request_id", json!("b1f1c9f2")),
+            "field=request_id ",
+        ),
+        (
+            "propose",
+            with("proposal", json!("4d0e9b1c")),
+            "field=proposal ",
+        ),
+        ("propose", with("dry_run", json!("yes")), "field=dry_run "),
+        (
+            "propose",
+            with("return", json!("everything")),
+            "field=return ",
+        ),
+        (
+            "propose",
+            with("name", json!("n".repeat(201))),
+            "field=name ",
+        ),
+        (
+            "propose",
+            propose_call(json!([{"op": "set_text", "ref": "7C02", "text": "x".repeat(100_001)}])),
+            "field=text op=0 ",
+        ),
+        // The spec lists these ops; the service does not compile them, so they are not offered.
+        (
+            "propose",
+            propose_call(json!([{"op": "macro", "name": "normalize_headings"}])),
+            "field=op op=0 ",
+        ),
+        (
+            "propose",
+            propose_call(
+                json!([{"op": "fill", "sheet": "S", "from": "A1", "to": "A9", "dir": "down"}]),
+            ),
+            "field=op op=0 ",
+        ),
+        // submit and status.
+        ("submit", json!({"action": "submit"}), "field=proposal "),
+        ("submit", json!({"proposal": PROPOSAL}), "field=action "),
+        (
+            "submit",
+            json!({"proposal": PROPOSAL, "action": "approve"}),
+            "field=action ",
+        ),
+        (
+            "submit",
+            json!({"proposal": PROPOSAL, "action": "merge"}),
+            "field=action ",
+        ),
+        (
+            "submit",
+            json!({"proposal": "4d0e9b1c", "action": "submit"}),
+            "field=proposal ",
+        ),
+        (
+            "submit",
+            json!({"proposal": PROPOSAL, "action": "submit", "note": "n".repeat(1001)}),
+            "field=note ",
+        ),
+        (
+            "submit",
+            json!({"proposal": PROPOSAL, "action": "submit", "extra": 1}),
+            "field=extra ",
+        ),
+        ("status", json!({"what": "proposals"}), "field=what "),
+        ("status", json!({"proposal": "4d0e9b1c"}), "field=proposal "),
+        ("status", json!({"file": "7034d450"}), "field=file "),
+    ];
+    for (name, arguments, expected) in cases {
+        let reply = one(&server, call(1, name, arguments.clone())).await;
+        assert_eq!(reply["result"]["isError"], true, "{name} {arguments}");
+        let text = reply["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(
+            text.starts_with(&format!("dd/1 error code=bad_request {expected}")),
+            "{name} {arguments}: {text}"
+        );
+    }
+    assert!(
+        backend.seen.lock().unwrap().is_empty(),
+        "nothing invalid reached the backend"
+    );
+}
+
+#[tokio::test]
+async fn good_write_arguments_reach_the_backend_as_they_are() {
+    let (server, backend) = full_server();
+    let ops = json!([
+        {"op": "set_text", "ref": "7C02", "text": "New.", "base": "b7a210", "why": "clearer", "id": "a1"},
+        {"op": "replace", "ref": "7D91", "find": "policy", "with": "procedure", "nth": 2},
+        {"op": "replace_all", "find": "clause", "with": "article", "expect": 80, "args": {"word": true}},
+        {"op": "insert", "after": "7C02", "blocks": [{"t": "p", "text": "Added."}]},
+        {"op": "set_cells", "sheet": "Budget", "at": "J2", "values": [["review"], ["review"]]},
+        {"op": "clear", "range": "Budget!A1:C3"},
+        {"op": "set_shape", "slide": "s2", "shape": "W2SK", "text": "T"},
+        {"op": "set_notes", "slide": "s2", "text": "N"},
+        {"op": "move", "ref": "7C02", "before": "7D91"},
+        {"op": "set_type", "ref": "7C02", "t": "h2"},
+        {"op": "delete", "ref": "$1"}
+    ]);
+    let mut arguments = propose_call(ops);
+    arguments["dry_run"] = json!(true);
+    arguments["strict"] = json!(false);
+    arguments["return"] = json!("diff");
+    arguments["name"] = json!("Wording");
+    arguments["request_id"] = json!("b1f1c9f2-3c4d-4e5f-8a6b-7c8d9e0f1a2b");
+    arguments["proposal"] = json!(PROPOSAL);
+    let reply = one(&server, call(1, "propose", arguments.clone())).await;
+    assert!(reply["result"].get("isError").is_none(), "{reply}");
+    for (name, arguments) in [
+        (
+            "submit",
+            json!({"proposal": PROPOSAL, "action": "withdraw", "note": "Superseded."}),
+        ),
+        ("status", json!({"proposal": PROPOSAL})),
+        ("status", json!({"what": "proposal", "proposal": PROPOSAL})),
+        ("status", json!({"what": "access"})),
+        ("status", json!({})),
+    ] {
+        let reply = one(&server, call(2, name, arguments.clone())).await;
+        assert!(reply["result"].get("isError").is_none(), "{name} {reply}");
+    }
+    let seen = backend.seen.lock().unwrap();
+    assert_eq!(seen.len(), 6);
+    assert_eq!(Value::Object(seen[0].1.args.clone()), arguments);
+}
+
+#[tokio::test]
+async fn a_failing_or_panicking_write_costs_one_call_and_nothing_reaches_the_writer() {
+    let (server, _) = full_server();
+    let ops = json!([{"op": "delete", "ref": "7C02"}]);
+    let named = |name: &str| {
+        let mut a = propose_call(ops.clone());
+        a["name"] = json!(name);
+        a
+    };
+    let input = format!(
+        "{}\n{}\n{}\n{}\n",
+        call(1, "propose", named("panic")),
+        call(2, "propose", named("fail")),
+        request(3, "ping", json!({})),
+        call(4, "propose", named("fine")),
+    );
+    let lines = run(&server, &input).await;
+    assert_eq!(lines.len(), 4, "{lines:?}");
+    for line in &lines {
+        assert_protocol_line(line);
+        assert!(!line.contains("recognisable"), "{line}");
+    }
+    let results: Vec<Value> = lines
+        .iter()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let text = |i: usize| {
+        results[i]["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    assert!(text(0).starts_with("dd/1 error code=internal "));
+    assert!(text(1).starts_with("dd/1 error code=not_found "));
+    assert_eq!(results[1]["result"]["isError"], true);
+    assert!(results[3]["result"].get("isError").is_none());
 }

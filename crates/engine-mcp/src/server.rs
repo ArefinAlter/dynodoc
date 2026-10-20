@@ -1,6 +1,6 @@
 //! The MCP server: newline-delimited JSON-RPC 2.0 over a reader and a writer.
 //!
-//! Hand-written for one reason: a read-only tool server needs `initialize`, `ping`,
+//! Hand-written for one reason: a tool server needs `initialize`, `ping`,
 //! `tools/list` and `tools/call` and nothing else, and the official Rust SDK (`rmcp`) would
 //! add a large dependency tree for them. The protocol layer is isolated here so replacing
 //! it is local (protocol spec 21, "MCP specification churn").
@@ -15,7 +15,8 @@
 //!   and a running call is never aborted.
 //! * `tools/list` is deterministic (same bytes every time). When the request (or the
 //!   negotiated revision) is 2026-07-28 or later it carries `ttlMs` and `cacheScope`.
-//! * `tools/call` validates the arguments against the published schema. An unknown tool is a
+//! * `tools/call` validates the arguments against the published schema. An unknown tool, or a
+//!   tool the connection's profile does not offer (the write tools unless `--write` was given), is a
 //!   JSON-RPC error `-32602`; invalid arguments and every backend failure are a normal
 //!   result with `isError: true` and a `dd/1 error` line (spec 7.1, and the 2025-11-25
 //!   clarification that argument errors are tool errors so a model can correct itself).
