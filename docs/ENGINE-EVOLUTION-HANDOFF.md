@@ -1,5 +1,30 @@
 # Engine evolution handoff
 
+## Source: AI agent screens in the web app (20 October 2026)
+
+Two screens now sit on the merged agent APIs; nothing on the server changed. **Signing keys:** enrolment asks "Who is this key for?"
+(me, by default, or an AI agent with a required name); an agent key shows an "AI agent" badge and one permission, "Read documents",
+which it can be given per project (no person scopes, no all-projects mode, mixed classes refused client-side and mapped from the
+server's errors). **Project settings, "AI agents":** a project owner or manager sees whether agents are available on this
+installation, turns them on or off, sets the role floor, the kinds and the two budgets (saved as the server's full replacement with
+the loaded revision; a conflict reloads the form), reads the last seven days of usage, sees the per-file overrides (read-only), and
+can press "Stop all AI agents now", which asks first and says exactly what it does (agents off, every agent key's access to this
+project and every open agent session ended, people's own keys untouched, turning agents on again restores nothing). Anyone else
+sees one explanatory line.
+
+A real defect was found and fixed on the way: the same-origin proxy (`api/engine/[...path]`) did not forward `If-Match`, so every
+browser save of the policy would have been refused with a 400; it now does, with a test.
+
+Evidence: 540 unit and component tests in 55 files, Prettier, ESLint, svelte-check (0 errors, 0 warnings) and a production build
+pass; the new Playwright spec (enrol as an agent and grant, save, a conflict from a second save, the kill switch, an editor seeing no
+controls, an axe scan of both sections with no violations) passed with the existing key and project specs, 8 of 8, on a local copy of
+the CI isolated stack. **Not verified:** the stack ran with the agent gateway off (the "turned on" wording is covered by unit tests only),
+no real AI client, only Chromium, no screen reader, no review of the copy by a non-technical administrator. Not built: file override
+editing, a date range for usage, and the write side of agents (reviewer badges and the proposals inbox belong with the write path).
+Questions for the owner: whether members below manager may read the policy (today they are refused, so they cannot see even a
+read-only state); whether an agent key's name should be required (the server treats it as optional); the role names in the floor
+select (the screen uses Viewer, Contributor, Reviewer, Editor, Manager, Owner).
+
 ## Source: at-rest envelope encryption library, Phase 0 core (20 October 2026)
 
 The pure core of Phase 0 of [END-TO-END-ENCRYPTION.md](END-TO-END-ENCRYPTION.md) section 7 is built as `engine_core::at_rest`:
