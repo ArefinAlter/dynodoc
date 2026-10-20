@@ -22,7 +22,7 @@ use std::{
     path::{Path, PathBuf},
 };
 use uuid::Uuid;
-mod http;
+pub(crate) mod http;
 use http::{Client, Credential, Remote};
 #[cfg(test)]
 mod tests;

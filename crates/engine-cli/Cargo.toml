@@ -15,6 +15,7 @@ path = "src/main.rs"
 engine-api = { workspace = true }
 engine-core = { workspace = true }
 engine-shared = { workspace = true }
+engine-mcp = { workspace = true }
 tokio = { workspace = true }
 sqlx = { workspace = true }
 uuid = { workspace = true }

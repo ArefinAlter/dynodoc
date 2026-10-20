@@ -642,6 +642,7 @@ dependencies = [
  "clap",
  "engine-api",
  "engine-core",
+ "engine-mcp",
  "engine-shared",
  "hex",
  "reqwest",
@@ -678,6 +679,21 @@ dependencies = [
  "tokio-test",
  "tracing",
  "ulid",
+ "uuid",
+]
+
+[[package]]
+name = "engine-mcp"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "engine-agent",
+ "futures",
+ "reqwest",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
  "uuid",
 ]
 

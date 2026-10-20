@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "dynodoc": {
+      "command": "engine-cli",
+      "args": [
+        "mcp",
+        "--remote",
+        "${DYNODOC_REMOTE}",
+        "--project",
+        "${DYNODOC_PROJECT}",
+        "--device-key",
+        "${DYNODOC_KEY}"
+      ]
+    }
+  }
+}
