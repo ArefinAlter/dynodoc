@@ -447,7 +447,8 @@ deterministic salt of 7.4 for content-addressed tables; the `KeyProvider` trait 
 `unwrap`, `rewrap`, `describe`), `FileKeyProvider` (KEK versions in owner-only files, bounded,
 rotation by adding a version), a deterministic `TestKeyProvider`, and a `DekCache` with a
 lifetime and a size bound on an injectable clock; zeroising `Dek`/`Kek`/`DataKey`. Evidence:
-68 tests (48 unit, 13 property and tamper, 7 vector) including every-byte tamper, AAD binding,
+68 tests on Windows (48 unit, 13 property and tamper, 7 vector; 69 on Linux, which adds the
+Unix key-file permission test) including every-byte tamper, AAD binding,
 key and nonce uniqueness, fixed-seed parser runs on arbitrary bytes, and a KEK rotation, DEK
 rotation and kill-switch walk-through; `tests/fixtures/at-rest-v1.json` from the independent
 Python generator `gen_at_rest_vectors.py` (PyPI `cryptography`, `hmac`, `hashlib`),
@@ -460,9 +461,11 @@ KMS providers and any asynchronous provider interface; the configuration of 7.7;
 and 0c; the restore drill; observability and failure injection. Nothing here is a public
 claim: claims level 1 still needs Phase 0 shipped and a passed restore drill. **Not
 verified:** the access list of a key file is not checked on Windows (the Unix mode check
-is); macOS was not run; the vectors share a reading of the design with the Rust code, no
-external review of the construction has taken place, and the cache and wipe behaviour were
-not measured under load.
+ran only on Linux, in a container as root); macOS was not run; the declared minimum Rust
+1.85 was not used (built and linted on 1.96; no newer feature is knowingly used); the
+vectors share a reading of the design with the Rust code, no external review of the
+construction has taken place, and the cache and wipe behaviour were not measured under
+load.
 
 ## 8. Phase 1: encrypted projects
 

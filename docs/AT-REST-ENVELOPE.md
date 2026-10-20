@@ -190,7 +190,9 @@ The output is deterministic (running it twice gives the same bytes). It aborts u
 reproduces RFC 5869 test case 1, AES-256-GCM reproduces the McGrew-Viega test case 14, a
 second HKDF written from RFC 5869 agrees for every derived key, and every ciphertext
 decrypts. Both sides were written from the same design text, so the vectors catch
-implementation mistakes, not a mistake in the design itself. The Rust tests reproduce every
+implementation mistakes, not a mistake in the design itself. A mutation check confirmed the
+tests are not vacuous: changing the salt label or the `kek_version` in the AAD makes the
+vector tests fail. The Rust tests reproduce every
 ciphertext, tag, derived key and nonce, associated data, HKDF info, deterministic salt and
 wrapped DEK byte for byte and decrypt the generator's own bytes. Never regenerate the
 fixture to make a Rust check pass.
