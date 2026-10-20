@@ -161,6 +161,7 @@
     z-index: 100;
     display: grid;
     place-items: center;
+    grid-template-columns: minmax(0, 1fr);
     padding: 24px;
     --rebase-solid: #3d6b4d;
   }
@@ -169,6 +170,7 @@
     width: 760px;
     max-width: 100%;
     max-height: 92vh;
+    max-height: 92dvh;
     overflow: auto;
     padding: 24px 28px;
     border-radius: 12px;

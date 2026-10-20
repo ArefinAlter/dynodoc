@@ -120,6 +120,7 @@
     width: 430px;
     max-width: calc(100vw - 32px);
     max-height: 85vh;
+    max-height: 85dvh;
     border: 1px solid var(--color-border-strong);
     border-radius: 7px;
     padding: 20px;

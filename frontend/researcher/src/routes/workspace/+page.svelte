@@ -1263,6 +1263,7 @@
     z-index: 50;
     display: grid;
     place-items: center;
+    grid-template-columns: minmax(0, 1fr);
     padding: 25px;
     -webkit-backdrop-filter: blur(4px);
     backdrop-filter: blur(4px);
@@ -1276,6 +1277,7 @@
     padding: 30px;
     position: relative;
     max-height: 90vh;
+    max-height: 90dvh;
     overflow: auto;
     box-shadow: var(--shadow-dialog);
   }

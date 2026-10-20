@@ -142,6 +142,7 @@
     display: flex;
     flex-direction: column;
     height: min(760px, 82vh);
+    height: min(760px, 82dvh);
     max-width: 1180px;
     margin: auto;
     border: 1px solid var(--color-border);

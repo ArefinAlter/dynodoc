@@ -259,6 +259,7 @@
     z-index: 120;
     width: min(400px, calc(100vw - 24px));
     max-height: min(560px, 75vh);
+    max-height: min(560px, 75dvh);
     overflow: auto;
     background: var(--color-surface-raised);
     color: var(--color-ink);

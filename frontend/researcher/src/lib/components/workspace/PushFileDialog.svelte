@@ -281,6 +281,7 @@
     z-index: 100;
     display: grid;
     place-items: center;
+    grid-template-columns: minmax(0, 1fr);
     padding: 24px;
   }
   .dialog {
@@ -288,6 +289,7 @@
     width: 760px;
     max-width: 100%;
     max-height: 92vh;
+    max-height: 92dvh;
     overflow: auto;
     padding: 26px 28px;
     border-radius: 12px;

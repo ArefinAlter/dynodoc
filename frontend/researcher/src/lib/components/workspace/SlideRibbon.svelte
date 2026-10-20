@@ -655,4 +655,10 @@
     opacity: 0.45;
     cursor: default;
   }
+  /* Fingertip-sized commands are taller than the fixed tab bar; let it grow. */
+  @media (pointer: coarse) {
+    .ribbon-tabs {
+      height: auto;
+    }
+  }
 </style>

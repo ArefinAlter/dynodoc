@@ -149,7 +149,11 @@
   let ribbon = $state('Home'),
     tracking = $state(false),
     preview = $state(false),
-    paginated = $state(true),
+    // A phone cannot show a printed page at a readable size, so it opens in continuous view,
+    // which reflows to the screen. Print layout is one tap away.
+    paginated = $state(
+      typeof window === 'undefined' || !window.matchMedia('(max-width: 700px)').matches
+    ),
     lightPages = $state(readLightPages()),
     layout = $state<PageLayout>({ pages: 1, current: 1, overflow: false });
   $effect(() => writeLightPages(lightPages));
@@ -1322,6 +1326,7 @@
     background: var(--color-overlay);
     display: grid;
     place-items: center;
+    grid-template-columns: minmax(0, 1fr);
     z-index: 100;
     -webkit-backdrop-filter: blur(3px);
     backdrop-filter: blur(3px);
@@ -1371,12 +1376,26 @@
     background: var(--color-accent-solid);
     color: var(--color-on-accent);
   }
+  @media (max-width: 700px) {
+    .paper:not(.paginated) {
+      width: auto !important;
+      max-width: 100%;
+      padding-inline: 16px !important;
+    }
+    .ruler {
+      display: none;
+    }
+  }
   @media (max-width: 600px) {
     .paper-area {
       padding: 0 12px 18px;
     }
     .document-foot {
       gap: 10px;
+      flex-wrap: wrap;
+    }
+    .document-foot > span {
+      white-space: nowrap;
     }
     .view-controls input {
       width: 55px;
