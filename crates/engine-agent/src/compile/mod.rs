@@ -313,7 +313,11 @@ impl<'a> Work<'a> {
     /// Resolve a ref or a `$n` to a live node of this file.
     pub(crate) fn resolve(&self, field: &'static str, anchor: &Anchor) -> R<NodeId> {
         let id = match anchor {
-            Anchor::New(n) => self.created.get(n - 1).cloned().ok_or(bad(field))?,
+            Anchor::New(n) => n
+                .checked_sub(1)
+                .and_then(|i| self.created.get(i))
+                .cloned()
+                .ok_or(bad(field))?,
             Anchor::Ref(r) => match self.idx.resolve(r) {
                 Ok(id) => id,
                 Err(ResolveError::Unknown) => {

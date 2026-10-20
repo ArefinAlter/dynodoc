@@ -399,6 +399,55 @@ fn replace_changes_only_the_matched_span() {
 }
 
 #[test]
+fn a_long_paragraph_edit_is_one_minimal_checked_patch() {
+    let d = doc();
+    let long = &d.ids["long"];
+    let t = text(&d.base.state, long);
+    let word = t.split_whitespace().nth(30).unwrap().to_string();
+    let words_before = t.matches(word.as_str()).count();
+    let c = ok(
+        &d.base,
+        json!([{
+            "op": "replace", "ref": rf(&d.base, long), "find": word, "with": "REPLACED",
+            "nth": 1, "expect": words_before
+        }]),
+    );
+    // `expect` states the count of the block; `nth` picks one of them.
+    check(&d.base, &c);
+    assert_eq!(c.ops.len(), 1, "{:?}", c.ops);
+    let EventPayload::RichTextPatched { patch, .. } = &c.ops[0] else {
+        panic!("{:?}", c.ops)
+    };
+    // One text edit at the root: keep, drop the word, add the replacement, keep the rest.
+    assert_eq!(patch.edits.len(), 1);
+    let engine_shared::richtext::RichTextEdit::Text { path, ops } = &patch.edits[0] else {
+        panic!("{:?}", patch.edits)
+    };
+    assert!(path.is_empty());
+    use engine_shared::richtext::TextOp::*;
+    let shape: Vec<&str> = ops
+        .iter()
+        .map(|o| match o {
+            Retain { style: None, .. } => "retain",
+            Retain { .. } => "restyle",
+            Delete { .. } => "delete",
+            Insert { .. } => "insert",
+        })
+        .collect();
+    assert!(shape.len() <= 6 && !shape.contains(&"restyle"), "{shape:?}");
+    assert!(patch.styles.len() <= 1);
+    // And it is smaller than writing the whole field.
+    let whole = EventPayload::FieldEdited {
+        node_id: long.clone(),
+        field: "content".into(),
+        value: content(&c.after, long),
+    };
+    assert!(
+        serde_json::to_vec(&c.ops[0]).unwrap().len() < serde_json::to_vec(&whole).unwrap().len()
+    );
+}
+
+#[test]
 fn replace_match_rules() {
     let d = doc();
     let long = &d.ids["long"];

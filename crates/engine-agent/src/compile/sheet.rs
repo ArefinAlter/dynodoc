@@ -9,7 +9,7 @@ use engine_shared::{EventPayload, NodeId, NodeType};
 use serde_json::{json, Map, Value};
 
 use super::{live_children, Work, R};
-use crate::a1::{A1Range, CellRef, MAX_COLS, MAX_ROWS};
+use crate::a1::{A1Range, CellRef, MAX_COLS, MAX_RANGE_CELLS, MAX_ROWS};
 use crate::error::AgentError;
 use crate::grammar::{Anchor, CellAt, Op};
 use crate::hash::range_hash;
@@ -115,7 +115,12 @@ pub(super) fn set_cells(
     w.check_redacted(&sheet)?;
     let rows = rows_of(&w.work, &sheet);
     let (row0, col0) = match at {
-        CellAt::A1(c) => ((c.row - 1) as usize, usize::from(c.col)),
+        CellAt::A1(c) => (
+            c.row
+                .checked_sub(1)
+                .ok_or(AgentError::BadRequest { field: "at" })? as usize,
+            usize::from(c.col),
+        ),
         CellAt::Row { row, col } => {
             let id = w.resolve("at", &Anchor::Ref(row.clone()))?;
             let i = rows
@@ -129,6 +134,13 @@ pub(super) fn set_cells(
     };
     let nrows = values.len();
     let width = values.iter().map(Vec::len).max().unwrap_or(0);
+    let cells: usize = values.iter().map(Vec::len).sum();
+    if cells == 0 {
+        return Err(AgentError::BadRequest { field: "values" });
+    }
+    if cells as u64 > MAX_RANGE_CELLS {
+        return Err(limit("values", MAX_RANGE_CELLS, cells as u64));
+    }
     if row0 + nrows > MAX_ROWS as usize {
         return Err(limit("at", u64::from(MAX_ROWS), (row0 + nrows) as u64));
     }
@@ -228,7 +240,17 @@ pub(super) fn clear(w: &mut Work, op: &Op, sheet: Option<&str>, range: &A1Range)
     let (sheet, sref) = sheet_of(w, q)?;
     w.check_redacted(&sheet)?;
     let rows = rows_of(&w.work, &sheet);
-    let (row0, col0) = ((range.from.row - 1) as usize, usize::from(range.from.col));
+    // A range from `grammar` is normalised and within the editor's limits; a hand-made one
+    // is checked the same way rather than trusted.
+    let first = range.from.row.checked_sub(1).filter(|_| {
+        range.to.row >= range.from.row
+            && range.to.col >= range.from.col
+            && range.to.row <= MAX_ROWS
+            && range.to.col < MAX_COLS
+            && range.cells() <= MAX_RANGE_CELLS
+    });
+    let first = first.ok_or(AgentError::BadRequest { field: "range" })?;
+    let (row0, col0) = (first as usize, usize::from(range.from.col));
     check_range_base(
         w,
         op,

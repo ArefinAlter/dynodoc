@@ -1,11 +1,14 @@
-//! The read path of the Dynodoc AI-agent connector, as pure functions.
+//! The read path and the operation compiler of the Dynodoc AI-agent connector, as pure
+//! functions.
 //!
-//! This is the `engine-agent` crate of `docs/AI-AGENT-CONNECTORS.md` section 3.1 and the
-//! "refs, hashes, DCT writer, outline, read, find, diff, escaping" task of its section 11.2.
-//! It implements the read-only half of `docs/AI-AGENT-PROTOCOL-SPEC.md` (`dynodoc.agent/1`)
-//! over [`engine_core::materializer::DocumentState`]: no HTTP, no database, no MCP, no I/O,
-//! no clock, no randomness. Given the same state and the same arguments every function
-//! returns the same bytes. Maps are ordered, so iteration order never shows in the output.
+//! This is the `engine-agent` crate of `docs/AI-AGENT-CONNECTORS.md` section 3.1, the
+//! "refs, hashes, DCT writer, outline, read, find, diff, escaping" task of its section 11.2
+//! and the "op compiler" task of its section 11.3. It implements the read tools and the
+//! compile step of `propose` of `docs/AI-AGENT-PROTOCOL-SPEC.md` (`dynodoc.agent/1`) over
+//! [`engine_core::materializer::DocumentState`]: no HTTP, no database, no MCP, no I/O, no
+//! clock, no randomness (new node ids come from a caller-supplied [`compile::IdSource`]).
+//! Given the same state and the same arguments every function returns the same bytes. Maps
+//! are ordered, so iteration order never shows in the output.
 //!
 //! # What is here
 //!
@@ -24,7 +27,11 @@
 //! | 7.4 `read` | [`read`] | [`read::read`] |
 //! | 7.5 `find` | [`find`] | [`find::find`] |
 //! | 7.6 `diff` | [`diff`] | [`diff::diff`] |
-//! | 10 errors | [`error`] | [`error::AgentError`] (26 codes) |
+//! | 8.2 position keys | [`pos`] | [`pos::between`], the Rust port of the editor's function, and [`pos::key_between`] |
+//! | 7.7, 8 operation grammar | [`grammar`] | [`grammar::parse_propose`], [`grammar::parse_ops`], [`grammar::Op`] |
+//! | 8.2 to 8.5, 9 compile | [`compile`] | [`compile::compile`], [`compile::CompileInput`], [`compile::Compiled`] |
+//! | 7.7, 8.7 dry run | [`preview`] | [`preview::preview`] |
+//! | 10 errors | [`error`] | [`error::AgentError`] (26 codes), [`error::CompileError`] (an error and the op that caused it) |
 //! | 12.3 JSON mirror | [`response`] | [`response::Response::json_mirror`] |
 //! | 17 conformance | [`parse`], [`corpus`], [`fixtures`] | strict body parsers, the golden call list, the fixture corpus |
 //!
@@ -34,8 +41,25 @@
 //! revision, a [`model::FileMeta`] (document id, kind, `rev`, hex chain hash; the state does
 //! not carry them) and, for `files`, the already authorised [`files::FileEntry`] list.
 //!
-//! Out of scope, and not here: `propose`, `submit`, `status`, the operation compiler, the
-//! state cache, agent routes and authorisation, migrations, the MCP server.
+//! Of `propose` only the compile step is here: parse the ops, turn them into the engine
+//! operations `edit_draft` would store, check them against the state and the role, and
+//! render the preview of a dry run. Out of scope, and not here: drafts, receipts and the
+//! idempotency ledger, agent identities, `submit`, `status`, the state cache, agent routes
+//! and authorisation, migrations, the MCP tool, the application.
+//!
+//! # The compiler in one paragraph
+//!
+//! `grammar::parse_ops` makes typed [`grammar::Op`]s from the JSON of `propose.ops` or fails
+//! with the field named. `compile::compile` takes them with a [`compile::CompileInput`] (the
+//! state the ops apply to, the team's current state for staleness, the role, `strict`, the
+//! blocks to withhold) and an [`compile::IdSource`], resolves refs with the same
+//! [`refs::RefIndex`] the read tools use, and runs every produced engine op through
+//! `governance::authorize`, the `redundant_label` skip and `richtext::compact_event`, then
+//! `materializer::apply_payload` on a working copy, so the next op sees the last one and the
+//! list that comes out applies as it is. Text edits rebuild the container from its runs and
+//! let `richtext::make_patch` derive and check the patch. The call is atomic: the first op
+//! that fails fails the call, and the error names the op. `preview::preview` writes the
+//! `dd/1 propose` response from the compiled call, bounded by `max_bytes`.
 //!
 //! # Verification
 //!
@@ -50,6 +74,27 @@
 //!   exact byte-budget boundaries; shared vectors under `tests/vectors/`; a check that the
 //!   source holds no clock, randomness, unordered map or I/O.
 //! * `examples/byte_benchmark.rs`: DCT size against the JSON mirror.
+//! * `tests/position.rs` with `tests/vectors/between.json`: 10,000 pairs and five long chains
+//!   of position keys, produced by running the real `between()` of
+//!   `frontend/researcher/src/lib/workspace/changes.ts` (`tests/vectors/between-gen.mjs`
+//!   transpiles it with the installed TypeScript compiler and runs it; `--check` compares a
+//!   fresh run with the committed file). The Rust function reproduces every one; order and
+//!   length laws are property-tested, including the 200-position boundary.
+//! * `tests/compile.rs`: every op against the fixture corpus, each rejection of spec 10 the
+//!   compiler can raise, atomicity, staleness, roles, redaction, id handling, the engine op cap.
+//!   Every compiled list is replayed with `authorize` and `apply_payload` and must give the
+//!   state the compiler reports, and must round-trip through `workspace_merge::diff` without
+//!   an op on a node the compile did not touch.
+//! * `tests/compile_differential.rs`: fixed-seed random edit scripts (60 document scripts of 12
+//!   calls, 40 sheet scripts, `replace_all` against its per-block expansion, `move`) checked
+//!   against a reference model of styled characters and grid cells, plus alignment-optimality
+//!   of the styles `set_text` keeps. `inline.rs` has the same kind of tests for the text model.
+//! * `tests/compile_hostile.rs`: huge counts, deep and malformed refs, the injection corpus and
+//!   generated hostile text through every op that carries text (stored as data or refused, and
+//!   every later `read`, `outline` and preview parses back), the vocabulary of engine ops, the
+//!   things an op must not reach, an untouched input state after a failed call.
+//! * `tests/preview.rs`: the preview header and body, the dry-run form, and the byte bound at
+//!   every budget from 500 to 64,000.
 //!
 //! # Decisions and deviations from the specification
 //!
@@ -146,12 +191,107 @@
 //!     free text, with one fixed hint per code. `limit_exceeded` is 413 when `field` is a byte
 //!     size (`max_bytes`, `body`, `text`), else 400.
 //!
+//! **The operation compiler (7.7, 8, 9)**
+//!
+//! 18. *Signature.* `compile(&CompileInput, &[Op], &mut dyn IdSource) -> Result<Compiled,
+//!     CompileError>`. [`error::CompileError`] is an `AgentError` plus the index and label of
+//!     the op, because 7.7 wants the error to name the op; it converts to and from
+//!     `AgentError`. The input holds one state (the proposal's current state, or the state at
+//!     `rev` for a new proposal) that refs resolve against and ops apply to, an optional
+//!     `head` (the team's current state) for the `base` comparison, the role and `strict`.
+//!     A ref made by an earlier op of the same call is `$n`, numbered in creation order across
+//!     all inserts (the spec says "the nth insert", which is the same until an insert makes
+//!     more than one block).
+//! 19. *What comes out is what `edit_draft` stores.* Every engine op is authorised with the
+//!     given role, a `label` edit equal to the current label is dropped and a whole-`content`
+//!     edit becomes a `RichTextPatched` when that is smaller. So a short paragraph edit is
+//!     `FieldEdited content` plus `FieldEdited label` (the digests make a patch larger than the
+//!     paragraph) and a long one is one patch: spec 8.2 says "one `RichTextPatched` (or
+//!     `FieldEdited` when not smaller)". `set_type` is one `props` edit at path `[]` when that is
+//!     smaller than the whole field, else a whole-field edit. A call may produce 10,000 engine ops; `edit_draft`
+//!     takes 5,000 per request, so a caller that stores more splits the list.
+//! 20. *`base` and staleness.* A `base` of 6 to 64 hex characters is accepted (the spec says
+//!     12; `read` shows 6). It is compared with the team's hash (`head`, else the input
+//!     state) of the block, of the row range of `set_cells` and `clear` (the range hash), of the
+//!     shape or of the slide notes. A difference is recorded in `Compiled::stale` and, with
+//!     `strict`, fails the call as `stale_base` (or `conflict` when the target is gone from
+//!     the team's state). `base` on `insert`, `replace_all` or a block made in the same call is
+//!     `bad_request field=base`: nothing earlier exists to guard.
+//! 21. *`replace` and `replace_all` are literal and case-sensitive by default.* `args.case`
+//!     defaults to `true` here and means "match case" as in `find`, where the default is
+//!     insensitive; a destructive edit should not change `policy` when asked for `Policy`, and
+//!     `expect` catches a count that differs from `find`. `args.word` is whole words.
+//!     `nth` counts the matches of one block in document order across its containers (list
+//!     items, cells) like `find` reports them. An `expect` equal to the count of several
+//!     matches without `nth` or `all` replaces all of them. Zero matches is `no_match`
+//!     (`match_count` when `expect` says otherwise), so a second `replace_all` is an error,
+//!     not a silent success. More than 25 matching blocks need `expect` (8.6), more than 5,000 are
+//!     `limit_exceeded`. Withheld blocks are left out of the scope and the count, since the
+//!     agent cannot have read them. A match never spans an inline object, and U+FFFC (which
+//!     stands for one while matching) cannot be searched for. `find` is at most 2,000
+//!     characters. The replacement takes the style of the first replaced character; the rule
+//!     of 8.3 for `set_text` (the preceding retained character) would let a replaced word at the
+//!     start of a bold or linked run lose the mark. A span replaced by identical text is left
+//!     as it was.
+//! 22. *`set_text`.* Plain only: `fmt=md` is `bad_request field=fmt` (an inline-markdown parser
+//!     is the inverse of the `read fmt=md` renderer and is not written). A line feed becomes a
+//!     `hardBreak` in paragraphs and headings (that is how `read` shows one) and a character in
+//!     code blocks. A block with inline objects keeps them when the new text carries each
+//!     `⟦...⟧` placeholder of `read` in order (spec 6.11), else `rich_block`. Alignment is the
+//!     engine's own (Myers, one replacement past 4,000 changed characters), not the 20 ms
+//!     deadline of the spec text. Sub-addresses `ref.N` and `ref.rRcC` edit the first
+//!     paragraph of a list item or table cell that has exactly one.
+//! 23. *Agent text is refused, not repaired.* `text`, `with`, `find`, cell values, new block
+//!     text, `why` and the proposal `name` are normalised (CRLF, CR, NEL, LS, PS become LF) and
+//!     then refused with `bad_request` when they hold a control character or a hidden or
+//!     bidirectional character of 6.5: an agent may not write what a reviewer cannot see. (The
+//!     security document says such proposals are "flagged"; refusing is the stricter reading.)
+//!     U+200C and U+200D stay allowed. `id` is limited to `A-Za-z0-9_.:-` so it can be echoed in
+//!     an error line; `why` is at most 280 characters.
+//! 24. *Position keys.* [`pos::between`] returns, for every input, what the TypeScript function
+//!     returns, except that a result with a lone surrogate (two stored keys with units on both
+//!     sides of the surrogate block) has U+FFFD in its place. The original has two quirks
+//!     that the compiler does not inherit: a key past the 200-position window is `left + "P"`,
+//!     which can sort at or above `right`, and which grows by a character per call at the end
+//!     of the list. [`pos::key_between`] refuses any key that is not strictly between its
+//!     neighbours in `(pos, id)` order or is longer than 200 characters, as `limit_exceeded
+//!     field=pos`. In practice that is a thousand inserts at one spot.
+//! 25. *Sheets.* `set_cells` writes only changed cells; rows that do not exist are created below
+//!     the last one up to the last row that holds a value (rows before it that hold none are
+//!     blank), carrying their cells in the `NodeCreated` (one event per row, not per cell:
+//!     the spec's "one `FieldEdited` per changed cell" is kept for existing rows). The sheet's
+//!     `columns` grows to the widest written column. A formula must have balanced brackets
+//!     outside quotes and is otherwise stored as written. At most 2,000 cells, 3,000 rows, 100
+//!     columns and 100,000 scalars in all. `at` is `A1` or `rowRef:Col`. `clear` empties
+//!     existing cells and keeps formats. `sheet_protected` gives `protected`.
+//! 26. *Slides.* `set_shape` (text shapes only) writes `text`, the shape `label` and, for a
+//!     title, the slide `label`, as the editor's `editShapeOps` does; `set_notes` writes
+//!     `notes`.
+//! 27. *Not compiled (`unsupported_op`)*: `fill` (needs the formula engine), `add_slide` and
+//!     `insert into` a slide (need the layout geometry of `presentation.ts` in Rust),
+//!     `delete_slide` and `delete sheet` (they remove a container and its children), `macro`
+//!     and the v1.1 macros. Everything the 7.7 schema lists beyond Phase 1 is in that list.
+//! 28. *Identity.* [`compile::DerivedIds`] makes ULIDs from a caller-supplied millisecond
+//!     timestamp and a seed (the `request_id`), so a dry run and the real call, or a retry,
+//!     name new blocks alike. A source that returns something that is not a ULID, or an id in
+//!     use, fails the call as `internal`.
+//! 29. *Preview.* The text is the `diff` of the state before and after the compiled ops with a
+//!     `propose` header (`applied`, `would_apply`, `expanded`, `stale`, `stale_refs`, `state`,
+//!     `revision`), cut at whole entries to fit `max_bytes` (default 8,000, 500 to 64,000).
+//!     No new body line exists; per-op results and stale targets are in the typed data.
+//!
 //! # Not verified
 //!
-//! No TypeScript implementation reads the vectors yet. No model has been run against this
-//! output, no real tokeniser was used (the benchmark estimates), and nothing here was
-//! measured under load. The fixtures are built with real operations but not through the event
-//! log, so the `chain` is a stand-in; the checkpoint-plus-tail reader is not exercised.
+//! No TypeScript implementation reads the vectors yet (the TypeScript side produced the
+//! position vectors and nothing consumes the hash and ref vectors). No model has been run
+//! against this output, no real tokeniser was used (the benchmark estimates), and nothing here
+//! was measured under load. The fixtures are built with real operations but not through the
+//! event log, so the `chain` is a stand-in; the checkpoint-plus-tail reader is not exercised.
+//! The compiler was run against `authorize`, `compact_event` and `apply_payload` as
+//! `edit_draft` calls them, not against `edit_draft` itself or a database; no draft was stored
+//! and no change request merged from its output. The token argument for compact ops (spec 8,
+//! the token-efficiency document) is not measured here. The `unsupported_op` list of decision
+//! 27 and `fmt=md` are not implemented.
 #![forbid(unsafe_code)]
 
 pub mod a1;

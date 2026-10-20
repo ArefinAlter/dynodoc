@@ -841,6 +841,38 @@ property tests pass; the evals show success rate not worse than the B1 baseline
 with confidence intervals; reviewers can tell agent from person in every surface.
 Rollout: per-project opt-in, agents default disabled, dogfood then pilot teams.
 
+**Implementation status, operation compiler (Phase 1, library only), 20 October 2026.** Built,
+in `crates/engine-agent` and nowhere else: the pure operation compiler of the first row of the
+table above. `grammar` parses the arguments and ops of `propose` strictly (unknown or
+misplaced fields, wrong types and every limit of protocol spec 11 refused with the field
+named); `compile::compile` turns the ops `set_text`, `replace`, `replace_all`, `insert`,
+`delete`, `move`, `set_type` (documents), `set_cells`, `clear` (sheets) and `set_shape`,
+`set_notes` (slides) into the engine operations `edit_draft` would store, authorising each with
+`governance::authorize`, applying each to a working copy and recording stale `base` hashes
+(`strict` rejects them), atomically, with the failing op named; `pos::between` is the Rust
+port of the editor's position-key function, byte-identical to it on `tests/vectors/between.json`
+(10,000 pairs and five long chains produced by running the real `changes.ts` function with
+the repository's TypeScript compiler, `tests/vectors/between-gen.mjs`); `preview::preview`
+renders the `dd/1 propose` response and the dry run, bounded by `max_bytes`. Evidence: 181
+tests in `engine-agent`, 91 of them new (22 unit tests, and the files `compile`, `compile_differential`,
+`compile_hostile`, `position` and `preview`): every op against the fixture corpus, fixed-seed
+random edit scripts checked against a reference model, hostile input (the injection corpus,
+hidden characters, huge counts, malformed refs), the position-key vectors and laws, and the byte
+bound of the preview; every compiled list is replayed with `authorize` and `apply_payload`
+and round-trips through `workspace_merge::diff`. `cargo clippy --workspace --all-targets -- -D
+warnings`, `cargo fmt --all` and `cargo doc -p engine-agent --no-deps` are clean.
+Not built: the `propose` route and anything that stores (drafts, `draft_edit` rows, receipts,
+the idempotency digest and ledger, `agent_call` rows for writes), agent identities, `submit`,
+withdraw and `status`, the MCP `propose` tool, project policy, budgets, the review-screen and
+app changes, the evals. Of spec 8 not compiled (`unsupported_op`): `fill`, `add_slide`,
+`delete_slide`, `delete` of a sheet, `insert` into a slide and `macro`; `set_text` with
+`fmt=md` is `bad_request`. **Not verified:** the compiler was exercised against the engine
+functions `edit_draft` calls, not against `edit_draft`, a database or a change request merge;
+no model produced any of the ops; token savings of compact ops are not measured. Decisions
+and deviations (the `$n` numbering, case-sensitive `replace`, refused hidden text, one
+`NodeCreated` per new sheet row, the 200-character key limit and others) are items 18 to 29
+of the crate documentation (`cargo doc -p engine-agent --no-deps`).
+
 ### 11.4 Phase 2 detail (remote MCP and OAuth)
 
 | Task | Weeks |
