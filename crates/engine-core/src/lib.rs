@@ -8,6 +8,7 @@
 //! pass, the ODK expression parser, and the semantic three-way merge are implemented
 //! (stages 14–16 and 21).
 
+pub mod at_rest;
 pub mod database;
 pub mod expr;
 pub mod governance;
