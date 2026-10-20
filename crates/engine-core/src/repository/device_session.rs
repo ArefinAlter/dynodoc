@@ -24,8 +24,10 @@ pub const SCOPES: [&str; 4] = [
 ];
 /// Scopes of an AI-agent key (docs/AI-AGENT-PROTOCOL-SPEC.md section 14.2). Kept apart
 /// from [`SCOPES`]: they are never offered to a person's key and a person's key can
-/// never hold one (the service refuses the mix at grant and issuance time).
-pub const AGENT_SCOPES: [&str; 1] = ["content:read"];
+/// never hold one (the service refuses the mix at grant and issuance time). Sorted;
+/// independent: `content:propose` and `content:submit` imply neither each other nor
+/// `content:read`.
+pub const AGENT_SCOPES: [&str; 3] = ["content:propose", "content:read", "content:submit"];
 
 /// Is `scope` one of [`AGENT_SCOPES`]?
 pub fn is_agent_scope(scope: &str) -> bool {
@@ -320,16 +322,21 @@ mod tests {
     }
 
     #[test]
-    fn the_agent_read_scope_is_known_independent_and_sorted() {
+    fn the_agent_scopes_are_known_independent_and_sorted() {
         assert_eq!(
             normalize_scopes(&["project:read", "content:read", "content:read"]).unwrap(),
             vec!["content:read", "project:read"]
         );
         assert!(is_agent_scope("content:read") && !is_agent_scope("history:read"));
-        // The specification's write scopes are not admitted until their routes exist.
-        assert!(normalize_scopes(&["content:propose"]).is_err());
-        assert!(normalize_scopes(&["content:submit"]).is_err());
+        // The write scopes are admitted since migration 0044, each on its own.
+        assert_eq!(
+            normalize_scopes(&["content:submit", "content:propose"]).unwrap(),
+            vec!["content:propose", "content:submit"]
+        );
+        assert!(is_agent_scope("content:propose") && is_agent_scope("content:submit"));
+        assert!(AGENT_SCOPES.windows(2).all(|pair| pair[0] < pair[1]));
         assert!(normalize_scopes(&["content:*"]).is_err());
+        assert!(normalize_scopes(&["content:write"]).is_err());
         // The person-key scope list shown to the UI is unchanged.
         assert!(SCOPES.iter().all(|s| !is_agent_scope(s)));
         let key = signer(7);
