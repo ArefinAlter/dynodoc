@@ -1,9 +1,62 @@
 import AxeBuilder from '@axe-core/playwright';
+import http from 'node:http';
+import type { AddressInfo, Socket } from 'node:net';
 import { expect, test, type Page } from '@playwright/test';
 // The installable app: manifest, service worker, offline page and update flow. The signed-in
 // checks need the isolated stack (DEV_AUTH); the rest run against any build.
 const signedIn = process.env.PILOT_E2E === 'true';
 const AXE_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'];
+
+/** A pass-through proxy in front of the app, so a test can take the "server" away. */
+async function startProxy(target: string) {
+  const origin = new URL(target);
+  const sockets = new Set<Socket>();
+  const proxy = {
+    mode: 'up' as 'up' | 'unavailable',
+    port: 0,
+    url: () => `http://127.0.0.1:${proxy.port}`
+  };
+  const server = http.createServer((req, res) => {
+    if (proxy.mode === 'unavailable') {
+      res.writeHead(503, { 'content-type': 'text/plain' });
+      res.end('Service unavailable');
+      return;
+    }
+    const upstream = http.request(
+      {
+        host: origin.hostname,
+        port: origin.port,
+        path: req.url,
+        method: req.method,
+        headers: { ...req.headers, host: origin.host }
+      },
+      (reply) => {
+        res.writeHead(reply.statusCode || 502, reply.headers);
+        reply.pipe(res);
+      }
+    );
+    upstream.on('error', () => res.destroy());
+    req.pipe(upstream);
+  });
+  server.on('connection', (socket) => {
+    sockets.add(socket);
+    socket.on('close', () => sockets.delete(socket));
+  });
+  const start = () =>
+    new Promise<void>((resolve) =>
+      server.listen(proxy.port, '127.0.0.1', () => {
+        proxy.port = (server.address() as AddressInfo).port;
+        resolve();
+      })
+    );
+  const stop = () =>
+    new Promise<void>((resolve) => {
+      for (const socket of sockets) socket.destroy();
+      server.close(() => resolve());
+    });
+  await start();
+  return Object.assign(proxy, { start, stop });
+}
 
 async function signIn(page: Page) {
   await page.getByLabel('Your name').fill('Install check');
@@ -120,9 +173,9 @@ test('pages link the manifest and carry the install and bar-colour tags @smoke',
     'yes'
   );
   await expect(page.locator('meta[name="apple-mobile-web-app-status-bar-style"]')).toHaveCount(1);
-  await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute(
+  await expect(page.locator('link[rel="apple-touch-icon"]').first()).toHaveAttribute(
     'href',
-    '/apple-touch-icon.png'
+    /\/apple-touch-icon\.png$/
   );
   const bars = await page
     .locator('meta[name="theme-color"]')
@@ -152,8 +205,12 @@ test('a service worker registers and controls the page @smoke', async ({ page })
 
 test('a page load without a network shows the offline page, and it returns when the network does @smoke', async ({
   page,
-  context
+  context,
+  browserName
 }) => {
+  // Playwright's offline switch also stops the worker's own requests on Chromium only. The
+  // test after this one takes the server away instead, which works on every engine.
+  test.skip(browserName !== 'chromium', 'setOffline does not reach the worker on this engine.');
   await controlled(page);
   await context.setOffline(true);
   try {
@@ -161,17 +218,47 @@ test('a page load without a network shows the offline page, and it returns when 
     expect(response?.status()).toBe(200);
     await expect(page.getByRole('heading', { name: 'You are offline' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Try again' })).toBeVisible();
-    const result = await new AxeBuilder({ page }).withTags(AXE_TAGS).analyze();
-    expect(result.violations.map((v) => v.id)).toEqual([]);
-    await page.emulateMedia({ colorScheme: 'dark' });
-    const dark = await new AxeBuilder({ page }).withTags(AXE_TAGS).analyze();
-    expect(dark.violations.map((v) => v.id)).toEqual([]);
   } finally {
     await context.setOffline(false);
   }
   await page.goto('/features');
-  await expect(page.getByRole('heading', { level: 1 }).first()).not.toHaveText('You are offline');
+  await expect(page.getByRole('heading', { name: 'You are offline' })).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Features', exact: true }).first()).toBeVisible();
+});
+
+test('when the server cannot be reached the offline page appears, and a reply from the server never is replaced @smoke', async ({
+  page,
+  baseURL
+}) => {
+  const proxy = await startProxy(baseURL!);
+  try {
+    await controlled(page, `${proxy.url()}/login`);
+    // The server answers with an error: it is shown as sent, not hidden behind the offline page.
+    proxy.mode = 'unavailable';
+    const failing = await page.goto(`${proxy.url()}/features`);
+    expect(failing?.status()).toBe(503);
+    await expect(page.getByText('Service unavailable')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'You are offline' })).toHaveCount(0);
+    // The server cannot be reached at all.
+    proxy.mode = 'up';
+    await proxy.stop();
+    const offline = await page.goto(`${proxy.url()}/features`);
+    expect(offline?.status()).toBe(200);
+    await expect(page.getByRole('heading', { name: 'You are offline' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Try again' })).toBeVisible();
+    const day = await new AxeBuilder({ page }).withTags(AXE_TAGS).analyze();
+    expect(day.violations.map((v) => v.id)).toEqual([]);
+    await page.emulateMedia({ colorScheme: 'dark' });
+    const night = await new AxeBuilder({ page }).withTags(AXE_TAGS).analyze();
+    expect(night.violations.map((v) => v.id)).toEqual([]);
+    // It comes back by itself once the server does.
+    await proxy.start();
+    await page.goto(`${proxy.url()}/features`);
+    await expect(page.getByRole('heading', { name: 'You are offline' })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Features', exact: true }).first()).toBeVisible();
+  } finally {
+    await proxy.stop();
+  }
 });
 
 test('the offline file itself passes accessibility checks in day and night mode @smoke', async ({
