@@ -20,12 +20,12 @@ name = "dynodoc_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = "2"
+tauri-build = { version = "2", features = [] }
 
 [dependencies]
 # No optional features: a release build has no web inspector (debug builds always do), no
 # tray icon and no asset protocol. A test fails if one is added.
-tauri = "2.12"
+tauri = { version = "2.12", features = [] }
 # Opens http(s) and mailto links in the system browser. Rust API only; no capability grants
 # its page-facing commands.
 tauri-plugin-opener = "2"

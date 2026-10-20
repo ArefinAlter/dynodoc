@@ -265,7 +265,8 @@ fn dependencies_stay_minimal() {
         .lines()
         .find(|l| l.starts_with("tauri = "))
         .expect("tauri dependency");
-    assert!(!tauri_line.contains("features"), "{tauri_line}");
+    // The Tauri command line normalises the line to `features = []` when it builds.
+    assert!(tauri_line.contains("features = []"), "{tauri_line}");
     assert!(manifest.contains("\nname = \"dynodoc-desktop\""));
     assert!(manifest.contains("\nname = \"dynodoc_desktop_lib\""));
     assert!(manifest.contains("crate-type = [\"staticlib\", \"cdylib\", \"rlib\"]"));
