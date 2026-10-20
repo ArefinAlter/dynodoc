@@ -1,13 +1,42 @@
 {
+  "id": "/",
   "name": "Dynodoc",
   "short_name": "Dynodoc",
   "description": "Version control and provenance for Word, Docs, Excel, Sheets, PowerPoint and Slides documents: capture, review, merge and prove every change.",
-  "start_url": "/",
-  "display": "browser",
-  "background_color": "#f6f3ea",
-  "theme_color": "#f6f3ea",
+  "lang": "en",
+  "dir": "ltr",
+  "start_url": "/workspace?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "background_color": "#f8f9fc",
+  "theme_color": "#f8f9fc",
+  "categories": ["productivity", "business"],
+  "prefer_related_applications": false,
   "icons": [
     { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    {
+      "src": "/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Workspace",
+      "short_name": "Workspace",
+      "description": "Open your documents",
+      "url": "/workspace?source=shortcut",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Projects",
+      "short_name": "Projects",
+      "description": "Open your projects",
+      "url": "/projects?source=shortcut",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
   ]
 }
