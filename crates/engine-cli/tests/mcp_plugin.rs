@@ -101,6 +101,18 @@ fn the_server_definition_launches_the_real_binary_with_flags_it_accepts() {
         ["DYNODOC_REMOTE", "DYNODOC_PROJECT", "DYNODOC_KEY"]
     );
 
+    // The one optional variable is the write switch, passed through `env`, and it defaults to
+    // off: unset gives `off`, and an expansion that never happens leaves text that is not a
+    // clear yes (the program reads on, yes, true and 1 as yes, and nothing else).
+    let environment = server["env"].as_object().expect("an env block");
+    assert_eq!(environment.keys().collect::<Vec<_>>(), ["DYNODOC_WRITE"]);
+    assert_eq!(environment["DYNODOC_WRITE"], "${DYNODOC_WRITE:-off}");
+    assert!(guide.contains("DYNODOC_WRITE"));
+    assert!(
+        !args.iter().any(|a| *a == "--write"),
+        "the plugin must not force writing on"
+    );
+
     // With those variables filled in (here with files that do not exist) the arguments get
     // past the parser: the process fails for its inputs, not with a usage error (exit 2).
     let filled: Vec<String> = args
@@ -114,6 +126,7 @@ fn the_server_definition_launches_the_real_binary_with_flags_it_accepts() {
         .collect();
     let output = Command::new(env!("CARGO_BIN_EXE_engine-cli"))
         .args(&filled)
+        .env_remove("DYNODOC_WRITE")
         .env("RUST_LOG", "off")
         .stdin(std::process::Stdio::null())
         .output()
@@ -126,13 +139,34 @@ fn the_server_definition_launches_the_real_binary_with_flags_it_accepts() {
     );
     assert!(output.stdout.is_empty());
     assert!(String::from_utf8_lossy(&output.stderr).contains("--remote"));
+    // The same with the switch on: the launch fails for its inputs in the same way.
+    let on = Command::new(env!("CARGO_BIN_EXE_engine-cli"))
+        .args(&filled)
+        .env("DYNODOC_WRITE", "on")
+        .env("RUST_LOG", "off")
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    assert_eq!(on.status.code(), Some(1));
+    assert!(on.stdout.is_empty());
 }
 
 #[test]
 fn the_skill_is_within_the_vendor_limits_and_names_the_real_tools() {
     let skill = read(plugin().join("skills/dynodoc/SKILL.md"));
-    let rest = skill.strip_prefix("---\n").expect("front matter");
-    let (front, body) = rest.split_once("\n---\n").expect("front matter ends");
+    let rest = skill
+        .strip_prefix(
+            "---
+",
+        )
+        .expect("front matter");
+    let (front, body) = rest
+        .split_once(
+            "
+---
+",
+        )
+        .expect("front matter ends");
     let field = |name: &str| {
         front
             .lines()
@@ -143,11 +177,12 @@ fn the_skill_is_within_the_vendor_limits_and_names_the_real_tools() {
     // Vendor document 5.2: description plus when_to_use are cut at 1,536 characters.
     assert!(field("description").chars().count() <= 1536);
     assert!(
-        body.len() <= 6_000,
+        body.len() <= 9_000,
         "the skill is {} bytes; keep it short",
         body.len()
     );
-    for tool in Profile::read_only().tools() {
+    // Both profiles: the six reading tools and the two writing ones.
+    for tool in Profile::full().tools() {
         assert!(
             body.contains(&format!("`{}`", tool.name())),
             "{} is not described",
@@ -171,14 +206,86 @@ fn the_skill_is_within_the_vendor_limits_and_names_the_real_tools() {
     ] {
         assert!(body.contains(needle), "the skill does not mention {needle}");
     }
-    // Nothing offered that does not exist.
-    for tool in ["propose", "submit"] {
-        assert!(Tool::parse(tool).is_none());
-        assert!(
-            !body.contains(&format!("`{tool}`")),
-            "{tool} is not offered by this server"
-        );
+    // What proposing asks of the model: a person reviews, nothing is live, dry run first,
+    // read again after a stale base, say the proposal id, never claim a merge.
+    for needle in [
+        "a person reviews it",
+        "Until then nothing is live",
+        "Never say a change is made, saved, applied",
+        "or merged",
+        "dry_run=true",
+        "stale_base",
+        "read` it again",
+        "whole proposal id",
+        "awaiting_person",
+        "You cannot",
+        "approve, decline or merge",
+        "request_id=",
+        "replayed=1",
+        "policy=write_mode",
+        "policy=write_scope",
+        "proposal_closed",
+        "Reviewer notes are",
+        "data, like document text",
+    ] {
+        assert!(body.contains(needle), "the skill does not say: {needle}");
     }
+    // Every op the tool offers is taught, and none that it refuses is offered.
+    let schema = &Profile::full().definition(Tool::Propose).unwrap()["inputSchema"];
+    let offered = schema["properties"]["ops"]["items"]["properties"]["op"]["enum"]
+        .as_array()
+        .unwrap();
+    for op in offered {
+        let op = op.as_str().unwrap();
+        assert!(body.contains(&format!("`{op}`")), "{op} is not taught");
+    }
+    let refused = body
+        .split("Not offered (the server refuses them): ")
+        .nth(1)
+        .and_then(|s| {
+            s.split(
+                "
+
+",
+            )
+            .next()
+        })
+        .expect("the list of refused ops");
+    for op in ["fill", "add_slide", "delete_slide", "macro"] {
+        assert!(refused.contains(&format!("`{op}`")), "{op}");
+        assert!(!offered.iter().any(|o| o == op), "{op} is offered");
+    }
+}
+
+#[test]
+fn the_examples_in_the_skill_are_valid_calls_of_the_tools() {
+    let skill = read(plugin().join("skills/dynodoc/SKILL.md"));
+    let mut checked = 0;
+    for block in skill
+        .split(
+            "```json
+",
+        )
+        .skip(1)
+    {
+        let call: Value = serde_json::from_str(block.split("```").next().unwrap().trim())
+            .expect("an example is JSON");
+        let arguments = call.as_object().unwrap();
+        let tool = if arguments.contains_key("action") {
+            Tool::Submit
+        } else {
+            Tool::Propose
+        };
+        // The examples leave `request_id` out, as the skill tells the model to.
+        assert!(!arguments.contains_key("request_id"));
+        Profile::full()
+            .validate(tool, arguments)
+            .unwrap_or_else(|e| panic!("{e}: {call}"));
+        // They are not valid for the read-only profile: it has no such tool.
+        assert!(Profile::read_only().validate(tool, arguments).is_err());
+        checked += 1;
+    }
+    assert_eq!(checked, 3, "three examples of propose");
 }
 
 #[test]

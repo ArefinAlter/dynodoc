@@ -1,6 +1,6 @@
 //! The device-session client of `mcp` against a loopback server that plays the two
-//! issuance routes. The scope under test is `history:read`: `content:read` is not yet a
-//! scope `engine-core` signs (see the ignored test at the end).
+//! issuance routes. Most tests ask for `history:read`, which needs no agent key; the last
+//! ones ask for the real scopes of an agent key, read and write.
 use super::*;
 use axum::{
     extract::State,
@@ -27,6 +27,11 @@ struct Mock {
     expires_in: AtomicU64,
     /// The installation the challenge claims to come from.
     authority: Mutex<Uuid>,
+    /// Refuse (`403`) every challenge that asks for a write scope, as the service does for a
+    /// key that was not granted them.
+    refuse_writes: AtomicBool,
+    /// The scopes of each challenge asked for, in order.
+    asked: Mutex<Vec<Vec<String>>>,
 }
 
 async fn challenge(
@@ -38,9 +43,20 @@ async fn challenge(
     if headers.contains_key(header::AUTHORIZATION) {
         mock.bearer_seen.store(true, Ordering::SeqCst);
     }
+    let asked: Vec<String> = serde_json::from_value(body["scopes"].clone()).unwrap();
+    let writes = asked
+        .iter()
+        .any(|s| s == "content:propose" || s == "content:submit");
+    // The service signs the sorted set (`normalize_scopes`); the client compares against it.
+    let mut sorted = asked.clone();
+    sorted.sort();
+    mock.asked.lock().unwrap().push(asked);
     let status = mock.challenge_status.load(Ordering::SeqCst);
     if status != 200 {
         return StatusCode::from_u16(status).unwrap().into_response();
+    }
+    if writes && mock.refuse_writes.load(Ordering::SeqCst) {
+        return StatusCode::FORBIDDEN.into_response();
     }
     let challenge = SessionChallenge {
         version: 1,
@@ -48,7 +64,7 @@ async fn challenge(
         authority: *mock.authority.lock().unwrap(),
         public_key: body["public_key"].as_str().unwrap().to_owned(),
         project: PROJECT,
-        scopes: serde_json::from_value(body["scopes"].clone()).unwrap(),
+        scopes: sorted,
         nonce: "ab".repeat(32),
         issued_at_ms: 1_000_000,
         expires_at_ms: 1_100_000,
@@ -86,6 +102,8 @@ async fn serve() -> (Arc<Mock>, DeviceSession) {
         challenge_status: AtomicU16::new(200),
         expires_in: AtomicU64::new(3600),
         authority: Mutex::new(AUTHORITY),
+        refuse_writes: AtomicBool::new(false),
+        asked: Mutex::new(Vec::new()),
     });
     let app = Router::new()
         .route("/projects/{id}/device-sessions/challenge", post(challenge))
@@ -212,14 +230,95 @@ async fn a_server_that_cannot_be_reached_is_unavailable() {
     assert_eq!(session.token().await.err(), Some(SessionError::Unavailable));
 }
 
-/// `content:read` is the scope the real command asks for. Until the agent-routes branch
-/// adds it to `engine-core`'s accepted scopes, `SessionProof::sign` refuses it, so
-/// `engine-cli mcp` cannot start a session. Run this after merging that branch:
-/// `cargo test -p engine-cli -- --ignored content_read`.
+/// The scopes the real command asks for, with a session the way `run` builds it.
+fn agent_session(session: DeviceSession, write: bool) -> DeviceSession {
+    let owned = |scopes: &[&str]| scopes.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+    let mut session = session;
+    session.scopes = owned(if write { &WRITE_SCOPES } else { &SCOPES });
+    if write {
+        session = session.with_read_fallback(owned(&SCOPES));
+    }
+    session
+}
+
 #[tokio::test]
-#[ignore = "needs content:read in engine-core's device-session scopes (agent-routes branch)"]
-async fn content_read_is_a_scope_engine_core_signs() {
-    let (_mock, mut session) = serve().await;
-    session.scopes = SCOPES.iter().map(|s| (*s).to_owned()).collect();
-    assert!(session.token().await.is_ok());
+async fn without_write_the_session_asks_for_the_read_scope_and_nothing_else() {
+    let (mock, session) = serve().await;
+    let session = agent_session(session, false);
+    let token = session.token().await.unwrap();
+    assert_eq!(*mock.asked.lock().unwrap(), [["content:read"]]);
+    assert!(
+        !token.writes(),
+        "a read session does not carry the write scopes"
+    );
+    // A renewal asks for the same.
+    session.rejected(&token).await.ok();
+    assert!(mock
+        .asked
+        .lock()
+        .unwrap()
+        .iter()
+        .all(|asked| asked == &["content:read"]));
+}
+
+#[tokio::test]
+async fn with_write_the_session_asks_for_the_read_and_both_write_scopes() {
+    let (mock, session) = serve().await;
+    let session = agent_session(session, true);
+    let token = session.token().await.unwrap();
+    assert_eq!(
+        *mock.asked.lock().unwrap(),
+        [["content:read", "content:propose", "content:submit"]]
+    );
+    assert!(token.writes());
+    assert_eq!(mock.sessions.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn a_refusal_of_the_write_scopes_falls_back_to_the_read_scope_and_stays_there() {
+    let (mock, mut session) = serve().await;
+    mock.refuse_writes.store(true, Ordering::SeqCst);
+    session.renew_gap = Duration::ZERO;
+    let session = agent_session(session, true);
+    let token = session.token().await.unwrap();
+    assert!(!token.writes(), "the write tools must be refused");
+    assert_eq!(
+        *mock.asked.lock().unwrap(),
+        [
+            vec!["content:read", "content:propose", "content:submit"],
+            vec!["content:read"]
+        ]
+    );
+    // Later calls reuse the token; a renewal asks for the read scope straight away.
+    assert_eq!(session.token().await.unwrap().generation(), 1);
+    session.rejected(&token).await.unwrap();
+    let renewed = session.token().await.unwrap();
+    assert_eq!(renewed.generation(), 2);
+    assert!(!renewed.writes());
+    assert_eq!(mock.asked.lock().unwrap().len(), 3);
+    assert_eq!(mock.asked.lock().unwrap()[2], ["content:read"]);
+}
+
+#[tokio::test]
+async fn a_key_refused_the_read_scope_too_stays_refused() {
+    let (mock, session) = serve().await;
+    mock.challenge_status.store(403, Ordering::SeqCst);
+    let session = agent_session(session, true);
+    assert_eq!(session.token().await.err(), Some(SessionError::Refused));
+    // A service that merely fails is not a refusal of the write scopes: no fallback.
+    mock.challenge_status.store(503, Ordering::SeqCst);
+    mock.asked.lock().unwrap().clear();
+    assert_eq!(session.token().await.err(), Some(SessionError::Unavailable));
+    assert_eq!(mock.asked.lock().unwrap().len(), 1);
+}
+
+#[test]
+fn the_environment_switches_writing_on_only_for_a_clear_yes() {
+    assert!(!write_wanted(None));
+    for on in ["1", "on", "ON", "yes", "true", " True "] {
+        assert!(write_wanted(Some(on)), "{on}");
+    }
+    for off in ["", "0", "off", "no", "false", "maybe", "2", "enabled"] {
+        assert!(!write_wanted(Some(off)), "{off}");
+    }
 }
