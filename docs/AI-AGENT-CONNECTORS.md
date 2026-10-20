@@ -729,6 +729,36 @@ with the harness; a person can follow the guide and read a document from Claude 
 and Claude Code. Rollout: `AGENT_GATEWAY=off` in production; enabled on a staging
 stack and one dogfood project.
 
+**Implementation status, MCP server and Claude Code plugin, 20 October 2026.** (This
+paragraph supersedes "Not built: ... `engine-mcp`, the Claude Code plugin and skill" in the
+18 October note below; the other items of that list are unchanged by it.) Built: the library
+crate `crates/engine-mcp` (a hand-written, dependency-light MCP server over newline-delimited
+JSON-RPC: `initialize`, `server/discover`, `ping`, `tools/list`, `tools/call`; the six
+read-only tools `files`, `outline`, `read`, `find`, `diff` and `status`, each defined once and
+validated from its published schema; an HTTP backend for protocol spec 12.1 routes 1 to 5, 7
+to 9 and 14, with ETag and cursor carry-through, one session renewal on `401`, `dd/1 error`
+lines for every failure, and byte, time and redirect limits), the `engine-cli mcp` verb
+(Path A: it loads the agent key like `sync` does and keeps a one-hour device session in
+memory), the Claude Code plugin under `integrations/claude-code/dynodoc/` (manifest,
+`.mcp.json`, a short skill with the DCT legend) and the guide
+[AI-AGENT-CLAUDE-SETUP.md](AI-AGENT-CLAUDE-SETUP.md). Evidence: 70 tests in `engine-mcp` and
+15 new ones in `engine-cli` (plus one ignored, below), including the real process on pipes
+with every log level on, and tests that pin the tool definitions to the specification text, the
+requests to the spec 16.1 transcript and the error lines to the `engine-agent` error table.
+The decisions (a verb in `engine-cli`, not a second binary; `rmcp` not used) and the
+deviations from the specification are in the crate documentation (`cargo doc -p engine-mcp`).
+Not built: any write tool, Streamable HTTP and OAuth, the `flat` and `chatgpt` profiles, the
+`dynodoc_workflow` prompt, a marketplace entry, a `.mcpb` bundle, release packaging of
+`engine-cli`, the "Use for an AI agent" choice on the signing-keys screen. **Not verified:**
+no real MCP client (Claude Code, Claude Desktop) and no real `engine-api` was run against it
+(the tests use stand-in servers); the 2026-07-28 details (the `server/discover` result, the
+`cacheScope` values, the request metadata key) and every vendor behaviour in the plugin and
+the guide are marked "unverified: check at build time". `engine-cli mcp` cannot start a
+session until `content:read` is among the scopes `engine-core` signs for a device session (the
+agent-routes work adds it); one ignored test, `content_read_is_a_scope_engine_core_signs`,
+checks that after the merge. The configuration snippets of the vendor document (section
+12.1) name `dynodoc-mcp`; the built command is `engine-cli mcp`.
+
 **Implementation status, 18 October 2026.** Built, in the new library crate
 `crates/engine-agent` (pure functions over `DocumentState`, no I/O): refs, hashes,
 revision tokens, A1 and slide addressing; the DCT v1 writer with strict reference
