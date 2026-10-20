@@ -28,6 +28,37 @@ wrapper and its migrations, backfill (the design's M-a and M-c), key rotation jo
 Owner questions: add a ciphertext length field to the header now (today a cut or extended value fails authentication instead of
 parsing as a distinct error); keep the authenticated but unused `kek_version` header field; accept the 256 MiB plaintext and
 name limits; accept plain-hex KEK files (a passphrase-wrapped variant is listed in the design).
+## Source: agent review-gated write path, connector Phase 1 server side (20 October 2026)
+
+An AI agent can now **propose** changes on the server, and nothing it does reaches the team version. Migration
+`0044_agent_write.sql` (schema 44) adds the `content:propose` and `content:submit` scopes (independent of `content:read` and of
+each other), `agent_identity` (the identity row under which an agent's drafts are recorded: born disabled, address in the
+reserved `agents.invalid` domain, one live per person and client product, revoked with the person, never a member, reviewer or
+key holder), `agent_proposal_receipt` (append-only: counts, stale refs, the agent's own reasons, request digest; no document
+text), `device_key_class.client_kind`, and the write fields of the project policy: `write_mode` (**`none` by default**, then
+`draft` or `change_request`), `submit_requires_person` (true), `proposals_per_day` (20), `open_proposals` (5) and
+`ops_per_proposal` (500); the kill switch sets `write_mode` back to `none`. Routes under `/projects/{id}/agent/` (mounted with
+the others under `AGENT_GATEWAY=on`): `POST files/{file}/propose` (the spec's name is `.../proposals`; a Phase 0 test pins that
+one as absent), `POST proposals/{id}/submit`, `POST proposals/{id}/withdraw`, `GET proposals/{id}`. A proposal is a
+`workspace_draft` created by the agent identity with the compiler's output stored as `draft_edit` rows; **no route of this
+slice appends to the event log** (the gate test compares row counts and chain heads). The person an agent acts for sees, edits,
+submits and withdraws those drafts through the existing routes (six queries accept the agent's principal), nobody else sees an
+unsubmitted agent draft, a request an agent wrote is `mine` for its principal so that **the principal cannot approve it (I5)**
+and an approval forced in some other way is not counted, the agent identity is refused as an approver (I4) by the database and by
+an explicit check, and requests carry an additive `agent` object. The merge audit row names the agent as contributor (layer B);
+the events keep the merger as actor (layer C, sealed attribution, is not built). Evidence: `tests/agent_write_test.rs` (22 tests
+under the restricted runtime login: gate, authority re-read per request, ownership and uniform answers, route table, I5 with one
+other reviewer and with none, stale bases, idempotency with concurrent duplicates, budgets and kill switch, hostile text,
+identity, disable/erase/document-erasure cascade, a seeded differential test of the route against `engine_agent::compile`,
+OpenAPI conformance) plus unit tests; five or more controls were removed one at a time to see their tests fail (listed in
+[AI-AGENT-CONNECTORS.md](AI-AGENT-CONNECTORS.md) section 11.3). **Not built:** MCP write tools, the app (no screen: badges,
+inbox, adopt action, policy tab), OAuth, layer C, the evals, macros, `agent.denied` audit rows, `diff proposal=`, DLP.
+**Not run** against a real client, under load, or on a production copy; migration 0044 has not been rehearsed or released.
+Raised for the owner: an owner or manager can still merge their own agent's request with the existing `override_rules`
+(approvals themselves cannot be self-given); the proposal id is server-chosen, not the first `request_id`; the proposal budgets
+are per agent identity and project, not per key; the budget defaults are the spec's numbers and apply only once `write_mode` is
+set.
+
 ## Source: agent project policy v0 and management routes, connector Phase 1 (20 October 2026)
 
 The main open risk of the Phase 0 read routes is closed in source: **agents are disabled until a project owner enables them.**

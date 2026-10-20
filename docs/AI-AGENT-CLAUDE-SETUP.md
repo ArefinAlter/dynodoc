@@ -151,7 +151,9 @@ agents, and an agent key cannot be used for anything else.
 Still under **Signing keys**, add the project you want Claude to read to this key, with
 read access to its files only (the scope is named `content:read`). *The tick box for this
 scope is not built yet either*; the same person who enrolled the key can set it. An agent
-key can hold nothing but this one scope, and it works for the project you add and no other.
+key can hold nothing but agent scopes (this one, and the two write scopes described under
+"Letting the agent propose changes" below, which you should leave off), and it works for the
+project you add and no other.
 
 Because you choose the project here, not in the key file, a copy of the file is not a way
 into your other projects.
@@ -259,6 +261,57 @@ Ask Claude, in plain words:
 You should see Claude call tools named `files`, `outline`, `find`, `diff`, `read` and
 `status`. If Claude asks permission before using them, the safe choice is to allow them for
 the session: they only read.
+
+## Letting the agent propose changes (server side only today)
+
+*Claude cannot do this yet.* The server has the routes (`propose`, `submit`, `withdraw` and a
+proposal's status), but the connector program (`engine-cli mcp`) still offers only the six
+reading tools, and the screens for the settings below are not built. This section says what
+the server enforces so that you can decide before the tools arrive.
+
+**What an agent can do.** Stage edits in a *draft that belongs to an assistant identity*
+("Claude for Olivia"), never in the team's version. People then look at the draft: Olivia sees
+it in her own drafts, can change it, submit it or withdraw it, and once it is submitted every
+member of the file sees it as a change request from "Claude for Olivia", with the person it
+acts for named. A person with merge rights merges it under the file's usual review rules;
+only then does the team's version change, and the merge record names the assistant as the
+author.
+
+**What an agent cannot do.** Change the team's version; approve, decline, merge or comment on a
+change request; edit anyone else's draft (not Olivia's own personal drafts either, not another
+assistant's, not another project's); change a rule, a policy, a member or a key; sign in; or
+receive mail. If the project says a person must submit, even its own submit call changes
+nothing and answers "awaiting person". Olivia can never be the only approver of her own
+assistant's request when the file needs approvals: her approval is refused, and an approval of
+hers that got in some other way is not counted.
+
+**How a project allows it.** Writing is **off by default**, separately from reading. The owner
+or manager of the project sets `write_mode` in the same agent settings as step 0
+(`PUT .../projects/<project>/agent-policy`, with `"write_mode":"draft"` or
+`"change_request"`):
+
+- `none` (the default): assistants only read.
+- `draft`: assistants stage drafts; a person submits them.
+- `change_request`: an assistant may submit its own draft, unless `submit_requires_person` is
+  true (it is by default), in which case a person must.
+
+The same settings carry the proposal limits: `proposals_per_day` (default 20) and
+`open_proposals` (default 5) for each assistant identity in the project, and
+`ops_per_proposal` (default 500 stored operations in one proposal). A single file can stay read
+only for assistants (`{"access":"read"}`) or be hidden (`none`). The stop button also sets
+`write_mode` back to `none`, so turning agents on again does not turn writing on again.
+
+**How a person allows it.** Enrol the key as an agent key (step 2, optionally naming the
+product with `client_kind`, for example `claude`), then give it the project with the write
+scopes you want: `content:propose` to stage drafts and `content:submit` to submit or withdraw
+them. They are separate from `content:read` and from each other. Only a project role that can
+write drafts (not a viewer) is issued a write session, and the role is checked again on every
+call, so a person who loses their role or is removed stops their assistants at once. When the
+person is disabled or erased, their assistants' identities end with them.
+
+**What gets recorded.** Each proposal call leaves a receipt with its counts, the stale
+references and the assistant's reasons (never the document text), an audit row, and a row in
+the call ledger. The same request id sent twice stores nothing twice.
 
 ## Taking access away
 

@@ -1,11 +1,12 @@
 # AI agent connectors: master design
 
-> **Status: design; the read-only half of Phase 0 is built, nothing else is.** 14 October
-> 2026, updated 18 October 2026. This document specifies how AI agents (Claude first, then
-> ChatGPT, then others) connect to Dynodoc to read documents, spreadsheets and
-> presentations and to propose edits that people review. What exists is listed in the
-> "Implementation status" paragraphs under section 11.2; everything not listed there,
-> including every write path, is design only. Nothing is deployed (production keeps
+> **Status: design; the read-only half of Phase 0, the operation compiler, the project policy
+> and the server side of the review-gated write path are built; the MCP write tools, the app,
+> OAuth and sealed attribution are not.** 14 October 2026, updated 20 October 2026. This
+> document specifies how AI agents (Claude first, then ChatGPT, then others) connect to
+> Dynodoc to read documents, spreadsheets and presentations and to propose edits that people
+> review. What exists is listed in the "Implementation status" paragraphs under sections 11.2
+> and 11.3; everything not listed there is design only. Nothing is deployed (production keeps
 > `AGENT_GATEWAY` off). Numbers for effort and token savings are estimates or design
 > targets and say so.
 >
@@ -112,15 +113,15 @@ use that machinery without weakening it, at a token cost proportional to the tas
 | Idempotent write patterns | EXISTS | `idempotency.rs`; `request_id` in `history.rs`; bundle receipts in `provenance.rs`. |
 | Local signing key, in-memory renewal, restricted file permissions | EXISTS | `crates/engine-cli/src/{device,signing,private_file}.rs`. |
 | Process-local admission and rate budgets | EXISTS | `crates/engine-api/src/workloads.rs`. |
-| Agent identity class and delegation | MISSING | `identity` has no kind; no principal link. |
-| Agent scopes on credentials; agent policy; DLP | MISSING | Scopes are `project:read`, `history:*`. |
+| Agent identity class and delegation | PARTIAL (server built 20 October 2026) | `agent_identity` sidecar and guards (migration 0044), `agent::identity`; no OAuth authorisation record. |
+| Agent scopes on credentials; agent policy; DLP | PARTIAL | `content:read`, `content:propose`, `content:submit` (migrations 0042, 0044); project and file policy (0043, 0044); no DLP. |
 | OAuth 2.1 authorisation server and resource metadata | MISSING | Magic link plus trusted web server (`crates/engine-api/src/auth/`). |
 | Compact outline, range, profile, find, diff endpoints | MISSING | See [protocol spec section 3](AI-AGENT-PROTOCOL-SPEC.md). |
 | Op compiler (intent ops to engine ops) | MISSING | Parts exist (`make_patch`, `diff`); `between()` only in TypeScript. |
 | MCP server (stdio and Streamable HTTP) | MISSING | None. |
 | Server-side formula evaluation and reference rebasing | MISSING | Browser-only in-house engine (`src/lib/workspace/formula/`); no server-side port. |
-| Agent attribution in the event chain | MISSING | Merge appends events as the merger (`append_to_team`). |
-| Review UI that identifies agent authorship | MISSING | `REQUEST_JSON` exposes author id, name, email only. |
+| Agent attribution in the event chain | MISSING (layers A and B built) | Merge appends events as the merger (`append_to_team`); the draft, the receipts and the merge audit name the agent (section 11.3). Layer C is not built. |
+| Review UI that identifies agent authorship | PARTIAL (data only) | `REQUEST_JSON` and the draft list gain an additive `agent` object; the app does not use it yet. |
 | Vendor listings (Anthropic directory, ChatGPT app directory) | MISSING | Legal pages are drafts "not yet effective" ([LEGAL-PAGES.md](LEGAL-PAGES.md)), which directories require. |
 
 ## 3. Architecture
@@ -1013,6 +1014,135 @@ of the crate documentation (`cargo doc -p engine-agent --no-deps`).
   after revoking the grants; `kinds` has a CHECK against duplicates; the 0043 header no longer
   claims that an older API build leaves the new objects unused (the API refuses a newer schema, so
   rollback means restoring the dump) and says the index is not built concurrently.
+
+**Implementation status, review-gated write path (Phase 1, server side), 20 October 2026.**
+(This paragraph supersedes the "Not built: routes 10 to 13 ..., agent identities and anything that
+authors drafts" clause of the 18 October server note, the list of policy fields "left out until the
+routes that need them exist" for the fields named below, and the compiler paragraph's "Not built: the
+`propose` route and anything that stores ..., agent identities, `submit`, withdraw and `status` ...,
+project policy, budgets"; its other items stand.) Built, in `crates/engine-api` (module `agent`:
+`write`, `proposal`, `identity`, `policy`, `manage`, `schema`; `auth::agent`, `devices`,
+`device_sessions`, `workspace`, `reviews`, `projects`, `admin`) and migration `0044_agent_write.sql`
+(schema 44), calling `engine_agent::compile` and `preview` unchanged:
+
+- *Routes* (protocol spec 12.1 numbers 10 to 13; mounted with the read routes under
+  `AGENT_GATEWAY=on`; JSON mirror by default, DCT on `Accept`; the `{error, code, details}` envelope with
+  `details.agent_code` and, for `propose`, `details.op`/`details.id` naming the failing op; typed OpenAPI
+  schemas checked against real responses): `POST /projects/{id}/agent/files/{file}/propose`
+  (`content:propose`), `POST .../proposals/{proposal}/submit` and `.../withdraw` (`content:submit`),
+  `GET .../proposals/{proposal}` (`content:read`).
+- *`propose`.* The body is the spec's (`rev`, `request_id`, `proposal`, `name`, `ops` of 1 to 200,
+  `dry_run`, `strict`, `return`), 1 MiB at most. Order: credential and scope, the person's project role,
+  the admission permit, the project policy (enabled, role floor, call and byte budgets, `write_mode` is
+  not `none`), the file (`404` for every way it can be unavailable; a file policy of `read` refuses
+  writes), the agent identity, the grammar; then one transaction that takes the document lock, reads the
+  account, the policy and the file policy `FOR SHARE` again (a kill switch, a revoked grant, a disabled
+  person or a changed policy either follows this write or is seen by it), refuses a viewer, looks up the
+  receipt of `(agent identity, request_id)` (same canonical digest: the stored receipt with `replayed`;
+  another: `idempotency_conflict`), finds the proposal it extends (the agent identity's own, in this file;
+  anything else is the same `404`) or checks the proposal budgets under an advisory lock, compiles
+  against the state the agent read (new) or the draft's own state (extension) with the team's head for the
+  `base` comparison, applies `ops_per_proposal`, and stores the draft, the compiled engine ops as
+  `draft_edit` rows by the agent identity, the receipt and an audit row. `dry_run` does all but store.
+  A stale `base` is a `stale` entry, `behind` and `warn`; `strict` is `stale_base` and stores nothing.
+- *`submit`, `withdraw`, status.* `submit` makes the draft a change request through the review code a
+  person's submit uses (`reviews::mark_submitted`, audit row and reviewer notifications as the agent
+  identity) only when `write_mode` is `change_request` and `submit_requires_person` is false; otherwise it
+  changes nothing and says `state=awaiting_person`; with `write_mode` `none` it is `policy_denied`.
+  `withdraw` closes the agent's own proposal and needs no `write_mode`. Both are idempotent by state and
+  write one receipt when they change it. Status gives the state (`draft`, `open`, `changes_requested`,
+  `declined`, `merged`, `withdrawn`), base, head and `behind`, approvals against the requirement, the latest
+  reviews (reviewer name and note cleaned of control and hidden characters and cut to 80 and 400
+  characters) and, while open, the same-field conflicts of the three-way merge by ref, field and short
+  hashes.
+- *Credential and identity.* The scopes are independent; the `all` mode never covers any of them; a viewer
+  is not issued a write session. The first write grant for a key makes the person's agent identity for the
+  key's product (`client_kind`, fixed at enrolment, `device` by default), named "Claude for Olivia". It is an
+  `identity` row born disabled (so it cannot sign in, receive a magic link, a session or a notification), with
+  the address `agent+<id>@agents.invalid`; `upsert_identity`, the one door through which an address becomes an
+  account, and a deferred constraint trigger refuse that domain to everything else; triggers keep it out of
+  `document_access`, `space_member`, `change_request_review`, `connector_grant` and `device_signing_key` and
+  refuse to enable or erase it. Disabling or erasing the person revokes it with their keys (a trigger
+  beside `revoke_removed_account_devices`); restoring the person revives neither; erasing them deletes their
+  agents' drafts, edits and receipts and scrubs the name.
+- *Policy.* `write_mode` (`none` by default, `draft`, `change_request`), `submit_requires_person` (true),
+  `proposals_per_day` (0 to 1000, default 20), `open_proposals` (0 to 100, default 5) and `ops_per_proposal`
+  (1 to 10,000, default 500), counted per agent identity and project. The kill switch also sets
+  `write_mode` back to `none`; the audit rows of the policy gain the fields; `access` reports the mode, the
+  proposal budgets and what this credential can do now.
+- *Visibility (spec 6.1, 7.3).* One SQL definition (`identity::owned_by`) of "whose draft": the creator, or
+  the person an agent identity created it for. `drafts`, `get_draft`, `edit_draft` (three queries),
+  `sync_draft`, `reviews::submit`, `request_row` (`mine`), the request list and the project's draft page use
+  it; unsubmitted agent drafts are seen by their principal and nobody else, a person's draft stays its
+  creator's. Requests and drafts gain an additive `agent` object (identity, client product, display name,
+  principal, revoked); the author's placeholder address is null. Reviewer notifications about an agent's
+  request go to its principal.
+- *Review.* I5: for an agent's request the principal is the contributor, so `mine` is true for them, their
+  approval is refused, and an approval row that exists anyway is not counted; I4: the agent identity never
+  counts, is refused by the database as a reviewer and by an explicit check in `review`, `merge` and
+  `decline`.
+- *Attribution.* Layer A: `workspace_draft.created_by` and `draft_edit.actor_id` are the agent identity (a
+  person's own edits to the draft carry the person), `source.kind = "agent"`, the receipts, the audit rows
+  `agent.identity.created`, `agent.proposal.created`, `.extended`, `.submitted`, `.withdrawn`, and the
+  existing `document.change_request_submitted` / `_withdrawn` as the agent, and `agent_call` rows for tools
+  `propose`, `submit` (withdraw too) and `status`. Layer B: the `document.change_request_merged` audit row
+  names the contributor and, for an agent's request, adds `contributor_kind` and the principal and client
+  product. The event vocabulary, the hashes and `append_to_team` are unchanged; layer C is not built.
+- *Evidence.* `tests/agent_write_test.rs`, 22 tests under the restricted runtime login (the harness of
+  `tests/agent_world/`), each threat of the task named in its test: T1 the gate (row counts of `event`,
+  `snapshot`, `snapshot_verification`, `shared_checkpoint`, `checkpoint_object`, `document_version`, `node`
+  and every chain head are unchanged by propose, extend, dry run, replay, a refused call, submit, withdraw,
+  status and an awaiting-person submit); T2 authority read again (grant narrowed, policy, file policy,
+  kinds, role floor, viewer, removed member, `all`-mode and person keys, disabled person); T3 and T12 five
+  kinds of foreign id on four verbs, byte-identical `404`s; T4 a route table of 26 routes refused for the
+  agent token and the submit rule; T5 I5 with exactly one other reviewer and with none; T6 stale and strict;
+  T7 receipts, conflicts and six rounds of two concurrent duplicates; T8 default-off writing, all four
+  budgets and the kill switch; T9 hostile text and sizes; T10 identity, database guards and the reserved
+  domain; T11 disable, restore, erase and document erasure; AC17; a differential test (10 fixed seeds, 3 calls
+  each: the stored draft equals the compiler's state and the ops applied to the team state, the stored edits
+  equal the compiled ops, refusals match the library's code and op); schema conformance and DCT parsing.
+  Plus unit tests of the digest, the reserved-domain rule, the display name, the state words, the notes, the
+  answer format and the policy helpers.
+- *Mutation checks* (a control removed from the source, the named test run and seen to fail, the source
+  restored from the commit; the whole suite then run again): (1) `review_state` counts the principal's
+  approval: T5 fails; (2) `find_proposal` without the creator test: T3 fails; (3) `agent_may_submit`
+  ignores `submit_requires_person`: the T4 submission test and a policy unit test fail; (4) a replay that
+  ignores the request digest: T7 fails; (5) `upsert_identity` admits the reserved domain: both T10 tests
+  fail (the database trigger alone then answers with an internal error, not the clean refusal); (6) no
+  viewer test in `write_proposal`: T2 fails; (7) `key_reaches` lets an `all`-mode key reach
+  `content:propose`: T2 fails; (8) `owned_by` without the principal clause: 8 tests fail; (9) `owned_by`
+  matching every agent draft for every viewer: 4 tests fail (the merge flow, T3, T5, T9); (10) `can_propose`
+  always true: both T8 tests fail.
+- *Deviations and decisions.* (1) Route 10 is `.../propose`, not `.../proposals` (a Phase 0 test pins the
+  latter as absent); a proposal id that is not a UUID is `404` before the credential is read, which keeps the
+  Phase 0 assertions about `.../proposals/x/...`. (2) The proposal id is the server's, not the first
+  `request_id`: a client-chosen key in the table of all drafts would let two clients that reuse a request id
+  collide and learn that the other exists. (3) A replay returns the receipt (counts, stale refs, state now),
+  not the diff; a dry run neither reads nor writes a receipt. (4) `Idempotency-Key` is not required on submit
+  and withdraw (idempotent by state). (5) `submit` with `write_mode` `draft`, or with a person required, is
+  `200 awaiting_person`, not an error. (6) Conflicts are reported by `status`, not refused at submit. (7) The
+  agent identity's display name is the identity row's `display_name` (scrubbed at erasure), not a sidecar
+  column; the sidecar's `client_ref` is the first key that needed it. (8) Proposal budgets are per agent
+  identity and project (more keys of one product do not multiply them); the defaults are the spec's and
+  apply only once `write_mode` is set. (9) The file policy values are unchanged (`inherit`, `none`, `read`):
+  `read` is what refuses writes; `propose` is not a value. (10) The discovery document's `scopes` stays
+  `["content:read"]` (a Phase 0 test pins it) and gains `write_scopes`; `access.capabilities` reports what
+  the credential can do now. (11) The `agent_call` columns are unchanged (a Phase 0 test pins them); the
+  proposal id, the counts and the digest are in the receipt. (12) The existing tests changed in two places
+  where the new routes made them false: the number of agent paths in the OpenAPI document (11 to 15) and
+  the scope each documents (`content:propose`, `content:submit`); the `agent_world` harness gained the
+  schema-conformance helpers.
+- *Not built, or not decided.* The MCP `propose`, `submit` and `status` tools and the setup of a client for
+  them; the app (badges, inbox, per-change `why` display, behind-base warning, adopt action, the policy tab);
+  OAuth, API keys, layer C, the evals, the reviewer usability test; macros, `fill`, `add_slide`,
+  `delete_slide` and the other ops the compiler refuses; `diff proposal=` (still `404`); `agent.denied`
+  audit rows; `status what=proposals`; the `Idempotency-Key` ledger on submit and withdraw; DLP, client
+  allow-lists, retention and pruning of receipts. An owner or manager can still merge their own agent's
+  request with the existing `override_rules` (an approval cannot be self-given, an override is the
+  existing audited bypass). **Not verified:** no real MCP client or model produced a proposal; nothing was
+  measured under load (the document lock is held while ops are compiled, which a 200-op call on a large file
+  makes long); migration 0044 has not been rehearsed on a production copy or released; the review-screen
+  behaviour is only the data it will read.
 
 ### 11.4 Phase 2 detail (remote MCP and OAuth)
 
