@@ -30,6 +30,8 @@ const HISTORY: &[&str] = &[
     "project_history_review",
     "project_ref_event",
     "project_issue_comment",
+    "device_key_class",
+    "agent_call",
 ];
 const MUTABLE: &[&str] = &[
     "document",

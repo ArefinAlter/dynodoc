@@ -245,6 +245,10 @@ async fn erase_one(
     )
     .await?;
     tx.commit().await?;
+    if target.kind == "documents" {
+        // Derived content of the erased document must not outlive it in memory.
+        state.agent_cache.purge_document(target.id);
+    }
     Ok(())
 }
 

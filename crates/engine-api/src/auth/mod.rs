@@ -18,6 +18,7 @@
 //! is per-document state read from `document_access` at request time ([`store::role_for`])
 //! and handed to the stage-16 governance gate.
 
+pub mod agent;
 pub mod device;
 pub mod routes;
 pub mod store;
