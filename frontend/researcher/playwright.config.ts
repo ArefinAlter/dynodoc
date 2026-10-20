@@ -12,7 +12,13 @@ const extra = matrix
       { name: 'webkit', use: { ...devices['Desktop Safari'] } },
       { name: 'pixel', use: { ...devices['Pixel 7'] }, testMatch: phoneSpecs },
       { name: 'iphone', use: { ...devices['iPhone 15'] }, testMatch: phoneSpecs }
-    ].map((project) => ({ ...project, grep: matrix === 'smoke' ? /@smoke/ : undefined }))
+    ].map((project) => ({
+      ...project,
+      grep: matrix === 'smoke' ? /@smoke/ : undefined,
+      // Creating a workbook takes about 3.5 s here on every engine, and tracing makes the
+      // slower engines miss the 5 s default. Same assertions, more patience.
+      expect: { timeout: 15000 }
+    }))
   : [];
 export default defineConfig({
   testDir: 'e2e',

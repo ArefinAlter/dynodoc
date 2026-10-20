@@ -20,6 +20,9 @@ export default {
         'font-src': ['self', 'data:', 'blob:'],
         'connect-src': ['self', 'https://app.dynodoc.online'],
         'worker-src': ['self', 'blob:'],
+        // Without this the browser refuses to read /site.webmanifest under default-src 'none',
+        // so the app could never be installed. Same-origin only.
+        'manifest-src': ['self'],
         'frame-src': ['self'],
         'frame-ancestors': ['self'],
         'object-src': ['none'],
