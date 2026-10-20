@@ -51,7 +51,23 @@ Without `BROWSER_MATRIX` only Chromium exists, which is what the two existing CI
 `browsers` job in `.github/workflows/ci-frontend.yml` runs the tests tagged `@smoke` (public pages,
 sign-in, workspace list, one document opened, saved and reopened, the projects page, a spreadsheet on a
 phone, and every service worker and manifest test) on Firefox, WebKit, Pixel and iPhone. Browser downloads
-are cached by Playwright version.
+are cached by Playwright version. The smoke set is 14 tests per project; on the machine used here it took about
+40 to 60 seconds per project, 3.5 minutes for the four.
+
+Harness notes, so a red run is read correctly:
+- Playwright's WebKit does not apply `page.route()` mocks to a page a service worker controls, even when
+  the worker lets the request through (checked: Chromium and Firefox apply them, WebKit returns the real
+  server's answer). The `webkit` and `iphone` projects therefore block workers, and `pwa.spec.ts` turns
+  them back on for itself. A user on Safari is not affected; no tool intercepts their requests.
+- `context.setOffline()` reaches the worker's own requests on Chromium only, so the offline page is tested
+  by taking the server away: the spec puts a small pass-through proxy in front of the app, loads a page
+  through it, then stops the proxy. That runs on every engine, and also shows a 503 from a live server is
+  passed through, not replaced by the offline page.
+- Firefox and WebKit are slower under tracing. Their projects use a 15 s `expect` timeout (Chromium keeps 5 s)
+  because creating a workbook takes about 3.5 s on every engine. Assertions are unchanged.
+- On Windows the WebKit build can hang at browser launch or teardown after a failed test and leave
+  `WebKitNetworkProcess.exe` behind. Kill leftovers before rerunning. Not seen on Linux, which is only
+  unverified because CI has not run this yet.
 
 The unit tests (`vitest`) cover the service worker's routing and caching decisions
 (`src/lib/pwa/sw-policy.test.ts`), the install wording per browser (`install.test.ts`), the keyboard inset
@@ -89,6 +105,12 @@ on macOS or iOS. Real-device passes are a release task for the owner or a QA ser
   screen"). A presentation opens and shows its slides, but editing slides on a phone was not
   exercised in these runs, and shapes are moved by dragging, which is awkward on a small screen.
 - Keyboard shortcut hints are hidden; the copy, cut and paste messages mention touch.
+- A spreadsheet cell is edited in place by a double tap (iOS Safari never sends `dblclick`, so the grid
+  detects two taps within 600 ms) or through the formula bar.
+- The toolbar rows, tab bar, ribbon and status line take most of a phone's height; with the 659px viewport of
+  an iPhone 15 in Safari the sheet grid shows about two rows until the notice is dismissed. A phone-specific
+  compact toolbar that hides the ribbon until a tab is tapped would help; it is not built (it would also
+  change what the existing end-to-end specs can click).
 
 **Tablets.** Under 700px they behave as a phone, above it as a desktop with touch. Touch-screen rules
 (16px fields, 44px controls) follow the pointer type, not the width, so a tablet gets them at any width and a
@@ -163,7 +185,39 @@ manifest under `default-src 'none'` and the app can never be installed.
 
 ## Checked and not checked
 
-Run for this record (21 October 2026, Windows, Chromium 148, Firefox 150, WebKit 26.4 build): see the counts in the
-change report. Not verified: any real phone or tablet, Safari itself, WKWebView, Android WebView, installing on any
-operating system, Nginx behaviour on Linux (the proxy script runs only in CI), and the real iOS keyboard, zoom, toolbar and
-notch behaviour.
+Run for this record on 21 October 2026, on Windows 11 against the isolated stack, with Chromium 148, Firefox 150 and
+the Playwright WebKit 26.4 build. The full suite (123 tests) on Chromium, the same suite on Firefox and WebKit, and the
+public, workspace and projects specs on both phone projects.
+
+Known failures that remain on non-Chromium engines, none seen on Chromium:
+
+- WebKit, `changes.spec.ts` "teammates push edited Word files...": fails in every run so far, at a different step each
+  time. One cause was a real defect and is fixed (see below); the others are not explained: the owner's open editor
+  not showing a merged paragraph within 15 s, text typed into a personal draft not raising an unsaved state, and the
+  rebase dialog. The same flow in single-user probes works on WebKit. Treat WebKit's multi-user editing as unverified.
+- WebKit, `office.spec.ts` "live pages reflow long editable paragraphs...": one line sits 1/16 px (2292.98 against a
+  boundary at 2293.04) before a page boundary. There is no visible effect; the planner asks for a pixel of clearance
+  that WebKit's layout does not reflect.
+- Firefox: three tests failed once in the 24-minute full run (`changes.spec.ts` "teammates push...", `office.spec.ts`
+  "conditional formatting...", `product.spec.ts` "administrator previews and permanently erases...") and pass when run
+  alone (`changes.spec.ts` three times in a row). They look like timing under load, for example a fill that arrives while the
+  editor is still read-only.
+
+Found by this work and fixed, beyond layout:
+
+- The page policy blocked `/site.webmanifest` (`default-src 'none'` with no `manifest-src`); WebKit logged it. The app could
+  never have been installed.
+- When another person's change arrived while someone was typing, the editor replaced the whole document and the caret
+  jumped to the end of the last paragraph, so the rest of the typing went there (seen on WebKit).
+  `RichEditor.svelte` now maps the caret across the change (`src/lib/workspace/selection-map.ts`).
+- iOS Safari never sends `dblclick`, so a spreadsheet cell could not be edited by double tap.
+- Below 700px comments, version history and help were hidden with no other way to reach them.
+- Text in some flex rows was squeezed until labels overlapped (a side effect of the first touch rule, caught by the
+  projects spec and now covered by its own test).
+
+Not verified: any real phone or tablet, Safari itself, WKWebView, Android WebView, installing on any operating system, the
+real iOS keyboard, zoom, toolbar and notch behaviour, `-webkit-` prefixes and `100dvh` fallbacks (added by inspection;
+Playwright's WebKit build is new enough not to need them), and the full `check-proxy-headers.mjs` script (it needs
+Linux and Nginx). Its two new assertions were exercised another way: the Nginx rules were run in an nginx 1.27 container
+in front of the app, where the worker installs and works with the entries and cannot install without them (the
+page keeps working, with no offline page).
