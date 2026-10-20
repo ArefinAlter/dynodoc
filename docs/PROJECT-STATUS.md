@@ -1,5 +1,34 @@
 # Dynodoc: intent, current implementation and remaining work
 
+## Source: at-rest envelope encryption library, Phase 0 core (20 October 2026)
+
+The pure core of Phase 0 of [END-TO-END-ENCRYPTION.md](END-TO-END-ENCRYPTION.md) section 7 is built as `engine_core::at_rest`:
+the `DYNOENC` stored form (AES-256-GCM, a per-value key and nonce from HKDF-SHA-256 over the project data key and a
+per-value salt, an authenticated header), a `KeyProvider` trait with a file provider (KEK versions in `kek-<n>.key` files,
+rotation by adding a version, owner-only check on Unix), a deterministic test provider and a `DekCache` with a TTL and size
+bound. **Nothing uses it**: no `EnvelopeStore`, no `data_key` tables, no migration, no backfill and no storage path changed.
+This is service-decryptable at-rest protection (claims level 1); it is not end-to-end encryption and the documentation says so
+wherever it names it. [AT-REST-ENVELOPE.md](AT-REST-ENVELOPE.md) records the format, the hierarchy and what it does and does not
+protect.
+
+Refinements of the design, made before anything is stored: the AAD and salt are length-framed (the design's plain concatenation is
+ambiguous: table `ab` + column `c` equals table `a` + column `bc`); the header version, data-key id and KEK version are
+authenticated; and, from review, the deterministic salt for content-addressed tables also binds `SHA-256(plaintext)`, so
+sealing different bytes under an address that was not verified gives a different key and nonce instead of repeating them
+(equal plaintexts still give equal envelopes, which the store's "same address, same bytes" check needs).
+
+Evidence: 68 tests (48 unit, 13 property with fixed seeds including arbitrary bytes into the parser, 7 vector) plus Clippy and
+rustdoc with warnings denied, and the Unix permission test in a Linux container. Vectors (13 envelopes, deterministic-salt
+envelopes, wrapped DEKs, rejects, KEK files) come from an independent Python generator using the `cryptography` package and
+checked against RFC 5869 and GCM known answers; the Rust code reproduces every byte, and breaking the salt label or the AAD
+fails the vector tests. No external cryptographic review has been done and the vectors share the author's reading of the design.
+
+Not built: the Vault and cloud-KMS providers (the trait is synchronous; a network provider needs an async form), the storage
+wrapper and its migrations, backfill (the design's M-a and M-c), key rotation jobs, crypto-erase integration, tier 0c.
+Owner questions: add a ciphertext length field to the header now (today a cut or extended value fails authentication instead of
+parsing as a distinct error); keep the authenticated but unused `kek_version` header field; accept the 256 MiB plaintext and
+name limits; accept plain-hex KEK files (a passphrase-wrapped variant is listed in the design).
+
 ## Source: agent operation compiler, connector Phase 1 library (20 October 2026)
 
 The pure core of connector Phase 1 is built in `engine-agent`: a strict parser for the operation grammar of

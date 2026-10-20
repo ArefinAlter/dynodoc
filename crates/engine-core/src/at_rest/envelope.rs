@@ -58,7 +58,7 @@ pub const MAX_ROW_KEY_BYTES: usize = 1024;
 
 const AAD_LABEL: &[u8] = b"dynodoc.at-rest.v1";
 const KEY_INFO_LABEL: &[u8] = b"dynodoc.at-rest.v1/aead+nonce";
-const SALT_LABEL: &[u8] = b"dynodoc.at-rest.v1/salt";
+const SALT_LABEL: &[u8] = b"dynodoc.at-rest.v1/content-salt";
 const KEY_LEN: usize = 32;
 const NONCE_LEN: usize = 12;
 
@@ -149,7 +149,8 @@ fn check_len(field: &'static str, len: usize, min: usize, max: usize) -> Result<
 /// A salt must never be used for two different plaintexts under the same data key and
 /// [`Context`]: that repeats the AES-GCM key and nonce and leaks the XOR of the two
 /// plaintexts. [`Salt::random`] cannot collide in practice; [`Salt::content_addressed`]
-/// is only safe where the address determines the plaintext.
+/// also binds a digest of the plaintext, so even a wrongly reused address cannot repeat a
+/// key and nonce for different plaintexts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Salt([u8; SALT_LEN]);
 
@@ -164,20 +165,24 @@ impl Salt {
     }
 
     /// The deterministic salt for a content-addressed table:
-    /// `HMAC-SHA-256(DEK, LP("dynodoc.at-rest.v1/salt") || LP(document) || LP(address))`.
+    /// `HMAC-SHA-256(DEK, LP("dynodoc.at-rest.v1/content-salt") || LP(document) || LP(address)
+    /// || LP(SHA-256(plaintext)))`.
     ///
-    /// The same key, document and address always give the same salt, so storing the
-    /// same object twice yields byte-identical envelopes and the store's "same address,
-    /// same bytes" comparison keeps working. The caller must have checked that
-    /// `address` is the hash of the plaintext it then seals; the salt does not include
-    /// the plaintext. The design writes `"salt" || document || address`; the fields are
-    /// length-framed here and the label is versioned, so the pair cannot be re-split.
-    pub fn content_addressed(dek: &Dek, document: &[u8], address: &[u8]) -> Self {
+    /// The same key, document, address and plaintext always give the same salt, so storing
+    /// the same object twice yields byte-identical envelopes and the store's "same address,
+    /// same bytes" comparison keeps working. The design binds only the address (which is
+    /// the hash of the plaintext in the content stores); the plaintext digest is added so
+    /// that a caller who seals different bytes under an address it did not verify gets a
+    /// different key and nonce instead of repeating them. The fields are length-framed and
+    /// the label is versioned, so the parts cannot be re-split.
+    pub fn content_addressed(dek: &Dek, document: &[u8], address: &[u8], plaintext: &[u8]) -> Self {
+        let digest = ring::digest::digest(&ring::digest::SHA256, plaintext);
         let mut message =
-            Vec::with_capacity(SALT_LABEL.len() + document.len() + address.len() + 24);
+            Vec::with_capacity(SALT_LABEL.len() + document.len() + address.len() + 56);
         lp(&mut message, SALT_LABEL);
         lp(&mut message, document);
         lp(&mut message, address);
+        lp(&mut message, digest.as_ref());
         let tag = hmac::sign(&hmac::Key::new(hmac::HMAC_SHA256, dek.as_bytes()), &message);
         let mut salt = [0u8; SALT_LEN];
         salt.copy_from_slice(tag.as_ref());
@@ -316,7 +321,7 @@ pub fn seal_content_addressed(
 ) -> Result<Vec<u8>, Error> {
     check_len("address", address.len(), 1, MAX_ROW_KEY_BYTES)?;
     check_len("document", document.len(), 0, MAX_ROW_KEY_BYTES)?;
-    let salt = Salt::content_addressed(key.dek(), document, address);
+    let salt = Salt::content_addressed(key.dek(), document, address, plaintext);
     seal_with_salt(key, ctx, &salt, plaintext)
 }
 
@@ -605,19 +610,39 @@ mod tests {
     }
 
     #[test]
-    fn content_addressed_salt_depends_on_key_document_and_address() {
+    fn content_addressed_salt_depends_on_key_document_address_and_plaintext() {
         let dek = Dek::from_bytes([1; 32]);
-        let base = Salt::content_addressed(&dek, b"doc", b"addr");
-        assert_eq!(base, Salt::content_addressed(&dek, b"doc", b"addr"));
-        assert_ne!(base, Salt::content_addressed(&dek, b"doc2", b"addr"));
-        assert_ne!(base, Salt::content_addressed(&dek, b"doc", b"addr2"));
+        let base = Salt::content_addressed(&dek, b"doc", b"addr", b"bytes");
+        assert_eq!(
+            base,
+            Salt::content_addressed(&dek, b"doc", b"addr", b"bytes")
+        );
         assert_ne!(
             base,
-            Salt::content_addressed(&Dek::from_bytes([2; 32]), b"doc", b"addr")
+            Salt::content_addressed(&dek, b"doc2", b"addr", b"bytes")
         );
-        // The pair cannot be re-split: ("do", "caddr") is not ("doc", "addr").
-        assert_ne!(base, Salt::content_addressed(&dek, b"do", b"caddr"));
-        assert_ne!(base, Salt::content_addressed(&dek, b"docaddr", b""));
+        assert_ne!(
+            base,
+            Salt::content_addressed(&dek, b"doc", b"addr2", b"bytes")
+        );
+        assert_ne!(
+            base,
+            Salt::content_addressed(&Dek::from_bytes([2; 32]), b"doc", b"addr", b"bytes")
+        );
+        // Different bytes under the same address must not share a key and nonce.
+        assert_ne!(
+            base,
+            Salt::content_addressed(&dek, b"doc", b"addr", b"other bytes")
+        );
+        // The parts cannot be re-split: ("do", "caddr") is not ("doc", "addr").
+        assert_ne!(
+            base,
+            Salt::content_addressed(&dek, b"do", b"caddr", b"bytes")
+        );
+        assert_ne!(
+            base,
+            Salt::content_addressed(&dek, b"docaddr", b"", b"bytes")
+        );
     }
 
     fn unhex(text: &str) -> Vec<u8> {
@@ -706,6 +731,14 @@ mod tests {
         assert_eq!(open(&key, &ctx(), &a).unwrap(), b"bytes");
         let other_doc = seal_content_addressed(&key, &ctx(), b"doc2", b"addr", b"bytes").unwrap();
         assert_ne!(a, other_doc);
+        // A wrongly reused address does not repeat the key and nonce: the XOR of the two
+        // ciphertext bodies is not the XOR of the plaintexts.
+        let other_bytes = seal_content_addressed(&key, &ctx(), b"doc", b"addr", b"BYTES").unwrap();
+        assert_ne!(
+            a[..49],
+            other_bytes[..49],
+            "the header (with the salt) differs"
+        );
         assert_eq!(
             seal_content_addressed(&key, &ctx(), b"doc", b"", b"bytes").unwrap_err(),
             Error::EmptyField("address")

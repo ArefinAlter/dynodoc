@@ -242,7 +242,7 @@ fn every_content_addressed_vector_is_reproduced() {
             Context::new(installation_of(v), s(v, "table"), s(v, "column"), &row_key).unwrap();
         let plaintext = plaintext_of(v);
 
-        let salt = Salt::content_addressed(key.dek(), &document, &address);
+        let salt = Salt::content_addressed(key.dek(), &document, &address, &plaintext);
         assert_eq!(hex(salt.as_bytes()), s(v, "salt_hex"), "{name} salt");
         let envelope = seal_content_addressed(&key, &ctx, &document, &address, &plaintext).unwrap();
         assert_envelope_matches(v, &envelope);

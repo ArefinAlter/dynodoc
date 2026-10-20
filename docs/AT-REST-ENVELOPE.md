@@ -75,13 +75,14 @@ through the key derivation and through the AAD; the installation through the AAD
 
 **Deterministic salt for content-addressed tables.** `PgStore::put_batch` compares stored
 bytes with incoming bytes for an existing address, so a random salt would break the
-comparison. `Salt::content_addressed(dek, document, address)` is
-`HMAC-SHA-256(DEK, LP("dynodoc.at-rest.v1/salt") || LP(document) || LP(address))`;
-`seal_content_addressed` uses it. The same key, document and address always give the same
-envelope. It is safe only where the address determines the plaintext (the address is a hash
-of it); the salt does not include the plaintext, so a caller that seals two different
-plaintexts under one (key, document, address) repeats the AES key and nonce and leaks their
-XOR. The caller must have verified the address first. Everything else uses `seal`, which
+comparison. `Salt::content_addressed(dek, document, address, plaintext)` is
+`HMAC-SHA-256(DEK, LP("dynodoc.at-rest.v1/content-salt") || LP(document) || LP(address) ||
+LP(SHA-256(plaintext)))`; `seal_content_addressed` uses it. The same key, document, address
+and plaintext always give the same envelope. The design binds only the address, which in the
+content stores is the hash of the plaintext; the plaintext digest is added (18 October 2026
+review) so a caller who seals different bytes under an address it did not verify gets a
+different key and nonce, instead of repeating them and leaking the XOR of the two
+plaintexts. The caller should still verify the address. Everything else uses `seal`, which
 draws a random salt.
 
 ### Refinements of the design (7.4), and why
@@ -89,7 +90,7 @@ draws a random salt.
 | Design says | Built | Why |
 |---|---|---|
 | `AAD = label \|\| installation \|\| table \|\| column \|\| row_key` | Every field length-framed, and `version`, `dek_id`, `kek_version` appended | Plain concatenation is ambiguous (table `ab` + column `c` equals table `a` + column `bc`). The header fields are not otherwise authenticated, so binding them makes a flipped bit in any header byte fail (`dek_id` is also checked against the key handle) |
-| salt `= HMAC(DEK, "salt" \|\| document \|\| address)` | Length-framed fields and the label `dynodoc.at-rest.v1/salt` | Same ambiguity; a versioned label separates the use of the DEK as an HMAC key |
+| salt `= HMAC(DEK, "salt" \|\| document \|\| address)` | Length-framed fields, the label `dynodoc.at-rest.v1/content-salt`, and a SHA-256 of the plaintext | Same ambiguity; a versioned label separates the use of the DEK as an HMAC key; the plaintext digest removes the nonce-reuse hazard of an unverified address |
 | `info = table, column, row identity` | `LP(label) \|\| LP(table) \|\| LP(column) \|\| LP(row_key)` | Same framing; the label ties the key derivation to this format version |
 | Strict parsing of "trailing bytes" | Not separable; see below | The layout has no length field, as designed |
 

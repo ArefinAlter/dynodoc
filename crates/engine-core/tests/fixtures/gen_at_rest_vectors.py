@@ -40,7 +40,7 @@ MAGIC = b"DYNOENC\x00"
 VERSION = 1
 AAD_LABEL = b"dynodoc.at-rest.v1"
 KEY_INFO_LABEL = b"dynodoc.at-rest.v1/aead+nonce"
-SALT_LABEL = b"dynodoc.at-rest.v1/salt"
+SALT_LABEL = b"dynodoc.at-rest.v1/content-salt"
 WRAP_LABEL = b"dynodoc.at-rest.v1/dek-wrap"
 WRAP_VERSION = 1
 
@@ -211,7 +211,9 @@ def content_addressed(name, document, plaintext, address=None):
     if address is None:
         address = hashlib.sha256(plaintext).digest()
     salt = hmac.new(
-        DEK, lp(SALT_LABEL) + lp(document) + lp(address), hashlib.sha256
+        DEK,
+        lp(SALT_LABEL) + lp(document) + lp(address) + lp(hashlib.sha256(plaintext).digest()),
+        hashlib.sha256,
     ).digest()
     case = dict(
         name=name, installation=INSTALLATION_A, table="checkpoint_object", column="bytes",
