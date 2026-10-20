@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license-file.workspace = true
 publish.workspace = true
-description = "dynodoc agent protocol read path: refs, hashes, Dynodoc Compact Text, outline/read/find/diff."
+description = "dynodoc agent protocol: refs, hashes, Dynodoc Compact Text, outline/read/find/diff and the propose operation compiler."
 
 [dependencies]
 engine-shared = { workspace = true }

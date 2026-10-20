@@ -265,6 +265,12 @@ impl AgentError {
 
     /// `dd/1 error code=<agent_code> ...` (one line, no body).
     pub fn to_dct(&self) -> String {
+        self.to_dct_with(&[])
+    }
+
+    /// [`to_dct`](Self::to_dct) with more `key=value` pairs before the hint (the `propose`
+    /// compiler adds `op=<index>` and `id=<label>` so the error names the op, spec 7.7).
+    pub fn to_dct_with(&self, extra: &[(&'static str, String)]) -> String {
         let mut h = HeaderBuilder::new(Tool::Error).kv("code", self.agent_code());
         let join = |refs: &[Ref]| refs.iter().map(Ref::as_str).collect::<Vec<_>>().join(",");
         match self {
@@ -302,9 +308,72 @@ impl AgentError {
             }
             _ => {}
         }
+        for (k, v) in extra {
+            h = h.kv(k, v);
+        }
         h.kv_quoted("hint", self.hint()).finish_line()
     }
 }
+
+/// An [`AgentError`] with the op of the call that caused it. A `propose` call is atomic, so
+/// the first failing op fails the call and the error names that op (spec 7.7): `op` is the
+/// 0-based index into the `ops` array, `id` the caller's own label when it gave one (a
+/// restricted token, see `grammar`). Both are `None` for an error about the whole call.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompileError {
+    pub op: Option<usize>,
+    pub id: Option<String>,
+    pub error: AgentError,
+}
+
+impl CompileError {
+    pub fn at(op: usize, id: Option<&str>, error: AgentError) -> Self {
+        Self {
+            op: Some(op),
+            id: id.map(str::to_string),
+            error,
+        }
+    }
+
+    /// `dd/1 error code=... op=<index> id=<label> hint="..."`.
+    pub fn to_dct(&self) -> String {
+        let mut extra = Vec::new();
+        if let Some(op) = self.op {
+            extra.push(("op", op.to_string()));
+        }
+        if let Some(id) = &self.id {
+            extra.push(("id", id.clone()));
+        }
+        self.error.to_dct_with(&extra)
+    }
+}
+
+impl From<AgentError> for CompileError {
+    fn from(error: AgentError) -> Self {
+        Self {
+            op: None,
+            id: None,
+            error,
+        }
+    }
+}
+
+impl From<CompileError> for AgentError {
+    fn from(e: CompileError) -> Self {
+        e.error
+    }
+}
+
+impl std::fmt::Display for CompileError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.op {
+            Some(op) => write!(f, "op {op}: {}", self.error),
+            None => self.error.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for CompileError {}
 
 impl std::fmt::Display for AgentError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

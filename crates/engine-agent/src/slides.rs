@@ -24,7 +24,37 @@ pub struct ShapeView<'a> {
     pub bullets: bool,
 }
 
-impl ShapeView<'_> {
+impl<'a> ShapeView<'a> {
+    /// The protocol's view of a shape `item`.
+    pub fn new(n: &'a MaterializedNode) -> Self {
+        let f = &n.current_fields;
+        let kind = match f["kind"].as_str() {
+            Some("image") => "image",
+            Some("shape") => "shape",
+            _ => "text",
+        };
+        let role = match f["role"].as_str() {
+            Some("title") => Some("title"),
+            Some("body") => Some("body"),
+            Some("subtitle") => Some("subtitle"),
+            _ => None,
+        };
+        let text = match f["text"].as_str() {
+            Some(t) => t.to_string(),
+            None => field_string(&f["label"]),
+        };
+        let src = f["src"].as_str().filter(|s| is_inline_raster(s));
+        ShapeView {
+            node: n,
+            kind,
+            role,
+            text,
+            alt: f["alt"].as_str().map(str::to_string),
+            src_len: src.map_or(0, str::len),
+            bullets: f["style"]["bullets"] == true,
+        }
+    }
+
     pub fn hash(&self) -> Hash {
         shape_hash(self.kind, self.role, &self.text)
     }
@@ -62,34 +92,7 @@ impl<'a> SlideView<'a> {
             .iter()
             .copied()
             .filter(|n| n.node_type == "item")
-            .map(|n| {
-                let f = &n.current_fields;
-                let kind = match f["kind"].as_str() {
-                    Some("image") => "image",
-                    Some("shape") => "shape",
-                    _ => "text",
-                };
-                let role = match f["role"].as_str() {
-                    Some("title") => Some("title"),
-                    Some("body") => Some("body"),
-                    Some("subtitle") => Some("subtitle"),
-                    _ => None,
-                };
-                let text = match f["text"].as_str() {
-                    Some(t) => t.to_string(),
-                    None => field_string(&f["label"]),
-                };
-                let src = f["src"].as_str().filter(|s| is_inline_raster(s));
-                ShapeView {
-                    node: n,
-                    kind,
-                    role,
-                    text,
-                    alt: f["alt"].as_str().map(str::to_string),
-                    src_len: src.map_or(0, str::len),
-                    bullets: f["style"]["bullets"] == true,
-                }
-            })
+            .map(ShapeView::new)
             .collect();
         Self {
             node,
