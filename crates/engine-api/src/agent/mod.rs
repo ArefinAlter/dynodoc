@@ -31,7 +31,7 @@
 //!    hold and be issued nothing else. A key with no class row is a person's key. A class
 //!    is written only when enrolment names one and never changes.
 //! 4. The `all` project-access mode never covers `content:read`: it always needs a grant
-//!    for the project ([`crate::auth::device::key_reaches`]).
+//!    for the project (`crate::auth::device::key_reaches`).
 //! 5. With no project or file policy table yet (spec 5.2, 5.3), the effective permission is
 //!    the gateway flag, the grant and the person's current project and file role. The spec's
 //!    default of "agents disabled until a project owner enables them" is therefore not

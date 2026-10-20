@@ -11,7 +11,7 @@
 //! key is unrevoked, was enrolled for an AI agent (`device_key_class`), belongs to an
 //! active account in the same session generation, and holds an active grant for this
 //! route's project that lists the scope. An `all`-mode key never reaches an agent scope
-//! without a grant ([`super::device::key_reaches`]). Revoking a grant or the key, or
+//! without a grant (`super::device::key_reaches`). Revoking a grant or the key, or
 //! disabling the account, therefore ends access at the next request. The project and
 //! file roles are read by the handler.
 
