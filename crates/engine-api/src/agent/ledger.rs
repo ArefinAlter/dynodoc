@@ -74,6 +74,9 @@ mod tests {
         assert_ne!(a, request_digest(&[b"GET", b"/x", b"q=2"]));
         assert_ne!(a, request_digest(&[b"POST", b"/x", b"q=1"]));
         // "ab"+"c" and "a"+"bc" differ.
-        assert_ne!(request_digest(&[b"ab", b"c"]), request_digest(&[b"a", b"bc"]));
+        assert_ne!(
+            request_digest(&[b"ab", b"c"]),
+            request_digest(&[b"a", b"bc"])
+        );
     }
 }

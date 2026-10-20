@@ -51,6 +51,8 @@ struct Inner {
     entries: HashMap<Key, Entry>,
     bytes: usize,
     tick: u64,
+    hits: u64,
+    misses: u64,
 }
 
 /// Cheap to clone; clones share one cache.
@@ -83,9 +85,14 @@ impl StateCache {
         let mut inner = self.0.lock().ok()?;
         inner.tick += 1;
         let tick = inner.tick;
-        let entry = inner.entries.get_mut(key)?;
+        let Some(entry) = inner.entries.get_mut(key) else {
+            inner.misses += 1;
+            return None;
+        };
         entry.used = tick;
-        Some(entry.state.clone())
+        let state = entry.state.clone();
+        inner.hits += 1;
+        Some(state)
     }
 
     /// Keep `state` (of `bytes` serialised bytes) unless it is too large; evicts the least
@@ -139,6 +146,14 @@ impl StateCache {
         doomed.len()
     }
 
+    /// `(hits, misses)` of [`get`](Self::get) since the process started.
+    pub fn lookups(&self) -> (u64, u64) {
+        self.0
+            .lock()
+            .map(|inner| (inner.hits, inner.misses))
+            .unwrap_or((0, 0))
+    }
+
     /// `(entries, serialised bytes)` currently held.
     pub fn usage(&self) -> (usize, usize) {
         self.0
@@ -165,6 +180,7 @@ mod tests {
         assert!(cache.get(&key(1, 3)).is_none());
         assert!(cache.insert(key(1, 3), state(), 100));
         assert!(cache.get(&key(1, 3)).is_some());
+        assert_eq!(cache.lookups(), (1, 1));
         let mut other_chain = key(1, 3);
         other_chain.2[0] ^= 1;
         assert!(cache.get(&other_chain).is_none());

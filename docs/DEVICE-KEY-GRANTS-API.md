@@ -187,6 +187,30 @@ No row is written for a no-op (`changed:false`).
 5. The command line learns of a refusal only as `403`; tell the person to check this
    screen.
 
+## Key class and the agent scope (schema 42)
+
+A key is enrolled for a person (the default) or for an AI agent. The class is chosen once,
+at enrolment, and never changes (`device_key_class`, immutable). It decides which scopes the
+key may ever hold, so a signing key file cannot be re-purposed.
+
+- `POST /devices` accepts two more optional fields next to `project_access`: `class`
+  (`person` or `agent`) and `label` (1 to 80 characters, no control characters, shown in the
+  listing; never put a secret in it). A `label` without a `class`, an unknown class or a bad
+  label is 400. The response gains `class`. An exact retry returns the class the key has.
+- `GET /devices` gains `class` (`person` unless the key was enrolled as an agent key) and
+  `label` (null when none) on every key. The `scopes` list is unchanged: it names the scopes
+  of a person's key.
+- The agent scope is `content:read` (docs/AI-AGENT-PROTOCOL-SPEC.md section 14.2). It is
+  independent of the other scopes. `PUT /devices/{key}/projects/{project}` with `content:read`
+  on a person's key is 400, and with any other scope on an agent key is 400. Issuance
+  (`POST /projects/{id}/device-sessions`) gives the same mix the uniform 403.
+- The `all` mode never covers `content:read`: even an agent key in `all` mode needs an
+  active grant for the project, checked at issuance and on every request.
+- A session with `content:read` is accepted only by the agent routes
+  (`/projects/{id}/agent/...`, behind `AGENT_GATEWAY=on`); every other route refuses it, and
+  the agent routes refuse every other credential.
+- `device.enrolled` audit rows carry `class` when the enrolment named one.
+
 ## Not in this contract
 
 No per-grant expiry, no device names, no grant approval workflow for another

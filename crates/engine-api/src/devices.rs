@@ -259,8 +259,9 @@ async fn register(
     // A lost response may be retried, but cannot reactivate or rebind a key.
     let existing: Option<(Value, String, String)> = sqlx::query_as("select k.proof,coalesce((select a.project_access from device_key_access a where a.key_id=k.id),'granted'),coalesce((select c.class from device_key_class c where c.key_id=k.id),'person') from device_signing_key k where k.id=$1 and k.identity_id=$2 and not exists(select 1 from device_key_revocation r where r.key_id=k.id)")
         .bind(proof.challenge.id).bind(auth.identity_id).fetch_optional(&mut *tx).await?;
-    if let Some((_, current, current_class)) =
-        existing.as_ref().filter(|(stored, _, _)| stored == &encoded)
+    if let Some((_, current, current_class)) = existing
+        .as_ref()
+        .filter(|(stored, _, _)| stored == &encoded)
     {
         // An exact retry never changes the mode or class the key already has.
         let (current, current_class) = (current.clone(), current_class.clone());

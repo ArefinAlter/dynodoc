@@ -10,6 +10,89 @@
 //!
 //! What is not here: `propose`, `submit`, proposal `status`, project and file policy,
 //! budgets, OAuth, API keys and the MCP server.
+//!
+//! # Decisions and deviations from the specification
+//!
+//! Where the spec says "proposed" the detail was settled here; where it is silent or
+//! contradicts itself or the code, the stricter reading won. Each item is a choice a reader
+//! of the spec could not have predicted.
+//!
+//! **Credentials and permission (spec 14)**
+//!
+//! 1. Only `content:read` exists. The CHECK constraints of migration 0042 do not admit
+//!    `content:propose` or `content:submit` yet; the write routes will widen them.
+//! 2. An ordinary account login, a connector key or any non-device token is `401` on these
+//!    routes (14.1 says "refused"; `401` matches the management routes' rule for a
+//!    credential of the wrong class). A device token without the scope, for another
+//!    project, or whose grant is gone is `403`. A project non-member is `403`, a file the
+//!    caller cannot open is `404`; each layer has one answer for every reason.
+//! 3. The key class is part of authority, read from `device_key_class` on every request. A
+//!    person's key cannot hold, be granted or be issued `content:read`; an agent key can
+//!    hold and be issued nothing else. A key with no class row is a person's key. A class
+//!    is written only when enrolment names one and never changes.
+//! 4. The `all` project-access mode never covers `content:read`: it always needs a grant
+//!    for the project ([`crate::auth::device::key_reaches`]).
+//! 5. With no project or file policy table yet (spec 5.2, 5.3), the effective permission is
+//!    the gateway flag, the grant and the person's current project and file role. The spec's
+//!    default of "agents disabled until a project owner enables them" is therefore not
+//!    enforced; any member can grant their own agent key read access to a project.
+//!    Every role, viewer included, may read (spec 14.3).
+//!
+//! **Routes (spec 12)**
+//!
+//! 6. Route 13 (proposal `status`) is not built: no agent can own a proposal yet. `diff`
+//!    accepts `proposal=` and always answers `404`, after the file check.
+//! 7. `GET .../diff` requires `from` (or a cursor carrying it); the spec leaves "neither"
+//!    undefined. `to` defaults to the head.
+//! 8. `{file}` is a document UUID or its first 8 hex characters when they name exactly one
+//!    file the caller can open in the project (6.2). Trashed files, questionnaires and
+//!    files of another project are not found.
+//! 9. List-valued query parameters (`refs`, `ids`) are comma-separated. `max_bytes` is
+//!    accepted wherever the library accepts it, although the 12.1 query lists omit it.
+//!    Unknown query parameters and unknown body fields are `400`.
+//! 10. `POST .../blocks:read` reads and writes nothing but the ledger, so it does not
+//!     require `Idempotency-Key` (12.2 asks for one on every POST but `propose`), and it
+//!     carries an `ETag` but never answers `304`. Its body is limited to 256 KiB.
+//! 11. `Accept` selects the body: absent, `*/*`, `application/*` and `application/json` give
+//!     the JSON mirror (12.2), `text/vnd.dynodoc.dct` (version 1 only) the DCT body. Errors
+//!     are always the JSON envelope (12.4), even when DCT was asked for.
+//! 12. ETag is `"<rev>:<chain8>"` of the revision served (for `diff`, the later one), on
+//!     every file route and never on `files` or `access`. It validates one URL; the same
+//!     `If-None-Match` on a different query is a different resource. A `304` is answered
+//!     after the credential, grant, role and file checks, so a revoked caller never learns
+//!     "unchanged", and before any state is read.
+//! 13. A cursor pins its revision; when `rev` is also given they must agree. `outline` and
+//!     `find` have no `rev` parameter: they read the head, or the revision of their cursor.
+//! 14. `files` lists at most 10,000 files per project and refuses a larger project with
+//!     `limit_exceeded field=files` rather than truncating.
+//! 15. `access` describes this credential in this project: the grant now active, the
+//!     person's role, `write_mode=none`, `budget=null` and the capabilities of this server
+//!     version (`calc=none`, no propose). The discovery document advertises no MCP URL and
+//!     no profiles because none exists.
+//!
+//! **State, verification and the ledger**
+//!
+//! 16. The cache holds at most [`cache::MAX_ENTRIES`] states, [`cache::MAX_BYTES`] of
+//!     serialised state in total and [`cache::MAX_ENTRY_BYTES`] per state. A hit skips the
+//!     replay, not the authorisation; the key includes the stored chain hash of the
+//!     revision, read on every request. A cached state was verified when it was loaded; it
+//!     is not replayed again.
+//! 17. Verification is that of `GET /documents/{id}/state`: the nearest verified checkpoint
+//!     plus a hash-checked tail. A document that does not replay is `replay_failed` (HTTP
+//!     500, `details.agent_code=internal`). Events inside the checkpoint are covered by
+//!     the checkpoint's own verification, not re-hashed per request.
+//! 18. Every admitted read is a ledger row, not a sample, with outcome `ok` or the
+//!     `agent_code` of the failure. Requests refused before admission (no membership,
+//!     admission budget, bad credential) write nothing. A ledger failure is logged and does
+//!     not fail the read. The runtime login cannot delete; pruning by retention is not
+//!     built.
+//! 19. Admission is the existing process-local [`crate::workloads`] limits (2 active and
+//!     120 a minute per identity, 4 active and 600 a minute per project, 8 expensive reads
+//!     in the process), answered `429` with `Retry-After`. No other rate-limit header is
+//!     defined by the spec or sent.
+//! 20. The global permissive CORS layer of [`crate::app`] also covers these routes. The
+//!     credential is a bearer token, never a cookie; spec C11 asks for no CORS on the
+//!     agent routes once a remote MCP binding exists (Phase 2).
 
 pub mod cache;
 pub mod error;

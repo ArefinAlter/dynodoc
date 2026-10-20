@@ -1,10 +1,13 @@
 # AI agent connectors: master design
 
-> **Status: design, not implemented.** 14 October 2026. This document specifies how AI
-> agents (Claude first, then ChatGPT, then others) connect to Dynodoc to read documents,
-> spreadsheets and presentations and to propose edits that people review. Nothing here
-> is built. It changes no code, migration or deployed behaviour. Numbers for effort and
-> token savings are estimates or design targets and say so.
+> **Status: design; the read-only half of Phase 0 is built, nothing else is.** 14 October
+> 2026, updated 18 October 2026. This document specifies how AI agents (Claude first, then
+> ChatGPT, then others) connect to Dynodoc to read documents, spreadsheets and
+> presentations and to propose edits that people review. What exists is listed in the
+> "Implementation status" paragraphs under section 11.2; everything not listed there,
+> including every write path, is design only. Nothing is deployed (production keeps
+> `AGENT_GATEWAY` off). Numbers for effort and token savings are estimates or design
+> targets and say so.
 >
 > Companion documents:
 > [protocol specification](AI-AGENT-PROTOCOL-SPEC.md) (tool contract, grammar, errors),
@@ -741,7 +744,54 @@ tokeniser). Not built: the state cache, agent routes, `AgentAuth`, scopes and mi
 `engine-mcp`, the Claude Code plugin and skill, the TypeScript side of the shared
 vectors, `fmt=md` cell annotations for ranges, and any measurement of model behaviour or
 real token counts. Decisions and deviations from the protocol spec are listed in the
-crate documentation (`cargo doc -p engine-agent`).
+crate documentation (`cargo doc -p engine-agent`). The next paragraph supersedes the list of
+what is not built.
+
+**Implementation status, 18 October 2026: server read routes.** Built, in `crates/engine-api`
+(module `agent`, extractor `auth::agent::AgentAuth`) and migration `0042_agent_read.sql`
+(schema 42), calling the library above:
+
+- *Routes* (protocol spec 12.1 numbers 1 to 9, 14 and 15; all `GET` but one) under
+  `/projects/{id}/agent`: `files`, `files/{file}/outline`, `files/{file}/blocks`,
+  `POST files/{file}/blocks:read`, `files/{file}/cells`, `files/{file}/sheets/{sheet}/profile`,
+  `files/{file}/slides`, `files/{file}/find`, `files/{file}/diff`, `access`; and
+  `GET /.well-known/dynodoc-agent`. JSON mirror by default, DCT for
+  `Accept: text/vnd.dynodoc.dct; v=1`; `ETag: "<rev>:<chain8>"` with `If-None-Match` answered
+  `304` after authorisation; errors keep `{error, code, details}` with `details.agent_code`.
+  Typed OpenAPI schemas, checked against real responses by a test.
+- *Gateway flag.* `AGENT_GATEWAY=on` mounts them. Off, the default, they are not mounted and
+  answer like any path that never existed.
+- *Credential.* A project device session with scope `content:read`, from a key enrolled with
+  `class: "agent"` (`POST /devices`, optional `label`) and granted `content:read` for the
+  project (`PUT /devices/{key}/projects/{project}`). Everything is re-read per request: key
+  revoked or account changed `401`; grant removed or no longer a member `403`. `all` mode never
+  covers `content:read`. A person's key cannot hold or obtain it, an agent key cannot hold or
+  obtain any other scope. An account login or connector key on these routes is `401`.
+- *Migration 0042.* `content:read` added to the scope checks of `device_session` and
+  `device_key_project_grant`; `device_key_class` (one immutable row per key enrolled with a
+  class; no row means a person's key); `agent_call` (append-only metadata ledger; leaves only
+  with its document in an audited erasure). Both tables are select and insert only for the
+  runtime login, in the `grant-runtime` allowlist and its `check-runtime` count.
+- *State cache.* Process-local, keyed `(document, rev, chain hash)`, at most 64 states and 32
+  MiB of serialised state (8 MiB per state), least recently used first, purged by the audited
+  erasure path. It is consulted only after authorisation.
+- *Verification.* Reads use the checkpoint-plus-tail reader of `GET /documents/{id}/state`; a
+  document that does not replay answers `replay_failed` as on every other read route.
+- *Writes.* No route appends to `event`, drafts, audit or membership; each admitted read adds
+  one `agent_call` row (credential, project, file, tool, revision, request digest, bytes,
+  outcome, and the caller's `X-Dynodoc-Client` and `Traceparent` as claims). Tests assert the
+  row counts of sixteen tables and every chain head before and after.
+
+Not built: routes 10 to 13 (propose, submit, withdraw, proposal status; `diff proposal=` is
+always `404`), agent identities and anything that authors drafts, project and file agent
+policy (spec 5.2, 5.3: with the gateway on, the effective permission is the grant, the
+person's project and file role and nothing else, so no project is "disabled until enabled"),
+budgets beyond the existing process-local admission limits, `warn=low_budget`, DLP, retention
+and pruning of `agent_call` (every admitted read is recorded, not a sample; the runtime login
+cannot delete), OAuth, API keys, the MCP server, `X-RateLimit-*` headers (the spec defines
+none; `Retry-After` is sent on `429`), and any load or latency measurement. Decisions and
+deviations from the protocol spec are in the module documentation
+(`cargo doc -p engine-api --no-deps`, module `agent`).
 
 ### 11.3 Phase 1 detail (propose)
 

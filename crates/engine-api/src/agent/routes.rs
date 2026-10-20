@@ -195,8 +195,7 @@ impl<'a> Ctx<'a> {
             // None, or an ambiguous prefix: indistinguishable from absence.
             return Err(AgentError::NotFound { refs: Vec::new() }.into());
         };
-        let kind =
-            FileKind::parse(kind).ok_or(AgentError::NotFound { refs: Vec::new() })?;
+        let kind = FileKind::parse(kind).ok_or(AgentError::NotFound { refs: Vec::new() })?;
         call.document = Some(*id);
         Ok((*id, kind))
     }
@@ -365,7 +364,14 @@ async fn files(
     uri: Uri,
     parsed: Result<Query<FilesQuery>, QueryRejection>,
 ) -> Out {
-    let ctx = Ctx::new(&state, &auth, project, &headers, Tool::Files, get_digest(&uri))?;
+    let ctx = Ctx::new(
+        &state,
+        &auth,
+        project,
+        &headers,
+        Tool::Files,
+        get_digest(&uri),
+    )?;
     let mut call = Call::default();
     let result: Result<Served, AgentFail> = async {
         let q = query(parsed)?;
@@ -468,15 +474,30 @@ async fn outline(
     uri: Uri,
     parsed: Result<Query<OutlineQuery>, QueryRejection>,
 ) -> Out {
-    let ctx = Ctx::new(&state, &auth, project, &headers, Tool::Outline, get_digest(&uri))?;
+    let ctx = Ctx::new(
+        &state,
+        &auth,
+        project,
+        &headers,
+        Tool::Outline,
+        get_digest(&uri),
+    )?;
     let mut call = Call::default();
     let result: Result<Served, AgentFail> = async {
         let q = query(parsed)?;
         let cursor = q.cursor.clone();
         let opts = q.options();
-        ctx.file_tool(&mut call, &file, None, cursor.as_deref(), true, move |meta, st, fmt| {
-            engine_agent::outline::outline(&meta, &st, &opts).map(|r| render(r, Tool::Outline, fmt))
-        })
+        ctx.file_tool(
+            &mut call,
+            &file,
+            None,
+            cursor.as_deref(),
+            true,
+            move |meta, st, fmt| {
+                engine_agent::outline::outline(&meta, &st, &opts)
+                    .map(|r| render(r, Tool::Outline, fmt))
+            },
+        )
         .await
     }
     .await;
@@ -503,7 +524,14 @@ async fn profile(
     uri: Uri,
     parsed: Result<Query<ProfileQuery>, QueryRejection>,
 ) -> Out {
-    let ctx = Ctx::new(&state, &auth, project, &headers, Tool::Outline, get_digest(&uri))?;
+    let ctx = Ctx::new(
+        &state,
+        &auth,
+        project,
+        &headers,
+        Tool::Outline,
+        get_digest(&uri),
+    )?;
     let mut call = Call::default();
     let result: Result<Served, AgentFail> = async {
         let q = query(parsed)?;
@@ -517,12 +545,20 @@ async fn profile(
             cursor: q.cursor,
             max_bytes: q.max_bytes,
         };
-        ctx.file_tool(&mut call, &file, None, cursor.as_deref(), true, move |meta, st, fmt| {
-            if meta.kind != FileKind::Spreadsheet {
-                return Err(AgentError::BadRequest { field: "sheet" });
-            }
-            engine_agent::outline::outline(&meta, &st, &opts).map(|r| render(r, Tool::Outline, fmt))
-        })
+        ctx.file_tool(
+            &mut call,
+            &file,
+            None,
+            cursor.as_deref(),
+            true,
+            move |meta, st, fmt| {
+                if meta.kind != FileKind::Spreadsheet {
+                    return Err(AgentError::BadRequest { field: "sheet" });
+                }
+                engine_agent::outline::outline(&meta, &st, &opts)
+                    .map(|r| render(r, Tool::Outline, fmt))
+            },
+        )
         .await
     }
     .await;
@@ -552,7 +588,14 @@ async fn blocks(
     uri: Uri,
     parsed: Result<Query<BlocksQuery>, QueryRejection>,
 ) -> Out {
-    let ctx = Ctx::new(&state, &auth, project, &headers, Tool::Read, get_digest(&uri))?;
+    let ctx = Ctx::new(
+        &state,
+        &auth,
+        project,
+        &headers,
+        Tool::Read,
+        get_digest(&uri),
+    )?;
     let mut call = Call::default();
     let result: Result<Served, AgentFail> = async {
         let q = query(parsed)?;
@@ -564,7 +607,16 @@ async fn blocks(
             cursor: q.cursor.clone(),
             ..ReadOptions::default()
         };
-        read_tool(&ctx, &mut call, &file, q.rev, q.cursor.as_deref(), true, opts).await
+        read_tool(
+            &ctx,
+            &mut call,
+            &file,
+            q.rev,
+            q.cursor.as_deref(),
+            true,
+            opts,
+        )
+        .await
     }
     .await;
     ctx.finish(call, result).await
@@ -579,9 +631,16 @@ async fn read_tool(
     conditional: bool,
     opts: ReadOptions,
 ) -> Result<Served, AgentFail> {
-    ctx.file_tool(call, file, rev, cursor, conditional, move |meta, st, fmt| {
-        engine_agent::read::read(&meta, &st, &opts).map(|r| render(r, Tool::Read, fmt))
-    })
+    ctx.file_tool(
+        call,
+        file,
+        rev,
+        cursor,
+        conditional,
+        move |meta, st, fmt| {
+            engine_agent::read::read(&meta, &st, &opts).map(|r| render(r, Tool::Read, fmt))
+        },
+    )
     .await
 }
 
@@ -653,7 +712,16 @@ async fn blocks_read(
             cursor: b.cursor.clone(),
             ..ReadOptions::default()
         };
-        read_tool(&ctx, &mut call, &file, b.rev, b.cursor.as_deref(), false, opts).await
+        read_tool(
+            &ctx,
+            &mut call,
+            &file,
+            b.rev,
+            b.cursor.as_deref(),
+            false,
+            opts,
+        )
+        .await
     }
     .await;
     ctx.finish(call, result).await
@@ -683,7 +751,14 @@ async fn cells(
     uri: Uri,
     parsed: Result<Query<CellsQuery>, QueryRejection>,
 ) -> Out {
-    let ctx = Ctx::new(&state, &auth, project, &headers, Tool::Read, get_digest(&uri))?;
+    let ctx = Ctx::new(
+        &state,
+        &auth,
+        project,
+        &headers,
+        Tool::Read,
+        get_digest(&uri),
+    )?;
     let mut call = Call::default();
     let result: Result<Served, AgentFail> = async {
         let q = query(parsed)?;
@@ -700,7 +775,16 @@ async fn cells(
             cursor: q.cursor.clone(),
             ..ReadOptions::default()
         };
-        read_tool(&ctx, &mut call, &file, q.rev, q.cursor.as_deref(), true, opts).await
+        read_tool(
+            &ctx,
+            &mut call,
+            &file,
+            q.rev,
+            q.cursor.as_deref(),
+            true,
+            opts,
+        )
+        .await
     }
     .await;
     ctx.finish(call, result).await
@@ -726,7 +810,14 @@ async fn slides(
     uri: Uri,
     parsed: Result<Query<SlidesQuery>, QueryRejection>,
 ) -> Out {
-    let ctx = Ctx::new(&state, &auth, project, &headers, Tool::Read, get_digest(&uri))?;
+    let ctx = Ctx::new(
+        &state,
+        &auth,
+        project,
+        &headers,
+        Tool::Read,
+        get_digest(&uri),
+    )?;
     let mut call = Call::default();
     let result: Result<Served, AgentFail> = async {
         let q = query(parsed)?;
@@ -737,7 +828,16 @@ async fn slides(
             cursor: q.cursor.clone(),
             ..ReadOptions::default()
         };
-        read_tool(&ctx, &mut call, &file, q.rev, q.cursor.as_deref(), true, opts).await
+        read_tool(
+            &ctx,
+            &mut call,
+            &file,
+            q.rev,
+            q.cursor.as_deref(),
+            true,
+            opts,
+        )
+        .await
     }
     .await;
     ctx.finish(call, result).await
@@ -774,7 +874,14 @@ async fn find(
     uri: Uri,
     parsed: Result<Query<FindQuery>, QueryRejection>,
 ) -> Out {
-    let ctx = Ctx::new(&state, &auth, project, &headers, Tool::Find, get_digest(&uri))?;
+    let ctx = Ctx::new(
+        &state,
+        &auth,
+        project,
+        &headers,
+        Tool::Find,
+        get_digest(&uri),
+    )?;
     let mut call = Call::default();
     let result: Result<Served, AgentFail> = async {
         let q = query(parsed)?;
@@ -794,9 +901,16 @@ async fn find(
             cursor: q.cursor,
             max_bytes: q.max_bytes,
         };
-        ctx.file_tool(&mut call, &file, None, cursor.as_deref(), true, move |meta, st, fmt| {
-            engine_agent::find::find(&meta, &st, &opts).map(|r| render(r, Tool::Find, fmt))
-        })
+        ctx.file_tool(
+            &mut call,
+            &file,
+            None,
+            cursor.as_deref(),
+            true,
+            move |meta, st, fmt| {
+                engine_agent::find::find(&meta, &st, &opts).map(|r| render(r, Tool::Find, fmt))
+            },
+        )
         .await
     }
     .await;
@@ -829,7 +943,14 @@ async fn diff(
     uri: Uri,
     parsed: Result<Query<DiffQuery>, QueryRejection>,
 ) -> Out {
-    let ctx = Ctx::new(&state, &auth, project, &headers, Tool::Diff, get_digest(&uri))?;
+    let ctx = Ctx::new(
+        &state,
+        &auth,
+        project,
+        &headers,
+        Tool::Diff,
+        get_digest(&uri),
+    )?;
     let mut call = Call::default();
     let result: Result<Served, AgentFail> = async {
         let q = query(parsed)?;
@@ -858,8 +979,17 @@ async fn diff(
             cursor: q.cursor.clone(),
         };
         let wants_proposal = q.proposal.is_some();
-        diff_tool(&ctx, &mut call, &file, from, q.to, q.cursor.as_deref(), wants_proposal, opts)
-            .await
+        diff_tool(
+            &ctx,
+            &mut call,
+            &file,
+            from,
+            q.to,
+            q.cursor.as_deref(),
+            wants_proposal,
+            opts,
+        )
+        .await
     }
     .await;
     ctx.finish(call, result).await
@@ -940,7 +1070,14 @@ async fn access(
     headers: HeaderMap,
     uri: Uri,
 ) -> Out {
-    let ctx = Ctx::new(&state, &auth, project, &headers, Tool::Status, get_digest(&uri))?;
+    let ctx = Ctx::new(
+        &state,
+        &auth,
+        project,
+        &headers,
+        Tool::Status,
+        get_digest(&uri),
+    )?;
     let mut call = Call::default();
     let result: Result<Served, AgentFail> = async {
         let mut admitted = ctx.admit(&mut call).await?;

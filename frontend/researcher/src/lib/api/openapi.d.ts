@@ -4,6 +4,22 @@
  */
 
 export interface paths {
+  '/.well-known/dynodoc-agent': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations['agent_discovery'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/admin/actions': {
     parameters: {
       query?: never;
@@ -1398,6 +1414,166 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/projects/{id}/agent/access': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations['agent_access'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/projects/{id}/agent/files': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations['agent_files'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/projects/{id}/agent/files/{file}/blocks': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations['agent_blocks'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/projects/{id}/agent/files/{file}/blocks:read': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations['agent_blocks_read'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/projects/{id}/agent/files/{file}/cells': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations['agent_cells'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/projects/{id}/agent/files/{file}/diff': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations['agent_diff'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/projects/{id}/agent/files/{file}/find': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations['agent_find'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/projects/{id}/agent/files/{file}/outline': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations['agent_outline'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/projects/{id}/agent/files/{file}/sheets/{sheet}/profile': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations['agent_sheet_profile'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/projects/{id}/agent/files/{file}/slides': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations['agent_slides'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/projects/{id}/change-requests': {
     parameters: {
       query?: never;
@@ -2022,13 +2198,298 @@ export interface components {
     };
     /** @enum {string} */
     Action: 'preview' | 'create';
+    /** @description `access` (`status what=access`). */
+    AgentAccess: {
+      /** @description Always null in this version. */
+      budget: Record<string, never>;
+      capabilities: Record<string, never>;
+      project: string;
+      protocol: string;
+      /** @description The principal's current role in the project. */
+      role: string;
+      /** @description Scopes of the grant that is active now. */
+      scopes: string[];
+      tool: string;
+      what: string;
+      /** @description `none`: no write exists in this version. */
+      write_mode: string;
+    };
+    AgentBlockRow: {
+      /** @description 6-hex content hash. */
+      h: string;
+      /** @description Preview (escaped). */
+      p: string;
+      ref: string;
+      /** @description Block type (`P`, `H1`..`H6`, `UL<n>`, `OL<n>`, `TBL<r>x<c>`, `CODE`, ...). */
+      t: string;
+      /** @description Depth 0 only: `[blocks, words]` under the heading. */
+      under?: number[] | null;
+      /** @description Words. */
+      w: number;
+    };
+    AgentColumnProfile: {
+      blank: number;
+      col: string;
+      distinct?: number | null;
+      distinct_over: boolean;
+      exceptions: number[];
+      exceptions_more: number;
+      header: string;
+      /** Format: double */
+      max?: number | null;
+      /** Format: double */
+      min?: number | null;
+      n: number;
+      pattern?: string | null;
+      /** Format: double */
+      sum?: number | null;
+      /** @description Up to 5 `[value, count]` pairs, only when few distinct values. */
+      top: Record<string, never>[];
+      /** @description `num`, `text`, `date`, `bool`, `formula` or `mixed`. */
+      type: string;
+    };
+    /** @description `diff`. */
+    AgentDiff: components['schemas']['AgentEnvelope'] & {
+      added: number;
+      blocks: number;
+      changed: number;
+      entries: components['schemas']['AgentDiffEntry'][];
+      /** Format: int64 */
+      from: number;
+      more?: string | null;
+      moved: number;
+      removed: number;
+      /** Format: int64 */
+      to: number;
+    };
+    AgentDiffEntry: {
+      after?: string | null;
+      cells?: number | null;
+      /** @description `[deleted, inserted]` characters. */
+      chars?: number[] | null;
+      /** @description Escaped detail lines (`detail=text`). */
+      detail: string[];
+      new?: string | null;
+      old?: string | null;
+      /** @description `~` changed, `+` added, `-` removed, `>` moved. */
+      op: string;
+      pos?: number | null;
+      preview?: string | null;
+      ref: string;
+      /** Format: int32 */
+      row?: number | null;
+      scope?: string | null;
+      t: string;
+    };
+    /** @description The discovery document. */
+    AgentDiscovery: {
+      capabilities: Record<string, never>;
+      dct: string;
+      http: Record<string, never>;
+      limits: Record<string, never>;
+      /** @description Null until an MCP server is deployed. */
+      mcp: Record<string, never>;
+      mcp_revisions: string[];
+      profiles: string[];
+      protected_resource_metadata?: string | null;
+      protocol: string;
+      scopes: string[];
+    };
+    /** @description The keys every JSON mirror starts with. */
+    AgentEnvelope: {
+      /** @description First 8 hex characters of the chain hash at `rev`. */
+      chain?: string | null;
+      /** @description Full document UUID (absent for `files`). */
+      file?: string | null;
+      /** @description `dynodoc.agent/1`. */
+      protocol: string;
+      /**
+       * Format: int64
+       * @description Event sequence the response was computed at; `0` is the empty initial state.
+       */
+      rev?: number | null;
+      /** @description `files`, `outline`, `read`, `find`, `diff` or `status`. */
+      tool: string;
+      /** @description Always `data`: every string below that came from a document is untrusted text. */
+      trust: string;
+    };
+    AgentFileRow: {
+      /** @description First 8 hex characters of the document UUID. */
+      file: string;
+      /** @description Full document UUID. */
+      id: string;
+      /** @description `document`, `spreadsheet` or `presentation`. */
+      kind: string;
+      project: string;
+      /**
+       * Format: int64
+       * @description Head sequence.
+       */
+      rev: number;
+      /** @description The caller's current role on the file. */
+      role: string;
+      title: string;
+    };
+    /** @description `files`. */
+    AgentFiles: components['schemas']['AgentEnvelope'] & {
+      files: components['schemas']['AgentFileRow'][];
+      more?: string | null;
+      n: number;
+    };
+    /** @description `find`. */
+    AgentFind: components['schemas']['AgentEnvelope'] & {
+      hits: components['schemas']['AgentHit'][];
+      more?: string | null;
+      n: number;
+      total: number;
+      total_capped: boolean;
+    };
+    AgentHit: {
+      /** @description `7C02`, `7C02.2`, `3B77.r2c1`, `R91W!C14` or `W2SK.A1B2`. */
+      at: string;
+      /** @description Character offset of the match in the searched text. */
+      offset: number;
+      snippet: string;
+    };
+    /** @description `outline` and the sheet profile. */
+    AgentOutline: components['schemas']['AgentEnvelope'] & {
+      blocks?: components['schemas']['AgentBlockRow'][] | null;
+      /** @description Blocks, sheets or slides in the selection, before paging. */
+      count: number;
+      /** Format: int32 */
+      depth: number;
+      kind: string;
+      more?: string | null;
+      /** @description Outline hash: pass it back as `if_none_match`. */
+      oh?: string | null;
+      profile?: null | components['schemas']['AgentProfile'];
+      sheets?: components['schemas']['AgentSheetRow'][] | null;
+      slides?: components['schemas']['AgentSlideRow'][] | null;
+      unchanged: boolean;
+      words?: number | null;
+    };
+    AgentProfile: {
+      cols: number;
+      columns: components['schemas']['AgentColumnProfile'][];
+      /** @description `[frozen rows, frozen columns]`. */
+      freeze: number[];
+      header: string;
+      merges: number;
+      name: string;
+      rows: number;
+    };
+    AgentRangeRead: {
+      /** @description `none`: formulas are not evaluated. */
+      calc: string;
+      columns: string[];
+      h: string;
+      /** @description Effective range, clamped to the used cells. */
+      range: string;
+      rows: components['schemas']['AgentRowRead'][];
+      /** @description Ref of the sheet. */
+      sheet: string;
+    };
+    /** @description `read` (blocks, cells, slides). */
+    AgentRead: components['schemas']['AgentEnvelope'] & {
+      items?: components['schemas']['AgentReadItem'][] | null;
+      more?: string | null;
+      n: number;
+      profile?: null | components['schemas']['AgentProfile'];
+      range?: null | components['schemas']['AgentRangeRead'];
+      slides?: components['schemas']['AgentSlideRead'][] | null;
+    };
+    AgentReadItem: {
+      /** @description The caller's `have` hash matched: no text was sent. */
+      equal: boolean;
+      features: string;
+      h?: string | null;
+      /** @description Escaped text lines. */
+      lines: string[];
+      redacted: boolean;
+      ref: string;
+      t: string;
+    };
+    AgentRowRead: {
+      cells: string[];
+      ref?: string | null;
+      /** Format: int32 */
+      row: number;
+    };
+    AgentShapeRead: {
+      alt?: string | null;
+      bullets: boolean;
+      equal: boolean;
+      h?: string | null;
+      kind: string;
+      omitted_bytes: number;
+      redacted: boolean;
+      ref: string;
+      role?: string | null;
+      text: string;
+    };
+    AgentShapeRow: {
+      h: string;
+      kind: string;
+      p: string;
+      ref: string;
+      role?: string | null;
+      w: number;
+    };
+    AgentSheetRow: {
+      cols: number;
+      h: string;
+      name: string;
+      ref: string;
+      rows: number;
+    };
+    AgentSlideRead: {
+      hidden: boolean;
+      layout: string;
+      /** @description `[hash, text]` of the notes, when there are any. */
+      notes?: string[] | null;
+      pos: number;
+      redacted: boolean;
+      ref: string;
+      shapes: components['schemas']['AgentShapeRead'][];
+    };
+    AgentSlideRow: {
+      body: number;
+      hidden: boolean;
+      image_bytes: number;
+      images: number;
+      layout: string;
+      notes_words: number;
+      pos: number;
+      ref: string;
+      shapes: components['schemas']['AgentShapeRow'][];
+      title: string;
+    };
+    /** @description Body of `POST .../blocks:read`: the selection and the hashes the caller already holds. */
+    BlocksReadBody: {
+      cursor?: string | null;
+      /** @description `plain` (default) or `md`. */
+      fmt?: string | null;
+      /** @description `ref -> hash` of content the caller holds; unchanged blocks come back as one line. */
+      have?: {
+        [key: string]: string;
+      };
+      max_bytes?: number | null;
+      /** @description Block refs, sub-addresses or full node ids (at most 100); answered in this order. */
+      refs?: string[];
+      /** Format: int64 */
+      rev?: number | null;
+      /** @description Heading ref, instead of `refs`. */
+      section?: string | null;
+    };
     ChallengeRequest: {
       /** @description Lowercase hexadecimal Ed25519 public key of an enrolled device key. */
       public_key: string;
       /**
        * @description One or more of `history:read`, `history:review`, `history:write`,
-       *     `project:read`. A key that is not in `all` mode also needs an active grant
-       *     for this project that lists every scope.
+       *     `project:read` (a person's key) or `content:read` (a key enrolled for an AI
+       *     agent; the two sets never mix). A key that is not in `all` mode also needs an
+       *     active grant for this project that lists every scope, and an agent scope always
+       *     does.
        */
       scopes: string[];
     };
@@ -2109,7 +2570,10 @@ export interface components {
       key_challenge?: string | null;
     };
     GrantRequest: {
-      /** @description One or more of `project:read`, `history:read`, `history:write`, `history:review`. */
+      /**
+       * @description A person's key: one or more of `project:read`, `history:read`, `history:write`,
+       *     `history:review`. An agent key: `content:read` only. The two sets never mix.
+       */
       scopes: string[];
     };
     Issue: {
@@ -2381,6 +2845,26 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  agent_discovery: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Protocol ids, formats, limits and capabilities of this server. No authentication; carries no project or user data */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AgentDiscovery'];
+        };
+      };
+    };
+  };
   action: {
     parameters: {
       query?: never;
@@ -2893,7 +3377,7 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description Own public signing keys, at most 128, each with its project_access mode (granted or all) and active per-project grants (at most 50, scopes, current role); never a directory of other members */
+      /** @description Own public signing keys, at most 128, each with its project_access mode (granted or all), class (person or agent) and optional label, and active per-project grants (at most 50, scopes, current role); never a directory of other members */
       200: {
         headers: {
           [name: string]: unknown;
@@ -2924,7 +3408,7 @@ export interface operations {
       };
     };
     responses: {
-      /** @description Enrolled device or exact active retry. Body: the signed challenge and signature, plus optional project_access (granted by default; all is the account-wide mode). Returns id, public_key and the key's project_access */
+      /** @description Enrolled device or exact active retry. Body: the signed challenge and signature, plus optional project_access (granted by default; all is the account-wide mode), class (person or agent; an agent key can only hold content:read grants and a person's key never can) and label (a display name, at most 80 characters). Returns id, public_key, the key's project_access and class */
       200: {
         headers: {
           [name: string]: unknown;
@@ -2933,7 +3417,7 @@ export interface operations {
           'application/json': unknown;
         };
       };
-      /** @description Invalid proof or project_access */
+      /** @description Invalid proof, project_access, class or label */
       400: {
         headers: {
           [name: string]: unknown;
@@ -3179,7 +3663,7 @@ export interface operations {
           'application/json': unknown;
         };
       };
-      /** @description Empty or unknown scopes */
+      /** @description Empty or unknown scopes, or a scope that does not match the key's class */
       400: {
         headers: {
           [name: string]: unknown;
@@ -6113,6 +6597,652 @@ export interface operations {
       };
       /** @description Deadline exceeded */
       504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  agent_access: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Project */
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The credential's active grant, the principal's current role, and what this server can do (capabilities are advertised, not assumed) */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AgentAccess'];
+          'text/vnd.dynodoc.dct; v=1': string;
+        };
+      };
+      /** @description Not a project device session */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Scope, grant, key class or project membership missing (uniform) */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Admission budget */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  agent_files: {
+    parameters: {
+      query?: {
+        /** @description Title substring, at most 200 characters */
+        q?: string;
+        /** @description document, spreadsheet or presentation */
+        kind?: string;
+        /** @description Files per page (1 to 50, default 20) */
+        limit?: number;
+        /** @description Continuation from a previous page */
+        cursor?: string;
+        /** @description Response budget in bytes (500 to 64000, default 16000) */
+        max_bytes?: number;
+      };
+      header?: never;
+      path: {
+        /** @description Project */
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Files of the project the caller may open, ordered by title. Titles are untrusted text */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AgentFiles'];
+          'text/vnd.dynodoc.dct; v=1': string;
+        };
+      };
+      /** @description Not a project device session */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Scope, grant, key class or project membership missing (uniform) */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Admission budget */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  agent_blocks: {
+    parameters: {
+      query?: {
+        /** @description Comma-separated refs (at most 100) */
+        refs?: string;
+        /** @description Heading ref: the heading and its blocks */
+        section?: string;
+        /** @description plain (default) or md */
+        fmt?: string;
+        /** @description Read an earlier revision */
+        rev?: number;
+        /** @description Response budget in bytes (500 to 64000, default 16000) */
+        max_bytes?: number;
+        /** @description Continuation; pins its revision */
+        cursor?: string;
+      };
+      header?: never;
+      path: {
+        /** @description Project */
+        id: string;
+        /** @description File UUID or unique 8-character prefix */
+        file: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The text of the selected blocks, escaped and marked trust=data. Exactly one of refs or section. Sets ETag */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AgentRead'];
+          'text/vnd.dynodoc.dct; v=1': string;
+        };
+      };
+      /** @description If-None-Match names the revision served */
+      304: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Invalid parameter or selector */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Scope, grant, key class or project membership missing (uniform) */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description File not visible */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  agent_blocks_read: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Project */
+        id: string;
+        /** @description File UUID or unique 8-character prefix */
+        file: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['BlocksReadBody'];
+      };
+    };
+    responses: {
+      /** @description Like GET blocks, with the hash cache: a block whose hash equals the caller's have entry is returned as one @ref = #hash line. A read; nothing is stored but a call-metadata row. Sets ETag; never 304 */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AgentRead'];
+          'text/vnd.dynodoc.dct; v=1': string;
+        };
+      };
+      /** @description Invalid body or selector */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Scope, grant, key class or project membership missing (uniform) */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description File not visible */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Body larger than 256 KiB */
+      413: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  agent_cells: {
+    parameters: {
+      query: {
+        /** @description A1 range with a sheet name or ref, e.g. Budget!A1:F40 (at most 2000 cells) */
+        range: string;
+        /** @description refs: add a row-ref column */
+        rows?: string;
+        /** @description plain (default) or md */
+        fmt?: string;
+        /** @description Read an earlier revision */
+        rev?: number;
+        /** @description Response budget in bytes */
+        max_bytes?: number;
+        /** @description Continuation; pins its revision */
+        cursor?: string;
+      };
+      header?: never;
+      path: {
+        /** @description Project */
+        id: string;
+        /** @description Spreadsheet file UUID or unique 8-character prefix */
+        file: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The stored cell strings of the range (a leading = is a formula; nothing is evaluated: calc=none). Sets ETag */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AgentRead'];
+          'text/vnd.dynodoc.dct; v=1': string;
+        };
+      };
+      /** @description If-None-Match names the revision served */
+      304: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Invalid range or parameter */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Scope, grant, key class or project membership missing (uniform) */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description File not visible */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  agent_diff: {
+    parameters: {
+      query?: {
+        /** @description Earlier revision (required unless a cursor carries it) */
+        from?: number;
+        /** @description Later revision (default: head) */
+        to?: number;
+        /** @description Reserved for agent proposals; always 404 in this version */
+        proposal?: string;
+        /** @description summary (default) or text */
+        detail?: string;
+        /** @description Response budget in bytes (default 8000) */
+        max_bytes?: number;
+        /** @description Continuation; pins both revisions */
+        cursor?: string;
+      };
+      header?: never;
+      path: {
+        /** @description Project */
+        id: string;
+        /** @description File UUID or unique 8-character prefix */
+        file: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Per-block changes between two revisions of the file. Sets ETag of the later revision */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AgentDiff'];
+          'text/vnd.dynodoc.dct; v=1': string;
+        };
+      };
+      /** @description If-None-Match names the later revision */
+      304: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Invalid revisions or parameter */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Scope, grant, key class or project membership missing (uniform) */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description File or proposal not visible */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  agent_find: {
+    parameters: {
+      query: {
+        /** @description Literal text or, with regex, a pattern (1 to 200 characters) */
+        q: string;
+        /** @description Linear-time regular expression */
+        regex?: boolean;
+        /** @description Case-sensitive */
+        case?: boolean;
+        /** @description Whole words */
+        word?: boolean;
+        /** @description text (default), formulas or notes */
+        in?: string;
+        /** @description Snippet context characters (0 to 120, default 30) */
+        context?: number;
+        /** @description Hits per page (1 to 100, default 20) */
+        limit?: number;
+        /** @description Continuation; pins its revision */
+        cursor?: string;
+        /** @description Response budget in bytes */
+        max_bytes?: number;
+      };
+      header?: never;
+      path: {
+        /** @description Project */
+        id: string;
+        /** @description File UUID or unique 8-character prefix */
+        file: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Refs or cells with short snippets, in document order. Sets ETag */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AgentFind'];
+          'text/vnd.dynodoc.dct; v=1': string;
+        };
+      };
+      /** @description If-None-Match names the revision served */
+      304: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Invalid pattern or parameter */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Scope, grant, key class or project membership missing (uniform) */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description File not visible */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  agent_outline: {
+    parameters: {
+      query?: {
+        /** @description 0: headings, sheets or slide titles; 1 (default): every block with a preview */
+        depth?: number;
+        /** @description Preview characters per block (0 to 120, default 48) */
+        preview?: number;
+        /** @description Heading ref (documents) or sheet name or ref (spreadsheets) */
+        under?: string;
+        /** @description An oh value from an earlier outline; an unchanged file answers with one line */
+        if_none_match?: string;
+        /** @description Lines per page (1 to 1000, default 200) */
+        limit?: number;
+        /** @description Continuation; pins its revision */
+        cursor?: string;
+        /** @description Response budget in bytes (500 to 64000, default 16000) */
+        max_bytes?: number;
+      };
+      header?: never;
+      path: {
+        /** @description Project */
+        id: string;
+        /** @description File UUID, or its first 8 hex characters when unique among the caller's files */
+        file: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Block refs, types, hashes and previews (documents); sheets or one sheet's column profile (spreadsheets); slides (presentations). Sets ETag "<rev>:<chain8>" */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AgentOutline'];
+          'text/vnd.dynodoc.dct; v=1': string;
+        };
+      };
+      /** @description If-None-Match names the revision served */
+      304: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Invalid parameter (details.agent_code, details.field) */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Not a project device session */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Scope, grant, key class or project membership missing (uniform) */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description File not visible (one answer for every reason) */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Admission budget */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  agent_sheet_profile: {
+    parameters: {
+      query?: {
+        /** @description A sheet hash (h) from an earlier profile */
+        if_none_match?: string;
+        /** @description Column lines per page */
+        limit?: number;
+        /** @description Continuation; pins its revision */
+        cursor?: string;
+        /** @description Response budget in bytes */
+        max_bytes?: number;
+      };
+      header?: never;
+      path: {
+        /** @description Project */
+        id: string;
+        /** @description Spreadsheet file UUID or unique 8-character prefix */
+        file: string;
+        /** @description Sheet name or ref */
+        sheet: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Column statistics over the stored strings of one sheet (formulas are not evaluated: calc=none). Sets ETag */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AgentOutline'];
+          'text/vnd.dynodoc.dct; v=1': string;
+        };
+      };
+      /** @description If-None-Match names the revision served */
+      304: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Invalid parameter, or the file is not a spreadsheet */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Scope, grant, key class or project membership missing (uniform) */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description File not visible */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  agent_slides: {
+    parameters: {
+      query: {
+        /** @description Comma-separated slide positions (s2) or refs (at most 50) */
+        ids: string;
+        /** @description plain (default) or md */
+        fmt?: string;
+        /** @description Read an earlier revision */
+        rev?: number;
+        /** @description Response budget in bytes */
+        max_bytes?: number;
+        /** @description Continuation; pins its revision */
+        cursor?: string;
+      };
+      header?: never;
+      path: {
+        /** @description Project */
+        id: string;
+        /** @description Presentation file UUID or unique 8-character prefix */
+        file: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Text of the selected slides; images are never returned (kind, alt text and size only). Sets ETag */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AgentRead'];
+          'text/vnd.dynodoc.dct; v=1': string;
+        };
+      };
+      /** @description If-None-Match names the revision served */
+      304: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Invalid slide selector or parameter */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Scope, grant, key class or project membership missing (uniform) */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description File not visible */
+      404: {
         headers: {
           [name: string]: unknown;
         };

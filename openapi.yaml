@@ -4,6 +4,18 @@ info:
   description: Document version control, collaborative review and authorized administration. Canonical content history is append-only except explicit audited whole-document erasure.
   version: 0.1.0
 paths:
+  /.well-known/dynodoc-agent:
+    get:
+      tags:
+      - agent
+      operationId: agent_discovery
+      responses:
+        '200':
+          description: Protocol ids, formats, limits and capabilities of this server. No authentication; carries no project or user data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentDiscovery'
   /admin/actions:
     post:
       tags:
@@ -339,7 +351,7 @@ paths:
       operationId: list
       responses:
         '200':
-          description: Own public signing keys, at most 128, each with its project_access mode (granted or all) and active per-project grants (at most 50, scopes, current role); never a directory of other members
+          description: Own public signing keys, at most 128, each with its project_access mode (granted or all), class (person or agent) and optional label, and active per-project grants (at most 50, scopes, current role); never a directory of other members
           content:
             application/json:
               schema: {}
@@ -358,12 +370,12 @@ paths:
         required: true
       responses:
         '200':
-          description: 'Enrolled device or exact active retry. Body: the signed challenge and signature, plus optional project_access (granted by default; all is the account-wide mode). Returns id, public_key and the key''s project_access'
+          description: 'Enrolled device or exact active retry. Body: the signed challenge and signature, plus optional project_access (granted by default; all is the account-wide mode), class (person or agent; an agent key can only hold content:read grants and a person''s key never can) and label (a display name, at most 80 characters). Returns id, public_key, the key''s project_access and class'
           content:
             application/json:
               schema: {}
         '400':
-          description: Invalid proof or project_access
+          description: Invalid proof, project_access, class or label
         '401':
           description: Sign in required
         '403':
@@ -515,7 +527,7 @@ paths:
             application/json:
               schema: {}
         '400':
-          description: Empty or unknown scopes
+          description: Empty or unknown scopes, or a scope that does not match the key's class
         '401':
           description: Account sign-in required; a device token is refused
         '403':
@@ -2713,6 +2725,720 @@ paths:
       - paseto: []
       - device_session:
         - project:read
+  /projects/{id}/agent/access:
+    get:
+      tags:
+      - agent
+      operationId: agent_access
+      parameters:
+      - name: id
+        in: path
+        description: Project
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: The credential's active grant, the principal's current role, and what this server can do (capabilities are advertised, not assumed)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentAccess'
+            text/vnd.dynodoc.dct; v=1:
+              schema:
+                type: string
+        '401':
+          description: Not a project device session
+        '403':
+          description: Scope, grant, key class or project membership missing (uniform)
+        '429':
+          description: Admission budget
+      security:
+      - device_session:
+        - content:read
+  /projects/{id}/agent/files:
+    get:
+      tags:
+      - agent
+      operationId: agent_files
+      parameters:
+      - name: id
+        in: path
+        description: Project
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: q
+        in: query
+        description: Title substring, at most 200 characters
+        required: false
+        schema:
+          type: string
+      - name: kind
+        in: query
+        description: document, spreadsheet or presentation
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        description: Files per page (1 to 50, default 20)
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+      - name: cursor
+        in: query
+        description: Continuation from a previous page
+        required: false
+        schema:
+          type: string
+      - name: max_bytes
+        in: query
+        description: Response budget in bytes (500 to 64000, default 16000)
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+      responses:
+        '200':
+          description: Files of the project the caller may open, ordered by title. Titles are untrusted text
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentFiles'
+            text/vnd.dynodoc.dct; v=1:
+              schema:
+                type: string
+        '401':
+          description: Not a project device session
+        '403':
+          description: Scope, grant, key class or project membership missing (uniform)
+        '429':
+          description: Admission budget
+      security:
+      - device_session:
+        - content:read
+  /projects/{id}/agent/files/{file}/blocks:
+    get:
+      tags:
+      - agent
+      operationId: agent_blocks
+      parameters:
+      - name: id
+        in: path
+        description: Project
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: file
+        in: path
+        description: File UUID or unique 8-character prefix
+        required: true
+        schema:
+          type: string
+      - name: refs
+        in: query
+        description: Comma-separated refs (at most 100)
+        required: false
+        schema:
+          type: string
+      - name: section
+        in: query
+        description: 'Heading ref: the heading and its blocks'
+        required: false
+        schema:
+          type: string
+      - name: fmt
+        in: query
+        description: plain (default) or md
+        required: false
+        schema:
+          type: string
+      - name: rev
+        in: query
+        description: Read an earlier revision
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 0
+      - name: max_bytes
+        in: query
+        description: Response budget in bytes (500 to 64000, default 16000)
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+      - name: cursor
+        in: query
+        description: Continuation; pins its revision
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The text of the selected blocks, escaped and marked trust=data. Exactly one of refs or section. Sets ETag
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentRead'
+            text/vnd.dynodoc.dct; v=1:
+              schema:
+                type: string
+        '304':
+          description: If-None-Match names the revision served
+        '400':
+          description: Invalid parameter or selector
+        '403':
+          description: Scope, grant, key class or project membership missing (uniform)
+        '404':
+          description: File not visible
+      security:
+      - device_session:
+        - content:read
+  /projects/{id}/agent/files/{file}/blocks:read:
+    post:
+      tags:
+      - agent
+      operationId: agent_blocks_read
+      parameters:
+      - name: id
+        in: path
+        description: Project
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: file
+        in: path
+        description: File UUID or unique 8-character prefix
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BlocksReadBody'
+        required: true
+      responses:
+        '200':
+          description: 'Like GET blocks, with the hash cache: a block whose hash equals the caller''s have entry is returned as one @ref = #hash line. A read; nothing is stored but a call-metadata row. Sets ETag; never 304'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentRead'
+            text/vnd.dynodoc.dct; v=1:
+              schema:
+                type: string
+        '400':
+          description: Invalid body or selector
+        '403':
+          description: Scope, grant, key class or project membership missing (uniform)
+        '404':
+          description: File not visible
+        '413':
+          description: Body larger than 256 KiB
+      security:
+      - device_session:
+        - content:read
+  /projects/{id}/agent/files/{file}/cells:
+    get:
+      tags:
+      - agent
+      operationId: agent_cells
+      parameters:
+      - name: id
+        in: path
+        description: Project
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: file
+        in: path
+        description: Spreadsheet file UUID or unique 8-character prefix
+        required: true
+        schema:
+          type: string
+      - name: range
+        in: query
+        description: A1 range with a sheet name or ref, e.g. Budget!A1:F40 (at most 2000 cells)
+        required: true
+        schema:
+          type: string
+      - name: rows
+        in: query
+        description: 'refs: add a row-ref column'
+        required: false
+        schema:
+          type: string
+      - name: fmt
+        in: query
+        description: plain (default) or md
+        required: false
+        schema:
+          type: string
+      - name: rev
+        in: query
+        description: Read an earlier revision
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 0
+      - name: max_bytes
+        in: query
+        description: Response budget in bytes
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+      - name: cursor
+        in: query
+        description: Continuation; pins its revision
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: 'The stored cell strings of the range (a leading = is a formula; nothing is evaluated: calc=none). Sets ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentRead'
+            text/vnd.dynodoc.dct; v=1:
+              schema:
+                type: string
+        '304':
+          description: If-None-Match names the revision served
+        '400':
+          description: Invalid range or parameter
+        '403':
+          description: Scope, grant, key class or project membership missing (uniform)
+        '404':
+          description: File not visible
+      security:
+      - device_session:
+        - content:read
+  /projects/{id}/agent/files/{file}/diff:
+    get:
+      tags:
+      - agent
+      operationId: agent_diff
+      parameters:
+      - name: id
+        in: path
+        description: Project
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: file
+        in: path
+        description: File UUID or unique 8-character prefix
+        required: true
+        schema:
+          type: string
+      - name: from
+        in: query
+        description: Earlier revision (required unless a cursor carries it)
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 0
+      - name: to
+        in: query
+        description: 'Later revision (default: head)'
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 0
+      - name: proposal
+        in: query
+        description: Reserved for agent proposals; always 404 in this version
+        required: false
+        schema:
+          type: string
+      - name: detail
+        in: query
+        description: summary (default) or text
+        required: false
+        schema:
+          type: string
+      - name: max_bytes
+        in: query
+        description: Response budget in bytes (default 8000)
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+      - name: cursor
+        in: query
+        description: Continuation; pins both revisions
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Per-block changes between two revisions of the file. Sets ETag of the later revision
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentDiff'
+            text/vnd.dynodoc.dct; v=1:
+              schema:
+                type: string
+        '304':
+          description: If-None-Match names the later revision
+        '400':
+          description: Invalid revisions or parameter
+        '403':
+          description: Scope, grant, key class or project membership missing (uniform)
+        '404':
+          description: File or proposal not visible
+      security:
+      - device_session:
+        - content:read
+  /projects/{id}/agent/files/{file}/find:
+    get:
+      tags:
+      - agent
+      operationId: agent_find
+      parameters:
+      - name: id
+        in: path
+        description: Project
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: file
+        in: path
+        description: File UUID or unique 8-character prefix
+        required: true
+        schema:
+          type: string
+      - name: q
+        in: query
+        description: Literal text or, with regex, a pattern (1 to 200 characters)
+        required: true
+        schema:
+          type: string
+      - name: regex
+        in: query
+        description: Linear-time regular expression
+        required: false
+        schema:
+          type: boolean
+      - name: case
+        in: query
+        description: Case-sensitive
+        required: false
+        schema:
+          type: boolean
+      - name: word
+        in: query
+        description: Whole words
+        required: false
+        schema:
+          type: boolean
+      - name: in
+        in: query
+        description: text (default), formulas or notes
+        required: false
+        schema:
+          type: string
+      - name: context
+        in: query
+        description: Snippet context characters (0 to 120, default 30)
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+      - name: limit
+        in: query
+        description: Hits per page (1 to 100, default 20)
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+      - name: cursor
+        in: query
+        description: Continuation; pins its revision
+        required: false
+        schema:
+          type: string
+      - name: max_bytes
+        in: query
+        description: Response budget in bytes
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+      responses:
+        '200':
+          description: Refs or cells with short snippets, in document order. Sets ETag
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentFind'
+            text/vnd.dynodoc.dct; v=1:
+              schema:
+                type: string
+        '304':
+          description: If-None-Match names the revision served
+        '400':
+          description: Invalid pattern or parameter
+        '403':
+          description: Scope, grant, key class or project membership missing (uniform)
+        '404':
+          description: File not visible
+      security:
+      - device_session:
+        - content:read
+  /projects/{id}/agent/files/{file}/outline:
+    get:
+      tags:
+      - agent
+      operationId: agent_outline
+      parameters:
+      - name: id
+        in: path
+        description: Project
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: file
+        in: path
+        description: File UUID, or its first 8 hex characters when unique among the caller's files
+        required: true
+        schema:
+          type: string
+      - name: depth
+        in: query
+        description: '0: headings, sheets or slide titles; 1 (default): every block with a preview'
+        required: false
+        schema:
+          type: integer
+          format: int32
+          minimum: 0
+      - name: preview
+        in: query
+        description: Preview characters per block (0 to 120, default 48)
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+      - name: under
+        in: query
+        description: Heading ref (documents) or sheet name or ref (spreadsheets)
+        required: false
+        schema:
+          type: string
+      - name: if_none_match
+        in: query
+        description: An oh value from an earlier outline; an unchanged file answers with one line
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        description: Lines per page (1 to 1000, default 200)
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+      - name: cursor
+        in: query
+        description: Continuation; pins its revision
+        required: false
+        schema:
+          type: string
+      - name: max_bytes
+        in: query
+        description: Response budget in bytes (500 to 64000, default 16000)
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+      responses:
+        '200':
+          description: Block refs, types, hashes and previews (documents); sheets or one sheet's column profile (spreadsheets); slides (presentations). Sets ETag "<rev>:<chain8>"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentOutline'
+            text/vnd.dynodoc.dct; v=1:
+              schema:
+                type: string
+        '304':
+          description: If-None-Match names the revision served
+        '400':
+          description: Invalid parameter (details.agent_code, details.field)
+        '401':
+          description: Not a project device session
+        '403':
+          description: Scope, grant, key class or project membership missing (uniform)
+        '404':
+          description: File not visible (one answer for every reason)
+        '429':
+          description: Admission budget
+      security:
+      - device_session:
+        - content:read
+  /projects/{id}/agent/files/{file}/sheets/{sheet}/profile:
+    get:
+      tags:
+      - agent
+      operationId: agent_sheet_profile
+      parameters:
+      - name: id
+        in: path
+        description: Project
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: file
+        in: path
+        description: Spreadsheet file UUID or unique 8-character prefix
+        required: true
+        schema:
+          type: string
+      - name: sheet
+        in: path
+        description: Sheet name or ref
+        required: true
+        schema:
+          type: string
+      - name: if_none_match
+        in: query
+        description: A sheet hash (h) from an earlier profile
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        description: Column lines per page
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+      - name: cursor
+        in: query
+        description: Continuation; pins its revision
+        required: false
+        schema:
+          type: string
+      - name: max_bytes
+        in: query
+        description: Response budget in bytes
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+      responses:
+        '200':
+          description: 'Column statistics over the stored strings of one sheet (formulas are not evaluated: calc=none). Sets ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentOutline'
+            text/vnd.dynodoc.dct; v=1:
+              schema:
+                type: string
+        '304':
+          description: If-None-Match names the revision served
+        '400':
+          description: Invalid parameter, or the file is not a spreadsheet
+        '403':
+          description: Scope, grant, key class or project membership missing (uniform)
+        '404':
+          description: File not visible
+      security:
+      - device_session:
+        - content:read
+  /projects/{id}/agent/files/{file}/slides:
+    get:
+      tags:
+      - agent
+      operationId: agent_slides
+      parameters:
+      - name: id
+        in: path
+        description: Project
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: file
+        in: path
+        description: Presentation file UUID or unique 8-character prefix
+        required: true
+        schema:
+          type: string
+      - name: ids
+        in: query
+        description: Comma-separated slide positions (s2) or refs (at most 50)
+        required: true
+        schema:
+          type: string
+      - name: fmt
+        in: query
+        description: plain (default) or md
+        required: false
+        schema:
+          type: string
+      - name: rev
+        in: query
+        description: Read an earlier revision
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 0
+      - name: max_bytes
+        in: query
+        description: Response budget in bytes
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+      - name: cursor
+        in: query
+        description: Continuation; pins its revision
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Text of the selected slides; images are never returned (kind, alt text and size only). Sets ETag
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentRead'
+            text/vnd.dynodoc.dct; v=1:
+              schema:
+                type: string
+        '304':
+          description: If-None-Match names the revision served
+        '400':
+          description: Invalid slide selector or parameter
+        '403':
+          description: Scope, grant, key class or project membership missing (uniform)
+        '404':
+          description: File not visible
+      security:
+      - device_session:
+        - content:read
   /projects/{id}/change-requests:
     get:
       tags: []
@@ -4277,6 +5003,828 @@ components:
       enum:
       - preview
       - create
+    AgentAccess:
+      type: object
+      description: '`access` (`status what=access`).'
+      required:
+      - protocol
+      - tool
+      - what
+      - project
+      - role
+      - scopes
+      - write_mode
+      - budget
+      - capabilities
+      properties:
+        budget:
+          type: object
+          description: Always null in this version.
+        capabilities:
+          type: object
+        project:
+          type: string
+        protocol:
+          type: string
+        role:
+          type: string
+          description: The principal's current role in the project.
+        scopes:
+          type: array
+          items:
+            type: string
+          description: Scopes of the grant that is active now.
+        tool:
+          type: string
+        what:
+          type: string
+        write_mode:
+          type: string
+          description: '`none`: no write exists in this version.'
+    AgentBlockRow:
+      type: object
+      required:
+      - ref
+      - t
+      - h
+      - w
+      - p
+      properties:
+        h:
+          type: string
+          description: 6-hex content hash.
+        p:
+          type: string
+          description: Preview (escaped).
+        ref:
+          type: string
+        t:
+          type: string
+          description: Block type (`P`, `H1`..`H6`, `UL<n>`, `OL<n>`, `TBL<r>x<c>`, `CODE`, ...).
+        under:
+          type:
+          - array
+          - 'null'
+          items:
+            type: integer
+            minimum: 0
+          description: 'Depth 0 only: `[blocks, words]` under the heading.'
+        w:
+          type: integer
+          description: Words.
+          minimum: 0
+    AgentColumnProfile:
+      type: object
+      required:
+      - col
+      - header
+      - type
+      - n
+      - blank
+      - distinct_over
+      - top
+      - exceptions
+      - exceptions_more
+      properties:
+        blank:
+          type: integer
+          minimum: 0
+        col:
+          type: string
+        distinct:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        distinct_over:
+          type: boolean
+        exceptions:
+          type: array
+          items:
+            type: integer
+            format: int32
+            minimum: 0
+        exceptions_more:
+          type: integer
+          minimum: 0
+        header:
+          type: string
+        max:
+          type:
+          - number
+          - 'null'
+          format: double
+        min:
+          type:
+          - number
+          - 'null'
+          format: double
+        n:
+          type: integer
+          minimum: 0
+        pattern:
+          type:
+          - string
+          - 'null'
+        sum:
+          type:
+          - number
+          - 'null'
+          format: double
+        top:
+          type: array
+          items:
+            type: object
+          description: Up to 5 `[value, count]` pairs, only when few distinct values.
+        type:
+          type: string
+          description: '`num`, `text`, `date`, `bool`, `formula` or `mixed`.'
+    AgentDiff:
+      allOf:
+      - $ref: '#/components/schemas/AgentEnvelope'
+      - type: object
+        required:
+        - from
+        - to
+        - blocks
+        - changed
+        - added
+        - removed
+        - moved
+        - entries
+        properties:
+          added:
+            type: integer
+            minimum: 0
+          blocks:
+            type: integer
+            minimum: 0
+          changed:
+            type: integer
+            minimum: 0
+          entries:
+            type: array
+            items:
+              $ref: '#/components/schemas/AgentDiffEntry'
+          from:
+            type: integer
+            format: int64
+            minimum: 0
+          more:
+            type:
+            - string
+            - 'null'
+          moved:
+            type: integer
+            minimum: 0
+          removed:
+            type: integer
+            minimum: 0
+          to:
+            type: integer
+            format: int64
+            minimum: 0
+      description: '`diff`.'
+    AgentDiffEntry:
+      type: object
+      required:
+      - op
+      - ref
+      - t
+      - detail
+      properties:
+        after:
+          type:
+          - string
+          - 'null'
+        cells:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        chars:
+          type:
+          - array
+          - 'null'
+          items:
+            type: integer
+            minimum: 0
+          description: '`[deleted, inserted]` characters.'
+        detail:
+          type: array
+          items:
+            type: string
+          description: Escaped detail lines (`detail=text`).
+        new:
+          type:
+          - string
+          - 'null'
+        old:
+          type:
+          - string
+          - 'null'
+        op:
+          type: string
+          description: '`~` changed, `+` added, `-` removed, `>` moved.'
+        pos:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        preview:
+          type:
+          - string
+          - 'null'
+        ref:
+          type: string
+        row:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          minimum: 0
+        scope:
+          type:
+          - string
+          - 'null'
+        t:
+          type: string
+    AgentDiscovery:
+      type: object
+      description: The discovery document.
+      required:
+      - protocol
+      - dct
+      - http
+      - mcp
+      - mcp_revisions
+      - scopes
+      - limits
+      - profiles
+      - capabilities
+      properties:
+        capabilities:
+          type: object
+        dct:
+          type: string
+        http:
+          type: object
+        limits:
+          type: object
+        mcp:
+          type: object
+          description: Null until an MCP server is deployed.
+        mcp_revisions:
+          type: array
+          items:
+            type: string
+        profiles:
+          type: array
+          items:
+            type: string
+        protected_resource_metadata:
+          type:
+          - string
+          - 'null'
+        protocol:
+          type: string
+        scopes:
+          type: array
+          items:
+            type: string
+    AgentEnvelope:
+      type: object
+      description: The keys every JSON mirror starts with.
+      required:
+      - protocol
+      - tool
+      - trust
+      properties:
+        chain:
+          type:
+          - string
+          - 'null'
+          description: First 8 hex characters of the chain hash at `rev`.
+        file:
+          type:
+          - string
+          - 'null'
+          description: Full document UUID (absent for `files`).
+        protocol:
+          type: string
+          description: '`dynodoc.agent/1`.'
+        rev:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: Event sequence the response was computed at; `0` is the empty initial state.
+          minimum: 0
+        tool:
+          type: string
+          description: '`files`, `outline`, `read`, `find`, `diff` or `status`.'
+        trust:
+          type: string
+          description: 'Always `data`: every string below that came from a document is untrusted text.'
+    AgentFileRow:
+      type: object
+      required:
+      - file
+      - id
+      - kind
+      - rev
+      - project
+      - role
+      - title
+      properties:
+        file:
+          type: string
+          description: First 8 hex characters of the document UUID.
+        id:
+          type: string
+          description: Full document UUID.
+        kind:
+          type: string
+          description: '`document`, `spreadsheet` or `presentation`.'
+        project:
+          type: string
+        rev:
+          type: integer
+          format: int64
+          description: Head sequence.
+          minimum: 0
+        role:
+          type: string
+          description: The caller's current role on the file.
+        title:
+          type: string
+    AgentFiles:
+      allOf:
+      - $ref: '#/components/schemas/AgentEnvelope'
+      - type: object
+        required:
+        - n
+        - files
+        properties:
+          files:
+            type: array
+            items:
+              $ref: '#/components/schemas/AgentFileRow'
+          more:
+            type:
+            - string
+            - 'null'
+          n:
+            type: integer
+            minimum: 0
+      description: '`files`.'
+    AgentFind:
+      allOf:
+      - $ref: '#/components/schemas/AgentEnvelope'
+      - type: object
+        required:
+        - n
+        - total
+        - total_capped
+        - hits
+        properties:
+          hits:
+            type: array
+            items:
+              $ref: '#/components/schemas/AgentHit'
+          more:
+            type:
+            - string
+            - 'null'
+          n:
+            type: integer
+            minimum: 0
+          total:
+            type: integer
+            minimum: 0
+          total_capped:
+            type: boolean
+      description: '`find`.'
+    AgentHit:
+      type: object
+      required:
+      - at
+      - snippet
+      - offset
+      properties:
+        at:
+          type: string
+          description: '`7C02`, `7C02.2`, `3B77.r2c1`, `R91W!C14` or `W2SK.A1B2`.'
+        offset:
+          type: integer
+          description: Character offset of the match in the searched text.
+          minimum: 0
+        snippet:
+          type: string
+    AgentOutline:
+      allOf:
+      - $ref: '#/components/schemas/AgentEnvelope'
+      - type: object
+        required:
+        - kind
+        - depth
+        - count
+        - unchanged
+        properties:
+          blocks:
+            type:
+            - array
+            - 'null'
+            items:
+              $ref: '#/components/schemas/AgentBlockRow'
+          count:
+            type: integer
+            description: Blocks, sheets or slides in the selection, before paging.
+            minimum: 0
+          depth:
+            type: integer
+            format: int32
+            minimum: 0
+          kind:
+            type: string
+          more:
+            type:
+            - string
+            - 'null'
+          oh:
+            type:
+            - string
+            - 'null'
+            description: 'Outline hash: pass it back as `if_none_match`.'
+          profile:
+            oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/AgentProfile'
+          sheets:
+            type:
+            - array
+            - 'null'
+            items:
+              $ref: '#/components/schemas/AgentSheetRow'
+          slides:
+            type:
+            - array
+            - 'null'
+            items:
+              $ref: '#/components/schemas/AgentSlideRow'
+          unchanged:
+            type: boolean
+          words:
+            type:
+            - integer
+            - 'null'
+            minimum: 0
+      description: '`outline` and the sheet profile.'
+    AgentProfile:
+      type: object
+      required:
+      - name
+      - rows
+      - cols
+      - header
+      - freeze
+      - merges
+      - columns
+      properties:
+        cols:
+          type: integer
+          minimum: 0
+        columns:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentColumnProfile'
+        freeze:
+          type: array
+          items:
+            type: integer
+            format: int64
+            minimum: 0
+          description: '`[frozen rows, frozen columns]`.'
+        header:
+          type: string
+        merges:
+          type: integer
+          minimum: 0
+        name:
+          type: string
+        rows:
+          type: integer
+          minimum: 0
+    AgentRangeRead:
+      type: object
+      required:
+      - sheet
+      - range
+      - h
+      - calc
+      - columns
+      - rows
+      properties:
+        calc:
+          type: string
+          description: '`none`: formulas are not evaluated.'
+        columns:
+          type: array
+          items:
+            type: string
+        h:
+          type: string
+        range:
+          type: string
+          description: Effective range, clamped to the used cells.
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentRowRead'
+        sheet:
+          type: string
+          description: Ref of the sheet.
+    AgentRead:
+      allOf:
+      - $ref: '#/components/schemas/AgentEnvelope'
+      - type: object
+        required:
+        - n
+        properties:
+          items:
+            type:
+            - array
+            - 'null'
+            items:
+              $ref: '#/components/schemas/AgentReadItem'
+          more:
+            type:
+            - string
+            - 'null'
+          n:
+            type: integer
+            minimum: 0
+          profile:
+            oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/AgentProfile'
+          range:
+            oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/AgentRangeRead'
+          slides:
+            type:
+            - array
+            - 'null'
+            items:
+              $ref: '#/components/schemas/AgentSlideRead'
+      description: '`read` (blocks, cells, slides).'
+    AgentReadItem:
+      type: object
+      required:
+      - ref
+      - t
+      - equal
+      - redacted
+      - features
+      - lines
+      properties:
+        equal:
+          type: boolean
+          description: 'The caller''s `have` hash matched: no text was sent.'
+        features:
+          type: string
+        h:
+          type:
+          - string
+          - 'null'
+        lines:
+          type: array
+          items:
+            type: string
+          description: Escaped text lines.
+        redacted:
+          type: boolean
+        ref:
+          type: string
+        t:
+          type: string
+    AgentRowRead:
+      type: object
+      required:
+      - row
+      - cells
+      properties:
+        cells:
+          type: array
+          items:
+            type: string
+        ref:
+          type:
+          - string
+          - 'null'
+        row:
+          type: integer
+          format: int32
+          minimum: 0
+    AgentShapeRead:
+      type: object
+      required:
+      - ref
+      - kind
+      - equal
+      - redacted
+      - text
+      - omitted_bytes
+      - bullets
+      properties:
+        alt:
+          type:
+          - string
+          - 'null'
+        bullets:
+          type: boolean
+        equal:
+          type: boolean
+        h:
+          type:
+          - string
+          - 'null'
+        kind:
+          type: string
+        omitted_bytes:
+          type: integer
+          minimum: 0
+        redacted:
+          type: boolean
+        ref:
+          type: string
+        role:
+          type:
+          - string
+          - 'null'
+        text:
+          type: string
+    AgentShapeRow:
+      type: object
+      required:
+      - ref
+      - kind
+      - h
+      - w
+      - p
+      properties:
+        h:
+          type: string
+        kind:
+          type: string
+        p:
+          type: string
+        ref:
+          type: string
+        role:
+          type:
+          - string
+          - 'null'
+        w:
+          type: integer
+          minimum: 0
+    AgentSheetRow:
+      type: object
+      required:
+      - ref
+      - name
+      - rows
+      - cols
+      - h
+      properties:
+        cols:
+          type: integer
+          minimum: 0
+        h:
+          type: string
+        name:
+          type: string
+        ref:
+          type: string
+        rows:
+          type: integer
+          minimum: 0
+    AgentSlideRead:
+      type: object
+      required:
+      - pos
+      - ref
+      - layout
+      - hidden
+      - redacted
+      - shapes
+      properties:
+        hidden:
+          type: boolean
+        layout:
+          type: string
+        notes:
+          type:
+          - array
+          - 'null'
+          items:
+            type: string
+          description: '`[hash, text]` of the notes, when there are any.'
+        pos:
+          type: integer
+          minimum: 0
+        redacted:
+          type: boolean
+        ref:
+          type: string
+        shapes:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentShapeRead'
+    AgentSlideRow:
+      type: object
+      required:
+      - pos
+      - ref
+      - layout
+      - title
+      - body
+      - notes_words
+      - images
+      - image_bytes
+      - hidden
+      - shapes
+      properties:
+        body:
+          type: integer
+          minimum: 0
+        hidden:
+          type: boolean
+        image_bytes:
+          type: integer
+          minimum: 0
+        images:
+          type: integer
+          minimum: 0
+        layout:
+          type: string
+        notes_words:
+          type: integer
+          minimum: 0
+        pos:
+          type: integer
+          minimum: 0
+        ref:
+          type: string
+        shapes:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentShapeRow'
+        title:
+          type: string
+    BlocksReadBody:
+      type: object
+      description: 'Body of `POST .../blocks:read`: the selection and the hashes the caller already holds.'
+      properties:
+        cursor:
+          type:
+          - string
+          - 'null'
+        fmt:
+          type:
+          - string
+          - 'null'
+          description: '`plain` (default) or `md`.'
+        have:
+          type: object
+          description: '`ref -> hash` of content the caller holds; unchanged blocks come back as one line.'
+          additionalProperties:
+            type: string
+          propertyNames:
+            type: string
+        max_bytes:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        refs:
+          type: array
+          items:
+            type: string
+          description: Block refs, sub-addresses or full node ids (at most 100); answered in this order.
+        rev:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          minimum: 0
+        section:
+          type:
+          - string
+          - 'null'
+          description: Heading ref, instead of `refs`.
+      additionalProperties: false
     ChallengeRequest:
       type: object
       required:
@@ -4292,8 +5840,10 @@ components:
             type: string
           description: |-
             One or more of `history:read`, `history:review`, `history:write`,
-            `project:read`. A key that is not in `all` mode also needs an active grant
-            for this project that lists every scope.
+            `project:read` (a person's key) or `content:read` (a key enrolled for an AI
+            agent; the two sets never mix). A key that is not in `all` mode also needs an
+            active grant for this project that lists every scope, and an agent scope always
+            does.
       additionalProperties: false
     ChallengeResponse:
       type: object
@@ -4452,7 +6002,9 @@ components:
           type: array
           items:
             type: string
-          description: One or more of `project:read`, `history:read`, `history:write`, `history:review`.
+          description: |-
+            A person's key: one or more of `project:read`, `history:read`, `history:write`,
+            `history:review`. An agent key: `content:read` only. The two sets never mix.
       additionalProperties: false
     Issue:
       type: object

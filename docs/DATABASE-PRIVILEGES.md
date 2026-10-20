@@ -1,5 +1,18 @@
 # Database runtime boundary
 
+Schema 42 adds two tables to the SELECT/INSERT history class (no UPDATE, no DELETE for the
+runtime login): `device_key_class`, one immutable row per signing key enrolled with a class
+(`person` or `agent`; no row means a person's key), and `agent_call`, the append-only
+metadata ledger of AI-agent reads (credential, project, file, tool, revision, request digest,
+byte counts, outcome; never document text). Both refuse UPDATE by trigger for every login;
+`device_key_class` refuses DELETE too, and an `agent_call` row can only be deleted by the
+cascade of an audited whole-document erasure (`agent_call_erasure_guard`, which checks the
+same-transaction erasure receipt and the trigger depth, because the document row is already
+gone when the cascade runs). The startup check counts both tables, so a missing table or a
+wrong privilege fails closed. The migration also widens the scope checks of `device_session`
+and `device_key_project_grant` with `content:read`. Re-run `grant-runtime`, then
+`check-runtime`, after migrating. See [AI agent connectors](AI-AGENT-CONNECTORS.md).
+
 Schema 41 adds two SELECT-only tables, `project_ref_authority_epoch` (receipt
 authority epochs with their stored signed statements) and
 `project_ref_authority_revocation` (immutable revocation markers). They join the

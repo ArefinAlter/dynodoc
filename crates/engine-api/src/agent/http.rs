@@ -119,7 +119,10 @@ pub fn not_modified(token: &RevToken) -> Response {
 
 fn stamp(headers: &mut HeaderMap, format: Option<Format>, token: Option<&RevToken>) {
     if let Some(format) = format {
-        headers.insert(CONTENT_TYPE, HeaderValue::from_static(format.content_type()));
+        headers.insert(
+            CONTENT_TYPE,
+            HeaderValue::from_static(format.content_type()),
+        );
     }
     // Document content: a cache may keep it only for this user, and must revalidate.
     headers.insert(CACHE_CONTROL, HeaderValue::from_static("private, no-cache"));
@@ -153,10 +156,9 @@ pub fn traceparent(headers: &HeaderMap) -> Option<String> {
     let value = headers.get("traceparent")?.to_str().ok()?.trim();
     let parts: Vec<&str> = value.split('-').collect();
     let ok = parts.len() == 4
-        && [2, 32, 16, 2]
-            .iter()
-            .zip(&parts)
-            .all(|(n, p)| p.len() == *n && p.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')));
+        && [2, 32, 16, 2].iter().zip(&parts).all(|(n, p)| {
+            p.len() == *n && p.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+        });
     ok.then(|| value.to_owned())
 }
 
@@ -211,7 +213,10 @@ mod tests {
         };
         assert!(if_none_match(&with("\"412:9f3a1c04\""), &token));
         assert!(if_none_match(&with("W/\"412:9f3a1c04\""), &token));
-        assert!(if_none_match(&with("\"1:aaaaaaaa\", \"412:9f3a1c04\""), &token));
+        assert!(if_none_match(
+            &with("\"1:aaaaaaaa\", \"412:9f3a1c04\""),
+            &token
+        ));
         assert!(if_none_match(&with("*"), &token));
         assert!(!if_none_match(&with("\"412:9f3a1c05\""), &token));
         assert!(!if_none_match(&with("\"411:9f3a1c04\""), &token));
@@ -221,7 +226,10 @@ mod tests {
     #[test]
     fn claims_are_sanitised_and_traceparent_is_strict() {
         let mut h = HeaderMap::new();
-        h.insert("x-dynodoc-client", HeaderValue::from_static("claude-code/2.1 (x)"));
+        h.insert(
+            "x-dynodoc-client",
+            HeaderValue::from_static("claude-code/2.1 (x)"),
+        );
         assert_eq!(client_claim(&h).unwrap(), "claude-code/2.1 (x)");
         h.insert("x-dynodoc-client", HeaderValue::from_static("   "));
         assert_eq!(client_claim(&h), None);
