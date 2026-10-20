@@ -109,7 +109,7 @@ fn the_server_definition_launches_the_real_binary_with_flags_it_accepts() {
     assert_eq!(environment["DYNODOC_WRITE"], "${DYNODOC_WRITE:-off}");
     assert!(guide.contains("DYNODOC_WRITE"));
     assert!(
-        !args.iter().any(|a| *a == "--write"),
+        !args.contains(&"--write"),
         "the plugin must not force writing on"
     );
 

@@ -18,6 +18,20 @@
 //! * Nothing the server wrote is passed on except the DCT body of a `200` whose content type
 //!   is `text/vnd.dynodoc.dct` and which starts with `dd/1 `. Errors are re-derived from
 //!   typed fields ([`crate::error`]).
+//!
+//! The write tools add these, each pinned by a test:
+//!
+//! * A write is made only when the model calls it: one call makes one logical request, and
+//!   nothing here follows a `propose` with a `submit` or any other call.
+//! * A `propose` has one `request_id` per logical call, added here when the model gave none.
+//!   The plan holds it, so a `401` renewal and the one resend of a request lost in transit
+//!   send the same body; the next call gets a new one. An error whose outcome is unknown
+//!   names it, so that the model's retry can reuse it.
+//! * A write whose key was not granted the write scopes is refused without a request
+//!   (`forbidden policy=write_scope`).
+//! * The answer of a write tool ends with a line that says a change is a proposal for a
+//!   person to review and is not live ([`crate::notes`]); the service's text comes first and
+//!   is unchanged.
 
 use std::{fmt, future::Future, net::IpAddr, time::Duration};
 
