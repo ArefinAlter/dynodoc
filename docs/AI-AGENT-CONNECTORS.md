@@ -890,7 +890,8 @@ of the crate documentation (`cargo doc -p engine-agent --no-deps`).
   transaction (`agent.policy.changed` with the changed fields and their values before and after,
   `agent.file_policy.changed`, `agent.killswitch`, and one `device.grant.revoked` per grant the
   switch ended), not append-only revision tables. Triggers: the revision moves by exactly one,
-  the project and document never change, the kill cut-off never moves back. Runtime privileges:
+  the project and document never change, the kill cut-off never moves back and never returns
+  to null; `kinds` is a CHECK of one to three distinct values. Runtime privileges:
   select, insert, update; no delete (the cascade of a project or a whole-document erasure removes
   rows). Listed in `engine-core` `database.rs`, `grant-runtime`, `check-runtime` and
   [DATABASE-PRIVILEGES.md](DATABASE-PRIVILEGES.md).
@@ -907,8 +908,12 @@ of the crate documentation (`cargo doc -p engine-agent --no-deps`).
   membership check and admission permit: the project is enabled, the person's project role is at
   least `min_role`, and the grant (one key in one project) has room in its budgets. The budgets are
   counted from the call ledger (`agent_call`; a covering index is added): calls in the last minute
-  and response bytes since midnight UTC. A refused budget is `429` `budget_exceeded` with
-  `Retry-After`; refusals are not counted. The counts are not transactional, so concurrent requests
+  (an index range over that minute only, a WHERE bound, not a filter over the day) and response
+  bytes since midnight UTC (an index-only scan of the covering index while the visibility map is
+  current; a test asks the planner and checks the plan). A refused budget is `429`
+  `budget_exceeded` with `Retry-After`, computed from the call that must age out for the window to
+  have room (the limit-th newest in it, so never early after an overrun or a lowered limit);
+  refusals are not counted. The counts are not transactional, so concurrent requests
   of one grant (at most two are admitted at once) may overrun a budget by one response. Files:
   a file whose policy is `none`, or whose kind the policy leaves out, is invisible to agents: the
   same `404` as an absent file on every file route, absent from `files`, from `find`, and from the
@@ -918,33 +923,52 @@ of the crate documentation (`cargo doc -p engine-agent --no-deps`).
   `403 forbidden` (identical body) as a missing grant or a non-member; nothing in the answer says
   which layer refused, and a non-member cannot tell enabled from disabled. The refused request
   is an internal ledger row with outcome `policy_denied` (or `budget_exceeded`), visible to
-  the owner through the usage route, not to the caller. A policy-hidden file is not recorded
-  (as for any file that does not exist).
+  the owner through the usage route, not to the caller. **These two outcomes are written at most
+  once a minute per key, project and outcome** (the runtime login cannot delete a ledger row and a
+  refusal can be repeated at the admission rate, 120 a minute, with invented file ids), so the
+  usage route's `denials` counts such a burst as one; admitted calls are never throttled. A
+  policy-hidden file is not recorded (as for any file that does not exist).
 - *Management routes* (`agent::manage`; account session only; a device, agent, connector or
   invented token is `401`; mounted whether or not `AGENT_GATEWAY` is on, and kept in the OpenAPI
   document when it is off): `GET` and `PUT /projects/{id}/agent-policy` (project owner or manager;
-  `PUT` replaces the whole policy, needs `If-Match: "<revision>"`, `0` when none was saved, `409`
-  on a stale revision, `400` for a missing or bad `If-Match` or a value out of range, `422` for an
-  unknown field; a body equal to the saved policy changes and audits nothing; the `GET` also lists
+  `PUT` needs `If-Match: "<revision>"`, `0` when none was saved, and a body that says `enabled`
+  (`422` without it); any other field it leaves out **keeps its saved value**, so flipping `enabled`
+  cannot widen the role floor, kinds or budgets. `409` on a stale revision, `400` for a missing or
+  bad `If-Match` or a value out of range, `422` for an unknown field; a result equal to the saved
+  policy changes and audits nothing; the `GET` also lists
   up to 100 file overrides and says whether the gateway is on); `POST /projects/{id}/agent-policy/kill`;
   `GET /projects/{id}/agent-usage?from&to` (calls, bytes, denials and other errors by UTC day and
-  client claim; at most 31 days and 500 rows, metadata only); `PUT /documents/{id}/agent-policy`
-  (`{"access": "inherit" | "none" | "read"}`; the file's owner or a project manager, which is
-  `can_manage_document`). A non-member, an unknown project and a member below owner or manager
-  all get the same `403`; a file the caller cannot open is `404`, one they can open but not manage
-  `403`. Concurrent saves are serialised by the row lock and the revision, concurrent file changes
-  by an advisory lock; the loser of a race is `409` (policy) or sees `changed: false` (file).
+  client claim; at most 31 days and 500 rows, years 2000 to 2200, metadata only); `PUT
+  /documents/{id}/agent-policy` (`{"access": "inherit" | "none" | "read"}`; the file's owner or a
+  project manager, which is `can_manage_document`; **tighten-only for anyone who is not a project
+  owner or manager**: changing `none` to `read` or `inherit`, or `read` to `inherit`, needs a
+  project owner or manager, so a file's creator, even one demoted to viewer, cannot undo a
+  manager's narrowing but may tighten). A non-member, an unknown project and a member below owner
+  or manager all get the same `403`; a file the caller cannot open is `404`, one they can open but
+  not manage `403`. Concurrent saves are serialised by the row lock and the revision, concurrent
+  file changes by an advisory lock; the loser of a race is `409` (policy) or sees `changed: false`
+  (file). Management requests are charged **after** authorisation, to a bucket of the caller's own
+  (120 a minute, 2 at once, derived from the person so that no agent read can spend it; agent reads
+  charge the person's identity bucket and the project's), so a compromised agent running as the
+  sole owner cannot make the owner's kill switch answer `429`. The process-wide limit on expensive
+  requests (8 at once) is still shared.
 - *Kill switch.* In one transaction: the policy is disabled (the row is created if the project
   never had one), every active grant of an **agent-class** key for the project is revoked (a
-  person's key and other projects are untouched), `sessions_valid_after` is set to now, and one
+  person's key and other projects are untouched), `sessions_valid_after` is set to now (stamped
+  after the grants are ended, as late as the transaction allows), and one
   audit row per ended grant plus the `agent.killswitch` row are written; then this process's
   cached states for the project's documents are purged. Device sessions are stateless tokens
   re-checked against the key and its grant on every request, so revoking the grants ends them at
-  the next request; the cut-off additionally makes `AgentAuth` refuse every session issued
-  before it, so that granting or enabling again **restores none of them** (without the cut-off, a
+  the next request; the cut-off additionally makes `AgentAuth` refuse every session not issued
+  strictly after it (the same instant counts as older, a session with no ledger row cannot prove
+  its age, and a test pins both), so that granting or enabling again **restores none of
+  them**, except a session whose issuance began in the few milliseconds between the cut-off being
+  stamped and the commit (it dies with the grants and revives only if the key's holder grants again
+  before it expires) (without the cut-off, a
   new grant by the key's holder would have revived an unexpired token; that remains the behaviour
   of an ordinary grant revocation, pinned by an existing test). Each pull moves the revision.
-- *Evidence.* `tests/agent_policy_test.rs`, 16 tests under the restricted runtime login:
+- *Evidence.* `tests/agent_policy_test.rs`, 22 tests under the restricted runtime login (16 of
+  them from the first pass and 6 added after an independent security review, below):
   default deny on every route with a byte-for-byte comparison against a non-member's refusal and
   the ledger rows it leaves; enable and disable, the very next request, the cache and the budget
   view; the role floor over every role; kinds, `none`, `read` and `inherit`, the 8-hex prefix and
@@ -955,7 +979,11 @@ of the crate documentation (`cargo doc -p engine-agent --no-deps`).
   person's key, another project, cache, audit, re-enable and re-grant, idempotence); usage bounds
   and ranges; per-grant call and byte budgets from the ledger; the row counts of 16 tables and
   every chain head unchanged by policy changes; the runtime login's privileges and the table
-  triggers; erasure; and the gateway-off case. The harness of `agent_read_test.rs` moved to
+  triggers; erasure; and the gateway-off case; and, from the review: a flood of 40 refusals leaves
+  one row, per grant and outcome, while admitted calls all stay; the minute budget's `Retry-After`
+  after an overrun; the plans of the two budget queries; a spent identity bucket not blocking the
+  owner's policy change or kill switch; a session stamped exactly at the cut-off; extreme usage
+  dates. The harness of `agent_read_test.rs` moved to
   `tests/agent_world/`; its 18 tests keep every assertion and now enable agents in their setup.
 - *Not built, or not decided.* No screen for any of this (the SvelteKit app is untouched), so an
   owner uses the API; token issuance and key grants are not refused for a project whose agents
@@ -966,11 +994,25 @@ of the crate documentation (`cargo doc -p engine-agent --no-deps`).
   `agent_call`, no per-client allow list or approval, no organisation or instance layer beyond
   the gateway flag, and the usage route groups by the client's own claim, not by person or key.
   The kill switch purges only the cache of the process that handled it; another process's entries
-  can never be served (policy is read first) and age out within five minutes. A file's owner can
-  lift a manager's `none` (the design names "owner or manager of the file"). **Not verified:** no
+  can never be served (policy is read first) and age out within five minutes. **Not verified:** no
   real client was run against it, the extra two queries per agent request were not measured under
   load, and the day boundary is UTC midnight by the database clock (a test that straddles
   midnight could see two days).
+
+  *Changes after the independent review (same day).* (1) `policy_denied` and `budget_exceeded`
+  ledger rows are throttled to one a minute per key, project and outcome (a member could otherwise
+  add about 173,000 undeletable rows a day with invented file ids). (2) A file override can only be
+  loosened by a project owner or manager. (3) The budget query is two scalar subselects with the
+  time bound in WHERE (the first version scanned the whole UTC day for the key); retry time comes
+  from the limit-th newest call. (4) The cut-off trigger also refuses clearing it to null. (5)
+  Management routes are charged after authorisation to a per-person bucket agent traffic cannot
+  spend. (6) `PUT` keeps the saved value of any field it omits and requires `enabled` (the first
+  version reset omitted fields to the widest defaults). (7) Usage dates are limited to 2000-2200
+  (an extreme date panicked chrono and a date outside the PostgreSQL range was a 500). (8) The
+  session cut-off compares strictly (`>`, the first version `>=`); the kill stamps the cut-off
+  after revoking the grants; `kinds` has a CHECK against duplicates; the 0043 header no longer
+  claims that an older API build leaves the new objects unused (the API refuses a newer schema, so
+  rollback means restoring the dump) and says the index is not built concurrently.
 
 ### 11.4 Phase 2 detail (remote MCP and OAuth)
 

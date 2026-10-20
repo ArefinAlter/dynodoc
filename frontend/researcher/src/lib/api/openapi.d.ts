@@ -2881,8 +2881,9 @@ export interface components {
       var_name?: string | null;
     };
     /**
-     * @description The whole policy; a field left out takes its default (so `enabled` is false unless
-     *     the body says true).
+     * @description The new policy. `enabled` must be said; every other field left out keeps its SAVED value
+     *     (the defaults when nothing was saved), so a request that only flips `enabled` cannot
+     *     silently widen the role floor, the kinds or the budgets.
      */
     PolicyBody: {
       /**
@@ -2890,8 +2891,8 @@ export interface components {
        * @description 1 to 600 (default 60).
        */
       calls_per_minute?: number | null;
-      /** @description Master switch. Default false. */
-      enabled?: boolean;
+      /** @description Master switch. Required. */
+      enabled: boolean;
       /** @description One or more of `document`, `spreadsheet`, `presentation` (default: all three). */
       kinds?: string[] | null;
       /** @description `viewer` (default), `contributor`, `reviewer`, `editor`, `manager` or `owner`. */
@@ -4120,7 +4121,7 @@ export interface operations {
       };
     };
     responses: {
-      /** @description The file's agent access. none hides the file from agents entirely (404 on every agent route, absent from the listing and the 8-character lookup) and purges its cached state. A file override can only narrow the project policy. Audited (agent.file_policy.changed) when it changes. Needs the file's owner or a project manager */
+      /** @description The file's agent access. none hides the file from agents entirely (404 on every agent route, absent from the listing and the 8-character lookup) and purges its cached state. A file override can only narrow the project policy. Audited (agent.file_policy.changed) when it changes. Needs the file's owner or a project manager; loosening it (none to read or inherit, read to inherit) needs a project owner or manager, so a file's creator who is only an editor or viewer can tighten but not undo a manager's choice */
       200: {
         headers: {
           [name: string]: unknown;
@@ -4143,7 +4144,7 @@ export interface operations {
         };
         content?: never;
       };
-      /** @description The caller can open the file but is neither its owner nor a manager */
+      /** @description The caller can open the file but is neither its owner nor a manager, or is loosening an override without being a project owner or manager */
       403: {
         headers: {
           [name: string]: unknown;
@@ -4152,6 +4153,13 @@ export interface operations {
       };
       /** @description No such file, or not one the caller can open, or not in a project */
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The caller's management budget (120 a minute, 2 at once) is used up */
+      429: {
         headers: {
           [name: string]: unknown;
         };
@@ -6941,7 +6949,7 @@ export interface operations {
       };
     };
     responses: {
-      /** @description The saved policy (full replacement; a field left out takes its default). changed=false and nothing written when it equalled the saved policy. Each effective change writes an audit row (agent.policy.changed) with the changed fields before and after. Disabling purges the project's cached document states */
+      /** @description The saved policy. enabled is required; a field left out keeps its saved value (the defaults when none was saved), so flipping enabled never widens the role floor, kinds or budgets. changed=false and nothing written when the result equalled the saved policy. Each effective change writes an audit row (agent.policy.changed) with the changed fields before and after. Disabling purges the project's cached document states */
       200: {
         headers: {
           [name: string]: unknown;
@@ -6978,8 +6986,15 @@ export interface operations {
         };
         content?: never;
       };
-      /** @description Malformed body or an unknown field */
+      /** @description Malformed body, a missing enabled or an unknown field */
       422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The caller's management budget (120 a minute, 2 at once) is used up */
+      429: {
         headers: {
           [name: string]: unknown;
         };
@@ -7022,6 +7037,13 @@ export interface operations {
         };
         content?: never;
       };
+      /** @description The caller's management budget (120 a minute, 2 at once) is used up */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
     };
   };
   agent_usage: {
@@ -7050,7 +7072,7 @@ export interface operations {
           'application/json': components['schemas']['UsageView'];
         };
       };
-      /** @description Bad date, from after to, or a range over 31 days */
+      /** @description Bad date, a year outside 2000 to 2200, from after to, or a range over 31 days */
       400: {
         headers: {
           [name: string]: unknown;
@@ -7066,6 +7088,13 @@ export interface operations {
       };
       /** @description Not a project owner or manager */
       403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The caller's management budget (120 a minute, 2 at once) is used up */
+      429: {
         headers: {
           [name: string]: unknown;
         };

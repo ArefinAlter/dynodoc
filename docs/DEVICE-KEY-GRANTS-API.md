@@ -216,8 +216,8 @@ key may ever hold, so a signing key file cannot be re-purposed.
   the key. Creating a key or a grant, and opening a session, are not refused meanwhile. The
   project's kill switch (`POST /projects/{id}/agent-policy/kill`) revokes every active grant of
   an agent key for the project (one `device.grant.revoked` audit row each, detail `reason:
-  agent_killswitch`, actor the manager) and refuses every session issued before it, so granting
-  the key again does not revive them. An ordinary revocation (`DELETE`) does not cut sessions
+  agent_killswitch`, actor the manager) and refuses every session not issued strictly after it,
+  so granting the key again does not revive them. An ordinary revocation (`DELETE`) does not cut sessions
   off: granting again revives an unexpired session.
 
 ## Not in this contract

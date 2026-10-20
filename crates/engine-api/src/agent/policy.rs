@@ -187,6 +187,31 @@ pub struct Allowed {
     pub bytes_used: i64,
 }
 
+/// Admitted calls of one grant (`$1` key, `$2` project) in the last minute; refusals are
+/// not counted, or a client that retried hard could never recover. The predicate is in the
+/// WHERE clause, so this is an index range over the last minute only (of
+/// `agent_call_key_project_at` or `agent_call_project_at`, as the planner prefers; at most
+/// the 120 a minute the identity admission allows, plus a heap visit each for `outcome`),
+/// not over the day.
+pub const CALLS_LAST_MINUTE_SQL: &str = "select count(*) from agent_call where key_id=$1 and project_id=$2 and at>now()-interval '1 minute' and outcome not in ('budget_exceeded','policy_denied')";
+
+/// Response bytes of one grant (`$1` key, `$2` project) since midnight UTC. A range of the
+/// same index that INCLUDEs `bytes_out`, so an index-only scan (heap visits only for pages
+/// the visibility map has not yet marked all-visible); its cost grows with the grant's
+/// calls today, which `calls_per_minute` bounds.
+pub const BYTES_TODAY_SQL: &str = "select coalesce(sum(bytes_out),0)::bigint from agent_call where key_id=$1 and project_id=$2 and at>=date_trunc('day',now() at time zone 'utc') at time zone 'utc'";
+
+/// Seconds until the minute window has room again, when the grant's calls in it are at or
+/// over its limit `L` (`$3` is `L - 1`). Room means at most `L - 1` calls left in the
+/// window, so the call that must age out is the `L`-th newest: everything older goes with
+/// it and exactly the `L - 1` newer ones remain. With exactly `L` calls that is the
+/// oldest; after an overrun or a lowered limit it is a later one, so the answer is never
+/// early (the oldest call alone would be).
+const MINUTE_RETRY_SQL: &str = "select extract(epoch from (at+interval '1 minute'-now()))::float8 from agent_call where key_id=$1 and project_id=$2 and at>now()-interval '1 minute' and outcome not in ('budget_exceeded','policy_denied') order by at desc offset $3 limit 1";
+
+/// Seconds until the next midnight UTC, when the day's bytes are spent.
+const DAY_RETRY_SQL: &str = "select extract(epoch from (date_trunc('day',now() at time zone 'utc') at time zone 'utc' + interval '1 day' - now()))::float8";
+
 /// The project policy for one request of the grant `key`, whose person has the stored
 /// project role `stored_role`. Reads the policy and the ledger now; called after the
 /// membership check and the admission permit.
@@ -207,26 +232,29 @@ pub async fn check(
     if rank(product_role(stored_role)) < rank(&policy.min_role) {
         return Err(Gate::Refused(Refusal::Policy));
     }
-    // Calls in the last minute and bytes since midnight UTC of this grant. Refusals are
-    // not counted, or a client that retried hard could never recover.
-    let (calls, retry_calls, bytes, retry_day): (i64, Option<f64>, i64, f64) = sqlx::query_as(
-        "select count(*) filter (where at>now()-interval '1 minute' and outcome not in ('budget_exceeded','policy_denied')),
-                extract(epoch from (min(at) filter (where at>now()-interval '1 minute' and outcome not in ('budget_exceeded','policy_denied')) + interval '1 minute' - now()))::float8,
-                coalesce(sum(bytes_out) filter (where at>=date_trunc('day',now() at time zone 'utc') at time zone 'utc'),0)::bigint,
-                extract(epoch from (date_trunc('day',now() at time zone 'utc') at time zone 'utc' + interval '1 day' - now()))::float8
-         from agent_call
-         where key_id=$1 and project_id=$2 and at>=date_trunc('day',now() at time zone 'utc') at time zone 'utc' - interval '1 minute'",
-    )
+    let (calls, bytes): (i64, i64) = sqlx::query_as(&format!(
+        "select ({CALLS_LAST_MINUTE_SQL}),({BYTES_TODAY_SQL})"
+    ))
     .bind(key)
     .bind(project)
-    .fetch_one(db)
+    .fetch_one(&mut *db)
     .await?;
-    if calls >= i64::from(policy.calls_per_minute) {
-        let wait = retry_calls.unwrap_or(60.0).ceil().clamp(1.0, 60.0);
+    let limit = i64::from(policy.calls_per_minute);
+    if calls >= limit {
+        let wait: Option<f64> = sqlx::query_scalar(MINUTE_RETRY_SQL)
+            .bind(key)
+            .bind(project)
+            .bind(limit - 1)
+            .fetch_optional(&mut *db)
+            .await?;
+        let wait = wait.unwrap_or(60.0).ceil().clamp(1.0, 60.0);
         return Err(Gate::Refused(Refusal::Budget(wait as u64)));
     }
     if bytes >= policy.read_bytes_per_day {
-        let wait = retry_day.ceil().clamp(1.0, 86_400.0);
+        let wait: f64 = sqlx::query_scalar(DAY_RETRY_SQL)
+            .fetch_one(&mut *db)
+            .await?;
+        let wait = wait.ceil().clamp(1.0, 86_400.0);
         return Err(Gate::Refused(Refusal::Budget(wait as u64)));
     }
     Ok(Allowed {

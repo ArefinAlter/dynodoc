@@ -23,7 +23,10 @@ retention) are not built. Evidence: `tests/agent_policy_test.rs` (16 tests under
 18 read-route tests, whose setup now enables agents. **Not run** against a real client or under load. Raised for the owner: the
 role field is a floor (`min_role`), not the ceiling the brief named, because every role may read; the caller is told `forbidden`,
 not a distinct `policy_denied`; whether token issuance and key grants should also be refused while agents are disabled; the
-file value is the spec's `none`, not `deny`; a file's owner can lift a manager's `none`.
+file value is the spec's `none`, not `deny`. An independent security review the same day led to: refusal ledger rows throttled to
+one a minute per grant and outcome, file overrides loosenable only by a project owner or manager, a budget query that no longer
+scans the day, a cut-off trigger that also refuses clearing it, a per-person admission bucket for the management routes, `PUT`
+keeping omitted fields (and requiring `enabled`), bounded usage dates and a strict session cut-off.
 
 ## Source: agent operation compiler, connector Phase 1 library (20 October 2026)
 

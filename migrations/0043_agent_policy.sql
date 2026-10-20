@@ -1,6 +1,12 @@
 -- AI-agent connector, Phase 1: project agent policy v0 (docs/AI-AGENT-CONNECTORS.md
--- sections 5.1 to 5.3 and 7.2). Additive only: no existing row or behaviour changes, and a
--- previous API build simply leaves these objects unused.
+-- sections 5.1 to 5.3 and 7.2). Additive only: no existing row changes. This is NOT
+-- rollback-safe by leaving the objects unused: the API refuses to start against a schema
+-- newer than its own (check_schema in engine-core database.rs), so going back to the
+-- previous build means restoring the pre-migration dump. The one index below is built
+-- inside the migration transaction (not CONCURRENTLY), which blocks inserts into
+-- agent_call while it builds; the table is new with schema 42 and small, but on a ledger
+-- that already holds many rows build the index by hand first (create index concurrently)
+-- during a quiet period.
 --
 -- The policy is the project owner's switch for AI agents. A project with NO row is
 -- disabled: the read routes of migration 0042 refuse every agent request until an owner or
@@ -27,10 +33,14 @@ create table project_agent_policy (
     -- Lowest project role whose agents may read (product vocabulary of document_member_role).
     min_role text not null default 'viewer'
         check (min_role in ('viewer', 'contributor', 'reviewer', 'editor', 'manager', 'owner')),
-    -- File kinds agents may read; at least one. The application stores them sorted.
+    -- File kinds agents may read; at least one, no repeats (a CHECK cannot hold a subquery,
+    -- and with at most three elements pairwise comparison is enough). The application
+    -- stores them sorted.
     kinds text[] not null default array['document', 'spreadsheet', 'presentation']::text[]
         check (cardinality(kinds) between 1 and 3
-               and kinds <@ array['document', 'spreadsheet', 'presentation']::text[]),
+               and kinds <@ array['document', 'spreadsheet', 'presentation']::text[]
+               and (cardinality(kinds) < 2 or kinds[1] <> kinds[2])
+               and (cardinality(kinds) < 3 or (kinds[1] <> kinds[3] and kinds[2] <> kinds[3]))),
     -- Per grant (one key in this project). Counted from agent_call.
     calls_per_minute integer not null default 60 check (calls_per_minute between 1 and 600),
     read_bytes_per_day bigint not null default 20000000
@@ -38,9 +48,10 @@ create table project_agent_policy (
     -- Optimistic concurrency, as project_settings.revision. A new row is revision 1; the
     -- application treats "no row" as revision 0.
     revision bigint not null default 1 check (revision >= 1),
-    -- Set by the kill switch only: an agent session issued before this moment is refused,
-    -- whatever grant or policy exists later, so enabling or granting again restores
-    -- nothing that was ended. Null until the switch is first pulled. Never moves back.
+    -- Set by the kill switch only: an agent session not issued strictly after this moment
+    -- is refused, whatever grant or policy exists later, so enabling or granting again
+    -- restores nothing that was ended. Null until the switch is first pulled. Never moves
+    -- back and never returns to null (the trigger below).
     sessions_valid_after timestamptz,
     updated_by uuid not null references identity(id),
     updated_at timestamptz not null default now()
@@ -66,7 +77,10 @@ begin
     if new.revision is distinct from old.revision + 1 then
         raise exception 'project_agent_policy.revision must increase by exactly one';
     end if;
-    if new.sessions_valid_after < old.sessions_valid_after then
+    -- NULL < x is NULL, so the null cases are spelled out: clearing the cut-off would
+    -- revive every session it ended.
+    if old.sessions_valid_after is not null
+       and (new.sessions_valid_after is null or new.sessions_valid_after < old.sessions_valid_after) then
         raise exception 'project_agent_policy.sessions_valid_after cannot move back';
     end if;
     return new;
@@ -85,9 +99,13 @@ end $$;
 create trigger file_agent_policy_key_fixed before update on file_agent_policy
     for each row execute function file_agent_policy_guard();
 
--- 3. The per-grant budgets read the ledger on every admitted request (calls in the last
---    minute, bytes since midnight UTC), per key and project. Covering, so the sum is an
---    index-only scan.
+-- 3. The per-grant budgets read the ledger on every admitted request, per key and project:
+--    the calls of the last minute (an index range over that minute, about a hundred entries
+--    at most, with a heap visit each for the outcome; the planner may use this index or
+--    agent_call_project_at, both bound it to the minute) and the bytes since midnight UTC
+--    (a range of this index, which INCLUDEs bytes_out, so an index-only scan while the
+--    visibility map is current; its cost grows with the grant's calls today, which
+--    calls_per_minute bounds).
 create index agent_call_key_project_at on agent_call(key_id, project_id, at) include (bytes_out);
 
 revoke all on project_agent_policy, file_agent_policy from public;

@@ -693,7 +693,7 @@ paths:
         required: true
       responses:
         '200':
-          description: The file's agent access. none hides the file from agents entirely (404 on every agent route, absent from the listing and the 8-character lookup) and purges its cached state. A file override can only narrow the project policy. Audited (agent.file_policy.changed) when it changes. Needs the file's owner or a project manager
+          description: The file's agent access. none hides the file from agents entirely (404 on every agent route, absent from the listing and the 8-character lookup) and purges its cached state. A file override can only narrow the project policy. Audited (agent.file_policy.changed) when it changes. Needs the file's owner or a project manager; loosening it (none to read or inherit, read to inherit) needs a project owner or manager, so a file's creator who is only an editor or viewer can tighten but not undo a manager's choice
           content:
             application/json:
               schema:
@@ -703,9 +703,11 @@ paths:
         '401':
           description: Account sign-in required; a device, agent or connector token is refused
         '403':
-          description: The caller can open the file but is neither its owner nor a manager
+          description: The caller can open the file but is neither its owner nor a manager, or is loosening an override without being a project owner or manager
         '404':
           description: No such file, or not one the caller can open, or not in a project
+        '429':
+          description: The caller's management budget (120 a minute, 2 at once) is used up
       security:
       - paseto: []
   /documents/{id}/batch:
@@ -2813,7 +2815,7 @@ paths:
         required: true
       responses:
         '200':
-          description: The saved policy (full replacement; a field left out takes its default). changed=false and nothing written when it equalled the saved policy. Each effective change writes an audit row (agent.policy.changed) with the changed fields before and after. Disabling purges the project's cached document states
+          description: The saved policy. enabled is required; a field left out keeps its saved value (the defaults when none was saved), so flipping enabled never widens the role floor, kinds or budgets. changed=false and nothing written when the result equalled the saved policy. Each effective change writes an audit row (agent.policy.changed) with the changed fields before and after. Disabling purges the project's cached document states
           content:
             application/json:
               schema:
@@ -2827,7 +2829,9 @@ paths:
         '409':
           description: The policy changed since the revision in If-Match
         '422':
-          description: Malformed body or an unknown field
+          description: Malformed body, a missing enabled or an unknown field
+        '429':
+          description: The caller's management budget (120 a minute, 2 at once) is used up
       security:
       - paseto: []
   /projects/{id}/agent-policy/kill:
@@ -2854,6 +2858,8 @@ paths:
           description: Account sign-in required; a device, agent or connector token is refused
         '403':
           description: Not a project owner or manager
+        '429':
+          description: The caller's management budget (120 a minute, 2 at once) is used up
       security:
       - paseto: []
   /projects/{id}/agent-usage:
@@ -2889,11 +2895,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/UsageView'
         '400':
-          description: Bad date, from after to, or a range over 31 days
+          description: Bad date, a year outside 2000 to 2200, from after to, or a range over 31 days
         '401':
           description: Account sign-in required; a device, agent or connector token is refused
         '403':
           description: Not a project owner or manager
+        '429':
+          description: The caller's management budget (120 a minute, 2 at once) is used up
       security:
       - paseto: []
   /projects/{id}/agent/access:
@@ -6690,8 +6698,11 @@ components:
     PolicyBody:
       type: object
       description: |-
-        The whole policy; a field left out takes its default (so `enabled` is false unless
-        the body says true).
+        The new policy. `enabled` must be said; every other field left out keeps its SAVED value
+        (the defaults when nothing was saved), so a request that only flips `enabled` cannot
+        silently widen the role floor, the kinds or the budgets.
+      required:
+      - enabled
       properties:
         calls_per_minute:
           type:
@@ -6701,7 +6712,7 @@ components:
           description: 1 to 600 (default 60).
         enabled:
           type: boolean
-          description: Master switch. Default false.
+          description: Master switch. Required.
         kinds:
           type:
           - array

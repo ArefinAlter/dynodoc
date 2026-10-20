@@ -96,7 +96,9 @@
 //!     the checkpoint's own verification, not re-hashed per request.
 //! 18. Every admitted read is a ledger row, not a sample, with outcome `ok` or the
 //!     `agent_code` of the failure (`policy_denied` or `budget_exceeded` when the project
-//!     policy stopped it). Requests refused before admission (no membership,
+//!     policy stopped it; those two are written at most once a minute per key, project
+//!     and outcome, because a refusal can be repeated at the admission rate and a ledger
+//!     row cannot be deleted). Requests refused before admission (no membership,
 //!     admission budget, bad credential) write nothing. A ledger failure is logged and does
 //!     not fail the read. The runtime login cannot delete; pruning by retention is not
 //!     built.

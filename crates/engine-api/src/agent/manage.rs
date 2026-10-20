@@ -5,10 +5,10 @@
 //!
 //! | Route | Who | What |
 //! |---|---|---|
-//! | `GET/PUT /projects/{id}/agent-policy` | project owner or manager | the project policy; `PUT` needs `If-Match` |
+//! | `GET/PUT /projects/{id}/agent-policy` | project owner or manager | the project policy; `PUT` needs `If-Match`, requires `enabled` and keeps the saved value of any other field it leaves out |
 //! | `POST /projects/{id}/agent-policy/kill` | project owner or manager | disable now and revoke every agent grant |
 //! | `GET /projects/{id}/agent-usage` | project owner or manager | calls, bytes and denials by day and client claim |
-//! | `PUT /documents/{id}/agent-policy` | the file's owner or a manager | the file override |
+//! | `PUT /documents/{id}/agent-policy` | the file's owner or a manager (only a project owner or manager may loosen it) | the file override |
 //!
 //! These routes are mounted whether or not `AGENT_GATEWAY` is on, so a project can be
 //! prepared first; `gateway` in the policy view says whether this server serves agents.
@@ -32,7 +32,7 @@ use axum::{
     routing::{get, post, put},
     Json, Router,
 };
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use sqlx::{PgConnection, Postgres, Transaction};
@@ -47,6 +47,9 @@ const BODY_LIMIT: usize = 16 * 1024;
 const MAX_OVERRIDES: i64 = 100;
 /// Widest usage range, in days, and most rows returned.
 const MAX_USAGE_DAYS: i64 = 31;
+/// Years the usage route accepts (inclusive): far wider than the ledger can hold, and well
+/// inside what PostgreSQL's `date` and chrono's arithmetic both handle.
+const USAGE_YEARS: (i32, i32) = (2000, 2200);
 const MAX_USAGE_ROWS: usize = 500;
 
 pub fn router() -> Router<AppState> {
@@ -98,6 +101,22 @@ async fn lock_project(db: &mut PgConnection, project: Uuid) -> Result<(), ApiErr
         .fetch_optional(db)
         .await?;
     Ok(())
+}
+
+/// Charge a management request to a bucket of the caller's own that agent traffic cannot
+/// spend, after the caller is known to manage the project. An agent read charges its
+/// identity's bucket (`enter(identity, ..)`) and the project's; a compromised agent running
+/// as the sole owner could therefore keep the owner's slots full and have the owner's kill
+/// switch answered `429`. Management is instead charged to `enter(<derived id>, None)`
+/// where the id is a hash of the person and a fixed label: a bucket in the same registry
+/// (120 a minute, 2 at once) that no read ever names, one per person, so managers do not
+/// contend with each other either. The process-wide limit on expensive requests is still
+/// shared.
+fn charge(state: &AppState, who: Uuid) -> Result<crate::workloads::ReadPermit, ApiError> {
+    let hash = crate::auth::sha256(format!("dynodoc.agent-management:{who}").as_bytes());
+    let mut bytes = [0u8; 16];
+    bytes.copy_from_slice(&hash[..16]);
+    state.workloads.enter(Uuid::from_bytes(bytes), None)
 }
 
 /// Drop the cached states of every document of `project`. The cache never decides access
@@ -234,13 +253,13 @@ async fn get_policy(
     ))
 }
 
-/// The whole policy; a field left out takes its default (so `enabled` is false unless
-/// the body says true).
+/// The new policy. `enabled` must be said; every other field left out keeps its SAVED value
+/// (the defaults when nothing was saved), so a request that only flips `enabled` cannot
+/// silently widen the role floor, the kinds or the budgets.
 #[derive(Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub(super) struct PolicyBody {
-    /// Master switch. Default false.
-    #[serde(default)]
+    /// Master switch. Required.
     enabled: bool,
     /// `viewer` (default), `contributor`, `reviewer`, `editor`, `manager` or `owner`.
     min_role: Option<String>,
@@ -253,16 +272,16 @@ pub(super) struct PolicyBody {
 }
 
 impl PolicyBody {
-    fn validate(self) -> Result<Policy, ApiError> {
-        let defaults = Policy::default();
-        let min_role = self.min_role.unwrap_or(defaults.min_role);
+    /// The policy this body asks for, with `base` (the saved policy) for what it leaves out.
+    fn validate(self, base: &Policy) -> Result<Policy, ApiError> {
+        let min_role = self.min_role.unwrap_or_else(|| base.min_role.clone());
         if !ROLES.contains(&min_role.as_str()) {
             return Err(bad(
                 "min_role must be viewer, contributor, reviewer, editor, manager or owner",
             ));
         }
         let kinds = match self.kinds {
-            None => defaults.kinds,
+            None => base.kinds.clone(),
             Some(list) => {
                 if list.iter().any(|k| !KINDS.contains(&k.as_str())) {
                     return Err(bad(
@@ -285,13 +304,11 @@ impl PolicyBody {
         };
         let calls = self
             .calls_per_minute
-            .unwrap_or(i64::from(defaults.calls_per_minute));
+            .unwrap_or(i64::from(base.calls_per_minute));
         if !(CALLS_PER_MINUTE.0..=CALLS_PER_MINUTE.1).contains(&calls) {
             return Err(bad("calls_per_minute must be 1 to 600"));
         }
-        let bytes = self
-            .read_bytes_per_day
-            .unwrap_or(defaults.read_bytes_per_day);
+        let bytes = self.read_bytes_per_day.unwrap_or(base.read_bytes_per_day);
         if !(READ_BYTES_PER_DAY.0..=READ_BYTES_PER_DAY.1).contains(&bytes) {
             return Err(bad("read_bytes_per_day must be 10,000 to 1,000,000,000"));
         }
@@ -350,7 +367,7 @@ fn diff(before: &Policy, after: &Policy) -> (Vec<&'static str>, Value, Value) {
     (names, Value::Object(from), Value::Object(to))
 }
 
-#[utoipa::path(operation_id="agent_policy_put", put, path="/projects/{id}/agent-policy", tag="agent policy", params(("id"=Uuid,Path,description="Project"),("If-Match"=String,Header,description="The revision from the last read, for example \"3\"; 0 when no policy was saved. Required")), request_body=PolicyBody, security(("paseto"=[])), responses((status=200, description="The saved policy (full replacement; a field left out takes its default). changed=false and nothing written when it equalled the saved policy. Each effective change writes an audit row (agent.policy.changed) with the changed fields before and after. Disabling purges the project's cached document states", body=PolicyView),(status=400, description="If-Match missing or malformed, or a value out of range"),(status=401, description="Account sign-in required; a device, agent or connector token is refused"),(status=403, description="Not a project owner or manager"),(status=409, description="The policy changed since the revision in If-Match"),(status=422, description="Malformed body or an unknown field")))]
+#[utoipa::path(operation_id="agent_policy_put", put, path="/projects/{id}/agent-policy", tag="agent policy", params(("id"=Uuid,Path,description="Project"),("If-Match"=String,Header,description="The revision from the last read, for example \"3\"; 0 when no policy was saved. Required")), request_body=PolicyBody, security(("paseto"=[])), responses((status=200, description="The saved policy. enabled is required; a field left out keeps its saved value (the defaults when none was saved), so flipping enabled never widens the role floor, kinds or budgets. changed=false and nothing written when the result equalled the saved policy. Each effective change writes an audit row (agent.policy.changed) with the changed fields before and after. Disabling purges the project's cached document states", body=PolicyView),(status=400, description="If-Match missing or malformed, or a value out of range"),(status=401, description="Account sign-in required; a device, agent or connector token is refused"),(status=403, description="Not a project owner or manager"),(status=409, description="The policy changed since the revision in If-Match"),(status=422, description="Malformed body, a missing enabled or an unknown field"),(status=429, description="The caller's management budget (120 a minute, 2 at once) is used up")))]
 async fn put_policy(
     State(state): State<AppState>,
     auth: AuthContext,
@@ -359,22 +376,22 @@ async fn put_policy(
     Json(body): Json<PolicyBody>,
 ) -> Result<impl IntoResponse, ApiError> {
     let expected = if_match(&headers)?;
-    let wanted = body.validate()?;
-    let _permit = state.workloads.enter(auth.identity_id, None)?;
     let mut tx = begin(&state).await?;
     lock_project(&mut tx, project).await?;
     require_manager(&mut tx, project, auth.identity_id).await?;
+    let _permit = charge(&state, auth.identity_id)?;
     // The row lock serialises concurrent writers; the loser sees the new revision.
     let current = policy::load(&mut tx, project, true).await?;
     let revision = current.as_ref().map_or(0, |c| c.revision);
+    let before = current
+        .as_ref()
+        .map_or_else(Policy::default, |c| c.policy.clone());
+    let wanted = body.validate(&before)?;
     if expected != revision {
         return Err(ApiError::Conflict {
             reason: "Agent policy changed. Reload before saving.".into(),
         });
     }
-    let before = current
-        .as_ref()
-        .map_or_else(Policy::default, |c| c.policy.clone());
     let (changed, from, to) = diff(&before, &wanted);
     if changed.is_empty() {
         let out = view(&mut tx, &state, project, current.as_ref(), Some(false)).await?;
@@ -448,29 +465,33 @@ pub(super) struct KillView {
     revoked_grants: i64,
 }
 
-#[utoipa::path(operation_id="agent_policy_kill", post, path="/projects/{id}/agent-policy/kill", tag="agent policy", params(("id"=Uuid,Path,description="Project")), security(("paseto"=[])), responses((status=200, description="Agents are disabled for the project and every active grant of an agent key for it is revoked, in one transaction, and the project's cached document states are purged. Takes effect on the very next agent request. Every agent session issued before the call is refused for good (sessions are stateless tokens, so this is recorded as a cut-off time on the policy, killed_at): enabling the policy or granting a key again restores none of them, and the key holders must grant again and open a new session. Each pull moves the policy revision and is audited (agent.killswitch, plus device.grant.revoked per grant); pulling it again is harmless", body=KillView),(status=401, description="Account sign-in required; a device, agent or connector token is refused"),(status=403, description="Not a project owner or manager")))]
+#[utoipa::path(operation_id="agent_policy_kill", post, path="/projects/{id}/agent-policy/kill", tag="agent policy", params(("id"=Uuid,Path,description="Project")), security(("paseto"=[])), responses((status=200, description="Agents are disabled for the project and every active grant of an agent key for it is revoked, in one transaction, and the project's cached document states are purged. Takes effect on the very next agent request. Every agent session issued before the call is refused for good (sessions are stateless tokens, so this is recorded as a cut-off time on the policy, killed_at): enabling the policy or granting a key again restores none of them, and the key holders must grant again and open a new session. Each pull moves the policy revision and is audited (agent.killswitch, plus device.grant.revoked per grant); pulling it again is harmless", body=KillView),(status=401, description="Account sign-in required; a device, agent or connector token is refused"),(status=403, description="Not a project owner or manager"),(status=429, description="The caller's management budget (120 a minute, 2 at once) is used up")))]
 async fn kill(
     State(state): State<AppState>,
     auth: AuthContext,
     Path(project): Path<Uuid>,
 ) -> Result<Json<KillView>, ApiError> {
-    let _permit = state.workloads.enter(auth.identity_id, None)?;
     let mut tx = begin(&state).await?;
     lock_project(&mut tx, project).await?;
     require_manager(&mut tx, project, auth.identity_id).await?;
+    let _permit = charge(&state, auth.identity_id)?;
     let current = policy::load(&mut tx, project, true).await?;
     let was_enabled = current.as_ref().is_some_and(|c| c.policy.enabled);
-    // Disable, and mark the moment: sessions issued before it are refused for good (the
-    // extractor compares them with sessions_valid_after), so enabling or granting again
-    // revives none of them. The row is created if the project never saved a policy.
-    let revision: i64 = sqlx::query_scalar("insert into project_agent_policy(project_id,enabled,updated_by,updated_at,sessions_valid_after) values($1,false,$2,clock_timestamp(),clock_timestamp()) on conflict(project_id) do update set enabled=false,revision=project_agent_policy.revision+1,updated_by=$2,updated_at=clock_timestamp(),sessions_valid_after=greatest(project_agent_policy.sessions_valid_after,clock_timestamp()) returning revision")
+    // Only agent keys: a person's key holds no agent grant. One audit row per ended grant,
+    // under the grant's own action, so the key holder's trail explains the change.
+    let revoked: i64 = sqlx::query_scalar("with revoked as (update device_key_project_grant g set revoked_at=clock_timestamp() where g.project_id=$1 and g.revoked_at is null and exists(select 1 from device_key_class c where c.key_id=g.key_id and c.class='agent') returning g.key_id,g.scopes), logged as (insert into operation_audit(actor_id,action,resource_id,detail) select $2::uuid,'device.grant.revoked',r.key_id,jsonb_build_object('key_id',r.key_id,'project_id',$1::uuid,'scopes',to_jsonb(r.scopes),'reason','agent_killswitch') from revoked r returning 1) select count(*) from logged")
         .bind(project)
         .bind(auth.identity_id)
         .fetch_one(&mut *tx)
         .await?;
-    // Only agent keys: a person's key holds no agent grant. One audit row per ended grant,
-    // under the grant's own action, so the key holder's trail explains the change.
-    let revoked: i64 = sqlx::query_scalar("with revoked as (update device_key_project_grant g set revoked_at=clock_timestamp() where g.project_id=$1 and g.revoked_at is null and exists(select 1 from device_key_class c where c.key_id=g.key_id and c.class='agent') returning g.key_id,g.scopes), logged as (insert into operation_audit(actor_id,action,resource_id,detail) select $2::uuid,'device.grant.revoked',r.key_id,jsonb_build_object('key_id',r.key_id,'project_id',$1::uuid,'scopes',to_jsonb(r.scopes),'reason','agent_killswitch') from revoked r returning 1) select count(*) from logged")
+    // Disable, and mark the moment: sessions not issued strictly after it are refused for
+    // good (the extractor compares them with sessions_valid_after), so enabling or granting
+    // again revives none of them. The row is created if the project never saved a policy.
+    // The cut-off is stamped as late as the transaction allows, after the grants are ended,
+    // so the only sessions it can miss are those whose issuance began in the few
+    // milliseconds between this statement and the commit; they die with the grants, and
+    // come back only if the key holder grants again before they expire.
+    let revision: i64 = sqlx::query_scalar("insert into project_agent_policy(project_id,enabled,updated_by,updated_at,sessions_valid_after) values($1,false,$2,clock_timestamp(),clock_timestamp()) on conflict(project_id) do update set enabled=false,revision=project_agent_policy.revision+1,updated_by=$2,updated_at=clock_timestamp(),sessions_valid_after=greatest(project_agent_policy.sessions_valid_after,clock_timestamp()) returning revision")
         .bind(project)
         .bind(auth.identity_id)
         .fetch_one(&mut *tx)
@@ -530,11 +551,23 @@ pub(super) struct UsageView {
     truncated: bool,
 }
 
-fn parse_day(raw: &str) -> Result<NaiveDate, ApiError> {
-    NaiveDate::parse_from_str(raw, "%Y-%m-%d").map_err(|_| bad("Dates are YYYY-MM-DD, in UTC"))
+/// A day within [`USAGE_YEARS`]; anything else would panic chrono's arithmetic or leave
+/// PostgreSQL's date range.
+fn in_range(day: NaiveDate) -> Result<NaiveDate, ApiError> {
+    if (USAGE_YEARS.0..=USAGE_YEARS.1).contains(&day.year()) {
+        Ok(day)
+    } else {
+        Err(bad("Dates must fall between the years 2000 and 2200"))
+    }
 }
 
-#[utoipa::path(operation_id="agent_usage", get, path="/projects/{id}/agent-usage", tag="agent policy", params(("id"=Uuid,Path,description="Project"),("from"=Option<String>,Query,description="First UTC day, YYYY-MM-DD (default: six days before to)"),("to"=Option<String>,Query,description="Last UTC day, inclusive (default: today)")), security(("paseto"=[])), responses((status=200, description="Calls, response bytes and denials of the project's agent grants by UTC day and client claim, from the call ledger (metadata only: no document text, title or request value). The range is at most 31 days and 500 rows", body=UsageView),(status=400, description="Bad date, from after to, or a range over 31 days"),(status=401, description="Account sign-in required; a device, agent or connector token is refused"),(status=403, description="Not a project owner or manager")))]
+fn parse_day(raw: &str) -> Result<NaiveDate, ApiError> {
+    NaiveDate::parse_from_str(raw, "%Y-%m-%d")
+        .map_err(|_| bad("Dates are YYYY-MM-DD, in UTC"))
+        .and_then(in_range)
+}
+
+#[utoipa::path(operation_id="agent_usage", get, path="/projects/{id}/agent-usage", tag="agent policy", params(("id"=Uuid,Path,description="Project"),("from"=Option<String>,Query,description="First UTC day, YYYY-MM-DD (default: six days before to)"),("to"=Option<String>,Query,description="Last UTC day, inclusive (default: today)")), security(("paseto"=[])), responses((status=200, description="Calls, response bytes and denials of the project's agent grants by UTC day and client claim, from the call ledger (metadata only: no document text, title or request value). The range is at most 31 days and 500 rows", body=UsageView),(status=400, description="Bad date, a year outside 2000 to 2200, from after to, or a range over 31 days"),(status=401, description="Account sign-in required; a device, agent or connector token is refused"),(status=403, description="Not a project owner or manager"),(status=429, description="The caller's management budget (120 a minute, 2 at once) is used up")))]
 async fn usage(
     State(state): State<AppState>,
     auth: AuthContext,
@@ -542,26 +575,25 @@ async fn usage(
     parsed: Result<Query<UsageQuery>, QueryRejection>,
 ) -> Result<Json<UsageView>, ApiError> {
     let Query(range) = parsed.map_err(|_| bad("Use from and to as YYYY-MM-DD"))?;
-    let to = range
-        .to
-        .as_deref()
-        .map(parse_day)
-        .transpose()?
-        .unwrap_or_else(|| Utc::now().date_naive());
-    let from = range
-        .from
-        .as_deref()
-        .map(parse_day)
-        .transpose()?
-        .unwrap_or(to - chrono::Duration::days(6));
+    let to = match range.to.as_deref() {
+        Some(raw) => parse_day(raw)?,
+        None => in_range(Utc::now().date_naive())?,
+    };
+    let from = match range.from.as_deref() {
+        Some(raw) => parse_day(raw)?,
+        None => to
+            .checked_sub_signed(chrono::Duration::days(6))
+            .ok_or_else(|| bad("Dates must fall between the years 2000 and 2200"))
+            .and_then(in_range)?,
+    };
     if from > to || (to - from).num_days() >= MAX_USAGE_DAYS {
         return Err(bad(
             "Use a range of at most 31 days, with from not after to",
         ));
     }
-    let _permit = state.workloads.enter(auth.identity_id, None)?;
     let mut db = state.pool.acquire().await?;
     require_manager(&mut db, project, auth.identity_id).await?;
+    let _permit = charge(&state, auth.identity_id)?;
     let rows: Vec<(NaiveDate, Option<String>, i64, i64, i64, i64)> = sqlx::query_as("select (a.at at time zone 'utc')::date,a.client,count(*)::bigint,coalesce(sum(a.bytes_out),0)::bigint,(count(*) filter (where a.outcome in ('forbidden','policy_denied','budget_exceeded','unauthorized')))::bigint,(count(*) filter (where a.outcome not in ('ok','forbidden','policy_denied','budget_exceeded','unauthorized')))::bigint from agent_call a where a.project_id=$1 and a.at>=($2::date)::timestamp at time zone 'utc' and a.at<(($3::date)+1)::timestamp at time zone 'utc' group by 1,2 order by 1 desc,3 desc,2 nulls last limit $4")
         .bind(project)
         .bind(from)
@@ -611,7 +643,7 @@ pub(super) struct FilePolicyView {
     changed: bool,
 }
 
-#[utoipa::path(operation_id="agent_file_policy_put", put, path="/documents/{id}/agent-policy", tag="agent policy", params(("id"=Uuid,Path,description="File")), request_body=FilePolicyBody, security(("paseto"=[])), responses((status=200, description="The file's agent access. none hides the file from agents entirely (404 on every agent route, absent from the listing and the 8-character lookup) and purges its cached state. A file override can only narrow the project policy. Audited (agent.file_policy.changed) when it changes. Needs the file's owner or a project manager", body=FilePolicyView),(status=400, description="access is not inherit, none or read"),(status=401, description="Account sign-in required; a device, agent or connector token is refused"),(status=403, description="The caller can open the file but is neither its owner nor a manager"),(status=404, description="No such file, or not one the caller can open, or not in a project")))]
+#[utoipa::path(operation_id="agent_file_policy_put", put, path="/documents/{id}/agent-policy", tag="agent policy", params(("id"=Uuid,Path,description="File")), request_body=FilePolicyBody, security(("paseto"=[])), responses((status=200, description="The file's agent access. none hides the file from agents entirely (404 on every agent route, absent from the listing and the 8-character lookup) and purges its cached state. A file override can only narrow the project policy. Audited (agent.file_policy.changed) when it changes. Needs the file's owner or a project manager; loosening it (none to read or inherit, read to inherit) needs a project owner or manager, so a file's creator who is only an editor or viewer can tighten but not undo a manager's choice", body=FilePolicyView),(status=400, description="access is not inherit, none or read"),(status=401, description="Account sign-in required; a device, agent or connector token is refused"),(status=403, description="The caller can open the file but is neither its owner nor a manager, or is loosening an override without being a project owner or manager"),(status=404, description="No such file, or not one the caller can open, or not in a project"),(status=429, description="The caller's management budget (120 a minute, 2 at once) is used up")))]
 async fn put_file_policy(
     State(state): State<AppState>,
     auth: AuthContext,
@@ -622,7 +654,6 @@ async fn put_file_policy(
         value @ ("inherit" | "none" | "read") => value.to_owned(),
         _ => return Err(bad("access must be inherit, none or read")),
     };
-    let _permit = state.workloads.enter(auth.identity_id, None)?;
     let mut tx = begin(&state).await?;
     projects::lock_document_project(&mut tx, document).await?;
     let known: Option<(Option<Uuid>, Option<String>)> = sqlx::query_as("select document_project(d.id),document_member_role(d.id,$2) from document d where d.id=$1 and d.deleted_at is null")
@@ -641,6 +672,7 @@ async fn put_file_policy(
     if !may_manage {
         return Err(ApiError::Forbidden);
     }
+    let _permit = charge(&state, auth.identity_id)?;
     // One writer per file; the row may not exist yet, so a row lock would not serialise.
     sqlx::query("select pg_advisory_xact_lock(hashtextextended($1::text,382))")
         .bind(format!("file_agent_policy:{document}"))
@@ -652,6 +684,21 @@ async fn put_file_policy(
     .bind(document)
     .fetch_one(&mut *tx)
     .await?;
+    // Lower layers narrow, never widen: the file's creator may be only an editor, or a
+    // viewer since demoted, and `can_manage_document` still lets them tighten the file, but
+    // undoing a narrowing (none to read or inherit, read to inherit) is for a project owner
+    // or manager.
+    let openness = |value: &str| match value {
+        "none" => 0,
+        "read" => 1,
+        _ => 2,
+    };
+    if openness(&access) > openness(&previous) {
+        let role = projects::require(&mut tx, project, auth.identity_id).await?;
+        if !matches!(role.as_str(), "owner" | "manager") {
+            return Err(ApiError::Forbidden);
+        }
+    }
     let changed = previous != access;
     if changed {
         sqlx::query("insert into file_agent_policy(document_id,access,updated_by,updated_at) values($1,$2,$3,clock_timestamp()) on conflict(document_id) do update set access=excluded.access,updated_by=excluded.updated_by,updated_at=excluded.updated_at")

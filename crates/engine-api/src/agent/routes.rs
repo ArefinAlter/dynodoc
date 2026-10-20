@@ -110,7 +110,8 @@ struct Call {
     rev: Option<u64>,
     /// The ledger outcome of a request the project policy stopped (`policy_denied`,
     /// `budget_exceeded`). Such a request is recorded although it resolved no file, so an
-    /// owner sees the attempts; the caller sees the uniform answer of [`policy::Refusal`].
+    /// owner sees the attempts, but at most one row a minute per grant and outcome
+    /// ([`ledger::record`]); the caller sees the uniform answer of [`policy::Refusal`].
     refused: Option<&'static str>,
 }
 
@@ -281,7 +282,9 @@ impl<'a> Ctx<'a> {
     /// Record the call and turn the result into the response.
     async fn finish(&self, call: Call, result: Result<Served, AgentFail>) -> Out {
         // A probe that never resolved a file (a random id) is rate-limited but not recorded,
-        // so the ledger cannot be filled by guessing.
+        // so the ledger cannot be filled by guessing. A request the project policy stopped
+        // is recorded (the owner should see it) but throttled to one row a minute per grant
+        // and outcome, so repeating it cannot fill the ledger either.
         if call.admitted && (result.is_ok() || call.document.is_some() || call.refused.is_some()) {
             let (outcome, bytes_out) = match &result {
                 Ok(served) => ("ok", served.bytes),

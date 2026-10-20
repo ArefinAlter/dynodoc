@@ -93,10 +93,11 @@ impl<S: AgentScope> FromRequestParts<AppState> for AgentAuth<S> {
         }
         // Read again on every request: nothing is cached but the token's lifetime.
         // The last column is the kill switch of the project (migration 0043): once pulled,
-        // only a session issued after it counts, and a session with no ledger row cannot
-        // show that it was.
+        // only a session issued strictly after it counts (a session stamped with the very
+        // same instant is treated as older), and a session with no ledger row cannot show
+        // that it was.
         let current: Option<(i64, bool, bool, bool)> = sqlx::query_as(&format!(
-            "select i.session_generation,exists(select 1 from device_key_class c where c.key_id=k.id and c.class='agent'),{},coalesce((select p.sessions_valid_after is null or exists(select 1 from device_session s where s.id=$5 and s.issued_at>=p.sessions_valid_after) from project_agent_policy p where p.project_id=$3),true) from identity i join device_signing_key k on k.identity_id=i.id where i.id=$1 and k.id=$2 and i.disabled_at is null and i.erased_at is null and not exists(select 1 from device_key_revocation r where r.key_id=k.id)",
+            "select i.session_generation,exists(select 1 from device_key_class c where c.key_id=k.id and c.class='agent'),{},coalesce((select p.sessions_valid_after is null or exists(select 1 from device_session s where s.id=$5 and s.issued_at>p.sessions_valid_after) from project_agent_policy p where p.project_id=$3),true) from identity i join device_signing_key k on k.identity_id=i.id where i.id=$1 and k.id=$2 and i.disabled_at is null and i.erased_at is null and not exists(select 1 from device_key_revocation r where r.key_id=k.id)",
             key_reaches("$3", "$4::text[]")
         ))
         .bind(claims.identity)

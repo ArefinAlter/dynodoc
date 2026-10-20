@@ -78,7 +78,9 @@ What the owner or manager decides, in plain words:
   wait, and the wait ends by itself.
 - **Single files.** A file can be hidden from assistants altogether (for example a
   contract) while the rest of the project stays open. A hidden file looks, to the assistant,
-  as if it did not exist. The owner of the file, or a manager, can do this.
+  as if it did not exist. The owner of the file, or a manager, can do this. Only a project
+  owner or manager can undo it again, so a file's creator who is only an editor, or no longer
+  a member, can hide a file but cannot reopen one a manager hid.
 
 *The screen for these settings is not built yet.* Today an owner (or whoever runs your
 installation) does it through the Dynodoc API, signed in as the owner. `<token>` is the
@@ -98,9 +100,10 @@ curl -X PUT -H "Authorization: Bearer <token>" -H "Content-Type: application/jso
   -d '{"access":"none"}' https://dynodoc.example.org/api/documents/<file>/agent-policy
 ```
 
-A save replaces the whole setting; a field you leave out goes back to its default, so send
-everything you want to keep. If two people save at once, the second is told the settings
-changed and must look again before saving. Every change is recorded with who made it and
+A save must say `enabled`; any other field you leave out keeps its current value, so
+switching agents on or off never changes who may read, which kinds of file or how much.
+If two people save at once, the second is told the settings changed and must look again before
+saving. Every change is recorded with who made it and
 what it changed. The full list of routes and values is in the API description
 (`openapi.yaml`, tag "agent policy"); the design is in
 [AI-AGENT-CONNECTORS.md](AI-AGENT-CONNECTORS.md) section 5.
@@ -108,7 +111,9 @@ what it changed. The full list of routes and values is in the API description
 Owners and managers can also see what assistants did: `GET .../projects/<project>/agent-usage`
 shows, for each day and each client name the assistant gave, how many calls it made, how many
 bytes it received and how many calls were refused. It holds no file text. The client name is
-what the assistant says about itself and proves nothing.
+what the assistant says about itself and proves nothing. A burst of refused calls from one key
+is recorded once a minute, not once per attempt, so the refusal count shows that an assistant
+tried, not how often.
 
 ## Step 1. Make a key for the agent
 

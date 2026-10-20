@@ -8,6 +8,8 @@
 use std::collections::BTreeSet;
 
 use axum::http::StatusCode;
+use chrono::{DateTime, Duration, Utc};
+use engine_api::auth::token::{self, DeviceClaims};
 use serde_json::{json, Value};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -311,19 +313,23 @@ async fn a_project_with_no_policy_serves_no_agent_request(pool: PgPool) {
     let discovery = raw(&w.app, "GET", "/.well-known/dynodoc-agent", None, &[], None).await;
     assert_eq!(discovery.code(), 200);
 
-    // Nothing was read, written or created; each admitted refusal is one internal ledger
-    // row that says why, and only the stranger's refusals (no membership) leave none.
+    // Nothing was read, written or created. The admitted refusals of the owner's grant are
+    // one internal ledger row that says why (a repeated refusal is written once a minute per
+    // grant and outcome, so probing cannot fill the ledger), and the stranger's refusals
+    // (no membership) leave none.
     assert_eq!(heads(&w).await, heads_before);
     let mut after = footprint(&w).await;
     let mut expected = before;
-    expected.last_mut().unwrap().1 += routes.len() as i64;
+    expected.last_mut().unwrap().1 += 1;
     after.sort();
     expected.sort();
     assert_eq!(after, expected);
     assert_eq!(audit_rows(&w, "%").await.len(), audit_before);
     assert_eq!(
         outcomes(&w).await,
-        vec![("policy_denied".to_owned(), routes.len() as i64, 0)]
+        vec![("policy_denied".to_owned(), 1, 0)],
+        "{} refusals, one row",
+        routes.len()
     );
     let rows: i64 = sqlx::query_scalar("select count(*) from project_agent_policy")
         .fetch_one(&w.runtime.owner)
@@ -683,16 +689,58 @@ async fn only_a_files_owner_or_a_manager_sets_its_policy(pool: PgPool) {
     }
     // The manager's change stands; an editor who did not create the file cannot undo it.
     let editor = logins.iter().find(|(r, _, _)| *r == "editor").unwrap();
+    let manager = logins.iter().find(|(r, _, _)| *r == "manager").unwrap();
     assert_eq!(file_policy(&w, &editor.2, doc, "inherit").await.code(), 403);
-    // The editor who created the file is its owner, whatever the project role says.
+    // The editor who created the file is its owner, whatever the project role says ...
     sqlx::query("update document set created_by=$2 where id=$1")
         .bind(doc)
         .bind(editor.1)
         .execute(&w.runtime.owner)
         .await
         .unwrap();
-    let own = file_policy(&w, &editor.2, doc, "inherit").await;
-    assert_eq!(own.code(), 200, "{}", own.text());
+    // ... but lower layers narrow, never widen: the creator cannot undo the manager's
+    // narrowing, step by step or all at once. Repeating it is harmless.
+    for loosen in ["inherit", "read"] {
+        let reply = file_policy(&w, &editor.2, doc, loosen).await;
+        assert_eq!(reply.code(), 403, "{loosen}: {}", reply.text());
+    }
+    let same = file_policy(&w, &editor.2, doc, "none").await;
+    assert_eq!(
+        (same.code(), same.json()["changed"].clone()),
+        (200, json!(false))
+    );
+    // A project manager may loosen it, and the creator may then tighten it again.
+    let lifted = file_policy(&w, &manager.2, doc, "inherit").await;
+    assert_eq!(
+        (lifted.code(), lifted.json()["changed"].clone()),
+        (200, json!(true))
+    );
+    let tightened = file_policy(&w, &editor.2, doc, "none").await;
+    assert_eq!(
+        (tightened.code(), tightened.json()["changed"].clone()),
+        (200, json!(true))
+    );
+    // The middle step is a narrowing too: from read the creator may close but not open.
+    assert_eq!(file_policy(&w, &manager.2, doc, "read").await.code(), 200);
+    assert_eq!(file_policy(&w, &editor.2, doc, "inherit").await.code(), 403);
+    assert_eq!(file_policy(&w, &editor.2, doc, "none").await.code(), 200);
+    // A creator demoted to viewer, or one who has left the project, is still the file's
+    // owner and may tighten, and still may not loosen.
+    sqlx::query("update space_member set role='viewer' where space_id=$1 and identity_id=$2")
+        .bind(w.project)
+        .bind(editor.1)
+        .execute(w.pool())
+        .await
+        .unwrap();
+    assert_eq!(file_policy(&w, &editor.2, doc, "read").await.code(), 403);
+    sqlx::query("delete from space_member where space_id=$1 and identity_id=$2")
+        .bind(w.project)
+        .bind(editor.1)
+        .execute(w.pool())
+        .await
+        .unwrap();
+    assert_eq!(file_policy(&w, &editor.2, doc, "inherit").await.code(), 403);
+    assert_eq!(file_policy(&w, &editor.2, doc, "none").await.code(), 200);
     assert_eq!(
         file_policy(&w, &w.owner_login, doc, "none").await.code(),
         200
@@ -953,22 +1001,34 @@ async fn revisions_conflicts_and_validation(pool: PgPool) {
     .await;
     assert_eq!(weak.code(), 200);
     assert_eq!(weak.json()["revision"], 2);
-    // It is a replacement: fields left out take their defaults.
+    // What a body leaves out keeps its saved value: it cannot silently widen the floor, the
+    // kinds or the budgets.
     let view = weak.json();
-    assert_eq!(
-        view["kinds"],
-        json!(["document", "spreadsheet", "presentation"])
-    );
+    assert_eq!(view["kinds"], json!(["document", "spreadsheet"]));
     assert_eq!(
         (
             view["calls_per_minute"].clone(),
             view["read_bytes_per_day"].clone()
         ),
-        (json!(60), json!(20_000_000))
+        (json!(30), json!(50000))
     );
-    let bare = put_policy(&w, &owner, project, "2", json!({})).await;
+    // `enabled` is the one field that must be said.
+    for body in [
+        json!({}),
+        json!({"min_role":"viewer"}),
+        json!({"calls_per_minute":600}),
+    ] {
+        let reply = put_policy(&w, &owner, project, "2", body.clone()).await;
+        assert_eq!(reply.code(), 422, "{body}");
+    }
+    assert_eq!(read_policy(&w, &owner, project).await.json()["revision"], 2);
+    let bare = put_policy(&w, &owner, project, "2", json!({"enabled":false})).await;
     assert_eq!(bare.json()["enabled"], false);
-    assert_eq!(bare.json()["min_role"], "viewer");
+    assert_eq!(
+        bare.json()["min_role"],
+        "manager",
+        "kept, not reset to viewer"
+    );
     assert_eq!(bare.header("etag").as_deref(), Some("\"3\""));
     assert_eq!(
         read_policy(&w, &owner, project)
@@ -990,6 +1050,8 @@ async fn revisions_conflicts_and_validation(pool: PgPool) {
         (json!({"read_bytes_per_day":9999}), "bytes low"),
         (json!({"read_bytes_per_day":1_000_000_001i64}), "bytes high"),
     ] {
+        let mut body = body;
+        body["enabled"] = json!(true);
         let reply = put_policy(&w, &owner, project, "3", body).await;
         assert_eq!(reply.code(), 400, "{why}: {}", reply.text());
     }
@@ -1013,6 +1075,8 @@ async fn revisions_conflicts_and_validation(pool: PgPool) {
     )
     .await;
     assert_eq!(edges.code(), 200, "{}", edges.text());
+    // The floor set to owner survives a body that only restates `enabled` and the budgets.
+    assert_eq!(edges.json()["min_role"], "owner");
     // The shape of every answer is the one OpenAPI describes.
     let spec = raw(&w.app, "GET", "/openapi.json", None, &[], None)
         .await
@@ -1680,8 +1744,8 @@ async fn budgets_are_enforced_per_grant_from_the_ledger(pool: PgPool) {
     );
     let kinds = outcomes(&w).await;
     assert!(
-        kinds.contains(&("budget_exceeded".to_owned(), 3, 0)),
-        "{kinds:?}"
+        kinds.contains(&("budget_exceeded".to_owned(), 1, 0)),
+        "four refusals in a minute are one row: {kinds:?}"
     );
     // The refused calls are recorded, and the grant recovers when its calls age out:
     // simulate by raising the limit (the ledger is append-only and cannot be edited).
@@ -1845,10 +1909,47 @@ async fn the_runtime_login_can_edit_but_never_delete_or_skip_a_revision(pool: Pg
     .execute(runtime)
     .await;
     assert!(ok.is_ok());
+    // The kill switch's cut-off never moves back and never returns to null (NULL < x is
+    // NULL, so a plain comparison would let `set ... = null` through).
+    assert_eq!(kill(&w, &w.owner_login, w.project).await.code(), 200);
+    for set in ["null", "sessions_valid_after - interval '1 second'"] {
+        let statement = format!("update project_agent_policy set sessions_valid_after={set},revision=revision+1 where project_id='{}'", w.project);
+        let error = sqlx::raw_sql(&statement)
+            .execute(runtime)
+            .await
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("cannot move back"),
+            "{statement}: {error}"
+        );
+    }
+    let forward = sqlx::raw_sql(&format!("update project_agent_policy set sessions_valid_after=sessions_valid_after + interval '1 second',revision=revision+1 where project_id='{}'", w.project))
+        .execute(runtime)
+        .await;
+    assert!(forward.is_ok(), "{forward:?}");
+    // From no cut-off to one is fine: that is the first pull.
+    sqlx::raw_sql(&format!(
+        "insert into project_agent_policy(project_id,updated_by) values('{other}','{}')",
+        w.owner
+    ))
+    .execute(runtime)
+    .await
+    .unwrap();
+    let first = sqlx::raw_sql(&format!("update project_agent_policy set sessions_valid_after=now(),revision=revision+1 where project_id='{other}'"))
+        .execute(runtime)
+        .await;
+    assert!(first.is_ok(), "{first:?}");
+    sqlx::raw_sql(&format!("update project_agent_policy set enabled=false,revision=revision+1 where project_id='{other}'"))
+        .execute(runtime)
+        .await
+        .unwrap();
     // Values the application would never write are refused by the table too.
     for (columns, values) in [
         ("kinds", "'{}'"),
         ("kinds", "'{pdf}'"),
+        ("kinds", "'{document,document}'"),
+        ("kinds", "'{document,spreadsheet,document}'"),
+        ("kinds", "'{presentation,presentation,presentation}'"),
         ("min_role", "'god'"),
         ("calls_per_minute", "0"),
         ("calls_per_minute", "601"),
@@ -1877,13 +1978,6 @@ async fn the_runtime_login_can_edit_but_never_delete_or_skip_a_revision(pool: Pg
             || error.as_database_error().and_then(|e| e.code()).as_deref() == Some("23505")
     );
     // A bare insert is the disabled default: a row alone enables nothing.
-    sqlx::raw_sql(&format!(
-        "insert into project_agent_policy(project_id,updated_by) values('{other}','{}')",
-        w.owner
-    ))
-    .execute(runtime)
-    .await
-    .unwrap();
     let enabled: bool =
         sqlx::query_scalar("select enabled from project_agent_policy where project_id=$1")
             .bind(other)
@@ -1982,6 +2076,323 @@ async fn the_management_routes_exist_whether_or_not_the_gateway_is_on(pool: PgPo
         let op = &spec["paths"][path][method];
         assert_eq!(op["security"], json!([{"paseto":[]}]), "{path}");
         assert!(op["responses"]["401"].is_object(), "{path}");
+    }
+    w.close().await;
+}
+
+// ------------------------------------------------------- review follow-ups
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_flood_of_refusals_leaves_one_ledger_row_a_minute_per_grant_and_outcome(pool: PgPool) {
+    let w = World::bare(pool, true).await;
+    let (_, token) = w.owner_reader().await;
+    let (_, _, _, second_token) = reader_of(&w, "second@example.test", "editor", 90).await;
+    let (_, _, third, third_token) = reader_of(&w, "third@example.test", "editor", 91).await;
+    // A refusal from more than a minute ago does not stand in for a new one.
+    ledger_row(
+        &w,
+        third.key_id,
+        w.owner,
+        w.project,
+        "2 minutes",
+        0,
+        "policy_denied",
+        None,
+    )
+    .await;
+
+    // Disabled: forty probes with invented file ids, as fast as admission lets them in.
+    for _ in 0..40 {
+        let uri = w.url(&format!("/files/{}/outline", Uuid::new_v4()));
+        assert_eq!(get(&w.app, &uri, &token).await.code(), 403);
+    }
+    assert_eq!(
+        outcomes(&w).await,
+        vec![("policy_denied".to_owned(), 2, 0)],
+        "the old row, and one for forty refusals"
+    );
+    // Another grant has its own row; the one with only an old row gets a new one.
+    for t in [&second_token, &third_token] {
+        for _ in 0..3 {
+            assert_eq!(get(&w.app, &w.url("/files"), t).await.code(), 403);
+        }
+    }
+    assert_eq!(outcomes(&w).await, vec![("policy_denied".to_owned(), 4, 0)]);
+    // The owner still sees that agents tried.
+    let seen = usage(&w, &w.owner_login, w.project, "").await.json();
+    let denials: i64 = seen["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["denials"].as_i64().unwrap())
+        .sum();
+    assert_eq!(denials, 4);
+
+    // A budget refusal is throttled the same way, and admitted calls are never throttled.
+    set_policy(&w, w.project, json!({"enabled":true,"calls_per_minute":5})).await;
+    for _ in 0..5 {
+        assert_eq!(get(&w.app, &w.url("/files"), &token).await.code(), 200);
+    }
+    for _ in 0..25 {
+        assert_eq!(get(&w.app, &w.url("/files"), &token).await.code(), 429);
+    }
+    let kinds = outcomes(&w).await;
+    assert_eq!(
+        kinds,
+        vec![
+            ("budget_exceeded".to_owned(), 1, 0),
+            ("ok".to_owned(), 5, kinds[1].2),
+            ("policy_denied".to_owned(), 4, 0),
+        ]
+    );
+    assert!(kinds[1].2 > 0, "ok rows carry their bytes");
+    w.close().await;
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_minute_budget_waits_for_the_call_that_must_age_out(pool: PgPool) {
+    let w = World::new(pool, true).await;
+    let (long, long_token) = w.owner_reader().await;
+    let (_, _, exact, exact_token) = reader_of(&w, "exact@example.test", "editor", 92).await;
+    set_policy(&w, w.project, json!({"enabled":true,"calls_per_minute":3})).await;
+    // Five calls in the window (an overrun, or a limit lowered since): ages 50 to 10
+    // seconds. Room means at most two left, so the third newest (30 seconds old) must age
+    // out: about 30 seconds. The oldest alone (10 seconds) would be too early.
+    for ago in [
+        "50 seconds",
+        "40 seconds",
+        "30 seconds",
+        "20 seconds",
+        "10 seconds",
+    ] {
+        ledger_row(&w, long.key_id, w.owner, w.project, ago, 0, "ok", None).await;
+    }
+    let refused = get(&w.app, &w.url("/files"), &long_token).await;
+    assert_eq!(refused.code(), 429, "{}", refused.text());
+    let wait: u64 = refused.header("retry-after").unwrap().parse().unwrap();
+    assert!((28..=31).contains(&wait), "{wait}");
+    // Exactly at the limit it is the oldest.
+    for ago in ["50 seconds", "30 seconds", "10 seconds"] {
+        ledger_row(&w, exact.key_id, w.owner, w.project, ago, 0, "ok", None).await;
+    }
+    let refused = get(&w.app, &w.url("/files"), &exact_token).await;
+    assert_eq!(refused.code(), 429);
+    let wait: u64 = refused.header("retry-after").unwrap().parse().unwrap();
+    assert!((8..=11).contains(&wait), "{wait}");
+    w.close().await;
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_budget_queries_are_index_ranges_of_the_covering_index(pool: PgPool) {
+    use engine_api::agent::policy::{BYTES_TODAY_SQL, CALLS_LAST_MINUTE_SQL};
+    let w = World::new(pool, true).await;
+    let (agent, _) = w.owner_reader().await;
+    sqlx::query("insert into agent_call(at,principal_id,key_id,project_id,tool,request_digest,bytes_out,tok_est,outcome) select now()-(g||' seconds')::interval,$1,$2,$3,'files',decode(repeat('00',32),'hex'),10,3,'ok' from generate_series(1,400) g")
+        .bind(w.owner)
+        .bind(agent.key_id)
+        .bind(w.project)
+        .execute(&w.runtime.owner)
+        .await
+        .unwrap();
+    sqlx::raw_sql("vacuum analyze agent_call")
+        .execute(&w.runtime.owner)
+        .await
+        .unwrap();
+    // The planner may rightly prefer a scan of a table this small; the question is whether
+    // the index can answer, so ask it not to scan the table.
+    let mut tx = w.runtime.owner.begin().await.unwrap();
+    sqlx::raw_sql("set local enable_seqscan=off; set local enable_bitmapscan=off")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    for (name, sql) in [("calls", CALLS_LAST_MINUTE_SQL), ("bytes", BYTES_TODAY_SQL)] {
+        let sql = sql
+            .replace("$1", &format!("'{}'::uuid", agent.key_id))
+            .replace("$2", &format!("'{}'::uuid", w.project));
+        let plan: Vec<String> = sqlx::query_scalar(&format!("explain {sql}"))
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
+        let plan = plan.join("\n");
+        assert!(!plan.contains("Seq Scan"), "{name}: {plan}");
+        // The time bound is an index condition, not a filter over the whole day.
+        assert!(
+            plan.contains("Index Cond") && plan.contains("(at >"),
+            "{name}: {plan}"
+        );
+        if name == "bytes" {
+            // Only the covering index can answer without the table.
+            assert!(
+                plan.contains("Index Only Scan using agent_call_key_project_at"),
+                "{name}: {plan}"
+            );
+        } else {
+            // The planner may use this index or the older (project_id, at) one; either way
+            // the scan covers the last minute, not the day.
+            assert!(
+                plan.contains("Index Scan using agent_call_"),
+                "{name}: {plan}"
+            );
+        }
+    }
+    tx.rollback().await.unwrap();
+    // And they count what they say: 59 calls in the last minute (ages 1 to 59 seconds, 60
+    // is past it) and every byte of today.
+    let (calls, bytes): (i64, i64) = sqlx::query_as(&format!(
+        "select ({CALLS_LAST_MINUTE_SQL}),({BYTES_TODAY_SQL})"
+    ))
+    .bind(agent.key_id)
+    .bind(w.project)
+    .fetch_one(&w.runtime.owner)
+    .await
+    .unwrap();
+    assert!((58..=60).contains(&calls), "{calls}");
+    assert!(bytes > 0 && bytes <= 4000, "{bytes}");
+    w.close().await;
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn management_has_its_own_admission_bucket_charged_after_authorisation(pool: PgPool) {
+    let w = World::new(pool, true).await;
+    let (_, token) = w.owner_reader().await;
+    // The agent, running as the sole owner, spends the owner's identity bucket.
+    let mut limited = false;
+    for _ in 0..130 {
+        if get(&w.app, &w.url("/files"), &token).await.code() == 429 {
+            limited = true;
+            break;
+        }
+    }
+    assert!(limited, "the identity bucket is spent by agent reads");
+    // The owner can still change the policy and pull the kill switch.
+    set_policy(
+        &w,
+        w.project,
+        json!({"enabled":true,"calls_per_minute":100}),
+    )
+    .await;
+    assert_eq!(usage(&w, &w.owner_login, w.project, "").await.code(), 200);
+    assert_eq!(kill(&w, &w.owner_login, w.project).await.code(), 200);
+
+    // Authorisation comes first: a member who may not manage spends nothing, however often
+    // they ask (and cannot reach the owner's bucket in any case).
+    let (viewer, viewer_login) = person(w.pool(), "viewer@example.test").await;
+    w.member(w.project, viewer, "viewer").await;
+    for _ in 0..130 {
+        assert_eq!(usage(&w, &viewer_login, w.project, "").await.code(), 403);
+    }
+    assert_eq!(usage(&w, &w.owner_login, w.project, "").await.code(), 200);
+    // The manager's own bucket does bound the manager (120 a minute here).
+    let mut bounded = false;
+    for _ in 0..130 {
+        if usage(&w, &w.owner_login, w.project, "").await.code() == 429 {
+            bounded = true;
+            break;
+        }
+    }
+    assert!(bounded, "management is limited, by its own bucket");
+    // Another manager has a bucket of their own.
+    let (second, second_login) = person(w.pool(), "second@example.test").await;
+    w.member(w.project, second, "manager").await;
+    assert_eq!(usage(&w, &second_login, w.project, "").await.code(), 200);
+    w.close().await;
+}
+
+/// A project device session token for `agent` whose ledger row says it was issued at
+/// `issued_at`, or that has no ledger row (`None`).
+async fn forged_session(
+    w: &World,
+    agent: &Agent,
+    generation: i64,
+    issued_at: Option<DateTime<Utc>>,
+) -> String {
+    let session = Uuid::new_v4();
+    if let Some(issued_at) = issued_at {
+        sqlx::query("insert into device_session(id,key_id,identity_id,project_id,scopes,issued_at,expires_at) values($1,$2,$3,$4,array['content:read'],$5,$5+interval '30 minutes')")
+            .bind(session)
+            .bind(agent.key_id)
+            .bind(w.owner)
+            .bind(w.project)
+            .bind(issued_at)
+            .execute(&w.runtime.owner)
+            .await
+            .unwrap();
+    }
+    token::mint_project_device(
+        &KEY,
+        &DeviceClaims {
+            identity: w.owner,
+            key: agent.key_id,
+            project: w.project,
+            session,
+            scopes: vec!["content:read".into()],
+            generation,
+        },
+        3600,
+    )
+    .unwrap()
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_session_stamped_at_the_cut_off_instant_is_refused(pool: PgPool) {
+    let w = World::new(pool, true).await;
+    let (agent, _) = w.owner_reader().await;
+    assert_eq!(kill(&w, &w.owner_login, w.project).await.code(), 200);
+    set_policy(&w, w.project, json!({"enabled":true})).await;
+    assert_eq!(
+        w.grant(&agent, w.project, &["content:read"]).await.0,
+        StatusCode::OK
+    );
+    let cutoff: DateTime<Utc> = sqlx::query_scalar(
+        "select sessions_valid_after from project_agent_policy where project_id=$1",
+    )
+    .bind(w.project)
+    .fetch_one(&w.runtime.owner)
+    .await
+    .unwrap();
+    let generation: i64 = sqlx::query_scalar("select session_generation from identity where id=$1")
+        .bind(w.owner)
+        .fetch_one(&w.runtime.owner)
+        .await
+        .unwrap();
+    // Only a session whose ledger row is strictly later than the cut-off counts.
+    for (issued_at, expected, why) in [
+        (Some(cutoff - Duration::microseconds(1)), 403, "before"),
+        (Some(cutoff), 403, "the same instant counts as older"),
+        (None, 403, "no ledger row, no proof of age"),
+        (Some(cutoff + Duration::microseconds(1)), 200, "after"),
+    ] {
+        let token = forged_session(&w, &agent, generation, issued_at).await;
+        let reply = get(&w.app, &w.url("/files"), &token).await;
+        assert_eq!(reply.code(), expected, "{why}: {}", reply.text());
+    }
+    w.close().await;
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn usage_dates_outside_2000_to_2200_are_a_400_not_a_panic(pool: PgPool) {
+    let w = World::new(pool, true).await;
+    for query in [
+        "?to=-262143-01-01",
+        "?from=-262143-01-01&to=-262143-01-02",
+        "?to=262142-12-31",
+        "?from=1999-12-31&to=2000-01-02",
+        "?from=2200-12-31&to=2201-01-01",
+        "?from=2201-01-01&to=2201-01-01",
+        // from defaults to six days before to, which here falls before 2000
+        "?to=2000-01-03",
+    ] {
+        let reply = usage(&w, &w.owner_login, w.project, query).await;
+        assert_eq!(reply.code(), 400, "{query}: {}", reply.text());
+    }
+    for query in [
+        "?from=2000-01-01&to=2000-01-01",
+        "?to=2200-12-31",
+        "?from=2200-12-31&to=2200-12-31",
+        "?to=2000-01-07",
+    ] {
+        let reply = usage(&w, &w.owner_login, w.project, query).await;
+        assert_eq!(reply.code(), 200, "{query}: {}", reply.text());
     }
     w.close().await;
 }
