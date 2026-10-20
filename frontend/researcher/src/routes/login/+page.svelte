@@ -174,6 +174,11 @@
     text-decoration: none;
     font-size: 13px;
   }
+  @media (pointer: coarse) {
+    .back {
+      min-height: 44px;
+    }
+  }
   .card {
     margin: 40px auto 24px;
     max-width: 460px;

@@ -1,11 +1,13 @@
 <script lang="ts">
   import '../app.css';
+  import '$lib/styles/touch.css';
   import { page } from '$app/stores';
   import { env } from '$env/dynamic/public';
   import { observeVitals } from '$lib/telemetry';
   import { onMount } from 'svelte';
   import { loadSession } from '$lib/stores/session.svelte';
   import { pwa } from '$lib/pwa/client.svelte';
+  import { trackKeyboard } from '$lib/viewport';
   import { theme } from '$lib/theme.svelte';
   import PwaUpdate from '$lib/components/PwaUpdate.svelte';
   onMount(() => {
@@ -13,6 +15,7 @@
     void loadSession();
     void observeVitals().catch(() => {});
     pwa.start();
+    return trackKeyboard();
   });
   import { beforeNavigate, goto } from '$app/navigation';
   import { isOfficePane } from '$lib/security-policy';

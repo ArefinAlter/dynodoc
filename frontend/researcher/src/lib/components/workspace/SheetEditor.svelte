@@ -104,16 +104,35 @@
     address = $state(''),
     replacing = $state('');
   const calculator = new WorkbookCalculator();
+  // A phone-sized window can read, select cells and use the formula bar, but typing into
+  // cells one by one is cramped there. Say so once per visit rather than leave it to guesswork.
+  const sizeNoticeKey = 'dynodoc.sheet-size-notice';
+  let smallScreen = $state(false),
+    sizeNoticeSeen = $state(false);
+  function dismissSizeNotice() {
+    sizeNoticeSeen = true;
+    try {
+      sessionStorage.setItem(sizeNoticeKey, '1');
+    } catch {
+      /* The notice only returns on reload. */
+    }
+  }
   onMount(() => {
     try {
       activeSheet = localStorage.getItem(preferenceKey) || '';
+      sizeNoticeSeen = sessionStorage.getItem(sizeNoticeKey) === '1';
     } catch {
       /* Storage can be disabled. */
     }
     preferencesReady = true;
+    const narrow = window.matchMedia('(max-width: 700px)');
+    const narrowChanged = () => (smallScreen = narrow.matches);
+    narrowChanged();
+    narrow.addEventListener('change', narrowChanged);
     window.addEventListener('dynodoc-print', printSheet);
     return () => {
       calculator.destroy();
+      narrow.removeEventListener('change', narrowChanged);
       window.removeEventListener('dynodoc-print', printSheet);
     };
   });
@@ -913,7 +932,8 @@
       );
       if (action === 'cut' && editable) clear();
     } catch {
-      error = 'Your browser blocked clipboard access. Use Ctrl+C, Ctrl+X or Ctrl+V in the sheet.';
+      error =
+        'Your browser blocked clipboard access. Use Ctrl+C, Ctrl+X or Ctrl+V on a keyboard, or press and hold in the sheet on a touch screen.';
     }
   }
   function openCellMenu(e: MouseEvent, r: number, c: number) {
@@ -1711,6 +1731,10 @@
         >Cancel</button
       >
     </div>{/if}
+  {#if smallScreen && !sizeNoticeSeen}<div class="notice size-notice" role="note">
+      Spreadsheets are easier to edit on a larger screen. Here you can read, select cells and change
+      a value in the formula bar.<button onclick={dismissSizeNotice}>Got it</button>
+    </div>{/if}
   {#if protectedSheet}<div class="protection-notice">
       <LockKeyhole size={13} />Protected sheet
       <button disabled={!canEdit} onclick={() => ribbonAction('protect')}>Unprotect</button>
@@ -2153,6 +2177,7 @@
     flex: 1;
     overflow: auto;
     max-height: calc(100vh - 215px);
+    max-height: calc(100dvh - 215px);
     min-height: 300px;
   }
   .grid table {
@@ -2294,6 +2319,10 @@
     background: var(--color-warn-bg);
     color: var(--color-warn-ink);
     font-size: 13px;
+  }
+  .size-notice {
+    background: var(--color-accent-bg);
+    color: var(--color-ink);
   }
   .notice button {
     float: right;

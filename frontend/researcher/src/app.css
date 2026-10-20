@@ -222,6 +222,8 @@ body {
   font-family: var(--font-body);
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
+  /* viewport-fit=cover lets the page run under a phone's notch in landscape. */
+  padding-inline: env(safe-area-inset-left, 0px) env(safe-area-inset-right, 0px);
 }
 a {
   color: var(--color-accent);

@@ -17,7 +17,7 @@
     position: fixed;
     left: max(12px, env(safe-area-inset-left));
     right: max(12px, env(safe-area-inset-right));
-    bottom: max(12px, env(safe-area-inset-bottom));
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px) + var(--keyboard-inset, 0px));
     z-index: 90;
     display: flex;
     flex-wrap: wrap;
