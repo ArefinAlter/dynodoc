@@ -1,5 +1,44 @@
 # Engine evolution handoff
 
+## Source: horizon record specification and read-only planner, pruning P0 and P1 (20 October 2026)
+
+Phases P0 and P1 of [DESIGN-COMMIT-PRUNING.md](DESIGN-COMMIT-PRUNING.md) are built; **nothing deletes,
+signs or changes a stored format**. [HORIZON-RECORD-V1.md](HORIZON-RECORD-V1.md) specifies the record
+(canonical JSON, address, signature domain, Merkle roots, invariants H1 to H10), the retention
+policy schema `dynodoc.retention-policy.v1` and the planner, with every decision taken. In
+`engine-core`: `repository/horizon.rs` (record types, hashing, the H-checks), `horizon/policy.rs`
+(strict JSON loader that lists every problem with a JSON pointer and a code) and `horizon/plan.rs`
+(the planner: heads, holds, pins, all merge bases including criss-cross, a recent window by count
+and by time, one-level v2 and v3 reference closure, both tiers, object accounting).
+`LocalRepository::horizon_plan` runs it on a read-only connection in one snapshot, and
+`engine-cli repository DB PROJECT horizon-plan --policy FILE [--list N] [--as-of-ms MS] [--out FILE]
+[--format json|text]` prints the canonical plan (never overwrites `--out`). The plan names the
+reference instant explicitly instead of reading a clock.
+
+Evidence: 21 unit tests (each H-rule has a negative test that fails for that rule only), 7 SQLite
+tests (merge bases equal the repository's own for every commit pair; database and write-ahead log
+byte-identical before and after planning), 2 CLI tests, 5 property tests at fixed seeds over linear,
+branchy, criss-cross and v2 and v3-heavy histories (heads, window and pin retention, closure,
+merge-base equivalence, hash stability across insertion orders, idempotent re-planning); breaking
+the planner nine different ways was caught every time. Vectors (36 Merkle roots, records,
+envelopes, 4 valid and 31 invalid policies, 10 planner scenarios) come from an independent Python
+generator with its own planner and are reproduced byte for byte. The pure planner took 12.7 s for
+100,000 in-memory commits in a debug build; the end-to-end 60 s target is not measured.
+
+Not done: everything from P2 (local schema 4, applier, skeleton-aware import and merge bases,
+verify, archive, hold storage, signing flows, sync, the shared service). Policy files are JSON only
+(no YAML parser). The plan hash was reproduced on Windows only; the Linux CI run of the vector test is its first cross-platform check.
+
+Raised for the owner: merge bases computed on retained bodies alone differ from the full graph even
+when the base is retained and agree only once skeleton rows are kept (as the design says for
+topology drop); whether skeleton and horizon rows count against the local SQLite quotas; where local
+holds are stored; whether the v2 and v3 closure should be recursive (it is one level today); the
+local role vocabulary (owner and device locally, owner and authority on the shared service).
+
+`engine-cli` now runs its command line on a 32 MiB thread: in a Windows debug build its argument
+parser needed almost exactly the 1 MiB main-thread stack, and each new subcommand overflowed it
+(the merge-policy work added a dev-profile `opt-level = 1` for the same reason; both are kept).
+
 ## Source: merge-policy framework, phases N0 and N1 (18 October 2026)
 
 [DESIGN-NODE-CONFLICT-RESOLUTION.md](DESIGN-NODE-CONFLICT-RESOLUTION.md) phases N0 and N1 are built as a
