@@ -141,7 +141,7 @@ pub async fn ensure(
             reason: "Only an agent key can be granted a write scope".into(),
         });
     };
-    if let Some(found) = resolve(&mut **tx, principal, key).await? {
+    if let Some(found) = resolve(tx, principal, key).await? {
         return Ok(found);
     }
     let (display, email): (Option<String>, String) =

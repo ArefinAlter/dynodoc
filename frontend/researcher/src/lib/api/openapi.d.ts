@@ -1606,6 +1606,27 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/projects/{id}/agent/files/{file}/propose': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Stage edits as a reviewable proposal (spec 7.7). The ops are compiled by the pure compiler
+     *     of `engine-agent` against the state they apply to and stored, exactly as compiled, as
+     *     `draft_edit` rows of a draft the agent identity owns. Nothing reaches the team version.
+     */
+    post: operations['agent_propose'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/projects/{id}/agent/files/{file}/sheets/{sheet}/profile': {
     parameters: {
       query?: never;
@@ -1632,6 +1653,66 @@ export interface paths {
     get: operations['agent_slides'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/projects/{id}/agent/proposals/{proposal}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * The state of one proposal of the agent (spec 7.9): where it is in review, what the
+     *     reviewers said, how far behind the team version it is and where a merge would conflict.
+     */
+    get: operations['agent_proposal_status'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/projects/{id}/agent/proposals/{proposal}/submit': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Send the agent's proposal to the file's reviewers, when the project lets an agent
+     *     (spec 7.8). You cannot approve, decline or merge.
+     */
+    post: operations['agent_submit'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/projects/{id}/agent/proposals/{proposal}/withdraw': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Close the agent's own proposal (spec 7.8): a draft or an open change request. A person can
+     *     still reopen it. It needs no `write_mode`, only the grant and a role that may draft.
+     */
+    post: operations['agent_withdraw'];
     delete?: never;
     options?: never;
     head?: never;
@@ -2266,9 +2347,15 @@ export interface components {
     AgentAccess: {
       /**
        * @description The grant's budgets in this project: `calls_per_minute` and `read_bytes_per_day`,
-       *     each `{limit, used}`.
+       *     each `{limit, used}`; and, when writing is on, `proposals_per_day` and
+       *     `open_proposals` (`{limit, used}`, counted for the agent identity) and
+       *     `ops_per_proposal` (`{limit}`).
        */
       budget: Record<string, never>;
+      /**
+       * @description What this credential can do now: `propose` and `submit` are true only when its grant
+       *     has the scope and the project's policy lets the agent do it.
+       */
       capabilities: Record<string, never>;
       project: string;
       protocol: string;
@@ -2276,9 +2363,11 @@ export interface components {
       role: string;
       /** @description Scopes of the grant that is active now. */
       scopes: string[];
+      /** @description Whether a person must submit an agent's draft even in `change_request` mode. */
+      submit_requires_person: boolean;
       tool: string;
       what: string;
-      /** @description `none`: no write exists in this version. */
+      /** @description The project's `write_mode`: `none` (agents only read), `draft` or `change_request`. */
       write_mode: string;
     };
     AgentBlockRow: {
@@ -2314,6 +2403,14 @@ export interface components {
       top: Record<string, never>[];
       /** @description `num`, `text`, `date`, `bool`, `formula` or `mixed`. */
       type: string;
+    };
+    AgentConflict: {
+      draft: string;
+      /** @description The engine field both sides changed. */
+      field: string;
+      ref?: string | null;
+      /** @description Six-hex hashes of the team's and the draft's value; never the values. */
+      team: string;
     };
     /** @description `diff`. */
     AgentDiff: components['schemas']['AgentEnvelope'] & {
@@ -2360,7 +2457,13 @@ export interface components {
       profiles: string[];
       protected_resource_metadata?: string | null;
       protocol: string;
+      /** @description The read scope (`content:read`), which every tool needs. */
       scopes: string[];
+      /**
+       * @description The write scopes (`content:propose`, `content:submit`), independent of each other and
+       *     of the read scope. A project must also set `write_mode`.
+       */
+      write_scopes: string[];
     };
     /** @description The keys every JSON mirror starts with. */
     AgentEnvelope: {
@@ -2418,6 +2521,11 @@ export interface components {
       offset: number;
       snippet: string;
     };
+    /** @description Optional note on `submit` and `withdraw`. */
+    AgentNoteBody: {
+      /** @description At most 1000 characters; no control or hidden characters. */
+      note?: string | null;
+    };
     /** @description `outline` and the sheet profile. */
     AgentOutline: components['schemas']['AgentEnvelope'] & {
       blocks?: components['schemas']['AgentBlockRow'][] | null;
@@ -2435,6 +2543,24 @@ export interface components {
       unchanged: boolean;
       words?: number | null;
     };
+    AgentPreviewChange: {
+      /** @description `changed`, `created`, `deleted` or `moved`. */
+      kind: string;
+      new?: string | null;
+      old?: string | null;
+      ref: string;
+    };
+    AgentPreviewOp: {
+      changes: components['schemas']['AgentPreviewChange'][];
+      engine_ops: number;
+      /** @description The agent's own label for the op. */
+      id?: string | null;
+      index: number;
+      more_changes: number;
+      op: string;
+      /** @description The agent's reason (untrusted text). */
+      why?: string | null;
+    };
     AgentProfile: {
       cols: number;
       columns: components['schemas']['AgentColumnProfile'][];
@@ -2444,6 +2570,128 @@ export interface components {
       merges: number;
       name: string;
       rows: number;
+    };
+    /** @description `status` of a proposal. */
+    AgentProposalStatus: {
+      /** Format: int64 */
+      approvals: number;
+      /** Format: int64 */
+      base: number;
+      /** Format: int64 */
+      behind: number;
+      conflict_list: components['schemas']['AgentConflict'][];
+      /** @description Same-field overlaps a merge would meet (the first 20 are in `conflict_list`). */
+      conflicts: number;
+      /**
+       * Format: int64
+       * @description Engine operations in the proposal.
+       */
+      edits: number;
+      file: string;
+      /** Format: int64 */
+      head: number;
+      merged_at?: string | null;
+      proposal: string;
+      protocol: string;
+      /** Format: int64 */
+      required: number;
+      reviews: components['schemas']['AgentReviewNote'][];
+      /** Format: int64 */
+      revision: number;
+      satisfied: boolean;
+      /** @description `draft`, `open`, `changes_requested`, `declined`, `merged` or `withdrawn`. */
+      state: string;
+      tool: string;
+      trust: string;
+      what: string;
+    };
+    /**
+     * @description `propose`: the preview of the call (or of a dry run), or the stored receipt of a call
+     *     already made (`replayed`; then `ops`, `entries`, `entries_total`, `would_apply` and
+     *     `truncated` are absent).
+     */
+    AgentPropose: components['schemas']['AgentEnvelope'] & {
+      /**
+       * Format: int64
+       * @description Ops applied (0 in a dry run).
+       */
+      applied: number;
+      /**
+       * Format: int64
+       * @description The proposal's base revision, the team's head, and how far behind it is.
+       */
+      base: number;
+      /** Format: int64 */
+      behind: number;
+      dry_run?: boolean | null;
+      entries?: components['schemas']['AgentDiffEntry'][] | null;
+      entries_total?: number | null;
+      /**
+       * Format: int64
+       * @description Engine operations the ops became.
+       */
+      expanded: number;
+      /** Format: int64 */
+      head: number;
+      /** @description Whether this call opened the proposal (a replay only). */
+      opened?: boolean | null;
+      ops?: components['schemas']['AgentPreviewOp'][] | null;
+      /** @description The proposal's id (absent in a dry run of a new proposal). */
+      proposal?: string | null;
+      replayed: boolean;
+      request_id?: string | null;
+      /**
+       * Format: int64
+       * @description The draft's revision after the call.
+       */
+      revision?: number | null;
+      /** @description The ops whose `base` was out of date (at most five in a replay). */
+      stale: components['schemas']['AgentStale'][];
+      /** Format: int64 */
+      stale_total: number;
+      /** @description `draft`, `open`, `merged`, `declined` or `withdrawn` (absent in a dry run). */
+      state?: string | null;
+      truncated?: boolean | null;
+      /** @description `stale`, `behind`, `truncated`. */
+      warn: string[];
+      /** Format: int64 */
+      would_apply?: number | null;
+    };
+    /**
+     * @description Body of `propose` (docs/AI-AGENT-PROTOCOL-SPEC.md 7.7). The file is the one in the path.
+     *     Unknown fields are refused. `ops` items are flat objects validated strictly against
+     *     the operation grammar (spec 8): `op` is one of `set_text`, `replace`, `replace_all`,
+     *     `insert`, `delete`, `move`, `set_type`, `set_cells`, `clear`, `set_shape`, `set_notes`;
+     *     the others (`fill`, `add_slide`, `delete_slide`, `macro`) are `unsupported_op`.
+     */
+    AgentProposeBody: {
+      /** @description Compile and preview only: nothing is stored, no receipt is written. */
+      dry_run?: boolean | null;
+      /** @description The file again (optional); if given it must be the file of the path. */
+      file?: string | null;
+      /** @description A short title for reviewers (at most 200 characters; no control or hidden characters). */
+      name?: string | null;
+      /** @description One to 200 ops, each `{op, ref|sheet|slide..., text|find|with|values..., base, why, id}`. */
+      ops: Record<string, never>[];
+      /** @description An existing proposal of this agent to extend; omit to start one. */
+      proposal?: string | null;
+      /**
+       * @description A new UUID per call; reuse it only to retry. With the same canonical body it returns
+       *     the stored receipt; with another body it is `idempotency_conflict`.
+       */
+      request_id: string;
+      /** @description `summary` (default) or `diff`. */
+      return?: string | null;
+      /**
+       * Format: int64
+       * @description The revision the refs and hashes in `ops` came from (0 up to the head).
+       */
+      rev: number;
+      /**
+       * @description Refuse an op whose `base` hash differs from the team's current hash (`stale_base`)
+       *     instead of recording a warning.
+       */
+      strict?: boolean | null;
     };
     AgentRangeRead: {
       /** @description `none`: formulas are not evaluated. */
@@ -2475,6 +2723,18 @@ export interface components {
       redacted: boolean;
       ref: string;
       t: string;
+    };
+    AgentReviewNote: {
+      /** @description The reviewer's display name (untrusted text, at most 80 characters). */
+      by: string;
+      /** @description The node the comment is on, when it is on one. */
+      node?: string | null;
+      /** @description The reviewer's note (untrusted text, at most 400 characters). */
+      note: string;
+      /** @description The proposal changed after this review. */
+      stale: boolean;
+      /** @description `approved`, `changes_requested` or `commented`. */
+      verdict: string;
     };
     AgentRowRead: {
       cells: string[];
@@ -2531,6 +2791,30 @@ export interface components {
       shapes: components['schemas']['AgentShapeRow'][];
       title: string;
     };
+    AgentStale: {
+      /** @description The ref or range the op named. */
+      at: string;
+      /** @description The team's hash now (absent in a replay, or when the target is gone). */
+      current?: string | null;
+      /** @description The index of the op (absent in a replay). */
+      op?: number | null;
+    };
+    /** @description `submit` and `withdraw`. */
+    AgentSubmit: {
+      /** @description `submit` or `withdraw`. */
+      action: string;
+      /** Format: int64 */
+      behind: number;
+      /** @description Whether this call changed anything. */
+      changed: boolean;
+      file: string;
+      proposal: string;
+      protocol: string;
+      /** @description `open`, `awaiting_person` (a person must submit it) or `withdrawn`. */
+      state: string;
+      tool: string;
+      trust: string;
+    };
     /** @description Body of `POST .../blocks:read`: the selection and the hashes the caller already holds. */
     BlocksReadBody: {
       cursor?: string | null;
@@ -2553,10 +2837,10 @@ export interface components {
       public_key: string;
       /**
        * @description One or more of `history:read`, `history:review`, `history:write`,
-       *     `project:read` (a person's key) or `content:read` (a key enrolled for an AI
-       *     agent; the two sets never mix). A key that is not in `all` mode also needs an
-       *     active grant for this project that lists every scope, and an agent scope always
-       *     does.
+       *     `project:read` (a person's key) or `content:read`, `content:propose`,
+       *     `content:submit` (a key enrolled for an AI agent; the two sets never mix). A key
+       *     that is not in `all` mode also needs an active grant for this project that lists
+       *     every scope, and an agent scope always does.
        */
       scopes: string[];
     };
@@ -2664,7 +2948,8 @@ export interface components {
     GrantRequest: {
       /**
        * @description A person's key: one or more of `project:read`, `history:read`, `history:write`,
-       *     `history:review`. An agent key: `content:read` only. The two sets never mix.
+       *     `history:review`. An agent key: one or more of `content:read`, `content:propose`,
+       *     `content:submit` (independent; none implies another). The two sets never mix.
        */
       scopes: string[];
     };
@@ -2899,9 +3184,28 @@ export interface components {
       min_role?: string | null;
       /**
        * Format: int64
+       * @description 0 to 100 (default 5).
+       */
+      open_proposals?: number | null;
+      /**
+       * Format: int64
+       * @description 1 to 10,000 (default 500).
+       */
+      ops_per_proposal?: number | null;
+      /**
+       * Format: int64
+       * @description 0 to 1000 (default 20).
+       */
+      proposals_per_day?: number | null;
+      /**
+       * Format: int64
        * @description 10,000 to 1,000,000,000 (default 20,000,000).
        */
       read_bytes_per_day?: number | null;
+      /** @description Default true. */
+      submit_requires_person?: boolean | null;
+      /** @description `none` (default), `draft` or `change_request`. */
+      write_mode?: string | null;
     };
     /** @description The project's agent policy as saved, or the defaults when none was ever saved. */
     PolicyView: {
@@ -2940,8 +3244,23 @@ export interface components {
        *     `editor`, `manager` or `owner`. Default `viewer` (every member).
        */
       min_role: string;
+      /**
+       * Format: int32
+       * @description Proposals one agent identity may have open at once (0 to 100). Default 5.
+       */
+      open_proposals: number;
+      /**
+       * Format: int32
+       * @description Engine operations in one proposal (1 to 10,000). Default 500.
+       */
+      ops_per_proposal: number;
       /** Format: uuid */
       project_id: string;
+      /**
+       * Format: int32
+       * @description Proposals one agent identity may open per UTC day (0 to 1000). Default 20.
+       */
+      proposals_per_day: number;
       /**
        * Format: int64
        * @description Response bytes per UTC day for each agent grant (10,000 to 1,000,000,000).
@@ -2954,8 +3273,16 @@ export interface components {
        *     in `If-Match`.
        */
       revision: number;
+      /** @description A person must submit an agent's draft even in `change_request` mode. Default true. */
+      submit_requires_person: boolean;
       /** Format: date-time */
       updated_at?: string | null;
+      /**
+       * @description What agents may write: `none` (the default: they only read), `draft` (they stage
+       *     drafts that a person submits) or `change_request` (they may submit, unless
+       *     `submit_requires_person`). The kill switch sets it back to `none`.
+       */
+      write_mode: string;
     };
     RecoveryRequest: {
       /** @description Preview by default. Create makes a private draft, never a canonical edit. */
@@ -7618,6 +7945,85 @@ export interface operations {
       };
     };
   };
+  agent_propose: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Project */
+        id: string;
+        /** @description File UUID, or its first 8 hex characters when unique among the caller's files */
+        file: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['AgentProposeBody'];
+      };
+    };
+    responses: {
+      /** @description The proposal after the call (or, with dry_run, what the call would do: nothing is stored and no receipt is written). The same request_id with the same canonical digest returns the stored receipt with replayed=true. Never changes the team version */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AgentPropose'];
+          'text/vnd.dynodoc.dct; v=1': string;
+        };
+      };
+      /** @description Invalid body or op (details.agent_code, details.field, details.op names the op), including text with control or hidden characters */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Not a project device session */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Scope, grant, key class, membership, role or policy (details.policy: write_mode or file) refuses */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description File or proposal not visible (one answer for every reason) */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description idempotency_conflict, stale_base (strict), match_count, no_match, protected or proposal_closed */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Body over 1 MiB */
+      413: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Call, byte or proposal budget (Retry-After) */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
   agent_sheet_profile: {
     parameters: {
       query?: {
@@ -7741,6 +8147,206 @@ export interface operations {
       };
       /** @description File not visible */
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  agent_proposal_status: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Project */
+        id: string;
+        /** @description Proposal id from propose */
+        proposal: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description state is draft, open, changes_requested, declined, merged or withdrawn; base and head revisions and behind; the approvals counted and required; the latest reviews (verdict, reviewer name, bounded note: all untrusted text, trust=data); and, while the proposal is not closed, the same-field conflicts a merge would meet by ref, field and short hashes (never content) */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AgentProposalStatus'];
+          'text/vnd.dynodoc.dct; v=1': string;
+        };
+      };
+      /** @description Not a project device session */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Scope, grant, key class, membership or policy refuses */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description No such proposal of this agent (one answer for every reason) */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Budget */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  agent_submit: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Project */
+        id: string;
+        /** @description Proposal id from propose */
+        proposal: string;
+      };
+      cookie?: never;
+    };
+    /** @description Optional note for the reviewers, at most 1000 characters; the body may be empty */
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['AgentNoteBody'];
+      };
+    };
+    responses: {
+      /** @description state is open (submitted now, or already open: nothing is written twice), or awaiting_person when the project requires a person to submit (nothing changed: a person submits it from the app). Notifies the reviewers when it submits. changed says whether this call did */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AgentSubmit'];
+          'text/vnd.dynodoc.dct; v=1': string;
+        };
+      };
+      /** @description Invalid body or note */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Not a project device session */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Scope, grant, key class, membership, role or policy (write_mode) refuses */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description No such proposal of this agent (one answer for every reason; a malformed id is 404 before authentication) */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description proposal_closed: merged, declined or withdrawn */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Budget */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  agent_withdraw: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Project */
+        id: string;
+        /** @description Proposal id from propose */
+        proposal: string;
+      };
+      cookie?: never;
+    };
+    /** @description Optional note, at most 1000 characters; the body may be empty */
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['AgentNoteBody'];
+      };
+    };
+    responses: {
+      /** @description state is withdrawn. Withdrawing a withdrawn proposal answers the same with changed=false */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AgentSubmit'];
+          'text/vnd.dynodoc.dct; v=1': string;
+        };
+      };
+      /** @description Invalid body or note */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Not a project device session */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Scope, grant, key class, membership or role refuses */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description No such proposal of this agent (one answer for every reason) */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description proposal_closed: merged or declined */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Budget */
+      429: {
         headers: {
           [name: string]: unknown;
         };

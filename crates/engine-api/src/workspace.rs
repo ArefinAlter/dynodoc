@@ -818,7 +818,7 @@ pub(crate) async fn load_draft(
     creator: Option<Uuid>,
 ) -> Result<DraftContext, ApiError> {
     let row:Value=sqlx::query_scalar(&format!("select to_jsonb(d) from workspace_draft d where id=$1 and document_id=$2 and ($3::uuid is null or {}) and merged_at is null for update",owned_by("d","$3"))).bind(draft).bind(id).bind(creator).fetch_optional(&mut **tx).await?.ok_or(ApiError::NotFound)?;
-    replay_draft(&mut **tx, id, row).await
+    replay_draft(tx, id, row).await
 }
 
 /// A draft's ancestor and current state from its stored row: the base, then every

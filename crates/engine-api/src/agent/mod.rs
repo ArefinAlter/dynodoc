@@ -1,10 +1,14 @@
-//! AI-agent connector, Phase 0: the read-only data plane of `dynodoc.agent/1`
-//! (docs/AI-AGENT-CONNECTORS.md section 11.2, docs/AI-AGENT-PROTOCOL-SPEC.md section 12).
+//! AI-agent connector: the data plane of `dynodoc.agent/1`, its read half (Phase 0) and its
+//! review-gated write half (Phase 1) (docs/AI-AGENT-CONNECTORS.md sections 11.2 and 11.3,
+//! docs/AI-AGENT-PROTOCOL-SPEC.md section 12).
 //!
-//! The pure read path lives in the `engine-agent` crate; this module is the HTTP shell:
-//! the routes ([`routes`]), the bounded state cache ([`cache`]), content negotiation and
-//! headers ([`http`]), the error envelope ([`error`]), the call ledger ([`ledger`]) and
-//! the OpenAPI description ([`schema`]). The routes are mounted only when the operator
+//! The pure read path and the operation compiler live in the `engine-agent` crate; this
+//! module is the HTTP shell: the routes ([`routes`]), the bounded state cache ([`cache`]),
+//! content negotiation and headers ([`http`]), the error envelope ([`error`]), the call
+//! ledger ([`ledger`]) and the OpenAPI description ([`schema`]). The write half is
+//! [`write`] (`propose`, and the routes) and [`proposal`] (`submit`, `withdraw`, status),
+//! over the agent identity of [`identity`]; read [`write`] first: it states what an agent can
+//! and cannot do and why nothing it does reaches the team version. The routes are mounted only when the operator
 //! turns the gateway on (`AGENT_GATEWAY=on`); otherwise they do not exist and every
 //! request, whatever its credential, gets the router's ordinary `404`.
 //!
@@ -13,8 +17,8 @@
 //! project and file policy ([`policy`]), pulls the kill switch and reads the usage ledger.
 //! A project can be prepared before the gateway is switched on.
 //!
-//! What is not here: `propose`, `submit`, proposal `status`, the policy fields that
-//! govern writes, OAuth, API keys and the MCP server.
+//! What is not here: OAuth, API keys, the MCP write tools, sealed attribution (layer C), the
+//! review screen's agent badge (the app), the evals, `diff proposal=` and any macro.
 //!
 //! # Decisions and deviations from the specification
 //!
@@ -24,8 +28,9 @@
 //!
 //! **Credentials and permission (spec 14)**
 //!
-//! 1. Only `content:read` exists. The CHECK constraints of migration 0042 do not admit
-//!    `content:propose` or `content:submit` yet; the write routes will widen them.
+//! 1. The agent scopes are `content:read`, `content:propose` and `content:submit` (migrations
+//!    0042 and 0044): independent, none implies another. Writing also needs the project's
+//!    `write_mode`, which is `none` until an owner changes it ([`write`]).
 //! 2. An ordinary account login, a connector key or any non-device token is `401` on these
 //!    routes (14.1 says "refused"; `401` matches the management routes' rule for a
 //!    credential of the wrong class). A device token without the scope, for another
@@ -52,8 +57,9 @@
 //!
 //! **Routes (spec 12)**
 //!
-//! 6. Route 13 (proposal `status`) is not built: no agent can own a proposal yet. `diff`
-//!    accepts `proposal=` and always answers `404`, after the file check.
+//! 6. Route 13 (proposal `status`), routes 10 to 12 and their names are in [`write`]. `diff`
+//!    still accepts `proposal=` and always answers `404`, after the file check; use
+//!    `status` for a proposal.
 //! 7. `GET .../diff` requires `from` (or a cursor carrying it); the spec leaves "neither"
 //!    undefined. `to` defaults to the head.
 //! 8. `{file}` is a document UUID or its first 8 hex characters when they name exactly one
@@ -78,10 +84,13 @@
 //! 14. `files` lists at most 10,000 files per project and refuses a larger project with
 //!     `limit_exceeded field=files` rather than truncating.
 //! 15. `access` describes this credential in this project: the grant now active, the
-//!     person's role, `write_mode=none`, the grant's budgets with what they have used (JSON
-//!     only; the DCT header does not carry them) and the capabilities of this server
-//!     version (`calc=none`, no propose). The discovery document advertises no MCP URL and
-//!     no profiles because none exists.
+//!     person's role, the project's `write_mode` and `submit_requires_person`, the grant's
+//!     budgets with what they have used (JSON only; the DCT header does not carry them; the
+//!     proposal budgets appear when writing is on) and what this credential can do now
+//!     (`calc=none`; `propose` and `submit` true only when its grant has the scope and the
+//!     policy lets the agent). The discovery document advertises the server's capabilities
+//!     (`propose` and `submit` true), `scopes` (the read scope, as in Phase 0) and
+//!     `write_scopes`, and no MCP URL and no profiles because none exists.
 //!
 //! **State, verification and the ledger**
 //!

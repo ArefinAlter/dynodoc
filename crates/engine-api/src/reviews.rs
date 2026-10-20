@@ -801,7 +801,7 @@ async fn refuse_agent(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     actor: Uuid,
 ) -> Result<(), ApiError> {
-    if crate::agent::identity::is_agent(&mut **tx, actor).await? {
+    if crate::agent::identity::is_agent(tx, actor).await? {
         return Err(ApiError::Denied {
             reason: "AI agents propose changes; people review them.".into(),
         });
@@ -909,3 +909,27 @@ async fn review(
     submit
 ))]
 pub struct ReviewApi;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_request_json_carries_the_shared_agent_badge_and_hides_the_placeholder_address() {
+        // The constant is written out; it must stay the shared definition.
+        assert!(REQUEST_JSON.contains(&crate::agent::identity::agent_json("d")));
+        assert!(REQUEST_JSON.contains("like '%@agents.invalid' then null"));
+        assert!(REQUEST_JSON.starts_with('(') && REQUEST_JSON.ends_with(')'));
+    }
+
+    #[test]
+    fn the_contributor_to_tell_is_the_person_an_agent_acts_for() {
+        let person = Uuid::from_u128(1);
+        let agent = Uuid::from_u128(2);
+        let by_person = json!({"author":{"id":person}});
+        assert_eq!(contributor_of(&by_person), Some(person));
+        let by_agent = json!({"author":{"id":agent},"agent":{"principal":{"id":person}}});
+        assert_eq!(contributor_of(&by_agent), Some(person));
+        assert_eq!(contributor_of(&json!({})), None);
+    }
+}

@@ -3473,6 +3473,62 @@ paths:
       security:
       - device_session:
         - content:read
+  /projects/{id}/agent/files/{file}/propose:
+    post:
+      tags:
+      - agent
+      summary: |-
+        Stage edits as a reviewable proposal (spec 7.7). The ops are compiled by the pure compiler
+        of `engine-agent` against the state they apply to and stored, exactly as compiled, as
+        `draft_edit` rows of a draft the agent identity owns. Nothing reaches the team version.
+      operationId: agent_propose
+      parameters:
+      - name: id
+        in: path
+        description: Project
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: file
+        in: path
+        description: File UUID, or its first 8 hex characters when unique among the caller's files
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentProposeBody'
+        required: true
+      responses:
+        '200':
+          description: 'The proposal after the call (or, with dry_run, what the call would do: nothing is stored and no receipt is written). The same request_id with the same canonical digest returns the stored receipt with replayed=true. Never changes the team version'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentPropose'
+            text/vnd.dynodoc.dct; v=1:
+              schema:
+                type: string
+        '400':
+          description: Invalid body or op (details.agent_code, details.field, details.op names the op), including text with control or hidden characters
+        '401':
+          description: Not a project device session
+        '403':
+          description: 'Scope, grant, key class, membership, role or policy (details.policy: write_mode or file) refuses'
+        '404':
+          description: File or proposal not visible (one answer for every reason)
+        '409':
+          description: idempotency_conflict, stale_base (strict), match_count, no_match, protected or proposal_closed
+        '413':
+          description: Body over 1 MiB
+        '429':
+          description: Call, byte or proposal budget (Retry-After)
+      security:
+      - device_session:
+        - content:propose
   /projects/{id}/agent/files/{file}/sheets/{sheet}/profile:
     get:
       tags:
@@ -3618,6 +3674,160 @@ paths:
       security:
       - device_session:
         - content:read
+  /projects/{id}/agent/proposals/{proposal}:
+    get:
+      tags:
+      - agent
+      summary: |-
+        The state of one proposal of the agent (spec 7.9): where it is in review, what the
+        reviewers said, how far behind the team version it is and where a merge would conflict.
+      operationId: agent_proposal_status
+      parameters:
+      - name: id
+        in: path
+        description: Project
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: proposal
+        in: path
+        description: Proposal id from propose
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 'state is draft, open, changes_requested, declined, merged or withdrawn; base and head revisions and behind; the approvals counted and required; the latest reviews (verdict, reviewer name, bounded note: all untrusted text, trust=data); and, while the proposal is not closed, the same-field conflicts a merge would meet by ref, field and short hashes (never content)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentProposalStatus'
+            text/vnd.dynodoc.dct; v=1:
+              schema:
+                type: string
+        '401':
+          description: Not a project device session
+        '403':
+          description: Scope, grant, key class, membership or policy refuses
+        '404':
+          description: No such proposal of this agent (one answer for every reason)
+        '429':
+          description: Budget
+      security:
+      - device_session:
+        - content:read
+  /projects/{id}/agent/proposals/{proposal}/submit:
+    post:
+      tags:
+      - agent
+      summary: |-
+        Send the agent's proposal to the file's reviewers, when the project lets an agent
+        (spec 7.8). You cannot approve, decline or merge.
+      operationId: agent_submit
+      parameters:
+      - name: id
+        in: path
+        description: Project
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: proposal
+        in: path
+        description: Proposal id from propose
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        description: Optional note for the reviewers, at most 1000 characters; the body may be empty
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentNoteBody'
+        required: true
+      responses:
+        '200':
+          description: 'state is open (submitted now, or already open: nothing is written twice), or awaiting_person when the project requires a person to submit (nothing changed: a person submits it from the app). Notifies the reviewers when it submits. changed says whether this call did'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSubmit'
+            text/vnd.dynodoc.dct; v=1:
+              schema:
+                type: string
+        '400':
+          description: Invalid body or note
+        '401':
+          description: Not a project device session
+        '403':
+          description: Scope, grant, key class, membership, role or policy (write_mode) refuses
+        '404':
+          description: No such proposal of this agent (one answer for every reason; a malformed id is 404 before authentication)
+        '409':
+          description: 'proposal_closed: merged, declined or withdrawn'
+        '429':
+          description: Budget
+      security:
+      - device_session:
+        - content:submit
+  /projects/{id}/agent/proposals/{proposal}/withdraw:
+    post:
+      tags:
+      - agent
+      summary: |-
+        Close the agent's own proposal (spec 7.8): a draft or an open change request. A person can
+        still reopen it. It needs no `write_mode`, only the grant and a role that may draft.
+      operationId: agent_withdraw
+      parameters:
+      - name: id
+        in: path
+        description: Project
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: proposal
+        in: path
+        description: Proposal id from propose
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        description: Optional note, at most 1000 characters; the body may be empty
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentNoteBody'
+        required: true
+      responses:
+        '200':
+          description: state is withdrawn. Withdrawing a withdrawn proposal answers the same with changed=false
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSubmit'
+            text/vnd.dynodoc.dct; v=1:
+              schema:
+                type: string
+        '400':
+          description: Invalid body or note
+        '401':
+          description: Not a project device session
+        '403':
+          description: Scope, grant, key class, membership or role refuses
+        '404':
+          description: No such proposal of this agent (one answer for every reason)
+        '409':
+          description: 'proposal_closed: merged or declined'
+        '429':
+          description: Budget
+      security:
+      - device_session:
+        - content:submit
   /projects/{id}/change-requests:
     get:
       tags: []
@@ -5193,6 +5403,7 @@ components:
       - role
       - scopes
       - write_mode
+      - submit_requires_person
       - budget
       - capabilities
       properties:
@@ -5200,9 +5411,14 @@ components:
           type: object
           description: |-
             The grant's budgets in this project: `calls_per_minute` and `read_bytes_per_day`,
-            each `{limit, used}`.
+            each `{limit, used}`; and, when writing is on, `proposals_per_day` and
+            `open_proposals` (`{limit, used}`, counted for the agent identity) and
+            `ops_per_proposal` (`{limit}`).
         capabilities:
           type: object
+          description: |-
+            What this credential can do now: `propose` and `submit` are true only when its grant
+            has the scope and the project's policy lets the agent do it.
         project:
           type: string
         protocol:
@@ -5215,13 +5431,16 @@ components:
           items:
             type: string
           description: Scopes of the grant that is active now.
+        submit_requires_person:
+          type: boolean
+          description: Whether a person must submit an agent's draft even in `change_request` mode.
         tool:
           type: string
         what:
           type: string
         write_mode:
           type: string
-          description: '`none`: no write exists in this version.'
+          description: 'The project''s `write_mode`: `none` (agents only read), `draft` or `change_request`.'
     AgentBlockRow:
       type: object
       required:
@@ -5320,6 +5539,25 @@ components:
         type:
           type: string
           description: '`num`, `text`, `date`, `bool`, `formula` or `mixed`.'
+    AgentConflict:
+      type: object
+      required:
+      - field
+      - team
+      - draft
+      properties:
+        draft:
+          type: string
+        field:
+          type: string
+          description: The engine field both sides changed.
+        ref:
+          type:
+          - string
+          - 'null'
+        team:
+          type: string
+          description: Six-hex hashes of the team's and the draft's value; never the values.
     AgentDiff:
       allOf:
       - $ref: '#/components/schemas/AgentEnvelope'
@@ -5440,6 +5678,7 @@ components:
       - mcp
       - mcp_revisions
       - scopes
+      - write_scopes
       - limits
       - profiles
       - capabilities
@@ -5473,6 +5712,14 @@ components:
           type: array
           items:
             type: string
+          description: The read scope (`content:read`), which every tool needs.
+        write_scopes:
+          type: array
+          items:
+            type: string
+          description: |-
+            The write scopes (`content:propose`, `content:submit`), independent of each other and
+            of the read scope. A project must also set `write_mode`.
     AgentEnvelope:
       type: object
       description: The keys every JSON mirror starts with.
@@ -5602,6 +5849,15 @@ components:
           minimum: 0
         snippet:
           type: string
+    AgentNoteBody:
+      type: object
+      description: Optional note on `submit` and `withdraw`.
+      properties:
+        note:
+          type:
+          - string
+          - 'null'
+          description: At most 1000 characters; no control or hidden characters.
     AgentOutline:
       allOf:
       - $ref: '#/components/schemas/AgentEnvelope'
@@ -5661,6 +5917,59 @@ components:
             - 'null'
             minimum: 0
       description: '`outline` and the sheet profile.'
+    AgentPreviewChange:
+      type: object
+      required:
+      - ref
+      - kind
+      properties:
+        kind:
+          type: string
+          description: '`changed`, `created`, `deleted` or `moved`.'
+        new:
+          type:
+          - string
+          - 'null'
+        old:
+          type:
+          - string
+          - 'null'
+        ref:
+          type: string
+    AgentPreviewOp:
+      type: object
+      required:
+      - index
+      - op
+      - engine_ops
+      - changes
+      - more_changes
+      properties:
+        changes:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentPreviewChange'
+        engine_ops:
+          type: integer
+          minimum: 0
+        id:
+          type:
+          - string
+          - 'null'
+          description: The agent's own label for the op.
+        index:
+          type: integer
+          minimum: 0
+        more_changes:
+          type: integer
+          minimum: 0
+        op:
+          type: string
+        why:
+          type:
+          - string
+          - 'null'
+          description: The agent's reason (untrusted text).
     AgentProfile:
       type: object
       required:
@@ -5696,6 +6005,260 @@ components:
         rows:
           type: integer
           minimum: 0
+    AgentProposalStatus:
+      type: object
+      description: '`status` of a proposal.'
+      required:
+      - protocol
+      - tool
+      - what
+      - proposal
+      - file
+      - state
+      - base
+      - head
+      - behind
+      - revision
+      - edits
+      - approvals
+      - required
+      - satisfied
+      - conflicts
+      - reviews
+      - conflict_list
+      - trust
+      properties:
+        approvals:
+          type: integer
+          format: int64
+        base:
+          type: integer
+          format: int64
+        behind:
+          type: integer
+          format: int64
+          minimum: 0
+        conflict_list:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentConflict'
+        conflicts:
+          type: integer
+          description: Same-field overlaps a merge would meet (the first 20 are in `conflict_list`).
+          minimum: 0
+        edits:
+          type: integer
+          format: int64
+          description: Engine operations in the proposal.
+          minimum: 0
+        file:
+          type: string
+        head:
+          type: integer
+          format: int64
+          minimum: 0
+        merged_at:
+          type:
+          - string
+          - 'null'
+        proposal:
+          type: string
+        protocol:
+          type: string
+        required:
+          type: integer
+          format: int64
+        reviews:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentReviewNote'
+        revision:
+          type: integer
+          format: int64
+        satisfied:
+          type: boolean
+        state:
+          type: string
+          description: '`draft`, `open`, `changes_requested`, `declined`, `merged` or `withdrawn`.'
+        tool:
+          type: string
+        trust:
+          type: string
+        what:
+          type: string
+    AgentPropose:
+      allOf:
+      - $ref: '#/components/schemas/AgentEnvelope'
+      - type: object
+        required:
+        - base
+        - head
+        - behind
+        - applied
+        - expanded
+        - stale
+        - stale_total
+        - replayed
+        - warn
+        properties:
+          applied:
+            type: integer
+            format: int64
+            description: Ops applied (0 in a dry run).
+            minimum: 0
+          base:
+            type: integer
+            format: int64
+            description: The proposal's base revision, the team's head, and how far behind it is.
+          behind:
+            type: integer
+            format: int64
+            minimum: 0
+          dry_run:
+            type:
+            - boolean
+            - 'null'
+          entries:
+            type:
+            - array
+            - 'null'
+            items:
+              $ref: '#/components/schemas/AgentDiffEntry'
+          entries_total:
+            type:
+            - integer
+            - 'null'
+            minimum: 0
+          expanded:
+            type: integer
+            format: int64
+            description: Engine operations the ops became.
+            minimum: 0
+          head:
+            type: integer
+            format: int64
+            minimum: 0
+          opened:
+            type:
+            - boolean
+            - 'null'
+            description: Whether this call opened the proposal (a replay only).
+          ops:
+            type:
+            - array
+            - 'null'
+            items:
+              $ref: '#/components/schemas/AgentPreviewOp'
+          proposal:
+            type:
+            - string
+            - 'null'
+            description: The proposal's id (absent in a dry run of a new proposal).
+          replayed:
+            type: boolean
+          request_id:
+            type:
+            - string
+            - 'null'
+          revision:
+            type:
+            - integer
+            - 'null'
+            format: int64
+            description: The draft's revision after the call.
+          stale:
+            type: array
+            items:
+              $ref: '#/components/schemas/AgentStale'
+            description: The ops whose `base` was out of date (at most five in a replay).
+          stale_total:
+            type: integer
+            format: int64
+            minimum: 0
+          state:
+            type:
+            - string
+            - 'null'
+            description: '`draft`, `open`, `merged`, `declined` or `withdrawn` (absent in a dry run).'
+          truncated:
+            type:
+            - boolean
+            - 'null'
+          warn:
+            type: array
+            items:
+              type: string
+            description: '`stale`, `behind`, `truncated`.'
+          would_apply:
+            type:
+            - integer
+            - 'null'
+            format: int64
+            minimum: 0
+      description: |-
+        `propose`: the preview of the call (or of a dry run), or the stored receipt of a call
+        already made (`replayed`; then `ops`, `entries`, `entries_total`, `would_apply` and
+        `truncated` are absent).
+    AgentProposeBody:
+      type: object
+      description: |-
+        Body of `propose` (docs/AI-AGENT-PROTOCOL-SPEC.md 7.7). The file is the one in the path.
+        Unknown fields are refused. `ops` items are flat objects validated strictly against
+        the operation grammar (spec 8): `op` is one of `set_text`, `replace`, `replace_all`,
+        `insert`, `delete`, `move`, `set_type`, `set_cells`, `clear`, `set_shape`, `set_notes`;
+        the others (`fill`, `add_slide`, `delete_slide`, `macro`) are `unsupported_op`.
+      required:
+      - rev
+      - request_id
+      - ops
+      properties:
+        dry_run:
+          type:
+          - boolean
+          - 'null'
+          description: 'Compile and preview only: nothing is stored, no receipt is written.'
+        file:
+          type:
+          - string
+          - 'null'
+          description: The file again (optional); if given it must be the file of the path.
+        name:
+          type:
+          - string
+          - 'null'
+          description: A short title for reviewers (at most 200 characters; no control or hidden characters).
+        ops:
+          type: array
+          items:
+            type: object
+          description: One to 200 ops, each `{op, ref|sheet|slide..., text|find|with|values..., base, why, id}`.
+        proposal:
+          type:
+          - string
+          - 'null'
+          description: An existing proposal of this agent to extend; omit to start one.
+        request_id:
+          type: string
+          description: |-
+            A new UUID per call; reuse it only to retry. With the same canonical body it returns
+            the stored receipt; with another body it is `idempotency_conflict`.
+        return:
+          type:
+          - string
+          - 'null'
+          description: '`summary` (default) or `diff`.'
+        rev:
+          type: integer
+          format: int64
+          description: The revision the refs and hashes in `ops` came from (0 up to the head).
+          minimum: 0
+        strict:
+          type:
+          - boolean
+          - 'null'
+          description: |-
+            Refuse an op whose `base` hash differs from the team's current hash (`stale_base`)
+            instead of recording a warning.
     AgentRangeRead:
       type: object
       required:
@@ -5790,6 +6353,31 @@ components:
           type: string
         t:
           type: string
+    AgentReviewNote:
+      type: object
+      required:
+      - verdict
+      - by
+      - note
+      - stale
+      properties:
+        by:
+          type: string
+          description: The reviewer's display name (untrusted text, at most 80 characters).
+        node:
+          type:
+          - string
+          - 'null'
+          description: The node the comment is on, when it is on one.
+        note:
+          type: string
+          description: The reviewer's note (untrusted text, at most 400 characters).
+        stale:
+          type: boolean
+          description: The proposal changed after this review.
+        verdict:
+          type: string
+          description: '`approved`, `changes_requested` or `commented`.'
     AgentRowRead:
       type: object
       required:
@@ -5964,6 +6552,62 @@ components:
             $ref: '#/components/schemas/AgentShapeRow'
         title:
           type: string
+    AgentStale:
+      type: object
+      required:
+      - at
+      properties:
+        at:
+          type: string
+          description: The ref or range the op named.
+        current:
+          type:
+          - string
+          - 'null'
+          description: The team's hash now (absent in a replay, or when the target is gone).
+        op:
+          type:
+          - integer
+          - 'null'
+          description: The index of the op (absent in a replay).
+          minimum: 0
+    AgentSubmit:
+      type: object
+      description: '`submit` and `withdraw`.'
+      required:
+      - protocol
+      - tool
+      - action
+      - proposal
+      - file
+      - state
+      - changed
+      - behind
+      - trust
+      properties:
+        action:
+          type: string
+          description: '`submit` or `withdraw`.'
+        behind:
+          type: integer
+          format: int64
+          minimum: 0
+        changed:
+          type: boolean
+          description: Whether this call changed anything.
+        file:
+          type: string
+        proposal:
+          type: string
+        protocol:
+          type: string
+        state:
+          type: string
+          description: '`open`, `awaiting_person` (a person must submit it) or `withdrawn`.'
+        tool:
+          type: string
+        trust:
+          type: string
     BlocksReadBody:
       type: object
       description: 'Body of `POST .../blocks:read`: the selection and the hashes the caller already holds.'
@@ -6021,10 +6665,10 @@ components:
             type: string
           description: |-
             One or more of `history:read`, `history:review`, `history:write`,
-            `project:read` (a person's key) or `content:read` (a key enrolled for an AI
-            agent; the two sets never mix). A key that is not in `all` mode also needs an
-            active grant for this project that lists every scope, and an agent scope always
-            does.
+            `project:read` (a person's key) or `content:read`, `content:propose`,
+            `content:submit` (a key enrolled for an AI agent; the two sets never mix). A key
+            that is not in `all` mode also needs an active grant for this project that lists
+            every scope, and an agent scope always does.
       additionalProperties: false
     ChallengeResponse:
       type: object
@@ -6232,7 +6876,8 @@ components:
             type: string
           description: |-
             A person's key: one or more of `project:read`, `history:read`, `history:write`,
-            `history:review`. An agent key: `content:read` only. The two sets never mix.
+            `history:review`. An agent key: one or more of `content:read`, `content:propose`,
+            `content:submit` (independent; none implies another). The two sets never mix.
       additionalProperties: false
     Issue:
       type: object
@@ -6725,12 +7370,40 @@ components:
           - string
           - 'null'
           description: '`viewer` (default), `contributor`, `reviewer`, `editor`, `manager` or `owner`.'
+        open_proposals:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: 0 to 100 (default 5).
+        ops_per_proposal:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: 1 to 10,000 (default 500).
+        proposals_per_day:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: 0 to 1000 (default 20).
         read_bytes_per_day:
           type:
           - integer
           - 'null'
           format: int64
           description: 10,000 to 1,000,000,000 (default 20,000,000).
+        submit_requires_person:
+          type:
+          - boolean
+          - 'null'
+          description: Default true.
+        write_mode:
+          type:
+          - string
+          - 'null'
+          description: '`none` (default), `draft` or `change_request`.'
       additionalProperties: false
     PolicyView:
       type: object
@@ -6743,6 +7416,11 @@ components:
       - kinds
       - calls_per_minute
       - read_bytes_per_day
+      - write_mode
+      - submit_requires_person
+      - proposals_per_day
+      - open_proposals
+      - ops_per_proposal
       - revision
       - gateway
       - file_overrides
@@ -6795,9 +7473,21 @@ components:
           description: |-
             Lowest project role whose agents may read: `viewer`, `contributor`, `reviewer`,
             `editor`, `manager` or `owner`. Default `viewer` (every member).
+        open_proposals:
+          type: integer
+          format: int32
+          description: Proposals one agent identity may have open at once (0 to 100). Default 5.
+        ops_per_proposal:
+          type: integer
+          format: int32
+          description: Engine operations in one proposal (1 to 10,000). Default 500.
         project_id:
           type: string
           format: uuid
+        proposals_per_day:
+          type: integer
+          format: int32
+          description: Proposals one agent identity may open per UTC day (0 to 1000). Default 20.
         read_bytes_per_day:
           type: integer
           format: int64
@@ -6810,11 +7500,20 @@ components:
           description: |-
             Zero until the first save; then increases by one with every change. Send it back
             in `If-Match`.
+        submit_requires_person:
+          type: boolean
+          description: A person must submit an agent's draft even in `change_request` mode. Default true.
         updated_at:
           type:
           - string
           - 'null'
           format: date-time
+        write_mode:
+          type: string
+          description: |-
+            What agents may write: `none` (the default: they only read), `draft` (they stage
+            drafts that a person submits) or `change_request` (they may submit, unless
+            `submit_requires_person`). The kill switch sets it back to `none`.
     RecoveryRequest:
       type: object
       required:

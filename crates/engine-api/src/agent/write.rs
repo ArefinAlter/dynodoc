@@ -327,7 +327,7 @@ pub(super) async fn verify_write(
     writing: bool,
 ) -> Result<Policy, AgentFail> {
     verify_current(
-        &mut **tx,
+        tx,
         &Claimed {
             identity: ctx.identity,
             key: ctx.key,
@@ -339,13 +339,13 @@ pub(super) async fn verify_write(
         true,
     )
     .await?;
-    let stored = policy::load_shared(&mut **tx, ctx.project)
+    let stored = policy::load_shared(tx, ctx.project)
         .await
         .map_err(ApiError::from)?;
     let Some(policy) = stored.map(|s| s.policy).filter(|p| p.enabled) else {
         return Err(ApiError::Forbidden.into());
     };
-    let role = projects::require(&mut **tx, ctx.project, ctx.identity).await?;
+    let role = projects::require(tx, ctx.project, ctx.identity).await?;
     if !policy::role_allowed(&role, &policy) {
         return Err(ApiError::Forbidden.into());
     }

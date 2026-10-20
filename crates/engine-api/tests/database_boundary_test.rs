@@ -58,6 +58,7 @@ async fn runtime_cannot_rewrite_history_disable_guards_or_escalate(pool: PgPool)
         ("erasure_receipt", "kind"),
         ("provenance_bundle", "body"),
         ("agent_call", "outcome"),
+        ("agent_proposal_receipt", "outcome"),
         ("device_key_class", "class"),
         ("checkpoint_object", "bytes"),
         ("shared_checkpoint", "through_seq"),

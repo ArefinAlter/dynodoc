@@ -1245,7 +1245,7 @@ async fn the_principal_adopts_edits_submits_and_withdraws_an_agent_draft(pool: P
     assert_eq!(got["draft"]["created_by"], json!(agent));
     assert_eq!(got["draft"]["agent"]["display_name"], "Claude for Tester");
     let revision = got["draft"]["revision"].as_i64().unwrap();
-    assert!(got["ops"].as_array().unwrap().len() >= 1);
+    assert!(!got["ops"].as_array().unwrap().is_empty());
 
     // She edits it (the same route as for her own draft); the edit is hers, the rest the agent's.
     let node = node_ids(w, doc).await.remove(1);
@@ -1828,6 +1828,16 @@ async fn t10_the_agent_identity_is_no_member_no_reviewer_and_no_account(pool: Pg
             .execute(runtime)
             .await,
     );
+    // The explicit check of invariant I4 that the review code makes before anyone approves,
+    // declines, merges or comments.
+    let mut conn = runtime.acquire().await.unwrap();
+    assert!(engine_api::agent::identity::is_agent(&mut conn, agent)
+        .await
+        .unwrap());
+    assert!(!engine_api::agent::identity::is_agent(&mut conn, s.olivia)
+        .await
+        .unwrap());
+    drop(conn);
     // The agent identity is not in a member list or the people list of the file.
     let people = call(
         &w.app,
@@ -3672,5 +3682,86 @@ async fn responses_match_their_openapi_schemas_and_the_dct_form_parses(pool: PgP
         tools.contains("propose") && tools.contains("submit") && tools.contains("status"),
         "{tools:?}"
     );
+    s.w.close().await;
+}
+
+// ------------------------------------------------------------------ AC17
+
+/// AC17. Two assistants propose conflicting edits to one block: both drafts exist, and once one
+/// is merged the other meets a conflict a person must resolve; nothing is silently overwritten.
+#[sqlx::test(migrations = "../../migrations")]
+async fn ac17_conflicting_proposals_of_two_agents_never_overwrite_each_other(pool: PgPool) {
+    let s = setup(pool, full()).await;
+    let w = &s.w;
+    let doc = standard(w).await;
+    // Raj's assistant rewrites the second paragraph; so does Olivia's.
+    let (_raj, raj_token, theirs) = raj_with_a_proposal(&s, doc).await;
+    let o = outline(w, &s.token, doc).await;
+    let (r1, _) = block(&o, 1);
+    let reply = propose(
+        w,
+        &s.token,
+        doc,
+        call_body(
+            o["rev"].as_u64().unwrap(),
+            json!([{"op":"set_text","ref":r1,"text":"Olivia's budget wording."}]),
+        ),
+    )
+    .await;
+    assert_eq!(reply.code(), 200, "{}", reply.text());
+    let mine = Uuid::parse_str(reply.json()["proposal"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        submit_p(w, &s.token, mine, json!({})).await.json()["state"],
+        "open"
+    );
+    assert_eq!(
+        submit_p(w, &raj_token, theirs, json!({})).await.json()["state"],
+        "open"
+    );
+    assert_eq!(count(w, "workspace_draft").await, 2);
+
+    // The owner merges Raj's first; Olivia's now overlaps the team's new text.
+    let head = w.head(doc).await;
+    let first = format!("/documents/{doc}/change-requests/{theirs}");
+    let detail = request_detail(w, &first).await;
+    let (status, body) = call(
+        &w.app,
+        "POST",
+        &format!("{first}/merge"),
+        Some(&w.owner_login),
+        json!({"team_seq":head,"revision":detail["revision"]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let second = format!("/documents/{doc}/change-requests/{mine}");
+    let detail = request_detail(w, &second).await;
+    assert!(
+        !detail["conflicts"].as_array().unwrap().is_empty(),
+        "{detail}"
+    );
+    let head = w.head(doc).await;
+    let (status, body) = call(
+        &w.app,
+        "POST",
+        &format!("{second}/merge"),
+        Some(&w.owner_login),
+        json!({"team_seq":head,"revision":detail["revision"]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(
+        w.head(doc).await,
+        head,
+        "nothing was merged over Raj's text"
+    );
+    let now = outline(w, &s.token, doc).await;
+    assert!(
+        now["blocks"][1]["p"].as_str().unwrap().contains("Raj's"),
+        "{now}"
+    );
+    // Olivia's assistant sees where it stands.
+    let st = status_of(w, &s.token, mine).await.json();
+    assert_eq!(st["state"], "open");
+    assert!(st["conflicts"].as_u64().unwrap() >= 1, "{st}");
     s.w.close().await;
 }
