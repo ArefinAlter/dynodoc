@@ -26,7 +26,8 @@ const proxy: RequestHandler = async ({ request, url, cookies, params }) => {
       { status: 409 }
     );
   const headers = new Headers({ authorization: `Bearer ${token}` });
-  for (const name of ['content-type', 'idempotency-key', 'last-event-id']) {
+  // `if-match` carries the revision a settings save was made from (agent policy).
+  for (const name of ['content-type', 'idempotency-key', 'if-match', 'last-event-id']) {
     const value = request.headers.get(name);
     if (value) headers.set(name, value);
   }
