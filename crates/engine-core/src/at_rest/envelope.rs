@@ -670,6 +670,33 @@ mod tests {
         assert_eq!(checked, 13 + 4);
     }
 
+    /// Every (salt, table, column, row) gets its own AES key and its own nonce.
+    #[test]
+    fn derived_key_and_nonce_are_unique_per_salt_table_column_and_row() {
+        let dek = Dek::from_bytes([3; 32]);
+        let (mut keys, mut nonces) = (
+            std::collections::HashSet::new(),
+            std::collections::HashSet::new(),
+        );
+        let mut total = 0;
+        for salt in 0..8u8 {
+            let salt = Salt::from_slice(&[salt; 32]).unwrap();
+            for table in ["a", "b", "ab"] {
+                for column in ["x", "y", "xy"] {
+                    for row in 0..20u32 {
+                        let row = row.to_be_bytes();
+                        let ctx = Context::new(installation(), table, column, &row).unwrap();
+                        let okm = derive_okm(&dek, &salt, &ctx).unwrap();
+                        keys.insert(okm.0[..KEY_LEN].to_vec());
+                        nonces.insert(okm.0[KEY_LEN..].to_vec());
+                        total += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!((keys.len(), nonces.len()), (total, total));
+    }
+
     #[test]
     fn content_addressed_sealing_is_deterministic() {
         let key = data_key(2);
