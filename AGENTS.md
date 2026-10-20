@@ -42,6 +42,7 @@ Update explicit handoffs/status in both repos at each increment/context boundary
 crates/engine-{core,api,cli,shared}   Rust engine
 migrations/                           SQL migrations (append-only once applied)
 frontend/researcher/                  SvelteKit PoC UI
+apps/desktop/                         Tauri 2 desktop/mobile shell (own Cargo workspace; see its README)
 infra/docker-compose.yml              Postgres only (PoC)
 docs/                                 Design + build reference
 ```

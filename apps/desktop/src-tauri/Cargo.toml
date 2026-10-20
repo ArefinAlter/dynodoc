@@ -1,0 +1,50 @@
+# Dynodoc desktop shell (Tauri 2). A Cargo workspace of its own, excluded from the engine
+# workspace at the repository root, so the engine's CI never needs webkit/GTK libraries.
+[workspace]
+
+[package]
+name = "dynodoc-desktop"
+# The single source of the app version: tauri.conf.json has no "version" and falls back to this.
+version = "0.1.0"
+description = "Dynodoc desktop client: a native shell around the configured Dynodoc server."
+edition = "2021"
+license-file = "../../../LICENSE"
+publish = false
+repository = "https://github.com/vernehq/dynodoc"
+authors = ["Verne Ltd."]
+
+[lib]
+# The library name must differ from the binary name on Windows. crate-type is what Tauri 2
+# mobile needs (staticlib for iOS, cdylib for Android); rlib serves the desktop binary and tests.
+name = "dynodoc_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = "2"
+
+[dependencies]
+# No optional features: a release build has no web inspector (debug builds always do), no
+# tray icon and no asset protocol. A test fails if one is added.
+tauri = "2.12"
+# Opens http(s) and mailto links in the system browser. Rust API only; no capability grants
+# its page-facing commands.
+tauri-plugin-opener = "2"
+# The dynodoc:// scheme. Registered on every platform; mobile configuration is not done yet.
+tauri-plugin-deep-link = "2"
+# Used by the navigation policy and the address validator (re-exported by tauri as tauri::Url).
+url = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+# One running copy; a second launch (or a dynodoc:// link) is forwarded to the first.
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+# Remembers the window's size, position and maximised state.
+tauri-plugin-window-state = "2"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
