@@ -167,6 +167,7 @@ pub mod find;
 pub mod fixtures;
 pub mod grammar;
 pub mod hash;
+pub(crate) mod inline;
 pub mod model;
 pub mod outline;
 pub mod paging;
