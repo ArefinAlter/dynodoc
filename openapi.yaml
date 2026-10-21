@@ -896,7 +896,9 @@ paths:
       - reviews
       summary: |-
         Approve, request changes or comment. Reviewers and above approve or request
-        changes on other people's requests; any contributor can comment.
+        changes on other people's requests; any contributor can comment. An approval or a
+        request for changes names the revision of the request it was given for (`revision`), and
+        counts only while the request's content is as it was at that revision.
       operationId: review
       parameters:
       - name: id
@@ -916,7 +918,8 @@ paths:
       requestBody:
         content:
           application/json:
-            schema: {}
+            schema:
+              $ref: '#/components/schemas/ReviewRequest'
         required: true
       responses:
         '200':
@@ -924,10 +927,12 @@ paths:
           content:
             application/json:
               schema: {}
+        '400':
+          description: Invalid review; code revision_required when an approval or a request for changes names no revision
         '403':
           description: Role cannot give this review
         '409':
-          description: The request is closed
+          description: The request is closed (code conflict), or it changed after the revision the review names (code request_changed, details.current_revision)
   /documents/{id}/conflicts:
     get:
       tags:
@@ -1305,7 +1310,11 @@ paths:
     post:
       tags:
       - reviews
-      summary: Ask the document's editors to review an existing personal draft.
+      summary: |-
+        Ask the document's editors to review an existing personal draft. A person may also submit
+        the draft an AI agent wrote for them (adopt it): the request stays the agent's work, the
+        audit row names the person who submitted it and the agent that proposed it, and the draft's
+        `revision` must be sent, so what is submitted is what was read.
       operationId: submit
       parameters:
       - name: id
@@ -1325,7 +1334,8 @@ paths:
       requestBody:
         content:
           application/json:
-            schema: {}
+            schema:
+              $ref: '#/components/schemas/SubmitRequest'
         required: true
       responses:
         '200':
@@ -1333,10 +1343,14 @@ paths:
           content:
             application/json:
               schema: {}
+        '400':
+          description: Invalid note; code revision_required when adopting an AI agent's draft without naming its revision
         '403':
           description: Viewers cannot propose changes
         '404':
           description: Not your open draft
+        '409':
+          description: The draft changed after the revision named (code request_changed, details.current_revision)
   /documents/{id}/drafts/{draft_id}/sync:
     post:
       tags:
@@ -2862,6 +2876,56 @@ paths:
           description: The caller's management budget (120 a minute, 2 at once) is used up
       security:
       - paseto: []
+  /projects/{id}/agent-proposals:
+    get:
+      tags:
+      - agent policy
+      summary: |-
+        The AI agents' proposals of a project: drafts waiting for the person each acts for, and
+        the change requests that came from agent identities, with where each stands.
+      operationId: agent_proposals_for_reviewers
+      parameters:
+      - name: id
+        in: path
+        description: Project
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: state
+        in: query
+        description: active (draft, open and changes_requested; the default), all, or one of draft, open, changes_requested, merged, declined, withdrawn
+        required: false
+        schema:
+          type: string
+      - name: offset
+        in: query
+        description: 0 to 1000
+        required: false
+        schema:
+          type: integer
+          format: int64
+      - name: limit
+        in: query
+        description: 1 to 50, default 25
+        required: false
+        schema:
+          type: integer
+          format: int64
+      responses:
+        '200':
+          description: 'items (newest activity first, open ones before closed), more, offset, state and the budgets the viewer''s own agents have used (null when the viewer has none). Each item is metadata: id, name (the agent''s words: untrusted text), state, revision, base_seq, head_seq, behind, stale_base, created_at, submitted_at, closed_at, document {id,title,kind}, agent {id,client_kind,display_name,principal{id,name},revoked}, mine, edits and ops {proposed,compiled}. Drafts only reach the person the agent acts for'
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Unknown state, or offset or limit out of range
+        '401':
+          description: Not an account session
+        '403':
+          description: Not a member of the project
+      security:
+      - paseto: []
   /projects/{id}/agent-usage:
     get:
       tags:
@@ -3671,6 +3735,65 @@ paths:
           description: Scope, grant, key class or project membership missing (uniform)
         '404':
           description: File not visible
+      security:
+      - device_session:
+        - content:read
+  /projects/{id}/agent/proposals:
+    get:
+      tags:
+      - agent
+      summary: |-
+        The agent's own proposals in this project (the list the `status` tool lacked): each with
+        its state, base, head, revision and size, newest first, open ones before closed. Only the
+        proposals of the agent identity of this key's product, in files the person can open and the
+        policy shows; a key that has no agent identity yet has none.
+      operationId: agent_proposals
+      parameters:
+      - name: id
+        in: path
+        description: Project
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: state
+        in: query
+        description: active (draft, open and changes_requested; the default), all, or one of draft, open, changes_requested, merged, declined, withdrawn
+        required: false
+        schema:
+          type: string
+      - name: offset
+        in: query
+        description: 0 to 1000
+        required: false
+        schema:
+          type: integer
+          format: int64
+      - name: limit
+        in: query
+        description: 1 to 50, default 20
+        required: false
+        schema:
+          type: integer
+          format: int64
+      responses:
+        '200':
+          description: 'This agent''s proposals in the project, newest activity first: proposal (the id the submit, withdraw and status routes take), file, state, base, head, behind, revision, edits (engine operations stored), created_at and submitted_at; more says whether another page exists; the budget fields say how many proposals the person''s agents have opened today and have open against the limits. Ids, numbers and states only'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentProposalList'
+            text/vnd.dynodoc.dct; v=1:
+              schema:
+                type: string
+        '400':
+          description: Unknown state, or offset or limit out of range
+        '401':
+          description: Not a project device session
+        '403':
+          description: Scope, grant, key class, membership or policy refuses
+        '429':
+          description: Budget
       security:
       - device_session:
         - content:read
@@ -6005,6 +6128,108 @@ components:
         rows:
           type: integer
           minimum: 0
+    AgentProposalList:
+      type: object
+      description: The agent's own proposals in a project (`GET .../agent/proposals`).
+      required:
+      - protocol
+      - tool
+      - what
+      - state
+      - n
+      - more
+      - write_mode
+      - opened_today
+      - opened_limit
+      - open
+      - open_limit
+      - proposals
+      - trust
+      properties:
+        more:
+          type: boolean
+        n:
+          type: integer
+          minimum: 0
+        open:
+          type: integer
+          format: int64
+        open_limit:
+          type: integer
+          format: int64
+        opened_limit:
+          type: integer
+          format: int64
+        opened_today:
+          type: integer
+          format: int64
+          description: |-
+            Proposals the person's agents opened since midnight UTC, and have open, against the
+            project's limits.
+        proposals:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentProposalRow'
+          description: Absent from the DCT form, which lists them as `proposal` lines.
+        protocol:
+          type: string
+        state:
+          type: string
+          description: 'The filter that was applied: `active`, `all` or one state.'
+        tool:
+          type: string
+        trust:
+          type: string
+        what:
+          type: string
+        write_mode:
+          type: string
+    AgentProposalRow:
+      type: object
+      description: One proposal in `proposals` of the agent's own list.
+      required:
+      - proposal
+      - file
+      - state
+      - base
+      - head
+      - behind
+      - revision
+      - edits
+      - created_at
+      properties:
+        base:
+          type: integer
+          format: int64
+          description: The team revision the proposal started from, and the file's head now.
+        behind:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+        edits:
+          type: integer
+          format: int64
+          description: Engine operations stored in the proposal.
+        file:
+          type: string
+          description: Full document UUID.
+        head:
+          type: integer
+          format: int64
+        proposal:
+          type: string
+          description: The id the submit, withdraw and status routes take.
+        revision:
+          type: integer
+          format: int64
+        state:
+          type: string
+          description: '`draft`, `open`, `changes_requested`, `declined`, `merged` or `withdrawn`.'
+        submitted_at:
+          type:
+          - string
+          - 'null'
     AgentProposalStatus:
       type: object
       description: '`status` of a proposal.'
@@ -7590,6 +7815,31 @@ components:
           description: Accept this competing proposal's value as canonical.
         custom_value:
           description: Override all proposals with this custom value.
+    ReviewRequest:
+      type: object
+      required:
+      - verdict
+      properties:
+        node_id:
+          type:
+          - string
+          - 'null'
+          description: Comment on one changed block.
+        note:
+          type: string
+        revision:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: |-
+            The `revision` of the change request the reviewer was looking at (the one its detail
+            returned). **Required for `approved` and `changes_requested`**: the review is given for
+            that revision and for no other. If the request has moved since, the answer is `409`
+            with the code `request_changed`; read the request again. A comment may leave it out.
+        verdict:
+          type: string
+          description: '`approved`, `changes_requested` or `commented`.'
     SessionAnswer:
       type: object
       required:
@@ -7618,6 +7868,21 @@ components:
           format: int64
         starred:
           type: boolean
+    SubmitRequest:
+      type: object
+      properties:
+        note:
+          type: string
+        revision:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: |-
+            The `revision` of the draft the person was looking at. **Required to adopt a draft an
+            AI agent wrote** (an agent can add to its own draft until it is submitted, so the
+            person must send what they read); when given for a draft of the person's own it must
+            match as well. A draft that moved is `409` with the code `request_changed`.
     SuggestRequest:
       type: object
       description: '`POST /ops/suggest`. `detail` is the wrapped content op (internally-tagged JSON).'

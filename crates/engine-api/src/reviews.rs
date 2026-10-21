@@ -1054,7 +1054,9 @@ async fn review(
     let rules = access::policy(&mut tx, id).await?;
     let summary = review_state(&mut tx, id, draft, &request, member, &rules).await?;
     tx.commit().await?;
-    Ok(Json(json!({"id":review,"revision":current,"review":summary})))
+    Ok(Json(
+        json!({"id":review,"revision":current,"review":summary}),
+    ))
 }
 
 #[derive(utoipa::OpenApi)]

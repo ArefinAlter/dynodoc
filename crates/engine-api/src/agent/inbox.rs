@@ -109,17 +109,12 @@ pub(super) fn paging(
 /// What the viewer's own agents have used of the project's proposal budgets, when the viewer
 /// is the person any agent identity acts for: proposals opened today and still open against
 /// the limits, and the operations one proposal may hold. `null` for everyone else.
-async fn budgets(
-    db: &mut PgConnection,
-    project: Uuid,
-    viewer: Uuid,
-) -> Result<Value, ApiError> {
-    let acts: bool = sqlx::query_scalar(
-        "select exists(select 1 from agent_identity where principal_id=$1)",
-    )
-    .bind(viewer)
-    .fetch_one(&mut *db)
-    .await?;
+async fn budgets(db: &mut PgConnection, project: Uuid, viewer: Uuid) -> Result<Value, ApiError> {
+    let acts: bool =
+        sqlx::query_scalar("select exists(select 1 from agent_identity where principal_id=$1)")
+            .bind(viewer)
+            .fetch_one(&mut *db)
+            .await?;
     if !acts {
         return Ok(Value::Null);
     }

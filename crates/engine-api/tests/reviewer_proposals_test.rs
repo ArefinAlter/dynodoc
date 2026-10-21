@@ -147,13 +147,26 @@ impl People {
     }
 
     async fn detail(&self, login: &str, draft: Uuid) -> Value {
-        let (status, body) = call(&self.w.app, "GET", &self.uri(draft), Some(login), Value::Null).await;
+        let (status, body) = call(
+            &self.w.app,
+            "GET",
+            &self.uri(draft),
+            Some(login),
+            Value::Null,
+        )
+        .await;
         assert_eq!(status, StatusCode::OK, "{body}");
         body
     }
 
     /// The contributor saves another label into the draft at `revision`.
-    async fn change(&self, draft: Uuid, revision: i64, node: usize, text: &str) -> (StatusCode, Value) {
+    async fn change(
+        &self,
+        draft: Uuid,
+        revision: i64,
+        node: usize,
+        text: &str,
+    ) -> (StatusCode, Value) {
         call(
             &self.w.app,
             "POST",
@@ -176,8 +189,12 @@ impl People {
     }
 
     async fn approve(&self, login: &str, draft: Uuid, revision: Value) -> (StatusCode, Value) {
-        self.review(login, draft, json!({"verdict":"approved","revision":revision}))
-            .await
+        self.review(
+            login,
+            draft,
+            json!({"verdict":"approved","revision":revision}),
+        )
+        .await
     }
 
     async fn merge(&self, login: &str, draft: Uuid, seen: &Value) -> (StatusCode, Value) {
@@ -222,21 +239,27 @@ async fn a_stale_approval_is_refused_with_409_and_a_current_one_counts(pool: PgP
     assert_eq!(body["code"], "request_changed", "{body}");
     assert_eq!(body["details"]["current_revision"], json!(revision + 1));
     assert_eq!(body["details"]["revision"], json!(revision));
-    assert!(body["details"]["reason"].as_str().unwrap().contains("changed"));
+    assert!(body["details"]["reason"]
+        .as_str()
+        .unwrap()
+        .contains("changed"));
     assert_eq!(p.rows(id).await, 0, "a refused approval writes nothing");
 
     let fresh = p.detail(&p.rita_login, id).await;
     assert_eq!(fresh["revision"], json!(revision + 1));
-    let (status, body) = p.approve(&p.rita_login, id, fresh["revision"].clone()).await;
+    let (status, body) = p
+        .approve(&p.rita_login, id, fresh["revision"].clone())
+        .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["revision"], json!(revision + 1));
     assert_eq!(body["review"]["satisfied"], true, "{body}");
     assert_eq!(p.rows(id).await, 1);
-    let stored: Option<i64> = sqlx::query_scalar("select draft_revision from change_request_review where draft_id=$1")
-        .bind(id)
-        .fetch_one(p.w.pool())
-        .await
-        .unwrap();
+    let stored: Option<i64> =
+        sqlx::query_scalar("select draft_revision from change_request_review where draft_id=$1")
+            .bind(id)
+            .fetch_one(p.w.pool())
+            .await
+            .unwrap();
     assert_eq!(stored, Some(revision + 1));
     p.w.close().await;
 }
@@ -257,17 +280,29 @@ async fn a_deciding_review_must_name_its_revision(pool: PgPool) {
         assert_eq!(got["code"], "revision_required", "{got}");
     }
     let (status, got) = p
-        .review(&p.rita_login, id, json!({"verdict":"approved","revision":-1}))
+        .review(
+            &p.rita_login,
+            id,
+            json!({"verdict":"approved","revision":-1}),
+        )
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{got}");
     let (status, got) = p
-        .review(&p.rita_login, id, json!({"verdict":"approved","revision":"3"}))
+        .review(
+            &p.rita_login,
+            id,
+            json!({"verdict":"approved","revision":"3"}),
+        )
         .await;
     assert!(status.is_client_error(), "{got}");
     assert_eq!(p.rows(id).await, 0);
     // A comment is not a decision.
     let (status, got) = p
-        .review(&p.rita_login, id, json!({"verdict":"commented","note":"Looks fine."}))
+        .review(
+            &p.rita_login,
+            id,
+            json!({"verdict":"commented","note":"Looks fine."}),
+        )
         .await;
     assert_eq!(status, StatusCode::OK, "{got}");
     assert_eq!(p.rows(id).await, 1);
@@ -325,10 +360,12 @@ async fn an_approval_lapses_when_the_request_changes_and_stays_as_history(pool: 
     // A second change while nothing counts writes no second row.
     let (status, _) = p.change(id, revision + 1, 2, "Gamma three.").await;
     assert_eq!(status, StatusCode::OK);
-    let rows: i64 = sqlx::query_scalar("select count(*) from operation_audit where action='document.change_request_changed'")
-        .fetch_one(p.w.pool())
-        .await
-        .unwrap();
+    let rows: i64 = sqlx::query_scalar(
+        "select count(*) from operation_audit where action='document.change_request_changed'",
+    )
+    .fetch_one(p.w.pool())
+    .await
+    .unwrap();
     assert_eq!(rows, 1);
 
     // Re-approval of what is there now lets it merge.
@@ -443,13 +480,20 @@ async fn an_approval_racing_a_change_never_counts_for_the_new_content(pool: PgPo
 async fn the_author_cannot_approve_their_own_request(pool: PgPool) {
     let p = people(pool, 1).await;
     // An editor can approve other people's requests, never their own.
-    let id = p.request_by(&p.editor_login.clone(), &[(0, "Alpha one.")]).await;
+    let id = p
+        .request_by(&p.editor_login.clone(), &[(0, "Alpha one.")])
+        .await;
     let seen = p.detail(&p.editor_login, id).await;
     assert_eq!(seen["request"]["author"]["id"], json!(p.editor));
     assert_eq!(seen["review"]["can_approve"], false);
-    let (status, body) = p.approve(&p.editor_login, id, seen["revision"].clone()).await;
+    let (status, body) = p
+        .approve(&p.editor_login, id, seen["revision"].clone())
+        .await;
     assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
-    assert!(body["details"]["reason"].as_str().unwrap().contains("your own"));
+    assert!(body["details"]["reason"]
+        .as_str()
+        .unwrap()
+        .contains("your own"));
     let (status, body) = p
         .review(&p.editor_login, id, json!({"verdict":"approved"}))
         .await;
@@ -458,7 +502,9 @@ async fn the_author_cannot_approve_their_own_request(pool: PgPool) {
     // And a contributor who cannot approve anything is refused as before.
     let other = p.request(&[(1, "Beta two.")]).await;
     let seen = p.detail(&p.author_login, other).await;
-    let (status, _) = p.approve(&p.author_login, other, seen["revision"].clone()).await;
+    let (status, _) = p
+        .approve(&p.author_login, other, seen["revision"].clone())
+        .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert_eq!(p.rows(other).await, 0);
     p.w.close().await;
@@ -476,7 +522,10 @@ async fn an_approval_replayed_on_another_request_is_refused(pool: PgPool) {
     let seen_b = p.detail(&p.rita_login, b).await;
     let rb = seen_b["revision"].as_i64().unwrap();
     assert_eq!(p.change(b, rb, 2, "Gamma three.").await.0, StatusCode::OK);
-    assert_eq!(p.change(b, rb + 1, 3, "Delta four.").await.0, StatusCode::OK);
+    assert_eq!(
+        p.change(b, rb + 1, 3, "Delta four.").await.0,
+        StatusCode::OK
+    );
     let seen_a = p.detail(&p.rita_login, a).await;
     let body = json!({"verdict":"approved","revision":seen_a["revision"]});
     let (status, got) = p.review(&p.rita_login, a, body.clone()).await;
@@ -510,12 +559,24 @@ async fn an_approval_replayed_on_another_request_is_refused(pool: PgPool) {
         .fetch_one(owner)
         .await
         .unwrap();
-    assert!(insert(Some(current - 1), "approved").await.is_err(), "an older revision");
-    assert!(insert(Some(current + 1), "approved").await.is_err(), "a revision not reached");
+    assert!(
+        insert(Some(current - 1), "approved").await.is_err(),
+        "an older revision"
+    );
+    assert!(
+        insert(Some(current + 1), "approved").await.is_err(),
+        "a revision not reached"
+    );
     assert!(insert(None, "approved").await.is_err(), "no revision");
-    assert!(insert(None, "changes_requested").await.is_err(), "no revision");
+    assert!(
+        insert(None, "changes_requested").await.is_err(),
+        "no revision"
+    );
     assert!(insert(Some(current), "approved").await.is_ok());
-    assert!(insert(None, "commented").await.is_ok(), "a comment names none");
+    assert!(
+        insert(None, "commented").await.is_ok(),
+        "a comment names none"
+    );
     // The counter only moves forward.
     for statement in [
         "update workspace_draft set revision=revision-1 where id=$1",
@@ -552,16 +613,24 @@ async fn a_review_without_a_revision_keeps_the_older_rule(pool: PgPool) {
         .await
         .unwrap();
     let after = p.detail(&p.editor_login, id).await;
-    assert_eq!(after["review"]["approvals"], 1, "written after the last change: {after}");
+    assert_eq!(
+        after["review"]["approvals"], 1,
+        "written after the last change: {after}"
+    );
     assert!(after["review"]["reviews"][0]["revision"].is_null());
     // The contributor changes the request: the older rule lapses it as it always did.
     let revision = after["revision"].as_i64().unwrap();
-    assert_eq!(p.change(id, revision, 1, "Beta two.").await.0, StatusCode::OK);
-    sqlx::query("update workspace_draft set content_changed_at=now()+interval '2 minutes' where id=$1")
-        .bind(id)
-        .execute(owner)
-        .await
-        .unwrap();
+    assert_eq!(
+        p.change(id, revision, 1, "Beta two.").await.0,
+        StatusCode::OK
+    );
+    sqlx::query(
+        "update workspace_draft set content_changed_at=now()+interval '2 minutes' where id=$1",
+    )
+    .bind(id)
+    .execute(owner)
+    .await
+    .unwrap();
     let later = p.detail(&p.editor_login, id).await;
     assert_eq!(later["review"]["approvals"], 0, "{later}");
     assert_eq!(later["review"]["reviews"][0]["stale"], true);
@@ -744,7 +813,13 @@ async fn request_as(w: &World, login: &str, doc: Uuid, draft: Uuid) -> Value {
     body
 }
 
-async fn review_as(w: &World, login: &str, doc: Uuid, draft: Uuid, body: Value) -> (StatusCode, Value) {
+async fn review_as(
+    w: &World,
+    login: &str,
+    doc: Uuid,
+    draft: Uuid,
+    body: Value,
+) -> (StatusCode, Value) {
     call(
         &w.app,
         "POST",
@@ -816,7 +891,9 @@ async fn an_agents_request_needs_current_approvals_and_an_agent_never_counts(poo
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["code"], "request_changed");
     // What the agent sees agrees.
-    let status = get(&w.app, &w.url(&format!("/proposals/{p}")), &s.token).await.json();
+    let status = get(&w.app, &w.url(&format!("/proposals/{p}")), &s.token)
+        .await
+        .json();
     assert_eq!(status["approvals"], 0);
     assert_eq!(status["satisfied"], false);
     // The audit row of the agent's extension names the approval it lapsed.
@@ -841,28 +918,46 @@ async fn an_agents_request_needs_current_approvals_and_an_agent_never_counts(poo
     )
     .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
-    // ... and even with the triggers that keep it out of the tables turned off and a
-    // membership forced in, an approval row of an agent is not counted.
+    // ... and even with the triggers that keep an agent out of the tables turned off and a
+    // membership forced in, the approval row of another person's agent identity (neither the
+    // author nor the principal of this request, so no other rule excludes it) is not counted.
+    let (pat, pat_login) = person(w.pool(), "pat@example.test").await;
+    w.member(w.project, pat, "editor").await;
+    let pats = enroll_claude(w, &pat_login, 8).await;
+    assert_eq!(w.grant(&pats, w.project, &WRITE).await.0, StatusCode::OK);
+    let pats_agent = agent_identity_of(w, pat).await;
+    assert_ne!(pats_agent, agent);
     let owner = &w.runtime.owner;
-    sqlx::raw_sql("alter table space_member disable trigger space_member_no_agent; alter table change_request_review disable trigger change_request_review_no_agent;")
+    sqlx::raw_sql("alter table space_member disable trigger space_member_no_agent; alter table change_request_review disable trigger change_request_review_no_agent; alter table identity disable trigger identity_agent_account;")
+        .execute(owner)
+        .await
+        .unwrap();
+    // An enabled account with a membership: only the agent rule is left to stop it.
+    sqlx::query("update identity set disabled_at=null where id=$1")
+        .bind(pats_agent)
         .execute(owner)
         .await
         .unwrap();
     sqlx::query("insert into space_member(space_id,identity_id,role) values($1,$2,'approver')")
         .bind(w.project)
-        .bind(agent)
+        .bind(pats_agent)
         .execute(owner)
         .await
         .unwrap();
     sqlx::query("insert into change_request_review(document_id,draft_id,reviewer_id,verdict,note,draft_revision) values($1,$2,$3,'approved','',$4)")
         .bind(doc)
         .bind(p)
-        .bind(agent)
+        .bind(pats_agent)
         .bind(draft_revision(w, p).await)
         .execute(owner)
         .await
         .unwrap();
     let forced = request_as(w, &rita_login, doc, p).await;
+    assert_eq!(
+        forced["review"]["reviews"].as_array().unwrap().len(),
+        2,
+        "{forced}"
+    );
     assert_eq!(forced["review"]["approvals"], 0, "{forced}");
     assert_eq!(forced["review"]["satisfied"], false);
     s.w.close().await;
@@ -890,12 +985,16 @@ async fn adopting_an_agents_draft_binds_the_revision_and_names_both(pool: PgPool
     let (status, body) = adopt(&s, doc, p, json!({"note":"Mine.","revision":seen})).await;
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["code"], "request_changed");
-    assert_eq!(body["details"]["current_revision"], json!(draft_revision(w, p).await));
-    let submitted: bool = sqlx::query_scalar("select submitted_at is not null from workspace_draft where id=$1")
-        .bind(p)
-        .fetch_one(w.pool())
-        .await
-        .unwrap();
+    assert_eq!(
+        body["details"]["current_revision"],
+        json!(draft_revision(w, p).await)
+    );
+    let submitted: bool =
+        sqlx::query_scalar("select submitted_at is not null from workspace_draft where id=$1")
+            .bind(p)
+            .fetch_one(w.pool())
+            .await
+            .unwrap();
     assert!(!submitted, "nothing was submitted");
 
     let now = draft_revision(w, p).await;
@@ -1046,7 +1145,12 @@ async fn the_reviewers_list_shows_agent_proposals_and_nothing_private(pool: PgPo
     assert_eq!(mine["budgets"]["ops_per_proposal"], 500);
     // No document text, no reasons, no placeholder address.
     let text = mine.to_string();
-    for private in ["secret proposed words", "adopted paragraph", "clearer", "agents.invalid"] {
+    for private in [
+        "secret proposed words",
+        "adopted paragraph",
+        "clearer",
+        "agents.invalid",
+    ] {
         assert!(!text.contains(private), "{private} leaked: {text}");
     }
 
@@ -1061,9 +1165,21 @@ async fn the_reviewers_list_shows_agent_proposals_and_nothing_private(pool: PgPo
     // Refusals: a stranger, no token, a device token.
     let (status, _) = list_as(w, &outsider, "").await;
     assert_eq!(status, StatusCode::FORBIDDEN);
-    let (status, _) = call(&w.app, "GET", &format!("/projects/{}/agent-proposals", w.project), None, Value::Null).await;
+    let (status, _) = call(
+        &w.app,
+        "GET",
+        &format!("/projects/{}/agent-proposals", w.project),
+        None,
+        Value::Null,
+    )
+    .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
-    let device = get(&w.app, &format!("/projects/{}/agent-proposals", w.project), &s.token).await;
+    let device = get(
+        &w.app,
+        &format!("/projects/{}/agent-proposals", w.project),
+        &s.token,
+    )
+    .await;
     assert_eq!(device.code(), 401, "{}", device.text());
 
     // Filters and bounds.
@@ -1073,7 +1189,15 @@ async fn the_reviewers_list_shows_agent_proposals_and_nothing_private(pool: PgPo
     assert_eq!(ids_of(&only), vec![adopted.to_string()]);
     let (_, none) = list_as(w, &s.login, "?state=merged").await;
     assert!(ids_of(&none).is_empty());
-    for bad in ["?state=nope", "?limit=0", "?limit=51", "?offset=-1", "?offset=1001", "?who=me", "?limit=x"] {
+    for bad in [
+        "?state=nope",
+        "?limit=0",
+        "?limit=51",
+        "?offset=-1",
+        "?offset=1001",
+        "?who=me",
+        "?limit=x",
+    ] {
         let (status, body) = list_as(w, &s.login, bad).await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{bad}: {body}");
     }
@@ -1138,7 +1262,12 @@ async fn the_reviewers_list_keeps_another_persons_agent_drafts_private(pool: PgP
     let doc = standard(w).await;
     let drafted = open_at(&s, doc, 0, "Alpha drafted.", None).await;
     let revision = draft_revision(w, drafted).await;
-    assert_eq!(adopt(&s, doc, drafted, json!({"revision":revision})).await.0, StatusCode::OK);
+    assert_eq!(
+        adopt(&s, doc, drafted, json!({"revision":revision}))
+            .await
+            .0,
+        StatusCode::OK
+    );
     // A second person with an agent of her own.
     let (pat, pat_login) = person(w.pool(), "pat@example.test").await;
     w.member(w.project, pat, "editor").await;
@@ -1160,7 +1289,9 @@ async fn the_reviewers_list_keeps_another_persons_agent_drafts_private(pool: PgP
     want.sort();
     assert_eq!(got, want, "{pat_sees}");
     // Each agent lists only its own proposals.
-    let mine = get(&w.app, &w.url("/proposals?state=all"), &pat_token).await.json();
+    let mine = get(&w.app, &w.url("/proposals?state=all"), &pat_token)
+        .await
+        .json();
     assert_eq!(mine["n"], 1);
     assert_eq!(mine["proposals"][0]["proposal"], json!(pats_draft));
     s.w.close().await;
@@ -1176,7 +1307,10 @@ async fn an_agent_can_list_its_own_proposals(pool: PgPool) {
     let a = open_at(&s, doc, 0, "Alpha one.", None).await;
     let b = open_at(&s, doc, 1, "Beta two.", None).await;
     let revision = draft_revision(w, b).await;
-    assert_eq!(adopt(&s, doc, b, json!({"revision":revision})).await.0, StatusCode::OK);
+    assert_eq!(
+        adopt(&s, doc, b, json!({"revision":revision})).await.0,
+        StatusCode::OK
+    );
 
     let listed = get(&w.app, &w.url("/proposals"), &s.token).await;
     assert_eq!(listed.code(), 200, "{}", listed.text());
@@ -1192,23 +1326,41 @@ async fn an_agent_can_list_its_own_proposals(pool: PgPool) {
     assert_eq!(body["open_limit"], 5);
     assert_eq!(body["write_mode"], "draft");
     let rows = body["proposals"].as_array().unwrap();
-    let find = |id: Uuid| rows.iter().find(|r| r["proposal"] == json!(id)).unwrap().clone();
+    let find = |id: Uuid| {
+        rows.iter()
+            .find(|r| r["proposal"] == json!(id))
+            .unwrap()
+            .clone()
+    };
     assert_eq!(find(a)["state"], "draft");
     assert_eq!(find(b)["state"], "open");
     assert_eq!(find(a)["file"], json!(doc));
     assert_eq!(find(a)["behind"], 0);
     assert!(find(a)["edits"].as_i64().unwrap() > 0);
-    assert!(!body.to_string().contains("Alpha one"), "ids and numbers only");
+    assert!(
+        !body.to_string().contains("Alpha one"),
+        "ids and numbers only"
+    );
 
-    let drafts = get(&w.app, &w.url("/proposals?state=draft"), &s.token).await.json();
+    let drafts = get(&w.app, &w.url("/proposals?state=draft"), &s.token)
+        .await
+        .json();
     assert_eq!(drafts["n"], 1);
     assert_eq!(drafts["proposals"][0]["proposal"], json!(a));
-    for bad in ["?state=zzz", "?limit=0", "?limit=51", "?offset=1001", "?q=1"] {
+    for bad in [
+        "?state=zzz",
+        "?limit=0",
+        "?limit=51",
+        "?offset=1001",
+        "?q=1",
+    ] {
         let reply = get(&w.app, &w.url(&format!("/proposals{bad}")), &s.token).await;
         assert_eq!(reply.code(), 400, "{bad}: {}", reply.text());
         assert_eq!(reply.json()["details"]["agent_code"], "bad_request");
     }
-    let paged = get(&w.app, &w.url("/proposals?limit=1"), &s.token).await.json();
+    let paged = get(&w.app, &w.url("/proposals?limit=1"), &s.token)
+        .await
+        .json();
     assert_eq!(paged["more"], true);
     assert_eq!(paged["n"], 1);
 
@@ -1216,14 +1368,22 @@ async fn an_agent_can_list_its_own_proposals(pool: PgPool) {
     let dct = get_dct(&w.app, &w.url("/proposals?state=all"), &s.token).await;
     assert_eq!(dct.code(), 200, "{}", dct.text());
     let text = dct.text();
-    assert_eq!(text.lines().filter(|l| l.starts_with("proposal ")).count(), 2, "{text}");
-    assert!(text.contains(&a.to_string()) && text.contains(&b.to_string()), "{text}");
+    assert_eq!(
+        text.lines().filter(|l| l.starts_with("proposal ")).count(),
+        2,
+        "{text}"
+    );
+    assert!(
+        text.contains(&a.to_string()) && text.contains(&b.to_string()),
+        "{text}"
+    );
 
     // It is one ledger row of the `status` tool, and not another route's.
-    let rows: i64 = sqlx::query_scalar("select count(*) from agent_call where tool='status' and outcome='ok'")
-        .fetch_one(w.pool())
-        .await
-        .unwrap();
+    let rows: i64 =
+        sqlx::query_scalar("select count(*) from agent_call where tool='status' and outcome='ok'")
+            .fetch_one(w.pool())
+            .await
+            .unwrap();
     assert!(rows >= 3);
 
     // A file whose policy is `none` drops out of the list.
@@ -1236,7 +1396,9 @@ async fn an_agent_can_list_its_own_proposals(pool: PgPool) {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{set}");
-    let hidden = get(&w.app, &w.url("/proposals?state=all"), &s.token).await.json();
+    let hidden = get(&w.app, &w.url("/proposals?state=all"), &s.token)
+        .await
+        .json();
     assert_eq!(hidden["n"], 0, "{hidden}");
 
     // A key with only the read scope has no agent identity yet: an empty list, not an error.
