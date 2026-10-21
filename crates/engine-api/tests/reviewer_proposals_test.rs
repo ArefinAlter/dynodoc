@@ -851,6 +851,21 @@ async fn an_agents_request_needs_current_approvals_and_an_agent_never_counts(poo
     let sent = post_to(w, &s.token, &format!("/proposals/{p}/submit"), json!({})).await;
     assert_eq!(sent.json()["state"], "open", "{}", sent.text());
 
+    // The reviewers' notification names the agent as such, with no placeholder address, and
+    // says which project it belongs to so the inbox can be opened from it.
+    let (status, inbox) = call(&w.app, "GET", "/notifications", Some(&rita_login), Value::Null).await;
+    assert_eq!(status, StatusCode::OK, "{inbox}");
+    let told = inbox["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|n| n["kind"] == "change_request_submitted")
+        .unwrap_or_else(|| panic!("no notification in {inbox}"));
+    assert_eq!(told["actor"]["is_agent"], true, "{told}");
+    assert_eq!(told["actor"]["name"], "Claude for Tester");
+    assert!(told["actor"]["email"].is_null(), "{told}");
+    assert_eq!(told["document"]["project_id"], json!(w.project));
+    assert!(!inbox.to_string().contains("agents.invalid"));
     let seen = request_as(w, &rita_login, doc, p).await;
     assert!(seen["request"]["agent"].is_object());
     let revision = seen["revision"].clone();

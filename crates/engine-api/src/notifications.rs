@@ -77,8 +77,8 @@ pub async fn notify_reviewers(
 
 const ITEM_JSON: &str = "jsonb_build_object(
     'id',n.id,'kind',n.kind,'created_at',n.created_at,'read',n.read_at is not null,'payload',n.payload,
-    'document',case when d.id is null then null else jsonb_build_object('id',d.id,'title',d.title,'kind',coalesce(d.settings->>'kind','questionnaire'),'role',document_member_role(d.id,$1)) end,
-    'actor',case when a.id is null then null else jsonb_build_object('id',a.id,'name',a.display_name,'email',case when a.erased_at is null then a.email end) end,
+    'document',case when d.id is null then null else jsonb_build_object('id',d.id,'title',d.title,'kind',coalesce(d.settings->>'kind','questionnaire'),'role',document_member_role(d.id,$1),'project_id',document_project(d.id)) end,
+    'actor',case when a.id is null then null else jsonb_build_object('id',a.id,'name',a.display_name,'email',case when a.erased_at is null and lower(a.email) not like '%@agents.invalid' then a.email end,'is_agent',exists(select 1 from agent_identity ai where ai.identity_id=a.id)) end,
     'source',(select jsonb_build_object('id',s.id,'title',s.title,'kind',coalesce(s.settings->>'kind','questionnaire'),'role',document_member_role(s.id,$1),
         'filename',(select u.filename from document_upload u where u.document_id=s.id and coalesce(u.report->>'kind','')<>'font' order by u.created_at limit 1))
       from document s where s.id=case when n.payload->>'source_document_id' ~ '^[0-9a-f-]{36}$' then (n.payload->>'source_document_id')::uuid end and s.deleted_at is null),
