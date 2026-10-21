@@ -181,6 +181,58 @@ async fn list(
     })))
 }
 
+/// Reasons shown on a request, in all, and the characters of one reason and of an op id.
+const MAX_REASONS: usize = 100;
+const REASON_CHARS: usize = 280;
+const ID_CHARS: usize = 40;
+
+/// What the agent said about a proposal, for the review screen: the totals of its propose
+/// calls and the reason it gave per operation (`why`). All of it is **the agent's own words and
+/// untrusted**: control and hidden characters are dropped again here, each reason is cut to 280
+/// characters, at most 100 are returned (`more` says there were others) and a client shows them
+/// as plain text, never as markup. No document text is in it (the receipts hold none).
+pub(crate) async fn statement(db: &mut PgConnection, draft: Uuid) -> Result<Value, ApiError> {
+    let receipts: Vec<(i32, i32, i32, Value)> = sqlx::query_as(
+        "select ops_in,ops_engine,stale,why from agent_proposal_receipt where draft_id=$1 and kind='propose' order by at,id limit 200",
+    )
+    .bind(draft)
+    .fetch_all(db)
+    .await?;
+    let (mut ops_in, mut ops_engine, mut stale) = (0i64, 0i64, 0i64);
+    let mut reasons: Vec<Value> = Vec::new();
+    let mut more = false;
+    for (call, (sent, compiled, stale_ops, why)) in receipts.iter().enumerate() {
+        ops_in += i64::from(*sent);
+        ops_engine += i64::from(*compiled);
+        stale += i64::from(*stale_ops);
+        for entry in why.as_array().into_iter().flatten() {
+            let Some(text) = entry["why"].as_str().filter(|t| !t.trim().is_empty()) else {
+                continue;
+            };
+            if reasons.len() >= MAX_REASONS {
+                more = true;
+                break;
+            }
+            reasons.push(json!({
+                "call": call + 1,
+                "i": entry["i"],
+                "op": entry["op"].as_str().map(|o| super::proposal::bounded(o, 20)),
+                "id": entry["id"].as_str().map(|i| super::proposal::bounded(i, ID_CHARS)),
+                "why": super::proposal::bounded(text, REASON_CHARS),
+            }));
+        }
+    }
+    Ok(json!({
+        "calls": receipts.len(),
+        "ops_in": ops_in,
+        "ops_engine": ops_engine,
+        "stale": stale,
+        "reasons": reasons,
+        "more": more,
+        "trust": "untrusted_text",
+    }))
+}
+
 #[derive(utoipa::OpenApi)]
 #[openapi(paths(list))]
 pub struct AgentInboxApi;

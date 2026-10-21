@@ -530,11 +530,19 @@ async fn detail(
     let role = access::governance_role(&mut tx, id, auth.identity_id).await?;
     let rules = access::policy(&mut tx, id).await?;
     let review = review_state(&mut tx, id, draft, &request, role, &rules).await?;
+    // What an AI agent said about its proposal (its words: untrusted text), for the reviewer.
+    let statement = if request["agent"].is_object() {
+        Some(crate::agent::inbox::statement(&mut tx, draft).await?)
+    } else {
+        None
+    };
     // Closed requests keep their record; only open ones have a live comparison.
     if request["status"] != "open" {
-        return Ok(Json(
-            json!({"request":request,"team_seq":seq,"review":review}),
-        ));
+        let mut closed = json!({"request":request,"team_seq":seq,"review":review});
+        if let Some(statement) = statement {
+            closed["agent_statement"] = statement;
+        }
+        return Ok(Json(closed));
     }
     let ctx = load_draft(&mut tx, id, draft, None).await?;
     let plan = plan(&request, &ctx.base, &team, &ctx.local, &BTreeMap::new());
@@ -555,9 +563,11 @@ async fn detail(
             )
         })
         .collect();
-    Ok(Json(
-        json!({"request":request,"team_seq":seq,"revision":ctx.revision,"ops":plan.ops,"conflicts":plan.conflicts,"own":own,"nodes":nodes,"behind":seq-ctx.row["base_seq"].as_i64().unwrap_or(0),"review":review}),
-    ))
+    let mut open = json!({"request":request,"team_seq":seq,"revision":ctx.revision,"ops":plan.ops,"conflicts":plan.conflicts,"own":own,"nodes":nodes,"behind":seq-ctx.row["base_seq"].as_i64().unwrap_or(0),"review":review});
+    if let Some(statement) = statement {
+        open["agent_statement"] = statement;
+    }
+    Ok(Json(open))
 }
 
 #[derive(Deserialize)]

@@ -102,7 +102,7 @@ fn note_of(body: &[u8]) -> Result<String, AgentFail> {
 
 /// `text` as data for the agent: control and hidden characters dropped, cut to `max`
 /// characters (with an ellipsis).
-fn bounded(text: &str, max: usize) -> String {
+pub(super) fn bounded(text: &str, max: usize) -> String {
     let clean = sanitize(text);
     if clean.chars().count() > max {
         let mut cut: String = clean.chars().take(max).collect();

@@ -229,6 +229,7 @@ async fn a_stale_approval_is_refused_with_409_and_a_current_one_counts(pool: PgP
     let id = p.request(&[(0, "Alpha one.")]).await;
     let seen = p.detail(&p.rita_login, id).await;
     let revision = seen["revision"].as_i64().unwrap();
+    assert!(seen.get("agent_statement").is_none(), "only an agent's request has one");
 
     let (status, edited) = p.change(id, revision, 1, "Beta two.").await;
     assert_eq!(status, StatusCode::OK, "{edited}");
@@ -1021,6 +1022,15 @@ async fn adopting_an_agents_draft_binds_the_revision_and_names_both(pool: PgPool
     let seen = request_as(w, &s.login, doc, p).await;
     assert_eq!(seen["request"]["mine"], true);
     assert_eq!(seen["review"]["can_approve"], false);
+    // The reviewer is shown what the agent said, as untrusted text, and who and what it was.
+    let said = &seen["agent_statement"];
+    assert_eq!(said["trust"], "untrusted_text", "{seen}");
+    assert_eq!(said["calls"], 2);
+    assert_eq!(said["ops_in"], 2);
+    assert_eq!(said["reasons"][0]["why"], "clearer");
+    assert_eq!(said["reasons"][0]["op"], "set_text");
+    assert_eq!(seen["request"]["agent"]["client_kind"], "claude");
+    assert_eq!(seen["request"]["agent"]["display_name"], "Claude for Tester");
 
     // A draft of the person's own needs no revision, but one that is sent must be right.
     let own: Value = call(
