@@ -494,7 +494,7 @@ pub struct AgentProposalRow {
     submitted_at: Option<String>,
 }
 
-/// The agent's own proposals in a project (`GET .../agent/proposals`).
+/// The agent's own proposals in a project (the list route of the agent plane).
 #[derive(ToSchema, Serialize)]
 #[allow(dead_code)]
 pub struct AgentProposalList {

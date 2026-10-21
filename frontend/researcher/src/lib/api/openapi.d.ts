@@ -2620,7 +2620,7 @@ export interface components {
       name: string;
       rows: number;
     };
-    /** @description The agent's own proposals in a project (`GET .../agent/proposals`). */
+    /** @description The agent's own proposals in a project (the list route of the agent plane). */
     AgentProposalList: {
       more: boolean;
       n: number;

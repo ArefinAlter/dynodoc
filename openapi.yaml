@@ -6130,7 +6130,7 @@ components:
           minimum: 0
     AgentProposalList:
       type: object
-      description: The agent's own proposals in a project (`GET .../agent/proposals`).
+      description: The agent's own proposals in a project (the list route of the agent plane).
       required:
       - protocol
       - tool
