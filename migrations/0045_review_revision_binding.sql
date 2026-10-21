@@ -9,7 +9,8 @@
 -- application refuses it when the request has moved, and it counts only while the
 -- request's content has not changed since that revision.
 --
--- Additive: no existing row changes. Existing reviews keep a null revision and keep the
+-- Additive: no existing row changes (amended before it ran in any shared environment).
+-- Existing reviews keep a null revision and keep the
 -- old rule (written after the last change) for as long as their request lives; they cannot
 -- be edited (the table is append-only) and nothing new can be written without a revision.
 -- Like 0043 and 0044 this is not rollback-safe by leaving the objects unused: the API
@@ -29,6 +30,15 @@ alter table change_request_review
     add column draft_revision bigint check (draft_revision is null or draft_revision >= 0);
 alter table change_request_review add constraint change_request_review_decision_revision
     check (verdict = 'commented' or draft_revision is not null) not valid;
+
+-- 2b. Which of one reviewer's decisions is the latest. created_at is the transaction's start
+--    time, not its commit order: a reviewer who double-submits from two tabs can have the
+--    later commit carry the earlier timestamp and lose. Every writer of a request holds the
+--    document lock until commit, so an identity drawn at insert time is in commit order. New
+--    rows are ordered by it; rows from before this migration keep their created_at order and
+--    count as older than every new row (their draft_revision is null, new decisions have one).
+--    The runtime login needs USAGE on the sequence (engine-core database.rs, SEQUENCES).
+alter table change_request_review add column seq bigint generated always as identity;
 
 -- 3. The counter is a counter: it never goes back, so (draft, revision) names one state
 --    for ever, and the content revision is never ahead of it. Nothing reuses a number.

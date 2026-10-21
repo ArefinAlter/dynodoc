@@ -648,7 +648,7 @@ async fn edit_draft(
     }
     // New content makes earlier approvals of this draft's change request stale: they name the
     // revision they were given for, and the content revision moves to this one.
-    crate::reviews::audit_lapsed_reviews(&mut tx, id, draft, auth.identity_id).await?;
+    crate::reviews::audit_lapsed_reviews(&mut tx, id, draft, auth.identity_id, "edited").await?;
     sqlx::query(
         "update workspace_draft set revision=revision+1,content_revision=revision+1,content_changed_at=now() where id=$1",
     )
@@ -1065,7 +1065,8 @@ async fn sync_draft(
         crate::draft_storage::encode(&mut tx, DocumentId(id), &team, state.shared_draft_bases)
             .await?;
     if req.action != "share" {
-        crate::reviews::audit_lapsed_reviews(&mut tx, id, draft, auth.identity_id).await?;
+        crate::reviews::audit_lapsed_reviews(&mut tx, id, draft, auth.identity_id, "edited")
+            .await?;
     }
     sqlx::query("update workspace_draft set content_changed_at=case when $6 then now() else content_changed_at end,content_revision=case when $6 then revision+1 else content_revision end,merge_base_state=$2,base_seq=$3,revision=revision+1,merged_at=case when $4 then now() else merged_at end,review_outcome=case when $4 and submitted_at is not null then 'merged' else review_outcome end,reviewed_by=case when $4 and submitted_at is not null then $5 else reviewed_by end,reviewed_at=case when $4 and submitted_at is not null then now() else reviewed_at end where id=$1").bind(draft).bind(stored).bind(next_seq).bind(completed).bind(auth.identity_id).bind(req.action != "share").execute(&mut *tx).await?;
     tx.commit().await?;

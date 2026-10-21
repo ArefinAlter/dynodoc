@@ -1480,3 +1480,602 @@ async fn an_agent_can_list_its_own_proposals(pool: PgPool) {
     assert!(problems.is_empty(), "{problems:?}");
     s.w.close().await;
 }
+
+// ============================================================ 5. follow-ups of the review
+
+impl People {
+    async fn identity(&self, email: &str) -> Uuid {
+        sqlx::query_scalar("select id from identity where email=$1")
+            .bind(email)
+            .fetch_one(self.w.pool())
+            .await
+            .unwrap()
+    }
+
+    /// The contributor-side sync of a draft: pull, rebase or share.
+    async fn sync(&self, login: &str, draft: Uuid, body: Value) -> (StatusCode, Value) {
+        call(
+            &self.w.app,
+            "POST",
+            &format!("/documents/{}/drafts/{draft}/sync", self.doc),
+            Some(login),
+            body,
+        )
+        .await
+    }
+
+    /// The team changes a paragraph nobody else is working on.
+    async fn team_changes(&self, node: usize, text: &str) {
+        let mut ops = Ops::default();
+        ops.edit(&self.nodes[node], "content", para(text));
+        ops.edit(&self.nodes[node], "label", json!(text));
+        self.w.edit(self.doc, ops).await;
+    }
+
+    /// A deciding review straight into the table, as the database's owner, for the revision
+    /// the draft is at.
+    async fn force(&self, reviewer: Uuid, draft: Uuid, verdict: &str) {
+        sqlx::query("insert into change_request_review(document_id,draft_id,reviewer_id,verdict,note,draft_revision) values($1,$2,$3,$4,'forced',(select revision from workspace_draft where id=$2))")
+            .bind(self.doc)
+            .bind(draft)
+            .bind(reviewer)
+            .bind(verdict)
+            .execute(&self.w.runtime.owner)
+            .await
+            .unwrap();
+    }
+
+    async fn changed_audit(&self) -> Vec<Value> {
+        sqlx::query_scalar("select detail from operation_audit where action='document.change_request_changed' and resource_id=$1 order by id")
+            .bind(self.doc)
+            .fetch_all(self.w.pool())
+            .await
+            .unwrap()
+    }
+}
+
+async fn content_revision(w: &World, draft: Uuid) -> (i64, i64) {
+    sqlx::query_as("select revision,content_revision from workspace_draft where id=$1")
+        .bind(draft)
+        .fetch_one(w.pool())
+        .await
+        .unwrap()
+}
+
+/// A pull or a rebase changes what the reviewer approved, so the approval stops counting;
+/// sharing part of the draft into the team version does not change it, so it keeps counting.
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_pull_or_a_rebase_lapses_an_approval_and_a_share_does_not(pool: PgPool) {
+    // No approvals are required here, so that an editor may share into the team version; what is
+    // measured is the count of approvals, which is what the rules would count.
+    let p = people(pool, 0).await;
+    sqlx::query("update project_settings set protect_team_version=false where space_id=$1")
+        .bind(p.w.project)
+        .execute(&p.w.runtime.owner)
+        .await
+        .unwrap();
+    let ed = p.editor_login.clone();
+    let id = p
+        .request_by(&ed, &[(0, "Alpha one."), (1, "Beta two.")])
+        .await;
+    let seen = p.detail(&p.rita_login, id).await;
+    let (status, body) = p.approve(&p.rita_login, id, seen["revision"].clone()).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // Sharing one of the two changes moves the revision and leaves the content: it still counts.
+    let (revision_before, content_before) = content_revision(&p.w, id).await;
+    let now = p.detail(&p.rita_login, id).await;
+    let (status, shared) = p
+        .sync(
+            &ed,
+            id,
+            json!({"action":"share","team_seq":now["team_seq"],"revision":now["revision"],"included_nodes":[p.nodes[0]]}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{shared}");
+    assert_eq!(shared["completed"], false, "{shared}");
+    let (revision_after, content_after) = content_revision(&p.w, id).await;
+    assert_eq!(revision_after, revision_before + 1);
+    assert_eq!(
+        content_after, content_before,
+        "a share does not change the content"
+    );
+    let kept = p.detail(&p.rita_login, id).await;
+    assert_eq!(kept["review"]["approvals"], 1, "{kept}");
+    assert_eq!(kept["review"]["satisfied"], true);
+    assert!(p.changed_audit().await.is_empty(), "nothing lapsed yet");
+
+    // The team moves on and the contributor pulls it in: the draft is not what was approved.
+    p.team_changes(3, "Delta changed by the team.").await;
+    let now = p.detail(&p.rita_login, id).await;
+    let (status, pulled) = p
+        .sync(
+            &ed,
+            id,
+            json!({"action":"pull","team_seq":now["team_seq"],"revision":now["revision"]}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{pulled}");
+    let after = p.detail(&p.rita_login, id).await;
+    assert_eq!(after["review"]["approvals"], 0, "{after}");
+    assert_eq!(after["review"]["reviews"][0]["stale"], true);
+    let (revision, content) = content_revision(&p.w, id).await;
+    assert_eq!(revision, content, "the content revision followed the pull");
+    let audit = p.changed_audit().await;
+    assert_eq!(audit.len(), 1, "{audit:?}");
+    assert_eq!(audit[0]["cause"], "edited");
+    assert_eq!(audit[0]["lapsed"].as_array().unwrap().len(), 1);
+
+    // Approved again, then a rebase lapses it the same way.
+    let (status, body) = p.approve(&p.sam_login, id, after["revision"].clone()).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(p.detail(&p.rita_login, id).await["review"]["approvals"], 1);
+    p.team_changes(2, "Gamma changed by the team.").await;
+    let now = p.detail(&p.rita_login, id).await;
+    let (status, rebased) = p
+        .sync(
+            &ed,
+            id,
+            json!({"action":"rebase","team_seq":now["team_seq"],"revision":now["revision"]}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{rebased}");
+    let after = p.detail(&p.rita_login, id).await;
+    assert_eq!(after["review"]["approvals"], 0, "{after}");
+    assert_eq!(p.changed_audit().await.len(), 2);
+    p.w.close().await;
+}
+
+/// Only people who hold a reviewer role or above count, and only while they do: a reviewer who
+/// is demoted stops counting (and counts again if restored), and rows of a contributor or a
+/// viewer, written behind the API's back, never count.
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_demoted_reviewer_and_a_contributor_never_count(pool: PgPool) {
+    let p = people(pool, 1).await;
+    let id = p.request(&[(0, "Alpha one.")]).await;
+    let rita = p.identity("rita@example.test").await;
+    let seen = p.detail(&p.editor_login, id).await;
+    let (status, body) = p.approve(&p.rita_login, id, seen["revision"].clone()).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        p.detail(&p.editor_login, id).await["review"]["approvals"],
+        1
+    );
+
+    for demoted in ["viewer", "reviewer"] {
+        // 'reviewer' is a contributor in the product's words; 'viewer' only reads.
+        sqlx::query("update space_member set role=$2 where space_id=$3 and identity_id=$1")
+            .bind(rita)
+            .bind(demoted)
+            .bind(p.w.project)
+            .execute(&p.w.runtime.owner)
+            .await
+            .unwrap();
+        let after = p.detail(&p.editor_login, id).await;
+        assert_eq!(after["review"]["approvals"], 0, "{demoted}: {after}");
+        assert_eq!(after["review"]["satisfied"], false);
+        // The row is history, not stale: nothing about the request changed.
+        assert_eq!(after["review"]["reviews"][0]["stale"], false);
+    }
+    sqlx::query("update space_member set role='approver' where space_id=$2 and identity_id=$1")
+        .bind(rita)
+        .bind(p.w.project)
+        .execute(&p.w.runtime.owner)
+        .await
+        .unwrap();
+    assert_eq!(
+        p.detail(&p.editor_login, id).await["review"]["approvals"],
+        1
+    );
+
+    // Approvals of a contributor and of a viewer, forced in, are not counted.
+    let (cora, _) = person(p.w.pool(), "cora@example.test").await;
+    p.w.member(p.w.project, cora, "reviewer").await;
+    let (vic, _) = person(p.w.pool(), "vic@example.test").await;
+    p.w.member(p.w.project, vic, "viewer").await;
+    p.force(cora, id, "approved").await;
+    p.force(vic, id, "approved").await;
+    let after = p.detail(&p.editor_login, id).await;
+    assert_eq!(after["review"]["approved_by"], json!([rita]), "{after}");
+    assert_eq!(after["review"]["approvals"], 1);
+    assert_eq!(after["review"]["reviews"].as_array().unwrap().len(), 3);
+    p.w.close().await;
+}
+
+/// Approve, a manager declines, the request is sent for review again: the old approval must not
+/// satisfy the new round, for an AI agent's request whose principal reopens it (I5); an
+/// approval of the new revision counts.
+#[sqlx::test(migrations = "../../migrations")]
+async fn reopening_a_declined_request_does_not_revive_its_old_approvals(pool: PgPool) {
+    let s = setup(pool, write_full()).await;
+    let w = &s.w;
+    let doc = standard(w).await;
+    sqlx::query("insert into document_policy(document_id,protect_team_version,required_approvals,merge_roles) values($1,false,1,'editors')")
+        .bind(doc)
+        .execute(&w.runtime.owner)
+        .await
+        .unwrap();
+    let (rita, rita_login) = person(w.pool(), "rita@example.test").await;
+    w.member(w.project, rita, "approver").await;
+    let p = open_at(&s, doc, 0, "Alpha procedure paragraph.", None).await;
+    assert_eq!(
+        post_to(w, &s.token, &format!("/proposals/{p}/submit"), json!({}))
+            .await
+            .json()["state"],
+        "open"
+    );
+    let seen = request_as(w, &rita_login, doc, p).await;
+    let revision = seen["revision"].as_i64().unwrap();
+    let (status, body) = review_as(
+        w,
+        &rita_login,
+        doc,
+        p,
+        json!({"verdict":"approved","revision":revision}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["review"]["satisfied"], true);
+
+    // A manager declines it; its principal sends it for review again.
+    let (status, body) = call(
+        &w.app,
+        "POST",
+        &format!("/documents/{doc}/change-requests/{p}/decline"),
+        Some(&w.owner_login),
+        json!({"note":"Not like this."}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = adopt(&s, doc, p, json!({"note":"Again.","revision":revision})).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let again = request_as(w, &rita_login, doc, p).await;
+    assert_eq!(again["request"]["status"], "open");
+    assert_eq!(again["revision"], json!(revision + 1), "a new round");
+    assert_eq!(again["review"]["approvals"], 0, "{again}");
+    assert_eq!(again["review"]["satisfied"], false);
+    assert_eq!(again["review"]["reviews"][0]["stale"], true);
+    let head = w.head(doc).await;
+    let (status, body) = call(
+        &w.app,
+        "POST",
+        &format!("/documents/{doc}/change-requests/{p}/merge"),
+        Some(&w.owner_login),
+        json!({"team_seq":head,"revision":again["revision"]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    assert_eq!(w.head(doc).await, head, "nothing was merged");
+    // The audit says the reopening lapsed the approval.
+    let audit: Vec<Value> = sqlx::query_scalar("select detail from operation_audit where action='document.change_request_changed' and resource_id=$1")
+        .bind(doc)
+        .fetch_all(w.pool())
+        .await
+        .unwrap();
+    assert_eq!(audit.len(), 1, "{audit:?}");
+    assert_eq!(audit[0]["cause"], "reopened");
+    assert_eq!(audit[0]["lapsed"][0]["reviewer"], json!(rita));
+    assert_eq!(audit[0]["from_revision"], json!(revision));
+
+    // A fresh approval of the new revision counts, and the request can merge.
+    let (status, body) = review_as(
+        w,
+        &rita_login,
+        doc,
+        p,
+        json!({"verdict":"approved","revision":again["revision"]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["review"]["satisfied"], true);
+    let (status, body) = call(
+        &w.app,
+        "POST",
+        &format!("/documents/{doc}/change-requests/{p}/merge"),
+        Some(&w.owner_login),
+        json!({"team_seq":head,"revision":again["revision"]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    s.w.close().await;
+}
+
+/// The same for a person's own request that was declined and sent again; a request that was
+/// never closed does not start a new round when it is first submitted.
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_person_request_sent_again_after_a_decline_starts_a_new_round(pool: PgPool) {
+    let p = people(pool, 1).await;
+    let id = p.request(&[(0, "Alpha one.")]).await;
+    let seen = p.detail(&p.rita_login, id).await;
+    let revision = seen["revision"].as_i64().unwrap();
+    assert_eq!(
+        p.approve(&p.rita_login, id, json!(revision)).await.0,
+        StatusCode::OK
+    );
+    let (status, body) = call(
+        &p.w.app,
+        "POST",
+        &format!("{}/decline", p.uri(id)),
+        Some(&p.editor_login),
+        json!({"note":"No."}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = call(
+        &p.w.app,
+        "POST",
+        &format!("/documents/{}/drafts/{id}/submit", p.doc),
+        Some(&p.author_login),
+        json!({"note":"Again."}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let again = p.detail(&p.editor_login, id).await;
+    assert_eq!(again["revision"], json!(revision + 1));
+    assert_eq!(again["review"]["approvals"], 0, "{again}");
+    let fresh = p.request(&[(1, "Beta two.")]).await;
+    assert_eq!(p.detail(&p.rita_login, fresh).await["revision"], json!(1));
+    p.w.close().await;
+}
+
+/// The lapse audit lists what counted: each eligible reviewer's latest decision, not the rows
+/// it superseded and not a person without a reviewer role; and nothing when nothing counted.
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_lapse_audit_lists_what_counted_and_nothing_else(pool: PgPool) {
+    let p = people(pool, 1).await;
+    let id = p.request(&[(0, "Alpha one.")]).await;
+    let rita = p.identity("rita@example.test").await;
+    let sam = p.identity("sam@example.test").await;
+    let revision = p.detail(&p.rita_login, id).await["revision"].clone();
+    // Rita approves twice (the second supersedes the first); Sam asks for changes; a
+    // contributor's forced approval and a comment are not decisions that count.
+    assert_eq!(
+        p.approve(&p.rita_login, id, revision.clone()).await.0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        p.approve(&p.rita_login, id, revision.clone()).await.0,
+        StatusCode::OK
+    );
+    let (status, body) = p
+        .review(
+            &p.sam_login,
+            id,
+            json!({"verdict":"changes_requested","note":"Cite it.","revision":revision}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (cora, _) = person(p.w.pool(), "cora@example.test").await;
+    p.w.member(p.w.project, cora, "reviewer").await;
+    p.force(cora, id, "approved").await;
+    let (status, body) = p
+        .review(
+            &p.author_login,
+            id,
+            json!({"verdict":"commented","note":"Thanks."}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let rita_rows: Vec<Uuid> = sqlx::query_scalar(
+        "select id from change_request_review where draft_id=$1 and reviewer_id=$2 order by seq",
+    )
+    .bind(id)
+    .bind(rita)
+    .fetch_all(p.w.pool())
+    .await
+    .unwrap();
+    assert_eq!(rita_rows.len(), 2);
+
+    let (status, edited) = p
+        .change(id, revision.as_i64().unwrap(), 1, "Beta two.")
+        .await;
+    assert_eq!(status, StatusCode::OK, "{edited}");
+    let audit = p.changed_audit().await;
+    assert_eq!(audit.len(), 1, "{audit:?}");
+    let lapsed = audit[0]["lapsed"].as_array().unwrap();
+    assert_eq!(lapsed.len(), 2, "{lapsed:?}");
+    let reviewers: Vec<&Value> = lapsed.iter().map(|l| &l["reviewer"]).collect();
+    assert!(reviewers.contains(&&json!(rita)) && reviewers.contains(&&json!(sam)));
+    let latest = lapsed
+        .iter()
+        .find(|l| l["reviewer"] == json!(rita))
+        .unwrap();
+    assert_eq!(
+        latest["review"],
+        json!(rita_rows[1]),
+        "the later row, not the one it replaced"
+    );
+    assert_eq!(latest["verdict"], "approved");
+
+    // Only a comment on this one: nothing counted, so nothing is written when it changes.
+    let quiet = p.request(&[(2, "Gamma three.")]).await;
+    let revision = p.detail(&p.rita_login, quiet).await["revision"]
+        .as_i64()
+        .unwrap();
+    let (status, body) = p
+        .review(
+            &p.rita_login,
+            quiet,
+            json!({"verdict":"commented","note":"Hm."}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        p.change(quiet, revision, 3, "Delta four.").await.0,
+        StatusCode::OK
+    );
+    assert_eq!(p.changed_audit().await.len(), 1, "no second row");
+    p.w.close().await;
+}
+
+/// A reviewer's latest decision is the one committed last, not the one whose transaction
+/// started last: two rows with skewed timestamps, and two tabs double-submitting at once.
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_reviewers_latest_decision_is_the_one_committed_last(pool: PgPool) {
+    let p = people(pool, 1).await;
+    let id = p.request(&[(0, "Alpha one.")]).await;
+    let rita = p.identity("rita@example.test").await;
+    // Committed first, but stamped a minute later (a transaction that started late); then the
+    // one committed second, stamped earlier. The second is the later decision.
+    let revision = p.detail(&p.rita_login, id).await["revision"]
+        .as_i64()
+        .unwrap();
+    for (verdict, skew) in [("approved", "1 minute"), ("changes_requested", "0 seconds")] {
+        sqlx::query(&format!("insert into change_request_review(document_id,draft_id,reviewer_id,verdict,note,draft_revision,created_at) values($1,$2,$3,$4,'skewed',$5,now()+interval '{skew}')"))
+            .bind(p.doc)
+            .bind(id)
+            .bind(rita)
+            .bind(verdict)
+            .bind(revision)
+            .execute(&p.w.runtime.owner)
+            .await
+            .unwrap();
+    }
+    let after = p.detail(&p.editor_login, id).await;
+    assert_eq!(after["review"]["approvals"], 0, "{after}");
+    assert_eq!(after["review"]["changes_requested_by"], json!([rita]));
+
+    // Real double submits: whichever the database committed last is the one that counts.
+    for trial in 0..8 {
+        let revision = p.detail(&p.rita_login, id).await["revision"].clone();
+        let (a, b) = tokio::join!(
+            p.approve(&p.rita_login, id, revision.clone()),
+            p.review(
+                &p.rita_login,
+                id,
+                json!({"verdict":"changes_requested","note":"Wait.","revision":revision}),
+            ),
+        );
+        assert_eq!(a.0, StatusCode::OK, "trial {trial}: {}", a.1);
+        assert_eq!(b.0, StatusCode::OK, "trial {trial}: {}", b.1);
+        let last: String = sqlx::query_scalar("select verdict from change_request_review where draft_id=$1 and reviewer_id=$2 and verdict<>'commented' order by seq desc limit 1")
+            .bind(id)
+            .bind(rita)
+            .fetch_one(p.w.pool())
+            .await
+            .unwrap();
+        let after = p.detail(&p.editor_login, id).await;
+        let approved = after["review"]["approvals"] == 1;
+        assert_eq!(approved, last == "approved", "trial {trial}: {after}");
+        assert_eq!(
+            !approved,
+            after["review"]["changes_requested_by"] == json!([rita])
+        );
+    }
+    p.w.close().await;
+}
+
+/// The person an AI agent acts for can discard its draft before sending it for review; it is
+/// kept as history (closed as withdrawn, edits and receipts intact), audited, and nobody else
+/// can do it or even see it.
+#[sqlx::test(migrations = "../../migrations")]
+async fn an_agents_unsent_draft_can_be_discarded_by_its_principal_and_is_kept(pool: PgPool) {
+    let s = setup(pool, json!({"write_mode":"draft"})).await;
+    let w = &s.w;
+    let doc = standard(w).await;
+    let p = open_at(&s, doc, 0, "Alpha discarded.", None).await;
+    let edits: i64 = sqlx::query_scalar("select count(*) from draft_edit where draft_id=$1")
+        .bind(p)
+        .fetch_one(w.pool())
+        .await
+        .unwrap();
+    assert!(edits > 0);
+    let withdraw = |login: String| {
+        let (app, uri) = (
+            w.app.clone(),
+            format!("/documents/{doc}/drafts/{p}/withdraw"),
+        );
+        async move { call(&app, "POST", &uri, Some(&login), json!({})).await }
+    };
+
+    // Not the owner of the project, not anyone but the principal: the draft is not theirs to see.
+    let (status, _) = withdraw(w.owner_login.clone()).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, body) = withdraw(s.login.clone()).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["status"], "withdrawn");
+
+    let (outcome, submitted, by): (Option<String>, bool, Option<Uuid>) = sqlx::query_as("select review_outcome,submitted_at is not null,reviewed_by from workspace_draft where id=$1")
+        .bind(p)
+        .fetch_one(w.pool())
+        .await
+        .unwrap();
+    assert_eq!(
+        (outcome.as_deref(), submitted, by),
+        (Some("withdrawn"), false, Some(s.olivia))
+    );
+    let kept: i64 = sqlx::query_scalar("select count(*) from draft_edit where draft_id=$1")
+        .bind(p)
+        .fetch_one(w.pool())
+        .await
+        .unwrap();
+    assert_eq!(kept, edits, "the edits are kept");
+    let receipts: i64 =
+        sqlx::query_scalar("select count(*) from agent_proposal_receipt where draft_id=$1")
+            .bind(p)
+            .fetch_one(w.pool())
+            .await
+            .unwrap();
+    assert_eq!(receipts, 1);
+    let (actor, detail): (Uuid, Value) = sqlx::query_as("select actor_id,detail from operation_audit where action='document.draft_withdrawn' and detail->>'draft_id'=$1")
+        .bind(p.to_string())
+        .fetch_one(w.pool())
+        .await
+        .unwrap();
+    assert_eq!(actor, s.olivia);
+    assert_eq!(detail["contributor_kind"], "agent");
+    assert_eq!(detail["agent"]["principal"], json!(s.olivia));
+    let events: i64 = sqlx::query_scalar("select count(*) from event where document_id=$1")
+        .bind(doc)
+        .fetch_one(w.pool())
+        .await
+        .unwrap();
+    assert_eq!(
+        events,
+        w.head(doc).await,
+        "nothing reached the team version"
+    );
+
+    // It shows as withdrawn, no longer in progress, and not among her open drafts.
+    let (_, listed) = list_as(w, &s.login, "?state=withdrawn").await;
+    assert_eq!(ids_of(&listed), vec![p.to_string()]);
+    let (_, active) = list_as(w, &s.login, "").await;
+    assert!(ids_of(&active).is_empty());
+    let (_, drafts) = call(
+        &w.app,
+        "GET",
+        &format!("/projects/{}/drafts", w.project),
+        Some(&s.login),
+        Value::Null,
+    )
+    .await;
+    assert!(drafts["items"].as_array().unwrap().is_empty(), "{drafts}");
+    let seen = get(&w.app, &w.url(&format!("/proposals/{p}")), &s.token)
+        .await
+        .json();
+    assert_eq!(seen["state"], "withdrawn");
+    // Discarding again, or withdrawing an ordinary unsent draft, is still refused.
+    let (status, _) = withdraw(s.login.clone()).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let own: Value = call(
+        &w.app,
+        "POST",
+        &format!("/documents/{doc}/drafts"),
+        Some(&s.login),
+        json!({"name":"Mine"}),
+    )
+    .await
+    .1;
+    let own = own["id"].as_str().unwrap().to_owned();
+    let (status, _) = call(
+        &w.app,
+        "POST",
+        &format!("/documents/{doc}/drafts/{own}/withdraw"),
+        Some(&s.login),
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    s.w.close().await;
+}

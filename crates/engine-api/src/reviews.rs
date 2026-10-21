@@ -143,9 +143,15 @@ const FRESH: &str = "case when r.draft_revision is null then r.created_at>coales
 /// SQL: the verdict that counts for each reviewer of draft `draft` in document `document`
 /// (expressions): the latest approval or request for changes that is still [`FRESH`], from a
 /// person who still holds a reviewer role or above and is not an agent identity (I4). The one
-/// definition of "counts", used by the review state and by the proposal lists.
+/// definition of "counts", used by the review state, the lapse audit and the proposal lists.
+/// Columns: reviewer, verdict, review id, the revision it names. Which of one reviewer's
+/// decisions is the latest is the insert order (`seq`, drawn under the document lock, so it is
+/// commit order) for every row written since migration 0045, and `created_at` (the
+/// transaction's start, which can disagree with commit order) only among the older rows that
+/// name no revision, which all count as older than the new ones. The caller's expressions
+/// must not use the aliases `r`, `w`, `ai` or `l`.
 pub(crate) fn latest_counted(draft: &str, document: &str) -> String {
-    format!("select distinct on (r.reviewer_id) r.reviewer_id,r.verdict from change_request_review r join workspace_draft w on w.id=r.draft_id where r.draft_id={draft} and r.verdict in ('approved','changes_requested') and {FRESH} and document_member_role({document},r.reviewer_id) in ('reviewer','editor','manager','owner') and not exists(select 1 from agent_identity ai where ai.identity_id=r.reviewer_id) order by r.reviewer_id,r.created_at desc")
+    format!("select distinct on (r.reviewer_id) r.reviewer_id,r.verdict,r.id as review_id,r.draft_revision from change_request_review r join workspace_draft w on w.id=r.draft_id where r.draft_id={draft} and r.verdict in ('approved','changes_requested') and {FRESH} and document_member_role({document},r.reviewer_id) in ('reviewer','editor','manager','owner') and not exists(select 1 from agent_identity ai where ai.identity_id=r.reviewer_id) order by r.reviewer_id,(r.draft_revision is not null) desc,case when r.draft_revision is not null then r.seq end desc nulls last,r.created_at desc")
 }
 
 /// SQL: the state word of the draft row `draft` (a table alias), as the proposal lists and the
@@ -178,22 +184,23 @@ pub(crate) async fn review_state(
         .unwrap_or_default();
     // I4: an agent identity never counts, whatever a row says (it holds no membership, so
     // the role test already excludes it, and the database refuses its review rows).
-    let latest: Vec<(Uuid, String)> = sqlx::query_as(&latest_counted("$1", "$2"))
-        .bind(draft)
-        .bind(id)
-        .fetch_all(&mut *db)
-        .await?;
+    let latest: Vec<(Uuid, String, Uuid, Option<i64>)> =
+        sqlx::query_as(&latest_counted("$1", "$2"))
+            .bind(draft)
+            .bind(id)
+            .fetch_all(&mut *db)
+            .await?;
     let approved: Vec<String> = latest
         .iter()
-        .filter(|(who, verdict)| {
+        .filter(|(who, verdict, _, _)| {
             verdict == "approved" && who.to_string() != contributor && who.to_string() != principal
         })
-        .map(|(who, _)| who.to_string())
+        .map(|(who, ..)| who.to_string())
         .collect();
     let blocked: Vec<String> = latest
         .iter()
-        .filter(|(_, verdict)| verdict == "changes_requested")
-        .map(|(who, _)| who.to_string())
+        .filter(|(_, verdict, ..)| verdict == "changes_requested")
+        .map(|(who, ..)| who.to_string())
         .collect();
     let required = i64::from(rules.required_approvals);
     let satisfied = approved.len() as i64 >= required && (required == 0 || blocked.is_empty());
@@ -215,16 +222,22 @@ pub(crate) async fn review_state(
 /// and `content_revision` follows), before the update. The approvals and requests for changes
 /// that count today stop counting with it; they stay in the append-only table, marked stale by
 /// the revision they name, and this writes the one audit row that says what lapsed and when,
-/// so that the trail reads: approved at revision N, changed, revision N+1. Nothing is written
-/// when no review counted.
+/// so that the trail reads: approved at revision N, changed, revision N+1. What lapses is
+/// exactly what counted: each eligible reviewer's latest decision ([`latest_counted`]), not the
+/// rows it superseded and not a person who no longer holds a reviewer role. Nothing is written
+/// when no review counted. `cause` says why the content moved: `edited` (a save, pull, rebase
+/// or an agent's addition) or `reopened` (a declined or withdrawn request sent for review
+/// again).
 pub(crate) async fn audit_lapsed_reviews(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     document: Uuid,
     draft: Uuid,
     actor: Uuid,
+    cause: &str,
 ) -> Result<(), ApiError> {
-    let lapsing: Vec<Value> = sqlx::query_scalar(&format!("select jsonb_build_object('review',r.id,'verdict',r.verdict,'revision',r.draft_revision,'reviewer',r.reviewer_id) from change_request_review r join workspace_draft w on w.id=r.draft_id where r.draft_id=$1 and r.verdict in ('approved','changes_requested') and {FRESH} order by r.created_at limit 50"))
+    let lapsing: Vec<Value> = sqlx::query_scalar(&format!("select jsonb_build_object('review',l.review_id,'verdict',l.verdict,'revision',l.draft_revision,'reviewer',l.reviewer_id) from ({}) l limit 50", latest_counted("$1", "$2")))
         .bind(draft)
+        .bind(document)
         .fetch_all(&mut **tx)
         .await?;
     if lapsing.is_empty() {
@@ -239,7 +252,7 @@ pub(crate) async fn audit_lapsed_reviews(
         actor,
         "document.change_request_changed",
         document,
-        json!({"draft_id":draft,"from_revision":revision,"to_revision":revision+1,"lapsed":lapsing}),
+        json!({"draft_id":draft,"cause":cause,"from_revision":revision,"to_revision":revision+1,"lapsed":lapsing}),
     )
     .await
 }
@@ -744,7 +757,14 @@ async fn close_request(
             });
         }
     }
-    if request["status"] != "open" || request["submitted_at"].is_null() {
+    // The person an AI agent acts for may discard its draft before sending it for review:
+    // it is closed as withdrawn and kept (the edits, the receipts and this row stay as history),
+    // exactly what the agent's own withdraw does. Nobody else can see the draft at all.
+    let discarding = outcome == "withdrawn"
+        && mine
+        && request["agent"].is_object()
+        && request["submitted_at"].is_null();
+    if request["status"] != "open" || (request["submitted_at"].is_null() && !discarding) {
         return Err(ApiError::Conflict {
             reason: "This change request is no longer open.".into(),
         });
@@ -756,7 +776,11 @@ async fn close_request(
     crate::product::audit(
         &mut tx,
         auth.identity_id,
-        &format!("document.change_request_{outcome}"),
+        &if discarding {
+            "document.draft_withdrawn".to_owned()
+        } else {
+            format!("document.change_request_{outcome}")
+        },
         id,
         detail,
     )
@@ -892,7 +916,17 @@ pub(crate) async fn mark_submitted(
     } else {
         " and review_outcome is null"
     };
-    let updated = sqlx::query(&format!("update workspace_draft set submitted_at=case when submitted_at is null or review_outcome is not null then now() else submitted_at end,source=case when source ? 'start_seq' then source else source||jsonb_build_object('start_seq',base_seq) end,submission_note=$4,review_outcome=null,reviewed_by=null,reviewed_at=null,review_note='' where id=$1 and document_id=$2 and {owned} and merged_at is null{closed}"))
+    // Sending a declined or withdrawn request for review again is a new round: the reviews
+    // given before it must not count for it, or an approval that predates a decline would
+    // satisfy the rules again (and, for an AI agent's request, its principal could revive it).
+    // Both counters move, so every counting path (they all go through [`FRESH`]) ignores those
+    // reviews, whatever the clock says, and the older rule's timestamp moves too.
+    let reopening: Option<bool> = sqlx::query_scalar(&format!("select review_outcome is not null from workspace_draft where id=$1 and document_id=$2 and {owned} and merged_at is null"))
+        .bind(draft).bind(id).bind(actor).fetch_optional(&mut **tx).await?;
+    if reopen && reopening == Some(true) {
+        audit_lapsed_reviews(tx, id, draft, actor, "reopened").await?;
+    }
+    let updated = sqlx::query(&format!("update workspace_draft set submitted_at=case when submitted_at is null or review_outcome is not null then now() else submitted_at end,source=case when source ? 'start_seq' then source else source||jsonb_build_object('start_seq',base_seq) end,submission_note=$4,revision=case when review_outcome is not null then revision+1 else revision end,content_revision=case when review_outcome is not null then revision+1 else content_revision end,content_changed_at=case when review_outcome is not null then now() else content_changed_at end,review_outcome=null,reviewed_by=null,reviewed_at=null,review_note='' where id=$1 and document_id=$2 and {owned} and merged_at is null{closed}"))
         .bind(draft).bind(id).bind(actor).bind(note).execute(&mut **tx).await?;
     if updated.rows_affected() == 0 {
         return Ok(false);
