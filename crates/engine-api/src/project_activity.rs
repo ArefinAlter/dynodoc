@@ -148,6 +148,8 @@ struct Raw {
     label: Option<String>,
     actor_name: Option<String>,
     subject_name: Option<String>,
+    /// The change request this row is about was written by an AI agent identity.
+    by_agent: bool,
 }
 
 struct Item {
@@ -159,6 +161,7 @@ struct Item {
     summary: Option<String>,
     seq: Option<i64>,
     count: i64,
+    by_agent: bool,
 }
 
 /// Rows strictly before the cursor in `(at, doc, kind, id)` order (same collation as
@@ -246,7 +249,10 @@ feed as (
 select r.at,r.doc,r.actor,r.kind,r.rid,
   case when r.kind='version' then (select s.through_seq from snapshot s where s.id=r.extra::uuid) else r.seq end as seq,
   case when r.kind='merged' then (select w.name from workspace_draft w where w.id=r.extra::uuid) else r.label end as label,
-  {who_actor} as actor_name,{who_subject} as subject_name
+  {who_actor} as actor_name,{who_subject} as subject_name,
+  case when r.kind in ('request_opened','declined') then exists(select 1 from workspace_draft w2 join agent_identity ai on ai.identity_id=w2.created_by where w2.id=r.rid::uuid)
+       when r.kind='merged' and r.extra ~ {uuid} then exists(select 1 from workspace_draft w2 join agent_identity ai on ai.identity_id=w2.created_by where w2.id=r.extra::uuid)
+       else false end as by_agent
 from (select * from feed order by at desc,doc desc,kind collate \"C\" desc,rid collate \"C\" desc limit $7) r
 left join identity i on i.id=r.actor
 left join identity s on s.id=case when r.kind='member_added' and r.extra ~ {uuid} then r.extra::uuid end
@@ -344,6 +350,7 @@ async fn project_activity_feed(
             label: r.get("label"),
             actor_name: r.get("actor_name"),
             subject_name: r.get("subject_name"),
+            by_agent: r.get("by_agent"),
         })
         .collect();
 
@@ -379,6 +386,7 @@ async fn project_activity_feed(
                 summary: summary(row),
                 seq: row.seq,
                 count: i64::from(row.kind == "edit"),
+                by_agent: row.by_agent,
             });
         }
         consumed += 1;
@@ -412,6 +420,10 @@ async fn project_activity_feed(
             });
             if item.count > 0 {
                 value["count"] = json!(item.count);
+            }
+            // Present only when true, so the rows of everything else are as they were.
+            if item.by_agent {
+                value["by_agent"] = json!(true);
             }
             value
         })

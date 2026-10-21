@@ -1128,6 +1128,28 @@ async fn the_reviewers_list_shows_agent_proposals_and_nothing_private(pool: PgPo
     .await;
     assert_eq!(status, StatusCode::OK, "{own}");
 
+    // The project's history marks the agent's request, and only that one.
+    let (status, feed) = call(
+        &w.app,
+        "GET",
+        &format!("/projects/{}/activity", w.project),
+        Some(&w.owner_login),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{feed}");
+    let opened: Vec<&Value> = feed["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|i| i["kind"] == "request_opened")
+        .collect();
+    assert_eq!(opened.len(), 2, "{feed}");
+    for item in opened {
+        let agents = item["summary"] == hostile;
+        assert_eq!(item.get("by_agent").is_some(), agents, "{item}");
+    }
+
     // Olivia, the principal: the request and the draft awaiting her.
     let (status, mine) = list_as(w, &s.login, "").await;
     assert_eq!(status, StatusCode::OK, "{mine}");
