@@ -209,6 +209,20 @@ Verification (each of these runs built all six targets natively; none created a 
   and was skipped in every run above. Before the first real release, push a throwaway
   tag such as `cli-v0.0.0-test`, check the release, then delete the release and the tag.
 
+## Container image
+
+[`containers.yml`](../.github/workflows/containers.yml) builds the repository's
+`Dockerfile` (engine-api and engine-cli on `debian:bookworm-slim`, non-root user 10001)
+natively for `linux/amd64` (`ubuntu-latest`) and `linux/arm64` (`ubuntu-24.04-arm`). Each
+job checks the image's architecture, runs `engine-cli --version`, runs `engine-api` with
+no configuration (it must exit non-zero and name `DATABASE_URL`) and checks the user id.
+Run [39531119708](https://github.com/ArefinAlter/dynodoc-engine/actions/runs/39531119708)
+passed on both. The images are not signed and carry no SBOM. **Not exercised: the
+publish path.** A pushed `image-v*` tag pushes `<tag>-amd64` and `<tag>-arm64` to GHCR
+and combines them into one multi-architecture `<tag>`; it needs `packages: write`, never
+runs for a branch, pull request or manual run, and has not been run. Before the first
+real tag, push a throwaway one and delete the package version afterwards.
+
 ## Known limits
 
 - Tier 2 means what it says: Windows aarch64 has no native PostgreSQL. Its job
