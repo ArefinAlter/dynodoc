@@ -121,8 +121,9 @@ not tested. The test `sse_delivers_a_new_event_within_100ms` (a 100 ms bound, no
 Windows x86-64 (failed 3 of 3), Windows aarch64 (2 of 2) and macOS x86-64 (flaky, 1 in 5) and recorded in its own non-blocking step;
 it passed on every Linux aarch64 and macOS aarch64 run and still blocks there. Questions for the owner: test the tag path once
 with a throwaway tag and delete that release; use the pinned PostgreSQL 16 on Windows x86-64 too; rework the SSE test to a
-CI-tolerant bound or keep the exclusion; keep the glibc 2.34 floor (ubuntu-22.04 builders will be retired eventually). Container
-images for linux/arm64 are not built yet (decision 016 item 4 still lists them as the goal).
+CI-tolerant bound or keep the exclusion; keep the glibc 2.34 floor (ubuntu-22.04 builders will be retired eventually). A multi-architecture container image
+(linux/amd64 and linux/arm64, each built natively and started on its own processor; engine run 39531119708) was added
+afterwards; its tag-only publish path to GHCR has not run.
 
 ## Source: MCP write tools, connector Phase 1 client side (20 October 2026)
 
