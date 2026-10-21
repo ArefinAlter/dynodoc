@@ -1,5 +1,6 @@
 //! The native menu. Desktop only.
 
+use crate::handoff::Source;
 use crate::server::SUPPORT_URL;
 use crate::{window, AppState};
 use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
@@ -123,18 +124,15 @@ pub fn handle(app: &AppHandle, id: &str) {
         CHANGE_SERVER => window::show_launcher(app, None),
         SIGN_IN => window::show_launcher(app, Some("signin")),
         DEVICE_KEY => window::show_launcher(app, Some("key")),
-        OPEN_IN_BROWSER => match app.state::<AppState>().server() {
-            Some(server) => window::open_external(app, &server.root()),
+        // A menu item is a person's choice: it may open a local server in the browser.
+        OPEN_IN_BROWSER => match app.try_state::<AppState>().and_then(|s| s.server()) {
+            Some(server) => window::open_external(app, &server.root(), Source::Person),
             None => window::show_launcher(app, None),
         },
-        RELOAD => {
-            if let Some(window) = window::main_window(app) {
-                let _ = window.reload();
-            }
-        }
+        RELOAD => window::reload_main(app),
         SUPPORT => {
             if let Ok(url) = Url::parse(SUPPORT_URL) {
-                window::open_external(app, &url);
+                window::open_external(app, &url, Source::Person);
             }
         }
         _ => {}

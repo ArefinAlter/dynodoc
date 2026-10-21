@@ -33,7 +33,10 @@ tauri-plugin-opener = "2"
 tauri-plugin-deep-link = "2"
 # Used by the navigation policy and the address validator (re-exported by tauri as tauri::Url).
 url = "2"
-serde = { version = "1", features = ["derive"] }
+# SHA-256 of the saved config, kept as a seal in the local data folder (config.rs). Already
+# part of Tauri's own dependency tree.
+sha2 = "0.10"
+serde ={ version = "1", features = ["derive"] }
 serde_json = "1"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]

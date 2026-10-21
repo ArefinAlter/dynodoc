@@ -170,6 +170,8 @@ fn csp_is_strict_and_the_conf_has_no_dangerous_switches() {
         assert!(!csp.contains(never), "csp has {never}: {csp}");
     }
     assert_eq!(security["freezePrototype"], true);
+    // No window.__TAURI__ namespace for any page; the launcher uses the internal bridge.
+    assert_eq!(conf["app"]["withGlobalTauri"], false);
     assert_eq!(
         strings(&security["capabilities"]),
         ["launcher", "launcher-mobile"]
@@ -374,8 +376,8 @@ fn the_workflow_never_runs_on_push() {
 
 #[test]
 fn the_script_injected_into_every_page_cannot_reach_the_app() {
-    // It runs in the pages of the configured server too, so it must do nothing but turn a
-    // target=_blank click into the page's own window.open.
+    // It runs in the pages of the configured server too, so it must do nothing but call the
+    // page's own window.open (from a trusted click, or for target=_blank).
     let js = read("src/link_targets.js");
     for never in [
         "__TAURI",
@@ -388,10 +390,37 @@ fn the_script_injected_into_every_page_cannot_reach_the_app() {
         "postMessage",
         "localStorage",
         "cookie",
-        "location",
+        "location.href",
+        "location.assign",
+        "location.replace",
+        "document.write",
     ] {
         assert!(!js.contains(never), "link_targets.js has {never}");
     }
-    assert!(js.contains("window.open(link.href, '_blank')"));
+    // The secret is a placeholder in the file and a closure variable in the script.
+    assert!(js.contains("var secret = '__GESTURE_SECRET__';"));
+    assert_eq!(js.matches("__GESTURE_SECRET__").count(), 1);
+    // Only a trusted click is believed, and the original window.open is kept first.
+    assert!(js.contains("!event.isTrusted"));
+    assert!(js.contains("var nativeOpen = window.open;"));
+    assert!(js.contains("marker + secret"));
+    assert!(js.contains("nativeOpen.call(window, link.href, '_blank')"));
+    assert!(js.contains(&format!("'https://{}/'", crate::handoff::MARKER_HOST)));
     assert!(read("src/window.rs").contains("include_str!(\"link_targets.js\")"));
+}
+
+#[test]
+fn the_permission_handler_and_the_launcher_bridge_are_fixed_choices() {
+    let lib = read("src/lib.rs");
+    assert!(lib.contains(".on_permission_request(|_, kind| window::permission_response(kind))"));
+    for never in ["PermissionResponse::Allow", "PermissionResponse::Default"] {
+        assert!(!lib.contains(never), "lib.rs has {never}");
+        let window = read("src/window.rs");
+        let production = &window[..window.find("#[cfg(test)]\nmod tests").unwrap()];
+        assert!(!production.contains(never), "window.rs has {never}");
+    }
+    // The launcher calls the internal bridge; nothing refers to the global namespace.
+    let js = read("../ui/launcher.js");
+    assert!(js.contains("window.__TAURI_INTERNALS__"));
+    assert!(!js.contains("__TAURI__."));
 }

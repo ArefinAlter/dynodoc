@@ -103,6 +103,35 @@ fn uuid(text: &str) -> Result<String, LinkError> {
     }
 }
 
+/// Links that arrive before the app has finished starting (a second launch while the first
+/// is still setting up). They are kept, a few and short ones only, and handled once the app
+/// is ready; anything else is dropped.
+#[derive(Debug, Default)]
+pub struct LinkQueue {
+    links: Vec<String>,
+}
+
+impl LinkQueue {
+    pub const MAX_LINKS: usize = 4;
+
+    pub const fn new() -> Self {
+        Self { links: Vec::new() }
+    }
+
+    /// False when the link was dropped.
+    pub fn push(&mut self, raw: &str) -> bool {
+        if raw.len() > MAX_LINK_LEN || self.links.len() >= Self::MAX_LINKS {
+            return false;
+        }
+        self.links.push(raw.to_string());
+        true
+    }
+
+    pub fn drain(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.links)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -245,5 +274,106 @@ mod tests {
         assert!(parse("dynodoc:/é/open/workspace").is_err());
         assert!(parse("dynodocé//open").is_err());
         assert!(parse("ｄynodoc://open/workspace").is_err());
+    }
+
+    /// The accepted set, stated exactly, as a whitelist. Every string built from this
+    /// vocabulary (up to four segments joined by slashes, after five spellings of the scheme,
+    /// with and without a trailing slash) is parsed; the set of strings that are accepted must
+    /// be EXACTLY the twenty listed by hand below. The tests above name refused inputs; this
+    /// one fails if any other shape becomes accepted.
+    #[test]
+    fn exactly_three_path_shapes_are_accepted() {
+        use std::collections::BTreeSet;
+        let upper = ID.to_uppercase();
+        let words: Vec<&str> = vec![
+            "open",
+            "workspace",
+            "projects",
+            "documents",
+            "admin",
+            "login",
+            "auth",
+            ID,
+            &upper,
+            "..",
+            ".",
+            "",
+            "x",
+        ];
+        let mut accepted: BTreeSet<String> = BTreeSet::new();
+        let mut tried = 0usize;
+        for depth in 0..=4usize {
+            let mut indexes = vec![0usize; depth];
+            loop {
+                let parts: Vec<&str> = indexes.iter().map(|&i| words[i]).collect();
+                for scheme in [
+                    "dynodoc://",
+                    "DYNODOC://",
+                    "dynodoc:/",
+                    "dynodoc:",
+                    "dynodoc",
+                    "",
+                ] {
+                    for trailing in ["", "/"] {
+                        let text = format!("{scheme}{}{trailing}", parts.join("/"));
+                        tried += 1;
+                        if let Ok(target) = parse(&text) {
+                            // Whatever is accepted maps to one of three server paths.
+                            let path = target.path();
+                            assert!(
+                                path == "/workspace"
+                                    || path == format!("/projects/{ID}")
+                                    || path == format!("/documents/{ID}"),
+                                "{text:?} -> {path}"
+                            );
+                            accepted.insert(text);
+                        }
+                    }
+                }
+                // Advance the odometer.
+                let mut at = 0;
+                while at < depth {
+                    indexes[at] += 1;
+                    if indexes[at] < words.len() {
+                        break;
+                    }
+                    indexes[at] = 0;
+                    at += 1;
+                }
+                if at == depth {
+                    break;
+                }
+            }
+        }
+        let mut expected: BTreeSet<String> = BTreeSet::new();
+        for scheme in ["dynodoc://", "DYNODOC://"] {
+            for trailing in ["", "/"] {
+                expected.insert(format!("{scheme}open/workspace{trailing}"));
+                for id in [ID, upper.as_str()] {
+                    expected.insert(format!("{scheme}open/projects/{id}{trailing}"));
+                    expected.insert(format!("{scheme}open/documents/{id}{trailing}"));
+                }
+            }
+        }
+        assert_eq!(expected.len(), 20);
+        assert!(tried > 300_000, "tried only {tried}");
+        assert_eq!(accepted, expected);
+    }
+
+    #[test]
+    fn links_that_arrive_early_are_kept_briefly_and_bounded() {
+        let mut queue = LinkQueue::default();
+        assert!(queue.drain().is_empty());
+        for i in 0..LinkQueue::MAX_LINKS {
+            assert!(queue.push(&format!("dynodoc://open/workspace#{i}")));
+        }
+        assert!(!queue.push("dynodoc://open/workspace"), "full");
+        assert!(
+            !LinkQueue::default().push(&"d".repeat(MAX_LINK_LEN + 1)),
+            "too long"
+        );
+        assert_eq!(queue.drain().len(), LinkQueue::MAX_LINKS);
+        assert!(queue.drain().is_empty(), "drained once");
+        assert!(queue.push("dynodoc://open/workspace"), "room again");
     }
 }

@@ -1,10 +1,15 @@
 // The launcher page. No framework, no remote scripts. It talks to the app only through the
 // seven commands in src-tauri/src/commands.rs; every value it sends is checked again in Rust.
+//
+// Tauri's bridge: this page calls window.__TAURI_INTERNALS__.invoke, the function that
+// @tauri-apps/api/core wraps. (withGlobalTauri is off, so window.__TAURI__ does not exist,
+// here or in a server's pages; the bridge object is still injected everywhere and the
+// permission files refuse every call except the launcher's own seven.)
 (function () {
   'use strict';
 
-  var core = window.__TAURI__ && window.__TAURI__.core;
-  var invoke = core && core.invoke;
+  var bridge = window.__TAURI_INTERNALS__;
+  var invoke = bridge && bridge.invoke;
 
   function $(id) {
     return document.getElementById(id);
@@ -56,6 +61,10 @@
     connect(state.cloud, 'cloud-error', $('use-cloud'), 'Opening ...');
   });
 
+  $('confirm').addEventListener('click', function () {
+    connect(state.unconfirmed, 'confirm-error', $('confirm'), 'Opening ...');
+  });
+
   $('own-form').addEventListener('submit', async function (event) {
     event.preventDefault();
     var ok = await connect($('address').value, 'address-error', $('connect'), 'Connecting ...');
@@ -78,28 +87,27 @@
     busy($('signin-go'), false);
   });
 
-  function showKey(publicKey, where) {
-    show($('key-none'), false);
-    show($('key-create'), false);
-    show($('key-have'), true);
-    $('public-key').value = publicKey || '';
-    $('key-where').textContent = where ? 'Stored at ' + where : '';
-  }
-
+  // Whether a key file exists (and looks finished). This reads no key: the public half is
+  // fetched only when the person asks, because that decrypts the key through the operating
+  // system's key store, which may prompt.
   async function loadKey() {
     var status = await invoke('device_key_status');
+    show($('key-public'), false);
     if (!status.exists) {
       show($('key-none'), true);
       show($('key-create'), true);
       show($('key-have'), false);
       return;
     }
-    try {
-      showKey(await invoke('device_public_key'), status.path);
-    } catch (e) {
+    show($('key-none'), false);
+    show($('key-create'), false);
+    if (status.damaged) {
       show($('key-have'), false);
-      say('key-error', message(e));
+      say('key-error', status.recovery);
+      return;
     }
+    show($('key-have'), true);
+    $('key-where').textContent = 'Stored at ' + status.path;
   }
 
   $('key-create').addEventListener('click', async function () {
@@ -108,13 +116,34 @@
     busy($('key-create'), true, 'Creating ...');
     try {
       var publicKey = await invoke('device_key_create');
-      var status = await invoke('device_key_status');
-      showKey(publicKey, status.path);
+      await loadKey();
+      $('public-key').value = publicKey;
+      show($('key-show'), false);
+      show($('key-public'), true);
       say('key-status', 'Key created. Add its public key in the web app to use it.');
     } catch (e) {
       say('key-error', message(e));
+      try {
+        await loadKey();
+      } catch (ignored) {
+        /* the message above stands */
+      }
     }
     busy($('key-create'), false);
+  });
+
+  $('key-show').addEventListener('click', async function () {
+    say('key-error', '');
+    say('key-status', '');
+    busy($('key-show'), true, 'Reading the key ...');
+    try {
+      $('public-key').value = await invoke('device_public_key');
+      show($('key-show'), false);
+      show($('key-public'), true);
+    } catch (e) {
+      say('key-error', message(e));
+    }
+    busy($('key-show'), false);
   });
 
   $('key-copy').addEventListener('click', async function () {
@@ -138,6 +167,10 @@
     }
     $('about').textContent = 'Dynodoc desktop ' + state.version + ' (' + state.platform + ')';
     $('help').href = state.support;
+    if (state.unconfirmed) {
+      $('unconfirmed-address').textContent = state.unconfirmed;
+      show($('unconfirmed'), true);
+    }
     if (state.server) {
       say('current', 'Currently set to ' + state.server + '.');
       $('address').value = state.server === state.cloud ? '' : state.server;

@@ -22,6 +22,17 @@
       <p id="current" class="notice" hidden></p>
       <p id="app-error" class="error" role="alert"></p>
 
+      <section id="unconfirmed" aria-labelledby="unconfirmed-title" hidden>
+        <h2 id="unconfirmed-title">Please check the saved server address</h2>
+        <p>
+          The server address saved on this computer, <strong id="unconfirmed-address"></strong>,
+          was changed outside this app (or was not saved by it), so it was not opened. If you
+          recognise it, use it; otherwise choose a server below.
+        </p>
+        <button type="button" id="confirm" class="primary">Use this address</button>
+        <p id="confirm-error" class="error" role="alert"></p>
+      </section>
+
       <section aria-labelledby="cloud-title">
         <h2 id="cloud-title">Dynodoc cloud</h2>
         <p>The hosted workspace at <strong>app.dynodoc.online</strong>.</p>
@@ -94,13 +105,17 @@
           Create a key for this computer
         </button>
         <div id="key-have" hidden>
-          <label for="public-key">Public key</label>
-          <input id="public-key" type="text" readonly spellcheck="false" aria-describedby="key-help" />
-          <button type="button" id="key-copy" class="secondary">Copy public key</button>
-          <p id="key-help" class="hint">
-            To use it, add this public key in the web app under Profile, then Signing keys.
-            Enrolling happens there; this window only makes the key and shows its public half.
-          </p>
+          <p>A key exists on this computer.</p>
+          <button type="button" id="key-show" class="secondary">Show the public key</button>
+          <div id="key-public" hidden>
+            <label for="public-key">Public key</label>
+            <input id="public-key" type="text" readonly spellcheck="false" aria-describedby="key-help" />
+            <button type="button" id="key-copy" class="secondary">Copy public key</button>
+            <p id="key-help" class="hint">
+              To use it, add this public key in the web app under Profile, then Signing keys.
+              Enrolling happens there; this window only makes the key and shows its public half.
+            </p>
+          </div>
           <p id="key-where" class="hint"></p>
         </div>
         <p id="key-status" class="notice" role="status"></p>

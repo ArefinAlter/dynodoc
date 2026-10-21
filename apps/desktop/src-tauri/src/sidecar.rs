@@ -22,10 +22,10 @@ pub const PROGRAM: &str = if cfg!(windows) {
 };
 pub const KEY_FILE_NAME: &str = "device-key.json";
 
-/// `--version` and `device public-key` answer at once.
+/// `--version` answers at once.
 pub const QUICK_TIMEOUT: Duration = Duration::from_secs(20);
-/// Creating a key may wait for the operating system's key store (a Keychain or Secret
-/// Service prompt is answered by a person).
+/// Creating a key, and reading its public half back, may wait for the operating system's key
+/// store (a Keychain or Secret Service prompt is answered by a person).
 pub const KEY_STORE_TIMEOUT: Duration = Duration::from_secs(90);
 /// Every answer is one line; 16 KiB is far more than needed.
 pub const MAX_OUTPUT: usize = 16 * 1024;
@@ -40,9 +40,58 @@ pub enum Operation {
 impl Operation {
     pub fn timeout(self) -> Duration {
         match self {
-            Self::CreateKey => KEY_STORE_TIMEOUT,
-            _ => QUICK_TIMEOUT,
+            Self::Version => QUICK_TIMEOUT,
+            Self::CreateKey | Self::PublicKey => KEY_STORE_TIMEOUT,
         }
+    }
+}
+
+/// The largest key file this app's key creation writes (docs/KEY-FILE-FORMAT.md: 16 KiB).
+pub const MAX_KEY_FILE_BYTES: usize = 16 * 1024;
+
+/// Is what is in the key file clearly not a finished key file: empty, too big, or not one
+/// complete JSON object (a creation killed half way leaves a short, cut-off file)? This
+/// knows nothing of the key format; `engine-cli` stays the only reader of keys.
+pub fn key_file_damaged(bytes: &[u8]) -> bool {
+    bytes.is_empty()
+        || bytes.len() > MAX_KEY_FILE_BYTES
+        || !matches!(
+            serde_json::from_slice::<serde_json::Value>(bytes),
+            Ok(serde_json::Value::Object(_))
+        )
+}
+
+/// Why a person is being told how to start again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Recovery {
+    /// A file is there but cannot be a finished key.
+    Damaged,
+    /// Creating the key failed, was cut off by the time limit, or was killed.
+    CreateFailed,
+    /// A finished-looking file that the tool could not open here.
+    CannotOpen,
+}
+
+/// What to do instead of a dead end. The app never deletes or replaces the file itself.
+pub fn recovery_text(key: &KeyPath, why: Recovery) -> String {
+    let path = key.as_path().display();
+    match why {
+        Recovery::Damaged => format!(
+            "The key file on this computer looks damaged, for example because creating it was \
+             interrupted. To start again, delete this file and create the key again: {path}. \
+             Nothing is deleted for you. A key you had already added in the web app would need \
+             to be added again."
+        ),
+        Recovery::CreateFailed => format!(
+            "Creating the key did not finish. If a file was left behind, delete this file and \
+             create the key again: {path}. Nothing is deleted for you."
+        ),
+        Recovery::CannotOpen => format!(
+            "The key file could not be opened here (it may belong to another account or \
+             computer, or the key store refused). If you cannot get it back, delete this file \
+             and create the key again: {path}. Nothing is deleted for you, and the new key must \
+             be added in the web app again."
+        ),
     }
 }
 
@@ -459,6 +508,59 @@ mod tests {
         );
         let traversal = dir().join("..").join("x");
         assert_eq!(KeyPath::in_dir(&traversal), Err(SidecarError::BadKeyPath));
+    }
+
+    #[test]
+    fn anything_that_may_wait_for_the_key_store_gets_the_long_limit() {
+        assert_eq!(Operation::Version.timeout(), QUICK_TIMEOUT);
+        assert_eq!(Operation::CreateKey.timeout(), KEY_STORE_TIMEOUT);
+        assert_eq!(Operation::PublicKey.timeout(), KEY_STORE_TIMEOUT);
+        assert!(KEY_STORE_TIMEOUT >= Duration::from_secs(60));
+        assert!(QUICK_TIMEOUT < KEY_STORE_TIMEOUT);
+    }
+
+    #[test]
+    fn a_key_file_that_cannot_be_finished_is_called_damaged() {
+        assert!(key_file_damaged(b""));
+        assert!(key_file_damaged(b"{"));
+        assert!(key_file_damaged(
+            br#"{"format":"dynodoc-key-v1","public_key":"ea4a6c63"#
+        ));
+        assert!(key_file_damaged(b"not json"));
+        assert!(key_file_damaged(b"[]"));
+        assert!(key_file_damaged(b"null"));
+        assert!(key_file_damaged(b"\0\0\0\0"));
+        assert!(key_file_damaged(&vec![b' '; MAX_KEY_FILE_BYTES + 1]));
+        let whole = br#"{"format":"dynodoc-key-v1","public_key":"ea"}"#;
+        assert!(!key_file_damaged(whole));
+        // Every proper prefix of a whole file is damaged: a creation cut off anywhere shows.
+        for cut in 0..whole.len() {
+            assert!(key_file_damaged(&whole[..cut]), "cut at {cut}");
+        }
+    }
+
+    #[test]
+    fn recovery_text_names_the_file_and_never_deletes_anything() {
+        let key = key();
+        let path = key.as_path().display().to_string();
+        for why in [
+            Recovery::Damaged,
+            Recovery::CreateFailed,
+            Recovery::CannotOpen,
+        ] {
+            let text = recovery_text(&key, why);
+            assert!(text.contains(&path), "{why:?}: {text}");
+            assert!(
+                text.to_lowercase().contains("delete this file"),
+                "{why:?}: {text}"
+            );
+            assert!(text.contains("create the key again"), "{why:?}: {text}");
+            assert!(
+                text.contains("Nothing is deleted for you"),
+                "{why:?}: {text}"
+            );
+            assert!(!text.chars().any(|c| c.is_control()), "{why:?}");
+        }
     }
 
     #[test]
