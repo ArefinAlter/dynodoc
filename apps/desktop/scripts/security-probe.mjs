@@ -438,12 +438,15 @@ try {
 
   // ---- a page that loops to flood the browser gets one hand-off, then a slow trickle
   const t3 = traceMark();
-  await evaluate(`(async () => { for (let i = 0; i < 20; i += 1) { location.href = 'https://flood' + i + '.invalid/'; await new Promise((r) => setTimeout(r, 60)); } for (let i = 0; i < 20; i += 1) { window.open('https://popup' + i + '.invalid/'); await new Promise((r) => setTimeout(r, 60)); } return 0; })()`);
+  const floodMs = await evaluate(`(async () => { const t0 = performance.now(); for (let i = 0; i < 20; i += 1) { location.href = 'https://flood' + i + '.invalid/'; await new Promise((r) => setTimeout(r, 60)); } for (let i = 0; i < 20; i += 1) { window.open('https://popup' + i + '.invalid/'); await new Promise((r) => setTimeout(r, 60)); } return performance.now() - t0; })()`);
   await sleep(1500);
   let flood = traceFrom(t3);
   const opened1 = (flood.match(/hand-off .* -> Opened/g) ?? []).length;
   const limited = (flood.match(/hand-off .* -> RateLimited/g) ?? []).length;
-  check(opened1 === 1 && limited >= 30, '40 page-initiated public links in 2.5 s: one is handed to the browser, the rest are dropped', `opened ${opened1}, rate limited ${limited}`);
+  // One at the start, and one more for every full 3 seconds the loop took (a loaded machine
+  // makes the 40 requests take longer than 2.5 s).
+  const allowedOpen = 1 + Math.floor((floodMs ?? 0) / 3000);
+  check(opened1 >= 1 && opened1 <= allowedOpen && limited >= 40 - allowedOpen - 2, '40 page-initiated public links in about 2.5 s: one (per 3 s) is handed to the browser, the rest are dropped', `opened ${opened1} (at most ${allowedOpen} in ${Math.round(floodMs)} ms), rate limited ${limited}`);
   await sleep(3200);
   const t4 = traceMark();
   await evaluate(`location.href = 'https://later.invalid/'; 0`);
@@ -599,7 +602,10 @@ try {
   if (dialogShown) {
     ws.send(JSON.stringify({ id: 2, method: 'Page.handleJavaScriptDialog', params: { accept: false } }));
     await sleep(1500);
-    check(!(A.hits.slice(mark).includes('/workspace')) && (await here()).endsWith('/bu-page'), 'answering "stay" in the leave-page dialog keeps the page (a link cannot discard unsaved work silently)');
+    // What matters is the page that is shown. (Chromium may start the request for the new page
+    // while the dialog is open and drop it on "Stay", so a hit on the server is not proof.)
+    const shownNow = await here();
+    check(String(shownNow).endsWith('/bu-page'), 'answering "stay" in the leave-page dialog keeps the page (a link cannot discard unsaved work silently)', `shown: ${shownNow}; request for /workspace seen: ${A.hits.slice(mark).includes('/workspace')}`);
   } else {
     check(false, 'a Rust-initiated navigation from a page that asked to be asked first shows the leave-page dialog', `fired=${firedFirst} navigated=${navigatedFirst}`);
   }

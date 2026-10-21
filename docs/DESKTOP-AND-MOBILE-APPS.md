@@ -116,7 +116,22 @@ Do not claim store readiness from this round.
   are not handled. WebView2 does not say whether a person clicked, so a page's own request to open
   a link is limited: public `http(s)` addresses only, one per 3 seconds and five per minute, never a
   mail link or a local-network address. A trusted click on a link (or a menu item) may open those too;
-  the injected script proves the click with a secret made at start-up.
+  the injected script proves the click with a secret made from the operating system's random source
+  when the app starts (per run, not per page load). The script keeps its own copy of every built-in
+  it uses and holds the secret in one closure variable, so a page that replaces built-ins afterwards
+  does not see it. A real click on a link the page controls (a link moved under the pointer, an
+  invisible overlay) is still a real click, so clicks have a budget of their own: one per second,
+  ten per minute. **"Public" is only about how the address is spelled.** A best-effort list refuses
+  the well-known wildcard-DNS services and names that spell an IPv4 address, but any domain can point
+  a name at a private address and DNS can be re-pointed after the check (DNS rebinding); the shell
+  cannot see either. What a page gets from it is at most one browser tab per 3 seconds, never a mail
+  link.
+- **Frames on WebKit and Android are unverified.** WebView2 reports only the window's own navigations
+  to the shell; WebKitGTK, WKWebView and perhaps Android also report `<iframe>` navigations without
+  saying which is which. Nothing was observed on those platforms. The shell assumes the ambiguity there
+  and lets `about:srcdoc`, `about:blank`, `data:` and the server's own `blob:` addresses through (they
+  are how pages fill frames); they never use up the launcher's one-time permission. Check on a real
+  WebKit build before relying on it.
 - **A link from another program navigates the window.** A `dynodoc://` link brings the window forward
   and takes it to that page, even if you were working in it. The protection for unsaved work is the web
   app's own leave-page warning. Checked: WebView2 runs the page's `beforeunload` handler for the shell's

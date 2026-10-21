@@ -23,13 +23,13 @@ notarised, in a store, or tried on a Mac, an iPhone or a physical device.
 | `src-tauri/src/lib.rs` | `run()` (also the mobile entry point): plugins, commands, window, menu. |
 | `src-tauri/src/server.rs` | Validates and normalises the server address and the pasted sign-in link; origin comparison. Pure functions. |
 | `src-tauri/src/nav.rs` | The navigation policy: what may load in the window (the launcher only when the shell asked for it), what goes to the system browser, what is dropped; the window title; log redaction. Pure functions. |
-| `src-tauri/src/handoff.rs` | Handing a link to the system: public addresses only for a page, a rate limit (1 per 3 s, 5 per minute), mail and local addresses only for a person's click (a secret marker from the injected script). Pure functions. |
+| `src-tauri/src/handoff.rs` | Handing a link to the system: public addresses only for a page (1 per 3 s, 5 per minute), mail and local addresses only for a click (a secret marker from the injected script; its own budget, 1 per second and 10 per minute) or a menu item. The secret comes from the operating system's random source. Pure functions. |
 | `src-tauri/src/deeplink.rs` | Parser for `dynodoc://` links (three accepted forms). Pure functions. |
 | `src-tauri/src/sidecar.rs` | Runs the bundled `engine-cli` with a fixed argument list, a time limit and an output limit; recognises a cut-off key file and says how to start again. |
 | `src-tauri/src/commands.rs` | The seven commands the launcher page may call. |
 | `src-tauri/src/config.rs` | Saves the chosen server in the app's config folder (atomic, re-validated on read) with a SHA-256 seal in the local data folder; a config that no longer matches its seal is shown, not opened. |
 | `src-tauri/src/window.rs` | Creates the window and hooks navigation, new-window and deep-link events to the policy. In debug builds it prints each decision to standard error. |
-| `src-tauri/src/link_targets.js` | A short script the shell injects into every page of the window. It has no access to the app; it only calls `window.open`. WebView2 raises no event for a click on `<a target="_blank">`, so it turns that click into `window.open`; and a trusted click (`event.isTrusted`) on a link that leaves the page or on a mail link is passed on with a start-up secret that tells the shell a person clicked. |
+| `src-tauri/src/link_targets.js` | A short script the shell injects into every page of the window, before the page's own scripts. It has no access to the app; it only calls `window.open`. WebView2 raises no event for a click on `<a target="_blank">`, so it turns that click into `window.open`; and a trusted click (`event.isTrusted`) on a link that leaves the page or on a mail link is passed on with a secret that tells the shell a click happened. It keeps its own copy of every built-in it uses (so a page that replaces `Function.prototype.call`, `closest()` or `window.open` sees nothing), and `scripts/link-targets.test.mjs` runs it against such a page. |
 | `src-tauri/src/menu.rs` | The native menu (desktop only). |
 | `src-tauri/src/policy_tests.rs` | Tests of the configuration files: capabilities, CSP, dependencies, launcher page, workflow triggers. |
 | `src-tauri/tauri.conf.json` | Product name, identifier, CSP, bundle settings, deep-link scheme. |
@@ -40,7 +40,9 @@ notarised, in a store, or tried on a Mac, an iPhone or a physical device.
 | `scripts/prepare-sidecar.mjs` | Builds `engine-cli` from the repository root and copies it to `src-tauri/binaries/engine-cli-<triple>[.exe]` (git-ignored). |
 | `scripts/smoke.ps1` | Windows smoke test of a debug build (starts, config folder, saved server and window title, deep link, an edited config, key creation in folders with accented and Bengali names, clean exit). |
 | `scripts/security-probe.mjs` | Windows black-box probe of a debug build: drives WebView2 through its debugging port and tries, from inside the web view, what a hostile server page would try (see "Security model"). Not part of CI. |
-| `scripts/harden-android.mjs` (+ `.test.mjs`) | After `tauri android init`: sets `allowBackup="false"` and cleartext off in the generated project and fails if either is left true. |
+| `scripts/harden-android.mjs` (+ `.test.mjs`) | After `tauri android init`: sets `allowBackup="false"` and cleartext off in the generated project and fails if either is left true, if a build file assigns `usesCleartextTraffic` true, or if a network security config does not switch cleartext off. |
+| `scripts/check-apk-manifest.mjs` (+ `.test.mjs`) | After the Android build: reads the MERGED manifest out of the built APK (`aapt2 dump xmltree`, or `apkanalyzer`) and fails unless `allowBackup` and `usesCleartextTraffic` are explicitly false (also on `testOnly`, a network security config, and `debuggable` in a release build). Tested on sample tool output only. |
+| `scripts/link-targets.test.mjs` | Runs the injected click script in a Node realm against a hostile page (patched `call`/`apply`/`bind`/`closest`/getters/`window.open`, fake link objects) and fails if the secret reaches the page or a fake link starts a hand-off. Two control tests run the previous script and must see it leak. |
 | `package.json` | Holds `@tauri-apps/cli` only. Nothing in it ships. |
 | `../../.github/workflows/desktop.yml` | Manual or tag-only builds: desktop bundles, Android debug APK, iOS simulator. |
 
@@ -164,8 +166,10 @@ program brings this window forward and navigates it, even if you were working in
 is accepted and documented: the protection for unsaved work is the web app's own leave-page
 warning. Checked in WebView2 (probe phase A): when the shell navigates, the page's `beforeunload`
 handler runs and WebView2 shows its "Leave site?" dialog; answering Stay keeps the page. A page that
-does not ask is left at once. Another instance's link that arrives while the app is still starting
-is kept (at most four) and handled when it is ready. The Windows installers
+does not ask is left at once. A second launch that arrives while the first is still starting up
+can reach the deep-link plugin before the shell is listening; the plugin keeps the **latest** such link
+and the shell reads it at the end of start-up (`get_current`), so an earlier link in that window is
+dropped (there is no queue of our own). The Windows installers
 register the scheme (visible in the generated NSIS script and WiX source; the installers were built
 and never installed). macOS and Linux package registration is configured the same way and
 unverified; a bare AppImage or a debug build does not register it.
@@ -191,12 +195,36 @@ and tested.
    over only a **public** `http(s)` address, at most **once per 3 seconds and five per minute**
    (the rest are dropped silently), and never a mail link, `localhost`, a loopback, private,
    link-local or otherwise reserved address (IPv4, IPv6, IPv4-mapped, `.local`/`.lan`/... names,
-   single-word names). A *person's* trusted click on a link, or a menu item, may open those too,
-   recognised by a marker address that carries a secret known only to the injected script. A page
-   that forges the marker without the secret gets nothing. Addresses with a user name or password
-   and anything that is not a web or mail link (`javascript:`, `data:`, `file:`, `blob:`,
-   `about:`, other apps' schemes) are dropped. A public name that resolves to a private address
-   (DNS rebinding) cannot be seen from here.
+   single-word names). A *click* on a link (a trusted `click` event, which a script cannot fake), or
+   a menu item, may open those too. A click is recognised by a marker address that carries a secret.
+   **Where the secret lives, exactly:** it is made from the operating system's random source when
+   the app starts, written into the injected script, and kept in one variable inside that script's
+   closure. The script runs before any page script and keeps its own copy of every built-in it uses
+   (called through "uncurried" functions, brand-checked getters, no `closest()`, `URL`, regular
+   expressions or array methods), so a page that later replaces `Function.prototype.call`,
+   `closest()`, `window.open`, `encodeURIComponent` or the link getters sees neither the secret nor
+   the marker (`scripts/link-targets.test.mjs`, 12 tests, and the probe's hostile page). **The
+   secret is per run (per start of the app), not per page load:** the script text is registered
+   once with the window and runs again, unchanged, in every page; rotating it per load would mean
+   removing and re-registering the script on every navigation, which is not done. The protection is
+   that no page can read it, not that it changes. A page that forges the marker without the secret
+   gets nothing.
+   **What a hostile page can still do:** if a page rewrites the link under the pointer, or puts an
+   invisible overlay link where a person is about to click, the person's real click is a real click,
+   and the page chooses the target (a local address or a mail link included). That is what any
+   website can do in a browser, and the shell bounds it: marker-sourced opens have their own budget
+   of **one per second and ten per minute**, separate from the page's budget (so neither can use the
+   other's up), and menu items have none. Addresses with a user name or password and anything that
+   is not a web or mail link (`javascript:`, `data:`, `file:`, `blob:`, `about:`, other apps'
+   schemes) are dropped.
+   **"Public" is only about spelling.** A page's request is checked by the address as written. A
+   best-effort list refuses the well-known wildcard-DNS services (`nip.io`, `sslip.io`, `xip.io`,
+   `localtest.me`, `lvh.me`, `vcap.me`, `lacolhost.com`, `localhost.direct`, `local.gd`,
+   `traefik.me`, `127-0-0-1.org.uk`) and any name that spells an IPv4 address (`10.0.0.5.example.com`,
+   `10-0-0-5.example.com`). It cannot be complete: any domain can point a name at a private address,
+   and a public name can be re-pointed after the check (DNS rebinding); neither can be seen from here.
+   What it limits is a page opening your browser at such a name, one per 3 seconds. Because the
+   page's budget is its own, a page can use all of it but cannot take a person's click budget.
 3. **The server address is checked.** `https` only (and `http` for `localhost`, `127.0.0.1` and
    `[::1]`, for testing), no user name, password, path, query or fragment, no backslashes, percent
    escapes, spaces or trailing dot, bounded length. International names are shown in their ASCII
@@ -224,14 +252,30 @@ cause one request that is never shown. A page can already send requests to other
 adds no new ability; it means "refused" is about what loads and what gets opened, not about the
 network. Other web views (WKWebView, WebKitGTK, Android) were not tested.
 
+**Frames on WebKit: unverified on WebKit and Android.** WebView2 reports only the window's own
+navigations to the shell. WebKitGTK and WKWebView (and perhaps Android) also report navigations of
+`<iframe>`s, and the library the shell uses (wry) says nothing about which is which on those
+platforms. Nothing was observed there; this is an assumption written into the code (`nav.rs`,
+`frames_are_ambiguous`). Where frames cannot be told from the window, the addresses pages normally
+use to fill a frame (`about:srcdoc`, `about:blank`, `data:`, and a `blob:` made by the configured
+server's own page) are let through instead of breaking the page; everything else is decided as
+usual, so a frame that goes to another site is still sent to the system browser or dropped. Such an
+address is never the launcher and never uses up the launcher's one-time permission. What a page
+gets by really navigating the *window* to one of them is its own content, with no native access.
+
 ### How this was tested
 
-- **Pure functions, unit tests** (`cargo test`, 91 tests on Windows, 90 elsewhere): the address
-  validator, the sign-in link rule, the navigation and new-window decisions, the hand-off rules (every
-  loopback, private, link-local, mapped, NAT64 and 6to4 shape; the rate limiter against a flood, a
-  trickle and a backwards clock; marker forgeries), the launcher grant, the config seal, the
-  deep-link parser (including an exact **whitelist** test over 370,000 generated links: the accepted
-  set must equal the 20 listed strings), the sidecar argument allowlist, the cut-off key file
+- **Pure functions, unit tests** (`cargo test`, 97 tests on Windows; the Windows-only key test is
+  not built elsewhere, so 96 are expected there, not rerun on Linux since the last change): the address
+  validator, the sign-in link rule, the navigation and new-window decisions (including the
+  launcher's own page only, and frame-like addresses), the hand-off rules (every
+  loopback, private, link-local, mapped, NAT64 and 6to4 shape; wildcard-DNS names and names spelling
+  an address; the two rate limiters against a flood, a trickle and a backwards clock, and that
+  neither can spend the other's budget; marker forgeries; mail links only for a click or a menu item),
+  the launcher grant, the config seal, the
+  deep-link parser (one static table, a test that states the table again by hand, a test that
+  `parse` contains no string literal, and an exact **whitelist** test over 370,000 generated links: the
+  accepted set must equal the 20 listed strings), the sidecar argument allowlist, the cut-off key file
   detector and the second lock on every command, with hostile inputs (`https://app.dynodoc.online@evil.example`, punycode look-alikes, trailing dots,
   ports, IPv6, `javascript:`/`data:`/`file:`/`blob:`, backslashes, percent-encoding, very long
   input). The sidecar runner is tested against a child process for the time limit, the output limit
@@ -243,6 +287,17 @@ network. Other web views (WKWebView, WebKitGTK, Android) were not tested.
   `.devtools(true)`; the rate limiter's gap set to 0; private ranges no longer refused; the marker
   secret always matching; the launcher always allowed; an unsealed config treated as confirmed; an
   extra deep-link shape (also one that no list of refused links mentions).
+  **Round 2 (21 October 2026, each fails at least one test):** in the injected script, window.open
+  called directly, `link.href` read directly, `.call` on a built-in, `closest()`, the `isTrusted`
+  check removed (node harness, and the Rust policy test for all but the `href` one); a row
+  `["open","settings"]` added to the deep-link table (3 tests), an inline `["open","settings"]`
+  beside the table in `parse` (2 tests), a word of the table changed (3 tests); in `handoff.rs`/`nav.rs`
+  a mail link allowed for a page, the click budget unlimited, clicks spending the page budget, the
+  wildcard-DNS list not consulted, names spelling an address not refused, the secret always matching, a
+  page allowed any host, the launcher grant opening any page of its origin, frame-like addresses
+  never or always let through. The previous injected script, built into the debug app, fails 3
+  probe checks against the hostile page (its real clicks were not recognised as clicks, so the
+  link was not opened by the system browser and the click-budget checks failed).
 - **Configuration tests** (`policy_tests.rs`): no `remote` capability anywhere, the exact permission
   lists, phones get no tool commands, the CSP has no unsafe source, no dangerous Tauri switches,
   banned plugins and features absent, the launcher page has no inline or remote code, the workflow
@@ -257,7 +312,13 @@ network. Other web views (WKWebView, WebKitGTK, Android) were not tested.
   public links in 2.5 seconds gets one hand-off and the rest are dropped; loopback, LAN,
   link-local, mapped-IPv6 and mail addresses from a page open nothing and send the browser nothing;
   a click made by a script on a link to a local address opens nothing while a real click does; a
-  page cannot bring up the launcher; an edited config opens the launcher without a request to the
+  page cannot bring up the launcher; **a hostile server page** that replaces `Function.prototype.call`,
+  `apply`, `bind`, `Reflect.apply`, `closest()`, the link and event getters, `encodeURIComponent`,
+  `URL` and `window.open` and records every argument never sees the click marker or the secret
+  (nor does any property of `window` hold it), a real click on a harmless button still opens
+  nothing although every getter claims "link to an address of the page's choosing", a real click on
+  a real link still opens that link, six real clicks within milliseconds open one (the click
+  budget), and a page-initiated hand-off a moment earlier does not use up the click budget; an edited config opens the launcher without a request to the
   saved address, and a real click on "Use this address" opens and re-seals it; the launcher does not
   read the key when it loads and a real click on "Show the public key" does; a cut-off key file gets
   recovery text and is left untouched; and `--unicode-home` runs the same in a folder named with an
@@ -280,9 +341,11 @@ Examples that work: `https://app.dynodoc.online`, `dynodoc.example.org` (https i
   `device public-key <key>`, where `<key>` is always `<local data dir>/device-key.json`.
 - **Deep links:** `dynodoc://open/workspace`, `dynodoc://open/projects/<uuid>`,
   `dynodoc://open/documents/<uuid>`.
-- **Handed to the system (page-initiated):** public `http(s)` addresses without credentials; at most
-  one per 3 s and five per minute. **Only for a person's click or a menu item:** `mailto:` and
-  loopback, private, link-local or otherwise local addresses.
+- **Handed to the system (page-initiated):** public-looking `http(s)` addresses without credentials
+  (not the listed wildcard-DNS services, not names spelling an address); at most one per 3 s and five
+  per minute. **Only for a click or a menu item:** `mailto:` and loopback, private, link-local or
+  otherwise local addresses; a click is limited to one per second and ten per minute, in a budget
+  of its own; menu items are not limited.
 
 ## Dependencies, and why each
 
@@ -292,7 +355,8 @@ it); `tauri-plugin-deep-link` (the `dynodoc://` scheme on every platform);
 `tauri-plugin-single-instance` with its `deep-link` feature (one running copy, links forwarded to
 it; desktop only); `tauri-plugin-window-state` (remember size and position, desktop only; it is
 left out of debug runs that use a test home so they never write to a real profile); `url`
-(parsing, the same crate Tauri uses); `sha2` (the config seal; already in Tauri's own tree);
+(parsing, the same crate Tauri uses); `sha2` (the config seal; already in Tauri's own tree); `getrandom` 0.3 (the click secret from the
+operating system's random source; already in Tauri's tree, the lockfile only gains an edge);
 `serde`, `serde_json` (the config file and command answers). **Not used on purpose:** `tauri-plugin-shell` (the sidecar is started with
 `std::process::Command`, so there are no generic "run a program" commands in the app, and we control
 the time and output limits), and no file, http, dialog, updater, notification, clipboard or process
@@ -325,7 +389,14 @@ stand-in SDK folders): a manifest with only the `INTERNET` permission and **no `
 `true` for debug builds. `scripts/harden-android.mjs` writes `allowBackup="false"` and sets the
 placeholder to `false` in every build type, and exits 1 if `allowBackup="true"` or
 `usesCleartextTraffic="true"` is left; the workflow runs it after `android init`. The script's tests
-and a run against the generated project pass here; the Gradle build was not run.
+and a run against the generated project pass here; the Gradle build was not run. The text check
+cannot see what Gradle merges in from libraries or build types, so the workflow also runs
+`scripts/check-apk-manifest.mjs` on every built APK: it reads the merged `<application>` with
+`aapt2 dump xmltree` (or `apkanalyzer manifest print`) from the SDK on the runner and fails unless
+`allowBackup` and `usesCleartextTraffic` are explicitly false (and on `testOnly`, a network security
+config, or `debuggable` in a release build; the debug build is debuggable by design and that is
+printed, not failed). **Its parsers were tested on sample output in the documented formats only:
+no Android SDK is available here, so real `aapt2` output is unverified until the first CI run.**
 
 On phones there is no sidecar and no menu, Tauri documents the new-window and `window.open` hooks as
 unsupported on Android and iOS (so the new-window rule does not apply there), and deep links by custom
@@ -359,7 +430,7 @@ until the CI jobs have run.
 After merging the main branch that holds the Windows non-ASCII key-file fix in `engine-cli`:
 
 - `cargo fmt --check`, `cargo clippy --all-targets --locked -- -D warnings`, `cargo test --locked`:
-  clean; 91 tests pass. At the repository root `cargo fmt --all --check` and
+  clean; 97 tests pass. At the repository root `cargo fmt --all --check` and
   `cargo clippy --workspace --all-targets --locked -- -D warnings` pass.
 - `scripts/prepare-sidecar.mjs --debug`: rebuilt `engine-cli` from the merged tree (27 MB, debug).
 - **Non-ASCII folders (the fix in `crates/engine-cli/src/private_file.rs`).** With that rebuilt
@@ -367,7 +438,8 @@ After merging the main branch that holds the Windows non-ASCII key-file fix in `
   followed by `device public-key` succeeded for folder names with an accented letter (`caf` + U+00E9),
   with Bengali letters (U+09AC U+09BE U+0982 U+09B2 U+09BE) and with both (`scripts/smoke.ps1`, phase
   5); and the app itself created, read back and refused to overwrite a key whose home folder had
-  both kinds of letters (`node scripts/security-probe.mjs --unicode-home`, 71 checks). **Not
+  both kinds of letters (`node scripts/security-probe.mjs --unicode-home`; the probe now has 79
+  checks). **Not
   verified:** that the same commands fail without the fix (the unfixed binary was not rebuilt to
   compare), and any non-ASCII path on macOS or Linux. (A side finding: Node 24 on Windows'
   `fs.rmSync` silently leaves a file in a folder with Bengali letters; the probe removes files
@@ -380,11 +452,20 @@ After merging the main branch that holds the Windows non-ASCII key-file fix in `
 - `scripts/smoke.ps1` passes (window, config and data folders, saved server and its title, single-instance
   deep link, refused links, an edited config shown not opened, key creation in three non-ASCII
   folders, clean exit code 0).
-- `scripts/security-probe.mjs` passes, and passes with `--unicode-home`; see "How this was tested".
-- `node --test scripts/harden-android.test.mjs` and `node scripts/harden-android.mjs` against a project
-  generated by `tauri android init` (stand-in SDK, NDK and JDK folders): pass.
-- `cargo check --lib --target aarch64-linux-android --locked`: passes, with no warning, after the review
-  fixes.
+- `scripts/security-probe.mjs` passes (79 checks), and passes with `--unicode-home`; see "How this
+  was tested". **The probe is sensitive to a loaded machine:** with another build running and about
+  0.4 GB of free memory, four runs in a row each failed one or two timing-dependent checks (the
+  40-link flood took more than 3 s, so a second hand-off was correctly allowed; a leave-page "Stay"
+  answer; one run lost the app process in phase B, as in the earlier hang). The first run and the two
+  final runs, on an idle machine, passed everything. The flood check now allows one hand-off per full 3
+  seconds the loop took, and the Stay check looks at the page shown, not at server hits. The Stay
+  failure under load was not explained; the application code involved did not change.
+- `node --test` on `link-targets.test.mjs` (12 tests), `harden-android.test.mjs` (8) and
+  `check-apk-manifest.test.mjs` (8): pass; `node scripts/harden-android.mjs` against a project
+  generated by `tauri android init` (stand-in SDK, NDK and JDK folders): pass, also a second run
+  on the already patched project (the generated folder was deleted afterwards).
+- `cargo check --lib --target aarch64-linux-android --locked`: passes, with no warning (the `Menu`
+  variant of `Source` is marked as unused on phones).
 - Linux, in an Ubuntu 24.04 container with a stub sidecar, repeated after the review fixes: fmt,
   `clippy --locked -D warnings`, `cargo test --locked` (90 tests; the Windows-only key test is not
   built), release build and `.deb`/`.rpm`/AppImage bundles. That run found one release-only

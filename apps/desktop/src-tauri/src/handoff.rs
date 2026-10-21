@@ -48,7 +48,8 @@ pub enum Source {
     Page,
     /// A trusted click, vouched for by the injected script's secret marker.
     Click,
-    /// A native menu item.
+    /// A native menu item (desktop only: phones have no menu).
+    #[cfg_attr(mobile, allow(dead_code))]
     Menu,
 }
 
