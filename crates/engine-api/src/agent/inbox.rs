@@ -144,8 +144,13 @@ async fn list(
     let filter = state_filter(q.state.as_deref())?;
     let (offset, limit) = paging(q.offset, q.limit, DEFAULT_LIMIT)?;
     let viewer = auth.identity_id;
-    let mut db = state.pool.acquire().await?;
+    let mut db = state.pool.begin().await?;
     projects::require(&mut db, project, viewer).await?;
+    // Charged like the activity feed, after membership is known, and bounded in time.
+    let _budget = state.workloads.enter(viewer, Some(project))?;
+    sqlx::query("set local statement_timeout='5s'")
+        .execute(&mut *db)
+        .await?;
 
     let owned = owned_by("d", "$2");
     let states = reviews::state_sql("d");
