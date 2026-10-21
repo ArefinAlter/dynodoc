@@ -466,12 +466,16 @@ After merging the main branch that holds the Windows non-ASCII key-file fix in `
   on the already patched project (the generated folder was deleted afterwards).
 - `cargo check --lib --target aarch64-linux-android --locked`: passes, with no warning (the `Menu`
   variant of `Source` is marked as unused on phones).
-- Linux, in an Ubuntu 24.04 container with a stub sidecar, repeated after the review fixes: fmt,
-  `clippy --locked -D warnings`, `cargo test --locked` (90 tests; the Windows-only key test is not
-  built), release build and `.deb`/`.rpm`/AppImage bundles. That run found one release-only
-  warning (a function used only by the debug log), now fixed. The release binary under Xvfb (stays
-  up, creates its folders, forwards a second launch) was run before the review fixes and not
-  repeated.
+- Linux, in an Ubuntu 24.04 container with a stub sidecar, after the FIRST round of review fixes
+  (**not repeated after the second round**: the volumes were removed and a fresh build was not
+  cheap): fmt, `clippy --locked -D warnings`, `cargo test --locked` (90 tests at that time; the
+  Windows-only key test is not built), release build and `.deb`/`.rpm`/AppImage bundles. That run
+  found one release-only warning (a function used only by the debug log), now fixed. The release
+  binary under Xvfb (stays up, creates its folders, forwards a second launch) was run before the
+  first review fixes and not repeated. So the non-Windows test count after round 2 (96 expected) and
+  the desktop-Linux build of the round 2 code are unverified; the Android `cargo check` above
+  compiled the library's non-Windows code that phones use (not the desktop-only code).
 - One `security-probe.mjs` run hung once, with the app process gone mid-run and no Windows crash
   event; three later runs passed. The probe now fails after 60 seconds without an answer instead
-  of waiting. Cause not found.
+  of waiting. Cause not found. In round 2 a run on a loaded machine lost the app process in phase B
+  the same way (see above).

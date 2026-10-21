@@ -86,7 +86,8 @@ notarised, published to a store or tested on a physical device.
 `apps/`): a launcher page to choose the hosted or a self-hosted server, a navigation policy under
 which the window only ever shows the launcher (when the shell itself asked for it) or the configured
 server, and every other public web link opens in the system browser (a page's own requests are rate
-limited and cannot reach the mail program or a local address; only a person's click can), a saved
+limited and cannot reach the mail program or a local address; only a click on a link, within a budget
+of its own, or a menu item can; "public" is judged by the address's spelling only), a saved
 server address sealed against edits made outside the app, a `dynodoc://` link parser with three accepted forms, a fixed-argument
 `engine-cli` sidecar (`--version`, `device keygen --encrypt --keystore`, `device public-key`) with time
 and output limits, a native menu, window state, denied web view permissions, single instance, a
@@ -96,7 +97,8 @@ configuration tests, clippy, a debug build, a smoke test (including key creation
 accented and Bengali names, with an `engine-cli` built from the tree that holds the Windows
 non-ASCII key-file fix), a black-box probe of the security model inside WebView2 and unsigned debug
 NSIS and MSI bundles (built, never installed); an Android `cargo check` and `tauri android init`
-(with stand-in SDK folders, plus a script that makes the generated manifest safe); the Linux
+(with stand-in SDK folders, plus a script that makes the generated manifest safe and a CI step,
+untested against a real APK, that checks the merged manifest of the built one); the Linux
 compile, clippy and tests in an Ubuntu 24.04 container (see the ledger for the exact result). Not run: any GitHub Actions job (the account's Actions are blocked by a billing error),
 macOS, iOS, an Android Gradle build, any physical device. Deviations from the text above, all on
 purpose: remote pages get **no** native access at all in this round (decision item 6 allowed an
