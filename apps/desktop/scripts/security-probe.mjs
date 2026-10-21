@@ -30,7 +30,10 @@ import {
   mkdtempSync,
   openSync,
   readFileSync,
-  rmSync,
+  readdirSync,
+  lstatSync,
+  rmdirSync,
+  unlinkSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
@@ -110,11 +113,34 @@ const keyFile = join(home, 'data', 'device-key.json');
 mkdirSync(join(home, 'config'), { recursive: true });
 mkdirSync(join(home, 'data'), { recursive: true });
 
+// Node's fs.rmSync leaves a file behind in a folder whose name has Bengali letters (seen on
+// Node 24 for Windows: it reports success and the file is still there), so this removes files
+// with unlinkSync and folders by hand.
+function removeFile(path) {
+  try {
+    unlinkSync(path);
+  } catch (e) {
+    if (e.code !== 'ENOENT') throw e;
+  }
+}
+function removeTree(path) {
+  try {
+    for (const name of readdirSync(path)) {
+      const child = join(path, name);
+      if (lstatSync(child).isDirectory()) removeTree(child);
+      else removeFile(child);
+    }
+    rmdirSync(path);
+  } catch {
+    /* best effort: a left-over temp folder is not a failure */
+  }
+}
+
 // 'sealed': what the app itself would have saved; 'tampered': same address, other bytes;
 // 'none': nothing saved.
 function writeConfig(kind) {
-  rmSync(configPath, { force: true });
-  rmSync(sealPath, { force: true });
+  removeFile(configPath);
+  removeFile(sealPath);
   if (kind === 'none') return;
   const text = `${JSON.stringify({ version: 1, server: serverA })}\n`;
   writeFileSync(configPath, text);
@@ -541,14 +567,15 @@ try {
   // =========================================================================== phase C
   console.log('--- phase C: no saved server, a key on disk; the launcher does not read the key by itself');
   writeConfig('none');
+  note('config.json exists after removal: ' + existsSync(configPath) + ', seal exists: ' + existsSync(sealPath) + ', home: ' + home);
   const c = await startApp();
   check(c?.url.startsWith('http://tauri.localhost/'), 'no saved server opens the launcher', c?.url);
   await launcherReady();
   check((await visible('key-have')) === true && (await visible('key-public')) === false && (await value('public-key')) === '', 'the launcher says a key exists but does not show or read its public half until asked');
   check((await visible('unconfirmed')) === false, 'and shows no "check the saved address" notice');
   await click('#key-show');
-  await sleep(2500);
-  check((await value('public-key')) === created?.value && (await visible('key-public')) === true, 'a real click on "Show the public key" reads it back and shows it', await value('public-key'));
+  for (let i = 0; i < 40 && !(await value('public-key')); i += 1) await sleep(500);
+  check((await value('public-key')) === created?.value && (await visible('key-public')) === true, 'a real click on "Show the public key" reads it back and shows it', 'value ' + (await value('public-key')) + ', key-error: ' + (await text('key-error')));
   await stopApp('phase C');
 
   // =========================================================================== phase D
@@ -584,7 +611,7 @@ try {
     console.log(`\nrequests seen by server B:\n${B.details.join('\n')}`);
     console.log(`\ndecisions made by the app (${traceFile}):\n${readFileSync(traceFile, 'utf8')}`);
   }
-  rmSync(home, { recursive: true, force: true });
+  removeTree(home);
 }
 
 console.log(failures.length ? `\n${failures.length} check(s) failed.` : '\nSecurity probe passed.');
