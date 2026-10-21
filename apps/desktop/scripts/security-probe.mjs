@@ -220,13 +220,20 @@ async function cdp(method, params) {
     ws.onopen = ok;
     ws.onerror = () => bad(new Error('websocket error'));
   });
-  const answer = await new Promise((ok) => {
-    ws.onmessage = (m) => {
-      const data = JSON.parse(m.data);
-      if (data.id === 1) ok(data);
-    };
-    ws.send(JSON.stringify({ id: 1, method, params }));
-  });
+  // A DevTools command that gets no answer in 60 seconds means the app is gone or stuck:
+  // fail instead of hanging (some of these commands run the key store).
+  const answer = await Promise.race([
+    new Promise((ok) => {
+      ws.onmessage = (m) => {
+        const data = JSON.parse(m.data);
+        if (data.id === 1) ok(data);
+      };
+      ws.send(JSON.stringify({ id: 1, method, params }));
+    }),
+    sleep(60000).then(() => {
+      throw new Error(`no answer to ${method} in 60 s (app exited: ${exitCode !== null})`);
+    }),
+  ]);
   ws.close();
   return answer.result;
 }

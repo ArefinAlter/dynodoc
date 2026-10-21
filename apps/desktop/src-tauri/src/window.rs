@@ -190,6 +190,7 @@ pub fn navigate_main(app: &AppHandle, url: Url) {
 }
 
 /// Reload the page. The launcher reloads only because this call said so.
+#[cfg(desktop)]
 pub fn reload_main(app: &AppHandle) {
     let Some(window) = main_window(app) else {
         return;

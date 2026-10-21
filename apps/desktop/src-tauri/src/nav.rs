@@ -156,7 +156,8 @@ pub fn window_title(url: &Url, server: Option<&ServerOrigin>) -> String {
 
 /// A URL for the debug log: path only, with a query shown as `?...` and no fragment, so a
 /// sign-in token never reaches a log. A click marker's path IS the click secret, so it is
-/// never printed.
+/// never printed. (Only debug builds log, so a release build never calls it.)
+#[cfg_attr(not(debug_assertions), allow(dead_code))]
 pub fn redacted(url: &Url) -> String {
     if url.host_str() == Some(handoff::MARKER_HOST) {
         return "(click marker)".to_string();
