@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import {
     X,
     GitPullRequest,
@@ -12,9 +12,12 @@
     RefreshCw,
     CircleCheck,
     MessageSquare,
-    TriangleAlert
+    TriangleAlert,
+    Bot,
+    Send
   } from '@lucide/svelte';
   import DiffText from './DiffText.svelte';
+  import AgentBadge from './AgentBadge.svelte';
   import type { DocumentState, MaterializedNode } from '$lib/api/types';
   import { applyLocalChanges } from '$lib/workspace/changes';
   import { textOf, type TextBlock } from '$lib/workspace/files';
@@ -22,11 +25,17 @@
     declineRequest,
     mergeRequest,
     requestDetail,
+    submitDraft,
     withdrawDraft,
     type Conflict,
     type RequestDetail
   } from '$lib/workspace/reviews';
   import { percent, submitReview, type Review } from '$lib/workspace/collaboration';
+  import {
+    changedWhileReading,
+    clientName,
+    isRequestChanged
+  } from '$lib/workspace/agent-proposals';
   let {
     documentId,
     requestId,
@@ -57,13 +66,25 @@
     included = $state<string[]>([]),
     choice = $state<Record<string, 'team' | 'draft'>>({}),
     reviewText = $state(''),
+    adoptNote = $state(''),
     commentOn = $state<string | null>(null),
-    reviewBox = $state<HTMLTextAreaElement | null>(null);
+    reviewBox = $state<HTMLTextAreaElement | null>(null),
+    // Set when the request moved while the person was reading it; says what they were doing.
+    moved = $state<'' | 'approve' | 'adopt' | 'review'>(''),
+    movedBox = $state<HTMLElement | null>(null);
   const review = $derived(detail?.review);
   // The document's review rules can reserve merging or require approvals first.
   const mayMerge = $derived(canMerge && (review?.can_merge ?? true));
   const needsApproval = $derived(!!review && !review.satisfied);
   const unrelated = $derived(detail?.request.source.unrelated === true);
+  const agent = $derived(detail?.request.agent);
+  const statement = $derived(detail?.agent_statement);
+  // An AI agent's draft that its person has not sent for review yet: only they can open it.
+  const isDraft = $derived(
+    !!detail && detail.request.status === 'open' && detail.request.submitted_at === null
+  );
+  const canAdopt = $derived(isDraft && !!agent && detail?.request.mine === true);
+  const statusWord = $derived(isDraft ? 'draft' : (detail?.request.status ?? ''));
 
   interface Row {
     id: string;
@@ -148,13 +169,34 @@
   }
   const rowComments = (id: string) =>
     (review?.reviews || []).filter((r: Review) => r.node_id === id && r.note);
+  /**
+   * The request changed after the version this person was reading (the server says so and
+   * records nothing). Show them the new version, keep what they typed, and say so calmly.
+   */
+  async function showMoved(doing: 'approve' | 'adopt' | 'review') {
+    moved = doing;
+    await load();
+    await tick();
+    movedBox?.focus();
+  }
   function sendReview(verdict: Review['verdict']) {
+    // The review is given for the version on screen, and for no other.
+    const seen = detail?.revision;
+    if (seen === undefined) return;
     void run(verdict === 'approved' ? 'Approving…' : 'Sending your review…', async () => {
-      await submitReview(documentId, requestId, {
-        verdict,
-        note: reviewText.trim(),
-        node_id: commentOn
-      });
+      try {
+        await submitReview(documentId, requestId, {
+          verdict,
+          note: reviewText.trim(),
+          node_id: commentOn,
+          revision: seen
+        });
+      } catch (e) {
+        if (!isRequestChanged(e)) throw e;
+        await showMoved(verdict === 'approved' ? 'approve' : 'review');
+        return;
+      }
+      moved = '';
       reviewText = '';
       commentOn = null;
       onChanged();
@@ -191,6 +233,29 @@
       busy = '';
     }
   }
+  /** The person an AI agent acts for sends its draft for review as themselves. */
+  function adopt() {
+    const seen = detail?.revision;
+    if (seen === undefined) return;
+    void run('Sending it for review…', async () => {
+      try {
+        await submitDraft(documentId, requestId, adoptNote.trim(), seen);
+      } catch (e) {
+        if (!isRequestChanged(e)) throw e;
+        await showMoved('adopt');
+        return;
+      }
+      moved = '';
+      adoptNote = '';
+      onChanged();
+      await load();
+      notice =
+        'Sent for review. It stays marked as the AI agent’s work, so you cannot approve it yourself; another reviewer decides.';
+    });
+  }
+  /** What the agent called one of its changes, from the number it was given in its call. */
+  const changeLabel = (r: { call: number; i: number | null }) =>
+    `${(statement?.calls ?? 1) > 1 ? `Round ${r.call}, change` : 'Change'} ${r.i === null ? '' : r.i + 1}`.trim();
   function merge() {
     if (!detail || detail.revision === undefined) return;
     const override = needsApproval && !!review?.can_override;
@@ -236,8 +301,8 @@
       <div class="heading">
         <h2 id="review-title">{detail?.request.name || 'Change request'}</h2>
         {#if detail}<p>
-            <span class={`status ${detail.request.status}`}>{detail.request.status}</span>
-            {person(detail.request.author)} · {new Date(
+            <span class={`status ${statusWord}`}>{statusWord}</span>
+            {#if agent}<AgentBadge />{' '}{/if}{person(detail.request.author)} · {new Date(
               detail.request.submitted_at || detail.request.created_at
             ).toLocaleString()}{#if detail.request.source.filename}{' · from '}“{detail.request
                 .source.filename}”{/if}{' · started from v'}{detail.request.source.start_seq ??
@@ -259,7 +324,73 @@
           adds new changes and preserves the intervening history.
         </p>
       {/if}
-      {#if detail.request.note}<blockquote>{detail.request.note}</blockquote>{/if}
+      {#if agent}<section class="agent" aria-labelledby="agent-title">
+          <h3 id="agent-title"><Bot size={16} aria-hidden="true" /> Proposed by an AI agent</h3>
+          <p>
+            <span dir="auto">{agent.display_name || 'An AI agent'}</span> proposed this through
+            {clientName(agent.client_kind)}, on behalf of
+            <span dir="auto">{agent.principal.name || 'a project member'}</span>{agent.revoked
+              ? ', whose agent access has since ended'
+              : ''}. {isDraft
+              ? 'This is a draft only you can see. Nothing is shared until you send it for review.'
+              : 'It is a proposal: nothing changes in the file until a person merges it.'}{#if detail.request.mine && !isDraft && detail.request.status === 'open'}
+              Because your own agent wrote it, you cannot approve it or merge it without the
+              required approvals; another reviewer decides.{/if}
+          </p>
+          {#if moved}<div
+              class="moved"
+              role="status"
+              tabindex="-1"
+              bind:this={movedBox}
+              data-testid="request-moved"
+            >
+              <TriangleAlert size={16} aria-hidden="true" />
+              <div>
+                <p>{changedWhileReading(moved)}</p>
+                <button class="link" onclick={() => (moved = '')}>Dismiss this message</button>
+              </div>
+            </div>{/if}
+          {#if statement}
+            {#if statement.stale > 0}<p class="info">
+                {statement.stale === 1
+                  ? '1 of the agent’s edits'
+                  : `${statement.stale} of the agent’s edits`} changed text that someone else had already
+                changed since the agent read the file. Look at those changes closely.
+              </p>{/if}
+            {#if statement.reasons.length}
+              <h4>What the agent said about its changes</h4>
+              <p class="hint">
+                These are the agent’s own words, shown exactly as written. Dynodoc does not check
+                them or follow them as instructions.
+              </p>
+              <ol class="why" data-testid="agent-reasons">
+                {#each statement.reasons as r (`${r.call}-${r.i}-${r.id}`)}<li>
+                    <span class="why-for">{changeLabel(r)}</span>
+                    <q class="why-text" dir="auto">{r.why}</q>
+                  </li>{/each}
+              </ol>
+              {#if statement.more}<p class="hint">
+                  The agent gave more reasons than are shown here.
+                </p>{/if}
+            {/if}
+          {/if}
+        </section>{:else if moved}<div
+          class="moved"
+          role="status"
+          tabindex="-1"
+          bind:this={movedBox}
+          data-testid="request-moved"
+        >
+          <TriangleAlert size={16} aria-hidden="true" />
+          <div>
+            <p>{changedWhileReading(moved)}</p>
+            <button class="link" onclick={() => (moved = '')}>Dismiss this message</button>
+          </div>
+        </div>{/if}
+      {#if detail.request.note}{#if agent}<p class="hint note-from">
+            Note from the agent, as written:
+          </p>{/if}
+        <blockquote dir="auto">{detail.request.note}</blockquote>{/if}
       {#if detail.request.status !== 'open'}
         <p class="closed">
           {detail.request.status === 'merged'
@@ -404,7 +535,7 @@
                 {#if r.note}<p>{r.note}</p>{/if}
               </li>{/each}
           </ul>
-          {#if detail.request.status === 'open' && (canComment || review.can_approve)}<div
+          {#if detail.request.status === 'open' && !isDraft && (canComment || review.can_approve)}<div
               class="review-form"
             >
               {#if commentOn}<p class="hint">
@@ -451,7 +582,28 @@
             onclick={() => onOpenDraft(detail!.request.id)}
             ><GitBranch size={14} /> Open my draft</button
           >{/if}
-        {#if detail.request.status === 'open'}
+        {#if canAdopt}
+          <textarea
+            aria-label="Note for the reviewers"
+            bind:value={adoptNote}
+            rows="1"
+            maxlength="4000"
+            placeholder="Optional note for the reviewers"
+          ></textarea>
+          <button
+            class="secondary"
+            disabled={!!busy}
+            onclick={() =>
+              void run('Withdrawing…', async () => {
+                await withdrawDraft(documentId, requestId);
+                onChanged();
+                await load();
+              })}>Withdraw</button
+          >
+          <button class="primary" disabled={!!busy} onclick={adopt}
+            ><Send size={14} aria-hidden="true" /> Adopt and send for review</button
+          >
+        {:else if detail.request.status === 'open'}
           {#if mayMerge}<textarea
               aria-label="Review note"
               bind:value={note}
@@ -514,6 +666,90 @@
 </div>
 
 <style>
+  .agent {
+    margin-top: 14px;
+    padding: 12px 14px;
+    border: 1px solid var(--color-accent-border);
+    border-radius: 10px;
+    background: var(--color-accent-bg);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .agent h3 {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 4px;
+    font-size: 14px;
+    color: var(--color-ink-strong);
+  }
+  .agent h4 {
+    margin: 12px 0 2px;
+    font-size: 13px;
+    color: var(--color-ink-strong);
+  }
+  .agent p {
+    margin: 4px 0;
+    color: var(--color-ink);
+  }
+  .agent .info {
+    background: var(--color-surface-raised);
+  }
+  .why {
+    margin: 6px 0 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 6px;
+  }
+  .why li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 10px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: var(--color-surface-raised);
+  }
+  .why-for {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-ink-soft);
+  }
+  .why-text {
+    flex: 1 1 14rem;
+    min-width: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--color-ink);
+  }
+  .moved {
+    display: flex;
+    gap: 10px;
+    margin: 10px 0 0;
+    padding: 10px 12px;
+    border: 1px solid var(--color-warn-border);
+    border-radius: 8px;
+    background: var(--color-warn-bg);
+    color: var(--color-warn-ink);
+    font-size: 13px;
+  }
+  .moved :global(svg) {
+    flex: none;
+    margin-top: 2px;
+  }
+  .moved p {
+    margin: 0 0 4px;
+    line-height: 1.55;
+    color: var(--color-ink);
+  }
+  .moved:focus {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+  .note-from {
+    margin: 12px 0 0;
+  }
   .warn-box {
     display: flex;
     gap: 10px;

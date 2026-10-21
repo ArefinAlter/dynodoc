@@ -2,6 +2,8 @@
   import { onMount, tick } from 'svelte';
   import MoveProjectFile from './MoveProjectFile.svelte';
   import ProjectAgentPolicy from './ProjectAgentPolicy.svelte';
+  import AgentProposals from './AgentProposals.svelte';
+  import AgentBadge from '$lib/components/workspace/AgentBadge.svelte';
   import RepositoryShell from '$lib/components/product/RepositoryShell.svelte';
   import {
     FolderGit2,
@@ -25,12 +27,14 @@
     BookOpen,
     Plug,
     CircleDot,
+    Bot,
     Star
   } from '@lucide/svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { workspaceRequest, saveBatch } from '$lib/workspace/api';
   import { createDocument } from '$lib/api/client';
+  import { loadProposals, type AgentProposal } from '$lib/workspace/agent-proposals';
   import type { DocumentDetail, DocumentState } from '$lib/api/types';
   import { importFile } from '$lib/workspace/files';
   import { people, inviteByEmail, invitationNotice } from '$lib/workspace/collaboration';
@@ -110,7 +114,9 @@
     readme = $state<{ id: string; title: string; state: DocumentState } | null>(null),
     Preview = $state<typeof import('./FilePreview.svelte').default | null>(null),
     issuesRequest = $state<IssuesRequest | null>(null),
-    openIssues = $state<number | null>(null);
+    openIssues = $state<number | null>(null),
+    agentCount = $state<string | null>(null),
+    proposalsVersion = $state(0);
   const id = $derived($page.params.id || ''),
     manage = $derived(project && ['owner', 'manager'].includes(project.role)),
     canImport = $derived(project && ['owner', 'manager', 'editor'].includes(project.role));
@@ -132,6 +138,7 @@
           )
         : null
     },
+    { key: 'agent', label: 'AI proposals', icon: Bot, count: agentCount },
     {
       key: 'issues',
       label: 'Issues',
@@ -207,8 +214,8 @@
       await loadMembers();
       return;
     }
-    // The Branches and Issues tabs read their own data, and abort when the tab is left.
-    if (tab === 'branches' || tab === 'issues') return;
+    // The Branches, Issues and AI proposals tabs read their own data.
+    if (tab === 'branches' || tab === 'issues' || tab === 'agent') return;
     if (tab === 'activity') {
       if (!members.length) await loadMembers().catch(() => {});
       if (!seen.files) await fetchList('files');
@@ -217,10 +224,16 @@
     }
     await fetchList(tab === 'editors' ? 'files' : (tab as Listing));
   }
+  /** The tab's number: proposals from AI agents that someone still has to act on. */
+  async function countProposals() {
+    if (agentCount !== null) return;
+    const page = await loadProposals(id, 'active', 0);
+    agentCount = `${page.items.length}${page.more ? '+' : ''}`;
+  }
   /** Counters, contributors and the README load quietly; they never raise the page error. */
   async function loadExtras() {
     const wanted = (['files', 'requests', 'drafts'] as Listing[]).filter((w) => !seen[w]);
-    await Promise.allSettled([...wanted.map(fetchList), loadMembers()]);
+    await Promise.allSettled([...wanted.map(fetchList), loadMembers(), countProposals()]);
     const list = await loadContributors(id, members).catch(() => null);
     if (list) {
       contributors = list.contributors;
@@ -349,6 +362,9 @@
     notice = `${file.name} added. ${imported.warnings.join(' ')}`;
     await loadTab();
   }
+  /** An AI proposal opens in the usual review, which needs only the request and its file. */
+  const reviewProposal = (p: AgentProposal) =>
+    openReview({ id: p.id, document: p.document } as unknown as RepoRequest);
   async function openReview(r: RepoRequest) {
     const doc = await workspaceRequest<DocumentDetail>(`/documents/${r.document.id}`),
       access = await people(r.document.id);
@@ -709,7 +725,9 @@
                       />{:else}<GitPullRequestClosed size={16} />{/if}
                   </span>
                   <div class="rp-pr-main">
-                    <strong>{r.name}</strong>
+                    <span class="rp-pr-title"
+                      ><strong>{r.name}</strong>{#if r.agent}{' '}<AgentBadge />{/if}</span
+                    >
                     <span class="rp-pr-doc">{r.document.title} · {r.status}</span>
                     <span class="rp-pr-by"
                       >opened {relativeTime(r.submitted_at || r.created_at)} by {r.author?.name ||
@@ -749,7 +767,9 @@
                 <article class="rp-pr">
                   <span class="rp-status draft" aria-hidden="true"><GitBranch size={16} /></span>
                   <div class="rp-pr-main">
-                    <a href={draftUrl(d)}>{d.name}</a>
+                    <span class="rp-pr-title"
+                      ><a href={draftUrl(d)}>{d.name}</a>{#if d.agent}{' '}<AgentBadge />{/if}</span
+                    >
                     <span class="rp-pr-doc">{d.document.title} · revision {d.revision}</span>
                     {#if d.created_at}<span class="rp-pr-by"
                         >created {relativeTime(d.created_at)}</span
@@ -758,6 +778,13 @@
                 </article>
               {/each}
             </div>
+          {:else if tab === 'agent'}
+            <AgentProposals
+              projectId={id}
+              version={proposalsVersion}
+              onReview={(p) => run(() => reviewProposal(p))}
+              onCount={(n, more) => (agentCount = `${n}${more ? '+' : ''}`)}
+            />
           {:else if tab === 'issues'}
             <IssueList
               projectId={id}
@@ -920,7 +947,7 @@
               fileTitles={Object.fromEntries(files.map((f) => [f.id, f.title]))}
             />
           {/if}
-          {#if tab !== 'settings' && tab !== 'activity' && tab !== 'branches' && tab !== 'issues' && (offsets[tab === 'editors' ? 'files' : (tab as Listing)] > 0 || mores[tab === 'editors' ? 'files' : (tab as Listing)])}<footer
+          {#if tab !== 'settings' && tab !== 'activity' && tab !== 'branches' && tab !== 'issues' && tab !== 'agent' && (offsets[tab === 'editors' ? 'files' : (tab as Listing)] > 0 || mores[tab === 'editors' ? 'files' : (tab as Listing)])}<footer
               class="repo-pagination"
             >
               <button
@@ -1040,6 +1067,7 @@
       onChanged={() => {
         const reviewed = review?.request.id;
         review = null;
+        proposalsVersion += 1;
         void run(async () => {
           await loadTab();
           // Show the request where it now lives, so a merge is visible at once.

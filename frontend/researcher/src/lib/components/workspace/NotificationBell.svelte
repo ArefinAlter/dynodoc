@@ -15,6 +15,7 @@
     LoaderCircle
   } from '@lucide/svelte';
   import { dismissable } from '$lib/actions/dismissable';
+  import AgentBadge from './AgentBadge.svelte';
   import {
     describe,
     listNotifications,
@@ -88,6 +89,14 @@
     open = false;
     await goto(`/documents/${item.document.id}${query}`);
   }
+  /** The project's list of what AI agents proposed, from a notification about one of them. */
+  async function proposals(item: NotificationItem) {
+    await read(item);
+    const project = item.document?.project_id;
+    if (!project) return;
+    open = false;
+    await goto(`/projects/${project}?tab=agent`);
+  }
   async function answer(item: NotificationItem, action: 'invite' | 'dismiss') {
     if (!item.match) return;
     loading = true;
@@ -157,7 +166,9 @@
                 />{/if}
             </span>
             <div class="body">
-              <p>{describe(item)}</p>
+              <p>
+                {describe(item)}{#if item.actor?.is_agent}{' '}<AgentBadge />{/if}
+              </p>
               <small>{ago(item.created_at)}</small>
               <div class="actions">
                 {#if item.kind === 'copy_detected' || item.kind === 'same_name_detected'}
@@ -189,7 +200,10 @@
                 {:else if item.request}<button
                     onclick={() => void visit(item, `?request=${item.request!.id}`)}
                     >Open request</button
-                  >
+                  >{#if item.actor?.is_agent && item.document?.project_id}<button
+                      class="quiet"
+                      onclick={() => void proposals(item)}>All AI proposals</button
+                    >{/if}
                 {:else}<button class="quiet" onclick={() => void visit(item)}>Open</button>{/if}
               </div>
             </div>

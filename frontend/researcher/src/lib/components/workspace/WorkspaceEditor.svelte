@@ -80,6 +80,7 @@
   import NotificationBell from './NotificationBell.svelte';
   import { people as loadPeople, type People } from '$lib/workspace/collaboration';
   import ChangeRequestReview from './ChangeRequestReview.svelte';
+  import AgentBadge from './AgentBadge.svelte';
   import RebaseDialog from './RebaseDialog.svelte';
   import { listRequests, submitDraft, type ChangeRequest } from '$lib/workspace/reviews';
   import { takePush } from '$lib/workspace/pending-push';
@@ -1434,7 +1435,7 @@
               class="draft-card"
               onclick={() => void switchDraft(d.id)}
               ><GitBranch size={17} /><span
-                >{d.name}<small
+                >{d.name}{#if d.agent}{' '}<AgentBadge />{/if}<small
                   >{new Date(d.created_at).toLocaleDateString()}{requests.some(
                     (r) => r.id === d.id && r.status === 'open'
                   )
@@ -1593,7 +1594,7 @@
               class="request-card"
               onclick={() => (reviewing = r.id)}
             >
-              <span class={`status ${r.status}`}>{r.status}</span>
+              <span class={`status ${r.status}`}>{r.status}</span>{#if r.agent}<AgentBadge />{/if}
               <strong>{r.name}</strong>
               <small
                 >{r.author.name || r.author.email.split('@')[0]} · {new Date(

@@ -8,6 +8,7 @@
   import { activityTone, kindLabel, type ActivityItem } from '$lib/workspace/activity';
   import { groupByDay } from '$lib/workspace/repo-ui';
   import Avatar from './Avatar.svelte';
+  import AgentBadge from '$lib/components/workspace/AgentBadge.svelte';
   import RelTime from './RelTime.svelte';
   type FeedItem = ActivityItem & { project_id?: string; project_name?: string };
   let {
@@ -46,8 +47,8 @@
                 kindLabel(item.kind)}{#if item.document_title}{' in '}{#if href}<a {href}
                     >{item.document_title}</a
                   >{:else}<strong>{item.document_title}</strong
-                  >{/if}{/if}{#if item.project_name}{' · '}<span class="muted"
-                  >{item.project_name}</span
+                  >{/if}{/if}{#if item.by_agent}{' '}<AgentBadge
+                />{/if}{#if item.project_name}{' · '}<span class="muted">{item.project_name}</span
                 >{/if}
             </p>
             <p class="meta">
