@@ -326,6 +326,41 @@ describe('adopting an AI agent’s draft', () => {
     expect(flat()).toContain('It stays marked as the AI agent’s work');
   });
 
+  it('discards the draft for real: the route is the withdraw route, the words say what it does', async () => {
+    let closed = false;
+    const { calls, onChanged } = await render((call) => {
+      if (call.path === DETAIL)
+        return json(
+          closed
+            ? detail({
+                submitted_at: null,
+                mine: true,
+                status: 'withdrawn',
+                review_outcome: 'withdrawn'
+              })
+            : draft()
+        );
+      if (call.path === `/documents/${DOC}/drafts/${REQ}/withdraw`) {
+        closed = true;
+        return json({ status: 'withdrawn' });
+      }
+      return undefined;
+    });
+    expect(button(/^Withdraw$/)).toBeUndefined();
+    const discard = button(/Discard this draft/)!;
+    expect(discard.title).toContain('stays in the history');
+    await click(discard);
+    const sent = posts(calls).filter((c) => c.path.endsWith('/withdraw'));
+    expect(sent).toHaveLength(1);
+    expect(sent[0].body).toEqual({});
+    expect(onChanged).toHaveBeenCalledOnce();
+    expect(flat()).toContain('Discarded. The draft stays in the history as withdrawn');
+    expect(target.querySelector('[role="alert"]')).toBeNull();
+    // Closed now: nothing left to adopt or discard.
+    expect(button(/Adopt and send for review/)).toBeUndefined();
+    expect(button(/Discard this draft/)).toBeUndefined();
+  });
+
   it('when the agent added to the draft meanwhile: sends nothing more, shows the new draft, says so', async () => {
     let reads = 0;
     const { calls, onChanged } = await render((call) => {
@@ -345,5 +380,31 @@ describe('adopting an AI agent’s draft', () => {
     expect(onChanged).not.toHaveBeenCalled();
     expect(posts(calls).filter((c) => c.path.endsWith('/submit'))).toHaveLength(1);
     expect(reads).toBe(2);
+  });
+});
+
+describe('the link to a request’s stored file', () => {
+  const link = () => target.querySelector<HTMLAnchorElement>('a[download]');
+  const withUpload = (upload_id: unknown) => detail({ source: { kind: 'file', upload_id } });
+  it('points at the stored file by its id', async () => {
+    const id = '77777777-7777-4777-8777-777777777777';
+    await render((call) => (call.path === DETAIL ? json(withUpload(id)) : undefined));
+    expect(link()?.getAttribute('href')).toBe(`/api/engine/documents/${DOC}/uploads/${id}`);
+  });
+  it('offers nothing when the id is anything but an id', async () => {
+    for (const hostile of [
+      'javascript:alert(1)',
+      '../../../auth/logout',
+      '77777777-7777-4777-8777-777777777777/../../x',
+      '77777777-7777-4777-8777-777777777777?x=1',
+      '//evil.example/x',
+      42
+    ]) {
+      await render((call) => (call.path === DETAIL ? json(withUpload(hostile)) : undefined));
+      expect(link(), String(hostile)).toBeNull();
+      unmount(component!);
+      component = null;
+      target.remove();
+    }
   });
 });

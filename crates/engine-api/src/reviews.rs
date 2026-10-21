@@ -811,7 +811,7 @@ async fn decline(
 ) -> Result<Json<Value>, ApiError> {
     close_request(&state, id, draft, &auth, "declined", &req.note).await
 }
-#[utoipa::path(post, path="/documents/{id}/drafts/{draft_id}/withdraw", tag="reviews", request_body=Value, params(("id" = Uuid, Path, description = "Document identifier"), ("draft_id" = Uuid, Path, description = "Draft identifier")), responses((status=200, description="The contributor withdrew their request", body=Value),(status=403, description="Only the contributor can withdraw")))]
+#[utoipa::path(post, path="/documents/{id}/drafts/{draft_id}/withdraw", tag="reviews", request_body=Value, params(("id" = Uuid, Path, description = "Document identifier"), ("draft_id" = Uuid, Path, description = "Draft identifier")), responses((status=200, description="The contributor withdrew their request, or the person an AI agent acts for discarded its draft before sending it for review (closed as withdrawn and kept as history)", body=Value),(status=403, description="Only the contributor can withdraw"),(status=409, description="Already closed, or an unsent draft that is not an AI agent's")))]
 async fn withdraw(
     State(state): State<AppState>,
     Path((id, draft)): Path<(Uuid, Uuid)>,

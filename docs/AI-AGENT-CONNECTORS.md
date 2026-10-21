@@ -1365,6 +1365,29 @@ Built, in migration `0045_review_revision_binding.sql` (schema 45), `crates/engi
   stack for the browser tests was a local copy of the CI stack with `AGENT_GATEWAY=on`; `ci-frontend.yml` now
   sets it for the authenticated job so the new spec runs there.
 
+*Follow-ups after the independent review of the reviewer's side (21 October 2026).* (1) *A new round on reopen.*
+Sending a declined or withdrawn request for review again (`mark_submitted` with `reopen`) bumps `revision` and
+`content_revision` (and `content_changed_at`, for reviews that name no revision) and audits what lapsed with
+`cause: reopened`: before this, an approval that predated a decline counted again after resubmission, so an
+AI agent's principal could revive a declined agent request. Both counters, not a comparison with the decline
+time, because every counting path goes through one predicate over the counters, a clock cannot be skewed
+past it, and it needs no new state. (2) *The lapse audit* is `latest_counted` (each eligible reviewer's
+latest decision), no longer every fresh row: superseded rows and people without a reviewer role are not listed,
+and nothing is written when nothing counted; the row carries `cause` (`edited` or `reopened`). (3) *Order of one
+reviewer's decisions* is the new identity column `change_request_review.seq` (drawn under the document lock,
+so commit order), not `created_at`, which is the transaction's start; rows from before 0045 (null revision)
+keep `created_at` and count as older than new ones. Migration 0045 was amended for this (it had not run in any
+shared environment); the runtime login needs `USAGE` on `change_request_review_seq_seq` (`grant-runtime`
+adds it: re-run it after migrating). (4) *Discarding an unsent agent draft.* The person an AI agent acts for
+can withdraw its draft before sending it: `POST /documents/{id}/drafts/{draft}/withdraw` closes it as
+`withdrawn` (what the agent's own withdraw does), audited as `document.draft_withdrawn` with the agent and
+principal; the edits, receipts and row stay; only the principal can see it, an ordinary unsent draft is still
+`409`. The review dialog's button for it is "Discard this draft". (5) *Stored file link* in the review dialog
+now accepts only a UUID as the file id. Tests: pull, rebase and share (a share keeps the approval, a pull or
+rebase lapses it), a demoted reviewer and a contributor or viewer never count, reopen after a decline for an
+agent's request (the I5 scenario) and a person's, the lapse audit, the latest decision under skew and under
+concurrent double submits, discard. Each control was removed in turn and its test failed.
+
 ### 11.4 Phase 2 detail (remote MCP and OAuth)
 
 | Task | Weeks |

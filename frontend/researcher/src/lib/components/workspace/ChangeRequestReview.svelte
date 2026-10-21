@@ -84,6 +84,15 @@
     !!detail && detail.request.status === 'open' && detail.request.submitted_at === null
   );
   const canAdopt = $derived(isDraft && !!agent && detail?.request.mine === true);
+  // The stored file's id comes from the request, which its author wrote: only an id (a UUID)
+  // may become part of the address, never a path, a query or a scheme.
+  const uploadId = $derived.by(() => {
+    const id = detail?.request.source.upload_id;
+    return typeof id === 'string' &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+      ? id
+      : '';
+  });
   const statusWord = $derived(isDraft ? 'draft' : (detail?.request.status ?? ''));
 
   interface Row {
@@ -572,9 +581,9 @@
             </div>{/if}
         </section>{/if}
       <div class="actions">
-        {#if detail.request.source.upload_id}<a
+        {#if uploadId}<a
             class="secondary"
-            href={`/api/engine/documents/${documentId}/uploads/${detail.request.source.upload_id}`}
+            href={`/api/engine/documents/${encodeURIComponent(documentId)}/uploads/${encodeURIComponent(uploadId)}`}
             download><Download size={14} /> Their file</a
           >{/if}
         {#if detail.request.mine && detail.request.status !== 'merged'}<button
@@ -593,12 +602,15 @@
           <button
             class="secondary"
             disabled={!!busy}
+            title="Closes the draft as withdrawn. It stays in the history and nothing is sent."
             onclick={() =>
-              void run('Withdrawing…', async () => {
+              void run('Discarding the draft…', async () => {
                 await withdrawDraft(documentId, requestId);
                 onChanged();
                 await load();
-              })}>Withdraw</button
+                notice =
+                  'Discarded. The draft stays in the history as withdrawn; nothing was sent for review.';
+              })}>Discard this draft</button
           >
           <button class="primary" disabled={!!busy} onclick={adopt}
             ><Send size={14} aria-hidden="true" /> Adopt and send for review</button
