@@ -306,7 +306,10 @@ async fn content_neutral_settings_skip_replay_but_review_transitions_fail_closed
             format!("{request}/reviews"),
             json!({"verdict":"commented","note":"Noted"}),
         ),
-        (format!("{request}/reviews"), json!({"verdict":"approved"})),
+        (
+            format!("{request}/reviews"),
+            json!({"verdict":"approved","revision":1}),
+        ),
         (format!("{draft}/withdraw"), json!({})),
         (format!("{request}/decline"), json!({"note":"Declined"})),
     ] {

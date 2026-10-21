@@ -1036,7 +1036,8 @@ async fn write_proposal(
             .map_err(ApiError::from)?;
     }
     // New content makes earlier approvals of this draft's change request stale.
-    let revision: i64 = sqlx::query_scalar("update workspace_draft set revision=revision+1,content_changed_at=now() where id=$1 returning revision")
+    reviews::audit_lapsed_reviews(&mut tx, document, proposal_id, agent.id).await?;
+    let revision: i64 = sqlx::query_scalar("update workspace_draft set revision=revision+1,content_revision=revision+1,content_changed_at=now() where id=$1 returning revision")
         .bind(proposal_id)
         .fetch_one(&mut *tx)
         .await

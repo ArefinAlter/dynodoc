@@ -1292,7 +1292,7 @@ async fn the_principal_adopts_edits_submits_and_withdraws_an_agent_draft(pool: P
         "POST",
         &format!("{uri}/submit"),
         Some(&s.login),
-        json!({"note":"Adopted."}),
+        json!({"note":"Adopted.","revision":edited["revision"]}),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -1652,7 +1652,7 @@ async fn t5_the_principal_cannot_be_the_sole_approver_of_their_agents_request(po
         "POST",
         &format!("{base}/reviews"),
         Some(&w.owner_login),
-        json!({"verdict":"approved","note":""}),
+        json!({"verdict":"approved","note":"","revision":d["revision"]}),
     )
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
@@ -1664,7 +1664,7 @@ async fn t5_the_principal_cannot_be_the_sole_approver_of_their_agents_request(po
         "{body}"
     );
     // An approval row that got in anyway (here as the owner of the database) does not count.
-    sqlx::query("insert into change_request_review(document_id,draft_id,reviewer_id,verdict,note) values($1,$2,$3,'approved','')")
+    sqlx::query("insert into change_request_review(document_id,draft_id,reviewer_id,verdict,note,draft_revision) values($1,$2,$3,'approved','',(select revision from workspace_draft where id=$2))")
         .bind(doc)
         .bind(p)
         .bind(w.owner)
@@ -1696,7 +1696,7 @@ async fn t5_the_principal_cannot_be_the_sole_approver_of_their_agents_request(po
         "POST",
         &format!("{base}/reviews"),
         Some(&rita_login),
-        json!({"verdict":"approved","note":"Good."}),
+        json!({"verdict":"approved","note":"Good.","revision":d["revision"]}),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -1762,10 +1762,10 @@ async fn t10_the_agent_identity_is_no_member_no_reviewer_and_no_account(pool: Pg
             .execute(runtime)
             .await,
     );
-    refused("review", sqlx::query("insert into change_request_review(document_id,draft_id,reviewer_id,verdict,note) values($1,$2,$3,'approved','')").bind(doc).bind(p).bind(agent).execute(runtime).await);
+    refused("review", sqlx::query("insert into change_request_review(document_id,draft_id,reviewer_id,verdict,note,draft_revision) values($1,$2,$3,'approved','',(select revision from workspace_draft where id=$2))").bind(doc).bind(p).bind(agent).execute(runtime).await);
     refused("key", sqlx::query("insert into device_signing_key(id,identity_id,public_key,proof) values(gen_random_uuid(),$1,repeat('ab',32),'{}')").bind(agent).execute(runtime).await);
     // The same as the owner of the database: the triggers hold for everyone.
-    refused("owner review", sqlx::query("insert into change_request_review(document_id,draft_id,reviewer_id,verdict,note) values($1,$2,$3,'approved','')").bind(doc).bind(p).bind(agent).execute(&w.runtime.owner).await);
+    refused("owner review", sqlx::query("insert into change_request_review(document_id,draft_id,reviewer_id,verdict,note,draft_revision) values($1,$2,$3,'approved','',(select revision from workspace_draft where id=$2))").bind(doc).bind(p).bind(agent).execute(&w.runtime.owner).await);
     // Born disabled, with the reserved address; never enabled, erased or renamed.
     let (email, disabled): (String, bool) =
         sqlx::query_as("select email,disabled_at is not null from identity where id=$1")
@@ -2828,12 +2828,17 @@ async fn t9_text_is_stored_and_shown_as_data(pool: PgPool) {
         '\u{202E}',
         "x".repeat(600)
     );
+    let revision: i64 = sqlx::query_scalar("select revision from workspace_draft where id=$1")
+        .bind(p)
+        .fetch_one(w.pool())
+        .await
+        .unwrap();
     let (status, body) = call(
         &w.app,
         "POST",
         &format!("/documents/{doc}/change-requests/{p}/reviews"),
         Some(&rita_login),
-        json!({"verdict":"changes_requested","note":said}),
+        json!({"verdict":"changes_requested","note":said,"revision":revision}),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -4566,12 +4571,18 @@ async fn every_audit_row_of_an_agents_request_names_the_agent(pool: PgPool) {
 
     // The person submits their agent's draft: their own row, naming the agent.
     let adopted = open_one(&s, doc, "Alpha adopted paragraph.").await;
+    let adopted_revision: i64 =
+        sqlx::query_scalar("select revision from workspace_draft where id=$1")
+            .bind(adopted)
+            .fetch_one(w.pool())
+            .await
+            .unwrap();
     let (status, body) = call(
         &w.app,
         "POST",
         &format!("/documents/{doc}/drafts/{adopted}/submit"),
         Some(&s.login),
-        json!({"note":"Mine now."}),
+        json!({"note":"Mine now.","revision":adopted_revision}),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");

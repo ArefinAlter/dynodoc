@@ -47,6 +47,16 @@ pub enum ApiError {
     /// violations, a duplicate id) → 409.
     #[error("conflict: {reason}")]
     Conflict { reason: String },
+    /// A refusal that has a stable code of its own, for the client to act on without parsing
+    /// the sentence: `request_changed` (409) and `revision_required` (400) of the review
+    /// route. `details` is merged into the usual `details.reason`.
+    #[error("{reason}")]
+    Coded {
+        status: StatusCode,
+        code: &'static str,
+        reason: String,
+        details: Value,
+    },
     /// The caller exceeded a rate limit → 429, with a `Retry-After` hint (seconds).
     #[error("rate limited")]
     RateLimited { retry_after: u64 },
@@ -80,6 +90,7 @@ impl ApiError {
             ApiError::Forbidden | ApiError::Denied { .. } => StatusCode::FORBIDDEN,
             ApiError::BadRequest { .. } => StatusCode::BAD_REQUEST,
             ApiError::Conflict { .. } => StatusCode::CONFLICT,
+            ApiError::Coded { status, .. } => *status,
             ApiError::RateLimited { .. } => StatusCode::TOO_MANY_REQUESTS,
             ApiError::Internal(_) | ApiError::ReplayFailed { .. } => {
                 StatusCode::INTERNAL_SERVER_ERROR
@@ -98,6 +109,7 @@ impl ApiError {
             ApiError::Forbidden | ApiError::Denied { .. } => "forbidden",
             ApiError::BadRequest { .. } => "bad_request",
             ApiError::Conflict { .. } => "conflict",
+            ApiError::Coded { code, .. } => code,
             ApiError::RateLimited { .. } => "rate_limited",
             ApiError::Internal(_) => "internal",
             ApiError::ReplayFailed { .. } => "replay_failed",
@@ -114,6 +126,15 @@ impl ApiError {
             | ApiError::Conflict { reason }
             | ApiError::Denied { reason } => {
                 json!({ "reason": reason })
+            }
+            ApiError::Coded {
+                reason, details, ..
+            } => {
+                let mut merged = json!({ "reason": reason });
+                if let (Some(into), Value::Object(more)) = (merged.as_object_mut(), details) {
+                    into.extend(more.clone());
+                }
+                merged
             }
             ApiError::RateLimited { retry_after } => json!({ "retry_after": retry_after }),
             ApiError::ReplayFailed { document_id, seq } => {

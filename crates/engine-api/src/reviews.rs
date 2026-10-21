@@ -17,6 +17,7 @@ use crate::{
 };
 use axum::{
     extract::{Path, Query, State},
+    http::StatusCode,
     routing::{get, post},
     Json, Router,
 };
@@ -132,8 +133,15 @@ fn plan(
     }
 }
 
+/// SQL boolean: the review `r`, joined to its draft `w`, still counts. A review that names a
+/// revision (every one written since migration 0045) counts while the request's content has
+/// not changed after that revision (`content_revision`); a merge of part of the request moves
+/// `revision` and leaves the content, so it does not lapse. An older review, which names none,
+/// keeps the rule it was written under: written after the last change.
+const FRESH: &str = "case when r.draft_revision is null then r.created_at>coalesce(w.content_changed_at,'-infinity'::timestamptz) else r.draft_revision>=w.content_revision end";
+
 /// Reviews on a request, and whether the document's rules allow merging it now.
-/// Approvals count while the contributor has not changed the request since, and
+/// Approvals count while the request's content is as the reviewer saw it, and
 /// only from people who still hold a reviewer role or above.
 pub(crate) async fn review_state(
     db: &mut sqlx::PgConnection,
@@ -143,7 +151,7 @@ pub(crate) async fn review_state(
     role: MemberRole,
     rules: &Policy,
 ) -> Result<Value, ApiError> {
-    let reviews: Vec<Value> = sqlx::query_scalar("select jsonb_build_object('id',r.id,'verdict',r.verdict,'note',r.note,'node_id',r.node_id,'created_at',r.created_at,'stale',r.created_at<=coalesce(w.content_changed_at,'-infinity'::timestamptz),'reviewer',jsonb_build_object('id',i.id,'name',i.display_name,'email',case when i.erased_at is null then i.email end)) from change_request_review r join identity i on i.id=r.reviewer_id join workspace_draft w on w.id=r.draft_id where r.draft_id=$1 order by r.created_at limit 500")
+    let reviews: Vec<Value> = sqlx::query_scalar(&format!("select jsonb_build_object('id',r.id,'verdict',r.verdict,'note',r.note,'node_id',r.node_id,'created_at',r.created_at,'revision',r.draft_revision,'stale',not ({FRESH}),'reviewer',jsonb_build_object('id',i.id,'name',i.display_name,'email',case when i.erased_at is null then i.email end)) from change_request_review r join identity i on i.id=r.reviewer_id join workspace_draft w on w.id=r.draft_id where r.draft_id=$1 order by r.created_at limit 500"))
         .bind(draft)
         .fetch_all(&mut *db)
         .await?;
@@ -155,7 +163,7 @@ pub(crate) async fn review_state(
         .unwrap_or_default();
     // I4: an agent identity never counts, whatever a row says (it holds no membership, so
     // the role test already excludes it, and the database refuses its review rows).
-    let latest: Vec<(Uuid, String)> = sqlx::query_as("select distinct on (r.reviewer_id) r.reviewer_id,r.verdict from change_request_review r join workspace_draft w on w.id=r.draft_id where r.draft_id=$1 and r.verdict in ('approved','changes_requested') and r.created_at>coalesce(w.content_changed_at,'-infinity'::timestamptz) and document_member_role($2,r.reviewer_id) in ('reviewer','editor','manager','owner') and not exists(select 1 from agent_identity ai where ai.identity_id=r.reviewer_id) order by r.reviewer_id,r.created_at desc")
+    let latest: Vec<(Uuid, String)> = sqlx::query_as(&format!("select distinct on (r.reviewer_id) r.reviewer_id,r.verdict from change_request_review r join workspace_draft w on w.id=r.draft_id where r.draft_id=$1 and r.verdict in ('approved','changes_requested') and {FRESH} and document_member_role($2,r.reviewer_id) in ('reviewer','editor','manager','owner') and not exists(select 1 from agent_identity ai where ai.identity_id=r.reviewer_id) order by r.reviewer_id,r.created_at desc"))
         .bind(draft)
         .bind(id)
         .fetch_all(&mut *db)
@@ -186,6 +194,39 @@ pub(crate) async fn review_state(
         "can_override": role.can_manage() && !satisfied && !own_agent_request(request),
         "can_approve": role.can_approve() && request["mine"] != true,
     }))
+}
+
+/// Call in the transaction that is about to change the content of `draft` (its revision moves
+/// and `content_revision` follows), before the update. The approvals and requests for changes
+/// that count today stop counting with it; they stay in the append-only table, marked stale by
+/// the revision they name, and this writes the one audit row that says what lapsed and when,
+/// so that the trail reads: approved at revision N, changed, revision N+1. Nothing is written
+/// when no review counted.
+pub(crate) async fn audit_lapsed_reviews(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    document: Uuid,
+    draft: Uuid,
+    actor: Uuid,
+) -> Result<(), ApiError> {
+    let lapsing: Vec<Value> = sqlx::query_scalar(&format!("select jsonb_build_object('review',r.id,'verdict',r.verdict,'revision',r.draft_revision,'reviewer',r.reviewer_id) from change_request_review r join workspace_draft w on w.id=r.draft_id where r.draft_id=$1 and r.verdict in ('approved','changes_requested') and {FRESH} order by r.created_at limit 50"))
+        .bind(draft)
+        .fetch_all(&mut **tx)
+        .await?;
+    if lapsing.is_empty() {
+        return Ok(());
+    }
+    let revision: i64 = sqlx::query_scalar("select revision from workspace_draft where id=$1")
+        .bind(draft)
+        .fetch_one(&mut **tx)
+        .await?;
+    crate::product::audit(
+        tx,
+        actor,
+        "document.change_request_changed",
+        document,
+        json!({"draft_id":draft,"from_revision":revision,"to_revision":revision+1,"lapsed":lapsing}),
+    )
+    .await
 }
 
 /// Is this the viewer's own agent's request? (I5: the person an AI agent acts for is its
@@ -731,21 +772,54 @@ async fn withdraw(
     close_request(&state, id, draft, &auth, "withdrawn", &req.note).await
 }
 
-/// Ask the document's editors to review an existing personal draft.
-#[utoipa::path(post, path="/documents/{id}/drafts/{draft_id}/submit", tag="reviews", request_body=Value, params(("id" = Uuid, Path, description = "Document identifier"), ("draft_id" = Uuid, Path, description = "Draft identifier")), responses((status=200, description="Submitted for review", body=Value),(status=403, description="Viewers cannot propose changes"),(status=404, description="Not your open draft")))]
+#[derive(Deserialize, utoipa::ToSchema)]
+struct SubmitRequest {
+    #[serde(default)]
+    note: String,
+    /// The `revision` of the draft the person was looking at. **Required to adopt a draft an
+    /// AI agent wrote** (an agent can add to its own draft until it is submitted, so the
+    /// person must send what they read); when given for a draft of the person's own it must
+    /// match as well. A draft that moved is `409` with the code `request_changed`.
+    revision: Option<i64>,
+}
+
+/// Ask the document's editors to review an existing personal draft. A person may also submit
+/// the draft an AI agent wrote for them (adopt it): the request stays the agent's work, the
+/// audit row names the person who submitted it and the agent that proposed it, and the draft's
+/// `revision` must be sent, so what is submitted is what was read.
+#[utoipa::path(post, path="/documents/{id}/drafts/{draft_id}/submit", tag="reviews", request_body=SubmitRequest, params(("id" = Uuid, Path, description = "Document identifier"), ("draft_id" = Uuid, Path, description = "Draft identifier")), responses((status=200, description="Submitted for review", body=Value),(status=400, description="Invalid note; code revision_required when adopting an AI agent's draft without naming its revision"),(status=403, description="Viewers cannot propose changes"),(status=404, description="Not your open draft"),(status=409, description="The draft changed after the revision named (code request_changed, details.current_revision)")))]
 async fn submit(
     State(state): State<AppState>,
     Path((id, draft)): Path<(Uuid, Uuid)>,
     auth: AuthContext,
-    Json(req): Json<NoteRequest>,
+    Json(req): Json<SubmitRequest>,
 ) -> Result<Json<Value>, ApiError> {
     if req.note.len() > 4000 {
         return Err(bad("Keep the description under 4,000 characters"));
+    }
+    if req.revision.is_some_and(|r| r < 0) {
+        return Err(bad("The revision of a draft is not negative"));
     }
     let (mut tx, role, _) =
         apply::begin_write(&state, DocumentId(id), IdentityId(auth.identity_id)).await?;
     if role == Role::Auditor {
         return Err(ApiError::Forbidden);
+    }
+    // The document lock is held: the revision read here is the one that is submitted.
+    let owned = owned_by("workspace_draft", "$3");
+    let found: Option<(i64, bool)> = sqlx::query_as(&format!("select revision,created_by<>$3 from workspace_draft where id=$1 and document_id=$2 and {owned}"))
+        .bind(draft)
+        .bind(id)
+        .bind(auth.identity_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+    if let Some((revision, adopting)) = found {
+        if adopting && req.revision.is_none() {
+            return Err(revision_required());
+        }
+        if req.revision.is_some_and(|named| named != revision) {
+            return Err(request_changed(revision, req.revision));
+        }
     }
     // Your draft, or one an AI agent made for you.
     if !mark_submitted(&mut tx, id, draft, auth.identity_id, req.note.trim(), true).await? {
@@ -753,6 +827,25 @@ async fn submit(
     }
     tx.commit().await?;
     Ok(Json(json!({"status":"open"})))
+}
+
+fn revision_required() -> ApiError {
+    ApiError::Coded {
+        status: StatusCode::BAD_REQUEST,
+        code: "revision_required",
+        reason: "Say which revision you read (the revision of the page you were looking at). Reload the page to read the current one.".into(),
+        details: json!({}),
+    }
+}
+
+/// `409 request_changed`: the request or draft is not at the revision the caller read.
+fn request_changed(current: i64, named: Option<i64>) -> ApiError {
+    ApiError::Coded {
+        status: StatusCode::CONFLICT,
+        code: "request_changed",
+        reason: "This change request changed while you were reading it. Read the new version, then decide again.".into(),
+        details: json!({"current_revision":current,"revision":named}),
+    }
 }
 
 /// Submit the unmerged draft `draft` of `actor` (or of an agent identity acting for
@@ -789,6 +882,10 @@ pub(crate) async fn mark_submitted(
         detail["contributor"] = json!(identity);
         detail["contributor_kind"] = json!("agent");
         detail["agent"] = json!({"client_kind":client_kind,"principal":principal});
+        // The row's actor is the person; the agent that proposed it is `contributor`.
+        if actor == principal {
+            detail["adopted"] = json!(true);
+        }
     }
     crate::product::audit(tx, actor, "document.change_request_submitted", id, detail).await?;
     notifications::notify_reviewers(
@@ -836,7 +933,7 @@ async fn refuse_agent(
     Ok(())
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, utoipa::ToSchema)]
 struct ReviewRequest {
     /// `approved`, `changes_requested` or `commented`.
     verdict: String,
@@ -844,10 +941,17 @@ struct ReviewRequest {
     note: String,
     /// Comment on one changed block.
     node_id: Option<String>,
+    /// The `revision` of the change request the reviewer was looking at (the one its detail
+    /// returned). **Required for `approved` and `changes_requested`**: the review is given for
+    /// that revision and for no other. If the request has moved since, the answer is `409`
+    /// with the code `request_changed`; read the request again. A comment may leave it out.
+    revision: Option<i64>,
 }
 /// Approve, request changes or comment. Reviewers and above approve or request
-/// changes on other people's requests; any contributor can comment.
-#[utoipa::path(post, path="/documents/{id}/change-requests/{draft_id}/reviews", tag="reviews", request_body=Value, params(("id" = Uuid, Path, description = "Document identifier"), ("draft_id" = Uuid, Path, description = "Change request identifier")), responses((status=200, description="Review recorded", body=Value),(status=403, description="Role cannot give this review"),(status=409, description="The request is closed")))]
+/// changes on other people's requests; any contributor can comment. An approval or a
+/// request for changes names the revision of the request it was given for (`revision`), and
+/// counts only while the request's content is as it was at that revision.
+#[utoipa::path(post, path="/documents/{id}/change-requests/{draft_id}/reviews", tag="reviews", request_body=ReviewRequest, params(("id" = Uuid, Path, description = "Document identifier"), ("draft_id" = Uuid, Path, description = "Change request identifier")), responses((status=200, description="Review recorded", body=Value),(status=400, description="Invalid review; code revision_required when an approval or a request for changes names no revision"),(status=403, description="Role cannot give this review"),(status=409, description="The request is closed (code conflict), or it changed after the revision the review names (code request_changed, details.current_revision)")))]
 async fn review(
     State(state): State<AppState>,
     Path((id, draft)): Path<(Uuid, Uuid)>,
@@ -864,6 +968,14 @@ async fn review(
     }
     if req.verdict != "approved" && req.note.trim().is_empty() {
         return Err(bad("Add a note explaining what should change"));
+    }
+    // A decision is given for one revision of the request, the one the reviewer read.
+    let decides = req.verdict != "commented";
+    if req.revision.is_some_and(|r| r < 0) {
+        return Err(bad("The revision of a change request is not negative"));
+    }
+    if decides && req.revision.is_none() {
+        return Err(revision_required());
     }
     let (mut tx, _, _) =
         apply::begin_write(&state, DocumentId(id), IdentityId(auth.identity_id)).await?;
@@ -887,13 +999,21 @@ async fn review(
             },
         });
     }
-    let review: Uuid = sqlx::query_scalar("insert into change_request_review(document_id,draft_id,reviewer_id,verdict,node_id,note) values($1,$2,$3,$4,$5,$6) returning id")
+    // The document lock is held, so the revision cannot move between this read and the insert
+    // (and the database refuses a deciding review for any other revision).
+    let current = request["revision"].as_i64().unwrap_or(0);
+    if decides && req.revision != Some(current) {
+        return Err(request_changed(current, req.revision));
+    }
+    let named = req.revision.filter(|r| (0..=current).contains(r));
+    let review: Uuid = sqlx::query_scalar("insert into change_request_review(document_id,draft_id,reviewer_id,verdict,node_id,note,draft_revision) values($1,$2,$3,$4,$5,$6,$7) returning id")
         .bind(id)
         .bind(draft)
         .bind(auth.identity_id)
         .bind(&req.verdict)
         .bind(&req.node_id)
         .bind(req.note.trim())
+        .bind(named)
         .fetch_one(&mut *tx)
         .await?;
     if let Some(contributor) = contributor_of(&request) {
@@ -913,13 +1033,13 @@ async fn review(
         auth.identity_id,
         "document.change_request_reviewed",
         id,
-        json!({"draft_id":draft,"review_id":review,"verdict":req.verdict}),
+        json!({"draft_id":draft,"review_id":review,"verdict":req.verdict,"revision":named}),
     )
     .await?;
     let rules = access::policy(&mut tx, id).await?;
     let summary = review_state(&mut tx, id, draft, &request, member, &rules).await?;
     tx.commit().await?;
-    Ok(Json(json!({"id":review,"review":summary})))
+    Ok(Json(json!({"id":review,"revision":current,"review":summary})))
 }
 
 #[derive(utoipa::OpenApi)]

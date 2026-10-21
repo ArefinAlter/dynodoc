@@ -539,7 +539,7 @@ async fn roles_rules_and_approvals_govern_merging(pool: PgPool) {
             &router,
             &format!("{uri}/reviews"),
             token,
-            json!({"verdict":"approved"}),
+            json!({"verdict":"approved","revision":detail["revision"]}),
         )
         .await;
         assert_eq!(status, StatusCode::FORBIDDEN);
@@ -548,7 +548,7 @@ async fn roles_rules_and_approvals_govern_merging(pool: PgPool) {
         &router,
         &format!("{uri}/reviews"),
         &reviewer,
-        json!({"verdict":"changes_requested","note":"Cite the table","node_id":ids[2]}),
+        json!({"verdict":"changes_requested","note":"Cite the table","node_id":ids[2],"revision":detail["revision"]}),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -563,7 +563,7 @@ async fn roles_rules_and_approvals_govern_merging(pool: PgPool) {
         &router,
         &format!("{uri}/reviews"),
         &reviewer,
-        json!({"verdict":"approved"}),
+        json!({"verdict":"approved","revision":detail["revision"]}),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");

@@ -72,6 +72,9 @@ fn api_agent_code(error: &ApiError) -> &'static str {
         ApiError::Forbidden | ApiError::Denied { .. } => "forbidden",
         ApiError::BadRequest { .. } => "bad_request",
         ApiError::Conflict { .. } => "conflict",
+        // Only the review route makes one; if it ever reached an agent route, say what it is.
+        ApiError::Coded { status, .. } if *status == axum::http::StatusCode::CONFLICT => "conflict",
+        ApiError::Coded { .. } => "bad_request",
         ApiError::RateLimited { .. } => "rate_limited",
         ApiError::Deadline => "deadline_exceeded",
         ApiError::Busy => "busy",
