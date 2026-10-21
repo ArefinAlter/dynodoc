@@ -10,7 +10,9 @@
 // an accented letter and Bengali letters.
 //
 // Phases, each with its own start of the app:
-//   A  a saved, sealed server: what a hostile server page can and cannot do.
+//   A  a saved, sealed server: what a hostile server page can and cannot do, including a page
+//      that replaces Function.prototype.call/apply/bind, closest(), the link getters and
+//      window.open to steal the click secret or fake a link, and the click rate limit.
 //   B  a saved server whose file was edited outside the app: shown, not opened; the launcher
 //      commands, real key creation, and confirming the address.
 //   C  no saved server, a key on disk: the launcher does not read the key by itself.
@@ -70,6 +72,56 @@ function check(ok, what, detail = '') {
 const note = (text) => console.log(`      note: ${text}`);
 
 // ------------------------------------------------------------------ the two servers
+// A server page that is hostile in the way the injected click script has to withstand: it
+// runs AFTER the script (which the shell injects first), replaces the built-ins the script
+// could have used, and records everything that is passed to them. window.__seen is read by
+// the probe; hooks keep every function's behaviour so the page works normally.
+function hostilePage(port) {
+  const fake = `http://127.0.0.1:${port}/fake-admin`;
+  return `<!doctype html><title>hostile</title><h1>hostile</h1>
+<p><button id="harmless">a harmless button</button></p>
+<p><a id="victim" href="http://127.0.0.1:${port}/hostile-target">a real link to another site</a></p>
+<script>
+(function () {
+  var seen = (window.__seen = []);
+  var depth = 0;
+  var origCall = Function.prototype.call;
+  var origApply = Function.prototype.apply;
+  var origBind = Function.prototype.bind;
+  var origReflectApply = Reflect.apply;
+  var FAKE = ${JSON.stringify(fake)};
+  function note(kind, args) {
+    if (depth > 0) return;
+    depth += 1;
+    try {
+      var parts = [];
+      for (var i = 0; i < args.length; i += 1) {
+        try { parts.push(typeof args[i] === 'string' ? args[i] : String(args[i])); } catch (e) { parts.push('?'); }
+      }
+      seen.push(kind + ':' + parts.join(','));
+    } catch (e) {} finally { depth -= 1; }
+  }
+  Function.prototype.call = function () { note('call', arguments); return origReflectApply(origCall, this, arguments); };
+  Function.prototype.apply = function () { note('apply', arguments); return origReflectApply(origApply, this, arguments); };
+  Function.prototype.bind = function () { note('bind', arguments); return origReflectApply(origBind, this, arguments); };
+  Reflect.apply = function () { note('reflect-apply', arguments); return origReflectApply(origReflectApply, Reflect, arguments); };
+  var fakeLink = document.createElement('a');
+  fakeLink.setAttribute('href', FAKE);
+  Element.prototype.closest = function () { note('closest', arguments); return fakeLink; };
+  Object.defineProperty(HTMLAnchorElement.prototype, 'href', { configurable: true, get: function () { note('href', []); return FAKE; } });
+  Object.defineProperty(HTMLAnchorElement.prototype, 'protocol', { configurable: true, get: function () { note('protocol', []); return 'http:'; } });
+  Object.defineProperty(HTMLAnchorElement.prototype, 'origin', { configurable: true, get: function () { note('origin', []); return 'http://127.0.0.1:${port}'; } });
+  Object.defineProperty(Event.prototype, 'target', { configurable: true, get: function () { note('target', []); return fakeLink; } });
+  var realEncode = encodeURIComponent;
+  window.encodeURIComponent = function () { note('encode', arguments); return realEncode.apply(null, arguments); };
+  window.open = function () { note('open', arguments); return null; };
+  window.URL = function () { note('URL', arguments); throw new Error('no'); };
+  // The page's own call, to show the hooks are live.
+  (function () {}).call(null, 'hook-check');
+})();
+</script>`;
+}
+
 function listen(label) {
   const hits = [];
   const details = [];
@@ -83,6 +135,10 @@ function listen(label) {
       return;
     }
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    if (req.url === '/hostile') {
+      res.end(hostilePage(globalThis.PROBE_B_PORT));
+      return;
+    }
     if (req.url === '/bu-page') {
       // A page that asks to be asked before it is left (an editor with unsaved work).
       res.end(`<!doctype html><title>bu</title><p><button id="activate">edit</button></p>
@@ -262,6 +318,28 @@ async function click(selector) {
   }
 }
 
+// Several real clicks at one element over ONE connection, so they arrive within milliseconds.
+async function clickBurst(selector, times) {
+  const box = await evaluate(
+    `(() => { const e = document.querySelector(${JSON.stringify(selector)}); e.scrollIntoView({ block: 'center' }); const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`,
+  );
+  const [page] = await pages();
+  const ws = new WebSocket(page.webSocketDebuggerUrl);
+  await new Promise((ok, bad) => {
+    ws.onopen = ok;
+    ws.onerror = () => bad(new Error('websocket error'));
+  });
+  let id = 0;
+  for (let n = 0; n < times; n += 1) {
+    for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased']) {
+      id += 1;
+      ws.send(JSON.stringify({ id, method: 'Input.dispatchMouseEvent', params: { type, x: box.x, y: box.y, button: 'left', clickCount: 1 } }));
+    }
+  }
+  await sleep(800);
+  ws.close();
+}
+
 const invokeAll = (commands) => `(async () => {
   const call = window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke;
   if (!call) return [];
@@ -433,6 +511,58 @@ try {
   await evaluate(`window.open('/popup-relative', '_blank'); 0`);
   await sleep(2000);
   check(A.hits.includes('/popup-relative') && (await pages()).length === 1, 'window.open of a same-origin address loads it in the one window');
+
+  // ---- a hostile page: it replaces the built-ins the click script could have used
+  // The shell injects the click script before any page script, so the script must have kept
+  // its own copy of everything it uses. This page then replaces Function.prototype.call /
+  // apply / bind, Reflect.apply, Element.prototype.closest, the link and event getters,
+  // encodeURIComponent, URL and window.open, records every argument, and lies about links.
+  await evaluate(`location.href = '/hostile'; 0`);
+  await sleep(1500);
+  check((await here()).endsWith('/hostile'), 'the hostile page loaded in the window');
+  const hooks = await evaluate('window.__seen');
+  check(Array.isArray(hooks) && hooks.some((s) => s.includes('hook-check')), 'the hostile page\'s hooks are live (they see the page\'s own calls)');
+  const mH = B.details.length;
+  const tH = traceMark();
+  await click('#harmless');
+  await sleep(1500);
+  check(
+    !B.details.slice(mH).some((d) => d.startsWith('/fake-admin')) && !/hand-off/.test(traceFrom(tH)),
+    'hostile page: a real click on a harmless button opens nothing, although closest(), the click target and every href getter say "link to an address of the page\'s choosing"',
+    B.details.slice(mH).join(' | '),
+  );
+  await click('#victim');
+  await sleep(3500);
+  check(
+    siteNone(B, mH, '/hostile-target') && !B.details.slice(mH).some((d) => d.startsWith('/fake-admin')),
+    'hostile page: a real click on a real link opens THAT link in the system browser, not the address the page\'s getters claim',
+    B.details.slice(mH).join(' | '),
+  );
+  const seenCalls = await evaluate('window.__seen');
+  const leaked = (seenCalls ?? []).filter((s) => /gesture\.dynodoc\.invalid|[0-9a-f]{40}/i.test(s));
+  check(Array.isArray(seenCalls) && seenCalls.length > 0 && leaked.length === 0, 'hostile page: nothing it replaced was ever handed the click marker or its secret', `${seenCalls?.length} calls recorded; leaks: ${leaked.join(' | ') || 'none'}`);
+  const onGlobal = await evaluate(`Object.getOwnPropertyNames(window).filter(function (k) { try { var v = window[k]; return typeof v === 'string' && (v.indexOf('gesture.dynodoc') >= 0 || /^[0-9a-f]{64}$/.test(v)); } catch (e) { return false; } })`);
+  check(Array.isArray(onGlobal) && onGlobal.length === 0, 'hostile page: the secret is not the value of any property of window', JSON.stringify(onGlobal));
+
+  // ---- the click budget: 1 per second, apart from the page's own budget
+  await sleep(1200);
+  const tB = traceMark();
+  await clickBurst('#victim', 6);
+  await sleep(2500);
+  const burst = traceFrom(tB);
+  const burstOpened = (burst.match(/hand-off .* -> Opened/g) ?? []).length;
+  const burstDropped = (burst.match(/hand-off .* -> RateLimited/g) ?? []).length;
+  check(burstOpened === 1 && burstDropped >= 4, 'six real clicks within milliseconds: one opens, the rest hit the click budget', `opened ${burstOpened}, rate limited ${burstDropped}`);
+  await sleep(1200);
+  const tS = traceMark();
+  await evaluate(`location.href = 'https://starve.invalid/'; 0`);
+  await sleep(300);
+  await click('#victim');
+  await sleep(2500);
+  const starve = traceFrom(tS);
+  check(/hand-off https:\/\/starve\.invalid\/ -> Opened/.test(starve) && /hand-off http:\/\/127\.0\.0\.1:\d+\/hostile-target -> Opened/.test(starve), 'a page-initiated hand-off a moment earlier does not use up the click budget (separate buckets)', (starve.match(/hand-off.*/g) ?? []).join(' | '));
+  await evaluate(`location.href = '/same-origin-page-3'; 0`);
+  await sleep(1500);
 
   // ---- permissions
   const perms = await evaluate(`(async () => {
