@@ -15,9 +15,49 @@
 
 use std::fmt;
 
+/// The scheme, as written in tauri.conf.json (a test compares them).
+#[cfg(test)]
 pub const SCHEME: &str = "dynodoc";
+const PREFIX: &str = "dynodoc://";
 /// Far longer than any accepted link (`dynodoc://open/documents/` plus 36 characters).
 pub const MAX_LINK_LEN: usize = 128;
+
+/// What an accepted link asks for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
+    Workspace,
+    Project,
+    Document,
+}
+
+/// One accepted shape: these fixed words, then (when `takes_id`) a UUID.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Shape {
+    pub words: &'static [&'static str],
+    pub takes_id: bool,
+    pub kind: Kind,
+}
+
+/// THE list of accepted links. `parse` accepts a link if and only if it matches a row here; no
+/// other code names a path, so a link shape cannot be added without changing this table, and a
+/// test compares the table with the documented list above.
+pub const SHAPES: &[Shape] = &[
+    Shape {
+        words: &["open", "workspace"],
+        takes_id: false,
+        kind: Kind::Workspace,
+    },
+    Shape {
+        words: &["open", "projects"],
+        takes_id: true,
+        kind: Kind::Project,
+    },
+    Shape {
+        words: &["open", "documents"],
+        takes_id: true,
+        kind: Kind::Document,
+    },
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Target {
@@ -33,6 +73,15 @@ impl Target {
             Self::Workspace => "/workspace".to_string(),
             Self::Project(id) => format!("/projects/{id}"),
             Self::Document(id) => format!("/documents/{id}"),
+        }
+    }
+
+    fn of(kind: Kind, id: Option<String>) -> Option<Self> {
+        match (kind, id) {
+            (Kind::Workspace, None) => Some(Self::Workspace),
+            (Kind::Project, Some(id)) => Some(Self::Project(id)),
+            (Kind::Document, Some(id)) => Some(Self::Document(id)),
+            _ => None,
         }
     }
 }
@@ -56,17 +105,19 @@ impl fmt::Display for LinkError {
     }
 }
 
+// This function contains no string literal on purpose: every word it compares comes from
+// SHAPES (a test fails if one is added here).
 pub fn parse(raw: &str) -> Result<Target, LinkError> {
     if raw.len() > MAX_LINK_LEN {
         return Err(LinkError::TooLong);
     }
-    let prefix = format!("{SCHEME}://");
-    let rest = match raw.get(..prefix.len()) {
-        Some(head) if head.eq_ignore_ascii_case(&prefix) => &raw[prefix.len()..],
+    let rest = match raw.get(..PREFIX.len()) {
+        Some(head) if head.eq_ignore_ascii_case(PREFIX) => &raw[PREFIX.len()..],
         _ => return Err(LinkError::NotOurs),
     };
-    // Letters, digits, '-' and '/' only. That leaves out every character the parsers of
-    // URLs disagree about: '%' '\' '?' '#' '@' ':' '.' ';' spaces and controls.
+    // Letters, digits, hyphen and slash only. That leaves out every character the parsers of
+    // URLs disagree about: percent, backslash, question mark, hash, at, colon, dot,
+    // semicolon, spaces and controls.
     if !rest
         .bytes()
         .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'/')
@@ -76,12 +127,21 @@ pub fn parse(raw: &str) -> Result<Target, LinkError> {
     // One trailing slash is how some systems hand the link over.
     let rest = rest.strip_suffix('/').unwrap_or(rest);
     let parts: Vec<&str> = rest.split('/').collect();
-    match parts.as_slice() {
-        ["open", "workspace"] => Ok(Target::Workspace),
-        ["open", "projects", id] => uuid(id).map(Target::Project),
-        ["open", "documents", id] => uuid(id).map(Target::Document),
-        _ if parts.iter().any(|p| p.is_empty()) => Err(LinkError::Malformed),
-        _ => Err(LinkError::NotAllowed),
+    for shape in SHAPES {
+        let fixed = shape.words.len();
+        if parts.len() == fixed + usize::from(shape.takes_id) && parts[..fixed] == *shape.words {
+            let id = if shape.takes_id {
+                Some(uuid(parts[fixed])?)
+            } else {
+                None
+            };
+            return Target::of(shape.kind, id).ok_or(LinkError::NotAllowed);
+        }
+    }
+    if parts.iter().any(|part| part.is_empty()) {
+        Err(LinkError::Malformed)
+    } else {
+        Err(LinkError::NotAllowed)
     }
 }
 
@@ -100,35 +160,6 @@ fn uuid(text: &str) -> Result<String, LinkError> {
         Ok(text.to_ascii_lowercase())
     } else {
         Err(LinkError::Malformed)
-    }
-}
-
-/// Links that arrive before the app has finished starting (a second launch while the first
-/// is still setting up). They are kept, a few and short ones only, and handled once the app
-/// is ready; anything else is dropped.
-#[derive(Debug, Default)]
-pub struct LinkQueue {
-    links: Vec<String>,
-}
-
-impl LinkQueue {
-    pub const MAX_LINKS: usize = 4;
-
-    pub const fn new() -> Self {
-        Self { links: Vec::new() }
-    }
-
-    /// False when the link was dropped.
-    pub fn push(&mut self, raw: &str) -> bool {
-        if raw.len() > MAX_LINK_LEN || self.links.len() >= Self::MAX_LINKS {
-            return false;
-        }
-        self.links.push(raw.to_string());
-        true
-    }
-
-    pub fn drain(&mut self) -> Vec<String> {
-        std::mem::take(&mut self.links)
     }
 }
 
@@ -345,35 +376,111 @@ mod tests {
                 }
             }
         }
+        // The expected set comes from the table, rendered by hand here (not by parse): each
+        // shape, both spellings of the scheme, with and without a trailing slash.
         let mut expected: BTreeSet<String> = BTreeSet::new();
         for scheme in ["dynodoc://", "DYNODOC://"] {
             for trailing in ["", "/"] {
-                expected.insert(format!("{scheme}open/workspace{trailing}"));
-                for id in [ID, upper.as_str()] {
-                    expected.insert(format!("{scheme}open/projects/{id}{trailing}"));
-                    expected.insert(format!("{scheme}open/documents/{id}{trailing}"));
+                for shape in SHAPES {
+                    let words = shape.words.join("/");
+                    if shape.takes_id {
+                        for id in [ID, upper.as_str()] {
+                            expected.insert(format!("{scheme}{words}/{id}{trailing}"));
+                        }
+                    } else {
+                        expected.insert(format!("{scheme}{words}{trailing}"));
+                    }
                 }
             }
         }
-        assert_eq!(expected.len(), 20);
+        assert_eq!(expected.len(), 20, "the three documented shapes");
         assert!(tried > 300_000, "tried only {tried}");
         assert_eq!(accepted, expected);
     }
 
+    /// The table, stated again by hand. Adding, removing or changing a row fails here, so the
+    /// documented list (module comment, README) and the code cannot drift apart.
     #[test]
-    fn links_that_arrive_early_are_kept_briefly_and_bounded() {
-        let mut queue = LinkQueue::default();
-        assert!(queue.drain().is_empty());
-        for i in 0..LinkQueue::MAX_LINKS {
-            assert!(queue.push(&format!("dynodoc://open/workspace#{i}")));
-        }
-        assert!(!queue.push("dynodoc://open/workspace"), "full");
-        assert!(
-            !LinkQueue::default().push(&"d".repeat(MAX_LINK_LEN + 1)),
-            "too long"
+    fn the_table_is_exactly_the_documented_list() {
+        let rows: Vec<(String, bool, Kind)> = SHAPES
+            .iter()
+            .map(|s| (s.words.join("/"), s.takes_id, s.kind))
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                ("open/workspace".to_string(), false, Kind::Workspace),
+                ("open/projects".to_string(), true, Kind::Project),
+                ("open/documents".to_string(), true, Kind::Document),
+            ]
         );
-        assert_eq!(queue.drain().len(), LinkQueue::MAX_LINKS);
-        assert!(queue.drain().is_empty(), "drained once");
-        assert!(queue.push("dynodoc://open/workspace"), "room again");
+        // Every kind has a documented shape and a path, by an exhaustive match: a new Kind does
+        // not compile until it is dealt with here.
+        for kind in [Kind::Workspace, Kind::Project, Kind::Document] {
+            let (documented, takes_id, path) = match kind {
+                Kind::Workspace => ("open/workspace", false, "/workspace"),
+                Kind::Project => ("open/projects", true, "/projects/"),
+                Kind::Document => ("open/documents", true, "/documents/"),
+            };
+            let row = SHAPES
+                .iter()
+                .find(|s| s.kind == kind)
+                .expect("a row per kind");
+            assert_eq!(row.words.join("/"), documented);
+            assert_eq!(row.takes_id, takes_id);
+            let target = Target::of(kind, takes_id.then(|| ID.to_string())).unwrap();
+            assert!(target.path().starts_with(path));
+        }
+        assert_eq!(SHAPES.len(), 3);
+        // A kind given the wrong kind of id is not a target.
+        assert!(Target::of(Kind::Workspace, Some(ID.into())).is_none());
+        assert!(Target::of(Kind::Project, None).is_none());
+        assert!(PREFIX.eq_ignore_ascii_case(&format!("{SCHEME}://")));
+        // The module documentation lists the same three links.
+        let source = include_str!("deeplink.rs");
+        let source = &source[..source.find("#[cfg(test)]").unwrap()];
+        for line in [
+            "//! dynodoc://open/workspace",
+            "//! dynodoc://open/projects/<uuid>",
+            "//! dynodoc://open/documents/<uuid>",
+        ] {
+            assert!(source.contains(line), "{line}");
+        }
+    }
+
+    /// `parse` takes every word from the table: no string literal in it, so a shape cannot be
+    /// slipped in beside the table (the way an extra match arm once could).
+    #[test]
+    fn parse_names_no_path_of_its_own() {
+        let source = include_str!("deeplink.rs");
+        let start = source.find("pub fn parse(").unwrap();
+        let end = source[start..]
+            .find(
+                "
+}
+",
+            )
+            .unwrap()
+            + start;
+        let body: String = source[start..end]
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join(
+                "
+",
+            );
+        assert!(!body.contains('"'), "string literal in parse: {body}");
+        // And nothing else in the production code decides what a link may be.
+        let production = &source[..source.find("#[cfg(test)]").unwrap()];
+        for word in ["settings", "admin", "login", "auth"] {
+            assert!(!production.contains(word), "{word}");
+        }
+        assert_eq!(production.matches("pub fn parse(").count(), 1);
+        assert_eq!(
+            production.matches("Target::of(").count(),
+            1,
+            "one place builds a target from a row"
+        );
     }
 }

@@ -3,21 +3,36 @@
 //! The web view tells the shell where a page wants to go but, in WebView2, not whether a
 //! person clicked (wry ignores `IsUserInitiated`). So a hostile page can loop
 //! `location = 'https://evil/' + n` or `window.open('mailto:...')` to flood the browser or
-//! mail program, or aim at `http://localhost` and the local network. Two defences, both
-//! pure functions here:
+//! mail program, or aim at `http://localhost` and the local network. Defences, all pure
+//! functions here:
 //!
 //! * A page-initiated hand-off opens only a PUBLIC `http(s)` address (never a mail link,
-//!   loopback, private, link-local or similar host), and at most once every 3 seconds and
-//!   five times a minute; the rest are dropped silently.
-//! * A person's click is recognised by a script the shell injects (`link_targets.js`): on a
-//!   trusted click (`event.isTrusted`) it calls `window.open` with a marker address that
-//!   carries a secret only that script knows. Such a request is a "person" hand-off and may
-//!   open mail links and local addresses. The secret is made at start-up, lives in the
-//!   script's closure and is never given to a page.
+//!   loopback, private, link-local or similar host), at most once every 3 seconds and five
+//!   times a minute; the rest are dropped silently. This is its own budget (`Limiters::page`).
+//! * A person's click is recognised by a script the shell injects (`link_targets.js`). On a
+//!   trusted click (`event.isTrusted`) on a link that leaves the page, or on a mail link, it
+//!   calls `window.open` with a marker address that carries a secret. Such a request is a
+//!   "click" hand-off and may open mail links and local addresses. It has its own budget
+//!   (`Limiters::click`, one per second and ten a minute), so a page flooding the page budget
+//!   cannot starve a person's click and a leaked secret could not flood. Menu items are not
+//!   limited.
 //!
-//! Limit: a page that gets a person to click something it controls (an overlay) counts as
-//! that person's click, as in any browser; and a public name that resolves to a private
-//! address (DNS rebinding) cannot be seen here.
+//! What protects the secret: it is made from the operating system's randomness once per run
+//! of the app and written into the script, where it lives in one closure variable. The script
+//! runs before any page script and captures every built-in it will ever call (the
+//! `Function.prototype.call`-free "uncurry" trick, the accessor functions of `Event`, `Node`
+//! and `HTMLAnchorElement`, `window.open`), so a page that later patches prototypes, globals
+//! or getters receives nothing: it never holds the marker address, because only the captured
+//! native `window.open` and the Rust navigation handler see it (`scripts/link-targets.test.mjs`
+//! runs the real script against such a page). The same script is injected again on every page
+//! load with the SAME secret: rotating it per load would need a channel from the page to this
+//! program, which pages must not have.
+//!
+//! What a hostile page can still do: get a person to really click something it controls (an
+//! overlay, a link that moves under the pointer). That is a click hand-off, the same power
+//! as a click in a browser, bounded by the click budget. A public name that resolves to a
+//! private address (DNS rebinding, `localtest.me`, `*.nip.io`) cannot be seen from the
+//! spelling; the well-known wildcard-DNS services are refused as a best effort.
 
 use crate::server::MAX_URL_LEN;
 use std::collections::VecDeque;
@@ -31,8 +46,10 @@ use url::{Host, Url};
 pub enum Source {
     /// A page's script or a link without a recognised click.
     Page,
-    /// The person: a native menu item or a trusted click seen by the injected script.
-    Person,
+    /// A trusted click, vouched for by the injected script's secret marker.
+    Click,
+    /// A native menu item.
+    Menu,
 }
 
 /// May `url` be handed to the system at all, for this source?
@@ -46,12 +63,12 @@ pub fn external_allowed(url: &Url, source: Source) -> bool {
                 return false;
             }
             match source {
-                Source::Person => url.host().is_some(),
+                Source::Click | Source::Menu => url.host().is_some(),
                 Source::Page => url.host().is_some_and(|host| public_host(&host)),
             }
         }
         // A mail link starts the user's mail program: only a person may do that.
-        "mailto" => source == Source::Person,
+        "mailto" => source != Source::Page,
         _ => false,
     }
 }
@@ -84,9 +101,45 @@ fn public_name(name: &str) -> bool {
         "private",
         "home.arpa",
     ];
-    !LOCAL_SUFFIXES
-        .iter()
-        .any(|suffix| name == *suffix || name.ends_with(&format!(".{suffix}")))
+    let under = |suffix: &&str| name == *suffix || name.ends_with(&format!(".{suffix}"));
+    !LOCAL_SUFFIXES.iter().any(under) && !WILDCARD_DNS.iter().any(under) && !embeds_ipv4(&name)
+}
+
+/// Services whose names resolve to the address written in them or to 127.0.0.1, so a
+/// "public" name can point at this machine or the local network. BEST EFFORT: a list of the
+/// well-known ones, which cannot be complete (any domain can do the same, and DNS can be
+/// rebound after this check).
+const WILDCARD_DNS: [&str; 11] = [
+    "nip.io",
+    "sslip.io",
+    "xip.io",
+    "localtest.me",
+    "lvh.me",
+    "vcap.me",
+    "lacolhost.com",
+    "localhost.direct",
+    "local.gd",
+    "traefik.me",
+    "127-0-0-1.org.uk",
+];
+
+/// Does the name spell an IPv4 address: four labels in a row that are numbers up to 255
+/// (`10.0.0.5.example.com`), or four dash-separated numbers in one label (`10-0-0-5.example.com`)?
+/// Such names are how wildcard-DNS services work; they are refused whatever the domain
+/// (best effort, and it can refuse a harmless name).
+fn embeds_ipv4(name: &str) -> bool {
+    let octet = |part: &str| {
+        !part.is_empty()
+            && part.len() <= 3
+            && part.bytes().all(|b| b.is_ascii_digit())
+            && part.parse::<u16>().is_ok_and(|n| n <= 255)
+    };
+    let labels: Vec<&str> = name.split('.').collect();
+    labels.windows(4).any(|w| w.iter().all(|l| octet(l)))
+        || labels.iter().any(|label| {
+            let parts: Vec<&str> = label.split('-').collect();
+            parts.windows(4).any(|w| w.iter().all(|p| octet(p)))
+        })
 }
 
 fn public_v4(ip: Ipv4Addr) -> bool {
@@ -141,11 +194,20 @@ fn public_v6(ip: Ipv6Addr) -> bool {
     true
 }
 
-/// At most one hand-off every 3 seconds and five in any minute. `now` is passed in so the
-/// rule is testable; only accepted hand-offs are recorded.
-#[derive(Debug, Default)]
+/// At most one hand-off every `min_gap` and `max_in_window` in any `window`. `now` is passed
+/// in so the rule is testable; only accepted hand-offs are recorded.
+#[derive(Debug)]
 pub struct HandOffLimiter {
+    min_gap: Duration,
+    window: Duration,
+    max_in_window: usize,
     accepted: VecDeque<Instant>,
+}
+
+impl Default for HandOffLimiter {
+    fn default() -> Self {
+        Self::page()
+    }
 }
 
 impl HandOffLimiter {
@@ -153,24 +215,61 @@ impl HandOffLimiter {
     pub const WINDOW: Duration = Duration::from_secs(60);
     pub const MAX_IN_WINDOW: usize = 5;
 
+    pub fn new(min_gap: Duration, max_in_window: usize, window: Duration) -> Self {
+        Self {
+            min_gap,
+            window,
+            max_in_window,
+            accepted: VecDeque::new(),
+        }
+    }
+
+    /// A page's own requests: one per 3 seconds, five a minute.
+    pub fn page() -> Self {
+        Self::new(Self::MIN_GAP, Self::MAX_IN_WINDOW, Self::WINDOW)
+    }
+
+    /// Requests vouched for by a click marker: one per second, ten a minute. A person cannot
+    /// click faster; this only bounds what a leaked secret could do.
+    pub fn click() -> Self {
+        Self::new(Duration::from_secs(1), 10, Duration::from_secs(60))
+    }
+
     pub fn allow(&mut self, now: Instant) -> bool {
         while self
             .accepted
             .front()
-            .is_some_and(|t| now.saturating_duration_since(*t) >= Self::WINDOW)
+            .is_some_and(|t| now.saturating_duration_since(*t) >= self.window)
         {
             self.accepted.pop_front();
         }
         if let Some(last) = self.accepted.back() {
-            if now.saturating_duration_since(*last) < Self::MIN_GAP {
+            if now.saturating_duration_since(*last) < self.min_gap {
                 return false;
             }
         }
-        if self.accepted.len() >= Self::MAX_IN_WINDOW {
+        if self.accepted.len() >= self.max_in_window {
             return false;
         }
         self.accepted.push_back(now);
         true
+    }
+}
+
+/// The two budgets. They are separate so that a page that spends its own cannot take a
+/// person's click budget (and the reverse). Menu items have none.
+#[derive(Debug, Default)]
+pub struct Limiters {
+    pub page: Mutex<HandOffLimiter>,
+    pub click: Mutex<HandOffLimiter>,
+}
+
+impl Limiters {
+    pub fn new() -> Self {
+        Self {
+            page: Mutex::new(HandOffLimiter::page()),
+            click: Mutex::new(HandOffLimiter::click()),
+        }
     }
 }
 
@@ -188,14 +287,19 @@ pub enum HandOff {
 pub fn hand_off(
     url: &Url,
     source: Source,
-    limiter: &Mutex<HandOffLimiter>,
+    limiters: &Limiters,
     now: Instant,
     open: impl FnOnce(String),
 ) -> HandOff {
     if !external_allowed(url, source) {
         return HandOff::Refused;
     }
-    if source == Source::Page && !limiter.lock().is_ok_and(|mut l| l.allow(now)) {
+    let budget = match source {
+        Source::Page => Some(&limiters.page),
+        Source::Click => Some(&limiters.click),
+        Source::Menu => None,
+    };
+    if budget.is_some_and(|b| !b.lock().is_ok_and(|mut l| l.allow(now))) {
         return HandOff::RateLimited;
     }
     open(url.to_string());
@@ -211,7 +315,7 @@ pub enum Marker {
     No,
     /// A marker address that is wrong in any way (bad secret, bad target): drop it.
     Bad,
-    /// A valid marker: the person asked to open this.
+    /// A valid marker: a trusted click asked to open this.
     Open(Url),
 }
 
@@ -235,7 +339,7 @@ pub fn read_marker(url: &Url, secret: &str) -> Marker {
         return Marker::Bad;
     }
     match Url::parse(&target) {
-        Ok(target) if external_allowed(&target, Source::Person) => Marker::Open(target),
+        Ok(target) if external_allowed(&target, Source::Click) => Marker::Open(target),
         _ => Marker::Bad,
     }
 }
@@ -249,19 +353,13 @@ fn same_text(a: &str, b: &str) -> bool {
             == 0
 }
 
-/// 128 bits from the operating system's randomness (each `RandomState` is seeded by it).
-pub fn new_secret() -> String {
-    use std::hash::{BuildHasher, Hasher};
-    let part = || {
-        let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
-        hasher.write_u64(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |d| d.as_nanos() as u64),
-        );
-        hasher.finish()
-    };
-    format!("{:016x}{:016x}", part(), part())
+/// 256 bits straight from the operating system's random source (`getrandom`, already part
+/// of Tauri's dependency tree). Hex, 64 characters. Fails (and the app does not start)
+/// rather than falling back to anything weaker.
+pub fn new_secret() -> Result<String, getrandom::Error> {
+    let mut bytes = [0u8; 32];
+    getrandom::fill(&mut bytes)?;
+    Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
 }
 
 #[cfg(test)]
@@ -275,7 +373,9 @@ mod tests {
         external_allowed(&url(text), Source::Page)
     }
     fn person(text: &str) -> bool {
-        external_allowed(&url(text), Source::Person)
+        let click = external_allowed(&url(text), Source::Click);
+        assert_eq!(click, external_allowed(&url(text), Source::Menu), "{text}");
+        click
     }
 
     #[test]
@@ -360,7 +460,47 @@ mod tests {
     }
 
     #[test]
-    fn only_a_person_may_start_the_mail_program() {
+    fn well_known_wildcard_dns_names_and_names_spelling_an_address_are_not_public() {
+        // Names that resolve to the address written in them or to 127.0.0.1. Best effort.
+        for bad in [
+            "http://localtest.me/",
+            "http://foo.localtest.me/",
+            "http://lvh.me:3000/",
+            "http://app.lvh.me/",
+            "http://vcap.me/",
+            "http://lacolhost.com/",
+            "http://anything.localhost.direct/",
+            "http://local.gd/",
+            "http://x.traefik.me/",
+            "http://127.0.0.1.nip.io/",
+            "http://192.168.1.10.nip.io/",
+            "http://app.10.0.0.5.sslip.io/",
+            "http://10-0-0-5.sslip.io/",
+            "http://7f000001.nip.io/",
+            "http://127-0-0-1.org.uk/",
+            "http://NIP.IO./",
+            "http://1.2.3.4.example.com/",
+            "http://ten-10-0-0-5.example.com/",
+        ] {
+            assert!(!page(bad), "{bad}");
+            assert!(person(bad), "a click may open {bad}");
+        }
+        // Close, but not those.
+        for ok in [
+            "https://example.org/",
+            "https://nip.io.example.org/",
+            "https://notnip.io/",
+            "https://a.b.example.com/",
+            "https://v1.2.example.com/",
+            "https://app-1-2.example.com/",
+            "https://x.300.1.1.1.example.com/",
+        ] {
+            assert!(page(ok), "{ok}");
+        }
+    }
+
+    #[test]
+    fn only_a_click_or_a_menu_item_may_start_the_mail_program() {
         for mail in [
             "mailto:support@dynodoc.online",
             "mailto:a@b?subject=x&body=y",
@@ -459,14 +599,14 @@ mod tests {
 
     #[test]
     fn hand_off_opens_nothing_unless_every_rule_passes() {
-        let limiter = Mutex::new(HandOffLimiter::default());
+        let limiters = Limiters::new();
         let t0 = Instant::now();
         let mut opened: Vec<String> = Vec::new();
         let mut try_open = |text: &str, source, at: u64| {
             hand_off(
                 &url(text),
                 source,
-                &limiter,
+                &limiters,
                 t0 + Duration::from_secs(at),
                 |u| opened.push(u),
             )
@@ -484,37 +624,106 @@ mod tests {
             try_open("http://localhost/", Source::Page, 10),
             HandOff::Refused
         );
-        assert_eq!(
-            try_open("javascript:alert(1)", Source::Person, 10),
-            HandOff::Refused
-        );
+        for source in [Source::Click, Source::Menu] {
+            assert_eq!(
+                try_open("javascript:alert(1)", source, 10),
+                HandOff::Refused
+            );
+        }
         // A refused one does not use up the allowance.
         assert_eq!(
             try_open("https://example.org/c", Source::Page, 10),
             HandOff::Opened
         );
-        // A person is not rate limited and may open mail and local addresses.
+        // A click may open mail and local addresses, within its own budget.
+        assert_eq!(try_open("mailto:x@y.z", Source::Click, 10), HandOff::Opened);
         assert_eq!(
-            try_open("mailto:x@y.z", Source::Person, 10),
+            try_open("http://localhost:3000/", Source::Click, 12),
             HandOff::Opened
         );
+        // A menu item has no budget at all.
+        for i in 0..20 {
+            assert_eq!(
+                try_open(&format!("http://localhost:3000/{i}"), Source::Menu, 12),
+                HandOff::Opened
+            );
+        }
+        assert_eq!(opened.len(), 4 + 20);
         assert_eq!(
-            try_open("http://localhost:3000/", Source::Person, 10),
-            HandOff::Opened
-        );
-        assert_eq!(
-            try_open("https://example.org/d", Source::Person, 10),
-            HandOff::Opened
-        );
-        assert_eq!(
-            opened,
+            opened[..4],
             [
                 "https://example.org/a",
                 "https://example.org/c",
                 "mailto:x@y.z",
-                "http://localhost:3000/",
-                "https://example.org/d"
+                "http://localhost:3000/"
             ]
+        );
+    }
+
+    #[test]
+    fn a_click_gets_one_per_second_and_ten_a_minute_in_its_own_bucket() {
+        let t0 = Instant::now();
+        let at = |ms: u64| t0 + Duration::from_millis(ms);
+        let mut limiter = HandOffLimiter::click();
+        assert!(limiter.allow(at(0)));
+        assert!(!limiter.allow(at(999)));
+        assert!(limiter.allow(at(1_000)));
+        let mut accepted = 2;
+        for i in 2..40u64 {
+            if limiter.allow(at(i * 1_000)) {
+                accepted += 1;
+            }
+        }
+        assert_eq!(accepted, 10, "ten in the first minute");
+        assert!(limiter.allow(at(60_000)), "the first has left the window");
+        // A flood of 10,000 attempts in a second gets one.
+        let mut flood = HandOffLimiter::click();
+        let got = (0..10_000u64)
+            .filter(|i| flood.allow(t0 + Duration::from_micros(i * 100)))
+            .count();
+        assert_eq!(got, 1);
+    }
+
+    #[test]
+    fn a_page_cannot_use_up_a_persons_budget_and_the_reverse() {
+        let limiters = Limiters::new();
+        let t0 = Instant::now();
+        let try_open = |text: &str, source, at_ms: u64| {
+            hand_off(
+                &url(text),
+                source,
+                &limiters,
+                t0 + Duration::from_millis(at_ms),
+                |_| {},
+            )
+        };
+        // A page floods: its own budget is spent...
+        let page: Vec<HandOff> = (0..50)
+            .map(|i| try_open(&format!("https://flood{i}.example/"), Source::Page, i * 100))
+            .collect();
+        assert_eq!(page.iter().filter(|r| **r == HandOff::Opened).count(), 2);
+        // ...and a person's click right after is still let through.
+        assert_eq!(
+            try_open("https://example.org/", Source::Click, 5_000),
+            HandOff::Opened
+        );
+        // Click floods do not take the page budget either.
+        let limiters = Limiters::new();
+        let try_open = |text: &str, source, at_ms: u64| {
+            hand_off(
+                &url(text),
+                source,
+                &limiters,
+                t0 + Duration::from_millis(at_ms),
+                |_| {},
+            )
+        };
+        for i in 0..30 {
+            try_open(&format!("https://c{i}.example/"), Source::Click, i * 200);
+        }
+        assert_eq!(
+            try_open("https://example.org/", Source::Page, 6_000),
+            HandOff::Opened
         );
     }
 
@@ -596,9 +805,9 @@ mod tests {
 
     #[test]
     fn secrets_are_long_and_do_not_repeat() {
-        let a = new_secret();
-        let b = new_secret();
-        assert_eq!(a.len(), 32);
+        let a = new_secret().unwrap();
+        let b = new_secret().unwrap();
+        assert_eq!(a.len(), 64);
         assert!(a.bytes().all(|c| c.is_ascii_hexdigit()));
         assert_ne!(a, b);
     }

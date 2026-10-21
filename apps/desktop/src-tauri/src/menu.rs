@@ -126,13 +126,13 @@ pub fn handle(app: &AppHandle, id: &str) {
         DEVICE_KEY => window::show_launcher(app, Some("key")),
         // A menu item is a person's choice: it may open a local server in the browser.
         OPEN_IN_BROWSER => match app.try_state::<AppState>().and_then(|s| s.server()) {
-            Some(server) => window::open_external(app, &server.root(), Source::Person),
+            Some(server) => window::open_external(app, &server.root(), Source::Menu),
             None => window::show_launcher(app, None),
         },
         RELOAD => window::reload_main(app),
         SUPPORT => {
             if let Ok(url) = Url::parse(SUPPORT_URL) {
-                window::open_external(app, &url, Source::Person);
+                window::open_external(app, &url, Source::Menu);
             }
         }
         _ => {}

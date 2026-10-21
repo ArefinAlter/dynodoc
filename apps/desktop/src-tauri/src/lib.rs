@@ -40,7 +40,7 @@ pub struct AppState {
     /// Lets the launcher load, once, for a navigation the shell started.
     pub launcher_grant: Mutex<nav::LauncherGrant>,
     /// Limits how often a page can make the system browser open.
-    pub handoffs: Mutex<handoff::HandOffLimiter>,
+    pub handoffs: handoff::Limiters,
     /// Proves a click to the new-window hook; lives in the injected script and here only.
     pub click_secret: String,
 }
@@ -124,8 +124,9 @@ fn resolve_state(app: &tauri::AppHandle) -> tauri::Result<AppState> {
         data_dir,
         webview_dir,
         launcher_grant: Mutex::new(nav::LauncherGrant::default()),
-        handoffs: Mutex::new(handoff::HandOffLimiter::default()),
-        click_secret: handoff::new_secret(),
+        handoffs: handoff::Limiters::new(),
+        click_secret: handoff::new_secret()
+            .map_err(|e| std::io::Error::other(format!("no operating-system randomness: {e}")))?,
     })
 }
 

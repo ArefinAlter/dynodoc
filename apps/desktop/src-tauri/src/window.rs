@@ -44,11 +44,8 @@ fn trace(what: &str, url: &Url, decision: &dyn std::fmt::Debug) {
     let _ = (what, url, decision);
 }
 
-/// Only one thread creates the window at a time (start-up and a link that arrives meanwhile).
+/// Only one thread creates the window at a time (start-up and a second launch meanwhile).
 static CREATE: Mutex<()> = Mutex::new(());
-
-/// Links that arrived before the app finished starting.
-static EARLY_LINKS: Mutex<deeplink::LinkQueue> = Mutex::new(deeplink::LinkQueue::new());
 
 /// Create the window: on the configured server when there is one, otherwise on the launcher.
 /// Returns the existing window if there already is one.
@@ -77,8 +74,16 @@ pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
             let state = navigation_app.state::<AppState>();
             let launcher = nav::launcher_origin();
             // The launcher loads only for a navigation the shell started (one-shot).
-            let launcher_allowed = nav::is_launcher(url, &launcher) && state.take_launcher_grant();
-            let decision = nav::decide(url, state.server().as_ref(), &launcher, launcher_allowed);
+            // Only the launcher's own page can use the grant: nothing else on that origin does.
+            let launcher_allowed =
+                nav::is_launcher_page(url, &launcher) && state.take_launcher_grant();
+            let decision = nav::decide(
+                url,
+                state.server().as_ref(),
+                &launcher,
+                launcher_allowed,
+                nav::frames_are_ambiguous(),
+            );
             trace("navigation", url, &decision);
             match decision {
                 Decision::Allow => true,
@@ -106,10 +111,10 @@ pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
                     trace("new window", &url, &"page asks to open");
                     open_external(&new_window_app, &target, Source::Page)
                 }
-                NewWindow::PersonOpen(target) => {
-                    // The marker's secret is not logged; the target is the person's click.
-                    trace("new window (click)", &target, &"person asks to open");
-                    open_external(&new_window_app, &target, Source::Person)
+                NewWindow::ClickOpen(target) => {
+                    // The marker's secret is not logged; the target is the clicked link.
+                    trace("new window (click)", &target, &"click asks to open");
+                    open_external(&new_window_app, &target, Source::Click)
                 }
                 NewWindow::Ignore => trace("new window", &url, &"ignored"),
             }
@@ -234,8 +239,11 @@ pub fn open_external(app: &AppHandle, url: &Url, source: Source) {
     trace("hand-off", url, &outcome);
 }
 
-/// Route `dynodoc://` links (at start-up and while running) through the parser, and handle
-/// the ones that arrived before the app was ready.
+/// Route `dynodoc://` links (at start-up and while running) through the parser. Called at the
+/// end of setup, after the app's state exists. A second launch that starts while the first is
+/// still setting up reaches the deep-link plugin before this listener exists: the event is
+/// lost, but the plugin keeps the most recent link and `get_current` below reads it (earlier
+/// ones in that window are dropped).
 pub fn watch_deep_links(app: &AppHandle) {
     let handle = app.clone();
     app.deep_link().on_open_url(move |event| {
@@ -248,24 +256,14 @@ pub fn watch_deep_links(app: &AppHandle) {
             open_deep_link(app, url.as_str());
         }
     }
-    let early = EARLY_LINKS
-        .lock()
-        .map(|mut q| q.drain())
-        .unwrap_or_default();
-    for raw in early {
-        open_deep_link(app, &raw);
-    }
 }
 
 /// Validate a link, then open it on the configured server only. A link that is refused, or
 /// that arrives before a server has been chosen, changes nothing except showing the window.
-/// One that arrives before the app has finished starting is kept and handled at the end of
-/// start-up (a few at most).
+/// Both callers run after the app's state exists, so `try_state` always succeeds here; it is
+/// a guard, not a code path (a panic would abort the whole app).
 pub fn open_deep_link(app: &AppHandle, raw: &str) {
     let Some(state) = app.try_state::<AppState>() else {
-        if let Ok(mut queue) = EARLY_LINKS.lock() {
-            queue.push(raw);
-        }
         return;
     };
     let Ok(target) = deeplink::parse(raw) else {
@@ -324,7 +322,7 @@ mod tests {
 
     #[test]
     fn the_injected_script_gets_this_runs_secret_and_nothing_else_changes() {
-        let secret = handoff::new_secret();
+        let secret = handoff::new_secret().unwrap();
         let script = link_script(&secret);
         assert!(script.contains(&secret));
         assert!(!script.contains(SECRET_PLACEHOLDER));

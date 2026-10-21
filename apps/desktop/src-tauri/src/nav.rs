@@ -28,8 +28,8 @@ pub enum NewWindow {
     NavigateHere(Url),
     /// A page's own request for a public address: rate limited.
     OpenExternal(Url),
-    /// A person's click, recognised by the injected script's secret marker.
-    PersonOpen(Url),
+    /// A trusted click, vouched for by the injected script's secret marker.
+    ClickOpen(Url),
     Ignore,
 }
 
@@ -60,6 +60,41 @@ pub fn is_launcher(url: &Url, launcher: &Url) -> bool {
     same_origin(url, launcher) && url.username().is_empty() && url.password().is_none()
 }
 
+/// The one page the launcher origin serves as a window's document. (Tauri reports the first
+/// load as `/` and a later one as `/index.html`.) Any other path on that origin is never loaded
+/// as a window's page, and never uses up a grant.
+pub fn is_launcher_page(url: &Url, launcher: &Url) -> bool {
+    is_launcher(url, launcher) && matches!(url.path(), "/" | "/index.html")
+}
+
+/// WebView2 reports only main-frame navigations to the navigation handler. WebKitGTK and
+/// WKWebView (and perhaps Android) report sub-frame navigations too, and wry passes no
+/// "is main frame" flag on those platforms, so there the handler cannot tell an `<iframe>`
+/// from the window. UNVERIFIED ON WEBKIT AND ANDROID: this is an assumption written down, not
+/// something observed. See `frame_like` for what is done about it.
+pub const fn frames_are_ambiguous() -> bool {
+    !cfg!(windows)
+}
+
+/// Addresses that are how pages normally fill a sub-frame: `about:srcdoc`, `about:blank`, a
+/// `blob:` made by the configured server's own page, and `data:`. Where the handler cannot
+/// tell frames from the window, refusing them would break pages (a PDF preview in a `blob:`
+/// frame, a `srcdoc` frame), so they are let through. What that gives a page that really does
+/// navigate the WINDOW to one of them: its own content, with no server session beyond what the
+/// page already has (a `blob:` of the server inherits its origin, which is the page's own power;
+/// `data:` gets an opaque origin), no native access (none of these is a local origin) and a title
+/// that no longer names the server. None of them is ever the launcher, so none can use a grant.
+fn frame_like(target: &Url, server: Option<&ServerOrigin>) -> bool {
+    match target.scheme() {
+        "about" => matches!(target.as_str(), "about:srcdoc" | "about:blank"),
+        "data" => true,
+        "blob" => {
+            server.is_some_and(|s| Url::parse(target.path()).is_ok_and(|inner| s.matches(&inner)))
+        }
+        _ => false,
+    }
+}
+
 /// Permission to load the launcher, given by the shell for one navigation it started. A
 /// server page that navigates to the launcher's address gets nothing: the launcher can run
 /// the key operations, so a page must not be able to bring it up on its own.
@@ -81,12 +116,14 @@ impl LauncherGrant {
     }
 }
 
-/// `launcher_allowed` is the result of `LauncherGrant::take` for this navigation.
+/// `launcher_allowed` is the result of `LauncherGrant::take` for this navigation (taken only
+/// for `is_launcher_page` addresses). `frames_ambiguous` is `frames_are_ambiguous()`.
 pub fn decide(
     target: &Url,
     server: Option<&ServerOrigin>,
     launcher: &Url,
     launcher_allowed: bool,
+    frames_ambiguous: bool,
 ) -> Decision {
     if target.as_str().len() > MAX_URL_LEN {
         return Decision::Deny;
@@ -96,11 +133,14 @@ pub fn decide(
         return Decision::Deny;
     }
     if is_launcher(target, launcher) {
-        return if launcher_allowed {
+        return if launcher_allowed && is_launcher_page(target, launcher) {
             Decision::Allow
         } else {
             Decision::Deny
         };
+    }
+    if frames_ambiguous && frame_like(target, server) {
+        return Decision::Allow;
     }
     match target.scheme() {
         "http" | "https" => {
@@ -129,11 +169,12 @@ pub fn new_window(
     secret: &str,
 ) -> NewWindow {
     match handoff::read_marker(target, secret) {
-        Marker::Open(url) => return NewWindow::PersonOpen(url),
+        Marker::Open(url) => return NewWindow::ClickOpen(url),
         Marker::Bad => return NewWindow::Ignore,
         Marker::No => {}
     }
-    match decide(target, server, launcher, false) {
+    // A request for a new window is never a sub-frame: no ambiguity.
+    match decide(target, server, launcher, false, false) {
         Decision::OpenExternal => NewWindow::OpenExternal(target.clone()),
         Decision::Allow if server.is_some_and(|s| s.matches(target)) => {
             NewWindow::NavigateHere(target.clone())
@@ -192,6 +233,16 @@ mod tests {
             configured,
             &launcher_origin(),
             false,
+            false,
+        )
+    }
+    fn decide_ambiguous(url: &str, configured: Option<&ServerOrigin>, grant: bool) -> Decision {
+        decide(
+            &Url::parse(url).unwrap(),
+            configured,
+            &launcher_origin(),
+            grant,
+            true,
         )
     }
 
@@ -310,11 +361,11 @@ mod tests {
         let s = server("https://app.dynodoc.online");
         // With the shell's permission the launcher loads, with or without a section.
         assert_eq!(
-            decide(&launcher_url(None), Some(&s), &launcher, true),
+            decide(&launcher_url(None), Some(&s), &launcher, true, false),
             Decision::Allow
         );
         assert_eq!(
-            decide(&launcher_url(Some("key")), None, &launcher, true),
+            decide(&launcher_url(Some("key")), None, &launcher, true, false),
             Decision::Allow
         );
         let hosts = if cfg!(any(windows, target_os = "android")) {
@@ -334,7 +385,7 @@ mod tests {
             let target = Url::parse(url).unwrap();
             assert!(!is_launcher(&target, &launcher), "{url}");
             assert_ne!(
-                decide(&target, Some(&s), &launcher, true),
+                decide(&target, Some(&s), &launcher, true, false),
                 Decision::Allow,
                 "{url}"
             );
@@ -360,12 +411,124 @@ mod tests {
         ] {
             for configured in [Some(&s), None] {
                 assert_eq!(
-                    decide(&target, configured, &launcher, false),
+                    decide(&target, configured, &launcher, false, false),
                     Decision::Deny,
                     "{target}"
                 );
             }
         }
+    }
+
+    #[test]
+    fn only_the_launchers_page_can_be_loaded_even_with_the_shells_permission() {
+        let launcher = launcher_origin();
+        let s = server("https://app.dynodoc.online");
+        let origin = launcher.as_str().trim_end_matches('/').to_string();
+        for path in ["/", "/index.html", "/index.html#key"] {
+            let target = Url::parse(&format!("{origin}{path}")).unwrap();
+            assert!(is_launcher_page(&target, &launcher), "{path}");
+            assert_eq!(
+                decide(&target, Some(&s), &launcher, true, false),
+                Decision::Allow
+            );
+            assert_eq!(
+                decide(&target, Some(&s), &launcher, true, true),
+                Decision::Allow
+            );
+        }
+        for path in [
+            "/other.html",
+            "/launcher.js",
+            "/index.html/x",
+            "/..%2f",
+            "/index.htm",
+        ] {
+            let target = Url::parse(&format!("{origin}{path}")).unwrap();
+            for ambiguous in [false, true] {
+                assert_ne!(
+                    decide(&target, Some(&s), &launcher, true, ambiguous),
+                    Decision::Allow,
+                    "{path} (ambiguous {ambiguous})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn where_frames_cannot_be_told_from_the_window_frame_like_addresses_are_let_through() {
+        let s = server("https://app.dynodoc.online");
+        // Let through when the handler cannot tell (WebKit): these are how pages fill frames.
+        for url in [
+            "about:srcdoc",
+            "about:blank",
+            "data:text/html,<p>preview</p>",
+            "data:application/pdf;base64,AAAA",
+            "blob:https://app.dynodoc.online/6f1c-aa",
+        ] {
+            assert_eq!(
+                decide_ambiguous(url, Some(&s), false),
+                Decision::Allow,
+                "{url}"
+            );
+            // Never because of a grant, and never the other way round: not the launcher.
+            assert_eq!(
+                decide_ambiguous(url, Some(&s), true),
+                Decision::Allow,
+                "{url}"
+            );
+            // On WebView2 (main frame only) the same addresses stay refused.
+            assert_eq!(decide_for(url, Some(&s)), Decision::Deny, "{url}");
+        }
+        // A blob of another origin, or with nothing configured, is not the server's own.
+        assert_eq!(
+            decide_ambiguous("blob:https://evil.example/x", Some(&s), false),
+            Decision::Deny
+        );
+        assert_eq!(
+            decide_ambiguous("blob:https://app.dynodoc.online/x", None, false),
+            Decision::Deny
+        );
+        assert_eq!(
+            decide_ambiguous("blob:null/abc", Some(&s), false),
+            Decision::Deny
+        );
+        // Everything else the strict rule refuses is still refused when ambiguous.
+        for url in [
+            "javascript:alert(1)",
+            "file:///C:/Windows/win.ini",
+            "about:srcdoc#x",
+            "about:config",
+            "view-source:https://app.dynodoc.online/",
+            "https://user@app.dynodoc.online/",
+            "dynodoc://open/workspace",
+        ] {
+            assert_eq!(
+                decide_ambiguous(url, Some(&s), false),
+                Decision::Deny,
+                "{url}"
+            );
+        }
+        // A frame-like address does not touch the launcher: the launcher still needs the
+        // shell's permission, and a frame request for it without one is refused.
+        let launcher = launcher_origin();
+        assert_eq!(
+            decide(&launcher_url(None), Some(&s), &launcher, false, true),
+            Decision::Deny
+        );
+        // Public links still go out, mail and local addresses still do not, when ambiguous.
+        assert_eq!(
+            decide_ambiguous("https://dynodoc.online/", Some(&s), false),
+            Decision::OpenExternal
+        );
+        assert_eq!(
+            decide_ambiguous("mailto:a@b.c", Some(&s), false),
+            Decision::Deny
+        );
+        assert_eq!(
+            decide_ambiguous("http://127.0.0.1/", Some(&s), false),
+            Decision::Deny
+        );
+        assert_eq!(frames_are_ambiguous(), !cfg!(windows));
     }
 
     #[test]
@@ -453,7 +616,7 @@ mod tests {
         ] {
             assert_eq!(
                 go(&marker(target), SECRET),
-                NewWindow::PersonOpen(Url::parse(target).unwrap()),
+                NewWindow::ClickOpen(Url::parse(target).unwrap()),
                 "{target}"
             );
             // A page that guesses the format but not the secret gets nothing, not even an

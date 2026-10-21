@@ -420,10 +420,16 @@ fn the_android_hardening_script_is_the_one_the_tests_exercise() {
 }
 
 #[test]
-fn the_script_injected_into_every_page_cannot_reach_the_app() {
+fn the_script_injected_into_every_page_cannot_reach_the_app_or_be_subverted() {
     // It runs in the pages of the configured server too, so it must do nothing but call the
-    // page's own window.open (from a trusted click, or for target=_blank).
+    // page's own window.open (from a trusted click, or for target=_blank), and it must call
+    // nothing the page can replace by the time of a click.
     let js = read("src/link_targets.js");
+    let code: String = js
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n");
     for never in [
         "__TAURI",
         "invoke",
@@ -440,17 +446,79 @@ fn the_script_injected_into_every_page_cannot_reach_the_app() {
         "location.replace",
         "document.write",
     ] {
-        assert!(!js.contains(never), "link_targets.js has {never}");
+        assert!(!code.contains(never), "link_targets.js has {never}");
     }
-    // The secret is a placeholder in the file and a closure variable in the script.
+    // Nothing the page can replace may be looked up at click time: no method calls on page
+    // objects at all, no closest, no URL objects, no regular expressions, no array methods or
+    // iterators, no template strings. (Everything is a captured, uncurried built-in.)
+    for never in [
+        ".call(",
+        ".apply(",
+        "Reflect",
+        "closest",
+        "new URL",
+        "URL(",
+        "RegExp",
+        ".test(",
+        ".exec(",
+        ".match(",
+        ".replace(",
+        ".indexOf(",
+        ".startsWith(",
+        ".slice(",
+        ".concat(",
+        ".join(",
+        ".push(",
+        ".map(",
+        ".forEach(",
+        " of ",
+        "Symbol",
+        "...",
+        "`",
+        ".then(",
+        "async ",
+        "await ",
+        "JSON",
+        "Object.keys",
+        "Array.",
+        "String(",
+        "addEventListener(",
+    ] {
+        assert!(!code.contains(never), "link_targets.js uses {never}");
+    }
+    // `.bind(` appears once, in the capture of the uncurry helper, and `.call` only there.
+    assert_eq!(code.matches(".bind(").count(), 1);
+    assert!(code.contains("var uncurry = Function.prototype.bind.bind(Function.prototype.call);"));
+    assert_eq!(code.matches("Function.prototype.call").count(), 1);
+    // Every built-in is captured by the injection-time statements, and used through them.
+    for captured in [
+        "getter(Event.prototype, 'target')",
+        "getter(Event.prototype, 'defaultPrevented')",
+        "getter(MouseEvent.prototype, 'button')",
+        "uncurry(Event.prototype.preventDefault)",
+        "getter(Node.prototype, 'parentNode')",
+        "getter(Node.prototype, 'nodeName')",
+        "getter(HTMLAnchorElement.prototype, 'href')",
+        "getter(HTMLAnchorElement.prototype, 'protocol')",
+        "getter(HTMLAnchorElement.prototype, 'origin')",
+        "uncurry(Element.prototype.hasAttribute)",
+        "uncurry(Element.prototype.getAttribute)",
+        "uncurry(String.prototype.toLowerCase)",
+        "uncurry(EventTarget.prototype.addEventListener)",
+        "var open = uncurry(win.open);",
+        "var encode = encodeURIComponent;",
+    ] {
+        assert!(code.contains(captured), "link_targets.js lacks {captured}");
+    }
+    // The secret is a placeholder in the file and a closure variable in the script, and is
+    // used in exactly one place: the marker address given to the captured window.open.
     assert!(js.contains("var secret = '__GESTURE_SECRET__';"));
     assert_eq!(js.matches("__GESTURE_SECRET__").count(), 1);
-    // Only a trusted click is believed, and the original window.open is kept first.
-    assert!(js.contains("!event.isTrusted"));
-    assert!(js.contains("var nativeOpen = window.open;"));
-    assert!(js.contains("marker + secret"));
-    assert!(js.contains("nativeOpen.call(window, link.href, '_blank')"));
-    assert!(js.contains(&format!("'https://{}/'", crate::handoff::MARKER_HOST)));
+    assert_eq!(code.matches("secret").count(), 2, "declaration and one use");
+    assert!(code.contains("open(win, marker + secret + '?u=' + encode(href), '_blank');"));
+    // Only a trusted click is believed.
+    assert!(code.contains("event.isTrusted !== true"));
+    assert!(code.contains(&format!("'https://{}/'", crate::handoff::MARKER_HOST)));
     assert!(read("src/window.rs").contains("include_str!(\"link_targets.js\")"));
 }
 

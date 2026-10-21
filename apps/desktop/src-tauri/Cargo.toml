@@ -36,6 +36,8 @@ url = "2"
 # SHA-256 of the saved config, kept as a seal in the local data folder (config.rs). Already
 # part of Tauri's own dependency tree.
 sha2 = "0.10"
+# The click secret comes straight from the operating system (handoff.rs). Already in the tree.
+getrandom = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
