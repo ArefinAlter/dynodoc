@@ -11,6 +11,13 @@ name: desktop
 #
 # Everything built here is UNSIGNED and un-notarised. Signing needs secrets that do not exist
 # yet; docs/DESKTOP-AND-MOBILE-APPS.md lists them (do not invent values for them).
+#
+# BEFORE ANY SIGNING SECRET IS ADDED: anyone who can push a tag can run this workflow, so a tag
+# run must first be gated by a protected GitHub environment (Settings > Environments, for
+# example "desktop-release", with required reviewers and a tag/branch rule that only allows
+# desktop-v* tags created from main), and only the jobs that sign may reference it
+# (`environment: desktop-release`), so that the secrets exist only inside that environment.
+# Every cargo and tauri command below uses --locked so the build is exactly the lockfile.
 
 on:
   workflow_dispatch:
@@ -79,11 +86,11 @@ jobs:
       - name: Format check
         run: cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --all -- --check
       - name: Clippy
-        run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets -- -D warnings
+        run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --locked -- -D warnings
       - name: Tests
-        run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
+        run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked
       - name: Bundle
-        run: npm run tauri -- build --ci --bundles deb,rpm,appimage
+        run: npm run tauri -- build --ci --bundles deb,rpm,appimage -- --locked
         working-directory: apps/desktop
       - name: Checksums
         run: |
@@ -117,9 +124,9 @@ jobs:
         run: node scripts/prepare-sidecar.mjs
         working-directory: apps/desktop
       - name: Tests
-        run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
+        run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked
       - name: Bundle
-        run: npm run tauri -- build --ci --bundles nsis,msi
+        run: npm run tauri -- build --ci --bundles nsis,msi -- --locked
         working-directory: apps/desktop
       - name: Checksums
         run: |
@@ -155,9 +162,9 @@ jobs:
         run: node scripts/prepare-sidecar.mjs
         working-directory: apps/desktop
       - name: Tests
-        run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
+        run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked
       - name: Bundle
-        run: npm run tauri -- build --ci --bundles app,dmg
+        run: npm run tauri -- build --ci --bundles app,dmg -- --locked
         working-directory: apps/desktop
       - name: Checksums
         run: |
@@ -201,9 +208,9 @@ jobs:
         run: node scripts/prepare-sidecar.mjs
         working-directory: apps/desktop
       - name: Tests
-        run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
+        run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked
       - name: Bundle
-        run: npm run tauri -- build --ci --bundles ${{ matrix.bundles }}
+        run: npm run tauri -- build --ci --bundles ${{ matrix.bundles }} -- --locked
         working-directory: apps/desktop
       - uses: actions/upload-artifact@v4
         with:
@@ -242,8 +249,22 @@ jobs:
       - name: Generate the Android project (not committed)
         run: npm run tauri -- android init --ci
         working-directory: apps/desktop
+      - name: Make the generated project safe, and fail if it is not
+        # Tauri's template has no android:allowBackup (the Android default is true, so a
+        # signed-in web view session could be backed up) and turns cleartext traffic on in
+        # debug builds. scripts/harden-android.mjs sets allowBackup="false" and cleartext
+        # "false" everywhere, then fails the job if allowBackup="true" or
+        # usesCleartextTraffic="true" is left anywhere in the manifest or build file.
+        run: |
+          node --test scripts/harden-android.test.mjs
+          node scripts/harden-android.mjs
+          grep -n 'allowBackup\|usesCleartextTraffic' src-tauri/gen/android/app/src/main/AndroidManifest.xml
+          if grep -q 'allowBackup="true"\|usesCleartextTraffic="true"' src-tauri/gen/android/app/src/main/AndroidManifest.xml; then
+            echo "unsafe Android manifest"; exit 1
+          fi
+        working-directory: apps/desktop
       - name: Build the debug APK (arm64)
-        run: npm run tauri -- android build --ci --debug --apk --target aarch64
+        run: npm run tauri -- android build --ci --debug --apk --target aarch64 -- --locked
         working-directory: apps/desktop
       - uses: actions/upload-artifact@v4
         with:
@@ -271,7 +292,7 @@ jobs:
         run: npm run tauri -- ios init --ci
         working-directory: apps/desktop
       - name: Build for the simulator, unsigned
-        run: npm run tauri -- ios build --ci --debug --target aarch64-sim
+        run: npm run tauri -- ios build --ci --debug --target aarch64-sim -- --locked
         working-directory: apps/desktop
       - uses: actions/upload-artifact@v4
         with:

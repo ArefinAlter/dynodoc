@@ -375,6 +375,51 @@ fn the_workflow_never_runs_on_push() {
 }
 
 #[test]
+fn the_workflow_builds_exactly_the_lockfile_and_hardens_android() {
+    let workflow =
+        fs::read_to_string(root().join("../../../.github/workflows/desktop.yml")).unwrap();
+    let mut checked = 0;
+    for line in workflow.lines().map(str::trim) {
+        let Some(command) = line.strip_prefix("run: ") else {
+            continue;
+        };
+        let builds = command.starts_with("cargo test")
+            || command.starts_with("cargo clippy")
+            || command.starts_with("cargo build")
+            || command.starts_with("npm run tauri -- build")
+            || command.starts_with("npm run tauri -- android build")
+            || command.starts_with("npm run tauri -- ios build");
+        if builds {
+            assert!(command.contains("--locked"), "no --locked: {command}");
+            checked += 1;
+        }
+    }
+    assert!(checked >= 10, "only {checked} build commands found");
+    // A tag run must be gated before any signing secret is added.
+    assert!(workflow.contains("protected GitHub environment"));
+    // Android: the generated project is hardened and checked after `android init` and before
+    // the build.
+    let init = workflow.find("tauri -- android init").unwrap();
+    let harden = workflow.find("scripts/harden-android.mjs").unwrap();
+    let build = workflow.find("tauri -- android build").unwrap();
+    assert!(init < harden && harden < build);
+    assert!(workflow.contains("allowBackup=\"true\"\\|usesCleartextTraffic=\"true\""));
+}
+
+#[test]
+fn the_android_hardening_script_is_the_one_the_tests_exercise() {
+    let script = read("../scripts/harden-android.mjs");
+    for want in [
+        "android:allowBackup=\"false\"",
+        "usesCleartextTraffic",
+        "process.exit(1)",
+    ] {
+        assert!(script.contains(want), "harden-android.mjs lacks {want}");
+    }
+    assert!(root().join("../scripts/harden-android.test.mjs").exists());
+}
+
+#[test]
 fn the_script_injected_into_every_page_cannot_reach_the_app() {
     // It runs in the pages of the configured server too, so it must do nothing but call the
     // page's own window.open (from a trusted click, or for target=_blank).
