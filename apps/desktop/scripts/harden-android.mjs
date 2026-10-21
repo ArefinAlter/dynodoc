@@ -36,13 +36,35 @@ export function harden(manifest, gradle) {
   return { manifest: m, gradle: g };
 }
 
-/** The problems left in the (patched) project; an empty list means it is safe. */
-export function problems(manifest, gradle) {
+/**
+ * The problems left in the (patched) project; an empty list means it is safe. `readXml` reads
+ * a resource of the app module (`xml/network_security_config.xml`) or returns null.
+ */
+export function problems(manifest, gradle, readXml = () => null) {
   const found = [];
   if (!/android:allowBackup\s*=\s*"false"/.test(manifest)) found.push('allowBackup is not "false"');
   if (/android:allowBackup\s*=\s*"true"/.test(manifest)) found.push('allowBackup="true"');
   if (/android:usesCleartextTraffic\s*=\s*"true"/.test(manifest)) found.push('usesCleartextTraffic="true" in the manifest');
   if (/android:debuggable\s*=\s*"true"/.test(manifest)) found.push('debuggable="true" in the manifest');
+  if (/android:testOnly\s*=\s*"true"/.test(manifest)) found.push('testOnly="true" in the manifest');
+  // A network security config can allow cleartext on its own: it must be a file in the
+  // project that turns cleartext off everywhere, or there must be none.
+  const config = manifest.match(/android:networkSecurityConfig\s*=\s*"@xml\/([A-Za-z0-9_]+)"/);
+  if (/android:networkSecurityConfig/.test(manifest) && !config) {
+    found.push('networkSecurityConfig is not a plain @xml reference');
+  } else if (config) {
+    const xml = readXml(`xml/${config[1]}.xml`);
+    if (xml === null) found.push(`networkSecurityConfig @xml/${config[1]} is not a file in the project`);
+    else if (/cleartextTrafficPermitted\s*=\s*"true"/.test(xml) || !/cleartextTrafficPermitted\s*=\s*"false"/.test(xml)) {
+      found.push(`networkSecurityConfig @xml/${config[1]} does not turn cleartext off everywhere`);
+    }
+  }
+  // Any other way the build file might hand the manifest a true value.
+  for (const line of gradle.split('\n')) {
+    if (/usesCleartextTraffic/i.test(line) && /\btrue\b/i.test(line)) {
+      found.push(`the build file sets usesCleartextTraffic to true: ${line.trim()}`);
+    }
+  }
   if (/manifestPlaceholders\s*\[\s*"usesCleartextTraffic"\s*\]\s*=\s*"true"/.test(gradle)) {
     found.push('a build type sets the usesCleartextTraffic placeholder to "true"');
   }
@@ -74,7 +96,11 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   console.log(
     `harden-android: manifest ${after.manifest !== before.manifest ? 'patched' : 'already safe'}, build.gradle.kts ${after.gradle !== before.gradle ? 'patched' : 'already safe'}`,
   );
-  const left = problems(after.manifest, after.gradle);
+  const readXml = (relative) => {
+    const file = join(root, 'app', 'src', 'main', 'res', relative);
+    return existsSync(file) ? readFileSync(file, 'utf8') : null;
+  };
+  const left = problems(after.manifest, after.gradle, readXml);
   if (left.length > 0) {
     for (const p of left) console.error(`harden-android: UNSAFE: ${p}`);
     process.exit(1);

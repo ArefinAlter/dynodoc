@@ -68,3 +68,37 @@ test('a build file that sets the placeholder to anything but false fails the che
   assert.ok(problems(manifest, 'no placeholder here').length > 0);
   assert.ok(problems('<manifest><application android:allowBackup="false"></application></manifest>', '').length > 0, 'cleartext not set at all');
 });
+
+test('a network security config is allowed only if a file in the project turns cleartext off', () => {
+  const { manifest, gradle } = harden(templateManifest, templateGradle);
+  const withConfig = manifest.replace('<application', '<application android:networkSecurityConfig="@xml/nsc"');
+  const off = '<network-security-config><base-config cleartextTrafficPermitted="false" /></network-security-config>';
+  const on = '<network-security-config><base-config cleartextTrafficPermitted="true" /></network-security-config>';
+  const silent = '<network-security-config><base-config /></network-security-config>';
+  assert.deepEqual(problems(withConfig, gradle, (f) => (f === 'xml/nsc.xml' ? off : null)), []);
+  for (const xml of [on, silent, null, off + on]) {
+    assert.ok(problems(withConfig, gradle, () => xml).length > 0, String(xml));
+  }
+  const odd = manifest.replace('<application', '<application android:networkSecurityConfig="@xml/../x"');
+  assert.ok(problems(odd, gradle, () => off).length > 0);
+  const raw = manifest.replace('<application', '<application android:networkSecurityConfig="${nsc}"');
+  assert.ok(problems(raw, gradle, () => off).length > 0);
+});
+
+test('every spelling of a true cleartext placeholder in the build file is caught', () => {
+  const { manifest } = harden(templateManifest, templateGradle);
+  for (const line of [
+    'manifestPlaceholders["usesCleartextTraffic"] = "true"',
+    'manifestPlaceholders += mapOf("usesCleartextTraffic" to "true")',
+    "manifestPlaceholders.put('usesCleartextTraffic', 'true')",
+    'manifestPlaceholders = [usesCleartextTraffic: "true"]',
+  ]) {
+    const gradle = `manifestPlaceholders["usesCleartextTraffic"] = "false"\n${line}`;
+    assert.ok(problems(manifest, gradle).length > 0, line);
+  }
+});
+
+test('testOnly in the manifest is a problem', () => {
+  const { manifest, gradle } = harden(templateManifest, templateGradle);
+  assert.ok(problems(manifest.replace('<application', '<application android:testOnly="true"'), gradle).some((p) => p.includes('testOnly')));
+});
