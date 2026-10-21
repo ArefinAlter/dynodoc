@@ -140,6 +140,21 @@ fn plan(
 /// keeps the rule it was written under: written after the last change.
 const FRESH: &str = "case when r.draft_revision is null then r.created_at>coalesce(w.content_changed_at,'-infinity'::timestamptz) else r.draft_revision>=w.content_revision end";
 
+/// SQL: the verdict that counts for each reviewer of draft `draft` in document `document`
+/// (expressions): the latest approval or request for changes that is still [`FRESH`], from a
+/// person who still holds a reviewer role or above and is not an agent identity (I4). The one
+/// definition of "counts", used by the review state and by the proposal lists.
+pub(crate) fn latest_counted(draft: &str, document: &str) -> String {
+    format!("select distinct on (r.reviewer_id) r.reviewer_id,r.verdict from change_request_review r join workspace_draft w on w.id=r.draft_id where r.draft_id={draft} and r.verdict in ('approved','changes_requested') and {FRESH} and document_member_role({document},r.reviewer_id) in ('reviewer','editor','manager','owner') and not exists(select 1 from agent_identity ai where ai.identity_id=r.reviewer_id) order by r.reviewer_id,r.created_at desc")
+}
+
+/// SQL: the state word of the draft row `draft` (a table alias), as the proposal lists and the
+/// agent's status say it: `draft`, `open`, `changes_requested` (an open request one counted
+/// reviewer has asked to change), `merged`, `declined` or `withdrawn`.
+pub(crate) fn state_sql(draft: &str) -> String {
+    format!("case when {draft}.merged_at is not null or {draft}.review_outcome='merged' then 'merged' when {draft}.review_outcome='declined' then 'declined' when {draft}.review_outcome='withdrawn' then 'withdrawn' when {draft}.submitted_at is null then 'draft' when exists(select 1 from ({}) l where l.verdict='changes_requested') then 'changes_requested' else 'open' end", latest_counted(&format!("{draft}.id"), &format!("{draft}.document_id")))
+}
+
 /// Reviews on a request, and whether the document's rules allow merging it now.
 /// Approvals count while the request's content is as the reviewer saw it, and
 /// only from people who still hold a reviewer role or above.
@@ -163,7 +178,7 @@ pub(crate) async fn review_state(
         .unwrap_or_default();
     // I4: an agent identity never counts, whatever a row says (it holds no membership, so
     // the role test already excludes it, and the database refuses its review rows).
-    let latest: Vec<(Uuid, String)> = sqlx::query_as(&format!("select distinct on (r.reviewer_id) r.reviewer_id,r.verdict from change_request_review r join workspace_draft w on w.id=r.draft_id where r.draft_id=$1 and r.verdict in ('approved','changes_requested') and {FRESH} and document_member_role($2,r.reviewer_id) in ('reviewer','editor','manager','owner') and not exists(select 1 from agent_identity ai where ai.identity_id=r.reviewer_id) order by r.reviewer_id,r.created_at desc"))
+    let latest: Vec<(Uuid, String)> = sqlx::query_as(&latest_counted("$1", "$2"))
         .bind(draft)
         .bind(id)
         .fetch_all(&mut *db)

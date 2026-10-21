@@ -159,6 +159,7 @@ pub fn routes() -> Router<AppState> {
             "/projects/{id}/agent/proposals/{proposal}",
             get(proposal::status),
         )
+        .route("/projects/{id}/agent/proposals", get(proposal::list))
 }
 
 // --- the path ------------------------------------------------------------------------

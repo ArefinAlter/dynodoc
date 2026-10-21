@@ -126,6 +126,7 @@ pub mod cache;
 pub mod error;
 pub mod http;
 pub mod identity;
+pub mod inbox;
 pub mod ledger;
 pub mod manage;
 pub mod policy;
@@ -136,6 +137,7 @@ pub mod state;
 pub mod write;
 
 pub use cache::StateCache;
+pub use inbox::{router as inbox_router, AgentInboxApi};
 pub use manage::{router as manage_router, AgentManageApi};
 pub use routes::router;
 pub use schema::AgentApi;

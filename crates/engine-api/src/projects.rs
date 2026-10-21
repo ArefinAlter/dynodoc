@@ -137,7 +137,7 @@ struct Page {
     #[serde(default)]
     offset: i64,
 }
-const TREE: &str="with recursive tree as (select id from access_space where id=$1 union select s.id from access_space s join tree t on s.parent_id=t.id)";
+pub(crate) const TREE: &str="with recursive tree as (select id from access_space where id=$1 union select s.id from access_space s join tree t on s.parent_id=t.id)";
 async fn page(
     state: &AppState,
     id: Uuid,

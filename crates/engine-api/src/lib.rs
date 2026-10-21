@@ -170,6 +170,8 @@ pub fn app(state: AppState) -> Router {
     // The policy and kill-switch routes belong to the account, not to the agent plane, so
     // a project can be prepared before the gateway is switched on.
     let routes = routes.merge(agent::manage_router());
+    // So is the reviewers' list of what the agents proposed: proposals outlive the switch.
+    let routes = routes.merge(agent::inbox_router());
     routes
         .layer(axum::middleware::from_fn_with_state(
             state.workloads.clone(),
@@ -293,6 +295,7 @@ impl utoipa::Modify for WorkspaceDocs {
         api.merge(project_issues::ProjectIssuesApi::openapi());
         api.merge(agent::AgentApi::openapi());
         api.merge(agent::AgentManageApi::openapi());
+        api.merge(agent::AgentInboxApi::openapi());
         // A workspace that declares no licence (`license-file` only) leaves the derived name
         // empty; an empty licence object is invalid OpenAPI, so drop it.
         if api.info.license.as_ref().is_some_and(|l| l.name.is_empty()) {
