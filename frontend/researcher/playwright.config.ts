@@ -1,5 +1,29 @@
-import { defineConfig } from '@playwright/test';
+import { defineConfig, devices } from '@playwright/test';
 const external = process.env.PLAYWRIGHT_BASE_URL;
+// Chromium always runs the whole suite. BROWSER_MATRIX adds Firefox, WebKit and two phone
+// emulations (docs/BROWSER-SUPPORT.md): `full` runs the authenticated specs on the desktop
+// engines and the public and workspace specs on the phones; `smoke` keeps only the tests
+// tagged @smoke, which is what CI runs on them. Emulation is not a real device.
+const matrix = process.env.BROWSER_MATRIX;
+const phoneSpecs = /(smoke|editorial-pages|ux|workspace|projects|browsers|pwa)\.spec\.ts$/;
+// Playwright's WebKit does not apply page.route() mocks to a page a service worker controls,
+// even when the worker lets the request through, which breaks the specs that mock the network.
+// The WebKit projects therefore block workers, except pwa.spec.ts, which turns them back on.
+const noWorker = { serviceWorkers: 'block' as const };
+const extra = matrix
+  ? [
+      { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
+      { name: 'webkit', use: { ...devices['Desktop Safari'], ...noWorker } },
+      { name: 'pixel', use: { ...devices['Pixel 7'] }, testMatch: phoneSpecs },
+      { name: 'iphone', use: { ...devices['iPhone 15'], ...noWorker }, testMatch: phoneSpecs }
+    ].map((project) => ({
+      ...project,
+      grep: matrix === 'smoke' ? /@smoke/ : undefined,
+      // Creating a workbook takes about 3.5 s here on every engine, and tracing makes the
+      // slower engines miss the 5 s default. Same assertions, more patience.
+      expect: { timeout: 15000 }
+    }))
+  : [];
 export default defineConfig({
   testDir: 'e2e',
   timeout: 60000,
@@ -19,5 +43,6 @@ export default defineConfig({
     baseURL: external || 'http://localhost:4173',
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure'
-  }
+  },
+  projects: [{ name: 'chromium' }, ...extra]
 });

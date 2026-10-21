@@ -30,6 +30,7 @@
   import { plural } from '$lib/workspace/repo-ui';
   import RepositoryShell from './RepositoryShell.svelte';
   import DeviceKeys from './DeviceKeys.svelte';
+  import InstallApp from './InstallApp.svelte';
   import Avatar from './repo/Avatar.svelte';
   import ActivityFeed from './repo/ActivityFeed.svelte';
   import ContributionGraph from './repo/ContributionGraph.svelte';
@@ -393,7 +394,7 @@
               </div>
             </section>
           {/if}
-          {#if !id}<DeviceKeys />{/if}
+          {#if !id}<DeviceKeys /><InstallApp />{/if}
         </div>
       </div>
     {:else if !error}

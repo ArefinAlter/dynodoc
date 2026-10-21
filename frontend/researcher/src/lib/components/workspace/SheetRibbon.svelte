@@ -989,4 +989,13 @@
   .arrow {
     font-size: 11px;
   }
+  /* Fingertip-sized commands are taller than the fixed ribbon; let it grow. */
+  @media (pointer: coarse) {
+    .ribbon-tabs {
+      height: auto;
+    }
+    .ribbon {
+      height: auto;
+    }
+  }
 </style>

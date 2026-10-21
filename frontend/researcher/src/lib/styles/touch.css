@@ -1,0 +1,79 @@
+/*
+ * Touch screens. These apply where the main pointer is a finger (phones and tablets),
+ * not by screen width, so a narrow desktop window keeps its dense layout. See
+ * docs/BROWSER-SUPPORT.md.
+ *
+ * - iOS Safari zooms the whole page when a field whose font is under 16px takes focus, and
+ *   does not zoom back. Components set their own, smaller sizes, hence !important.
+ * - A fingertip needs about 44px. Raising only the minimum keeps larger controls as
+ *   designed. Dense widgets (spreadsheet cells, colour swatches, the activity graph) opt
+ *   out with .touch-dense; they are read and tapped as a whole, not as separate buttons.
+ */
+@media (pointer: coarse) {
+  /* Keyboard shortcut hints mean nothing without a keyboard. */
+  input + kbd {
+    display: none;
+  }
+  input:not(
+    [type='checkbox'],
+    [type='radio'],
+    [type='range'],
+    [type='hidden'],
+    [type='file'],
+    [type='color'],
+    [type='button'],
+    [type='submit'],
+    [type='reset'],
+    [type='image']
+  ),
+  select,
+  textarea {
+    font-size: max(16px, 1em) !important;
+  }
+  :is(
+    button,
+    summary,
+    select,
+    textarea,
+    [role='button'],
+    [role='tab'],
+    [role='menuitem'],
+    [role='menuitemradio'],
+    [role='menuitemcheckbox'],
+    [role='option'],
+    input:not(
+      [type='checkbox'],
+      [type='radio'],
+      [type='range'],
+      [type='hidden'],
+      [type='color'],
+      [type='file']
+    )
+  ):not(.touch-dense, .touch-dense *) {
+    min-height: 44px !important;
+  }
+  /*
+   * Width only for buttons that carry an icon (icon-only buttons are the narrow ones). A
+   * min-width alone would replace the automatic minimum, their text width, and let a flex row
+   * squeeze labels until they overlap, so they also stop shrinking. Text-only buttons keep
+   * their natural width, which is already wide enough.
+   */
+  :is(button, [role='button']):has(> svg:only-child):not(.touch-dense, .touch-dense *) {
+    min-width: 44px !important;
+    flex-shrink: 0 !important;
+  }
+  /* Colour pickers are an invisible input over a small swatch; grow the swatch. */
+  label:has(> input[type='color']) {
+    min-width: 44px !important;
+    min-height: 44px !important;
+  }
+  input[type='range'] {
+    min-height: 44px !important;
+  }
+  :is(header, nav, [role='tablist']) a[href]:not(.touch-dense, .touch-dense *),
+  a.repo-btn {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px !important;
+  }
+}

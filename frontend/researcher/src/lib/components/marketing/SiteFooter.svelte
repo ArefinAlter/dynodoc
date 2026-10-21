@@ -252,6 +252,7 @@
     letter-spacing: 0;
     line-height: 0.86;
     white-space: nowrap;
+    -webkit-user-select: none;
     user-select: none;
   }
   .ghost span {

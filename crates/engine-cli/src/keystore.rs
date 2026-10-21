@@ -15,9 +15,10 @@
 //!
 //! This binds the key to an OS account. It does not defend against code running as
 //! that same account (DPAPI and an unlocked keychain answer to it), and it is not a
-//! hardware token. The macOS and Linux paths are tested through their command
-//! construction and the container logic; they were not run on this repository's
-//! Windows host.
+//! hardware token. All three providers are run for real by `tests/native_keystore.rs`
+//! (a temporary keychain on macOS, a private gnome-keyring on Linux, DPAPI on
+//! Windows; see `docs/PLATFORM-SUPPORT.md`); the unit tests below cover command
+//! construction and the container logic on every platform.
 use crate::passphrase::{wipe_slice, Secret};
 use anyhow::{anyhow, bail, ensure, Context};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};

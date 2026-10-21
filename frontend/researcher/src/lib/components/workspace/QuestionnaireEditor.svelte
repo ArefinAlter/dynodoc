@@ -444,6 +444,7 @@
   .layout {
     display: flex;
     min-height: calc(100vh - 170px);
+    min-height: calc(100dvh - 170px);
   }
   nav {
     width: 220px;

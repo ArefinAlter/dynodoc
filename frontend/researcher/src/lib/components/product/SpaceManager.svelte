@@ -235,6 +235,7 @@
     max-width: 570px;
     width: calc(100% - 40px);
     max-height: 85vh;
+    max-height: 85dvh;
     padding: 24px;
     color: var(--color-ink);
     background: var(--color-surface-raised);

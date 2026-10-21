@@ -1,15 +1,12 @@
 <script lang="ts">
   import { Copy } from '@lucide/svelte';
   import { pushToast } from '$lib/stores/toast.svelte';
+  import { copyText } from '$lib/clipboard';
   import { shortHash } from '$lib/workspace/repo-ui';
   let { hash, label = 'revision hash' }: { hash: string; label?: string } = $props();
   async function copy() {
-    try {
-      await navigator.clipboard.writeText(hash);
-      pushToast(`Copied the ${label}`, 'success', 2200);
-    } catch {
-      pushToast(`Copy this ${label}: ${hash}`, 'info', 6000);
-    }
+    if (await copyText(hash)) pushToast(`Copied the ${label}`, 'success', 2200);
+    else pushToast(`Copy this ${label}: ${hash}`, 'info', 6000);
   }
 </script>
 

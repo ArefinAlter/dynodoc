@@ -121,8 +121,10 @@
     inset: 0;
     display: grid;
     place-items: center;
+    grid-template-columns: minmax(0, 1fr);
     padding: 1rem;
     background: var(--color-overlay);
+    -webkit-backdrop-filter: blur(6px);
     backdrop-filter: blur(6px);
     z-index: 40;
   }
