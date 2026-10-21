@@ -1415,12 +1415,14 @@ paths:
         required: true
       responses:
         '200':
-          description: The contributor withdrew their request
+          description: The contributor withdrew their request, or the person an AI agent acts for discarded its draft before sending it for review (closed as withdrawn and kept as history)
           content:
             application/json:
               schema: {}
         '403':
           description: Only the contributor can withdraw
+        '409':
+          description: Already closed, or an unsent draft that is not an AI agent's
   /documents/{id}/events:
     get:
       tags:

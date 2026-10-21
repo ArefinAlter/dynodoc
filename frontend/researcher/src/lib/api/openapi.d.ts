@@ -5543,7 +5543,7 @@ export interface operations {
       };
     };
     responses: {
-      /** @description The contributor withdrew their request */
+      /** @description The contributor withdrew their request, or the person an AI agent acts for discarded its draft before sending it for review (closed as withdrawn and kept as history) */
       200: {
         headers: {
           [name: string]: unknown;
@@ -5554,6 +5554,13 @@ export interface operations {
       };
       /** @description Only the contributor can withdraw */
       403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Already closed, or an unsent draft that is not an AI agent's */
+      409: {
         headers: {
           [name: string]: unknown;
         };
