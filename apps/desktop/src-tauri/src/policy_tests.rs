@@ -404,6 +404,12 @@ fn the_workflow_builds_exactly_the_lockfile_and_hardens_android() {
     let build = workflow.find("tauri -- android build").unwrap();
     assert!(init < harden && harden < build);
     assert!(workflow.contains("allowBackup=\"true\"\\|usesCleartextTraffic=\"true\""));
+    // And what shipped is checked too: the merged manifest of every built APK, after the build
+    // and before the upload.
+    let merged = workflow.find("scripts/check-apk-manifest.mjs").unwrap();
+    let upload = workflow.find("name: dynodoc-android-debug-apk").unwrap();
+    assert!(build < merged && merged < upload);
+    assert!(workflow.contains("node --test scripts/check-apk-manifest.test.mjs"));
 }
 
 #[test]
@@ -417,6 +423,22 @@ fn the_android_hardening_script_is_the_one_the_tests_exercise() {
         assert!(script.contains(want), "harden-android.mjs lacks {want}");
     }
     assert!(root().join("../scripts/harden-android.test.mjs").exists());
+    // The merged-manifest check refuses what the text check refuses, in the APK itself.
+    let checker = read("../scripts/check-apk-manifest.mjs");
+    for want in [
+        "allowBackup",
+        "usesCleartextTraffic",
+        "debuggable",
+        "process.exit(1)",
+    ] {
+        assert!(
+            checker.contains(want),
+            "check-apk-manifest.mjs lacks {want}"
+        );
+    }
+    assert!(root()
+        .join("../scripts/check-apk-manifest.test.mjs")
+        .exists());
 }
 
 #[test]

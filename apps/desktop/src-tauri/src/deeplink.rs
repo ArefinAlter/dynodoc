@@ -438,7 +438,7 @@ mod tests {
         assert!(PREFIX.eq_ignore_ascii_case(&format!("{SCHEME}://")));
         // The module documentation lists the same three links.
         let source = include_str!("deeplink.rs");
-        let source = &source[..source.find("#[cfg(test)]").unwrap()];
+        let source = &source[..source.find("mod tests {").unwrap()];
         for line in [
             "//! dynodoc://open/workspace",
             "//! dynodoc://open/projects/<uuid>",
@@ -472,7 +472,7 @@ mod tests {
             );
         assert!(!body.contains('"'), "string literal in parse: {body}");
         // And nothing else in the production code decides what a link may be.
-        let production = &source[..source.find("#[cfg(test)]").unwrap()];
+        let production = &source[..source.find("mod tests {").unwrap()];
         for word in ["settings", "admin", "login", "auth"] {
             assert!(!production.contains(word), "{word}");
         }

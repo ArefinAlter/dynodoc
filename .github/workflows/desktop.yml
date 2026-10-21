@@ -266,6 +266,23 @@ jobs:
       - name: Build the debug APK (arm64)
         run: npm run tauri -- android build --ci --debug --apk --target aarch64 -- --locked
         working-directory: apps/desktop
+      - name: Check the MERGED manifest inside the built APK
+        # The text check above looks at the generated project; this looks at what shipped,
+        # after Gradle merged every library's manifest and applied the build type's
+        # placeholders. aapt2 (build-tools of the runner image) or apkanalyzer prints
+        # <application>; the job fails unless allowBackup and usesCleartextTraffic are
+        # explicitly false, and for a release build also if debuggable is true. A network
+        # security config also fails (it can allow cleartext). The parser is tested on sample
+        # tool output only: read the printed attributes on the first run.
+        run: |
+          node --test scripts/check-apk-manifest.test.mjs
+          apks=$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk')
+          test -n "$apks" || { echo "no APK built"; exit 1; }
+          for apk in $apks; do
+            echo "== $apk"
+            node scripts/check-apk-manifest.mjs "$apk" --build debug
+          done
+        working-directory: apps/desktop
       - uses: actions/upload-artifact@v4
         with:
           name: dynodoc-android-debug-apk
