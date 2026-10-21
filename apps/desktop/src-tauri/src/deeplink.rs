@@ -227,6 +227,7 @@ mod tests {
             "dynodoc://open/profile",
             "dynodoc://open/auth/verify",
             "dynodoc://open/login",
+            "dynodoc://open/settings",
             "dynodoc://open/workspace/extra",
             "dynodoc://open/projects",
             "dynodoc://open/projects/",
