@@ -229,7 +229,10 @@ async fn a_stale_approval_is_refused_with_409_and_a_current_one_counts(pool: PgP
     let id = p.request(&[(0, "Alpha one.")]).await;
     let seen = p.detail(&p.rita_login, id).await;
     let revision = seen["revision"].as_i64().unwrap();
-    assert!(seen.get("agent_statement").is_none(), "only an agent's request has one");
+    assert!(
+        seen.get("agent_statement").is_none(),
+        "only an agent's request has one"
+    );
 
     let (status, edited) = p.change(id, revision, 1, "Beta two.").await;
     assert_eq!(status, StatusCode::OK, "{edited}");
@@ -853,7 +856,14 @@ async fn an_agents_request_needs_current_approvals_and_an_agent_never_counts(poo
 
     // The reviewers' notification names the agent as such, with no placeholder address, and
     // says which project it belongs to so the inbox can be opened from it.
-    let (status, inbox) = call(&w.app, "GET", "/notifications", Some(&rita_login), Value::Null).await;
+    let (status, inbox) = call(
+        &w.app,
+        "GET",
+        "/notifications",
+        Some(&rita_login),
+        Value::Null,
+    )
+    .await;
     assert_eq!(status, StatusCode::OK, "{inbox}");
     let told = inbox["items"]
         .as_array()
@@ -1045,7 +1055,10 @@ async fn adopting_an_agents_draft_binds_the_revision_and_names_both(pool: PgPool
     assert_eq!(said["reasons"][0]["why"], "clearer");
     assert_eq!(said["reasons"][0]["op"], "set_text");
     assert_eq!(seen["request"]["agent"]["client_kind"], "claude");
-    assert_eq!(seen["request"]["agent"]["display_name"], "Claude for Tester");
+    assert_eq!(
+        seen["request"]["agent"]["display_name"],
+        "Claude for Tester"
+    );
 
     // A draft of the person's own needs no revision, but one that is sent must be right.
     let own: Value = call(
