@@ -26,12 +26,12 @@ notarised, published or tried on a physical device.
 
 | Platform | In the repository | Run so far | Not done |
 |---|---|---|---|
-| Windows x86-64 | Source, launcher, sidecar, menu, deep link, probes | Windows 11 PC: format, clippy, 55 tests (including the real `engine-cli` creating a DPAPI-bound key), debug build, `smoke.ps1`, `security-probe.mjs` (43 checks inside WebView2), unsigned debug NSIS and MSI bundles built | Installers never installed; no release-profile run; no signing, so SmartScreen will warn |
-| Linux x86-64 | The same source | In an Ubuntu 24.04 container on the Windows PC (the steps of the `linux` job, with a stub in place of `engine-cli`): format, clippy with `-D warnings`, 54 tests, release build, `.deb` (2.0 MiB), `.rpm` (2.0 MiB) and AppImage (77 MiB) bundles; then the release binary under Xvfb with a D-Bus session: stays up, creates its config and data folders, a second launch is forwarded to it and exits | Not run on a real desktop; the real `engine-cli` was not built on Linux; the bundles were not installed; AppImage does not register `dynodoc://`; no Secret Service key creation exercised; the app was ended with SIGTERM (exit 143), not by closing its window |
+| Windows x86-64 | Source, launcher, sidecar, menu, deep link, probes | Windows 11 PC, after the security-review fixes and a merge of main: format, clippy, 91 tests (including the real `engine-cli` creating a DPAPI-bound key), debug build, `smoke.ps1` (which also creates keys in folders with accented and Bengali names), `security-probe.mjs` (four phases inside WebView2, also with `--unicode-home`); earlier: unsigned debug NSIS and MSI bundles, a release build that ran | Installers never installed; no release-profile run; no signing, so SmartScreen will warn |
+| Linux x86-64 | The same source | In an Ubuntu 24.04 container on the Windows PC (the steps of the `linux` job, with a stub in place of `engine-cli`): format, clippy with `-D warnings`, tests, release build, `.deb` (2.0 MiB), `.rpm` (2.0 MiB) and AppImage (77 MiB) bundles; then the release binary under Xvfb with a D-Bus session: stays up, creates its config and data folders, a second launch is forwarded to it and exits | Not run on a real desktop; the real `engine-cli` was not built on Linux; the bundles were not installed; AppImage does not register `dynodoc://`; no Secret Service key creation exercised; the app was ended with SIGTERM (exit 143), not by closing its window |
 | Linux aarch64 | Workflow job behind a tick box | Nothing (private-repository availability of `ubuntu-24.04-arm` unverified) | Everything |
 | macOS aarch64 and x86-64 | Same source; workflow jobs on `macos-latest` and `macos-15-intel` | Nothing; the Apple targets cannot even be type-checked on Windows | Everything: no Mac build, no Keychain key creation, no notarisation |
 | Windows aarch64 | Workflow job behind a tick box | Nothing (`windows-11-arm`, availability unverified) | Everything |
-| Android | Mobile entry point, phone capability file, icons, `minSdkVersion` 24; workflow job `android` generates the project and builds a debug APK | `cargo check --lib --target aarch64-linux-android` passes on Windows (also proves the sidecar declaration stays out of a phone build) | `tauri android init`, Gradle, an emulator or device; Play signing; app links; there is no sidecar on phones |
+| Android | Mobile entry point, phone capability file, icons, `minSdkVersion` 24; workflow job `android` generates the project and builds a debug APK | `cargo check --lib --target aarch64-linux-android` passes on Windows (also proves the sidecar declaration stays out of a phone build) | Gradle, an emulator or device; Play signing; app links; there is no sidecar on phones. `tauri android init` was run with stand-in SDK folders: the template has no `allowBackup` and enables cleartext in debug, which `scripts/harden-android.mjs` fixes and checks (README) |
 | iPhone | Same source, iOS 15.0 minimum; workflow job `ios` (simulator, unsigned) | Nothing | Everything: needs a Mac runner and, for devices, an Apple Developer team |
 
 ## How to build each
@@ -109,10 +109,25 @@ Do not claim store readiness from this round.
 - **Permissions** (camera, microphone, location, notifications, clipboard read) are denied for
   every page, so any web feature that needs them will not work in the shell. Tested in WebView2:
   location, camera, microphone and notifications are not granted.
-- **New windows.** A click on `<a target="_blank">` raises no event in WebView2, so the shell injects a
-  20-line script into every page that turns such a click into `window.open`; the new-window rule then
-  loads same-server links in the one window and opens other web links in the system browser. The
-  shell never opens a second window. `<form target="_blank">` and a middle-click are not handled.
+- **New windows and links out.** A click on `<a target="_blank">` raises no event in WebView2, so the
+  shell injects a short script into every page that turns such a click into `window.open`; the
+  new-window rule then loads same-server links in the one window and opens other web links in the
+  system browser. The shell never opens a second window. `<form target="_blank">` and a middle-click
+  are not handled. WebView2 does not say whether a person clicked, so a page's own request to open
+  a link is limited: public `http(s)` addresses only, one per 3 seconds and five per minute, never a
+  mail link or a local-network address. A trusted click on a link (or a menu item) may open those too;
+  the injected script proves the click with a secret made at start-up.
+- **A link from another program navigates the window.** A `dynodoc://` link brings the window forward
+  and takes it to that page, even if you were working in it. The protection for unsaved work is the web
+  app's own leave-page warning. Checked: WebView2 runs the page's `beforeunload` handler for the shell's
+  own navigation and shows its "Leave site?" dialog, and answering Stay keeps the page.
+- **A pasted sign-in link signs in whichever account issued it.** Only paste a link from an email you
+  asked for in this window. The web `/login` page still needs a click ("Continue to workspace") before
+  it uses the token. Showing the account's email address there before the click would close the gap;
+  that is server work (owner question 3).
+- **A changed saved address is shown, not opened.** The saved server is sealed with a SHA-256 in the
+  local data folder; if the file was edited by anything that did not also rewrite the seal, the launcher
+  asks the person to confirm it. Malware running as the user can rewrite both.
 - **Refused navigations still cost one request.** WebView2 sends the request for a navigation before
   the shell cancels it (seen in the probe), so a server page can make the web view fetch an address
   without showing it. Pages can already send requests; the shell does not make that worse, but
@@ -127,7 +142,9 @@ Do not claim store readiness from this round.
    Until then no installer, APK or simulator build can be produced or tested in CI.
 2. Is `online.dynodoc.client` the right identifier (and is the reverse-domain `online.dynodoc` correct for the company)?
 3. Should the shell's "Sign in with an emailed link" workaround stay, or should sign-in hand-over
-   (server work) come first?
+   (server work) come first? Either way: should the web `/login` page show the account's email
+   address before the person confirms a token (server work; it closes the login-CSRF gap of a pasted
+   link)?
 4. Accept the permission denial for all pages, or allow clipboard read for the web app's origin?
 5. Which Windows signing route (certificate, cloud signing service, Microsoft Store)?
 6. Arm runners: try `ubuntu-24.04-arm` and `windows-11-arm` on this private repository?

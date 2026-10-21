@@ -84,16 +84,20 @@ notarised, published to a store or tested on a physical device.
 **Implementation status (21 October 2026, desktop shell and mobile preparation).** Source only.
 `apps/desktop` holds a Tauri 2 project with its own Cargo workspace (the engine workspace excludes
 `apps/`): a launcher page to choose the hosted or a self-hosted server, a navigation policy under
-which the window only ever shows the launcher or the configured server and every other web link opens
-in the system browser, a `dynodoc://` link parser with three accepted forms, a fixed-argument
+which the window only ever shows the launcher (when the shell itself asked for it) or the configured
+server, and every other public web link opens in the system browser (a page's own requests are rate
+limited and cannot reach the mail program or a local address; only a person's click can), a saved
+server address sealed against edits made outside the app, a `dynodoc://` link parser with three accepted forms, a fixed-argument
 `engine-cli` sidecar (`--version`, `device keygen --encrypt --keystore`, `device public-key`) with time
 and output limits, a native menu, window state, denied web view permissions, single instance, a
 pasted-sign-in-link command, and Android and iPhone preparation (mobile entry point, phone capability
 file without the tools, icons, minimum versions). Verified: on one Windows 11 PC the unit and
-configuration tests, clippy, a debug build, a smoke test, a black-box probe of the security model
-inside WebView2 and unsigned debug NSIS and MSI bundles (built, never installed); an Android
-`cargo check`; the Linux compile, clippy and tests in an Ubuntu 24.04 container (see the ledger for the
-exact result). Not run: any GitHub Actions job (the account's Actions are blocked by a billing error),
+configuration tests, clippy, a debug build, a smoke test (including key creation in folders with
+accented and Bengali names, with an `engine-cli` built from the tree that holds the Windows
+non-ASCII key-file fix), a black-box probe of the security model inside WebView2 and unsigned debug
+NSIS and MSI bundles (built, never installed); an Android `cargo check` and `tauri android init`
+(with stand-in SDK folders, plus a script that makes the generated manifest safe); the Linux
+compile, clippy and tests in an Ubuntu 24.04 container (see the ledger for the exact result). Not run: any GitHub Actions job (the account's Actions are blocked by a billing error),
 macOS, iOS, an Android Gradle build, any physical device. Deviations from the text above, all on
 purpose: remote pages get **no** native access at all in this round (decision item 6 allowed an
 allowlist for the server's own origin), "open a link in the system browser" is done by the shell's own

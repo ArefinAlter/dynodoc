@@ -22,13 +22,14 @@ notarised, in a store, or tried on a Mac, an iPhone or a physical device.
 | `src-tauri/src/main.rs` | Thin desktop entry point. |
 | `src-tauri/src/lib.rs` | `run()` (also the mobile entry point): plugins, commands, window, menu. |
 | `src-tauri/src/server.rs` | Validates and normalises the server address and the pasted sign-in link; origin comparison. Pure functions. |
-| `src-tauri/src/nav.rs` | The navigation policy: what may load in the window, what goes to the system browser, what is dropped. Pure functions. |
+| `src-tauri/src/nav.rs` | The navigation policy: what may load in the window (the launcher only when the shell asked for it), what goes to the system browser, what is dropped; the window title; log redaction. Pure functions. |
+| `src-tauri/src/handoff.rs` | Handing a link to the system: public addresses only for a page, a rate limit (1 per 3 s, 5 per minute), mail and local addresses only for a person's click (a secret marker from the injected script). Pure functions. |
 | `src-tauri/src/deeplink.rs` | Parser for `dynodoc://` links (three accepted forms). Pure functions. |
-| `src-tauri/src/sidecar.rs` | Runs the bundled `engine-cli` with a fixed argument list, a time limit and an output limit. |
+| `src-tauri/src/sidecar.rs` | Runs the bundled `engine-cli` with a fixed argument list, a time limit and an output limit; recognises a cut-off key file and says how to start again. |
 | `src-tauri/src/commands.rs` | The seven commands the launcher page may call. |
-| `src-tauri/src/config.rs` | Saves the chosen server in the app's config folder (atomic, re-validated on read). |
+| `src-tauri/src/config.rs` | Saves the chosen server in the app's config folder (atomic, re-validated on read) with a SHA-256 seal in the local data folder; a config that no longer matches its seal is shown, not opened. |
 | `src-tauri/src/window.rs` | Creates the window and hooks navigation, new-window and deep-link events to the policy. In debug builds it prints each decision to standard error. |
-| `src-tauri/src/link_targets.js` | A 20-line script the shell injects into every page of the window: WebView2 raises no event for a click on `<a target="_blank">`, so it turns that click into `window.open`, which the new-window rule then handles. It has no access to the app. |
+| `src-tauri/src/link_targets.js` | A short script the shell injects into every page of the window. It has no access to the app; it only calls `window.open`. WebView2 raises no event for a click on `<a target="_blank">`, so it turns that click into `window.open`; and a trusted click (`event.isTrusted`) on a link that leaves the page or on a mail link is passed on with a start-up secret that tells the shell a person clicked. |
 | `src-tauri/src/menu.rs` | The native menu (desktop only). |
 | `src-tauri/src/policy_tests.rs` | Tests of the configuration files: capabilities, CSP, dependencies, launcher page, workflow triggers. |
 | `src-tauri/tauri.conf.json` | Product name, identifier, CSP, bundle settings, deep-link scheme. |
@@ -37,8 +38,9 @@ notarised, in a store, or tried on a Mac, an iPhone or a physical device.
 | `src-tauri/icons/` | Generated from the Dynodoc mark with `tauri icon` (desktop, Android and iOS sets). |
 | `ui/` | The launcher page: plain HTML, CSS and JavaScript shipped inside the app. No framework, no remote scripts. |
 | `scripts/prepare-sidecar.mjs` | Builds `engine-cli` from the repository root and copies it to `src-tauri/binaries/engine-cli-<triple>[.exe]` (git-ignored). |
-| `scripts/smoke.ps1` | Windows smoke test of a debug build (starts, config folder, saved server, deep link, clean exit). |
+| `scripts/smoke.ps1` | Windows smoke test of a debug build (starts, config folder, saved server and window title, deep link, an edited config, key creation in folders with accented and Bengali names, clean exit). |
 | `scripts/security-probe.mjs` | Windows black-box probe of a debug build: drives WebView2 through its debugging port and tries, from inside the web view, what a hostile server page would try (see "Security model"). Not part of CI. |
+| `scripts/harden-android.mjs` (+ `.test.mjs`) | After `tauri android init`: sets `allowBackup="false"` and cleartext off in the generated project and fails if either is left true. |
 | `package.json` | Holds `@tauri-apps/cli` only. Nothing in it ships. |
 | `../../.github/workflows/desktop.yml` | Manual or tag-only builds: desktop bundles, Android debug APK, iOS simulator. |
 
@@ -117,14 +119,26 @@ nothing else, then opens it here). "Continue with Google" does not work inside t
 Google's page opens in the system browser, and a proper hand-over from the browser to the app
 needs server work that is not built (round 2 of decision 016).
 
+*Whose account?* A pasted link signs this window in as **whichever account the link was issued
+for**, so paste only a link from an email you asked for in this window: someone else's link would
+sign you in as them (login CSRF). The web app's own `/login` page still shows "Continue to
+workspace" and needs a click before it uses the token, so nothing is signed in silently. Showing the
+account's email address on that page before the click would close the gap; that is server work, not
+built, and is on the owner's question list.
+
 **This computer's key.** The launcher can create a device signing key with
 `engine-cli device keygen --out <app local data>/device-key.json --encrypt --keystore` and show its
 public key. The private key is encrypted with a random secret held by the operating system's key
 store: Windows data protection (DPAPI), the macOS login keychain through `security`, or the Linux
 Secret Service through `secret-tool` (as implemented in `engine-cli`, see
 [KEY-FILE-FORMAT.md](../../docs/KEY-FILE-FORMAT.md)). The system may show its own prompt; the
-shell waits up to 90 seconds for key creation and 20 seconds for the quick operations, then stops
-the tool. The key file is under the local (not roamed) data folder, for example
+shell waits up to 90 seconds for key creation **and for reading the public key back** (both can
+wait for a key-store prompt) and 20 seconds for `--version`, then stops the tool. The launcher only
+says that a key exists; it reads the public half (which decrypts the key through the key store)
+when you press **Show the public key**, never when the page loads. If a key file is damaged (for
+example creation was interrupted) or key creation fails or is killed, the launcher says "delete this
+file in <path> and create the key again" and names the file: nothing is deleted or overwritten for
+you, and creation still refuses to replace any file. The key file is under the local (not roamed) data folder, for example
 `%LOCALAPPDATA%\online.dynodoc.client\device-key.json`. Copy the public key into the web app under
 **Profile > Signing keys**; **enrolling happens there**, not in this window. The shell never reads or
 writes a key file itself: all key code stays in `engine-cli`. The macOS and Linux key-store paths
@@ -135,8 +149,23 @@ browser, Quit), Edit, View (Reload), Help (Dynodoc support, About). No tray icon
 no analytics. The window remembers its size, position and maximised state, follows the system
 light or dark theme, and is high-DPI aware.
 
+**Window title.** It names the server the page is from (`Dynodoc - app.dynodoc.online`, in its
+ASCII form), so the origin is always visible; the launcher is plain `Dynodoc`.
+
+**A changed saved address.** The saved address is sealed (its SHA-256 is kept in the local data
+folder). If the file was edited by another program or user, or the seal is gone, the window opens
+the launcher with "Please check the saved server address" and does not load it until you press
+**Use this address**. The seal detects edits by anything that does not also rewrite the seal;
+malware running as you can rewrite both.
+
 **Links.** `dynodoc://open/workspace`, `dynodoc://open/projects/<uuid>` and
-`dynodoc://open/documents/<uuid>` open that page on the configured server. The Windows installers
+`dynodoc://open/documents/<uuid>` open that page on the configured server. **A link from another
+program brings this window forward and navigates it, even if you were working in it.** That limit
+is accepted and documented: the protection for unsaved work is the web app's own leave-page
+warning. Checked in WebView2 (probe phase A): when the shell navigates, the page's `beforeunload`
+handler runs and WebView2 shows its "Leave site?" dialog; answering Stay keeps the page. A page that
+does not ask is left at once. Another instance's link that arrives while the app is still starting
+is kept (at most four) and handled when it is ready. The Windows installers
 register the scheme (visible in the generated NSIS script and WiX source; the installers were built
 and never installed). macOS and Linux package registration is configured the same way and
 unverified; a bare AppImage or a debug build does not register it.
@@ -150,11 +179,24 @@ and tested.
    the launcher page bundled inside the app. Tauri's permission files (`capabilities/`) name the
    main window's *local* content only and have no `remote` section, so a page loaded from a server,
    even your own, cannot call anything. Each command also checks that the page asking is the
-   launcher.
-2. **The window can only go to your server.** Any other web address, from a link, a redirect or
-   `window.open`, opens in your system browser and never in the window. Addresses with a user name
-   or password, and anything that is not a plain web or mail link (`javascript:`, `data:`, `file:`,
-   `blob:`, other apps' schemes), are dropped.
+   launcher. `withGlobalTauri` is off, so there is no `window.__TAURI__` in any page; the launcher
+   uses `window.__TAURI_INTERNALS__.invoke`, the function `@tauri-apps/api` wraps (it needs no
+   bundler). Tauri still puts that bridge object in every page, **including a server's**, and the
+   permission files refuse every call from it (probe: 18 calls from a server page, all refused).
+   The launcher itself loads only when the shell asked for it: a server page that navigates the
+   window to the launcher's address is refused (otherwise it could bring up the key operations).
+2. **The window can only go to your server, and a page cannot flood or aim your browser.** Any
+   other web address opens in your system browser and never in the window, but WebView2 does not
+   say whether a person clicked, so: a *page's* request (script, redirect, `window.open`) may hand
+   over only a **public** `http(s)` address, at most **once per 3 seconds and five per minute**
+   (the rest are dropped silently), and never a mail link, `localhost`, a loopback, private,
+   link-local or otherwise reserved address (IPv4, IPv6, IPv4-mapped, `.local`/`.lan`/... names,
+   single-word names). A *person's* trusted click on a link, or a menu item, may open those too,
+   recognised by a marker address that carries a secret known only to the injected script. A page
+   that forges the marker without the secret gets nothing. Addresses with a user name or password
+   and anything that is not a web or mail link (`javascript:`, `data:`, `file:`, `blob:`,
+   `about:`, other apps' schemes) are dropped. A public name that resolves to a private address
+   (DNS rebinding) cannot be seen from here.
 3. **The server address is checked.** `https` only (and `http` for `localhost`, `127.0.0.1` and
    `[::1]`, for testing), no user name, password, path, query or fragment, no backslashes, percent
    escapes, spaces or trailing dot, bounded length. International names are shown in their ASCII
@@ -165,11 +207,13 @@ and tested.
    link.
 5. **The local tool runs with a fixed command line.** The launcher cannot pass an argument. The app
    builds one of three argument lists itself, refuses any other, closes standard input, switches
-   off logging, limits time and output, and checks the answer's shape.
+   off logging, limits time and output, and checks the answer's shape. The public key is read only
+   on request, never when the launcher loads.
 6. **Everything else is denied.** Camera, microphone, location, notifications, clipboard reading
    and every other web view permission are refused for every page. No inspector in release builds.
    No `eval` or remote script in the launcher, whose Content-Security-Policy is
    `default-src 'none'` plus its own scripts and styles. One copy of the app runs at a time.
+   The debug log (debug builds only) never prints a query string or the click secret.
 
 Not covered: a page you chose to open can still do what any website can do inside its own window
 (it is your server's responsibility; its own Content-Security-Policy is unchanged), and malware on
@@ -182,13 +226,23 @@ network. Other web views (WKWebView, WebKitGTK, Android) were not tested.
 
 ### How this was tested
 
-- **Pure functions, unit tests** (`cargo test`): the address validator, the sign-in link rule, the
-  navigation and new-window decisions, the deep-link parser and the sidecar argument allowlist, with
-  hostile inputs (`https://app.dynodoc.online@evil.example`, punycode look-alikes, trailing dots,
+- **Pure functions, unit tests** (`cargo test`, 91 tests on Windows, 90 elsewhere): the address
+  validator, the sign-in link rule, the navigation and new-window decisions, the hand-off rules (every
+  loopback, private, link-local, mapped, NAT64 and 6to4 shape; the rate limiter against a flood, a
+  trickle and a backwards clock; marker forgeries), the launcher grant, the config seal, the
+  deep-link parser (including an exact **whitelist** test over 370,000 generated links: the accepted
+  set must equal the 20 listed strings), the sidecar argument allowlist, the cut-off key file
+  detector and the second lock on every command, with hostile inputs (`https://app.dynodoc.online@evil.example`, punycode look-alikes, trailing dots,
   ports, IPv6, `javascript:`/`data:`/`file:`/`blob:`, backslashes, percent-encoding, very long
   input). The sidecar runner is tested against a child process for the time limit, the output limit
   and closed standard input, and against the real `engine-cli` (version everywhere; real key
   creation, read-back and refusal to overwrite on Windows).
+- **Mutations** (each makes a test fail; checked by hand on 21 October 2026): `require_launcher`
+  always Ok, or its call removed from a command; the permission handler returning Allow (in
+  `window.rs` and in `lib.rs`); the scheme filter removed from `external_allowed` or `hand_off`;
+  `.devtools(true)`; the rate limiter's gap set to 0; private ranges no longer refused; the marker
+  secret always matching; the launcher always allowed; an unsealed config treated as confirmed; an
+  extra deep-link shape (also one that no list of refused links mentions).
 - **Configuration tests** (`policy_tests.rs`): no `remote` capability anywhere, the exact permission
   lists, phones get no tool commands, the CSP has no unsafe source, no dangerous Tauri switches,
   banned plugins and features absent, the launcher page has no inline or remote code, the workflow
@@ -199,7 +253,15 @@ network. Other web views (WKWebView, WebKitGTK, Android) were not tested.
   `javascript:`, `file:`, `data:`, `blob:` and credential URLs do not load; location, camera,
   microphone and notifications are denied; the launcher's CSP blocks `eval` and injected scripts; the
   launcher itself cannot call opener, window or deep-link plugin commands; the real device-key
-  operations work through the real sidecar.
+  operations work through the real sidecar. It also checks the review fixes: a page that loops 40
+  public links in 2.5 seconds gets one hand-off and the rest are dropped; loopback, LAN,
+  link-local, mapped-IPv6 and mail addresses from a page open nothing and send the browser nothing;
+  a click made by a script on a link to a local address opens nothing while a real click does; a
+  page cannot bring up the launcher; an edited config opens the launcher without a request to the
+  saved address, and a real click on "Use this address" opens and re-seals it; the launcher does not
+  read the key when it loads and a real click on "Show the public key" does; a cut-off key file gets
+  recovery text and is left untouched; and `--unicode-home` runs the same in a folder named with an
+  accented letter and Bengali letters.
 
 ### Server address rules
 
@@ -218,6 +280,9 @@ Examples that work: `https://app.dynodoc.online`, `dynodoc.example.org` (https i
   `device public-key <key>`, where `<key>` is always `<local data dir>/device-key.json`.
 - **Deep links:** `dynodoc://open/workspace`, `dynodoc://open/projects/<uuid>`,
   `dynodoc://open/documents/<uuid>`.
+- **Handed to the system (page-initiated):** public `http(s)` addresses without credentials; at most
+  one per 3 s and five per minute. **Only for a person's click or a menu item:** `mailto:` and
+  loopback, private, link-local or otherwise local addresses.
 
 ## Dependencies, and why each
 
@@ -227,8 +292,8 @@ it); `tauri-plugin-deep-link` (the `dynodoc://` scheme on every platform);
 `tauri-plugin-single-instance` with its `deep-link` feature (one running copy, links forwarded to
 it; desktop only); `tauri-plugin-window-state` (remember size and position, desktop only; it is
 left out of debug runs that use a test home so they never write to a real profile); `url`
-(parsing, the same crate Tauri uses); `serde`, `serde_json` (the config file and command
-answers). **Not used on purpose:** `tauri-plugin-shell` (the sidecar is started with
+(parsing, the same crate Tauri uses); `sha2` (the config seal; already in Tauri's own tree);
+`serde`, `serde_json` (the config file and command answers). **Not used on purpose:** `tauri-plugin-shell` (the sidecar is started with
 `std::process::Command`, so there are no generic "run a program" commands in the app, and we control
 the time and output limits), and no file, http, dialog, updater, notification, clipboard or process
 plugin. A test fails if one appears in `Cargo.toml`.
@@ -253,13 +318,23 @@ npm run tauri -- ios init         # macOS with Xcode and Homebrew xcodegen
 npm run tauri -- ios build --debug --target aarch64-sim
 ```
 
+**What Tauri 2.12's Android template produces** (checked by running `tauri android init` here with
+stand-in SDK folders): a manifest with only the `INTERNET` permission and **no `android:allowBackup`**
+(Android's default is true, so a signed-in web view session could be backed up), and
+`android:usesCleartextTraffic="${usesCleartextTraffic}"` with the placeholder `false` for release and
+`true` for debug builds. `scripts/harden-android.mjs` writes `allowBackup="false"` and sets the
+placeholder to `false` in every build type, and exits 1 if `allowBackup="true"` or
+`usesCleartextTraffic="true"` is left; the workflow runs it after `android init`. The script's tests
+and a run against the generated project pass here; the Gradle build was not run.
+
 On phones there is no sidecar and no menu, Tauri documents the new-window and `window.open` hooks as
 unsupported on Android and iOS (so the new-window rule does not apply there), and deep links by custom
 scheme are not configured (Android and iOS app links need domain files on the web host that do not
 exist yet). **What was checked:** `cargo check --lib --target aarch64-linux-android` passes (this also
 shows that the desktop-only sidecar declaration does not leak into a phone build). **What was not:**
 the Android Gradle build, `tauri android init`, anything on iOS (the Apple targets cannot even be
-checked on Windows), and every command above; treat them as unverified until the CI jobs have run.
+checked on Windows), and every command above except `android init`; treat them as unverified
+until the CI jobs have run.
 
 ## What is not done
 
@@ -281,13 +356,35 @@ checked on Windows), and every command above; treat them as unverified until the
 
 ## What was run on the author's machine (21 October 2026, Windows 11, x86-64)
 
-- `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`: clean; 55 tests pass.
-- `cargo build` (debug) and `npm run tauri -- build --debug --bundles nsis` / `--bundles msi`: unsigned
-  `Dynodoc_0.1.0_x64-setup.exe` (7.9 MiB) and `Dynodoc_0.1.0_x64_en-US.msi` (12.5 MiB) built, with the
-  sidecar and the `dynodoc` protocol registration visible in the generated installer sources. Never
-  installed or run as installers.
-- `scripts/smoke.ps1`: passes (window, config and data folders, saved server, single-instance deep link,
-  refused links, clean exit code 0).
-- `scripts/security-probe.mjs`: passes (the checks listed under "How this was tested").
-- `scripts/prepare-sidecar.mjs --debug`: builds `engine-cli` and copies it (27 MB, debug).
-- `cargo check --lib --target aarch64-linux-android`: passes.
+After merging the main branch that holds the Windows non-ASCII key-file fix in `engine-cli`:
+
+- `cargo fmt --check`, `cargo clippy --all-targets --locked -- -D warnings`, `cargo test --locked`:
+  clean; 91 tests pass. At the repository root `cargo fmt --all --check` and
+  `cargo clippy --workspace --all-targets --locked -- -D warnings` pass.
+- `scripts/prepare-sidecar.mjs --debug`: rebuilt `engine-cli` from the merged tree (27 MB, debug).
+- **Non-ASCII folders (the fix in `crates/engine-cli/src/private_file.rs`).** With that rebuilt
+  sidecar, `engine-cli device keygen --out <dir>\<name>\device-key.json --encrypt --keystore`
+  followed by `device public-key` succeeded for folder names with an accented letter (`caf` + U+00E9),
+  with Bengali letters (U+09AC U+09BE U+0982 U+09B2 U+09BE) and with both (`scripts/smoke.ps1`, phase
+  5); and the app itself created, read back and refused to overwrite a key whose home folder had
+  both kinds of letters (`node scripts/security-probe.mjs --unicode-home`, 71 checks). **Not
+  verified:** that the same commands fail without the fix (the unfixed binary was not rebuilt to
+  compare), and any non-ASCII path on macOS or Linux. (A side finding: Node 24 on Windows'
+  `fs.rmSync` silently leaves a file in a folder with Bengali letters; the probe removes files
+  with `unlinkSync`.)
+- `cargo build --locked` (debug) and `npm run tauri -- build --debug --no-bundle --ci -- --locked`:
+  build. Earlier the same day: unsigned `Dynodoc_0.1.0_x64-setup.exe` (7.9 MiB) and
+  `Dynodoc_0.1.0_x64_en-US.msi` (12.5 MiB) were built (NSIS and WiX), never installed or run as
+  installers, with the sidecar and the `dynodoc` protocol registration visible in the generated
+  installer sources; and a release build ran and exited cleanly.
+- `scripts/smoke.ps1` passes (window, config and data folders, saved server and its title, single-instance
+  deep link, refused links, an edited config shown not opened, key creation in three non-ASCII
+  folders, clean exit code 0).
+- `scripts/security-probe.mjs` passes, and passes with `--unicode-home`; see "How this was tested".
+- `node --test scripts/harden-android.test.mjs` and `node scripts/harden-android.mjs` against a project
+  generated by `tauri android init` (stand-in SDK, NDK and JDK folders): pass.
+- `cargo check --lib --target aarch64-linux-android`: passes (before the review fixes; the changed code
+  is platform-neutral Rust, but it was not re-checked).
+- Linux, in an Ubuntu 24.04 container with a stub sidecar (before the review fixes, not repeated):
+  fmt, clippy, tests, release build, `.deb`/`.rpm`/AppImage bundles, and the release binary under
+  Xvfb stayed up and forwarded a second launch. **The review fixes were not compiled on Linux.**
