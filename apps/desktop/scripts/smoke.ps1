@@ -12,6 +12,11 @@
     3. Deep link: a second launch with dynodoc://open/workspace is handed to the running
        copy (the second process exits), which loads /workspace on the same server; a refused
        link (dynodoc://open/admin) loads nothing.
+    4. Edited config: a saved server whose file no longer matches its seal (config.seal) is
+       not opened; the launcher is shown instead.
+    5. Non-ASCII folders: `engine-cli device keygen --encrypt --keystore` and `device
+       public-key` (the launcher's own commands) in folders named with an accented letter,
+       Bengali letters and both. Needs an engine-cli built after the Windows non-ASCII fix.
   Needs no network and no installed WebView2 beyond the one Windows 11 ships with.
 
 .PARAMETER Exe
@@ -146,6 +151,45 @@ function Read-Request($listener, [int]$seconds) {
   return $null
 }
 
+# The app trusts a saved server only if config\config.json matches config.seal in the data
+# folder: the SHA-256 (lower-case hex) of the file's exact bytes.
+function Write-SealedConfig([string]$HomeDir, [string]$Json) {
+  $cfg = Join-Path $HomeDir 'config\config.json'
+  [System.IO.File]::WriteAllText($cfg, $Json)
+  $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $cfg).Hash.ToLower()
+  [System.IO.File]::WriteAllText((Join-Path $HomeDir 'data\config.seal'), $hash + "`n")
+}
+
+# `engine-cli device keygen --encrypt --keystore` (the exact command the launcher runs) into
+# folders named with an accented letter and with Bengali letters, then `device public-key`.
+# Names are built from code points so this file stays ASCII. This is the Windows non-ASCII
+# path fix in crates/engine-cli/src/private_file.rs; it needs an engine-cli built after it.
+function Test-UnicodeKeys([string]$Sidecar) {
+  if (-not (Test-Path -LiteralPath $Sidecar)) { Check $false "non-ASCII folders: sidecar not found at $Sidecar"; return }
+  $bengali = -join ([char[]](0x09AC, 0x09BE, 0x0982, 0x09B2, 0x09BE))
+  $cafe = 'caf' + [char]0xE9
+  $root = Join-Path ([System.IO.Path]::GetTempPath()) ('dynodoc-smoke-unicode-' + [guid]::NewGuid().ToString('N'))
+  try {
+    $cases = @(@('an accented letter', $cafe), @('Bengali letters', $bengali), @('both', ($cafe + ' ' + $bengali)))
+    foreach ($case in $cases) {
+      $label = $case[0]; $name = $case[1]
+      $dir = Join-Path $root $name
+      New-Item -ItemType Directory -Path $dir -Force | Out-Null
+      $key = Join-Path $dir 'device-key.json'
+      $created = (& $Sidecar device keygen --out $key --encrypt --keystore 2>&1 | Out-String).Trim()
+      $codeOk = ($LASTEXITCODE -eq 0)
+      Check ($codeOk -and $created -match '^[0-9a-f]{64}$') "non-ASCII folder ($label): keygen --encrypt --keystore succeeds and prints a public key"
+      Check (Test-Path -LiteralPath $key) 'non-ASCII folder: the key file exists'
+      $again = (& $Sidecar device public-key $key 2>&1 | Out-String).Trim()
+      Check (($LASTEXITCODE -eq 0) -and ($again -eq $created)) 'non-ASCII folder: public-key reads the same key back'
+    }
+  } finally {
+    if ($root -like (Join-Path ([System.IO.Path]::GetTempPath()) 'dynodoc-smoke-unicode-*')) {
+      Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+    }
+  }
+}
+
 $home1 = Join-Path ([System.IO.Path]::GetTempPath()) ("dynodoc-smoke-" + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $home1 | Out-Null
 $env:DYNODOC_DESKTOP_HOME = $home1
@@ -176,13 +220,15 @@ try {
   $listener.Start()
   $port = ([System.Net.IPEndPoint]$listener.LocalEndpoint).Port
   $config = '{"version":1,"server":"http://127.0.0.1:' + $port + '"}'
-  [System.IO.File]::WriteAllText((Join-Path $home1 'config\config.json'), $config)
+  Write-SealedConfig $home1 $config
 
   $p = Start-App
   $running += $p
   $line = Read-Request $listener 40
   Check ($line -eq 'GET / HTTP/1.1') "saved server: the window requests the server's front page (got '$line')"
   Start-Sleep -Seconds 2
+  $p.Refresh()
+  Check ($p.MainWindowTitle -eq "Dynodoc - 127.0.0.1:$port") "saved server: the title names the server (got '$($p.MainWindowTitle)')"
   Save-Shot $p 'server'
 
   # Phase 3: a second launch carrying a link is handed to the running copy.
@@ -203,6 +249,23 @@ try {
   Check ($null -eq $line) "deep link: a link carrying a token loads nothing (got '$line')"
 
   Close-Clean $p 'saved server'
+
+  # ---- Phase 4: a config edited outside the app is shown, not opened -----------------------
+  # Same address, different bytes: the seal no longer matches. (An attacker would change the
+  # address; the spacing is enough to prove the check, and keeps the listener the only server.)
+  $cfgPath = Join-Path $home1 'config\config.json'
+  [System.IO.File]::WriteAllText($cfgPath, "`n" + $config)
+  $p = Start-App
+  $running += $p
+  $line = Read-Request $listener 10
+  Check ($null -eq $line) "edited config: the saved server is NOT opened (got '$line')"
+  $p.Refresh()
+  Check ($p.MainWindowTitle -eq 'Dynodoc') "edited config: the launcher is shown (title '$($p.MainWindowTitle)')"
+  Save-Shot $p 'edited-config'
+  Close-Clean $p 'edited config'
+
+  # ---- Phase 5: the sidecar creates keys in folders with non-ASCII names ---------------------
+  Test-UnicodeKeys (Join-Path (Split-Path -Parent $Exe) 'engine-cli.exe')
 }
 finally {
   foreach ($proc in $running) { try { if (-not $proc.HasExited) { $proc.Kill() } } catch {} }
