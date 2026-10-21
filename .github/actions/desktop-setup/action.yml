@@ -1,0 +1,53 @@
+name: desktop-setup
+description: Node (for the Tauri command line), the repository's pinned Rust toolchain and, on Linux, the webview libraries that apps/desktop needs.
+
+inputs:
+  targets:
+    description: Extra Rust targets to add to the pinned toolchain, separated by spaces.
+    default: ""
+  linux-packages:
+    description: Install the Linux webview libraries ("false" for the Android job).
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+        cache: npm
+        cache-dependency-path: apps/desktop/package-lock.json
+
+    - name: Install the Tauri command line from the lockfile (no install scripts)
+      shell: bash
+      working-directory: apps/desktop
+      run: npm ci --ignore-scripts --no-audit --no-fund
+
+    - name: Install the Rust toolchain pinned in rust-toolchain.toml
+      shell: bash
+      env:
+        TARGETS: ${{ inputs.targets }}
+      run: |
+        toolchain=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)
+        echo "pinned toolchain: ${toolchain}"
+        rustup toolchain install "${toolchain}" --profile minimal --component rustfmt --component clippy
+        for target in ${TARGETS}; do
+          rustup target add --toolchain "${toolchain}" "${target}"
+        done
+        rustup show active-toolchain
+
+    - name: Install the Linux webview libraries
+      if: runner.os == 'Linux' && inputs.linux-packages == 'true'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends \
+          libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libxdo-dev \
+          libayatana-appindicator3-dev patchelf file
+
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: |
+          . -> target
+          apps/desktop/src-tauri -> target
+        cache-on-failure: true

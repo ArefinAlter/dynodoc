@@ -8,6 +8,9 @@ members = [
     "crates/engine-api",
     "crates/engine-cli",
 ]
+# apps/desktop is a separate Cargo workspace (Tauri needs webkit/GTK on Linux); keep it
+# out of the engine's cargo fmt/clippy/test --workspace and its CI.
+exclude = ["apps"]
 
 [workspace.package]
 version = "0.1.0"

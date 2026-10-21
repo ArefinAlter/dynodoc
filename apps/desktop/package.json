@@ -1,0 +1,13 @@
+{
+  "name": "dynodoc-desktop-tooling",
+  "private": true,
+  "description": "Holds the Tauri command line for apps/desktop. Nothing here is shipped; the app's version is in src-tauri/Cargo.toml.",
+  "scripts": {
+    "tauri": "tauri",
+    "prepare-sidecar": "node scripts/prepare-sidecar.mjs",
+    "test": "cargo test --manifest-path src-tauri/Cargo.toml"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.3"
+  }
+}
