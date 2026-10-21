@@ -233,6 +233,11 @@ answers). **Not used on purpose:** `tauri-plugin-shell` (the sidecar is started 
 the time and output limits), and no file, http, dialog, updater, notification, clipboard or process
 plugin. A test fails if one appears in `Cargo.toml`.
 
+**Lockfile pin.** `Cargo.lock` pins `rust-ini` (a Linux-only dependency of `tauri-plugin-deep-link`)
+to 0.21.1: 0.21.2 and 0.21.3 added fields to a public struct that the plugin (2.6.2) fills in by
+hand, which fails to compile on Linux. Found by building in an Ubuntu 24.04 container. Do not run a
+blanket `cargo update` without checking the Linux build; drop the pin when the plugin is updated.
+
 ## Mobile
 
 The project is prepared, not built. `lib.rs` carries `#[cfg_attr(mobile, tauri::mobile_entry_point)]`,
@@ -248,10 +253,13 @@ npm run tauri -- ios init         # macOS with Xcode and Homebrew xcodegen
 npm run tauri -- ios build --debug --target aarch64-sim
 ```
 
-On phones there is no sidecar and no menu, `window.open` interception is not supported by the web
-view hooks, and deep links by custom scheme are not configured (Android and iOS app links need
-domain files on the web host that do not exist yet). Treat the mobile commands above as
-unverified until the CI jobs have run.
+On phones there is no sidecar and no menu, Tauri documents the new-window and `window.open` hooks as
+unsupported on Android and iOS (so the new-window rule does not apply there), and deep links by custom
+scheme are not configured (Android and iOS app links need domain files on the web host that do not
+exist yet). **What was checked:** `cargo check --lib --target aarch64-linux-android` passes (this also
+shows that the desktop-only sidecar declaration does not leak into a phone build). **What was not:**
+the Android Gradle build, `tauri android init`, anything on iOS (the Apple targets cannot even be
+checked on Windows), and every command above; treat them as unverified until the CI jobs have run.
 
 ## What is not done
 
@@ -265,4 +273,21 @@ unverified until the CI jobs have run.
   needs a one-time-code exchange on the server.
 - Downloads, printing and file-open behaviour inside the web view are unverified on every platform.
 - Linux AppImage does not register the `dynodoc://` scheme by itself.
-- macOS, iPhone and Android builds have not been run by hand; see the status document.
+- **No GitHub Actions job has run.** `.github/workflows/desktop.yml` parses and GitHub lists its jobs,
+  but this repository's Actions currently refuse to start any job ("recent account payments have
+  failed or your spending limit needs to be increased"), so the workflow is untested. Also, a
+  `workflow_dispatch` workflow cannot be started until its file is on the default branch.
+- macOS, iPhone and Android builds have not been run; see the status document.
+
+## What was run on the author's machine (21 October 2026, Windows 11, x86-64)
+
+- `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`: clean; 55 tests pass.
+- `cargo build` (debug) and `npm run tauri -- build --debug --bundles nsis` / `--bundles msi`: unsigned
+  `Dynodoc_0.1.0_x64-setup.exe` (7.9 MiB) and `Dynodoc_0.1.0_x64_en-US.msi` (12.5 MiB) built, with the
+  sidecar and the `dynodoc` protocol registration visible in the generated installer sources. Never
+  installed or run as installers.
+- `scripts/smoke.ps1`: passes (window, config and data folders, saved server, single-instance deep link,
+  refused links, clean exit code 0).
+- `scripts/security-probe.mjs`: passes (the checks listed under "How this was tested").
+- `scripts/prepare-sidecar.mjs --debug`: builds `engine-cli` and copies it (27 MB, debug).
+- `cargo check --lib --target aarch64-linux-android`: passes.

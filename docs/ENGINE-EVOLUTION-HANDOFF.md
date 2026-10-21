@@ -1,5 +1,46 @@
 # Engine evolution handoff
 
+## Source: desktop client shell and mobile preparation (21 October 2026)
+
+`apps/desktop` is a Tauri 2 project (crate `dynodoc-desktop`, product name Dynodoc, bundle identifier `online.dynodoc.client`, version taken
+from its `Cargo.toml` only) with its own Cargo workspace and lockfile; the root `Cargo.toml` excludes `apps/`, and at the root `cargo
+metadata` and `cargo fmt --all --check` still see only the six engine crates. It is a shell: it does not bundle the web app but opens the
+configured server (the hosted workspace or a self-hosted origin) in the system web view. A launcher page shipped inside the app (plain HTML,
+CSS and JavaScript, strict CSP) lets the person choose the server, shows "This computer's key" and accepts a pasted sign-in link. Security
+model, in Rust and tested: a server's pages get no native access at all (the capability files name only the main window's local content and
+have no `remote` section; every command also checks that the caller is the launcher); the window may load only the launcher or the configured
+origin, every other http(s) or mailto link opens in the system browser, everything else is dropped, and `window.open` and `target=_blank` follow
+the same rule without ever creating a window; server addresses are validated (https, or http for localhost, 127.0.0.1 and [::1]; no credentials,
+path, query, fragment, backslash, percent escape or trailing dot; internationalised names shown as punycode); `dynodoc://open/workspace`,
+`.../projects/<uuid>` and `.../documents/<uuid>` are the only accepted links and always open on the configured server, never carrying a token; the
+sidecar runs only `engine-cli --version`, `device keygen --out <local data>/device-key.json --encrypt --keystore` and `device public-key <that
+file>` with standard input closed, logging off, a time limit (20 s; 90 s for key creation) and a 16 KiB output limit; every web view permission is
+denied; one instance; no devtools feature and no shell, fs, http or updater plugin. No tray icon, no auto-update (it needs signing keys), no
+analytics. Mobile: mobile entry point, `staticlib`/`cdylib`/`rlib`, a phone capability file without the tool commands, the sidecar declared only in
+desktop overlays, icon sets, Android minSdk 24, iOS 15.0, macOS 12.0. Documents: `apps/desktop/README.md`, `DESKTOP-AND-MOBILE-APPS.md`, decision 016.
+
+Evidence, Windows 11 x86-64: 55 unit and configuration tests with fmt and clippy clean, including the real `engine-cli` creating a DPAPI-bound
+key and refusing to overwrite it; manual mutations of the `@` check, the navigation rule, the sidecar allowlist, a `remote` capability and the CSP
+each failed a test (a mutation of a redundant deep-link character check did not, because later checks reject the same inputs). `scripts/smoke.ps1`
+(window, config folders, saved server, single-instance deep link, refused links, clean exit 0) and `scripts/security-probe.mjs` (43 checks from
+inside WebView2: every command and plugin command refused for a server page, real clicks on `target=_blank` and plain external links, dropped
+schemes, denied permissions, the launcher's CSP, real key creation) pass; debug NSIS and MSI installers built, never installed; a release build runs,
+exits cleanly and ignores the debug-only test-home variable. Linux, in an Ubuntu 24.04 container with a stub sidecar: fmt, clippy `-D warnings`, 54
+tests, release build, `.deb`, `.rpm` and AppImage bundles, and the release binary under Xvfb stays up, creates its folders and forwards a second
+launch to the first. Android: `cargo check --lib --target aarch64-linux-android` passes. Defects found by running it: a click on `<a
+target="_blank">` does nothing in WebView2 (fixed by a small injected script that calls `window.open`); `rust-ini` 0.21.2 and 0.21.3 break
+`tauri-plugin-deep-link` 2.6.2 on Linux (the lockfile pins 0.21.1); WebView2 sends the request of a navigation before the shell cancels it
+(documented, not fixable here).
+
+**Not verified:** no GitHub Actions job has run. The account's Actions refuse to start any job ("recent account payments have failed or your
+spending limit needs to be increased"), and `workflow_dispatch` cannot start a workflow that is not on the default branch, so `desktop.yml`
+(manual or tag `desktop-v*` only, never on push) has never executed; it parses and GitHub lists its six jobs. Also not verified: macOS and iOS
+builds (the Apple targets cannot be checked on Windows), the Android Gradle build and `tauri android init` and `ios init`, the real `engine-cli` on
+Linux, key creation through the macOS Keychain or the Linux Secret Service, the installers installed, downloads and printing in any web view,
+Android and iOS web view behaviour, physical devices. Nothing is signed or notarised. Questions for the owner: fix the Actions billing; confirm
+`online.dynodoc.client`; keep the paste-a-sign-in-link workaround or build the browser-to-app hand-over first (server work); allow clipboard
+read for the web app's origin; the Windows signing route; try the Arm runners.
+
 ## Source: MCP write tools, connector Phase 1 client side (20 October 2026)
 
 The MCP server gains `propose`, `submit` (also `action=withdraw`) and `status` for the proposals of the merged write path, as an
