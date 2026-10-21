@@ -145,7 +145,7 @@ const DETAIL = `/documents/${DOC}/change-requests/${REQ}`;
 describe('reviewing a request an AI agent wrote', () => {
   it('says who proposed it and in which client, and labels the agent’s own words', async () => {
     await render((call) => (call.path === DETAIL ? json(detail()) : undefined));
-    expect(target.querySelector('header .agent-badge')?.textContent).toContain('AI agent');
+    expect(target.querySelector('.top .agent-badge')?.textContent).toContain('AI agent');
     const block = target.querySelector('section.agent')!;
     const said = (block.textContent ?? '').replace(/\s+/g, ' ');
     expect(said).toContain('Proposed by an AI agent');

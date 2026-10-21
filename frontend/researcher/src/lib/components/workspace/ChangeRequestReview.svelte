@@ -296,7 +296,7 @@
 
 <div class="shade" role="presentation">
   <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="review-title">
-    <header>
+    <div class="top">
       <span class="icon"><GitPullRequest size={20} /></span>
       <div class="heading">
         <h2 id="review-title">{detail?.request.name || 'Change request'}</h2>
@@ -312,7 +312,7 @@
       <button class="close" aria-label="Close review" disabled={!!busy} onclick={onClose}
         ><X size={18} /></button
       >
-    </header>
+    </div>
     {#if detail}
       {#if detail.request.source.kind === 'history_recovery'}
         <p>
@@ -571,7 +571,7 @@
               </div>
             </div>{/if}
         </section>{/if}
-      <footer>
+      <div class="actions">
         {#if detail.request.source.upload_id}<a
             class="secondary"
             href={`/api/engine/documents/${documentId}/uploads/${detail.request.source.upload_id}`}
@@ -652,7 +652,7 @@
                 : 'An editor of this document reviews and merges changes.'}
             </p>{/if}
         {/if}
-      </footer>
+      </div>
       {#if unresolved && mayMerge}<p class="hint">
           Choose which version to keep for {unresolved} overlapping change{unresolved === 1
             ? ''
@@ -888,7 +888,7 @@
     font-family: var(--font-ui);
     color: var(--color-ink);
   }
-  header {
+  .top {
     display: flex;
     gap: 14px;
     align-items: start;
@@ -896,14 +896,14 @@
   .heading {
     min-width: 0;
   }
-  header h2 {
+  .top h2 {
     margin: 2px 0 6px;
     font-size: 19px;
     font-weight: 600;
     color: var(--color-ink-strong);
     overflow-wrap: anywhere;
   }
-  header p {
+  .top p {
     margin: 0;
     font-size: 13px;
     color: var(--color-ink-soft);
@@ -1085,7 +1085,7 @@
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
-  footer {
+  .actions {
     display: flex;
     flex-wrap: wrap;
     justify-content: end;
@@ -1093,7 +1093,7 @@
     gap: 10px;
     margin-top: 18px;
   }
-  footer textarea {
+  .actions textarea {
     flex: 1;
     min-width: 200px;
     font: inherit;

@@ -364,7 +364,13 @@
               onsubmit={(e) => {
                 e.preventDefault();
                 void run(async () => {
-                  await submitDraft(id, branch, note);
+                  // An AI agent's draft is adopted at the revision on screen.
+                  await submitDraft(
+                    id,
+                    branch,
+                    note,
+                    selected?.draft.agent ? selected.draft.revision : undefined
+                  );
                   notice = 'Pull request opened';
                   await load();
                   await selectTab('requests');

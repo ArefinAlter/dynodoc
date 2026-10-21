@@ -204,7 +204,14 @@
     await save();
     if (dirty) return;
     await run(async () => {
-      await submitDraft(store.documentId, draftId, reviewNote.trim());
+      // An AI agent's draft is adopted at the revision on screen.
+      const agentDraft = drafts.some((d) => d.id === draftId && d.agent);
+      await submitDraft(
+        store.documentId,
+        draftId,
+        reviewNote.trim(),
+        agentDraft ? draftRevision : undefined
+      );
       reviewNote = '';
       await refreshRequests();
       saved = 'Draft sent for review';

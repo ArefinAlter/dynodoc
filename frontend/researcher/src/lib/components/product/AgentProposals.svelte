@@ -153,8 +153,8 @@
         </div>
         <div class="repo-actions">
           <button type="button" onclick={() => void onReview(p)}
-            >{p.state === 'draft' ? 'Review and send' : 'Review changes'}<span class="sr-only">
-              : {p.name}</span
+            >{p.state === 'draft' ? 'Review and send' : 'Review changes'}<span class="sr-only"
+              >: {p.name}</span
             ></button
           >
         </div>
