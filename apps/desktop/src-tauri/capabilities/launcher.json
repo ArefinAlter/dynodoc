@@ -1,0 +1,17 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "launcher",
+  "description": "The bundled launcher page in the main window may call the app's own commands, on desktop. There is no `remote` section: a page loaded from a server gets no native access at all.",
+  "local": true,
+  "windows": ["main"],
+  "platforms": ["linux", "macOS", "windows"],
+  "permissions": [
+    "allow-get-state",
+    "allow-set-server",
+    "allow-open-sign-in-link",
+    "allow-tools-version",
+    "allow-device-key-status",
+    "allow-device-key-create",
+    "allow-device-public-key"
+  ]
+}

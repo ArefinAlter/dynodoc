@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Dynodoc</title>
+    <link rel="stylesheet" href="launcher.css" />
+    <script src="launcher.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <header>
+        <img src="mark.svg" alt="" width="48" height="48" />
+        <h1>Dynodoc</h1>
+        <p class="lede">
+          Dynodoc opens your workspace in this window. Choose the Dynodoc cloud, or the address of a
+          server your organisation runs. You can change it later from the File menu.
+        </p>
+      </header>
+
+      <p id="current" class="notice" hidden></p>
+      <p id="app-error" class="error" role="alert"></p>
+
+      <section id="unconfirmed" aria-labelledby="unconfirmed-title" hidden>
+        <h2 id="unconfirmed-title">Please check the saved server address</h2>
+        <p>
+          The server address saved on this computer, <strong id="unconfirmed-address"></strong>,
+          was changed outside this app (or was not saved by it), so it was not opened. If you
+          recognise it, use it; otherwise choose a server below.
+        </p>
+        <button type="button" id="confirm" class="primary">Use this address</button>
+        <p id="confirm-error" class="error" role="alert"></p>
+      </section>
+
+      <section aria-labelledby="cloud-title">
+        <h2 id="cloud-title">Dynodoc cloud</h2>
+        <p>The hosted workspace at <strong>app.dynodoc.online</strong>.</p>
+        <button type="button" id="use-cloud" class="primary">Use Dynodoc cloud</button>
+        <p id="cloud-error" class="error" role="alert"></p>
+      </section>
+
+      <section aria-labelledby="own-title">
+        <h2 id="own-title">Your own server</h2>
+        <p>For a team that runs its own Dynodoc.</p>
+        <form id="own-form" novalidate>
+          <label for="address">Server address</label>
+          <input
+            id="address"
+            name="address"
+            type="text"
+            inputmode="url"
+            autocomplete="url"
+            autocapitalize="off"
+            spellcheck="false"
+            maxlength="300"
+            placeholder="https://dynodoc.example.org"
+            aria-describedby="address-hint address-error"
+          />
+          <p id="address-hint" class="hint">
+            Only secure addresses (https) are accepted, written without a page after them.
+            <code>http://localhost</code> is allowed for testing.
+          </p>
+          <p id="address-error" class="error" role="alert"></p>
+          <button type="submit" id="connect" class="primary">Connect</button>
+        </form>
+      </section>
+
+      <section id="signin" aria-labelledby="signin-title" hidden>
+        <h2 id="signin-title">Signing in with an emailed link</h2>
+        <p>
+          When you ask for a sign-in email in this window, the link in that email opens in your web
+          browser, not here. To sign in here instead, copy the link from the email (right-click it,
+          then Copy link) and paste it below. Signing in with Google does not work inside this
+          window yet.
+        </p>
+        <form id="signin-form" novalidate>
+          <label for="link">Sign-in link</label>
+          <input
+            id="link"
+            name="link"
+            type="text"
+            inputmode="url"
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+            maxlength="2048"
+            aria-describedby="link-error"
+          />
+          <p id="link-error" class="error" role="alert"></p>
+          <button type="submit" id="signin-go" class="secondary">Sign in here</button>
+        </form>
+      </section>
+
+      <section id="key" aria-labelledby="key-title" hidden>
+        <h2 id="key-title">This computer's key</h2>
+        <p>
+          A signing key lets Dynodoc show that a change was made on this computer. Its private part
+          is encrypted and kept by your operating system (Windows data protection, the macOS
+          Keychain or the Linux Secret Service). It is never shown and never sent anywhere. Your
+          system may ask you to approve access to its key store.
+        </p>
+        <p id="key-none" hidden>No key has been made on this computer yet.</p>
+        <button type="button" id="key-create" class="secondary" hidden>
+          Create a key for this computer
+        </button>
+        <div id="key-have" hidden>
+          <p>A key exists on this computer.</p>
+          <button type="button" id="key-show" class="secondary">Show the public key</button>
+          <div id="key-public" hidden>
+            <label for="public-key">Public key</label>
+            <input id="public-key" type="text" readonly spellcheck="false" aria-describedby="key-help" />
+            <button type="button" id="key-copy" class="secondary">Copy public key</button>
+            <p id="key-help" class="hint">
+              To use it, add this public key in the web app under Profile, then Signing keys.
+              Enrolling happens there; this window only makes the key and shows its public half.
+            </p>
+          </div>
+          <p id="key-where" class="hint"></p>
+        </div>
+        <p id="key-status" class="notice" role="status"></p>
+        <p id="key-error" class="error" role="alert"></p>
+      </section>
+
+      <footer>
+        <p id="about"></p>
+        <p><a id="help" href="https://dynodoc.online/support" target="_blank" rel="noopener">Help and support</a></p>
+      </footer>
+    </main>
+  </body>
+</html>

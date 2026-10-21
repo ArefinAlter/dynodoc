@@ -1,0 +1,9 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "launcher-mobile",
+  "description": "The same launcher on Android and iPhone, without the local tools: a phone app has no bundled engine-cli. No `remote` section.",
+  "local": true,
+  "windows": ["main"],
+  "platforms": ["android", "iOS"],
+  "permissions": ["allow-get-state", "allow-set-server", "allow-open-sign-in-link"]
+}

@@ -1,0 +1,174 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f7f5ef;
+  --surface: #ffffff;
+  --text: #1c2230;
+  --muted: #4f586b;
+  --line: #d6d9e0;
+  --accent: #2059b0;
+  --accent-text: #ffffff;
+  --error: #a3261f;
+  --notice-bg: #e8f0fb;
+  --focus: #1b6ef3;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #11151c;
+    --surface: #1a202b;
+    --text: #e8ebf1;
+    --muted: #a9b2c3;
+    --line: #333c4d;
+    --accent: #8fb4ff;
+    --accent-text: #0b1220;
+    --error: #ff9b94;
+    --notice-bg: #1d2a40;
+    --focus: #8fb4ff;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+main {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 2rem 1rem 3rem;
+}
+
+header img {
+  display: block;
+}
+
+h1 {
+  margin: 0.5rem 0 0.25rem;
+  font-size: 1.75rem;
+  line-height: 1.2;
+}
+
+h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1.15rem;
+}
+
+p {
+  margin: 0.25rem 0 0.75rem;
+}
+
+.lede {
+  color: var(--muted);
+}
+
+section {
+  margin: 1.25rem 0;
+  padding: 1rem 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+}
+
+label {
+  display: block;
+  margin: 0.5rem 0 0.25rem;
+  font-weight: 600;
+}
+
+input[type='text'] {
+  display: block;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.75rem;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--muted);
+  border-radius: 0.5rem;
+  font: inherit;
+}
+
+input[readonly] {
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, Menlo, monospace;
+  font-size: 0.85rem;
+}
+
+button {
+  min-height: 2.75rem;
+  padding: 0.5rem 1.1rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button.primary {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+button.secondary {
+  background: transparent;
+  color: var(--accent);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+a {
+  color: var(--accent);
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.error {
+  color: var(--error);
+  font-weight: 600;
+}
+
+.notice {
+  padding: 0.6rem 0.9rem;
+  background: var(--notice-bg);
+  border-radius: 0.5rem;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+/* Live regions are always in the page; with no text they take no room. */
+.notice:empty {
+  padding: 0;
+  background: none;
+}
+
+code {
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, Menlo, monospace;
+  font-size: 0.9em;
+}
+
+footer {
+  margin-top: 2rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+form button {
+  margin-top: 0.5rem;
+}
