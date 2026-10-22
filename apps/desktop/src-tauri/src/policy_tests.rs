@@ -885,7 +885,7 @@ fn the_android_code_this_repository_adds_has_no_javascript_bridge() {
         "it must be in the forwarded set"
     );
     // The pure helpers have JVM tests (Gradle: testUniversalDebugUnitTest).
-    for name in ["DownloadNamesTest.kt", "OriginsTest.kt"] {
+    for name in ["DownloadNamesTest.kt", "OriginsTest.kt", "AppTokenTest.kt"] {
         assert!(root()
             .join("gen/android/app/src/test/java/online/dynodoc/client")
             .join(name)
@@ -901,4 +901,32 @@ fn the_android_link_script_is_the_only_page_script_android_gets() {
     assert!(production.contains("include_str!(\"link_targets.js\")"));
     assert!(root().join("../scripts/blank-targets.test.mjs").exists());
     assert!(root().join("../scripts/android-probe.mjs").exists());
+}
+
+#[test]
+fn the_script_run_in_the_finish_page_is_one_template_with_its_own_node_test() {
+    // The only script the shell ever runs in a page after it has loaded (every platform): the
+    // template in finish_hash.js, filled in by signin::finish_script, run by one `window.eval`.
+    let signin = read("src/signin.rs");
+    assert!(signin.contains("include_str!(\"finish_hash.js\")"));
+    assert!(root().join("src/finish_hash.js").exists());
+    assert!(root().join("../scripts/finish-hash.test.mjs").exists());
+    let window = read("src/window.rs");
+    let production = &window[..window.find("#[cfg(test)]\nmod tests").unwrap()];
+    assert_eq!(production.matches("window.eval(").count(), 1);
+    for file in [
+        "commands.rs",
+        "nav.rs",
+        "deeplink.rs",
+        "menu.rs",
+        "handoff.rs",
+        "server.rs",
+    ] {
+        let source = read(&format!("src/{file}"));
+        let production = &source[..source.find("#[cfg(test)]").unwrap_or(source.len())];
+        assert!(
+            !production.contains(".eval(") && !production.contains("evaluate_script"),
+            "{file} runs a script in a page"
+        );
+    }
 }

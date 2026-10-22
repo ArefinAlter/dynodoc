@@ -167,17 +167,21 @@ pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
                 if matches!(payload.event(), PageLoadEvent::Finished)
                     && nav::is_finish_page(payload.url(), state.server().as_ref())
                 {
-                    if let Some(script) = state
-                        .outbox
-                        .take(Instant::now())
-                        .and_then(|fragment| signin::finish_script(fragment.expose()))
-                    {
+                    // The fragment is only for the server it was made for (the outbox compares), and
+                    // the script itself checks the page's origin and path again before it acts.
+                    let origin = state.server().map(|server| server.as_text());
+                    if let Some(script) = origin.as_deref().and_then(|origin| {
+                        state
+                            .outbox
+                            .take(signin::Moment::now(), origin)
+                            .and_then(|fragment| signin::finish_script(fragment.expose(), origin))
+                    }) {
                         trace(
                             "page load",
                             payload.url(),
                             &"finish page, handing it the fragment",
                         );
-                        let _ = window.eval(script);
+                        let _ = window.eval(script.expose());
                     }
                 }
                 // Phones only (no menu to reach the launcher from): when the window has landed
@@ -217,12 +221,54 @@ pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     }
 
     let window = builder.build()?;
+    // Names the app's own window to the server (decision 017). Where this build cannot do that
+    // the browser sign-in is not offered (`signin::APP_TOKEN`).
+    #[cfg(windows)]
+    append_app_token(&window);
     #[cfg(desktop)]
     {
         let _ = window.show();
         let _ = window.set_focus();
     }
     Ok(window)
+}
+
+/// Windows: add `DynodocApp/<version> (desktop)` to the end of WebView2's own User-Agent, for
+/// every request this window makes from now on (the finish page's loads and its redeem call among
+/// them). The server's app sign-in finish page and routes work only for a window that carries it;
+/// a browser does not. (The first page loaded at start-up may precede it, which matters to none of
+/// them.) Android adds its token in Kotlin (`MainActivity`); other systems add none, and the
+/// browser sign-in is not offered there (`signin::APP_TOKEN`).
+#[cfg(windows)]
+fn append_app_token(window: &WebviewWindow) {
+    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings2;
+    use windows_core::{Interface, HSTRING, PWSTR};
+
+    let token = signin::app_token();
+    let _ = window.with_webview(move |webview| {
+        // SAFETY: calls on the WebView2 objects Tauri hands this closure, on the thread that owns
+        // them; the string WebView2 returns is freed by `take_pwstr`.
+        unsafe {
+            let Ok(core) = webview.controller().CoreWebView2() else {
+                return;
+            };
+            let Ok(settings) = core.Settings() else {
+                return;
+            };
+            let Ok(settings2) = settings.cast::<ICoreWebView2Settings2>() else {
+                return;
+            };
+            let mut current = PWSTR::null();
+            if settings2.UserAgent(&mut current).is_err() {
+                return;
+            }
+            let agent = webview2_com::take_pwstr(current);
+            if agent.contains("DynodocApp/") {
+                return;
+            }
+            let _ = settings2.SetUserAgent(&HSTRING::from(format!("{agent} {token}")));
+        }
+    });
 }
 
 pub fn main_window(app: &AppHandle) -> Option<WebviewWindow> {
@@ -331,6 +377,9 @@ pub enum SignInStart {
     NoServer,
     NoRandomness,
     TooSoon,
+    /// This system's web view does not carry the app's token (see `signin::APP_TOKEN`), so the
+    /// server would refuse the sign-in; it is not started.
+    Unsupported,
 }
 
 impl std::fmt::Display for SignInStart {
@@ -339,6 +388,9 @@ impl std::fmt::Display for SignInStart {
             Self::NoServer => "Choose a server first.",
             Self::NoRandomness => "This device could not make a safe sign-in request.",
             Self::TooSoon => "Please wait a moment, then try again.",
+            Self::Unsupported => {
+                "Signing in with the browser is not available on this system yet. Use an emailed sign-in link instead."
+            }
         })
     }
 }
@@ -348,20 +400,25 @@ impl std::fmt::Display for SignInStart {
 /// `<server>/app-signin?challenge=..&state=..&platform=..` in the browser. The attempt is only
 /// kept if the browser is really asked to open (a page that was refused or rate limited leaves
 /// the older attempt alone). Called by the launcher's button and, on desktop, a menu item;
-/// never by a page.
-pub fn begin_browser_sign_in(app: &AppHandle) -> Result<(), SignInStart> {
+/// never by a page. Returns the four-character pairing code the launcher shows while the attempt
+/// waits (the server's page shows the same four).
+pub fn begin_browser_sign_in(app: &AppHandle) -> Result<String, SignInStart> {
+    if !signin::APP_TOKEN {
+        return Err(SignInStart::Unsupported);
+    }
     let state = app.try_state::<AppState>().ok_or(SignInStart::NoServer)?;
     let server = state.server().ok_or(SignInStart::NoServer)?;
-    let now = Instant::now();
+    let now = signin::Moment::now();
     let (attempt, request) = signin::Attempt::new(&server.as_text(), now, signin::os_random)
         .ok_or(SignInStart::NoRandomness)?;
     let url = server.app_signin_url(&request.challenge, &request.state, signin::PLATFORM);
-    let outcome = open_external_then(app, &url, Source::Click, || {
+    let pairing = signin::pairing_code(&request.state);
+    let outcome = open_external_then(app, &url, Source::SignIn, || {
         state.outbox.clear();
         state.signin.start(attempt);
     });
     match outcome {
-        Some(handoff::HandOff::Opened) => Ok(()),
+        Some(handoff::HandOff::Opened) => Ok(pairing),
         _ => Err(SignInStart::TooSoon),
     }
 }
@@ -377,12 +434,14 @@ fn finish_browser_sign_in(app: &AppHandle, state: &AppState, code: &str, link_st
     };
     match state
         .signin
-        .complete(Instant::now(), &server.as_text(), code, link_state)
+        .complete(signin::Moment::now(), &server.as_text(), code, link_state)
     {
         Ok(finish) => {
-            // The secrets wait here and reach the page after it has loaded; the window is sent to
-            // the plain address.
-            state.outbox.put(finish.fragment(), Instant::now());
+            // The secrets wait here, for this server's finish page only, and reach the page after
+            // it has loaded; the window is sent to the plain address.
+            state
+                .outbox
+                .put(finish.fragment(), &server.as_text(), signin::Moment::now());
             focus_main(app);
             navigate_main(app, server.finish_url());
         }
@@ -582,6 +641,12 @@ mod tests {
         &source[..source.find("#[cfg(test)]\nmod tests").unwrap()]
     }
 
+    /// The text with every space and line break removed, so a check does not depend on how the
+    /// formatter happened to lay a call out.
+    fn flat(text: &str) -> String {
+        text.split_whitespace().collect()
+    }
+
     /// The body of the function that starts at `signature`, up to the next top-level item.
     fn body(signature: &str) -> &'static str {
         let production = production();
@@ -597,17 +662,20 @@ mod tests {
         // The attempt (and with it the verifier) is stored inside the closure that runs just
         // before the system is asked to open the link, so a refused or rate-limited hand-off
         // leaves the older attempt alone, and it is stored BEFORE the browser can answer.
-        let begin = body("pub fn begin_browser_sign_in(");
-        assert_eq!(production().matches(".signin.start(").count(), 1);
+        let begin = flat(body("pub fn begin_browser_sign_in("));
+        assert_eq!(flat(production()).matches(".signin.start(").count(), 1);
         assert!(begin.contains(
-            "open_external_then(app, &url, Source::Click, || {\n        state.outbox.clear();\n        state.signin.start(attempt);\n    })"
+            "open_external_then(app,&url,Source::SignIn,||{state.outbox.clear();state.signin.start(attempt);})"
         ));
         // It opens the page of the configured server, built from the server and the request.
-        assert!(begin.contains(
-            "server.app_signin_url(&request.challenge, &request.state, signin::PLATFORM)"
-        ));
+        assert!(begin
+            .contains("server.app_signin_url(&request.challenge,&request.state,signin::PLATFORM)"));
         // And randomness comes from the operating system or the attempt is not made.
         assert!(begin.contains("signin::os_random"));
+        // Not at all where the web view cannot carry the app's token (the server would refuse it).
+        assert!(begin.starts_with(
+            "pubfnbegin_browser_sign_in(app:&AppHandle)->Result<String,SignInStart>{if!signin::APP_TOKEN{returnErr(SignInStart::Unsupported);}"
+        ));
         let then = body("fn open_external_then(");
         let before = then.find("before();").unwrap();
         assert!(before > then.find("move |target|").unwrap());
@@ -620,15 +688,30 @@ mod tests {
     }
 
     #[test]
+    fn only_the_sign_in_button_uses_the_sign_in_budget() {
+        // Source::SignIn exists for begin_browser_sign_in alone: a page-driven hand-off (a click
+        // marker, a navigation, a new window) must never spend the budget a person needs to sign
+        // in, so it is not made anywhere else, the menu included (the menu calls begin).
+        let all = flat(production());
+        assert_eq!(all.matches("Source::SignIn").count(), 1);
+        assert_eq!(
+            all.matches("Source::Click").count(),
+            1,
+            "the click marker only"
+        );
+        assert!(flat(body("pub fn begin_browser_sign_in(")).contains("Source::SignIn"));
+    }
+
+    #[test]
     fn a_returning_sign_in_link_goes_through_the_pending_attempt_and_nothing_else() {
         // One place decides, and it is the pending attempt.
-        assert_eq!(
-            production().matches(".signin\n        .complete(").count(),
-            1
-        );
+        assert_eq!(flat(production()).matches(".signin.complete(").count(), 1);
         let finish = body("fn finish_browser_sign_in(");
-        // The window is sent to the plain finish address; the secrets wait in the outbox.
-        assert!(finish.contains("state.outbox.put(finish.fragment(), Instant::now());"));
+        // The window is sent to the plain finish address; the secrets wait in the outbox, for the
+        // server they were made for.
+        assert!(flat(finish).contains(
+            "state.outbox.put(finish.fragment(),&server.as_text(),signin::Moment::now());"
+        ));
         assert!(finish.contains("navigate_main(app, server.finish_url());"));
         // The secrets reach no address the window requests.
         for banned in ["eprintln", "println", "format!", "trace("] {
@@ -650,24 +733,59 @@ mod tests {
     #[test]
     fn the_fragment_is_handed_over_once_and_only_to_the_finish_page_after_it_loaded() {
         let production = production();
+        let all = flat(production);
         // The only place the outbox is emptied, the only place a script is run in the page.
-        assert_eq!(production.matches(".outbox\n").count(), 1);
-        assert_eq!(production.matches(".take(Instant::now())").count(), 1);
-        assert_eq!(production.matches("window.eval(").count(), 1);
-        let call = production.find("window.eval(script)").unwrap();
+        assert_eq!(all.matches(".outbox.take(").count(), 1);
+        assert_eq!(all.matches("window.eval(").count(), 1);
+        let call = production.find("window.eval(script.expose())").unwrap();
         let before = &production[..call];
         let gate = before
             .rfind("if matches!(payload.event(), PageLoadEvent::Finished)")
             .unwrap();
-        let block = &production[gate..call];
-        assert!(block.contains("nav::is_finish_page(payload.url(), state.server().as_ref())"));
-        assert!(block.contains("signin::finish_script(fragment.expose())"));
+        let block = flat(&production[gate..call]);
+        assert!(block.contains("nav::is_finish_page(payload.url(),state.server().as_ref())"));
+        // For the server configured NOW: what the outbox holds was made for one server, and the
+        // script checks the page's origin again.
+        assert!(block.contains("state.server().map(|server|server.as_text())"));
+        assert!(block.contains(".take(signin::Moment::now(),origin)"));
+        assert!(block.contains("signin::finish_script(fragment.expose(),origin)"));
         // The script is made by finish_script from the fragment, never from anything a page sent.
         assert!(!block.contains("payload.url().as_str()"));
         // A new attempt drops what an older one left behind.
         assert!(body("pub fn begin_browser_sign_in(").contains("state.outbox.clear();"));
         // The debug note names no secret.
-        assert!(block.contains("\"finish page, handing it the fragment\""));
+        assert!(block.contains("finishpage,handingitthefragment"));
+    }
+
+    #[test]
+    fn the_app_names_itself_in_the_user_agent_where_it_can_and_nowhere_else() {
+        let production = production();
+        // Windows appends to WebView2's own agent once the window exists; the function is Windows
+        // only and called once.
+        assert!(
+            production.contains("#[cfg(windows)]\nfn append_app_token(window: &WebviewWindow) {")
+        );
+        assert!(production.contains("#[cfg(windows)]\n    append_app_token(&window);"));
+        assert_eq!(production.matches("append_app_token(&window)").count(), 1);
+        let function = body("fn append_app_token(");
+        assert!(function.contains("signin::app_token()"));
+        assert!(
+            function.contains("agent.contains(\"DynodocApp/\")"),
+            "never twice"
+        );
+        assert!(
+            function.contains("format!(\"{agent} {token}\")"),
+            "appended, not replaced"
+        );
+        assert!(
+            !production.contains(".user_agent("),
+            "the builder's call replaces the whole agent"
+        );
+        // Android adds its token in Kotlin, on the web view's own settings.
+        let activity =
+            include_str!("../gen/android/app/src/main/java/online/dynodoc/client/MainActivity.kt");
+        assert!(activity
+            .contains("userAgentString = AppToken.appended(userAgentString, appVersionName())"));
     }
 
     #[test]

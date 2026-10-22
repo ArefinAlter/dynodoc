@@ -16,6 +16,10 @@
 //!   (`Limiters::click`, one per second and ten a minute), so a page flooding the page budget
 //!   cannot starve a person's click and a leaked secret could not flood. Menu items are not
 //!   limited.
+//! * The sign-in button's own request (`Source::SignIn`, made by the shell and never for a page)
+//!   has a third budget (`Limiters::sign_in`, one per two seconds and six a minute), so that a
+//!   page that holds the click secret and floods the click budget cannot stop a person from
+//!   signing in.
 //!
 //! What protects the secret: it is made from the operating system's randomness once per run
 //! of the app and written into the script, where it lives in one closure variable. The script
@@ -51,6 +55,11 @@ pub enum Source {
     /// A native menu item (desktop only: phones have no menu).
     #[cfg_attr(mobile, allow(dead_code))]
     Menu,
+    /// The sign-in button's own request, made by the shell (the launcher's button or the menu
+    /// item) to open the server's sign-in page in the browser. Never made for a page. It has its
+    /// own budget, so nothing a page does (even with a leaked click secret) can use it up and
+    /// stop a person from signing in.
+    SignIn,
 }
 
 /// May `url` be handed to the system at all, for this source?
@@ -64,12 +73,12 @@ pub fn external_allowed(url: &Url, source: Source) -> bool {
                 return false;
             }
             match source {
-                Source::Click | Source::Menu => url.host().is_some(),
+                Source::Click | Source::Menu | Source::SignIn => url.host().is_some(),
                 Source::Page => url.host().is_some_and(|host| public_host(&host)),
             }
         }
         // A mail link starts the user's mail program: only a person may do that.
-        "mailto" => source != Source::Page,
+        "mailto" => matches!(source, Source::Click | Source::Menu),
         _ => false,
     }
 }
@@ -230,6 +239,12 @@ impl HandOffLimiter {
         Self::new(Self::MIN_GAP, Self::MAX_IN_WINDOW, Self::WINDOW)
     }
 
+    /// The sign-in button: one per 2 seconds, six a minute. A person who presses it again
+    /// because the browser did not come up is let through; nothing else uses this budget.
+    pub fn sign_in() -> Self {
+        Self::new(Duration::from_secs(2), 6, Duration::from_secs(60))
+    }
+
     /// Requests vouched for by a click marker: one per second, ten a minute. A person cannot
     /// click faster; this only bounds what a leaked secret could do.
     pub fn click() -> Self {
@@ -257,12 +272,15 @@ impl HandOffLimiter {
     }
 }
 
-/// The two budgets. They are separate so that a page that spends its own cannot take a
-/// person's click budget (and the reverse). Menu items have none.
+/// The three budgets. They are separate so that a page that spends its own cannot take a
+/// person's click budget (and the reverse), and neither can take the sign-in button's: a click
+/// can be made by a page that holds the click secret, the sign-in request cannot. Menu items
+/// have none.
 #[derive(Debug, Default)]
 pub struct Limiters {
     pub page: Mutex<HandOffLimiter>,
     pub click: Mutex<HandOffLimiter>,
+    pub sign_in: Mutex<HandOffLimiter>,
 }
 
 impl Limiters {
@@ -270,6 +288,7 @@ impl Limiters {
         Self {
             page: Mutex::new(HandOffLimiter::page()),
             click: Mutex::new(HandOffLimiter::click()),
+            sign_in: Mutex::new(HandOffLimiter::sign_in()),
         }
     }
 }
@@ -298,6 +317,7 @@ pub fn hand_off(
     let budget = match source {
         Source::Page => Some(&limiters.page),
         Source::Click => Some(&limiters.click),
+        Source::SignIn => Some(&limiters.sign_in),
         Source::Menu => None,
     };
     if budget.is_some_and(|b| !b.lock().is_ok_and(|mut l| l.allow(now))) {
@@ -683,6 +703,93 @@ mod tests {
             .filter(|i| flood.allow(t0 + Duration::from_micros(i * 100)))
             .count();
         assert_eq!(got, 1);
+    }
+
+    #[test]
+    fn the_sign_in_request_opens_web_addresses_for_a_person_and_nothing_else() {
+        // Same reach as a click for a web address (the configured server may be local) ...
+        for ok in [
+            "https://app.dynodoc.online/app-signin?challenge=a&state=b&platform=desktop",
+            "http://localhost:8080/app-signin?challenge=a",
+            "http://192.168.1.10:8080/app-signin",
+        ] {
+            assert!(external_allowed(&url(ok), Source::SignIn), "{ok}");
+        }
+        // ... but never a mail link, another scheme or credentials.
+        for bad in [
+            "mailto:x@y.z",
+            "javascript:alert(1)",
+            "dynodoc://signin?code=a",
+            "file:///C:/x",
+            "https://user@example.org/",
+        ] {
+            assert!(!external_allowed(&url(bad), Source::SignIn), "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_sign_in_request_gets_its_own_budget_that_a_page_or_a_click_cannot_use_up() {
+        let t0 = Instant::now();
+        let at = |ms: u64| t0 + Duration::from_millis(ms);
+        let mut limiter = HandOffLimiter::sign_in();
+        assert!(limiter.allow(at(0)));
+        assert!(!limiter.allow(at(1_999)));
+        assert!(limiter.allow(at(2_000)));
+        let mut accepted = 2;
+        for i in 2..30u64 {
+            if limiter.allow(at(i * 2_000)) {
+                accepted += 1;
+            }
+        }
+        assert_eq!(accepted, 6, "six in the first minute");
+        // A flood of 10,000 attempts in a second gets one.
+        let mut flood = HandOffLimiter::sign_in();
+        let got = (0..10_000u64)
+            .filter(|i| flood.allow(t0 + Duration::from_micros(i * 100)))
+            .count();
+        assert_eq!(got, 1);
+
+        // A page flooding its budget, and a page with the click secret flooding the click budget,
+        // leave the sign-in request alone, and the reverse.
+        let limiters = Limiters::new();
+        let try_open = |text: &str, source, at_ms: u64| {
+            hand_off(
+                &url(text),
+                source,
+                &limiters,
+                t0 + Duration::from_millis(at_ms),
+                |_| {},
+            )
+        };
+        for i in 0..100 {
+            try_open(&format!("https://flood{i}.example/"), Source::Page, i * 50);
+            try_open(&format!("https://click{i}.example/"), Source::Click, i * 50);
+        }
+        assert_eq!(
+            try_open("https://app.example/app-signin", Source::SignIn, 5_000),
+            HandOff::Opened
+        );
+        let limiters = Limiters::new();
+        let try_open = |text: &str, source, at_ms: u64| {
+            hand_off(
+                &url(text),
+                source,
+                &limiters,
+                t0 + Duration::from_millis(at_ms),
+                |_| {},
+            )
+        };
+        for i in 0..100 {
+            try_open("https://app.example/app-signin", Source::SignIn, i * 50);
+        }
+        assert_eq!(
+            try_open("https://example.org/", Source::Click, 5_000),
+            HandOff::Opened
+        );
+        assert_eq!(
+            try_open("https://example.org/", Source::Page, 5_000),
+            HandOff::Opened
+        );
     }
 
     #[test]

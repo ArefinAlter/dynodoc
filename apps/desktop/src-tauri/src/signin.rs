@@ -10,8 +10,12 @@
 //!    Only the challenge and the state go to the browser, in the address of the server's
 //!    `/app-signin` page. The verifier is kept here, in memory, and nowhere else.
 //! 2. [`Pending::start`] keeps the attempt. There is at most ONE per running app (a new one
-//!    replaces the old), and it is good for [`ATTEMPT_TTL`] (ten minutes) of monotonic time.
-//!    Nothing is written to disk, so an app the system ends meanwhile simply has to start again.
+//!    replaces the old), and it is good for [`ATTEMPT_TTL`] (ten minutes) by BOTH clocks: the
+//!    monotonic one, which does not run while a phone sleeps, and the wall clock, which does
+//!    (see [`Moment`]). Nothing is written to disk, so an app the system ends meanwhile simply has
+//!    to start again. [`pairing_code`] gives four characters of the state that the launcher shows
+//!    while the attempt waits and the server's page shows too, so a person can tell the request
+//!    they started from one another program on the device started.
 //! 3. The browser comes back with `dynodoc://signin?code=..&state=..` (see `deeplink.rs`).
 //!    [`Pending::complete`] accepts it only when an attempt is pending, fresh, for the server
 //!    now configured, and the link's state equals the attempt's state (compared without
@@ -22,20 +26,26 @@
 //! 4. The result, [`Finish::fragment`], reaches the server's `/app-signin/finish` page as an
 //!    address FRAGMENT (which no server or proxy ever receives), but not in the address the window
 //!    is sent to: the window loads the plain page first, and once it has finished loading the
-//!    shell sets `location.hash` from an [`Outbox`] ([`finish_script`]). So the secrets are in no
-//!    address the web view requests, keeps in its history or writes to a log (Android's web view
-//!    logs the address of the page next to every console message, and that log showed a verifier
-//!    when the address held it). The fragment is handed over once, to that page only, within
-//!    [`DELIVERY_TTL`].
+//!    shell runs [`finish_script`] (`finish_hash.js`), which sets `location.hash` from an
+//!    [`Outbox`]. The script first checks that the page really is the finish page of the server
+//!    the attempt was started for, and waits for the page to say it is ready (the page ignores any
+//!    fragment that was there when it loaded). So the secrets are in no address the web view
+//!    requests, keeps in its history or writes to a log (Android's web view logs the address of
+//!    the page next to every console message, and that log showed a verifier when the address held
+//!    it). The fragment is handed over once, to that page only, for the server it was made for,
+//!    within [`DELIVERY_TTL`].
 //!
 //! Nothing here prints a secret: [`Secret`] has no `Display`, no `Clone`, and a `Debug` that shows
-//! nothing, and no type holding one derives `Debug`.
+//! nothing, no type holding one derives `Debug`, and every buffer that held one is overwritten
+//! when it is dropped ([`wipe`]; best effort: the copies the web view makes of a script it runs
+//! cannot be reached, and a write cannot be forced to stay without `unsafe`, which this crate does
+//! not use, so `black_box` is what asks the optimiser to keep it).
 
 use crate::handoff::same_text;
 use sha2::{Digest, Sha256};
 use std::fmt;
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 /// How long a started attempt waits for the browser to come back.
 pub const ATTEMPT_TTL: Duration = Duration::from_secs(10 * 60);
@@ -55,12 +65,96 @@ pub const PLATFORM: &str = if cfg!(target_os = "android") {
     "desktop"
 };
 
-/// Text that must not be printed. No `Display`, no `Clone`.
+/// Whether this build puts the `DynodocApp/<version> (<kind>)` token into its web view's
+/// User-Agent, which the server's finish page and sign-in routes require (decision 017). Only
+/// where that is built AND has been run (Windows' WebView2 and Android's WebView); elsewhere the
+/// browser sign-in is not offered, because it would only be refused.
+pub const APP_TOKEN: bool = cfg!(any(windows, target_os = "android"));
+
+/// The token appended to the web view's own User-Agent: `DynodocApp/<version> (<kind>)`.
+pub fn app_token() -> String {
+    format!("DynodocApp/{} ({PLATFORM})", env!("CARGO_PKG_VERSION"))
+}
+
+/// A moment read from both clocks. The monotonic clock cannot be set, but on a phone it stops
+/// while the device sleeps (Android's `CLOCK_MONOTONIC` does not count suspend), so a ten minute
+/// attempt could be much older than that. The wall clock keeps running, but can be set. What has
+/// passed between two moments is the LARGER of what the two clocks say; a clock that appears to
+/// run backwards counts as no time having passed.
+#[derive(Clone, Copy)]
+pub struct Moment {
+    mono: Instant,
+    wall: SystemTime,
+}
+
+impl Moment {
+    pub fn now() -> Self {
+        Self {
+            mono: Instant::now(),
+            wall: SystemTime::now(),
+        }
+    }
+
+    /// Time since `earlier`, by whichever clock says more.
+    pub fn since(self, earlier: Moment) -> Duration {
+        let mono = self.mono.saturating_duration_since(earlier.mono);
+        let wall = self
+            .wall
+            .duration_since(earlier.wall)
+            .unwrap_or(Duration::ZERO);
+        mono.max(wall)
+    }
+
+    #[cfg(test)]
+    pub fn from_parts(mono: Instant, wall: SystemTime) -> Self {
+        Self { mono, wall }
+    }
+
+    #[cfg(test)]
+    pub fn plus(self, by: Duration) -> Self {
+        Self {
+            mono: self.mono + by,
+            wall: self.wall + by,
+        }
+    }
+}
+
+impl fmt::Debug for Moment {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Moment(..)")
+    }
+}
+
+/// Overwrite `bytes` with zeros in a way the optimiser is asked to keep.
+pub fn wipe_bytes(bytes: &mut [u8]) {
+    for b in bytes.iter_mut() {
+        *b = 0;
+    }
+    std::hint::black_box(&*bytes);
+}
+
+/// Overwrite the text's bytes with zeros, and leave it empty.
+pub fn wipe(text: &mut String) {
+    let mut bytes = std::mem::take(text).into_bytes();
+    wipe_bytes(&mut bytes);
+}
+
+/// Text that must not be printed. No `Display`, no `Clone`; overwritten when dropped.
 pub struct Secret(String);
 
 impl Secret {
+    pub fn new(text: String) -> Self {
+        Self(text)
+    }
+
     pub fn expose(&self) -> &str {
         &self.0
+    }
+}
+
+impl Drop for Secret {
+    fn drop(&mut self) {
+        wipe(&mut self.0);
     }
 }
 
@@ -87,16 +181,39 @@ pub fn base64url(bytes: &[u8]) -> String {
         for i in 0..=chunk.len() {
             out.push(char::from(ALPHABET[((n >> (18 - 6 * i)) & 63) as usize]));
         }
+        wipe_bytes(&mut group);
     }
     out
+}
+
+/// 32 symbols without 0, 1, I and O, so that a person can read four of them out and compare.
+const PAIRING_ALPHABET: &[u8; 32] = b"23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+
+/// Four characters derived from the state (the low five bits of the first four bytes of its
+/// SHA-256): shown in the launcher while the attempt waits, and by the server's confirmation page
+/// (`pairingCode` in `frontend/researcher/src/lib/server/app-signin.ts`, the same function with the
+/// same test vectors). They tell the person's own request from one another program on the device
+/// started; they are not a secret and prove nothing to a server.
+pub fn pairing_code(state: &str) -> String {
+    let digest = Sha256::digest(state.as_bytes());
+    digest[..4]
+        .iter()
+        .map(|b| char::from(PAIRING_ALPHABET[usize::from(b & 31)]))
+        .collect()
 }
 
 /// What the browser is told: the public half of an attempt.
 pub struct Request {
     pub challenge: String,
     /// Sent to the server and echoed back in the app link. Not a credential on its own, but kept
-    /// out of every log all the same.
+    /// out of every log and overwritten when dropped.
     pub state: String,
+}
+
+impl Drop for Request {
+    fn drop(&mut self) {
+        wipe(&mut self.state);
+    }
 }
 
 /// A started sign-in: the secrets of one trip to the browser.
@@ -106,7 +223,7 @@ pub struct Attempt {
     /// The server (its origin text) the attempt was started for. The verifier is only ever
     /// shown to that server.
     origin: String,
-    started: Instant,
+    started: Moment,
 }
 
 impl fmt::Debug for Attempt {
@@ -120,24 +237,24 @@ impl Attempt {
     /// a fixed one in a test). `None` if it fails: the app never falls back to anything weaker.
     pub fn new(
         origin: &str,
-        now: Instant,
+        now: Moment,
         mut fill: impl FnMut(&mut [u8]) -> bool,
     ) -> Option<(Self, Request)> {
         let mut verifier = [0u8; VERIFIER_BYTES];
         let mut state = [0u8; STATE_BYTES];
-        if !fill(&mut verifier) || !fill(&mut state) {
-            return None;
-        }
-        let verifier = base64url(&verifier);
-        let state = base64url(&state);
+        let filled = fill(&mut verifier) && fill(&mut state);
+        let made = filled.then(|| (base64url(&verifier), base64url(&state)));
+        wipe_bytes(&mut verifier);
+        wipe_bytes(&mut state);
+        let (verifier, state) = made?;
         let challenge = base64url(&Sha256::digest(verifier.as_bytes()));
         let request = Request {
             challenge,
             state: state.clone(),
         };
         let attempt = Self {
-            verifier: Secret(verifier),
-            state: Secret(state),
+            verifier: Secret::new(verifier),
+            state: Secret::new(state),
             origin: origin.to_string(),
             started: now,
         };
@@ -175,7 +292,7 @@ impl Finish {
     /// `code=..&state=..&verifier=..`: the three values are URL-safe characters only, so
     /// nothing needs encoding.
     pub fn fragment(&self) -> Secret {
-        Secret(format!(
+        Secret::new(format!(
             "code={}&state={}&verifier={}",
             self.code.expose(),
             self.state.expose(),
@@ -184,9 +301,17 @@ impl Finish {
     }
 }
 
-/// A fragment waiting for the finish page to load: handed over once, fresh, to that page only.
+/// What the outbox holds: the fragment, the server it was made for and when.
+struct Parcel {
+    fragment: Secret,
+    origin: String,
+    put: Moment,
+}
+
+/// A fragment waiting for the finish page to load: handed over once, fresh, to that page only,
+/// and only if the server now configured is still the one it was made for.
 #[derive(Default)]
-pub struct Outbox(Mutex<Option<(Secret, Instant)>>);
+pub struct Outbox(Mutex<Option<Parcel>>);
 
 impl fmt::Debug for Outbox {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -195,20 +320,26 @@ impl fmt::Debug for Outbox {
 }
 
 impl Outbox {
-    /// Keep `fragment` for the page about to load, replacing anything older.
-    pub fn put(&self, fragment: Secret, now: Instant) {
+    /// Keep `fragment` for the finish page of `origin`, replacing anything older.
+    pub fn put(&self, fragment: Secret, origin: &str, now: Moment) {
         if let Ok(mut slot) = self.0.lock() {
-            *slot = Some((fragment, now));
+            *slot = Some(Parcel {
+                fragment,
+                origin: origin.to_string(),
+                put: now,
+            });
         }
     }
 
-    /// The fragment, once, if it is still fresh. Whatever is there is gone afterwards.
-    pub fn take(&self, now: Instant) -> Option<Secret> {
-        let (fragment, put) = self.0.lock().ok()?.take()?;
-        (now.saturating_duration_since(put) < DELIVERY_TTL).then_some(fragment)
+    /// The fragment, once, if it is still fresh and `origin` (the server configured now) is the
+    /// one it was made for. Whatever is there is gone afterwards, whatever the answer.
+    pub fn take(&self, now: Moment, origin: &str) -> Option<Secret> {
+        let parcel = self.0.lock().ok()?.take()?;
+        let fresh = now.since(parcel.put) < DELIVERY_TTL;
+        (fresh && same_text(&parcel.origin, origin)).then_some(parcel.fragment)
     }
 
-    /// Drop anything waiting (a new attempt makes the old one's leftovers meaningless).
+    /// Drop anything waiting (a new attempt, or a change of server, makes it meaningless).
     pub fn clear(&self) {
         if let Ok(mut slot) = self.0.lock() {
             *slot = None;
@@ -216,11 +347,30 @@ impl Outbox {
     }
 }
 
-/// The script that hands the fragment to the finish page: `window.location.hash="#..."`. `None`
-/// unless `fragment` is exactly `code=<64 hex>&state=<16 to 64 base64url>&verifier=<43 to 128
-/// base64url>` (the shapes the web app and the API accept), so nothing but those characters can
-/// ever be put into a script.
-pub fn finish_script(fragment: &str) -> Option<String> {
+/// The script the shell runs in the finish page: the template in `finish_hash.js`.
+const FINISH_HASH: &str = include_str!("finish_hash.js");
+const ORIGIN_PLACEHOLDER: &str = "__ORIGIN__";
+const FRAGMENT_PLACEHOLDER: &str = "__FRAGMENT__";
+
+/// An origin as the shell writes it (`https://host`, `http://host:port`, `https://[::1]:8443`):
+/// only characters that cannot end a script string or start anything else.
+fn plain_origin(origin: &str) -> bool {
+    (origin.starts_with("https://") || origin.starts_with("http://"))
+        && origin.len() <= 300
+        && origin.bytes().all(|b| {
+            b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b':' | b'/' | b'[' | b']')
+        })
+}
+
+/// The script that hands the fragment to the finish page of `origin`. `None` unless `fragment` is
+/// exactly `code=<64 hex>&state=<16 to 64 base64url>&verifier=<43 to 128 base64url>` (the shapes
+/// the web app and the API accept) and `origin` is a plain origin, so nothing but those
+/// characters can ever be put into a script. The script itself (`finish_hash.js`) checks the
+/// page's origin and path before it touches anything, and waits for the page to be ready.
+pub fn finish_script(fragment: &str, origin: &str) -> Option<Secret> {
+    if !plain_origin(origin) {
+        return None;
+    }
     let mut parts = fragment.split('&');
     let (code, state, verifier) = (parts.next()?, parts.next()?, parts.next()?);
     if parts.next().is_some() {
@@ -241,7 +391,11 @@ pub fn finish_script(fragment: &str) -> Option<String> {
     value(code, "code", 64, 64, true)?;
     value(state, "state", 16, 64, false)?;
     value(verifier, "verifier", 43, 128, false)?;
-    Some(format!("window.location.hash=\"#{fragment}\";"))
+    Some(Secret::new(
+        FINISH_HASH
+            .replace(ORIGIN_PLACEHOLDER, origin)
+            .replace(FRAGMENT_PLACEHOLDER, fragment),
+    ))
 }
 
 /// The one attempt this running app may have waiting.
@@ -262,6 +416,13 @@ impl Pending {
         }
     }
 
+    /// Forget the attempt (the server was changed: its verifier is not kept for another one).
+    pub fn clear(&self) {
+        if let Ok(mut slot) = self.0.lock() {
+            *slot = None;
+        }
+    }
+
     /// Is an attempt waiting? (For tests and the debug log; it says nothing about its secrets.)
     #[cfg(test)]
     pub fn is_waiting(&self) -> bool {
@@ -272,7 +433,7 @@ impl Pending {
     /// the module documentation for the rules; a poisoned lock refuses everything.
     pub fn complete(
         &self,
-        now: Instant,
+        now: Moment,
         origin: &str,
         code: &str,
         state: &str,
@@ -281,8 +442,7 @@ impl Pending {
         let Some(attempt) = slot.as_ref() else {
             return Err(Refusal::NothingPending);
         };
-        // A clock that appears to run backwards counts as no time having passed.
-        if now.saturating_duration_since(attempt.started) >= ATTEMPT_TTL {
+        if now.since(attempt.started) >= ATTEMPT_TTL {
             *slot = None;
             return Err(Refusal::Expired);
         }
@@ -295,10 +455,13 @@ impl Pending {
         }
         // Used up here, before anything else happens.
         let attempt = slot.take().ok_or(Refusal::NothingPending)?;
+        let Attempt {
+            verifier, state, ..
+        } = attempt;
         Ok(Finish {
-            code: Secret(code.to_string()),
-            state: attempt.state,
-            verifier: attempt.verifier,
+            code: Secret::new(code.to_string()),
+            state,
+            verifier,
         })
     }
 }
@@ -322,7 +485,11 @@ mod tests {
         }
     }
 
-    fn started(now: Instant) -> (Pending, Request) {
+    fn secs(n: u64) -> Duration {
+        Duration::from_secs(n)
+    }
+
+    fn started(now: Moment) -> (Pending, Request) {
         let (attempt, request) = Attempt::new(ORIGIN, now, counting()).unwrap();
         let pending = Pending::default();
         pending.start(attempt);
@@ -356,7 +523,7 @@ mod tests {
         let challenge = base64url(&Sha256::digest(verifier.as_bytes()));
         assert_eq!(challenge, "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM");
         // And the app's own attempt follows it.
-        let (attempt, request) = Attempt::new(ORIGIN, Instant::now(), counting()).unwrap();
+        let (attempt, request) = Attempt::new(ORIGIN, Moment::now(), counting()).unwrap();
         assert_eq!(
             request.challenge,
             base64url(&Sha256::digest(attempt.verifier.expose().as_bytes()))
@@ -365,7 +532,7 @@ mod tests {
 
     #[test]
     fn the_secrets_have_the_agreed_sizes_and_characters() {
-        let (attempt, request) = Attempt::new(ORIGIN, Instant::now(), counting()).unwrap();
+        let (attempt, request) = Attempt::new(ORIGIN, Moment::now(), counting()).unwrap();
         let url_safe = |s: &str| {
             s.bytes()
                 .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
@@ -389,7 +556,7 @@ mod tests {
 
     #[test]
     fn the_operating_system_gives_different_secrets_every_time() {
-        let now = Instant::now();
+        let now = Moment::now();
         let a = Attempt::new(ORIGIN, now, os_random).unwrap();
         let b = Attempt::new(ORIGIN, now, os_random).unwrap();
         assert_ne!(a.0.verifier.expose(), b.0.verifier.expose());
@@ -400,10 +567,10 @@ mod tests {
 
     #[test]
     fn no_randomness_means_no_attempt() {
-        assert!(Attempt::new(ORIGIN, Instant::now(), |_| false).is_none());
+        assert!(Attempt::new(ORIGIN, Moment::now(), |_| false).is_none());
         // Even if only the second request for randomness fails.
         let mut calls = 0;
-        assert!(Attempt::new(ORIGIN, Instant::now(), |buffer| {
+        assert!(Attempt::new(ORIGIN, Moment::now(), |buffer| {
             calls += 1;
             buffer.fill(1);
             calls < 2
@@ -413,11 +580,11 @@ mod tests {
 
     #[test]
     fn a_returning_link_finishes_the_attempt_once() {
-        let t0 = Instant::now();
+        let t0 = Moment::now();
         let (pending, request) = started(t0);
         assert!(pending.is_waiting());
         let finish = pending
-            .complete(t0 + Duration::from_secs(30), ORIGIN, CODE, &request.state)
+            .complete(t0.plus(secs(30)), ORIGIN, CODE, &request.state)
             .expect("the right state, in time");
         // The attempt is used up at once.
         assert!(!pending.is_waiting());
@@ -443,7 +610,7 @@ mod tests {
         // The very same link again does nothing.
         assert_eq!(
             pending
-                .complete(t0 + Duration::from_secs(31), ORIGIN, CODE, &request.state)
+                .complete(t0.plus(secs(31)), ORIGIN, CODE, &request.state)
                 .unwrap_err(),
             Refusal::NothingPending
         );
@@ -454,7 +621,7 @@ mod tests {
         let pending = Pending::default();
         assert_eq!(
             pending
-                .complete(Instant::now(), ORIGIN, CODE, "anything")
+                .complete(Moment::now(), ORIGIN, CODE, "anything")
                 .unwrap_err(),
             Refusal::NothingPending
         );
@@ -462,9 +629,9 @@ mod tests {
 
     #[test]
     fn a_wrong_state_is_refused_and_leaves_the_attempt_alone() {
-        let t0 = Instant::now();
+        let t0 = Moment::now();
         let (pending, request) = started(t0);
-        let now = t0 + Duration::from_secs(5);
+        let now = t0.plus(secs(5));
         let mut wrong_ones = vec![
             String::new(),
             "x".repeat(32),
@@ -497,12 +664,12 @@ mod tests {
 
     #[test]
     fn an_attempt_expires_after_ten_minutes_exactly() {
-        let t0 = Instant::now();
+        let t0 = Moment::now();
         // One tick before the limit: still good.
         let (pending, request) = started(t0);
         assert!(pending
             .complete(
-                t0 + ATTEMPT_TTL - Duration::from_nanos(1),
+                t0.plus(ATTEMPT_TTL - Duration::from_nanos(1)),
                 ORIGIN,
                 CODE,
                 &request.state
@@ -512,14 +679,14 @@ mod tests {
         let (pending, request) = started(t0);
         assert_eq!(
             pending
-                .complete(t0 + ATTEMPT_TTL, ORIGIN, CODE, &request.state)
+                .complete(t0.plus(ATTEMPT_TTL), ORIGIN, CODE, &request.state)
                 .unwrap_err(),
             Refusal::Expired
         );
         assert!(!pending.is_waiting());
         assert_eq!(
             pending
-                .complete(t0 + Duration::from_secs(1), ORIGIN, CODE, &request.state)
+                .complete(t0.plus(secs(1)), ORIGIN, CODE, &request.state)
                 .unwrap_err(),
             Refusal::NothingPending
         );
@@ -527,26 +694,61 @@ mod tests {
         let (pending, _) = started(t0);
         assert_eq!(
             pending
-                .complete(t0 + Duration::from_secs(86_400), ORIGIN, CODE, "wrong")
+                .complete(t0.plus(secs(86_400)), ORIGIN, CODE, "wrong")
                 .unwrap_err(),
             Refusal::Expired
         );
-        assert_eq!(ATTEMPT_TTL, Duration::from_secs(600));
+        assert_eq!(ATTEMPT_TTL, secs(600));
     }
 
     #[test]
-    fn a_clock_that_runs_backwards_is_not_an_expiry() {
-        let t0 = Instant::now() + Duration::from_secs(1000);
+    fn a_phone_that_slept_does_not_extend_an_attempt() {
+        // The monotonic clock stopped while the device slept (it barely moved), the wall clock did
+        // not: the attempt is as old as the larger of the two says.
+        let mono0 = Instant::now();
+        let wall0 = SystemTime::now();
+        let t0 = Moment::from_parts(mono0, wall0);
         let (pending, request) = started(t0);
-        let before = t0 - Duration::from_secs(500);
+        let slept = Moment::from_parts(mono0 + secs(30), wall0 + ATTEMPT_TTL + secs(1));
+        assert_eq!(
+            pending
+                .complete(slept, ORIGIN, CODE, &request.state)
+                .unwrap_err(),
+            Refusal::Expired,
+            "ten minutes of wall clock with half a minute of monotonic clock"
+        );
+        // And the other way round: the wall clock set back does not shorten it, the monotonic
+        // clock still counts.
+        let (pending, request) = started(t0);
+        let set_back = Moment::from_parts(mono0 + ATTEMPT_TTL, wall0 - secs(3600));
+        assert_eq!(
+            pending
+                .complete(set_back, ORIGIN, CODE, &request.state)
+                .unwrap_err(),
+            Refusal::Expired
+        );
+        // Each clock alone, just inside the limit, is still good.
+        let (pending, request) = started(t0);
+        let inside = Moment::from_parts(mono0 + ATTEMPT_TTL - secs(1), wall0 + secs(5));
         assert!(pending
-            .complete(before, ORIGIN, CODE, &request.state)
+            .complete(inside, ORIGIN, CODE, &request.state)
             .is_ok());
     }
 
     #[test]
+    fn a_clock_that_runs_backwards_is_not_an_expiry() {
+        let t0 = Moment::now().plus(secs(1000));
+        let (pending, request) = started(t0);
+        let before = Moment::from_parts(t0.mono - secs(500), t0.wall - secs(500));
+        assert!(pending
+            .complete(before, ORIGIN, CODE, &request.state)
+            .is_ok());
+        assert_eq!(before.since(t0), Duration::ZERO);
+    }
+
+    #[test]
     fn a_new_attempt_replaces_the_old_one() {
-        let t0 = Instant::now();
+        let t0 = Moment::now();
         let (pending, first) = started(t0);
         let (second_attempt, second) = Attempt::new(ORIGIN, t0, os_random).unwrap();
         pending.start(second_attempt);
@@ -562,7 +764,7 @@ mod tests {
 
     #[test]
     fn the_attempt_belongs_to_the_server_it_was_started_for() {
-        let t0 = Instant::now();
+        let t0 = Moment::now();
         for other in [
             "https://dynodoc.example.org",
             "https://app.dynodoc.online:8443",
@@ -583,8 +785,22 @@ mod tests {
     }
 
     #[test]
+    fn clearing_forgets_the_attempt() {
+        let t0 = Moment::now();
+        let (pending, request) = started(t0);
+        pending.clear();
+        assert!(!pending.is_waiting());
+        assert_eq!(
+            pending
+                .complete(t0, ORIGIN, CODE, &request.state)
+                .unwrap_err(),
+            Refusal::NothingPending
+        );
+    }
+
+    #[test]
     fn nothing_prints_a_secret() {
-        let t0 = Instant::now();
+        let t0 = Moment::now();
         let (attempt, request) = Attempt::new(ORIGIN, t0, os_random).unwrap();
         let verifier = attempt.verifier.expose().to_string();
         let state = request.state.clone();
@@ -593,8 +809,10 @@ mod tests {
         pending.start(attempt);
         let finish = pending.complete(t0, ORIGIN, CODE, &state).unwrap();
         let fragment = finish.fragment();
+        let outbox = Outbox::default();
+        outbox.put(finish.fragment(), ORIGIN, t0);
         let shown = format!(
-            "{shown} {pending:?} {finish:?} {fragment:?} {:#?} {:?}",
+            "{shown} {pending:?} {finish:?} {fragment:?} {:#?} {:?} {outbox:?} {t0:?}",
             finish, fragment
         );
         for secret in [
@@ -622,6 +840,7 @@ mod tests {
             "pub struct Finish",
             "pub struct Pending",
             "pub struct Outbox",
+            "struct Parcel",
         ] {
             let at = production
                 .find(holder)
@@ -638,6 +857,34 @@ mod tests {
         assert!(complete.contains("same_text(attempt.state.expose(), state)"));
         assert!(!complete.contains("attempt.state.expose() == "));
         assert!(!complete.contains("== attempt.state"));
+        // No unsafe anywhere: the overwrite is plain stores that `black_box` asks to keep.
+        assert!(!production.contains("unsafe {") && !production.contains("unsafe fn"));
+    }
+
+    #[test]
+    fn every_buffer_that_held_a_secret_is_overwritten() {
+        let mut bytes = *b"verifier-bytes-verifier-bytes!!!";
+        wipe_bytes(&mut bytes);
+        assert_eq!(bytes, [0u8; 32]);
+        let mut text = String::from("a-secret-state-value");
+        wipe(&mut text);
+        assert!(text.is_empty());
+        // Source check: the holders are wiped when dropped, and the randomness buffers after use.
+        let source = include_str!("signin.rs");
+        let production = &source[..source.find("#[cfg(test)]\nmod tests").unwrap()];
+        let drop_of = |holder: &str| {
+            let at = production
+                .find(&format!("impl Drop for {holder}"))
+                .unwrap_or_else(|| panic!("no Drop for {holder}"));
+            &production[at..at + 140]
+        };
+        for holder in ["Secret", "Request"] {
+            assert!(drop_of(holder).contains("wipe("), "{holder}");
+        }
+        let new = &production[production.find("pub fn new(\n        origin").unwrap()..];
+        let new = &new[..new.find("Some((attempt, request))").unwrap()];
+        assert!(new.contains("wipe_bytes(&mut verifier);"));
+        assert!(new.contains("wipe_bytes(&mut state);"));
     }
 
     const VERIFIER: &str = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
@@ -648,42 +895,125 @@ mod tests {
     }
 
     #[test]
+    fn the_pairing_code_is_a_fixed_function_of_the_state() {
+        // The same vectors as the server's confirmation page (src/lib/server/app-signin.test.ts).
+        for (state, want) in [
+            ("b3JkZXJseS1zdGF0ZS12YWx1ZQ", "4K77"),
+            (&"a".repeat(16), "EDCG"),
+            ("K8710daSV_AjCvmPElN6z6L-DQ2YusRS", "6CR6"),
+            ("0123456789abcdef0123456789abcdef", "YKX5"),
+            (&"g".repeat(64), "GLJA"),
+        ] {
+            assert_eq!(pairing_code(state), want, "{state}");
+        }
+        // Only symbols a person cannot confuse, and the app's own attempts follow it.
+        for i in 0..500 {
+            let code = pairing_code(&format!("state-{i}-{}", "x".repeat(16)));
+            assert_eq!(code.len(), 4);
+            assert!(
+                code.bytes()
+                    .all(|b| b"23456789ABCDEFGHJKLMNPQRSTUVWXYZ".contains(&b)),
+                "{code}"
+            );
+        }
+        let (_, request) = Attempt::new(ORIGIN, Moment::now(), os_random).unwrap();
+        assert_eq!(pairing_code(&request.state).len(), 4);
+    }
+
+    #[test]
     fn the_outbox_hands_the_fragment_over_once_and_only_while_fresh() {
-        let t0 = Instant::now();
+        let t0 = Moment::now();
         let outbox = Outbox::default();
-        assert!(outbox.take(t0).is_none(), "nothing put, nothing taken");
-        outbox.put(Secret(fragment()), t0);
-        let taken = outbox.take(t0 + Duration::from_secs(1)).expect("fresh");
+        assert!(
+            outbox.take(t0, ORIGIN).is_none(),
+            "nothing put, nothing taken"
+        );
+        outbox.put(Secret::new(fragment()), ORIGIN, t0);
+        let taken = outbox.take(t0.plus(secs(1)), ORIGIN).expect("fresh");
         assert_eq!(taken.expose(), fragment());
-        assert!(outbox.take(t0 + Duration::from_secs(1)).is_none(), "once");
+        assert!(outbox.take(t0.plus(secs(1)), ORIGIN).is_none(), "once");
         // One tick before the limit; at the limit; and an expired one is gone for good.
-        outbox.put(Secret(fragment()), t0);
+        outbox.put(Secret::new(fragment()), ORIGIN, t0);
         assert!(outbox
-            .take(t0 + DELIVERY_TTL - Duration::from_nanos(1))
+            .take(t0.plus(DELIVERY_TTL - Duration::from_nanos(1)), ORIGIN)
             .is_some());
-        outbox.put(Secret(fragment()), t0);
-        assert!(outbox.take(t0 + DELIVERY_TTL).is_none());
-        assert!(outbox.take(t0).is_none(), "an expired fragment is not kept");
+        outbox.put(Secret::new(fragment()), ORIGIN, t0);
+        assert!(outbox.take(t0.plus(DELIVERY_TTL), ORIGIN).is_none());
+        assert!(
+            outbox.take(t0, ORIGIN).is_none(),
+            "an expired fragment is not kept"
+        );
         // A newer put replaces an older one; clear drops it; a backwards clock is no expiry.
-        outbox.put(Secret("old".into()), t0);
-        outbox.put(Secret(fragment()), t0);
-        assert_eq!(outbox.take(t0).unwrap().expose(), fragment());
-        outbox.put(Secret(fragment()), t0);
+        outbox.put(Secret::new("old".into()), ORIGIN, t0);
+        outbox.put(Secret::new(fragment()), ORIGIN, t0);
+        assert_eq!(outbox.take(t0, ORIGIN).unwrap().expose(), fragment());
+        outbox.put(Secret::new(fragment()), ORIGIN, t0);
         outbox.clear();
-        assert!(outbox.take(t0).is_none());
-        let later = t0 + Duration::from_secs(100);
-        outbox.put(Secret(fragment()), later);
-        assert!(outbox.take(t0).is_some());
-        assert_eq!(DELIVERY_TTL, Duration::from_secs(30));
+        assert!(outbox.take(t0, ORIGIN).is_none());
+        let later = t0.plus(secs(100));
+        outbox.put(Secret::new(fragment()), ORIGIN, later);
+        assert!(outbox.take(t0, ORIGIN).is_some());
+        assert_eq!(DELIVERY_TTL, secs(30));
         // Nothing prints it.
-        outbox.put(Secret(fragment()), t0);
+        outbox.put(Secret::new(fragment()), ORIGIN, t0);
         assert!(!format!("{outbox:?}").contains(CODE));
     }
 
     #[test]
-    fn the_script_that_hands_over_the_fragment_is_made_only_of_the_three_values() {
-        let script = finish_script(&fragment()).unwrap();
-        assert_eq!(script, format!("window.location.hash=\"#{}\";", fragment()));
+    fn a_fragment_made_for_one_server_is_never_handed_to_another() {
+        let t0 = Moment::now();
+        let outbox = Outbox::default();
+        for other in [
+            "https://dynodoc.example.org",
+            "https://app.dynodoc.online:8443",
+            "http://app.dynodoc.online",
+            "https://APP.dynodoc.online",
+            "https://app.dynodoc.online/",
+            "",
+        ] {
+            outbox.put(Secret::new(fragment()), ORIGIN, t0);
+            assert!(outbox.take(t0, other).is_none(), "{other:?}");
+            // Asking was enough: it is gone, even for the right server.
+            assert!(outbox.take(t0, ORIGIN).is_none(), "{other:?}");
+        }
+        outbox.put(Secret::new(fragment()), ORIGIN, t0);
+        assert!(outbox.take(t0, ORIGIN).is_some());
+    }
+
+    #[test]
+    fn the_delivery_window_counts_the_larger_clock_too() {
+        let mono0 = Instant::now();
+        let wall0 = SystemTime::now();
+        let outbox = Outbox::default();
+        outbox.put(
+            Secret::new(fragment()),
+            ORIGIN,
+            Moment::from_parts(mono0, wall0),
+        );
+        // The device slept: half a second of monotonic time, a minute of wall time.
+        let slept = Moment::from_parts(mono0 + Duration::from_millis(500), wall0 + secs(60));
+        assert!(outbox.take(slept, ORIGIN).is_none());
+    }
+
+    #[test]
+    fn the_script_that_hands_over_the_fragment_is_made_only_of_the_template_and_the_three_values() {
+        let script = finish_script(&fragment(), ORIGIN).unwrap();
+        let script = script.expose();
+        assert_eq!(
+            script,
+            FINISH_HASH
+                .replace(ORIGIN_PLACEHOLDER, ORIGIN)
+                .replace(FRAGMENT_PLACEHOLDER, &fragment())
+        );
+        assert!(!script.contains(ORIGIN_PLACEHOLDER));
+        assert!(!script.contains(FRAGMENT_PLACEHOLDER));
+        assert!(script.contains(&format!("var origin = '{ORIGIN}';")));
+        assert!(script.contains(&format!("var fragment = '{}';", fragment())));
+        // The template has each placeholder exactly once, as a whole single-quoted string.
+        assert_eq!(FINISH_HASH.matches(ORIGIN_PLACEHOLDER).count(), 1);
+        assert_eq!(FINISH_HASH.matches(FRAGMENT_PLACEHOLDER).count(), 1);
+        assert!(FINISH_HASH.contains("var origin = '__ORIGIN__';"));
+        assert!(FINISH_HASH.contains("var fragment = '__FRAGMENT__';"));
         // Whatever the values are made of, they are in no way executable: only the characters
         // the three values use can be in the script, and every other shape is refused.
         for bad in [
@@ -714,25 +1044,132 @@ mod tests {
             format!("code={CODE}&state={STATE}&verifier={VERIFIER}\u{2028}"),
             format!("code={CODE}&state={STATE}&verifier={VERIFIER}\u{e9}"),
         ] {
-            assert!(finish_script(&bad).is_none(), "{bad:?}");
+            assert!(finish_script(&bad, ORIGIN).is_none(), "{bad:?}");
         }
-        // The longest accepted values still fit, and the result has no quote but its own two.
+        // The longest accepted values still fit; the result has no quote but the template's own.
         let longest = format!(
             "code={CODE}&state={}&verifier={}",
             "s".repeat(64),
             "v".repeat(128)
         );
-        let script = finish_script(&longest).unwrap();
-        assert_eq!(script.matches('"').count(), 2);
-        assert!(script.is_ascii());
+        let script = finish_script(&longest, ORIGIN).unwrap();
+        assert_eq!(
+            script.expose().matches('\'').count(),
+            FINISH_HASH.matches('\'').count()
+        );
+        assert!(script.expose().is_ascii());
+    }
+
+    #[test]
+    fn a_verifier_of_valid_characters_that_looks_like_script_is_refused_by_the_charset_check_alone()
+    {
+        // 43 characters, the minimum length, so the length rule passes; what is wrong is only the
+        // characters: a quote, a semicolon and the letter x that would close the string and start
+        // a statement. Every position is tried, so a check that only looked at the first or last
+        // character would be caught.
+        let pieces = [
+            "\";x;\"",
+            "';x;'",
+            "\\\";x;",
+            "`;x;`",
+            "\u{0}\";x;\"",
+            "</script>",
+            "${x}",
+        ];
+        for piece in pieces {
+            for at in 0..=(43 - piece.chars().count().min(43)) {
+                let mut verifier: Vec<char> = "A".repeat(43).chars().collect();
+                for (i, c) in piece.chars().enumerate() {
+                    if at + i < verifier.len() {
+                        verifier[at + i] = c;
+                    }
+                }
+                let verifier: String = verifier.into_iter().collect();
+                let fragment = format!("code={CODE}&state={STATE}&verifier={verifier}");
+                assert!(
+                    finish_script(&fragment, ORIGIN).is_none(),
+                    "{piece:?} at {at}"
+                );
+            }
+        }
+        // The same checks on the other two values, and on the origin.
+        let bad_state = format!(
+            "code={CODE}&state={}&verifier={VERIFIER}",
+            "A\";x;\"A".repeat(3)
+        );
+        assert!(finish_script(&bad_state, ORIGIN).is_none());
+        for origin in [
+            "https://app.dynodoc.online\";x;\"",
+            "https://app.dynodoc.online';x;'",
+            "https://app.dynodoc.online\n",
+            "https://app.dynodoc.online\\",
+            "https://app dynodoc.online",
+            "ftp://app.dynodoc.online",
+            "javascript:alert(1)",
+            "app.dynodoc.online",
+            "",
+        ] {
+            assert!(finish_script(&fragment(), origin).is_none(), "{origin:?}");
+        }
+        // And the plain forms of an origin the app writes all pass.
+        for origin in [
+            "https://app.dynodoc.online",
+            "http://127.0.0.1:8080",
+            "https://[2001:db8::1]:8443",
+            "http://localhost:5173",
+        ] {
+            assert!(finish_script(&fragment(), origin).is_some(), "{origin:?}");
+        }
+    }
+
+    #[test]
+    fn the_template_checks_the_page_before_it_touches_the_address() {
+        // The behaviour is run in a Node realm by scripts/finish-hash.test.mjs; this keeps the
+        // pieces that must never be dropped from the text.
+        let code: String = FINISH_HASH
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        for needed in [
+            "location.origin !== origin",
+            "location.pathname !== '/app-signin/finish'",
+            "location.search !== ''",
+            "location.hash !== ''",
+            "data-finish-ready",
+            "location.hash = fragment;",
+        ] {
+            assert!(code.contains(needed), "finish_hash.js lost: {needed}");
+        }
+        // Nothing but the hash is written, and nothing is read back from the page or sent out.
+        assert_eq!(code.matches("location.hash =").count(), 1);
+        for banned in [
+            "fetch(",
+            "XMLHttpRequest",
+            "postMessage",
+            "eval(",
+            "Function(",
+            "innerHTML",
+            "__TAURI",
+            "invoke",
+            "document.cookie",
+            "localStorage",
+            "console.",
+            "location.href",
+            "location.assign",
+            "location.replace",
+            "window.open",
+        ] {
+            assert!(!code.contains(banned), "finish_hash.js uses {banned}");
+        }
     }
 
     #[test]
     fn the_finished_attempts_own_fragment_is_a_valid_script() {
-        let t0 = Instant::now();
+        let t0 = Moment::now();
         let (pending, request) = started(t0);
         let finish = pending.complete(t0, ORIGIN, CODE, &request.state).unwrap();
-        assert!(finish_script(finish.fragment().expose()).is_some());
+        assert!(finish_script(finish.fragment().expose(), ORIGIN).is_some());
     }
 
     #[test]
@@ -741,5 +1178,23 @@ mod tests {
         if cfg!(not(any(target_os = "android", target_os = "ios"))) {
             assert_eq!(PLATFORM, "desktop");
         }
+    }
+
+    #[test]
+    fn the_app_token_is_what_the_server_reads() {
+        // `DynodocApp/<major.minor.patch> (<kind>)`, exactly what the web tier's `appKind` accepts.
+        let token = app_token();
+        let (name, rest) = token.split_once('/').unwrap();
+        assert_eq!(name, "DynodocApp");
+        let (version, kind) = rest.split_once(" (").unwrap();
+        let numbers: Vec<&str> = version.split('.').collect();
+        assert_eq!(numbers.len(), 3, "{token}");
+        assert!(numbers
+            .iter()
+            .all(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())));
+        assert_eq!(kind, format!("{PLATFORM})"));
+        assert_eq!(version, env!("CARGO_PKG_VERSION"));
+        // Only where it is built and has been run is the browser sign-in offered.
+        assert_eq!(APP_TOKEN, cfg!(any(windows, target_os = "android")));
     }
 }

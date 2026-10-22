@@ -94,13 +94,17 @@
   $('browser-signin-go').addEventListener('click', async function () {
     say('browser-signin-error', '');
     say('browser-signin-status', '');
+    show($('browser-signin-pairing'), false);
     busy($('browser-signin-go'), true, 'Opening your browser ...');
     try {
-      await invoke('start_browser_sign_in');
+      // The four characters this request is known by; the browser page shows the same four.
+      var pairing = await invoke('start_browser_sign_in');
+      $('browser-signin-code').textContent = pairing;
+      show($('browser-signin-pairing'), true);
       say(
         'browser-signin-status',
-        'Your browser has opened. Sign in there, choose Continue, and you will come back to this app. ' +
-          'This request is good for 10 minutes.'
+        'Your browser has opened. Sign in there, check that the pairing code matches, choose Continue, ' +
+          'and you will come back to this app. This request is good for 10 minutes.'
       );
     } catch (e) {
       say('browser-signin-error', message(e));
@@ -203,7 +207,9 @@
     if (state.server) {
       say('current', 'Currently set to ' + state.server + '.');
       $('address').value = state.server === state.cloud ? '' : state.server;
-      show($('browser-signin'), true);
+      // Where this app cannot name itself to the server the browser sign-in would only be refused.
+      show($('browser-signin'), state.browser_signin);
+      show($('signin-if-button'), state.browser_signin);
       show($('signin'), true);
     }
     if (state.tools) {

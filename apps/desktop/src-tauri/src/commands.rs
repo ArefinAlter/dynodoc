@@ -9,6 +9,7 @@
 use crate::nav;
 use crate::server::{parse_server_address, sign_in_url, CLOUD_ORIGIN, SUPPORT_URL};
 use crate::sidecar::{self, KeyPath, Operation, Recovery, SidecarError};
+use crate::signin;
 use crate::{config, window, AppState};
 use serde::Serialize;
 use std::io::Read;
@@ -44,6 +45,9 @@ pub struct StateView {
     unconfirmed: Option<String>,
     /// Whether this build can run the bundled tools (desktop only).
     tools: bool,
+    /// Whether this build can sign in with the system browser: only where its web view names the
+    /// app to the server (`signin::APP_TOKEN`); elsewhere the button is not shown.
+    browser_signin: bool,
 }
 
 #[derive(Serialize)]
@@ -83,6 +87,7 @@ pub fn get_state(webview: Webview) -> Result<StateView, String> {
         server: state.server().map(|s| s.as_text()),
         unconfirmed: state.unconfirmed().map(|s| s.as_text()),
         tools: cfg!(desktop),
+        browser_signin: signin::APP_TOKEN,
     })
 }
 
@@ -115,9 +120,10 @@ pub fn open_sign_in_link(webview: Webview, link: String) -> Result<(), String> {
 
 /// Sign in with the system browser: open the server's sign-in page there and wait for it to
 /// hand the app a one-time code (see `signin.rs`). The launcher's button; also a menu item on
-/// desktop. Takes no argument: the page cannot choose what is opened.
+/// desktop. Takes no argument: the page cannot choose what is opened. Returns the four-character
+/// pairing code the launcher shows while the request waits.
 #[tauri::command]
-pub fn start_browser_sign_in(webview: Webview) -> Result<(), String> {
+pub fn start_browser_sign_in(webview: Webview) -> Result<String, String> {
     require_launcher(webview.url())?;
     window::begin_browser_sign_in(webview.app_handle()).map_err(|e| e.to_string())
 }

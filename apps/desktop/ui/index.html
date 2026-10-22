@@ -77,14 +77,20 @@
           Sign in with your browser
         </button>
         <p id="browser-signin-status" class="notice" role="status"></p>
+        <p id="browser-signin-pairing" class="notice" hidden>
+          Pairing code <strong id="browser-signin-code" class="pairing"></strong>. The page in your
+          browser shows the same four characters. If it shows different ones, choose Cancel there:
+          that request is not the one you started.
+        </p>
         <p id="browser-signin-error" class="error" role="alert"></p>
       </section>
 
       <section id="signin" aria-labelledby="signin-title" hidden>
         <h2 id="signin-title">Or paste an emailed sign-in link</h2>
         <p>
-          If the button above does not work for you: when you ask for a sign-in email in this
-          window, the link in that email opens in your web browser, not here. Copy the link from
+          <span id="signin-if-button">If the button above does not work for you: </span>when you
+          ask for a sign-in email in this window, the link in that email opens in your web
+          browser, not here. Copy the link from
           the email (right-click it, then Copy link) and paste it below to sign in here. Only paste
           a link from an email you asked for.
         </p>

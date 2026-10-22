@@ -59,9 +59,16 @@ impl AppState {
         self.unconfirmed.lock().ok().and_then(|s| s.clone())
     }
 
-    /// The person chose (or confirmed) this server.
+    /// The person chose (or confirmed) this server. A different server forgets the browser
+    /// sign-in in flight: its verifier was made for the old one, and a finished attempt's fragment
+    /// waiting for a page is only for the old one's finish page (the outbox and the attempt each
+    /// compare the server again, so this is the second lock, not the only one).
     pub fn set_server(&self, server: server::ServerOrigin) {
         if let Ok(mut current) = self.server.lock() {
+            if current.as_ref() != Some(&server) {
+                self.signin.clear();
+                self.outbox.clear();
+            }
             *current = Some(server);
         }
         if let Ok(mut pending) = self.unconfirmed.lock() {
@@ -210,5 +217,63 @@ mod tests {
             (None, Some(s))
         );
         assert_eq!(split_loaded(config::Loaded::Nothing), (None, None));
+    }
+
+    fn bare_state() -> AppState {
+        AppState {
+            server: Mutex::new(None),
+            unconfirmed: Mutex::new(None),
+            config_dir: PathBuf::new(),
+            data_dir: PathBuf::new(),
+            webview_dir: None,
+            launcher_grant: Mutex::new(nav::LauncherGrant::default()),
+            handoffs: handoff::Limiters::new(),
+            click_secret: String::new(),
+            signin: signin::Pending::default(),
+            outbox: signin::Outbox::default(),
+        }
+    }
+
+    #[test]
+    fn choosing_another_server_forgets_the_sign_in_in_flight() {
+        let a = parse_server_address("https://a.example.org").unwrap();
+        let b = parse_server_address("https://b.example.org").unwrap();
+        let state = bare_state();
+        state.set_server(a.clone());
+        let now = signin::Moment::now();
+        let start = |state: &AppState| {
+            let (attempt, request) =
+                signin::Attempt::new(&a.as_text(), now, signin::os_random).unwrap();
+            state.signin.start(attempt);
+            state
+                .outbox
+                .put(signin::Secret::new("fragment".into()), &a.as_text(), now);
+            request
+        };
+        // Choosing the same server again changes nothing.
+        let request = start(&state);
+        state.set_server(a.clone());
+        assert!(state.signin.is_waiting());
+        assert!(state.outbox.take(now, &a.as_text()).is_some());
+        // Another server: the attempt and the fragment are gone, and stay gone.
+        let request2 = start(&state);
+        state.set_server(b.clone());
+        assert!(!state.signin.is_waiting());
+        assert!(state.outbox.take(now, &a.as_text()).is_none());
+        assert!(state.outbox.take(now, &b.as_text()).is_none());
+        for state_text in [&request.state, &request2.state] {
+            assert_eq!(
+                state
+                    .signin
+                    .complete(now, &b.as_text(), &"ab".repeat(32), state_text)
+                    .unwrap_err(),
+                signin::Refusal::NothingPending
+            );
+        }
+        // And the source says so: the clearing is in set_server itself.
+        let source = include_str!("lib.rs");
+        let body = &source[source.find("pub fn set_server(").unwrap()..];
+        let body = &body[..body.find("\n    }\n").unwrap()];
+        assert!(body.contains("self.signin.clear();") && body.contains("self.outbox.clear();"));
     }
 }
