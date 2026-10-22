@@ -748,7 +748,7 @@ test.describe('the whole flow', () => {
     });
     await page.waitForTimeout(9000);
     await expect(page.getByRole('alert')).toContainText(
-      'did not come from the button on this page',
+      'could not be confirmed as your own click on this page',
       {
         timeout: 15000
       }
@@ -823,5 +823,154 @@ test.describe('the whole flow', () => {
       await app.context.close();
     }
     await attacker.close();
+  });
+  test('the two pages are never framed, never share a window group, and the confirmation form sends its real Origin', async ({
+    browser
+  }) => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await signIn(page, `headers-${Date.now()}@example.test`, /\/projects$/);
+    const p = pkce();
+    const response = await page.goto(`${origin}${requestPath(p)}`);
+    const finishResponse = await page.request.get(`${origin}/app-signin/finish`);
+    for (const [name, r] of [
+      ['the confirmation page', response!],
+      ['the finish page', finishResponse]
+    ] as const) {
+      const h = r.headers();
+      expect(h['cross-origin-opener-policy'], name).toBe('same-origin');
+      expect(h['x-frame-options'], name).toBe('DENY');
+      expect(h['content-security-policy'], name).toContain("frame-ancestors 'none'");
+    }
+    // The page's own policy is what makes the form carry its real Origin behind a proxy that
+    // replaces the header with `no-referrer`.
+    await expect(page.locator('meta[name="referrer"]')).toHaveAttribute('content', 'same-origin');
+    const post = page.waitForRequest(
+      (r) => r.method() === 'POST' && r.url().includes('/app-signin?')
+    );
+    const answer = page.waitForResponse(
+      (r) => r.request().method() === 'POST' && r.url().includes('/app-signin?')
+    );
+    await page.getByRole('button', { name: 'Continue' }).click();
+    expect((await post).headers()['origin']).toBe(origin);
+    const h = (await answer).headers();
+    expect(h['cross-origin-opener-policy']).toBe('same-origin');
+    expect(h['x-frame-options']).toBe('DENY');
+    await context.close();
+  });
+
+  test('a script on an infected page cannot read the code a form post into a popup returns', async ({
+    browser
+  }) => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await signIn(page, `popup-${Date.now()}@example.test`, /\/projects$/);
+    const p = pkce();
+    const before = issues(apiProxy.seen).length;
+    // What a script running on an ordinary page of the site (an infected one) can do with two real
+    // inputs: open a same-origin window by name, then post the Continue form into it, then read
+    // the answer from the window it holds. Installed through the DevTools protocol, so the page's
+    // own script policy does not apply; the browser's rules about windows do.
+    await page.evaluate(
+      (target) => {
+        const state = window as unknown as { __read: string };
+        let popup: Window | null = null;
+        let taps = 0;
+        state.__read = 'nothing read yet';
+        document.addEventListener('pointerdown', () => {
+          taps += 1;
+          if (taps === 1) popup = window.open('', 'pop');
+          if (taps === 2) {
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = target;
+            form.target = 'pop';
+            document.body.appendChild(form);
+            form.submit();
+            setTimeout(() => {
+              try {
+                state.__read =
+                  popup!.document.querySelector('a[href^="dynodoc:"]')?.getAttribute('href') ??
+                  'popup readable, no link';
+              } catch (error) {
+                state.__read = `BLOCKED ${String(error).slice(0, 40)}`;
+              }
+            }, 1500);
+          }
+        });
+      },
+      `${origin}${requestPath(p)}`
+    );
+    await page.mouse.click(5, 5);
+    await page.waitForTimeout(300);
+    await page.mouse.click(6, 6);
+    await page.waitForTimeout(2500);
+    // The post did happen (a code was made) ...
+    expect(issues(apiProxy.seen).length, 'the form post minted a code').toBe(before + 1);
+    // ... and the opener could not read it: the answer's Cross-Origin-Opener-Policy put that
+    // window in a group of its own.
+    const read = await page.evaluate(() => (window as unknown as { __read: string }).__read);
+    expect(read).not.toContain('dynodoc://');
+    await context.close();
+  });
+
+  test('a finish page inside a frame does nothing, even where the browser ignores the frame headers', async ({
+    browser
+  }) => {
+    const context = await appContext(browser, origin);
+    const page = await context.newPage();
+    // Take the frame-refusing headers off, as a server or proxy that did not send them would.
+    await context.route('**/app-signin/finish', async (route) => {
+      const upstream = await route.fetch();
+      const headers = { ...upstream.headers() };
+      delete headers['x-frame-options'];
+      delete headers['cross-origin-opener-policy'];
+      headers['content-security-policy'] = (headers['content-security-policy'] ?? '').replace(
+        /frame-ancestors [^;]*/,
+        "frame-ancestors 'self'"
+      );
+      await route.fulfill({ response: upstream, headers });
+    });
+    const redeemsBefore = redeems(webProxy.seen).length;
+    await page.goto(`${origin}/app-signin/finish`);
+    await expect(page.getByText('Signing you in')).toBeVisible();
+    await page.evaluate(() => {
+      const frame = document.createElement('iframe');
+      frame.name = 'victim';
+      frame.src = '/app-signin/finish';
+      document.body.appendChild(frame);
+    });
+    const frame = await (async () => {
+      for (let i = 0; i < 40; i += 1) {
+        const found = page
+          .frames()
+          .find((x) => x !== page.mainFrame() && x.url().includes('/app-signin/finish'));
+        if (found) return found;
+        await page.waitForTimeout(250);
+      }
+      throw new Error('the frame did not load');
+    })();
+    await frame.waitForLoadState('load');
+    // The framed page is not the app's window: it says so, and no fragment is ever acted on.
+    await expect(
+      frame.getByRole('heading', { name: 'Open this from the Dynodoc app' })
+    ).toBeVisible();
+    // A plain link with the frame as its target (no script on the attacker's side) feeds it a fragment.
+    const p = pkce();
+    await page.evaluate(
+      (hash) => {
+        const a = document.createElement('a');
+        a.href = `/app-signin/finish#${hash}`;
+        a.target = 'victim';
+        a.id = 'feed';
+        a.textContent = 'feed';
+        document.body.appendChild(a);
+      },
+      hashOf('ab'.repeat(32), p)
+    );
+    await page.click('#feed');
+    await page.waitForTimeout(1500);
+    expect(redeems(webProxy.seen).length).toBe(redeemsBefore);
+    await context.close();
   });
 });

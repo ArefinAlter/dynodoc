@@ -60,17 +60,26 @@ export function secureResponse(
       ...origins
     ]);
   }
-  policy.set('frame-ancestors', pane ? officeAncestors : ["'self'"]);
+  // The app sign-in pages (decision 017) are never framed: a framed finish page could be fed a
+  // fragment by a plain link whose target is the frame, and in the app's own window the frame would
+  // carry the app's User-Agent token and bridge object.
+  const signIn = /^\/app-signin(\/finish)?\/?$/.test(url.pathname);
+  policy.set('frame-ancestors', pane ? officeAncestors : signIn ? ["'none'"] : ["'self'"]);
   headers.set(
     'content-security-policy',
     [...policy].map(([key, values]) => `${key} ${[...new Set(values)].join(' ')}`).join('; ')
   );
   if (pane) headers.delete('x-frame-options');
-  else headers.set('x-frame-options', 'SAMEORIGIN');
+  else headers.set('x-frame-options', signIn ? 'DENY' : 'SAMEORIGIN');
+  // A same-origin window an infected page opens must not stay in the browsing context group of
+  // these pages: it could be the target of the Continue form and read the code the answer holds.
+  if (signIn) headers.set('cross-origin-opener-policy', 'same-origin');
   headers.set('x-content-type-options', 'nosniff');
   // The app sign-in confirmation page is the one place a form POST must carry its real Origin
   // header (the browser sends `Origin: null` for a POST under `no-referrer`, and the form is
-  // refused without it), so it shares the address with its own site only (decision 017).
+  // refused without it), so it shares the address with its own site only (decision 017). A reverse
+  // proxy that replaces this header with `no-referrer` (both shipped ones do) is overruled by the
+  // page's own `<meta name="referrer">`.
   headers.set(
     'referrer-policy',
     url.pathname === '/app-signin'

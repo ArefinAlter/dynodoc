@@ -5,6 +5,8 @@ includes the review's fixes). Owner: Verne. Status: built and checked on this PC
 was run"; migration 0046 never rehearsed against a production database (it was edited in place twice
 before it ever ran anywhere shared, which is allowed; see "Routes"), never tried on a physical phone,
 iOS not started, and the browser sign-in is offered only on Windows and Android (see "Forced login").
+A second review round (the shipped proxies, windows, frames, version grammar) is recorded at the end of
+the refinements.
 Refines item 6 of [decision 016](016-devices-processors-desktop-and-mobile-apps.md).
 
 ## The problem
@@ -115,7 +117,10 @@ platform, account, session generation, the login (session) that asked, times, an
 trigger lets move from unused to used exactly once. It was **amended in place** after the review
 (the login that asked, two indexes, the guard trigger covering the new column): it had never run in any
 shared environment, which is the condition `AGENTS.md` sets for editing a migration. If it has run
-anywhere by the time this is read, the change must become a new numbered file instead.
+anywhere by the time this is read, the change must become a new numbered file instead. **Any local or
+test database that applied the first version of 0046 must be reset** (sqlx records a checksum of every
+applied migration and refuses a changed one: `task migrate-reset`, development databases only); this
+branch's own test databases are created fresh each run.
 `engine-core/src/database.rs` lists it for the restricted runtime login (insert, update, delete; the
 trigger refuses every other edit). The retention job (`retention.rs`, one more spec, with its own test)
 deletes rows that expired more than `RETENTION_AUTH_DAYS` ago; the audit rows stay. Nothing else
@@ -209,6 +214,65 @@ changes, and nothing reads the table unless the routes are called.
     state or fragment (plain stores kept by `black_box`; the shell has no `unsafe` and adds no
     dependency for this). The copies a web view makes of a script it runs are out of reach.
 
+### Second review round: what only a real edge and real browsers showed
+
+18. **The Continue form was refused behind both shipped proxies, and no test could see it.**
+    `infra/demo/nginx-app.conf` and the bundled proxy hide the application's `Referrer-Policy` and
+    force `no-referrer`, so the `same-origin` the application sends for `/app-signin` never reached the
+    browser; under `no-referrer` a same-origin form POST carries `Origin: null` (Chromium, Firefox and
+    WebKit all do), and the form check refused it (SvelteKit's own CSRF check would too). The
+    browser tests ran without a proxy. The confirmation page now carries
+    `<meta name="referrer" content="same-origin">`, which overrules the header, so the form sends its
+    real Origin. It is tested **through** both configurations: `infra/selfhosted/test/proxy-app-signin.mjs`
+    runs the hosted `nginx-app.conf` (rewritten only for server name, certificate and upstream, each
+    rewrite asserted) and the bundled proxy image in front of the real built web app and the real API
+    and drives Chromium (12 checks), and `scripts/smoke.mjs` runs the same browser checks (h3 to h7)
+    through the full bundle. Removing the meta fails them.
+19. **A script on an infected page could read a minted code through a popup.** With two real inputs
+    it opens a same-origin window by name, posts the Continue form into it and reads the answer from
+    the window it holds (found in Chromium and Firefox; every request is `dest=document`, `user=?1`).
+    `/app-signin` and `/app-signin/finish` now send `Cross-Origin-Opener-Policy: same-origin`, so the
+    answer lands in a window group of its own and the opener cannot read it. Both proxies pass the
+    header through unchanged (tested through them). **Residual:** the same script can still make the
+    victim's browser mint codes blind (two real inputs, nothing read); such a code goes only to the
+    victim's own `dynodoc://` handler and is useless without a verifier the script does not have. A
+    script on the confirmation page itself shares the page's own window group and is out of scope:
+    it already runs with the person's session.
+20. **WebKit sends no `Sec-Fetch-User`, so Safari could never press Continue.** Not reachable today
+    (the browser sign-in is not offered on macOS, and there is no iPhone app), so the check is **not
+    relaxed**; the refusal page says plainly that this browser may not support the confirmation step
+    and to use Chrome, Edge or Firefox, in words that give a script nothing (a script-submitted form
+    without activation looks the same to the server). **Prerequisite of the iOS slice:** for the
+    iPhone app the proof of a real, person-made confirmation cannot be a browser header. It must
+    change, for example to the person typing the pairing code shown by the app into the confirmation
+    page, which makes the pairing code (item 12) mandatory instead of advisory, and removes the
+    reliance on `Sec-Fetch-User`.
+21. **The sign-in pages are never framed.** A plain link whose `target` names a frame can feed a
+    framed finish page a fragment with no script at all, and in the shell the frame would carry the
+    app's token and bridge object. `/app-signin` and `/app-signin/finish` send `X-Frame-Options:
+    DENY` and `frame-ancestors 'none'` (both proxies overwrite the application's `X-Frame-Options`,
+    so their frame-option map says `DENY` for the two paths, in the hosted file and the bundle's
+    `maps.conf`, which a smoke check keeps byte for byte equal), and the finish page and the shell's
+    script both do nothing when they are not the top window. Tested with the headers removed.
+22. **The confirmation form is rate limited at the proxy.** Moving Continue out of `/auth/` also took
+    it out of the proxy's 60-a-minute-per-address limit. Both configurations now have a zone of their
+    own for `POST /app-signin` (an empty key for any other method, so no GET is counted); the smoke
+    test checks both configurations' text and the harness checks a 429 through each.
+23. **One grammar for the version in the token.** The server accepted three digits per number, the
+    Android layer six, and the Rust shell passed Cargo's raw version, so a version such as
+    `2026.10.22` or `0.1.0-beta.1` gave a token the server silently refused. Now: `<major>.<minor>.<patch>`,
+    each one to nine ASCII digits; a producer keeps the leading dotted triple of its version and
+    **drops whatever follows** (a pre-release or build suffix, a fourth number), and writes `0.0.0`
+    when there is none. One fixture file (`apps/desktop/fixtures/app-token.json`: `2026.10.22`,
+    `0.1.0-beta.1`, `10.0.0+build5`, `1.2.3.4`, empty, very long, full-width digits ...) is run by
+    the Rust shell, the Android JVM test and the web app's tests.
+24. **What the User-Agent token proves.** Nothing about identity. It is a speed bump: a crafted link
+    or a page cannot make an ordinary browser send it on a navigation, so the finish page and the
+    redeem route refuse such a request. It is **not authentication**: any program can send the header,
+    and the kind of app the API compares with the one the code was asked for comes from that same
+    client-controlled header, relayed by the web tier. What keeps a code from being useful to another
+    program is the verifier, not the token.
+
 ## Phone sign-in without a menu
 
 The shell's rule stays: a page of the server gets **no** native access, not even an allowlisted one.
@@ -240,9 +304,11 @@ launcher deep link plus an Android long-press shortcut is the smallest one.
 |---|---|---|
 | **A program that registered `dynodoc://` only takes the code out of the link** (Android and desktop allow it; App Links and universal links do not exist yet) | PKCE: the code is bound to `SHA-256(verifier)`; the verifier exists only in the app's memory and in the one script and POST body that finish the sign-in. 60 s, once, a failed redeem burns it | the interceptor can burn the code (the person taps again), and on Android a chooser may show if two apps claim the scheme |
 | **A program on the device starts a request of its own and also receives the link** (its own verifier, challenge and state, opened in the person's browser; the person, signed in there, sees the confirmation page and presses Continue; the link goes to the program, which holds the verifier) | PKCE does **not** stop this: "useless without the verifier" is true only of a program that did not start the request. What helps: the page names the account and the device and shows a **pairing code** the real app also shows in its launcher while it waits, so a person who looks sees a mismatch (or no code in the app) and presses Cancel; the code is a human check, not a proof | **Open for a person who does not compare, and for a program that claims the scheme.** The real fix is verified Android App Links and iOS universal links, so that only the app signed with our key can receive the link. Not built: it needs the release signing key and the final identifiers |
+| **A script on an infected page reads a code minted into a popup** | `Cross-Origin-Opener-Policy: same-origin` on both pages and the form's answer (refinement 19), tested in the browser through both shipped proxies; the browser tests show the read fails | blind minting by two real inputs (the code goes only to the victim's own handler and needs a verifier); a script on the confirmation page itself |
+| **The Continue form refused behind a proxy** (`Origin: null` under `no-referrer`) | the page's own `<meta name="referrer">` (refinement 18); tested through both shipped proxies | a proxy that also rewrites the HTML; none known |
 | **Replay** of the code or of the link | row lock and used-once trigger; the app's attempt is used up at the first accepted link, and a second copy finds nothing pending | none known |
 | **Login CSRF through `/app-signin`** (a link makes the victim's browser hand a session to the attacker's app) | the page needs the visitor's own session, shows who, which device and the pairing code, and makes nothing until Continue, a real user-activated top-level form post of this site (`Sec-Fetch-*` and Origin, which script cannot set; an old browser that sends none is refused); framing is refused (`frame-ancestors 'self'`); no JSON route exists to script | a victim who reads the page and presses Continue anyway |
-| **Forced login through a crafted `/app-signin/finish` link** (the attacker mints a code and verifier for his own account and gets the victim's browser or app window to open the finish page with them) | **Closed, by four independent layers** (each has a test and a mutation that fails it): (1) the server acts only for a request carrying the app's User-Agent token, which a page cannot make a browser send on a navigation, and says so to anything else; (2) the page also needs the shell's bridge object, ignores a fragment present at load, and acts only on a change the shell causes after the page says it is ready; (3) the navigation rule refuses a page-initiated navigation (link, script, `window.open`, redirect) to `/app-signin/finish` with a query, a fragment or another spelling; (4) the shell's script checks origin and path before it touches the address. A normal browser with a valid triple in the fragment does not sign in, even after a later change of the fragment (browser test: the session cookie stays) | The token is not a secret: a native program can send it, but a native program already runs with the person's rights and cannot reach the browser's cookies through this. On Windows the request of a navigation the shell cancels may still reach the server (WebView2 sends it first; the window does not move). Whether Android's web view reports a server redirect or a history step to the navigation rule was not tested, so there layers (1) and (2) are what is relied on (they do not depend on it). Not offered at all where the token cannot be added: macOS, Linux and iOS |
+| **Forced login through a crafted `/app-signin/finish` link** (the attacker mints a code and verifier for his own account and gets the victim's browser or app window to open the finish page with them) | **Closed, by four independent layers** (each has a test and a mutation that fails it): (1) the server acts only for a request carrying the app's User-Agent token, which a page cannot make a browser send on a navigation, and says so to anything else; (2) the page also needs the shell's bridge object, ignores a fragment present at load, and acts only on a change the shell causes after the page says it is ready; (3) the navigation rule refuses a page-initiated navigation (link, script, `window.open`, redirect) to `/app-signin/finish` with a query, a fragment or another spelling; (4) the shell's script checks origin and path before it touches the address. A normal browser with a valid triple in the fragment does not sign in, even after a later change of the fragment (browser test: the session cookie stays) | The token is not a secret: a native program can send it, but a native program already runs with the person's rights and cannot reach the browser's cookies through this. On Windows the request of a navigation the shell cancels may still reach the server (WebView2 sends it first; the window does not move). Whether Android's web view reports a server redirect or a history step to the navigation rule was not tested, so there layers (1) and (2) are what is relied on (they do not depend on it). Not offered at all where the token cannot be added: macOS, Linux and iOS. A server redirect to the finish page was **not tried on Android** (the hosted cloud has no endpoint that redirects there); a page-initiated navigation to it was (the probe's check). A framed finish page is refused by headers, by the page and by the shell's script (refinement 21) |
 | **Session fixation** | a new login is made at redeem (new session id and refresh lineage); nothing the visitor supplied becomes a session | none |
 | **Open redirect** | the return address after sign-in is accepted only as the canonical form of a valid request; the app link is built from validated parts with a fixed scheme and host | none |
 | **Code and verifier in logs, Referer or history** | the code exists only in the page that answers the Continue form (the app link), the API's answer to the web server, a POST body, the app link and the one script that sets the fragment (never in a URL a server sees); the verifier never leaves the app but in that script and the redeem POST; the window is sent to a plain address, so the web view's own log and history never hold either; `no-referrer`, `no-store`; the fragment is removed from the address at once; the shell's debug log strips queries and fragments; tests assert none of it appears in the API log, the audit rows, the ledger, any request, the shell's debug log or (Android emulator) the device log | Android's activity manager may log the address of the app link's activity start (code and state, never the verifier); only adb and developer tools read that log, and the code is useless without the verifier |
@@ -332,6 +398,37 @@ cannot start: billing). The branch includes `main` as of 0257d46 (the self-hoste
   web redeem accepting a request without the token, the form accepting any `Sec-Fetch-Mode` or no
   `Sec-Fetch-User`, the finish page open to any browser, acting on a fragment present at load, and not
   needing the bridge object (the last four fail the browser tests).
+
+### Second review round: what was run (same day, same PC)
+
+* **Through the two shipped proxies:** `infra/selfhosted/test/proxy-app-signin.mjs` (hosted
+  `nginx-app.conf` in an nginx container and the bundled proxy image in evaluation TLS, each in front
+  of the real built web app and the real API, Chromium): 12 checks, all passed. Each edge: signed in
+  through the proxy, headers (DENY, `frame-ancestors 'none'`, COOP) on both pages while other pages
+  keep SAMEORIGIN, Continue works although the proxy says `no-referrer` (the real Origin arrives),
+  a popup read-back attack fails, the proxy answers 429 after the burst to POSTs and never to GETs.
+  The same browser checks are in `scripts/smoke.mjs` (h3 to h7) with static checks c14 and c15 (the
+  hosted maps and the zones equal in both configurations; c14 and c15 were run on the tree on their own,
+  **the full bundle smoke was not run**: it builds the shared `dynodoc-local/*:dev` images, which
+  another session was using). The Linux-only `scripts/check-proxy-headers.mjs` gained assertions for
+  the two pages and was **not run** (it needs Linux and nginx on the host).
+* **Web:** vitest 974 passed, 4 skipped (86 files); eslint, prettier, svelte-check (0 errors),
+  hosted-string audit; Chromium: 17 tests in `e2e/app-signin.spec.ts` (three new: headers and the real
+  Origin, the popup read-back with the answer's COOP, a framed finish page with the frame headers
+  removed), 51 in the run with the security, session-revocation, smoke and launch specs, 3 in
+  `selfhosted-noemail.spec.ts`.
+* **Shell:** 155 unit tests, fmt and clippy clean, 52 Node tests (the finish script has 8: one new for
+  a frame), JVM `AppTokenTest` 5 tests with the shared fixture; `signin-probe.mjs` 53/53 on the
+  rebuilt Windows shell. **Android emulator** on the rebuilt app: the `signin` phase now also tries
+  three forged navigations to the finish page from an ordinary page (fragment, query, trailing slash)
+  and the shell's rule refuses each (marker kept, `-> Deny` logged), 64 checks with the `ipc`, `links`,
+  `deeplink` and `recreate` phases, all passed. **Not tried on Android:** a server redirect to the
+  finish page (the hosted cloud has no endpoint that redirects there).
+* **Mutations, each fails a test:** the referrer meta removed (through both proxies); COOP removed
+  (unit test and the proxy checks); `X-Frame-Options` not DENY; the finish page's frame check removed;
+  the web reader back to three digits; the hosted `DENY` map entry removed; the bundle's `DENY` removed;
+  the hosted POST limit removed; the bundle's POST limit removed; the finish script's top-window check
+  removed (Rust and Node); the Rust producer not normalising; the Kotlin producer keeping a suffix.
 
 ## Not done, on purpose
 

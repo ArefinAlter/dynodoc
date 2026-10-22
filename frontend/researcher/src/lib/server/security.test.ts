@@ -54,22 +54,53 @@ it('hardens immutable redirects and API errors without adding HSTS on plain HTTP
   expect(failed.headers.has('strict-transport-security')).toBe(false);
 });
 
-it('keeps the native-app sign-in pages out of caches, referrers and frames', () => {
-  for (const path of ['/app-signin', '/app-signin/finish', '/auth/app-signin/redeem']) {
+it('keeps the native-app sign-in pages out of caches, referrers, frames and shared windows', () => {
+  for (const path of [
+    '/app-signin',
+    '/app-signin/',
+    '/app-signin/finish',
+    '/app-signin/finish/',
+    '/auth/app-signin/redeem'
+  ]) {
     const response = secureResponse(
       new Response('page', {
         headers: { 'content-security-policy': "script-src 'self' 'nonce-n'; connect-src 'self'" }
       }),
       new URL(path, 'https://app.test')
     );
-    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    const page = !path.startsWith('/auth/');
+    expect(response.headers.get('cache-control'), path).toBe('private, no-store');
     // The confirmation page's form must send its real Origin, so it shares its address with its own
     // site only; every other sign-in route says nothing about where it was reached from.
-    expect(response.headers.get('referrer-policy')).toBe(
+    expect(response.headers.get('referrer-policy'), path).toBe(
       path === '/app-signin' ? 'same-origin' : 'no-referrer'
     );
-    expect(response.headers.get('x-frame-options')).toBe('SAMEORIGIN');
-    expect(response.headers.get('content-security-policy')).toContain("frame-ancestors 'self'");
+    // The two pages are never framed (a plain link can aim a fragment at a frame) and never share
+    // a browsing context group with a window an infected page opened (it could read the code).
+    expect(response.headers.get('x-frame-options'), path).toBe(page ? 'DENY' : 'SAMEORIGIN');
+    expect(response.headers.get('content-security-policy'), path).toContain(
+      page ? "frame-ancestors 'none'" : "frame-ancestors 'self'"
+    );
+    expect(response.headers.get('content-security-policy'), path).not.toContain(
+      page ? "frame-ancestors 'self'" : "frame-ancestors 'none'"
+    );
+    expect(response.headers.get('cross-origin-opener-policy'), path).toBe(
+      page ? 'same-origin' : null
+    );
+  }
+});
+
+it('leaves every other page framable by its own site and in the default window group', () => {
+  for (const path of ['/', '/workspace', '/login', '/app-signin-help', '/app-signin/other']) {
+    const response = secureResponse(
+      new Response('page', { headers: { 'content-security-policy': "script-src 'self'" } }),
+      new URL(path, 'https://app.test')
+    );
+    expect(response.headers.get('x-frame-options'), path).toBe('SAMEORIGIN');
+    expect(response.headers.get('content-security-policy'), path).toContain(
+      "frame-ancestors 'self'"
+    );
+    expect(response.headers.has('cross-origin-opener-policy'), path).toBe(false);
   }
 });
 

@@ -1,6 +1,10 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  APP_VERSION,
   appKind,
+  normaliseAppVersion,
   appLink,
   appSigninPath,
   isChallenge,
@@ -172,5 +176,52 @@ describe('the app’s own window names itself in its User-Agent', () => {
       `${BASE} ${'x'.repeat(1100)} DynodocApp/0.1.0 (android)`
     ])
       expect(appKind(bad), String(bad).slice(-50)).toBeNull();
+  });
+});
+
+describe('the version in the app’s token: one grammar for the app and the server', () => {
+  const fixture = JSON.parse(
+    readFileSync(
+      resolve(process.cwd(), '..', '..', 'apps', 'desktop', 'fixtures', 'app-token.json'),
+      'utf8'
+    )
+  ) as { cases: { raw: string; version: string }[] };
+  const BASE = 'Mozilla/5.0 (Linux; Android 16) Chrome/133.0.0.0 Mobile Safari/537.36';
+  const generated = [
+    { raw: `1.2.3-${'x'.repeat(5000)}`, version: '1.2.3' },
+    { raw: `${'9'.repeat(400)}.0.0`, version: '0.0.0' }
+  ];
+
+  it('normalises every fixture the way the producers do', () => {
+    expect(fixture.cases.length).toBeGreaterThan(15);
+    for (const { raw, version } of [...fixture.cases, ...generated])
+      expect(normaliseAppVersion(raw), JSON.stringify(raw.slice(0, 40))).toBe(version);
+  });
+
+  it('accepts the token of every normalised version, for every kind, and nothing it was not given', () => {
+    for (const { raw, version } of [...fixture.cases, ...generated]) {
+      expect(version).toMatch(APP_VERSION);
+      for (const kind of ['desktop', 'android', 'ios'] as const)
+        expect(
+          appKind(`${BASE} DynodocApp/${version} (${kind})`),
+          `${raw.slice(0, 30)} ${kind}`
+        ).toBe(kind);
+    }
+  });
+
+  it('refuses a token carrying a version that was not normalised, which is why producers normalise', () => {
+    for (const raw of [
+      '0.1.0-beta.1',
+      '10.0.0+build5',
+      '1.2.3.4',
+      '',
+      '1.2',
+      'v1.2.3',
+      '1234567890.0.0'
+    ])
+      expect(appKind(`${BASE} DynodocApp/${raw} (android)`), JSON.stringify(raw)).toBeNull();
+    // Dates and long numbers within the grammar are accepted: nothing here has a three-digit limit.
+    expect(appKind(`${BASE} DynodocApp/2026.10.22 (desktop)`)).toBe('desktop');
+    expect(appKind(`${BASE} DynodocApp/123456789.0.1 (ios)`)).toBe('ios');
   });
 });

@@ -13,17 +13,28 @@
     if (form && 'url' in form && form.url) window.location.assign(form.url);
   });
 
+  // The two refusals of the confirmation step say what failed in terms that help a person and
+  // nobody else: a browser that does not report the click (WebKit sends no `Sec-Fetch-User`; some
+  // older ones send no `Sec-Fetch-*` at all) cannot be used for this step, and neither can a request
+  // that was not the person's own click. They look the same from the server, so the words cover both.
   const PROBLEMS: Record<string, string> = {
     browser:
-      'Your browser did not say where this request came from, so no sign-in was prepared. Update your browser, then start again from the app.',
+      'This browser does not support the confirmation step used for signing in the app, so no sign-in was prepared. Use Chrome, Edge or Firefox, then start again from the app.',
     blocked:
-      'This request did not come from the button on this page, so no sign-in was prepared. Go back to the app and start again.',
+      'This request could not be confirmed as your own click on this page, so no sign-in was prepared. Press Continue yourself; if that does not work this browser does not support the confirmation step (use Chrome, Edge or Firefox), or go back to the app and start again.',
     'signed-out': 'Your sign-in here has ended. Sign in again, then start again from the app.',
     busy: 'Too many sign-in attempts. Wait a minute, then try again.',
     failed: 'The sign-in could not be prepared. Please try again.',
     invalid: 'This sign-in link is not valid. Go back to the app and start again.'
   };
 </script>
+
+<svelte:head>
+  <!-- A reverse proxy that replaces the Referrer-Policy header with `no-referrer` (both shipped ones
+       do) would make the browser send `Origin: null` with the Continue form, which the form check
+       refuses. The page's own policy wins over the header, so the form carries its real Origin. -->
+  <meta name="referrer" content="same-origin" />
+</svelte:head>
 
 {#if data.phase === 'invalid'}
   <AppSigninCard title="This sign-in link is not valid">

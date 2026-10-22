@@ -266,8 +266,15 @@ async function main() {
     const mine = readFileSync(path.join(SRC, 'proxy', 'conf', 'maps.conf'), 'utf8');
     const block = mine.slice(mine.indexOf('# BEGIN HOSTED MAPS') + '# BEGIN HOSTED MAPS\n'.length, mine.indexOf('# END HOSTED MAPS'));
     const norm = (s) => s.split('\n').filter((l) => !l.startsWith('#')).join('\n').trim();
-    const demoMaps = readFileSync(path.join(REPO, 'infra', 'demo', 'nginx-app.conf'), 'utf8').split('\n').slice(0, 20).join('\n');
-    check('c14', 'the CSP and frame-option maps are byte for byte the hosted ones (infra/demo/nginx-app.conf)', norm(block) === norm(demoMaps), 'maps.conf differs from infra/demo/nginx-app.conf lines 1-20');
+    // The hosted file starts with the same maps, then a comment that begins the rest of the file.
+    const hosted = readFileSync(path.join(REPO, 'infra', 'demo', 'nginx-app.conf'), 'utf8');
+    const demoMaps = hosted.slice(0, hosted.indexOf('# Install after app.dynodoc.online'));
+    check('c14', 'the CSP and frame-option maps are byte for byte the hosted ones (infra/demo/nginx-app.conf)', demoMaps.length > 500 && norm(block) === norm(demoMaps), 'maps.conf differs from the start of infra/demo/nginx-app.conf');
+    // The sign-in confirmation form is limited like /auth/ in both configurations.
+    const tpl = readFileSync(path.join(SRC, 'proxy', 'conf', 'https.conf.tpl'), 'utf8');
+    const zone = (text) => /limit_req_zone \$dynodoc_signin_post_key zone=dynodoc_app_signin:10m rate=60r\/m;/.test(text) && /map \$request_method \$dynodoc_signin_post_key \{\s*POST \$binary_remote_addr;\s*default "";\s*\}/.test(text);
+    const location = (text) => /location = \/app-signin \{\s*limit_req zone=dynodoc_app_signin burst=60 nodelay;\s*limit_req_status 429;/.test(text);
+    check('c15', 'the sign-in confirmation form (POST /app-signin) has its own per-address limit zone and location in the bundled proxy and in the hosted nginx-app.conf', zone(mine) && zone(hosted) && location(tpl) && location(hosted), JSON.stringify({ bundleZone: zone(mine), hostedZone: zone(hosted), bundleLocation: location(tpl), hostedLocation: location(hosted) }));
   }
 
   // (d) API not reachable
@@ -396,6 +403,9 @@ async function main() {
       const admin = await session.page.goto('/admin');
       info(`first administrator opens /admin: HTTP ${admin?.status()}`);
       check('h2', 'the first administrator (ADMIN_EMAILS) can open /admin', admin && admin.status() < 400, admin?.status());
+      // The app sign-in confirmation step through this proxy (decision 017): the proxy's own
+      // no-referrer would break the form without the page's meta, and only a real edge shows it.
+      for (const r of await flow.appSigninThroughEdge({ page: session.page, context: session.context, baseUrl: ORIGIN })) check(r.id, r.label, r.ok, r.detail);
     } catch (error) {
       check('h', 'email sign-in end to end, and (k) the browser smoke', false, error.stack ?? error.message);
     }
