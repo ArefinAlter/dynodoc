@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
+  import { page } from '$app/stores';
   import {
     Archive,
     FileText,
@@ -376,7 +377,10 @@
 </script>
 
 <svelte:head
-  ><title>Your workspace · Dynodoc</title><meta name="robots" content="noindex" /></svelte:head
+  ><title>Your workspace · {$page.data.site.brand}</title><meta
+    name="robots"
+    content="noindex"
+  /></svelte:head
 >
 <div
   class="workspace"
@@ -384,8 +388,8 @@
   class:presentation-home={filter === 'presentation'}
 >
   <header class="app-title">
-    <a href="https://dynodoc.online"
-      ><img src="/brand/mark.svg?v=2" alt="" width="21" height="21" />Dynodoc</a
+    <a href={$page.data.site.homeUrl}
+      ><img src="/brand/mark.svg?v=2" alt="" width="21" height="21" />{$page.data.site.brand}</a
     >
     <div>
       <NotificationBell size={17} />

@@ -10,6 +10,7 @@ vi.mock('$lib/server/session', () => ({
   engineUrl: () => 'http://engine.test'
 }));
 
+import { resetConfig } from '$lib/server/config';
 import { POST } from './+server';
 
 const DOC = '11111111-2222-3333-4444-555555555555';
@@ -103,8 +104,10 @@ describe('POST /api/invite', () => {
   it('reports when email is not configured', async () => {
     const key = env.RESEND_API_KEY;
     env.RESEND_API_KEY = '';
+    resetConfig(); // the configuration is read once; this test changes the environment
     const response = await call({ document_id: DOC, email: 'eli@example.test', role: 'viewer' });
     env.RESEND_API_KEY = key;
+    resetConfig();
     expect((await response.json()).email_status).toBe('not_configured');
   });
   it('rejects cross-site requests and bad input', async () => {

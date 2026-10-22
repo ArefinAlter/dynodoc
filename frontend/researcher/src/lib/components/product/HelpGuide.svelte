@@ -37,17 +37,17 @@
     >{/if}
   <dialog bind:this={dialog} aria-labelledby="guide-title">
     <header>
-      <a href="https://dynodoc.online"
+      <a href={$page.data.site.homeUrl}
         ><img
           class="logo-day"
           src="/brand/logo.svg?v=2"
-          alt="Dynodoc"
+          alt={$page.data.site.brand}
           width="145"
           height="32"
         /><img
           class="logo-night"
           src="/brand/logo-dark.svg?v=2"
-          alt="Dynodoc"
+          alt={$page.data.site.brand}
           width="145"
           height="32"
         /></a
@@ -83,11 +83,12 @@
       </nav>
     </div>
     <footer>
-      <button disabled={index === 0} onclick={() => index--}><ArrowLeft size={16} />Back</button><a
-        href="https://dynodoc.online/help"
-        target="_blank"
-        rel="noopener noreferrer">Full guide</a
-      ><button
+      <button disabled={index === 0} onclick={() => index--}><ArrowLeft size={16} />Back</button
+      >{#if $page.data.site.helpUrl}<a
+          href={$page.data.site.helpUrl}
+          target="_blank"
+          rel="noopener noreferrer">Full guide</a
+        >{/if}<button
         class="next"
         onclick={() => {
           if (index === guide.length - 1) dialog?.close();

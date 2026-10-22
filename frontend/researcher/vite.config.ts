@@ -1,5 +1,10 @@
+import { fileURLToPath } from 'node:url';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
+
+// Unit tests cannot import SvelteKit's environment modules; they get an empty stand-in
+// unless the test mocks them.
+const emptyEnv = fileURLToPath(new URL('./src/lib/testing/env.ts', import.meta.url));
 
 export default defineConfig({
   plugins: [sveltekit()],
@@ -9,6 +14,7 @@ export default defineConfig({
   resolve: process.env.VITEST ? { conditions: ['browser'] } : {},
   test: {
     include: ['src/**/*.{test,spec}.{js,ts}'],
-    environment: 'jsdom'
+    environment: 'jsdom',
+    alias: { '$env/dynamic/private': emptyEnv, '$env/dynamic/public': emptyEnv }
   }
 });

@@ -1,8 +1,9 @@
 /**
  * Day and night mode. The preference is `light`, `dark` or `system` (follow the
  * operating system). app.html applies it before first paint; this module changes it
- * and keeps `system` in step with the OS setting. A cookie on the shared parent
- * domain lets dynodoc.online, app. and admin. show the same mode.
+ * and keeps `system` in step with the OS setting. Where the configuration names a shared
+ * parent domain (the hosted service), a cookie on it lets the public site, app. and admin.
+ * show the same mode.
  */
 export type ThemePreference = 'light' | 'dark' | 'system';
 export type ResolvedTheme = 'light' | 'dark';
@@ -23,10 +24,17 @@ function systemDark() {
 export function resolveTheme(preference: ThemePreference, osDark = systemDark()): ResolvedTheme {
   return preference === 'dark' || (preference === 'system' && osDark) ? 'dark' : 'light';
 }
-/** The cookie domain shared by the public site and the workspace/admin hosts. */
+let sharedDomain: string | null = null;
+/** The server configuration names the parent domain that public site, workspace and admin
+ *  hosts share (hosted only); with none, the cookie belongs to the current host. */
+export function setThemeCookieDomain(domain: string | null) {
+  sharedDomain = domain;
+}
+/** The cookie domain attribute for this host. */
 export function cookieDomain(hostname: string) {
-  return hostname === 'dynodoc.online' || hostname.endsWith('.dynodoc.online')
-    ? '; domain=.dynodoc.online'
+  const bare = sharedDomain?.replace(/^\./, '');
+  return sharedDomain && bare && (hostname === bare || hostname.endsWith(`.${bare}`))
+    ? `; domain=${sharedDomain}`
     : '';
 }
 export function nextPreference(preference: ThemePreference): ThemePreference {

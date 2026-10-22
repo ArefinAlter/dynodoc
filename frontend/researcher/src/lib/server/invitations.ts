@@ -3,7 +3,7 @@
  * Access itself is granted by the engine; this only tells the person. Content is
  * built here so it can be tested without sending anything.
  */
-import { env } from '$env/dynamic/private';
+import { getConfig } from './config';
 
 export const ROLE_TEXT: Record<string, string> = {
   editor: 'Editor — you can edit the team version and merge changes',
@@ -91,7 +91,10 @@ export function allowInvitation(inviter: string, recipientKey: string, now = Dat
   return true;
 }
 
-export const emailConfigured = () => Boolean(env.RESEND_API_KEY && env.EMAIL_FROM);
+export const emailConfigured = () => {
+  const config = getConfig();
+  return Boolean(config.secrets.resendApiKey && config.emailFrom);
+};
 
 export async function sendEmail(message: {
   to: string;
@@ -100,14 +103,15 @@ export async function sendEmail(message: {
   html: string;
   replyTo?: string;
 }) {
+  const config = getConfig();
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${env.RESEND_API_KEY}`,
+      Authorization: `Bearer ${config.secrets.resendApiKey?.expose()}`,
       'content-type': 'application/json'
     },
     body: JSON.stringify({
-      from: env.EMAIL_FROM,
+      from: config.emailFrom,
       to: [message.to],
       subject: message.subject,
       text: message.text,

@@ -17,6 +17,8 @@
     Upload
   } from '@lucide/svelte';
   import { goto } from '$app/navigation';
+  import { page } from '$app/stores';
+  import OrgNotice from './OrgNotice.svelte';
   import NotificationBell from '$lib/components/workspace/NotificationBell.svelte';
   import { clearSession } from '$lib/stores/session.svelte';
   import { theme, type ThemePreference } from '$lib/theme.svelte';
@@ -221,10 +223,14 @@
   {#if signOutError}<p class="repo-alert repo-wrap" role="alert">{signOutError}</p>{/if}
   <main id="repository-content" class="repo-main">{@render children()}</main>
   <footer class="repo-footer">
-    <span>Dynodoc · Version control for documents</span>
-    <a href="/compatibility">Supported formats</a>
-    <a href="/privacy">Privacy</a>
-    <a href="/terms">Terms</a>
+    <span>{$page.data.site.brand} · Version control for documents</span>
+    {#if $page.data.site.mode === 'hosted'}
+      <a href="/compatibility">Supported formats</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/terms">Terms</a>
+    {:else}
+      <OrgNotice compact />
+    {/if}
     <span>Test uploads: 3 MB per file</span>
   </footer>
   <CommandPalette

@@ -1,13 +1,15 @@
-import { env } from '$env/dynamic/private';
+import { getConfig } from '$lib/server/config';
 import { enginePost } from '$lib/server/session';
 import type { RequestHandler } from './$types';
-const origins = new Map([
-  ['https://dynodoc.online', 'homepage'],
-  ['https://www.dynodoc.online', 'homepage'],
-  ['https://app.dynodoc.online', 'workspace'],
-  ['https://admin.dynodoc.online', 'admin']
-]);
+// Which browser origins may report, and the host label stored with each measurement, come
+// from the configuration. With page metrics off the route does nothing.
+const allowed = () => {
+  const { telemetry } = getConfig();
+  return telemetry.enabled ? new Map(telemetry.origins) : null;
+};
 export const OPTIONS: RequestHandler = ({ request }) => {
+  const origins = allowed();
+  if (!origins) return new Response(null, { status: 404 });
   const origin = request.headers.get('origin') || '';
   if (!origins.has(origin) || request.headers.get('access-control-request-method') !== 'POST')
     return new Response(null, { status: 403 });
@@ -23,9 +25,11 @@ export const OPTIONS: RequestHandler = ({ request }) => {
   });
 };
 export const POST: RequestHandler = async ({ request }) => {
+  const origins = allowed();
+  if (!origins) return new Response(null, { status: 404 });
   const origin = request.headers.get('origin') || '';
   const host = origins.get(origin);
-  if (!host || !env.WEB_SERVICE_KEY) return new Response(null, { status: 403 });
+  if (!host || !getConfig().secrets.webServiceKey) return new Response(null, { status: 403 });
   if (Number(request.headers.get('content-length') || 0) > 2048)
     return new Response(null, { status: 413 });
   const text = await request.text();
