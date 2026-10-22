@@ -51,7 +51,7 @@ export function prune(buildDir, { dryRun = false } = {}) {
 function main() {
   const args = process.argv.slice(2);
   const known = ['--build', '--dry-run', '--json'];
-  const unknown = args.filter((arg, index) => arg.startsWith('--') && !known.includes(arg));
+  const unknown = args.filter((arg) => arg.startsWith('--') && !known.includes(arg));
   const buildIndex = args.indexOf('--build');
   const value = buildIndex >= 0 ? args[buildIndex + 1] : undefined;
   if (unknown.length || (buildIndex >= 0 && (!value || value.startsWith('--')))) {

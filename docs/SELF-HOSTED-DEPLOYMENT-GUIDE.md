@@ -552,6 +552,7 @@ pages can be worked on without secrets; `vite preview` and `node build` stop. Un
 | `DYNODOC_ORG_NAME` | no | empty | **Built**, `selfhosted` only. Organisation name for the notice (up to 120 characters, one line). |
 | `DYNODOC_ORG_NOTICE` or `DYNODOC_NOTICE_FILE` | no | empty | **Built**, `selfhosted` only. Plain text of up to 2,000 characters and 40 lines, shown on the sign-in page and in the workspace footer where the hosted service shows its privacy and terms links. Line breaks are kept; markup is shown as typed. Control and direction-override characters are refused. The file form reads at most 16 KiB of UTF-8 with no permission check; both set is an error. It stands in for the privacy policy, terms and contact pages, which a self-hosted installation does not serve. |
 | `DYNODOC_SUPPORT_URL` | no | empty | **Built**, `selfhosted` only. An `https:`, `http:` or `mailto:` link of up to 300 characters, without credentials, shown as "Contact or support" in the notice. |
+| `DYNODOC_OFFICE_JS_DIR` | no | unset | **Built**, `selfhosted` only. Absolute path of a folder that holds a copy of Office.js (`office.js` and the files beside it), which the installation then serves itself from `/office-js/`. Checked at start: not absolute, not a folder, or no `office.js` stops the server. Set: the Office panes load Office.js from this installation and their content security policy lists no Microsoft host. Unset: the panes load it from Microsoft's servers, as the hosted service does. Dynodoc does not ship Office.js; see "Add-in files and a local Office.js" below. |
 | `DYNODOC_ALLOW_OPEN_SECRET_FILES` | no | unset | `true` accepts a secret file that group or others can read (Unix). Same meaning as for the API. |
 | `CONNECTOR_ORIGINS` | no | empty | Comma-separated extra HTTPS origins appended to pane `connect-src`. Malformed entries discarded. |
 | `DEV_AUTH` | no | `false` | Never `true` outside a test stack: with no mail key it returns sign-in tokens in the HTTP response. Only the exact text `true` turns it on; `selfhosted` mode warns when it is. |
@@ -763,6 +764,76 @@ prints no secret, and lists what to back up. `check-config --dir <directory>` va
 same validator the server runs (plus the shape of `PASETO_LOCAL_KEY` and `DATABASE_URL`, which
 only the API reads) without starting anything; exit code 0 (valid), 1 (problems) or 2 (cannot
 run), `--json` for tools. `dynodoctl` is meant to call both.
+
+**Add-in files and a local Office.js (P0-7, built 23 October 2026).** The Word, Excel and
+PowerPoint add-ins and the Google editor add-ons must name the address of the installation
+they talk to, so each installation makes its own files from `ORIGIN`, the product name
+(`DYNODOC_BRAND_NAME`), the organisation (`DYNODOC_ORG_NAME`) and the support link
+(`DYNODOC_SUPPORT_URL`, used only when it is an `https:` address; otherwise the manifests link
+to the installation itself).
+
+*The web server makes them.* In `selfhosted` mode, and only there:
+
+| Address | Who | What |
+|---|---|---|
+| `GET /connectors/addins/word.xml`, `excel.xml`, `powerpoint.xml` | anyone | The Office manifests with the ribbon button. Not secret (they hold the address, the product name, a support link and ids derived from the address), so they are public: people sideload from a link, and the Microsoft 365 admin center can fetch a manifest from a link. |
+| `GET /connectors/addins/word-catalog.xml`, `excel-catalog.xml`, `powerpoint-catalog.xml` | anyone | The catalog-compatible manifests for SharePoint app catalogs and trusted add-in catalogs: no `VersionOverrides`, so no ribbon button (the pane opens from Home, Add-ins, More Settings, My Organization). |
+| `GET /connectors/addins/google-docs.zip`, `google-sheets.zip`, `google-slides.zip` | anyone | The Apps Script projects with the origin and `urlFetchWhitelist` filled in, plus an `INSTALL.md` for this address. Not made when `ORIGIN` is `http://` (Google calls `https://` addresses only). |
+| `GET /connectors/addins/SHA256SUMS` | anyone | The checksum of every file above, in the form `sha256sum -c` reads. |
+| `GET /connectors/addins` | administrators | The page that lists the files with their ids and checksums, the install steps for each way of installing, and what cannot work without internet access or on a private network. The same sign-in and administrator rule as `/admin` (`ADMIN_EMAILS` on the API); a person who is signed in but is not an administrator gets 403. |
+
+A hosted process answers 404 for all of these and keeps serving its committed files under
+`/connectors/packages/`. The files change when the settings change; the add-in ids are derived
+from the address, so they stay the same until the address changes (a new address is a new
+add-in to Office). The manifest `Version` is `1.<major>.<minor>.<patch>` of the web
+application's version, so a newer release gives Office a newer manifest. `ORIGIN` must be an
+`https://` address for Office to load the add-in; `http://localhost` is accepted only on a
+test stack (`DEV_AUTH=true`), and the hosted service's own address is refused. When `ORIGIN`
+cannot be used, the download addresses answer 503 with the reason in plain text, and the
+administrator page shows it.
+
+*Offline builder.* The same files, written to a folder, for installations that hand them out
+by hand or build them away from the server:
+
+```
+node scripts/build-addins.mjs --origin https://dynodoc.example.org --out ./addins \
+  [--brand "Acme Docs"] [--app-version 1.0.0] [--support-url https://help.example.org] \
+  [--provider "Acme Research Ltd."] [--display-suffix "(staging)"] [--force] [--json]
+```
+
+It needs only Node.js 20 or later and this package (no network, no other dependency), and it
+is copied into the `tools` image of the bundle by its Dockerfile (that image was not built when this was written). Exit codes: `0` built; `1` unexpected failure; `2` wrong
+command line; `3` an input was refused (unsafe origin, the hosted service's address, a bad name,
+version or link); `4` the folder holds files and `--force` was not given, or could not be written.
+With `--json` it prints one document on standard output and nothing else (`ok`, `origin`,
+`brand`, `appVersion`, `manifestVersion`, `supportUrl`, `out`, `google`, and per file `name`,
+`group`, `host`, `variant`, `id`, `bytes`, `sha256`; on failure `ok: false`, `exit`, `code`,
+`error`); `dynodoctl addin build` is meant to call it that way. Given the same settings it
+writes the same bytes as the web server serves, and the same bytes every time.
+
+*A local Office.js.* Office loads `office.js` for each pane. By default it comes from
+Microsoft's servers, which an intranet or an air-gapped network may not reach. To serve it
+from the installation: obtain a copy of the Office.js files yourself (for example the `dist`
+folder of Microsoft's `@microsoft/office-js` package), and run
+`node scripts/stage-office-js.mjs --from <that folder> --to <folder on the server>`, which copies
+only the files the server hands out (`.js`, `.css`, `.json`, `.map`, `.txt`, `.png`, `.gif`,
+`.woff`, `.woff2`, up to 16 MiB each) and lists what it skipped. In the bundle, a folder under
+`config/` (mounted read-only at `/etc/dynodoc`) works: set
+`DYNODOC_OFFICE_JS_DIR=/etc/dynodoc/office-js` and restart the web container. **Dynodoc does not
+ship Office.js**: whether it may be redistributed has not been reviewed, so you bring the files
+and accept Microsoft's terms for them. With the folder set, the three pane pages carry a small
+`<meta name="dynodoc-office-js">` tag, load the script from `/office-js/office.js`, and their
+content security policy drops Microsoft's three hosts from `script-src` and `connect-src`;
+every other page, and every process without the setting, is unchanged. The small command page
+`/connectors/commands.html` is a static file and still asks Microsoft's address for Office.js; it
+defines no ribbon command, but no installation with that address blocked has been tried.
+
+*Hosted files in the image.* The web image of the bundle removes the six hosted add-in
+packages from the build (`scripts/prune-hosted-static.mjs`, run by `infra/selfhosted/images/Dockerfile.web`),
+so no file in the image names the hosted service's add-in address; the hosted service's own
+build keeps them. `node scripts/audit-hosted-strings.mjs --check --profile selfhosted-image`
+holds a pruned build to the shorter list.
+
 ### 7.3 Other components
 
 | Component | Variables | Notes |
@@ -1116,8 +1187,8 @@ Things that embed the origin and what to do:
 |---|---|
 | `ORIGIN`, `PUBLIC_API_BASE_URL`, proxy `server_name`, certificate | Change; recreate web and API |
 | OIDC redirect URIs and SAML ACS URLs / entity IDs | Update at the IdP before the switch |
-| Office manifests (six lines each, plus `SupportUrl`) | Regenerate (`dynodoctl addin build`), raise `Version`, redeploy through the catalog; users may need to remove the old add-in |
-| Google add-ons (`DYNODOC_ORIGIN`, `urlFetchWhitelist`) | Regenerate and reinstall |
+| Office manifests (six lines each, plus `SupportUrl`) | Restart the web process with the new `ORIGIN`, download the new manifests from `/connectors/addins` (or run `scripts/build-addins.mjs`; `dynodoctl addin build` is meant to call it), and redeploy through the catalog. The add-in ids change with the address, so Office treats them as new add-ins: remove the old ones |
+| Google add-ons (`DYNODOC_ORIGIN`, `urlFetchWhitelist`) | Make new packages the same way and reinstall |
 | Pairing grants (seven-day, origin-bound approval links) | Re-pair; old grants expire |
 | Add-in local ledgers (IndexedDB per origin) | Unsent queued captures at the old origin are orphaned; ask users to push or export a sidecar first |
 | `engine-cli` remote files | Update the base URL; pins are keyed by authority UUID and public key, not hostname, so receipt journals remain valid |

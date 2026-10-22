@@ -232,9 +232,9 @@ limitation), **MISSING** (not present). "Today" means the repository at commit `
 | # | Capability | Tag | Evidence and limitation |
 |---|---|---|---|
 | 42 | Six add-ins as test builds | EXISTS | `extensions/{word,excel,powerpoint}/manifest.xml`, `extensions/google-*`. Not listed on any marketplace ([ADDIN-PUBLICATION-AND-ACCEPTANCE.md](ADDIN-PUBLICATION-AND-ACCEPTANCE.md)). |
-| 43 | Manifest and package for a customer origin | PARTIAL | Documented as a manual find-and-replace of `https://app.dynodoc.online` on six lines of each Office manifest (plus a `SupportUrl` line that names the marketing site) and in `Code.gs`/`appsscript.json` for Google ([extensions/INSTALL.md](../extensions/INSTALL.md)). Packages are static files built by `scripts/build-connectors.mjs`. |
-| 44 | Office.js served locally | MISSING | Panes load `https://appsforoffice.microsoft.com/lib/1/hosted/office.js` (`routes/connectors/word/+page.svelte`, `static/connectors/commands.html`). |
-| 45 | Manifest without `VersionOverrides` for SharePoint catalogs | MISSING | All three manifests use `VersionOverrides` for the ribbon group. |
+| 43 | Manifest and package for a customer origin | EXISTS (23 Oct 2026, P0-7; not tried in a host) | The web server makes the manifests and the Google packages for its own `ORIGIN` (`/connectors/addins/`), and `scripts/build-addins.mjs` writes the same files offline; the hosted packages stay static files built by `scripts/build-connectors.mjs` (section 7.9). The manual find-and-replace in [extensions/INSTALL.md](../extensions/INSTALL.md) is still how a developer points a source checkout at a staging server. |
+| 44 | Office.js served locally | PARTIAL (23 Oct 2026, P0-7) | With `DYNODOC_OFFICE_JS_DIR` set the panes load Office.js from the installation and drop Microsoft's hosts from their policy; the files are the operator's (not shipped), the command page `static/connectors/commands.html` still names Microsoft's address, and nothing was tried in a host. Without the setting the panes load `https://appsforoffice.microsoft.com/lib/1/hosted/office.js` as before. |
+| 45 | Manifest without `VersionOverrides` for SharePoint catalogs | EXISTS (23 Oct 2026, P0-7; not tried in a host) | `/connectors/addins/{word,excel,powerpoint}-catalog.xml`: the same add-in without the ribbon part. The hosted manifests keep `VersionOverrides`. |
 
 ### 3.6 Licensing, supply chain and storage
 
@@ -1728,7 +1728,7 @@ in the deployment guide 3.1, 5.2, 7.3, 9.1). Nothing is deployed, signed or rele
 **Implementation status (22 October 2026, revised 23 October 2026 after an independent review): P0-5, `dynodoctl` v1.** Source and tests in the application
 repository (`crates/dynodoctl`, seventh member of the root workspace); command reference, exit codes, decisions
 and runbooks in [SELF-HOSTED-OPERATIONS.md](SELF-HOSTED-OPERATIONS.md). Nothing is deployed, signed or released.
-`addin build` is not part of it (the manifest generator, P0-7, does not exist).
+`addin build` is not part of it (the manifest generator and the offline builder script it is meant to call were built afterwards in P0-7, section 7.9; the `dynodoctl` command is still a stub).
 
 - *Built.* One Rust binary with: `install` (preflight of Docker, Compose, memory, clock, disk, ports and DNS; the
   certificate mode is required and has no default; calls the bundle's own settings generator; never overwrites a secret;
@@ -1856,7 +1856,7 @@ and runbooks in [SELF-HOSTED-OPERATIONS.md](SELF-HOSTED-OPERATIONS.md). Nothing 
   files; the redaction cannot know a secret that has no sensitive name beside it; `verify-delivery` cannot probe TLS 1.0/1.1;
   a real Ctrl-C on Windows and a real release-to-release upgrade were not exercised; the engine repository CI and GitHub
   Actions did not run (billing).
-- *Not built.* `addin build` and the manifest check (P0-7; stub reports `NOT BUILT`); signed bundles, `bundle verify` and
+- *Not built.* The `dynodoctl addin build` call of `scripts/build-addins.mjs` and the manifest check (the script exists since P0-7, section 7.9; the command's stub reports `NOT BUILT`); signed bundles, `bundle verify` and
   `bundle import` (P3-1); air-gapped import and the egress-blocked run (P0-9); backup encryption and remote or off-host
   targets; scheduled backups (use cron); PITR and physical backups (P2-9); binary rollback without a restore (P2-5);
   high availability, Profile B and C; `admin sign-in-link` (P0-3); rotation helpers; an interactive prompt for the
