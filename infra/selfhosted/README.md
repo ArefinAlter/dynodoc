@@ -427,7 +427,7 @@ can run Docker on this machine controls everything in it; treat the host accordi
 | Command | What it proves |
 |---|---|
 | `node scripts/smoke.mjs` (or `scripts/smoke.sh`) | The whole stack in `evaluation` mode: ports, redirect, headers, hardening, roles, sign-in by email through a throwaway mail sink, Chromium, restarts, down/up, backup and restore, failures that must stop the stack |
-| `node test/proxy-tls.mjs` | `provided` and `evaluation` certificates: a bad key refused, renewal and replacement with no failed request |
+| `node test/proxy-tls.mjs` | `provided` and `evaluation` certificates: a bad key refused, renewal and replacement with no failed request; server-sent events unbuffered; WebSocket upgrade passed |
 | `node test/acme-pebble.mjs` | `acme` mode against Pebble, the Let's Encrypt test server: HTTP-01, hand-over, renewal with no failed request |
 | `docker run ... sh /t/tls-provided-cases.sh` | Sixteen good and bad certificate chains and the messages they give |
 | `node scripts/pin-bases.mjs` | Which base-image pins are out of date |

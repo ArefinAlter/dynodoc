@@ -55,7 +55,22 @@ function get(path = '/') {
 }
 
 function startWeb() {
-  const script = "require('http').createServer((q,r)=>{r.setHeader('content-type','text/plain');r.end('stub')}).listen(3000)";
+  // A stub web server: plain answers, a server-sent event stream on /sse (an event at once, then
+  // one every 400 ms for 1.2 s), and a WebSocket-style upgrade that answers 101 and sends a word.
+  const script = `
+const http = require('http');
+const s = http.createServer((q, r) => {
+  if (q.url === '/sse') {
+    r.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
+    r.write('data: first\\n\\n');
+    let n = 0;
+    const t = setInterval(() => { r.write('data: tick' + (++n) + '\\n\\n'); if (n >= 3) { clearInterval(t); r.end(); } }, 400);
+    return;
+  }
+  r.setHeader('content-type', 'text/plain'); r.end('stub');
+});
+s.on('upgrade', (q, sock) => { sock.write('HTTP/1.1 101 Switching Protocols\\r\\nUpgrade: websocket\\r\\nConnection: Upgrade\\r\\n\\r\\n'); sock.write('hello-ws'); sock.end(); });
+s.listen(3000);`;
   docker(['run', '-d', '--name', `${ID}-web`, '--network', NET, '--network-alias', 'web', WEB, 'node', '-e', script]);
   containers.push(`${ID}-web`);
 }
@@ -160,6 +175,33 @@ async function main() {
     ok(third && third.fingerprint === second.fingerprint, 'provided: a bad replacement is not applied; the previous certificate keeps being served');
     ok(/NOT applied/.test(logs(`${ID}-proxy`)), 'provided: the log says the bad replacement was not applied', logs(`${ID}-proxy`).split('\n').slice(-12).join('\n'));
     ok((await get('/')) === 200, 'provided: requests still succeed after a refused replacement');
+
+    // Server-sent events must not be buffered, and WebSocket upgrades must get through.
+    const sse = await new Promise((resolve) => {
+      const started = Date.now();
+      const chunks = [];
+      const request = https.get({ host: '127.0.0.1', port: PORT, path: '/sse', servername: 'localhost', rejectUnauthorized: false, agent: false, headers: { host: `localhost:${PORT}` } }, (response) => {
+        response.on('data', (c) => chunks.push({ at: Date.now() - started, text: c.toString() }));
+        response.on('end', () => resolve({ chunks, total: Date.now() - started, type: response.headers['content-type'] }));
+      });
+      request.on('error', () => resolve({ chunks, total: 0, type: '' }));
+    });
+    ok(sse.type === 'text/event-stream' && sse.chunks.length >= 3 && sse.chunks[0].at < 600 && sse.total > 1000 && sse.chunks[0].at < sse.total - 800,
+      'provided: a server-sent event stream arrives event by event, not buffered until it ends', JSON.stringify(sse));
+    const ws = await new Promise((resolve) => {
+      const request = https.request({ host: '127.0.0.1', port: PORT, path: '/socket', servername: 'localhost', rejectUnauthorized: false, agent: false,
+        headers: { host: `localhost:${PORT}`, connection: 'Upgrade', upgrade: 'websocket', 'sec-websocket-version': '13', 'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ==' } });
+      request.on('upgrade', (response, socket, head) => {
+        let body = head.toString();
+        socket.on('data', (d) => { body += d.toString(); });
+        socket.on('end', () => resolve({ status: response.statusCode, upgrade: response.headers.upgrade, body }));
+        socket.on('error', () => resolve({ status: response.statusCode, upgrade: response.headers.upgrade, body }));
+      });
+      request.on('response', (response) => resolve({ status: response.statusCode, body: '' }));
+      request.on('error', (e) => resolve({ status: 0, body: e.message }));
+      request.end();
+    });
+    ok(ws.status === 101 && /websocket/i.test(ws.upgrade ?? '') && /hello-ws/.test(ws.body), 'provided: a WebSocket upgrade is passed through (101 and the data after it)', JSON.stringify(ws));
   }
   stop(`${ID}-proxy`);
 

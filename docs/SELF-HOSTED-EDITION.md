@@ -1653,6 +1653,78 @@ mail through Resend exactly as before. Settings, messages and examples are in th
   been executed. **Not verified:** any real mail server or provider (Postfix, Exchange, a hosted relay, a private
   certificate authority in the field), IPv6 targets, and the Linux file-mode and arm64 runs.
 
+**Implementation status (22 October 2026): P0-4, the single-node bundle.** Source and tests in the
+application repository under `infra/selfhosted` (README there is the operator's entry point; settings
+in the deployment guide 3.1, 5.2, 7.3, 9.1). Nothing is deployed, signed or released; the hosted
+`infra/demo/*` files and the application code are untouched.
+
+- *Built.* `compose.yml` (project `dynodoc-selfhosted`) with `postgres` 16 (SCRAM on every
+  connection, no published port, health check, one data volume), `api`, `web`, `proxy`, and on
+  demand `acme`, `converter`, `database-admin` and `mailcheck`. Four one-shot jobs run on every
+  `up` and stop the stack if one fails: `secrets-init`, `preflight` (the web server's own validator
+  over `.env` and the secrets, no network), `db-roles` (creates or updates the restricted runtime
+  login) and `init` (`engine-cli migrate`, `grant-runtime`, `check-runtime` with the owner credential,
+  which exists only in that job). Only `proxy` publishes ports, on `DYNODOC_BIND` (default
+  `127.0.0.1`). Every container is non-root with a read-only root file system, `cap_drop: ALL`,
+  `no-new-privileges`, memory and process limits and rotated logs; the one exception is
+  `secrets-init`, root for seconds with three capabilities, no network, read-only root. The proxy
+  (nginx, unprivileged) reuses the hosted content-security-policy and frame-option maps byte for byte
+  (the smoke test compares them with `infra/demo/nginx-app.conf`), redirects HTTP to the configured
+  origin, answers 421 to other host names, sends HSTS, passes server-sent events and WebSocket
+  upgrades, limits bodies to 16 MiB, keeps tokens out of its log, and speaks TLS 1.2 and 1.3 with
+  ECDHE/AEAD ciphers only.
+- *TLS modes, one setting, no default* (`DYNODOC_TLS_MODE`). `provided`: key/certificate match,
+  dates, names, chain order and passphrase checked at start, refuses to start with every problem in
+  plain words; a replaced certificate is checked, then loaded by a graceful reload (the old one keeps
+  serving if the new one is bad). `evaluation`: a self-signed certificate for the configured name,
+  labelled in its subject, a response header and the log, five-minute HSTS, reused across restarts,
+  renewed before expiry. `acme`: lego v5.5.2 (HTTP-01 through the proxy), no default authority,
+  terms accepted explicitly in `.env`; the proxy serves plain HTTP only until a certificate exists.
+- *Decisions.* (1) Secrets are copied by `secrets-init` into one volume per service, owned by that
+  service's user, instead of Compose `secrets:`: Compose ignores `uid`, `gid` and `mode` for file
+  secrets (it says so; observed), so a 0600 secret is unreadable to the container user and an open one
+  is refused by the API. This is identical on Linux and Docker Desktop. (2) Networks: `frontend`
+  (internal; proxy and web only, so the proxy cannot reach the API or database) and `egress` (web, and
+  the ACME client) beside `published`, `engine` and `conversion`; the brief asked for one internal
+  network, this keeps the proxy off it. (3) The configuration check runs in the `tools` build target of
+  the web Dockerfile (the web image plus the generator and checkers), as the `preflight` job; the web
+  image itself is unchanged. (4) `smoke.sh` is a launcher for `smoke.mjs`: one implementation for
+  Windows, macOS and Linux. (5) The evaluation label is in the certificate, a header and the log; no
+  banner is injected into pages (the application's CSP would block it).
+- *Images.* `api` 182 MB (cold build 23 min), `web` and `tools` 536 MB (9 min, shared layers),
+  `proxy` 92 MB, `acme` 103 MB; base images pinned by digest (`scripts/pin-bases.mjs` reports and
+  updates), a release overlay pins the Dynodoc images by digest (`scripts/make-release-overlay.mjs`),
+  Docker Scout SBOMs (api 134 packages: the Rust crates are not in it until the build uses
+  `cargo auditable`, P0-6; web 493; proxy 87; acme 224).
+- *Seen in the application, not changed.* With page metrics off, `GET` and `PUT /telemetry` answer 405
+  (only `POST` answers 404; 7.2 says every method). A self-signed certificate makes the service-worker
+  registration fail, a console message only. The first request for a sign-in link creates the account
+  (no invitation-only mode), and the API allows five links per address per 15 minutes.
+- *Verified here* (Windows 11, Docker Desktop 29.5 with Compose 5.1.4, linux/amd64, Chromium through
+  Playwright): `scripts/smoke.mjs` from a clean state, 106 checks, 0 failed, 315 s (a: only the proxy
+  publishes, on 127.0.0.1; b: HTTP redirects to the configured origin whatever the Host header; c:
+  headers, one CSP, HSTS, TLS 1.0/1.1 refused, the hosted maps unchanged; d: the API and PostgreSQL
+  not reachable from the host or the proxy, no route out for the API; e: users, read-only roots,
+  capabilities, limits, live `CapEff` 0 and `NoNewPrivs` 1 for the four services; f: the runtime login
+  cannot create, alter, drop, truncate or touch the event log and passes `check-runtime`; g: the
+  sign-in page in self-hosted mode with the organisation notice, no marketing pages; h and k: email
+  sign-in through a throwaway mail sink, then a document created and listed; i: every service
+  restarted; j: `down` then `up`; failure injection (no certificate, bad `.env`, wrong owner
+  password) each stops the stack; the documented certificate renewal with 76 requests and none
+  failing; backup and restore with `verify-snapshots --all`; no secret in `docker inspect`, `compose
+  config`, logs or `.env`) and again on the release path with the images pulled by digest from a
+  local registry (105 checks, 302 s). Four deliberate mutations each failed their checks (published on
+  0.0.0.0, HSTS changed, capabilities not dropped, an extra schema privilege for the runtime login,
+  which also made `up` refuse at `init`). `test/proxy-tls.mjs` 20/20 (including an unbuffered event stream and a WebSocket upgrade through the proxy), `test/tls-provided-cases.sh`
+  16/16 and `test/acme-pebble.mjs` 17/17 (HTTP-01 against Pebble, issuance, hand-over, renewal with
+  no failed request). GitHub Actions could not run (billing).
+- *Not verified.* A Linux host (file ownership of the bind-mounted `jobs`, `config`, `secrets`, `tls`
+  directories, rootful and rootless Docker, SELinux, `ufw`), arm64, ACME against a real authority (only
+  Pebble), a real mail server, an upgrade from release N to N+1 (only the mechanism: `init` re-run on
+  `down`/`up` and after a restore), the converter image (its Compose service is validated, the
+  LibreOffice image was not built), the air-gap run (P0-9), memory under load, and the `no-egress`
+  overlay beyond `docker compose config`.
+
 ### 13.3 Phase 1: identity
 
 Goal: a university or company connects its identity provider and maps groups to roles;
