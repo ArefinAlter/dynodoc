@@ -440,7 +440,10 @@ fn restoring_settings_never_writes_outside_the_bundle_even_if_the_manifest_was_n
         let mut notes = Vec::new();
         let e = restore_config_files(&ctx, &info, &root, &mut notes).unwrap_err();
         assert_eq!(e.kind, crate::error::Kind::Refused, "{evil}");
-        assert!(!escaped.exists(), "{evil}: a file was written outside the bundle");
+        assert!(
+            !escaped.exists(),
+            "{evil}: a file was written outside the bundle"
+        );
         assert!(!dir.path().join(".git").exists(), "{evil}");
     }
     assert_eq!(std::fs::read(&absolute).unwrap(), b"original");

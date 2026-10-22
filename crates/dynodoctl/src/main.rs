@@ -24,6 +24,11 @@ fn main() {
             )
         })
         .expect("start the worker thread");
-    let code = worker.join().unwrap_or(1);
+    // A panic is caught and reported with a message and a JSON error by `cli::run`; this is the
+    // last line of defence for one that escapes it (it must never be a silent exit status).
+    let code = worker.join().unwrap_or_else(|_| {
+        eprintln!("ERROR: internal error: dynodoctl stopped unexpectedly (a bug)\n  What to do: run `dynodoctl status`; if a restore was running, `dynodoctl recover` puts the databases right. Please report this.");
+        1
+    });
     std::process::exit(code);
 }
