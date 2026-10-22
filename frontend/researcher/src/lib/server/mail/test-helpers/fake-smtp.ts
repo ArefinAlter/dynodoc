@@ -16,6 +16,10 @@ export interface FakeSmtpOptions {
   authMethods?: ('PLAIN' | 'LOGIN')[];
   /** Offer AUTH in the EHLO answer given before TLS too (a hostile or careless server). */
   authBeforeTls?: boolean;
+  /** Offer AUTH before TLS only: the EHLO answer given after STARTTLS leaves it out. */
+  authOnlyBeforeTls?: boolean;
+  /** Offer STARTTLS, then answer the command with a refusal. */
+  refuseStarttls?: boolean;
   /** Accept AUTH before TLS when offered; otherwise answer 538. Default false. */
   acceptAuthBeforeTls?: boolean;
   credentials?: { user: string; pass: string };
@@ -127,7 +131,10 @@ export async function startFakeSmtp(options: FakeSmtpOptions = {}): Promise<Fake
       if (options.maxSize) lines.push(`SIZE ${options.maxSize}`);
       if (!secure && context && options.starttls !== false && !options.implicitTls)
         lines.push('STARTTLS');
-      if (options.authMethods?.length && (secure || !context || options.authBeforeTls))
+      const offersAuth = secure
+        ? !options.authOnlyBeforeTls
+        : !context || options.authBeforeTls === true;
+      if (options.authMethods?.length && offersAuth)
         lines.push(`AUTH ${options.authMethods.join(' ')}`);
       return lines;
     };
@@ -169,6 +176,10 @@ export async function startFakeSmtp(options: FakeSmtpOptions = {}): Promise<Fake
       } else if (upper === 'STARTTLS') {
         if (!context || secure || options.starttls === false || options.implicitTls) {
           send('502 5.5.1 STARTTLS is not available');
+          return;
+        }
+        if (options.refuseStarttls) {
+          send('454 4.7.0 TLS not available due to a temporary reason');
           return;
         }
         send('220 2.0.0 Ready to start TLS');

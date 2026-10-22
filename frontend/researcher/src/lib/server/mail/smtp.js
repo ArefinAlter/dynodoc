@@ -279,20 +279,22 @@ export function createSmtpSender(settings, deps = {}) {
           steps.push({ name: 'authenticate', ok: true });
         } else steps.push({ name: 'authenticate', ok: true, detail: 'no SMTP_USER set; skipped' });
         if (options.to) {
+          // The client reads the message only once the server has said "go ahead" (354) after
+          // accepting the sender and the recipient. That first read is the answer we wanted; the
+          // connection is dropped there, so the server never gets the end of a message.
           let reached = false;
-          /** @type {Readable} */
-          const never = new Readable({
-            read() {
-              reached = true;
-              connection.close();
-            }
-          });
-          await new Promise((resolve, reject) =>
+          await new Promise((resolve, reject) => {
+            const never = new Readable({
+              read() {
+                reached = true;
+                connection.close();
+                resolve(undefined);
+              }
+            });
             connection.send({ from: from.address, to: [options.to ?? ''] }, never, (error) => {
-              if (reached) resolve(undefined);
-              else reject(error ?? new MailError('unknown'));
-            })
-          );
+              if (!reached) reject(error ?? new MailError('unknown'));
+            });
+          });
           steps.push({
             name: 'MAIL FROM and RCPT TO',
             ok: true,

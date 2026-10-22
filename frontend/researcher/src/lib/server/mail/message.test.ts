@@ -12,6 +12,7 @@ import {
   newMessageId
 } from './message.js';
 import { MailError } from './errors.js';
+import { decodePart, decodeWords, split } from './test-helpers/mime';
 
 const ch = (code: number) => String.fromCharCode(code);
 const FROM = { name: 'Acme Docs', address: 'docs@example.org' };
@@ -117,53 +118,6 @@ describe('checkSender', () => {
     ).toContain('sender address');
   });
 });
-
-/** Split a built message into its header block and body. */
-function split(raw: Buffer) {
-  const text = raw.toString('latin1');
-  const end = text.indexOf('\r\n\r\n');
-  const headers = new Map<string, string>();
-  for (const line of text
-    .slice(0, end)
-    .replace(/\r\n[ \t]+/g, ' ')
-    .split('\r\n')) {
-    const colon = line.indexOf(':');
-    headers.set(line.slice(0, colon).toLowerCase(), line.slice(colon + 1).trim());
-  }
-  return { headers, body: text.slice(end + 4) };
-}
-/** Decode RFC 2047 encoded words (B and Q) in a header value. */
-function decodeWords(value: string) {
-  return value
-    .replace(/\?=\s+=\?/g, '?==?')
-    .replace(/=\?([^?]+)\?([BbQq])\?([^?]*)\?=/g, (_m, _charset, kind: string, data: string) =>
-      kind.toUpperCase() === 'B'
-        ? Buffer.from(data, 'base64').toString('utf8')
-        : Buffer.from(
-            data
-              .replace(/_/g, ' ')
-              .replace(/=([0-9A-F]{2})/gi, (_x, hex: string) =>
-                String.fromCharCode(parseInt(hex, 16))
-              ),
-            'latin1'
-          ).toString('utf8')
-    );
-}
-/** Decode one MIME part's body according to its transfer encoding. */
-function decodePart(part: string) {
-  const [head, ...rest] = part.split('\r\n\r\n');
-  const body = rest.join('\r\n\r\n').replace(/\r\n$/, '');
-  const encoding = /content-transfer-encoding:\s*(\S+)/i.exec(head)?.[1]?.toLowerCase();
-  if (encoding === 'base64') return Buffer.from(body, 'base64').toString('utf8');
-  if (encoding === 'quoted-printable')
-    return Buffer.from(
-      body
-        .replace(/=\r\n/g, '')
-        .replace(/=([0-9A-F]{2})/g, (_m, hex: string) => String.fromCharCode(parseInt(hex, 16))),
-      'latin1'
-    ).toString('utf8');
-  return body;
-}
 
 describe('composeMessage', () => {
   const build = async (
