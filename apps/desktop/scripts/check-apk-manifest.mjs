@@ -15,8 +15,9 @@
 //   permissions: only INTERNET and the signature permission AndroidX adds for its own receivers;
 //   exported components: only MainActivity and AndroidX's ProfileInstallReceiver (guarded by the
 //     DUMP permission); every other component is `exported="false"`;
-//   intent filters of MainActivity: the launcher, and `dynodoc://open/...` links (VIEW, DEFAULT,
-//     BROWSABLE; scheme dynodoc, host open, the three path shapes; no autoVerify);
+//   intent filters of MainActivity: the launcher, `dynodoc://open/...` links (VIEW, DEFAULT,
+//     BROWSABLE; scheme dynodoc, host open, the three path shapes; no autoVerify) and the end of the
+//     browser sign-in, `dynodoc://signin?...` (the same, host signin and NO path);
 //   minSdkVersion equals bundle.android.minSdkVersion in tauri.conf.json, targetSdkVersion >= 35;
 //   MainActivity has an EMPTY taskAffinity (a task of its own), no component sets
 //     allowTaskReparenting;
@@ -216,6 +217,8 @@ const PROFILE_ACTIONS = [
   'androidx.profileinstaller.action.SAVE_PROFILE',
   'androidx.profileinstaller.action.BENCHMARK_OPERATION',
 ];
+/** The only hosts a link may name: the page links (`open`) and the end of the browser sign-in. */
+const DEEP_LINK_HOSTS = ['open', 'signin'];
 /** The only deep-link paths the manifest may route to the app; the Rust parser still decides. */
 const DEEP_LINK_PATHS = [
   ['path', '/workspace'],
@@ -250,23 +253,27 @@ function filterProblems(filter, where) {
     found.push(`${where}: a link filter must have exactly DEFAULT and BROWSABLE, has [${categories.join(', ')}]`);
   }
   // Android merges every <data> element of a filter (the Tauri plugin writes one element per
-  // attribute), so the rules apply to the filter as a whole: scheme dynodoc, host open, and
-  // one of the three path shapes, nothing else.
+  // attribute), so the rules apply to the filter as a whole: scheme dynodoc, then EITHER host
+  // open and one of the three path shapes OR host signin and no path (the end of the browser
+  // sign-in, whose query the Rust parser checks), nothing else.
   const seen = { scheme: [], host: [], path: [], pathPrefix: [] };
   for (const d of data) {
     for (const [attr, value] of Object.entries(d.attrs)) {
       const allowed =
         (attr === 'scheme' && value === 'dynodoc') ||
-        (attr === 'host' && value === 'open') ||
+        (attr === 'host' && DEEP_LINK_HOSTS.includes(value)) ||
         DEEP_LINK_PATHS.some(([a, v]) => a === attr && v === value);
-      if (!allowed) found.push(`${where}: data ${attr}="${value}" is not part of dynodoc://open/...`);
+      if (!allowed) found.push(`${where}: data ${attr}="${value}" is not part of dynodoc://open/... or dynodoc://signin`);
       else seen[attr].push(value);
     }
   }
+  const paths = seen.path.length + seen.pathPrefix.length;
   if (data.length === 0) found.push(`${where}: a link filter without data matches every link`);
   if (seen.scheme.length === 0) found.push(`${where}: the link filter has no scheme dynodoc`);
   if (seen.host.length === 0) found.push(`${where}: the link filter has no host (any host would match)`);
-  if (seen.path.length + seen.pathPrefix.length !== 1) found.push(`${where}: a link filter must name exactly one path shape`);
+  else if (new Set(seen.host).size > 1) found.push(`${where}: a link filter must name one host, has [${seen.host.join(', ')}]`);
+  else if (seen.host[0] === 'signin' && paths !== 0) found.push(`${where}: the dynodoc://signin filter must name no path`);
+  else if (seen.host[0] === 'open' && paths !== 1) found.push(`${where}: a link filter must name exactly one path shape`);
   return found;
 }
 

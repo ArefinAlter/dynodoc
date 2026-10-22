@@ -19,7 +19,8 @@
       "mobile": [
         { "scheme": ["dynodoc"], "host": "open", "path": ["/workspace"], "appLink": false },
         { "scheme": ["dynodoc"], "host": "open", "pathPrefix": ["/projects/"], "appLink": false },
-        { "scheme": ["dynodoc"], "host": "open", "pathPrefix": ["/documents/"], "appLink": false }
+        { "scheme": ["dynodoc"], "host": "open", "pathPrefix": ["/documents/"], "appLink": false },
+        { "scheme": ["dynodoc"], "host": "signin", "appLink": false }
       ],
       "desktop": {
         "schemes": ["dynodoc"]

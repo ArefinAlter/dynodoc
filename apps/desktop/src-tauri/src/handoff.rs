@@ -346,7 +346,7 @@ pub fn read_marker(url: &Url, secret: &str) -> Marker {
 }
 
 /// Equal text, compared without stopping at the first difference.
-fn same_text(a: &str, b: &str) -> bool {
+pub(crate) fn same_text(a: &str, b: &str) -> bool {
     a.len() == b.len()
         && a.bytes()
             .zip(b.bytes())

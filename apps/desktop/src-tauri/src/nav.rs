@@ -156,6 +156,22 @@ pub fn launcher_denied_goes_to(
     server.map(ServerOrigin::entry)
 }
 
+/// Is `url`, a page the window has finished loading, the configured server's own sign-in page?
+///
+/// On a phone, where there is no menu and the launcher is otherwise out of reach once a server
+/// is saved, the shell shows its launcher (with the browser sign-in button) when the window
+/// lands on the server's sign-in page: the emailed link and Google both finish in the system
+/// browser, so that page cannot sign this window in. The test is on the address alone (the
+/// shell never reads a page, a cookie or a header) and is only used to choose what to show: the
+/// launcher is a page of the app itself, and nothing a page does gives it any power over the
+/// app. `/login?token=...` is the pasted-link route and is left alone.
+#[cfg_attr(not(mobile), allow(dead_code))]
+pub fn needs_sign_in(url: &Url, server: Option<&ServerOrigin>) -> bool {
+    server.is_some_and(|s| s.matches(url))
+        && url.path() == "/login"
+        && !url.query_pairs().any(|(name, _)| name == "token")
+}
+
 /// `launcher_allowed` is the result of `launcher_load_allowed` for this navigation.
 /// `frames_ambiguous` is `frames_are_ambiguous()`.
 pub fn decide(
@@ -655,6 +671,48 @@ mod tests {
             launcher_denied_goes_to(&elsewhere, &launcher, Some(&s)),
             None
         );
+    }
+
+    #[test]
+    fn only_the_servers_own_sign_in_page_asks_for_the_browser_sign_in() {
+        let s = server("https://app.dynodoc.online");
+        let yes = |u: &str| needs_sign_in(&Url::parse(u).unwrap(), Some(&s));
+        for url in [
+            "https://app.dynodoc.online/login",
+            "https://app.dynodoc.online/login?next=%2Fworkspace",
+            "https://APP.dynodoc.online:443/login?next=%2Fprojects#x",
+        ] {
+            assert!(yes(url), "{url}");
+        }
+        for url in [
+            // The pasted-link route finishes the sign-in itself.
+            "https://app.dynodoc.online/login?token=abc",
+            "https://app.dynodoc.online/login?next=%2Fworkspace&token=abc",
+            // Every other page of the server, and anything look-alike.
+            "https://app.dynodoc.online/workspace",
+            "https://app.dynodoc.online/",
+            "https://app.dynodoc.online/login/",
+            "https://app.dynodoc.online/login.html",
+            "https://app.dynodoc.online/loginx",
+            "https://app.dynodoc.online/auth/login",
+            "https://app.dynodoc.online/app-signin",
+            "https://app.dynodoc.online/app-signin/finish",
+            // Another server, scheme or port, or credentials, is not this server's page.
+            "https://evil.example/login",
+            "https://app.dynodoc.online.evil.example/login",
+            "http://app.dynodoc.online/login",
+            "https://app.dynodoc.online:8443/login",
+            "https://user@app.dynodoc.online/login",
+            "tauri://localhost/login",
+            "http://tauri.localhost/login",
+        ] {
+            assert!(!yes(url), "{url}");
+        }
+        // With no server configured nothing is "the server's sign-in page".
+        assert!(!needs_sign_in(
+            &Url::parse("https://app.dynodoc.online/login").unwrap(),
+            None
+        ));
     }
 
     #[test]

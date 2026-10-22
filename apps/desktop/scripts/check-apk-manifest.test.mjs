@@ -95,9 +95,9 @@ test('real aapt2 output: the tree, the application attributes and a clean audit'
   const { problems, facts } = auditManifest(manifest, { ...options, build: 'debug' });
   assert.deepEqual(problems, []);
   assert.ok(facts.some((f) => f.includes('minSdkVersion 29, targetSdkVersion 37')), facts.join('\n'));
-  assert.ok(facts.some((f) => f.includes('MainActivity: EXPORTED, 4 intent filter(s)')));
+  assert.ok(facts.some((f) => f.includes('MainActivity: EXPORTED, 5 intent filter(s)')));
   const activity = manifest.children.find((c) => c.name === 'application').children.find((c) => c.name === 'activity');
-  assert.equal(activity.children.filter((c) => c.name === 'intent-filter').length, 4);
+  assert.equal(activity.children.filter((c) => c.name === 'intent-filter').length, 5);
 });
 
 test('real apkanalyzer output gives the same audit as aapt2', () => {
@@ -172,10 +172,20 @@ test('components: anything exported beyond MainActivity and the DUMP-guarded pro
   assert.ok(audit(implicit).some((p) => p.includes('no explicit exported')));
 });
 
-test('link filters: only dynodoc://open/<three shapes>, VIEW + DEFAULT + BROWSABLE, no autoVerify', () => {
+test('link filters: dynodoc://open/<three shapes> and dynodoc://signin, VIEW + DEFAULT + BROWSABLE, no autoVerify', () => {
   const cases = {
     'another scheme': [swapFirst(aapt2Text, '"dynodoc" (Raw: "dynodoc")', '"https" (Raw: "https")'),/scheme="https"|no scheme dynodoc/],
     'another host': [aapt2Text.replaceAll('="open" (Raw: "open")', '="evil" (Raw: "evil")'), /host="evil"/],
+    'a third host': [aapt2Text.replaceAll('="signin" (Raw: "signin")', '="settings" (Raw: "settings")'), /host="settings"/],
+    // The sign-in filter names no path: a path on it (or no host) is a problem.
+    'a path on the sign-in filter': [
+      swap(aapt2Text, 'A: http://schemas.android.com/apk/res/android:host(0x01010028)="signin" (Raw: "signin")', 'A: http://schemas.android.com/apk/res/android:pathPrefix(0x0101002b)="/documents/" (Raw: "/documents/")\n                  E: data (line=96)\n                    A: http://schemas.android.com/apk/res/android:host(0x01010028)="signin" (Raw: "signin")'),
+      /dynodoc:\/\/signin filter must name no path/,
+    ],
+    'both hosts in one filter': [
+      swap(aapt2Text, 'A: http://schemas.android.com/apk/res/android:host(0x01010028)="signin" (Raw: "signin")', 'A: http://schemas.android.com/apk/res/android:host(0x01010028)="open" (Raw: "open")\n                  E: data (line=96)\n                    A: http://schemas.android.com/apk/res/android:host(0x01010028)="signin" (Raw: "signin")'),
+      /must name one host/,
+    ],
     'a path outside the three': [swap(aapt2Text, '="/workspace" (Raw: "/workspace")', '="/admin" (Raw: "/admin")'), /path="\/admin"/],
     'a broader prefix': [swap(aapt2Text, '="/projects/" (Raw: "/projects/")', '="/" (Raw: "/")'), /pathPrefix="\/"/],
     'autoVerify (app links)': [addAttribute(aapt2Text, 'intent-filter', 'autoVerify(0x010104ee)=true'), /autoVerify/],

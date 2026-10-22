@@ -102,7 +102,8 @@ fn desktop_gets_all_commands_and_phones_get_no_tools() {
         [
             "allow-get-state",
             "allow-set-server",
-            "allow-open-sign-in-link"
+            "allow-open-sign-in-link",
+            "allow-start-browser-sign-in"
         ]
     );
     for tool in ["tools", "key"] {
@@ -245,15 +246,30 @@ fn identity_is_stable_and_the_version_has_one_source() {
         strings(&conf["plugins"]["deep-link"]["desktop"]["schemes"]),
         [crate::deeplink::SCHEME]
     );
-    // Android: the same scheme, host open, the three path shapes, no app link (no autoVerify).
+    // Android: the same scheme, no app link (no autoVerify). Host open with the three path
+    // shapes, and host signin (the end of the browser sign-in) with no path at all.
     let mobile = conf["plugins"]["deep-link"]["mobile"].as_array().unwrap();
-    assert_eq!(mobile.len(), 3);
+    assert_eq!(mobile.len(), 4);
     for entry in mobile {
         assert_eq!(strings(&entry["scheme"]), [crate::deeplink::SCHEME]);
-        assert_eq!(entry["host"], "open");
         assert_eq!(entry["appLink"], false);
     }
-    let shapes: Vec<String> = mobile
+    let hosts: Vec<&str> = mobile.iter().map(|e| e["host"].as_str().unwrap()).collect();
+    assert_eq!(hosts, ["open", "open", "open", "signin"]);
+    let sign_in = &mobile[3];
+    for key in [
+        "path",
+        "pathPrefix",
+        "pathPattern",
+        "pathAdvancedPattern",
+        "pathSuffix",
+    ] {
+        assert!(
+            sign_in.get(key).is_none(),
+            "the sign-in filter names no path: {key}"
+        );
+    }
+    let shapes: Vec<String> = mobile[..3]
         .iter()
         .map(|e| {
             e.get("path")
@@ -739,13 +755,18 @@ fn the_android_manifest_is_hardened_and_routes_only_the_deep_links() {
         manifest
             .matches("<data android:scheme=\"dynodoc\" />")
             .count(),
-        3
+        4
     );
     assert_eq!(
         manifest.matches("<data android:host=\"open\" />").count(),
         3
     );
-    assert_eq!(manifest.matches("<data ").count(), 9);
+    // The end of the browser sign-in: dynodoc://signin?code=..&state=.. (host signin, no path).
+    assert_eq!(
+        manifest.matches("<data android:host=\"signin\" />").count(),
+        1
+    );
+    assert_eq!(manifest.matches("<data ").count(), 11);
     assert!(manifest.contains("<data android:path=\"/workspace\" />"));
     assert!(manifest.contains("<data android:pathPrefix=\"/projects/\" />"));
     assert!(manifest.contains("<data android:pathPrefix=\"/documents/\" />"));

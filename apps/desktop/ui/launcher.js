@@ -89,6 +89,25 @@
     busy($('signin-go'), false);
   });
 
+  // Sign in with the system browser. The command takes no argument: the app opens the chosen
+  // server's own sign-in page, and the page cannot be asked for anything else.
+  $('browser-signin-go').addEventListener('click', async function () {
+    say('browser-signin-error', '');
+    say('browser-signin-status', '');
+    busy($('browser-signin-go'), true, 'Opening your browser ...');
+    try {
+      await invoke('start_browser_sign_in');
+      say(
+        'browser-signin-status',
+        'Your browser has opened. Sign in there, choose Continue, and you will come back to this app. ' +
+          'This request is good for 10 minutes.'
+      );
+    } catch (e) {
+      say('browser-signin-error', message(e));
+    }
+    busy($('browser-signin-go'), false);
+  });
+
   // Whether a key file exists (and looks finished). This reads no key: the public half is
   // fetched only when the person asks, because that decrypts the key through the operating
   // system's key store, which may prompt.
@@ -173,8 +192,8 @@
     if (phone) {
       $('lede').textContent =
         'Dynodoc opens your workspace in this app. Choose the Dynodoc cloud, or the address of a ' +
-        'server your organisation runs. To choose a different server later, clear the data of ' +
-        'this app in your phone settings.';
+        'server your organisation runs. To choose a different server later, sign out in Dynodoc: ' +
+        'this screen comes back.';
     }
     $('help').href = state.support;
     if (state.unconfirmed) {
@@ -184,6 +203,7 @@
     if (state.server) {
       say('current', 'Currently set to ' + state.server + '.');
       $('address').value = state.server === state.cloud ? '' : state.server;
+      show($('browser-signin'), true);
       show($('signin'), true);
     }
     if (state.tools) {
@@ -201,7 +221,7 @@
       }
     }
     // Only these two fixed values are ever read from the address.
-    if (location.hash === '#signin' && !$('signin').hidden) $('link').focus();
+    if (location.hash === '#signin' && !$('browser-signin').hidden) $('browser-signin-go').focus();
     if (location.hash === '#key' && !$('key').hidden) $('key').scrollIntoView();
   }
 

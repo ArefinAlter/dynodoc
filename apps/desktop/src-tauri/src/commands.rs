@@ -18,10 +18,11 @@ use url::Url;
 /// Every command, in the order of `generate_handler!` in lib.rs and of build.rs. A test
 /// compares this list with the capability files and with build.rs.
 #[cfg(test)]
-pub const COMMANDS: [&str; 7] = [
+pub const COMMANDS: [&str; 8] = [
     "get_state",
     "set_server",
     "open_sign_in_link",
+    "start_browser_sign_in",
     "tools_version",
     "device_key_status",
     "device_key_create",
@@ -110,6 +111,15 @@ pub fn open_sign_in_link(webview: Webview, link: String) -> Result<(), String> {
     let target = sign_in_url(&server, &link).map_err(|e| e.to_string())?;
     window::navigate_main(app, target);
     Ok(())
+}
+
+/// Sign in with the system browser: open the server's sign-in page there and wait for it to
+/// hand the app a one-time code (see `signin.rs`). The launcher's button; also a menu item on
+/// desktop. Takes no argument: the page cannot choose what is opened.
+#[tauri::command]
+pub fn start_browser_sign_in(webview: Webview) -> Result<(), String> {
+    require_launcher(webview.url())?;
+    window::begin_browser_sign_in(webview.app_handle()).map_err(|e| e.to_string())
 }
 
 fn key_path(app: &AppHandle) -> Result<KeyPath, String> {

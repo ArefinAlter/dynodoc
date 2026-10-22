@@ -13,6 +13,10 @@ pub const CLOUD_ORIGIN: &str = "https://app.dynodoc.online";
 pub const SUPPORT_URL: &str = "https://dynodoc.online/support";
 /// The path the window opens on a server (see `ServerOrigin::entry`).
 pub const ENTRY_PATH: &str = "/workspace";
+/// The page that asks the signed-in person to let the app in (docs/decisions/017).
+pub const APP_SIGNIN_PATH: &str = "/app-signin";
+/// The page the app's own window finishes signing in on, with the secrets in the fragment.
+pub const APP_SIGNIN_FINISH_PATH: &str = "/app-signin/finish";
 /// Longest address text accepted: `https://` + a 253 character name + `:65535` is 267.
 pub const MAX_ADDRESS_LEN: usize = 300;
 /// Longest URL the navigation policy looks at; anything longer is refused outright.
@@ -92,6 +96,31 @@ impl ServerOrigin {
         }
         let url = self.0.join(path).ok()?;
         self.matches(&url).then_some(url)
+    }
+
+    /// The page the system browser opens to sign the app in:
+    /// `<server>/app-signin?challenge=..&state=..&platform=..`. A fixed path of the configured
+    /// server; the three values are made by `signin.rs` (URL-safe characters only) and are
+    /// encoded anyway. The page never learns the verifier.
+    pub fn app_signin_url(&self, challenge: &str, state: &str, platform: &str) -> Url {
+        let mut url = self.0.clone();
+        url.set_path(APP_SIGNIN_PATH);
+        url.query_pairs_mut()
+            .append_pair("challenge", challenge)
+            .append_pair("state", state)
+            .append_pair("platform", platform);
+        url
+    }
+
+    /// The page the app's own window opens to finish signing in:
+    /// `<server>/app-signin/finish#<fragment>`. The code, state and verifier go in the
+    /// FRAGMENT, which no server, proxy or log ever receives; the path and the query carry
+    /// nothing.
+    pub fn finish_url(&self, fragment: &str) -> Url {
+        let mut url = self.0.clone();
+        url.set_path(APP_SIGNIN_FINISH_PATH);
+        url.set_fragment(Some(fragment));
+        url
     }
 
     /// True when `url` has exactly this scheme, host and port and carries no credentials.
@@ -603,6 +632,63 @@ mod tests {
         ] {
             assert!(server.join(bad).is_none(), "{bad}");
         }
+    }
+
+    #[test]
+    fn the_browser_sign_in_pages_are_fixed_paths_of_the_configured_server() {
+        for address in [
+            "https://app.dynodoc.online",
+            "dynodoc.example.org:8443",
+            "http://localhost:5173",
+            "https://[2001:db8::1]",
+        ] {
+            let server = parse_server_address(address).unwrap();
+            let start = server.app_signin_url("CHALLENGE-43-chars", "state_value", "android");
+            assert!(server.matches(&start), "{address}: {start}");
+            assert_eq!(start.path(), "/app-signin");
+            assert_eq!(
+                start.query(),
+                Some("challenge=CHALLENGE-43-chars&state=state_value&platform=android")
+            );
+            assert_eq!(start.fragment(), None);
+
+            let finish = server.finish_url("code=a&state=b&verifier=c");
+            assert!(server.matches(&finish), "{address}: {finish}");
+            assert_eq!(finish.path(), "/app-signin/finish");
+            // The secrets are in the fragment and nowhere a server or a log would see.
+            assert_eq!(finish.query(), None);
+            assert_eq!(finish.fragment(), Some("code=a&state=b&verifier=c"));
+            assert!(!finish
+                .as_str()
+                .split('#')
+                .next()
+                .unwrap()
+                .contains("verifier"));
+            // The same host, scheme and port as the server, never another.
+            assert_eq!(finish.origin(), server.root().origin());
+            assert_eq!(start.origin(), server.root().origin());
+        }
+    }
+
+    #[test]
+    fn nothing_but_the_three_values_ever_reaches_the_sign_in_address() {
+        let server = parse_server_address("https://app.dynodoc.online").unwrap();
+        // Values are encoded, so even a value with separators in it stays one value.
+        let start = server.app_signin_url("a&evil=1#x", "s t", "p/../q");
+        assert_eq!(start.fragment(), None);
+        let pairs: Vec<(String, String)> = start
+            .query_pairs()
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect();
+        assert_eq!(
+            pairs,
+            [
+                ("challenge".to_string(), "a&evil=1#x".to_string()),
+                ("state".to_string(), "s t".to_string()),
+                ("platform".to_string(), "p/../q".to_string()),
+            ]
+        );
+        assert_eq!(start.path(), "/app-signin");
     }
 
     const TOKEN: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";

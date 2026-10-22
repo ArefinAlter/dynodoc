@@ -8,6 +8,7 @@ use tauri::{AppHandle, Manager, Runtime};
 use url::Url;
 
 const CHANGE_SERVER: &str = "change-server";
+const SIGN_IN_BROWSER: &str = "sign-in-browser";
 const SIGN_IN: &str = "sign-in-link";
 const DEVICE_KEY: &str = "device-key";
 const OPEN_IN_BROWSER: &str = "open-in-browser";
@@ -33,6 +34,13 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let separator = || PredefinedMenuItem::separator(app);
 
     let change = MenuItem::with_id(app, CHANGE_SERVER, "Change server...", true, None::<&str>)?;
+    let sign_in_browser = MenuItem::with_id(
+        app,
+        SIGN_IN_BROWSER,
+        "Sign in with your browser...",
+        true,
+        None::<&str>,
+    )?;
     let sign_in = MenuItem::with_id(
         app,
         SIGN_IN,
@@ -61,10 +69,23 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         app,
         "File",
         true,
-        &[&change, &sign_in, &key, &browser, &separator()?, &quit],
+        &[
+            &change,
+            &sign_in_browser,
+            &sign_in,
+            &key,
+            &browser,
+            &separator()?,
+            &quit,
+        ],
     )?;
     #[cfg(target_os = "macos")]
-    let file = Submenu::with_items(app, "File", true, &[&change, &sign_in, &key, &browser])?;
+    let file = Submenu::with_items(
+        app,
+        "File",
+        true,
+        &[&change, &sign_in_browser, &sign_in, &key, &browser],
+    )?;
 
     let edit = Submenu::with_items(
         app,
@@ -122,6 +143,13 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
 pub fn handle(app: &AppHandle, id: &str) {
     match id {
         CHANGE_SERVER => window::show_launcher(app, None),
+        // A menu item is the person's choice, like the launcher's button. Without a server
+        // there is nothing to sign in to: the launcher is where one is chosen.
+        SIGN_IN_BROWSER => {
+            if let Err(window::SignInStart::NoServer) = window::begin_browser_sign_in(app) {
+                window::show_launcher(app, None);
+            }
+        }
         SIGN_IN => window::show_launcher(app, Some("signin")),
         DEVICE_KEY => window::show_launcher(app, Some("key")),
         // A menu item is a person's choice: it may open a local server in the browser.

@@ -5,7 +5,7 @@
 //! a fixed set of local tools (a device signing key kept by the operating system). Read
 //! docs/decisions/016-devices-processors-desktop-and-mobile-apps.md and
 //! apps/desktop/README.md before changing the security-relevant modules (`nav`, `handoff`,
-//! `server`, `deeplink`, `sidecar`, `commands`, the capability file and tauri.conf.json).
+//! `server`, `deeplink`, `signin`, `sidecar`, `commands`, the capability file and tauri.conf.json).
 
 mod commands;
 mod config;
@@ -16,6 +16,7 @@ mod menu;
 mod nav;
 mod server;
 mod sidecar;
+mod signin;
 mod window;
 
 #[cfg(test)]
@@ -43,6 +44,8 @@ pub struct AppState {
     pub handoffs: handoff::Limiters,
     /// Proves a click to the new-window hook; lives in the injected script and here only.
     pub click_secret: String,
+    /// The one browser sign-in this running app is waiting for (memory only, see signin.rs).
+    pub signin: signin::Pending,
 }
 
 impl AppState {
@@ -127,6 +130,7 @@ fn resolve_state(app: &tauri::AppHandle) -> tauri::Result<AppState> {
         handoffs: handoff::Limiters::new(),
         click_secret: handoff::new_secret()
             .map_err(|e| std::io::Error::other(format!("no operating-system randomness: {e}")))?,
+        signin: signin::Pending::default(),
     })
 }
 
@@ -159,6 +163,7 @@ pub fn run() {
             commands::get_state,
             commands::set_server,
             commands::open_sign_in_link,
+            commands::start_browser_sign_in,
             commands::tools_version,
             commands::device_key_status,
             commands::device_key_create,

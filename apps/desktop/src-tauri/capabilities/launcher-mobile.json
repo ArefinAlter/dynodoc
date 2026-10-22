@@ -5,5 +5,5 @@
   "local": true,
   "windows": ["main"],
   "platforms": ["android", "iOS"],
-  "permissions": ["allow-get-state", "allow-set-server", "allow-open-sign-in-link"]
+  "permissions": ["allow-get-state", "allow-set-server", "allow-open-sign-in-link", "allow-start-browser-sign-in"]
 }

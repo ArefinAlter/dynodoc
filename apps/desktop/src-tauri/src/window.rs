@@ -2,9 +2,11 @@
 
 use crate::handoff::{self, Source};
 use crate::nav::{self, Decision, NewWindow};
-use crate::{deeplink, AppState};
+use crate::{deeplink, signin, AppState};
 use std::sync::Mutex;
 use std::time::Instant;
+#[cfg(mobile)]
+use tauri::webview::PageLoadEvent;
 use tauri::webview::{NewWindowResponse, PermissionKind, PermissionResponse};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_deep_link::DeepLinkExt;
@@ -55,6 +57,14 @@ fn trace(what: &str, url: &Url, decision: &dyn std::fmt::Debug) {
     eprintln!("dynodoc: {what} {} -> {decision:?}", nav::redacted(url));
     #[cfg(not(debug_assertions))]
     let _ = (what, url, decision);
+}
+
+/// A debug-build note with no address and nothing secret in it.
+fn trace_note(what: &str, note: &dyn std::fmt::Debug) {
+    #[cfg(debug_assertions)]
+    eprintln!("dynodoc: {what} -> {note:?}");
+    #[cfg(not(debug_assertions))]
+    let _ = (what, note);
 }
 
 /// Only one thread creates the window at a time (start-up and a second launch meanwhile).
@@ -154,6 +164,21 @@ pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
             if let Some(state) = window.app_handle().try_state::<AppState>() {
                 let title = nav::window_title(payload.url(), state.server().as_ref());
                 let _ = window.set_title(&title);
+                // Phones only (no menu to reach the launcher from): when the window has landed
+                // on the server's sign-in page, which cannot sign this window in, show the
+                // launcher and its "Sign in with your browser" button instead. Decided from the
+                // address alone; see `nav::needs_sign_in`.
+                #[cfg(mobile)]
+                if matches!(payload.event(), PageLoadEvent::Finished)
+                    && nav::needs_sign_in(payload.url(), state.server().as_ref())
+                {
+                    trace(
+                        "page load",
+                        payload.url(),
+                        &"sign-in page, showing the launcher",
+                    );
+                    show_launcher(window.app_handle(), Some("signin"));
+                }
             }
         });
 
@@ -254,9 +279,18 @@ pub fn show_launcher(app: &AppHandle, section: Option<&str>) {
 /// source. A page's hand-offs are limited to public web addresses at a limited rate; the
 /// rest are dropped silently (and logged in a debug build).
 pub fn open_external(app: &AppHandle, url: &Url, source: Source) {
-    let Some(state) = app.try_state::<AppState>() else {
-        return;
-    };
+    open_external_then(app, url, source, || {});
+}
+
+/// Like [`open_external`], and `before` runs just before the system is asked to open the link,
+/// and only if it will be opened. Returns what `handoff` decided.
+fn open_external_then(
+    app: &AppHandle,
+    url: &Url,
+    source: Source,
+    before: impl FnOnce(),
+) -> Option<handoff::HandOff> {
+    let state = app.try_state::<AppState>()?;
     let opener = app.clone();
     let outcome = handoff::hand_off(
         url,
@@ -264,6 +298,7 @@ pub fn open_external(app: &AppHandle, url: &Url, source: Source) {
         &state.handoffs,
         Instant::now(),
         move |target| {
+            before();
             std::thread::spawn(move || {
                 let _ = opener.opener().open_url(target, None::<&str>);
             });
@@ -271,6 +306,69 @@ pub fn open_external(app: &AppHandle, url: &Url, source: Source) {
     );
     // Every refusal is silent: the person sees nothing, a page learns nothing.
     trace("hand-off", url, &outcome);
+    Some(outcome)
+}
+
+/// Why the browser sign-in could not be started; the words are the person's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SignInStart {
+    NoServer,
+    NoRandomness,
+    TooSoon,
+}
+
+impl std::fmt::Display for SignInStart {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::NoServer => "Choose a server first.",
+            Self::NoRandomness => "This device could not make a safe sign-in request.",
+            Self::TooSoon => "Please wait a moment, then try again.",
+        })
+    }
+}
+
+/// Start signing in with the system browser (docs/decisions/017; `signin.rs` has the rules):
+/// make the secrets, remember them as THE pending attempt (replacing any older one) and open
+/// `<server>/app-signin?challenge=..&state=..&platform=..` in the browser. The attempt is only
+/// kept if the browser is really asked to open (a page that was refused or rate limited leaves
+/// the older attempt alone). Called by the launcher's button and, on desktop, a menu item;
+/// never by a page.
+pub fn begin_browser_sign_in(app: &AppHandle) -> Result<(), SignInStart> {
+    let state = app.try_state::<AppState>().ok_or(SignInStart::NoServer)?;
+    let server = state.server().ok_or(SignInStart::NoServer)?;
+    let now = Instant::now();
+    let (attempt, request) = signin::Attempt::new(&server.as_text(), now, signin::os_random)
+        .ok_or(SignInStart::NoRandomness)?;
+    let url = server.app_signin_url(&request.challenge, &request.state, signin::PLATFORM);
+    let outcome = open_external_then(app, &url, Source::Click, || state.signin.start(attempt));
+    match outcome {
+        Some(handoff::HandOff::Opened) => Ok(()),
+        _ => Err(SignInStart::TooSoon),
+    }
+}
+
+/// The browser has come back with a sign-in link: finish in this window. `signin.rs` decides
+/// whether the link belongs to the attempt this app started; if it does, the window goes to the
+/// server's finish page with the code, the state and the verifier in the address FRAGMENT. A
+/// link that is refused changes nothing (the window is only brought forward) and says nothing.
+fn finish_browser_sign_in(app: &AppHandle, state: &AppState, code: &str, link_state: &str) {
+    let Some(server) = state.server() else {
+        focus_main(app);
+        return;
+    };
+    match state
+        .signin
+        .complete(Instant::now(), &server.as_text(), code, link_state)
+    {
+        Ok(finish) => {
+            focus_main(app);
+            navigate_main(app, server.finish_url(finish.fragment().expose()));
+        }
+        Err(refusal) => {
+            trace_note("sign-in link refused", &refusal);
+            focus_main(app);
+        }
+    }
 }
 
 /// Route `dynodoc://` links (at start-up and while running) through the parser. Called at the
@@ -303,7 +401,20 @@ pub fn open_deep_link(app: &AppHandle, raw: &str) {
     let Ok(target) = deeplink::parse(raw) else {
         return;
     };
-    match state.server().and_then(|s| s.join(&target.path())) {
+    // The browser sign-in coming back is not a page to open: it finishes the attempt this app
+    // started, or does nothing.
+    if let deeplink::Target::SignIn {
+        code,
+        state: link_state,
+    } = &target
+    {
+        finish_browser_sign_in(app, &state, code, link_state);
+        return;
+    }
+    match target
+        .path()
+        .and_then(|path| state.server().and_then(|s| s.join(&path)))
+    {
         Some(url) => {
             focus_main(app);
             navigate_main(app, url);
