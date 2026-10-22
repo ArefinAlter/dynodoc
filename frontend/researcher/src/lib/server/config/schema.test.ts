@@ -419,7 +419,8 @@ describe('brand and organisation notice (selfhosted)', () => {
       text: 'Run by the records office.\nQuestions: ask us.',
       supportUrl: 'mailto:records@acme.example.test'
     });
-    expect(config.site.helpUrl).toBe('mailto:records@acme.example.test');
+    // The support link is for contact; "Full guide" has no target in a self-hosted installation.
+    expect(config.site.helpUrl).toBeNull();
   });
   it('reads the notice from a file, once', () => {
     const path = file('From the file.\nSecond line.\n', 0o644);

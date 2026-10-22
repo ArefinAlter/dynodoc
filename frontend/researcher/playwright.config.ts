@@ -1,5 +1,25 @@
+import { readFileSync } from 'node:fs';
 import { defineConfig, devices } from '@playwright/test';
 const external = process.env.PLAYWRIGHT_BASE_URL;
+// The self-hosted edition runs the same build with DYNODOC_MODE=selfhosted, so it needs its
+// own server (and one more with email sign-in off). Their settings are in e2e/selfhosted.env.
+// With an external stack the servers are started outside and named here; without one, they
+// are started below. The hosted specs never run against them, nor these specs against hosted.
+const selfhostedUrl = external ? process.env.SELFHOSTED_BASE_URL : 'http://localhost:4174';
+const noEmailUrl = external ? process.env.SELFHOSTED_NOEMAIL_BASE_URL : 'http://localhost:4175';
+const selfhostedSettings = Object.fromEntries(
+  readFileSync(new URL('./e2e/selfhosted.env', import.meta.url), 'utf8')
+    .split(/\r?\n/)
+    .filter((line) => line.trim() && !line.startsWith('#'))
+    .map((line) => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)])
+);
+// Start-up validation needs real-looking secrets; these exist only for the preview servers
+// this file starts. A stack started outside uses its own.
+const previewSecrets = {
+  SESSION_SECRET: process.env.SESSION_SECRET ?? 'e2e-preview-only-session-secret-0123456789abcdef',
+  WEB_SERVICE_KEY: process.env.WEB_SERVICE_KEY ?? 'e2e-preview-only-service-key-0123456789abcdef'
+};
+const selfhostedSpecs = /selfhosted(-noemail)?\.spec\.ts$/;
 // Chromium always runs the whole suite. BROWSER_MATRIX adds Firefox, WebKit and two phone
 // emulations (docs/BROWSER-SUPPORT.md): `full` runs the authenticated specs on the desktop
 // engines and the public and workspace specs on the phones; `smoke` keeps only the tests
@@ -18,6 +38,7 @@ const extra = matrix
       { name: 'iphone', use: { ...devices['iPhone 15'], ...noWorker }, testMatch: phoneSpecs }
     ].map((project) => ({
       ...project,
+      testIgnore: selfhostedSpecs,
       grep: matrix === 'smoke' ? /@smoke/ : undefined,
       // Creating a workbook takes about 3.5 s here on every engine, and tracing makes the
       // slower engines miss the 5 s default. Same assertions, more patience.
@@ -30,19 +51,58 @@ export default defineConfig({
   workers: 1,
   webServer: external
     ? undefined
-    : {
-        // CI already builds in a separate checked step. Keep local runs self-contained.
-        command: process.env.CI
-          ? 'pnpm preview --host 127.0.0.1 --port 4173'
-          : 'pnpm build && pnpm preview --port 4173',
-        timeout: 180000,
-        port: 4173,
-        reuseExistingServer: !process.env.CI
-      },
+    : [
+        {
+          // CI already builds in a separate checked step. Keep local runs self-contained.
+          command: process.env.CI
+            ? 'pnpm preview --host 127.0.0.1 --port 4173'
+            : 'pnpm build && pnpm preview --port 4173',
+          timeout: 180000,
+          port: 4173,
+          reuseExistingServer: !process.env.CI,
+          env: previewSecrets
+        },
+        ...[
+          [4174, {}],
+          [4175, { AUTH_EMAIL_LINK: 'off' }]
+        ].map(([port, extra]) => ({
+          command: `pnpm preview ${process.env.CI ? '--host 127.0.0.1 ' : ''}--port ${port}`,
+          timeout: 180000,
+          port: port as number,
+          reuseExistingServer: !process.env.CI,
+          env: {
+            ...previewSecrets,
+            ...selfhostedSettings,
+            ORIGIN: `http://${process.env.CI ? '127.0.0.1' : 'localhost'}:${port}`,
+            ...(extra as Record<string, string>)
+          }
+        }))
+      ],
   use: {
     baseURL: external || 'http://localhost:4173',
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure'
   },
-  projects: [{ name: 'chromium' }, ...extra]
+  projects: [
+    { name: 'chromium', testIgnore: selfhostedSpecs },
+    ...(selfhostedUrl
+      ? [
+          {
+            name: 'selfhosted',
+            testMatch: /selfhosted\.spec\.ts$/,
+            use: { baseURL: selfhostedUrl }
+          }
+        ]
+      : []),
+    ...(noEmailUrl
+      ? [
+          {
+            name: 'selfhosted-noemail',
+            testMatch: /selfhosted-noemail\.spec\.ts$/,
+            use: { baseURL: noEmailUrl }
+          }
+        ]
+      : []),
+    ...extra
+  ]
 });

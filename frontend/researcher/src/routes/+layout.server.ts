@@ -1,5 +1,5 @@
 import { getConfig } from '$lib/server/config';
-import { CANONICAL_ORIGIN, INDEXABLE_PAGES, SITE_IMAGE } from '$lib/seo';
+import { CANONICAL_ORIGIN, INDEXABLE_PAGES, SITE_IMAGE } from '$lib/seo/site';
 import type { LayoutServerLoad } from './$types';
 
 // What the browser may know about this installation: brand, notice, where page metrics go,

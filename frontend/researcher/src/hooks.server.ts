@@ -1,5 +1,5 @@
 import { isRedirect, redirect, type Handle, type ServerInit } from '@sveltejs/kit';
-import { isIndexableHost, isPublicPath } from '$lib/seo';
+import { isIndexableHost, isPublicPath } from '$lib/seo/site';
 import { requiresSignIn } from '$lib/auth-next';
 import { accessToken } from '$lib/server/session';
 import { secureResponse } from '$lib/server/security';

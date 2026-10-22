@@ -70,7 +70,7 @@ describe.each([
       message = (error as Error).message;
     }
     expect(message.startsWith('invalid configuration (4 problems):')).toBe(true);
-    expect(message).not.toContain('short\n');
+    expect(message).not.toContain('short-too');
   });
   it('prints warnings, never a secret', async () => {
     const { startupCheck } = await boot(false, { ...good, DYNODOC_TELEMTRY: 'on' });

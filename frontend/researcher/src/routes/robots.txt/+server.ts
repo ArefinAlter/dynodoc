@@ -1,5 +1,10 @@
 import type { RequestHandler } from './$types';
-import { CANONICAL_ORIGIN, DISALLOWED_PATHS, isIndexableHost, PUBLIC_SEO_FILES } from '$lib/seo';
+import {
+  CANONICAL_ORIGIN,
+  DISALLOWED_PATHS,
+  isIndexableHost,
+  PUBLIC_SEO_FILES
+} from '$lib/seo/site';
 
 // Crawlers that retrieve pages to cite them in generated answers, and those
 // that collect training data. Both are allowed: being found and quoted

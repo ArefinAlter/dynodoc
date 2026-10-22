@@ -467,7 +467,7 @@ export function loadConfig(env) {
     notice: self ? organisationNotice : null,
     indexable: !self,
     homeUrl: self ? '/' : HOSTED.homeUrl,
-    helpUrl: self ? supportUrl || null : HOSTED.helpUrl,
+    helpUrl: self ? null : HOSTED.helpUrl,
     workspaceUrl: self ? '' : HOSTED.workspaceUrl,
     themeCookieDomain: self ? null : HOSTED.themeCookieDomain,
     telemetry: !telemetryOn
