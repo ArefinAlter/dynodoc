@@ -23,11 +23,13 @@ pub mod report;
 pub mod restore;
 pub mod runner;
 pub mod status;
+pub mod support;
 pub mod tarball;
 #[cfg(test)]
 pub mod testkit;
 pub mod upgrade;
 pub mod util;
+pub mod verify_delivery;
 pub mod x509;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

@@ -273,21 +273,30 @@ pub struct FakeNet {
 }
 
 impl FakeNet {
+    /// A later registration for the same path replaces the earlier one.
     pub fn on_https(&self, path: &str, answer: Result<(HttpResponse, TlsFacts), String>) {
-        self.https.borrow_mut().push((path.to_string(), answer));
+        self.https.borrow_mut().insert(0, (path.to_string(), answer));
     }
     pub fn on_http(&self, path: &str, answer: Result<HttpResponse, String>) {
-        self.http.borrow_mut().push((path.to_string(), answer));
+        self.http.borrow_mut().insert(0, (path.to_string(), answer));
     }
 }
 
+/// A path registered as `@host/path` answers only requests whose Host header is `host`.
 impl Net for FakeNet {
     fn https_get(&self, target: &Target, path: &str) -> Result<(HttpResponse, TlsFacts), String> {
-        self.requested.borrow_mut().push(format!("https://{}{path}", target.host_header));
-        self.https.borrow().iter().find(|(p, _)| p == path).map(|(_, a)| a.clone()).unwrap_or_else(|| Err(format!("no scripted answer for https {path}")))
+        self.requested.borrow_mut().push(format!("https://{}{path} via {}:{}", target.host_header, target.connect_host, target.port));
+        let specific = format!("@{}{path}", target.host_header);
+        let answers = self.https.borrow();
+        answers
+            .iter()
+            .find(|(p, _)| *p == specific)
+            .or_else(|| answers.iter().find(|(p, _)| p == path))
+            .map(|(_, a)| a.clone())
+            .unwrap_or_else(|| Err(format!("no scripted answer for https {path}")))
     }
     fn http_get(&self, target: &Target, path: &str) -> Result<HttpResponse, String> {
-        self.requested.borrow_mut().push(format!("http://{}{path}", target.host_header));
+        self.requested.borrow_mut().push(format!("http://{}{path} via {}:{}", target.host_header, target.connect_host, target.port));
         self.http.borrow().iter().find(|(p, _)| p == path).map(|(_, a)| a.clone()).unwrap_or_else(|| Err(format!("no scripted answer for http {path}")))
     }
 }
