@@ -153,6 +153,15 @@ view are SELECT-only. Two identity sequences permit usage but not `setval`.
 Seven read-only access helpers are executable; new tables/functions need an explicit
 allowlist and schema update. Effective column and PUBLIC grants are checked as well.
 
+One table class is deliberately asymmetric: `operator_sign_in_link` (schema 47, operator-issued
+sign-in links, [decision 018](decisions/018-operator-issued-sign-in-links.md)) is granted SELECT,
+UPDATE and DELETE to the runtime login and **never INSERT** (`CONSUME_PRUNE` in
+`engine_core::database`). Only the operator's owner credential (`engine-cli auth issue-link`)
+can write a row, so no API route, and no bug in one, can mint a sign-in link. The API can use a
+link up (a trigger lets a row be ended exactly once, and never used after its expiry), and the
+retention job can sweep and prune. `check-runtime` fails if the login can insert into it, by
+table or by column.
+
 The API retention loop (`crates/engine-api/src/retention.rs`) depends on the grants
 that already exist: SELECT, UPDATE (for `FOR UPDATE SKIP LOCKED`) and DELETE on the mutable
 tables `magic_link`, `refresh_token`, `auth_request_window`, `device_enrollment_challenge`,

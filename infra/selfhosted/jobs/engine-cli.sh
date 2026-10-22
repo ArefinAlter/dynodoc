@@ -7,6 +7,7 @@
 #   docker compose run --rm database-admin verify-snapshots --all
 #   docker compose run --rm database-admin verify <document-uuid>
 #   docker compose run --rm database-admin check-runtime
+#   docker compose run --rm database-admin auth list-links      # operator sign-in links (decision 018)
 #
 # Never attached to the api or web, and not started by `docker compose up`.
 set -eu

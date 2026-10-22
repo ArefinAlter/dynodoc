@@ -8,6 +8,9 @@
 //!    a one-time link. Only the SHA-256 of the link token is stored.
 //! 2. `POST /auth/verify` exchanges the link token for a short-lived **Paseto v4
 //!    local** access token (NFR-8 — not JWT) plus a rotating refresh token.
+//!    A token that is not an emailed link is tried as an **operator-issued** link
+//!    ([`operator`], docs/decisions/018): made only by `engine-cli auth issue-link` with the
+//!    database owner credential, never by an HTTP route, and usable here without email.
 //! 3. `POST /auth/refresh` rotates the refresh token and mints a new access token.
 //! 4. Protected handlers take the [`AuthContext`] extractor, which validates the
 //!    bearer plus account generation and login revocation on each request.

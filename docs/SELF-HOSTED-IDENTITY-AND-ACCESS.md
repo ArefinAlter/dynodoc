@@ -5,6 +5,14 @@
 > accounts, and maps an organisation's groups to Dynodoc roles. Items tagged MISSING
 > or PARTIAL are proposals. Nothing here changes code.
 >
+> **Update, 23 October 2026.** Two items of this design are built and no longer proposals: the switch
+> that turns email sign-in off (`AUTH_EMAIL_LINK=off`, row 19), and **operator-issued sign-in links**
+> (section 9.4 and row 24: `engine-cli auth issue-link`, `dynodoctl admin-link`, migration
+> 0047, [decision 018](decisions/018-operator-issued-sign-in-links.md)). They differ from the text
+> below in one way that matters: a link is made with the database OWNER credential and written by the
+> command line tool, not by an HTTP call with the service key, so there is no network path to it
+> (section 9.4 says why). OIDC, SAML, SCIM, group mapping and the rest are still not built (Phase 1).
+>
 > Read first: the [master design](SELF-HOSTED-EDITION.md). Companions:
 > [deployment guide](SELF-HOSTED-DEPLOYMENT-GUIDE.md),
 > [licensing and distribution](SELF-HOSTED-LICENSING-AND-DISTRIBUTION.md).
@@ -114,11 +122,12 @@ remembering to remove them.
 | 16 | Per-session list and revoke | MISSING | Logout revokes by lineage; no listing. |
 | 17 | IdP logout propagation | MISSING | |
 | 18 | Open-redirect-safe return path | EXISTS | `safeNext` allowlist of workspace paths (`lib/auth-next.ts`). |
-| 19 | Email sign-in can be disabled | MISSING | Offered whenever Resend is configured (or `DEV_AUTH`). |
+| 19 | Email sign-in can be disabled | EXISTS | `AUTH_EMAIL_LINK=off` (web tier, P0-2/P0-3): `POST /auth/email` answers 403 and `/auth/options` offers no email, whatever mail or `DEV_AUTH` is set. It stops the request for a NEW emailed link only; a link already issued can still be confirmed, and so can an operator-issued one (row 24). |
 | 20 | Offboarding workflow with ownership report | PARTIAL | Admin erase reports blockers (owned documents, owned workspaces); no deactivation report. |
 | 21 | Live streams stop promptly after revocation | PARTIAL | Checked only when the next event is delivered; idle streams keep heartbeating ([SECURITY-HARDENING.md](SECURITY-HARDENING.md)). |
 | 22 | Role ladder, spaces, project floors | EXISTS | `access.rs` (viewer, contributor, reviewer, editor, manager, owner), `access_space` kinds organization, team, folder, project. |
 | 23 | Sign-in of the native apps from the system browser | EXISTS | One-time hand-over code with PKCE ([decision 017](decisions/017-native-app-sign-in-handover.md)): web pages `/app-signin` (Continue is a real user-activated form post of that page; no script or other client can make it) and `/app-signin/finish` (works only in the app's own window), web route `POST /auth/app-signin/redeem` (needs the app's User-Agent token), API routes `POST /auth/app-handover` and `/auth/app-handover/redeem` (both need the service key; issuing also needs an account login's bearer token), table `app_handover_code` (`0046_app_handover.sql`): code stored as SHA-256, 60 seconds, once, at most three unused per account, kind of app bound to the code, the login that asked remembered, pruned by the retention job, audit `auth.app_handover.*`. Offered on the Windows and Android apps only. Works at any configured origin; with email sign-in off and no Google the page says no method is turned on. The per-address limit on failed redeems needs `ADDRESS_HEADER` and `XFF_DEPTH` behind a proxy (see the deployment guide); without them it is off. |
+| 24 | Operator-issued sign-in links (first administrator, break-glass) | EXISTS | The operator, with the database OWNER credential, makes a one-time link: `engine-cli auth issue-link --email A [--ttl 15m] [--create] [--role admin\|user]` (also `list-links`, `revoke-link`), run for the bundle by `dynodoctl admin-link`. Table `operator_sign_in_link` (`0047_operator_sign_in_link.sql`): token stored as SHA-256, 60 seconds to 24 hours (default 15 minutes), ended exactly once by a trigger, one live link per account. The restricted runtime login can read, end and prune the table but has no INSERT (`engine_core::database`, `CONSUME_PRUNE`), and no HTTP route issues a link. `POST /auth/verify` tries emailed links first and then this table; the same login is made, in one transaction with the use-up and the audit row. Works with `AUTH_EMAIL_LINK=off`. Roles are untouched (`ADMIN_EMAILS` only). Audit `auth.operator_link.issued`, `.used`, `.refused`, `.revoked`, `.expired`. See [decision 018](decisions/018-operator-issued-sign-in-links.md). |
 
 ---
 
@@ -615,9 +624,29 @@ guide's note remains true: a From address does not create an inbound mailbox.
 
 | Need | Mechanism |
 |---|---|
-| First administrator | `dynodoctl admin sign-in-link EMAIL`: calls `/auth/magic-link` with the service key and prints the one-time link (15 minutes). Same security properties as an emailed link; the printed link is a credential and is handled as one |
-| Break-glass access during an IdP outage | A configured `break_glass` list of emails that may use operator-issued links even when email sign-in is otherwise off; every use is audited; links are never reusable |
+| First administrator | **As built (23 October 2026):** `dynodoctl admin-link --email you@example.org --create` (below). It was proposed as `dynodoctl admin sign-in-link EMAIL` calling `/auth/magic-link` with the service key. That was not built: it would make a network path (the web tier, or anyone holding the service key, could mint a sign-in link for any address, and the route creates accounts), and it would put the issuing in the API's own privilege |
+| Break-glass access during an IdP outage | **As built:** the same command, for any existing account, with email sign-in off or on. No `break_glass` list is needed: an operator link is a different kind of credential from an emailed one, so it works while `AUTH_EMAIL_LINK=off`, and the person who can make one already holds the database owner credential. Every use is audited; links are never reusable |
 | Invitations | The product shows the link to copy; no email is sent (`email_status: not_configured` exists today) |
+
+**As built: operator-issued sign-in links** ([decision 018](decisions/018-operator-issued-sign-in-links.md)).
+
+- *Who and how.* The operator (shell access to the host and the owner credential, i.e. the install directory) runs
+  `dynodoctl admin-link --email A [--ttl 15m] [--create] [--role admin|user] [--reason TEXT]`, which runs
+  `engine-cli auth issue-link` in a one-off `database-admin` container, after the operator has typed the address at a
+  terminal. The link `<ORIGIN>/login?token=...` is shown once, on that terminal, and saved nowhere. There is no `--json`
+  mode.
+- *Using it.* The page asks for one click, `POST /auth/verify` checks the emailed links and then the operator links,
+  and the person gets the same login as after an emailed link (30-day refresh lineage, revocable, usable for the native-app
+  hand-over of decision 017). It works from any browser or address: it is a bearer token, so keep the life short.
+- *Roles.* Administrators stay the addresses in `ADMIN_EMAILS`. A link never changes a role; `--role` only refuses
+  when the installation disagrees. `--create` makes an account only for the first administrator (an address in
+  `ADMIN_EMAILS` while none of those addresses has an account), or after the address is typed a second time.
+- *Limits.* No per-address lockout (it would let the public lock the operator out; a 256-bit token needs none) and no
+  use of the emailed-link request window. A disabled account gets no link, and signing the account out everywhere or
+  disabling it ends its outstanding links.
+- *Not built:* a list of break-glass addresses, mail-free invitations beyond the existing copyable link, OIDC/SAML/SCIM
+  (Phase 1), and a `dynodoctl` wrapper for `list-links` and `revoke-link` (run
+  `docker compose --profile maintenance run --rm database-admin auth list-links` instead).
 
 ### 9.5 Email sign-in and SSO
 
@@ -923,7 +952,9 @@ malicious Dynodoc administrator; curious operator; compromised endpoint.
 | Signature wrapping / XXE | Tampering | Vetted library, DTD off, size caps, tests | Library flaw |
 | Open redirect after login | Tampering | `safeNext` allowlist (exists); relay state is an opaque id | None known |
 | CSRF on callbacks and logout | Tampering | State/nonce in sealed cookies; origin checks on POST (exist) | |
-| Email link bypasses MFA | Elevation | `AUTH_EMAIL_LINK=off`, `sso_required_domains` | Break-glass list |
+| Email link bypasses MFA | Elevation | `AUTH_EMAIL_LINK=off` (built), `sso_required_domains` | The operator-issued link (built) is a bypass by design: it needs the owner credential, is audited, lives at most 24 hours and works once |
+| Operator link issued remotely | Elevation | No HTTP route issues one; the runtime login has no INSERT on the table (privilege check at start); a source check fails the build if a route calls the issuing function | The owner credential is the trust root: whoever holds it can already read and change the database |
+| Operator link intercepted or sent to the wrong person | Spoofing | 15 minutes by default, 24 hours at most, once, one click on the page, `revoke-link`, one live link per account, shown only on the operator's terminal | Anyone who sees it first in that window signs in as the person (a bearer token, from any address) |
 | IdP admin edits a mapped group | Elevation | Ceiling, scope limited to named spaces, audit, preview, freeze | Trust in the IdP |
 | Mapping rule mistake grants broad access | Elevation | Dry run, per-run change cap, ceilings, review by auditor | Human error |
 | SCIM token stolen | Elevation | Hash at rest, scope, mTLS or IP allowlist, circuit breaker, audit, rotation | Mass provisioning of accounts until detected (new accounts have no access without mapping) |
@@ -953,7 +984,7 @@ one).
 | `OIDC_PROVIDERS_FILE`, `SAML_PROVIDERS_FILE` | Provider definitions (5.2, 6.3); secrets by file reference |
 | `MAPPINGS_FILE` | Rules (10.2) |
 | `SCIM_ENABLED`, `SCIM_ALLOWED_SOURCES` | SCIM facade and optional CIDR allowlist |
-| `AUTH_EMAIL_LINK`, `SSO_REQUIRED_DOMAINS`, `BREAK_GLASS_EMAILS` | Email policy |
+| `AUTH_EMAIL_LINK` (built), `SSO_REQUIRED_DOMAINS`, `BREAK_GLASS_EMAILS` (not needed: operator links work with email off) | Email policy |
 | `SESSION_*`, `REFRESH_*`, `TOKEN_TTL_SECONDS` | Session policy (12.3) |
 
 Changes to provider files are validated at start and by `dynodoctl config check`

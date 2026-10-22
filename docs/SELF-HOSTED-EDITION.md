@@ -260,7 +260,7 @@ if the code can contact it at run time, or if a browser or Office client is told
 |---|---|---|---|---|---|
 | D1 | `accounts.google.com`, `openidconnect.googleapis.com` | `routes/auth/[...action]/+server.ts` | Google sign-in | Off unless `GOOGLE_CLIENT_ID`/`SECRET` set | Remove; customer OIDC or SAML (P1-1, P1-8). The Google flow becomes one preset of generic OIDC. |
 | D2 | `forms.googleapis.com`, `forms.google.com` | `routes/integrations/google/[action]`, `routes/api/google-forms` | Import a Google Form | Off | Removed; feature hidden when Google is not configured. |
-| D3 | `api.resend.com` | `lib/server/invitations.ts: sendEmail`, `routes/auth/[...action]/+server.ts` | Sign-in links and invitations | Replaced by SMTP (P0-3, built 22 October 2026); Resend stays an optional transport | Intranet SMTP relay, or no mail: operator-issued sign-in links (P0-3) and SSO only. |
+| D3 | `api.resend.com` | `lib/server/invitations.ts: sendEmail`, `routes/auth/[...action]/+server.ts` | Sign-in links and invitations | Replaced by SMTP (P0-3, built 22 October 2026); Resend stays an optional transport | Intranet SMTP relay, or no mail: operator-issued sign-in links (P0-3, built 23 October 2026) and SSO only. |
 | D4 | `appsforoffice.microsoft.com` (legacy), `officeapis.public.onecdn.static.microsoft`, `ajax.aspnetcdn.com` | `routes/connectors/*/+page.svelte`, `static/connectors/commands.html`, `lib/server/security.ts`, `nginx-app.conf` CSP maps | Office.js for the three panes | CDN, with the newer domain | Serve a local copy of Office.js and relax nothing else (P0-7). See licensing caveat in section 7.3. |
 | D5 | Google Apps Script runtime and `script.google.com` services | `extensions/google-*` | Google add-ons | Works only if the Dynodoc origin is reachable from Google's servers | Impossible air-gapped or intranet-only (section 7.4). |
 | D6 | `https://app.dynodoc.online/telemetry` | `lib/telemetry.ts` (fixed destination and a four-host allowlist), `routes/telemetry/+server.ts` | Anonymous page-load metrics | No-op on any other host (hostname allowlist), but CSP `connect-src` still lists the hosted origin (`svelte.config.js`) | Remove CSP entry and the route in self-hosted mode (P0-1); metrics, if any, go to the customer's own system. |
@@ -1568,7 +1568,7 @@ production release is unchanged. Settings and defaults are in the deployment gui
   `(site)` routes out (P0-6) and per-installation add-in packages (P0-7).
 - *Not built.* Product name in the logo images, the installable-app name (`site.webmanifest`)
   and page titles outside sign-in, workspace, shared link and administration; the Office.js
-  CDN (P0-7); operator-issued sign-in links (P0-3; SMTP was built the same day, see below); the Compose wiring of the new
+  CDN (P0-7); operator-issued sign-in links (P0-3; built later, 23 October 2026: see the P0-3 operator-link paragraph below); the Compose wiring of the new
   variables and a web image that contains the check tool (built on 22 October in P0-4, see its status paragraph; the `dynodoctl` call remains P0-5); `engine-cli`;
   Windows has no secret-file mode check (as in the API). The hosted `infra/demo/*`,
   `extensions/*` and `static/connectors/*` files in Appendix B are untouched.
@@ -1621,8 +1621,7 @@ mail through Resend exactly as before. Settings, messages and examples are in th
   invitation says "on <brand>" and offers only the sign-in methods a self-hosted installation really
   has (the hosted wording is unchanged and pinned); the Resend path now logs one line per send
   (provider, outcome, class, id); the licences page lists nodemailer.
-- *Not built.* A database outbox with retry and administrator visibility, operator-issued sign-in
-  links (the rest of P0-3), XOAUTH2, DKIM signing (SPF, DKIM and DMARC guidance only, in the guide),
+- *Not built.* A database outbox with retry and administrator visibility, XOAUTH2, DKIM signing (SPF, DKIM and DMARC guidance only, in the guide),
   bounce handling, per-language templates, a cap on concurrent sends (the API's per-address limits
   apply), the `dynodoctl` call to `check-mail` (the Compose wiring was built in P0-4: `docker compose run --rm mailcheck`). SMTP_MAX_RECIPIENTS is not a
   setting: the cap is fixed at 10. No real mail provider was contacted; every claim above rests on
@@ -1652,6 +1651,32 @@ mail through Resend exactly as before. Settings, messages and examples are in th
   nodemailer. GitHub Actions could not run (billing); `ci-frontend.yml` now also starts the SMTP web server and has not
   been executed. **Not verified:** any real mail server or provider (Postfix, Exchange, a hosted relay, a private
   certificate authority in the field), IPv6 targets, and the Linux file-mode and arm64 runs.
+
+**Implementation status (23 October 2026): P0-3, operator-issued sign-in links (the rest of P0-3), and the first administrator.**
+Source and tests in the application repository; nothing is deployed or released. The hosted service keeps its emailed-link flow
+exactly (the new table stays empty there unless the command is used; migration 0047 is additive). Design, threat table and
+decisions: [decision 018](decisions/018-operator-issued-sign-in-links.md); the identity document (9.4, row 24) and the operations
+guide (`admin-link`) carry the as-built text.
+
+- *Built.* `engine-cli auth issue-link | list-links | revoke-link`, run with the database OWNER credential
+  (`MIGRATION_DATABASE_URL`), and `dynodoctl admin-link`, which runs it in a one-off `database-admin` container after the operator
+  has typed the address at a terminal; the link is shown once and saved nowhere, and there is no `--json` mode. Migration
+  `0047_operator_sign_in_link.sql`: token stored as SHA-256, 60 seconds to 24 hours (default 15 minutes), a row is born live and
+  ended exactly once (triggers; a link cannot be used after its expiry), one live link per account. The restricted runtime login
+  gets select, update and delete and **never insert** (a new privilege class, checked at every API start), no HTTP route issues a
+  link, and `POST /auth/verify` tries emailed links first and then this table, making the same login in one transaction with the
+  use-up and the audit row. It works with `AUTH_EMAIL_LINK=off`; roles stay `ADMIN_EMAILS` only; `--create` makes an account
+  only for the first administrator or after the address is typed a second time; a disabled account gets no link. Audit rows
+  `auth.operator_link.*` hold no secret. The retention job sweeps expired links (with an audit row) and prunes them; erasing an
+  account deletes its links. `dynodoctl install` now prints the command for the first administrator instead of "nobody can sign in".
+- *Deviations from the design (9.4).* The proposed `dynodoctl admin sign-in-link` calling `/auth/magic-link` with the service key
+  was not built: that is a network path to a sign-in credential. No `break_glass` list: operator links work whatever the email
+  switch says.
+- *Not built.* `dynodoctl list-links` and `revoke-link` wrappers (use `docker compose --profile maintenance run --rm database-admin
+  auth list-links`); a run against the real Docker bundle (the wrapper ran only against the scripted fake; `engine-cli` ran against
+  real PostgreSQL); OIDC, SAML and SCIM (Phase 1); scrubbing the token from the address bar; a rehearsal of 0047 against a
+  production-like database.
+- *Verified here.* RESULTS_EDITION_PLACEHOLDER
 
 **Implementation status (22 October 2026): P0-4, the single-node bundle.** Source and tests in the
 application repository under `infra/selfhosted` (README there is the operator's entry point; settings
@@ -1859,7 +1884,7 @@ and runbooks in [SELF-HOSTED-OPERATIONS.md](SELF-HOSTED-OPERATIONS.md). Nothing 
 - *Not built.* `addin build` and the manifest check (P0-7; stub reports `NOT BUILT`); signed bundles, `bundle verify` and
   `bundle import` (P3-1); air-gapped import and the egress-blocked run (P0-9); backup encryption and remote or off-host
   targets; scheduled backups (use cron); PITR and physical backups (P2-9); binary rollback without a restore (P2-5);
-  high availability, Profile B and C; `admin sign-in-link` (P0-3); rotation helpers; an interactive prompt for the
+  high availability, Profile B and C; rotation helpers; an interactive prompt for the
   certificate mode (the choice is an option, and the command refuses without it); licence checks; the operating system's
   trust store in the TLS checks.
 - *Not verified.* A Linux host (the Unix-only unit tests, file modes, symbolic links, signals and process liveness, did

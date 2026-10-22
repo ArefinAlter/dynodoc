@@ -637,6 +637,20 @@ async fn disabled_accounts_get_no_link_and_their_links_stop_working(pool: PgPool
         verify(&router, flag.token.expose()).await.0,
         StatusCode::UNAUTHORIZED
     );
+    // The link's own query refused it (a refusal is audited as such), not only the login made after.
+    assert_eq!(refusal_reasons(&pool, flag.link_id).await, ["account"]);
+    assert_eq!(outcome(&pool, flag.token.expose()).await, None);
+}
+
+/// The `reason` of each `auth.operator_link.refused` row for one link.
+async fn refusal_reasons(pool: &PgPool, link: Uuid) -> Vec<String> {
+    sqlx::query_scalar(
+        "select detail->>'reason' from operation_audit where action='auth.operator_link.refused' and resource_id=$1 order by id",
+    )
+    .bind(link)
+    .fetch_all(pool)
+    .await
+    .unwrap()
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -653,6 +667,9 @@ async fn signing_out_everywhere_ends_an_outstanding_link(pool: PgPool) {
         verify(&router, issued.token.expose()).await.0,
         StatusCode::UNAUTHORIZED
     );
+    // Refused by the link's own query (audited as an account change), and not used up.
+    assert_eq!(refusal_reasons(&pool, issued.link_id).await, ["account"]);
+    assert_eq!(outcome(&pool, issued.token.expose()).await, None);
     // A link made afterwards works.
     let fresh = issue(&pool, "everywhere@example.test").await;
     assert_eq!(
@@ -1437,4 +1454,78 @@ async fn the_reason_and_label_are_bounded_text(pool: PgPool) {
     r.reason = "";
     r.operator = "DOMAIN\\alice";
     assert!(operator::issue(&pool, &r).await.is_ok());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn using_a_link_and_the_login_it_makes_succeed_or_fail_together(pool: PgPool) {
+    let router = router(&pool);
+    let id = account(&pool, "atomic@example.test").await;
+    let issued = issue(&pool, "atomic@example.test").await;
+    let token = issued.token.expose().to_string();
+    let logins = || async {
+        sqlx::query_scalar::<_, i64>("select count(*) from refresh_token where identity_id=$1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+    };
+    let used_rows = || async {
+        sqlx::query_scalar::<_, i64>(
+            "select count(*) from operation_audit where action='auth.operator_link.used'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+    };
+
+    // The login cannot be made: the link is not used up, and nothing is recorded as used.
+    sqlx::raw_sql(
+        "create function refuse_login() returns trigger language plpgsql as $$ begin raise exception 'no login'; end $$;
+         create trigger refuse_login before insert on refresh_token for each row execute function refuse_login();",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        verify(&router, &token).await.0,
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
+    assert_eq!(outcome(&pool, &token).await, None, "the link is still live");
+    assert_eq!((logins().await, used_rows().await), (0, 0));
+    sqlx::raw_sql("drop trigger refuse_login on refresh_token")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // The audit row cannot be written: the login that was made is undone with it.
+    sqlx::raw_sql(
+        "create function refuse_used_audit() returns trigger language plpgsql as $$ begin
+             if new.action = 'auth.operator_link.used' then raise exception 'no audit'; end if;
+             return new;
+         end $$;
+         create trigger refuse_used_audit before insert on operation_audit for each row execute function refuse_used_audit();",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        verify(&router, &token).await.0,
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
+    assert_eq!(outcome(&pool, &token).await, None, "the link is still live");
+    assert_eq!(
+        (logins().await, used_rows().await),
+        (0, 0),
+        "no login without its record"
+    );
+    sqlx::raw_sql("drop trigger refuse_used_audit on operation_audit")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // Everything works, once: the link, one login and one audit row together.
+    assert_eq!(verify(&router, &token).await.0, StatusCode::OK);
+    assert_eq!((logins().await, used_rows().await), (1, 1));
+    assert_eq!(outcome(&pool, &token).await.as_deref(), Some("used"));
+    assert_eq!(verify(&router, &token).await.0, StatusCode::UNAUTHORIZED);
 }

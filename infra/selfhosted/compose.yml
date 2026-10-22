@@ -162,7 +162,8 @@ services:
       secrets-init: {condition: service_completed_successfully}
 
   # On demand, never started by `up`: engine-cli with the owner credential for operator tasks
-  # (docker compose run --rm database-admin verify-snapshots --all).
+  # (docker compose run --rm database-admin verify-snapshots --all). `dynodoctl admin-link` runs
+  # `auth issue-link` here to make a one-time sign-in link: the API's login cannot (decision 018).
   database-admin:
     profiles: [maintenance]
     image: *api-image
