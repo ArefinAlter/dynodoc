@@ -26,6 +26,7 @@ pub mod status;
 pub mod tarball;
 #[cfg(test)]
 pub mod testkit;
+pub mod upgrade;
 pub mod util;
 pub mod x509;
 
