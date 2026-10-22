@@ -635,12 +635,12 @@ mod tests {
         assert!(!constant_time_equal(&a, &a[..31]));
         assert!(!constant_time_equal(&a, &[]));
         // Zero-padding must not make two different values equal (an HMAC key comparison did).
-        assert!(!constant_time_equal(b"abc", b"abc "));
-        assert!(!constant_time_equal(b"abc ", b"abc"));
-        assert!(!constant_time_equal(b"", b" "));
-        assert!(!constant_time_equal(b"abc  ", b"abc "));
+        assert!(!constant_time_equal(b"abc", b"abc\0"));
+        assert!(!constant_time_equal(b"abc\0", b"abc"));
+        assert!(!constant_time_equal(b"", b"\0"));
+        assert!(!constant_time_equal(b"abc\0\0", b"abc\0"));
         assert!(constant_time_equal(b"", b""));
-        assert!(constant_time_equal(b"abc ", b"abc "));
+        assert!(constant_time_equal(b"abc\0", b"abc\0"));
     }
 
     #[test]

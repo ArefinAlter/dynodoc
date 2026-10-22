@@ -18,7 +18,17 @@
 //   6. a second attempt after the first works, and a link for the FIRST attempt's state no
 //      longer does;
 //   7. a page of the server cannot start the sign-in (its call to the command is refused and
-//      nothing is opened), while the launcher's own button can (a real mouse click).
+//      nothing is opened), while the launcher's own button can (a real mouse click), and the
+//      launcher shows the four-character pairing code of the request (the same function the
+//      server's confirmation page uses);
+//   8. the window names itself to the server: its own User-Agent with DynodocApp/<version>
+//      (desktop) appended, on the finish page's request and on the request the page makes;
+//   9. the shell waits for the finish page to say it is ready (data-finish-ready) before it sets
+//      the fragment, and the page ignores a fragment that was there at load;
+//  10. forced login: a page of the server cannot send the window to /app-signin/finish with
+//      anything after the path (a query, a fragment, window.open, a redirect, another spelling):
+//      the navigation is refused, so the window stays in the document it was in (WebView2 may
+//      still send the request, which is never shown) and no finish page runs.
 //
 //   node scripts/signin-probe.mjs [path\to\dynodoc-desktop.exe]
 //
@@ -60,14 +70,22 @@ const b64url = (buffer) => buffer.toString('base64url');
 // ------------------------------------------------------------------ the stand-in server
 const requests = [];
 const reports = [];
+const reportAgents = [];
 const server = createServer((req, res) => {
   const chunks = [];
   req.on('data', (c) => chunks.push(c));
   req.on('end', () => {
-    requests.push({ method: req.method, url: req.url, referer: req.headers.referer ?? '-' });
+    requests.push({ method: req.method, url: req.url, referer: req.headers.referer ?? '-', ua: req.headers['user-agent'] ?? '' });
     if (req.method === 'POST' && req.url === '/report') {
       reports.push(Buffer.concat(chunks).toString('utf8'));
+      reportAgents.push(req.headers['user-agent'] ?? '');
       res.writeHead(204).end();
+      return;
+    }
+    if (req.url === '/redirect-finish') {
+      // A server page that redirects the window to the finish page with a fragment in it.
+      res.writeHead(302, { location: '/app-signin/finish#code=' + 'ab'.repeat(32) + '&state=' + 'c'.repeat(32) + '&verifier=' + 'd'.repeat(43) });
+      res.end();
       return;
     }
     if (req.url === '/favicon.ico') {
@@ -76,10 +94,11 @@ const server = createServer((req, res) => {
     }
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     if (req.url.startsWith('/app-signin/finish')) {
-      // What the real page does: read the fragment (here: report it back, so the probe can see
-      // exactly what the shell put there), remove it from the address, and read it again
-      // whenever it changes (the shell sets it after the page has loaded, and the app can open
-      // this page again while it is still showing, which is no page load).
+      // What the real page does: ignore (and remove) a fragment that is there when it loads, say it
+      // is ready a moment later (the shell waits for that), then read the fragment whenever it
+      // CHANGES (here: report it back, so the probe can see exactly what the shell put there),
+      // removing it from the address. The app can open this page again while it is still
+      // showing, which is no page load.
       res.end(`<!doctype html><title>finish</title><p>finishing</p>
 <script>
 function report() {
@@ -88,8 +107,9 @@ function report() {
   history.replaceState(null, '', location.pathname);
   fetch('/report', { method: 'POST', body: hash }).catch(function () {});
 }
-report();
+if (location.hash) history.replaceState(null, '', location.pathname);
 addEventListener('hashchange', report);
+setTimeout(function () { document.documentElement.setAttribute('data-finish-ready', '1'); }, 1200);
 </script>`);
     } else if (req.url.startsWith('/app-signin')) {
       res.end('<!doctype html><title>browser sign-in</title><h1>browser sign-in page</h1>');
@@ -212,6 +232,12 @@ async function click(selector) {
 }
 
 const hex = () => randomBytes(32).toString('hex');
+// The same function as `pairingCode` in the web app and `pairing_code` in the shell.
+const PAIRING_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+const pairing = (state) => {
+  const digest = createHash('sha256').update(state).digest();
+  return [0, 1, 2, 3].map((i) => PAIRING_ALPHABET[digest[i] & 31]).join('');
+};
 const sinceMark = () => requests.length;
 const finishHits = (from = 0) => requests.slice(from).filter((r) => r.url.startsWith('/app-signin/finish'));
 const reportsFrom = (from = 0) => reports.slice(from);
@@ -271,6 +297,11 @@ try {
   check(!everything.includes(verifier) && !everything.includes(code1), 'no request the server saw (address, Referer) holds the verifier or the code');
   const trace = readFileSync(traceFile, 'utf8');
   check(!trace.includes(verifier) && !trace.includes(code1) && !trace.includes(challenge) && !trace.includes(state1), "the app's debug log holds none of them");
+  // 8. the window names itself, by appending to its own User-Agent.
+  const agent = finish?.ua ?? '';
+  check(/^Mozilla\/5\.0 .+ DynodocApp\/\d+\.\d+\.\d+ \(desktop\)$/.test(agent), "the window names itself: WebView2's own User-Agent with DynodocApp/<version> (desktop) at the end", agent.slice(-70));
+  check(reportAgents.length > 0 && reportAgents.at(-1) === agent, 'and a request the finish page makes carries the same agent');
+  check(/ Edg\/\d/.test(agent), "the agent was appended to, not replaced (it still holds the web view's own Edg/ token)");
 
   // 5. a replay does nothing.
   mark = sinceMark();
@@ -302,6 +333,41 @@ try {
   check(b64url(createHash('sha256').update(again.get('verifier') ?? '').digest()) === challenge2, "and a verifier whose SHA-256 is the second attempt's challenge");
   check(again.get('verifier') !== verifier, 'which is not the first verifier');
 
+  // 10. forced login: the window is moved to an ordinary page, then every way a page has of sending it
+  // to the finish page with something in the address is tried. None may reach the server.
+  await evaluate(`location.href = '/elsewhere'`);
+  const elsewhere = await waitFor(async () => (await currentUrl()) === `${origin}/elsewhere`, 20, 'the ordinary page');
+  check(Boolean(elsewhere), 'a page of the server loads (the window is moved off the finish page)');
+  const forged = `code=${hex()}&state=${b64url(randomBytes(24))}&verifier=${b64url(randomBytes(32))}`;
+  mark = sinceMark();
+  seenReports = reports.length;
+  // WebView2 sends the request of a navigation the shell then cancels (README, "Not covered"), so
+  // "refused" means the window does not move: the document the page was in survives (a marker set
+  // in it is still there), the address does not change and no finish page ran.
+  const stay = await evaluate(`window.__stay = String(Math.random())`);
+  for (const [what, script] of [
+    ['location.href with a fragment', `location.href = '/app-signin/finish#${forged}'`],
+    ['location.href with a query', `location.href = '/app-signin/finish?${forged}'`],
+    ['location.assign with both', `location.assign('/app-signin/finish?x=1#${forged}')`],
+    ['location.replace with an encoded spelling', `location.replace('/app-signin/%66inish#${forged}')`],
+    ['a trailing slash', `location.href = '/app-signin/finish/#${forged}'`],
+    ['window.open with a fragment', `window.open('/app-signin/finish#${forged}')`],
+    ['a server redirect that carries a fragment', `location.href = '/redirect-finish'`],
+  ]) {
+    await evaluate(script);
+    await sleep(1800);
+    const same = await evaluate(`window.__stay`);
+    check(same === stay && (await currentUrl()) === `${origin}/elsewhere` && reports.length === seenReports, `a page cannot send the window to the finish page by ${what}`, `marker ${same === stay ? 'kept' : 'lost'}, ${await currentUrl()}`);
+  }
+  const stayed = await currentUrl();
+  check(stayed === `${origin}/elsewhere` || stayed === `${origin}/redirect-finish`, 'and the window stays on the page it was on', stayed);
+  const refusals = readFileSync(traceFile, 'utf8').split('\n').filter((l) => l.includes('app-signin/') && l.includes('-> Deny'));
+  check(refusals.length >= 5, 'the navigation rule logged each as a refusal', String(refusals.length));
+  check(!refusals.some((l) => l.includes(forged.slice(0, 20))), 'without the address in the log');
+  mark = sinceMark();
+  await evaluate(`location.href = '/elsewhere'`);
+  await waitFor(async () => (await currentUrl()) === `${origin}/elsewhere`, 20, 'the ordinary page again');
+
   // 7. a page of the server cannot start it; the launcher's button can.
   mark = sinceMark();
   const refusedCall = await evaluate(`(async () => { try { await window.__TAURI_INTERNALS__.invoke('start_browser_sign_in'); return 'ALLOWED'; } catch (e) { return 'refused: ' + String(e && e.message || e).slice(0, 80); } })()`);
@@ -321,6 +387,9 @@ try {
   const status = await evaluate(`document.getElementById('browser-signin-status').textContent`);
   check(/Your browser has opened/.test(String(status)), 'and tells the person what to do next', String(status).slice(0, 60));
   const buttonState = viaButton ? new URL(viaButton.url, origin).searchParams.get('state') : null;
+  const shownCode = await evaluate(`document.getElementById('browser-signin-pairing').hidden ? '' : document.getElementById('browser-signin-code').textContent`);
+  check(/^[2-9A-HJ-NP-Z]{4}$/.test(String(shownCode)), 'the launcher shows a four-character pairing code while the request waits', String(shownCode));
+  check(Boolean(buttonState) && shownCode === pairing(buttonState), "and it is the pairing code of that request's state (the server's page shows the same four)", `${shownCode} vs ${buttonState ? pairing(buttonState) : '-'}`);
   mark = sinceMark();
   seenReports = reports.length;
   sendLink(`dynodoc://signin?code=${hex()}&state=${buttonState}`);
