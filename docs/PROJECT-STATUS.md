@@ -1,5 +1,50 @@
 # Dynodoc: intent, current implementation and remaining work
 
+## Source: self-hosted Phase 0, single-node bundle (23 October 2026)
+
+P0-4 is built in source and was run end to end in Docker on this PC (Docker Desktop 29.5, Compose 5.1.4, amd64, Windows 11). Nothing is
+deployed or published. Files: `infra/selfhosted/` (Compose project, four image Dockerfiles, hardened nginx proxy, one-shot jobs,
+smoke and TLS tests, README quick start); deployment guide and edition plan updated.
+
+**Topology.** `postgres` 16, `api`, `web` (`DYNODOC_MODE=selfhosted`), `proxy`; on demand `acme`, `converter`, `database-admin`,
+`mailcheck`. Four one-shot jobs run on every `up` and stop the stack on failure: `secrets-init`, `preflight` (the web configuration
+check, in the `tools` image target), `db-roles` (creates the runtime role; needs psql, which the API image lacks) and `init` (migrate
+as the owner role, `grant-runtime`, `check-runtime`). Only the proxy publishes ports, on 127.0.0.1 unless `DYNODOC_BIND` says
+otherwise; networks `published`, `frontend` (internal), `engine` (internal), `conversion` (internal) and `egress` (web and acme, for
+mail). The API and PostgreSQL are unreachable from the host and from the proxy. The runtime containers never receive the owner
+credential.
+
+**TLS modes** (`DYNODOC_TLS_MODE` is required, no default): `provided` (key match, dates, names, chain order and passphrase
+checked, the proxy refuses to start with the reasons; graceful renewal, a bad replacement is refused and the old certificate keeps
+serving), `evaluation` (self-signed with SANs, labelled in the subject, a header and the log; HSTS 300 s), `acme` (lego 5.5.2, HTTP-01
+through the proxy, terms must be accepted in the env file). Tested: provided 16 good and bad chains; renewals with 0 failed requests;
+ACME **against Pebble only** (17 of 17), not against a real CA.
+
+**Hardening, measured with `docker inspect` and the live process status:** every service non-root (postgres 999, api and web 10001,
+proxy 101), read-only root, all capabilities dropped (effective set 0; `secrets-init` keeps three), `no-new-privileges`, memory and
+pid limits, rotated logs, SCRAM on every PostgreSQL connection; the runtime role cannot CREATE (including TEMP), DROP, ALTER,
+TRUNCATE, DELETE or UPDATE the event log or create extensions. Secrets are copied by `secrets-init` into one volume per service
+(Compose `secrets:` ignores uid, gid and mode, so a 0600 file is unreadable and an open one is refused by the API).
+
+**Smoke results** (`scripts/smoke.mjs`, checks a to k plus extras): clean build run 106 passed, 0 failed (345 s; first `up` 60 s);
+release path with images pulled by digest from a local registry 105 passed, 0 failed; 69 checks through the Git Bash launcher. They
+cover the single published port, redirect to the configured origin even with a forged Host, one CSP with HSTS and nosniff, TLS 1.0
+and 1.1 refused, 421 for other hosts, 413 over 16 MiB, the hosted CSP maps identical to `infra/demo`, sign-in through a test-only mail
+sink, an admin from `ADMIN_EMAILS` reaching `/admin`, every service restarted with data intact, `down` then `up` idempotent, four
+failure injections each stopping `up`, a by-hand backup and restore with `verify-snapshots --all`, and a Chromium run (sign in,
+create a document, see it listed). Four manual mutations (bind 0.0.0.0, HSTS, capabilities not dropped, an extra schema grant)
+each failed the expected checks. Images: api 182 MB (cold Rust build 23 min), web 536 MB, proxy 92 MB, acme 103 MB; base images
+pinned by digest (`pin-bases.mjs`), SBOMs from Docker Scout (api shows no Rust crates until `cargo-auditable`, P0-6).
+
+**Not run / not verified.** A Linux host (bind-mount ownership, rootless Docker, SELinux, ufw), arm64, a real CA, a real mail
+server, an upgrade from release N to N+1 (only the `init` re-run is exercised), the converter image build, air-gap, HA, any GitHub
+Actions job. **Not independently reviewed** (the measured evidence above is the author's). Observations in the app, unchanged: `GET`
+and `PUT /telemetry` answer 405 with metrics off while the guide says 404; the first sign-in-link request creates the account; without
+working SMTP nobody can sign in, and `DEV_AUTH=true` lets anyone sign in as anyone (both documented). The first administrator today
+comes from `ADMIN_EMAILS` plus an emailed link; operator-issued links are not built. Questions for the owner: accept the two extra
+networks; keep `DYNODOC_TLS_MODE` mandatory; lego v5 as the ACME client (an nginx module was not evaluated); a LAN-reachable default
+instead of 127.0.0.1.
+
 ## Source: self-hosted Phase 0, SMTP mail transport (22 October 2026)
 
 P0-3 is built in source for the web tier (the operator-issued sign-in link, the outbox and the `dynodoctl` call are not). A mail

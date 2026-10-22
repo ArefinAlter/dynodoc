@@ -1,0 +1,22 @@
+# ACME client for the bundled proxy's `acme` TLS mode: lego (https://go-acme.github.io/lego/)
+# with a small loop that obtains and renews the certificate and hands it to the proxy.
+#
+# Build context: infra/selfhosted (compose.build.yml sets it). Only used with the `acme` compose
+# profile. The lego image is built FROM scratch (no shell), so its binary is copied into a pinned
+# Alpine image that has one. Refresh both digests with scripts/pin-bases.mjs.
+ARG LEGO_IMAGE=goacme/lego:v5.5.2@sha256:1944e8c36055beec47c7de6f15202b41128be75eea0ffa257f0c14d93c5155fd
+ARG ALPINE_IMAGE=alpine:3.24@sha256:71e9b7bae160ba167fa17414401b94cbcdaf3c32feeab9298bd794a2a0614c35
+
+FROM ${LEGO_IMAGE} AS lego
+
+FROM ${ALPINE_IMAGE}
+LABEL org.opencontainers.image.title="dynodoc-acme" \
+      org.opencontainers.image.description="ACME client (lego) for the Dynodoc bundled proxy" \
+      org.opencontainers.image.vendor="Verne Ltd."
+RUN apk add --no-cache openssl \
+ && mkdir -p /var/lib/dynodoc-tls && chown 101:101 /var/lib/dynodoc-tls
+COPY --from=lego /lego /usr/local/bin/lego
+COPY acme/acme-loop /usr/local/bin/acme-loop
+RUN chmod 0755 /usr/local/bin/acme-loop
+USER 101
+ENTRYPOINT ["/usr/local/bin/acme-loop"]

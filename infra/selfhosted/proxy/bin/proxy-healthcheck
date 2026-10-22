@@ -1,0 +1,3 @@
+#!/bin/sh
+# Container health check: nginx answers on its own loopback listener.
+exec wget -q -O /dev/null --timeout=3 http://127.0.0.1:8081/proxy-healthz

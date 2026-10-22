@@ -1,0 +1,26 @@
+# Dynodoc bundled proxy: nginx (unprivileged) with the TLS modes of the self-hosted bundle.
+#
+# Build context: infra/selfhosted (compose.build.yml sets it).
+# Runs as uid 101, listens on 8080 (HTTP) and 8443 (HTTPS) inside the container; compose.yml
+# publishes them as 80 and 443 on the address in DYNODOC_BIND (default 127.0.0.1).
+ARG NGINX_IMAGE=nginxinc/nginx-unprivileged:stable-alpine3.24@sha256:f5116ed4606f3eb015dd4a8e28cb9b351476dc0ad4bc6e9f93b19cec130cdf03
+
+FROM ${NGINX_IMAGE}
+LABEL org.opencontainers.image.title="dynodoc-proxy" \
+      org.opencontainers.image.description="Dynodoc bundled nginx proxy with TLS modes (self-hosted bundle)" \
+      org.opencontainers.image.vendor="Verne Ltd."
+USER root
+RUN apk add --no-cache openssl \
+ && rm -f /etc/nginx/conf.d/default.conf \
+ && mkdir -p /var/lib/dynodoc-tls /etc/dynodoc/tls /etc/nginx/dynodoc /usr/local/lib/dynodoc \
+ && chown -R 101:101 /var/lib/dynodoc-tls
+COPY proxy/nginx.conf /etc/nginx/nginx.conf
+COPY proxy/conf/ /etc/nginx/dynodoc/
+COPY proxy/bin/tls-lib.sh /usr/local/lib/dynodoc/tls-lib.sh
+COPY proxy/bin/proxy-entrypoint proxy/bin/proxy-healthcheck /usr/local/bin/
+RUN chmod 0755 /usr/local/bin/proxy-entrypoint /usr/local/bin/proxy-healthcheck
+USER 101
+EXPOSE 8080 8443
+STOPSIGNAL SIGQUIT
+ENTRYPOINT ["/usr/local/bin/proxy-entrypoint"]
+CMD ["run"]

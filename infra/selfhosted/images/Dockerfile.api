@@ -1,0 +1,42 @@
+# Dynodoc API and operator CLI for the self-hosted bundle.
+#
+# Build context: the repository root.
+#   docker compose -f infra/selfhosted/compose.yml -f infra/selfhosted/compose.build.yml build api
+#
+# Same sources and build as infra/demo/Dockerfile.api (the hosted image), with:
+#   - base images pinned by digest (refresh with scripts/pin-bases.mjs),
+#   - BuildKit cache mounts so a second build does not download or recompile the dependencies,
+#   - OCI labels.
+# The runtime stage is debian:bookworm-slim, so it has bash and coreutils but no curl: the
+# health check in compose.yml uses bash's /dev/tcp.
+ARG RUST_IMAGE=rust:1.96-bookworm@sha256:a339861ae23e9abb272cea45dfafde21760d2ce6577a70f8a926153677902663
+ARG DEBIAN_IMAGE=debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
+
+FROM ${RUST_IMAGE} AS build
+# Fewer parallel rustc processes keep the peak memory of a small Docker VM down.
+ARG CARGO_BUILD_JOBS=6
+ENV CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS}
+WORKDIR /app
+COPY Cargo.toml Cargo.lock ./
+COPY crates ./crates
+COPY migrations ./migrations
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=dynodoc-cargo-registry \
+    --mount=type=cache,target=/usr/local/cargo/git,id=dynodoc-cargo-git \
+    --mount=type=cache,target=/app/target,id=dynodoc-cargo-target \
+    cargo build --locked --release -p engine-api -p engine-cli \
+ && install -D target/release/engine-api /out/engine-api \
+ && install -D target/release/engine-cli /out/engine-cli
+
+FROM ${DEBIAN_IMAGE}
+LABEL org.opencontainers.image.title="dynodoc-api" \
+      org.opencontainers.image.description="Dynodoc engine API and engine-cli (self-hosted bundle)" \
+      org.opencontainers.image.vendor="Verne Ltd."
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates \
+ && rm -rf /var/lib/apt/lists/* \
+ && useradd --uid 10001 --create-home dynodoc
+COPY --from=build /out/engine-api /usr/local/bin/engine-api
+COPY --from=build /out/engine-cli /usr/local/bin/engine-cli
+USER dynodoc
+EXPOSE 8080
+CMD ["engine-api"]

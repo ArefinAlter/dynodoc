@@ -1,0 +1,11 @@
+# An installation directory holds secrets; none of these may be committed.
+/.env
+/secrets/
+/tls/*
+!/tls/README.md
+/config/*
+!/config/README.md
+/backups/
+/release.env
+/compose.release.generated.yml
+/sbom/
