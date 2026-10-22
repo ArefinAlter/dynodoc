@@ -1,0 +1,12 @@
+# Optional overlay: the web server gets no route out of Docker.
+#
+#   docker compose -f compose.yml -f compose.no-egress.yml up -d --wait
+#
+# Use it when nothing the web server needs is outside this machine: no mail server (or one on
+# this host's own Docker network), no identity provider, no Google sign-in. Email sign-in then
+# needs a mail relay that the `web` container can reach by name, so for an isolated installation
+# turn email sign-in off (AUTH_EMAIL_LINK=off) until a sign-in method that needs no relay exists.
+# Not compatible with DYNODOC_TLS_MODE=acme (the ACME client needs the internet).
+services:
+  web:
+    networks: !override [frontend, engine, conversion]
