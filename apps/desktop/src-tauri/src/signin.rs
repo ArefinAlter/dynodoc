@@ -71,9 +71,42 @@ pub const PLATFORM: &str = if cfg!(target_os = "android") {
 /// browser sign-in is not offered, because it would only be refused.
 pub const APP_TOKEN: bool = cfg!(any(windows, target_os = "android"));
 
+/// The version as the token writes it. ONE grammar for the shell (this function), the Android
+/// layer (`AppToken.kt`) and the server (`appKind` in `frontend/researcher/src/lib/app-signin.ts`),
+/// with fixtures all three run (`apps/desktop/fixtures/app-token.json`): `<major>.<minor>.<patch>`,
+/// each one to nine ASCII digits. The leading dotted triple of `raw` is kept and anything after it
+/// is dropped on purpose (`0.1.0-beta.1` and `10.0.0+build5` give `0.1.0` and `10.0.0`); with no
+/// such triple the answer is `0.0.0`. So a token is never one the server silently refuses.
+pub fn normalise_version(raw: &str) -> String {
+    const NONE: &str = "0.0.0";
+    let mut rest = raw;
+    let mut parts = [""; 3];
+    for (i, slot) in parts.iter_mut().enumerate() {
+        let end = rest
+            .bytes()
+            .position(|b| !b.is_ascii_digit())
+            .unwrap_or(rest.len());
+        if end == 0 || end > 9 {
+            return NONE.to_string();
+        }
+        *slot = &rest[..end];
+        rest = &rest[end..];
+        if i < 2 {
+            match rest.strip_prefix('.') {
+                Some(after) => rest = after,
+                None => return NONE.to_string(),
+            }
+        }
+    }
+    format!("{}.{}.{}", parts[0], parts[1], parts[2])
+}
+
 /// The token appended to the web view's own User-Agent: `DynodocApp/<version> (<kind>)`.
 pub fn app_token() -> String {
-    format!("DynodocApp/{} ({PLATFORM})", env!("CARGO_PKG_VERSION"))
+    format!(
+        "DynodocApp/{} ({PLATFORM})",
+        normalise_version(env!("CARGO_PKG_VERSION"))
+    )
 }
 
 /// A moment read from both clocks. The monotonic clock cannot be set, but on a phone it stops
@@ -1132,6 +1165,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         for needed in [
+            "window.top !== window",
             "location.origin !== origin",
             "location.pathname !== '/app-signin/finish'",
             "location.search !== ''",
@@ -1181,6 +1215,41 @@ mod tests {
     }
 
     #[test]
+    fn the_version_follows_the_one_grammar_the_fixtures_pin() {
+        // The same cases the Kotlin layer and the web app run (apps/desktop/fixtures/app-token.json).
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../fixtures/app-token.json")).unwrap();
+        let cases = fixture["cases"].as_array().unwrap();
+        assert!(cases.len() > 15);
+        for case in cases {
+            let raw = case["raw"].as_str().unwrap();
+            assert_eq!(
+                normalise_version(raw),
+                case["version"].as_str().unwrap(),
+                "{raw:?}"
+            );
+        }
+        // The two long cases every language generates for itself.
+        assert_eq!(
+            normalise_version(&format!("1.2.3-{}", "x".repeat(5000))),
+            "1.2.3"
+        );
+        assert_eq!(
+            normalise_version(&format!("{}.0.0", "9".repeat(400))),
+            "0.0.0"
+        );
+        // Whatever comes out is in the grammar the server reads.
+        for case in cases {
+            let version = normalise_version(case["raw"].as_str().unwrap());
+            let parts: Vec<&str> = version.split('.').collect();
+            assert_eq!(parts.len(), 3, "{version}");
+            assert!(parts
+                .iter()
+                .all(|p| (1..=9).contains(&p.len()) && p.bytes().all(|b| b.is_ascii_digit())));
+        }
+    }
+
+    #[test]
     fn the_app_token_is_what_the_server_reads() {
         // `DynodocApp/<major.minor.patch> (<kind>)`, exactly what the web tier's `appKind` accepts.
         let token = app_token();
@@ -1193,7 +1262,12 @@ mod tests {
             .iter()
             .all(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())));
         assert_eq!(kind, format!("{PLATFORM})"));
-        assert_eq!(version, env!("CARGO_PKG_VERSION"));
+        assert_eq!(version, normalise_version(env!("CARGO_PKG_VERSION")));
+        // The version this build has is already in the grammar, so nothing is lost by normalising.
+        assert_eq!(
+            normalise_version(env!("CARGO_PKG_VERSION")),
+            env!("CARGO_PKG_VERSION")
+        );
         // Only where it is built and has been run is the browser sign-in offered.
         assert_eq!(APP_TOKEN, cfg!(any(windows, target_os = "android")));
     }

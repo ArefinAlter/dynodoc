@@ -21,7 +21,7 @@ const script = (origin = ORIGIN, fragment = FRAGMENT) =>
   template.replace('__ORIGIN__', origin).replace('__FRAGMENT__', fragment);
 
 /** A page with what the script touches. `ready` says when the page marks itself ready. */
-function page({ origin = ORIGIN, pathname = '/app-signin/finish', search = '', hash = '', readyAfter = 0 } = {}) {
+function page({ origin = ORIGIN, pathname = '/app-signin/finish', search = '', hash = '', readyAfter = 0, framed = false } = {}) {
   const writes = [];
   const timers = [];
   let polls = 0;
@@ -47,6 +47,9 @@ function page({ origin = ORIGIN, pathname = '/app-signin/finish', search = '', h
     }
   };
   const context = { location, document, setTimeout: (fn, ms) => timers.push({ fn, ms }) };
+  // `window.top === window` in a top-level page; in a frame `top` is the parent's window.
+  context.window = context;
+  context.top = framed ? { someOtherWindow: true } : context;
   return {
     location,
     writes,
@@ -118,6 +121,15 @@ test('any other page gets nothing, not even a poll of the page', () => {
     assert.deepEqual(p.writes, [], JSON.stringify(options));
     assert.equal(p.polls(), 0, `it did not even look: ${JSON.stringify(options)}`);
   }
+});
+
+test('inside a frame it does nothing, not even a poll of the page', () => {
+  const p = page({ framed: true, readyAfter: 0 });
+  p.run();
+  p.drain();
+  assert.deepEqual(p.writes, []);
+  assert.equal(p.polls(), 0);
+  assert.equal(p.timers.length, 0);
 });
 
 test('a window sent elsewhere while it waits is left alone', () => {

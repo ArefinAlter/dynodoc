@@ -4,7 +4,8 @@
 // only). The script reads nothing from the page and sends nothing anywhere: it sets
 // `location.hash`, once, and only
 //  - on exactly the finish page of that origin, with nothing else in its address (so a window that
-//    has been sent anywhere else by anything gets nothing), and
+//    has been sent anywhere else by anything gets nothing), in the top window and never in a frame
+//    (a plain link whose target is a frame could feed a framed page a fragment), and
 //  - after the page has said it is ready (the attribute `data-finish-ready`, set by the page once
 //    it listens for a change of the fragment; the page ignores any fragment that was there when it
 //    loaded, so setting it earlier would do nothing).
@@ -17,6 +18,7 @@
   var tries = 0;
   function attempt() {
     if (
+      window.top !== window ||
       location.origin !== origin ||
       location.pathname !== '/app-signin/finish' ||
       location.search !== '' ||
