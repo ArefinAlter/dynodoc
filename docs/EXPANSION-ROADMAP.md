@@ -125,9 +125,9 @@ The documents give dependency detail; this is the product order.
 
 On 14 October 2026 receipt-authority rotation, passphrase-encrypted key files with optional OS key
 storage, and transparent compression of local repository objects were built the same day as the
-designs. Between 18 and 20 October 2026 the pieces below were built **in source**. Nothing here is
-deployed: production runs the schema 41 release, and schemas 42 and 43 (and 44 when the write path
-lands) need the usual rehearsal and release. Each row links to its ledger entry in
+designs. Between 18 and 22 October 2026 the pieces below were built **in source**. Nothing here is
+deployed: production runs the schema 41 release, and schemas 42 to 45
+need the usual rehearsal and release. Each row links to its ledger entry in
 [PROJECT-STATUS.md](PROJECT-STATUS.md), which says exactly what exists, what was verified and what was not.
 
 | Roadmap item | State | What exists | What does not |
@@ -135,7 +135,7 @@ lands) need the usual rehearsal and release. Each row links to its ledger entry 
 | Agent connectors, read path | Built, off by default | `engine-agent` library, read routes under `AGENT_GATEWAY=on`, migration 0042, `AgentAuth`, `engine-mcp` over stdio, Claude Code plugin files, setup guide | Never run with a real MCP client or a production copy |
 | Agent connectors, policy | Built | Migration 0043: default-deny project policy, role floor, budgets, file overrides, kill switch, usage; independent review applied | Policy for write fields; file override editing screen |
 | Agent connectors, screens | Built | Agent keys on Signing keys; "AI agents" in project settings (policy, usage, kill switch) | Run only with the gateway off; no copy review by a non-technical admin |
-| Agent connectors, propose path | Compiler built; server in progress | `engine-agent` operation compiler with a Rust port of the editor's position keys | Propose, submit, agent drafts, receipts, reviewer badges, MCP write tools |
+| Agent connectors, propose path | Built, off by default | `engine-agent` operation compiler, migration 0044 (propose, submit, withdraw, agent drafts, receipts), opt-in MCP write tools; migration 0045: approvals bound to the revision seen, an AI-proposals inbox, badges and review screens, adopt and discard | Release of schemas 42 to 45 (not rehearsed), OAuth, layer C, evals, filters by client or principal, MCP `status` using the new list route |
 | Agent connectors, OAuth and remote MCP, ChatGPT | Designed only | none | everything |
 | Self-hosted, Phase 0 | Partly built | API retention job, `*_FILE` secrets and startup validation | Web-tier parametrisation, SMTP, bundle, `dynodoctl`, image pipeline, add-in manifests, air-gap harness |
 | Self-hosted, Phase 1 (identity) | Designed only | none | OIDC, SAML, SCIM, group mapping |
@@ -146,5 +146,9 @@ lands) need the usual rehearsal and release. Each row links to its ledger entry 
 | Cross-document merge | Designed only | none | everything |
 | Large-file acceptance, installed-host acceptance | Designed only | benchmark corpus tools (PR #28) | The runs themselves (the host runs are the owner's) |
 | Key files | Argon2id added | memory-hard derivation, `device rewrap` | hardware-token keys |
+| Processors and operating systems | Built in CI, public engine repository | Build and full test run on Linux x86-64 and Arm, macOS Arm and Intel, Windows x86-64 and Arm (tier 2); real key stores on all three systems; prebuilt `engine-cli` and `engine-api` for six targets (unsigned); a `linux/amd64` + `linux/arm64` container image; two Windows key-file defects found and fixed | A published release or image (tag paths have not run), signing, notarisation, a timing test excluded on three platforms |
+| Browsers and phones | Built, emulation only | Playwright matrix (Firefox, WebKit, Pixel and iPhone emulation), phone layouts, touch layer, an installable web app with a cache-nothing-private service worker | Real devices, Safari itself, two WebKit tests, three Firefox full-run flakes |
+| Desktop client (Tauri 2) | Built, Windows-run only | `apps/desktop`: launcher, hardened navigation, deep links, device-key sidecar, two independent security reviews and fixes, 97 tests, unsigned Windows installers built | macOS and Linux runs, signing, auto-update, a CI run of the bundle jobs |
+| Android and iPhone apps | Prepared | Mobile entry point and capability file, harden and manifest-check scripts, workflow jobs written | iOS anything, store accounts, signing, a CI run (see the Android row of the ledger once built) |
 
 The owner decisions in section 5 are unchanged; the ledger entries add the new questions each build raised.

@@ -18,7 +18,7 @@
 //!
 //! **Bounds.** At most 50 rows a page (25 by default), and the newest 2,000 visible agent
 //! proposals are considered, so `offset` stops at 1,000 and a state filter looks inside those.
-//! The state is computed by the SQL of [`crate::reviews::state_sql`], the same counting rule
+//! The state is computed by the SQL of `crate::reviews::state_sql`, the same counting rule
 //! the review screen and the agent's status use.
 
 use axum::{
