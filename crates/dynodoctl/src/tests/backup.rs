@@ -140,8 +140,15 @@ fn secrets_can_be_sent_to_another_place_and_the_dump_directory_then_holds_none()
     };
     assert!(manifest::verify_files(&info, Some(&copy)).is_ok());
     assert!(
-        manifest::verify_files(&info, None).is_err(),
-        "an external copy must be named to be checked"
+        manifest::verify_files(&info, None).is_ok(),
+        "an external copy that is not named is not checked (the installation has its own)"
+    );
+    // Named, it is checked: a tampered secret is caught.
+    std::fs::write(copy.join("secrets").join("session_secret"), "tampered\n").unwrap();
+    let problems = manifest::verify_files(&info, Some(&copy)).unwrap_err();
+    assert!(
+        problems.iter().any(|p| p.contains("session_secret")),
+        "{problems:?}"
     );
 }
 

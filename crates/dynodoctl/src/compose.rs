@@ -201,9 +201,46 @@ pub fn docker(ctx: &Ctx<'_>, args: &[&str]) -> Result<Output> {
     run_cmd(ctx, &cmd)
 }
 
-/// Keep messages short: the last lines of a long output.
+/// Remove terminal colour sequences (`ESC [ ... m`), which tools such as engine-cli print.
+pub fn strip_ansi(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' && chars.peek() == Some(&'[') {
+            chars.next();
+            for n in chars.by_ref() {
+                if n.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Compose's own progress lines (`Container x Created`), which say nothing about a failure.
+fn is_progress_line(line: &str) -> bool {
+    let t = line.trim();
+    ["Container ", "Network ", "Volume "]
+        .iter()
+        .any(|p| t.starts_with(p))
+        && [
+            "Creating", "Created", "Starting", "Started", "Running", "Healthy", "Waiting",
+            "Removing", "Removed", "Stopping", "Stopped",
+        ]
+        .iter()
+        .any(|s| t.ends_with(s))
+}
+
+/// Keep messages short: the last lines of a long output, without colour codes or progress noise.
 pub fn short(text: &str) -> String {
-    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
+    let cleaned = strip_ansi(text);
+    let lines: Vec<&str> = cleaned
+        .lines()
+        .filter(|l| !l.trim().is_empty() && !is_progress_line(l))
+        .collect();
     let start = lines.len().saturating_sub(6);
     lines[start..].join(" / ")
 }
@@ -306,6 +343,17 @@ mod tests {
         assert!(runner.calls().is_empty());
         assert!(c.psql("dynodoc", "select 1").is_ok());
         assert!(runner.ran("psql -h 127.0.0.1 -U dynodoc -d dynodoc"));
+    }
+
+    #[test]
+    fn colour_codes_and_compose_progress_lines_are_dropped_from_summaries() {
+        let text = "\u{1b}[2m2026-10-22T16:00:20Z\u{1b}[0m \u{1b}[32m INFO\u{1b}[0m migrations complete\n Container x-database-admin-run-1 Creating \n Container x-database-admin-run-1 Created \nError: boom\n";
+        assert_eq!(
+            short(text),
+            "2026-10-22T16:00:20Z  INFO migrations complete / Error: boom"
+        );
+        assert_eq!(strip_ansi("plain"), "plain");
+        assert_eq!(strip_ansi("a\u{1b}[1;31mb\u{1b}[0mc"), "abc");
     }
 
     #[test]

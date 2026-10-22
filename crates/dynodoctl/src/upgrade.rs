@@ -176,6 +176,9 @@ pub struct UpgradeRecord {
     pub result: String,
     pub backup_dir: Option<String>,
     pub backup_name: Option<String>,
+    /// Where the copy of the settings and secrets went, if it was sent away (`--secrets-to`).
+    #[serde(default)]
+    pub config_dir: Option<String>,
     pub saved_state_dir: Option<String>,
     pub skipped_backup: bool,
     pub skipped_rehearsal: bool,
@@ -314,6 +317,7 @@ pub fn run(ctx: &Ctx<'_>, opts: &Options) -> Result<UpgradeReport> {
         result: "plan".into(),
         backup_dir: None,
         backup_name: None,
+        config_dir: None,
         saved_state_dir: None,
         skipped_backup: false,
         skipped_rehearsal: false,
@@ -440,6 +444,10 @@ pub fn run(ctx: &Ctx<'_>, opts: &Options) -> Result<UpgradeReport> {
             Ok(r) => {
                 record.backup_dir = Some(r.path.display().to_string());
                 record.backup_name = Some(r.name.clone());
+                record.config_dir = opts
+                    .secrets_to
+                    .as_ref()
+                    .map(|d| d.join(format!("{}-config", r.name)).display().to_string());
                 backup_info = Some(r);
             }
             Err(e) => {
@@ -797,7 +805,12 @@ fn rollback_with(ctx: &Ctx<'_>, record: &UpgradeRecord, confirmed: bool) -> Resu
             }
         }
     }
-    let config_from = None;
+    // An external copy of the settings and secrets is used if it is still there.
+    let config_from = record
+        .config_dir
+        .as_ref()
+        .map(PathBuf::from)
+        .filter(|p| p.is_dir());
     let report = restore::restore_live(
         ctx,
         &LiveOptions {

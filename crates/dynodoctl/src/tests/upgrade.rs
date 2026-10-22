@@ -551,6 +551,29 @@ fn rollback_restores_settings_and_overlay_then_the_pre_upgrade_backup() {
 }
 
 #[test]
+fn rollback_works_when_the_secrets_copy_of_the_upgrade_backup_was_sent_elsewhere() {
+    // Found on the real bundle: `upgrade --secrets-to X` then `rollback` was refused because the
+    // external copy was not named, although the installation still had its own settings.
+    let (dir, runner, overlay) = setup();
+    let elsewhere = tempfile::tempdir().unwrap();
+    let opts = Options {
+        secrets_to: Some(elsewhere.path().to_path_buf()),
+        ..release_opts(&overlay)
+    };
+    let report = run_with(&runner, dir.path(), &[], &opts).unwrap();
+    assert!(report
+        .record
+        .config_dir
+        .as_deref()
+        .unwrap()
+        .ends_with("dynodoc-20261022T120000Z-before-upgrade-config"));
+    let confirm = ScriptedConfirm::new(&[true]);
+    let ctx = testkit::ctx(&runner, dir.path(), &confirm);
+    let rolled = rollback(&ctx, None).unwrap();
+    assert!(rolled.ok, "{}", rolled.render());
+}
+
+#[test]
 fn rollback_without_confirmation_changes_nothing() {
     let (dir, runner, overlay) = setup();
     run_with(&runner, dir.path(), &[], &release_opts(&overlay)).unwrap();

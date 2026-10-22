@@ -164,15 +164,14 @@ pub fn verify_files(
             sha256: m.database.sha256.clone(),
         },
     );
+    // The settings and secrets copy is checked when it is at hand (inside the backup, or named
+    // with --config-from). An external copy that is not named is simply not checked here: an
+    // installation that still has its own .env and secrets/ does not need it, and a restore
+    // that does need it refuses on its own (restore_live).
     if let Some(root) = info.config_root(config_override) {
         for e in &m.config.files {
             check(&root, e);
         }
-    } else if m.config.location == "external" && !m.config.files.is_empty() {
-        problems.push(format!(
-            "the settings and secrets copy is outside this backup (directory `{}`); pass --config-from, or accept that it is not checked",
-            m.config.dir_name.clone().unwrap_or_default()
-        ));
     }
     if problems.is_empty() {
         Ok(())
