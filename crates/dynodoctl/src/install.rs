@@ -248,6 +248,14 @@ pub fn validate(
             "choose one",
         ));
     }
+    // M1 (b): an overlay changes which images run. On an installation that exists, that is an
+    // upgrade, with its backup, rehearsal and digest check; `install` would skip all three.
+    if installed.is_some() && opts.overlay.is_some() {
+        return Err(CliError::refused(
+            "--overlay would change the images of an installation that already exists, without a backup, a rehearsal or a digest check",
+            "use `dynodoctl upgrade --version <tag> --overlay <file>`, which does all three; nothing was changed",
+        ));
+    }
     Ok(())
 }
 
@@ -647,6 +655,8 @@ pub fn run(ctx: &Ctx<'_>, opts: &Options) -> Result<InstallReport> {
             "run again and answer `yes`, or pass --yes",
         ));
     }
+    // M9: containers of this Compose project name must belong to this directory.
+    crate::compose::guard_project(ctx)?;
     std::fs::create_dir_all(&dir)?;
     if need_populate {
         let n = rec.step("copy the bundle files", || {

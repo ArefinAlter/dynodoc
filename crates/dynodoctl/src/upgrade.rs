@@ -50,6 +50,12 @@ pub struct OverlayImage {
     pub digest: Option<String>,
 }
 
+/// `sha256:` followed by exactly 64 lowercase hex digits, and nothing else.
+pub fn valid_digest(text: &str) -> bool {
+    text.strip_prefix("sha256:")
+        .is_some_and(|h| h.len() == 64 && h.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')))
+}
+
 /// The `service: image:` pairs of a release overlay.
 pub fn parse_overlay(text: &str) -> Vec<OverlayImage> {
     let mut out = Vec::new();
@@ -65,9 +71,11 @@ pub fn parse_overlay(text: &str) -> Vec<OverlayImage> {
         } else if indent >= 4 {
             if let (Some(s), Some(image)) = (&service, t.strip_prefix("image:")) {
                 let reference = image.trim().trim_matches('"').to_string();
+                // M1 (d): only a full digest counts (`sha256:` and exactly 64 lowercase hex).
                 let digest = reference
-                    .split_once("@sha256:")
-                    .map(|(_, d)| format!("sha256:{d}"));
+                    .split_once('@')
+                    .map(|(_, d)| d.to_string())
+                    .filter(|d| valid_digest(d));
                 out.push(OverlayImage {
                     service: s.clone(),
                     reference,
@@ -96,17 +104,16 @@ pub fn plan(opts: &Options, env: &EnvFile, overlay_text: Option<&str>) -> Result
     let from_registry = env.get("DYNODOC_IMAGE_REGISTRY").unwrap_or("").to_string();
     let mut warnings = Vec::new();
     let (to_version, to_registry) = if opts.local {
-        if opts.registry.is_some() || opts.overlay.is_some() {
+        // M1 (a): `--local --version X` would switch DYNODOC_VERSION with no overlay, no digest
+        // check and no --allow-unpinned: every gate of a release upgrade, bypassed with one flag.
+        if opts.registry.is_some() || opts.overlay.is_some() || opts.version.is_some() {
             return Err(CliError::usage(
-                "--local means the images already installed",
-                "remove --registry/--overlay, or remove --local",
+                "--local means the images already installed, so it cannot be combined with --version, --registry or --overlay",
+                "remove --local to upgrade to a release (with --version and --overlay), or remove the other options",
             ));
         }
         warnings.push("--local: no new images. This exercises the backup, rehearsal, restart and rollback mechanism with the version already installed; it is not an upgrade to a newer release.".to_string());
-        (
-            opts.version.clone().unwrap_or_else(|| from_version.clone()),
-            from_registry.clone(),
-        )
+        (from_version.clone(), from_registry.clone())
     } else {
         let version = opts.version.clone().ok_or_else(|| CliError::usage("which release? --version is missing", "pass --version <tag> (and --overlay compose.release.generated.yml from the release), or --local to exercise the mechanism with the installed images"))?;
         (
@@ -134,8 +141,13 @@ pub fn plan(opts: &Options, env: &EnvFile, overlay_text: Option<&str>) -> Result
             warnings.push("--allow-unpinned: the images are trusted by tag; nothing proves they are the tested ones.".to_string());
         }
         if !images.is_empty() && images.iter().any(|i| i.digest.is_none()) {
+            let names: Vec<&str> = images
+                .iter()
+                .filter(|i| i.digest.is_none())
+                .map(|i| i.service.as_str())
+                .collect();
             return Err(CliError::refused(
-                "the overlay names an image without a digest",
+                format!("the overlay names an image without a full sha256 digest (`@sha256:` and 64 hex characters): {}", names.join(", ")),
                 "use the overlay exactly as scripts/make-release-overlay.mjs wrote it",
             ));
         }
@@ -229,12 +241,118 @@ impl UpgradeReport {
     }
 }
 
-fn digest_check(ctx: &Ctx<'_>, images: &[OverlayImage]) -> Result<usize> {
-    let mut checked = 0;
+/// The repository part of an image reference: no digest, no tag, and Docker Hub's default
+/// prefixes removed, so `docker.io/library/postgres:16@sha256:..` and `postgres@sha256:..` agree.
+fn repository(reference: &str) -> String {
+    let no_digest = reference.split_once('@').map_or(reference, |(r, _)| r);
+    let last_slash = no_digest.rfind('/').map_or(0, |i| i + 1);
+    let no_tag = match no_digest[last_slash..].find(':') {
+        Some(i) => &no_digest[..last_slash + i],
+        None => no_digest,
+    };
+    let mut repo = no_tag;
+    for prefix in ["index.docker.io/", "docker.io/"] {
+        repo = repo.strip_prefix(prefix).unwrap_or(repo);
+    }
+    repo.strip_prefix("library/").unwrap_or(repo).to_string()
+}
+
+/// Does `RepoDigests` (a JSON array of `repo@sha256:..`) contain exactly this repository and digest?
+fn repo_digests_contain(json: &str, reference: &str, digest: &str) -> bool {
+    let Ok(entries) = serde_json::from_str::<Vec<String>>(json.trim()) else {
+        return false;
+    };
+    let wanted = repository(reference);
+    entries.iter().any(|entry| {
+        entry
+            .split_once('@')
+            .is_some_and(|(repo, d)| d == digest && repository(repo) == wanted)
+    })
+}
+
+/// The `service -> image` pairs Compose will actually run (overlay merged, variables resolved,
+/// the `maintenance` jobs included), from `docker compose config --format json`.
+fn effective_images(tc: &Compose<'_>) -> Result<Vec<(String, String)>> {
+    let out = tc.run(&["--profile", "maintenance", "config", "--format", "json"])?;
+    let parsed = out
+        .ok()
+        .then(|| serde_json::from_str::<serde_json::Value>(&out.stdout_text()).ok())
+        .flatten();
+    let services = parsed
+        .as_ref()
+        .and_then(|v| v.get("services"))
+        .and_then(|s| s.as_object())
+        .ok_or_else(|| {
+            CliError::refused(
+                format!("could not read the configuration Compose would run: {}", short(&out.text())),
+                "the images cannot be verified without it; nothing was changed. Check `docker compose config` in the bundle directory",
+            )
+        })?;
+    let mut images: Vec<(String, String)> = services
+        .iter()
+        .filter_map(|(name, def)| {
+            def.get("image")
+                .and_then(|i| i.as_str())
+                .map(|i| (name.clone(), i.to_string()))
+        })
+        .collect();
+    images.sort();
+    Ok(images)
+}
+
+/// M1 (d). The images Compose will run must (1) ALL be pinned by a full digest, whichever file
+/// pins them, (2) be the ones the overlay names, and (3) have been pulled with exactly that
+/// repository and digest. Returns how many were checked.
+fn digest_check(ctx: &Ctx<'_>, tc: &Compose<'_>, images: &[OverlayImage]) -> Result<usize> {
+    let effective = effective_images(tc)?;
+    let unpinned: Vec<String> = effective
+        .iter()
+        .filter(|(_, image)| !image.split_once('@').is_some_and(|(_, d)| valid_digest(d)))
+        .map(|(service, image)| format!("{service} ({image})"))
+        .collect();
+    if !unpinned.is_empty() {
+        return Err(CliError::refused(
+            format!("these services would run an image that is not pinned by a full digest: {}", unpinned.join(", ")),
+            "the overlay must cover every service image of the installation; ask for a complete compose.release.generated.yml. Nothing was changed",
+        ));
+    }
     for image in images {
-        let Some(digest) = &image.digest else {
+        match effective
+            .iter()
+            .find(|(service, _)| *service == image.service)
+        {
+            Some((_, running)) if *running == image.reference => {}
+            Some((_, running)) => {
+                return Err(CliError::refused(
+                    format!(
+                        "the overlay names {} for {}, but Compose would run {running}",
+                        image.reference, image.service
+                    ),
+                    "the overlay does not apply as intended; nothing was changed",
+                ));
+            }
+            None => {
+                return Err(CliError::refused(
+                    format!(
+                        "the overlay names a service this installation does not have: {}",
+                        image.service
+                    ),
+                    "use the overlay of the release you are installing; nothing was changed",
+                ));
+            }
+        }
+    }
+    let mut checked = 0;
+    let mut seen: Vec<&str> = Vec::new();
+    for (service, reference) in &effective {
+        if seen.contains(&reference.as_str()) {
             continue;
-        };
+        }
+        seen.push(reference);
+        let digest = reference
+            .split_once('@')
+            .map(|(_, d)| d)
+            .unwrap_or_default();
         let out = docker(
             ctx,
             &[
@@ -242,12 +360,12 @@ fn digest_check(ctx: &Ctx<'_>, images: &[OverlayImage]) -> Result<usize> {
                 "inspect",
                 "--format",
                 "{{json .RepoDigests}}",
-                &image.reference,
+                reference,
             ],
         )?;
-        if !out.ok() || !out.stdout_text().contains(digest.as_str()) {
+        if !out.ok() || !repo_digests_contain(&out.stdout_text(), reference, digest) {
             return Err(CliError::refused(
-                format!("the image {} was not pulled with the digest the overlay names ({digest})", image.service),
+                format!("the image of {service} was not pulled with the repository and digest the release names ({digest})"),
                 "do not upgrade with it: pull again from the release registry, or ask for a new overlay; nothing was changed",
             ));
         }
@@ -304,6 +422,17 @@ pub fn run(ctx: &Ctx<'_>, opts: &Options) -> Result<UpgradeReport> {
         None => None,
     };
     let plan = plan(opts, &env, overlay_text.as_deref())?;
+    // M1 (c): with an overlay of the installed release in place, an upgrade by tag would keep
+    // running the old pinned images while DYNODOC_VERSION moves on. Say so instead.
+    if !opts.local && opts.overlay.is_none() && ctx.layout.overlay_file().is_file() {
+        return Err(CliError::refused(
+            format!(
+                "{} from the installed release pins the images by digest, so changing the version by tag would keep running the old images",
+                crate::ctx::OVERLAY_NAME
+            ),
+            "pass --overlay with the new release's file, or, if you really mean to trust the registry tag, move that overlay file out of the directory first; nothing was changed",
+        ));
+    }
     let started = (ctx.now)();
     let id = stamp(started);
     let mut record = UpgradeRecord {
@@ -337,6 +466,8 @@ pub fn run(ctx: &Ctx<'_>, opts: &Options) -> Result<UpgradeReport> {
         });
     }
 
+    crate::recover::require_no_journal(ctx)?;
+
     // The two things that must never happen silently.
     if opts.skip_backup && !ctx.confirm.confirm("You are about to upgrade WITHOUT a backup. If the upgrade damages the data there is nothing to go back to.", SKIP_BACKUP_PHRASE) {
         return Err(CliError::refused("the upgrade without a backup was not confirmed; nothing was changed", format!("take the backup (drop --skip-backup), or pass --confirm \"{SKIP_BACKUP_PHRASE}\"")));
@@ -356,6 +487,8 @@ pub fn run(ctx: &Ctx<'_>, opts: &Options) -> Result<UpgradeReport> {
     }
     record.skipped_backup = opts.skip_backup;
     record.skipped_rehearsal = opts.skip_rehearsal;
+    // M9: containers of this Compose project name must belong to this directory.
+    crate::compose::guard_project(ctx)?;
 
     let c = Compose::new(ctx);
     if !c.ps()?.iter().any(|s| s.service == "postgres" && s.up()) {
@@ -364,8 +497,8 @@ pub fn run(ctx: &Ctx<'_>, opts: &Options) -> Result<UpgradeReport> {
             "start it and check `dynodoctl status` first",
         ));
     }
-    let mut rec = Recorder::new();
-    let changes_version = !opts.local || opts.version.is_some();
+    let mut rec = Recorder::for_ctx(ctx);
+    let changes_version = !opts.local;
     let target = Target {
         version: changes_version.then(|| plan.to_version.clone()),
         registry: (!plan.to_registry.is_empty() && plan.to_registry != plan.from_registry)
@@ -400,7 +533,7 @@ pub fn run(ctx: &Ctx<'_>, opts: &Options) -> Result<UpgradeReport> {
         }
         if !plan.images.is_empty() {
             let r = rec.step("each image matches its digest in the overlay", || {
-                let n = digest_check(ctx, &plan.images)?;
+                let n = digest_check(ctx, &tc, &plan.images)?;
                 Ok((n, format!("{n} images")))
             });
             if let Err(e) = r {
@@ -577,9 +710,11 @@ pub fn run(ctx: &Ctx<'_>, opts: &Options) -> Result<UpgradeReport> {
         }
     }
 
-    // 4. Switch.
+    // 4. Switch. What can fail without changing the installation comes first, and the record is
+    // written BEFORE `.env` changes: an upgrade that is interrupted after the switch must never
+    // read as "nothing to roll back" (H3 c).
     let saved = ctx.layout.state_dir().join(format!("pre-upgrade-{id}"));
-    let switch = rec.step("save .env and the overlay, write the new version", || {
+    let prepared = rec.step("save .env and the overlay; record the upgrade", || {
         create_private_dir(&saved)?;
         write_private(
             &saved.join("env"),
@@ -591,6 +726,25 @@ pub fn run(ctx: &Ctx<'_>, opts: &Options) -> Result<UpgradeReport> {
                 std::fs::read(ctx.layout.overlay_file())?.as_slice(),
             )?;
         }
+        record.saved_state_dir = Some(saved.display().to_string());
+        record.result = "switching".into();
+        write_record(ctx, &record)?;
+        Ok(((), saved.display().to_string()))
+    });
+    if let Err(e) = prepared {
+        record.saved_state_dir = None;
+        return finish(
+            ctx,
+            plan,
+            record,
+            rec,
+            rehearsal,
+            "failed",
+            Some(e),
+            String::new(),
+        );
+    }
+    let switch = rec.step("write the new version and overlay", || {
         let mut new_env = ctx.env()?;
         if changes_version {
             new_env.set("DYNODOC_VERSION", &plan.to_version)?;
@@ -605,9 +759,16 @@ pub fn run(ctx: &Ctx<'_>, opts: &Options) -> Result<UpgradeReport> {
                 std::fs::read(overlay)?.as_slice(),
             )?;
         }
-        Ok(((), saved.display().to_string()))
+        Ok(((), plan.to_version.clone()))
     });
-    if let Err(e) = switch {
+    if let Err(mut e) = switch {
+        if restore_saved(ctx, &saved).is_err() {
+            e.todo = format!(
+                "{} Your previous settings are saved in {}",
+                e.todo,
+                saved.display()
+            );
+        }
         return finish(
             ctx,
             plan,
@@ -619,12 +780,17 @@ pub fn run(ctx: &Ctx<'_>, opts: &Options) -> Result<UpgradeReport> {
             String::new(),
         );
     }
-    record.saved_state_dir = Some(saved.display().to_string());
 
     let up = rec.step(
         "docker compose up -d --wait (migrations run in init)",
         || {
-            let out = Compose::new(ctx).run(&["up", "-d", "--wait", "--wait-timeout", "300"])?;
+            let out = Compose::new(ctx).shielded().run(&[
+                "up",
+                "-d",
+                "--wait",
+                "--wait-timeout",
+                "300",
+            ])?;
             if !out.ok() {
                 return Err(CliError::failed(
                     format!(
@@ -647,8 +813,36 @@ pub fn run(ctx: &Ctx<'_>, opts: &Options) -> Result<UpgradeReport> {
     if let Err(e) = up {
         let hint = rollback_hint(&record.id, &record.backup_name);
         let from_version = plan.from_version.clone();
-        // Offer the way back at once.
+        if e.what == crate::report::interrupted_error().what {
+            // Interrupted before the services were touched: only the settings changed, so put them back.
+            let back = restore_saved(ctx, &saved);
+            let mut e = e;
+            e.what = format!(
+                "{}; the services were not touched and {}",
+                e.what,
+                if back.is_ok() {
+                    "the previous settings were put back".to_string()
+                } else {
+                    format!(
+                        "the previous settings could NOT be put back (copies are in {})",
+                        saved.display()
+                    )
+                }
+            );
+            return finish(
+                ctx,
+                plan,
+                record,
+                rec,
+                rehearsal,
+                "interrupted",
+                Some(e),
+                String::new(),
+            );
+        }
+        // Offer the way back at once (not while an interrupt is pending: nobody is at the prompt).
         let wants = record.backup_dir.is_some()
+            && !ctx.interrupted()
             && (opts.auto_rollback || ctx.confirm.confirm("The new version is not healthy. Roll back now: restore the pre-upgrade backup into the previous version? Data written since the backup is lost.", ROLLBACK_PHRASE));
         if wants {
             let rolled = rollback_with(ctx, &record, true);
@@ -761,7 +955,7 @@ pub fn latest_record(ctx: &Ctx<'_>, named: Option<&str>) -> Result<(UpgradeRecor
         None => found
             .into_iter()
             .rev()
-            .find(|(r, _)| matches!(r.result.as_str(), "completed" | "failed")),
+            .find(|(r, _)| matches!(r.result.as_str(), "completed" | "failed" | "switching")),
     };
     pick.ok_or_else(|| CliError::refused("there is no upgrade to roll back", "an upgrade leaves a record in state/; to restore any backup use `dynodoctl restore --into-live`"))
 }
@@ -777,11 +971,40 @@ impl RollbackReport {
     }
 }
 
+/// Put back the `.env` and overlay that were saved before a switch (the installation as it was).
+fn restore_saved(ctx: &Ctx<'_>, saved: &Path) -> Result<()> {
+    let env = std::fs::read(saved.join("env"))?;
+    write_private(&ctx.layout.env_file(), &env)?;
+    match std::fs::read(saved.join(crate::ctx::OVERLAY_NAME)) {
+        Ok(bytes) => write_private(&ctx.layout.overlay_file(), &bytes)?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            let _ = std::fs::remove_file(ctx.layout.overlay_file());
+        }
+        Err(e) => return Err(e.into()),
+    }
+    Ok(())
+}
+
 fn rollback_with(ctx: &Ctx<'_>, record: &UpgradeRecord, confirmed: bool) -> Result<RollbackReport> {
     let backup_dir = record.backup_dir.clone().ok_or_else(|| {
         CliError::refused(
             "that upgrade was made without a backup, so there is nothing to roll back to",
             "restore an older backup with `dynodoctl restore --into-live --backup <dir>`",
+        )
+    })?;
+    crate::recover::require_no_journal(ctx)?;
+    // H2: everything that can be refused is checked BEFORE a single file changes, so "nothing was
+    // changed" is true when it is said. The backup is found and its files verified first.
+    let config_from = record
+        .config_dir
+        .as_ref()
+        .map(PathBuf::from)
+        .filter(|p| p.is_dir());
+    let info = restore::resolve_backup(ctx, Some(&backup_dir))?;
+    crate::manifest::verify_files(&info, config_from.as_deref()).map_err(|p| {
+        CliError::refused(
+            format!("the pre-upgrade backup is damaged or incomplete: {}", p.join("; ")),
+            "nothing was changed; use `dynodoctl restore --into-live --backup <dir>` with an older backup",
         )
     })?;
     if !confirmed
@@ -793,25 +1016,23 @@ fn rollback_with(ctx: &Ctx<'_>, record: &UpgradeRecord, confirmed: bool) -> Resu
         return Err(CliError::refused("the rollback was not confirmed; nothing was changed", format!("run again and type the phrase, or pass --confirm {ROLLBACK_PHRASE}")));
     }
     // The previous version's settings and overlay come back first, so `up` starts the old images.
-    if let Some(saved) = &record.saved_state_dir {
-        let saved = Path::new(saved);
-        if let Ok(bytes) = std::fs::read(saved.join("env")) {
-            write_private(&ctx.layout.env_file(), &bytes)?;
-        }
-        match std::fs::read(saved.join(crate::ctx::OVERLAY_NAME)) {
-            Ok(bytes) => write_private(&ctx.layout.overlay_file(), &bytes)?,
-            Err(_) => {
+    // What is there now is kept in memory: if the restore does not change the database, it goes back.
+    let current_env = std::fs::read(ctx.layout.env_file())?;
+    let current_overlay = std::fs::read(ctx.layout.overlay_file()).ok();
+    let put_current_back = |ctx: &Ctx<'_>| -> Result<()> {
+        write_private(&ctx.layout.env_file(), &current_env)?;
+        match &current_overlay {
+            Some(bytes) => write_private(&ctx.layout.overlay_file(), bytes)?,
+            None => {
                 let _ = std::fs::remove_file(ctx.layout.overlay_file());
             }
         }
+        Ok(())
+    };
+    if let Some(saved) = &record.saved_state_dir {
+        restore_saved(ctx, Path::new(saved))?;
     }
-    // An external copy of the settings and secrets is used if it is still there.
-    let config_from = record
-        .config_dir
-        .as_ref()
-        .map(PathBuf::from)
-        .filter(|p| p.is_dir());
-    let report = restore::restore_live(
+    let mut report = match restore::restore_live(
         ctx,
         &LiveOptions {
             backup: Some(backup_dir),
@@ -820,7 +1041,46 @@ fn rollback_with(ctx: &Ctx<'_>, record: &UpgradeRecord, confirmed: bool) -> Resu
             keep_previous: false,
             confirmed: true,
         },
-    )?;
+    ) {
+        Ok(report) => report,
+        Err(e) => {
+            // The restore refused or failed before it changed anything: the settings go back too.
+            return Err(match put_current_back(ctx) {
+                Ok(()) => e,
+                Err(back) => CliError::failed(
+                    format!(
+                        "{}; the previous settings could NOT be put back: {}",
+                        e.what, back.what
+                    ),
+                    format!(
+                        "{} Your settings before the rollback began are in {}",
+                        e.todo,
+                        record.saved_state_dir.clone().unwrap_or_default()
+                    ),
+                ),
+            });
+        }
+    };
+    if !report.ok && !report.live_changed {
+        // The old data is still the live data (nothing was replaced, or the swap was undone), so the
+        // newer version's settings must come back as well, and the services must follow them.
+        match put_current_back(ctx) {
+            Ok(()) => {
+                let up = Compose::new(ctx)
+                    .shielded()
+                    .run(&["up", "-d", "--wait", "--wait-timeout", "300"]);
+                let started = up.as_ref().map(|o| o.ok()).unwrap_or(false);
+                report.notes.push(format!(
+                    "the rollback did not change the database, so the settings from before it were put back{}",
+                    if started { " and the services restarted with them" } else { "; the services could NOT be restarted, run `docker compose up -d --wait`" }
+                ));
+            }
+            Err(e) => report.notes.push(format!(
+                "the rollback did not change the database, but the settings from before it could NOT be put back: {}",
+                e.what
+            )),
+        }
+    }
     let ok = report.ok;
     Ok(RollbackReport {
         restore: report,
@@ -831,6 +1091,7 @@ fn rollback_with(ctx: &Ctx<'_>, record: &UpgradeRecord, confirmed: bool) -> Resu
 /// `dynodoctl rollback`.
 pub fn rollback(ctx: &Ctx<'_>, record_arg: Option<&str>) -> Result<RollbackReport> {
     ctx.require_installed()?;
+    crate::recover::require_no_journal(ctx)?;
     let (mut record, path) = latest_record(ctx, record_arg)?;
     let report = rollback_with(ctx, &record, false)?;
     record.result = if report.ok {

@@ -26,14 +26,39 @@ pub fn install() {
     HONOUR.store(true, Ordering::SeqCst);
 }
 
-/// How many interrupts arrived (a second one does not stop recovery either; it is only counted).
+/// How many interrupts arrived.
 pub fn count() -> usize {
     COUNT.load(Ordering::SeqCst)
 }
 
+/// Set by commands that can unwind to a consistent state at a step boundary. Any other command
+/// ends at the first interrupt, as a process does without a handler.
+static UNWINDING: AtomicBool = AtomicBool::new(false);
+
+pub fn unwinding(on: bool) {
+    UNWINDING.store(on, Ordering::SeqCst);
+}
+
 fn note() {
-    COUNT.fetch_add(1, Ordering::SeqCst);
+    let before = COUNT.fetch_add(1, Ordering::SeqCst);
     SIGNALLED.store(true, Ordering::SeqCst);
+    // Not honoured (unit tests), outside an unwinding command, or the second interrupt: end now.
+    // That is safe because every destructive change is one transaction behind a journal that
+    // `dynodoctl recover` replays.
+    if HONOUR.load(Ordering::SeqCst) && (before >= 1 || !UNWINDING.load(Ordering::SeqCst)) {
+        hard_exit();
+    }
+}
+
+#[cfg(unix)]
+fn hard_exit() {
+    // SAFETY: `_exit` is async-signal-safe and takes no pointers.
+    unsafe { libc::_exit(130) }
+}
+
+#[cfg(not(unix))]
+fn hard_exit() {
+    std::process::exit(130);
 }
 
 #[cfg(unix)]

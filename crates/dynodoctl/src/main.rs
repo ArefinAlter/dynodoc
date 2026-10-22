@@ -7,6 +7,9 @@ const STACK_BYTES: usize = 16 * 1024 * 1024;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    // Ctrl-C and SIGTERM set a flag that destructive sequences honour at step boundaries (see
+    // `signals`); without this a kill between two steps leaves a half-done restore.
+    dynodoctl::signals::install();
     let worker = std::thread::Builder::new()
         .name("dynodoctl".into())
         .stack_size(STACK_BYTES)

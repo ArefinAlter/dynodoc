@@ -23,17 +23,50 @@ fn overlay_text() -> String {
     t
 }
 
+const PG_DIGEST: &str = "sha256:9999999999999999999999999999999999999999999999999999999999999999";
+
+/// `docker compose config --format json` for the installation with the release overlay applied:
+/// every service image pinned by a full digest.
+fn config_json() -> String {
+    let mut services = serde_json::Map::new();
+    for (service, image) in [
+        ("api", "api"),
+        ("init", "api"),
+        ("secrets-init", "api"),
+        ("web", "web"),
+        ("preflight", "tools"),
+        ("proxy", "proxy"),
+    ] {
+        services.insert(
+            service.into(),
+            serde_json::json!({ "image": format!("registry.example.org/dynodoc/{image}@{DIGEST}") }),
+        );
+    }
+    services.insert(
+        "postgres".into(),
+        serde_json::json!({ "image": format!("postgres:16@{PG_DIGEST}") }),
+    );
+    serde_json::json!({ "name": "dynodoc-selfhosted", "services": services }).to_string()
+}
+
+/// What `docker image inspect` reports for the pulled images (all of them in one array).
+fn repo_digests() -> String {
+    let mut list: Vec<String> = ["api", "web", "tools", "proxy"]
+        .iter()
+        .map(|i| format!("registry.example.org/dynodoc/{i}@{DIGEST}"))
+        .collect();
+    list.push(format!("postgres@{PG_DIGEST}"));
+    serde_json::to_string(&list).unwrap()
+}
+
 fn setup() -> (tempfile::TempDir, FakeRunner, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     testkit::installed(dir.path(), testkit::ENV_TEXT);
     let overlay = dir.path().join("release-overlay.yml");
     std::fs::write(&overlay, overlay_text()).unwrap();
     let runner = testkit::healthy_runner();
-    runner.first(
-        "--format {{json .RepoDigests}}",
-        0,
-        &format!("[\"registry.example.org/dynodoc/api@{DIGEST}\"]"),
-    );
+    runner.first("config --format json", 0, &config_json());
+    runner.first("--format {{json .RepoDigests}}", 0, &repo_digests());
     (dir, runner, overlay)
 }
 
@@ -155,7 +188,7 @@ fn the_plan_needs_a_release_and_pinned_images_unless_told_otherwise() {
         Some("services:\n  api:\n    image: r/api:1\n"),
     )
     .unwrap_err();
-    assert!(undigested.what.contains("without a digest"));
+    assert!(undigested.what.contains("without a full sha256 digest"));
 }
 
 #[test]
@@ -352,7 +385,7 @@ fn an_image_that_does_not_match_its_overlay_digest_is_refused_with_nothing_chang
     let e = run_with(&runner, dir.path(), &[], &release_opts(&overlay)).unwrap_err();
     assert!(
         e.what
-            .contains("not pulled with the digest the overlay names"),
+            .contains("not pulled with the repository and digest the release names"),
         "{e}"
     );
     assert!(
@@ -639,3 +672,6 @@ fn rollback_with_no_upgrade_on_record_or_no_backup_is_refused() {
     let e = rollback(&ctx2, None).err().unwrap();
     assert!(e.what.contains("without a backup"), "{e}");
 }
+
+#[path = "upgrade_review.rs"]
+mod review;

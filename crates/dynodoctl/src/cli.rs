@@ -77,6 +77,8 @@ pub enum Command {
     Upgrade(UpgradeArgs),
     /// Undo the last upgrade by restoring its pre-upgrade backup into the previous version.
     Rollback(RollbackArgs),
+    /// Finish or undo a database swap that was interrupted (state/restore-journal.json).
+    Recover,
     /// Collect diagnostics into one redacted .tar.gz.
     SupportBundle(SupportArgs),
     /// Check a running installation from the operator's side: HTTPS, headers, pages, references.
@@ -641,6 +643,10 @@ fn dispatch(
             let r = upgrade::rollback(ctx, a.record.as_deref())?;
             outcome(&r.restore, r.render(), bool_code(r.ok))
         }
+        Command::Recover => {
+            let r = crate::recover::recover(ctx)?;
+            outcome(&r, r.render(), bool_code(r.ok))
+        }
         Command::SupportBundle(a) => {
             let r = support::run(
                 ctx,
@@ -668,6 +674,62 @@ fn dispatch(
             )?;
             let code = r.exit_code();
             outcome(&r, r.render(), code)
+        }
+    }
+}
+
+/// The name written into `state/.lock` for a command that changes the installation or its
+/// databases; `None` for the read-only ones (and for the dry runs and plans of the others).
+fn lock_name(command: &Command) -> Option<&'static str> {
+    match command {
+        Command::Install(a) if !a.dry_run => Some("install"),
+        Command::Configure {
+            action: ConfigureAction::Set { .. },
+        } => Some("configure set"),
+        Command::Configure {
+            action: ConfigureAction::Apply,
+        } => Some("configure apply"),
+        Command::Backup(_) => Some("backup"),
+        Command::RestoreVerify(_) => Some("restore-verify"),
+        Command::Restore(_) => Some("restore"),
+        Command::RehearseLite(_) => Some("rehearse-lite"),
+        Command::Upgrade(a) if !a.plan => Some("upgrade"),
+        Command::Rollback(_) => Some("rollback"),
+        Command::Recover => Some("recover"),
+        _ => None,
+    }
+}
+
+/// Commands that stop at a step boundary and put things back when interrupted (`signals`).
+fn unwinds(command: &Command) -> bool {
+    matches!(
+        command,
+        Command::Restore(_) | Command::Upgrade(_) | Command::Rollback(_) | Command::Recover
+    )
+}
+
+/// `dispatch`, but a panic (a bug) becomes a structured error instead of a silent exit status 1.
+fn guarded(
+    cli: &Cli,
+    ctx: &Ctx<'_>,
+    net: &dyn Net,
+    stdin_password: &dyn Fn() -> Option<String>,
+) -> Result<Outcome> {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        dispatch(cli, ctx, net, stdin_password)
+    })) {
+        Ok(result) => result,
+        Err(payload) => {
+            let text = payload
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .or_else(|| payload.downcast_ref::<String>().cloned())
+                .unwrap_or_default();
+            let text: String = text.chars().take(200).collect();
+            Err(CliError::failed(
+                format!("internal error: dynodoctl hit a bug and stopped ({text})"),
+                "run `dynodoctl status`; if a restore was running, `dynodoctl recover` puts the databases right. Please report this message",
+            ))
         }
     }
 }
@@ -710,9 +772,14 @@ pub fn run(
     ctx.project = cli.project.clone();
     ctx.extra_files = cli.files.clone();
     ctx.progress_to_stderr = cli.json;
+    crate::signals::unwinding(unwinds(&cli.command));
     let result = read_roots(&cli.ca_file).and_then(|roots| {
         let net = make_net(roots);
-        dispatch(&cli, &ctx, net.as_ref(), &|| {
+        // One mutating run at a time (M2); held until this closure returns.
+        let _lock = lock_name(&cli.command)
+            .map(|name| crate::lock::Lock::acquire(&ctx.layout, name, (ctx.now)()))
+            .transpose()?;
+        guarded(&cli, &ctx, net.as_ref(), &|| {
             let mut line = String::new();
             std::io::stdin()
                 .lock()

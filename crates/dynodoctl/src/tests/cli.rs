@@ -463,3 +463,6 @@ fn a_ca_file_without_a_certificate_is_a_usage_error() {
     assert_eq!(code, crate::error::exit::USAGE);
     assert!(err.contains("contains no certificate"));
 }
+
+#[path = "cli_review.rs"]
+mod review;

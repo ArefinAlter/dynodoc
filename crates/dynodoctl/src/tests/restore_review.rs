@@ -75,10 +75,7 @@ fn a_failure_at_any_step_leaves_the_old_database_live_and_the_services_running()
         (
             "the stack does not start on the restored copy",
             |r| {
-                r.first_seq(
-                    "up -d --wait --wait-timeout 300",
-                    &[(1, "boom"), (0, "")],
-                );
+                r.first_seq("up -d --wait --wait-timeout 300", &[(1, "boom"), (0, "")]);
             },
             2,
         ),
@@ -271,9 +268,8 @@ fn an_interrupt_before_the_swap_removes_the_loaded_copy_and_changes_nothing() {
     let report = restore_live(&ctx, &live_opts()).unwrap();
     assert!(!report.ok && !report.live_changed, "{}", report.render());
     assert!(alter_calls(&runner).is_empty());
-    assert!(runner.ran(
-        "drop database if exists dynodoc_restoring_20261022t120000z_ab12cd with (force)"
-    ));
+    assert!(runner
+        .ran("drop database if exists dynodoc_restoring_20261022t120000z_ab12cd with (force)"));
     assert!(
         last_index(&runner, "up -d --wait --wait-timeout 300").unwrap()
             > last_index(&runner, "stop proxy web api").unwrap()
@@ -411,7 +407,12 @@ fn restoring_settings_never_writes_outside_the_bundle_even_if_the_manifest_was_n
     let (dir, runner, backup) = setup();
     let confirm = ScriptedConfirm::new(&[]);
     let ctx = testkit::ctx(&runner, dir.path(), &confirm);
-    for evil in ["../escaped.txt", "/tmp/escaped.txt", "secrets/../x", ".git/config"] {
+    for evil in [
+        "../escaped.txt",
+        "/tmp/escaped.txt",
+        "secrets/../x",
+        ".git/config",
+    ] {
         let mut m = crate::manifest::read_manifest(&backup).unwrap();
         m.config.files = vec![crate::manifest::FileEntry {
             path: evil.into(),
