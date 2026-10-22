@@ -345,8 +345,9 @@ fn a_confirmed_live_restore_loads_beside_the_live_database_then_swaps_verifies_a
     let order = [
         pos("up -d --wait --wait-timeout 180 postgres"),
         pos("run --rm --no-deps -T db-roles"),
-        pos("stop proxy web api"),
+        // The SQL is screened BEFORE the services stop: a bad backup costs no downtime.
         pos("pg_restore --no-owner -f -"),
+        pos("stop proxy web api"),
         pos(&format!("create database {RESTORING}")),
         pos(&format!(
             "pg_restore -h 127.0.0.1 -U dynodoc -d {RESTORING}"
@@ -583,3 +584,6 @@ fn a_damaged_backup_is_refused_before_the_confirmation() {
     assert!(confirm.asked.borrow().is_empty());
     assert!(runner.calls().is_empty());
 }
+
+#[path = "restore_review.rs"]
+mod review;

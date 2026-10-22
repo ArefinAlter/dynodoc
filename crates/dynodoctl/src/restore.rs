@@ -212,17 +212,15 @@ pub fn review_dump(ctx: &Ctx<'_>, c: &Compose<'_>, dump: &Path) -> Result<String
     result
 }
 
-/// Check the files of the backup, screen its SQL, load the dump into `db` and compare the counts
-/// with the manifest. `created` is set once this call has created `db`: only then may the caller drop it.
-pub fn restore_into(
+/// Everything that can be checked about a backup without loading it: its files against both
+/// records of their hashes, and its SQL against the screen. Nothing is changed.
+pub fn check_backup(
     ctx: &Ctx<'_>,
     c: &Compose<'_>,
     info: &BackupInfo,
     config_from: Option<&Path>,
-    db: &str,
     rec: &mut Recorder,
-    created: &mut bool,
-) -> Result<DbFacts> {
+) -> Result<()> {
     rec.step("backup files match their checksums", || {
         manifest::verify_files(info, config_from).map_err(|p| {
             CliError::refused(
@@ -235,7 +233,32 @@ pub fn restore_into(
     rec.step("screen the dump's SQL before it runs", || {
         let detail = review_dump(ctx, c, &info.dump_path())?;
         Ok(((), detail))
-    })?;
+    })
+}
+
+/// [`check_backup`] then [`load_backup`] (the verify and rehearse paths).
+pub fn restore_into(
+    ctx: &Ctx<'_>,
+    c: &Compose<'_>,
+    info: &BackupInfo,
+    config_from: Option<&Path>,
+    db: &str,
+    rec: &mut Recorder,
+    created: &mut bool,
+) -> Result<DbFacts> {
+    check_backup(ctx, c, info, config_from, rec)?;
+    load_backup(c, info, db, rec, created)
+}
+
+/// Load the dump into the new database `db` and compare the counts with the manifest. `created`
+/// is set once this call has created `db`: only then may the caller drop it.
+pub fn load_backup(
+    c: &Compose<'_>,
+    info: &BackupInfo,
+    db: &str,
+    rec: &mut Recorder,
+    created: &mut bool,
+) -> Result<DbFacts> {
     rec.step("create database", || {
         db::create_database(c, db)?;
         *created = true;
@@ -600,15 +623,7 @@ fn destructive(
     }
 
     // Load beside the live database: a damaged dump fails here and the live database is untouched.
-    restore_into(
-        ctx,
-        &c,
-        info,
-        opts.config_from.as_deref(),
-        &st.restoring,
-        rec,
-        &mut st.created,
-    )?;
+    load_backup(&c, info, &st.restoring, rec, &mut st.created)?;
 
     let journal = recover::new_journal(ctx, &info.name(), &st.restoring, &st.previous);
     rec.step("record the swap in state/restore-journal.json", || {
@@ -620,7 +635,7 @@ fn destructive(
     })?;
     st.journal = Some(journal);
 
-    rec.step("swap the restored database in (one transaction)", || {
+    let swap = rec.step("swap the restored database in (one transaction)", || {
         db::terminate_sessions(&cs, LIVE_DB)?;
         db::swap_names(&cs, LIVE_DB, &st.restoring, &st.previous)?;
         Ok((
@@ -630,7 +645,16 @@ fn destructive(
                 st.previous
             ),
         ))
-    })?;
+    });
+    if swap.is_err() {
+        // A lost connection after the commit would look like a failure: look before undoing.
+        if let Ok(names) = db::database_names(&c) {
+            if names.contains(&st.previous) && !names.contains(&st.restoring) {
+                st.swapped = true;
+            }
+        }
+        swap?;
+    }
     st.swapped = true;
     if let Some(j) = st.journal.as_mut() {
         j.phase = recover::PHASE_SWAPPED.into();
@@ -824,6 +848,9 @@ pub fn restore_live(ctx: &Ctx<'_>, opts: &LiveOptions) -> Result<RestoreReport> 
     })?;
     // "Cannot tell" is an error here, never "empty": a failed query must not skip the safety backup.
     let schema = db::schema_state(&c, LIVE_DB)?;
+    // Still not destructive: a backup whose files or SQL do not pass is refused before the
+    // services are stopped, so a bad backup costs no downtime.
+    check_backup(ctx, &c, &info, opts.config_from.as_deref(), &mut rec)?;
 
     let mut st = State {
         restoring: ctx.scratch_name("dynodoc_restoring_"),

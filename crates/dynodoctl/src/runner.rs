@@ -233,6 +233,28 @@ impl FakeRunner {
         self
     }
 
+    /// Like [`on_seq`](Self::on_seq) but checked before every rule registered so far: the first
+    /// call gets the first answer, and so on (fault injection that clears after a retry).
+    pub fn first_seq(&self, needle: &str, answers: &[(i32, &str)]) -> &Self {
+        self.rules.borrow_mut().insert(
+            0,
+            Rule {
+                needle: needle.to_string(),
+                outputs: answers
+                    .iter()
+                    .map(|(status, text)| Output {
+                        status: *status,
+                        stdout: text.as_bytes().to_vec(),
+                        stderr: Vec::new(),
+                    })
+                    .collect(),
+                used: 0,
+                file_bytes: None,
+            },
+        );
+        self
+    }
+
     pub fn on_seq(&self, needle: &str, answers: &[(i32, &str)]) -> &Self {
         self.rules.borrow_mut().push(Rule {
             needle: needle.to_string(),
