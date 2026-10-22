@@ -40,9 +40,11 @@ use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sqlx::PgConnection;
+use subtle::ConstantTimeEq;
 use uuid::Uuid;
+use zeroize::Zeroize;
 
-use super::routes::{mint_session, require_service};
+use super::routes::{mint_session_with, require_service, TokenResponse};
 use super::{random_token, sha256, AuthContext};
 use crate::error::ApiError;
 use crate::AppState;
@@ -232,10 +234,6 @@ pub async fn issue(
     let Some(generation) = generation else {
         return Err(ApiError::Unauthorized);
     };
-    sqlx::query("delete from app_handover_code where identity_id=$1 and created_at < now()-interval '1 day'")
-        .bind(auth.identity_id)
-        .execute(&mut *tx)
-        .await?;
     let outstanding: i64 = sqlx::query_scalar(
         "select count(*) from app_handover_code where identity_id=$1 and consumed_at is null and expires_at > now()",
     )
@@ -243,22 +241,33 @@ pub async fn issue(
     .fetch_one(&mut *tx)
     .await?;
     if outstanding >= MAX_OUTSTANDING {
-        audit(
-            &mut tx,
-            auth.identity_id,
-            "auth.app_handover.refused",
-            auth.identity_id,
-            json!({"platform": platform.as_str(), "reason": "too_many_outstanding"}),
+        // At most one such row per account per minute, so a script pressing the button cannot
+        // fill the audit trail (it is an append-only table).
+        let recent: bool = sqlx::query_scalar(
+            "select exists(select 1 from operation_audit where actor_id=$1 and action='auth.app_handover.refused'
+               and created_at > now()-interval '1 minute' and detail->>'reason'='too_many_outstanding')",
         )
+        .bind(auth.identity_id)
+        .fetch_one(&mut *tx)
         .await?;
+        if !recent {
+            audit(
+                &mut tx,
+                auth.identity_id,
+                "auth.app_handover.refused",
+                auth.identity_id,
+                json!({"platform": platform.as_str(), "reason": "too_many_outstanding"}),
+            )
+            .await?;
+        }
         tx.commit().await?;
         return Err(ApiError::RateLimited {
             retry_after: CODE_TTL_SECONDS as u64,
         });
     }
     let id: Uuid = sqlx::query_scalar(
-        "insert into app_handover_code(identity_id,code_hash,challenge,state,platform,session_generation,expires_at)
-         values($1,$2,$3,$4,$5,$6, now()+make_interval(secs => $7)) returning id",
+        "insert into app_handover_code(identity_id,code_hash,challenge,state,platform,session_generation,issued_session,expires_at)
+         values($1,$2,$3,$4,$5,$6,$7, now()+make_interval(secs => $8)) returning id",
     )
     .bind(auth.identity_id)
     .bind(&hash)
@@ -266,6 +275,7 @@ pub async fn issue(
     .bind(&req.state)
     .bind(platform.as_str())
     .bind(generation)
+    .bind(auth.session_id)
     .bind(CODE_TTL_SECONDS as f64)
     .fetch_one(&mut *tx)
     .await?;
@@ -295,6 +305,10 @@ pub struct RedeemRequest {
     state: String,
     /// The app's PKCE verifier, 43 to 128 characters of `A-Za-z0-9-._~`.
     verifier: String,
+    /// The kind of app the web server saw the request come from, read from the app's
+    /// `User-Agent` token (`desktop`, `android` or `ios`). It must equal the platform the code
+    /// was asked for; a request with no such token never reaches this route.
+    app: String,
     /// The visitor's network address as the web server sees it, when that tells visitors
     /// apart (behind a proxy that hides it, the web server leaves it out). Only its hash is
     /// kept, in a rate window.
@@ -302,18 +316,22 @@ pub struct RedeemRequest {
     client: Option<String>,
 }
 
-/// Equality with no early exit: the two values become HMAC keys over a fixed message and the
-/// tags are compared by `ring::hmac::verify`, which compares in constant time (the same
-/// construction the service-key check uses; `ring`'s own comparison function is deprecated).
+// The three values of a redeem are secrets in memory for as long as the request lives; they are
+// wiped when it is dropped (best effort: the framework's own buffers are not ours to wipe).
+impl Drop for RedeemRequest {
+    fn drop(&mut self) {
+        self.code.zeroize();
+        self.state.zeroize();
+        self.verifier.zeroize();
+    }
+}
+
+/// Equality of two byte strings: different lengths are different (lengths here are public:
+/// 32-byte hashes, or the bounded state), and equal lengths are compared by `subtle`, which does
+/// not stop at the first difference. (An HMAC-key comparison would zero-pad, and make
+/// `b"abc"` equal `b"abc\0"`.)
 fn constant_time_equal(a: &[u8], b: &[u8]) -> bool {
-    const MESSAGE: &[u8] = b"dynodoc-app-handover-compare";
-    let tag = ring::hmac::sign(&ring::hmac::Key::new(ring::hmac::HMAC_SHA256, a), MESSAGE);
-    ring::hmac::verify(
-        &ring::hmac::Key::new(ring::hmac::HMAC_SHA256, b),
-        MESSAGE,
-        tag.as_ref(),
-    )
-    .is_ok()
+    a.len() == b.len() && bool::from(a.ct_eq(b))
 }
 
 /// A rate-window key: the hash of a namespace and a value, so the two kinds cannot collide
@@ -361,26 +379,30 @@ struct Row {
     fresh: bool,
     /// The account is active and still at the generation the code was issued at.
     account: bool,
+    generation: i64,
 }
 
 enum Redeemed {
-    Account(Uuid),
+    Session(Box<TokenResponse>),
     Refused,
 }
 
-/// Check and use up a code in one transaction. Nothing but the account id leaves.
+/// Check and use up a code, and make the session, in ONE transaction: the code is used up, the
+/// login exists and the audit row names it, or none of the three happened.
 async fn consume(
     state: &AppState,
     code: &str,
     app_state: &str,
     verifier: &str,
-) -> Result<Redeemed, sqlx::Error> {
+    app: &str,
+) -> Result<Redeemed, ApiError> {
     let mut tx = state.pool.begin().await?;
     // The row lock makes simultaneous redeems of one code take turns: the second sees it used.
     let row: Option<Row> = sqlx::query_as(
         "select h.id, h.identity_id, h.challenge, h.state, h.platform,
                 h.consumed_at is null as unused, h.expires_at > now() as fresh,
-                exists(select 1 from identity i where i.id=h.identity_id and i.disabled_at is null and i.session_generation=h.session_generation) as account
+                exists(select 1 from identity i where i.id=h.identity_id and i.disabled_at is null and i.session_generation=h.session_generation) as account,
+                h.session_generation as generation
          from app_handover_code h where h.code_hash=$1 for update of h",
     )
     .bind(sha256(code.as_bytes()))
@@ -396,6 +418,7 @@ async fn consume(
         unused,
         fresh,
         account,
+        generation,
     }) = row
     else {
         return Ok(Redeemed::Refused);
@@ -403,23 +426,25 @@ async fn consume(
     // Always computed, in constant time, whatever the other checks said.
     let verifier_ok = constant_time_equal(&sha256(verifier.as_bytes()), &challenge);
     let state_ok = constant_time_equal(stored_state.as_bytes(), app_state.as_bytes());
-    if unused && fresh && account && verifier_ok && state_ok {
+    let app_ok = constant_time_equal(platform.as_bytes(), app.as_bytes());
+    if unused && fresh && account && verifier_ok && state_ok && app_ok {
         sqlx::query(
             "update app_handover_code set consumed_at=now(), outcome='redeemed' where id=$1",
         )
         .bind(id)
         .execute(&mut *tx)
         .await?;
+        let (tokens, session) = mint_session_with(state, &mut *tx, identity, generation).await?;
         audit(
             &mut tx,
             identity,
             "auth.app_handover.redeemed",
             id,
-            json!({"platform": platform}),
+            json!({"platform": platform, "session_id": session}),
         )
         .await?;
         tx.commit().await?;
-        return Ok(Redeemed::Account(identity));
+        return Ok(Redeemed::Session(Box::new(tokens)));
     }
     let reason = if !unused {
         "used"
@@ -429,8 +454,10 @@ async fn consume(
         "account"
     } else if !verifier_ok {
         "verifier"
-    } else {
+    } else if !state_ok {
         "state"
+    } else {
+        "app"
     };
     if unused {
         // A failed redeem uses the code up (committed, not rolled back).
@@ -476,7 +503,10 @@ pub async fn redeem(
         .as_deref()
         .filter(|c| !c.is_empty() && c.len() <= 64)
         .map(|c| window_key("client", c));
-    let shaped = valid_code(&req.code) && valid_state(&req.state) && valid_verifier(&req.verifier);
+    let shaped = valid_code(&req.code)
+        && valid_state(&req.state)
+        && valid_verifier(&req.verifier)
+        && Platform::parse(&req.app).is_some();
     let prefix = shaped.then(|| window_key("prefix", &req.code[..PREFIX_LEN]));
     let budgets = [
         (client.as_deref(), CLIENT_FAILURES),
@@ -492,12 +522,12 @@ pub async fn redeem(
         }
     }
     let outcome = if shaped {
-        consume(&state, &req.code, &req.state, &req.verifier).await?
+        consume(&state, &req.code, &req.state, &req.verifier, &req.app).await?
     } else {
         Redeemed::Refused
     };
     match outcome {
-        Redeemed::Account(identity) => Ok(no_store(Json(mint_session(&state, identity).await?))),
+        Redeemed::Session(tokens) => Ok(no_store(Json(*tokens))),
         Redeemed::Refused => {
             for (key, _) in budgets {
                 if let Some(key) = key {
@@ -604,6 +634,13 @@ mod tests {
         assert!(!constant_time_equal(&a, &flipped));
         assert!(!constant_time_equal(&a, &a[..31]));
         assert!(!constant_time_equal(&a, &[]));
+        // Zero-padding must not make two different values equal (an HMAC key comparison did).
+        assert!(!constant_time_equal(b"abc", b"abc "));
+        assert!(!constant_time_equal(b"abc ", b"abc"));
+        assert!(!constant_time_equal(b"", b" "));
+        assert!(!constant_time_equal(b"abc  ", b"abc "));
+        assert!(constant_time_equal(b"", b""));
+        assert!(constant_time_equal(b"abc ", b"abc "));
     }
 
     #[test]

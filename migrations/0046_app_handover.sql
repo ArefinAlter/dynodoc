@@ -12,12 +12,15 @@
 -- lives 60 seconds (the application sets expires_at; the table refuses more than two
 -- minutes), can move from unused to used exactly once, and is never otherwise edited. The
 -- permanent record is the operation_audit rows `auth.app_handover.issued`, `.redeemed`
--- and `.refused`, which hold no secret. Rows older than a day are pruned by the next
--- issuance for the same account.
+-- and `.refused`, which hold no secret. Rows are pruned by the retention job
+-- (`RETENTION_AUTH_DAYS`, like the other authentication rows).
 --
 -- Additive: nothing existing changes, and nothing reads this table unless the new routes
 -- are called. Like 0043 to 0045 this is not rollback-safe by leaving the table unused: the
 -- API refuses a newer schema, so rolling back means restoring the dump.
+--
+-- Amended on 22 October 2026 (review of the first version), before it ran in any shared
+-- environment: the `issued_session` column and the partial index on operation_audit below.
 create table app_handover_code (
     id uuid primary key default gen_random_uuid(),
     identity_id uuid not null references identity(id) on delete cascade,
@@ -31,6 +34,10 @@ create table app_handover_code (
     -- The account's session generation when the code was issued: signing out everywhere
     -- between issue and redeem invalidates the code, as it does a magic link.
     session_generation bigint not null,
+    -- The login (refresh-token lineage) that was signed in when the code was asked for. Ending
+    -- that login (`auth::store::revoke_login`) ends the codes it made; null for a legacy token
+    -- with no lineage, which only the account's session generation can end.
+    issued_session uuid,
     created_at timestamptz not null default now(),
     expires_at timestamptz not null,
     consumed_at timestamptz,
@@ -41,6 +48,11 @@ create table app_handover_code (
     check ((consumed_at is null) = (outcome is null))
 );
 create index app_handover_code_identity_idx on app_handover_code(identity_id, created_at);
+create index app_handover_code_session_idx on app_handover_code(identity_id, issued_session)
+    where consumed_at is null;
+-- The refusal "too many unused codes" is written at most once a minute per account; this finds the last.
+create index operation_audit_handover_refused_idx on operation_audit(actor_id, created_at)
+    where action = 'auth.app_handover.refused';
 
 create function app_handover_code_guard() returns trigger language plpgsql as $$
 begin
@@ -51,6 +63,7 @@ begin
         or new.state is distinct from old.state
         or new.platform is distinct from old.platform
         or new.session_generation is distinct from old.session_generation
+        or new.issued_session is distinct from old.issued_session
         or new.created_at is distinct from old.created_at
         or new.expires_at is distinct from old.expires_at
         or old.consumed_at is not null

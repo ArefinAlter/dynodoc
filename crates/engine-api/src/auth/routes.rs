@@ -153,6 +153,20 @@ pub(super) async fn mint_session(
     identity_id: Uuid,
 ) -> Result<TokenResponse, AuthError> {
     let generation = store::session_generation(&state.pool, identity_id).await?;
+    mint_session_with(state, &state.pool, identity_id, generation)
+        .await
+        .map(|(tokens, _)| tokens)
+}
+
+/// A new login for `identity_id` at `generation`, written through `executor` (a pool, or a
+/// transaction that also does other work, as the app hand-over's redeem does). Returns the
+/// tokens and the id of the login (the refresh-token lineage), which an audit row can name.
+pub(super) async fn mint_session_with(
+    state: &AppState,
+    executor: impl sqlx::PgExecutor<'_>,
+    identity_id: Uuid,
+    generation: i64,
+) -> Result<(TokenResponse, Uuid), AuthError> {
     let session_id = Uuid::new_v4();
     let access_token = token::mint_bound_session(
         &state.auth.paseto_key,
@@ -164,7 +178,7 @@ pub(super) async fn mint_session(
     let (refresh_plain, refresh_hash) = random_token()?;
     let refresh_expires = Utc::now() + Duration::seconds(REFRESH_TTL_SECONDS);
     store::issue_bound_refresh(
-        &state.pool,
+        executor,
         identity_id,
         &refresh_hash,
         refresh_expires,
@@ -172,12 +186,15 @@ pub(super) async fn mint_session(
         Some(session_id),
     )
     .await?;
-    Ok(TokenResponse {
-        access_token,
-        token_type: "Bearer",
-        expires_in: state.auth.token_ttl_seconds,
-        refresh_token: refresh_plain,
-    })
+    Ok((
+        TokenResponse {
+            access_token,
+            token_type: "Bearer",
+            expires_in: state.auth.token_ttl_seconds,
+            refresh_token: refresh_plain,
+        },
+        session_id,
+    ))
 }
 
 #[derive(Deserialize)]

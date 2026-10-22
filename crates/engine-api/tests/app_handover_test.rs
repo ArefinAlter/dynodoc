@@ -170,7 +170,19 @@ async fn redeem_with(
     verifier: &str,
     client: Option<&str>,
 ) -> (StatusCode, Value) {
-    let mut body = json!({"code": code, "state": state, "verifier": verifier});
+    redeem_as(router, code, state, verifier, client, "android").await
+}
+
+/// Like `redeem_with`, naming the kind of app the web server says the request came from.
+async fn redeem_as(
+    router: &Router,
+    code: &str,
+    state: &str,
+    verifier: &str,
+    client: Option<&str>,
+    app: &str,
+) -> (StatusCode, Value) {
+    let mut body = json!({"code": code, "state": state, "verifier": verifier, "app": app});
     if let Some(client) = client {
         body["client"] = json!(client);
     }
@@ -309,7 +321,7 @@ async fn an_expired_code_is_refused(pool: PgPool) {
     let code = "ab".repeat(32);
     sqlx::query(
         "insert into app_handover_code(identity_id,code_hash,challenge,state,platform,session_generation,created_at,expires_at)
-         select $1,$2,$3,$4,'desktop',session_generation, now()-interval '2 minutes', now()-interval '1 minute' from identity where id=$1",
+         select $1,$2,$3,$4,'android',session_generation, now()-interval '2 minutes', now()-interval '1 minute' from identity where id=$1",
     )
     .bind(id)
     .bind(hash(&code))
@@ -328,7 +340,7 @@ async fn an_expired_code_is_refused(pool: PgPool) {
     let live = "cd".repeat(32);
     sqlx::query(
         "insert into app_handover_code(identity_id,code_hash,challenge,state,platform,session_generation,created_at,expires_at)
-         select $1,$2,$3,$4,'desktop',session_generation, now()-interval '57 seconds', now()+interval '3 seconds' from identity where id=$1",
+         select $1,$2,$3,$4,'android',session_generation, now()-interval '57 seconds', now()+interval '3 seconds' from identity where id=$1",
     )
     .bind(id)
     .bind(hash(&live))
@@ -434,7 +446,7 @@ async fn a_code_gives_its_own_account_whoever_is_signed_in_where_it_is_redeemed(
         &router,
         json_post(
             "/auth/app-handover/redeem",
-            &json!({"code": code, "state": p.state, "verifier": p.verifier}),
+            &json!({"code": code, "state": p.state, "verifier": p.verifier, "app": "android"}),
             Some(&access_b),
             true,
         ),
@@ -532,7 +544,8 @@ async fn at_most_three_unused_codes_per_account(pool: PgPool) {
         .fetch_one(&pool)
         .await
         .unwrap();
-    assert_eq!(refused, 2);
+    // The second refusal came inside the same minute as the first, so it wrote no row of its own.
+    assert_eq!(refused, 1);
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -589,7 +602,8 @@ async fn both_routes_need_the_web_servers_service_key_and_issue_needs_a_login(po
     .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     let code = issue_code(&router, &access, &p).await;
-    let redeem_body = json!({"code": code, "state": p.state, "verifier": p.verifier});
+    let redeem_body =
+        json!({"code": code, "state": p.state, "verifier": p.verifier, "app": "android"});
     let (status, _, _) = send(
         &router,
         json_post("/auth/app-handover/redeem", &redeem_body, None, false),
@@ -820,7 +834,10 @@ async fn no_secret_reaches_the_ledger_the_audit_rows_or_the_log(pool: PgPool) {
             assert!(!text.contains(secret.as_str()), "{text}");
         }
         for key in detail.as_object().unwrap().keys() {
-            assert!(["platform", "reason"].contains(&key.as_str()), "{key}");
+            assert!(
+                ["platform", "reason", "session_id"].contains(&key.as_str()),
+                "{key}"
+            );
         }
     }
     // And the log of the whole exchange, request spans included.
@@ -897,27 +914,293 @@ async fn the_restricted_runtime_login_runs_the_flow_and_cannot_edit_the_ledger(p
     runtime.close().await;
 }
 
+// --- review follow-ups -------------------------------------------------------------------------
+
 #[sqlx::test(migrations = "../../migrations")]
-async fn old_ledger_rows_are_pruned_by_the_next_issue_and_young_ones_are_kept(pool: PgPool) {
+async fn a_downgrade_to_the_plain_method_is_refused(pool: PgPool) {
+    // RFC 7636's "plain" method would accept the challenge itself as the verifier. Only S256 exists
+    // here: the challenge is a valid-looking verifier, and it must not open the code.
     let router = router(&pool);
-    let (access, id) = sign_in(&router, "handover-q@example.test").await;
+    let (access, _) = sign_in(&router, "handover-plain@example.test").await;
     let p = pkce();
-    let old = "12".repeat(32);
-    sqlx::query(
-        "insert into app_handover_code(identity_id,code_hash,challenge,state,platform,session_generation,created_at,expires_at,consumed_at,outcome)
-         select $1,$2,$3,$4,'desktop',session_generation, now()-interval '3 days', now()-interval '3 days'+interval '60 seconds', now()-interval '3 days', 'redeemed' from identity where id=$1",
+    let code = issue_code(&router, &access, &p).await;
+    assert!(handover::valid_verifier(&p.challenge));
+    let (status, _) = redeem_with(&router, &code, &p.state, &p.challenge, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(outcome_of(&pool, &code).await.as_deref(), Some("burned"));
+    // And the code is gone: even the real verifier does not help now.
+    let (status, _) = redeem(&router, &code, &p).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_kind_of_app_must_be_the_one_the_code_was_asked_for(pool: PgPool) {
+    let router = router(&pool);
+    let (access, _) = sign_in(&router, "handover-app@example.test").await;
+    // Asked for by an Android app; redeemed "from" a desktop one: refused, and used up.
+    let p = pkce();
+    let code = issue_code(&router, &access, &p).await;
+    let (status, _) = redeem_as(&router, &code, &p.state, &p.verifier, None, "desktop").await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(outcome_of(&pool, &code).await.as_deref(), Some("burned"));
+    let reasons: Vec<Value> = audit_rows(&pool)
+        .await
+        .into_iter()
+        .filter(|(a, _, _)| a == "auth.app_handover.refused")
+        .map(|(_, _, d)| d["reason"].clone())
+        .collect();
+    assert_eq!(reasons, [json!("app")]);
+    // A value that is not an app kind never reaches the ledger, and a missing one is no request.
+    let q = pkce();
+    let code2 = issue_code(&router, &access, &q).await;
+    for app in ["", "web", "Android", "android ", "browser"] {
+        let (status, _) = redeem_as(&router, &code2, &q.state, &q.verifier, None, app).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "{app:?}");
+    }
+    assert_eq!(
+        outcome_of(&pool, &code2).await,
+        None,
+        "a malformed request does not touch the code"
+    );
+    let (status, _, _) = send(
+        &router,
+        json_post(
+            "/auth/app-handover/redeem",
+            &json!({"code": code2, "state": q.state, "verifier": q.verifier}),
+            None,
+            true,
+        ),
     )
-    .bind(id)
-    .bind(hash(&old))
-    .bind(digest(&SHA256, p.verifier.as_bytes()).as_ref().to_vec())
-    .bind(&p.state)
-    .execute(&pool)
-    .await
+    .await;
+    assert!(status.is_client_error(), "{status}");
+    assert_eq!(redeem(&router, &code2, &q).await.0, StatusCode::OK);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn unknown_fields_are_refused_on_both_routes_and_touch_nothing(pool: PgPool) {
+    let router = router(&pool);
+    let (access, _) = sign_in(&router, "handover-extra@example.test").await;
+    let p = pkce();
+    let code = issue_code(&router, &access, &p).await;
+    for extra in [
+        json!({"admin": true}),
+        json!({"identity_id": Uuid::nil()}),
+        json!({"client_ip": "1.2.3.4"}),
+    ] {
+        let mut body =
+            json!({"code": code, "state": p.state, "verifier": p.verifier, "app": "android"});
+        body.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        let (status, _, _) = send(
+            &router,
+            json_post("/auth/app-handover/redeem", &body, None, true),
+        )
+        .await;
+        assert!(status.is_client_error(), "{body} -> {status}");
+    }
+    assert_eq!(
+        outcome_of(&pool, &code).await,
+        None,
+        "a refused request leaves the code alone"
+    );
+    assert_eq!(redeem(&router, &code, &p).await.0, StatusCode::OK);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn only_an_account_login_can_ask_for_a_code(pool: PgPool) {
+    use engine_api::auth::token::{mint, mint_project_device, DeviceClaims};
+    let router = router(&pool);
+    let (_, id) = sign_in(&router, "handover-tokens@example.test").await;
+    let key = [9u8; 32];
+    let p = pkce();
+    let body = json!({"challenge": p.challenge, "state": p.state, "platform": "android"});
+    let device = mint_project_device(
+        &key,
+        &DeviceClaims {
+            identity: id,
+            key: Uuid::new_v4(),
+            project: Uuid::new_v4(),
+            session: Uuid::new_v4(),
+            scopes: vec!["project:read".into()],
+            generation: 0,
+        },
+        3600,
+    )
     .unwrap();
-    let young = issue_code(&router, &access, &p).await;
-    let remaining: Vec<Vec<u8>> = sqlx::query_scalar("select code_hash from app_handover_code")
-        .fetch_all(&pool)
+    // A device (or agent: the same kind of token) session, a link-style token that is not a token
+    // at all, a made-up PASETO, and an expired account token.
+    let (view_like, _) = engine_api::auth::random_token().unwrap();
+    let expired = mint(&key, id, -10).unwrap();
+    for (name, bearer) in [
+        ("device or agent session", device),
+        ("share or view link token", view_like),
+        (
+            "made-up v4.local token",
+            "v4.local.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".into(),
+        ),
+        ("expired account token", expired),
+        ("empty", String::new()),
+    ] {
+        let (status, _, _) = send(
+            &router,
+            json_post("/auth/app-handover", &body, Some(&bearer), true),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "{name}");
+    }
+    let rows: i64 = sqlx::query_scalar("select count(*) from app_handover_code")
+        .fetch_one(&pool)
         .await
         .unwrap();
-    assert_eq!(remaining, vec![hash(&young)]);
+    assert_eq!(rows, 0);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn signing_that_login_out_ends_its_unused_codes_and_no_other_logins(pool: PgPool) {
+    let router = router(&pool);
+    let email = "handover-logout@example.test";
+    // Two logins of one account.
+    let (token_a, _) = send_login(&router, email).await;
+    let (token_b, _) = send_login(&router, email).await;
+    let (access_a, refresh_a) = (
+        token_a["access_token"].as_str().unwrap().to_string(),
+        token_a["refresh_token"].clone(),
+    );
+    let access_b = token_b["access_token"].as_str().unwrap().to_string();
+    let (pa, pb) = (pkce(), pkce());
+    let code_a = issue_code(&router, &access_a, &pa).await;
+    let code_b = issue_code(&router, &access_b, &pb).await;
+    // A plain sign-out of login A (no change of the account's generation).
+    let (status, _, _) = send(
+        &router,
+        json_post(
+            "/auth/logout",
+            &json!({"refresh_token": refresh_a}),
+            None,
+            false,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        redeem(&router, &code_a, &pa).await.0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(outcome_of(&pool, &code_a).await.as_deref(), Some("burned"));
+    // Login B and its code are untouched.
+    assert_eq!(redeem(&router, &code_b, &pb).await.0, StatusCode::OK);
+}
+
+async fn send_login(router: &Router, email: &str) -> (Value, Uuid) {
+    let (status, link, _) = send(
+        router,
+        json_post("/auth/magic-link", &json!({"email": email}), None, true),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, tokens, _) = send(
+        router,
+        json_post(
+            "/auth/verify",
+            &json!({"token": link["magic_link_token"]}),
+            None,
+            false,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let id = me(router, tokens["access_token"].as_str().unwrap()).await;
+    (tokens, id)
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_redeemed_audit_row_names_the_login_it_made(pool: PgPool) {
+    let router = router(&pool);
+    let (access, _) = sign_in(&router, "handover-lineage@example.test").await;
+    let p = pkce();
+    let code = issue_code(&router, &access, &p).await;
+    let (status, tokens) = redeem(&router, &code, &p).await;
+    assert_eq!(status, StatusCode::OK);
+    let recorded: String = sqlx::query_scalar(
+        "select detail->>'session_id' from operation_audit where action='auth.app_handover.redeemed'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let lineage: Option<Uuid> =
+        sqlx::query_scalar("select session_id from refresh_token where token_hash=$1")
+            .bind(hash(tokens["refresh_token"].as_str().unwrap()))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(Some(recorded.parse::<Uuid>().unwrap()), lineage);
+    // The code remembers the login that asked for it, which is not the one it made.
+    let asked_by: Option<Uuid> =
+        sqlx::query_scalar("select issued_session from app_handover_code where code_hash=$1")
+            .bind(hash(&code))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(asked_by.is_some());
+    assert_ne!(asked_by, lineage);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn pressing_the_button_with_three_codes_waiting_writes_one_audit_row_a_minute(pool: PgPool) {
+    let router = router(&pool);
+    let (access, id) = sign_in(&router, "handover-coalesce@example.test").await;
+    for _ in 0..handover::MAX_OUTSTANDING {
+        issue_code(&router, &access, &pkce()).await;
+    }
+    for _ in 0..6 {
+        let (status, _) = issue_for(&router, &access, &pkce(), "android").await;
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    }
+    let rows: i64 = sqlx::query_scalar(
+        "select count(*) from operation_audit where actor_id=$1 and action='auth.app_handover.refused'",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(rows, 1);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_redeem_and_the_login_it_makes_succeed_or_fail_together(pool: PgPool) {
+    let router = router(&pool);
+    let (access, id) = sign_in(&router, "handover-atomic@example.test").await;
+    let before: i64 = sqlx::query_scalar("select count(*) from refresh_token where identity_id=$1")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let p = pkce();
+    let code = issue_code(&router, &access, &p).await;
+    // A refused redeem makes no login.
+    let wrong = pkce();
+    assert_eq!(
+        redeem_with(&router, &code, &p.state, &wrong.verifier, None)
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    let after_refusal: i64 =
+        sqlx::query_scalar("select count(*) from refresh_token where identity_id=$1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(after_refusal, before);
+    // An accepted one makes exactly one.
+    let q = pkce();
+    let code2 = issue_code(&router, &access, &q).await;
+    assert_eq!(redeem(&router, &code2, &q).await.0, StatusCode::OK);
+    let after: i64 = sqlx::query_scalar("select count(*) from refresh_token where identity_id=$1")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(after, before + 1);
 }

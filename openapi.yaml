@@ -7887,7 +7887,14 @@ components:
       - code
       - state
       - verifier
+      - app
       properties:
+        app:
+          type: string
+          description: |-
+            The kind of app the web server saw the request come from, read from the app's
+            `User-Agent` token (`desktop`, `android` or `ios`). It must equal the platform the code
+            was asked for; a request with no such token never reaches this route.
         client:
           type:
           - string
