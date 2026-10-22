@@ -532,7 +532,8 @@ mod tests {
         let seconds: Vec<f64> = SPECS.iter().map(|s| (s.seconds)(&config)).collect();
         assert_eq!(
             seconds,
-            vec![172_800.0, 172_800.0, 900.0, 172_800.0, 172_800.0, 259_200.0, 86_400.0]
+            vec![172_800.0, 172_800.0, 900.0, 172_800.0, 172_800.0, 259_200.0, 86_400.0, 172_800.0]
         );
+        assert_eq!(table_names()[7], "operator_sign_in_link");
     }
 }
