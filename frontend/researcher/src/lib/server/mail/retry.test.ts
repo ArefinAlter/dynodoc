@@ -96,7 +96,9 @@ describe('withRetry', () => {
     const cases: Error[] = [
       Object.assign(new Error('Invalid login'), { code: 'EAUTH', responseCode: 535 }),
       Object.assign(new Error('self-signed certificate'), { code: 'ESOCKET' }),
-      Object.assign(new Error("Hostname/IP does not match certificate's altnames"), { code: 'ESOCKET' }),
+      Object.assign(new Error("Hostname/IP does not match certificate's altnames"), {
+        code: 'ESOCKET'
+      }),
       Object.assign(new Error('Error upgrading connection with STARTTLS'), {
         code: 'ETLS',
         command: 'STARTTLS',

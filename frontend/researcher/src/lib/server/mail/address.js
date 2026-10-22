@@ -52,7 +52,15 @@ export function parseAddress(raw) {
 // Code points are built with fromCharCode so that this file holds no invisible characters.
 const SEPARATORS = String.fromCharCode(0x2028, 0x2029);
 const DIRECTION = String.fromCharCode(
-  0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069
+  0x202a,
+  0x202b,
+  0x202c,
+  0x202d,
+  0x202e,
+  0x2066,
+  0x2067,
+  0x2068,
+  0x2069
 );
 /** Control characters, line and paragraph separators, and bidirectional overrides. */
 const FORBIDDEN_IN_HEADER_TEXT = new RegExp(`[\\x00-\\x1f\\x7f-\\x9f${SEPARATORS}${DIRECTION}]`);

@@ -113,7 +113,8 @@ export function generateEnv(options) {
   if (!smtp && (options.smtpFrom || options.smtpUser || options.smtpPort || options.smtpSecurity))
     throw new Error('--smtp-host is required with the other --smtp-* options.');
   if (smtp) {
-    if (!smtp.from) throw new Error('--smtp-from is required with --smtp-host (the sender address).');
+    if (!smtp.from)
+      throw new Error('--smtp-from is required with --smtp-host (the sender address).');
     const probe = loadConfig({
       DYNODOC_MODE: 'selfhosted',
       ORIGIN: options.origin,

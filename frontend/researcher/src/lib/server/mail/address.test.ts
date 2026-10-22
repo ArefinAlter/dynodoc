@@ -107,7 +107,12 @@ describe('header text', () => {
       expect(headerTextProblem(hostile, 100), JSON.stringify(hostile)).toMatch(/control character/);
   });
   it('accepts ordinary text in any script and enforces the limit', () => {
-    expect(headerTextProblem(`Z${ch(0xfc)}rich ${ch(0x2014)} ${ch(0x201c)}shared${ch(0x201d)} with you`, 100)).toBeUndefined();
+    expect(
+      headerTextProblem(
+        `Z${ch(0xfc)}rich ${ch(0x2014)} ${ch(0x201c)}shared${ch(0x201d)} with you`,
+        100
+      )
+    ).toBeUndefined();
     expect(headerTextProblem('x'.repeat(101), 100)).toMatch(/longer than 100/);
     expect(headerTextProblem(42, 100)).toBe('is not text');
   });

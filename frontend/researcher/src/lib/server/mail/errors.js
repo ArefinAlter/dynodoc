@@ -72,13 +72,17 @@ export class MailError extends Error {
 
 /** A server reply as one printable line of limited length. @param {unknown} text */
 export function printable(text) {
-  return String(text ?? '')
-    .replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ')
-    .trim()
-    .slice(0, 200);
+  return (
+    String(text ?? '')
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ')
+      .trim()
+      .slice(0, 200)
+  );
 }
 
-const TLS_HOSTNAME = /ERR_TLS_CERT_ALTNAME_INVALID|does not match certificate'?s altnames|Hostname\/IP does not match/i;
+const TLS_HOSTNAME =
+  /ERR_TLS_CERT_ALTNAME_INVALID|does not match certificate'?s altnames|Hostname\/IP does not match/i;
 const TLS_EXPIRED = /CERT_HAS_EXPIRED|certificate has expired|CERT_NOT_YET_VALID|not yet valid/i;
 const TLS_UNTRUSTED =
   /DEPTH_ZERO_SELF_SIGNED_CERT|SELF_SIGNED_CERT_IN_CHAIN|UNABLE_TO_VERIFY_LEAF_SIGNATURE|UNABLE_TO_GET_ISSUER_CERT|CERT_UNTRUSTED|self[- ]signed|unable to verify the first certificate|unable to get (?:local )?issuer|certificate chain|CERT_REJECTED/i;

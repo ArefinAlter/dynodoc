@@ -64,7 +64,11 @@ export function selfSigned(options: {
     0xa3,
     seq(
       seq(oid('2.5.29.17'), tlv(0x04, seq(...names))),
-      seq(oid('2.5.29.19'), tlv(0x01, Buffer.from([0xff])), tlv(0x04, seq(tlv(0x01, Buffer.from([0xff])))))
+      seq(
+        oid('2.5.29.19'),
+        tlv(0x01, Buffer.from([0xff])),
+        tlv(0x04, seq(tlv(0x01, Buffer.from([0xff]))))
+      )
     )
   );
   const subject = name(options.commonName ?? options.dns?.[0] ?? 'dynodoc test');

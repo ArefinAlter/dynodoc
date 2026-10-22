@@ -105,7 +105,7 @@ export async function startFakeSmtp(options: FakeSmtpOptions = {}): Promise<Fake
     let buffer = '';
     let loginStep: 'user' | 'pass' | 'plain' | null = null;
     let loginUser = '';
-    let delivered = { mail: 0, rcpt: 0, data: 0, end: 0 };
+    const delivered = { mail: 0, rcpt: 0, data: 0, end: 0 };
     let closing = false;
 
     const send = (text: string) => {
@@ -117,9 +117,7 @@ export async function startFakeSmtp(options: FakeSmtpOptions = {}): Promise<Fake
     };
     const scripted = (step: 'mail' | 'rcpt' | 'data' | 'end', line: string, fallback: string) => {
       delivered[step]++;
-      return (
-        options.reply?.[step]?.({ connection, message: delivered[step], line }) ?? fallback
-      );
+      return options.reply?.[step]?.({ connection, message: delivered[step], line }) ?? fallback;
     };
     const mayAuthenticate = () =>
       (options.authMethods?.length ?? 0) > 0 &&
@@ -135,7 +133,9 @@ export async function startFakeSmtp(options: FakeSmtpOptions = {}): Promise<Fake
     };
 
     const finishAuth = (user: string, pass: string) => {
-      const ok = !options.credentials || (user === options.credentials.user && pass === options.credentials.pass);
+      const ok =
+        !options.credentials ||
+        (user === options.credentials.user && pass === options.credentials.pass);
       if (ok) {
         authUser = user;
         send('235 2.7.0 Authentication successful');
@@ -163,7 +163,9 @@ export async function startFakeSmtp(options: FakeSmtpOptions = {}): Promise<Fake
       const upper = line.toUpperCase();
       if (upper.startsWith('EHLO') || upper.startsWith('HELO')) {
         const lines = capabilities();
-        send(lines.map((text, i) => `250${i === lines.length - 1 ? ' ' : '-'}${text}`).join('\r\n'));
+        send(
+          lines.map((text, i) => `250${i === lines.length - 1 ? ' ' : '-'}${text}`).join('\r\n')
+        );
       } else if (upper === 'STARTTLS') {
         if (!context || secure || options.starttls === false || options.implicitTls) {
           send('502 5.5.1 STARTTLS is not available');
@@ -180,7 +182,8 @@ export async function startFakeSmtp(options: FakeSmtpOptions = {}): Promise<Fake
         sockets.add(upgraded);
       } else if (upper.startsWith('AUTH')) {
         const [, mechanism, initial] = line.split(/\s+/);
-        if (!mayAuthenticate()) send('538 5.7.11 Encryption required for requested authentication mechanism');
+        if (!mayAuthenticate())
+          send('538 5.7.11 Encryption required for requested authentication mechanism');
         else if (mechanism?.toUpperCase() === 'PLAIN') {
           if (initial) {
             const [, user, pass] = unb64(initial).split('\0');
@@ -263,8 +266,9 @@ export async function startFakeSmtp(options: FakeSmtpOptions = {}): Promise<Fake
 
   const server: net.Server =
     options.implicitTls && options.tls
-      ? tls.createServer({ key: options.tls.key, cert: options.tls.cert, maxVersion: options.tls.maxVersion }, (socket) =>
-          onConnection(socket, true)
+      ? tls.createServer(
+          { key: options.tls.key, cert: options.tls.cert, maxVersion: options.tls.maxVersion },
+          (socket) => onConnection(socket, true)
         )
       : net.createServer((socket) => onConnection(socket, false));
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));

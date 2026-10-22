@@ -15,12 +15,25 @@ const net = (code: string, message: string) => Object.assign(new Error(message),
 describe('classifyError', () => {
   const cases: [string, unknown, string, boolean][] = [
     ['untrusted: self-signed', net('ESOCKET', 'self-signed certificate'), 'tls-untrusted', false],
-    ['untrusted: unknown issuer', net('ESOCKET', 'unable to verify the first certificate'), 'tls-untrusted', false],
-    ['untrusted: in chain', net('ESOCKET', 'self-signed certificate in certificate chain'), 'tls-untrusted', false],
+    [
+      'untrusted: unknown issuer',
+      net('ESOCKET', 'unable to verify the first certificate'),
+      'tls-untrusted',
+      false
+    ],
+    [
+      'untrusted: in chain',
+      net('ESOCKET', 'self-signed certificate in certificate chain'),
+      'tls-untrusted',
+      false
+    ],
     ['expired', net('ESOCKET', 'certificate has expired'), 'tls-expired', false],
     [
       'host name',
-      net('ESOCKET', "Hostname/IP does not match certificate's altnames: Host: a. is not in the cert's altnames: DNS:b"),
+      net(
+        'ESOCKET',
+        "Hostname/IP does not match certificate's altnames: Host: a. is not in the cert's altnames: DNS:b"
+      ),
       'tls-hostname',
       false
     ],
@@ -30,7 +43,12 @@ describe('classifyError', () => {
       'tls-protocol',
       false
     ],
-    ['old TLS', net('ESOCKET', 'error:0A000102:SSL routines::unsupported protocol'), 'tls-protocol', false],
+    [
+      'old TLS',
+      net('ESOCKET', 'error:0A000102:SSL routines::unsupported protocol'),
+      'tls-protocol',
+      false
+    ],
     [
       'no STARTTLS',
       reply('ETLS', 502, 'STARTTLS', '502 5.5.1 STARTTLS is not available'),
@@ -42,17 +60,62 @@ describe('classifyError', () => {
     ['dns trouble', net('EDNS', 'getaddrinfo EAI_AGAIN mail.example.org'), 'dns-temporary', true],
     ['timeout', Object.assign(net('ETIMEDOUT', 'Timeout'), { command: 'CONN' }), 'timeout', true],
     ['reset', net('ESOCKET', 'read ECONNRESET'), 'network', true],
-    ['bad password', reply('EAUTH', 535, 'AUTH PLAIN', '535 5.7.8 Authentication credentials invalid'), 'auth-failed', false],
-    ['auth required', reply('EENVELOPE', 530, 'MAIL FROM', '530 5.7.0 Authentication required'), 'auth-required', false],
+    [
+      'bad password',
+      reply('EAUTH', 535, 'AUTH PLAIN', '535 5.7.8 Authentication credentials invalid'),
+      'auth-failed',
+      false
+    ],
+    [
+      'auth required',
+      reply('EENVELOPE', 530, 'MAIL FROM', '530 5.7.0 Authentication required'),
+      'auth-required',
+      false
+    ],
     ['greylisted', reply('EENVELOPE', 451, 'RCPT TO', '451 4.7.1 Greylisted'), 'transient', true],
-    ['mailbox busy', reply('EENVELOPE', 450, 'RCPT TO', '450 4.2.1 Mailbox busy'), 'transient', true],
-    ['closing', reply('ECONNECTION', 421, 'EHLO', '421 4.3.2 Service shutting down'), 'transient', true],
-    ['relay denied', reply('EENVELOPE', 554, 'RCPT TO', '554 5.7.1 Relay access denied'), 'relay-refused', false],
+    [
+      'mailbox busy',
+      reply('EENVELOPE', 450, 'RCPT TO', '450 4.2.1 Mailbox busy'),
+      'transient',
+      true
+    ],
+    [
+      'closing',
+      reply('ECONNECTION', 421, 'EHLO', '421 4.3.2 Service shutting down'),
+      'transient',
+      true
+    ],
+    [
+      'relay denied',
+      reply('EENVELOPE', 554, 'RCPT TO', '554 5.7.1 Relay access denied'),
+      'relay-refused',
+      false
+    ],
     ['policy', reply('EENVELOPE', 550, 'RCPT TO', '550 5.7.1 Not allowed'), 'relay-refused', false],
-    ['unknown user', reply('EENVELOPE', 550, 'RCPT TO', '550 5.1.1 No such user'), 'recipient-refused', false],
-    ['sender refused', reply('EENVELOPE', 550, 'MAIL FROM', '550 5.7.1 Sender not allowed'), 'sender-refused', false],
-    ['spam', reply('EMESSAGE', 554, 'DATA', '554 5.7.0 Rejected as spam'), 'message-rejected', false],
-    ['too big', reply('EMESSAGE', 552, 'DATA', '552 5.3.4 Message size exceeds limit'), 'too-large', false],
+    [
+      'unknown user',
+      reply('EENVELOPE', 550, 'RCPT TO', '550 5.1.1 No such user'),
+      'recipient-refused',
+      false
+    ],
+    [
+      'sender refused',
+      reply('EENVELOPE', 550, 'MAIL FROM', '550 5.7.1 Sender not allowed'),
+      'sender-refused',
+      false
+    ],
+    [
+      'spam',
+      reply('EMESSAGE', 554, 'DATA', '554 5.7.0 Rejected as spam'),
+      'message-rejected',
+      false
+    ],
+    [
+      'too big',
+      reply('EMESSAGE', 552, 'DATA', '552 5.3.4 Message size exceeds limit'),
+      'too-large',
+      false
+    ],
     ['plain 5xx', reply('EPROTOCOL', 500, 'EHLO', '500 5.5.1 Unknown'), 'permanent', false],
     ['nothing known', new Error('???'), 'unknown', false]
   ];
@@ -65,15 +128,21 @@ describe('classifyError', () => {
   it('never retries a 5xx and always retries a 4xx reply, whatever the command', () => {
     for (const command of ['MAIL FROM', 'RCPT TO', 'DATA', 'EHLO'])
       for (const status of [500, 501, 550, 553, 554])
-        expect(classifyError(reply('EENVELOPE', status, command, `${status} no`)).retryable).toBe(false);
+        expect(classifyError(reply('EENVELOPE', status, command, `${status} no`)).retryable).toBe(
+          false
+        );
     for (const command of ['MAIL FROM', 'RCPT TO', 'DATA'])
       for (const status of [421, 450, 451, 452])
-        expect(classifyError(reply('EENVELOPE', status, command, `${status} later`)).retryable).toBe(true);
+        expect(
+          classifyError(reply('EENVELOPE', status, command, `${status} later`)).retryable
+        ).toBe(true);
   });
   it('keeps a MailError as it is, and keeps the server words only in serverResponse', () => {
     const own = new MailError('too-large');
     expect(classifyError(own)).toBe(own);
-    const sorted = classifyError(reply('EENVELOPE', 550, 'RCPT TO', '550 5.1.1 <olivia@example.org> unknown'));
+    const sorted = classifyError(
+      reply('EENVELOPE', 550, 'RCPT TO', '550 5.1.1 <olivia@example.org> unknown')
+    );
     expect(sorted.serverResponse).toContain('olivia@example.org');
     expect(sorted.message).not.toContain('olivia@example.org');
   });

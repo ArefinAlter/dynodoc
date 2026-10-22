@@ -11,6 +11,8 @@ import {
 } from '$lib/server/session';
 import { safeNext } from '$lib/auth-next';
 import { getConfig } from '$lib/server/config';
+import { linkOrigin, mailConfigured, sendMail } from '$lib/server/mail';
+import { signInEmail } from '$lib/server/mail/templates';
 
 let configuration: Promise<oidc.Configuration> | undefined;
 function googleCredentials() {
@@ -34,7 +36,7 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
   if (params.action === 'options')
     return json({
       google: Boolean(googleCredentials()),
-      email: config.emailSignIn && Boolean(config.secrets.resendApiKey && config.emailFrom),
+      email: config.emailSignIn && mailConfigured(),
       development: config.emailSignIn && config.devAuth,
       destination: config.adminSite ? '/admin' : '/projects'
     });
@@ -175,36 +177,26 @@ export const POST: RequestHandler = async ({ params, url, request, cookies }) =>
     // A link that was already issued can still be confirmed above; asking for a new one stops.
     if (!config.emailSignIn)
       return json({ error: 'Email sign-in is turned off for this installation.' }, { status: 403 });
-    const resendKey = config.secrets.resendApiKey?.expose();
+    const mailOn = mailConfigured();
     const email = String(body.email || '')
       .trim()
       .toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254)
       return json({ error: 'Enter a valid email address.' }, { status: 400 });
-    if (!resendKey && !config.devAuth)
+    if (!mailOn && !config.devAuth)
       return json({ error: 'Email sign-in is not configured yet.' }, { status: 503 });
     try {
       const result = await enginePost('/auth/magic-link', {
         email,
         display_name: body.display_name
       });
-      const link = `${url.origin}/auth/verify?token=${encodeURIComponent(result.magic_link_token)}`;
-      if (config.devAuth && !resendKey) return json({ development_token: result.magic_link_token });
-      const delivery = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${resendKey}`,
-          'content-type': 'application/json'
-        },
-        body: JSON.stringify({
-          from: config.emailFrom,
-          to: [email],
-          subject: 'Sign in to Dynodoc',
-          text: `Sign in to your Dynodoc workspace:\n\n${link}\n\nThis link expires in 15 minutes. If you did not request it, you can ignore this message.`
-        }),
-        signal: AbortSignal.timeout(15_000)
+      const link = `${linkOrigin(url.origin)}/auth/verify?token=${encodeURIComponent(result.magic_link_token)}`;
+      if (config.devAuth && !mailOn) return json({ development_token: result.magic_link_token });
+      await sendMail({
+        kind: 'signin',
+        to: email,
+        ...signInEmail({ link, brand: config.site.brand })
       });
-      if (!delivery.ok) throw new Error('Delivery failed');
       return json({ ok: true });
     } catch {
       return json(

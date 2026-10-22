@@ -126,7 +126,6 @@ export function lintMessage(raw, messageId) {
   if (end < 0) throw refuse('the finished message has no header block');
   const head = text.slice(0, end);
   // Headers are 7-bit: non-ASCII text must have been encoded (RFC 2047) by now.
-  // eslint-disable-next-line no-control-regex
   if (/[^\t\r\n -~]/.test(head)) throw refuse('a header holds raw non-ASCII or control text');
   const logical = head.replace(/\r\n[ \t]+/g, ' ').split('\r\n');
   /** @type {Map<string, string>} */ const seen = new Map();

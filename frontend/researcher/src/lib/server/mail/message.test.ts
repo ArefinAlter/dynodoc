@@ -69,7 +69,8 @@ describe('checkMessage', () => {
       expect(error?.message).not.toContain('attacker');
     }
     expect(
-      refusal(() => checkMessage({ ...ok, replyTo: 'x@example.org\r\nBcc: y@example.org' }))?.message
+      refusal(() => checkMessage({ ...ok, replyTo: 'x@example.org\r\nBcc: y@example.org' }))
+        ?.message
     ).toContain('reply-to');
   });
   it('caps the recipients, and removes a repeated one', () => {
@@ -107,12 +108,13 @@ describe('checkSender', () => {
       name: 'Acme Docs',
       address: 'Docs@example.org'
     });
-    expect(refusal(() => checkSender({ name: 'Acme\r\nBcc: x@example.org', address: 'a@example.org' }))?.message).toContain(
-      'sender name'
-    );
-    expect(refusal(() => checkSender({ name: 'Acme', address: 'not an address' }))?.message).toContain(
-      'sender address'
-    );
+    expect(
+      refusal(() => checkSender({ name: 'Acme\r\nBcc: x@example.org', address: 'a@example.org' }))
+        ?.message
+    ).toContain('sender name');
+    expect(
+      refusal(() => checkSender({ name: 'Acme', address: 'not an address' }))?.message
+    ).toContain('sender address');
   });
 });
 
@@ -121,7 +123,10 @@ function split(raw: Buffer) {
   const text = raw.toString('latin1');
   const end = text.indexOf('\r\n\r\n');
   const headers = new Map<string, string>();
-  for (const line of text.slice(0, end).replace(/\r\n[ \t]+/g, ' ').split('\r\n')) {
+  for (const line of text
+    .slice(0, end)
+    .replace(/\r\n[ \t]+/g, ' ')
+    .split('\r\n')) {
     const colon = line.indexOf(':');
     headers.set(line.slice(0, colon).toLowerCase(), line.slice(colon + 1).trim());
   }
@@ -135,9 +140,11 @@ function decodeWords(value: string) {
       kind.toUpperCase() === 'B'
         ? Buffer.from(data, 'base64').toString('utf8')
         : Buffer.from(
-            data.replace(/_/g, ' ').replace(/=([0-9A-F]{2})/gi, (_x, hex: string) =>
-              String.fromCharCode(parseInt(hex, 16))
-            ),
+            data
+              .replace(/_/g, ' ')
+              .replace(/=([0-9A-F]{2})/gi, (_x, hex: string) =>
+                String.fromCharCode(parseInt(hex, 16))
+              ),
             'latin1'
           ).toString('utf8')
     );
@@ -150,16 +157,19 @@ function decodePart(part: string) {
   if (encoding === 'base64') return Buffer.from(body, 'base64').toString('utf8');
   if (encoding === 'quoted-printable')
     return Buffer.from(
-      body.replace(/=\r\n/g, '').replace(/=([0-9A-F]{2})/g, (_m, hex: string) =>
-        String.fromCharCode(parseInt(hex, 16))
-      ),
+      body
+        .replace(/=\r\n/g, '')
+        .replace(/=([0-9A-F]{2})/g, (_m, hex: string) => String.fromCharCode(parseInt(hex, 16))),
       'latin1'
     ).toString('utf8');
   return body;
 }
 
 describe('composeMessage', () => {
-  const build = async (message: Partial<Parameters<typeof checkMessage>[0]> = {}, replyTo?: string) => {
+  const build = async (
+    message: Partial<Parameters<typeof checkMessage>[0]> = {},
+    replyTo?: string
+  ) => {
     const id = newMessageId('example.org');
     const checked = checkMessage({ ...ok, ...message });
     return { id, ...(await composeMessage(FROM, replyTo, checked, id)) };
@@ -175,7 +185,7 @@ describe('composeMessage', () => {
     expect(headers.get('mime-version')).toBe('1.0');
     expect(decodeWords(headers.get('subject') ?? '')).toBe(subject);
     expect(headers.get('subject')).toMatch(/=\?UTF-8\?[BQ]\?/i);
-    expect(/[^\x20-\x7e]/.test([...headers.values()].join(''))).toBe(false); // eslint-disable-line no-control-regex
+    expect(/[^\x20-\x7e]/.test([...headers.values()].join(''))).toBe(false);
     const boundary = /boundary="?([^";]+)"?/.exec(headers.get('content-type') ?? '')?.[1] ?? '';
     const parts = body.split(`--${boundary}`).slice(1, -1);
     expect(parts).toHaveLength(2);
@@ -194,20 +204,30 @@ describe('composeMessage', () => {
     expect(headers.get('date')).toMatch(/^\w{3}, \d{1,2} \w{3} \d{4} /);
     expect(headers.get('from')).toBe('Acme Docs <docs@example.org>');
     expect(headers.get('to')).toBe('a@example.test, b@example.test');
-    expect(built.envelope).toEqual({ from: 'docs@example.org', to: ['a@example.test', 'b@example.test'] });
+    expect(built.envelope).toEqual({
+      from: 'docs@example.org',
+      to: ['a@example.test', 'b@example.test']
+    });
     expect(headers.has('bcc')).toBe(false);
   });
   it('encodes a non-ASCII sender name (RFC 2047) and keeps the address plain', async () => {
     const checked = checkMessage(ok);
-    const built = await composeMessage({ name: `Équipe Zürich`, address: 'docs@example.org' }, undefined, checked, newMessageId('example.org'));
+    const built = await composeMessage(
+      { name: `Équipe Zürich`, address: 'docs@example.org' },
+      undefined,
+      checked,
+      newMessageId('example.org')
+    );
     const from = split(built.raw).headers.get('from') ?? '';
     expect(from).toMatch(/^=\?UTF-8\?[BQ]\?.*\?= <docs@example\.org>$/i);
     expect(decodeWords(from)).toBe('Équipe Zürich <docs@example.org>');
   });
   it('puts a request Reply-To ahead of the configured one, and the configured one when there is none', async () => {
-    expect(split((await build({ replyTo: 'inviter@example.test' }, 'configured@example.org')).raw).headers.get('reply-to')).toBe(
-      'inviter@example.test'
-    );
+    expect(
+      split(
+        (await build({ replyTo: 'inviter@example.test' }, 'configured@example.org')).raw
+      ).headers.get('reply-to')
+    ).toBe('inviter@example.test');
     expect(split((await build({}, 'configured@example.org')).raw).headers.get('reply-to')).toBe(
       'configured@example.org'
     );
@@ -235,7 +255,13 @@ describe('composeMessage', () => {
     const attempt = await composeMessage(
       { name: 'Acme\r\nBcc: attacker@example.org', address: 'docs@example.org' },
       undefined,
-      { to: ['olivia@example.test'], subject: hostile, text: 'Body', html: undefined, replyTo: undefined },
+      {
+        to: ['olivia@example.test'],
+        subject: hostile,
+        text: 'Body',
+        html: undefined,
+        replyTo: undefined
+      },
       newMessageId('example.org')
     ).catch((error) => error);
     if (attempt instanceof Error) expect(attempt).toBeInstanceOf(MailError);
@@ -264,7 +290,9 @@ describe('lintMessage', () => {
   const lint = (lines: string[]) => lintMessage(Buffer.from(lines.join('\r\n')), id);
   it('accepts the headers the builder produces, folded or not', () => {
     expect(() => lint(good)).not.toThrow();
-    expect(() => lint([...good.slice(0, 2), 'Subject: Hello', ' continued', ...good.slice(3)])).not.toThrow();
+    expect(() =>
+      lint([...good.slice(0, 2), 'Subject: Hello', ' continued', ...good.slice(3)])
+    ).not.toThrow();
   });
   it('refuses an injected, repeated, missing or odd header', () => {
     const withExtra = (extra: string) => [...good.slice(0, 3), extra, ...good.slice(3)];
@@ -273,9 +301,13 @@ describe('lintMessage', () => {
     expect(() => lint(withExtra('Subject: second'))).toThrow(/appears twice/);
     expect(() => lint(withExtra('no colon here'))).toThrow(/malformed/);
     expect(() => lint(good.filter((line) => !line.startsWith('Date')))).toThrow(/date is missing/);
-    expect(() => lint(good.map((line) => (line.startsWith('Message-ID') ? 'Message-ID: <other@example.org>' : line)))).toThrow(
-      /Message-ID/
-    );
+    expect(() =>
+      lint(
+        good.map((line) =>
+          line.startsWith('Message-ID') ? 'Message-ID: <other@example.org>' : line
+        )
+      )
+    ).toThrow(/Message-ID/);
     expect(() => lint(withExtra(`Subject-X: caf${ch(0xe9)}`))).toThrow(/non-ASCII/);
     expect(() => lint(['From: a', 'no blank line'])).toThrow(/no header block/);
   });

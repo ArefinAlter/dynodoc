@@ -21,6 +21,9 @@ import { domainOf } from './address.js';
 import { isLocalAddress } from './local-address.js';
 import { MailError, classifyError, printable } from './errors.js';
 import { withRetry } from './retry.js';
+import { defaultLog } from './log.js';
+
+/** @typedef {import('./log.js').LogEntry} LogEntry */
 
 /**
  * @typedef {object} SmtpSettings
@@ -116,22 +119,10 @@ function within(promise, ms, onTimeout) {
       reject(Object.assign(new Error('the send ran out of time'), { code: 'ETIMEDOUT' }));
     }, ms);
   });
-  return Promise.race([promise, limit]).finally(() => clearTimeout(timer)).then((value) => /** @type {T} */ (value));
+  return Promise.race([promise, limit])
+    .finally(() => clearTimeout(timer))
+    .then((value) => /** @type {T} */ (value));
 }
-
-/** @typedef {{ provider: string, outcome: 'sent' | 'failed' | 'retry', kind?: string, errorClass?: string, messageId?: string, attempts?: number }} LogEntry */
-/** One line, key=value, nothing that identifies a person or a secret. @param {LogEntry} entry */
-export function formatLog(entry) {
-  const parts = [`provider=${entry.provider}`, `outcome=${entry.outcome}`];
-  if (entry.kind) parts.push(`kind=${entry.kind}`);
-  if (entry.errorClass) parts.push(`class=${entry.errorClass}`);
-  if (entry.attempts) parts.push(`attempts=${entry.attempts}`);
-  if (entry.messageId) parts.push(`id=${entry.messageId}`);
-  return `[dynodoc] mail ${parts.join(' ')}`;
-}
-/** @param {LogEntry} entry */
-const defaultLog = (entry) =>
-  (entry.outcome === 'sent' ? console.info : console.warn)(formatLog(entry));
 
 /**
  * @param {SmtpSettings} settings
@@ -166,8 +157,7 @@ export function createSmtpSender(settings, deps = {}) {
         remainingMs,
         () => transport.close()
       );
-      if (info.rejected?.length || !info.accepted?.length)
-        throw new MailError('recipient-refused');
+      if (info.rejected?.length || !info.accepted?.length) throw new MailError('recipient-refused');
       return info;
     } finally {
       transport.close();

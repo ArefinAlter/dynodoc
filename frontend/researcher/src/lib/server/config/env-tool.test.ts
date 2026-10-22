@@ -158,7 +158,12 @@ describe('generate-env, mail', () => {
     expect(env).toMatch(/^DYNODOC_MAIL_TRANSPORT=none$/m);
     expect(env).toContain('with email on and no way to send the link, the server will not start');
     expect(env).toContain('# SMTP_HOST=smtp.example.org');
-    expect(checkConfig({ dir })).toEqual({ ok: true, problems: [], warnings: [], mode: 'selfhosted' });
+    expect(checkConfig({ dir })).toEqual({
+      ok: true,
+      problems: [],
+      warnings: [],
+      mode: 'selfhosted'
+    });
   });
   it('writes a working SMTP block when a mail server is given', () => {
     const dir = fresh();
@@ -174,7 +179,12 @@ describe('generate-env, mail', () => {
   });
   it('creates an empty password file for a login, and check-config says to fill it', () => {
     const dir = fresh();
-    const { written, lines } = generateEnv({ dir, origin: ORIGIN, ...SMTP, smtpUser: 'docs-sender' });
+    const { written, lines } = generateEnv({
+      dir,
+      origin: ORIGIN,
+      ...SMTP,
+      smtpUser: 'docs-sender'
+    });
     expect(written).toHaveLength(8);
     expect(readFileSync(join(dir, 'secrets', 'smtp_password'), 'utf8')).toBe('');
     expect(lines.join('\n')).toContain('smtp_password: the mail server password. It is EMPTY');

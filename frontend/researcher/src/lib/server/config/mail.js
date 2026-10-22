@@ -12,7 +12,12 @@
 // fixed in the mail code, not settings: nothing an operator should loosen.
 import { X509Certificate } from 'node:crypto';
 import { isIP } from 'node:net';
-import { MAX_DISPLAY_NAME_LENGTH, domainOf, headerTextProblem, parseAddress } from '../mail/address.js';
+import {
+  MAX_DISPLAY_NAME_LENGTH,
+  domainOf,
+  headerTextProblem,
+  parseAddress
+} from '../mail/address.js';
 import { isLocalAddress } from '../mail/local-address.js';
 import { readBoundedFile } from './secrets.js';
 
@@ -71,7 +76,8 @@ function hostProblem(host) {
   if (isIP(host)) return undefined;
   if (!/^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$/.test(host) || host.includes('..'))
     return 'must be a host name or an IP address, with no scheme (smtp://), port, path or spaces';
-  if (host.split('.').some((label) => label.length > 63)) return 'has a label longer than 63 characters';
+  if (host.split('.').some((label) => label.length > 63))
+    return 'has a label longer than 63 characters';
   return undefined;
 }
 
@@ -140,8 +146,7 @@ export function loadMail(context) {
   const before = problems.length;
 
   // --- Which transport ---
-  /** @type {'resend' | 'smtp' | 'none'} */
-  let transport = context.resendKey ? 'resend' : 'none';
+  let transport = /** @type {'resend' | 'smtp' | 'none'} */ (context.resendKey ? 'resend' : 'none');
   const rawTransport = get('DYNODOC_MAIL_TRANSPORT');
   const explicit = rawTransport !== undefined;
   if (explicit) {
@@ -181,14 +186,14 @@ export function loadMail(context) {
     const issue = (/** @type {string} */ text) => problems.push(text);
 
     const host = get('SMTP_HOST')?.trim();
-    if (host === undefined) issue('SMTP_HOST is not set (the mail server, such as smtp.example.org)');
+    if (host === undefined)
+      issue('SMTP_HOST is not set (the mail server, such as smtp.example.org)');
     else {
       const bad = hostProblem(host);
       if (bad) issue(`SMTP_HOST ${bad}`);
     }
 
-    /** @type {'tls' | 'starttls' | 'none-local'} */
-    let security = 'starttls';
+    let security = /** @type {'tls' | 'starttls' | 'none-local'} */ ('starttls');
     const rawSecurity = get('SMTP_SECURITY');
     if (rawSecurity !== undefined) {
       const value = rawSecurity.trim().toLowerCase();
@@ -224,7 +229,9 @@ export function loadMail(context) {
       issue('SMTP_PASSWORD must not contain a NUL character');
     if (!failed) {
       if (user !== undefined && !password)
-        issue('SMTP_USER is set but there is no SMTP_PASSWORD (or SMTP_PASSWORD_FILE): set both or neither');
+        issue(
+          'SMTP_USER is set but there is no SMTP_PASSWORD (or SMTP_PASSWORD_FILE): set both or neither'
+        );
       if (user === undefined && password)
         issue('SMTP_PASSWORD is set but there is no SMTP_USER: set both or neither');
     }
@@ -237,7 +244,8 @@ export function loadMail(context) {
     /** @type {{ name: string, address: string } | undefined} */
     let from;
     const rawFrom = get('SMTP_FROM');
-    if (rawFrom === undefined) issue('SMTP_FROM is not set (the sender address, such as docs@example.org)');
+    if (rawFrom === undefined)
+      issue('SMTP_FROM is not set (the sender address, such as docs@example.org)');
     else {
       const parsed = parseAddress(rawFrom);
       if ('reason' in parsed) issue(`SMTP_FROM ${parsed.reason}`);
@@ -262,7 +270,9 @@ export function loadMail(context) {
     const caFile = get('SMTP_CA_FILE');
     if (caFile !== undefined) {
       if (security === 'none-local')
-        warnings.push('SMTP_CA_FILE is set but SMTP_SECURITY=none-local uses no TLS; it is ignored');
+        warnings.push(
+          'SMTP_CA_FILE is set but SMTP_SECURITY=none-local uses no TLS; it is ignored'
+        );
       else ca = readCa('SMTP_CA_FILE', caFile, problems, warnings);
     }
     let timeoutSeconds = SMTP_TIMEOUT_DEFAULT;
@@ -275,7 +285,10 @@ export function loadMail(context) {
         Number(value) <= SMTP_TIMEOUT_MAX
       )
         timeoutSeconds = Number(value);
-      else issue(`SMTP_TIMEOUT_SECONDS must be a whole number from ${SMTP_TIMEOUT_MIN} to ${SMTP_TIMEOUT_MAX}`);
+      else
+        issue(
+          `SMTP_TIMEOUT_SECONDS must be a whole number from ${SMTP_TIMEOUT_MIN} to ${SMTP_TIMEOUT_MAX}`
+        );
     }
 
     if (lookup('NODE_TLS_REJECT_UNAUTHORIZED') === '0')
