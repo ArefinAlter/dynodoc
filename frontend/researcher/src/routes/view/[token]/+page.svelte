@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { page } from '$app/stores';
   import { byPosition } from '$lib/workspace/api';
   import RichEditor from '$lib/components/workspace/RichEditor.svelte';
   import SheetEditor from '$lib/components/workspace/SheetEditor.svelte';
@@ -25,19 +26,25 @@
 </script>
 
 <svelte:head
-  ><title>{data.title} · Shared with Dynodoc</title><meta
+  ><title>{data.title} · Shared with {$page.data.site.brand}</title><meta
     name="robots"
     content="noindex,nofollow"
   /><meta name="referrer" content="no-referrer" /></svelte:head
 >
 <header>
-  <a href="https://dynodoc.online"
-    ><img class="logo-day" src="/brand/logo.svg?v=2" width="145" height="32" alt="Dynodoc" /><img
+  <a href={$page.data.site.homeUrl}
+    ><img
+      class="logo-day"
+      src="/brand/logo.svg?v=2"
+      width="145"
+      height="32"
+      alt={$page.data.site.brand}
+    /><img
       class="logo-night"
       src="/brand/logo-dark.svg?v=2"
       width="145"
       height="32"
-      alt="Dynodoc"
+      alt={$page.data.site.brand}
     /></a
   ><span>Published copy · View only</span>
 </header>

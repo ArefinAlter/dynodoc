@@ -1,18 +1,19 @@
-import { env } from '$env/dynamic/private';
 import { json, redirect } from '@sveltejs/kit';
 import * as oidc from 'openid-client';
 import { activeIdentity, sealProvider, openProvider } from '$lib/server/session';
+import { getConfig } from '$lib/server/config';
 import type { RequestHandler } from './$types';
 let configuration: Promise<oidc.Configuration> | undefined;
+function googleCredentials() {
+  const { googleClientId, secrets } = getConfig();
+  const secret = secrets.googleClientSecret?.expose();
+  return googleClientId && secret ? { id: googleClientId, secret } : null;
+}
 function google() {
-  if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET)
-    throw new Error('Google is not configured');
+  const credentials = googleCredentials();
+  if (!credentials) throw new Error('Google is not configured');
   return (configuration ??= oidc
-    .discovery(
-      new URL('https://accounts.google.com'),
-      env.GOOGLE_CLIENT_ID,
-      env.GOOGLE_CLIENT_SECRET
-    )
+    .discovery(new URL('https://accounts.google.com'), credentials.id, credentials.secret)
     .catch((e) => {
       configuration = undefined;
       throw e;
@@ -34,7 +35,7 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
     maxAge: 600
   };
   if (params.action === 'connect') {
-    if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET)
+    if (!googleCredentials())
       return json({ error: 'Google Forms connection is not configured.' }, { status: 503 });
     const state = oidc.randomState(),
       verifier = oidc.randomPKCECodeVerifier();

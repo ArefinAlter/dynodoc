@@ -8,12 +8,12 @@
   import { loadSession } from '$lib/stores/session.svelte';
   import { pwa } from '$lib/pwa/client.svelte';
   import { trackKeyboard } from '$lib/viewport';
-  import { theme } from '$lib/theme.svelte';
+  import { theme, setThemeCookieDomain } from '$lib/theme.svelte';
   import PwaUpdate from '$lib/components/PwaUpdate.svelte';
   onMount(() => {
     if (window.location.pathname === '/print') return;
     void loadSession();
-    void observeVitals().catch(() => {});
+    void observeVitals(data.site.telemetry).catch(() => {});
     pwa.start();
     return trackKeyboard();
   });
@@ -37,9 +37,16 @@
   import { requiresSignIn } from '$lib/auth-next';
   import HelpGuide from '$lib/components/product/HelpGuide.svelte';
   import ToastHost from '$lib/components/ToastHost.svelte';
-  import { CANONICAL_ORIGIN, SITE_IMAGE, canonicalUrl, isIndexablePath } from '$lib/seo';
 
-  let { children } = $props();
+  let { children, data } = $props();
+  // Canonical URLs and the like exist only where the server says the site is indexable.
+  const seo = $derived(data.seo);
+  const canonical = $derived(
+    seo && seo.paths.includes($page.url.pathname)
+      ? seo.origin + ($page.url.pathname === '/' ? '/' : $page.url.pathname)
+      : null
+  );
+  $effect.pre(() => setThemeCookieDomain(data.site.themeCookieDomain));
 
   // Browser bar colour. The public site sets its own; here the OS decides unless the person
   // picked day or night mode in the app, in which case both entries follow that choice.
@@ -64,32 +71,27 @@
     <meta name="theme-color" content={barByDay} media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content={barByNight} media="(prefers-color-scheme: dark)" />
   {/if}
-  {#if isIndexablePath($page.url.pathname)}
-    <link rel="canonical" href={canonicalUrl($page.url.pathname)} />
+  {#if seo && canonical}
+    <link rel="canonical" href={canonical} />
     <!-- Allow full snippets and large image previews, so search and answer
          engines can quote these pages properly rather than truncating them. -->
     <meta
       name="robots"
       content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1"
     />
-    <meta property="og:url" content={canonicalUrl($page.url.pathname)} />
+    <meta property="og:url" content={canonical} />
     <meta property="og:site_name" content="Dynodoc" />
     <meta property="og:type" content="website" />
     <meta property="og:locale" content="en" />
-    <meta property="og:image" content={SITE_IMAGE} />
+    <meta property="og:image" content={seo.image} />
     <meta property="og:image:width" content="1200" /><meta
       property="og:image:height"
       content="630"
     />
     <meta property="og:image:alt" content="Dynodoc — version control for documents" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:image" content={SITE_IMAGE} />
-    <link
-      rel="alternate"
-      type="text/plain"
-      href={`${CANONICAL_ORIGIN}/llms.txt`}
-      title="llms.txt"
-    />
+    <meta name="twitter:image" content={seo.image} />
+    <link rel="alternate" type="text/plain" href={`${seo.origin}/llms.txt`} title="llms.txt" />
     {#if env.PUBLIC_GOOGLE_SITE_VERIFICATION}<meta
         name="google-site-verification"
         content={env.PUBLIC_GOOGLE_SITE_VERIFICATION}

@@ -6,6 +6,10 @@
   import { rememberNext, safeNext, takeRememberedNext } from '$lib/auth-next';
   import { ArrowRight, ArrowLeft, Mail, CheckCircle2 } from '@lucide/svelte';
   import ThemeToggle from '$lib/components/ThemeToggle.svelte';
+  import OrgNotice from '$lib/components/product/OrgNotice.svelte';
+  // Brand, links and which sign-in methods to offer come from the server configuration.
+  const site = $derived($page.data.site);
+  const hosted = $derived(site.mode === 'hosted');
   // A protected page sent the visitor here; return there once they have signed in.
   const next = $derived(safeNext($page.url.searchParams.get('next')));
   let email = $state(''),
@@ -13,6 +17,7 @@
     message = $state(''),
     error = $state(''),
     busy = $state(false),
+    loaded = $state(false),
     sent = $state(false),
     devToken = $state('');
   let options = $state({
@@ -25,6 +30,7 @@
     if (next) rememberNext(next);
     const res = await fetch('/auth/options');
     if (res.ok) options = await res.json();
+    loaded = true;
   });
   function destination() {
     if ($page.url.searchParams.get('next') === 'admin' || options.destination === '/admin')
@@ -74,13 +80,16 @@
   }
 </script>
 
-<svelte:head><title>Sign in · Dynodoc</title><meta name="robots" content="noindex" /></svelte:head>
+<svelte:head
+  ><title>Sign in · {site.brand}</title><meta name="robots" content="noindex" /></svelte:head
+>
 <main class="auth-page">
-  <a href="https://dynodoc.online" class="back"><ArrowLeft size={16} /> Back to Dynodoc</a>
+  {#if hosted}<a href={site.homeUrl} class="back"><ArrowLeft size={16} /> Back to {site.brand}</a
+    >{/if}
   <div class="theme-corner"><ThemeToggle /></div>
   <section class="card">
-    <a class="brand" href="https://dynodoc.online"
-      ><img src="/brand/mark.svg?v=2" width="52" height="52" alt="Dynodoc" /></a
+    <a class="brand" href={site.homeUrl}
+      ><img src="/brand/mark.svg?v=2" width="52" height="52" alt={site.brand} /></a
     >
     <p class="eyebrow">YOUR DOCUMENTS, WITH A HISTORY</p>
     <h1>Welcome to your workspace.</h1>
@@ -113,49 +122,62 @@
       >
     {:else}
       {#if next}<p class="setup">Sign in to open your workspace.</p>{/if}
-      <a
-        class:disabled={!options.google}
-        class="google"
-        href={options.google
-          ? `/auth/google${next ? `?next=${encodeURIComponent(next)}` : ''}`
-          : undefined}
-        aria-disabled={!options.google}><span class="g">G</span> Continue with Google</a
-      >
-      {#if !options.google}<p class="setup">Google sign-in is awaiting administrator setup.</p>{/if}
-      <div class="divider"><span></span>or use your email<span></span></div>
-      <form onsubmit={requestLink}>
-        <label
-          >Your name<input
-            autocomplete="name"
-            bind:value={name}
-            placeholder="How should we call you?"
-            maxlength="100"
-          /></label
+      {#if hosted || options.google}
+        <a
+          class:disabled={!options.google}
+          class="google"
+          href={options.google
+            ? `/auth/google${next ? `?next=${encodeURIComponent(next)}` : ''}`
+            : undefined}
+          aria-disabled={!options.google}><span class="g">G</span> Continue with Google</a
         >
-        <label
-          >Work email<input
-            type="email"
-            autocomplete="email"
-            bind:value={email}
-            placeholder="you@company.com"
-            required
-          /></label
-        >
-        <button class="primary" disabled={busy || (!options.email && !options.development)}
-          >{busy ? 'Sending your link…' : 'Email me a sign-in link'}<ArrowRight size={18} /></button
-        >
-      </form>
-      {#if !options.email && !options.development}<p class="setup">
-          Email sign-in is awaiting administrator setup.
+        {#if !options.google}<p class="setup">
+            Google sign-in is awaiting administrator setup.
+          </p>{/if}
+      {/if}
+      {#if site.emailSignIn}
+        {#if hosted || options.google}<div class="divider">
+            <span></span>or use your email<span></span>
+          </div>{/if}
+        <form onsubmit={requestLink}>
+          <label
+            >Your name<input
+              autocomplete="name"
+              bind:value={name}
+              placeholder="How should we call you?"
+              maxlength="100"
+            /></label
+          >
+          <label
+            >Work email<input
+              type="email"
+              autocomplete="email"
+              bind:value={email}
+              placeholder="you@company.com"
+              required
+            /></label
+          >
+          <button class="primary" disabled={busy || (!options.email && !options.development)}
+            >{busy ? 'Sending your link…' : 'Email me a sign-in link'}<ArrowRight
+              size={18}
+            /></button
+          >
+        </form>
+        {#if !options.email && !options.development}<p class="setup">
+            Email sign-in is awaiting administrator setup.
+          </p>{/if}
+      {/if}
+      {#if !hosted && loaded && !options.google && !site.emailSignIn}<p class="setup">
+          No sign-in method is turned on. Ask your administrator.
         </p>{/if}
       <p class="fine">No password to remember. You choose who can collaborate on your documents.</p>
     {/if}
     {#if error}<p role="alert" class="error">{error}</p>{/if}
   </section>
-  <p class="footer">
-    Made for the people behind every revision.<br /><a href="/privacy">Privacy policy</a> ·
-    <a href="/terms">Terms &amp; conditions</a>
-  </p>
+  {#if hosted}<p class="footer">
+      Made for the people behind every revision.<br /><a href="/privacy">Privacy policy</a> ·
+      <a href="/terms">Terms &amp; conditions</a>
+    </p>{:else}<OrgNotice />{/if}
 </main>
 
 <style>

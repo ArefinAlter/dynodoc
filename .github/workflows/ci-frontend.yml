@@ -56,6 +56,10 @@ jobs:
         run: pnpm format:check
       - name: Build
         run: pnpm build
+      # Every hosted hostname, operator fact and third-party host left in the build must be in
+      # scripts/hosted-strings-known.json (the list can only shrink; docs/SELF-HOSTED-EDITION.md 13.2).
+      - name: Hosted-string audit of the build
+        run: node scripts/audit-hosted-strings.mjs --check
       - name: Unit tests (vitest)
         run: pnpm test:unit
       - name: Install Playwright browsers
@@ -96,6 +100,9 @@ jobs:
       PLAYWRIGHT_BASE_URL: http://127.0.0.1:4173
       # The agent routes exist only when the gateway is on; agent-proposals.spec.ts drives them.
       AGENT_GATEWAY: 'on'
+      # Self-hosted mode on the same build and API (started below); selfhosted*.spec.ts run against these.
+      SELFHOSTED_BASE_URL: http://127.0.0.1:4174
+      SELFHOSTED_NOEMAIL_BASE_URL: http://127.0.0.1:4175
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -134,6 +141,26 @@ jobs:
             sleep 1
           done
           exit 1
+      - name: Start the self-hosted web servers (DYNODOC_MODE=selfhosted, settings in e2e/selfhosted.env)
+        run: |
+          umask 077
+          printf '%s' "$SESSION_SECRET" > /tmp/dynodoc-session-secret
+          printf '%s' "$WEB_SERVICE_KEY" > /tmp/dynodoc-web-service-key
+          # The first reads its secrets from files, as an installation does; the second takes
+          # them as variables and has email sign-in off.
+          env -u SESSION_SECRET -u WEB_SERVICE_KEY \
+            SESSION_SECRET_FILE=/tmp/dynodoc-session-secret WEB_SERVICE_KEY_FILE=/tmp/dynodoc-web-service-key \
+            ORIGIN=http://127.0.0.1:4174 PORT=4174 \
+            node --env-file=e2e/selfhosted.env build > /tmp/dynodoc-self.log 2>&1 &
+          echo $! > /tmp/dynodoc-self.pid
+          AUTH_EMAIL_LINK=off ORIGIN=http://127.0.0.1:4175 PORT=4175 \
+            node --env-file=e2e/selfhosted.env build > /tmp/dynodoc-noemail.log 2>&1 &
+          echo $! > /tmp/dynodoc-noemail.pid
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:4174/healthz >/dev/null && curl -fsS http://127.0.0.1:4175/healthz >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          exit 1
       - name: Install Nginx for production proxy regression
         run: |
           sudo apt-get update
@@ -151,11 +178,13 @@ jobs:
             frontend/researcher/test-results
             /tmp/dynodoc-api.log
             /tmp/dynodoc-web.log
+            /tmp/dynodoc-self.log
+            /tmp/dynodoc-noemail.log
           retention-days: 7
       - name: Stop test processes
         if: always()
         run: |
-          for file in /tmp/dynodoc-api.pid /tmp/dynodoc-web.pid; do
+          for file in /tmp/dynodoc-api.pid /tmp/dynodoc-web.pid /tmp/dynodoc-self.pid /tmp/dynodoc-noemail.pid; do
             if [ -f "$file" ]; then kill "$(cat "$file")" 2>/dev/null || true; fi
           done
 

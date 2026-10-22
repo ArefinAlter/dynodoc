@@ -405,8 +405,10 @@ with their source; proposed variables are marked **(proposed)** with the task th
 add them. Secrets should come from files or a secret store, never from images or Helm
 values. The API implements the `*_FILE` convention (read the value from the named file)
 for every secret it reads: `DATABASE_URL`, `PASETO_LOCAL_KEY` and `WEB_SERVICE_KEY`
-(P0-2, API half, 20 October 2026; see "Secret files" below). The web process still reads
-plain variables only.
+(P0-2, API half, 20 October 2026; see "Secret files" below). The web process does the same
+for its five secrets, with the same rules, and validates its whole configuration when it starts
+(P0-1 and P0-2, web half, 22 October 2026; see 7.2). Rows marked **built** below exist in the
+code; everything marked **(proposed)** does not.
 
 ### 7.1 API process (`engine-api`)
 
@@ -480,24 +482,95 @@ request body (`lib.rs`); refresh lifetime of 30 days and link lifetime of 15 min
 
 ### 7.2 Web process (SvelteKit, adapter-node)
 
+The web process reads its whole configuration once, when it starts
+(`frontend/researcher/src/lib/server/config/`), and stops before it listens if anything is
+wrong, with one message that lists every problem and never a secret value (the API's format
+in 7.1). A development server (`vite dev`) reports the same problems as warnings so the public
+pages can be worked on without secrets; `vite preview` and `node build` stop. Unknown
+`DYNODOC_*` names that resemble a known one (`DYNODOC_TELEMTRY`) are reported as warnings.
+
 | Variable | Req. | Default | Meaning and notes |
 |---|---|---|---|
-| `ORIGIN` | yes | none | Exact public origin. Mismatch makes every POST fail with `Invalid origin`. |
-| `SESSION_SECRET` | yes | none | At least 32 characters; hashed (SHA-256) into the AES-256-GCM key for the session cookie and provider-state cookies. Checked on first use, not at start. Same on all replicas. |
-| `WEB_SERVICE_KEY` | yes | none | Service credential for `/auth/magic-link`, `/auth/exchange`, `/telemetry`. |
-| `ENGINE_API_URL` | no | `http://127.0.0.1:8080` | Internal API address. |
-| `CONVERTER_URL`, `CONVERTER_KEY` | pair | unset | Legacy `.doc` import. Missing: the route answers 503 with an instruction to save as DOCX. |
-| `RESEND_API_KEY`, `EMAIL_FROM` | pair | unset | Both set means `email: true` in `/auth/options`. |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | pair | unset | Both set means Google sign-in and Forms import are offered. |
+| `DYNODOC_MODE` | no | `hosted` | **Built.** `hosted` is the hosted service exactly as it runs today. `selfhosted` removes the hosted-only parts, as listed under "Self-hosted mode" below. Any other value stops startup (`self-hosted` with a hyphen is not accepted). |
+| `ORIGIN` | yes (selfhosted) | none | Exact public origin: scheme, host, optional port, no path or trailing slash. Mismatch makes every POST fail with `Invalid origin`. In `selfhosted` mode a missing or malformed value stops startup and a plain `http://` origin other than loopback is warned about. In `hosted` mode a malformed value is a warning. |
+| `DYNODOC_ALT_ORIGINS` | no | empty | **Built**, `selfhosted` only. Further origins the same installation answers to, comma-separated, at most 8, each checked like `ORIGIN`. They join `ORIGIN` in the CSP `connect-src` and in the origins allowed to send page metrics. |
+| `SESSION_SECRET` or `SESSION_SECRET_FILE` | yes (selfhosted) | none | At least 32 characters and not trivial: a value that is short, blank, made of fewer than 8 distinct characters, repeats a pattern of up to 8 characters, or contains a documented placeholder (`change-me`, `replace-with`, `placeholder`, ...) stops startup in both modes. This is a sanity check, not a proof of entropy: generate it with `openssl rand -hex 32`. Hashed (SHA-256) into the AES-256-GCM key for the session cookie and provider-state cookies. **Checked when the server starts** (it was checked on first use before 22 October 2026). Absent: stops a `selfhosted` server; in `hosted` mode a warning, because the public homepage host on Vercel runs with no secret at all ([VERCEL-DEPLOYMENT.md](VERCEL-DEPLOYMENT.md)) and must keep starting. Same on all replicas. |
+| `WEB_SERVICE_KEY` or `WEB_SERVICE_KEY_FILE` | yes (selfhosted) | none | Service credential for `/auth/magic-link`, `/auth/exchange`, `/telemetry`; the API must hold the same value. Checked like `SESSION_SECRET`. Missing in `hosted` mode is a warning (as before, the pages start and sign-in fails at the API); present but weak stops startup in both modes. Equal to `SESSION_SECRET`: an error in `selfhosted` mode, a warning in `hosted` mode. |
+| `ENGINE_API_URL` | no | `http://127.0.0.1:8080` | Internal API address (the web process's API base URL). Must be an `http://` or `https://` URL without user name, password, query or fragment; a trailing slash stops startup in `selfhosted` mode and is a warning in `hosted` mode. |
+| `CONVERTER_URL`, `CONVERTER_KEY` or `CONVERTER_KEY_FILE` | pair | unset | Legacy `.doc` import. Missing: the route answers 503 with an instruction to save as DOCX. One of the two set: a warning. |
+| `RESEND_API_KEY` or `RESEND_API_KEY_FILE`, `EMAIL_FROM` | pair | unset | Both set means `email: true` in `/auth/options` (unless `AUTH_EMAIL_LINK=off`). Resend is the only mail transport today (SMTP is P0-3). |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` or `GOOGLE_CLIENT_SECRET_FILE` | pair | unset | Both set means Google sign-in and Forms import are offered. |
+| `AUTH_EMAIL_LINK` | no | `on` | **Built.** `off` hides email sign-in on the sign-in page, answers `email: false` and `development: false` in `/auth/options`, and makes `POST /auth/email` answer 403 before any mail or API call. A link that was already issued can still be confirmed. |
+| `DYNODOC_TELEMETRY` | no | `on` in `hosted`, `off` in `selfhosted` | **Built.** `on` or `off`. Off: the browser code makes no request, loads nothing, and `/telemetry` answers 404 to every method. On in `selfhosted` mode: pages report to `/telemetry` of the same installation, accepted only from `ORIGIN` and `DYNODOC_ALT_ORIGINS`, stored in the installation's own `web_metric` table. |
+| `DYNODOC_BRAND_NAME` | no | `Dynodoc` | **Built**, `selfhosted` only. Product name in the sign-in page, workspace header and footer, shared-link header and administration page (up to 60 characters, one line). The logo images and the installable-app name are not configurable yet. |
+| `DYNODOC_ORG_NAME` | no | empty | **Built**, `selfhosted` only. Organisation name for the notice (up to 120 characters, one line). |
+| `DYNODOC_ORG_NOTICE` or `DYNODOC_NOTICE_FILE` | no | empty | **Built**, `selfhosted` only. Plain text of up to 2,000 characters and 40 lines, shown on the sign-in page and in the workspace footer where the hosted service shows its privacy and terms links. Line breaks are kept; markup is shown as typed. Control and direction-override characters are refused. The file form reads at most 16 KiB of UTF-8 with no permission check; both set is an error. It stands in for the privacy policy, terms and contact pages, which a self-hosted installation does not serve. |
+| `DYNODOC_SUPPORT_URL` | no | empty | **Built**, `selfhosted` only. An `https:`, `http:` or `mailto:` link of up to 300 characters, without credentials, shown as "Contact or support" in the notice. |
+| `DYNODOC_ALLOW_OPEN_SECRET_FILES` | no | unset | `true` accepts a secret file that group or others can read (Unix). Same meaning as for the API. |
 | `CONNECTOR_ORIGINS` | no | empty | Comma-separated extra HTTPS origins appended to pane `connect-src`. Malformed entries discarded. |
-| `DEV_AUTH` | no | `false` | Never `true` outside a test stack: with no mail key it returns sign-in tokens in the HTTP response. |
-| `ADMIN_SITE` | no | `false` | `true` turns this process into the admin site (root redirects to `/admin`, sign-in lands there). |
-| `PUBLIC_WORKSPACE_URL` | no | unset | Redirects workspace paths from the public marketing host. Not used in self-hosted. |
+| `DEV_AUTH` | no | `false` | Never `true` outside a test stack: with no mail key it returns sign-in tokens in the HTTP response. Only the exact text `true` turns it on; `selfhosted` mode warns when it is. |
+| `ADMIN_SITE` | no | `false` | `true` turns this process into the admin site (root redirects to `/admin`, sign-in lands there). Only the exact text `true` turns it on. |
+| `PUBLIC_WORKSPACE_URL` | no | unset | Redirects workspace paths from the public marketing host to another host. Off unless set, in both modes; not for a single-host installation (`selfhosted` mode warns when it is set). |
 | `OPS_STATUS_PATH` | no | unset | File with the host status JSON for `/admin`. |
 | `BODY_SIZE_LIMIT` | image | `16M` | adapter-node request body cap. |
 | `HOST` / `PORT` / `NODE_ENV` | image | `0.0.0.0` / `3000` / `production` | |
 | `NODE_EXTRA_CA_CERTS` | proposed use | unset | PEM bundle for outbound TLS to an IdP or SMTP relay behind a private CA. |
 
+**Secret files (web).** `SESSION_SECRET`, `WEB_SERVICE_KEY`, `RESEND_API_KEY`,
+`GOOGLE_CLIENT_SECRET` and `CONVERTER_KEY` each take `NAME` or `NAME_FILE`, with the API's
+rules (7.1): both non-empty is an error; an empty value of either counts as unset; the file
+is a regular file of at most 16 KiB, UTF-8, with trailing line breaks removed; on Unix a file
+group or others can access is refused unless `DYNODOC_ALLOW_OPEN_SECRET_FILES=true`; Windows
+has no mode check. A plain `NAME` is used exactly as before. All problems are reported
+together, for example:
+
+```text
+invalid configuration (3 problems):
+  - SESSION_SECRET looks like a placeholder; generate a random value (openssl rand -hex 32)
+  - WEB_SERVICE_KEY is not set (at least 32 characters; or set WEB_SERVICE_KEY_FILE)
+  - ORIGIN is not set (the public origin people use, such as https://dynodoc.example.org)
+```
+
+**Self-hosted mode (`DYNODOC_MODE=selfhosted`).** What changes, all of it covered by tests:
+
+- The marketing, legal and help pages of the public site (`/privacy`, `/terms`, `/features`,
+  `/support`, ... every page of the `(site)` group), `/sitemap.xml`, `/llms.txt`,
+  `/llms-full.txt` and `/source` answer 404, with no redirect. `/` sends a visitor to
+  `/login`, or to `/projects` when signed in.
+- Nothing is offered to search engines: every response carries
+  `x-robots-tag: noindex, nofollow`, every page carries `<meta name="robots" content="noindex,nofollow">`
+  and no canonical or social tags, `/robots.txt` is `User-agent: *` / `Disallow: /`, there is
+  no sitemap.
+- The CSP `connect-src` is `'self'` plus `ORIGIN` and `DYNODOC_ALT_ORIGINS` (hosted:
+  `'self' https://app.dynodoc.online`). The Office panes keep the Microsoft sources they need
+  (the Office.js CDN is a known exception until P0-7).
+- No page metrics (see `DYNODOC_TELEMETRY`), no `app.dynodoc.online` root redirect, no
+  shared theme-cookie domain, no workspace-host redirect unless `PUBLIC_WORKSPACE_URL` is set.
+- The sign-in page shows no link to the hosted site, no privacy or terms links, and no Google
+  button unless Google is configured; the organisation notice stands in their place.
+- The browser is told only what it may know (`site` in the root layout data): mode, product
+  name, notice, whether metrics are on and where, and whether email sign-in is on.
+
+**What still names the hosted service in the build.** The marketing pages are compiled into
+the same build and are only unreachable in `selfhosted` mode, and a few static files carry
+hosted names (the add-in packages built for `app.dynodoc.online`, `security.txt`, the social
+image). `node frontend/researcher/scripts/audit-hosted-strings.mjs` lists every occurrence in
+a build and says whether a self-hosted installation can reach it; `--check` fails on anything
+not in `scripts/hosted-strings-known.json`, `--strict` applies the acceptance criterion as
+written ("no file in the shipped images contains `dynodoc.online` outside third-party
+notices") and fails until that list is empty, which needs an image build that leaves the
+`(site)` routes out (P0-6) and per-installation add-in packages (P0-7).
+
+**Environment-file generator and check.** `node frontend/researcher/scripts/dynodoc-env.mjs
+generate-env --dir <new directory> --origin https://dynodoc.example.org` writes a commented `.env`
+that names secret files, and a `secrets/` directory with one random 32-byte value per secret
+(`session_secret`, `web_service_key`, `paseto_local_key`, `postgres_password`, `database_url`
+with a random runtime password, and `converter_key` with `--with-converter`), mode 0600 on
+Unix. It refuses to overwrite anything, writes nothing if any target exists, prints no secret,
+and lists what to back up. `check-config --dir <directory>` validates that directory with the
+same validator the server runs (plus the shape of `PASETO_LOCAL_KEY` and `DATABASE_URL`, which
+only the API reads) without starting anything; exit code 0 (valid), 1 (problems) or 2 (cannot
+run), `--json` for tools. `dynodoctl` is meant to call both.
 ### 7.3 Other components
 
 | Component | Variables | Notes |
@@ -511,11 +584,10 @@ request body (`lib.rs`); refresh lifetime of 30 days and link lifetime of 15 min
 
 | Variable | Task | Purpose |
 |---|---|---|
-| `DYNODOC_MODE=hosted\|self-hosted` | P0-1 | Hides marketing and legal pages, telemetry, SEO; uses organisation notices |
 | `DYNODOC_AIRGAP=true` | P0-1, P0-9 | Refuses to start features that need outbound access; tightens CSP (`img-src`, Office hosts) |
-| `DYNODOC_ORG_NAME`, `DYNODOC_SUPPORT_URL`, `DYNODOC_NOTICE_FILE` | P0-1 | Branding, support link in manifests, privacy/terms text supplied by the customer |
+| Support link in add-in manifests | P0-7 | `DYNODOC_SUPPORT_URL` exists (7.2); the manifest generator does not read it yet |
 | `MAIL_TRANSPORT=smtp\|resend\|none`, `SMTP_URL`, `SMTP_FROM`, `SMTP_CA_FILE`, `SMTP_REQUIRE_TLS` | P0-3 | Mail delivery |
-| `AUTH_EMAIL_LINK=on\|off` | P0-3 | Disable email sign-in where SSO must be the only path |
+| Operator-issued sign-in links | P0-3 | `AUTH_EMAIL_LINK` exists (7.2); the operator-issued link and SMTP do not |
 | `OIDC_PROVIDERS_FILE`, `SAML_PROVIDERS_FILE` | P1-1, P1-8 | Provider definitions ([identity document](SELF-HOSTED-IDENTITY-AND-ACCESS.md)) |
 | `SCIM_ENABLED` | P1-5 | Mount `/scim/v2` |
 | `SESSION_IDLE_TIMEOUT_SECONDS`, `SESSION_ABSOLUTE_TIMEOUT_SECONDS`, `REFRESH_TTL_SECONDS`, `REFRESH_REUSE_INTERVAL_SECONDS` | P1-6, P2-3 | Session policy |
@@ -1143,7 +1215,7 @@ services:
       ORIGIN: ${ORIGIN:?}
       ENGINE_API_URL: http://api:8080
       CONVERTER_URL: http://converter:8090
-      DYNODOC_MODE: self-hosted
+      DYNODOC_MODE: selfhosted
       DEV_AUTH: "false"
       SESSION_SECRET_FILE: /run/secrets/session_secret
       WEB_SERVICE_KEY_FILE: /run/secrets/web_service_key

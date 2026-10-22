@@ -2,7 +2,10 @@
 declare global {
   namespace App {
     // interface Error {}
-    // interface Locals {}
+    interface Locals {
+      /** Set by hooks.server.ts: false when this installation must not be indexed. */
+      indexable?: boolean;
+    }
     // interface PageData {}
     // interface PageState {}
     // interface Platform {}

@@ -14,6 +14,8 @@
     "build:marketplace-assets": "node scripts/build-marketplace-assets.mjs",
     "validate:manifests": "npx --yes office-addin-manifest validate ../../extensions/word/manifest.xml && npx --yes office-addin-manifest validate ../../extensions/excel/manifest.xml && npx --yes office-addin-manifest validate ../../extensions/powerpoint/manifest.xml",
     "check:proxy": "node scripts/check-proxy-headers.mjs",
+    "audit:hosted": "node scripts/audit-hosted-strings.mjs --check",
+    "env": "node scripts/dynodoc-env.mjs",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",

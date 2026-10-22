@@ -18,7 +18,8 @@ export default {
         'style-src': ['self', 'unsafe-inline'],
         'img-src': ['self', 'data:', 'blob:', 'https:'],
         'font-src': ['self', 'data:', 'blob:'],
-        'connect-src': ['self', 'https://app.dynodoc.online'],
+        // Further origins come from the configuration, added in $lib/server/security.ts.
+        'connect-src': ['self'],
         'worker-src': ['self', 'blob:'],
         // Without this the browser refuses to read /site.webmanifest under default-src 'none',
         // so the app could never be installed. Same-origin only.

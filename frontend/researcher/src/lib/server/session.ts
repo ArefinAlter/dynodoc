@@ -1,9 +1,9 @@
-import { env } from '$env/dynamic/private';
 import { EncryptJWT, jwtDecrypt } from 'jose';
 import { createHash } from 'node:crypto';
 import type { Cookies } from '@sveltejs/kit';
+import { getConfig } from './config';
 
-export const engineUrl = () => env.ENGINE_API_URL || 'http://127.0.0.1:8080';
+export const engineUrl = () => getConfig().engineApiUrl;
 const cookieName = 'dynodoc_session';
 export interface Tokens {
   access_token: string;
@@ -13,10 +13,14 @@ export interface Tokens {
 interface StoredSession extends Tokens {
   expires_at: number;
 }
+// The secret is validated at start (see ./config); this is the key derived from it, once.
+let derived: Buffer | undefined;
 function key() {
-  if (!env.SESSION_SECRET || env.SESSION_SECRET.length < 32)
+  if (derived) return derived;
+  const secret = getConfig().secrets.session?.expose();
+  if (!secret || secret.length < 32)
     throw new Error('SESSION_SECRET must contain at least 32 characters');
-  return createHash('sha256').update(env.SESSION_SECRET).digest();
+  return (derived = createHash('sha256').update(secret).digest());
 }
 export async function saveSession(cookies: Cookies, tokens: Tokens, secure: boolean) {
   const value = await new EncryptJWT({
@@ -74,11 +78,12 @@ export async function accessToken(cookies: Cookies, secure: boolean): Promise<st
   }
 }
 export async function enginePost(path: string, body: unknown) {
+  const serviceKey = getConfig().secrets.webServiceKey?.expose();
   const response = await fetch(engineUrl() + path, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      ...(env.WEB_SERVICE_KEY ? { 'x-dynodoc-service-key': env.WEB_SERVICE_KEY } : {})
+      ...(serviceKey ? { 'x-dynodoc-service-key': serviceKey } : {})
     },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(15_000)

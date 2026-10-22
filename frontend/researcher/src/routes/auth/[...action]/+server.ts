@@ -1,4 +1,3 @@
-import { env } from '$env/dynamic/private';
 import { json, redirect } from '@sveltejs/kit';
 import * as oidc from 'openid-client';
 import type { RequestHandler } from './$types';
@@ -11,17 +10,19 @@ import {
   enginePost
 } from '$lib/server/session';
 import { safeNext } from '$lib/auth-next';
+import { getConfig } from '$lib/server/config';
 
 let configuration: Promise<oidc.Configuration> | undefined;
+function googleCredentials() {
+  const { googleClientId, secrets } = getConfig();
+  const secret = secrets.googleClientSecret?.expose();
+  return googleClientId && secret ? { id: googleClientId, secret } : null;
+}
 function google() {
-  if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET)
-    throw new Error('Google sign-in is not configured');
+  const credentials = googleCredentials();
+  if (!credentials) throw new Error('Google sign-in is not configured');
   return (configuration ??= oidc
-    .discovery(
-      new URL('https://accounts.google.com'),
-      env.GOOGLE_CLIENT_ID,
-      env.GOOGLE_CLIENT_SECRET
-    )
+    .discovery(new URL('https://accounts.google.com'), credentials.id, credentials.secret)
     .catch((error) => {
       configuration = undefined;
       throw error;
@@ -29,12 +30,13 @@ function google() {
 }
 export const GET: RequestHandler = async ({ params, url, cookies }) => {
   const secure = url.protocol === 'https:';
+  const config = getConfig();
   if (params.action === 'options')
     return json({
-      google: Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET),
-      email: Boolean(env.RESEND_API_KEY && env.EMAIL_FROM),
-      development: env.DEV_AUTH === 'true',
-      destination: env.ADMIN_SITE === 'true' ? '/admin' : '/projects'
+      google: Boolean(googleCredentials()),
+      email: config.emailSignIn && Boolean(config.secrets.resendApiKey && config.emailFrom),
+      development: config.emailSignIn && config.devAuth,
+      destination: config.adminSite ? '/admin' : '/projects'
     });
   if (params.action === 'session') {
     const token = await accessToken(cookies, secure);
@@ -48,7 +50,7 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
     return json({ authenticated: true, identity_id: identity.identity_id });
   }
   if (params.action === 'google') {
-    if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET)
+    if (!googleCredentials())
       return json({ error: 'Google sign-in is not configured yet.' }, { status: 503 });
     const state = oidc.randomState(),
       verifier = oidc.randomPKCECodeVerifier();
@@ -121,7 +123,7 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
     } catch {
       return json({ error: 'Google sign-in failed. Please start again.' }, { status: 401 });
     }
-    redirect(303, env.ADMIN_SITE === 'true' ? '/admin' : next || '/projects');
+    redirect(303, config.adminSite ? '/admin' : next || '/projects');
   }
   if (params.action === 'verify') {
     // Confirmation is POSTed by the page so email link scanners cannot consume it.
@@ -169,12 +171,17 @@ export const POST: RequestHandler = async ({ params, url, request, cookies }) =>
     }
   }
   if (params.action === 'email') {
+    const config = getConfig();
+    // A link that was already issued can still be confirmed above; asking for a new one stops.
+    if (!config.emailSignIn)
+      return json({ error: 'Email sign-in is turned off for this installation.' }, { status: 403 });
+    const resendKey = config.secrets.resendApiKey?.expose();
     const email = String(body.email || '')
       .trim()
       .toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254)
       return json({ error: 'Enter a valid email address.' }, { status: 400 });
-    if (!env.RESEND_API_KEY && env.DEV_AUTH !== 'true')
+    if (!resendKey && !config.devAuth)
       return json({ error: 'Email sign-in is not configured yet.' }, { status: 503 });
     try {
       const result = await enginePost('/auth/magic-link', {
@@ -182,16 +189,15 @@ export const POST: RequestHandler = async ({ params, url, request, cookies }) =>
         display_name: body.display_name
       });
       const link = `${url.origin}/auth/verify?token=${encodeURIComponent(result.magic_link_token)}`;
-      if (env.DEV_AUTH === 'true' && !env.RESEND_API_KEY)
-        return json({ development_token: result.magic_link_token });
+      if (config.devAuth && !resendKey) return json({ development_token: result.magic_link_token });
       const delivery = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${env.RESEND_API_KEY}`,
+          Authorization: `Bearer ${resendKey}`,
           'content-type': 'application/json'
         },
         body: JSON.stringify({
-          from: env.EMAIL_FROM,
+          from: config.emailFrom,
           to: [email],
           subject: 'Sign in to Dynodoc',
           text: `Sign in to your Dynodoc workspace:\n\n${link}\n\nThis link expires in 15 minutes. If you did not request it, you can ignore this message.`

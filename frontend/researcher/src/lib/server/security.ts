@@ -19,7 +19,14 @@ const officeAncestors = [
 ];
 const fallback = "default-src 'none'; base-uri 'none'; object-src 'none'; form-action 'self'";
 
-export function secureResponse(response: Response, url: URL, connectorOrigins = ''): Response {
+// `connectSrc` is the configured extra `connect-src` origins for every page (from the
+// configuration, never a fixed hostname); `connectorOrigins` applies to the Office panes only.
+export function secureResponse(
+  response: Response,
+  url: URL,
+  connectorOrigins = '',
+  connectSrc: readonly string[] = []
+): Response {
   // Redirect headers can be immutable. Preserve the body/stream without buffering.
   const secured = new Response(response.body, response);
   const headers = secured.headers;
@@ -31,6 +38,8 @@ export function secureResponse(response: Response, url: URL, connectorOrigins = 
       .filter(([key]) => key)
       .map(([key, ...values]) => [key, values])
   );
+  if (connectSrc.length && policy.has('connect-src'))
+    policy.get('connect-src')!.push(...connectSrc);
   if (pane && policy.has('script-src')) {
     policy.get('script-src')!.push(...officeSources);
     // Operators may explicitly allow another HTTPS Dynodoc installation. Never

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { page } from '$app/stores';
   import ThemeToggle from '$lib/components/ThemeToggle.svelte';
   import AdminRecords from '$lib/components/product/AdminRecords.svelte';
   import AdminNav, { type NavGroup } from '$lib/components/admin/AdminNav.svelte';
@@ -150,7 +151,7 @@
 </script>
 
 <svelte:head
-  ><title>Administration · Dynodoc</title><meta
+  ><title>Administration · {$page.data.site.brand}</title><meta
     name="robots"
     content="noindex,nofollow"
   /></svelte:head
@@ -158,18 +159,24 @@
 <div class="admin">
   <a class="skip" href="#admin-main">Skip to content</a>
   <header class="topbar">
-    <a class="brand" href="https://dynodoc.online"
-      ><img class="logo-day" src="/brand/logo.svg?v=2" width="128" height="28" alt="Dynodoc" /><img
+    <a class="brand" href={$page.data.site.homeUrl}
+      ><img
+        class="logo-day"
+        src="/brand/logo.svg?v=2"
+        width="128"
+        height="28"
+        alt={$page.data.site.brand}
+      /><img
         class="logo-night"
         src="/brand/logo-dark.svg?v=2"
         width="128"
         height="28"
-        alt="Dynodoc"
+        alt={$page.data.site.brand}
       /></a
     ><span class="divider" aria-hidden="true">/</span><span class="app-name">Administration</span
     ><span class="pill" class:pill-accent={data.environment === 'Local'}>{data.environment}</span>
     <div class="top-actions">
-      <a class="btn btn-sm btn-ghost" href="https://app.dynodoc.online/projects"
+      <a class="btn btn-sm btn-ghost" href="{$page.data.site.workspaceUrl}/projects"
         >Workspace <ExternalLink size={14} aria-hidden="true" /></a
       ><ThemeToggle /><button type="button" class="btn btn-sm" onclick={signOut}
         ><LogOut size={14} aria-hidden="true" /> Sign out</button

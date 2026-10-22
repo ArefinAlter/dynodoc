@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { page } from '$app/stores';
   import { workspaceRequest } from '$lib/workspace/api';
   import { downloadJson } from '$lib/workspace/projects';
   let {
@@ -126,8 +127,9 @@
       <a href="/connectors">Install editor add-ins</a> ·
       <a href="/connectors/word">Word task pane</a> ·
       <a href="/connectors/excel">Excel task pane</a> ·
-      <a href="/connectors/powerpoint">PowerPoint task pane</a> ·
-      <a href="/add-ins">Add-in installation overview</a>
+      <a href="/connectors/powerpoint">PowerPoint task pane</a
+      >{#if $page.data.site.mode === 'hosted'}
+        · <a href="/add-ins">Add-in installation overview</a>{/if}
     </p>
   {/if}
   <h3>Your connections</h3>

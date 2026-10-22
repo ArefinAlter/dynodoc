@@ -1,0 +1,2 @@
+This workspace is run by the records office of Acme Research.
+Documents here are kept for seven years. Questions go to the helpdesk.

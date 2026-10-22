@@ -1,5 +1,10 @@
 import type { RequestHandler } from './$types';
-import { CANONICAL_ORIGIN, DISALLOWED_PATHS, isIndexableHost, PUBLIC_SEO_FILES } from '$lib/seo';
+import {
+  CANONICAL_ORIGIN,
+  DISALLOWED_PATHS,
+  isIndexableHost,
+  PUBLIC_SEO_FILES
+} from '$lib/seo/site';
 
 // Crawlers that retrieve pages to cite them in generated answers, and those
 // that collect training data. Both are allowed: being found and quoted
@@ -54,13 +59,17 @@ const PUBLIC_ROBOTS = [
   ''
 ].join('\n');
 
-// Every other host (app., admin., preview deployments) is private.
+// Every other host (app., admin., preview deployments) is private, and so is every
+// self-hosted installation.
 const PRIVATE_ROBOTS = 'User-agent: *\nDisallow: /\n';
 
-export const GET: RequestHandler = ({ url }) =>
-  new Response(isIndexableHost(url.hostname) ? PUBLIC_ROBOTS : PRIVATE_ROBOTS, {
-    headers: {
-      'content-type': 'text/plain; charset=utf-8',
-      'cache-control': 'public, max-age=3600'
+export const GET: RequestHandler = ({ url, locals }) =>
+  new Response(
+    locals?.indexable !== false && isIndexableHost(url.hostname) ? PUBLIC_ROBOTS : PRIVATE_ROBOTS,
+    {
+      headers: {
+        'content-type': 'text/plain; charset=utf-8',
+        'cache-control': 'public, max-age=3600'
+      }
     }
-  });
+  );

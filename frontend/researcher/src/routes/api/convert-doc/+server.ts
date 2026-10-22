@@ -1,5 +1,5 @@
 import { MAX_FILE_BYTES } from '$lib/workspace/file-limits';
-import { env } from '$env/dynamic/private';
+import { getConfig } from '$lib/server/config';
 import { json } from '@sveltejs/kit';
 import { accessToken } from '$lib/server/session';
 import type { RequestHandler } from './$types';
@@ -8,7 +8,9 @@ export const POST: RequestHandler = async ({ request, url, cookies }) => {
     return json({ error: 'Invalid origin' }, { status: 403 });
   if (!(await accessToken(cookies, url.protocol === 'https:')))
     return json({ error: 'Please sign in' }, { status: 401 });
-  if (!env.CONVERTER_URL || !env.CONVERTER_KEY)
+  const { converterUrl, secrets } = getConfig();
+  const converterKey = secrets.converterKey?.expose();
+  if (!converterUrl || !converterKey)
     return json(
       {
         error:
@@ -28,9 +30,9 @@ export const POST: RequestHandler = async ({ request, url, cookies }) => {
       !file.name.toLowerCase().endsWith('.doc')
     )
       return json({ error: 'Choose a .doc file no larger than 3 MB.' }, { status: 400 });
-    const result = await fetch(env.CONVERTER_URL + '/convert', {
+    const result = await fetch(converterUrl + '/convert', {
       method: 'POST',
-      headers: { 'content-type': 'application/msword', 'x-converter-key': env.CONVERTER_KEY },
+      headers: { 'content-type': 'application/msword', 'x-converter-key': converterKey },
       body: await file.arrayBuffer(),
       signal: AbortSignal.timeout(50000)
     });
