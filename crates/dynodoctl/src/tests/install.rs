@@ -519,3 +519,6 @@ fn a_given_mail_password_is_stored_privately_and_never_echoed() {
         "the password is never on a command line"
     );
 }
+
+#[path = "install_review.rs"]
+mod review;
