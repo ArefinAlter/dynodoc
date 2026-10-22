@@ -14,7 +14,7 @@
 // usage: node scripts/dynodoc-env.mjs generate-env --dir ./dynodoc-config --origin https://dynodoc.example.org
 //          [--brand-name "Acme Docs"] [--org-name "Acme Ltd."] [--support-url mailto:docs@acme.example]
 //          [--container-secrets-dir /run/secrets] [--db-host postgres] [--db-name dynodoc]
-//          [--db-user dynodoc_runtime] [--with-converter]
+//          [--db-port 5432] [--db-user dynodoc_runtime] [--with-converter]
 //        node scripts/dynodoc-env.mjs check-config --dir ./dynodoc-config [--use-process-env] [--json]
 import { randomBytes } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -96,12 +96,14 @@ export function generateEnv(options) {
   const secretsDir = join(dir, 'secrets');
   const mountDir = options.containerSecretsDir ?? secretsDir;
   const dbHost = options.dbHost ?? 'postgres';
+  const dbPort = String(options.dbPort ?? '5432');
   const dbName = options.dbName ?? 'dynodoc';
   const dbUser = options.dbUser ?? 'dynodoc_runtime';
   for (const [label, value] of [
     ['--db-host', dbHost],
     ['--db-name', dbName],
-    ['--db-user', dbUser]
+    ['--db-user', dbUser],
+    ['--db-port', dbPort]
   ])
     if (!/^[A-Za-z0-9_.-]+$/.test(value))
       throw new Error(`${label} may contain only letters, digits, . _ and -`);
@@ -126,7 +128,7 @@ export function generateEnv(options) {
     paseto_local_key: hex(32),
     converter_key: hex(32),
     postgres_password: hex(24),
-    database_url: `postgres://${dbUser}:${runtimePassword}@${dbHost}:5432/${dbName}`
+    database_url: `postgres://${dbUser}:${runtimePassword}@${dbHost}:${dbPort}/${dbName}`
   };
   ensureDir(dir);
   ensureDir(secretsDir);
@@ -302,6 +304,7 @@ function main(argv) {
         containerSecretsDir: flag(args, '--container-secrets-dir'),
         dbHost: flag(args, '--db-host'),
         dbName: flag(args, '--db-name'),
+        dbPort: flag(args, '--db-port'),
         dbUser: flag(args, '--db-user'),
         withConverter: args.includes('--with-converter')
       });

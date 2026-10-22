@@ -73,7 +73,8 @@ export default defineConfig({
           env: {
             ...previewSecrets,
             ...selfhostedSettings,
-            ORIGIN: `http://${process.env.CI ? '127.0.0.1' : 'localhost'}:${port}`,
+            // The address the specs use (selfhostedUrl above); vite preview ignores ORIGIN for routing.
+            ORIGIN: `http://localhost:${port}`,
             ...(extra as Record<string, string>)
           }
         }))
