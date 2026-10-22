@@ -15,10 +15,23 @@ pub const MAIN: &str = "main";
 
 /// Recognises a person's click and makes `target="_blank"` reach the new-window rule (see
 /// the file). `__GESTURE_SECRET__` is replaced by a secret made at start-up.
+///
+/// DESKTOP ONLY. On Android the web view has no new-window event: `window.open` loads in the one
+/// web view and reaches the navigation rule like any other link, so a marker address would arrive
+/// there as a navigation and be dropped (every link out would do nothing), and the secret would sit
+/// in the page's world for no gain. Android gets `blank_targets.js` instead: no secret, no marker.
+#[cfg(desktop)]
 const LINK_TARGETS: &str = include_str!("link_targets.js");
+#[cfg(desktop)]
 const SECRET_PLACEHOLDER: &str = "__GESTURE_SECRET__";
 
+/// What Android injects: only makes a tap on target="_blank" load in the one window (the web view
+/// drops it otherwise). Nothing secret in it.
+#[cfg(mobile)]
+const BLANK_TARGETS: &str = include_str!("blank_targets.js");
+
 /// The injected script for this run of the app.
+#[cfg(desktop)]
 pub fn link_script(secret: &str) -> String {
     LINK_TARGETS.replace(SECRET_PLACEHOLDER, secret)
 }
@@ -56,7 +69,7 @@ pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     }
     let state = app.state::<AppState>();
     let start = match state.server() {
-        Some(server) => WebviewUrl::External(server.root()),
+        Some(server) => WebviewUrl::External(server.entry()),
         None => {
             // The shell itself starts at the launcher: the one navigation it may make there.
             state.arm_launcher_grant();
@@ -69,14 +82,15 @@ pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     let mut builder = WebviewWindowBuilder::new(app, MAIN, start)
         .title("Dynodoc")
         .devtools(devtools_enabled())
-        .initialization_script(link_script(&state.click_secret))
         .on_navigation(move |url| {
             let state = navigation_app.state::<AppState>();
             let launcher = nav::launcher_origin();
             // The launcher loads only for a navigation the shell started (one-shot).
             // Only the launcher's own page can use the grant: nothing else on that origin does.
             let launcher_allowed =
-                nav::is_launcher_page(url, &launcher) && state.take_launcher_grant();
+                nav::launcher_load_allowed(url, &launcher, state.server().is_some(), || {
+                    state.take_launcher_grant()
+                });
             let decision = nav::decide(
                 url,
                 state.server().as_ref(),
@@ -128,9 +142,14 @@ pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
             }
         });
 
+    #[cfg(mobile)]
+    {
+        builder = builder.initialization_script(BLANK_TARGETS);
+    }
     #[cfg(desktop)]
     {
         builder = builder
+            .initialization_script(link_script(&state.click_secret))
             .inner_size(1280.0, 820.0)
             .min_inner_size(800.0, 560.0)
             .center()
@@ -331,6 +350,61 @@ mod tests {
             LINK_TARGETS.len() - SECRET_PLACEHOLDER.len() + secret.len()
         );
         assert!(LINK_TARGETS.contains(SECRET_PLACEHOLDER));
+    }
+
+    #[test]
+    fn the_click_script_is_injected_on_desktop_only() {
+        // On Android nothing of ours runs in the page: the marker would come back as a
+        // navigation and be dropped (links out would do nothing) and its secret would sit in
+        // the page's world for no gain. See the comment on LINK_TARGETS.
+        let source = include_str!("window.rs");
+        let production = &source[..source.find("#[cfg(test)]\nmod tests").unwrap()];
+        // Two calls: the secret-carrying script (desktop block) and Android's own (below).
+        assert_eq!(production.matches(".initialization_script(").count(), 2);
+        let call = production
+            .find(".initialization_script(link_script(")
+            .unwrap();
+        let gate = production[..call].rfind("#[cfg(").unwrap();
+        assert!(production[gate..].starts_with("#[cfg(desktop)]"));
+        assert!(
+            !production[gate..call].contains("\n    }\n"),
+            "the call must sit inside the desktop block"
+        );
+        assert!(production.contains("#[cfg(desktop)]\nconst LINK_TARGETS"));
+        // Android injects its own script, in a mobile-only block, and nothing else.
+        assert!(production.contains("#[cfg(mobile)]\nconst BLANK_TARGETS"));
+        assert!(production.contains(
+            "#[cfg(mobile)]\n    {\n        builder = builder.initialization_script(BLANK_TARGETS);\n    }"
+        ));
+    }
+
+    #[test]
+    fn the_android_script_has_no_secret_no_window_open_and_no_page_reachable_state() {
+        let script = include_str!("blank_targets.js");
+        assert!(!script.contains(SECRET_PLACEHOLDER));
+        assert!(!script.contains("secret =") && !script.contains("var secret"));
+        let code: String = script
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        for banned in [
+            "window.open",
+            "open(",
+            "invoke",
+            "__TAURI",
+            "fetch(",
+            "XMLHttpRequest",
+            "postMessage",
+            "location",
+            "eval(",
+            "Function(",
+        ] {
+            assert!(!code.contains(banned), "blank_targets.js uses {banned}");
+        }
+        // It only ever turns _blank/_new into _self for a moment and puts it back.
+        assert!(code.contains("'_self'"));
+        assert!(code.contains("setTimeout"));
     }
 
     #[test]

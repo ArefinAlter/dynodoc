@@ -95,7 +95,7 @@ pub fn set_server(webview: Webview, address: String) -> Result<String, String> {
     config::save(&state.config_dir, &state.data_dir, &origin)
         .map_err(|_| "Your choice could not be saved on this computer.".to_string())?;
     state.set_server(origin.clone());
-    window::navigate_main(app, origin.root());
+    window::navigate_main(app, origin.entry());
     Ok(origin.as_text())
 }
 

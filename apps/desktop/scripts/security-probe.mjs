@@ -702,7 +702,7 @@ try {
   const aConfirm = A.hits.length;
   await click('#confirm');
   const confirmed = await waitForPage((u) => u.startsWith(serverA), 15);
-  check(Boolean(confirmed) && A.hits.slice(aConfirm).includes('/'), 'a real click on "Use this address" opens the confirmed server', confirmed?.url);
+  check(Boolean(confirmed) && A.hits.slice(aConfirm).includes('/workspace'), 'a real click on "Use this address" opens the confirmed server (its workspace page)', confirmed?.url);
   const cfg = readFileSync(configPath);
   check(readFileSync(sealPath, 'utf8').trim() === createHash('sha256').update(cfg).digest('hex'), 'and the config is sealed again');
   await stopApp('phase B');

@@ -58,10 +58,12 @@
   }
 
   $('use-cloud').addEventListener('click', function () {
+    if (!state) return; // the app has not answered get_state yet
     connect(state.cloud, 'cloud-error', $('use-cloud'), 'Opening ...');
   });
 
   $('confirm').addEventListener('click', function () {
+    if (!state) return;
     connect(state.unconfirmed, 'confirm-error', $('confirm'), 'Opening ...');
   });
 
@@ -165,7 +167,15 @@
       say('app-error', message(e));
       return;
     }
-    $('about').textContent = 'Dynodoc desktop ' + state.version + ' (' + state.platform + ')';
+    // A phone has no menu bar and no window: say what it has.
+    var phone = state.platform === 'android' || state.platform === 'ios';
+    $('about').textContent = (phone ? 'Dynodoc ' : 'Dynodoc desktop ') + state.version + ' (' + state.platform + ')';
+    if (phone) {
+      $('lede').textContent =
+        'Dynodoc opens your workspace in this app. Choose the Dynodoc cloud, or the address of a ' +
+        'server your organisation runs. To choose a different server later, clear the data of ' +
+        'this app in your phone settings.';
+    }
     $('help').href = state.support;
     if (state.unconfirmed) {
       $('unconfirmed-address').textContent = state.unconfirmed;
