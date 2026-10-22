@@ -79,6 +79,7 @@ pub fn router() -> Router<AppState> {
         .route("/auth/logout", post(logout))
         .route("/auth/me", get(me))
         .route("/auth/exchange", post(exchange))
+        .merge(super::handover::router())
 }
 
 // --- magic link request ---------------------------------------------------------
@@ -137,8 +138,8 @@ async fn magic_link_request(
 
 // --- token responses (verify + refresh) -----------------------------------------
 
-#[derive(Serialize)]
-struct TokenResponse {
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct TokenResponse {
     access_token: String,
     token_type: &'static str,
     /// Access-token lifetime in seconds.
@@ -147,8 +148,25 @@ struct TokenResponse {
     refresh_token: String,
 }
 
-async fn mint_session(state: &AppState, identity_id: Uuid) -> Result<TokenResponse, AuthError> {
+pub(super) async fn mint_session(
+    state: &AppState,
+    identity_id: Uuid,
+) -> Result<TokenResponse, AuthError> {
     let generation = store::session_generation(&state.pool, identity_id).await?;
+    mint_session_with(state, &state.pool, identity_id, generation)
+        .await
+        .map(|(tokens, _)| tokens)
+}
+
+/// A new login for `identity_id` at `generation`, written through `executor` (a pool, or a
+/// transaction that also does other work, as the app hand-over's redeem does). Returns the
+/// tokens and the id of the login (the refresh-token lineage), which an audit row can name.
+pub(super) async fn mint_session_with(
+    state: &AppState,
+    executor: impl sqlx::PgExecutor<'_>,
+    identity_id: Uuid,
+    generation: i64,
+) -> Result<(TokenResponse, Uuid), AuthError> {
     let session_id = Uuid::new_v4();
     let access_token = token::mint_bound_session(
         &state.auth.paseto_key,
@@ -160,7 +178,7 @@ async fn mint_session(state: &AppState, identity_id: Uuid) -> Result<TokenRespon
     let (refresh_plain, refresh_hash) = random_token()?;
     let refresh_expires = Utc::now() + Duration::seconds(REFRESH_TTL_SECONDS);
     store::issue_bound_refresh(
-        &state.pool,
+        executor,
         identity_id,
         &refresh_hash,
         refresh_expires,
@@ -168,12 +186,15 @@ async fn mint_session(state: &AppState, identity_id: Uuid) -> Result<TokenRespon
         Some(session_id),
     )
     .await?;
-    Ok(TokenResponse {
-        access_token,
-        token_type: "Bearer",
-        expires_in: state.auth.token_ttl_seconds,
-        refresh_token: refresh_plain,
-    })
+    Ok((
+        TokenResponse {
+            access_token,
+            token_type: "Bearer",
+            expires_in: state.auth.token_ttl_seconds,
+            refresh_token: refresh_plain,
+        },
+        session_id,
+    ))
 }
 
 #[derive(Deserialize)]
@@ -282,7 +303,7 @@ async fn exchange(
     .await?;
     Ok(Json(mint_session(&state, identity.id.0).await?))
 }
-fn require_service(state: &AppState, headers: &HeaderMap) -> Result<(), AuthError> {
+pub(super) fn require_service(state: &AppState, headers: &HeaderMap) -> Result<(), AuthError> {
     match &state.auth.service_key {
         Some(expected) if expected.len() >= 32 && !expected.trim().is_empty() => {
             let presented = headers

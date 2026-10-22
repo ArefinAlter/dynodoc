@@ -136,6 +136,48 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/auth/app-handover': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Make a one-time hand-over code for the signed-in account. `[web server only: service key
+     *     and the person's own account token]`. The code is bound to the PKCE challenge and the
+     *     state, valid for 60 seconds, usable once; an account holds at most three unused codes.
+     */
+    post: operations['app_handover_issue'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/auth/app-handover/redeem': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Trade a hand-over code and its PKCE verifier for a session, exactly as a magic-link
+     *     sign-in makes one. `[web server only: service key]`; the app's own credentials are the
+     *     code and the verifier, so no account token is read. Every refusal is the same `401`.
+     */
+    post: operations['app_handover_redeem'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/auth/logout': {
     parameters: {
       query?: never;
@@ -3164,6 +3206,23 @@ export interface components {
       /** @description Chosen name, else the email's local part; `Deleted account` after erasure. */
       name?: string | null;
     };
+    IssueRequest: {
+      /** @description `base64url(SHA-256(verifier))`, 43 characters. */
+      challenge: string;
+      /** @description `desktop`, `android` or `ios`. */
+      platform: string;
+      /** @description The app's anti-forgery value, 16 to 64 characters of `A-Za-z0-9_-`. */
+      state: string;
+    };
+    IssueResponse: {
+      /** @description The one-time code: 64 lower-case hexadecimal digits. Shown once, never stored. */
+      code: string;
+      /**
+       * Format: int64
+       * @description Seconds the code stays valid.
+       */
+      expires_in: number;
+    };
     IssueSummary: {
       assignee?: null | components['schemas']['IssueAssignee'];
       author: components['schemas']['IssuePerson'];
@@ -3420,6 +3479,26 @@ export interface components {
        */
       through_seq: number;
     };
+    RedeemRequest: {
+      /**
+       * @description The kind of app the web server saw the request come from, read from the app's
+       *     `User-Agent` token (`desktop`, `android` or `ios`). It must equal the platform the code
+       *     was asked for; a request with no such token never reaches this route.
+       */
+      app: string;
+      /**
+       * @description The visitor's network address as the web server sees it, when that tells visitors
+       *     apart (behind a proxy that hides it, the web server leaves it out). Only its hash is
+       *     kept, in a rate window.
+       */
+      client?: string | null;
+      /** @description The code from the browser, 64 lower-case hexadecimal digits. */
+      code: string;
+      /** @description The state the app sent when it started and received back with the code. */
+      state: string;
+      /** @description The app's PKCE verifier, 43 to 128 characters of `A-Za-z0-9-._~`. */
+      verifier: string;
+    };
     RefreshRequest: {
       refresh_token: string;
     };
@@ -3480,6 +3559,17 @@ export interface components {
       detail: unknown;
       suggestion_id?: string | null;
       target_node_id?: string | null;
+    };
+    TokenResponse: {
+      access_token: string;
+      /**
+       * Format: int64
+       * @description Access-token lifetime in seconds.
+       */
+      expires_in: number;
+      /** @description Opaque refresh token (rotates on every use). */
+      refresh_token: string;
+      token_type: string;
     };
     /** @description One day of one client claim. */
     UsageRow: {
@@ -3902,6 +3992,103 @@ export interface operations {
       };
       /** @description Refresh the current revision */
       409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  app_handover_issue: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['IssueRequest'];
+      };
+    };
+    responses: {
+      /** @description A code, valid for 60 seconds, usable once */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['IssueResponse'];
+        };
+      };
+      /** @description Challenge, state or platform malformed */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description No valid account token */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Not the trusted web server */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The account already holds three unused codes */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  app_handover_redeem: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RedeemRequest'];
+      };
+    };
+    responses: {
+      /** @description A new login for the account that issued the code */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TokenResponse'];
+        };
+      };
+      /** @description Refused; the same answer for every reason, a malformed code included */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Not the trusted web server */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Too many failed attempts from this address or for this code prefix */
+      429: {
         headers: {
           [name: string]: unknown;
         };

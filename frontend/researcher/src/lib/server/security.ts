@@ -68,13 +68,18 @@ export function secureResponse(
   if (pane) headers.delete('x-frame-options');
   else headers.set('x-frame-options', 'SAMEORIGIN');
   headers.set('x-content-type-options', 'nosniff');
+  // The app sign-in confirmation page is the one place a form POST must carry its real Origin
+  // header (the browser sends `Origin: null` for a POST under `no-referrer`, and the form is
+  // refused without it), so it shares the address with its own site only (decision 017).
   headers.set(
     'referrer-policy',
-    /^\/(auth|connectors|view)(\/|$)/.test(url.pathname)
-      ? 'no-referrer'
-      : 'strict-origin-when-cross-origin'
+    url.pathname === '/app-signin'
+      ? 'same-origin'
+      : /^\/(auth|connectors|view|app-signin)(\/|$)/.test(url.pathname)
+        ? 'no-referrer'
+        : 'strict-origin-when-cross-origin'
   );
-  if (/^\/(auth|admin|integrations|connectors|view)(\/|$)/.test(url.pathname))
+  if (/^\/(auth|admin|integrations|connectors|view|app-signin)(\/|$)/.test(url.pathname))
     headers.set('cache-control', 'private, no-store');
   if (url.protocol === 'https:') headers.set('strict-transport-security', 'max-age=31536000');
   return secured;

@@ -5,7 +5,7 @@
 //! a fixed set of local tools (a device signing key kept by the operating system). Read
 //! docs/decisions/016-devices-processors-desktop-and-mobile-apps.md and
 //! apps/desktop/README.md before changing the security-relevant modules (`nav`, `handoff`,
-//! `server`, `deeplink`, `sidecar`, `commands`, the capability file and tauri.conf.json).
+//! `server`, `deeplink`, `signin`, `sidecar`, `commands`, the capability file and tauri.conf.json).
 
 mod commands;
 mod config;
@@ -16,6 +16,7 @@ mod menu;
 mod nav;
 mod server;
 mod sidecar;
+mod signin;
 mod window;
 
 #[cfg(test)]
@@ -43,6 +44,10 @@ pub struct AppState {
     pub handoffs: handoff::Limiters,
     /// Proves a click to the new-window hook; lives in the injected script and here only.
     pub click_secret: String,
+    /// The one browser sign-in this running app is waiting for (memory only, see signin.rs).
+    pub signin: signin::Pending,
+    /// A finished attempt's fragment, waiting for the finish page to load (see signin.rs).
+    pub outbox: signin::Outbox,
 }
 
 impl AppState {
@@ -54,9 +59,16 @@ impl AppState {
         self.unconfirmed.lock().ok().and_then(|s| s.clone())
     }
 
-    /// The person chose (or confirmed) this server.
+    /// The person chose (or confirmed) this server. A different server forgets the browser
+    /// sign-in in flight: its verifier was made for the old one, and a finished attempt's fragment
+    /// waiting for a page is only for the old one's finish page (the outbox and the attempt each
+    /// compare the server again, so this is the second lock, not the only one).
     pub fn set_server(&self, server: server::ServerOrigin) {
         if let Ok(mut current) = self.server.lock() {
+            if current.as_ref() != Some(&server) {
+                self.signin.clear();
+                self.outbox.clear();
+            }
             *current = Some(server);
         }
         if let Ok(mut pending) = self.unconfirmed.lock() {
@@ -127,6 +139,8 @@ fn resolve_state(app: &tauri::AppHandle) -> tauri::Result<AppState> {
         handoffs: handoff::Limiters::new(),
         click_secret: handoff::new_secret()
             .map_err(|e| std::io::Error::other(format!("no operating-system randomness: {e}")))?,
+        signin: signin::Pending::default(),
+        outbox: signin::Outbox::default(),
     })
 }
 
@@ -159,6 +173,7 @@ pub fn run() {
             commands::get_state,
             commands::set_server,
             commands::open_sign_in_link,
+            commands::start_browser_sign_in,
             commands::tools_version,
             commands::device_key_status,
             commands::device_key_create,
@@ -202,5 +217,63 @@ mod tests {
             (None, Some(s))
         );
         assert_eq!(split_loaded(config::Loaded::Nothing), (None, None));
+    }
+
+    fn bare_state() -> AppState {
+        AppState {
+            server: Mutex::new(None),
+            unconfirmed: Mutex::new(None),
+            config_dir: PathBuf::new(),
+            data_dir: PathBuf::new(),
+            webview_dir: None,
+            launcher_grant: Mutex::new(nav::LauncherGrant::default()),
+            handoffs: handoff::Limiters::new(),
+            click_secret: String::new(),
+            signin: signin::Pending::default(),
+            outbox: signin::Outbox::default(),
+        }
+    }
+
+    #[test]
+    fn choosing_another_server_forgets_the_sign_in_in_flight() {
+        let a = parse_server_address("https://a.example.org").unwrap();
+        let b = parse_server_address("https://b.example.org").unwrap();
+        let state = bare_state();
+        state.set_server(a.clone());
+        let now = signin::Moment::now();
+        let start = |state: &AppState| {
+            let (attempt, request) =
+                signin::Attempt::new(&a.as_text(), now, signin::os_random).unwrap();
+            state.signin.start(attempt);
+            state
+                .outbox
+                .put(signin::Secret::new("fragment".into()), &a.as_text(), now);
+            request
+        };
+        // Choosing the same server again changes nothing.
+        let request = start(&state);
+        state.set_server(a.clone());
+        assert!(state.signin.is_waiting());
+        assert!(state.outbox.take(now, &a.as_text()).is_some());
+        // Another server: the attempt and the fragment are gone, and stay gone.
+        let request2 = start(&state);
+        state.set_server(b.clone());
+        assert!(!state.signin.is_waiting());
+        assert!(state.outbox.take(now, &a.as_text()).is_none());
+        assert!(state.outbox.take(now, &b.as_text()).is_none());
+        for state_text in [&request.state, &request2.state] {
+            assert_eq!(
+                state
+                    .signin
+                    .complete(now, &b.as_text(), &"ab".repeat(32), state_text)
+                    .unwrap_err(),
+                signin::Refusal::NothingPending
+            );
+        }
+        // And the source says so: the clearing is in set_server itself.
+        let source = include_str!("lib.rs");
+        let body = &source[source.find("pub fn set_server(").unwrap()..];
+        let body = &body[..body.find("\n    }\n").unwrap()];
+        assert!(body.contains("self.signin.clear();") && body.contains("self.outbox.clear();"));
     }
 }

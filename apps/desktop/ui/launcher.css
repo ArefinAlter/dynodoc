@@ -59,6 +59,12 @@ h2 {
   font-size: 1.15rem;
 }
 
+.pairing {
+  font-size: 1.35rem;
+  letter-spacing: 0.2em;
+  font-variant-numeric: tabular-nums;
+}
+
 p {
   margin: 0.25rem 0 0.75rem;
 }

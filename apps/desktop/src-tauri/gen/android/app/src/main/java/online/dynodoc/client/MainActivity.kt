@@ -76,6 +76,11 @@ class MainActivity : TauriActivity() {
       // window.open without a tap on the page is refused by the web view itself.
       setSupportMultipleWindows(false)
       javaScriptCanOpenWindowsAutomatically = false
+      // The server's app sign-in finish page and routes work only for this app's own window,
+      // which names itself in the User-Agent of every request it makes: the web view's own agent
+      // with `DynodocApp/<version> (android)` at the end (docs/decisions/017). Nothing a page can
+      // read or set; a browser that is not this app does not send it.
+      userAgentString = AppToken.appended(userAgentString, appVersionName())
     }
     // Touches that arrive while another window covers part of this one are dropped (tapjacking).
     webView.filterTouchesWhenObscured = true
@@ -104,6 +109,13 @@ class MainActivity : TauriActivity() {
       }
     })
   }
+
+  private fun appVersionName(): String? =
+    try {
+      packageManager.getPackageInfo(packageName, 0).versionName
+    } catch (e: Exception) {
+      null
+    }
 
   private fun previousPageIsSameSite(webView: WebView): Boolean {
     val history = webView.copyBackForwardList()

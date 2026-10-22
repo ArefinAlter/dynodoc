@@ -9,6 +9,7 @@
     "allow-get-state",
     "allow-set-server",
     "allow-open-sign-in-link",
+    "allow-start-browser-sign-in",
     "allow-tools-version",
     "allow-device-key-status",
     "allow-device-key-create",

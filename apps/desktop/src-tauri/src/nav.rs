@@ -156,6 +156,75 @@ pub fn launcher_denied_goes_to(
     server.map(ServerOrigin::entry)
 }
 
+/// Is `url`, a page the window has finished loading, the configured server's own sign-in page?
+///
+/// On a phone, where there is no menu and the launcher is otherwise out of reach once a server
+/// is saved, the shell shows its launcher (with the browser sign-in button) when the window
+/// lands on the server's sign-in page: the emailed link and Google both finish in the system
+/// browser, so that page cannot sign this window in. The test is on the address alone (the
+/// shell never reads a page, a cookie or a header) and is only used to choose what to show: the
+/// launcher is a page of the app itself, and nothing a page does gives it any power over the
+/// app. `/login?token=...` is the pasted-link route and is left alone.
+#[cfg_attr(not(mobile), allow(dead_code))]
+pub fn needs_sign_in(url: &Url, server: Option<&ServerOrigin>) -> bool {
+    server.is_some_and(|s| s.matches(url))
+        && url.path() == "/login"
+        && !url.query_pairs().any(|(name, _)| name == "token")
+}
+
+/// Is `url` the configured server's finish page, exactly as the shell opens it (no query, no
+/// fragment)? The one page the browser sign-in's fragment is handed to.
+pub fn is_finish_page(url: &Url, server: Option<&ServerOrigin>) -> bool {
+    server.is_some_and(|s| s.matches(url))
+        && url.path() == crate::server::APP_SIGNIN_FINISH_PATH
+        && url.query().is_none()
+        && url.fragment().is_none()
+}
+
+/// Does `url` name the finish page in any spelling the server could route to it: a trailing
+/// slash, other letter case, a percent-encoded letter, repeated or backward slashes? Only used to
+/// REFUSE, so it errs wide. Which origin it is on is not asked here.
+fn names_finish_page(url: &Url) -> bool {
+    let decoded = percent_decoded(url.path());
+    let segments: Vec<&str> = decoded.split('/').filter(|s| !s.is_empty()).collect();
+    matches!(segments.as_slice(), [a, b]
+        if a.eq_ignore_ascii_case("app-signin") && b.eq_ignore_ascii_case("finish"))
+}
+
+/// `%41` -> `A` in a URL path (bad escapes stay as they are; bytes that are not UTF-8 become the
+/// replacement character).
+fn percent_decoded(path: &str) -> String {
+    let bytes = path.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let hex = |b: u8| char::from(b).to_digit(16);
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Some(hi), Some(lo)) = (hex(bytes[i + 1]), hex(bytes[i + 2])) {
+                out.push((hi * 16 + lo) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// May the window load this address of the configured server? Everything may, except the finish
+/// page of the browser sign-in in any form but the one the shell itself opens: exactly
+/// `/app-signin/finish`, with no query and no fragment. A page (a crafted link, a redirect, a
+/// script, `window.open`) that sends the window to the finish page with a code, a state or a
+/// verifier in its address is refused (decision 017, "forced login": the finish page also ignores
+/// a fragment that was there when it loaded, and acts only for the app's own window).
+fn server_page_allowed(target: &Url) -> bool {
+    !names_finish_page(target)
+        || (target.path() == crate::server::APP_SIGNIN_FINISH_PATH
+            && target.query().is_none()
+            && target.fragment().is_none())
+}
+
 /// `launcher_allowed` is the result of `launcher_load_allowed` for this navigation.
 /// `frames_ambiguous` is `frames_are_ambiguous()`.
 pub fn decide(
@@ -185,7 +254,11 @@ pub fn decide(
     match target.scheme() {
         "http" | "https" => {
             if server.is_some_and(|s| s.matches(target)) {
-                Decision::Allow
+                if server_page_allowed(target) {
+                    Decision::Allow
+                } else {
+                    Decision::Deny
+                }
             } else if target.host_str() == Some(handoff::MARKER_HOST) {
                 Decision::Deny // the click marker is only meaningful as a new-window request
             } else if handoff::external_allowed(target, Source::Page) {
@@ -655,6 +728,215 @@ mod tests {
             launcher_denied_goes_to(&elsewhere, &launcher, Some(&s)),
             None
         );
+    }
+
+    #[test]
+    fn only_the_servers_own_sign_in_page_asks_for_the_browser_sign_in() {
+        let s = server("https://app.dynodoc.online");
+        let yes = |u: &str| needs_sign_in(&Url::parse(u).unwrap(), Some(&s));
+        for url in [
+            "https://app.dynodoc.online/login",
+            "https://app.dynodoc.online/login?next=%2Fworkspace",
+            "https://APP.dynodoc.online:443/login?next=%2Fprojects#x",
+        ] {
+            assert!(yes(url), "{url}");
+        }
+        for url in [
+            // The pasted-link route finishes the sign-in itself.
+            "https://app.dynodoc.online/login?token=abc",
+            "https://app.dynodoc.online/login?next=%2Fworkspace&token=abc",
+            // Every other page of the server, and anything look-alike.
+            "https://app.dynodoc.online/workspace",
+            "https://app.dynodoc.online/",
+            "https://app.dynodoc.online/login/",
+            "https://app.dynodoc.online/login.html",
+            "https://app.dynodoc.online/loginx",
+            "https://app.dynodoc.online/auth/login",
+            "https://app.dynodoc.online/app-signin",
+            "https://app.dynodoc.online/app-signin/finish",
+            // Another server, scheme or port, or credentials, is not this server's page.
+            "https://evil.example/login",
+            "https://app.dynodoc.online.evil.example/login",
+            "http://app.dynodoc.online/login",
+            "https://app.dynodoc.online:8443/login",
+            "https://user@app.dynodoc.online/login",
+            "tauri://localhost/login",
+            "http://tauri.localhost/login",
+        ] {
+            assert!(!yes(url), "{url}");
+        }
+        // With no server configured nothing is "the server's sign-in page".
+        assert!(!needs_sign_in(
+            &Url::parse("https://app.dynodoc.online/login").unwrap(),
+            None
+        ));
+    }
+
+    #[test]
+    fn only_the_servers_own_finish_page_receives_the_sign_in_fragment() {
+        let s = server("https://app.dynodoc.online");
+        let yes = |u: &str| is_finish_page(&Url::parse(u).unwrap(), Some(&s));
+        assert!(yes("https://app.dynodoc.online/app-signin/finish"));
+        assert!(yes("https://APP.dynodoc.online:443/app-signin/finish"));
+        for url in [
+            // Not as the shell opens it: a query or a fragment already there.
+            "https://app.dynodoc.online/app-signin/finish?x=1",
+            "https://app.dynodoc.online/app-signin/finish#code=a",
+            "https://app.dynodoc.online/app-signin/finish#",
+            // Other pages of the server, and look-alikes.
+            "https://app.dynodoc.online/app-signin",
+            "https://app.dynodoc.online/app-signin/finish/",
+            "https://app.dynodoc.online/app-signin/finish/x",
+            "https://app.dynodoc.online/app-signin/finish.html",
+            "https://app.dynodoc.online/login",
+            "https://app.dynodoc.online/workspace",
+            "https://app.dynodoc.online/",
+            // Another origin, scheme, port, or credentials.
+            "https://evil.example/app-signin/finish",
+            "https://app.dynodoc.online.evil.example/app-signin/finish",
+            "http://app.dynodoc.online/app-signin/finish",
+            "https://app.dynodoc.online:8443/app-signin/finish",
+            "https://user@app.dynodoc.online/app-signin/finish",
+            "tauri://localhost/app-signin/finish",
+            "http://tauri.localhost/app-signin/finish",
+        ] {
+            assert!(!yes(url), "{url}");
+        }
+        assert!(!is_finish_page(
+            &Url::parse("https://app.dynodoc.online/app-signin/finish").unwrap(),
+            None
+        ));
+    }
+
+    #[test]
+    fn a_page_may_not_send_the_window_to_the_finish_page_with_anything_in_its_address() {
+        let s = server("https://app.dynodoc.online");
+        // The shell's own navigation, and a plain page-initiated one, are the exact address.
+        let plain = "https://app.dynodoc.online/app-signin/finish";
+        assert_eq!(decide_for(plain, Some(&s)), Decision::Allow);
+        assert_eq!(decide_ambiguous(plain, Some(&s), false), Decision::Allow);
+        assert_eq!(
+            decide_for(s.finish_url().as_str(), Some(&s)),
+            Decision::Allow,
+            "the address the shell opens"
+        );
+        // Anything after it: a query, a fragment (even empty), or another spelling of the path.
+        let code = "ab".repeat(32);
+        for url in [
+            format!("https://app.dynodoc.online/app-signin/finish#code={code}&state=s&verifier=v"),
+            "https://app.dynodoc.online/app-signin/finish#".to_string(),
+            "https://app.dynodoc.online/app-signin/finish?x=1".to_string(),
+            "https://app.dynodoc.online/app-signin/finish?".to_string(),
+            "https://app.dynodoc.online/app-signin/finish?x=1#y".to_string(),
+            "https://app.dynodoc.online/app-signin/finish/".to_string(),
+            "https://app.dynodoc.online/app-signin/finish/#a".to_string(),
+            "https://app.dynodoc.online/App-Signin/Finish".to_string(),
+            "https://app.dynodoc.online/app-signin/%66inish".to_string(),
+            "https://app.dynodoc.online/app-signin/%46INISH#a".to_string(),
+            "https://app.dynodoc.online/%61pp-signin/finish".to_string(),
+            "https://app.dynodoc.online//app-signin//finish#a".to_string(),
+            "https://app.dynodoc.online/app-signin/./finish?x".to_string(),
+            "https://app.dynodoc.online/x/../app-signin/finish#a".to_string(),
+            "https://app.dynodoc.online\\app-signin\\finish#a".to_string(),
+            "https://app.dynodoc.online:443/app-signin/finish#a".to_string(),
+            "https://APP.dynodoc.online/app-signin/finish?x".to_string(),
+        ] {
+            let target = Url::parse(&url).unwrap();
+            if server_page_allowed(&target) {
+                // Only a spelling the URL parser has already made exact may pass.
+                assert_eq!(target.path(), "/app-signin/finish", "{url}");
+                assert!(
+                    target.query().is_none() && target.fragment().is_none(),
+                    "{url}"
+                );
+                continue;
+            }
+            assert_eq!(decide_for(&url, Some(&s)), Decision::Deny, "{url}");
+            assert_eq!(
+                decide_ambiguous(&url, Some(&s), false),
+                Decision::Deny,
+                "{url}"
+            );
+        }
+        // Spot checks that must be refused outright.
+        for url in [
+            format!("https://app.dynodoc.online/app-signin/finish#code={code}&state=s&verifier=v"),
+            "https://app.dynodoc.online/app-signin/finish?x=1".to_string(),
+            "https://app.dynodoc.online/app-signin/finish/".to_string(),
+            "https://app.dynodoc.online/app-signin/%66inish".to_string(),
+            "https://app.dynodoc.online/App-Signin/Finish".to_string(),
+        ] {
+            assert_eq!(decide_for(&url, Some(&s)), Decision::Deny, "{url}");
+        }
+        // window.open and target=_blank follow the same rule, whether or not the page is the
+        // server's own: it is never navigated here and never handed to the browser.
+        let secret = "0123456789abcdef0123456789abcdef";
+        for url in [
+            format!("https://app.dynodoc.online/app-signin/finish#code={code}&state=s&verifier=v"),
+            "https://app.dynodoc.online/app-signin/finish?x=1".to_string(),
+            "https://app.dynodoc.online/app-signin/finish/".to_string(),
+        ] {
+            assert_eq!(
+                new_window(
+                    &Url::parse(&url).unwrap(),
+                    Some(&s),
+                    &launcher_origin(),
+                    secret
+                ),
+                NewWindow::Ignore,
+                "{url}"
+            );
+        }
+        // The plain finish page in a new window shows in the one window, like any server page.
+        assert_eq!(
+            new_window(&s.finish_url(), Some(&s), &launcher_origin(), secret),
+            NewWindow::NavigateHere(s.finish_url())
+        );
+        // Another server's page of the same name is not this rule's business: it goes to the
+        // browser like any other public address (it is a page there, not in this window).
+        assert_eq!(
+            decide_for("https://other.example.org/app-signin/finish#a", Some(&s)),
+            Decision::OpenExternal
+        );
+        // And the rule does not touch the confirmation page or its look-alikes.
+        for url in [
+            "https://app.dynodoc.online/app-signin",
+            "https://app.dynodoc.online/app-signin?challenge=a",
+            "https://app.dynodoc.online/app-signin/finished",
+            "https://app.dynodoc.online/app-signin/finish/x",
+            "https://app.dynodoc.online/login#finish",
+            "https://app.dynodoc.online/finish",
+        ] {
+            assert_eq!(decide_for(url, Some(&s)), Decision::Allow, "{url}");
+        }
+    }
+
+    #[test]
+    fn the_finish_page_check_decodes_what_the_server_would() {
+        let names = |u: &str| names_finish_page(&Url::parse(u).unwrap());
+        for yes in [
+            "https://x.example/app-signin/finish",
+            "https://x.example/app-signin/finish/",
+            "https://x.example/APP-SIGNIN/FINISH",
+            "https://x.example/app-signin/%66%69nish",
+            "https://x.example/%61%70%70-signin/finish",
+            "https://x.example//app-signin///finish",
+        ] {
+            assert!(names(yes), "{yes}");
+        }
+        for no in [
+            "https://x.example/",
+            "https://x.example/app-signin",
+            "https://x.example/app-signin/finish/more",
+            "https://x.example/app-signin/finishx",
+            "https://x.example/app-signin/%zzfinish",
+            "https://x.example/app-signin/finish%",
+            "https://x.example/other/app-signin/finish",
+        ] {
+            assert!(!names(no), "{no}");
+        }
+        assert_eq!(percent_decoded("/a%2Fb%41%zz%4"), "/a/bA%zz%4");
+        assert_eq!(percent_decoded("/%ff"), "/\u{fffd}");
     }
 
     #[test]

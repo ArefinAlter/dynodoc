@@ -5,7 +5,11 @@
 // real touch events, and reads the app's decisions from logcat (debug builds log them).
 //
 //   node scripts/android-probe.mjs [phase ...]      (no phase = all)
-//   phases: ipc links frames download upload back bypass renderer deeplink rotate recreate dark offline
+//   phases: ipc links frames download upload back bypass renderer deeplink rotate recreate dark offline signin
+//
+// The `signin` phase uses the hosted cloud only as a stand-in server for pages that do not exist
+// there yet (it gets 404 pages; nothing is signed in). A local server cannot be used: the app forbids
+// cleartext traffic on Android, `http://localhost` included.
 //
 // Needs ANDROID_HOME (or ANDROID_SDK_ROOT), the debug APK installed (online.dynodoc.client) and
 // network access to the hosted cloud: the hosted sign-in page is the carrier for the test links
@@ -133,10 +137,41 @@ async function toCloud() {
   await waitFor(async () => (await here(page)).includes('tauri.localhost') && (await page.eval(`document.getElementById('about')?.textContent`)), 'the launcher');
   await page.eval(`document.getElementById('use-cloud').click()`);
   page.close();
+  // Since decision 017 a phone never stays on the server's sign-in page: when `/login` has loaded the
+  // shell shows its launcher instead (the sign-in page cannot sign this window in). The probe phases
+  // below still need a page of the hosted server to act as the "hostile page", so they take the
+  // pasted-link route, which the shell leaves alone (`/login?token=...`, a made-up token that is
+  // never confirmed): the launcher's open_sign_in_link command, as a person pasting a link would.
+  const bounced = await waitFor(async () => {
+    try {
+      const p = await connect();
+      const url = await here(p);
+      if (url.includes('tauri.localhost') && url.endsWith('#signin') && (await p.eval(`!document.getElementById('signin').hidden`))) return p;
+      p.close();
+    } catch { /* the web view is changing page */ }
+    return null;
+  }, "the launcher, brought up by the server's sign-in page", 60);
+  await bounced.eval(`window.__TAURI_INTERNALS__.invoke('open_sign_in_link', { link: ${JSON.stringify(`${CLOUD}/login?token=${'a'.repeat(40)}`)} }).then(() => 'ok')`);
+  bounced.close();
   const next = await connect();
   await waitFor(async () => (await here(next)).startsWith(`${CLOUD}/login`) && (await next.eval('document.readyState')) === 'complete' && (await next.eval('!!document.body')), 'the hosted sign-in page', 40);
   await sleep(1500);
   return next;
+}
+
+/**
+ * After the system re-creates the web view the window reloads the server's entry page. The probe's
+ * server is not signed in, so (decision 017) the entry page leads to /login and the shell shows its
+ * launcher with the browser sign-in button: either that or a page of the server is a window that is
+ * not blank. Returns the address it settled on.
+ */
+async function settledOnSiteOrSignInScreen(page, what, seconds = 60) {
+  return waitFor(async () => {
+    const url = await here(page);
+    const ready = (await page.eval('document.readyState')) === 'complete';
+    const signIn = url.includes('tauri.localhost') && url.endsWith('#signin');
+    return ready && (url.startsWith(`${CLOUD}/`) || signIn) ? url : null;
+  }, what, seconds);
 }
 
 // ---- phases ----------------------------------------------------------------------------------
@@ -145,7 +180,7 @@ const phases = {
     const page = await toCloud();
     const calls = [
       ['get_state', {}], ['set_server', { address: 'https://evil.example' }], ['open_sign_in_link', { link: 'https://x' }],
-      ['tools_version', {}], ['device_key_status', {}], ['device_key_create', {}], ['device_public_key', {}],
+      ['start_browser_sign_in', {}], ['tools_version', {}], ['device_key_status', {}], ['device_key_create', {}], ['device_public_key', {}],
       ['plugin:opener|open_url', { url: 'https://example.org' }], ['plugin:opener|open_path', { path: '/sdcard' }],
       ['plugin:deep-link|get_current', {}], ['plugin:deep-link|register', { protocol: 'x' }],
       ['plugin:app|version', {}], ['plugin:app|exit', {}], ['plugin:window|close', { label: 'main' }],
@@ -384,8 +419,8 @@ const phases = {
     check(pid() === before, 'and survives it (same process)');
     page.close();
     const again = await connect();
-    await waitFor(async () => (await here(again)).startsWith(`${CLOUD}/`) && (await again.eval('document.readyState')) === 'complete', 'the site again after the renderer died', 40);
-    check(true, 'the activity was re-created and the site is shown again', await here(again));
+    const settled = await settledOnSiteOrSignInScreen(again, 'the site (or the sign-in screen) again after the renderer died', 60);
+    check(true, 'the activity was re-created and the site (for a server that is not signed in: the sign-in screen) is shown again', settled);
     again.close();
   },
 
@@ -475,8 +510,8 @@ const phases = {
     await sleep(6000);
     cloud.close();
     const again = await connect();
-    await waitFor(async () => (await here(again)).startsWith(`${CLOUD}/`) && (await again.eval('document.readyState')) === 'complete', 'the site after the re-creation', 40);
-    check(true, 'with a server saved, a re-created web view comes back on the server, not blank', await here(again));
+    const settled = await settledOnSiteOrSignInScreen(again, 'the site (or the sign-in screen) after the re-creation', 60);
+    check(true, 'with a server saved, a re-created web view comes back on the server (not signed in: its sign-in screen), not blank', settled);
     check(logs().some((l) => l.includes('launcher refused, server saved')), 'by way of the refused-launcher redirect', logs().join(' | '));
     shot('after-font-change-with-server');
     shell('settings', 'put', 'system', 'font_scale', '1.0');
@@ -495,6 +530,147 @@ const phases = {
     check(!logs().some((l) => l.includes(`/projects/${id}`)), 'and the re-created activity does not open it again', logs().join(' | '));
     shell('settings', 'put', 'system', 'font_scale', '1.0');
     await sleep(2000);
+  },
+
+  // The browser sign-in (docs/decisions/017) on the real Android shell and WebView, against the
+  // hosted cloud as the stand-in server. The cloud has neither /app-signin nor /app-signin/finish
+  // yet, so it answers ordinary 404 pages: nothing is signed in and no secret is involved (the
+  // challenge and the state are random and the code is made up). What it shows is the app's half:
+  //   - the launcher appears by itself when the server's sign-in page has loaded (a phone has no menu);
+  //   - its button makes ONE attempt and asks the system browser for /app-signin?challenge=&state=;
+  //   - Android's own routing of dynodoc://signin?... reaches the app (the manifest filter);
+  //   - a link with nothing pending, or with the wrong state, does nothing; the right one takes the
+  //     window to /app-signin/finish with code, state and verifier in the FRAGMENT only, and
+  //     SHA-256(verifier) is the challenge the browser was given; a replay does nothing;
+  //   - the web view names the app in its User-Agent (DynodocApp/<version> (android), appended);
+  //   - the launcher shows the request's pairing code, the same four characters the server's page
+  //     shows; and the shell sets the fragment only once the finish page says it is ready (the
+  //     cloud's 404 page stands in for it, so the probe sets the page's ready marker itself).
+  // The challenge and state are read from the browser's launch intent (dumpsys), because the app's
+  // own debug log never prints a query.
+  async signin() {
+    /** Chrome's first run: "Use without an account" (the emulator image's Chrome starts there once). */
+    async function dismissChromeFirstRun() {
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        if (!resumed().includes('FirstRunActivity')) return;
+        shell('uiautomator', 'dump', '/sdcard/probe-ui.xml');
+        const xml = shell('cat', '/sdcard/probe-ui.xml');
+        const m = xml.match(/text="(?:Use without an account|No thanks|Got it|Accept[^"]*)"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/);
+        if (m) {
+          const [x1, y1, x2, y2] = m.slice(1).map(Number);
+          shell('input', 'tap', String(Math.round((x1 + x2) / 2)), String(Math.round((y1 + y2) / 2)));
+          note('got past a Chrome first-run screen');
+        }
+        await sleep(2500);
+      }
+    }
+    const page0 = await launch({ fresh: true });
+    await waitFor(async () => (await here(page0)).includes('tauri.localhost') && (await page0.eval(`document.getElementById('about')?.textContent`)), 'the launcher');
+    clearLogs();
+    await page0.eval(`document.getElementById('use-cloud').click()`);
+    page0.close();
+    // 1. The cloud sends the signed-out window to its sign-in page; the app shows its launcher there.
+    const page = await waitFor(async () => {
+      try {
+        const p = await connect();
+        const url = await here(p);
+        if (url.includes('tauri.localhost') && url.endsWith('#signin') && (await p.eval(`document.getElementById('browser-signin') && !document.getElementById('browser-signin').hidden`))) return p;
+        p.close();
+      } catch { /* the web view is changing page */ }
+      return null;
+    }, "the launcher, brought up by the server's sign-in page", 60);
+    check(true, 'a saved server that is not signed in: the app shows its launcher with "Sign in with your browser"');
+    check(logs().some((l) => l.includes('sign-in page, showing the launcher')), 'the shell says why', logs().filter((l) => l.includes('showing the launcher')).join(' | '));
+    shot('signin-launcher');
+
+    const open = (link) => shell('am', 'start', '-a', 'android.intent.action.VIEW', '-d', `'${link}'`, APP);
+    const hex = (n) => [...Array(n)].map(() => Math.floor(Math.random() * 16).toString(16)).join('');
+    // 2. Nothing pending: Android routes the link to the app (the manifest filter), which does nothing.
+    clearLogs();
+    open(`dynodoc://signin?code=${hex(64)}&state=${'a'.repeat(32)}`);
+    await sleep(3000);
+    check(logs().some((l) => l.includes('sign-in link refused -> NothingPending')), 'a link with no attempt pending reaches the app through the manifest and is refused', logs().join(' | '));
+
+    // 3. The button.
+    clearLogs();
+    shell('am', 'force-stop', 'com.android.chrome');
+    const live = await connect();
+    await live.eval(`document.getElementById('browser-signin-go').click()`);
+    await sleep(2500);
+    check(logs().some((l) => l.startsWith(`hand-off ${CLOUD}/app-signin?... -> Opened`)), 'the button asks the system browser to open <server>/app-signin?...', logs().join(' | '));
+    // The emulator's Chrome shows its first-run screen once; get past it, and ask it what it was opened on.
+    await dismissChromeFirstRun();
+    adb('forward', 'tcp:9333', 'localabstract:chrome_devtools_remote');
+    const tab = await waitFor(async () => (await (await fetch('http://127.0.0.1:9333/json/list')).json()).find((t) => t.url.startsWith(`${CLOUD}/app-signin?`)), 'the browser tab', 20).catch(() => null);
+    check(Boolean(tab), 'the emulator\'s browser really opens <server>/app-signin?...', tab ? 'found' : 'no such tab (a Chrome first-run screen, or no browser?)');
+    if (!tab) { live.close(); page.close(); return; }
+    const found = [null, tab.url.slice(tab.url.indexOf('?') + 1)];
+    const query = new URLSearchParams(found[1]);
+    const challenge = query.get('challenge');
+    const state = query.get('state');
+    check([...query.keys()].join(',') === 'challenge,state,platform' && query.get('platform') === 'android', 'with challenge, state and platform=android', [...query.keys()].join(',') + ' ' + query.get('platform'));
+    check(/^[A-Za-z0-9_-]{43}$/.test(challenge ?? '') && /^[A-Za-z0-9_-]{32}$/.test(state ?? ''), 'the challenge is 43 and the state 32 base64url characters');
+    const { createHash: sha } = await import('node:crypto');
+    const alphabet = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+    const digest = sha('sha256').update(state ?? '').digest();
+    const expectedPairing = [0, 1, 2, 3].map((i) => alphabet[digest[i] & 31]).join('');
+    const shownPairing = await live.eval(`document.getElementById('browser-signin-pairing').hidden ? '' : document.getElementById('browser-signin-code').textContent`);
+    check(shownPairing === expectedPairing && /^[2-9A-HJ-NP-Z]{4}$/.test(String(shownPairing)), "the launcher shows the request's pairing code (the same four characters the server's page shows)", `${shownPairing} vs ${expectedPairing}`);
+    shot('signin-after-button');
+    live.close();
+    page.close();
+    shell('am', 'start', '-n', `${APP}/.MainActivity`);
+    await sleep(2000);
+
+    // 4. A wrong state is refused and the attempt stays; the right one finishes.
+    clearLogs();
+    open(`dynodoc://signin?code=${hex(64)}&state=${'b'.repeat(32)}`);
+    await sleep(3000);
+    check(logs().some((l) => l.includes('sign-in link refused -> StateMismatch')), 'a link with the wrong state is refused and the attempt stays', logs().join(' | '));
+    const code = hex(64);
+    clearLogs();
+    open(`dynodoc://signin?code=${code}&state=${state}`);
+    const done = await waitFor(async () => {
+      try {
+        const p = await connect();
+        const url = await here(p);
+        if (url.startsWith(`${CLOUD}/app-signin/finish`)) return p;
+        p.close();
+      } catch { /* the web view is changing page */ }
+      return null;
+    }, 'the finish page', 60);
+    check(Boolean(done), 'the right link takes the window to <server>/app-signin/finish');
+    const agent = await done.eval('navigator.userAgent');
+    check(/ DynodocApp\/\d+\.\d+\.\d+ \(android\)$/.test(String(agent)) && /Chrome\//.test(String(agent)), "the web view names the app: its own User-Agent with DynodocApp/<version> (android) at the end", String(agent).slice(-90));
+    // The cloud's 404 page stands in for the finish page and never says it is ready: say so for it,
+    // as the real page does when it listens for a change of its fragment. The shell waits for that.
+    const early = String(await done.eval('location.hash'));
+    check(early === '', 'until the page says it is ready the fragment is not set', early);
+    await done.eval(`document.documentElement.setAttribute('data-finish-ready', '1')`);
+    await sleep(2500);
+    const href = await done.eval('location.href');
+    const hash = new URLSearchParams(String(await done.eval('location.hash')).replace(/^#/, ''));
+    check([...hash.keys()].join(',') === 'code,state,verifier' && hash.get('code') === code && hash.get('state') === state, 'with code, state and verifier in the address FRAGMENT', [...hash.keys()].join(','));
+    check(!href.split('#')[0].includes('?') && !href.split('#')[0].includes(code), 'and nothing in the path or query', href.split('#')[0]);
+    const { createHash } = await import('node:crypto');
+    const verifier = hash.get('verifier') ?? '';
+    check(/^[A-Za-z0-9_-]{43}$/.test(verifier) && createHash('sha256').update(verifier).digest('base64url') === challenge, "and SHA-256(verifier) is the challenge the browser was given (RFC 7636 S256)");
+    const wholeLog = adb('logcat', '-d');
+    const withVerifier = wholeLog.split('\n').filter((l) => l.includes(verifier));
+    check(withVerifier.length === 0, 'the verifier is nowhere in the device log', withVerifier.map((l) => l.split(verifier).join('<verifier>').split(code).join('<code>').split(state).join('<state>').slice(0, 220)).join(' | '));
+    check(!logs().some((l) => l.includes(code) || l.includes(state)) && !appLogs().some((l) => l.includes(code) || l.includes(state)), "and neither the code nor the state is in the app's own log lines");
+    // Android's activity manager logs the address of every activity start, including the app link
+    // (code and state, never the verifier). Only adb and developer tools can read that log; the
+    // code is useless without the verifier. Noted, not hidden.
+    note(`the system log line of the link start holds the code: ${wholeLog.includes(code)} (ActivityTaskManager, readable only through adb)`);
+    shot('signin-finish');
+
+    // 5. A replay does nothing.
+    clearLogs();
+    open(`dynodoc://signin?code=${code}&state=${state}`);
+    await sleep(3500);
+    check(logs().some((l) => l.includes('sign-in link refused -> NothingPending')), 'the same link again (a replay) finds nothing pending', logs().join(' | '));
+    done.close();
   },
 
   async dark() {

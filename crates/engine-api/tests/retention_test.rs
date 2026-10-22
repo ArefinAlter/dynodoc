@@ -18,11 +18,12 @@ use sqlx::{Connection, PgPool};
 use std::{collections::BTreeMap, time::Duration};
 use uuid::Uuid;
 
-const TARGETS: [&str; 6] = [
+const TARGETS: [&str; 7] = [
     "magic_link",
     "refresh_token",
     "auth_request_window",
     "device_enrollment_challenge",
+    "app_handover_code",
     "web_metric",
     "idempotency_key",
 ];
@@ -102,6 +103,39 @@ async fn seed(pool: &PgPool, identity: Uuid) {
     ] {
         sql += &format!("insert into device_enrollment_challenge(id,identity_id,expires_at,challenge) values({},'{identity}',{expires},'{{}}');", uuid_tag(n));
     }
+    // (tag, created, expires, consumed): a code lives 60 seconds, used up or not.
+    for (n, created, expires, consumed, outcome) in [
+        (
+            1,
+            "now() - interval '30 days'",
+            "now() - interval '30 days' + interval '60 seconds'",
+            "null",
+            "null",
+        ), // P expired long ago, never used
+        (
+            2,
+            "now() - interval '40 days'",
+            "now() - interval '40 days' + interval '60 seconds'",
+            "now() - interval '40 days'",
+            "'redeemed'",
+        ), // P used long ago
+        (
+            3,
+            "now() - interval '1 day'",
+            "now() - interval '1 day' + interval '60 seconds'",
+            "null",
+            "null",
+        ), // K expired inside the window
+        (
+            4,
+            "now() - interval '10 seconds'",
+            "now() + interval '50 seconds'",
+            "null",
+            "null",
+        ), // K live
+    ] {
+        sql += &format!("insert into app_handover_code(identity_id,code_hash,challenge,state,platform,session_generation,created_at,expires_at,consumed_at,outcome) values('{identity}',{},{},'retention-test-state-0000','desktop',0,{created},{expires},{consumed},{outcome});", tag(n), tag(n));
+    }
     for (n, recorded) in [
         (1, "now() - interval '40 days'"), // P
         (2, "now() - interval '29 days'"), // K
@@ -163,8 +197,8 @@ async fn only_expired_rows_are_pruned_under_the_restricted_login(pool: PgPool) {
         .await
         .unwrap();
     // Table order: magic_link, refresh_token, auth_request_window,
-    // device_enrollment_challenge, web_metric, idempotency_key.
-    assert_eq!(outcome, Outcome::Ran([2, 2, 2, 1, 1, 2]));
+    // device_enrollment_challenge, app_handover_code, web_metric, idempotency_key.
+    assert_eq!(outcome, Outcome::Ran([2, 2, 2, 1, 2, 1, 2]));
 
     let tags = |table: &str, column: &str| {
         format!("select get_byte({column},0)::text from {table} order by 1")
@@ -192,6 +226,14 @@ async fn only_expired_rows_are_pruned_under_the_restricted_login(pool: PgPool) {
     assert_eq!(
         survivors(
             &runtime.pool,
+            "select get_byte(code_hash,0)::text from app_handover_code order by 1"
+        )
+        .await,
+        ["3", "4"]
+    );
+    assert_eq!(
+        survivors(
+            &runtime.pool,
             "select right(page_id::text,1) from web_metric order by 1"
         )
         .await,
@@ -210,7 +252,7 @@ async fn only_expired_rows_are_pruned_under_the_restricted_login(pool: PgPool) {
     let outcome = retention::run_once(&runtime.pool, &config(1000), &stats)
         .await
         .unwrap();
-    assert_eq!(outcome, Outcome::Ran([0; 6]));
+    assert_eq!(outcome, Outcome::Ran([0; 7]));
     let snapshot = stats.snapshot();
     assert_eq!(snapshot["runs"], 2);
     assert_eq!(snapshot["pruned"]["magic_link"], 2);
@@ -236,7 +278,7 @@ async fn windows_are_configurable(pool: PgPool) {
         .unwrap();
     // A year of grace keeps every auth row except the request windows (always 15
     // minutes) and the 25-hour-old idempotency keys; metrics older than 10 days go.
-    assert_eq!(outcome, Outcome::Ran([0, 0, 2, 0, 2, 2]));
+    assert_eq!(outcome, Outcome::Ran([0, 0, 2, 0, 0, 2, 2]));
     runtime.close().await;
 }
 
@@ -281,7 +323,7 @@ async fn batches_are_bounded_and_the_pass_drains_the_backlog(pool: PgPool) {
     let outcome = retention::run_once(&runtime.pool, &config(10), &Stats::default())
         .await
         .unwrap();
-    assert_eq!(outcome, Outcome::Ran([0, 0, 0, 0, 25, 0]));
+    assert_eq!(outcome, Outcome::Ran([0, 0, 0, 0, 0, 25, 0]));
     // An unknown table name is refused rather than interpolated.
     let mut connection = runtime.pool.acquire().await.unwrap();
     assert!(retention::prune_batch(&mut connection, "event", &cfg)
@@ -403,7 +445,7 @@ async fn only_one_instance_prunes_at_a_time(pool: PgPool) {
     let outcome = retention::run_once(&runtime.pool, &config(1000), &stats)
         .await
         .unwrap();
-    assert_eq!(outcome, Outcome::Ran([0, 0, 0, 0, 40, 0]));
+    assert_eq!(outcome, Outcome::Ran([0, 0, 0, 0, 0, 40, 0]));
 
     // Two passes started together: one runs, the other skips, nothing is deleted twice.
     sqlx::raw_sql(expired).execute(&runtime.pool).await.unwrap();
@@ -415,7 +457,7 @@ async fn only_one_instance_prunes_at_a_time(pool: PgPool) {
     let outcomes = [first.unwrap(), second.unwrap()];
     assert!(outcomes.contains(&Outcome::Skipped), "{outcomes:?}");
     assert!(
-        outcomes.contains(&Outcome::Ran([0, 0, 0, 0, 40, 0])),
+        outcomes.contains(&Outcome::Ran([0, 0, 0, 0, 0, 40, 0])),
         "{outcomes:?}"
     );
     runtime.close().await;

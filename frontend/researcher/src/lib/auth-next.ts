@@ -1,3 +1,5 @@
+import { appSigninPath, parseAppSignin } from './app-signin';
+
 /** Pages that need a signed-in account. Visitors without a session are sent to sign in first. */
 export function requiresSignIn(pathname: string) {
   return (
@@ -19,6 +21,12 @@ export function safeNext(next: string | null | undefined): string | null {
   if (!next || next.length > 500 || !next.startsWith('/') || /^\/[\\/]/.test(next)) return null;
   if ([...next].some((c) => c.charCodeAt(0) < 32)) return null;
   const path = next.split(/[?#]/)[0];
+  // The native-app sign-in page comes back with its request intact, and only in the one
+  // canonical spelling of a valid request (nothing else is carried through sign-in).
+  if (path === '/app-signin') {
+    const request = parseAppSignin(new URLSearchParams(next.slice('/app-signin?'.length)));
+    return request && next === appSigninPath(request) ? next : null;
+  }
   return path === '/connectors/authorize' ||
     path === '/profile' ||
     /^\/profiles\/[0-9a-f-]{36}$/i.test(path) ||

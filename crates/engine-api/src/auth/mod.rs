@@ -20,6 +20,7 @@
 
 pub mod agent;
 pub mod device;
+pub mod handover;
 pub mod routes;
 pub mod store;
 pub mod token;

@@ -5,6 +5,7 @@ const COMMANDS: &[&str] = &[
     "get_state",
     "set_server",
     "open_sign_in_link",
+    "start_browser_sign_in",
     "tools_version",
     "device_key_status",
     "device_key_create",
