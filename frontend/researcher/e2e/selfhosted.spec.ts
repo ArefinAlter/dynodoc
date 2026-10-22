@@ -320,6 +320,9 @@ test.describe('add-in files', () => {
       expect(response.headers()['content-disposition'], name).toBe(
         `attachment; filename="${name}"`
       );
+      expect(response.headers()['cache-control'], name).toBe('private, no-store');
+      expect(response.headers()['x-content-type-options'], name).toBe('nosniff');
+      expect(response.headers()['x-robots-tag'], name).toBe('noindex, nofollow');
       const text = await response.text();
       // Every address in the file is on this installation's origin, apart from the XML
       // namespaces and the Office schema addresses that are identifiers, not links.

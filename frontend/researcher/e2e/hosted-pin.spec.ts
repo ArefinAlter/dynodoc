@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { expect, test } from '@playwright/test';
 
 // Pins what the hosted service sends, as it was before DYNODOC_MODE existed (captured from
@@ -143,6 +145,49 @@ test('the sign-in page still links the public site and its legal pages', async (
   await expect(page.getByText('Continue with Google')).toBeVisible();
   await expect(page.getByLabel('Work email')).toBeVisible();
   await expect(page).toHaveTitle('Sign in · Dynodoc');
+});
+
+test('the add-in downloads are the committed files byte for byte, and the per-installation routes do not exist', async ({
+  request
+}) => {
+  const root = resolve(process.cwd(), '..', '..');
+  for (const host of ['word', 'excel', 'powerpoint']) {
+    const served = await request.get(`/connectors/packages/${host}.xml`);
+    expect(served.status(), host).toBe(200);
+    expect(
+      Buffer.from(await served.body()).equals(
+        readFileSync(resolve(root, 'extensions', host, 'manifest.xml'))
+      )
+    ).toBe(true);
+  }
+  for (const host of ['docs', 'sheets', 'slides']) {
+    const served = await request.get(`/connectors/packages/google-${host}.zip`);
+    expect(served.status(), host).toBe(200);
+    expect(
+      Buffer.from(await served.body()).equals(
+        readFileSync(resolve(process.cwd(), 'static/connectors/packages', `google-${host}.zip`))
+      )
+    ).toBe(true);
+  }
+  for (const path of [
+    '/connectors/addins',
+    '/connectors/addins/word.xml',
+    '/connectors/addins/word-catalog.xml',
+    '/connectors/addins/SHA256SUMS',
+    '/office-js/office.js'
+  ])
+    expect((await request.get(path, { maxRedirects: 0 })).status(), path).toBe(404);
+  // The panes name Microsoft's address and carry no local-copy tag.
+  const pane = await request.get('/connectors/word');
+  expect(pane.headers()['content-security-policy']).toContain(
+    'https://appsforoffice.microsoft.com'
+  );
+  expect(await pane.text()).not.toContain('dynodoc-office-js');
+  // The public add-ins page links to the committed files, as it always did.
+  const page = await (await request.get('/connectors')).text();
+  expect(page).toContain('href="/connectors/packages/word.xml"');
+  expect(page).toContain('href="/connectors/packages/google-docs.zip"');
+  expect(page).not.toContain('/connectors/addins/');
 });
 
 test('the options carry the same four fields', async ({ request }) => {

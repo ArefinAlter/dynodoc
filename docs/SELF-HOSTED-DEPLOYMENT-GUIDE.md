@@ -790,7 +790,7 @@ application's version, so a newer release gives Office a newer manifest. `ORIGIN
 `https://` address for Office to load the add-in; `http://localhost` is accepted only on a
 test stack (`DEV_AUTH=true`), and the hosted service's own address is refused. When `ORIGIN`
 cannot be used, the download addresses answer 503 with the reason in plain text, and the
-administrator page shows it.
+administrator page shows it. Only `ORIGIN` is named in the files; `DYNODOC_ALT_ORIGINS` are not.
 
 *Offline builder.* The same files, written to a folder, for installations that hand them out
 by hand or build them away from the server:
