@@ -17,7 +17,13 @@
 //     DUMP permission); every other component is `exported="false"`;
 //   intent filters of MainActivity: the launcher, and `dynodoc://open/...` links (VIEW, DEFAULT,
 //     BROWSABLE; scheme dynodoc, host open, the three path shapes; no autoVerify);
-//   minSdkVersion equals bundle.android.minSdkVersion in tauri.conf.json, targetSdkVersion >= 35.
+//   minSdkVersion equals bundle.android.minSdkVersion in tauri.conf.json, targetSdkVersion >= 35;
+//   MainActivity has an EMPTY taskAffinity (a task of its own), no component sets
+//     allowTaskReparenting;
+//   no attribute outside the android namespace anywhere (except the three the tools write on
+//     <manifest>), and no attribute twice: attributes are kept as android:name in `attrs` and
+//     everything else apart in `other`, so a foreign `http://evil/ns:exported="false"` can neither
+//     hide nor replace the real `android:exported="true"`.
 // The signing certificate is read with `apksigner`: a debug build must carry the SDK's debug key,
 // a release build must not. A debug build is debuggable by design; that is printed, not failed.
 //
@@ -51,7 +57,24 @@ export function readValue(raw) {
 /** A tool's output that cannot be turned into a manifest tree. */
 export class ParseError extends Error {}
 
-const node = (name, indent = -1) => ({ name, attrs: {}, children: [], indent });
+/** The namespace Android reads its attributes from. */
+export const ANDROID_NS = 'http://schemas.android.com/apk/res/android';
+
+/**
+ * `attrs` holds ONLY attributes of the android namespace (keyed by local name: the ones Android
+ * reads); `other` holds every other attribute (no namespace, or a foreign one) keyed `uri:name`
+ * or `name`. Keeping them apart means an attribute of another namespace can never take the
+ * place of an android one, and the audit refuses any of them where none belongs.
+ */
+const node = (name, indent = -1) => ({ name, attrs: {}, other: {}, children: [], indent });
+
+/** Put an attribute where it belongs, and refuse a repeated one (the tools never print any). */
+function setAttribute(element, namespace, name, value, where) {
+  const target = namespace === ANDROID_NS ? element.attrs : element.other;
+  const key = namespace === ANDROID_NS || namespace === '' ? name : `${namespace}:${name}`;
+  if (Object.hasOwn(target, key)) throw new ParseError(`${where}: attribute ${key} appears twice on <${element.name}>`);
+  target[key] = value;
+}
 
 /**
  * The element tree of `aapt2 dump xmltree`. Lines are `N: ns=uri (line=n)`, `E: element (line=n)`
@@ -86,12 +109,14 @@ export function parseAapt2Tree(text) {
     const eq = rest.indexOf('=');
     if (eq <= 0) throw new ParseError(`aapt2: attribute without a value: ${line.slice(0, 80)}`);
     const left = rest.slice(0, eq).replace(/\(0x[0-9a-f]+\)$/i, '');
-    const name = left.slice(left.lastIndexOf(':') + 1);
+    const colon = left.lastIndexOf(':');
+    const namespace = colon >= 0 ? left.slice(0, colon) : '';
+    const name = left.slice(colon + 1);
     if (!/^[A-Za-z][\w.-]*$/.test(name)) throw new ParseError(`aapt2: odd attribute name: ${line.slice(0, 80)}`);
     let value = rest.slice(eq + 1);
     const quoted = value.match(/^"((?:[^"\\]|\\.)*)"(?: \(Raw: ".*"\))?$/);
     if (quoted) value = quoted[1];
-    owner.attrs[name] = value.trim();
+    setAttribute(owner, namespace, name, value.trim(), 'aapt2');
   }
   if (!sawElement) throw new ParseError('aapt2: no elements in the output');
   const top = root.children;
@@ -107,6 +132,8 @@ export function parseApkanalyzerTree(xml) {
   const text = String(xml).replace(/<\?xml[\s\S]*?\?>/, '').replace(/<!--[\s\S]*?-->/g, '');
   const root = node('#document');
   const stack = [root];
+  // Prefix -> namespace, scoped like the elements: a prefix means what the nearest declaration says.
+  const scopes = [new Map()];
   const tag = /<(\/?)([A-Za-z][\w.:-]*)((?:\s+[A-Za-z][\w.:-]*\s*=\s*"[^"]*")*)\s*(\/?)>/g;
   let at = 0;
   for (let m = tag.exec(text); m; m = tag.exec(text)) {
@@ -115,15 +142,29 @@ export function parseApkanalyzerTree(xml) {
     const [, closing, name, attributes, selfClosing] = m;
     if (closing) {
       const top = stack.pop();
+      scopes.pop();
       if (!top || top.name !== name) throw new ParseError(`apkanalyzer: </${name}> does not match <${top?.name}>`);
       continue;
     }
     const element = node(name);
-    for (const a of attributes.matchAll(/([A-Za-z][\w.:-]*)\s*=\s*"([^"]*)"/g)) {
-      element.attrs[a[1].slice(a[1].lastIndexOf(':') + 1)] = decode(a[2]);
+    const scope = new Map(scopes[scopes.length - 1]);
+    const parsed = [...attributes.matchAll(/([A-Za-z][\w.:-]*)\s*=\s*"([^"]*)"/g)].map((a) => [a[1], decode(a[2])]);
+    for (const [key, value] of parsed) if (key.startsWith('xmlns:')) scope.set(key.slice(6), value);
+    for (const [key, value] of parsed) {
+      if (key === 'xmlns' || key.startsWith('xmlns:')) continue;
+      const colon = key.indexOf(':');
+      if (colon < 0) setAttribute(element, '', key, value, 'apkanalyzer');
+      else {
+        const uri = scope.get(key.slice(0, colon));
+        if (uri === undefined) throw new ParseError(`apkanalyzer: prefix ${key.slice(0, colon)} is not declared`);
+        setAttribute(element, uri, key.slice(colon + 1), value, 'apkanalyzer');
+      }
     }
     stack[stack.length - 1].children.push(element);
-    if (!selfClosing) stack.push(element);
+    if (!selfClosing) {
+      stack.push(element);
+      scopes.push(scope);
+    }
   }
   if (text.slice(at).trim() !== '') throw new ParseError('apkanalyzer: text after the last tag');
   if (stack.length !== 1) throw new ParseError('apkanalyzer: a tag is not closed');
@@ -229,6 +270,25 @@ function filterProblems(filter, where) {
   return found;
 }
 
+/** The attributes the manifest element itself carries without the android namespace. */
+const ROOT_OTHER = new Set(['package', 'platformBuildVersionCode', 'platformBuildVersionName']);
+
+/**
+ * Attributes outside the android namespace are read by nobody on the phone, so there is no reason
+ * for one to exist except to confuse a checker (`http://evil/ns:exported="false"` after
+ * `android:exported="true"`). Any such attribute, anywhere, is a problem, except the three the
+ * tools put on the manifest element.
+ */
+export function foreignProblems(element, isRoot = true) {
+  const found = [];
+  for (const key of Object.keys(element.other)) {
+    if (isRoot && ROOT_OTHER.has(key)) continue;
+    found.push(`<${element.name}> has the attribute ${key} outside the android namespace`);
+  }
+  for (const child of element.children) found.push(...foreignProblems(child, false));
+  return found;
+}
+
 /**
  * Everything about the merged manifest that has to hold; returns {problems, facts}. `facts` are
  * lines worth printing (components, permissions, link filters, SDK levels).
@@ -236,7 +296,9 @@ function filterProblems(filter, where) {
 export function auditManifest(manifest, { build = 'debug', appId, minSdk } = {}) {
   const problems = [];
   const facts = [];
-  const pkg = manifest.attrs.package;
+  // `package` is the one attribute of the manifest element that has no namespace.
+  const pkg = manifest.other.package;
+  problems.push(...foreignProblems(manifest));
   if (appId && pkg !== appId) problems.push(`package is ${pkg}, expected ${appId}`);
   facts.push(`package ${pkg}, versionName ${manifest.attrs.versionName ?? '?'}, versionCode ${manifest.attrs.versionCode ?? '?'}`);
 
@@ -277,6 +339,7 @@ export function auditManifest(manifest, { build = 'debug', appId, minSdk } = {})
   }
   const application = apps[0];
   problems.push(...manifestProblems(application.attrs, { build }));
+  if ('allowTaskReparenting' in application.attrs && readValue(application.attrs.allowTaskReparenting) !== false) problems.push('application: allowTaskReparenting is set');
   facts.push(`application: allowBackup=${application.attrs.allowBackup}, dataExtractionRules=${application.attrs.dataExtractionRules}, usesCleartextTraffic=${application.attrs.usesCleartextTraffic}, debuggable=${application.attrs.debuggable ?? '(absent)'}`);
 
   for (const kind of COMPONENTS) {
@@ -288,6 +351,14 @@ export function auditManifest(manifest, { build = 'debug', appId, minSdk } = {})
       if (explicit !== undefined && typeof readValue(explicit) !== 'boolean') problems.push(`${name}: exported has a value that is not understood`);
       if (explicit === undefined && filters.length > 0) problems.push(`${name}: has intent filters but no explicit exported`);
       facts.push(`${kind} ${name}: ${exported ? 'EXPORTED' : 'not exported'}${c.attrs.permission ? `, permission ${c.attrs.permission}` : ''}, ${filters.length} intent filter(s)`);
+      // A component that may be moved to another task's stack is how another app takes over a
+      // screen (task hijacking).
+      if ('allowTaskReparenting' in c.attrs && readValue(c.attrs.allowTaskReparenting) !== false) problems.push(`${name}: allowTaskReparenting is set`);
+      if (kind === 'activity' && name === `${pkg}.MainActivity`) {
+        // The default affinity is the package name, which another app can claim for its own task
+        // (StrandHogg); an empty one puts the activity in a task of its own.
+        if (c.attrs.taskAffinity !== '') problems.push(`MainActivity: taskAffinity is ${JSON.stringify(c.attrs.taskAffinity ?? '(absent)')}, it must be empty`);
+      }
       if (!exported) continue;
       if (kind === 'activity' && name === `${pkg}.MainActivity`) {
         filters.forEach((f, i) => problems.push(...filterProblems(f, `MainActivity filter ${i + 1}`)));

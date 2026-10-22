@@ -5,7 +5,7 @@
 // real touch events, and reads the app's decisions from logcat (debug builds log them).
 //
 //   node scripts/android-probe.mjs [phase ...]      (no phase = all)
-//   phases: ipc links frames download upload back deeplink rotate recreate dark offline
+//   phases: ipc links frames download upload back bypass renderer deeplink rotate recreate dark offline
 //
 // Needs ANDROID_HOME (or ANDROID_SDK_ROOT), the debug APK installed (online.dynodoc.client) and
 // network access to the hosted cloud: the hosted sign-in page is the carrier for the test links
@@ -50,6 +50,8 @@ function shot(name) {
 const pid = () => shell('pidof', APP).split(/\s+/)[0] || null;
 const resumed = () => (shell('dumpsys', 'activity', 'activities').match(/topResumedActivity=ActivityRecord\{[^ ]+ [^ ]+ ([^ ]+)/) ?? [])[1] ?? '';
 const logs = () => adb('logcat', '-d', '-s', 'RustStdoutStderr:I').split('\n').filter((l) => l.includes('dynodoc:')).map((l) => l.replace(/^.*dynodoc: /, ''));
+/** What the Kotlin layer says about itself (tag Dynodoc): downloads, refusals, a dead renderer. */
+const appLogs = () => adb('logcat', '-d', '-s', 'Dynodoc:V').split('\n').filter((l) => /\bDynodoc\b/.test(l)).map((l) => l.replace(/^.*?Dynodoc\s*:\s*/, ''));
 const clearLogs = () => adb('logcat', '-c');
 async function waitFor(fn, what, seconds = 30) {
   const end = Date.now() + seconds * 1000;
@@ -79,6 +81,8 @@ async function connect() {
       if (r.result?.exceptionDetails) throw new Error(r.result.exceptionDetails.text + ' ' + (r.result.exceptionDetails.exception?.description ?? ''));
       return r.result?.result?.value;
     },
+    /** Any DevTools command (for example Page.setBypassCSP): the result object. */
+    async send(method, params = {}) { return (await send(method, params)).result; },
     close() { ws.close(); },
   };
 }
@@ -94,11 +98,21 @@ async function launch({ fresh = false } = {}) {
 
 /** Where the web view sits on the screen: [left, top, right, bottom] in device pixels. */
 function webViewBounds() {
-  shell('uiautomator', 'dump', '/sdcard/probe-ui.xml');
-  const xml = shell('cat', '/sdcard/probe-ui.xml');
-  const m = xml.match(/class="android\.webkit\.WebView"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/);
-  if (!m) throw new Error('no web view in the UI hierarchy');
-  return m.slice(1).map(Number);
+  for (let attempt = 0; ; attempt += 1) {
+    shell('uiautomator', 'dump', '/sdcard/probe-ui.xml');
+    const xml = shell('cat', '/sdcard/probe-ui.xml');
+    const m = xml.match(/class="android\.webkit\.WebView"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/);
+    if (m) return m.slice(1).map(Number);
+    // A loaded emulator shows "... isn't responding" over the app: press Wait and look again.
+    const wait = xml.match(/text="Wait"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/);
+    if (wait && attempt < 3) {
+      const [x1, y1, x2, y2] = wait.slice(1).map(Number);
+      shell('input', 'tap', String(Math.round((x1 + x2) / 2)), String(Math.round((y1 + y2) / 2)));
+      note('dismissed an "isn\'t responding" dialog of the loaded emulator');
+      continue;
+    }
+    throw new Error('no web view in the UI hierarchy');
+  }
 }
 
 /** Put a panel of test elements at fixed places and return their centres in device pixels. */
@@ -230,12 +244,40 @@ const phases = {
     const page = await toCloud();
     const at = await panel(page, '<p><a id="file" href="/robots.txt" download="probe-robots.txt">same-site file</a></p><p><a id="blob" href="#" download="x.csv">blob</a></p><p><a id="other" href="https://example.org/f.txt" download>other site</a></p>');
     await page.eval(`document.getElementById('blob').href = URL.createObjectURL(new Blob(['a,b'], { type: 'text/csv' }))`);
-    shell('rm', '-f', '/sdcard/Download/probe-robots.txt');
+    shell('rm', '-f', '/sdcard/Download/robots.txt', '/sdcard/Download/robots-1.txt', '/sdcard/Download/robots-2.txt');
+    // A script alone cannot start a download: no touch of the page in the last 5 seconds.
+    clearLogs();
+    await sleep(5500);
+    await page.eval(`document.getElementById('file').click()`);
+    await sleep(3000);
+    check(appLogs().some((l) => l.includes('download refused: no touch')) && !/robots/.test(shell('ls', '/sdcard/Download')), 'a download started by a script, with no touch, is refused', appLogs().join(' | '));
+    // A tap: the file is saved, UNLESS the site has set cookies (then the app refuses: it never sends
+    // cookies, and a signed-in download needs them). Both outcomes are the designed ones.
+    clearLogs();
     tap(at.file);
     await sleep(6000);
     const listing = shell('ls', '/sdcard/Download');
-    check(/robots|probe-robots/.test(listing), 'a download of a same-site file reaches the Downloads folder', listing);
+    const said = appLogs().join(' | ');
+    check((/download enqueued/.test(said) && /robots/.test(listing)) || (/the site has cookies set/.test(said) && !/robots/.test(listing)), 'a tapped download of a same-site file is saved (no cookies set) or refused because cookies are set; no cookie is ever sent', `${said}; Download/: ${listing}`);
+    note(`this run: ${/download enqueued/.test(said) ? 'saved' : 'refused (cookies)'}`);
     shot('download-toast');
+    // At most one per 3 seconds, however many taps.
+    clearLogs();
+    tap(at.file);
+    tap(at.file);
+    tap(at.file);
+    await sleep(3000);
+    check(appLogs().filter((l) => l.includes('download enqueued')).length <= 1, 'three quick taps start at most one download', appLogs().join(' | '));
+    // With a cookie set for the site, a download is refused (the app never sends cookies, and a signed-in
+    // download would be an HTML sign-in page without them), and nothing is fetched.
+    await page.eval(`document.cookie = 'probe=1; path=/; max-age=120'`);
+    shell('rm', '-f', '/sdcard/Download/robots.txt', '/sdcard/Download/robots-1.txt', '/sdcard/Download/robots-2.txt', '/sdcard/Download/robots-3.txt');
+    await sleep(3500);
+    clearLogs();
+    tap(at.file);
+    await sleep(4000);
+    check(appLogs().some((l) => l.includes('the site has cookies set')) && !/robots/.test(shell('ls', '/sdcard/Download')), 'with a cookie set for the site the download is refused and nothing is fetched', appLogs().join(' | '));
+    await page.eval(`document.cookie = 'probe=; path=/; max-age=0'`);
     clearLogs();
     tap(at.blob);
     await sleep(1500);
@@ -282,6 +324,69 @@ const phases = {
     check(pid() === before, 'and it comes back with its page, in the same process', await here(again));
     again.close();
     page.close();
+  },
+
+  async bypass() {
+    // Navigations Android never reports to the shell's link rule: a form POST, and history.
+    const page = await toCloud();
+    check((await page.eval('history.length')) === 1, 'the launcher is not left in the history once the site has loaded', `history.length ${await page.eval('history.length')}`);
+    await page.eval('history.back()');
+    await sleep(2500);
+    check((await here(page)).startsWith(CLOUD), 'history.back() from the first page of the site cannot bring up the launcher', await here(page));
+    // A POST to another origin (the page's own Content-Security-Policy would stop it first, so it is switched off for the test).
+    await page.send('Page.enable');
+    await page.send('Page.setBypassCSP', { enabled: true });
+    // It applies to documents created from now on: load the page again.
+    await page.send('Page.reload');
+    await sleep(3000);
+    await waitFor(async () => (await page.eval('document.readyState')) === 'complete' && (await here(page)).startsWith(CLOUD), 'the page after the reload', 30);
+    clearLogs();
+    await page.eval(`(() => { const f = document.createElement('form'); f.method = 'post'; f.action = 'https://example.org/post'; f.target = '_self'; document.body.appendChild(f); f.submit(); })()`);
+    await sleep(5000);
+    const refused = appLogs().filter((l) => l.includes('refused a main-frame POST request'));
+    check(refused.length === 1, 'a form POST to another origin is refused by the app (HTTP 403, a plain page, no request leaves the device)', appLogs().join(' | '));
+    const shownNow = await connect().then(async (c) => { const t = await c.eval('document.body ? document.body.innerText : ""').catch(() => ''); c.close(); return t; });
+    check(/did not open this address/.test(shownNow) && /Back to Dynodoc/.test(shownNow), 'and the person sees why, with a link back', String(shownNow).replace(/\n+/g, ' / ').slice(0, 100));
+    shot('blocked-post');
+    // The link back loads the site again.
+    const back = await connect();
+    const dpr = await back.eval('devicePixelRatio');
+    const link = JSON.parse(await back.eval('JSON.stringify([...document.querySelectorAll("a")].map((a) => { const r = a.getBoundingClientRect(); return [a.textContent, r.x + r.width / 2, r.y + r.height / 2]; }))'));
+    const home = link.find(([t]) => t === 'Back to Dynodoc');
+    if (home) {
+      const [left, top] = webViewBounds();
+      tap([Math.round(left + home[1] * dpr), Math.round(top + home[2] * dpr)]);
+      const again = await connect();
+      await waitFor(async () => (await here(again)).startsWith(`${CLOUD}/`), 'the site after the link back', 30);
+      check(true, 'the link back returns to the site');
+      again.close();
+    } else check(false, 'the blocked page has a link back');
+    back.close();
+    page.close();
+  },
+
+  async renderer() {
+    // A dead web view renderer must not kill the app: it is re-created. Needs adb root (an emulator image that allows it).
+    const page = await toCloud();
+    const before = pid();
+    if (!/restarting adbd as root|already running as root/.test(adb('root'))) {
+      note('adb root is not available here: the renderer phase is skipped');
+      page.close();
+      return;
+    }
+    await sleep(3000);
+    const ps = shell('ps', '-A', '-o', 'PID,NAME').split('\n').find((l) => /webview:sandboxed_process/.test(l));
+    if (!ps) { check(false, 'found the web view renderer process'); page.close(); return; }
+    clearLogs();
+    shell('kill', '-9', ps.trim().split(/\s+/)[0]);
+    await sleep(8000);
+    check(appLogs().some((l) => l.includes('renderer is gone')), 'the app is told its renderer died', appLogs().join(' | '));
+    check(pid() === before, 'and survives it (same process)');
+    page.close();
+    const again = await connect();
+    await waitFor(async () => (await here(again)).startsWith(`${CLOUD}/`) && (await again.eval('document.readyState')) === 'complete', 'the site again after the renderer died', 40);
+    check(true, 'the activity was re-created and the site is shown again', await here(again));
+    again.close();
   },
 
   async deeplink() {
@@ -362,6 +467,34 @@ const phases = {
     shell('settings', 'put', 'system', 'font_scale', '1.0');
     await sleep(3000);
     page.close();
+    // The same with a server SAVED: the new web view reloads the window's first address, the launcher,
+    // which is refused now; the app must go to the server's entry instead of showing a blank window.
+    const cloud = await toCloud();
+    clearLogs();
+    shell('settings', 'put', 'system', 'font_scale', '1.3');
+    await sleep(6000);
+    cloud.close();
+    const again = await connect();
+    await waitFor(async () => (await here(again)).startsWith(`${CLOUD}/`) && (await again.eval('document.readyState')) === 'complete', 'the site after the re-creation', 40);
+    check(true, 'with a server saved, a re-created web view comes back on the server, not blank', await here(again));
+    check(logs().some((l) => l.includes('launcher refused, server saved')), 'by way of the refused-launcher redirect', logs().join(' | '));
+    shot('after-font-change-with-server');
+    shell('settings', 'put', 'system', 'font_scale', '1.0');
+    await sleep(3000);
+    again.close();
+    // A re-created activity does not replay the deep link that started it.
+    const id = '0b0f6a52-6a0e-4c1f-9d57-5b7a3a1e2c44';
+    shell('am', 'force-stop', APP);
+    clearLogs();
+    shell('am', 'start', '-a', 'android.intent.action.VIEW', '-d', `dynodoc://open/projects/${id}`);
+    await sleep(9000);
+    check(logs().some((l) => l.includes(`navigation ${CLOUD}/projects/${id}`)), 'cold start with a project link opens the project', logs().join(' | '));
+    clearLogs();
+    shell('settings', 'put', 'system', 'font_scale', '1.3');
+    await sleep(8000);
+    check(!logs().some((l) => l.includes(`/projects/${id}`)), 'and the re-created activity does not open it again', logs().join(' | '));
+    shell('settings', 'put', 'system', 'font_scale', '1.0');
+    await sleep(2000);
   },
 
   async dark() {

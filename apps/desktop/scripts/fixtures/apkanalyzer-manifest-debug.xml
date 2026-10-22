@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest
     xmlns:android="http://schemas.android.com/apk/res/android"
-    android:versionCode="1"
-    android:versionName="1.0"
+    android:versionCode="1000"
+    android:versionName="0.1.0"
     android:compileSdkVersion="37"
     android:compileSdkVersionCodename="17"
     package="online.dynodoc.client"
@@ -10,7 +10,7 @@
     platformBuildVersionName="17">
 
     <uses-sdk
-        android:minSdkVersion="24"
+        android:minSdkVersion="29"
         android:targetSdkVersion="37" />
 
     <uses-permission
@@ -42,8 +42,10 @@
             android:label="@ref/0x7f0f004b"
             android:name="online.dynodoc.client.MainActivity"
             android:exported="true"
+            android:taskAffinity=""
             android:launchMode="2"
-            android:configChanges="0xfb4">
+            android:configChanges="0xfb4"
+            android:windowSoftInputMode="0x10">
 
             <intent-filter>
 

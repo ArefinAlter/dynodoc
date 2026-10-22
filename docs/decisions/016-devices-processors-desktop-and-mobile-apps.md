@@ -114,7 +114,7 @@ bars, downloads and offline had no handling). **Android limits:** signing in ins
 not work (the emailed link opens in the browser, a phone cannot reach the launcher's paste form;
 needs App Links), the server cannot be changed without clearing the app's data, `blob:` downloads
 are refused with a message, mail links from pages do nothing, nothing was tried on a physical
-phone. Not run: any GitHub Actions job (the account's Actions are blocked by a billing error),
+phone. An independent review (no critical or high finding) led to: downloads only after a touch, one per 3 s, an https file of exactly the page's origin, no cookie ever sent (so signed-in downloads are not supported in the app), cleaned names and no installable files; minSdk raised from 24 to 29; a 403 for main-frame POST and history navigations Android never reports to the shell, and the launcher kept out of the history; a dead renderer re-creates the activity; a re-created activity with a saved server goes to the server instead of showing a blank window and does not replay its deep link; a manifest checker that cannot be fooled by foreign-namespace attributes; an empty task affinity; Gradle dependency verification metadata. Not run: any GitHub Actions job (the account's Actions are blocked by a billing error),
 macOS, iOS, any physical device, a Play-signed build or an AAB. Deviations from the text above, all on
 purpose: remote pages get **no** native access at all in this round (decision item 6 allowed an
 allowlist for the server's own origin), "open a link in the system browser" is done by the shell's own

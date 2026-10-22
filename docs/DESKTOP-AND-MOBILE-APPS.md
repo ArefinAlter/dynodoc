@@ -32,7 +32,7 @@ notarised, published or tried on a physical device.
 | Linux aarch64 | Workflow job behind a tick box | Nothing (private-repository availability of `ubuntu-24.04-arm` unverified) | Everything |
 | macOS aarch64 and x86-64 | Same source; workflow jobs on `macos-latest` and `macos-15-intel` | Nothing; the Apple targets cannot even be type-checked on Windows | Everything: no Mac build, no Keychain key creation, no notarisation |
 | Windows aarch64 | Workflow job behind a tick box | Nothing (`windows-11-arm`, availability unverified) | Everything |
-| Android | The Tauri 2.12 Android project is **committed** (`apps/desktop/src-tauri/gen/android`, hardened), mobile entry point, phone capability file, icons, `minSdkVersion` 24, `targetSdkVersion` 37, deep-link filters, a small Kotlin layer (insets, Back, downloads, offline page; no JavaScript bridge), `scripts/android-build.ps1`, `scripts/android-probe.mjs`, workflow job `android` | **22 October 2026, Windows 11 PC:** debug APK built (universal, arm64-v8a plus x86_64, 44.6 MiB), merged manifest audited against real `aapt2` output, installed and run on an x86_64 Android 16 emulator (WebView 133, hardware-accelerated through WHPX) and driven by a black-box probe (see "Android: what was run on 22 October 2026"); a release APK was built (below) | **Signing in inside the app does not work yet** (the emailed link opens in the browser and a phone has no menu to paste it; needs App Links, round 2); changing the server needs the app's data cleared; no physical device; no Play signing, no AAB run; GitHub Actions job never executed; iOS not part of this |
+| Android | The Tauri 2.12 Android project is **committed** (`apps/desktop/src-tauri/gen/android`, hardened), mobile entry point, phone capability file, icons, `minSdkVersion` 29, `targetSdkVersion` 37, deep-link filters, a small Kotlin layer (insets, Back, narrow downloads, offline page, refusal of navigations Android does not report; no JavaScript bridge), `scripts/android-build.ps1`, `scripts/android-probe.mjs`, workflow job `android` | **22 October 2026, Windows 11 PC:** debug APK built (universal, arm64-v8a plus x86_64, 44.6 MiB), merged manifest audited against real `aapt2` output, installed and run on an x86_64 Android 16 emulator (WebView 133, hardware-accelerated through WHPX) and driven by a black-box probe (see "Android: what was run on 22 October 2026"); a release APK was built (below) | **Signing in inside the app does not work yet** (the emailed link opens in the browser and a phone has no menu to paste it; needs App Links, round 2); changing the server needs the app's data cleared; no physical device; no Play signing, no AAB run; GitHub Actions job never executed; iOS not part of this |
 | iPhone | Same source, iOS 15.0 minimum; workflow job `ios` (simulator, unsigned) | Nothing | Everything: needs a Mac runner and, for devices, an Apple Developer team |
 
 ## How to build each
@@ -84,7 +84,7 @@ them; `sdkmanager` verifies its own packages.
 | NDK | 28.2.13676358 (r28c) | `sdkmanager`; Tauri uses whichever NDK `NDK_HOME` names |
 | emulator | 37.2.12 | `sdkmanager`; WHPX was "installed and usable" (`emulator -accel-check`) |
 | system image | `system-images;android-36;google_apis;x86_64` (revision 7, Android 16, WebView 133.0.6943.137) | `sdkmanager` |
-| Gradle | 9.6.1 (wrapper), SHA-256 `9c0f7fae...9e14` pinned in `gradle-wrapper.properties` | services.gradle.org checksum; the wrapper jar's SHA-256 is on gradle.org/release-checksums |
+| Gradle | 9.6.1 (wrapper), SHA-256 `9c0f7fae...9e14` pinned in `gradle-wrapper.properties`; every dependency pinned by `gradle/verification-metadata.xml` | services.gradle.org checksum; the wrapper jar's SHA-256 is on gradle.org/release-checksums; the metadata is written by Gradle (see "Android: review follow-ups") |
 | Android Gradle plugin, Kotlin | 9.3.1, 2.2.10 | Tauri 2.12.3's template (`tauri android init`) |
 | Tauri | CLI 2.12.3 (npm), `tauri` 2.12.4, `wry` 0.57.0, deep-link plugin 2.6.2, opener 2.7.2 | `package-lock.json`, `Cargo.lock` (`--locked`; the `rust-ini` 0.21.1 pin is untouched) |
 
@@ -141,7 +141,7 @@ production-build phone.
 - **Manifest, from the real tools** (`aapt2 dump xmltree`, `apkanalyzer manifest print`; both are now
   fixtures of `check-apk-manifest.test.mjs`): package `online.dynodoc.client`; `versionName 0.1.0`,
   `versionCode 1000` (from `tauri.android.conf.json`; the first build said `1.0` / `1`);
-  minSdk 24, targetSdk 37, compileSdk 37. Permissions: `INTERNET` only, plus
+  minSdk 29, targetSdk 37, compileSdk 37 (raised from 24 on review: see "Android: review follow-ups"). Permissions: `INTERNET` only, plus
   `online.dynodoc.client.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`, a signature-level permission
   AndroidX adds for its own receivers (no other app can hold it). Exported components: `MainActivity`
   (`singleTask`; launcher and leanback launcher filters and three `dynodoc://open/...` filters:
@@ -196,7 +196,7 @@ production-build phone.
   by our parser; Back goes back inside the site and from the first page sends the app to the
   background; rotation does not restart the app; a font size change (which makes Android re-create the
   activity) leaves the launcher working; the web view follows dark mode; a same-site download reaches
-  `Download/`; a `blob:` download is refused with a message; the system file chooser opens for an
+  `Download/` when the site has set no cookies (otherwise it is refused: see "Android: review follow-ups"); a `blob:` download is refused with a message; the system file chooser opens for an
   upload field and Back returns; offline shows the retry page and **Try again** works once the
   connection is back.
 - **Defects found and fixed** (each has a test or a probe check): window opened the server root
@@ -218,10 +218,10 @@ production-build phone.
   2. **Changing the server** needs the app's data cleared (Settings > Apps > Dynodoc > Storage). The
      launcher says so. A "Change server" entry needs a decision (a launcher shortcut, or a deep link
      that shows the launcher, which weakens "the launcher only when the shell asked").
-  3. **`blob:` downloads** (the web app's CSV, device-key and project exports): refused with a message;
-     fetching a blob needs a script bridge, which this app deliberately does not have. Plain https
-     downloads work. API 24 to 28 may refuse to write to `Download/` without a storage permission the
-     app does not declare (the person is told the download could not start).
+  3. **Downloads of signed-in files and `blob:` downloads** (the web app's CSV, device-key and project
+     exports): refused with a message. A blob needs a script bridge, which this app deliberately does not
+     have; a signed-in file needs cookies, which the app now never sends (see "Android: review follow-ups").
+     Only a public https file of the page's own origin is saved.
   4. **Mail links and local-address links from a page do nothing** (no tap signal on Android).
   5. Printing, camera, microphone, location, notifications, clipboard read: denied or not tried.
   6. Doubled navigation on a cold deep link: the plugin delivers the link twice (event and
@@ -229,6 +229,99 @@ production-build phone.
   7. Arm64 execution, a physical phone, Android versions other than 16 / WebView 133, Play signing,
      an AAB, the GitHub Actions job (its Linux path, `tauri android build` and the `sdkmanager` line,
      has not been executed anywhere; the Windows PC needs the script), iOS.
+
+## Android: review follow-ups (22 October 2026)
+
+An independent review of the branch found no critical or high problem and nothing was run on a
+device by the reviewer; its medium and low findings were fixed and checked on the emulator (all
+phases of `scripts/android-probe.mjs` pass again, the new checks included).
+
+1. **Downloads (medium).** A page's script could start downloads (`a.click()`, an attachment, a hidden
+   iframe) with no touch and no limit; the name and type came from the server (only `/` was removed);
+   and the `Cookie` header added to the download manager is repeated on every redirect hop, so an open
+   redirect on the server would hand the session cookie to another host. Now: a touch of the page
+   in the last 5 seconds is required (recorded by the web view's own touch listener, so a touch
+   dropped by `filterTouchesWhenObscured` does not count) and at most one download starts per 3
+   seconds; **same site means the same origin (scheme, host and port) as the page shown**
+   (`Origins`, a pure function with JVM tests; the page address is `WebView.getUrl()`, the committed
+   page, never a string comparison of hosts); **no cookie is ever sent**; the name is cleaned
+   (`DownloadNames`: control, format and bidirectional characters, line separators, private-use and
+   unassigned characters dropped, path separators and `<>:"|?*` replaced, leading dots and spaces
+   removed, 100 characters with the extension kept) and **anything installable or runnable is refused
+   whatever the type says** (`.apk .xapk .apks .apkm .aab .dex .odex .jar .so .sh .bat .cmd .exe .msi ...`
+   in any dot-separated part of the name, and the installable types whatever the name says).
+   **Consequence, stated plainly: a download the site would give only to a signed-in person is not
+   supported in the app** (if the cookie jar holds cookies for the address the app shows "Not
+   supported in the app yet. Download this in your web browser."; a signed-in person always has them),
+   so in practice the app saves public files only; exports the web app builds as `blob:` stay
+   unsupported as before. A safe in-app fetch (redirects off, credentials the app controls) can come
+   later. Checked on the emulator: a script's click is refused, a tap saves a public file, three quick
+   taps start one, a cookie set for the site makes the download refused with nothing fetched, a
+   `blob:` link is refused with a message; the name rules and the origin rules by 10 JVM tests.
+   **minSdkVersion is now 29** (it was 24): the download manager saves into `Download/` without any
+   storage permission only from Android 10, and Android 7 to 9 stay open to task hijacking
+   ("StrandHogg", an app that claims this app's task affinity) whatever the manifest says. The
+   alternative was declaring `WRITE_EXTERNAL_STORAGE` for API 24 to 28 and keeping those phones; with no
+   users yet to lose, the smaller attack surface won. Check current Android version shares before a
+   store release. (`tauri.conf.json`, `build.gradle.kts`, the tests and the checker all say 29.)
+2. **Navigations Android never reports (low).** `shouldOverrideUrlLoading`, which feeds the Rust
+   rule, is called for GET link navigations only, not for a form POST or a history step. `OfflineClient`
+   now answers a main-frame http(s) request to an origin other than the site's (the origin of the first
+   page of the site that started loading; the launcher's address is exempt; nothing is judged before a
+   site page has started) with **HTTP 403 and a short page** with one link back (an empty body would have
+   left a blank window: the web view shows the answer in place of the page that asked), and drops the
+   launcher from the web view's history once the site has loaded, so `history.back()` cannot bring it up.
+   Checked on the emulator: a form POST to another origin (the page's own `form-action 'self'` policy
+   switched off for the test) is refused with the log line and the page; `history.length` is 1 and
+   `history.back()` stays; the link back loads the site. Frames are not covered. The README line
+   "the window can only go to your server" now says what is true on Android.
+3. **The checker's namespace handling (low).** `check-apk-manifest.mjs` keyed attributes by local name
+   only, so `http://evil/ns:exported="false"` after `android:exported="true"` hid an exported receiver. It
+   now keeps android-namespace attributes (`attrs`) apart from every other (`other`, keyed `uri:name`),
+   resolves apkanalyzer prefixes by their `xmlns` declarations, fails on a repeated attribute, and fails on
+   any attribute outside the android namespace except the three the tools put on `<manifest>`; it also audits
+   `allowTaskReparenting` and requires an empty `taskAffinity` on the activity. The mutation is a test case
+   (aapt2 and apkanalyzer forms, a rebound `android` prefix included); the fixtures are regenerated from
+   the new APK (real output, minSdk 29, `taskAffinity=""`).
+4. **Task affinity and tapjacking (low).** `android:taskAffinity=""` on `MainActivity` and
+   `webView.filterTouchesWhenObscured = true`; the manifest audit requires the empty affinity. The
+   touch filter is not exercised by the probe (it needs another app drawing over this one): reviewed in
+   code and by a policy test only.
+5. **Gradle supply chain (low).** `gradle/verification-metadata.xml` (523 components, sha256, no trusted
+   or ignored keys) is committed, written from the committed project by `./gradlew
+   --write-verification-metadata sha256 assembleUniversalDebug assembleUniversalRelease
+   testUniversalDebugUnitTest -x rustBuild...` (the `rustBuild*` tasks skipped as in
+   `android-build.ps1`; refresh it the same way after any dependency, plugin or Tauri update, and
+   review the diff). It was written on Windows, where Gradle resolves only the Windows `aapt2`; the Linux
+   and macOS jars, the one platform-specific artifact, were added by hand from Google's Maven with the
+   sha256 computed here and checked against the sha1 Maven publishes. **The first Linux or macOS build is
+   the real test of the file**: if it reports a missing checksum, run the command above there.
+   The Material library was kept: Tauri's own Android library depends on it (1.7.0) and the theme is
+   Material3, so removing our explicit 1.12.0 would only downgrade it. Gradle was not bumped (a bump
+   needs the new distribution's checksum re-verified from services.gradle.org and the metadata
+   rewritten, for no gain). Provenance kept: the wrapper jar's sha256 `497c8c2a...a9c7` is the one
+   gradle.org publishes for 9.6.1 and `distributionSha256Sum` (`9c0f7fae...9e14`) equals the published
+   `gradle-9.6.1-bin.zip.sha256` (the reviewer repeated both checks). Side note: building Android's Gradle project also
+   writes `build` folders inside the Tauri crates in `~/.cargo/registry/src` (on drive C: here); they
+   are small and can be deleted.
+6. **Robustness (low).** `onRenderProcessGone` is handled: a dead renderer used to take the whole app
+   with it; now the activity is re-created. Checked by killing the renderer process on the emulator (the
+   app process survived and the site came back). **With a server saved, a re-created activity reloaded the
+   window's first address, the launcher, which is refused when a server is configured, and left a blank
+   window** (reproduced on the emulator with a font size change; the log shows
+   `navigation http://tauri.localhost/ -> Deny`): on phones the shell now goes to the server's entry page
+   when the launcher is refused and a server is saved (`nav::launcher_denied_goes_to`; desktop still refuses
+   outright). A re-created activity also replaces its launch intent, so the deep-link plugin does not
+   replay the `dynodoc://` link that started it (checked: cold start with a project link, font size change,
+   the project is not opened again). Not done: clearing the intent right after a cold-start link is handled (the plugin
+   offers no hook; the replacement happens on re-creation).
+7. **Documented (info).** wry's `ipc` JavaScript interface is present in every frame, including a
+   cross-origin iframe; the origin the permission check sees comes from wry's `onPageStarted` (the page that
+   has STARTED loading); `require_launcher(webview.url())` in `commands.rs` reads the web view's own
+   current address and is the load-bearing second lock (README, "Mobile"). The reviewer's observation
+   that `dynodoc://open/projects/../workspace` is not a bypass is right: the plugin parses with the `url`
+   crate, which collapses dot segments before our parser sees the text, so the link is exactly the
+   accepted `dynodoc://open/workspace`, and `../admin` collapses to a refused form (probe: both).
 
 ## Android: what the owner must provide for Google Play
 
@@ -305,8 +398,8 @@ Do not claim store readiness from this round.
   server work and is round 2.
 - **Downloads, printing, file pickers, drag and drop, and iframes** are whatever the platform's
   web view does by default; none was exercised on desktop. On Android (emulator) a same-site https
-  download goes to the system download manager, a `blob:` download (the web app's exports) is
-  refused with a message, the system file chooser opens for upload fields, and iframes behave as in a
+  download of a public file goes to the system download manager (a signed-in one, and a `blob:` download
+  such as the web app's exports, are refused with a message), the system file chooser opens for upload fields, and iframes behave as in a
   browser; printing and drag and drop were not tried. The web app's `frame-ancestors 'self'` means it
   cannot be framed by the launcher, which is why the window navigates to it instead.
 - **Web view versions** differ per platform (WebView2, WKWebView, WebKitGTK, Android System

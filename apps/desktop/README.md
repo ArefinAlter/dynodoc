@@ -252,6 +252,11 @@ and tested.
    `default-src 'none'` plus its own scripts and styles. One copy of the app runs at a time.
    The debug log (debug builds only) never prints a query string or the click secret.
 
+**What "the window can only go to your server" means on Android** (corrected on review): the Rust rule
+decides every GET link navigation the web view reports; Android does not report a form POST or a
+history step, so there a small layer in Kotlin answers a main-frame request to another origin with a
+403 page and keeps the launcher out of the history (see "Mobile"). Frames are not covered by either.
+
 Not covered: a page you chose to open can still do what any website can do inside its own window
 (it is your server's responsibility; its own Content-Security-Policy is unchanged), and malware on
 your computer is outside what any of this can stop. One behaviour of WebView2 found by the probe:
@@ -385,7 +390,7 @@ blanket `cargo update` without checking the Linux build; drop the pin when the p
 
 **Android: built and run (22 October 2026).** The Android project is committed in
 `src-tauri/gen/android` (Tauri 2.12.3, AGP 9.3.1, Gradle 9.6.1, Kotlin 2.2.10, compileSdk and
-targetSdk 37, minSdk 24). A debug APK (universal: arm64-v8a and x86_64, 44.6 MiB) was built on
+targetSdk 37, **minSdk 29**, see below). A debug APK (universal: arm64-v8a and x86_64, 44.6 MiB) was built on
 Windows 11, its merged manifest audited, and installed on an x86_64 Android 16 emulator, where
 `scripts/android-probe.mjs` drove it. The versions of the tool chain, the exact commands, what the
 probe checks, the defects it found and the limits are in
@@ -413,11 +418,27 @@ tasks, which would fail the same way). It builds the same APK. `-Release` builds
 `check-apk-manifest.mjs` on the built APK and by `policy_tests.rs`): `allowBackup="false"` (the
 template has none, so Android's default, true, applied) and `dataExtractionRules` excluding every
 domain (Android 12+ reads those instead); `usesCleartextTraffic` false in every build type (the
-template enables it in debug); the Gradle distribution pinned by SHA-256; `FileProvider` paths narrowed
-from "all shared storage and cache" to the one folder it uses; the three deep-link intent filters
+template enables it in debug); the Gradle distribution pinned by SHA-256 **and every dependency by
+`gradle/verification-metadata.xml`** (523 components; refresh with `./gradlew
+--write-verification-metadata sha256 assembleUniversalDebug assembleUniversalRelease
+testUniversalDebugUnitTest -x rustBuild...Debug/Release` after a dependency or Tauri update; it was
+written on Windows, so the Linux and macOS `aapt2` jars, the one platform-specific artifact, were added by
+hand with the sha256 computed from Google's Maven and cross-checked against the sha1 it publishes:
+**the first Linux build is the real test of the file**); `FileProvider` paths narrowed from "all shared
+storage and cache" to the one folder it uses; the three deep-link intent filters
 (`dynodoc://open/workspace`, `.../projects/`, `.../documents/`, host `open`, no `autoVerify`, written by
-the deep-link plugin from `tauri.conf.json`); `windowSoftInputMode="adjustResize"`; window colours
-for light and dark; and the Kotlin described next.
+the deep-link plugin from `tauri.conf.json`); `windowSoftInputMode="adjustResize"`; `taskAffinity=""` on
+the activity (a task of its own: Android's default affinity is the package name, which another app
+can claim to slip its screen into this app's task, "StrandHogg"); **minSdk 29** (Android 10): Android 7
+to 9 stay open to that task hijacking whatever the manifest says, and the download manager only
+saves into `Download/` without a storage permission from Android 10 on (the other way out was
+declaring `WRITE_EXTERNAL_STORAGE`; check current Android version shares before a store release, the app
+has no users yet to lose); window colours for light and dark; and the Kotlin described next. The Material
+library stays: Tauri's own Android library depends on it (1.7.0) and the theme is Material3, so
+dropping our explicit 1.12.0 would only downgrade it. Gradle stays at 9.6.1 (not bumped: a bump needs the
+new distribution's checksum re-verified and the metadata rewritten, for no gain here); the wrapper
+jar's sha256 (`497c8c2a...a9c7`) is the one gradle.org publishes for 9.6.1, and the distribution's
+`distributionSha256Sum` (`9c0f7fae...9e14`) is the published file's.
 
 **What the Kotlin does** (`MainActivity.kt`, `OfflineClient.kt`; no JavaScript bridge, no
 `addJavascriptInterface`, a test greps for it; wry's own `ipc` object is in every page, as on
@@ -440,15 +461,53 @@ desktop, and the probe sends 20 app and plugin commands from a hosted page: all 
   mail link does nothing**, because nothing says whether a person tapped it (WebView2 has the same
   problem; on desktop the injected secret script solves it, which cannot work here: its marker would
   arrive as a navigation). The desktop script is therefore not injected on Android at all.
-- *Downloads.* A web view ignores them unless the app handles them. A plain https file from the very
-  site shown goes to the system download manager with the site's cookies; anything else, notably a
-  `blob:` address (the web app builds CSV, key and project exports that way), is not supported and
-  the person is told so ("Not supported in the app yet. Download this in your web browser."): fetching
-  a blob needs a script bridge.
+- *Downloads.* A web view ignores them unless the app handles them, and a page's script can start
+  them too (`a.click()`, an attachment, a hidden iframe), so only the narrowest case is handled:
+  after a touch of the page in the last 5 seconds, at most one per 3 seconds, an https file of
+  exactly the page's origin (scheme, host AND port, compared as origins, not as host strings), **with
+  no cookies ever sent** (the download manager repeats a header on every redirect, to any host, so an
+  open redirect on the server would hand over the session), under a cleaned name (control, invisible
+  and bidirectional characters and path separators dropped, no leading dots, 100 characters, nothing
+  installable or runnable: `.apk`, `.xapk`, `.dex`, `.jar`, `.sh`, ... refused whatever the type of
+  the answer says, and an installable type refused whatever the name says). **Consequence: a download the site would only give to a
+  signed-in person is not supported** (if the cookie jar holds cookies for the address, the person is
+  told "Not supported in the app yet. Download this in your web browser."); so are `blob:` addresses
+  (the web app builds CSV, key and project exports that way) and anything of another origin. A safe in-app
+  fetch (redirects off, an Authorization the app controls) can come later. `DownloadNames` and
+  `Origins` are pure Kotlin with JVM unit tests (`./gradlew testUniversalDebugUnitTest`).
+- *Navigations Android never reports.* `shouldOverrideUrlLoading`, which feeds the Rust rule, is not
+  called for a form POST or for a history step. So `OfflineClient` answers a main-frame http(s) request
+  to an origin other than the site's (the origin of the first page of the site, once it started
+  loading; the launcher's own address is exempt) with HTTP 403 and a short page with a link back,
+  nothing leaves the device; and once the site has loaded, the launcher is dropped from the web view's
+  history (`clearHistory`), so a page's `history.back()` cannot bring it up. Frames are not covered.
+- *Dead renderer.* Without a handler Android kills the whole app with a renderer that died.
+  `onRenderProcessGone` re-creates the activity (wry builds a fresh web view).
+- *Re-creation.* The system re-creates the activity for a font size change, a dead renderer or after
+  process death, and wry reloads the address the window was first created with, which is the launcher
+  whenever the app was first run without a saved server. With a server saved that load is refused; on
+  phones the shell then goes to the server's entry page (`nav::launcher_denied_goes_to`) instead of
+  leaving a blank window. A re-created activity also replaces its launch intent, so the deep-link plugin
+  does not replay the `dynodoc://` link that started it and pull the window back to that page.
+- *Touches.* `filterTouchesWhenObscured`: a touch that arrives while another window covers the page is
+  dropped (tapjacking).
 - *Offline.* A failed load of the site shows a plain page ("Dynodoc cannot reach app.dynodoc.online",
   a **Try again** link to the failed address, no script) instead of Android's stock error page, which
-  has no way to retry. It wraps wry's client and refuses to install itself if a later wry overrides
-  more than it forwards.
+  has no way to retry. `OfflineClient` wraps wry's client and refuses to install itself if a later wry
+  overrides more than it forwards.
+
+**What the web view gives a page that Tauri and wry add, stated so nobody is surprised.** wry registers
+a JavaScript interface named `ipc` (`addJavascriptInterface`) on the web view: it is therefore present in
+**every frame, including a cross-origin `<iframe>`**, not only the top page. Every call still has to
+pass Tauri's permission files, which name the launcher's local content only (the probe's 20 calls from
+a hosted page were all refused). The origin the permission check sees comes from wry's
+`onPageStarted` (`RustWebViewClient.currentUrl`), that is, the address of the page that has STARTED
+loading, which can run ahead of the page still shown during a navigation; and **`require_launcher(webview.url())`
+in `commands.rs`, the check that the asking page is the bundled launcher, is the load-bearing second
+lock**: it reads the web view's own current address, not wry's. Neither is something this app
+changes. (A reviewer asked whether `dynodoc://open/projects/../workspace` is a bypass: it is not. The
+plugin parses links with the `url` crate, which collapses dot segments before our parser sees the text, so
+the link IS `dynodoc://open/workspace`; `../admin` collapses to a refused form.)
 
 **Rust-side changes found by the first real run** (they apply to desktop too): the window opens the
 server's `/workspace`, not its root (the hosted cloud's root redirects to the marketing site, which
@@ -563,3 +622,15 @@ After merging the main branch that holds the Windows non-ASCII key-file fix in `
   passes (it now expects `GET /workspace` for the saved server), `scripts/security-probe.mjs` passes
   (79 checks; it opened a few tabs in the default browser, as designed).
 - Not run: iOS; a physical phone or arm64 device; Google Play signing or an AAB; GitHub Actions.
+
+**After the independent review (same day):** `cargo test --locked` 107 passed; `node --test scripts/*.test.mjs`
+44 passed (check-apk-manifest 16); Kotlin JVM unit tests (`./gradlew testUniversalDebugUnitTest`) 10 passed
+(`DownloadNames` 7, `Origins` 3); root `cargo fmt --all --check` and `cargo clippy --workspace --all-targets
+--locked -- -D warnings`, `cargo check --lib --locked --target aarch64-linux-android` (no warning), the desktop
+debug build and `scripts/smoke.ps1` pass (desktop behaviour is unchanged: the new Rust code is phone-only,
+so `security-probe.mjs` was not rerun). The debug APK (minSdk 29, empty task affinity) and the release APK
+pass `check-apk-manifest.mjs` (debug and release; release unsigned). `scripts/android-probe.mjs` on a fresh
+x86_64 Android 16 emulator: 13 phases, 72 checks, all pass, including the new `bypass` (form POST to another
+origin, history to the launcher) and `renderer` (renderer process killed) phases, the download rules, and
+re-creation with a server saved and with a deep link. Not exercised on a device: `filterTouchesWhenObscured`
+(needs another app drawing over this one) and the Linux/macOS Gradle verification metadata.

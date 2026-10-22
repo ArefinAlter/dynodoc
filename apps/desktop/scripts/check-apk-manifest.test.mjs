@@ -26,7 +26,7 @@ const fixtures = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const aapt2Text = readFileSync(join(fixtures, 'aapt2-xmltree-debug.txt'), 'utf8');
 const analyzerText = readFileSync(join(fixtures, 'apkanalyzer-manifest-debug.xml'), 'utf8');
 const signerText = readFileSync(join(fixtures, 'apksigner-certs-debug.txt'), 'utf8');
-const options = { appId: 'online.dynodoc.client', minSdk: 24 };
+const options = { appId: 'online.dynodoc.client', minSdk: 29 };
 
 const ANDROID = 'http://schemas.android.com/apk/res/android';
 const audit = (text, build = 'debug') => auditManifest(parseAapt2Tree(text), { ...options, build }).problems;
@@ -85,7 +85,7 @@ function swapFirst(text, from, to) {
 
 test('real aapt2 output: the tree, the application attributes and a clean audit', () => {
   const manifest = parseAapt2Tree(aapt2Text);
-  assert.equal(manifest.attrs.package, 'online.dynodoc.client');
+  assert.equal(manifest.other.package, 'online.dynodoc.client');
   const app = applicationAttrs(manifest);
   assert.equal(app.allowBackup, 'false');
   assert.equal(app.usesCleartextTraffic, 'false');
@@ -94,7 +94,7 @@ test('real aapt2 output: the tree, the application attributes and a clean audit'
   assert.equal(app.appComponentFactory, 'androidx.core.app.CoreComponentFactory', 'quoted values lose their quotes');
   const { problems, facts } = auditManifest(manifest, { ...options, build: 'debug' });
   assert.deepEqual(problems, []);
-  assert.ok(facts.some((f) => f.includes('minSdkVersion 24, targetSdkVersion 37')), facts.join('\n'));
+  assert.ok(facts.some((f) => f.includes('minSdkVersion 29, targetSdkVersion 37')), facts.join('\n'));
   assert.ok(facts.some((f) => f.includes('MainActivity: EXPORTED, 4 intent filter(s)')));
   const activity = manifest.children.find((c) => c.name === 'application').children.find((c) => c.name === 'activity');
   assert.equal(activity.children.filter((c) => c.name === 'intent-filter').length, 4);
@@ -102,7 +102,7 @@ test('real aapt2 output: the tree, the application attributes and a clean audit'
 
 test('real apkanalyzer output gives the same audit as aapt2', () => {
   const manifest = parseApkanalyzerTree(analyzerText);
-  assert.equal(manifest.attrs.package, 'online.dynodoc.client');
+  assert.equal(manifest.other.package, 'online.dynodoc.client');
   assert.equal(applicationAttrs(manifest).allowBackup, 'false');
   assert.deepEqual(auditManifest(manifest, { ...options, build: 'debug' }).problems, []);
   const a = auditManifest(parseAapt2Tree(aapt2Text), { ...options }).facts.filter((f) => !f.startsWith('application:') && !f.startsWith('package'));
@@ -195,8 +195,77 @@ test('link filters: only dynodoc://open/<three shapes>, VIEW + DEFAULT + BROWSAB
   assert.ok(audit(noPath).some((p) => p.includes('exactly one path shape')), audit(noPath).join('|'));
 });
 
+/** Insert a raw `A:` line (any namespace) right after the `name` line of a component, before its next attribute. */
+function addRawAttribute(text, componentName, rawLine) {
+  const lines = text.split(/\r?\n/);
+  const at = lines.findIndex((l) => l.includes(`"${componentName}" (Raw:`));
+  assert.ok(at >= 0, componentName);
+  lines.splice(at + 1, 0, `${lines[at].match(/^\s*/)[0]}A: ${rawLine}`);
+  return lines.join('\n');
+}
+
+test('an attribute of another namespace can never hide or replace an android one', () => {
+  const receiver = 'androidx.profileinstaller.ProfileInstallReceiver';
+  // The mutation of the review: a foreign `exported="false"` after the real `exported="true"`.
+  // (Keyed by local name, the old parser let the later one win and the receiver looked private.)
+  for (const evil of ['http://evil/ns:exported(0x01010010)=false', 'http://schemas.android.com/apk/res-auto:exported=false', 'exported=false']) {
+    const text = addRawAttribute(aapt2Text, receiver, evil);
+    const manifest = parseAapt2Tree(text);
+    const found = auditManifest(manifest, { ...options, build: 'debug' }).problems;
+    assert.ok(found.some((p) => p.includes('outside the android namespace')), `${evil}: ${found.join(' | ')}`);
+    const component = manifest.children.find((c) => c.name === 'application').children.find((c) => c.attrs.name === receiver);
+    assert.equal(component.attrs.exported, 'true', 'the android attribute is untouched');
+  }
+  // On the manifest element only the three attributes the tools write are expected.
+  const rootEvil = aapt2Text.replace('A: package="online.dynodoc.client"', 'A: http://evil/ns:debuggable=false\n    A: package="online.dynodoc.client"');
+  assert.notEqual(rootEvil, aapt2Text);
+  assert.ok(audit(rootEvil).some((p) => p.includes('<manifest> has the attribute http://evil/ns:debuggable')));
+  // The same attribute twice is something the tools never print: refused, not "last one wins".
+  assert.throws(() => parseAapt2Tree(addRawAttribute(aapt2Text, receiver, `${ANDROID}:exported(0x01010010)=false`)), /appears twice/);
+  assert.throws(() => parseAapt2Tree(addRawAttribute(addRawAttribute(aapt2Text, receiver, 'http://evil/ns:x=1'), receiver, 'http://evil/ns:x=2')), /appears twice/);
+});
+
+test('the same holds for apkanalyzer output, with prefixes resolved by their declarations', () => {
+  const receiver = '<receiver\n            android:name="androidx.profileinstaller.ProfileInstallReceiver"';
+  assert.ok(analyzerText.includes(receiver), 'the fixture still has the receiver as written here');
+  const with_ = (extra) => analyzerText.replace(receiver, `${receiver}\n            ${extra}`);
+  const problems = (text) => auditManifest(parseApkanalyzerTree(text), options).problems;
+  assert.ok(problems(with_('xmlns:evil="http://evil/ns" evil:exported="false"')).some((p) => p.includes('outside the android namespace')));
+  assert.ok(problems(with_('exported="false"')).some((p) => p.includes('outside the android namespace')));
+  // A prefix called android that is bound to another namespace is not android.
+  // Rebinding the prefix on an element moves every attribute written with it out of android's.
+  const everything = problems(with_('xmlns:android="http://evil/ns"'));
+  assert.ok(everything.some((p) => p.includes('outside the android namespace')), everything.join(' | '));
+  const rebound = problems(analyzerText.replace('android:permission="android.permission.DUMP"', 'xmlns:android="http://evil/ns" android:permission="android.permission.DUMP"'));
+  assert.ok(rebound.some((p) => p.includes('outside the android namespace')), rebound.join(' | '));
+  assert.throws(() => parseApkanalyzerTree(with_('ghost:exported="false"')), /not declared/);
+  assert.throws(() => parseApkanalyzerTree(with_('android:exported="false"')), /appears twice/);
+});
+
+test('MainActivity must have an empty taskAffinity and no component may be reparented', () => {
+  const name = 'online.dynodoc.client.MainActivity';
+  const lines = aapt2Text.split(/\r?\n/);
+  const affinityAt = lines.findIndex((l) => l.includes('taskAffinity('));
+  assert.ok(affinityAt >= 0, 'the real manifest sets taskAffinity');
+  assert.match(lines[affinityAt], /=""$/);
+  const without = [...lines.slice(0, affinityAt), ...lines.slice(affinityAt + 1)].join('\n');
+  assert.ok(audit(without).some((p) => p.includes('taskAffinity is "(absent)"')));
+  const named = lines.map((l, i) => (i === affinityAt ? l.replace('=""', `="${name}"`) : l)).join('\n');
+  assert.ok(audit(named).some((p) => p.includes('taskAffinity is')));
+  for (const [component, value] of [[name, 'true'], ['androidx.profileinstaller.ProfileInstallReceiver', 'true'], ['androidx.core.content.FileProvider', '(type 0x12)0xffffffff']]) {
+    const found = audit(addRawAttribute(aapt2Text, component, `${ANDROID}:allowTaskReparenting(0x01010204)=${value}`));
+    assert.ok(found.some((p) => p.includes('allowTaskReparenting is set')), `${component}: ${found.join(' | ')}`);
+  }
+  assert.ok(audit(addAttribute(aapt2Text, 'application', 'allowTaskReparenting(0x01010204)=true')).some((p) => p.includes('application: allowTaskReparenting')));
+  // false is fine.
+  assert.deepEqual(audit(addRawAttribute(aapt2Text, name, `${ANDROID}:allowTaskReparenting(0x01010204)=false`)), []);
+  // The apkanalyzer view says the same.
+  assert.match(analyzerText, /android:taskAffinity=""/);
+  assert.ok(auditManifest(parseApkanalyzerTree(analyzerText.replace('android:taskAffinity=""', '')), options).problems.some((p) => p.includes('taskAffinity')));
+});
+
 test('SDK levels: minSdk must equal tauri.conf.json, target must be recent', () => {
-  assert.ok(audit(swap(aapt2Text, 'minSdkVersion(0x0101020c)=24', 'minSdkVersion(0x0101020c)=21')).some((p) => p.includes('tauri.conf.json says 24')));
+  assert.ok(audit(swap(aapt2Text, 'minSdkVersion(0x0101020c)=29', 'minSdkVersion(0x0101020c)=24')).some((p) => p.includes('tauri.conf.json says 29')));
   assert.ok(audit(swap(aapt2Text, 'targetSdkVersion(0x01010270)=37', 'targetSdkVersion(0x01010270)=30')).some((p) => p.includes('below 35')));
   assert.ok(audit(swap(aapt2Text, 'package="online.dynodoc.client" (Raw: "online.dynodoc.client")', 'package="x.y" (Raw: "x.y")')).some((p) => p.includes('expected online.dynodoc.client')));
 });

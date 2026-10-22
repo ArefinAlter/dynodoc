@@ -268,6 +268,11 @@ jobs:
       - name: Build the debug APK (arm64 and x86-64 in one universal APK)
         run: npm run tauri -- android build --ci --debug --apk --target aarch64 x86_64 -- --locked
         working-directory: apps/desktop
+      - name: Kotlin unit tests (download names, origins), with Gradle's dependency verification on
+        # Plain JVM tests of the pure helpers in gen/android (DownloadNames, Origins). The rustBuild
+        # tasks are skipped: the library was just built by the step above.
+        run: ./gradlew testUniversalDebugUnitTest -PabiList=arm64-v8a,x86_64 -ParchList=arm64,x86_64 -PtargetList=aarch64,x86_64 -x rustBuildArm64Debug -x rustBuildX86_64Debug -x rustBuildUniversalDebug --no-daemon
+        working-directory: apps/desktop/src-tauri/gen/android
       - name: Check the MERGED manifest and the signing key inside the built APK
         # The text check above looks at the project; this looks at what shipped, after Gradle
         # merged every library's manifest and applied the build type's placeholders. aapt2 prints
