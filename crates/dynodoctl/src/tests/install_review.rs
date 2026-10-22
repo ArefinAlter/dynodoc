@@ -20,7 +20,8 @@ fn an_overlay_on_an_existing_installation_is_refused_and_nothing_runs() {
     let e = run(&ctx, &opts).unwrap_err();
     assert_eq!(e.kind, crate::error::Kind::Refused, "{e}");
     assert!(
-        e.what.contains("without a backup, a rehearsal or a digest check"),
+        e.what
+            .contains("without a backup, a rehearsal or a digest check"),
         "{e}"
     );
     assert!(e.todo.contains("dynodoctl upgrade"), "{e}");
@@ -66,7 +67,11 @@ fn a_project_name_that_belongs_to_another_directory_stops_the_install_before_any
     let dir = tempfile::tempdir().unwrap();
     testkit::bundle(dir.path());
     let runner = testkit::healthy_runner();
-    runner.first("compose.project.working_dir", 0, "/srv/the-first-installation\n");
+    runner.first(
+        "compose.project.working_dir",
+        0,
+        "/srv/the-first-installation\n",
+    );
     runner.on_effect("generate-env", generator_effect(dir.path().to_path_buf()));
     let confirm = ScriptedConfirm::new(&[true]);
     let ctx = testkit::ctx(&runner, dir.path(), &confirm);
@@ -74,6 +79,10 @@ fn a_project_name_that_belongs_to_another_directory_stops_the_install_before_any
     assert_eq!(e.kind, crate::error::Kind::Refused, "{e}");
     assert!(e.what.contains("another directory"), "{e}");
     assert!(e.todo.contains("COMPOSE_PROJECT_NAME"), "{e}");
-    assert!(!runner.ran("generate-env") && !runner.ran("up -d"), "{:?}", runner.lines());
+    assert!(
+        !runner.ran("generate-env") && !runner.ran("up -d"),
+        "{:?}",
+        runner.lines()
+    );
     assert!(!dir.path().join(".env").exists());
 }

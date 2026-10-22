@@ -233,3 +233,25 @@ fn the_rehearsal_never_names_the_live_database_in_a_destructive_command() {
         assert!(!line.contains("stop proxy"), "{line}");
     }
 }
+
+#[test]
+fn a_create_that_failed_never_leads_to_a_drop_and_names_carry_random_text() {
+    // M2: only a database this run created is this run's to drop.
+    let (dir, runner) = setup();
+    runner.first(
+        "create database dynodoc_rehearse_",
+        1,
+        "ERROR: database already exists",
+    );
+    let confirm = ScriptedConfirm::new(&[]);
+    let ctx = testkit::ctx(&runner, dir.path(), &confirm);
+    let report = run(&ctx, None, None, &Target::default()).unwrap();
+    assert!(!report.ok);
+    assert!(!runner.ran("drop database"), "{:?}", runner.lines());
+    assert!(crate::db::is_scratch_name(&report.scratch_database));
+    assert!(
+        report.scratch_database.ends_with("_ab12cd"),
+        "{}",
+        report.scratch_database
+    );
+}
