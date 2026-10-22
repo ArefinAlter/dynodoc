@@ -44,6 +44,10 @@ pub struct Cli {
     /// A PEM file with extra trusted certificate authorities for the checks that look at the certificate (repeatable).
     #[arg(long, global = true, value_name = "FILE")]
     pub ca_file: Vec<PathBuf>,
+    /// Accept settings, secrets and backups whose access cannot be restricted to the current user
+    /// (Windows: the access list could not be applied). Off by default: such a file is not kept.
+    #[arg(long, global = true)]
+    pub allow_insecure_files: bool,
     #[command(subcommand)]
     pub command: Command,
 }
@@ -693,14 +697,14 @@ pub fn run(
             return code;
         }
     };
-    let interactive = Interactive {
-        provided: cli
-            .confirm
+    crate::winacl::allow_insecure(cli.allow_insecure_files);
+    let interactive = Interactive::stdio(
+        cli.confirm
             .iter()
             .cloned()
             .chain(cli.yes.then(|| "yes".to_string()))
             .collect(),
-    };
+    );
     let confirm: &dyn Confirm = confirm_for_tests.unwrap_or(&interactive);
     let mut ctx = Ctx::new(runner, Layout::new(dir_from(&cli)), confirm);
     ctx.project = cli.project.clone();

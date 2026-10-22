@@ -62,13 +62,83 @@ pub fn read_facts(c: &Compose<'_>, db: &str) -> Result<DbFacts> {
     })
 }
 
-/// Has `init` ever run on this database?
-pub fn has_schema(c: &Compose<'_>, db: &str) -> Result<bool> {
+/// What a database holds. "Cannot tell" is an error, never "empty": a failed query must not be
+/// read as permission to skip the safety backup.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SchemaState {
+    /// The database does not exist (a fresh server).
+    Missing,
+    /// It exists and `init` never ran in it.
+    Empty,
+    /// It exists and has the migration table.
+    Present,
+}
+
+pub fn schema_state(c: &Compose<'_>, db: &str) -> Result<SchemaState> {
+    check_ident(db)?;
+    let exists = c.psql(
+        "postgres",
+        &format!("select 1 from pg_database where datname = '{db}'"),
+    )?;
+    if !exists.ok() {
+        return Err(CliError::failed(
+            format!(
+                "could not ask PostgreSQL whether `{db}` exists: {}",
+                short(&exists.text())
+            ),
+            "check `dynodoctl status` and `docker compose logs postgres`; nothing was changed",
+        ));
+    }
+    if exists.stdout_text().trim() != "1" {
+        return Ok(SchemaState::Missing);
+    }
     let out = c.psql(
         db,
         "select to_regclass('public._sqlx_migrations') is not null",
     )?;
-    Ok(out.ok() && out.stdout_text().trim() == "t")
+    if !out.ok() {
+        return Err(CliError::failed(
+            format!("could not read the database `{db}`: {}", short(&out.text())),
+            "check `dynodoctl status` and `docker compose logs postgres`; nothing was changed",
+        ));
+    }
+    Ok(if out.stdout_text().trim() == "t" {
+        SchemaState::Present
+    } else {
+        SchemaState::Empty
+    })
+}
+
+const SCRATCH_PREFIXES: [&str; 4] = [
+    "dynodoc_restore_",
+    "dynodoc_restoring_",
+    "dynodoc_prev_",
+    "dynodoc_rehearse_",
+];
+
+/// Is this one of the names dynodoctl gives the databases it makes and may drop?
+/// `dynodoc`, `postgres`, `template0` and `template1` are never among them.
+pub fn is_scratch_name(name: &str) -> bool {
+    name.len() <= 63
+        && SCRATCH_PREFIXES.iter().any(|p| {
+            name.strip_prefix(p).is_some_and(|rest| {
+                !rest.is_empty()
+                    && rest
+                        .chars()
+                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+            })
+        })
+}
+
+fn check_scratch(name: &str) -> Result<()> {
+    if is_scratch_name(name) {
+        Ok(())
+    } else {
+        Err(CliError::failed(
+            format!("internal: `{name}` is not a name dynodoctl may create or drop"),
+            "this is a bug in dynodoctl; please report it",
+        ))
+    }
 }
 
 pub fn size_bytes(c: &Compose<'_>, db: &str) -> Result<u64> {
@@ -83,7 +153,7 @@ pub fn size_bytes(c: &Compose<'_>, db: &str) -> Result<u64> {
 }
 
 pub fn create_database(c: &Compose<'_>, name: &str) -> Result<()> {
-    check_ident(name)?;
+    check_scratch(name)?;
     let out = c.psql("postgres", &format!("create database {name}"))?;
     if out.ok() {
         Ok(())
@@ -100,13 +170,8 @@ pub fn create_database(c: &Compose<'_>, name: &str) -> Result<()> {
 
 /// Drop a database even if sessions remain (PostgreSQL 13+; the bundle ships 16).
 pub fn drop_database(c: &Compose<'_>, name: &str) -> Result<()> {
-    check_ident(name)?;
-    if name == LIVE_DB {
-        return Err(CliError::failed(
-            "internal: refusing to drop the live database",
-            "this is a bug in dynodoctl; please report it",
-        ));
-    }
+    // An allow-list, not a deny-list: only databases this tool names can be dropped.
+    check_scratch(name)?;
     let out = c.psql(
         "postgres",
         &format!("drop database if exists {name} with (force)"),
@@ -119,7 +184,7 @@ pub fn drop_database(c: &Compose<'_>, name: &str) -> Result<()> {
 }
 
 pub fn list_scratch_databases(c: &Compose<'_>) -> Result<Vec<String>> {
-    let out = c.psql("postgres", "select datname from pg_database where datname like 'dynodoc!_restore!_%' escape '!' or datname like 'dynodoc!_restoring!_%' escape '!' order by 1")?;
+    let out = c.psql("postgres", "select datname from pg_database where datname like 'dynodoc!_restore!_%' escape '!' or datname like 'dynodoc!_restoring!_%' escape '!' or datname like 'dynodoc!_prev!_%' escape '!' or datname like 'dynodoc!_rehearse!_%' escape '!' order by 1")?;
     if !out.ok() {
         return Ok(Vec::new());
     }
@@ -144,6 +209,77 @@ pub fn restore_dump(c: &Compose<'_>, db: &str, dump: &Path) -> Result<Output> {
         Some(dump.to_path_buf()),
         None,
     )
+}
+
+/// Render the dump as the SQL script `pg_restore` would run, WITHOUT running it (`-f -` connects
+/// to no database), into `out` on the host. For the screen in `dumpscan`.
+pub fn dump_script(c: &Compose<'_>, dump: &Path, out: &Path) -> Result<Output> {
+    c.pg_sh_io(
+        "pg_restore --no-owner -f -",
+        Some(dump.to_path_buf()),
+        Some(out.to_path_buf()),
+    )
+}
+
+/// Every database name on the server.
+pub fn database_names(c: &Compose<'_>) -> Result<Vec<String>> {
+    let out = c.psql("postgres", "select datname from pg_database order by 1")?;
+    if !out.ok() {
+        return Err(CliError::failed(
+            format!("could not list the databases: {}", short(&out.text())),
+            "check `docker compose logs postgres`",
+        ));
+    }
+    Ok(out
+        .stdout_text()
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect())
+}
+
+/// Close every session on `db` (the services must be stopped first).
+pub fn terminate_sessions(c: &Compose<'_>, db: &str) -> Result<()> {
+    check_ident(db)?;
+    let out = c.psql("postgres", &format!("select pg_terminate_backend(pid) from pg_stat_activity where datname = '{db}' and pid <> pg_backend_pid()"))?;
+    if out.ok() {
+        Ok(())
+    } else {
+        Err(CliError::failed(
+            format!(
+                "could not close the open connections to `{db}`: {}",
+                short(&out.text())
+            ),
+            "the database was not changed",
+        ))
+    }
+}
+
+/// Rename `live` to `outgoing` and `incoming` to `live` in ONE transaction: either both happen or
+/// neither does, so a crash or a kill between them cannot leave the server without a live database.
+/// (Used for the swap and, with the roles of the two scratch names exchanged, for the swap back.)
+pub fn swap_names(c: &Compose<'_>, live: &str, incoming: &str, outgoing: &str) -> Result<()> {
+    if live != LIVE_DB {
+        return Err(CliError::failed(
+            "internal: the swap must name the live database",
+            "this is a bug in dynodoctl; please report it",
+        ));
+    }
+    check_scratch(incoming)?;
+    check_scratch(outgoing)?;
+    let sql = format!("begin; alter database {live} rename to {outgoing}; alter database {incoming} rename to {live}; commit;");
+    let out = c.psql("postgres", &sql)?;
+    if out.ok() {
+        Ok(())
+    } else {
+        Err(CliError::failed(
+            format!(
+                "the database swap failed as a whole (nothing was renamed): {}",
+                short(&out.text())
+            ),
+            "the live database is as it was",
+        ))
+    }
 }
 
 /// Number of entries `pg_restore --list` finds in a dump (proves it is a readable custom-format dump).
@@ -315,11 +451,81 @@ mod tests {
     }
 
     #[test]
-    fn the_live_database_can_never_be_dropped_by_the_scratch_helper() {
+    fn only_databases_dynodoctl_names_can_be_dropped_or_created() {
+        // M2: an allow-list. The old check accepted `postgres` and `template1`.
         let runner = FakeRunner::new();
-        let err = with_ctx(&runner, |c| drop_database(c, LIVE_DB)).unwrap_err();
-        assert!(err.what.contains("refusing"));
-        assert!(runner.calls().is_empty());
+        for name in [
+            LIVE_DB,
+            "postgres",
+            "template0",
+            "template1",
+            "dynodoc_restore_",
+            "dynodoc_restore_UPPER",
+            "dynodoc_restore_a;drop",
+            "dynodoc_other_1",
+            "my_dynodoc_restore_1",
+            "",
+        ] {
+            let err = with_ctx(&runner, |c| drop_database(c, name)).unwrap_err();
+            assert!(
+                err.what.contains("not a name dynodoctl may"),
+                "{name}: {err}"
+            );
+            assert!(
+                with_ctx(&runner, |c| create_database(c, name)).is_err(),
+                "{name}"
+            );
+        }
+        assert!(runner.calls().is_empty(), "nothing reached the database");
+        for name in [
+            "dynodoc_restore_20261022t120000z_ab12",
+            "dynodoc_restoring_1",
+            "dynodoc_prev_x",
+            "dynodoc_rehearse_9",
+        ] {
+            assert!(is_scratch_name(name), "{name}");
+        }
+    }
+
+    #[test]
+    fn a_failed_query_is_never_read_as_an_empty_database() {
+        // M3: the old code treated any psql error as "no schema" and skipped the safety backup.
+        let ok = FakeRunner::new();
+        ok.first("select 1 from pg_database", 0, "1\n");
+        ok.first("to_regclass", 0, "t\n");
+        assert_eq!(
+            with_ctx(&ok, |c| schema_state(c, LIVE_DB)).unwrap(),
+            SchemaState::Present
+        );
+        let empty = FakeRunner::new();
+        empty.first("select 1 from pg_database", 0, "1\n");
+        empty.first("to_regclass", 0, "f\n");
+        assert_eq!(
+            with_ctx(&empty, |c| schema_state(c, LIVE_DB)).unwrap(),
+            SchemaState::Empty
+        );
+        let missing = FakeRunner::new();
+        missing.first("select 1 from pg_database", 0, "");
+        assert_eq!(
+            with_ctx(&missing, |c| schema_state(c, LIVE_DB)).unwrap(),
+            SchemaState::Missing
+        );
+        let broken = FakeRunner::new();
+        broken.first("select 1 from pg_database", 0, "1\n");
+        broken.first("to_regclass", 2, "psql: error: connection to server failed");
+        assert_eq!(
+            with_ctx(&broken, |c| schema_state(c, LIVE_DB))
+                .unwrap_err()
+                .code(),
+            crate::error::exit::FAILED
+        );
+        let down = FakeRunner::new();
+        down.first(
+            "select 1 from pg_database",
+            1,
+            "psql: error: server closed the connection",
+        );
+        assert!(with_ctx(&down, |c| schema_state(c, LIVE_DB)).is_err());
     }
 
     #[test]

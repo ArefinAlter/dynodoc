@@ -163,7 +163,9 @@ pub fn config_files(ctx: &Ctx<'_>) -> Result<Vec<String>> {
     Ok(found)
 }
 
-fn copy_config(ctx: &Ctx<'_>, root: &Path) -> Result<Vec<FileEntry>> {
+/// Copy the settings and secrets under `root` (mode 0600) and describe them: a checksum per
+/// non-secret file, and one salted digest over the secret files together.
+fn copy_config(ctx: &Ctx<'_>, root: &Path) -> Result<ConfigCopy> {
     create_private_dir(root)?;
     let mut entries = Vec::new();
     for rel in config_files(ctx)? {
@@ -176,7 +178,54 @@ fn copy_config(ctx: &Ctx<'_>, root: &Path) -> Result<Vec<FileEntry>> {
         write_private(&target, &bytes)?;
         entries.push(manifest::file_entry(root, &rel)?);
     }
-    Ok(entries)
+    let (salt, digest) = if entries.iter().any(|e| manifest::is_secret_path(&e.path)) {
+        let salt = crate::util::random_hex(16);
+        let digest = manifest::secrets_digest(root, &entries, &salt)?;
+        (Some(salt), Some(digest))
+    } else {
+        (None, None)
+    };
+    Ok(ConfigCopy {
+        entries,
+        salt,
+        digest,
+    })
+}
+
+struct ConfigCopy {
+    entries: Vec<FileEntry>,
+    salt: Option<String>,
+    digest: Option<String>,
+}
+
+/// Marker file in a backup directory while it is being written. A directory that still has it was
+/// never finished (a crash, a kill) and is removed at the next backup.
+pub const INCOMPLETE_MARKER: &str = ".dynodoctl-incomplete";
+
+/// Remove backup directories that were never finished.
+pub fn clean_unfinished(backups_dir: &Path) -> Vec<PathBuf> {
+    let mut removed = Vec::new();
+    let Ok(entries) = std::fs::read_dir(backups_dir) else {
+        return removed;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let ours = entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with(manifest::DIR_PREFIX);
+        let marked = std::fs::symlink_metadata(path.join(INCOMPLETE_MARKER)).is_ok();
+        if ours
+            && marked
+            && !std::fs::symlink_metadata(&path)
+                .map(|m| m.file_type().is_symlink())
+                .unwrap_or(true)
+            && std::fs::remove_dir_all(&path).is_ok()
+        {
+            removed.push(path);
+        }
+    }
+    removed
 }
 
 /// Is `inner` inside `outer`? (Textual, after making both absolute where they exist.)
@@ -215,8 +264,16 @@ pub fn run(ctx: &Ctx<'_>, options: &Options) -> Result<BackupReport> {
             "wait a second and run again, or choose another --label; backups are never overwritten",
         ));
     }
-    let mut rec = Recorder::new();
+    let mut rec = Recorder::for_ctx(ctx);
     let mut warnings = Vec::new();
+    let cleaned = clean_unfinished(&backups_dir);
+    if !cleaned.is_empty() {
+        warnings.push(format!(
+            "removed {} backup director{} that was never finished (a crash or an interrupted run)",
+            cleaned.len(),
+            if cleaned.len() == 1 { "y" } else { "ies" }
+        ));
+    }
 
     let size = db::size_bytes(&c, LIVE_DB)?;
     if let Some(free) = free_bytes(&backups_dir) {
@@ -240,6 +297,14 @@ pub fn run(ctx: &Ctx<'_>, options: &Options) -> Result<BackupReport> {
         }
     }
     create_private_dir(&path)?;
+    write_private(&path.join(INCOMPLETE_MARKER), b"being written\n")?;
+    // The settings copy may go to a directory of its own; if this run fails it must not be left behind.
+    let external_root = options
+        .secrets_to
+        .as_ref()
+        .filter(|_| !options.no_config)
+        .map(|d| d.join(format!("{}-config", name)));
+    let external_existed = external_root.as_ref().is_some_and(|p| p.exists());
     let work = (|| -> Result<(Manifest, Vec<FileEntry>)> {
         let env = ctx.env()?;
         let before = rec.step("read the database", || {
@@ -293,11 +358,7 @@ pub fn run(ctx: &Ctx<'_>, options: &Options) -> Result<BackupReport> {
         let (sha, bytes) = crate::util::sha256_file(&dump_path)?;
         set_private(&dump_path)?;
 
-        let mut config = ConfigEntry {
-            location: "none".into(),
-            dir_name: None,
-            files: Vec::new(),
-        };
+        let mut config = ConfigEntry::none();
         if !options.no_config {
             let (root, location, dir_name) = match &options.secrets_to {
                 Some(dir) => {
@@ -306,17 +367,17 @@ pub fn run(ctx: &Ctx<'_>, options: &Options) -> Result<BackupReport> {
                 }
                 None => (path.join("config"), "inside", None),
             };
-            let files = rec.step("copy settings and secrets (mode 0600)", || {
-                let files = copy_config(ctx, &root)?;
-                Ok((
-                    files.clone(),
-                    format!("{} files to {}", files.len(), root.display()),
-                ))
+            let copy = rec.step("copy settings and secrets (owner only)", || {
+                let copy = copy_config(ctx, &root)?;
+                let detail = format!("{} files to {}", copy.entries.len(), root.display());
+                Ok((copy, detail))
             })?;
             config = ConfigEntry {
                 location: location.into(),
                 dir_name,
-                files,
+                files: copy.entries,
+                secrets_salt: copy.salt,
+                secrets_digest: copy.digest,
             };
         }
 
@@ -350,26 +411,13 @@ pub fn run(ctx: &Ctx<'_>, options: &Options) -> Result<BackupReport> {
         };
         rec.step("write manifest.json and SHA256SUMS", || {
             manifest::write_manifest(&path, &manifest)?;
-            let mut sums = vec![FileEntry {
-                path: manifest::DUMP_NAME.into(),
-                bytes,
-                sha256: manifest.database.sha256.clone(),
-            }];
-            sums.push(manifest::file_entry(&path, manifest::MANIFEST_NAME)?);
-            if manifest.config.location == "inside" {
-                for f in &manifest.config.files {
-                    sums.push(FileEntry {
-                        path: format!("config/{}", f.path),
-                        bytes: f.bytes,
-                        sha256: f.sha256.clone(),
-                    });
-                }
-            }
-            write_private(
-                &path.join(manifest::SUMS_NAME),
-                manifest::sums_text(&sums).as_bytes(),
-            )?;
-            Ok(((), format!("{} checksums", sums.len())))
+            let n = manifest::write_sums(&path, &manifest)?;
+            // The last thing: from here on the directory is a complete backup.
+            let _ = std::fs::remove_file(path.join(INCOMPLETE_MARKER));
+            Ok((
+                (),
+                format!("{n} checksums (secret files have none of their own)"),
+            ))
         })?;
         Ok((manifest.clone(), manifest.config.files.clone()))
     })();
@@ -379,6 +427,11 @@ pub fn run(ctx: &Ctx<'_>, options: &Options) -> Result<BackupReport> {
         Err(e) => {
             // A half-written backup is worse than none: it looks like one.
             let _ = std::fs::remove_dir_all(&path);
+            if let Some(external) = &external_root {
+                if !external_existed {
+                    let _ = std::fs::remove_dir_all(external);
+                }
+            }
             return Err(e);
         }
     };
@@ -420,7 +473,14 @@ pub fn run(ctx: &Ctx<'_>, options: &Options) -> Result<BackupReport> {
 
     // Retention runs only after this backup (and its verification, when asked) succeeded.
     let removed = if ok {
-        manifest::apply_retention(&backups_dir, &options.kind, options.keep, &path)?
+        manifest::apply_retention(
+            &backups_dir,
+            &options.kind,
+            options.keep,
+            &path,
+            &manifest.project,
+            &manifest.origin,
+        )?
     } else {
         Vec::new()
     };

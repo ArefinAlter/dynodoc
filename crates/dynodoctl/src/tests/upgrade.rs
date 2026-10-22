@@ -176,7 +176,7 @@ fn a_release_upgrade_pulls_verifies_backs_up_rehearses_then_switches_in_that_ord
         pos(" pull"),
         pos("--format {{json .RepoDigests}}"),
         pos("pg_dump"),
-        pos("create database dynodoc_restore_"),
+        pos("create database dynodoc_rehearse_"),
         pos(" migrate"),
         pos("engine-api"),
         pos("up -d --wait --wait-timeout 300"),
@@ -342,7 +342,7 @@ fn skipping_the_rehearsal_needs_its_own_phrase() {
         },
     )
     .unwrap();
-    assert!(report.record.skipped_rehearsal && !runner2.ran("create database dynodoc_restore_"));
+    assert!(report.record.skipped_rehearsal && !runner2.ran("create database dynodoc_rehearse_"));
 }
 
 #[test]

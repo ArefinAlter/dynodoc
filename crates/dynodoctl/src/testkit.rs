@@ -153,14 +153,24 @@ pub fn make_backup(
             std::fs::copy(from.join(&rel), &target).unwrap();
             files.push(manifest::file_entry(&root, &rel).unwrap());
         }
+        let salt = "test-salt".to_string();
+        let digest = manifest::secrets_digest(&root, &files, &salt).unwrap();
         m.config = ConfigEntry {
             location: "inside".into(),
             dir_name: None,
             files,
+            secrets_salt: Some(salt),
+            secrets_digest: Some(digest),
         };
     }
     manifest::write_manifest(&path, &m).unwrap();
+    manifest::write_sums(&path, &m).unwrap();
     path
+}
+
+/// Fixed random text in scratch database names, so tests can name them.
+pub fn fixed_nonce() -> String {
+    "ab12cd".to_string()
 }
 
 /// TLS facts as the probe would report them for one of the fixture certificates.
@@ -199,6 +209,7 @@ pub fn confirm_yes() -> ScriptedConfirm {
 pub fn ctx<'a>(runner: &'a FakeRunner, dir: &Path, confirm: &'a ScriptedConfirm) -> Ctx<'a> {
     let mut c = Ctx::new(runner, Layout::new(dir), confirm);
     c.now = fixed_now;
+    c.nonce = fixed_nonce;
     c.progress_to_stderr = true;
     c
 }

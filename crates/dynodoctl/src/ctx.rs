@@ -72,9 +72,33 @@ pub trait Confirm {
     fn confirm(&self, prompt: &str, phrase: &str) -> bool;
 }
 
-/// Phrases passed with `--confirm`, else a prompt on a terminal, else refusal.
+/// Phrases passed with `--confirm`, else a prompt on a terminal, else refusal. Whether input is a
+/// terminal, and where the answer is read from, are injected so the refusal without a terminal is
+/// testable (a script must never be able to confirm by piping text in).
 pub struct Interactive {
     pub provided: Vec<String>,
+    terminal: bool,
+    input: RefCell<Box<dyn BufRead>>,
+}
+
+impl Interactive {
+    /// The real thing: standard input, and whether it is a terminal.
+    pub fn stdio(provided: Vec<String>) -> Self {
+        Self {
+            provided,
+            terminal: std::io::stdin().is_terminal(),
+            input: RefCell::new(Box::new(std::io::stdin().lock())),
+        }
+    }
+
+    /// For tests: say whether the input is a terminal and what it would answer.
+    pub fn with_input(provided: Vec<String>, terminal: bool, input: Box<dyn BufRead>) -> Self {
+        Self {
+            provided,
+            terminal,
+            input: RefCell::new(input),
+        }
+    }
 }
 
 impl Confirm for Interactive {
@@ -82,14 +106,14 @@ impl Confirm for Interactive {
         if self.provided.iter().any(|p| p == phrase) {
             return true;
         }
-        if !std::io::stdin().is_terminal() {
+        if !self.terminal {
             return false;
         }
         println!("{prompt}");
         print!("Type exactly `{phrase}` to continue, anything else cancels: ");
         let _ = std::io::stdout().flush();
         let mut line = String::new();
-        if std::io::stdin().lock().read_line(&mut line).is_err() {
+        if self.input.borrow_mut().read_line(&mut line).is_err() {
             return false;
         }
         line.trim() == phrase
@@ -127,8 +151,17 @@ pub struct Ctx<'a> {
     pub extra_files: Vec<PathBuf>,
     pub confirm: &'a dyn Confirm,
     pub now: fn() -> DateTime<Utc>,
+    /// Random text for names that must not collide (scratch databases). Fixed in tests.
+    pub nonce: fn() -> String,
+    /// Set by an interrupt (Ctrl-C, SIGTERM) or by a test: destructive sequences stop at the next
+    /// step boundary and unwind. See `signals`.
+    pub interrupt: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// Progress goes to standard error when standard output carries JSON.
     pub progress_to_stderr: bool,
+}
+
+fn random_nonce() -> String {
+    crate::util::random_hex(4)
 }
 
 impl<'a> Ctx<'a> {
@@ -140,8 +173,24 @@ impl<'a> Ctx<'a> {
             extra_files: Vec::new(),
             confirm,
             now: Utc::now,
+            nonce: random_nonce,
+            interrupt: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             progress_to_stderr: false,
         }
+    }
+
+    /// A name for a database this run creates: `<prefix><UTC time>_<random>`, lowercase.
+    pub fn scratch_name(&self, prefix: &str) -> String {
+        format!(
+            "{prefix}{}_{}",
+            crate::util::stamp((self.now)()).to_ascii_lowercase(),
+            (self.nonce)()
+        )
+    }
+
+    /// Has the operator asked to stop (a signal), or has a test asked for it?
+    pub fn interrupted(&self) -> bool {
+        self.interrupt.load(std::sync::atomic::Ordering::SeqCst) || crate::signals::signalled()
     }
 
     /// One line of progress.
@@ -244,14 +293,42 @@ mod tests {
         assert_eq!(*confirm.asked.borrow(), vec!["A", "B"]);
     }
 
+    fn answers(text: &str) -> Box<dyn BufRead> {
+        Box::new(std::io::Cursor::new(text.as_bytes().to_vec()))
+    }
+
     #[test]
-    fn provided_phrase_confirms_without_a_terminal() {
-        let confirm = Interactive {
-            provided: vec!["I HAVE NO BACKUP".into()],
-        };
+    fn a_phrase_given_in_advance_confirms_without_a_terminal() {
+        let confirm = Interactive::with_input(vec!["I HAVE NO BACKUP".into()], false, answers(""));
         assert!(confirm.confirm("p", "I HAVE NO BACKUP"));
         assert!(
-            !Interactive { provided: vec![] }.confirm("p", "x") || std::io::stdin().is_terminal()
+            !confirm.confirm("p", "SKIP REHEARSAL"),
+            "only the phrase that was given"
+        );
+    }
+
+    #[test]
+    fn text_piped_into_a_non_terminal_never_confirms() {
+        // M10: the right phrase is on the input, but the input is not a terminal: refused.
+        let confirm = Interactive::with_input(vec![], false, answers("REPLACE LIVE DATA\n"));
+        assert!(!confirm.confirm("p", "REPLACE LIVE DATA"));
+    }
+
+    #[test]
+    fn on_a_terminal_only_the_exact_phrase_confirms() {
+        assert!(
+            Interactive::with_input(vec![], true, answers("REPLACE LIVE DATA\n"))
+                .confirm("p", "REPLACE LIVE DATA")
+        );
+        assert!(
+            !Interactive::with_input(vec![], true, answers("replace live data\n"))
+                .confirm("p", "REPLACE LIVE DATA")
+        );
+        assert!(!Interactive::with_input(vec![], true, answers("yes\n"))
+            .confirm("p", "REPLACE LIVE DATA"));
+        assert!(
+            !Interactive::with_input(vec![], true, answers("")).confirm("p", "REPLACE LIVE DATA"),
+            "end of input is a no"
         );
     }
 }

@@ -34,9 +34,18 @@ fn a_backup_writes_a_dump_a_manifest_checksums_and_the_settings() {
     assert!(
         sums.contains("  database.dump\n")
             && sums.contains("  manifest.json\n")
-            && sums.contains("  config/secrets/session_secret\n"),
+            && sums.contains("  config/.env\n"),
         "{sums}"
     );
+    // LOW: no unsalted hash of a secret file anywhere; one salted aggregate digest instead.
+    assert!(!sums.contains("config/secrets/"), "{sums}");
+    assert!(m.config.secrets_salt.is_some() && m.config.secrets_digest.is_some());
+    assert!(m
+        .config
+        .files
+        .iter()
+        .filter(|f| f.path.starts_with("secrets/"))
+        .all(|f| f.sha256.is_empty()));
     let info = manifest::BackupInfo {
         path: path.clone(),
         manifest: m,
@@ -358,8 +367,10 @@ fn verify_restores_the_new_backup_into_a_throwaway_database_and_reports_it() {
             && v.history_verified
             && v.scratch_removed == Some(true)
     );
-    assert!(runner.ran("create database dynodoc_restore_20261022t120000z"));
-    assert!(runner.ran("drop database if exists dynodoc_restore_20261022t120000z with (force)"));
+    assert!(runner.ran("create database dynodoc_restore_20261022t120000z_ab12cd"));
+    assert!(
+        runner.ran("drop database if exists dynodoc_restore_20261022t120000z_ab12cd with (force)")
+    );
     assert!(report.render().contains("Verification of this backup"));
 }
 

@@ -137,16 +137,22 @@ fn rehearse_on(
     let live = Compose::new(ctx);
     let tc = target.compose(ctx);
     let installed = env.get("DYNODOC_VERSION").unwrap_or("dev").to_string();
-    let db_name = format!(
-        "dynodoc_restore_{}",
-        stamp((ctx.now)()).to_ascii_lowercase()
-    );
-    let mut rec = Recorder::new();
+    let db_name = ctx.scratch_name("dynodoc_rehearse_");
+    let mut rec = Recorder::for_ctx(ctx);
     let mut notes = Vec::new();
+    let mut created = false;
     ctx.say(&format!("Rehearsing {} on a copy of {} in the scratch database {db_name} (the live database is not touched)...", target.label(&installed), info.name()));
 
     let outcome = (|| -> Result<(i64, i64, u64)> {
-        let restored = restore_into(&live, info, config_from, &db_name, &mut rec)?;
+        let restored = restore_into(
+            ctx,
+            &live,
+            info,
+            config_from,
+            &db_name,
+            &mut rec,
+            &mut created,
+        )?;
         rec.step("mirror the database ACL on the copy", || {
             // The same two statements the db-roles job applies to the live database.
             for sql in [format!("revoke all on database {db_name} from public"), format!("grant connect on database {db_name} to dynodoc_runtime")] {
@@ -202,14 +208,28 @@ fn rehearse_on(
         Ok((restored.latest_migration, after.latest_migration, documents))
     })();
 
-    let removed = match db::drop_database(&live, &db_name) {
-        Ok(()) => true,
-        Err(e) => {
-            notes.push(e.to_string());
-            false
+    // Teardown runs whatever happened above, but only for a database THIS run created (M2).
+    rec.set_recovering(true);
+    let removed = if created {
+        match db::drop_database(&live, &db_name) {
+            Ok(()) => true,
+            Err(e) => {
+                notes.push(e.to_string());
+                false
+            }
         }
+    } else {
+        true
     };
-    rec.note("remove the scratch database", removed, &db_name);
+    rec.note(
+        "remove the scratch database",
+        removed,
+        if created {
+            &db_name
+        } else {
+            "none was created"
+        },
+    );
     let (before, after, documents, smoke, ok) = match &outcome {
         Ok((b, a, d)) => (*b, *a, *d, true, removed),
         Err(e) => {

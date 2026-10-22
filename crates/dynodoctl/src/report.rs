@@ -1,8 +1,11 @@
 //! Timed, recorded steps: what every long command prints at the end and writes as JSON.
 
-use crate::error::Result;
+use crate::ctx::Ctx;
+use crate::error::{CliError, Result};
 use crate::util::human_duration;
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Instant;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -13,9 +16,19 @@ pub struct Step {
     pub detail: String,
 }
 
+/// The error a step returns when it did not start because an interrupt is pending.
+pub fn interrupted_error() -> CliError {
+    CliError::failed(
+        "interrupted: the sequence stopped at a step boundary",
+        "read what was put back above; run `dynodoctl status`, and `dynodoctl recover` if it says an interrupted restore is recorded",
+    )
+}
+
 #[derive(Default)]
 pub struct Recorder {
     pub steps: Vec<Step>,
+    stop: Option<Arc<AtomicBool>>,
+    recovering: bool,
 }
 
 impl Recorder {
@@ -23,8 +36,38 @@ impl Recorder {
         Self::default()
     }
 
+    /// A recorder that stops starting new steps once this run is interrupted.
+    pub fn for_ctx(ctx: &Ctx<'_>) -> Self {
+        Self {
+            steps: Vec::new(),
+            stop: Some(ctx.interrupt.clone()),
+            recovering: false,
+        }
+    }
+
+    /// While recovering (putting the installation back), steps run even though an interrupt is pending.
+    pub fn set_recovering(&mut self, on: bool) {
+        self.recovering = on;
+    }
+
+    pub fn interrupted(&self) -> bool {
+        !self.recovering
+            && (self.stop.as_ref().is_some_and(|f| f.load(Ordering::SeqCst))
+                || crate::signals::signalled())
+    }
+
     /// Run `f`, record how long it took and whether it worked. A failure is recorded and returned.
     pub fn step<T>(&mut self, name: &str, f: impl FnOnce() -> Result<(T, String)>) -> Result<T> {
+        if self.interrupted() {
+            let error = interrupted_error();
+            self.steps.push(Step {
+                name: name.into(),
+                ok: false,
+                millis: 0,
+                detail: "not started: interrupted".into(),
+            });
+            return Err(error);
+        }
         let started = Instant::now();
         match f() {
             Ok((value, detail)) => {

@@ -25,6 +25,10 @@ pub struct Cmd {
     pub stdin_bytes: Option<Vec<u8>>,
     /// Write the program's standard output to this file instead of capturing it.
     pub stdout_file: Option<PathBuf>,
+    /// Start the program in its own process group so the terminal's Ctrl-C does not reach it:
+    /// a destructive step then finishes (or fails by itself) instead of being cut off half way,
+    /// and dynodoctl unwinds at the next step boundary (see `signals`).
+    pub shield: bool,
 }
 
 impl Cmd {
@@ -113,6 +117,18 @@ impl Runner for SystemRunner {
             command.env(name, value);
         }
         command.stderr(Stdio::piped());
+        if cmd.shield {
+            #[cfg(unix)]
+            {
+                use std::os::unix::process::CommandExt;
+                command.process_group(0);
+            }
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                command.creation_flags(0x0000_0200); // CREATE_NEW_PROCESS_GROUP
+            }
+        }
         match &cmd.stdout_file {
             Some(path) => {
                 command.stdout(Stdio::from(File::create(path)?));

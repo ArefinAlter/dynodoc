@@ -3,7 +3,7 @@ use crate::ctx::ScriptedConfirm;
 use crate::runner::FakeRunner;
 use crate::testkit;
 
-const SCRATCH: &str = "dynodoc_restore_20261022t120000z";
+const SCRATCH: &str = "dynodoc_rehearse_20261022t120000z_ab12cd";
 
 fn setup() -> (tempfile::TempDir, FakeRunner) {
     let dir = tempfile::tempdir().unwrap();
@@ -50,7 +50,7 @@ fn the_rehearsal_runs_the_target_migrations_on_a_copy_and_removes_it() {
         pos(&format!(
             "grant connect on database {SCRATCH} to dynodoc_runtime"
         )),
-        pos("sh dynodoc_restore_20261022t120000z runtime migrate"),
+        pos("sh dynodoc_rehearse_20261022t120000z_ab12cd runtime migrate"),
         pos("grant-runtime dynodoc_runtime"),
         pos("check-runtime"),
         pos("verify-snapshots --all"),

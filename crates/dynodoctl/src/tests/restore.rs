@@ -3,9 +3,9 @@ use crate::ctx::ScriptedConfirm;
 use crate::runner::FakeRunner;
 use crate::testkit::{self, assert_no_seeded_secret};
 
-const SCRATCH: &str = "dynodoc_restore_20261022t120000z";
-const RESTORING: &str = "dynodoc_restoring_20261022t120000z";
-const PREVIOUS: &str = "dynodoc_prev_20261022t120000z";
+const SCRATCH: &str = "dynodoc_restore_20261022t120000z_ab12cd";
+const RESTORING: &str = "dynodoc_restoring_20261022t120000z_ab12cd";
+const PREVIOUS: &str = "dynodoc_prev_20261022t120000z_ab12cd";
 
 fn setup() -> (tempfile::TempDir, FakeRunner, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
@@ -128,7 +128,7 @@ fn the_restore_verify_report_requires_both_verification_commands() {
     // A scratch copy has no grants for the runtime login (found on the real bundle): the history
     // is verified with the owner login.
     assert!(
-        runner.ran("sh dynodoc_restore_20261022t120000z owner verify-snapshots --all"),
+        runner.ran("sh dynodoc_restore_20261022t120000z_ab12cd owner verify-snapshots --all"),
         "{:?}",
         runner.lines()
     );
@@ -341,17 +341,18 @@ fn a_confirmed_live_restore_loads_beside_the_live_database_then_swaps_verifies_a
             .position(needle)
             .unwrap_or_else(|| panic!("`{needle}` did not run: {:?}", runner.lines()))
     };
+    let swap = format!("begin; alter database dynodoc rename to {PREVIOUS}; alter database {RESTORING} rename to dynodoc; commit;");
     let order = [
         pos("up -d --wait --wait-timeout 180 postgres"),
         pos("run --rm --no-deps -T db-roles"),
         pos("stop proxy web api"),
+        pos("pg_restore --no-owner -f -"),
         pos(&format!("create database {RESTORING}")),
         pos(&format!(
             "pg_restore -h 127.0.0.1 -U dynodoc -d {RESTORING}"
         )),
         pos("pg_terminate_backend"),
-        pos(&format!("alter database dynodoc rename to {PREVIOUS}")),
-        pos(&format!("alter database {RESTORING} rename to dynodoc")),
+        pos(&swap),
         pos("up -d --wait --wait-timeout 300"),
         pos("verify-snapshots --all"),
         pos("check-runtime"),
@@ -359,8 +360,21 @@ fn a_confirmed_live_restore_loads_beside_the_live_database_then_swaps_verifies_a
     ];
     assert!(
         order.windows(2).all(|w| w[0] < w[1]),
-        "{order:?}\n{:?}",
+        "{order:?}
+{:?}",
         runner.lines()
+    );
+    assert_eq!(
+        runner.count("alter database"),
+        1,
+        "both renames are ONE statement batch (H3)"
+    );
+    assert!(
+        !dir.path()
+            .join("state")
+            .join("restore-journal.json")
+            .exists(),
+        "the journal is removed once the installation is consistent"
     );
     assert!(report.counts_match && report.history_verified && report.documents_verified == 2);
     assert!(report

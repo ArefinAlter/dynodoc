@@ -51,6 +51,7 @@ pub struct Compose<'a> {
     ctx: &'a Ctx<'a>,
     env: Vec<(String, String)>,
     files: Option<Vec<PathBuf>>,
+    shield: bool,
 }
 
 impl<'a> Compose<'a> {
@@ -59,7 +60,14 @@ impl<'a> Compose<'a> {
             ctx,
             env: Vec::new(),
             files: None,
+            shield: false,
         }
+    }
+
+    /// Run the commands of this wrapper out of reach of the terminal's Ctrl-C (destructive steps).
+    pub fn shielded(mut self) -> Self {
+        self.shield = true;
+        self
     }
 
     /// Set a variable for the commands of this wrapper only (Compose interpolation: it wins over `.env`).
@@ -97,6 +105,7 @@ impl<'a> Compose<'a> {
             cwd: Some(self.ctx.layout.dir.clone()),
             env: self.env.clone(),
             scrub_env: true,
+            shield: self.shield,
             ..Cmd::default()
         }
     }
@@ -199,6 +208,65 @@ pub fn docker(ctx: &Ctx<'_>, args: &[&str]) -> Result<Output> {
     let mut cmd = Cmd::new("docker", args);
     cmd.scrub_env = true;
     run_cmd(ctx, &cmd)
+}
+
+/// Two spellings of one directory as Docker records it and as this tool knows it: separators,
+/// case (Windows and macOS file systems ignore it), a trailing separator and the `\\?\` prefix aside.
+pub fn same_dir(a: &str, b: &str) -> bool {
+    fn norm(s: &str) -> String {
+        let s = s.trim().trim_start_matches(r"\\?\").replace('\\', "/");
+        s.trim_end_matches('/').to_lowercase()
+    }
+    norm(a) == norm(b)
+}
+
+/// M9: containers of this Compose project name must belong to THIS directory. Compose finds a
+/// project by name alone, so a second copy of the bundle (or a restored backup folder) that shares
+/// the name would take over, stop and migrate the other installation's containers and volumes.
+pub fn guard_project(ctx: &Ctx<'_>) -> Result<()> {
+    let project = ctx.project_name();
+    let filter = format!("label=com.docker.compose.project={project}");
+    let out = docker(
+        ctx,
+        &[
+            "ps",
+            "-a",
+            "--filter",
+            &filter,
+            "--format",
+            "{{.Label \"com.docker.compose.project.working_dir\"}}",
+        ],
+    )?;
+    if !out.ok() {
+        return Err(CliError::failed(
+            format!(
+                "could not list the containers of project `{project}`: {}",
+                short(&out.text())
+            ),
+            "check that Docker is running; nothing was changed",
+        ));
+    }
+    let here = ctx.layout.dir.display().to_string();
+    let mut elsewhere: Vec<String> = out
+        .stdout_text()
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !same_dir(l, &here))
+        .map(str::to_string)
+        .collect();
+    elsewhere.sort();
+    elsewhere.dedup();
+    if elsewhere.is_empty() {
+        Ok(())
+    } else {
+        Err(CliError::refused(
+            format!(
+                "containers of the Compose project `{project}` already exist for another directory ({}); this directory is {here}",
+                elsewhere.join(", ")
+            ),
+            "give this installation its own name with COMPOSE_PROJECT_NAME in .env (or --project), or work in the directory that project belongs to; nothing was changed",
+        ))
+    }
 }
 
 /// Remove terminal colour sequences (`ESC [ ... m`), which tools such as engine-cli print.
@@ -343,6 +411,53 @@ mod tests {
         assert!(runner.calls().is_empty());
         assert!(c.psql("dynodoc", "select 1").is_ok());
         assert!(runner.ran("psql -h 127.0.0.1 -U dynodoc -d dynodoc"));
+    }
+
+    #[test]
+    fn directory_spellings_compare_the_way_docker_records_them() {
+        assert!(same_dir(r"D:\bundle\one\", "d:/bundle/one"));
+        assert!(same_dir(r"\\?\D:\bundle\one", "D:/bundle/one"));
+        assert!(!same_dir("/srv/a", "/srv/b"));
+        assert!(!same_dir("/srv/a", "/srv/a2"));
+    }
+
+    #[test]
+    fn a_project_name_used_by_another_directory_is_refused() {
+        // M9: Compose finds a project by name alone, so another directory's containers would be taken over.
+        let dir = tempfile::tempdir().unwrap();
+        let runner = FakeRunner::new();
+        let confirm = ScriptedConfirm::new(&[]);
+        let ctx = Ctx::new(&runner, Layout::new(dir.path()), &confirm);
+        runner.on(
+            "compose.project.working_dir",
+            0,
+            "/somewhere/else\n/somewhere/else\n",
+        );
+        let err = guard_project(&ctx).unwrap_err();
+        assert_eq!(err.kind, crate::error::Kind::Refused);
+        assert!(err.what.contains("/somewhere/else"), "{}", err.what);
+        assert!(err.what.contains("already exist for another directory"));
+        assert!(runner.ran("--filter label=com.docker.compose.project=dynodoc-selfhosted"));
+    }
+
+    #[test]
+    fn this_directorys_own_containers_and_no_containers_pass_the_project_guard() {
+        let dir = tempfile::tempdir().unwrap();
+        let runner = FakeRunner::new();
+        let confirm = ScriptedConfirm::new(&[]);
+        let ctx = Ctx::new(&runner, Layout::new(dir.path()), &confirm);
+        guard_project(&ctx).unwrap();
+        runner.first(
+            "compose.project.working_dir",
+            0,
+            &format!("{}\n", dir.path().display()),
+        );
+        guard_project(&ctx).unwrap();
+        runner.first("compose.project.working_dir", 1, "");
+        assert_eq!(
+            guard_project(&ctx).unwrap_err().kind,
+            crate::error::Kind::Failed
+        );
     }
 
     #[test]
