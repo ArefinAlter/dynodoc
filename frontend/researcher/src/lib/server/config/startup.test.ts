@@ -37,12 +37,12 @@ describe.each([
     expect(() => startupCheck()).not.toThrow();
     expect(getConfig().secrets.session?.expose()).toBe(SESSION);
   });
-  it('refuses a missing SESSION_SECRET at start, not at the first request', async () => {
-    const { startupCheck, getConfig } = await boot(false, { ...good, SESSION_SECRET: '' });
+  it('refuses an unusable SESSION_SECRET at start, not at the first request', async () => {
+    const { startupCheck, getConfig } = await boot(false, { ...good, SESSION_SECRET: 'x7Kp2mQ9' });
     expect(() => startupCheck()).toThrow(
-      /^invalid configuration \(1 problem\):\n {2}- SESSION_SECRET is not set/
+      /^invalid configuration \(1 problem\):\n {2}- SESSION_SECRET must be at least 32/
     );
-    expect(() => getConfig()).toThrow(/SESSION_SECRET is not set/);
+    expect(() => getConfig()).toThrow(/SESSION_SECRET must be at least 32/);
   });
   it('refuses a documented placeholder as SESSION_SECRET', async () => {
     const { startupCheck } = await boot(false, { ...good, SESSION_SECRET: PLACEHOLDER });
@@ -83,11 +83,36 @@ describe.each([
   });
 });
 
+describe('a missing SESSION_SECRET', () => {
+  it('stops a self-hosted server at start', async () => {
+    const { startupCheck, getConfig } = await boot(false, {
+      DYNODOC_MODE: 'selfhosted',
+      ORIGIN: 'https://dynodoc.example.test',
+      WEB_SERVICE_KEY: SERVICE
+    });
+    expect(() => startupCheck()).toThrow(
+      /^invalid configuration \(1 problem\):\n {2}- SESSION_SECRET is not set/
+    );
+    expect(() => getConfig()).toThrow(/SESSION_SECRET is not set/);
+  });
+  it('does not stop the public homepage host, which runs without any secret', async () => {
+    const { startupCheck, getConfig } = await boot(false, {
+      PUBLIC_WORKSPACE_URL: 'https://app.example.test'
+    });
+    expect(() => startupCheck({ PUBLIC_WORKSPACE_URL: 'https://app.example.test' })).not.toThrow();
+    expect(getConfig().workspaceUrl).toBe('https://app.example.test');
+    expect(getConfig().secrets.session).toBeUndefined();
+    expect(printed()).toContain(
+      'SESSION_SECRET is not set: this process cannot hold sign-in sessions'
+    );
+  });
+});
+
 describe('a development server', () => {
   it('warns about the same problems and keeps serving the public pages', async () => {
-    const { startupCheck, getConfig } = await boot(true, { SESSION_SECRET: '' });
+    const { startupCheck, getConfig } = await boot(true, { SESSION_SECRET: 'x7Kp2mQ9' });
     expect(() => startupCheck()).not.toThrow();
-    expect(printed()).toContain('configuration problem: SESSION_SECRET is not set');
+    expect(printed()).toContain('configuration problem: SESSION_SECRET must be at least 32');
     expect(getConfig().mode).toBe('hosted');
   });
 });

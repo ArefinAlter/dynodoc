@@ -181,7 +181,7 @@ limitation), **MISSING** (not present). "Today" means the repository at commit `
 | 9 | Source packaging with manifest | EXISTS | `package-source.py` archives a committed revision with `SOURCE_MANIFEST.sha256`; excludes env files, keys, dumps. |
 | 10 | Read-only delivery check | EXISTS | `check-connectors.py`: health, auth options, byte-equality of six packages and icons, Office frame headers, anonymous 401s. Default origin hardcoded; compares against a source checkout, which a customer does not have. |
 | 11 | Host status collector | PARTIAL | `collect-status.py` calls `docker inspect` on fixed container names and also prunes `web_metric` rows older than 30 days; not portable to Kubernetes, and retention is silently coupled to a host cron. |
-| 12 | Startup validation of secrets and database boundary | PARTIAL | API fails closed on missing/short `PASETO_LOCAL_KEY`, `WEB_SERVICE_KEY`, on `MIGRATION_DATABASE_URL`, and on privilege/migration mismatch ([`main.rs`](../crates/engine-api/src/main.rs), [`database.rs`](../crates/engine-core/src/database.rs)). Web validates `SESSION_SECRET` lazily at first session operation (`lib/server/session.ts: key()`). |
+| 12 | Startup validation of secrets and database boundary | PARTIAL | API fails closed on missing/short `PASETO_LOCAL_KEY`, `WEB_SERVICE_KEY`, on `MIGRATION_DATABASE_URL`, and on privilege/migration mismatch ([`main.rs`](../crates/engine-api/src/main.rs), [`database.rs`](../crates/engine-core/src/database.rs)). The web process validates its whole configuration when it starts, `SESSION_SECRET` included, and reads every secret from `NAME` or `NAME_FILE` (P0-1 and P0-2 web half, 22 October 2026; `frontend/researcher/src/lib/server/config/`). `engine-cli` still reads plain variables. |
 | 13 | Structured logging, metrics endpoint, trace export | PARTIAL | `tracing_subscriber::fmt` and `TraceLayer` only; no `/metrics`, no OTLP exporter, no JSON log mode. |
 | 14 | Retention of expired authentication rows | MISSING | No pruning of `magic_link`, `refresh_token`, `auth_request_window` outside erasure paths (grep of `crates/`); `idempotency_key` is pruned on reuse; `web_metric` by the host collector. |
 
@@ -1493,10 +1493,10 @@ other Phase 0 task is untouched.
   listing every problem; no message contains a secret value. The API reads no other
   secret: the receipt-signing key was already a file (`DYNODOC_REF_SIGNING_KEY_FILE`).
   Section 3.1 row 12 is closed for the API only.
-- *P0-2, not built.* The web process (`SESSION_SECRET` is still checked lazily, and no
-  `*_FILE` there), `engine-cli` (still reads `DATABASE_URL` and `MIGRATION_DATABASE_URL`
-  from plain variables), the environment-file generator, and the compose wiring of the
-  new variables. The Unix permission check has no Windows equivalent; its tests, the
+- *P0-2, not built (as of 20 October; the web process and the generator were built on 22
+  October, see the next paragraph).* `engine-cli` (still reads `DATABASE_URL` and
+  `MIGRATION_DATABASE_URL` from plain variables) and the compose wiring of the new
+  variables. The Unix permission check has no Windows equivalent; its tests, the
   start-up tests and the retention tests were also run on Linux (container, pinned and
   current stable toolchains).
 - *P0-8, built.* `crates/engine-api/src/retention.rs`: a loop in every API process that
@@ -1518,6 +1518,65 @@ other Phase 0 task is untouched.
   host-side `web_metric` prune in `collect-status.py`, an index on `refresh_token.expires_at`
   (a table scan per batch, acceptable at the sizes in section 9 and not worth a
   migration today), and the copy-indexer lease of row 33.
+
+**Implementation status (22 October 2026): P0-1 and the web half of P0-2.** Source and
+tests in the application repository; nothing here is deployed or released, and the hosted
+production release is unchanged. Settings and defaults are in the deployment guide 7.2.
+
+- *Configuration, built.* `frontend/researcher/src/lib/server/config/`: `secrets.js` (the
+  API's `NAME` / `NAME_FILE` rules, same limits, same messages), `schema.js` (every web
+  setting, one aggregated error, typo warnings), `hosted.js` (the hosted hostnames, kept in
+  one place), `index.ts` (read once, frozen; the `init` hook in `hooks.server.ts` runs it
+  before the server listens). `DYNODOC_MODE=hosted` (default) or `selfhosted`;
+  `DYNODOC_ALT_ORIGINS`, `DYNODOC_BRAND_NAME`, `DYNODOC_ORG_NAME`, `DYNODOC_ORG_NOTICE` or
+  `DYNODOC_NOTICE_FILE`, `DYNODOC_SUPPORT_URL`, `DYNODOC_TELEMETRY`, `AUTH_EMAIL_LINK`. The
+  five web secrets take `*_FILE`. `SESSION_SECRET` is checked at start (length, blankness,
+  repeated pattern, documented placeholders) in both modes.
+- *Self-hosted mode, built.* The `(site)` pages, `/sitemap.xml`, `/llms*.txt` and `/source`
+  answer 404 (no redirect); `/` goes to sign-in or the workspace; no indexing anywhere
+  (header, meta tags, `robots.txt`, no canonical or social tags); the CSP `connect-src` comes
+  from the configured origins; page metrics are off, the browser code makes no request and
+  `/telemetry` answers 404; the workspace-host redirect and the `app.dynodoc.online` root
+  redirect do not apply; the sign-in page and the workspace footer show the organisation
+  notice instead of the privacy and terms links; email sign-in can be switched off.
+- *Hosted mode, unchanged.* Pinned by `hooks.test.ts` (headers and redirects per host),
+  `hosted-pin.spec.ts` (the policy string, the 19 public pages with their canonical and index
+  tags, the telemetry origins), and a before-and-after comparison of 95 responses (5 hosts, 18
+  paths, 5 telemetry requests: status, headers and head tags) between the unchanged and the
+  changed build, which differed in nothing but asset hashes. One deliberate allowance: a hosted
+  process with no `SESSION_SECRET` and no `WEB_SERVICE_KEY` starts with warnings, because the
+  public homepage host on Vercel runs with no secret ([VERCEL-DEPLOYMENT.md](VERCEL-DEPLOYMENT.md));
+  a secret that is set but unusable stops either mode.
+- *Environment files, built.* `frontend/researcher/scripts/dynodoc-env.mjs` with
+  `generate-env` (random 32-byte secrets, one 0600 file each, a commented `.env`, refuses to
+  overwrite, prints no secret, lists what to back up) and `check-config` (the server's
+  validator on an existing directory, no server started, exit code and `--json` for
+  `dynodoctl`).
+- *Hosted-string audit, built.* `frontend/researcher/scripts/audit-hosted-strings.mjs` scans
+  the build for the hosted hostnames, operator facts, analytics and third-party hosts and
+  classifies each occurrence by whether a self-hosted installation can load the file. In the
+  current build, 47 files outside third-party notices still contain `dynodoc.online`, so
+  acceptance criterion 6 does **not** hold yet: 22 are the compiled `(site)` pages (11 browser
+  files, 11 server files; unreachable in self-hosted mode, shipped in the build), 14 are
+  source maps of those, 3 are server files every mode loads (the hosted preset, the hosted
+  search-engine constants, the hosted `robots.txt` body; dormant in self-hosted mode), and 8
+  are static files (the add-in packages built for `app.dynodoc.online`, `security.txt`, the
+  social image). No browser script that every page loads names a hosted host or an operator
+  fact. `--check` (run in CI) fails on anything not in `scripts/hosted-strings-known.json`;
+  `--strict` applies the criterion as written. Closing the rest needs a build that leaves the
+  `(site)` routes out (P0-6) and per-installation add-in packages (P0-7).
+- *Not built.* Product name in the logo images, the installable-app name (`site.webmanifest`)
+  and page titles outside sign-in, workspace, shared link and administration; the Office.js
+  CDN (P0-7); SMTP and operator-issued sign-in links (P0-3); the Compose wiring of the new
+  variables and a web image that contains the check tool (P0-4, P0-5, P0-6); `engine-cli`;
+  Windows has no secret-file mode check (as in the API). The hosted `infra/demo/*`,
+  `extensions/*` and `static/connectors/*` files in Appendix B are untouched.
+- *Verified here.* Unit tests (`vitest`), the build, and Chromium end-to-end specs against an
+  isolated stack with three web processes (hosted; self-hosted with secrets from files;
+  self-hosted with email sign-in off) on a disposable PostgreSQL database; the Unix-only
+  secret-file tests were also run as plain checks on Linux as a non-root user. GitHub Actions
+  could not run (billing); `ci-frontend.yml` now starts the two self-hosted servers and runs
+  the audit, and has not been executed.
 
 ### 13.3 Phase 1: identity
 
@@ -1826,6 +1885,15 @@ appear there with their own prefix.
 | Runtime login | The restricted PostgreSQL login the API uses; no DDL, no history UPDATE/DELETE |
 
 ### Appendix B: file index of hosted-only assumptions (P0-1)
+
+Status 22 October 2026, web tier (the first eleven rows, `svelte.config.js` through
+`src/routes/source/+server.ts`): the code that runs in every mode now reads the configuration
+(the CSP, the request hook, page metrics, the theme cookie domain, the sign-in, workspace,
+shared-link, administration and help screens, `robots.txt`). What stays as hosted-mode code,
+never served in self-hosted mode: the search-engine constants in `src/lib/seo/`, `nav.ts`,
+the `(site)` pages, `src/lib/site/operator.ts`, `/sitemap.xml`, `/llms*.txt` and `/source`.
+`scripts/audit-hosted-strings.mjs` lists what remains in a build. `extensions/*`,
+`infra/demo/*` and `static/connectors/*` are untouched (P0-4, P0-7).
 
 | Path | Assumption |
 |---|---|

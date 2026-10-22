@@ -13,6 +13,8 @@ import {
   readSecret
 } from './secrets.js';
 
+// The byte order mark, written as a code so no invisible character sits in this file.
+const BOM = String.fromCharCode(0xfeff);
 const VALUE = 's3cr3t-value-that-must-not-leak-0123456789';
 const unix = process.platform !== 'win32';
 const dir = mkdtempSync(join(tmpdir(), 'dynodoc-secrets-'));
@@ -65,7 +67,7 @@ describe('secret files', () => {
       expect(value({ KEY_FILE: file(content) })).toBe(expected);
   });
   it('keep a byte order mark, as the API does', () => {
-    expect(value({ KEY_FILE: file(`﻿${VALUE}\n`) })).toBe(`﻿${VALUE}`);
+    expect(value({ KEY_FILE: file(`${BOM}${VALUE}\n`) })).toBe(`${BOM}${VALUE}`);
   });
   it('conflict with a non-empty plain variable but not with an empty one', () => {
     const path = file(VALUE);

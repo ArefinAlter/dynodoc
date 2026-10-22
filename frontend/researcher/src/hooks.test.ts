@@ -17,10 +17,14 @@ const secrets = {
 const PAGE_CSP =
   "default-src 'none'; connect-src 'self'; script-src 'self' 'nonce-1'; frame-ancestors 'self'";
 
-async function start(settings: Record<string, string>, pub: Record<string, string> = {}) {
+async function start(
+  settings: Record<string, string>,
+  pub: Record<string, string> = {},
+  withSecrets = true
+) {
   vi.resetModules();
   for (const bag of [env, publicEnv]) for (const key of Object.keys(bag)) delete bag[key];
-  Object.assign(env, secrets, settings);
+  Object.assign(env, withSecrets ? secrets : {}, settings);
   Object.assign(publicEnv, pub);
   const hooks = await import('./hooks.server');
   await hooks.init?.();
@@ -51,6 +55,16 @@ async function request(
 beforeEach(() => session.accessToken.mockReset().mockResolvedValue(null));
 
 describe('hosted mode', () => {
+  it('serves the public homepage host, which runs with no secret at all', async () => {
+    const hooks = await start({}, { PUBLIC_WORKSPACE_URL: 'https://app.dynodoc.online' }, false);
+    const home = await request(hooks, 'https://dynodoc.online/', { route: '/(site)' });
+    expect(home.response.status).toBe(200);
+    expect(home.response.headers.has('x-robots-tag')).toBe(false);
+    const workspace = await request(hooks, 'https://dynodoc.online/projects', {
+      route: '/projects'
+    });
+    expect(workspace.response.headers.get('location')).toBe('https://app.dynodoc.online/projects');
+  });
   it('sends the root of the workspace host to the public host', async () => {
     const hooks = await start({});
     const { response, resolve } = await request(hooks, 'https://app.dynodoc.online/', {

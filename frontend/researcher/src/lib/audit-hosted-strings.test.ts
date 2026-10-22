@@ -6,7 +6,6 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { strToU8, zipSync } from 'fflate';
-// @ts-expect-error the audit is a plain script
 import {
   PATTERNS,
   closure,

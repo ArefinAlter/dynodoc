@@ -1,3 +1,4 @@
+// @ts-nocheck -- a command-line tool, exercised by its tests; the typed code is src/lib/server/config.
 // Environment files for a self-hosted installation.
 //
 //   generate-env --dir <dir> --origin <https://...>   write a commented .env and a secrets/

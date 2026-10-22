@@ -111,6 +111,27 @@ describe('hosted mode (the default)', () => {
     const result = problems({ SESSION_SECRET: SESSION });
     expect(result.warnings.some((w) => w.startsWith('WEB_SERVICE_KEY is not set'))).toBe(true);
   });
+  it('starts with no secret at all, as the public homepage host does (docs/VERCEL-DEPLOYMENT.md)', () => {
+    const homepage = { PUBLIC_WORKSPACE_URL: 'https://app.dynodoc.online' };
+    const result = problems(homepage);
+    expect(result.config.secrets.session).toBeUndefined();
+    expect(result.warnings).toEqual([
+      expect.stringContaining(
+        'SESSION_SECRET is not set: this process cannot hold sign-in sessions'
+      ),
+      expect.stringContaining('WEB_SERVICE_KEY is not set: this process cannot authenticate')
+    ]);
+    expect(result.config.workspaceUrl).toBe('https://app.dynodoc.online');
+    problems({});
+  });
+  it('still stops for a hosted secret that is set but unusable', () => {
+    problems({ SESSION_SECRET: 'short' }, 'SESSION_SECRET must be at least 32');
+    problems(
+      { SESSION_SECRET: 'change-me-to-a-long-random-value-please' },
+      'looks like a placeholder'
+    );
+    problems({ SESSION_SECRET_FILE: join(dir, 'missing') }, 'SESSION_SECRET_FILE');
+  });
   it('is the mode when DYNODOC_MODE is blank or says hosted', () => {
     for (const mode of [undefined, '', '  ', 'hosted', 'HOSTED'])
       expect(loadConfig(hosted({ DYNODOC_MODE: mode })).config.mode).toBe('hosted');
@@ -169,12 +190,14 @@ describe('DYNODOC_MODE', () => {
 });
 
 describe('SESSION_SECRET', () => {
+  it('is required in selfhosted mode', () => {
+    problems(selfhosted({ SESSION_SECRET: undefined }), 'SESSION_SECRET is not set');
+    problems(selfhosted({ SESSION_SECRET: '' }), 'SESSION_SECRET is not set');
+  });
   it.each([
     ['hosted', hosted],
     ['selfhosted', selfhosted]
-  ] as const)('is validated at start in %s mode', (_name, make) => {
-    problems(make({ SESSION_SECRET: undefined }), 'SESSION_SECRET is not set');
-    problems(make({ SESSION_SECRET: '' }), 'SESSION_SECRET is not set');
+  ] as const)('is validated at start in %s mode when it is set', (_name, make) => {
     problems(make({ SESSION_SECRET: 'x7Kp2mQ9vL4nR8sT' }), 'SESSION_SECRET must be at least 32');
     problems(make({ SESSION_SECRET: ' '.repeat(40) }), 'SESSION_SECRET must not be blank');
     problems(make({ SESSION_SECRET: 'a'.repeat(64) }), 'SESSION_SECRET uses too few distinct');

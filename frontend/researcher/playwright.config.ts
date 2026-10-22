@@ -13,8 +13,9 @@ const selfhostedSettings = Object.fromEntries(
     .filter((line) => line.trim() && !line.startsWith('#'))
     .map((line) => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)])
 );
-// Start-up validation needs real-looking secrets; these exist only for the preview servers
-// this file starts. A stack started outside uses its own.
+// A self-hosted server will not start without secrets; these exist only for the preview
+// servers this file starts. The hosted preview needs none, as before. A stack started outside
+// uses its own.
 const previewSecrets = {
   SESSION_SECRET: process.env.SESSION_SECRET ?? 'e2e-preview-only-session-secret-0123456789abcdef',
   WEB_SERVICE_KEY: process.env.WEB_SERVICE_KEY ?? 'e2e-preview-only-service-key-0123456789abcdef'
@@ -59,8 +60,7 @@ export default defineConfig({
             : 'pnpm build && pnpm preview --port 4173',
           timeout: 180000,
           port: 4173,
-          reuseExistingServer: !process.env.CI,
-          env: previewSecrets
+          reuseExistingServer: !process.env.CI
         },
         ...[
           [4174, {}],

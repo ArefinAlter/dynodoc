@@ -235,14 +235,22 @@ export function loadConfig(env) {
     if (found.problem) problems.push(found.problem);
     return { secret: found.secret, failed: found.problem !== undefined };
   };
-  /** A secret that must be present, long enough and not a placeholder. @param {string} name @param {boolean} required */
-  const checked = (name, required) => {
+  /**
+   * A secret that must be long enough and not a placeholder. When `required`, it must also be
+   * present; when not, its absence is a warning that says what the process cannot do.
+   * @param {string} name
+   * @param {boolean} required
+   * @param {string} without what a process without it cannot do
+   */
+  const checked = (name, required, without) => {
     const { secret: value, failed } = secret(name);
     if (!value) {
       if (!failed) {
-        const message = `${name} is not set (at least ${MIN_SECRET_BYTES} characters; or set ${name}_FILE)`;
-        if (required) problems.push(message);
-        else warnings.push(message);
+        if (required)
+          problems.push(
+            `${name} is not set (at least ${MIN_SECRET_BYTES} characters; or set ${name}_FILE)`
+          );
+        else warnings.push(`${name} is not set: this process cannot ${without}`);
       }
       return undefined;
     }
@@ -252,8 +260,18 @@ export function loadConfig(env) {
     if (weak) problems.push(`${name} ${weak}`);
     return value;
   };
-  const session = checked('SESSION_SECRET', true);
-  const webServiceKey = checked('WEB_SERVICE_KEY', self);
+  // A hosted process may run without any secret: the public homepage host on Vercel only links
+  // to the workspace (docs/VERCEL-DEPLOYMENT.md). Whatever is set is checked in every mode.
+  const session = checked(
+    'SESSION_SECRET',
+    self,
+    'hold sign-in sessions (the public homepage host runs this way)'
+  );
+  const webServiceKey = checked(
+    'WEB_SERVICE_KEY',
+    self,
+    'authenticate to the API (sign-in, emailed links and page metrics are refused)'
+  );
   if (session && webServiceKey && session.expose() === webServiceKey.expose()) {
     const message =
       'SESSION_SECRET and WEB_SERVICE_KEY have the same value; generate each secret independently';
