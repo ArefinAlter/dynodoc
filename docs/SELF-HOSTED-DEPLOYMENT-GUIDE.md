@@ -914,6 +914,9 @@ and `verify-delivery`), `configure` (9.9 partly: the origin is changed, the add-
 `addin build` (P0-7), encryption and remote targets for backups (9.6), binary rollback without a restore (9.10 level 2),
 rotation helpers (9.12), the Helm and Profile B/C paths. The backup is `pg_dump -Fc`; its copy of the secrets is not
 encrypted (decision recorded in the operations guide). DQ1 is settled as a Rust binary in the application repository.
+Revised 23 October 2026 after an independent review: a live restore is journalled and reversible (`recover`, 9.7), a
+backup is treated as trusted code and its SQL is screened (operations guide, "Trust"), the upgrade gates cannot be
+bypassed by a flag (9.8), and `rollback` validates before it changes anything (9.10).
 
 ### 9.1 Install, Profile A
 

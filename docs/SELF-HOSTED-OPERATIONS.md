@@ -588,7 +588,19 @@ the databases are right and the services are up, delete `state/restore-journal.j
 
 ## 8. What was tested, and what was not
 
-See the status paragraph in [SELF-HOSTED-EDITION.md](SELF-HOSTED-EDITION.md), section 13.2 (P0-5): unit tests against a
-fake runner and a fake network, thirteen mutation checks, and a run of every command against the real Docker bundle on
-Windows 11 with Docker Desktop. Not run: a Linux host, arm64, a real certificate authority, a real mail server, a real
-upgrade from one release to a newer one, remote backup targets, a signed bundle, an air-gapped host, high availability.
+See the status paragraph in [SELF-HOSTED-EDITION.md](SELF-HOSTED-EDITION.md), section 13.2 (P0-5): 373 unit tests on
+Windows and 375 on Linux (in a `rust:1` container) against a fake runner and a fake network, four tests that keep
+dynodoctl out of the public mirror, 52 manual mutation checks (each makes at least one test fail), and a run of the
+affected commands against the real Docker bundle on Windows 11 with Docker Desktop after the review fixes: backup, volume
+destroyed, `restore --into-live` from the backup and the external settings copy; a failed start after the swap that
+swapped back by itself; a crash after the swap recovered with `dynodoctl recover`; a hostile dump refused by the SQL screen;
+`upgrade --local` and `rollback` (and a rollback with a damaged backup that changed nothing); `support-bundle` (no secret
+value found in the archive); `verify-delivery` (195 files read).
+
+Not run: a real release-to-release upgrade, a real certificate authority, a real mail server, arm64, macOS, rootless
+Docker, a dataset of 1,000 documents, remote backup targets, a signed bundle, an air-gapped host, high availability. Known
+limits of what was built: a backup is trusted code (the SQL screen is not a sandbox and nothing authenticates a backup);
+administrators and the SYSTEM account can read owner-only files on Windows through their privileges; the redaction cannot
+recognise a secret that has no sensitive name next to it; `verify-delivery` cannot test whether a server also accepts
+TLS 1.0 or 1.1; an interrupt that arrives twice ends the program at once and leaves the journal for `recover`; the
+interrupt handling on Windows was written and compiled but not exercised with a real Ctrl-C.
