@@ -223,7 +223,8 @@ fn the_age_of_the_newest_backup_is_counted_in_days() {
     let runner = FakeRunner::new();
     let confirm = ScriptedConfirm::new(&[]);
     let ctx = testkit::ctx(&runner, dir.path(), &confirm);
-    assert!(newest_age_days(&ctx).is_none());
-    testkit::make_backup(&dir.path().join("backups"), "dynodoc-a", "2026-10-15T12:00:00Z", "routine", None);
-    assert_eq!(newest_age_days(&ctx).unwrap().1, 7);
+    let backups = dir.path().join("backups");
+    assert!(newest_age_days(&ctx, &backups).is_none());
+    testkit::make_backup(&backups, "dynodoc-a", "2026-10-15T12:00:00Z", "routine", None);
+    assert_eq!(newest_age_days(&ctx, &backups).unwrap().1, 7);
 }

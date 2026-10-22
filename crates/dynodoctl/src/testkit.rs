@@ -114,6 +114,22 @@ pub fn make_backup(backups: &Path, name: &str, created: &str, kind: &str, config
     path
 }
 
+/// TLS facts as the probe would report them for one of the fixture certificates.
+pub fn tls_facts(evaluation: bool, trust: Result<(), String>) -> crate::net::TlsFacts {
+    use base64::Engine;
+    let b64 = if evaluation { crate::x509::TEST_CERT_B64 } else { crate::x509::TEST_CERT2_B64 };
+    crate::net::TlsFacts {
+        protocol: "TLSv1_3".into(),
+        cipher: "TLS13_AES_256_GCM_SHA384".into(),
+        chain: vec![base64::engine::general_purpose::STANDARD.decode(b64).unwrap()],
+        trust,
+    }
+}
+
+pub fn response(status: u16, headers: &[(&str, &str)], body: &str) -> crate::net::HttpResponse {
+    crate::net::HttpResponse { status, headers: headers.iter().map(|(k, v)| (k.to_ascii_lowercase(), v.to_string())).collect(), body: body.as_bytes().to_vec() }
+}
+
 pub fn confirm_yes() -> ScriptedConfirm {
     ScriptedConfirm::new(&[true, true, true, true])
 }

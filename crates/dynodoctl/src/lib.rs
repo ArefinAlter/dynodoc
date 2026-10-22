@@ -6,6 +6,7 @@
 
 pub mod backup;
 pub mod compose;
+pub mod configure;
 pub mod ctx;
 pub mod db;
 pub mod envfile;
@@ -17,9 +18,11 @@ pub mod net;
 pub mod origin;
 pub mod preflight;
 pub mod redact;
+pub mod rehearse;
 pub mod report;
 pub mod restore;
 pub mod runner;
+pub mod status;
 pub mod tarball;
 #[cfg(test)]
 pub mod testkit;

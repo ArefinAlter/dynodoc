@@ -328,8 +328,8 @@ pub fn run(ctx: &Ctx<'_>, options: &Options) -> Result<BackupReport> {
 }
 
 /// Age in whole days of the newest backup, if any.
-pub fn newest_age_days(ctx: &Ctx<'_>) -> Option<(String, i64)> {
-    let newest = manifest::list_backups(&ctx.layout.backups_dir()).into_iter().last()?;
+pub fn newest_age_days(ctx: &Ctx<'_>, dir: &Path) -> Option<(String, i64)> {
+    let newest = manifest::list_backups(dir).into_iter().last()?;
     let created = chrono::DateTime::parse_from_rfc3339(&newest.manifest.created_utc).ok()?;
     Some((newest.manifest.created_utc.clone(), ((ctx.now)() - created.with_timezone(&chrono::Utc)).num_days()))
 }
