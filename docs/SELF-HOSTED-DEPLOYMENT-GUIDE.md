@@ -498,9 +498,19 @@ pages can be worked on without secrets; `vite preview` and `node build` stop. Un
 | `WEB_SERVICE_KEY` or `WEB_SERVICE_KEY_FILE` | yes (selfhosted) | none | Service credential for `/auth/magic-link`, `/auth/exchange`, `/telemetry`; the API must hold the same value. Checked like `SESSION_SECRET`. Missing in `hosted` mode is a warning (as before, the pages start and sign-in fails at the API); present but weak stops startup in both modes. Equal to `SESSION_SECRET`: an error in `selfhosted` mode, a warning in `hosted` mode. |
 | `ENGINE_API_URL` | no | `http://127.0.0.1:8080` | Internal API address (the web process's API base URL). Must be an `http://` or `https://` URL without user name, password, query or fragment; a trailing slash stops startup in `selfhosted` mode and is a warning in `hosted` mode. |
 | `CONVERTER_URL`, `CONVERTER_KEY` or `CONVERTER_KEY_FILE` | pair | unset | Legacy `.doc` import. Missing: the route answers 503 with an instruction to save as DOCX. One of the two set: a warning. |
-| `RESEND_API_KEY` or `RESEND_API_KEY_FILE`, `EMAIL_FROM` | pair | unset | Both set means `email: true` in `/auth/options` (unless `AUTH_EMAIL_LINK=off`). Resend is the only mail transport today (SMTP is P0-3). |
+| `DYNODOC_MAIL_TRANSPORT` | no | `resend` when `RESEND_API_KEY` is set, else `none` | **Built.** `resend`, `smtp` or `none` (any other value stops startup). `none` turns mail off; the interface says so (see "Mail" below). Explicit `resend` without its key and sender stops startup. |
+| `RESEND_API_KEY` or `RESEND_API_KEY_FILE`, `EMAIL_FROM` | pair | unset | The `resend` transport, as before. Both set means `email: true` in `/auth/options` (unless `AUTH_EMAIL_LINK=off`). Set but the transport is `smtp` or `none`: a warning, they are not used. |
+| `SMTP_HOST` | yes (smtp) | none | **Built.** Mail server: a host name or an IP address, with no scheme (`smtp://`), port, path or spaces. IPv6 without brackets. |
+| `SMTP_PORT` | no | `587` (`starttls`), `465` (`tls`), `25` (`none-local`) | **Built.** 1 to 65535. |
+| `SMTP_SECURITY` | no | `starttls` | **Built.** `tls` (TLS from the first byte), `starttls` (upgrade; refuses to go on without it) or `none-local` (plain text, only to a loopback or private address; the loudly named opt-out). Certificate and host name are always verified, TLS 1.2 or newer. |
+| `SMTP_USER`, `SMTP_PASSWORD` or `SMTP_PASSWORD_FILE` | pair | unset | **Built.** Both or neither (one without the other stops startup). The password takes `NAME` / `NAME_FILE` like every secret (7.2 secret files), may not contain a NUL, and is never logged or printed. AUTH PLAIN or LOGIN. |
+| `SMTP_FROM` | yes (smtp) | none | **Built.** The sender address and envelope sender, such as `docs@example.org`; the relay must accept it. The Message-ID is under its domain. |
+| `SMTP_FROM_NAME` | no | the product name (`DYNODOC_BRAND_NAME`, else `Dynodoc`) | **Built.** Display name of the sender, one line, up to 120 characters. |
+| `SMTP_REPLY_TO` | no | unset | **Built.** Reply-To for messages that have none of their own (an invitation answers to the person who invited). |
+| `SMTP_CA_FILE` | no | unset | **Built.** PEM file with the certificate authorities to trust **instead of** the built-in list, for a mail server behind a private authority. Up to 256 KiB and 100 certificates; read at start; an expired one is a warning. Ignored with `none-local`. |
+| `SMTP_TIMEOUT_SECONDS` | no | `30` | **Built.** 5 to 120. The time one send may take in all, retries included. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` or `GOOGLE_CLIENT_SECRET_FILE` | pair | unset | Both set means Google sign-in and Forms import are offered. |
-| `AUTH_EMAIL_LINK` | no | `on` | **Built.** `off` hides email sign-in on the sign-in page, answers `email: false` and `development: false` in `/auth/options`, and makes `POST /auth/email` answer 403 before any mail or API call. A link that was already issued can still be confirmed. |
+| `AUTH_EMAIL_LINK` | no | `on` | **Built.** `off` hides email sign-in on the sign-in page, answers `email: false` and `development: false` in `/auth/options`, and makes `POST /auth/email` answer 403 before any mail or API call. A link that was already issued can still be confirmed. On with no mail transport that can send: a `selfhosted` server stops at start (nobody could sign in) unless `DEV_AUTH=true`; a `hosted` one warns. |
 | `DYNODOC_TELEMETRY` | no | `on` in `hosted`, `off` in `selfhosted` | **Built.** `on` or `off`. Off: the browser code makes no request, loads nothing, and `/telemetry` answers 404 to every method. On in `selfhosted` mode: pages report to `/telemetry` of the same installation, accepted only from `ORIGIN` and `DYNODOC_ALT_ORIGINS`, stored in the installation's own `web_metric` table. |
 | `DYNODOC_BRAND_NAME` | no | `Dynodoc` | **Built**, `selfhosted` only. Product name in the sign-in page, workspace header and footer, shared-link header and administration page (up to 60 characters, one line). The logo images and the installable-app name are not configurable yet. |
 | `DYNODOC_ORG_NAME` | no | empty | **Built**, `selfhosted` only. Organisation name for the notice (up to 120 characters, one line). |
@@ -514,7 +524,7 @@ pages can be worked on without secrets; `vite preview` and `node build` stop. Un
 | `OPS_STATUS_PATH` | no | unset | File with the host status JSON for `/admin`. |
 | `BODY_SIZE_LIMIT` | image | `16M` | adapter-node request body cap. |
 | `HOST` / `PORT` / `NODE_ENV` | image | `0.0.0.0` / `3000` / `production` | |
-| `NODE_EXTRA_CA_CERTS` | proposed use | unset | PEM bundle for outbound TLS to an IdP or SMTP relay behind a private CA. |
+| `NODE_EXTRA_CA_CERTS` | proposed use | unset | PEM bundle for outbound TLS to an IdP behind a private CA. The mail server uses `SMTP_CA_FILE` instead. |
 
 **Secret files (web).** `SESSION_SECRET`, `WEB_SERVICE_KEY`, `RESEND_API_KEY`,
 `GOOGLE_CLIENT_SECRET` and `CONVERTER_KEY` each take `NAME` or `NAME_FILE`, with the API's
@@ -561,13 +571,159 @@ written ("no file in the shipped images contains `dynodoc.online` outside third-
 notices") and fails until that list is empty, which needs an image build that leaves the
 `(site)` routes out (P0-6) and per-installation add-in packages (P0-7).
 
+**Mail (sign-in links and invitations).** The web server sends exactly two kinds of
+message: the emailed sign-in link and the invitation to a document or workspace. Nothing else
+is emailed. `DYNODOC_MAIL_TRANSPORT` chooses how they are sent: `resend` (the hosted
+service's HTTPS provider, unchanged), `smtp` (a mail server of your choice) or `none`.
+Unset, it is `resend` when `RESEND_API_KEY` is set and `none` otherwise, so the hosted service
+behaves as it always did.
+
+With `none`, mail is off and the product says so rather than dropping anything: the sign-in
+page shows "Email sign-in is awaiting administrator setup." and the button is disabled, and an
+invitation grants access and shows the person who invited the link to send themselves ("Email
+is not set up on this server, so no invitation was sent. Send <address> this link yourself:
+<link>"). A self-hosted server with email sign-in on and no way to send the link stops at
+start (nobody could sign in); set a transport or `AUTH_EMAIL_LINK=off`. Hosted only warns.
+The test stack switch `DEV_AUTH=true` is the one exception (it warns).
+
+*Library decision.* SMTP is nodemailer **10.1.0**, pinned exactly: licence MIT-0 (the
+package's own LICENSE text is the MIT permission without the attribution condition), **no
+runtime dependencies** (its `package.json` has no `dependencies`, so the lockfile gained one
+package and nothing else), published from GitHub Actions with npm provenance, integrity
+`sha512-fXW8AulB25aOTuwfRYV6lqHyfz2VM4rr4SGXH03mE7x5znEUpzL5mu6anARUpZN7744Ziwkmr4AxSLPJsBQspg==`
+(identical in the registry metadata and the lockfile), `pnpm audit --prod` lists no advisory for
+it. It is loaded only when the transport is `smtp`. An own client over `node:net` and
+`node:tls` was rejected: parsing replies, STARTTLS state, AUTH and MIME is security-critical code
+that a maintained library already gets reviewed. The library is released very often (10.0.0 on 3
+September, 10.2.0 on 21 October 2026, many of the fixes in the address parser): Dynodoc therefore
+gives it only addresses it has validated itself, builds the envelope itself, and checks the
+finished message again (below), so a parser fix in the library is not a precondition for
+safety. 10.1.0 was chosen because it was twelve days old at the time and carries the connection
+hardening of 10.1.0; later 10.1.x releases (address-parser fixes, limits on work per message,
+credential stripping in an HTTP fetch Dynodoc never uses) are not needed for how it is used
+here. Re-run `pnpm audit` and the mail tests when you update it.
+
+*Connection security.* `SMTP_SECURITY=tls` is TLS from the first byte (port 465).
+`starttls` (the default; port 587) upgrades the connection and **refuses to continue if the
+server does not offer or does not complete STARTTLS**: a server that leaves STARTTLS out cannot
+make Dynodoc send a password in the clear, and a login offered only before TLS is never used.
+Certificates and the host name are always verified, TLS 1.2 is the minimum, and the check holds
+even if `NODE_TLS_REJECT_UNAUTHORIZED=0` is set for the process (a warning says so).
+`SMTP_CA_FILE` (a PEM file of one or more certificates) **replaces** the built-in list of
+authorities, for a mail server behind a private authority. `none-local` is plain text and is
+**only** for a relay on this machine or a private network: an IP address in the configuration
+must be loopback (127.0.0.0/8, ::1), private (10/8, 172.16/12, 192.168/16, fc00::/7),
+link-local or shared (100.64/10), and a host name is resolved when mail is sent and refused
+unless every address is one of those (the connection goes to the address that was checked).
+With a login, `none-local` sends the user name and password unencrypted to that host; the
+server warns at start. Authentication is AUTH PLAIN or LOGIN, whichever the server offers first
+(CRAM-MD5 only if it offers nothing else).
+
+*Sending.* One time budget (`SMTP_TIMEOUT_SECONDS`, 30 by default) covers a whole send; inside
+it, connect and greeting are given up on after 10 s and a silent connection after 15 s. A 4xx
+reply, a refused or lost connection or a timeout is tried again, at most three attempts in all,
+after 1 s then 2 s (each randomly shortened by up to half). A 5xx reply, a refused certificate,
+a wrong password or a refused message is never tried again. A message has at most 10
+recipients (the product sends one) and at most 256 KiB. Nothing is queued: a send that fails
+returns an error to the person (503 for a sign-in link, "the invitation email could not be sent"
+with the link for an invitation). Message-ID is under the domain of `SMTP_FROM`; the EHLO name is
+the host name in `ORIGIN` when it is a real DNS name, otherwise that domain. Each message is
+multipart/alternative (text and simple HTML built from the same template, every value escaped,
+no images, no tracking, one link) in UTF-8 with RFC 2047 headers, and carries `Auto-Submitted:
+auto-generated`. Links are always built on `ORIGIN` in self-hosted mode, never on what a request
+says.
+
+*Addresses and headers.* A recipient or sender must be `local@domain` with an ASCII local part of
+letters, digits and `. _ + - ' = &` and a plain DNS domain with a dot. Quoted, bracketed,
+display-name, group, comment, IP-literal, `%`, `!` and non-ASCII forms are refused, not
+rewritten. A line break or any control character in a subject, a name, a user name or an address
+is refused before anything is sent, the finished message is parsed again and refused unless its
+headers are exactly the expected ones, and a reply-to is only taken from the request that
+asked for it (the inviter) or `SMTP_REPLY_TO`.
+
+*Log.* One line per outcome, `[dynodoc] mail provider=smtp outcome=sent kind=signin attempts=1
+id=<...@example.org>` or `outcome=failed class=auth-failed`: the provider, the outcome, a short
+class, the attempt count and the Message-ID. Never a password, a recipient, a subject or the
+text of the server's reply.
+
+*Check the settings against the real server:* `node scripts/check-mail.mjs --dir <dir> --to
+you@example.org` reads the `.env` in `<dir>` with the validator the server runs, connects, secures
+the connection, says EHLO, logs in, gives MAIL FROM and RCPT TO, and drops the connection when
+the server asks for the message text, so nothing is delivered. `--send` then sends one short test
+message to that address. `--json` prints one object for `dynodoctl`. Exit code 0 passed, 1
+failed, 2 could not run, 3 the transport is not SMTP. It never prints a password; for a refusal it
+shows the server's own words, which may quote the `--to` address.
+
+*What an operator sees, and does.* The message is what the check prints and what a failed send
+carries in the error (the log carries only the class):
+
+| Message | What to do |
+|---|---|
+| TLS certificate not trusted: set SMTP_CA_FILE to the certificate authority that signed the mail server certificate (or to the certificate itself) | Put the certificate of the authority that signed the mail server certificate (or the certificate itself) in a PEM file and name it in `SMTP_CA_FILE`. It replaces the built-in list, so include every authority the server chain needs. Do not switch certificate checks off: there is no setting for that. |
+| TLS certificate does not match the server name: SMTP_HOST must be a name that the certificate lists | Set `SMTP_HOST` to a name the certificate lists (the name on the certificate, not an IP address, unless the certificate lists the address). |
+| TLS certificate of the mail server has expired or is not valid yet: ask the mail administrator to renew it, and check this machine's clock | The mail administrator renews the certificate. If it is current, check this machine clock. |
+| TLS handshake failed: check SMTP_PORT and SMTP_SECURITY (port 465 usually needs tls, port 587 usually needs starttls; TLS 1.2 or newer is required) | The port and `SMTP_SECURITY` do not match: 465 is usually `tls`, 587 usually `starttls`. The server must also speak TLS 1.2 or newer. |
+| the server does not offer STARTTLS, so the connection would not be encrypted and nothing was sent: use SMTP_SECURITY=tls on port 465, or ask the mail administrator to enable STARTTLS (a password is never sent without encryption) | Use `SMTP_SECURITY=tls` (port 465) if the server has that, or ask for STARTTLS to be enabled. For a relay on this machine or a private network only, `none-local` is the explicit alternative. |
+| the mail server did not answer in time: check SMTP_HOST, SMTP_PORT and any firewall, and SMTP_SECURITY (a server that speaks TLS from the first byte, usually on port 465, needs SMTP_SECURITY=tls) | Check the host, the port and any firewall between the two machines. A server that speaks TLS from its first byte (usually port 465) needs `SMTP_SECURITY=tls`. |
+| the mail server refused the connection: check SMTP_HOST and SMTP_PORT, and that the relay is running | Check `SMTP_HOST` and `SMTP_PORT`, and that the relay is running. |
+| SMTP_HOST could not be found in DNS | Check the spelling of `SMTP_HOST` and the DNS settings of this machine. |
+| authentication failed: check SMTP_USER and SMTP_PASSWORD | Check `SMTP_USER` and the password (`SMTP_PASSWORD` or the file named by `SMTP_PASSWORD_FILE`). |
+| the server requires authentication before it accepts mail: set SMTP_USER and SMTP_PASSWORD | Set `SMTP_USER` and `SMTP_PASSWORD`, or ask for this machine to be allowed to relay without a login. |
+| relay refused: the server will not take mail from this installation for that recipient; ask the mail administrator to allow it (check SMTP_FROM and which machines the relay trusts) | The relay will not take mail from this installation for that recipient. The mail administrator allows the machine or the login, and confirms that `SMTP_FROM` is an address the relay accepts. |
+| the server refused the sender address: SMTP_FROM must be an address the relay accepts | Set `SMTP_FROM` to an address the relay allows this login to send from. |
+| SMTP_SECURITY=none-local is only allowed for a loopback or private network address, and the host resolves elsewhere | The name in `SMTP_HOST` resolves to an address that is not loopback or private. Use `tls` or `starttls`, or a name that resolves only to a private address. |
+
+*Settings for common mail servers* (all other settings keep their defaults):
+
+```text
+# A corporate relay on port 587 with STARTTLS and a login. Its certificate is from a private
+# authority, whose certificate is in the file named by SMTP_CA_FILE.
+DYNODOC_MAIL_TRANSPORT=smtp
+SMTP_HOST=smtp.corp.example
+SMTP_SECURITY=starttls
+SMTP_USER=dynodoc
+SMTP_PASSWORD_FILE=/run/secrets/smtp_password
+SMTP_FROM=docs@corp.example
+SMTP_CA_FILE=/etc/dynodoc/corp-ca.pem
+
+# A provider on port 465 (TLS from the first byte), public certificate, login.
+DYNODOC_MAIL_TRANSPORT=smtp
+SMTP_HOST=smtp.provider.example
+SMTP_PORT=465
+SMTP_SECURITY=tls
+SMTP_USER=apikey-or-user
+SMTP_PASSWORD_FILE=/run/secrets/smtp_password
+SMTP_FROM=docs@example.org
+
+# Postfix on the same machine, accepting mail from 127.0.0.1 without a login. In a container,
+# 127.0.0.1 is the container itself: give the private address of the host or of the mail
+# container instead (for example 172.17.0.1, or the service name when it resolves privately).
+DYNODOC_MAIL_TRANSPORT=smtp
+SMTP_HOST=127.0.0.1
+SMTP_SECURITY=none-local
+SMTP_FROM=docs@example.org
+```
+
+*Not built:* a database outbox with retry and administrator visibility (a failed send is
+reported to the person, not queued), operator-issued sign-in links, XOAUTH2, DKIM signing
+(Dynodoc does not sign: SPF, DKIM and DMARC belong to the relay. Publish SPF for the machines the
+relay sends from, have the relay sign for the domain of `SMTP_FROM`, and keep `SMTP_FROM` in a
+domain you control so that DMARC aligns), bounce handling, and per-language templates.
+A From address does not create an inbound mailbox: replies go where `SMTP_REPLY_TO` or the
+inviter's address says.
+
 **Environment-file generator and check.** `node frontend/researcher/scripts/dynodoc-env.mjs
 generate-env --dir <new directory> --origin https://dynodoc.example.org` writes a commented `.env`
 that names secret files, and a `secrets/` directory with one random 32-byte value per secret
 (`session_secret`, `web_service_key`, `paseto_local_key`, `postgres_password`, `database_url`
 with a random runtime password, and `converter_key` with `--with-converter`), mode 0600 on
-Unix. It refuses to overwrite anything, writes nothing if any target exists, prints no secret,
-and lists what to back up. `check-config --dir <directory>` validates that directory with the
+Unix. Without a mail server the `.env` has `DYNODOC_MAIL_TRANSPORT=none` and
+`AUTH_EMAIL_LINK=off` (the server refuses email sign-in with no way to send the link) and a
+commented SMTP block; `--smtp-host H --smtp-from A [--smtp-port N] [--smtp-security
+tls|starttls|none-local] [--smtp-user U] [--smtp-ca-file P]` writes a checked SMTP block instead
+(with `--smtp-user`, an empty `secrets/smtp_password` for you to fill; `check-config` says it is
+empty until you do). It refuses to overwrite anything, writes nothing if any target exists,
+prints no secret, and lists what to back up. `check-config --dir <directory>` validates that directory with the
 same validator the server runs (plus the shape of `PASETO_LOCAL_KEY` and `DATABASE_URL`, which
 only the API reads) without starting anything; exit code 0 (valid), 1 (problems) or 2 (cannot
 run), `--json` for tools. `dynodoctl` is meant to call both.
@@ -586,8 +742,8 @@ run), `--json` for tools. `dynodoctl` is meant to call both.
 |---|---|---|
 | `DYNODOC_AIRGAP=true` | P0-1, P0-9 | Refuses to start features that need outbound access; tightens CSP (`img-src`, Office hosts) |
 | Support link in add-in manifests | P0-7 | `DYNODOC_SUPPORT_URL` exists (7.2); the manifest generator does not read it yet |
-| `MAIL_TRANSPORT=smtp\|resend\|none`, `SMTP_URL`, `SMTP_FROM`, `SMTP_CA_FILE`, `SMTP_REQUIRE_TLS` | P0-3 | Mail delivery |
-| Operator-issued sign-in links | P0-3 | `AUTH_EMAIL_LINK` exists (7.2); the operator-issued link and SMTP do not |
+| Mail delivery | P0-3 | **Built** as `DYNODOC_MAIL_TRANSPORT` and `SMTP_*` (7.2), not under the names proposed here (`MAIL_TRANSPORT`, `SMTP_URL`, `SMTP_REQUIRE_TLS`): TLS is required by default and `SMTP_SECURITY=none-local` is the only way out |
+| Operator-issued sign-in links | P0-3 | `AUTH_EMAIL_LINK` and SMTP exist (7.2); the operator-issued link does not |
 | `OIDC_PROVIDERS_FILE`, `SAML_PROVIDERS_FILE` | P1-1, P1-8 | Provider definitions ([identity document](SELF-HOSTED-IDENTITY-AND-ACCESS.md)) |
 | `SCIM_ENABLED` | P1-5 | Mount `/scim/v2` |
 | `SESSION_IDLE_TIMEOUT_SECONDS`, `SESSION_ABSOLUTE_TIMEOUT_SECONDS`, `REFRESH_TTL_SECONDS`, `REFRESH_REUSE_INTERVAL_SECONDS` | P1-6, P2-3 | Session policy |

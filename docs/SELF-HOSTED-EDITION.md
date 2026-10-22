@@ -189,7 +189,7 @@ limitation), **MISSING** (not present). "Today" means the repository at commit `
 
 | # | Capability | Tag | Evidence and limitation |
 |---|---|---|---|
-| 15 | Email sign-in link (15 minutes, single use, hash stored, scanner-safe POST confirmation) | EXISTS | `crates/engine-api/src/auth/routes.rs`, `routes/auth/[...action]/+server.ts`. Delivery only through Resend (`api.resend.com`). |
+| 15 | Email sign-in link (15 minutes, single use, hash stored, scanner-safe POST confirmation) | EXISTS | `crates/engine-api/src/auth/routes.rs`, `routes/auth/[...action]/+server.ts`. Delivery through Resend (`api.resend.com`) or, from 22 October 2026, SMTP (13.2). |
 | 16 | Google sign-in (OIDC authorization code with PKCE) | EXISTS | `routes/auth/[...action]/+server.ts` using `openid-client`; discovery URL fixed to `accounts.google.com`. |
 | 17 | Generic OIDC | MISSING | `openid-client` and `jose` are already dependencies; configuration is the gap. |
 | 18 | SAML 2.0 | MISSING | |
@@ -201,7 +201,7 @@ limitation), **MISSING** (not present). "Today" means the repository at commit `
 | 24 | Device keys, project-scoped sessions, per-project grants | EXISTS | Schemas 33, 38, 40; [DEVICE-KEY-GRANTS-API.md](DEVICE-KEY-GRANTS-API.md). |
 | 25 | Non-human (service) identities | MISSING | An identity requires an email today (`identity.email not null`, `0004_identity.sql`). |
 | 26 | Configurable token lifetimes | PARTIAL | `TOKEN_TTL_SECONDS` only (code default 86,400; compose default 3,600). Refresh lifetime is the constant `REFRESH_TTL_SECONDS` (30 days). |
-| 27 | Invitation email | EXISTS | `lib/server/invitations.ts`; Resend only; per-process rate maps. |
+| 27 | Invitation email | EXISTS | `lib/server/invitations.ts`; Resend or, from 22 October 2026, SMTP (13.2); per-process rate maps. |
 
 ### 3.3 Multi-instance behaviour
 
@@ -260,7 +260,7 @@ if the code can contact it at run time, or if a browser or Office client is told
 |---|---|---|---|---|---|
 | D1 | `accounts.google.com`, `openidconnect.googleapis.com` | `routes/auth/[...action]/+server.ts` | Google sign-in | Off unless `GOOGLE_CLIENT_ID`/`SECRET` set | Remove; customer OIDC or SAML (P1-1, P1-8). The Google flow becomes one preset of generic OIDC. |
 | D2 | `forms.googleapis.com`, `forms.google.com` | `routes/integrations/google/[action]`, `routes/api/google-forms` | Import a Google Form | Off | Removed; feature hidden when Google is not configured. |
-| D3 | `api.resend.com` | `lib/server/invitations.ts: sendEmail`, `routes/auth/[...action]/+server.ts` | Sign-in links and invitations | Replaced by SMTP (P0-3); Resend stays an optional transport | Intranet SMTP relay, or no mail: operator-issued sign-in links (P0-3) and SSO only. |
+| D3 | `api.resend.com` | `lib/server/invitations.ts: sendEmail`, `routes/auth/[...action]/+server.ts` | Sign-in links and invitations | Replaced by SMTP (P0-3, built 22 October 2026); Resend stays an optional transport | Intranet SMTP relay, or no mail: operator-issued sign-in links (P0-3) and SSO only. |
 | D4 | `appsforoffice.microsoft.com` (legacy), `officeapis.public.onecdn.static.microsoft`, `ajax.aspnetcdn.com` | `routes/connectors/*/+page.svelte`, `static/connectors/commands.html`, `lib/server/security.ts`, `nginx-app.conf` CSP maps | Office.js for the three panes | CDN, with the newer domain | Serve a local copy of Office.js and relax nothing else (P0-7). See licensing caveat in section 7.3. |
 | D5 | Google Apps Script runtime and `script.google.com` services | `extensions/google-*` | Google add-ons | Works only if the Dynodoc origin is reachable from Google's servers | Impossible air-gapped or intranet-only (section 7.4). |
 | D6 | `https://app.dynodoc.online/telemetry` | `lib/telemetry.ts` (fixed destination and a four-host allowlist), `routes/telemetry/+server.ts` | Anonymous page-load metrics | No-op on any other host (hostname allowlist), but CSP `connect-src` still lists the hosted origin (`svelte.config.js`) | Remove CSP entry and the route in self-hosted mode (P0-1); metrics, if any, go to the customer's own system. |
@@ -1568,7 +1568,7 @@ production release is unchanged. Settings and defaults are in the deployment gui
   `(site)` routes out (P0-6) and per-installation add-in packages (P0-7).
 - *Not built.* Product name in the logo images, the installable-app name (`site.webmanifest`)
   and page titles outside sign-in, workspace, shared link and administration; the Office.js
-  CDN (P0-7); SMTP and operator-issued sign-in links (P0-3); the Compose wiring of the new
+  CDN (P0-7); operator-issued sign-in links (P0-3; SMTP was built the same day, see below); the Compose wiring of the new
   variables and a web image that contains the check tool (P0-4, P0-5, P0-6); `engine-cli`;
   Windows has no secret-file mode check (as in the API). The hosted `infra/demo/*`,
   `extensions/*` and `static/connectors/*` files in Appendix B are untouched.
