@@ -34,7 +34,9 @@ fn patterns() -> &'static Patterns {
         jwt: Regex::new(r"\beyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]*").expect("regex"),
         bearer: Regex::new(r"(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=\-]{8,}").expect("regex"),
         key_value: Regex::new(
-            r#"(?i)\b([a-z0-9_.\-]*(?:password|passwd|secret|token|api[_\-]?key|apikey|private[_\-]?key|passphrase|credential|authorization|cookie)[a-z0-9_.\-]*)(["']?\s*[:=]\s*["']?)([^\s"',;&]+)"#,
+            // The value must be on the same line as its name (`[ \t]`, not `\s`): in YAML a name
+            // such as `secrets-init:` followed by a line break has no value on that line.
+            r#"(?i)\b([a-z0-9_.\-]*(?:password|passwd|secret|token|api[_\-]?key|apikey|private[_\-]?key|passphrase|credential|authorization|cookie)[a-z0-9_.\-]*)(["']?[ \t]*[:=][ \t]*["']?)([^\s"',;&]+)"#,
         )
         .expect("regex"),
         private_key: Regex::new(r"(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)").expect("regex"),
@@ -87,10 +89,17 @@ impl Redactor {
             .key_value
             .replace_all(&out, |c: &Captures| {
                 let key = &c[1];
-                if key.to_ascii_lowercase().ends_with("_file")
-                    || &c[3] == "[redacted]"
-                    || c[3].starts_with("[redacted")
-                {
+                let lower = key.to_ascii_lowercase();
+                // A path, a duration or a size is not a secret even when the name says "token".
+                let harmless_name = [
+                    "_file", "_path", "_dir", "_seconds", "_ttl", "_minutes", "_hours", "_days",
+                    "_bytes", "_size", "_count",
+                ]
+                .iter()
+                .any(|s| lower.ends_with(s));
+                // Structure, not a value: a YAML/JSON flow opening, or an already hidden value.
+                let structural = c[3].starts_with('{') || c[3].starts_with('[');
+                if harmless_name || structural || &c[3] == "[redacted]" {
                     c[0].to_string()
                 } else {
                     format!("{key}{}[redacted]", &c[2])
@@ -179,6 +188,31 @@ mod tests {
         assert!(
             out.contains("PASETO_LOCAL_KEY_FILE=/run/secrets/paseto_local_key"),
             "{out}"
+        );
+    }
+
+    #[test]
+    fn compose_structure_survives_and_a_secret_on_the_same_line_does_not() {
+        let r = Redactor::new(false);
+        let yaml = "depends_on:\n  secrets-init:\n    condition: service_completed_successfully\n  postgres:\n    condition: service_healthy\nenvironment:\n  TOKEN_TTL_SECONDS: \"3600\"\n  SESSION_SECRET_FILE: /run/secrets/session_secret\n  SESSION_SECRET: abc12345def\n";
+        let out = r.apply(yaml);
+        assert!(
+            out.contains("secrets-init:\n    condition: service_completed_successfully"),
+            "{out}"
+        );
+        assert!(out.contains("TOKEN_TTL_SECONDS: \"3600\""), "{out}");
+        assert!(
+            out.contains("SESSION_SECRET_FILE: /run/secrets/session_secret"),
+            "{out}"
+        );
+        assert!(
+            !out.contains("abc12345def") && out.contains("SESSION_SECRET: [redacted]"),
+            "{out}"
+        );
+        assert!(
+            r.apply("secrets-init: {condition: service_completed_successfully}")
+                .contains("{condition"),
+            "a flow opening is structure"
         );
     }
 

@@ -35,7 +35,7 @@ fn restore_verify_loads_the_backup_into_a_throwaway_database_verifies_and_remove
         .unwrap();
     let load = runner
         .position(&format!(
-            "pg_restore -h 127.0.0.1 -U dynodoc -d {SCRATCH} --no-owner --no-acl --exit-on-error"
+            "pg_restore -h 127.0.0.1 -U dynodoc -d {SCRATCH} --no-owner --exit-on-error"
         ))
         .unwrap();
     let verify = runner.position("verify-snapshots --all").unwrap();
@@ -336,6 +336,7 @@ fn a_confirmed_live_restore_loads_beside_the_live_database_then_swaps_verifies_a
     };
     let order = [
         pos("up -d --wait --wait-timeout 180 postgres"),
+        pos("run --rm --no-deps -T db-roles"),
         pos("stop proxy web api"),
         pos(&format!("create database {RESTORING}")),
         pos(&format!(

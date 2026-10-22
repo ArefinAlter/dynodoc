@@ -168,7 +168,10 @@ pub fn restore_into(
                 "the dump may be damaged or from an incompatible PostgreSQL; try an earlier backup",
             ));
         }
-        Ok(((), "loaded with --no-owner --no-acl".to_string()))
+        Ok((
+            (),
+            "loaded with its privileges (--no-owner only)".to_string(),
+        ))
     })?;
     let facts = rec.step("read the restored database", || {
         let f = db::read_facts(c, db)?;
@@ -426,6 +429,19 @@ pub fn restore_live(ctx: &Ctx<'_>, opts: &LiveOptions) -> Result<RestoreReport> 
             ));
         }
         Ok(((), "healthy".to_string()))
+    })?;
+
+    // The dump's GRANTs name the runtime login. On a fresh volume (the disaster-recovery case) it
+    // does not exist yet: the db-roles job creates it (idempotent; harmless on a running install).
+    rec.step("create the runtime login (db-roles)", || {
+        let out = c.run(&["run", "--rm", "--no-deps", "-T", "db-roles"])?;
+        if !out.ok() {
+            return Err(CliError::failed(
+                format!("the db-roles job failed: {}", short(&out.text())),
+                "run `docker compose logs db-roles`; nothing was changed",
+            ));
+        }
+        Ok(((), "dynodoc_runtime is in place".to_string()))
     })?;
 
     if !opts.no_safety_backup && db::has_schema(&c, LIVE_DB).unwrap_or(false) {

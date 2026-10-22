@@ -132,10 +132,15 @@ pub fn list_scratch_databases(c: &Compose<'_>) -> Result<Vec<String>> {
 }
 
 /// `pg_restore` of a custom-format dump into `db`, read from the file on standard input.
+///
+/// The ACLs are kept (`--no-owner` only): the migrations REVOKE EXECUTE on the guard functions
+/// from PUBLIC, and without those statements `grant-runtime` rightly refuses the copy. The dump's
+/// GRANTs name the runtime login, so that role must exist: it does on a running installation, and
+/// `restore --into-live` runs the `db-roles` job first on a fresh volume.
 pub fn restore_dump(c: &Compose<'_>, db: &str, dump: &Path) -> Result<Output> {
     check_ident(db)?;
     c.pg_sh_io(
-        &format!("pg_restore {PG_CONNECT} -d {db} --no-owner --no-acl --exit-on-error"),
+        &format!("pg_restore {PG_CONNECT} -d {db} --no-owner --exit-on-error"),
         Some(dump.to_path_buf()),
         None,
     )
@@ -332,7 +337,13 @@ mod tests {
         })
         .unwrap();
         let line = runner.lines().pop().unwrap();
-        assert!(line.contains("pg_restore -h 127.0.0.1 -U dynodoc -d dynodoc_restore_1 --no-owner --no-acl --exit-on-error"));
+        assert!(line.contains(
+            "pg_restore -h 127.0.0.1 -U dynodoc -d dynodoc_restore_1 --no-owner --exit-on-error"
+        ));
+        assert!(
+            !line.contains("--no-acl"),
+            "the ACLs are part of what an upgrade rehearsal must prove"
+        );
         assert_eq!(
             runner.calls()[0].stdin_file.as_deref(),
             Some(Path::new("/tmp/x.dump"))
