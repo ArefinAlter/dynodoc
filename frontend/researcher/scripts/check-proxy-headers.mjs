@@ -60,15 +60,20 @@ function request(url, cookie) {
     pending.on('error', reject);
   });
 }
-function checkSecurity(response, pane = false) {
+function checkSecurity(response, pane = false, signIn = false) {
   assert.equal(response.headers['strict-transport-security'], 'max-age=31536000');
   assert.equal(response.headers['x-content-type-options'], 'nosniff');
   const csp = response.headers['content-security-policy'];
   assert.ok(csp && !csp.includes(','), 'One complete CSP, without duplicate policies.');
   assert.match(csp, /object-src 'none'/);
   assert.doesNotMatch(csp, /script-src[^;]*unsafe-(inline|eval)/);
-  assert.equal(response.headers['x-frame-options'], pane ? undefined : 'SAMEORIGIN');
-  if (!pane) assert.match(csp, /frame-ancestors 'self'(?:;|$)/);
+  // The app sign-in pages are never framed (decision 017); every other page may be, by its own site.
+  assert.equal(
+    response.headers['x-frame-options'],
+    pane ? undefined : signIn ? 'DENY' : 'SAMEORIGIN'
+  );
+  if (!pane)
+    assert.match(csp, signIn ? /frame-ancestors 'none'(?:;|$)/ : /frame-ancestors 'self'(?:;|$)/);
 }
 async function stopNginx() {
   if (!nginx) return;
@@ -202,6 +207,15 @@ ${sites.join('\n')}
       /script-src[^;]+appsforoffice\.microsoft\.com/
     );
     assert.match(response.headers['content-security-policy'], /frame-ancestors/);
+  }
+  // The app sign-in pages: never framed, never in a window group a popup of an infected page shares
+  // (the proxy replaces the X-Frame-Options header, so its map has to say DENY for them, and the
+  // application's Cross-Origin-Opener-Policy has to arrive unchanged).
+  for (const path of ['/app-signin', '/app-signin/finish']) {
+    const response = await request(`${appURL}${path}`);
+    assert.equal(response.status, 200);
+    checkSecurity(response, false, true);
+    assert.equal(response.headers['cross-origin-opener-policy'], 'same-origin');
   }
   for (const [path, status] of [
     ['/workspace', 303],
