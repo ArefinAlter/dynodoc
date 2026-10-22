@@ -11,13 +11,14 @@
 //   - retries (./retry.js): 4xx replies and network errors only, a few times, with jitter.
 //   - what is logged: provider, outcome, a short error class and the message id. Never a
 //     password, a recipient, a subject or the server's reply text.
-import { BlockList, isIP } from 'node:net';
+import { isIP } from 'node:net';
 import { lookup as dnsLookup } from 'node:dns/promises';
 import { Readable } from 'node:stream';
 import { createTransport } from 'nodemailer';
 import SMTPConnection from 'nodemailer/lib/smtp-connection';
 import { checkMessage, checkSender, composeMessage, newMessageId } from './message.js';
 import { domainOf } from './address.js';
+import { isLocalAddress } from './local-address.js';
 import { MailError, classifyError, printable } from './errors.js';
 import { withRetry } from './retry.js';
 
@@ -34,32 +35,6 @@ import { withRetry } from './retry.js';
  * @property {number} timeoutMs the budget for one send, retries included
  * @property {string} helloName the name given in EHLO
  */
-
-const PRIVATE = new BlockList();
-for (const [network, prefix] of /** @type {[string, number][]} */ ([
-  ['127.0.0.0', 8],
-  ['10.0.0.0', 8],
-  ['172.16.0.0', 12],
-  ['192.168.0.0', 16],
-  ['169.254.0.0', 16],
-  ['100.64.0.0', 10]
-]))
-  PRIVATE.addSubnet(network, prefix, 'ipv4');
-PRIVATE.addAddress('::1', 'ipv6');
-PRIVATE.addSubnet('fc00::', 7, 'ipv6');
-PRIVATE.addSubnet('fe80::', 10, 'ipv6');
-
-/**
- * Loopback, private (RFC 1918, unique-local), link-local and shared (100.64/10) addresses.
- * @param {string} address
- */
-export function isLocalAddress(address) {
-  const family = isIP(address);
-  if (family === 0) return false;
-  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address);
-  if (mapped) return PRIVATE.check(mapped[1], 'ipv4');
-  return PRIVATE.check(address, family === 4 ? 'ipv4' : 'ipv6');
-}
 
 /**
  * The address to connect to for `none-local`: every address the host resolves to must be local,

@@ -17,6 +17,8 @@
 //          [--brand-name "Acme Docs"] [--org-name "Acme Ltd."] [--support-url mailto:docs@acme.example]
 //          [--container-secrets-dir /run/secrets] [--db-host postgres] [--db-name dynodoc]
 //          [--db-port 5432] [--db-user dynodoc_runtime] [--with-converter]
+//          [--smtp-host mail.example.org --smtp-from docs@example.org [--smtp-port 587]
+//           [--smtp-security starttls|tls|none-local] [--smtp-user name] [--smtp-ca-file /path.pem]]
 //        node scripts/dynodoc-env.mjs check-config --dir ./dynodoc-config [--use-process-env] [--json]
 import { randomBytes } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -65,6 +67,7 @@ export const SECRET_FILES = [
   ]
 ];
 const RUNTIME_PASSWORD_FILE = 'runtime_database_password';
+const SMTP_PASSWORD_FILE = 'smtp_password';
 
 const flag = (args, name, fallback) => {
   const i = args.indexOf(name);
@@ -95,6 +98,36 @@ export function generateEnv(options) {
   const probe = loadConfig({ DYNODOC_MODE: 'selfhosted', ORIGIN: options.origin });
   const originProblem = probe.problems.find((p) => p.startsWith('ORIGIN'));
   if (originProblem) throw new Error(originProblem);
+  // Mail: with --smtp-host the .env gets a working SMTP block; without it, email sign-in is off,
+  // because a link nobody can send is a sign-in nobody can use (the server refuses that setup).
+  const smtp = options.smtpHost
+    ? {
+        host: options.smtpHost,
+        from: options.smtpFrom,
+        port: options.smtpPort,
+        security: options.smtpSecurity,
+        user: options.smtpUser,
+        caFile: options.smtpCaFile
+      }
+    : null;
+  if (!smtp && (options.smtpFrom || options.smtpUser || options.smtpPort || options.smtpSecurity))
+    throw new Error('--smtp-host is required with the other --smtp-* options.');
+  if (smtp) {
+    if (!smtp.from) throw new Error('--smtp-from is required with --smtp-host (the sender address).');
+    const probe = loadConfig({
+      DYNODOC_MODE: 'selfhosted',
+      ORIGIN: options.origin,
+      DYNODOC_MAIL_TRANSPORT: 'smtp',
+      SMTP_HOST: smtp.host,
+      SMTP_FROM: smtp.from,
+      ...(smtp.port ? { SMTP_PORT: String(smtp.port) } : {}),
+      ...(smtp.security ? { SMTP_SECURITY: smtp.security } : {}),
+      ...(smtp.user ? { SMTP_USER: smtp.user, SMTP_PASSWORD: 'x' } : {}),
+      ...(smtp.caFile ? { SMTP_CA_FILE: smtp.caFile } : {})
+    });
+    const smtpProblem = probe.problems.find((p) => p.startsWith('SMTP_'));
+    if (smtpProblem) throw new Error(smtpProblem);
+  }
   const secretsDir = join(dir, 'secrets');
   const mountDir = options.containerSecretsDir ?? secretsDir;
   const dbHost = options.dbHost ?? 'postgres';
@@ -115,7 +148,8 @@ export function generateEnv(options) {
   const targets = [
     join(dir, '.env'),
     ...files.map(([file]) => join(secretsDir, file)),
-    join(secretsDir, RUNTIME_PASSWORD_FILE)
+    join(secretsDir, RUNTIME_PASSWORD_FILE),
+    ...(smtp?.user ? [join(secretsDir, SMTP_PASSWORD_FILE)] : [])
   ];
   const existing = targets.filter((path) => existsSync(path));
   if (existing.length)
@@ -136,6 +170,8 @@ export function generateEnv(options) {
   ensureDir(secretsDir);
   for (const [file] of files) createFile(join(secretsDir, file), `${values[file]}\n`, 0o600);
   createFile(join(secretsDir, RUNTIME_PASSWORD_FILE), `${runtimePassword}\n`, 0o600);
+  // The mail server's password is not ours to invent: an empty file, so check-config says to fill it.
+  if (smtp?.user) createFile(join(secretsDir, SMTP_PASSWORD_FILE), '', 0o600);
 
   const optional = (name, value, example) => (value ? `${name}=${value}` : `# ${name}=${example}`);
   const env = [
@@ -164,10 +200,43 @@ export function generateEnv(options) {
     '',
     '# --- Sign-in ---',
     '# on | off. Off hides email sign-in and refuses requests for new emailed links.',
-    '# AUTH_EMAIL_LINK=on',
-    '# Mail delivery (optional; SMTP arrives in a later release). Set both or neither.',
-    '# RESEND_API_KEY_FILE=',
-    '# EMAIL_FROM=',
+    smtp
+      ? '# AUTH_EMAIL_LINK=on'
+      : '# Off until a mail server is set up below: with email on and no way to send the link, the server will not start.',
+    ...(smtp ? [] : ['AUTH_EMAIL_LINK=off']),
+    '',
+    '# --- Mail: sign-in links and invitations ---',
+    '# smtp | resend | none. SMTP is the usual choice for your own network or mail service.',
+    ...(smtp
+      ? [
+          'DYNODOC_MAIL_TRANSPORT=smtp',
+          `SMTP_HOST=${smtp.host}`,
+          '# starttls (port 587, the default) | tls (port 465) | none-local (plain text, only to this machine or a private address)',
+          optional('SMTP_SECURITY', smtp.security, 'starttls'),
+          optional('SMTP_PORT', smtp.port, '587'),
+          `SMTP_FROM=${smtp.from}`,
+          '# SMTP_FROM_NAME=Dynodoc',
+          '# SMTP_REPLY_TO=',
+          optional('SMTP_USER', smtp.user, 'the-login-name'),
+          smtp.user
+            ? `SMTP_PASSWORD_FILE=${join(mountDir, SMTP_PASSWORD_FILE).split('\\').join('/')}`
+            : '# SMTP_PASSWORD_FILE=/run/secrets/smtp_password',
+          '# A PEM file with the authority that signed the mail server certificate, if it is a private one.',
+          optional('SMTP_CA_FILE', smtp.caFile, '/etc/dynodoc/mail-ca.pem'),
+          '# SMTP_TIMEOUT_SECONDS=30'
+        ]
+      : [
+          'DYNODOC_MAIL_TRANSPORT=none',
+          '# To use email sign-in: set the lines below, delete AUTH_EMAIL_LINK=off above, and run',
+          '# node scripts/check-mail.mjs --dir <this directory> --to you@example.org',
+          '# DYNODOC_MAIL_TRANSPORT=smtp',
+          '# SMTP_HOST=smtp.example.org',
+          '# SMTP_SECURITY=starttls',
+          '# SMTP_FROM=docs@example.org',
+          '# SMTP_USER=',
+          '# SMTP_PASSWORD_FILE=/run/secrets/smtp_password'
+        ]),
+    '# Resend instead (an HTTPS mail service): DYNODOC_MAIL_TRANSPORT=resend, RESEND_API_KEY_FILE and EMAIL_FROM.',
     '# Comma-separated emails allowed to use /admin.',
     '# ADMIN_EMAILS=',
     '',
@@ -190,7 +259,8 @@ export function generateEnv(options) {
   const written = [
     join(dir, '.env'),
     ...files.map(([file]) => join(secretsDir, file)),
-    join(secretsDir, RUNTIME_PASSWORD_FILE)
+    join(secretsDir, RUNTIME_PASSWORD_FILE),
+    ...(smtp?.user ? [join(secretsDir, SMTP_PASSWORD_FILE)] : [])
   ];
   const lines = [
     `Wrote ${written.length} files under ${dir}:`,
@@ -206,6 +276,11 @@ export function generateEnv(options) {
     'Back up the whole directory somewhere safe and separate from the server. Without it:',
     ...files.map(([file, name, , cost]) => `  - ${file} (${name}): ${cost}`),
     `  - ${RUNTIME_PASSWORD_FILE}: the password inside database_url; needed when you create the database login.`,
+    ...(smtp?.user
+      ? [
+          `  - ${SMTP_PASSWORD_FILE}: the mail server password. It is EMPTY: put the password in it (one line) before you start.`
+        ]
+      : []),
     'No secret is shown here. Do not commit this directory, paste its files into a ticket, or mail them.',
     '',
     `Next: node scripts/dynodoc-env.mjs check-config --dir ${dir}`
@@ -308,6 +383,12 @@ function main(argv) {
         dbName: flag(args, '--db-name'),
         dbPort: flag(args, '--db-port'),
         dbUser: flag(args, '--db-user'),
+        smtpHost: flag(args, '--smtp-host'),
+        smtpFrom: flag(args, '--smtp-from'),
+        smtpPort: flag(args, '--smtp-port'),
+        smtpSecurity: flag(args, '--smtp-security'),
+        smtpUser: flag(args, '--smtp-user'),
+        smtpCaFile: flag(args, '--smtp-ca-file'),
         withConverter: args.includes('--with-converter')
       });
       console.log(lines.join('\n'));

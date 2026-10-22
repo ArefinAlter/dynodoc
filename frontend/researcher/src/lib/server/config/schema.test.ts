@@ -32,11 +32,18 @@ const hosted = (extra: Env = {}): Env => ({
   WEB_SERVICE_KEY: SERVICE,
   ...extra
 });
+// A complete self-hosted setup needs a way to send the sign-in link (or AUTH_EMAIL_LINK=off).
+const SMTP: Env = {
+  DYNODOC_MAIL_TRANSPORT: 'smtp',
+  SMTP_HOST: 'mail.example.test',
+  SMTP_FROM: 'docs@dynodoc.example.test'
+};
 const selfhosted = (extra: Env = {}): Env => ({
   DYNODOC_MODE: 'selfhosted',
   ORIGIN: 'https://dynodoc.example.test',
   SESSION_SECRET: SESSION,
   WEB_SERVICE_KEY: SERVICE,
+  ...SMTP,
   ...extra
 });
 /** Load and demand exactly these problems (as substrings, in any order). */
@@ -64,7 +71,14 @@ const quiet = (env: Env, part: string) =>
 
 describe('hosted mode (the default)', () => {
   it('keeps the hosted service exactly as it was', () => {
-    const { config, warnings, ok } = loadConfig(hosted({ ORIGIN: 'https://app.dynodoc.online' }));
+    // The hosted service sends its mail through Resend, so a complete hosted setup has it.
+    const { config, warnings, ok } = loadConfig(
+      hosted({
+        ORIGIN: 'https://app.dynodoc.online',
+        RESEND_API_KEY: 're_0123456789abcdef',
+        EMAIL_FROM: 'Dynodoc <team@example.test>'
+      })
+    );
     expect(ok).toBe(true);
     expect(warnings).toEqual([]);
     expect(config.mode).toBe('hosted');
@@ -119,7 +133,8 @@ describe('hosted mode (the default)', () => {
       expect.stringContaining(
         'SESSION_SECRET is not set: this process cannot hold sign-in sessions'
       ),
-      expect.stringContaining('WEB_SERVICE_KEY is not set: this process cannot authenticate')
+      expect.stringContaining('WEB_SERVICE_KEY is not set: this process cannot authenticate'),
+      expect.stringContaining('email sign-in is on but no mail transport is configured')
     ]);
     expect(result.config.workspaceUrl).toBe('https://app.dynodoc.online');
     problems({});
@@ -274,6 +289,9 @@ describe('WEB_SERVICE_KEY and the other secrets', () => {
       SESSION_SECRET_FILE: file(SESSION),
       WEB_SERVICE_KEY_FILE: file(`${SERVICE}\r\n`),
       RESEND_API_KEY_FILE: file('re_test_key_0123456789\n'),
+      DYNODOC_MAIL_TRANSPORT: undefined,
+      SMTP_HOST: undefined,
+      SMTP_FROM: undefined,
       GOOGLE_CLIENT_SECRET_FILE: file('google-secret-0123456789\n'),
       CONVERTER_KEY_FILE: file('converter-key-0123456789\n'),
       EMAIL_FROM: 'Docs <docs@example.test>',
@@ -522,7 +540,12 @@ describe('warnings', () => {
   it('stay quiet about known names and unrelated ones', () => {
     for (const name of KNOWN_DYNODOC_NAMES) expect(likelyTypoOf(name)).toEqual([]);
     expect(likelyTypoOf('DYNODOC_COMPLETELY_UNRELATED_SETTING')).toEqual([]);
-    const env = hosted({ DYNODOC_COMPLETELY_UNRELATED_SETTING: '1', PATH: '/bin' });
+    const env = hosted({
+      DYNODOC_COMPLETELY_UNRELATED_SETTING: '1',
+      PATH: '/bin',
+      RESEND_API_KEY: 're_0123456789abcdef',
+      EMAIL_FROM: 'Dynodoc <team@example.test>'
+    });
     expect(loadConfig(env).warnings).toEqual([]);
   });
   it('know every DYNODOC_ name the Rust crates read', () => {
