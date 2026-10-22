@@ -1791,9 +1791,15 @@ and runbooks in [SELF-HOSTED-OPERATIONS.md](SELF-HOSTED-OPERATIONS.md). Nothing 
   specified:** backup, then the PostgreSQL volume deleted and `.env` and `secrets/` removed, then
   `restore --into-live --config-from ...` rebuilt everything in 39.8 s, `verify-snapshots --all` and `verify` passed for 14
   documents, `check-runtime` passed, the restored secrets and `.env` were byte-identical, a restore report was printed. Run
-  again, `install` on the installed directory kept every secret byte for byte. `cargo fmt --all --check` and
-  `cargo clippy -p dynodoctl --all-targets --locked -- -D warnings` pass; WORKSPACE_GATES_PLACEHOLDER GitHub Actions could
-  not run (billing); `ci-rust.yml` builds the new crate and has not been executed.
+  again, `install` on the installed directory kept every secret byte for byte. **Gates, run locally:**
+  `cargo fmt --all --check`; `cargo clippy --workspace --all-targets --locked -- -D warnings` (629 s);
+  `RUSTDOCFLAGS='-D warnings' cargo doc --locked --workspace --no-deps` (it first failed on two doc comments containing
+  `host[:port]`, now fixed); `cargo test --workspace --locked --no-run` (every test binary of the workspace still builds);
+  `cargo test -p dynodoctl --locked` (259 passed). The OpenAPI document and the other crates are untouched, and the lock
+  file gained only the crate's own entry. The Unix-only functions were also type-checked and linted for
+  `x86_64-unknown-linux-gnu` and `aarch64-apple-darwin` in a scratch crate (the full crate cannot be cross-built here:
+  `ring` needs a Linux C compiler). GitHub Actions could not run (billing); `ci-rust.yml` builds the new crate and has not
+  been executed.
 - *Not built.* `addin build` and the manifest check (P0-7; stub reports `NOT BUILT`); signed bundles, `bundle verify` and
   `bundle import` (P3-1); air-gapped import and the egress-blocked run (P0-9); backup encryption and remote or off-host
   targets; scheduled backups (use cron); PITR and physical backups (P2-9); binary rollback without a restore (P2-5);

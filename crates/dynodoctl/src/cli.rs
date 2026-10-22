@@ -84,7 +84,7 @@ pub struct InstallArgs {
     /// Copy compose.yml, jobs/, tls/, config/ from this bundle directory into --dir first.
     #[arg(long, value_name = "DIR")]
     pub from: Option<PathBuf>,
-    /// What people type in the browser, https://host[:port].
+    /// What people type in the browser: https://HOST or https://HOST:PORT.
     #[arg(long)]
     pub origin: Option<String>,
     /// Certificate mode: evaluation | provided | acme (no default on purpose).
@@ -334,7 +334,7 @@ pub struct VerifyArgs {
     /// The address people use (default: ORIGIN of the bundle directory).
     #[arg(long)]
     pub origin: Option<String>,
-    /// Connect to host[:port] instead of resolving the origin's name.
+    /// Connect to HOST or HOST:PORT instead of resolving the origin's name.
     #[arg(long, value_name = "HOST[:PORT]")]
     pub connect: Option<String>,
     #[arg(long)]
