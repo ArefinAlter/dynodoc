@@ -19,8 +19,14 @@
 //!    the same link finds nothing pending and does nothing. A link with the wrong state changes
 //!    nothing (it cannot be told apart from noise, and it must not be able to cancel the
 //!    person's own attempt).
-//! 4. The result, [`Finish::fragment`], goes on the server's `/app-signin/finish` page as an
-//!    address FRAGMENT, which no server, proxy or log ever receives.
+//! 4. The result, [`Finish::fragment`], reaches the server's `/app-signin/finish` page as an
+//!    address FRAGMENT (which no server or proxy ever receives), but not in the address the window
+//!    is sent to: the window loads the plain page first, and once it has finished loading the
+//!    shell sets `location.hash` from an [`Outbox`] ([`finish_script`]). So the secrets are in no
+//!    address the web view requests, keeps in its history or writes to a log (Android's web view
+//!    logs the address of the page next to every console message, and that log showed a verifier
+//!    when the address held it). The fragment is handed over once, to that page only, within
+//!    [`DELIVERY_TTL`].
 //!
 //! Nothing here prints a secret: [`Secret`] has no `Display`, no `Clone`, and a `Debug` that shows
 //! nothing, and no type holding one derives `Debug`.
@@ -33,6 +39,8 @@ use std::time::{Duration, Instant};
 
 /// How long a started attempt waits for the browser to come back.
 pub const ATTEMPT_TTL: Duration = Duration::from_secs(10 * 60);
+/// How long a finished attempt's fragment waits for the finish page to load.
+pub const DELIVERY_TTL: Duration = Duration::from_secs(30);
 /// Bytes of operating-system randomness behind the verifier (RFC 7636 asks for 32).
 const VERIFIER_BYTES: usize = 32;
 /// Bytes behind the state.
@@ -174,6 +182,66 @@ impl Finish {
             self.verifier.expose()
         ))
     }
+}
+
+/// A fragment waiting for the finish page to load: handed over once, fresh, to that page only.
+#[derive(Default)]
+pub struct Outbox(Mutex<Option<(Secret, Instant)>>);
+
+impl fmt::Debug for Outbox {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Outbox(..)")
+    }
+}
+
+impl Outbox {
+    /// Keep `fragment` for the page about to load, replacing anything older.
+    pub fn put(&self, fragment: Secret, now: Instant) {
+        if let Ok(mut slot) = self.0.lock() {
+            *slot = Some((fragment, now));
+        }
+    }
+
+    /// The fragment, once, if it is still fresh. Whatever is there is gone afterwards.
+    pub fn take(&self, now: Instant) -> Option<Secret> {
+        let (fragment, put) = self.0.lock().ok()?.take()?;
+        (now.saturating_duration_since(put) < DELIVERY_TTL).then_some(fragment)
+    }
+
+    /// Drop anything waiting (a new attempt makes the old one's leftovers meaningless).
+    pub fn clear(&self) {
+        if let Ok(mut slot) = self.0.lock() {
+            *slot = None;
+        }
+    }
+}
+
+/// The script that hands the fragment to the finish page: `window.location.hash="#..."`. `None`
+/// unless `fragment` is exactly `code=<64 hex>&state=<16 to 64 base64url>&verifier=<43 to 128
+/// base64url>` (the shapes the web app and the API accept), so nothing but those characters can
+/// ever be put into a script.
+pub fn finish_script(fragment: &str) -> Option<String> {
+    let mut parts = fragment.split('&');
+    let (code, state, verifier) = (parts.next()?, parts.next()?, parts.next()?);
+    if parts.next().is_some() {
+        return None;
+    }
+    let value = |part: &str, name: &str, min: usize, max: usize, hex_only: bool| {
+        let text = part.strip_prefix(name)?.strip_prefix('=')?;
+        let fits = (min..=max).contains(&text.len())
+            && text.bytes().all(|b| {
+                if hex_only {
+                    matches!(b, b'0'..=b'9' | b'a'..=b'f')
+                } else {
+                    b.is_ascii_alphanumeric() || b == b'-' || b == b'_'
+                }
+            });
+        fits.then_some(())
+    };
+    value(code, "code", 64, 64, true)?;
+    value(state, "state", 16, 64, false)?;
+    value(verifier, "verifier", 43, 128, false)?;
+    Some(format!("window.location.hash=\"#{fragment}\";"))
 }
 
 /// The one attempt this running app may have waiting.
@@ -553,6 +621,7 @@ mod tests {
             "pub struct Attempt",
             "pub struct Finish",
             "pub struct Pending",
+            "pub struct Outbox",
         ] {
             let at = production
                 .find(holder)
@@ -569,6 +638,101 @@ mod tests {
         assert!(complete.contains("same_text(attempt.state.expose(), state)"));
         assert!(!complete.contains("attempt.state.expose() == "));
         assert!(!complete.contains("== attempt.state"));
+    }
+
+    const VERIFIER: &str = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
+    const STATE: &str = "b3JkZXJseS1zdGF0ZS12YWx1ZQ";
+
+    fn fragment() -> String {
+        format!("code={CODE}&state={STATE}&verifier={VERIFIER}")
+    }
+
+    #[test]
+    fn the_outbox_hands_the_fragment_over_once_and_only_while_fresh() {
+        let t0 = Instant::now();
+        let outbox = Outbox::default();
+        assert!(outbox.take(t0).is_none(), "nothing put, nothing taken");
+        outbox.put(Secret(fragment()), t0);
+        let taken = outbox.take(t0 + Duration::from_secs(1)).expect("fresh");
+        assert_eq!(taken.expose(), fragment());
+        assert!(outbox.take(t0 + Duration::from_secs(1)).is_none(), "once");
+        // One tick before the limit; at the limit; and an expired one is gone for good.
+        outbox.put(Secret(fragment()), t0);
+        assert!(outbox
+            .take(t0 + DELIVERY_TTL - Duration::from_nanos(1))
+            .is_some());
+        outbox.put(Secret(fragment()), t0);
+        assert!(outbox.take(t0 + DELIVERY_TTL).is_none());
+        assert!(outbox.take(t0).is_none(), "an expired fragment is not kept");
+        // A newer put replaces an older one; clear drops it; a backwards clock is no expiry.
+        outbox.put(Secret("old".into()), t0);
+        outbox.put(Secret(fragment()), t0);
+        assert_eq!(outbox.take(t0).unwrap().expose(), fragment());
+        outbox.put(Secret(fragment()), t0);
+        outbox.clear();
+        assert!(outbox.take(t0).is_none());
+        let later = t0 + Duration::from_secs(100);
+        outbox.put(Secret(fragment()), later);
+        assert!(outbox.take(t0).is_some());
+        assert_eq!(DELIVERY_TTL, Duration::from_secs(30));
+        // Nothing prints it.
+        outbox.put(Secret(fragment()), t0);
+        assert!(!format!("{outbox:?}").contains(CODE));
+    }
+
+    #[test]
+    fn the_script_that_hands_over_the_fragment_is_made_only_of_the_three_values() {
+        let script = finish_script(&fragment()).unwrap();
+        assert_eq!(script, format!("window.location.hash=\"#{}\";", fragment()));
+        // Whatever the values are made of, they are in no way executable: only the characters
+        // the three values use can be in the script, and every other shape is refused.
+        for bad in [
+            String::new(),
+            format!("code={CODE}"),
+            format!("code={CODE}&state={STATE}"),
+            format!("code={CODE}&state={STATE}&verifier={VERIFIER}&x=1"),
+            format!("state={STATE}&code={CODE}&verifier={VERIFIER}"),
+            format!("code={CODE}&verifier={VERIFIER}&state={STATE}"),
+            format!("code={CODE}&state={STATE}&verifier={VERIFIER}\";alert(1);\""),
+            format!("code={CODE}&state={STATE}&verifier={VERIFIER}'"),
+            format!("code={CODE}&state={STATE}&verifier={VERIFIER}\n"),
+            format!("code={CODE}&state={STATE}&verifier={VERIFIER}+"),
+            format!("code={CODE}&state={STATE}&verifier={VERIFIER}%22"),
+            format!("code={CODE}&state={STATE}&verifier={VERIFIER}<"),
+            format!("code={CODE}&state={STATE}&verifier={VERIFIER}\\"),
+            format!("code={}\"&state={STATE}&verifier={VERIFIER}", &CODE[1..]),
+            format!(
+                "code={}&state={STATE}&verifier={VERIFIER}",
+                CODE.to_uppercase()
+            ),
+            format!("code={}0&state={STATE}&verifier={VERIFIER}", CODE),
+            format!("code={CODE}&state=short&verifier={VERIFIER}"),
+            format!("code={CODE}&state={}&verifier={VERIFIER}", "s".repeat(65)),
+            format!("code={CODE}&state={STATE}&verifier={}", "v".repeat(42)),
+            format!("code={CODE}&state={STATE}&verifier={}", "v".repeat(129)),
+            format!("Code={CODE}&state={STATE}&verifier={VERIFIER}"),
+            format!("code={CODE}&state={STATE}&verifier={VERIFIER}\u{2028}"),
+            format!("code={CODE}&state={STATE}&verifier={VERIFIER}\u{e9}"),
+        ] {
+            assert!(finish_script(&bad).is_none(), "{bad:?}");
+        }
+        // The longest accepted values still fit, and the result has no quote but its own two.
+        let longest = format!(
+            "code={CODE}&state={}&verifier={}",
+            "s".repeat(64),
+            "v".repeat(128)
+        );
+        let script = finish_script(&longest).unwrap();
+        assert_eq!(script.matches('"').count(), 2);
+        assert!(script.is_ascii());
+    }
+
+    #[test]
+    fn the_finished_attempts_own_fragment_is_a_valid_script() {
+        let t0 = Instant::now();
+        let (pending, request) = started(t0);
+        let finish = pending.complete(t0, ORIGIN, CODE, &request.state).unwrap();
+        assert!(finish_script(finish.fragment().expose()).is_some());
     }
 
     #[test]

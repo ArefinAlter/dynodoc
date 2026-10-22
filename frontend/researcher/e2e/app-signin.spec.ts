@@ -21,6 +21,8 @@ function pkce() {
 type Pkce = ReturnType<typeof pkce>;
 const requestPath = (p: Pkce, platform = 'android') =>
   `/app-signin?challenge=${p.challenge}&state=${p.state}&platform=${platform}`;
+/** What the shell sets as `location.hash` once the finish page has loaded. */
+const hashOf = (code: string, p: Pkce) => `code=${code}&state=${p.state}&verifier=${p.verifier}`;
 const fragment = (code: string, p: Pkce, verifier = p.verifier, state = p.state) =>
   `/app-signin/finish#code=${code}&state=${state}&verifier=${verifier}`;
 
@@ -72,9 +74,13 @@ test.describe('without a session', () => {
   }) => {
     const seen: string[] = [];
     page.on('request', (r) => seen.push(r.url()));
-    for (const hash of ['', '#code=1&state=2&verifier=3', `#code=${'a'.repeat(64)}`]) {
+    for (const hash of ['#code=1&state=2&verifier=3', `#code=${'a'.repeat(64)}`, '']) {
       await page.goto(`/app-signin/finish${hash}`);
-      await expect(page.getByRole('heading', { name: 'Signing in did not finish' })).toBeVisible();
+      // A fragment that is not three valid values fails at once; with none at all the page waits
+      // a few seconds for the shell to set one, then says it did not finish.
+      await expect(page.getByRole('heading', { name: 'Signing in did not finish' })).toBeVisible({
+        timeout: 15000
+      });
       // The fragment is removed from the address at once, valid or not.
       expect(page.url()).toBe(new URL('/app-signin/finish', page.url()).href);
     }
@@ -351,7 +357,16 @@ test.describe('the whole flow', () => {
 
     // 4. The app window (no cookies) opens the finish page with the fragment and is signed in.
     const app = await appWindow(browser);
-    await app.page.goto(`${origin}${fragment(code, p)}`);
+    //    The shell's way: the window loads the PLAIN finish address, and once it has loaded the
+    //    shell sets the fragment (here by a script, as the shell does with its own).
+    await app.page.goto(`${origin}/app-signin/finish`);
+    await expect(app.page.getByText('Signing you in')).toBeVisible();
+    await app.page.evaluate(
+      (hash) => {
+        window.location.hash = hash;
+      },
+      hashOf(code, p)
+    );
     await expect(app.page).toHaveURL(`${origin}/workspace`);
     expect(app.page.url()).not.toContain('verifier');
     const cookie = await sessionCookie(app.context);

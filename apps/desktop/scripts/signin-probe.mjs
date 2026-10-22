@@ -9,10 +9,11 @@
 //      browser (a tab opens in your default browser, on purpose) for
 //      <server>/app-signin?challenge=..&state=..&platform=desktop, and the verifier is not in it;
 //   3. a link with the wrong state changes nothing and does not cancel the attempt;
-//   4. a link with the right state takes the window to <server>/app-signin/finish, and ONLY the
-//      address FRAGMENT carries code, state and verifier: no request the server saw has them
+//   4. a link with the right state takes the window to <server>/app-signin/finish, a plain address;
+//      once the page has loaded the shell sets its address FRAGMENT to code, state and verifier,
+//      so they are in no address the web view requested: no request the server saw has them
 //      (path, query or Referer), the verifier hashes to the challenge from step 2, and the
-//      page the server sent read the fragment back;
+//      page the server sent read the fragment back and removed it from the address;
 //   5. the same link again (a replay) does nothing;
 //   6. a second attempt after the first works, and a link for the FIRST attempt's state no
 //      longer does;
@@ -75,10 +76,10 @@ const server = createServer((req, res) => {
     }
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     if (req.url.startsWith('/app-signin/finish')) {
-      // What the real page does first: read the fragment (here: report it back, so the probe
-      // can see exactly what the shell put there), remove it from the address, and read it
-      // again whenever it changes (the app opens this page again while it is still showing,
-      // which is no page load).
+      // What the real page does: read the fragment (here: report it back, so the probe can see
+      // exactly what the shell put there), remove it from the address, and read it again
+      // whenever it changes (the shell sets it after the page has loaded, and the app can open
+      // this page again while it is still showing, which is no page load).
       res.end(`<!doctype html><title>finish</title><p>finishing</p>
 <script>
 function report() {
@@ -260,6 +261,7 @@ try {
   const reported = await waitFor(async () => reports.at(-1), 15, 'the page to report its fragment');
   const fragment = new URLSearchParams((reported ?? '').replace(/^#/, ''));
   check(finish?.url === '/app-signin/finish', 'the request line has no query: the secrets are not in it', finish?.url ?? '');
+  check(finishHits(mark).length === 1, 'and the page was requested once, with no fragment to send (the shell set it after the load)');
   check([...fragment.keys()].join(',') === 'code,state,verifier', 'the fragment has code, state and verifier', [...fragment.keys()].join(','));
   check(fragment.get('code') === code1 && fragment.get('state') === state1, 'with the code and state of the link');
   const verifier = fragment.get('verifier') ?? '';

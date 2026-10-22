@@ -112,14 +112,13 @@ impl ServerOrigin {
         url
     }
 
-    /// The page the app's own window opens to finish signing in:
-    /// `<server>/app-signin/finish#<fragment>`. The code, state and verifier go in the
-    /// FRAGMENT, which no server, proxy or log ever receives; the path and the query carry
-    /// nothing.
-    pub fn finish_url(&self, fragment: &str) -> Url {
+    /// The page the app's own window opens to finish signing in: `<server>/app-signin/finish`,
+    /// with nothing after the path. The code, state and verifier are handed to it once it has
+    /// loaded (see `signin::Outbox`), as its address fragment; they are in no address the window
+    /// requests.
+    pub fn finish_url(&self) -> Url {
         let mut url = self.0.clone();
         url.set_path(APP_SIGNIN_FINISH_PATH);
-        url.set_fragment(Some(fragment));
         url
     }
 
@@ -652,18 +651,17 @@ mod tests {
             );
             assert_eq!(start.fragment(), None);
 
-            let finish = server.finish_url("code=a&state=b&verifier=c");
+            let finish = server.finish_url();
             assert!(server.matches(&finish), "{address}: {finish}");
             assert_eq!(finish.path(), "/app-signin/finish");
-            // The secrets are in the fragment and nowhere a server or a log would see.
+            // Nothing is in the address the window requests: not the path, the query or the
+            // fragment (the secrets come later, by `signin::Outbox`).
             assert_eq!(finish.query(), None);
-            assert_eq!(finish.fragment(), Some("code=a&state=b&verifier=c"));
-            assert!(!finish
-                .as_str()
-                .split('#')
-                .next()
-                .unwrap()
-                .contains("verifier"));
+            assert_eq!(finish.fragment(), None);
+            assert_eq!(
+                finish.as_str(),
+                format!("{}app-signin/finish", server.root())
+            );
             // The same host, scheme and port as the server, never another.
             assert_eq!(finish.origin(), server.root().origin());
             assert_eq!(start.origin(), server.root().origin());

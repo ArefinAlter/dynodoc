@@ -172,6 +172,15 @@ pub fn needs_sign_in(url: &Url, server: Option<&ServerOrigin>) -> bool {
         && !url.query_pairs().any(|(name, _)| name == "token")
 }
 
+/// Is `url` the configured server's finish page, exactly as the shell opens it (no query, no
+/// fragment)? The one page the browser sign-in's fragment is handed to.
+pub fn is_finish_page(url: &Url, server: Option<&ServerOrigin>) -> bool {
+    server.is_some_and(|s| s.matches(url))
+        && url.path() == crate::server::APP_SIGNIN_FINISH_PATH
+        && url.query().is_none()
+        && url.fragment().is_none()
+}
+
 /// `launcher_allowed` is the result of `launcher_load_allowed` for this navigation.
 /// `frames_ambiguous` is `frames_are_ambiguous()`.
 pub fn decide(
@@ -711,6 +720,42 @@ mod tests {
         // With no server configured nothing is "the server's sign-in page".
         assert!(!needs_sign_in(
             &Url::parse("https://app.dynodoc.online/login").unwrap(),
+            None
+        ));
+    }
+
+    #[test]
+    fn only_the_servers_own_finish_page_receives_the_sign_in_fragment() {
+        let s = server("https://app.dynodoc.online");
+        let yes = |u: &str| is_finish_page(&Url::parse(u).unwrap(), Some(&s));
+        assert!(yes("https://app.dynodoc.online/app-signin/finish"));
+        assert!(yes("https://APP.dynodoc.online:443/app-signin/finish"));
+        for url in [
+            // Not as the shell opens it: a query or a fragment already there.
+            "https://app.dynodoc.online/app-signin/finish?x=1",
+            "https://app.dynodoc.online/app-signin/finish#code=a",
+            "https://app.dynodoc.online/app-signin/finish#",
+            // Other pages of the server, and look-alikes.
+            "https://app.dynodoc.online/app-signin",
+            "https://app.dynodoc.online/app-signin/finish/",
+            "https://app.dynodoc.online/app-signin/finish/x",
+            "https://app.dynodoc.online/app-signin/finish.html",
+            "https://app.dynodoc.online/login",
+            "https://app.dynodoc.online/workspace",
+            "https://app.dynodoc.online/",
+            // Another origin, scheme, port, or credentials.
+            "https://evil.example/app-signin/finish",
+            "https://app.dynodoc.online.evil.example/app-signin/finish",
+            "http://app.dynodoc.online/app-signin/finish",
+            "https://app.dynodoc.online:8443/app-signin/finish",
+            "https://user@app.dynodoc.online/app-signin/finish",
+            "tauri://localhost/app-signin/finish",
+            "http://tauri.localhost/app-signin/finish",
+        ] {
+            assert!(!yes(url), "{url}");
+        }
+        assert!(!is_finish_page(
+            &Url::parse("https://app.dynodoc.online/app-signin/finish").unwrap(),
             None
         ));
     }

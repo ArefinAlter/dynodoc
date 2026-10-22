@@ -46,6 +46,8 @@ pub struct AppState {
     pub click_secret: String,
     /// The one browser sign-in this running app is waiting for (memory only, see signin.rs).
     pub signin: signin::Pending,
+    /// A finished attempt's fragment, waiting for the finish page to load (see signin.rs).
+    pub outbox: signin::Outbox,
 }
 
 impl AppState {
@@ -131,6 +133,7 @@ fn resolve_state(app: &tauri::AppHandle) -> tauri::Result<AppState> {
         click_secret: handoff::new_secret()
             .map_err(|e| std::io::Error::other(format!("no operating-system randomness: {e}")))?,
         signin: signin::Pending::default(),
+        outbox: signin::Outbox::default(),
     })
 }
 

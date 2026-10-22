@@ -5,9 +5,7 @@ use crate::nav::{self, Decision, NewWindow};
 use crate::{deeplink, signin, AppState};
 use std::sync::Mutex;
 use std::time::Instant;
-#[cfg(mobile)]
-use tauri::webview::PageLoadEvent;
-use tauri::webview::{NewWindowResponse, PermissionKind, PermissionResponse};
+use tauri::webview::{NewWindowResponse, PageLoadEvent, PermissionKind, PermissionResponse};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_opener::OpenerExt;
@@ -164,6 +162,24 @@ pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
             if let Some(state) = window.app_handle().try_state::<AppState>() {
                 let title = nav::window_title(payload.url(), state.server().as_ref());
                 let _ = window.set_title(&title);
+                // The browser sign-in's last step: the finish page has loaded, so hand it the
+                // fragment the shell is holding for it (once, only to that page; see signin.rs).
+                if matches!(payload.event(), PageLoadEvent::Finished)
+                    && nav::is_finish_page(payload.url(), state.server().as_ref())
+                {
+                    if let Some(script) = state
+                        .outbox
+                        .take(Instant::now())
+                        .and_then(|fragment| signin::finish_script(fragment.expose()))
+                    {
+                        trace(
+                            "page load",
+                            payload.url(),
+                            &"finish page, handing it the fragment",
+                        );
+                        let _ = window.eval(script);
+                    }
+                }
                 // Phones only (no menu to reach the launcher from): when the window has landed
                 // on the server's sign-in page, which cannot sign this window in, show the
                 // launcher and its "Sign in with your browser" button instead. Decided from the
@@ -340,7 +356,10 @@ pub fn begin_browser_sign_in(app: &AppHandle) -> Result<(), SignInStart> {
     let (attempt, request) = signin::Attempt::new(&server.as_text(), now, signin::os_random)
         .ok_or(SignInStart::NoRandomness)?;
     let url = server.app_signin_url(&request.challenge, &request.state, signin::PLATFORM);
-    let outcome = open_external_then(app, &url, Source::Click, || state.signin.start(attempt));
+    let outcome = open_external_then(app, &url, Source::Click, || {
+        state.outbox.clear();
+        state.signin.start(attempt);
+    });
     match outcome {
         Some(handoff::HandOff::Opened) => Ok(()),
         _ => Err(SignInStart::TooSoon),
@@ -361,8 +380,11 @@ fn finish_browser_sign_in(app: &AppHandle, state: &AppState, code: &str, link_st
         .complete(Instant::now(), &server.as_text(), code, link_state)
     {
         Ok(finish) => {
+            // The secrets wait here and reach the page after it has loaded; the window is sent to
+            // the plain address.
+            state.outbox.put(finish.fragment(), Instant::now());
             focus_main(app);
-            navigate_main(app, server.finish_url(finish.fragment().expose()));
+            navigate_main(app, server.finish_url());
         }
         Err(refusal) => {
             trace_note("sign-in link refused", &refusal);
@@ -578,7 +600,7 @@ mod tests {
         let begin = body("pub fn begin_browser_sign_in(");
         assert_eq!(production().matches(".signin.start(").count(), 1);
         assert!(begin.contains(
-            "open_external_then(app, &url, Source::Click, || state.signin.start(attempt))"
+            "open_external_then(app, &url, Source::Click, || {\n        state.outbox.clear();\n        state.signin.start(attempt);\n    })"
         ));
         // It opens the page of the configured server, built from the server and the request.
         assert!(begin.contains(
@@ -605,8 +627,10 @@ mod tests {
             1
         );
         let finish = body("fn finish_browser_sign_in(");
-        assert!(finish.contains("server.finish_url(finish.fragment().expose())"));
-        // The secrets reach exactly one place: the address of the finish page, as a fragment.
+        // The window is sent to the plain finish address; the secrets wait in the outbox.
+        assert!(finish.contains("state.outbox.put(finish.fragment(), Instant::now());"));
+        assert!(finish.contains("navigate_main(app, server.finish_url());"));
+        // The secrets reach no address the window requests.
         for banned in ["eprintln", "println", "format!", "trace("] {
             assert!(
                 !finish.contains(banned),
@@ -621,6 +645,29 @@ mod tests {
         // The debug note prints a note and no address.
         let note = body("fn trace_note(");
         assert!(!note.contains("url"));
+    }
+
+    #[test]
+    fn the_fragment_is_handed_over_once_and_only_to_the_finish_page_after_it_loaded() {
+        let production = production();
+        // The only place the outbox is emptied, the only place a script is run in the page.
+        assert_eq!(production.matches(".outbox\n").count(), 1);
+        assert_eq!(production.matches(".take(Instant::now())").count(), 1);
+        assert_eq!(production.matches("window.eval(").count(), 1);
+        let call = production.find("window.eval(script)").unwrap();
+        let before = &production[..call];
+        let gate = before
+            .rfind("if matches!(payload.event(), PageLoadEvent::Finished)")
+            .unwrap();
+        let block = &production[gate..call];
+        assert!(block.contains("nav::is_finish_page(payload.url(), state.server().as_ref())"));
+        assert!(block.contains("signin::finish_script(fragment.expose())"));
+        // The script is made by finish_script from the fragment, never from anything a page sent.
+        assert!(!block.contains("payload.url().as_str()"));
+        // A new attempt drops what an older one left behind.
+        assert!(body("pub fn begin_browser_sign_in(").contains("state.outbox.clear();"));
+        // The debug note names no secret.
+        assert!(block.contains("\"finish page, handing it the fragment\""));
     }
 
     #[test]
