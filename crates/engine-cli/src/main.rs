@@ -196,8 +196,9 @@ async fn run() -> anyhow::Result<()> {
     let logs = tracing_subscriber::fmt().with_env_filter(
         tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
     );
-    if matches!(cli.command, Command::Mcp(_)) {
-        // `mcp` speaks its protocol on stdout: its logs, and only its, go to stderr.
+    if matches!(cli.command, Command::Mcp(_) | Command::Auth { .. }) {
+        // `mcp` speaks its protocol on stdout, and `auth issue-link` prints a sign-in link there
+        // (and nothing else, so it can be piped): their logs go to stderr.
         logs.with_writer(std::io::stderr).init();
     } else {
         logs.init();
