@@ -172,8 +172,14 @@ export const POST: RequestHandler = async ({ params, url, request, cookies, getC
       );
       return json({ ok: true });
     } catch {
+      // Where nobody can ask for an emailed link (AUTH_EMAIL_LINK=off), the link came from the
+      // operator (docs/decisions/018): say who to ask instead of offering a request that is refused.
       return json(
-        { error: 'This link has expired or has already been used. Request another link.' },
+        {
+          error: getConfig().emailSignIn
+            ? 'This link has expired or has already been used. Request another link.'
+            : 'This sign-in link has expired or has already been used. Ask your administrator for a new one.'
+        },
         { status: 401 }
       );
     }
