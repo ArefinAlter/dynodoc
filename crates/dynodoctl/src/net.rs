@@ -85,9 +85,17 @@ pub trait Net {
     fn http_get(&self, target: &Target, path: &str) -> Result<HttpResponse, String>;
 }
 
+/// The certificate verifier is built once per run: parsing the ~150 built-in roots for every
+/// request made a delivery check take half a minute in a debug build.
+struct Shared {
+    provider: Arc<rustls::crypto::CryptoProvider>,
+    verifier: Arc<WebPkiServerVerifier>,
+}
+
 pub struct RealNet {
     pub extra_roots: Vec<Vec<u8>>,
     pub timeout: Duration,
+    shared: std::sync::OnceLock<Result<Shared, String>>,
 }
 
 impl RealNet {
@@ -95,7 +103,30 @@ impl RealNet {
         Self {
             extra_roots,
             timeout: Duration::from_secs(10),
+            shared: std::sync::OnceLock::new(),
         }
+    }
+
+    fn shared(&self) -> Result<&Shared, String> {
+        self.shared
+            .get_or_init(|| {
+                let provider = Arc::new(rustls::crypto::ring::default_provider());
+                let mut roots = RootCertStore {
+                    roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
+                };
+                for der in &self.extra_roots {
+                    roots
+                        .add(CertificateDer::from(der.clone()))
+                        .map_err(|e| format!("a --ca-file certificate is not usable: {e}"))?;
+                }
+                let verifier =
+                    WebPkiServerVerifier::builder_with_provider(Arc::new(roots), provider.clone())
+                        .build()
+                        .map_err(|e| format!("cannot build the certificate verifier: {e}"))?;
+                Ok(Shared { provider, verifier })
+            })
+            .as_ref()
+            .map_err(|e| e.clone())
     }
 
     fn connect(&self, target: &Target) -> Result<TcpStream, String> {
@@ -299,24 +330,13 @@ pub fn describe_tls_error(error: &TlsError) -> String {
 
 impl Net for RealNet {
     fn https_get(&self, target: &Target, path: &str) -> Result<(HttpResponse, TlsFacts), String> {
-        let provider = Arc::new(rustls::crypto::ring::default_provider());
-        let mut roots = RootCertStore {
-            roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
-        };
-        for der in &self.extra_roots {
-            roots
-                .add(CertificateDer::from(der.clone()))
-                .map_err(|e| format!("a --ca-file certificate is not usable: {e}"))?;
-        }
-        let inner = WebPkiServerVerifier::builder_with_provider(Arc::new(roots), provider.clone())
-            .build()
-            .map_err(|e| format!("cannot build the certificate verifier: {e}"))?;
+        let shared = self.shared()?;
         let recording = Arc::new(Recording {
-            inner,
-            provider: provider.clone(),
+            inner: shared.verifier.clone(),
+            provider: shared.provider.clone(),
             outcome: Mutex::new(None),
         });
-        let config = rustls::ClientConfig::builder_with_provider(provider)
+        let config = rustls::ClientConfig::builder_with_provider(shared.provider.clone())
             .with_protocol_versions(&[&rustls::version::TLS12, &rustls::version::TLS13])
             .map_err(|e| e.to_string())?
             .dangerous()
@@ -461,10 +481,8 @@ mod tests {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         drop(listener);
-        let net = RealNet {
-            extra_roots: vec![],
-            timeout: Duration::from_secs(2),
-        };
+        let mut net = RealNet::new(vec![]);
+        net.timeout = Duration::from_secs(2);
         let target = Target {
             connect_host: "127.0.0.1".into(),
             port,

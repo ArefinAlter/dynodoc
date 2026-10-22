@@ -605,6 +605,220 @@ fn references_are_taken_from_the_tags_a_browser_loads_by_itself() {
 }
 
 #[test]
+fn relative_references_resolve_against_the_file_that_names_them() {
+    assert_eq!(
+        resolve_path("/login", "./_app/a.js").as_deref(),
+        Some("/_app/a.js")
+    );
+    assert_eq!(
+        resolve_path("/login", "_app/a.js").as_deref(),
+        Some("/_app/a.js")
+    );
+    assert_eq!(
+        resolve_path("/login", "/x/y.css?v=2#top").as_deref(),
+        Some("/x/y.css")
+    );
+    assert_eq!(
+        resolve_path("/_app/immutable/entry/start.js", "../chunks/b.js").as_deref(),
+        Some("/_app/immutable/chunks/b.js")
+    );
+    assert_eq!(
+        resolve_path("/_app/a.js", "./b.js").as_deref(),
+        Some("/_app/b.js")
+    );
+    assert_eq!(
+        resolve_path("/a.js", "../../escape.js"),
+        None,
+        "a path above the root is not a path"
+    );
+    for no in [
+        "https://x.example/a.js",
+        "//x.example/a.js",
+        "data:text/plain,hi",
+        "mailto:a@x.example",
+        "#top",
+        "",
+    ] {
+        assert_eq!(resolve_path("/login", no), None, "{no}");
+    }
+}
+
+#[test]
+fn imports_are_found_in_inline_scripts_and_in_modules() {
+    let text = r#"Promise.all([import("./_app/immutable/entry/start.js"), import('./_app/immutable/entry/app.js')]); import {a} from "../chunks/b.js"; import "./c.mjs"; const s = "not-a-module.txt";"#;
+    let found = script_imports(text);
+    assert_eq!(
+        found
+            .iter()
+            .map(|(s, d)| (s.as_str(), *d))
+            .collect::<Vec<_>>(),
+        vec![
+            ("./_app/immutable/entry/start.js", true),
+            ("./_app/immutable/entry/app.js", true),
+            ("../chunks/b.js", false),
+            ("./c.mjs", false)
+        ]
+    );
+}
+
+#[test]
+fn the_crawl_follows_a_sveltekit_style_page_into_its_modules_and_finds_what_they_name() {
+    let net = FakeNet::default();
+    let ok = |b: &str| {
+        Ok((
+            page(200, &headers("max-age=31536000"), b),
+            testkit::tls_facts(false, Ok(())),
+        ))
+    };
+    let html = r#"<html><head><link href="./_app/immutable/assets/0.css" rel="stylesheet"><script src="./theme-init.js"></script></head><body><script>Promise.all([import("./_app/immutable/entry/start.js")])</script></body></html>"#;
+    net.on_https("/login", ok(html));
+    net.on_https("/_app/immutable/assets/0.css", ok("a{}"));
+    net.on_https(
+        "/theme-init.js",
+        ok("document.documentElement.dataset.theme='dark'"),
+    );
+    net.on_https(
+        "/_app/immutable/entry/start.js",
+        ok("import {x} from '../chunks/deep.js'; export {x}"),
+    );
+    net.on_https(
+        "/_app/immutable/chunks/deep.js",
+        ok("fetch('https://app.dynodoc.online/telemetry')"),
+    );
+    let report = check(&net, &opts());
+    let c = report
+        .checks
+        .iter()
+        .find(|c| c.id == "outbound-references")
+        .unwrap();
+    assert_eq!(c.level, Level::Fail, "{c:?}");
+    assert!(
+        c.detail.contains("/_app/immutable/chunks/deep.js") && c.detail.contains("dynodoc.online"),
+        "{}",
+        c.detail
+    );
+    let clean = FakeNet::default();
+    clean.on_https("/login", ok(html));
+    clean.on_https("/_app/immutable/assets/0.css", ok("a{}"));
+    clean.on_https("/theme-init.js", ok("x"));
+    clean.on_https(
+        "/_app/immutable/entry/start.js",
+        ok("import {x} from '../chunks/deep.js'"),
+    );
+    clean.on_https("/_app/immutable/chunks/deep.js", ok("export const x = 1"));
+    let report = check(&clean, &opts());
+    let c = report
+        .checks
+        .iter()
+        .find(|c| c.id == "outbound-references")
+        .unwrap();
+    assert_eq!(c.level, Level::Pass);
+    assert!(c.detail.starts_with("5 files read"), "{}", c.detail);
+}
+
+#[test]
+fn the_hosted_name_in_a_route_module_that_sign_in_does_not_load_is_a_warning_not_a_failure() {
+    let net = FakeNet::default();
+    let ok = |b: &str| {
+        Ok((
+            page(200, &headers("max-age=31536000"), b),
+            testkit::tls_facts(false, Ok(())),
+        ))
+    };
+    let html =
+        r#"<html><body><script>import("./_app/immutable/entry/app.js")</script></body></html>"#;
+    net.on_https("/login", ok(html));
+    // The application entry lists every route module as a lazy import, as SvelteKit does.
+    net.on_https("/_app/immutable/entry/app.js", ok(r#"export const nodes = [() => import("../nodes/0.js"), () => import("../nodes/3.js")];"#));
+    net.on_https("/_app/immutable/nodes/0.js", ok("export default 'shell'"));
+    net.on_https(
+        "/_app/immutable/nodes/3.js",
+        ok("const site = 'https://dynodoc.online/pricing'"),
+    );
+    let report = check(&net, &opts());
+    assert_eq!(
+        level(&report, "outbound-references"),
+        Level::Pass,
+        "{:?}",
+        report.checks
+    );
+    let dormant = report
+        .checks
+        .iter()
+        .find(|c| c.id == "dormant-references")
+        .expect("reported");
+    assert_eq!(dormant.level, Level::Warn);
+    assert!(
+        dormant.detail.contains("nodes/3.js") && dormant.detail.contains("criterion 6"),
+        "{}",
+        dormant.detail
+    );
+}
+
+#[test]
+fn the_same_name_in_a_file_the_sign_in_page_loads_eagerly_fails() {
+    let net = FakeNet::default();
+    let ok = |b: &str| {
+        Ok((
+            page(200, &headers("max-age=31536000"), b),
+            testkit::tls_facts(false, Ok(())),
+        ))
+    };
+    let html =
+        r#"<html><body><script>import("./_app/immutable/entry/app.js")</script></body></html>"#;
+    net.on_https("/login", ok(html));
+    net.on_https(
+        "/_app/immutable/entry/app.js",
+        ok(r#"import {a} from "../chunks/shared.js";"#),
+    );
+    net.on_https(
+        "/_app/immutable/chunks/shared.js",
+        ok("fetch('https://app.dynodoc.online/telemetry')"),
+    );
+    let report = check(&net, &opts());
+    assert_eq!(level(&report, "outbound-references"), Level::Fail);
+    assert!(report.checks.iter().all(|c| c.id != "dormant-references"));
+}
+
+#[test]
+fn the_crawl_is_bounded_and_says_how_much_it_left_unread() {
+    let net = FakeNet::default();
+    let ok = |b: &str| {
+        Ok((
+            page(200, &headers("max-age=31536000"), b),
+            testkit::tls_facts(false, Ok(())),
+        ))
+    };
+    net.on_https(
+        "/login",
+        ok(r#"<html><script>import("./_app/entry.js")</script></html>"#),
+    );
+    let many: String = (0..100)
+        .map(|i| format!("import(\"./n{i}.js\");"))
+        .collect();
+    net.on_https("/_app/entry.js", ok(&many));
+    for i in 0..100 {
+        net.on_https(&format!("/_app/n{i}.js"), ok("export {}"));
+    }
+    let report = check(&net, &opts());
+    let c = report
+        .checks
+        .iter()
+        .find(|c| c.id == "outbound-references")
+        .unwrap();
+    assert_eq!(c.level, Level::Pass);
+    assert!(
+        c.detail.contains("more not read (limit 60)"),
+        "{}",
+        c.detail
+    );
+    assert!(
+        net.requested.borrow().len() < 90,
+        "the number of requests is bounded"
+    );
+}
+
+#[test]
 fn the_json_has_the_documented_shape() {
     let v = serde_json::to_value(check(&site(false), &opts())).unwrap();
     for key in ["schema_version", "origin", "tls_mode", "checks", "overall"] {

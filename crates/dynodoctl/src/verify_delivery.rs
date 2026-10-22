@@ -131,6 +131,122 @@ pub fn loaded_references(html: &str) -> Vec<(String, String)> {
     out
 }
 
+/// Files read from the origin while looking for references to outside hosts. Every file costs a
+/// TLS handshake, so the number is bounded; files the sign-in page loads eagerly come first.
+const MAX_CRAWL: usize = 60;
+
+/// The files still to read, the ones already queued, and references to other hosts found so far.
+/// "Lazy" files are reached only through `import(...)` of another script: route modules the
+/// browser loads when it opens that route. "Eager" files are loaded by the sign-in page itself.
+struct Crawl {
+    host: String,
+    eager: std::collections::VecDeque<String>,
+    lazy: std::collections::VecDeque<String>,
+    seen: std::collections::HashSet<String>,
+    lazy_files: std::collections::HashSet<String>,
+    external: Vec<String>,
+}
+
+impl Crawl {
+    fn new(host: &str) -> Self {
+        Self {
+            host: host.to_string(),
+            eager: Default::default(),
+            lazy: Default::default(),
+            seen: Default::default(),
+            lazy_files: Default::default(),
+            external: Vec::new(),
+        }
+    }
+
+    fn enqueue(&mut self, from: &str, reference: &str, tag: &str, lazy: bool) {
+        if let Some(host) = host_of(reference) {
+            if host != self.host {
+                self.external.push(format!("<{tag}> loads {reference}"));
+            }
+            return;
+        }
+        let Some(path) = resolve_path(from, reference) else {
+            return;
+        };
+        if !is_static_asset(&path) {
+            return;
+        }
+        if self.seen.insert(path.clone()) {
+            if lazy {
+                self.lazy_files.insert(path.clone());
+                self.lazy.push_back(path);
+            } else {
+                self.eager.push_back(path);
+            }
+        } else if !lazy {
+            // Found eagerly after it was queued as lazy: it is eager.
+            self.lazy_files.remove(&path);
+        }
+    }
+
+    fn next(&mut self) -> Option<String> {
+        self.eager.pop_front().or_else(|| self.lazy.pop_front())
+    }
+
+    fn is_lazy(&self, path: &str) -> bool {
+        self.lazy_files.contains(path)
+    }
+}
+
+fn is_static_asset(path: &str) -> bool {
+    [".js", ".mjs", ".css"].iter().any(|e| path.ends_with(e))
+}
+
+/// Resolve a reference found in the file at `from` to an absolute path on this origin
+/// (`./x`, `../x`, `x`, `/x`); None for another scheme, a data URL or a fragment.
+pub fn resolve_path(from: &str, reference: &str) -> Option<String> {
+    let reference = reference.split(['?', '#']).next().unwrap_or("");
+    if reference.is_empty()
+        || reference.contains("://")
+        || reference.starts_with("//")
+        || reference.starts_with("data:")
+        || reference.starts_with("mailto:")
+    {
+        return None;
+    }
+    let mut parts: Vec<&str> = if reference.starts_with('/') {
+        Vec::new()
+    } else {
+        let dir = from
+            .split(['?', '#'])
+            .next()
+            .unwrap_or("")
+            .rsplit_once('/')
+            .map(|(d, _)| d)
+            .unwrap_or("");
+        dir.split('/').filter(|p| !p.is_empty()).collect()
+    };
+    for piece in reference.split('/') {
+        match piece {
+            "" | "." => {}
+            ".." => {
+                parts.pop()?;
+            }
+            other => parts.push(other),
+        }
+    }
+    Some(format!("/{}", parts.join("/")))
+}
+
+/// Module specifiers a script or page names, each with whether it is a dynamic `import("...")`:
+/// `import("./x.js")` (lazy), `from "./x.js"` and `import "./x.js"` (static).
+pub fn script_imports(text: &str) -> Vec<(String, bool)> {
+    static RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+    let re = RE.get_or_init(|| {
+        Regex::new(r#"(?:(import\s*\(\s*)|from\s*|import\s*)["']([^"']+\.m?js)["']"#)
+            .expect("regex")
+    });
+    re.captures_iter(text)
+        .map(|c| (c[2].to_string(), c.get(1).is_some()))
+        .collect()
+}
+
 fn host_of(reference: &str) -> Option<String> {
     let rest = reference
         .strip_prefix("https://")
@@ -536,43 +652,54 @@ pub fn run(ctx: &Ctx<'_>, net: &dyn Net, opts: &Options) -> Result<DeliveryRepor
     }
 
     // 6. Nothing served names an outside host.
-    let mut texts: Vec<(String, String)> = vec![("/login".to_string(), login.text())];
-    let mut external_loads: Vec<String> = Vec::new();
-    let mut fetched = 0;
+    // Breadth first from the sign-in page: its tags, its inline `import("...")` calls, and the
+    // static imports of every script found, up to MAX_CRAWL files of this origin.
+    // (path, text, lazy)
+    let mut texts: Vec<(String, String, bool)> = vec![("/login".to_string(), login.text(), false)];
+    let mut crawl = Crawl::new(&origin.host);
     for (tag, reference) in loaded_references(&login.text()) {
-        if let Some(host) = host_of(&reference) {
-            if host != origin.host {
-                external_loads.push(format!("<{tag}> loads {reference}"));
-            }
-            continue;
+        crawl.enqueue("/login", &reference, &tag, false);
+    }
+    for (reference, _) in script_imports(&login.text()) {
+        // The page's own inline `import("...")` loads the application: eager.
+        crawl.enqueue("/login", &reference, "script", false);
+    }
+    while let Some(path) = crawl.next() {
+        if texts.len() > MAX_CRAWL {
+            break;
         }
-        let path = if reference.starts_with('/') {
-            reference.clone()
-        } else {
-            continue;
-        };
-        let static_asset = path
-            .split('?')
-            .next()
-            .map(|p| p.ends_with(".js") || p.ends_with(".mjs") || p.ends_with(".css"))
-            .unwrap_or(false);
-        if static_asset && fetched < 40 {
-            fetched += 1;
-            if let Ok((r, _)) = net.https_get(&target, &path) {
-                if r.status == 200 {
-                    texts.push((path, r.text()));
+        if let Ok((r, _)) = net.https_get(&target, &path) {
+            if r.status == 200 {
+                let body = r.text();
+                let lazy_parent = crawl.is_lazy(&path);
+                if path.ends_with(".js") || path.ends_with(".mjs") {
+                    for (reference, dynamic) in script_imports(&body) {
+                        crawl.enqueue(&path, &reference, "script", dynamic || lazy_parent);
+                    }
                 }
+                texts.push((path, body, lazy_parent));
             }
         }
     }
+    let skipped = crawl.eager.len() + crawl.lazy.len();
+    let external_loads = crawl.external.clone();
+    // A file found eagerly after it was first read as lazy is eager.
+    for t in texts.iter_mut() {
+        t.2 = t.2 && crawl.is_lazy(&t.0);
+    }
     let mut forbidden: Vec<String> = Vec::new();
+    let mut dormant: Vec<String> = Vec::new();
     let mut known: Vec<String> = Vec::new();
-    for (path, text) in &texts {
+    for (path, text, lazy) in &texts {
         for hit in find_hosts(text, &FORBIDDEN)
             .into_iter()
             .chain(find_hosts(text, &FORBIDDEN_MORE))
         {
-            forbidden.push(format!("{path}: {hit}"));
+            if *lazy {
+                dormant.push(format!("{path}: {hit}"));
+            } else {
+                forbidden.push(format!("{path}: {hit}"));
+            }
         }
         for hit in find_hosts(text, &KNOWN) {
             known.push(format!("{path}: {hit}"));
@@ -589,14 +716,32 @@ pub fn run(ctx: &Ctx<'_>, net: &dyn Net, opts: &Options) -> Result<DeliveryRepor
         "What is served names no outside host",
         if forbidden.is_empty() {
             format!(
-                "{} files read ({} bytes)",
+                "{} files read ({} bytes){}",
                 texts.len(),
-                texts.iter().map(|(_, t)| t.len()).sum::<usize>()
+                texts.iter().map(|(_, t, _)| t.len()).sum::<usize>(),
+                if skipped > 0 {
+                    format!(", {skipped} more not read (limit {MAX_CRAWL})")
+                } else {
+                    String::new()
+                }
             )
         } else {
             forbidden.join("; ")
         },
     );
+    if !dormant.is_empty() {
+        let shown: Vec<&str> = dormant.iter().take(3).map(String::as_str).collect();
+        add(
+            "dormant-references",
+            Level::Warn,
+            "Route modules that are not loaded at sign-in name the hosted site or an analytics host",
+            format!(
+                "{} hit(s), for example {}. They are loaded only when the browser opens that route; the marketing routes answer 404 here. Known open item: acceptance criterion 6 of Phase 0 (task P0-6, a build without the (site) routes)",
+                dormant.len(),
+                shown.join("; ")
+            ),
+        );
+    }
     if !known.is_empty() {
         add(
             "known-references",
