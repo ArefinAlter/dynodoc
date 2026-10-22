@@ -138,6 +138,24 @@ pub fn launcher_load_allowed(
     granted || !server_configured
 }
 
+/// Where to go instead when the launcher's page was refused: on a phone, a configured server's
+/// entry page. Android re-creates the web view on a font-size or display-size change (or after a
+/// dead renderer) and reloads the address the window was FIRST created with, which is the
+/// launcher whenever the app was first run without a saved server; with a server saved that load
+/// is refused, and the window would stay blank. `None` when there is no server (the launcher is
+/// allowed then) or the address is not the launcher's page.
+#[cfg_attr(not(mobile), allow(dead_code))]
+pub fn launcher_denied_goes_to(
+    target: &Url,
+    launcher: &Url,
+    server: Option<&ServerOrigin>,
+) -> Option<Url> {
+    if !is_launcher_page(target, launcher) {
+        return None;
+    }
+    server.map(ServerOrigin::entry)
+}
+
 /// `launcher_allowed` is the result of `launcher_load_allowed` for this navigation.
 /// `frames_ambiguous` is `frames_are_ambiguous()`.
 pub fn decide(
@@ -609,6 +627,33 @@ mod tests {
         assert_eq!(
             decide(&page, Some(&s), &launcher, false, false),
             Decision::Deny
+        );
+    }
+
+    #[test]
+    fn a_refused_launcher_load_goes_to_the_servers_entry_when_there_is_a_server() {
+        let launcher = launcher_origin();
+        let s = server("https://app.dynodoc.online");
+        for target in [
+            launcher_url(None),
+            launcher.clone(),
+            launcher_url(Some("key")),
+        ] {
+            assert_eq!(
+                launcher_denied_goes_to(&target, &launcher, Some(&s)),
+                Some(s.entry()),
+                "{target}"
+            );
+            assert_eq!(launcher_denied_goes_to(&target, &launcher, None), None);
+        }
+        for other in ["/other.html", "/launcher.js", "/index.html/x"] {
+            let target = launcher.join(other).unwrap();
+            assert_eq!(launcher_denied_goes_to(&target, &launcher, Some(&s)), None);
+        }
+        let elsewhere = Url::parse("https://evil.example/index.html").unwrap();
+        assert_eq!(
+            launcher_denied_goes_to(&elsewhere, &launcher, Some(&s)),
+            None
         );
     }
 

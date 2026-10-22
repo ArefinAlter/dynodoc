@@ -105,7 +105,22 @@ pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
                     open_external(&navigation_app, url, Source::Page);
                     false
                 }
-                Decision::Deny => false,
+                Decision::Deny => {
+                    // Phones only: a refused launcher load (the system re-created the web view,
+                    // which reloaded the window's first address) must not leave a blank window.
+                    #[cfg(mobile)]
+                    if let Some(entry) =
+                        nav::launcher_denied_goes_to(url, &launcher, state.server().as_ref())
+                    {
+                        trace(
+                            "navigation (launcher refused, server saved)",
+                            &entry,
+                            &"entry",
+                        );
+                        navigate_main(&navigation_app, entry);
+                    }
+                    false
+                }
             }
         })
         .on_new_window(move |url, _features| {
@@ -405,6 +420,17 @@ mod tests {
         // It only ever turns _blank/_new into _self for a moment and puts it back.
         assert!(code.contains("'_self'"));
         assert!(code.contains("setTimeout"));
+    }
+
+    #[test]
+    fn a_refused_launcher_load_is_redirected_on_phones_only() {
+        // Desktop keeps refusing the launcher outright (a server page must not bring it up).
+        let source = include_str!("window.rs");
+        let production = &source[..source.find("#[cfg(test)]\nmod tests").unwrap()];
+        let call = production.find("nav::launcher_denied_goes_to(").unwrap();
+        let gate = production[..call].rfind("#[cfg(").unwrap();
+        assert!(production[gate..].starts_with("#[cfg(mobile)]"));
+        assert_eq!(production.matches("launcher_denied_goes_to(").count(), 1);
     }
 
     #[test]

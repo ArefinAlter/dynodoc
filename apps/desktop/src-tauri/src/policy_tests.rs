@@ -752,9 +752,25 @@ fn the_android_manifest_is_hardened_and_routes_only_the_deep_links() {
     let gradle = android("app/build.gradle.kts");
     assert!(!gradle.contains("\"usesCleartextTraffic\"] = \"true\""));
     assert!(gradle.contains("targetSdk = 37"));
-    assert!(gradle.contains("minSdk = 24"));
+    // 29, not 24: the download manager needs no storage permission from Android 10 on, and
+    // Android 7 to 9 are open to task hijacking (StrandHogg) the manifest cannot fully close.
+    assert!(gradle.contains("minSdk = 29"));
     let conf = json("tauri.conf.json");
-    assert_eq!(conf["bundle"]["android"]["minSdkVersion"], 24);
+    assert_eq!(conf["bundle"]["android"]["minSdkVersion"], 29);
+    // The activity has a task of its own (an empty affinity), and is the only one declared.
+    assert!(manifest.contains("android:taskAffinity=\"\""));
+    assert_eq!(manifest.matches("android:taskAffinity").count(), 1);
+    assert!(!manifest.contains("allowTaskReparenting=\"true\""));
+    // Gradle checks every dependency against the committed checksums.
+    let verification = android("gradle/verification-metadata.xml");
+    assert!(verification.contains("<verify-metadata>true</verify-metadata>"));
+    assert!(verification.matches("<component ").count() >= 400);
+    assert!(verification.contains("aapt2-9.3.1-15703166-linux.jar"));
+    assert!(
+        !verification.contains("<trust "),
+        "no dependency may be trusted without a checksum"
+    );
+    assert!(!verification.contains("<ignored-keys"));
     // The extraction rules exclude every domain from both transfers (harden-android.mjs checks
     // the same in CI; this keeps `cargo test` honest too).
     let rules = android("app/src/main/res/xml/data_extraction_rules.xml");
@@ -803,13 +819,57 @@ fn the_android_code_this_repository_adds_has_no_javascript_bridge() {
     ] {
         assert!(activity.contains(stated), "MainActivity lacks {stated}");
     }
-    // Downloads: only a plain https file from the very site shown.
-    assert!(activity.contains("file.scheme == \"https\" && page.scheme == \"https\""));
-    assert!(activity.contains("file.host == page.host"));
+    // Tapjacking: touches while another window covers the page are dropped.
+    assert!(activity.contains("filterTouchesWhenObscured = true"));
+    // A re-created activity does not replay the link that started it.
+    assert!(activity
+        .contains("intent = Intent(this, MainActivity::class.java).setAction(Intent.ACTION_MAIN)"));
+    // Downloads: a touch in the last 5 s, one per 3 s, an https file of exactly the page's origin
+    // (scheme, host and port), no cookies ever sent, a cleaned name, nothing installable.
+    let code: String = activity
+        .lines()
+        .filter(|l| !l.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    for stated in [
+        "now - lastTouch > 5000",
+        "now - lastDownload < 3000",
+        "Origins.same(url, page)",
+        "getCookie(url)",
+        "DownloadNames.safe(",
+    ] {
+        assert!(code.contains(stated), "MainActivity lacks {stated}");
+    }
+    for never in ["addRequestHeader", "\"Cookie\"", ".host == page.host"] {
+        assert!(!code.contains(never), "MainActivity has {never}");
+    }
     // The offline page holds no script and links only to the address that failed.
     let offline = android("app/src/main/java/online/dynodoc/client/OfflineClient.kt");
     assert!(!offline.contains("<script"));
     assert!(offline.contains("Html.escapeHtml"));
+    // The edge cases Android never reports to Rust: a main-frame request to another origin is
+    // refused with an empty 403, the launcher leaves the history, a dead renderer re-creates the
+    // activity.
+    for stated in [
+        "request.isForMainFrame && refuses(",
+        "\"text/html\", \"utf-8\", 403, \"Forbidden\",",
+        "view.clearHistory()",
+        "override fun onRenderProcessGone",
+        "activity.recreate()",
+    ] {
+        assert!(offline.contains(stated), "OfflineClient lacks {stated}");
+    }
+    assert!(
+        offline.contains("\"onRenderProcessGone\""),
+        "it must be in the forwarded set"
+    );
+    // The pure helpers have JVM tests (Gradle: testUniversalDebugUnitTest).
+    for name in ["DownloadNamesTest.kt", "OriginsTest.kt"] {
+        assert!(root()
+            .join("gen/android/app/src/test/java/online/dynodoc/client")
+            .join(name)
+            .exists());
+    }
 }
 
 #[test]
