@@ -208,11 +208,12 @@ test('start-up stops with one message listing every problem, and prints no secre
   });
   expect(code, output).not.toBeNull();
   expect(code).not.toBe(0);
-  expect(output).toMatch(/invalid configuration \(3 problems\):/);
+  expect(output).toMatch(/invalid configuration \(4 problems\):/);
   for (const problem of [
     'SESSION_SECRET looks like a placeholder',
     'WEB_SERVICE_KEY is not set',
-    'ORIGIN is not set'
+    'ORIGIN is not set',
+    'email sign-in is on but no mail transport is configured'
   ])
     expect(output).toContain(problem);
   expect(output).toContain(
@@ -268,6 +269,25 @@ test.describe('signed in', () => {
     await expect(footer.getByRole('link', { name: 'Contact or support' })).toHaveAttribute(
       'href',
       settings.DYNODOC_SUPPORT_URL
+    );
+  });
+
+  test('with no mail transport the invitation link is shown to copy, and nothing is emailed', async ({
+    page,
+    baseURL
+  }) => {
+    await login(page);
+    await page.getByRole('button', { name: 'New project', exact: true }).click();
+    await page.getByLabel('Project name').fill(`No mail ${Date.now()}`);
+    await page.getByRole('button', { name: 'Create project' }).click();
+    await expect(page.getByRole('button', { name: 'Files', exact: true })).toBeVisible();
+    const projectId = page.url().split('/').pop();
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    const guest = `nomail-guest-${Date.now()}@example.test`;
+    await page.getByLabel('Email', { exact: true }).fill(guest);
+    await page.getByRole('button', { name: 'Add person' }).click();
+    await expect(page.getByRole('status')).toContainText(
+      `Access updated. Email is not set up on this server, so no invitation was sent. Send ${guest} this link yourself: ${new URL(baseURL!).origin}/projects/${projectId}`
     );
   });
 

@@ -377,7 +377,7 @@
   }
   async function invite() {
     const result = await inviteByEmail({ space_id: id }, email, role, { notify, note });
-    notice = invitationNotice(result.email_status, email);
+    notice = invitationNotice(result.email_status, email, result.invitation_link);
     email = '';
     await loadTab();
   }

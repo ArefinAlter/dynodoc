@@ -103,6 +103,8 @@ jobs:
       # Self-hosted mode on the same build and API (started below); selfhosted*.spec.ts run against these.
       SELFHOSTED_BASE_URL: http://127.0.0.1:4174
       SELFHOSTED_NOEMAIL_BASE_URL: http://127.0.0.1:4175
+      # Self-hosted, mail through SMTP to the mail server selfhosted-smtp.spec.ts starts (port 2526).
+      SELFHOSTED_SMTP_BASE_URL: http://127.0.0.1:4176
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -156,8 +158,12 @@ jobs:
           AUTH_EMAIL_LINK=off ORIGIN=http://127.0.0.1:4175 PORT=4175 \
             node --env-file=e2e/selfhosted.env build > /tmp/dynodoc-noemail.log 2>&1 &
           echo $! > /tmp/dynodoc-noemail.pid
+          # The third sends its mail through SMTP and has no development shortcut (DEV_AUTH off).
+          DEV_AUTH=false ORIGIN=http://127.0.0.1:4176 PORT=4176 \
+            node --env-file=e2e/selfhosted.env --env-file=e2e/selfhosted-smtp.env build > /tmp/dynodoc-smtp.log 2>&1 &
+          echo $! > /tmp/dynodoc-smtp.pid
           for attempt in $(seq 1 60); do
-            if curl -fsS http://127.0.0.1:4174/healthz >/dev/null && curl -fsS http://127.0.0.1:4175/healthz >/dev/null; then exit 0; fi
+            if curl -fsS http://127.0.0.1:4174/healthz >/dev/null && curl -fsS http://127.0.0.1:4175/healthz >/dev/null && curl -fsS http://127.0.0.1:4176/healthz >/dev/null; then exit 0; fi
             sleep 1
           done
           exit 1
@@ -180,11 +186,12 @@ jobs:
             /tmp/dynodoc-web.log
             /tmp/dynodoc-self.log
             /tmp/dynodoc-noemail.log
+            /tmp/dynodoc-smtp.log
           retention-days: 7
       - name: Stop test processes
         if: always()
         run: |
-          for file in /tmp/dynodoc-api.pid /tmp/dynodoc-web.pid /tmp/dynodoc-self.pid /tmp/dynodoc-noemail.pid; do
+          for file in /tmp/dynodoc-api.pid /tmp/dynodoc-web.pid /tmp/dynodoc-self.pid /tmp/dynodoc-noemail.pid /tmp/dynodoc-smtp.pid; do
             if [ -f "$file" ]; then kill "$(cat "$file")" 2>/dev/null || true; fi
           done
 

@@ -8,6 +8,12 @@ vi.mock('$env/dynamic/private', () => ({ env }));
 const SESSION = 'c1d8e5f20a7b3946c1d8e5f20a7b3946c1d8e5f20a7b3946c1d8e5f20a7b3946';
 const SERVICE = '9e3a6d0b4f8c1275e9a3d6b0f4c8e1579e3a6d0b4f8c1275e9a3d6b0f4c8e157';
 const PLACEHOLDER = 'change-me-to-a-long-random-value-please';
+// A self-hosted server needs a way to send the sign-in link (or AUTH_EMAIL_LINK=off).
+const SMTP = {
+  DYNODOC_MAIL_TRANSPORT: 'smtp',
+  SMTP_HOST: 'mail.example.test',
+  SMTP_FROM: 'docs@dynodoc.example.test'
+};
 
 async function boot(dev: boolean, values: Record<string, string>) {
   vi.resetModules();
@@ -29,7 +35,7 @@ const printed = () => warn.mock.calls.map((call) => call.join(' ')).join('\n');
 
 describe.each([
   ['hosted', {}],
-  ['selfhosted', { DYNODOC_MODE: 'selfhosted', ORIGIN: 'https://dynodoc.example.test' }]
+  ['selfhosted', { DYNODOC_MODE: 'selfhosted', ORIGIN: 'https://dynodoc.example.test', ...SMTP }]
 ])('a production server in %s mode', (_mode, mode) => {
   const good = { ...mode, SESSION_SECRET: SESSION, WEB_SERVICE_KEY: SERVICE };
   it('starts when the configuration is valid', async () => {
@@ -88,7 +94,8 @@ describe('a missing SESSION_SECRET', () => {
     const { startupCheck, getConfig } = await boot(false, {
       DYNODOC_MODE: 'selfhosted',
       ORIGIN: 'https://dynodoc.example.test',
-      WEB_SERVICE_KEY: SERVICE
+      WEB_SERVICE_KEY: SERVICE,
+      ...SMTP
     });
     expect(() => startupCheck()).toThrow(
       /^invalid configuration \(1 problem\):\n {2}- SESSION_SECRET is not set/

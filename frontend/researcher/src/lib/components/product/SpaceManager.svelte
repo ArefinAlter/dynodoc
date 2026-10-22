@@ -86,10 +86,8 @@
     notice = '';
     await run(async () => {
       const address = email.trim();
-      const { email_status } = await inviteByEmail({ space_id: selected }, address, role, {
-        notify
-      });
-      notice = invitationNotice(email_status, address);
+      const result = await inviteByEmail({ space_id: selected }, address, role, { notify });
+      notice = invitationNotice(result.email_status, address, result.invitation_link);
       email = '';
       await people();
     });
