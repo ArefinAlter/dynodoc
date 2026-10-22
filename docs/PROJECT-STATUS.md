@@ -1,5 +1,47 @@
 # Dynodoc: intent, current implementation and remaining work
 
+## Source: Android app built and run on an emulator (22 October 2026)
+
+The Tauri shell now has a committed, hardened Android project (`apps/desktop/src-tauri/gen/android`) and was built, installed
+and exercised on an Android 16 x86-64 emulator (Google APIs image, WebView 133, hardware acceleration worked). Toolchain, all
+under `E:\android`, nothing permanent in the environment: Temurin 17.0.20.1, command-line tools 15859902, platform 37, build-tools
+37.0.0, NDK 28.2.13676358, Gradle 9.6.1 (wrapper pinned by sha256, jar checked against the published hash), AGP 9.3.1, Kotlin 2.2.10,
+Tauri CLI 2.12.3. Tauri's own CLI cannot finish on this PC (no symlink right without Developer Mode), so `scripts/android-build.ps1`
+compiles with the CLI, copies the library and runs Gradle: same APK. Debug universal APK about 45 MiB, release (R8) unsigned 10.9 MiB.
+minSdk is 29 (raised from 24 to remove the pre-Q storage-permission and task-hijack cases; check the device share before a store
+release), target 37.
+
+**Merged manifest audited by script on real aapt2 / apkanalyzer / apksigner output** (`check-apk-manifest.mjs`, fixtures from the real
+APK, exit 2 on anything it cannot parse; attributes keyed by namespace so a foreign-namespace attribute cannot hide an exported
+component): INTERNET only, MainActivity exported with three `dynodoc://open/...` filters (no `autoVerify`) and one AndroidX receiver
+guarded by DUMP, backup off, cleartext off, extraction rules complete, empty task affinity, debuggable only in debug, debug key only.
+The Kotlin adds no JavaScript bridge (tested). Downloads: only a plain https file from the exact site (scheme, host, port) after a real
+touch in the last 5 s, at most one per 3 s, cleaned names, executable types refused, **no cookies ever sent**, so signed-in
+downloads and `blob:` exports are NOT supported on the phone yet (a toast says to use the browser). Main-frame requests to another
+origin get a 403 page with a way back (this closes cross-origin form POSTs and history navigation, which the usual hook does not
+see); a dead renderer re-creates the activity instead of killing the app; Back goes back through the site then to the background.
+
+**Emulator results.** `android-probe.mjs` (real taps, WebView over adb and the DevTools protocol): 13 phases and 72 checks pass:
+20 commands from a hosted page refused; external links, `_blank` and `window.open` open the system browser once and the window
+stays; mail, local and credential links do nothing; a 40-link flood is rate limited; iframes never reach the shell; about 25 hostile
+deep links dropped (dot segments collapse before the parser: `../workspace` is accepted as `/workspace`, which is normalisation, not
+a bypass); POST and history bypass refused; renderer kill; re-creation with a server saved (blank-window defect found and fixed);
+rotation, dark mode, offline, keyboard, the phone address validator. Screenshots were viewed: 44 px targets, 16 px fields, no
+horizontal scroll, cut-out in landscape. Defects found by running and fixed: the window opened the server root (the hosted root
+redirects to the marketing site, so the window stayed empty: now `/workspace`, desktop too), a second launcher load denied, `target=_blank`
+silently dropped by the WebView, Back closing the app, content under the system bars and the keyboard, downloads ignored, the stock
+offline page. Gates: shell tests 107, script tests 44, Kotlin unit tests 10, clippy and fmt clean. An independent review found no
+Critical or High issue; its Medium (downloads) and Lows are fixed.
+
+**Not done / not verified.** **Signing in inside the app is impossible today**: the emailed link and Google sign-in open the browser, a
+phone has no menu and the launcher is unreachable once a server is saved; it needs App Links (assetlinks.json plus the release key)
+or a one-time hand-over code, which is the next slice. Changing the server on a phone needs the app data cleared. No arm64
+execution, no physical phone, no Play signing or AAB, no CI run (the `desktop.yml` Android job is written and unrun because the
+account billing blocks Actions), `gradle/verification-metadata.xml` was written on Windows with the Linux and macOS aapt2 hashes
+added by hand (the first Linux build is the real test). iOS is untouched. One request to crates.io carried the owner's e-mail address
+in its User-Agent during the build (disclosed by the agent; nothing else was sent). Questions for the owner: the Android sign-in
+route; whether to accept public downloads only until a safe in-app fetch exists; whether to enable Developer Mode on this PC.
+
 ## Source: self-hosted Phase 0, web tier configuration (22 October 2026)
 
 P0-1 (hosted assumptions behind configuration) and the web half of P0-2 (configuration schema, startup validation, `*_FILE`
