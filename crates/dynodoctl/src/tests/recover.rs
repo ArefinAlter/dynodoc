@@ -113,6 +113,13 @@ fn the_journal_round_trips_privately_and_a_damaged_one_is_reported_not_deleted()
     assert_eq!(read_journal(&layout).unwrap(), Some(journal(PHASE_SWAPPED)));
     #[cfg(unix)]
     assert_eq!(crate::util::unix_mode(&journal_path(&layout)), Some(0o600));
+    // A byte order mark (a Windows editor, `Set-Content -Encoding utf8`) does not make it damaged.
+    let with_bom = format!(
+        "\u{feff}{}",
+        std::fs::read_to_string(journal_path(&layout)).unwrap()
+    );
+    std::fs::write(journal_path(&layout), with_bom).unwrap();
+    assert_eq!(read_journal(&layout).unwrap(), Some(journal(PHASE_SWAPPED)));
     std::fs::write(journal_path(&layout), "{ not json").unwrap();
     let err = read_journal(&layout).unwrap_err();
     assert!(

@@ -62,8 +62,10 @@ impl DeliveryReport {
 
 /// Origins that may appear in what is served without being a third party the browser talks to:
 /// identifiers that are never fetched. Anything else outside the installation's own origin is
-/// reported (docs/SELF-HOSTED-OPERATIONS.md, "verify-delivery"). Deliberately short.
-const INERT: [&str; 1] = ["www.w3.org"];
+/// reported (docs/SELF-HOSTED-OPERATIONS.md, "verify-delivery"). Deliberately short, and each
+/// entry was found in the real web build: `www.w3.org` is the XML namespace of SVG and MathML;
+/// `svelte.dev` is the documentation link inside the framework's own error messages.
+const INERT: [&str; 2] = ["www.w3.org", "svelte.dev"];
 
 /// Known, documented, optional: reported as a warning, not a failure. The host and, when given,
 /// the first path segment after it.
@@ -264,8 +266,10 @@ pub fn loaded_references(html: &str) -> Vec<(String, String)> {
 }
 
 /// Files read from the origin while looking for references to outside hosts. Every file costs a
-/// TLS handshake, so the number is bounded; files the sign-in page loads eagerly come first.
-const MAX_CRAWL: usize = 60;
+/// TLS handshake, so the number is bounded; files the sign-in page loads eagerly come first. The
+/// real web build has about 175 files (found by running it), so the bound leaves room; a build
+/// that exceeds it is reported as an incomplete check, never as a pass.
+const MAX_CRAWL: usize = 300;
 
 /// The files still to read, the ones already queued, and references to other hosts found so far.
 /// "Lazy" files are reached only through `import(...)` of another script: route modules the
@@ -952,7 +956,6 @@ pub fn run(ctx: &Ctx<'_>, net: &dyn Net, opts: &Options) -> Result<DeliveryRepor
         },
     );
     if !dormant.is_empty() {
-        let shown: Vec<&str> = dormant.iter().take(5).map(String::as_str).collect();
         add(
             "dormant-references",
             Level::Warn,
@@ -960,7 +963,7 @@ pub fn run(ctx: &Ctx<'_>, net: &dyn Net, opts: &Options) -> Result<DeliveryRepor
             format!(
                 "{} origin(s): {}. They are loaded only when the browser opens that route; the marketing routes answer 404 here. Known open item: acceptance criterion 6 of Phase 0 (task P0-6, a build without the (site) routes)",
                 dormant.len(),
-                shown.join("; ")
+                dormant.join("; ")
             ),
         );
     }

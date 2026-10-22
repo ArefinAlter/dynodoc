@@ -415,14 +415,14 @@ fn restoring_settings_never_writes_outside_the_bundle_even_if_the_manifest_was_n
     let absolute_text = absolute.display().to_string();
     // Each source file EXISTS where the unchecked join would look for it, so that only the path
     // check itself (not "the source is not a regular file") can refuse the entry.
-    let escaped = dir.path().parent().unwrap().join("escaped.txt");
+    let escaped = dir.path().parent().unwrap().join("escaped-by-the-writer.txt");
     let _ = std::fs::remove_file(&escaped);
-    std::fs::write(backup.join("escaped.txt"), b"x").unwrap(); // root/../escaped.txt
+    std::fs::write(backup.join("escaped-by-the-writer.txt"), b"x").unwrap(); // root/../escaped-by-the-writer.txt
     std::fs::write(root.join("x"), b"x").unwrap(); // root/secrets/../x
     std::fs::create_dir_all(root.join(".git")).unwrap();
     std::fs::write(root.join(".git").join("config"), b"x").unwrap();
     for evil in [
-        "../escaped.txt",
+        "../escaped-by-the-writer.txt",
         absolute_text.as_str(),
         "secrets/../x",
         ".git/config",

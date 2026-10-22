@@ -219,7 +219,7 @@ fn the_installations_own_origin_and_the_documented_inert_ones_are_not_outside() 
     net.on_https(
         "/_app/immutable/entry.js",
         ok_page(
-            "const a = 'https://docs.example.org/api'; const ns = 'http://www.w3.org/2000/svg';",
+            "const a = 'https://docs.example.org/api'; const ns = 'http://www.w3.org/2000/svg'; const e = 'https://svelte.dev/e/lifecycle_outside_component';",
         ),
     );
     net.on_https("/_app/immutable/app.css", ok_page("a{}"));

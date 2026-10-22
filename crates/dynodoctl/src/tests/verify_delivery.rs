@@ -792,11 +792,11 @@ fn the_crawl_is_bounded_and_says_how_much_it_left_unread() {
         "/login",
         ok(r#"<html><script>import("./_app/entry.js")</script></html>"#),
     );
-    let many: String = (0..100)
+    let many: String = (0..400)
         .map(|i| format!("import(\"./n{i}.js\");"))
         .collect();
     net.on_https("/_app/entry.js", ok(&many));
-    for i in 0..100 {
+    for i in 0..400 {
         net.on_https(&format!("/_app/n{i}.js"), ok("export {}"));
     }
     let report = check(&net, &opts());
@@ -811,12 +811,12 @@ fn the_crawl_is_bounded_and_says_how_much_it_left_unread() {
         "M4: a crawl cut short by its cap is never a pass"
     );
     assert!(
-        c.detail.contains("more NOT read (limit 60)"),
+        c.detail.contains("more NOT read (limit 300)"),
         "{}",
         c.detail
     );
     assert!(
-        net.requested.borrow().len() < 90,
+        net.requested.borrow().len() < 330,
         "the number of requests is bounded"
     );
 }

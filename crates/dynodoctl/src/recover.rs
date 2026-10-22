@@ -53,7 +53,8 @@ pub fn write_journal(layout: &Layout, journal: &Journal) -> Result<()> {
 
 pub fn read_journal(layout: &Layout) -> Result<Option<Journal>> {
     match std::fs::read_to_string(journal_path(layout)) {
-        Ok(text) => Ok(Some(serde_json::from_str(&text).map_err(|e| {
+        // A byte order mark is what a Windows editor or `Set-Content -Encoding utf8` adds.
+        Ok(text) => Ok(Some(serde_json::from_str(text.trim_start_matches('\u{feff}')).map_err(|e| {
             CliError::failed(format!("state/{JOURNAL_NAME} is damaged ({e})"), "do not delete it: its contents tell `dynodoctl recover` which databases to look at; send it to support")
         })?)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
