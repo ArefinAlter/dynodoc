@@ -32,7 +32,7 @@ notarised, published or tried on a physical device.
 | Linux aarch64 | Workflow job behind a tick box | Nothing (private-repository availability of `ubuntu-24.04-arm` unverified) | Everything |
 | macOS aarch64 and x86-64 | Same source; workflow jobs on `macos-latest` and `macos-15-intel` | Nothing; the Apple targets cannot even be type-checked on Windows | Everything: no Mac build, no Keychain key creation, no notarisation |
 | Windows aarch64 | Workflow job behind a tick box | Nothing (`windows-11-arm`, availability unverified) | Everything |
-| Android | The Tauri 2.12 Android project is **committed** (`apps/desktop/src-tauri/gen/android`, hardened), mobile entry point, phone capability file, icons, `minSdkVersion` 24, `targetSdkVersion` 37, deep-link filters, a small Kotlin layer (insets, Back, downloads, offline page; no JavaScript bridge), `scripts/android-build.ps1`, `scripts/android-probe.mjs`, workflow job `android` | **22 October 2026, Windows 11 PC:** debug APK built (universal, arm64-v8a plus x86_64, 63.5 MiB), merged manifest audited against real `aapt2` output, installed and run on an x86_64 Android 16 emulator (WebView 133, hardware-accelerated through WHPX) and driven by a black-box probe (see "Android: what was run on 22 October 2026"); a release APK was built (below) | **Signing in inside the app does not work yet** (the emailed link opens in the browser and a phone has no menu to paste it; needs App Links, round 2); changing the server needs the app's data cleared; no physical device; no Play signing, no AAB run; GitHub Actions job never executed; iOS not part of this |
+| Android | The Tauri 2.12 Android project is **committed** (`apps/desktop/src-tauri/gen/android`, hardened), mobile entry point, phone capability file, icons, `minSdkVersion` 24, `targetSdkVersion` 37, deep-link filters, a small Kotlin layer (insets, Back, downloads, offline page; no JavaScript bridge), `scripts/android-build.ps1`, `scripts/android-probe.mjs`, workflow job `android` | **22 October 2026, Windows 11 PC:** debug APK built (universal, arm64-v8a plus x86_64, 44.6 MiB), merged manifest audited against real `aapt2` output, installed and run on an x86_64 Android 16 emulator (WebView 133, hardware-accelerated through WHPX) and driven by a black-box probe (see "Android: what was run on 22 October 2026"); a release APK was built (below) | **Signing in inside the app does not work yet** (the emailed link opens in the browser and a phone has no menu to paste it; needs App Links, round 2); changing the server needs the app's data cleared; no physical device; no Play signing, no AAB run; GitHub Actions job never executed; iOS not part of this |
 | iPhone | Same source, iOS 15.0 minimum; workflow job `ios` (simulator, unsigned) | Nothing | Everything: needs a Mac runner and, for devices, an Apple Developer team |
 
 ## How to build each
@@ -122,8 +122,9 @@ arm64 library was compiled and packaged and never executed. Nothing was run in G
 
 - **Build.** `tauri android build` compiled the Rust library for aarch64 and x86_64 and then stopped
   at the symbolic link; `scripts/android-build.ps1` did the rest (copy, Gradle) and produced
-  `app-universal-debug.apk`, 63.5 MiB (two unstripped debug libraries of about 19.5 MiB each, stored
-  uncompressed because `extractNativeLibs` is false). Rebuilds after a source change took about a
+  `app-universal-debug.apk`, 44.6 MiB (two unstripped debug libraries of about 19.5 MiB each, stored
+  uncompressed because `extractNativeLibs` is false; incremental rebuilds left the file at 63.5 MiB, with
+  about 19 MiB of dead space inside the zip, until a full rebuild compacted it). Rebuilds after a source change took about a
   minute. **Release build:** `scripts\android-build.ps1 -Release` (16.4 minutes for both targets, `lto = true`, three jobs, while engine tests ran
 on the same PC) built `app-universal-release-unsigned.apk`, **10.2 MiB** (the stripped release libraries are 4.13 MiB for
 arm64-v8a and 4.5 MiB for x86_64). R8 shrinking worked: a copy signed with the SDK's debug key (local test

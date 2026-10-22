@@ -99,7 +99,7 @@ non-ASCII key-file fix), a black-box probe of the security model inside WebView2
 NSIS and MSI bundles (built, never installed); the Linux
 compile, clippy and tests in an Ubuntu 24.04 container (see the ledger for the exact result).
 **Android (22 October 2026):** the generated project is now committed and hardened; a debug APK
-(arm64-v8a and x86_64, 63.5 MiB) was built on the Windows PC with JDK 17, Gradle 9.6.1, NDK
+(arm64-v8a and x86_64, 44.6 MiB) was built on the Windows PC with JDK 17, Gradle 9.6.1, NDK
 28.2.13676358 and build-tools 37.0.0 (`scripts/android-build.ps1`, because Windows refused the
 symbolic link Tauri's command line needs), its merged manifest audited against real `aapt2`,
 `apkanalyzer` and `apksigner` output (permissions: INTERNET only; one exported activity;

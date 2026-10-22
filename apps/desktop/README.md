@@ -385,7 +385,7 @@ blanket `cargo update` without checking the Linux build; drop the pin when the p
 
 **Android: built and run (22 October 2026).** The Android project is committed in
 `src-tauri/gen/android` (Tauri 2.12.3, AGP 9.3.1, Gradle 9.6.1, Kotlin 2.2.10, compileSdk and
-targetSdk 37, minSdk 24). A debug APK (universal: arm64-v8a and x86_64, 63.5 MiB) was built on
+targetSdk 37, minSdk 24). A debug APK (universal: arm64-v8a and x86_64, 44.6 MiB) was built on
 Windows 11, its merged manifest audited, and installed on an x86_64 Android 16 emulator, where
 `scripts/android-probe.mjs` drove it. The versions of the tool chain, the exact commands, what the
 probe checks, the defects it found and the limits are in
@@ -546,7 +546,7 @@ After merging the main branch that holds the Windows non-ASCII key-file fix in `
   28.2.13676358, emulator 37.2.12, system image `android-36` Google APIs x86_64) installed under
   `E:\android`, checksums checked where the vendors publish them; versions in
   [DESKTOP-AND-MOBILE-APPS.md](../../docs/DESKTOP-AND-MOBILE-APPS.md#android-building-on-windows).
-- `scripts/android-build.ps1`: debug APK (universal, arm64-v8a and x86_64) 63.5 MiB; release APK
+- `scripts/android-build.ps1`: debug APK (universal, arm64-v8a and x86_64) 44.6 MiB; release APK
   (unsigned) 10.2 MiB, 16 minutes. `scripts/check-apk-manifest.mjs` passes on both (debug and release
   mode) and, against the unhardened first build, failed it for the right reasons.
 - `scripts/android-probe.mjs` on an x86_64 Android 16 emulator (WHPX): all checks of the 11 phases pass
