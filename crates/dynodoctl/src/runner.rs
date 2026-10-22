@@ -142,6 +142,7 @@ struct Rule {
 pub struct FakeRunner {
     calls: RefCell<Vec<Cmd>>,
     rules: RefCell<Vec<Rule>>,
+    effects: RefCell<Vec<(String, Box<dyn Fn(&Cmd)>)>>,
     default: Output,
 }
 
@@ -154,11 +155,28 @@ impl Default for FakeRunner {
 impl FakeRunner {
     /// Unmatched commands succeed with no output.
     pub fn new() -> Self {
-        Self { calls: RefCell::new(Vec::new()), rules: RefCell::new(Vec::new()), default: Output::default() }
+        Self { calls: RefCell::new(Vec::new()), rules: RefCell::new(Vec::new()), effects: RefCell::new(Vec::new()), default: Output::default() }
+    }
+
+    /// Run `effect` (for example, create the files a real generator would) whenever a command
+    /// line contains `needle`. Effects run in addition to the answering rule.
+    pub fn on_effect(&self, needle: &str, effect: impl Fn(&Cmd) + 'static) -> &Self {
+        self.effects.borrow_mut().push((needle.to_string(), Box::new(effect)));
+        self
     }
 
     pub fn on(&self, needle: &str, status: i32, stdout: &str) -> &Self {
         self.on_seq(needle, &[(status, stdout)])
+    }
+
+    /// Like [`on`](Self::on) but checked before every rule registered so far, so a test can
+    /// override the canned answers of a shared runner.
+    pub fn first(&self, needle: &str, status: i32, stdout: &str) -> &Self {
+        self.rules.borrow_mut().insert(
+            0,
+            Rule { needle: needle.to_string(), outputs: vec![Output { status, stdout: stdout.as_bytes().to_vec(), stderr: Vec::new() }], used: 0, file_bytes: None },
+        );
+        self
     }
 
     pub fn on_seq(&self, needle: &str, answers: &[(i32, &str)]) -> &Self {
@@ -212,6 +230,11 @@ impl Runner for FakeRunner {
     fn run(&self, cmd: &Cmd) -> io::Result<Output> {
         self.calls.borrow_mut().push(cmd.clone());
         let line = cmd.line();
+        for (needle, effect) in self.effects.borrow().iter() {
+            if line.contains(needle.as_str()) {
+                effect(cmd);
+            }
+        }
         let mut rules = self.rules.borrow_mut();
         for rule in rules.iter_mut() {
             if line.contains(&rule.needle) {

@@ -27,6 +27,7 @@ base64 = { workspace = true }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 webpki-roots = "1"
 flate2 = "1"
+regex = "1"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

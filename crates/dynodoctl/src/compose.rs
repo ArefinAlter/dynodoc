@@ -98,11 +98,22 @@ impl<'a> Compose<'a> {
         self.run(&["exec", "-T", "postgres", "sh", "-c", &full])
     }
 
-    /// Same, with a file on standard input.
-    pub fn pg_sh_stdin(&self, script: &str, stdin: PathBuf) -> Result<Output> {
+    /// Same, with a file on standard input and/or standard output (a dump going in or out).
+    pub fn pg_sh_io(&self, script: &str, stdin: Option<PathBuf>, stdout: Option<PathBuf>) -> Result<Output> {
         let full = format!("{PG_AUTH}{script}");
         let mut cmd = self.cmd(&["exec", "-T", "postgres", "sh", "-c", &full]);
-        cmd.stdin_file = Some(stdin);
+        cmd.stdin_file = stdin;
+        cmd.stdout_file = stdout;
+        run_cmd(self.ctx, &cmd)
+    }
+
+    /// A one-off container of `service` (profile `maintenance` services included) running `script`
+    /// with `sh -c`; `args` become `$1`, `$2`, ... of the script. Standard input is optional.
+    pub fn run_script(&self, service: &str, script: &str, args: &[&str], stdin: Option<Vec<u8>>) -> Result<Output> {
+        let mut all = vec!["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "--entrypoint", "/bin/sh", service, "-c", script, "sh"];
+        all.extend_from_slice(args);
+        let mut cmd = self.cmd(&all);
+        cmd.stdin_bytes = stdin;
         run_cmd(self.ctx, &cmd)
     }
 
