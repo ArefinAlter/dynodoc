@@ -24,3 +24,7 @@ services:
   web:
     depends_on:
       mailsink: {condition: service_healthy}
+  # The test mail sink lives on the internal network, so the mail check joins it as well (in the
+  # product it sits on `egress`, where a real mail server is).
+  mailcheck:
+    networks: [egress, engine]

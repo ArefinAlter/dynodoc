@@ -138,6 +138,48 @@ services:
       db-roles: {condition: service_completed_successfully}
       preflight: {condition: service_completed_successfully}
 
+  # On demand: checks the mail settings against the real mail server from the same network
+  # position as the web server (docker compose run --rm mailcheck --to you@example.org [--send]).
+  mailcheck:
+    profiles: [maintenance]
+    image: ${DYNODOC_IMAGE_REGISTRY:-dynodoc-local}/tools:${DYNODOC_VERSION:-dev}
+    entrypoint: ["node", "scripts/check-mail.mjs", "--dir", "/run/secrets"]
+    user: "10001:10001"
+    restart: "no"
+    <<: *hardening
+    tmpfs: ["/tmp:size=8m"]
+    volumes:
+      - secrets-check:/run/secrets:ro
+      - type: bind
+        source: ./config
+        target: /etc/dynodoc
+        read_only: true
+        bind: {create_host_path: false}
+    networks: [egress]
+    depends_on:
+      secrets-init: {condition: service_completed_successfully}
+
+  # On demand, never started by `up`: engine-cli with the owner credential for operator tasks
+  # (docker compose run --rm database-admin verify-snapshots --all).
+  database-admin:
+    profiles: [maintenance]
+    image: *api-image
+    entrypoint: ["/bin/sh", "/jobs/engine-cli.sh"]
+    user: "999:999"
+    restart: "no"
+    <<: *hardening
+    tmpfs: ["/tmp:size=8m"]
+    volumes:
+      - secrets-db:/run/secrets:ro
+      - type: bind
+        source: ./jobs
+        target: /jobs
+        read_only: true
+        bind: {create_host_path: false}
+    networks: [engine]
+    depends_on:
+      postgres: {condition: service_healthy}
+
   # --- long-running services ---------------------------------------------------------------
 
   postgres:
