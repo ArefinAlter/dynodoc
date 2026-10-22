@@ -1,0 +1,648 @@
+//! Everything the tool does to PostgreSQL and to `engine-cli`, always through the containers of
+//! the bundle: owner credentials are read inside a container from its own secret files and never
+//! pass through this process.
+
+use crate::compose::{check_ident, short, Compose, PG_CONNECT};
+use crate::error::{CliError, Result};
+use crate::runner::Output;
+use std::path::Path;
+
+/// The live database.
+pub const LIVE_DB: &str = "dynodoc";
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DbFacts {
+    pub migrations_applied: i64,
+    pub latest_migration: i64,
+    pub events: i64,
+    pub documents: i64,
+    pub identities: i64,
+    pub server_version: String,
+}
+
+/// One query for everything a backup, a status and a restore comparison need.
+const FACTS_SQL: &str = "select (select count(*) from _sqlx_migrations where success), (select coalesce(max(version),0) from _sqlx_migrations where success), (select count(*) from event), (select count(*) from document), (select count(*) from identity), current_setting('server_version')";
+
+pub fn parse_facts(text: &str) -> Option<DbFacts> {
+    let line = text.lines().find(|l| l.matches('|').count() >= 5)?;
+    let mut parts = line.trim().splitn(6, '|');
+    let mut int = || parts.next().and_then(|p| p.trim().parse::<i64>().ok());
+    let applied = int()?;
+    let latest = int()?;
+    let events = int()?;
+    let documents = int()?;
+    let identities = int()?;
+    let server_version = parts.next()?.trim().to_string();
+    Some(DbFacts {
+        migrations_applied: applied,
+        latest_migration: latest,
+        events,
+        documents,
+        identities,
+        server_version,
+    })
+}
+
+pub fn read_facts(c: &Compose<'_>, db: &str) -> Result<DbFacts> {
+    let out = c.psql(db, FACTS_SQL)?;
+    if !out.ok() {
+        return Err(CliError::failed(
+            format!("could not read the database `{db}`: {}", short(&out.text())),
+            "check that the stack is running (`dynodoctl status`) and that the database has been initialised",
+        ));
+    }
+    parse_facts(&out.stdout_text()).ok_or_else(|| {
+        CliError::failed(
+            format!(
+                "unexpected answer from the database: {}",
+                short(&out.text())
+            ),
+            "run `dynodoctl status` and report this output",
+        )
+    })
+}
+
+/// What a database holds. "Cannot tell" is an error, never "empty": a failed query must not be
+/// read as permission to skip the safety backup.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SchemaState {
+    /// The database does not exist (a fresh server).
+    Missing,
+    /// It exists and `init` never ran in it.
+    Empty,
+    /// It exists and has the migration table.
+    Present,
+}
+
+pub fn schema_state(c: &Compose<'_>, db: &str) -> Result<SchemaState> {
+    check_ident(db)?;
+    let exists = c.psql(
+        "postgres",
+        &format!("select 1 from pg_database where datname = '{db}'"),
+    )?;
+    if !exists.ok() {
+        return Err(CliError::failed(
+            format!(
+                "could not ask PostgreSQL whether `{db}` exists: {}",
+                short(&exists.text())
+            ),
+            "check `dynodoctl status` and `docker compose logs postgres`; nothing was changed",
+        ));
+    }
+    if exists.stdout_text().trim() != "1" {
+        return Ok(SchemaState::Missing);
+    }
+    let out = c.psql(
+        db,
+        "select to_regclass('public._sqlx_migrations') is not null",
+    )?;
+    if !out.ok() {
+        return Err(CliError::failed(
+            format!("could not read the database `{db}`: {}", short(&out.text())),
+            "check `dynodoctl status` and `docker compose logs postgres`; nothing was changed",
+        ));
+    }
+    Ok(if out.stdout_text().trim() == "t" {
+        SchemaState::Present
+    } else {
+        SchemaState::Empty
+    })
+}
+
+const SCRATCH_PREFIXES: [&str; 4] = [
+    "dynodoc_restore_",
+    "dynodoc_restoring_",
+    "dynodoc_prev_",
+    "dynodoc_rehearse_",
+];
+
+/// Is this one of the names dynodoctl gives the databases it makes and may drop?
+/// `dynodoc`, `postgres`, `template0` and `template1` are never among them.
+pub fn is_scratch_name(name: &str) -> bool {
+    name.len() <= 63
+        && SCRATCH_PREFIXES.iter().any(|p| {
+            name.strip_prefix(p).is_some_and(|rest| {
+                !rest.is_empty()
+                    && rest
+                        .chars()
+                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+            })
+        })
+}
+
+fn check_scratch(name: &str) -> Result<()> {
+    if is_scratch_name(name) {
+        Ok(())
+    } else {
+        Err(CliError::failed(
+            format!("internal: `{name}` is not a name dynodoctl may create or drop"),
+            "this is a bug in dynodoctl; please report it",
+        ))
+    }
+}
+
+pub fn size_bytes(c: &Compose<'_>, db: &str) -> Result<u64> {
+    check_ident(db)?;
+    let out = c.psql("postgres", &format!("select pg_database_size('{db}')"))?;
+    out.stdout_text().trim().parse::<u64>().map_err(|_| {
+        CliError::failed(
+            format!("could not read the size of `{db}`: {}", short(&out.text())),
+            "check `dynodoctl status`",
+        )
+    })
+}
+
+pub fn create_database(c: &Compose<'_>, name: &str) -> Result<()> {
+    check_scratch(name)?;
+    let out = c.psql("postgres", &format!("create database {name}"))?;
+    if out.ok() {
+        Ok(())
+    } else {
+        Err(CliError::failed(
+            format!(
+                "could not create the scratch database `{name}`: {}",
+                short(&out.text())
+            ),
+            "check the free disk space of the database volume and that PostgreSQL is healthy",
+        ))
+    }
+}
+
+/// Drop a database even if sessions remain (PostgreSQL 13+; the bundle ships 16).
+pub fn drop_database(c: &Compose<'_>, name: &str) -> Result<()> {
+    // An allow-list, not a deny-list: only databases this tool names can be dropped.
+    check_scratch(name)?;
+    let out = c.psql(
+        "postgres",
+        &format!("drop database if exists {name} with (force)"),
+    )?;
+    if out.ok() {
+        Ok(())
+    } else {
+        Err(CliError::failed(format!("could not remove the database `{name}`: {}", short(&out.text())), format!("remove it by hand: docker compose exec postgres sh -c 'PGPASSWORD=$(cat /run/secrets/postgres_password) dropdb -h 127.0.0.1 -U dynodoc {name}'")))
+    }
+}
+
+pub fn list_scratch_databases(c: &Compose<'_>) -> Result<Vec<String>> {
+    let out = c.psql("postgres", "select datname from pg_database where datname like 'dynodoc!_restore!_%' escape '!' or datname like 'dynodoc!_restoring!_%' escape '!' or datname like 'dynodoc!_prev!_%' escape '!' or datname like 'dynodoc!_rehearse!_%' escape '!' order by 1")?;
+    if !out.ok() {
+        return Ok(Vec::new());
+    }
+    Ok(out
+        .stdout_text()
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect())
+}
+
+/// `pg_restore` of a custom-format dump into `db`, read from the file on standard input.
+///
+/// The ACLs are kept (`--no-owner` only): the migrations REVOKE EXECUTE on the guard functions
+/// from PUBLIC, and without those statements `grant-runtime` rightly refuses the copy. The dump's
+/// GRANTs name the runtime login, so that role must exist: it does on a running installation, and
+/// `restore --into-live` runs the `db-roles` job first on a fresh volume.
+pub fn restore_dump(c: &Compose<'_>, db: &str, dump: &Path) -> Result<Output> {
+    check_ident(db)?;
+    c.pg_sh_io(
+        &format!("pg_restore {PG_CONNECT} -d {db} --no-owner --exit-on-error"),
+        Some(dump.to_path_buf()),
+        None,
+    )
+}
+
+/// Render the dump as the SQL script `pg_restore` would run, WITHOUT running it (`-f -` connects
+/// to no database), into `out` on the host. For the screen in `dumpscan`.
+pub fn dump_script(c: &Compose<'_>, dump: &Path, out: &Path) -> Result<Output> {
+    c.pg_sh_io(
+        "pg_restore --no-owner -f -",
+        Some(dump.to_path_buf()),
+        Some(out.to_path_buf()),
+    )
+}
+
+/// Every database name on the server.
+pub fn database_names(c: &Compose<'_>) -> Result<Vec<String>> {
+    let out = c.psql("postgres", "select datname from pg_database order by 1")?;
+    if !out.ok() {
+        return Err(CliError::failed(
+            format!("could not list the databases: {}", short(&out.text())),
+            "check `docker compose logs postgres`",
+        ));
+    }
+    Ok(out
+        .stdout_text()
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect())
+}
+
+/// Close every session on `db` (the services must be stopped first).
+pub fn terminate_sessions(c: &Compose<'_>, db: &str) -> Result<()> {
+    check_ident(db)?;
+    let out = c.psql("postgres", &format!("select pg_terminate_backend(pid) from pg_stat_activity where datname = '{db}' and pid <> pg_backend_pid()"))?;
+    if out.ok() {
+        Ok(())
+    } else {
+        Err(CliError::failed(
+            format!(
+                "could not close the open connections to `{db}`: {}",
+                short(&out.text())
+            ),
+            "the database was not changed",
+        ))
+    }
+}
+
+/// Rename `live` to `outgoing` and `incoming` to `live` in ONE transaction: either both happen or
+/// neither does, so a crash or a kill between them cannot leave the server without a live database.
+/// (Used for the swap and, with the roles of the two scratch names exchanged, for the swap back.)
+pub fn swap_names(c: &Compose<'_>, live: &str, incoming: &str, outgoing: &str) -> Result<()> {
+    if live != LIVE_DB {
+        return Err(CliError::failed(
+            "internal: the swap must name the live database",
+            "this is a bug in dynodoctl; please report it",
+        ));
+    }
+    check_scratch(incoming)?;
+    check_scratch(outgoing)?;
+    let sql = format!("begin; alter database {live} rename to {outgoing}; alter database {incoming} rename to {live}; commit;");
+    let out = c.psql("postgres", &sql)?;
+    if out.ok() {
+        Ok(())
+    } else {
+        Err(CliError::failed(
+            format!(
+                "the database swap failed as a whole (nothing was renamed): {}",
+                short(&out.text())
+            ),
+            "the live database is as it was",
+        ))
+    }
+}
+
+/// Number of entries `pg_restore --list` finds in a dump (proves it is a readable custom-format dump).
+pub fn toc_entries(c: &Compose<'_>, dump: &Path) -> Result<u64> {
+    let out = c.pg_sh_io("pg_restore --list", Some(dump.to_path_buf()), None)?;
+    if !out.ok() {
+        return Err(CliError::failed(
+            format!(
+                "the dump cannot be read by pg_restore: {}",
+                short(&out.text())
+            ),
+            "do not rely on this backup; take a new one",
+        ));
+    }
+    Ok(out
+        .stdout_text()
+        .lines()
+        .filter(|l| !l.trim().is_empty() && !l.starts_with(';'))
+        .count() as u64)
+}
+
+/// Ids of the documents in `db`, in a stable order.
+pub fn document_ids(c: &Compose<'_>, db: &str) -> Result<Vec<String>> {
+    let out = c.psql(db, "select id from document order by id")?;
+    if !out.ok() {
+        return Err(CliError::failed(
+            format!("could not list the documents: {}", short(&out.text())),
+            "check `dynodoctl status`",
+        ));
+    }
+    let ids: Vec<String> = out
+        .stdout_text()
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect();
+    if let Some(bad) = ids
+        .iter()
+        .find(|id| !id.chars().all(|ch| ch.is_ascii_hexdigit() || ch == '-'))
+    {
+        return Err(CliError::failed(
+            format!("unexpected document id `{bad}`"),
+            "run `dynodoctl status` and report this",
+        ));
+    }
+    Ok(ids)
+}
+
+/// engine-cli against database `db`: the owner login in `MIGRATION_DATABASE_URL`, and in
+/// `DATABASE_URL` either the runtime login (as the bundle's jobs set it, jobs/init.sh and
+/// jobs/engine-cli.sh; needed by `check-runtime`) or the owner. `$2` is `runtime` or `owner`.
+///
+/// History verification uses `owner`: a database restored without ACLs (every scratch copy) has
+/// no grants for the runtime login until `grant-runtime` ran, and verification needs only to read
+/// the history and write the snapshot receipts it backfills.
+const ENGINE_SCRIPT: &str = r#"set -eu
+DB=$1; LOGIN=$2; shift 2
+OWNER_PW=$(cat /run/secrets/postgres_password)
+RUNTIME_PW=$(cat /run/secrets/runtime_database_password)
+export MIGRATION_DATABASE_URL="postgres://dynodoc:${OWNER_PW}@postgres:5432/${DB}"
+if [ "$LOGIN" = owner ]; then
+  export DATABASE_URL="$MIGRATION_DATABASE_URL"
+else
+  export DATABASE_URL="postgres://dynodoc_runtime:${RUNTIME_PW}@postgres:5432/${DB}"
+fi
+exec engine-cli "$@"
+"#;
+
+/// Verify every document one by one, as the owner (ids arrive on standard input; a command line
+/// would be too long for Windows with a thousand documents).
+const VERIFY_SCRIPT: &str = r#"set -eu
+DB=$1
+OWNER_PW=$(cat /run/secrets/postgres_password)
+export MIGRATION_DATABASE_URL="postgres://dynodoc:${OWNER_PW}@postgres:5432/${DB}"
+export DATABASE_URL="$MIGRATION_DATABASE_URL"
+n=0
+while read -r id; do
+  [ -n "$id" ] || continue
+  engine-cli verify "$id"
+  n=$((n+1))
+done
+echo "verified $n documents"
+"#;
+
+/// Start the API image against `db` and wait for `/healthz`. It runs in a one-off container on the
+/// bundle's private network and publishes nothing.
+const SMOKE_SCRIPT: &str = r#"set -u
+DB=$1
+URL=$(cat /run/secrets/database_url)
+export DATABASE_URL="${URL%/*}/${DB}"
+unset DATABASE_URL_FILE
+engine-api >/tmp/api.log 2>&1 &
+pid=$!
+i=0; ok=0
+while [ "$i" -lt 60 ]; do
+  if bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf "GET /healthz HTTP/1.0\r\nHost: api\r\n\r\n" >&3 && head -n 1 <&3 | grep -q " 200 "' 2>/dev/null; then ok=1; break; fi
+  kill -0 "$pid" 2>/dev/null || break
+  i=$((i+1)); sleep 1
+done
+kill "$pid" 2>/dev/null || true
+wait "$pid" 2>/dev/null || true
+if [ "$ok" = 1 ]; then echo "api smoke: /healthz answered 200 after ${i}s"; exit 0; fi
+echo "api smoke: /healthz did not answer 200"; tail -n 5 /tmp/api.log | cut -c1-300; exit 1
+"#;
+
+/// engine-cli with the runtime login in `DATABASE_URL` (what `check-runtime` must test).
+pub fn engine_cli(c: &Compose<'_>, db: &str, args: &[&str]) -> Result<Output> {
+    engine_cli_as(c, db, "runtime", args)
+}
+
+/// engine-cli with the owner login in `DATABASE_URL` (history verification on any copy).
+pub fn engine_cli_owner(c: &Compose<'_>, db: &str, args: &[&str]) -> Result<Output> {
+    engine_cli_as(c, db, "owner", args)
+}
+
+fn engine_cli_as(c: &Compose<'_>, db: &str, login: &str, args: &[&str]) -> Result<Output> {
+    check_ident(db)?;
+    let mut all = vec![db, login];
+    all.extend_from_slice(args);
+    c.run_script("database-admin", ENGINE_SCRIPT, &all, None)
+}
+
+pub fn verify_documents(c: &Compose<'_>, db: &str, ids: &[String]) -> Result<Output> {
+    check_ident(db)?;
+    let mut input = ids.join("\n");
+    input.push('\n');
+    c.run_script(
+        "database-admin",
+        VERIFY_SCRIPT,
+        &[db],
+        Some(input.into_bytes()),
+    )
+}
+
+pub fn api_smoke(c: &Compose<'_>, db: &str) -> Result<Output> {
+    check_ident(db)?;
+    c.run_script("api", SMOKE_SCRIPT, &[db], None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ctx::{Ctx, Layout, ScriptedConfirm};
+    use crate::runner::FakeRunner;
+
+    #[test]
+    fn facts_parse_from_one_psql_line() {
+        let f = parse_facts("52|52|36|2|9|16.4 (Debian 16.4-1.pgdg120+2)\n").unwrap();
+        assert_eq!(
+            (
+                f.migrations_applied,
+                f.latest_migration,
+                f.events,
+                f.documents,
+                f.identities
+            ),
+            (52, 52, 36, 2, 9)
+        );
+        assert!(f.server_version.starts_with("16.4"));
+        assert!(parse_facts("ERROR: relation does not exist").is_none());
+        assert!(parse_facts("1|2|x|4|5|16").is_none());
+    }
+
+    fn with_ctx<T>(runner: &FakeRunner, f: impl FnOnce(&Compose<'_>) -> T) -> T {
+        let dir = tempfile::tempdir().unwrap();
+        let confirm = ScriptedConfirm::new(&[]);
+        let ctx = Ctx::new(runner, Layout::new(dir.path()), &confirm);
+        f(&Compose::new(&ctx))
+    }
+
+    #[test]
+    fn only_databases_dynodoctl_names_can_be_dropped_or_created() {
+        // M2: an allow-list. The old check accepted `postgres` and `template1`.
+        let runner = FakeRunner::new();
+        for name in [
+            LIVE_DB,
+            "postgres",
+            "template0",
+            "template1",
+            "dynodoc_restore_",
+            "dynodoc_restore_UPPER",
+            "dynodoc_restore_a;drop",
+            "dynodoc_other_1",
+            "my_dynodoc_restore_1",
+            "",
+        ] {
+            let err = with_ctx(&runner, |c| drop_database(c, name)).unwrap_err();
+            assert!(
+                err.what.contains("not a name dynodoctl may"),
+                "{name}: {err}"
+            );
+            assert!(
+                with_ctx(&runner, |c| create_database(c, name)).is_err(),
+                "{name}"
+            );
+        }
+        assert!(runner.calls().is_empty(), "nothing reached the database");
+        for name in [
+            "dynodoc_restore_20261022t120000z_ab12",
+            "dynodoc_restoring_1",
+            "dynodoc_prev_x",
+            "dynodoc_rehearse_9",
+        ] {
+            assert!(is_scratch_name(name), "{name}");
+        }
+    }
+
+    #[test]
+    fn a_failed_query_is_never_read_as_an_empty_database() {
+        // M3: the old code treated any psql error as "no schema" and skipped the safety backup.
+        let ok = FakeRunner::new();
+        ok.first("select 1 from pg_database", 0, "1\n");
+        ok.first("to_regclass", 0, "t\n");
+        assert_eq!(
+            with_ctx(&ok, |c| schema_state(c, LIVE_DB)).unwrap(),
+            SchemaState::Present
+        );
+        let empty = FakeRunner::new();
+        empty.first("select 1 from pg_database", 0, "1\n");
+        empty.first("to_regclass", 0, "f\n");
+        assert_eq!(
+            with_ctx(&empty, |c| schema_state(c, LIVE_DB)).unwrap(),
+            SchemaState::Empty
+        );
+        let missing = FakeRunner::new();
+        missing.first("select 1 from pg_database", 0, "");
+        assert_eq!(
+            with_ctx(&missing, |c| schema_state(c, LIVE_DB)).unwrap(),
+            SchemaState::Missing
+        );
+        let broken = FakeRunner::new();
+        broken.first("select 1 from pg_database", 0, "1\n");
+        broken.first("to_regclass", 2, "psql: error: connection to server failed");
+        assert_eq!(
+            with_ctx(&broken, |c| schema_state(c, LIVE_DB))
+                .unwrap_err()
+                .code(),
+            crate::error::exit::FAILED
+        );
+        let down = FakeRunner::new();
+        down.first(
+            "select 1 from pg_database",
+            1,
+            "psql: error: server closed the connection",
+        );
+        assert!(with_ctx(&down, |c| schema_state(c, LIVE_DB)).is_err());
+    }
+
+    #[test]
+    fn drop_uses_force_and_if_exists() {
+        let runner = FakeRunner::new();
+        with_ctx(&runner, |c| drop_database(c, "dynodoc_restore_1")).unwrap();
+        assert!(runner.ran("drop database if exists dynodoc_restore_1 with (force)"));
+    }
+
+    #[test]
+    fn restore_uses_no_owner_no_acl_and_stops_on_error() {
+        let runner = FakeRunner::new();
+        with_ctx(&runner, |c| {
+            restore_dump(c, "dynodoc_restore_1", Path::new("/tmp/x.dump"))
+        })
+        .unwrap();
+        let line = runner.lines().pop().unwrap();
+        assert!(line.contains(
+            "pg_restore -h 127.0.0.1 -U dynodoc -d dynodoc_restore_1 --no-owner --exit-on-error"
+        ));
+        assert!(
+            !line.contains("--no-acl"),
+            "the ACLs are part of what an upgrade rehearsal must prove"
+        );
+        assert_eq!(
+            runner.calls()[0].stdin_file.as_deref(),
+            Some(Path::new("/tmp/x.dump"))
+        );
+    }
+
+    #[test]
+    fn toc_counts_entries_and_ignores_comment_lines() {
+        let runner = FakeRunner::new();
+        runner.on("pg_restore --list", 0, "; Archive created at ...\n; dbname: dynodoc\n1; 2615 2200 SCHEMA - public x\n2; 1259 1 TABLE public event x\n");
+        assert_eq!(
+            with_ctx(&runner, |c| toc_entries(c, Path::new("/tmp/x.dump"))).unwrap(),
+            2
+        );
+        let bad = FakeRunner::new();
+        bad.on("pg_restore --list", 1, "");
+        assert!(with_ctx(&bad, |c| toc_entries(c, Path::new("/tmp/x.dump"))).is_err());
+    }
+
+    #[test]
+    fn document_ids_must_look_like_uuids() {
+        let runner = FakeRunner::new();
+        runner.on(
+            "select id from document",
+            0,
+            "0190a1b2-0000-7000-8000-000000000001\n0190a1b2-0000-7000-8000-000000000002\n",
+        );
+        assert_eq!(
+            with_ctx(&runner, |c| document_ids(c, "dynodoc"))
+                .unwrap()
+                .len(),
+            2
+        );
+        let evil = FakeRunner::new();
+        evil.on("select id from document", 0, "x; rm -rf /\n");
+        assert!(with_ctx(&evil, |c| document_ids(c, "dynodoc")).is_err());
+    }
+
+    #[test]
+    fn engine_cli_runs_in_a_one_off_container_with_the_database_as_first_argument() {
+        let runner = FakeRunner::new();
+        with_ctx(&runner, |c| {
+            engine_cli(c, "dynodoc_restore_1", &["migrate"])
+        })
+        .unwrap();
+        let line = runner.lines().pop().unwrap();
+        assert!(line.contains(
+            "--profile maintenance run --rm --no-deps -T --entrypoint /bin/sh database-admin -c"
+        ));
+        assert!(line.ends_with(" sh dynodoc_restore_1 runtime migrate"));
+        assert!(
+            !line.contains("postgres_password") || line.contains("cat /run/secrets"),
+            "passwords are read inside the container"
+        );
+    }
+
+    #[test]
+    fn history_verification_uses_the_owner_login_because_a_scratch_copy_has_no_runtime_grants() {
+        let runner = FakeRunner::new();
+        with_ctx(&runner, |c| {
+            engine_cli_owner(c, "dynodoc_restore_1", &["verify-snapshots", "--all"])
+        })
+        .unwrap();
+        assert!(runner
+            .lines()
+            .pop()
+            .unwrap()
+            .ends_with(" sh dynodoc_restore_1 owner verify-snapshots --all"));
+        // The per-document loop never selects the runtime login at all.
+        assert!(!VERIFY_SCRIPT.contains("dynodoc_runtime"));
+        // And check-runtime, which must test the runtime login, still gets it.
+        let r2 = FakeRunner::new();
+        with_ctx(&r2, |c| {
+            engine_cli(c, "dynodoc_restore_1", &["check-runtime"])
+        })
+        .unwrap();
+        assert!(r2
+            .lines()
+            .pop()
+            .unwrap()
+            .ends_with(" sh dynodoc_restore_1 runtime check-runtime"));
+    }
+
+    #[test]
+    fn verify_sends_ids_on_standard_input() {
+        let runner = FakeRunner::new();
+        with_ctx(&runner, |c| {
+            verify_documents(c, "dynodoc", &["a-1".to_string(), "b-2".to_string()])
+        })
+        .unwrap();
+        assert_eq!(
+            runner.calls()[0].stdin_bytes.as_deref(),
+            Some(&b"a-1\nb-2\n"[..])
+        );
+    }
+}

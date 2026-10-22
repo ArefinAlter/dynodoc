@@ -1,0 +1,41 @@
+//! `dynodoctl`: the operator tool for the Dynodoc self-hosted single-node bundle (`infra/selfhosted`).
+//!
+//! It drives `docker compose` through a [`runner::Runner`], so every command is tested against a
+//! scripted fake. Commands live in their own modules; `cli` parses arguments and `main` maps
+//! results to the exit codes documented in `docs/SELF-HOSTED-OPERATIONS.md`.
+
+pub mod backup;
+pub mod cli;
+pub mod compose;
+pub mod configure;
+pub mod ctx;
+pub mod db;
+pub mod dumpscan;
+pub mod envfile;
+pub mod error;
+pub mod generator;
+pub mod install;
+pub mod lock;
+pub mod manifest;
+pub mod net;
+pub mod origin;
+pub mod preflight;
+pub mod recover;
+pub mod redact;
+pub mod rehearse;
+pub mod report;
+pub mod restore;
+pub mod runner;
+pub mod signals;
+pub mod status;
+pub mod support;
+pub mod tarball;
+#[cfg(test)]
+pub mod testkit;
+pub mod upgrade;
+pub mod util;
+pub mod verify_delivery;
+pub mod winacl;
+pub mod x509;
+
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");

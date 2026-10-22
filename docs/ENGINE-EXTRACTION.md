@@ -1,5 +1,14 @@
 # Standalone engine release
 
+**Mirror note (22 October 2026).** The application workspace has a seventh crate, `crates/dynodoctl` (the operator tool
+of the self-hosted bundle, task P0-5). It is proprietary ([licensing and distribution](SELF-HOSTED-LICENSING-AND-DISTRIBUTION.md)
+4.1) and is **not** part of the MIT engine. When engine sources are mirrored to `D:\dynodoc-engine` /
+`ArefinAlter/dynodoc-engine`: do not copy `crates/dynodoctl`; copy `Cargo.toml` and `Cargo.lock` without the
+`"crates/dynodoctl"` member, the `[profile.dev.package.dynodoctl]` section and the `dynodoctl` package entry (the lock
+file gained nothing else: every dependency of the crate was already in it); the mirrored workspace's
+`cargo fmt/clippy/doc/test --workspace` must stay green without it. The crate adds no change to the API,
+the CLI, the migrations or `openapi.yaml`.
+
 Current source work adds [typed checkpoints](TYPED-CHECKPOINTS.md), schema 31
 [shared draft bases](SHARED-DRAFT-BASES.md), schema-32
 [named/deployed snapshots](SHARED-NAMED-SNAPSHOTS.md), and a

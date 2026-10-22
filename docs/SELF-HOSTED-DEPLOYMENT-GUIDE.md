@@ -904,6 +904,20 @@ existing tools, shown or referenced. Paths follow the production layout
 (`/opt/dynodoc-demo`) only where the existing scripts require it. Every runbook ends
 with a record: who, when, version, checks run, results.
 
+*Status, 22 October 2026 (task P0-5).* `dynodoctl` v1 exists for Profile A and is documented in
+[SELF-HOSTED-OPERATIONS.md](SELF-HOSTED-OPERATIONS.md). Where this chapter proposes a command, the built
+equivalent is: `install` (9.1), `backup` and `backup --verify` (9.6), `restore-verify` and
+`restore --into-live` (9.7), `rehearse-lite` and `upgrade` (9.8; the plan is `upgrade --plan`, and
+`rehearse` is `rehearse-lite`), `rollback` (9.10, level 3 only), `status` and `verify-delivery` (the proposed `check`
+and `verify-delivery`), `configure` (9.9 partly: the origin is changed, the add-in manifests are not regenerated),
+`support-bundle`. Not built: `bundle verify` and `bundle import` (signed bundles, P3-1), `admin sign-in-link` (P0-3),
+`addin build` (P0-7), encryption and remote targets for backups (9.6), binary rollback without a restore (9.10 level 2),
+rotation helpers (9.12), the Helm and Profile B/C paths. The backup is `pg_dump -Fc`; its copy of the secrets is not
+encrypted (decision recorded in the operations guide). DQ1 is settled as a Rust binary in the application repository.
+Revised 23 October 2026 after an independent review: a live restore is journalled and reversible (`recover`, 9.7), a
+backup is treated as trusted code and its SQL is screened (operations guide, "Trust"), the upgrade gates cannot be
+bypassed by a flag (9.8), and `rollback` validates before it changes anything (9.10).
+
 ### 9.1 Install, Profile A
 
 *Today (P0-4, no `dynodoctl` yet):* follow the README of `infra/selfhosted`: build or pull the

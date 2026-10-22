@@ -1725,6 +1725,152 @@ in the deployment guide 3.1, 5.2, 7.3, 9.1). Nothing is deployed, signed or rele
   LibreOffice image was not built), the air-gap run (P0-9), memory under load, and the `no-egress`
   overlay beyond `docker compose config`.
 
+**Implementation status (22 October 2026, revised 23 October 2026 after an independent review): P0-5, `dynodoctl` v1.** Source and tests in the application
+repository (`crates/dynodoctl`, seventh member of the root workspace); command reference, exit codes, decisions
+and runbooks in [SELF-HOSTED-OPERATIONS.md](SELF-HOSTED-OPERATIONS.md). Nothing is deployed, signed or released.
+`addin build` is not part of it (the manifest generator, P0-7, does not exist).
+
+- *Built.* One Rust binary with: `install` (preflight of Docker, Compose, memory, clock, disk, ports and DNS; the
+  certificate mode is required and has no default; calls the bundle's own settings generator; never overwrites a secret;
+  refuses a half-installed directory and a conflicting setting; `--dry-run`; prints the first-administrator facts as they
+  are today), `configure` (show, set, check, apply for 19 named settings; dated 0600 copy of the previous `.env`; the web
+  tier's own `check-config` and the real `check-mail` handshake before a change is kept; a change that does not validate or
+  start is taken back), `status` (services, versions, certificate mode and expiry, schema level, counts, volume sizes, last
+  backup age, warnings, `--json` schema 1), `backup` (consistent `pg_dump -Fc` in the container, `pg_restore --list`,
+  manifest with checksums, counts before and after, `SHA256SUMS`, copy of settings and secrets at 0600 or sent elsewhere
+  with `--secrets-to`, retention that only touches directories with a valid manifest, `--verify`), `restore-verify` (into a
+  throwaway database, never the live one; `verify-snapshots --all` and `verify` for each document; torn down on every
+  path), `restore --into-live` (typed phrase; the dump is loaded beside the live database and the names are swapped, so a
+  damaged dump leaves the live one untouched; the replaced database is dropped only after the restore verifies),
+  `rehearse-lite` (restore into a scratch database, mirror the database ACL, run the target release's migrations,
+  `grant-runtime`, `check-runtime`, history verification and an API start with `/healthz`), `upgrade` (digest check of the
+  pulled images against the release overlay, mandatory pre-upgrade backup, rehearsal, switch, health check, rollback offer;
+  skipping the backup or the rehearsal needs its own typed phrase and is recorded) and `rollback` (restore of the
+  pre-upgrade backup into the previous version), `support-bundle` (tar.gz with a manifest and checksums; the guard refuses
+  every read under `secrets/` and any private key; this installation's own secret values are used in memory to hide them,
+  plus pattern rules) and `verify-delivery` (HTTPS and chain, redirect, headers, sign-in page, `/healthz`, 421, private API,
+  no marketing pages, outside-host references through the page's scripts, certificate horizon, the mail handshake; the
+  add-in check is a stub that says `NOT BUILT`). Exit codes 0, 1, 2, 3 and 4 are documented and tested; `--json` on every
+  command.
+- *Decisions.* (1) Rust, one binary, no async runtime, every dependency already in `Cargo.lock` (deployment guide DQ1).
+  (2) The crate is proprietary like the other bundle tooling (licensing 4.1) and is **not** mirrored to the public MIT
+  engine repository (note in ENGINE-EXTRACTION.md); this differs from "MIT like the engine" in the task brief. (3) The
+  settings generator is called, not copied: through the `tools` image, or Node with a checkout. (4) Logical `pg_dump`, not
+  `pg_basebackup`. (5) **No backup encryption**: the repository has no passphrase-sealed format for arbitrary files, so the
+  copy of the secrets is written at 0600 with a loud warning and can be sent elsewhere; encryption is future work (open
+  question below). (6) Restore keeps the ACLs and history is verified with the owner login. (7) The TLS client uses the
+  Mozilla roots built in; the operating system's trust store is not read (`--ca-file` adds authorities).
+- *Found by running it against the real bundle, not by the unit tests.* Seven defects, all fixed with a test: the settings
+  generator's `chmod` of its target failed with EPERM on a Docker Desktop bind mount (it now writes into a work
+  directory); a scratch copy restored without grants could not be verified by the runtime login (verification uses the
+  owner login); `pg_restore --no-acl` dropped the `REVOKE EXECUTE ... FROM PUBLIC` statements and `grant-runtime` refused
+  the copy (the schema 38 pitfall in a new form; ACLs are kept and `db-roles` runs first on a fresh volume); a rollback
+  after an upgrade whose secrets copy had been sent elsewhere was refused; `verify-delivery` took 157 s because a refused
+  `::1` connection costs about 2 s on Windows (IPv4 first, remembered address: 2.2 s); the delivery check missed relative
+  `./_app/...` references and `import()`; redaction blanked YAML structure in `compose config`. The unit tests found one
+  more: SHA-256 values in the support bundle's own manifest were taken for keys.
+- *Found about the product.* The web build served by every self-hosted installation contains `dynodoc.online` in six route
+  modules (and the Office.js CDN, the Resend host and the engine repository link in others), so acceptance criterion 6 still
+  does not hold; `verify-delivery` reports them as a warning when they are only in lazily loaded route modules and fails when
+  a file the sign-in page loads eagerly has one. Separately, the preflight caught a real port conflict on this machine
+  (something already listened on 28080) before anything was changed.
+- *Verified here.* Windows 11, Docker Desktop 29.5.3, Compose 5.1.4, linux/amd64 images built from this tree (cold build
+  about 25 minutes for the API). **Unit tests:** 259, all pass, against a scripted runner and a scripted network
+  (arguments, plans, every refusal path, redaction with seeded fake secrets, manifest and checksums, retention, exit codes,
+  `--json`). **Mutation checks:** 13, each makes at least one test fail: the pre-upgrade backup skipped; secrets printed in
+  the support bundle; restore into live without confirmation; the verify step skipped; retention deleting the newest;
+  an existing `.env` overwritten; the digest check removed; the live database droppable as a scratch one; known secret
+  values not scrubbed; `--no-acl` back; history verified with the runtime login (this one first slipped through and a test was
+  added); the scratch database left behind; a half-written backup left behind. **Real bundle** (project `dynodoctl-it`,
+  evaluation certificate, loopback ports 38443 and 38080, 14 documents and 16 events written through the API): `install`
+  72 s (first start 68 s); `status` 6 s; `backup --verify` 18 s (14 documents verified on the restored copy);
+  `restore-verify` 6 s; `configure set --apply` 15 s; `rehearse-lite` 15 s (API started on the migrated copy);
+  `upgrade --local` 20 s; `rollback` 33 s (two documents and eight events written after the upgrade are gone, the
+  earlier state is back); `verify-delivery` 2 s, warnings only; `support-bundle` 12 s, 21 files, none of the 7 real secret
+  values (including the password inside the database URL) found in the extracted archive. **Acceptance criterion 3, as
+  specified:** backup, then the PostgreSQL volume deleted and `.env` and `secrets/` removed, then
+  `restore --into-live --config-from ...` rebuilt everything in 39.8 s, `verify-snapshots --all` and `verify` passed for 14
+  documents, `check-runtime` passed, the restored secrets and `.env` were byte-identical, a restore report was printed. Run
+  again, `install` on the installed directory kept every secret byte for byte. **Gates, run locally:**
+  `cargo fmt --all --check`; `cargo clippy --workspace --all-targets --locked -- -D warnings` (629 s);
+  `RUSTDOCFLAGS='-D warnings' cargo doc --locked --workspace --no-deps` (it first failed on two doc comments containing
+  `host[:port]`, now fixed); `cargo test --workspace --locked --no-run` (every test binary of the workspace still builds);
+  `cargo test -p dynodoctl --locked` (259 passed). The OpenAPI document and the other crates are untouched, and the lock
+  file gained only the crate's own entry. The Unix-only functions were also type-checked and linted for
+  `x86_64-unknown-linux-gnu` and `aarch64-apple-darwin` in a scratch crate (the full crate cannot be cross-built here:
+  `ring` needs a Linux C compiler). GitHub Actions could not run (billing); `ci-rust.yml` builds the new crate and has not
+  been executed.
+- *Independent review, 23 October 2026 (tip `bb2c5d0`: 3 high, 10 medium, several low findings, 16 probe tests), all
+  addressed.* **H1** a hostile backup could write outside the bundle (a manifest path `../x` or an absolute path) and its SQL
+  ran as the PostgreSQL superuser: manifest paths are confined and re-checked at the writer, files are written exclusively
+  and never through a link, the files are checked against both `manifest.json` and `SHA256SUMS`, and the dump is rendered
+  with `pg_restore --no-owner -f -` and screened (`COPY ... PROGRAM`, `ALTER SYSTEM`, roles, event triggers, foreign data
+  wrappers, unknown extensions and languages, file and large-object functions, `DO` blocks) before anything is created or
+  any service is stopped. It is a screen, not a sandbox, and nothing authenticates a backup: the guide now says so and
+  tells the operator to restore only backups they made (a least-privileged restore role was rejected: ownership and
+  `SECURITY DEFINER` need an owner). **H2** `rollback` rewrote `.env` before validating the backup: it now validates first
+  and puts the settings back if the restore does not replace the database. **H3** a failed or interrupted swap had no way
+  back: the restore writes `state/restore-journal.json`, swaps the two database names in one transaction, swaps back by
+  itself on any failure after the swap (failed start, counts, verification, `check-runtime`, interrupt), reports the exact
+  commands if even that fails, `status` and every destructive command refuse while the journal exists, and the new
+  `dynodoctl recover` finishes or undoes it; SIGINT, SIGTERM and Windows Ctrl-C set a flag honoured at step boundaries and
+  the destructive children run in their own process group; the upgrade record is written before `.env` changes; the
+  missing "Undo a restore" runbook exists (6.8, with the SQL). **M1** `upgrade --local --version`, `install --overlay` on an
+  existing installation, `--allow-unpinned` over an installed overlay and a substring digest match are gone: digests must
+  be full, match in repository and digest exactly, and cover every service image of the effective configuration. **M2**
+  scratch databases carry random text and are dropped only if this run created them, the drop allow-list is
+  `dynodoc_(restore|restoring|prev|rehearse)_...`, and mutating commands take `state/.lock`. **M3** a failed schema
+  query no longer reads as "empty"; the writers stop before the safety backup. **M4** `verify-delivery` takes the
+  evaluation allowance only from the operator's `--tls-mode`, parses the redirect as a URL, reports every outside origin
+  (allow-list of two inert names), warns when a crawl is incomplete, parses `[::1]`, bounds time and bytes, no longer claims
+  TLS 1.0/1.1 behaviour it cannot test, and a panic becomes a structured error. **M5** redaction rewritten around name parts,
+  quoted and rest-of-line values, user information up to the last `@`, query secrets, cookies, bearer tokens of any length
+  and non-ASCII and `%40` emails. **M6** retention counts only this installation's backups. **M7** only directories the
+  tool creates are made private. **M8** Windows owner-only ACLs are applied with `icacls` and read back, and the command
+  fails without `--allow-insecure-files`. **M9** the Compose project name must belong to the working directory. **M10**
+  the non-terminal refusal is tested with a piped input. Low: the external settings copy is removed when a backup fails,
+  secret files carry only a salted aggregate digest, partly written backups are cleaned, `status` says when Docker cannot be
+  reached, `pg_restore`'s text (it can quote rows) is never stored, HSTS parsing ignores case, and
+  `crates/dynodoctl/tests/isolation.rs` fails if any crate depends on dynodoctl or a mirror manifest lists it.
+  **Evidence.** 373 unit tests on Windows and 375 on Linux (a `rust:1` container; the Unix-only paths ran for the first
+  time), 4 isolation tests; 52 manual mutation checks, each made at least one test fail (four first survived: three tests
+  were too weak, for the settings writer, the exclusive create and the lock held by another live process, and were
+  strengthened or added; one mutation touched only one of two redundant checks and was redefined. The new lock test found a
+  real defect: on Windows a lock held by an exited process whose handle was still open counted as alive). Gates run locally: `cargo fmt --all --check`,
+  `cargo clippy --workspace --all-targets --locked -- -D warnings`, `RUSTDOCFLAGS='-D warnings' cargo doc --locked
+  --workspace --no-deps`, `cargo test --workspace --locked --no-run`; OpenAPI untouched. **Real bundle** (Windows 11, Docker
+  Desktop 29.5.3, images rebuilt from this tree in 413 s with the build cache): `install` 29 s; `backup --verify` 7.4 s with
+  the SQL screen passing the real 756-entry dump (no false positive); volume deleted plus `.env` and `secrets/` removed, then
+  `restore --into-live --config-from` 37.5 s, 16 events and 10 documents back, verified; a restore whose full start failed
+  (rejected web configuration) swapped back by itself in 16 s, the data written after the backup was still there, journal
+  gone; a swap made by hand and a journal written, `status` reported it, `restore` refused (exit 3), `recover` swapped back
+  in 23 s; a real dump with the `file_fdw` extension (both checksum records rewritten to agree) was refused by
+  `restore-verify` (exit 1) and by `restore --into-live` (exit 3) with nothing created and no service stopped;
+  `upgrade --local` 20 s, `rollback` with a tampered pre-upgrade dump refused with `.env` unchanged, then `rollback` 34 s
+  (data written after the upgrade gone); `support-bundle` 6 s, none of the 6 secret files' values (nor the password inside
+  the database URL) in the 21 extracted files; `verify-delivery` 3 s, 195 files read, warnings only (evaluation
+  certificate, route modules naming 37 further origins, documented optional references). Two defects were found by this run
+  and fixed with tests: `svelte.dev` links in the framework's error strings made a correct installation fail (now an inert
+  origin), and a 60-file crawl cap could never cover the real 195-file build (now 300). **Remaining.** Backups are not
+  authenticated or signed; the SQL screen is not a sandbox; Windows administrators and SYSTEM can still read owner-only
+  files; the redaction cannot know a secret that has no sensitive name beside it; `verify-delivery` cannot probe TLS 1.0/1.1;
+  a real Ctrl-C on Windows and a real release-to-release upgrade were not exercised; the engine repository CI and GitHub
+  Actions did not run (billing).
+- *Not built.* `addin build` and the manifest check (P0-7; stub reports `NOT BUILT`); signed bundles, `bundle verify` and
+  `bundle import` (P3-1); air-gapped import and the egress-blocked run (P0-9); backup encryption and remote or off-host
+  targets; scheduled backups (use cron); PITR and physical backups (P2-9); binary rollback without a restore (P2-5);
+  high availability, Profile B and C; `admin sign-in-link` (P0-3); rotation helpers; an interactive prompt for the
+  certificate mode (the choice is an option, and the command refuses without it); licence checks; the operating system's
+  trust store in the TLS checks.
+- *Not verified.* A Linux host (the Unix-only unit tests, file modes, symbolic links, signals and process liveness, did
+  run on 23 October in a `rust:1` container; rootful and rootless Docker, SELinux and a systemd unit did not), arm64, a real certificate authority (`provided` and `acme` were
+  not run through dynodoctl; the bundle's own tests cover them), a real mail server (the `configure --mail-to` and
+  `verify-delivery` mail paths ran only against the fake runner), a real upgrade from release N to N+1 (only the mechanism
+  with the same version: a different image needs a second build; the digest check, pull and overlay paths ran against
+  the fake only), a dataset of 1,000 documents (14 were used, so acceptance criterion 4's dataset size is not met), remote
+  backup targets, a signed bundle, the converter profile, `--no-egress`, and any run where dynodoctl is installed on a
+  different machine from the one running Docker.
+
 ### 13.3 Phase 1: identity
 
 Goal: a university or company connects its identity provider and maps groups to roles;

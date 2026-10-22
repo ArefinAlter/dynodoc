@@ -7,6 +7,7 @@ members = [
     "crates/engine-mcp",
     "crates/engine-api",
     "crates/engine-cli",
+    "crates/dynodoctl",
 ]
 # apps/desktop is a separate Cargo workspace (Tauri needs webkit/GTK on Linux); keep it
 # out of the engine's cargo fmt/clippy/test --workspace and its CI.
@@ -105,6 +106,9 @@ opt-level = 3
 # whole main-thread stack of a Windows debug build, so adding one option to a
 # subcommand made `engine-cli --help` overflow it. Level 1 needs under a quarter.
 [profile.dev.package.engine-cli]
+opt-level = 1
+# dynodoctl has the same generated parser (many subcommands and options) and the same limit.
+[profile.dev.package.dynodoctl]
 opt-level = 1
 
 [profile.release]
