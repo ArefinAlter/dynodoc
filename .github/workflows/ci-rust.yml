@@ -73,6 +73,10 @@ jobs:
         run: cargo build --workspace
       - name: Test
         run: cargo test --workspace
+      - name: Documentation
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --locked --workspace --no-deps
       - name: OpenAPI drift check
         run: cargo run -p engine-cli -- openapi | diff - openapi.yaml
       - name: Source packaging regression
