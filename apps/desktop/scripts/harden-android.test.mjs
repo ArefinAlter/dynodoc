@@ -1,7 +1,7 @@
 // node --test scripts/harden-android.test.mjs
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { harden, problems } from './harden-android.mjs';
+import { EXTRACTION_RULES_XML, extractionRuleProblems, harden, problems as rawProblems } from './harden-android.mjs';
 
 // The shape of Tauri 2.12's generated files (the parts that matter).
 const templateManifest = `<?xml version="1.0" encoding="utf-8"?>
@@ -30,10 +30,40 @@ const templateGradle = `android {
     }
 }`;
 
-test('the unpatched template has two problems this script exists for', () => {
+// The project's own res/xml files, as the script reads them.
+const readRules = (f) => (f === 'xml/data_extraction_rules.xml' ? EXTRACTION_RULES_XML : null);
+const problems = (manifest, gradle, read = readRules) => rawProblems(manifest, gradle, read);
+
+test('the unpatched template has the problems this script exists for', () => {
   const found = problems(templateManifest, templateGradle);
   assert.ok(found.some((p) => p.includes('allowBackup')), found.join('; '));
   assert.ok(found.some((p) => p.includes('"true"')), found.join('; '));
+  assert.ok(found.some((p) => p.includes('dataExtractionRules')), found.join('; '));
+});
+
+test('the extraction rules must exclude every domain from the cloud backup and the device transfer', () => {
+  assert.deepEqual(extractionRuleProblems(EXTRACTION_RULES_XML), []);
+  const noTransfer = EXTRACTION_RULES_XML.replace(/<device-transfer>[\s\S]*<\/device-transfer>/, '');
+  assert.ok(extractionRuleProblems(noTransfer).some((p) => p.includes('device-transfer')));
+  const noCloud = EXTRACTION_RULES_XML.replace(/<cloud-backup>[\s\S]*?<\/cloud-backup>/, '<cloud-backup />');
+  assert.ok(extractionRuleProblems(noCloud).some((p) => p.includes('cloud-backup')));
+  const missingDomain = EXTRACTION_RULES_XML.replace('<exclude domain="sharedpref" />', '');
+  assert.ok(extractionRuleProblems(missingDomain).some((p) => p.includes('sharedpref')));
+  const included = EXTRACTION_RULES_XML.replace('</data-extraction-rules>', '<cloud-backup><include domain="file" path="x" /></cloud-backup></data-extraction-rules>');
+  assert.ok(extractionRuleProblems(included).some((p) => p.includes('<include>')));
+  const byPath = EXTRACTION_RULES_XML.replace('<exclude domain="file" />', '<exclude domain="file" path="a" />');
+  assert.ok(extractionRuleProblems(byPath).length > 0);
+  // A commented-out exclude does not count.
+  const commented = EXTRACTION_RULES_XML.replace('<exclude domain="root" />', '<!-- <exclude domain="root" /> -->');
+  assert.ok(extractionRuleProblems(commented).some((p) => p.includes('root')));
+});
+
+test('a manifest whose extraction rules file is missing, or not a plain reference, fails', () => {
+  const { manifest, gradle } = harden(templateManifest, templateGradle);
+  assert.deepEqual(problems(manifest, gradle), []);
+  assert.ok(problems(manifest, gradle, () => null).some((p) => p.includes('not a file in the project')));
+  const raw = manifest.replace('@xml/data_extraction_rules', '${rules}');
+  assert.ok(problems(raw, gradle).some((p) => p.includes('plain @xml reference')));
 });
 
 test('the template is made safe', () => {
@@ -75,14 +105,14 @@ test('a network security config is allowed only if a file in the project turns c
   const off = '<network-security-config><base-config cleartextTrafficPermitted="false" /></network-security-config>';
   const on = '<network-security-config><base-config cleartextTrafficPermitted="true" /></network-security-config>';
   const silent = '<network-security-config><base-config /></network-security-config>';
-  assert.deepEqual(problems(withConfig, gradle, (f) => (f === 'xml/nsc.xml' ? off : null)), []);
+  assert.deepEqual(problems(withConfig, gradle, (f) => (f === 'xml/nsc.xml' ? off : readRules(f))), []);
   for (const xml of [on, silent, null, off + on]) {
-    assert.ok(problems(withConfig, gradle, () => xml).length > 0, String(xml));
+    assert.ok(problems(withConfig, gradle, (f) => (f === 'xml/nsc.xml' ? xml : readRules(f))).length > 0, String(xml));
   }
   const odd = manifest.replace('<application', '<application android:networkSecurityConfig="@xml/../x"');
-  assert.ok(problems(odd, gradle, () => off).length > 0);
+  assert.ok(problems(odd, gradle, (f) => (f === 'xml/nsc.xml' ? off : readRules(f))).length > 0);
   const raw = manifest.replace('<application', '<application android:networkSecurityConfig="${nsc}"');
-  assert.ok(problems(raw, gradle, () => off).length > 0);
+  assert.ok(problems(raw, gradle, (f) => (f === 'xml/nsc.xml' ? off : readRules(f))).length > 0);
 });
 
 test('every spelling of a true cleartext placeholder in the build file is caught', () => {
