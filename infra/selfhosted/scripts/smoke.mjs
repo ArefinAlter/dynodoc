@@ -6,6 +6,9 @@
 //
 //   --port N              HTTPS port on 127.0.0.1 (default 18443); the HTTP port is N-363 (18080)
 //   --no-build            use the images already built (dynodoc-local/*:dev); default builds them
+//   --registry R --version V   run the RELEASE path instead: pull the images from R by digest
+//                         through a generated release overlay (nothing is built)
+//   --reuse DIR           debugging: run the checks against a stack left by --keep
 //   --skip-browser        skip the Chromium checks (needs Playwright, see --playwright-from)
 //   --playwright-from DIR a directory whose node_modules has @playwright/test and a Chromium
 //                         (default: frontend/researcher of this repository, if it has node_modules)
@@ -60,7 +63,9 @@ const cleanEnv = () => {
 };
 const docker = (a, o = {}) => spawnSync('docker', a, { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, env: cleanEnv(), ...o });
 let BUNDLE = '';
-const composeArgs = (extra) => ['compose', '-p', PROJECT, '--project-directory', BUNDLE, '-f', path.join(BUNDLE, 'compose.yml'), '-f', path.join(BUNDLE, 'compose.smoke.yml'), ...extra];
+const composeArgs = (extra) => ['compose', '-p', PROJECT, '--project-directory', BUNDLE, '-f', path.join(BUNDLE, 'compose.yml'),
+  ...(existsSync(path.join(BUNDLE, 'compose.release.generated.yml')) ? ['-f', path.join(BUNDLE, 'compose.release.generated.yml')] : []),
+  '-f', path.join(BUNDLE, 'compose.smoke.yml'), ...extra];
 const compose = (extra, o = {}) => docker(composeArgs(extra), { cwd: BUNDLE, ...o });
 const out = (r) => `${r.stdout ?? ''}${r.stderr ?? ''}`.trim();
 const containers = () => compose(['ps', '-a', '-q']).stdout.split(/\s+/).filter(Boolean);
@@ -137,6 +142,15 @@ function prepareBundle() {
     'DYNODOC_TLS_MODE=evaluation', `DYNODOC_HTTPS_PORT=${PORT}`, `DYNODOC_HTTP_PORT=${HTTP_PORT}`,
     `ADMIN_EMAILS=${ADMIN}`, 'DYNODOC_ORG_NOTICE=Smoke test installation. Questions: the IT desk, extension 123.', ''
   ].join('\n'));
+  // Release path: images come from a registry by digest, through the generated overlay.
+  const registry = opt('--registry');
+  if (registry) {
+    const version = opt('--version', 'dev');
+    appendFileSync(path.join(BUNDLE, '.env'), `DYNODOC_IMAGE_REGISTRY=${registry}\nDYNODOC_VERSION=${version}\n`);
+    const gen2 = spawnSync(process.execPath, [path.join(here, 'make-release-overlay.mjs'), '--registry', registry, '--version', version, '--out', path.join(BUNDLE, 'compose.release.generated.yml')], { encoding: 'utf8' });
+    if (gen2.status !== 0) throw new Error(`make-release-overlay failed: ${gen2.stderr}${gen2.stdout}`);
+    info(`release overlay: ${registry} ${version} (images by digest)`);
+  }
   return tmp;
 }
 function secretValues() {
@@ -169,7 +183,7 @@ async function main() {
   }
 
   // Images.
-  if (!has('--no-build') && !reuse) {
+  if (!has('--no-build') && !reuse && !opt('--registry')) {
     const t = Date.now();
     const r = docker(['compose', '-p', `${PROJECT}-build`, '--project-directory', SRC, '-f', path.join(SRC, 'compose.yml'), '-f', path.join(SRC, 'compose.build.yml'), '--profile', 'acme', 'build', 'api', 'web', 'preflight', 'proxy', 'acme'],
       { env: { ...cleanEnv(), ORIGIN, DYNODOC_TLS_MODE: 'evaluation' }, cwd: SRC });
@@ -460,11 +474,88 @@ async function main() {
     check('x4', 'the web server answers again after the restore', same.status === 200, same.status);
   }
 
-  // backup by hand
+  // the mail check, from where the web server sits
   {
-    const dump = compose(['exec', '-T', 'postgres', 'sh', '-c', 'PGPASSWORD=$(cat /run/secrets/postgres_password) pg_dump -h 127.0.0.1 -U dynodoc -Fc dynodoc > /tmp/smoke.dump && pg_restore --list /tmp/smoke.dump | wc -l && wc -c < /tmp/smoke.dump']);
-    const lines = dump.stdout.trim().split('\n').map((x) => Number(x.trim()));
-    check('z1', 'the by-hand backup command from the README (pg_dump -Fc) produces a readable dump', dump.status === 0 && lines[0] > 50 && lines[1] > 10000, out(dump));
+    const r = compose(['--profile', 'maintenance', 'run', '--rm', '-T', 'mailcheck', '--to', 'admin@smoke.test', '--json']);
+    let parsed = null;
+    try { parsed = JSON.parse(r.stdout.trim().split('\n').pop()); } catch { /* reported below */ }
+    check('m1', 'docker compose run --rm mailcheck --to ... does the real SMTP handshake with the configured server and passes', r.status === 0 && parsed?.ok === true, out(r).slice(-800));
+  }
+
+  // a provided certificate at stack level: refusal, start, and the documented renewal
+  {
+    const proxyImage = `${opt('--registry', 'dynodoc-local')}/proxy:${opt('--version', 'dev')}`;
+    const tlsDir = path.join(BUNDLE, 'tls');
+    const mkcert = (name) => docker(['run', '--rm', '--user', '0', '--entrypoint', 'sh', '-v', `${tlsDir}:/out`, proxyImage, '-c',
+      `openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout /out/${name}.key -out /out/${name}.pem -days 30 -subj /CN=localhost -addext subjectAltName=DNS:localhost >/dev/null 2>&1; chmod 600 /out/${name}.key`]);
+    mkcert('a'); mkcert('b');
+    const put = (cert, key) => { writeFileSync(path.join(tlsDir, 'fullchain.pem'), readFileSync(path.join(tlsDir, `${cert}.pem`))); writeFileSync(path.join(tlsDir, 'privkey.pem'), readFileSync(path.join(tlsDir, `${key}.key`))); };
+    const env = { DYNODOC_TLS_MODE: 'provided' };
+    const composeP = (extra) => compose(extra, { env: { ...cleanEnv(), ...env } });
+    put('a', 'b'); // a certificate with someone else's key
+    let r = await up('provided, wrong key', [], env);
+    const proxyLog = out(compose(['logs', '--no-color', '--tail', '40', 'proxy']));
+    check('t1', 'provided mode with a key that does not belong to the certificate: up fails, the proxy says why, nothing listens', !r.ok && /does not match the certificate/.test(proxyLog) && (await tlsProbe({})).cert === undefined, r.text.slice(-300) + proxyLog.slice(-600));
+    put('a', 'a');
+    r = await up('provided, good', [], env);
+    const pa = await tlsProbe({});
+    const head = await request('/login');
+    check('t2', 'provided mode with a good certificate: the stack comes up and serves that certificate with a one-year HSTS', r.ok && pa.cert?.subject?.CN === 'localhost' && !/EVALUATION/.test(JSON.stringify(pa.cert?.subject)) && head.headers['strict-transport-security'] === 'max-age=31536000' && !head.headers['x-dynodoc-tls-mode'], `${r.text.slice(-500)} ${JSON.stringify(pa.cert?.subject)} ${head.headers['strict-transport-security']}`);
+    // The documented renewal: replace the files, stage them, check, reload; no request may fail meanwhile.
+    put('b', 'b');
+    let failed = 0, total = 0, stop = false;
+    const loop = (async () => { while (!stop) { total++; if ((await request('/healthz')).status !== 200) failed++; await sleep(50); } })();
+    const staged = composeP(['run', '--rm', '--no-deps', '-T', 'secrets-init']);
+    const checked = composeP(['run', '--rm', '--no-deps', '-T', 'proxy', 'check']);
+    const reloaded = composeP(['exec', '-T', 'proxy', 'proxy-entrypoint', 'reload']);
+    await sleep(1000);
+    stop = true; await loop;
+    const pb = await tlsProbe({});
+    check('t3', `the documented renewal (replace files, secrets-init, proxy check, proxy-entrypoint reload) serves the new certificate with no failed request (${total} requests)`,
+      staged.status === 0 && checked.status === 0 && reloaded.status === 0 && pb.cert?.fingerprint256 && pb.cert.fingerprint256 !== pa.cert?.fingerprint256 && failed === 0, `${out(staged)}\n${out(checked)}\n${out(reloaded)}\nfailed=${failed}`);
+    // A bad replacement is checked and refused; the old certificate keeps serving.
+    put('a', 'b');
+    const stagedBad = composeP(['run', '--rm', '--no-deps', '-T', 'secrets-init']);
+    const checkedBad = composeP(['run', '--rm', '--no-deps', '-T', 'proxy', 'check']);
+    const reloadedBad = composeP(['exec', '-T', 'proxy', 'proxy-entrypoint', 'reload']);
+    const pc = await tlsProbe({});
+    check('t4', 'a bad replacement fails `proxy check`, is not applied by reload, and the previous certificate keeps serving', stagedBad.status === 0 && checkedBad.status !== 0 && reloadedBad.status !== 0 && pc.cert?.fingerprint256 === pb.cert?.fingerprint256 && /NOT applied/.test(out(reloadedBad)), `${out(checkedBad)}\n${out(reloadedBad)}`);
+    // Back to the evaluation setting for the rest of the run.
+    for (const f of readdirSync(tlsDir)) if (f !== 'README.md') rmSync(path.join(tlsDir, f), { force: true });
+    r = await up('back to evaluation');
+    check('t5', 'back to evaluation mode: the stack comes up again with the labelled certificate', r.ok && /EVALUATION/.test(JSON.stringify((await tlsProbe({})).cert?.subject ?? {})), r.text.slice(-400));
+  }
+
+  // backup by hand and restore (the README's procedure)
+  {
+    const pgsh = (cmd, input) => spawnSync('docker', composeArgs(['exec', '-T', 'postgres', 'sh', '-c', `PGPASSWORD=$(cat /run/secrets/postgres_password); export PGPASSWORD; ${cmd}`]), { cwd: BUNDLE, env: cleanEnv(), encoding: null, input, maxBuffer: 1024 * 1024 * 1024 });
+    const count = (sql) => Number(pgsh(`psql -h 127.0.0.1 -U dynodoc -d dynodoc -tAc "${sql}"`).stdout.toString().trim());
+    const before = { events: count('select count(*) from event'), identities: count('select count(*) from identity'), docs: count('select count(*) from document') };
+    info(`before backup: ${JSON.stringify(before)}`);
+    const dump = pgsh('pg_dump -h 127.0.0.1 -U dynodoc -Fc dynodoc');
+    const file = path.join(BUNDLE, 'backups', 'smoke.dump');
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, dump.stdout);
+    check('z1', `the by-hand backup (pg_dump -Fc through docker compose exec) writes a custom-format dump (${(dump.stdout.length / 1024).toFixed(0)} KiB)`, dump.status === 0 && dump.stdout.subarray(0, 5).toString() === 'PGDMP' && dump.stdout.length > 10000, dump.stderr.toString());
+    // Restore over the production database: stop the writers, recreate the database, load the dump, start.
+    compose(['stop', 'proxy', 'web', 'api']);
+    const reset = pgsh('psql -h 127.0.0.1 -U dynodoc -d postgres -v ON_ERROR_STOP=1 -c "DROP DATABASE dynodoc" -c "CREATE DATABASE dynodoc"');
+    const restore = pgsh('pg_restore -h 127.0.0.1 -U dynodoc -d dynodoc --no-owner --exit-on-error', readFileSync(file));
+    check('z2', 'restore: database recreated and the dump loaded with pg_restore, no errors', reset.status === 0 && restore.status === 0, `${reset.stderr}${restore.stderr}`.slice(0, 800));
+    const upAgain = await up('after restore');
+    check('z3', 'docker compose up -d after a restore re-applies the login and grants and starts everything (init is the same step as an upgrade)', upAgain.ok, upAgain.text.slice(-800));
+    const after = { events: count('select count(*) from event'), identities: count('select count(*) from identity'), docs: count('select count(*) from document') };
+    check('z4', 'the restored database has the same event, identity and document counts', JSON.stringify(before) === JSON.stringify(after) && before.events > 0, `${JSON.stringify(before)} vs ${JSON.stringify(after)}`);
+    const verify = compose(['--profile', 'maintenance', 'run', '--rm', '-T', 'database-admin', 'verify-snapshots', '--all']);
+    check('z5', 'docker compose run --rm database-admin verify-snapshots --all passes on the restored database', verify.status === 0, out(verify).slice(-600));
+    const cr2 = compose(['--profile', 'maintenance', 'run', '--rm', '-T', 'database-admin', 'check-runtime']);
+    check('z6', 'database-admin check-runtime passes after the restore (runtime login re-granted)', cr2.status === 0, out(cr2).slice(-600));
+    if (session) {
+      const ok3 = await waitFor('after restore', async () => (await request('/healthz')).status === 200, 120000);
+      let kept = false;
+      try { if (ok3) { await flow.documentStillThere({ page: session.page, title: TITLE, text: TEXT }); kept = true; } } catch (error) { info(error.message.split('\n')[0]); }
+      check('z7', 'after the restore the document is there and the browser session still works', kept, '');
+    }
   }
 
   if (session) await session.browser.close();
