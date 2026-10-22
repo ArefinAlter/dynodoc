@@ -105,7 +105,9 @@ services:
     user: "999:999"
     restart: "no"
     <<: *hardening
-    tmpfs: ["/tmp:size=8m"]
+    # The PostgreSQL image declares its data directory as a volume; this job never uses it, and a
+    # tmpfs there stops Docker from leaving an empty anonymous volume behind on every run.
+    tmpfs: ["/tmp:size=8m", "/var/lib/postgresql/data:size=1m"]
     volumes:
       - secrets-db:/run/secrets:ro
       - type: bind

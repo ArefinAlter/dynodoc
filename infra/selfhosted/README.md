@@ -48,7 +48,7 @@ The jobs, in order, each of which must succeed before the next starts:
 
 - A Linux machine (x86-64; arm64 images build but are not tested) with Docker Engine and Compose
   **v2.24 or newer** (`docker compose version`). Docker Desktop works for evaluation.
-- About 4 GB of memory and 10 GB of disk for a trial. Idle, the four services use about 120 MiB;
+- About 4 GB of memory and 10 GB of disk for a trial. Idle, the four services use about 110 MiB;
   their limits add up to 5.25 GiB (`web` 1 GiB, `api` 2 GiB, `postgres` 2 GiB, `proxy` 256 MiB).
 - Node 20 or newer, **or** the `tools` image (below), to create the settings files.
 - For anything beyond a trial: a DNS name for the machine, and an outbound mail server (SMTP) so
@@ -264,7 +264,7 @@ stale copy of a removed secret is removed on the next `up`. After you change a s
 
 *Docker Desktop.* Bind-mounted files appear as root-owned 0777 inside containers; the staging step
 makes that irrelevant. Ports below 1024 may be taken by other software (IIS, WSL): use
-`DYNODOC_HTTP_PORT`/`DYNODOC_HTTPS_PORT`. Do not use `--user` with a Windows path.
+`DYNODOC_HTTP_PORT`/`DYNODOC_HTTPS_PORT`.
 
 ## Day to day
 
