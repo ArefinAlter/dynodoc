@@ -1,0 +1,36 @@
+{
+  "note": "Occurrences of the hosted service's hostnames and the operator's facts that remain in the built web server (node scripts/audit-hosted-strings.mjs --check fails on anything else). Acceptance criterion 6 of Phase 0 (no file in the shipped images contains dynodoc.online outside third-party notices) holds only when this list is empty; it shrinks as the items below are done. See docs/SELF-HOSTED-EDITION.md section 13.2.",
+  "classes": {
+    "marketing-client": {
+      "patterns": ["hosted-domain", "operator"],
+      "reason": "The (site) pages: marketing, legal and help text. Shipped, but they answer 404 in self-hosted mode and no page outside them loads these files. Leaving them out of the image needs a build that excludes the (site) route group (image pipeline, P0-6)."
+    },
+    "marketing-server": {
+      "patterns": ["hosted-domain", "operator"],
+      "reason": "The same pages rendered on the server, and the llms.txt, sitemap and /source code. 404 in self-hosted mode."
+    },
+    "shared-server": {
+      "patterns": ["hosted-domain"],
+      "max": 3,
+      "reason": "Hosted-mode values in code every mode loads, dormant in self-hosted mode: the hosted preset (src/lib/server/config/hosted.js), the hosted search-engine constants (src/lib/seo/site.ts) and the hosted robots.txt body (src/routes/robots.txt). They cannot be removed from a build that serves both modes."
+    },
+    "shared-client": {
+      "patterns": [],
+      "reason": "Nothing: scripts that every page loads name no hosted host and no operator fact."
+    },
+    "static-asset": {
+      "patterns": ["hosted-domain", "operator"],
+      "paths": [
+        "^client/\\.well-known/security\\.txt$",
+        "^client/brand/social\\.svg$",
+        "^client/connectors/packages/",
+        "^client/examples/"
+      ],
+      "reason": "Files served as they are: the hosted security.txt and social image (static/), the add-in packages built for app.dynodoc.online (P0-7 generates them per installation), and demo spreadsheets whose sample data names a city."
+    },
+    "sourcemap": {
+      "patterns": ["hosted-domain", "operator"],
+      "reason": "Server source maps repeat the source of the files above. They are not needed to run the server and can be left out of an image."
+    }
+  }
+}

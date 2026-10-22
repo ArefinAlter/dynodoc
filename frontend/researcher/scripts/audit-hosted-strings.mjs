@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 // Hosted-string audit of a built web server (acceptance criterion 6 of Phase 0 in
 // docs/SELF-HOSTED-EDITION.md: "no file in the shipped images contains dynodoc.online outside
 // of third-party notices"). It scans every file under the build directory for the hosted
@@ -21,7 +20,7 @@
 // usage: node scripts/audit-hosted-strings.mjs [--build build] [--json out.json] [--check] [--strict]
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, posix, relative, resolve, sep } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { unzipSync, strFromU8 } from 'fflate';
 
 /** What to look for. `exception` marks a hit that is documented elsewhere and allowed. */
@@ -108,19 +107,10 @@ async function routeFiles(buildDir) {
   const manifestPath = join(buildDir, 'server', 'manifest.js');
   if (!existsSync(manifestPath)) return null;
   const text = readFileSync(manifestPath, 'utf8');
-  const { manifest } = await import(pathToFileURL(resolve(manifestPath)).href);
-  const table = manifest._;
   const serverFile = (path) => posix.normalize(posix.join('server', path));
   const nodesText = /\bnodes:\s*\[([\s\S]*?)\],\s*remotes\b/.exec(text)?.[1] ?? '';
   const nodeFiles = [...nodesText.matchAll(/import\(\s*["']([^"']+)["']\s*\)/g)].map((m) =>
     serverFile(m[1])
-  );
-  const endpoints = new Map(
-    [
-      ...text.matchAll(
-        /\bid:\s*"([^"]+)"[\s\S]*?\bendpoint:\s*(?:null|__memo\(\(\)\s*=>\s*import\(\s*["']([^"']+)["']\s*\)\))/g
-      )
-    ].map((m) => [m[1], m[2] ? serverFile(m[2]) : null])
   );
   const marketingRoute = (id) =>
     id.startsWith('/(site)') ||
@@ -129,14 +119,17 @@ async function routeFiles(buildDir) {
   const sharedNodes = new Set();
   const marketingFiles = new Set();
   const sharedFiles = new Set();
-  for (const route of table.routes) {
-    const marketing = marketingRoute(route.id);
-    const page = route.page;
-    const indexes = page ? [page.leaf, ...page.layouts, ...page.errors] : [];
-    for (const index of indexes)
-      if (typeof index === 'number') (marketing ? marketingNodes : sharedNodes).add(index);
-    const endpoint = endpoints.get(route.id);
-    if (endpoint) (marketing ? marketingFiles : sharedFiles).add(endpoint);
+  // One block per route: id, then its page (layouts, errors, leaf) or null, then its endpoint.
+  const route =
+    /\bid:\s*"([^"]+)"[\s\S]*?\bpage:\s*(?:null|\{\s*layouts:\s*\[([^\]]*)\],\s*errors:\s*\[([^\]]*)\],\s*leaf:\s*(\d+)\s*\})\s*,\s*endpoint:\s*(?:null|__memo\(\(\)\s*=>\s*import\(\s*["']([^"']+)["']\s*\)\))/g;
+  for (const match of text.matchAll(route)) {
+    const [, id, layouts = '', errors = '', leaf, endpoint] = match;
+    const marketing = marketingRoute(id);
+    const indexes = [leaf, ...(layouts.match(/\d+/g) ?? []), ...(errors.match(/\d+/g) ?? [])]
+      .filter((index) => index !== undefined)
+      .map(Number);
+    for (const index of indexes) (marketing ? marketingNodes : sharedNodes).add(index);
+    if (endpoint) (marketing ? marketingFiles : sharedFiles).add(serverFile(endpoint));
   }
   // A node that serves both kinds of route (the root layout) is shared.
   for (const index of sharedNodes) marketingNodes.delete(index);
@@ -284,6 +277,7 @@ export async function scanBuild(buildDir) {
  */
 export function violations(scan, known) {
   const out = [];
+  const counted = new Map();
   for (const hit of scan.hits) {
     if (hit.class === 'notice') continue;
     const rule = known.classes[hit.class];
@@ -300,8 +294,22 @@ export function violations(scan, known) {
       out.push({ ...hit, why: `${extra.join(', ')} is not allowed in ${hit.class}` });
     else if (rule.paths && !rule.paths.some((pattern) => new RegExp(pattern).test(hit.file)))
       out.push({ ...hit, why: `${hit.file} is not a listed ${hit.class}` });
+    else counted.set(hit.class, (counted.get(hit.class) ?? 0) + 1);
   }
+  for (const [name, rule] of Object.entries(known.classes))
+    if (rule.max !== undefined && (counted.get(name) ?? 0) > rule.max)
+      out.push({
+        file: `(${name})`,
+        class: name,
+        found: {},
+        why: `${counted.get(name)} files, at most ${rule.max} are listed`
+      });
   return out;
+}
+
+/** The hits that break the criterion as written: dynodoc.online outside third-party notices. */
+export function strictHits(scan) {
+  return scan.hits.filter((hit) => hit.class !== 'notice' && 'hosted-domain' in hit.found);
 }
 
 function report(scan) {
@@ -344,9 +352,7 @@ async function main() {
   }
   if (args.includes('--strict')) {
     // The acceptance criterion as written: nothing but third-party notices.
-    const bad = scan.hits.filter(
-      (hit) => hit.class !== 'notice' && Object.keys(hit.found).some((id) => id === 'hosted-domain')
-    );
+    const bad = strictHits(scan);
     console.log(
       `\nstrict: ${bad.length} file(s) outside third-party notices contain dynodoc.online.`
     );

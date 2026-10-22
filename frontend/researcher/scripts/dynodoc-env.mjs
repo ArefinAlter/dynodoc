@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 // Environment files for a self-hosted installation.
 //
 //   generate-env --dir <dir> --origin <https://...>   write a commented .env and a secrets/
