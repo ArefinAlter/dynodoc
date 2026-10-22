@@ -114,7 +114,7 @@
   <section id="dependencies">
     <h2>Dependencies</h2>
     <p>
-      These are the direct runtime dependencies as of 14 October 2026, with licenses taken from the
+      These are the direct runtime dependencies as of 22 October 2026, with licenses taken from the
       lockfiles and installed package metadata. Each keeps its own license, and so do the transitive
       packages beneath them, which are not listed here. The authoritative record is the lockfile; in
       the engine repository, <code>cargo metadata --locked</code> prints the complete Rust set. Build
@@ -142,6 +142,10 @@
             ></tr
           ><tr><td>ISC</td><td><code>@lucide/svelte</code> (icons)</td></tr><tr
             ><td>BSD-2-Clause</td><td><code>mammoth</code></td></tr
+          ><tr
+            ><td>MIT-0</td><td
+              ><code>nodemailer</code> (sends mail by SMTP; used by self-hosted installations)</td
+            ></tr
           ><tr><td>Apache-2.0</td><td><code>web-vitals</code></td></tr><tr
             ><td>MIT or GPL-3.0-or-later</td><td><code>jszip</code></td></tr
           ></tbody

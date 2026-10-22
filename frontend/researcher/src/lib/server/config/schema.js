@@ -9,6 +9,7 @@
 // DYNODOC_MODE=selfhosted turns the hosted-only parts off and requires a complete setup.
 import { ALLOW_OPEN_FILES, readBoundedFile, readSecret, Secret } from './secrets.js';
 import { HOSTED } from './hosted.js';
+import { SMTP_NAMES, loadMail } from './mail.js';
 
 /** @typedef {import('./secrets.js').Lookup} Lookup */
 /**
@@ -42,7 +43,8 @@ import { HOSTED } from './hosted.js';
  * @property {string[]} connectSrc extra `connect-src` origins on every page
  * @property {string} connectorOrigins CONNECTOR_ORIGINS as given (parsed where it is used)
  * @property {{ enabled: boolean, origins: [string, string][] }} telemetry
- * @property {string | undefined} emailFrom
+ * @property {string | undefined} emailFrom EMAIL_FROM, the sender of the Resend transport
+ * @property {import('./mail.js').MailConfig} mail which transport sends mail, and the SMTP connection
  * @property {string | undefined} googleClientId
  * @property {string | undefined} converterUrl
  * @property {string | undefined} opsStatusPath
@@ -82,6 +84,7 @@ export const KNOWN_DYNODOC_NAMES = [
   'DYNODOC_MODE',
   'DYNODOC_TELEMETRY',
   'DYNODOC_ALLOW_OPEN_SECRET_FILES',
+  'DYNODOC_MAIL_TRANSPORT',
   ...SELF_HOSTED_ONLY,
   'DYNODOC_NAMED_SNAPSHOT_STORAGE',
   'DYNODOC_PERIODIC_CHECKPOINT_STORAGE',
@@ -149,14 +152,14 @@ function distance(a, b) {
   return row[b.length];
 }
 
-/** The known DYNODOC_* names an unknown one resembles. @param {string} name */
-export function likelyTypoOf(name) {
-  if (KNOWN_DYNODOC_NAMES.includes(name)) return [];
+/** The known names an unknown one resembles. @param {string} name @param {string[]} [known] */
+export function likelyTypoOf(name, known = KNOWN_DYNODOC_NAMES) {
+  if (known.includes(name)) return [];
   const squash = (/** @type {string} */ s) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
-  return KNOWN_DYNODOC_NAMES.filter((known) => {
-    if (squash(known) === squash(name)) return true;
-    const limit = known.length > 20 ? 3 : 2;
-    return distance(name, known) <= limit;
+  return known.filter((candidate) => {
+    if (squash(candidate) === squash(name)) return true;
+    const limit = candidate.length > 20 ? 3 : 2;
+    return distance(name, candidate) <= limit;
   });
 }
 
@@ -277,7 +280,8 @@ export function loadConfig(env) {
       'SESSION_SECRET and WEB_SERVICE_KEY have the same value; generate each secret independently';
     (self ? problems : warnings).push(message);
   }
-  const resend = secret('RESEND_API_KEY').secret;
+  const resendRead = secret('RESEND_API_KEY');
+  const resend = resendRead.secret;
   const googleSecret = secret('GOOGLE_CLIENT_SECRET').secret;
   const converterKey = secret('CONVERTER_KEY').secret;
   const emailFrom = get('EMAIL_FROM');
@@ -458,12 +462,35 @@ export function loadConfig(env) {
     }
   }
 
+  // --- Mail ---
+  const mail = loadMail({
+    lookup,
+    get,
+    secret,
+    problems,
+    warnings,
+    self,
+    devAuth,
+    emailLink,
+    brand,
+    origin,
+    resendKey: resend,
+    emailFrom,
+    // Another problem is already reported for these inputs: do not add one about the same thing.
+    inputsBroken: resendRead.failed || problems.some((p) => p.startsWith('AUTH_EMAIL_LINK'))
+  });
+
   // --- The reader's allow-file switch and typos ---
   const open = lookup(ALLOW_OPEN_FILES);
   if (open !== undefined && open !== '' && open !== 'true' && open !== 'false')
     warnings.push(`${ALLOW_OPEN_FILES} should be true or false; "${shown(open)}" counts as false`);
   for (const name of Object.keys(env).filter((n) => n.startsWith('DYNODOC_'))) {
     const near = likelyTypoOf(name);
+    if (near.length)
+      warnings.push(`${name} is not a known setting; did you mean ${near.join(' or ')}?`);
+  }
+  for (const name of Object.keys(env).filter((n) => n.startsWith('SMTP_'))) {
+    const near = likelyTypoOf(name, SMTP_NAMES);
     if (near.length)
       warnings.push(`${name} is not a known setting; did you mean ${near.join(' or ')}?`);
   }
@@ -513,6 +540,7 @@ export function loadConfig(env) {
     connectorOrigins: lookup('CONNECTOR_ORIGINS') ?? '',
     telemetry: { enabled: telemetryOn, origins: telemetryOrigins },
     emailFrom,
+    mail,
     googleClientId,
     converterUrl,
     opsStatusPath: get('OPS_STATUS_PATH'),

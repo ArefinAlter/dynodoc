@@ -1,5 +1,48 @@
 # Engine evolution handoff
 
+## Source: self-hosted Phase 0, SMTP mail transport (22 October 2026)
+
+P0-3 is built in source for the web tier (the operator-issued sign-in link, the outbox and the `dynodoctl` call are not). A mail
+transport abstraction has three providers selected by `DYNODOC_MAIL_TRANSPORT`: `resend` (the hosted behaviour, pinned by a golden
+test written before the refactor and unchanged after it), `smtp` and `none`; the default is `resend` when `RESEND_API_KEY` is set,
+otherwise `none`. With `none` the interface says so plainly: email sign-in is unavailable and an invitation shows its link to the
+inviter to copy, never a silent drop. A self-hosted installation with email sign-in on and no transport that can send is a startup
+error unless `AUTH_EMAIL_LINK=off` (a warning in hosted; `DEV_AUTH=true` also only warns, so the existing e2e stacks keep working).
+
+**SMTP.** Library: nodemailer 10.1.0, exact pin, the only new dependency, loaded only when the transport is `smtp`; licence MIT-0, zero
+runtime dependencies, published with npm provenance; the integrity hash in the lockfile equals the registry tarball's (checked again
+independently when merging) and `pnpm 10.34.5 install --frozen-lockfile --lockfile-only` accepts the hand-added lockfile entries
+(pnpm 11 had rewritten the whole file, so those three entries were added by hand). An in-house client was rejected as security-
+critical parsing. Settings (documented in SELF-HOSTED-DEPLOYMENT-GUIDE.md 7.2): `SMTP_HOST`, `SMTP_PORT` (587 / 465 / 25 by
+security mode), `SMTP_SECURITY` = `tls` | `starttls` (default) | `none-local`, `SMTP_USER` with `SMTP_PASSWORD[_FILE]`, `SMTP_FROM`,
+`SMTP_FROM_NAME`, `SMTP_REPLY_TO`, `SMTP_CA_FILE`, `SMTP_TIMEOUT_SECONDS`; fixed in code: 3 attempts, 10 recipients, 256 KiB, TLS
+1.2 minimum. Certificate and host-name verification are always on (`NODE_TLS_REJECT_UNAUTHORIZED=0` only warns and mail still
+verifies); credentials are never sent in clear; a server that omits STARTTLS is refused; `none-local` accepts only loopback or
+private addresses, checked at send time. 4xx and network errors retry with jitter, 5xx never; header injection, quoted addresses,
+too many recipients and oversize messages are refused before any connection. Logs carry provider, outcome, a short error class and
+a message id, never a recipient or secret. `scripts/check-mail.mjs` performs the real handshake and prints plain diagnostics (for the
+future `dynodoctl`); `dynodoc-env.mjs` writes `AUTH_EMAIL_LINK=off` by default or a checked SMTP block.
+
+**Behaviour beyond the brief (hosted):** the Resend path now logs one line per send (no recipient, no secret); `RESEND_API_KEY`
+without `EMAIL_FROM` counts as not configured instead of attempting a send that fails; a hosted invitation response gains
+`invitation_link` only when no email went out; the invitation text in self-hosted mode names the brand and the sign-in methods that
+exist (hosted wording pinned unchanged). Existing tests changed only where the new rule makes a complete self-hosted setup need mail;
+no assertion was loosened.
+
+**Evidence (local; Actions of this repository cannot run).** vitest 84 files, 943 passed, 4 skipped (Unix file modes) on the merged
+tree, including 51 integration tests against an in-process SMTP server with a real self-signed certificate made at test time
+(greeting, EHLO, STARTTLS, AUTH PLAIN/LOGIN, 4xx then success, 5xx, silence, AUTH only before TLS, wrong host name, STARTTLS
+downgrade); prettier, eslint, svelte-check, build and the hosted-string audit clean; Chromium e2e on an isolated stack (the sign-in link
+arrives at the configured origin and signs in once, a refusal is shown plainly, the invitation is emailed with the inviter as Reply-To
+and an escaped title, the no-transport invitation link is shown): 4 new specs; the whole hosted Chromium suite 128 passed, 6 skipped
+by design, 0 failed. Twelve manual mutations each failed a test (certificate verification off, STARTTLS not required, plaintext
+to a public address, CR/LF in headers, HTML escaping, retry on 5xx, TLS minimum, recipient in the log, the sign-in rule and others).
+**Not independently reviewed** (the author's mutations are the only adversarial check so far). **Not verified:** any real mail server
+or provider (Postfix, Exchange, a hosted relay, a private CA), IPv6 targets, the Unix file-mode tests on Linux, the CI job. Not built:
+outbox or queue, operator-issued sign-in links (so P0-3 is only partly done), XOAUTH2, DKIM signing (guidance only), bounce handling,
+a cap on concurrent sends (a flood of sign-in requests can open many SMTP connections; the API's per-address limits still apply).
+Questions for the owner: bump nodemailer to 10.1.7 or later once it has aged; add a small semaphore on concurrent sends.
+
 ## Source: Android app built and run on an emulator (22 October 2026)
 
 The Tauri shell now has a committed, hardened Android project (`apps/desktop/src-tauri/gen/android`) and was built, installed

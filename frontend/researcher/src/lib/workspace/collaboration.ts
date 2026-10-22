@@ -111,7 +111,7 @@ export async function inviteByEmail(
   email: string,
   role: string,
   options: { notify: boolean; note?: string }
-): Promise<{ email_status: EmailStatus }> {
+): Promise<{ email_status: EmailStatus; invitation_link?: string }> {
   const response = await fetch('/api/invite', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -126,16 +126,20 @@ export async function inviteByEmail(
   return data;
 }
 /** What happened to the invitation email, in plain words. */
-export function invitationNotice(status: EmailStatus, email: string) {
+export function invitationNotice(status: EmailStatus, email: string, link?: string) {
   switch (status) {
     case 'sent':
       return `Access updated. We emailed ${email} an invitation with a link.`;
     case 'rate_limited':
       return `Access updated. No email was sent because ${email} was invited a few minutes ago.`;
     case 'failed':
-      return `Access updated, but the invitation email could not be sent. Copy the document link and send it to ${email} yourself.`;
+      return link
+        ? `Access updated, but the invitation email could not be sent. Send ${email} this link yourself: ${link}`
+        : `Access updated, but the invitation email could not be sent. Copy the document link and send it to ${email} yourself.`;
     case 'not_configured':
-      return `Access updated. Email is not set up on this server, so send ${email} the link yourself.`;
+      return link
+        ? `Access updated. Email is not set up on this server, so no invitation was sent. Send ${email} this link yourself: ${link}`
+        : `Access updated. Email is not set up on this server, so send ${email} the link yourself.`;
     default:
       return 'Access updated. They will see it in their workspace when they sign in.';
   }

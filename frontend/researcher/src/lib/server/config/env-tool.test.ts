@@ -25,6 +25,8 @@ let counter = 0;
 const fresh = () => join(root, `install-${counter++}`);
 const unix = process.platform !== 'win32';
 const ORIGIN = 'https://dynodoc.example.test';
+// Email sign-in needs a mail server; without one generate-env turns it off (tested below).
+const SMTP = { smtpHost: 'mail.example.test', smtpFrom: 'docs@example.test' };
 
 const secretValues = (dir: string) =>
   Object.fromEntries(
@@ -38,7 +40,12 @@ const secretsOf = (value: Record<string, string>) => Object.values(value);
 describe('generate-env', () => {
   it('writes a commented .env and one random file per secret, and prints no secret', () => {
     const dir = fresh();
-    const { written, lines } = generateEnv({ dir, origin: ORIGIN, orgName: 'Acme Research Ltd.' });
+    const { written, lines } = generateEnv({
+      dir,
+      origin: ORIGIN,
+      orgName: 'Acme Research Ltd.',
+      ...SMTP
+    });
     expect(written).toHaveLength(7);
     const values = secretValues(dir);
     expect(Object.keys(values).sort()).toEqual(
@@ -119,7 +126,7 @@ describe('generate-env', () => {
   });
   it('adds the converter key and address only when asked', () => {
     const dir = fresh();
-    generateEnv({ dir, origin: ORIGIN, withConverter: true });
+    generateEnv({ dir, origin: ORIGIN, withConverter: true, ...SMTP });
     expect(secretValues(dir).converter_key).toMatch(/^[0-9a-f]{64}$/);
     const env = readFileSync(join(dir, '.env'), 'utf8');
     expect(env).toMatch(/^CONVERTER_KEY_FILE=.*converter_key$/m);
@@ -142,10 +149,73 @@ describe('generate-env', () => {
   });
 });
 
+describe('generate-env, mail', () => {
+  it('turns email sign-in off, and says why, when no mail server is given', () => {
+    const dir = fresh();
+    generateEnv({ dir, origin: ORIGIN });
+    const env = readFileSync(join(dir, '.env'), 'utf8');
+    expect(env).toMatch(/^AUTH_EMAIL_LINK=off$/m);
+    expect(env).toMatch(/^DYNODOC_MAIL_TRANSPORT=none$/m);
+    expect(env).toContain('with email on and no way to send the link, the server will not start');
+    expect(env).toContain('# SMTP_HOST=smtp.example.org');
+    expect(checkConfig({ dir })).toEqual({
+      ok: true,
+      problems: [],
+      warnings: [],
+      mode: 'selfhosted'
+    });
+  });
+  it('writes a working SMTP block when a mail server is given', () => {
+    const dir = fresh();
+    generateEnv({ dir, origin: ORIGIN, ...SMTP, smtpSecurity: 'tls', smtpPort: '465' });
+    const env = readFileSync(join(dir, '.env'), 'utf8');
+    expect(env).toMatch(/^DYNODOC_MAIL_TRANSPORT=smtp$/m);
+    expect(env).toMatch(/^SMTP_HOST=mail\.example\.test$/m);
+    expect(env).toMatch(/^SMTP_SECURITY=tls$/m);
+    expect(env).toMatch(/^SMTP_PORT=465$/m);
+    expect(env).toMatch(/^SMTP_FROM=docs@example\.test$/m);
+    expect(env).not.toMatch(/^AUTH_EMAIL_LINK=/m);
+    expect(checkConfig({ dir })).toMatchObject({ ok: true, warnings: [] });
+  });
+  it('creates an empty password file for a login, and check-config says to fill it', () => {
+    const dir = fresh();
+    const { written, lines } = generateEnv({
+      dir,
+      origin: ORIGIN,
+      ...SMTP,
+      smtpUser: 'docs-sender'
+    });
+    expect(written).toHaveLength(8);
+    expect(readFileSync(join(dir, 'secrets', 'smtp_password'), 'utf8')).toBe('');
+    expect(lines.join('\n')).toContain('smtp_password: the mail server password. It is EMPTY');
+    const env = readFileSync(join(dir, '.env'), 'utf8');
+    expect(env).toMatch(/^SMTP_USER=docs-sender$/m);
+    expect(env).toMatch(/^SMTP_PASSWORD_FILE=.*secrets\/smtp_password$/m);
+    expect(checkConfig({ dir }).problems.join('\n')).toMatch(/SMTP_PASSWORD_FILE .*is empty/);
+    writeFileSync(join(dir, 'secrets', 'smtp_password'), 'relay-password\n');
+    expect(checkConfig({ dir }).ok).toBe(true);
+  });
+  it('rejects a bad mail option before writing anything', () => {
+    for (const [options, message] of [
+      [{ smtpHost: 'smtp://mail.example.test', smtpFrom: 'docs@example.test' }, /SMTP_HOST/],
+      [{ smtpHost: 'mail.example.test' }, /--smtp-from is required/],
+      [{ smtpFrom: 'docs@example.test' }, /--smtp-host is required/],
+      [{ smtpHost: 'mail.example.test', smtpFrom: 'not an address' }, /SMTP_FROM/],
+      [{ ...SMTP, smtpSecurity: 'maybe' }, /SMTP_SECURITY must be/],
+      [{ ...SMTP, smtpPort: '99999' }, /SMTP_PORT/],
+      [{ ...SMTP, smtpHost: '203.0.113.7', smtpSecurity: 'none-local' }, /loopback or private/]
+    ] as [Record<string, string>, RegExp][]) {
+      const dir = fresh();
+      expect(() => generateEnv({ dir, origin: ORIGIN, ...options })).toThrow(message);
+      expect(existsSync(dir)).toBe(false);
+    }
+  });
+});
+
 describe('check-config', () => {
   const generated = () => {
     const dir = fresh();
-    generateEnv({ dir, origin: ORIGIN });
+    generateEnv({ dir, origin: ORIGIN, ...SMTP });
     return dir;
   };
   it('accepts what generate-env wrote, with no warning', () => {

@@ -95,17 +95,18 @@
   async function invite() {
     const address = email.trim();
     let status: Awaited<ReturnType<typeof inviteByEmail>>['email_status'] = 'skipped';
+    let link: string | undefined;
     await run('Sharing…', async () => {
-      status = (
-        await inviteByEmail({ document_id: documentId }, address, role, {
-          notify,
-          note: note.trim()
-        })
-      ).email_status;
+      const result = await inviteByEmail({ document_id: documentId }, address, role, {
+        notify,
+        note: note.trim()
+      });
+      status = result.email_status;
+      link = result.invitation_link;
       email = '';
       note = '';
     });
-    if (!error) notice = invitationNotice(status, address);
+    if (!error) notice = invitationNotice(status, address, link);
   }
   const change = (address: string, next: MemberRole | 'remove') =>
     run('Updating access…', () => shareDocument(documentId, address, next), 'Access updated.');

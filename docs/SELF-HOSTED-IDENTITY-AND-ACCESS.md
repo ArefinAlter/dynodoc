@@ -590,6 +590,12 @@ returns a generic 503.
 | Authentication | AUTH PLAIN or LOGIN over TLS; unauthenticated relay by source address (common on intranets); OAuth2 token authentication (XOAUTH2) for hosted relays is a candidate extension, not v1 |
 | Library | A maintained Node SMTP client (Nodemailer is the usual candidate; maintenance status **unverified, check at build time**) |
 
+**As built (22 October 2026):** the settings are `DYNODOC_MAIL_TRANSPORT` and `SMTP_HOST`, `SMTP_PORT`,
+`SMTP_SECURITY` (`tls`, `starttls`, `none-local`), `SMTP_USER`, `SMTP_PASSWORD[_FILE]`, `SMTP_FROM`,
+`SMTP_FROM_NAME`, `SMTP_REPLY_TO`, `SMTP_CA_FILE` and `SMTP_TIMEOUT_SECONDS`, not the names in the table
+above; the library is nodemailer 10.1.0. Plain text is possible only with `none-local`, to a
+loopback or private address. The deployment guide 7.2 has the rules, the messages and examples.
+
 DKIM, SPF and DMARC are the relay's concern; Dynodoc does not sign mail. The previous
 guide's note remains true: a From address does not create an inbound mailbox.
 

@@ -77,6 +77,7 @@
     "jszip": "^3.10.2",
     "katex": "^0.18.7",
     "mammoth": "^1.12.3",
+    "nodemailer": "10.1.0",
     "openapi-fetch": "^0.13.8",
     "openid-client": "^6.8.8",
     "pagedjs": "0.4.3",

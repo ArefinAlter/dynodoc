@@ -3,7 +3,8 @@
  * Access itself is granted by the engine; this only tells the person. Content is
  * built here so it can be tested without sending anything.
  */
-import { getConfig } from './config';
+import { mailConfigured, sendMail } from './mail';
+import { escapeHtml } from './mail/templates';
 
 export const ROLE_TEXT: Record<string, string> = {
   editor: 'Editor — you can edit the team version and merge changes',
@@ -26,13 +27,12 @@ export interface Invitation {
   role: string;
   link: string;
   note?: string;
+  /** Product name; the hosted service says Dynodoc. */
+  brand?: string;
+  /** Which sign-in methods the installation offers, for the line on how to sign in. */
+  google?: boolean;
+  email?: boolean;
 }
-
-const escapeHtml = (value: string) =>
-  value.replace(
-    /[&<>"']/g,
-    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!
-  );
 /** Plain printable text, one line for names, a few lines for notes. */
 export const clean = (value: string, max: number, lines = false) =>
   [...value]
@@ -48,10 +48,19 @@ export function invitationEmail(invite: Invitation) {
   const what =
     invite.kind === 'document' ? `“${invite.itemName}”` : `the ${invite.itemName} workspace`;
   const role = ROLE_TEXT[invite.role] || invite.role;
-  const subject = `${invite.inviterName || invite.inviterEmail} shared ${what} with you on Dynodoc`;
-  const signIn = `Sign in with this email address (${invite.to}): choose “Continue with Google” if it is a Google account, or ask for an email sign-in link.`;
+  const brand = invite.brand || 'Dynodoc';
+  const subject = `${invite.inviterName || invite.inviterEmail} shared ${what} with you on ${brand}`;
+  const how =
+    invite.google !== false && invite.email !== false
+      ? ': choose “Continue with Google” if it is a Google account, or ask for an email sign-in link.'
+      : invite.google !== false
+        ? ': choose “Continue with Google”.'
+        : invite.email !== false
+          ? ': ask for an email sign-in link.'
+          : '.';
+  const signIn = `Sign in with this email address (${invite.to})${how}`;
   const text = [
-    `${who} shared ${what} with you on Dynodoc.`,
+    `${who} shared ${what} with you on ${brand}.`,
     `Your access: ${role}.`,
     invite.note ? `\nTheir note:\n${invite.note}\n` : '',
     `Open it: ${invite.link}`,
@@ -63,10 +72,10 @@ export function invitationEmail(invite: Invitation) {
     .filter((line, i, all) => line !== '' || all[i - 1] !== '')
     .join('\n');
   const html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#1d2f40;max-width:560px">
-<p><strong>${escapeHtml(who)}</strong> shared ${escapeHtml(what)} with you on Dynodoc.</p>
+<p><strong>${escapeHtml(who)}</strong> shared ${escapeHtml(what)} with you on ${escapeHtml(brand)}.</p>
 <p>Your access: ${escapeHtml(role)}.</p>
 ${invite.note ? `<blockquote style="margin:16px 0;padding:10px 14px;border-left:3px solid #b9d0ee;background:#f3f6f9;white-space:pre-wrap">${escapeHtml(invite.note)}</blockquote>` : ''}
-<p><a href="${escapeHtml(invite.link)}" style="display:inline-block;padding:10px 18px;border-radius:8px;background:#205bb0;color:#ffffff;text-decoration:none;font-weight:bold">Open in Dynodoc</a></p>
+<p><a href="${escapeHtml(invite.link)}" style="display:inline-block;padding:10px 18px;border-radius:8px;background:#205bb0;color:#ffffff;text-decoration:none;font-weight:bold">Open in ${escapeHtml(brand)}</a></p>
 <p style="color:#46617a;font-size:13px">${escapeHtml(signIn)}</p>
 <p style="color:#64788b;font-size:12px">You are receiving this because ${escapeHtml(invite.inviterEmail)} added you. If you were not expecting it, you can ignore this email.</p>
 </div>`;
@@ -91,10 +100,8 @@ export function allowInvitation(inviter: string, recipientKey: string, now = Dat
   return true;
 }
 
-export const emailConfigured = () => {
-  const config = getConfig();
-  return Boolean(config.secrets.resendApiKey && config.emailFrom);
-};
+/** Whether the installation can send mail at all (see ./mail). */
+export const emailConfigured = mailConfigured;
 
 export async function sendEmail(message: {
   to: string;
@@ -103,22 +110,5 @@ export async function sendEmail(message: {
   html: string;
   replyTo?: string;
 }) {
-  const config = getConfig();
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${config.secrets.resendApiKey?.expose()}`,
-      'content-type': 'application/json'
-    },
-    body: JSON.stringify({
-      from: config.emailFrom,
-      to: [message.to],
-      subject: message.subject,
-      text: message.text,
-      html: message.html,
-      ...(message.replyTo ? { reply_to: message.replyTo } : {})
-    }),
-    signal: AbortSignal.timeout(15_000)
-  });
-  if (!response.ok) throw new Error(`Email delivery failed (${response.status})`);
+  await sendMail({ kind: 'invitation', ...message });
 }
