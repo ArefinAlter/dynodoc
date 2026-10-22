@@ -670,7 +670,37 @@ const phases = {
     open(`dynodoc://signin?code=${code}&state=${state}`);
     await sleep(3500);
     check(logs().some((l) => l.includes('sign-in link refused -> NothingPending')), 'the same link again (a replay) finds nothing pending', logs().join(' | '));
+    // 6. Forced login: from an ordinary page, a script cannot send the window to the finish page with
+    //    a fragment or a query in its address (the shell's navigation rule; the finish page, the token
+    //    and the bridge are the other layers). A server REDIRECT to the finish page is not tried: the
+    //    hosted cloud has no endpoint that redirects there (decision 017 says so).
+    await done.eval(`location.href = '/zzz-forced-login-probe'`);
     done.close();
+    const ordinary = await waitFor(async () => {
+      try {
+        const p = await connect();
+        if ((await here(p)).endsWith('/zzz-forced-login-probe')) return p;
+        p.close();
+      } catch { /* the web view is changing page */ }
+      return null;
+    }, 'an ordinary page of the cloud', 40);
+    check(Boolean(ordinary), 'the window moves to an ordinary page of the server');
+    const stay = String(await ordinary.eval(`window.__stay = String(Math.random())`));
+    const forged = `code=${hex(64)}&state=${'c'.repeat(32)}&verifier=${'d'.repeat(43)}`;
+    for (const [what, script] of [
+      ['location.href with a fragment', `location.href = '/app-signin/finish#${forged}'`],
+      ['location.href with a query', `location.href = '/app-signin/finish?${forged}'`],
+      ['a trailing slash and a fragment', `location.href = '/app-signin/finish/#${forged}'`],
+    ]) {
+      clearLogs();
+      await ordinary.eval(script);
+      await sleep(2500);
+      let kept = 'lost';
+      let where = '';
+      try { kept = String(await ordinary.eval('window.__stay')) === stay ? 'kept' : 'lost'; where = await here(ordinary); } catch { /* the page went away: lost */ }
+      check(kept === 'kept' && where.endsWith('/zzz-forced-login-probe') && logs().some((l) => l.includes('app-signin/finish') && l.includes('-> Deny')), `a page cannot send the window to the finish page by ${what}`, `marker ${kept}, ${where}, ${logs().filter((l) => l.includes('finish')).join(' | ').slice(0, 160)}`);
+    }
+    ordinary.close();
   },
 
   async dark() {

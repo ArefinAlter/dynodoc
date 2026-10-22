@@ -103,7 +103,7 @@ export async function appSigninThroughEdge({ page, context, baseUrl }) {
 
   // 2. Continue works: the form posts its real Origin although the proxy says no-referrer
   const referrerHeader = confirmation.headers()['referrer-policy'];
-  const meta = await page.locator('meta[name="referrer"]').getAttribute('content');
+  const meta = await page.locator('meta[name="referrer"]').getAttribute('content', { timeout: 3000 }).catch(() => null);
   const client = await context.newCDPSession(page);
   await client.send('Page.enable');
   const links = [];
