@@ -1,5 +1,56 @@
 # Dynodoc: intent, current implementation and remaining work
 
+## Source: self-hosted Phase 0, `dynodoctl` v1 (23 October 2026)
+
+P0-5 is built in source as the crate `crates/dynodoctl` (one Rust binary, no async runtime, every dependency already in the lockfile;
+rustls client for the TLS and HTTP checks). It drives `docker compose` through a runner trait with a scripted fake, so every command is
+unit-tested without Docker. **Licence: treated as proprietary and not mirrored to the public MIT engine repository** (licensing document
+4.1); `crates/dynodoctl/tests/isolation.rs` fails if a mirrored crate depends on it. Reference, exit codes, decisions and runbooks:
+`docs/SELF-HOSTED-OPERATIONS.md`.
+
+**Commands** (all with `--json`; exit 0 done, 1 a check or step failed, 2 wrong arguments, 3 refused before changing anything, 4 warnings
+only): `install` (preflight, settings through the generator `dynodoc-env.mjs`, up, wait for health; refuses to overwrite secrets;
+`--dry-run`), `configure` (show, set, check, apply for 19 named settings, with the web and mail pre-flights), `status`, `backup`
+(consistent `pg_dump`, settings and secrets at 0600, manifest, retention, optional `--verify`), `restore-verify` (restore into a
+throwaway database, run `verify-snapshots --all` and `verify`, report, tear down), `restore --into-live` (typed confirmation; loads
+beside the live database and swaps names in one transaction, with a journal), `rehearse-lite` (restore the latest backup, run the NEW
+version's migrations, grants, checks, verification and an API smoke), `upgrade` (mandatory backup, digest check, rehearsal, switch,
+health check, rollback instructions), `rollback`, `recover` (finishes or undoes an interrupted swap), `support-bundle` and
+`verify-delivery` (add-in check is a named stub that reports NOT BUILT). Confirmations are typed phrases; no environment or `--yes`
+path reaches a destructive step.
+
+**Review.** An independent adversarial review found 3 High and 10 Medium issues; all were fixed with tests and mutations: a hostile
+backup could write files outside the install directory (manifest paths now confined to known prefixes, written with exclusive create,
+checked against `SHA256SUMS`; the dump is rendered and screened for `PROGRAM`, `ALTER SYSTEM`, roles, event triggers, foreign data
+wrappers, unshipped extensions and file functions before any service stops; **restoring a backup means trusting it, and the screen is
+not a sandbox**); `rollback` changed `.env` before validating the backup; an interrupted or failed swap left no recovery path (now a
+journal, signal handling, automatic swap-back after any post-swap failure, `recover`, and the runbooks "Undo a restore" and
+"interrupted swap"); gate bypasses (local upgrade with a version, install with an overlay on a live installation, stale overlay, digest
+check not exact or not covering every service); scratch-database drop of another run's database; silent skip of the safety backup;
+`verify-delivery` false assurance (evaluation taken from the server's own certificate, prefix redirect match, a small deny-list of
+outside hosts, crawl cap reported as Pass, chunk-size overflow panic, no deadline); redaction gaps in the support bundle; retention
+across installations; Windows 0600 not enforced (an owner-only ACL is now applied and read back, and the step fails unless
+`--allow-insecure-files`); no project-name guard; a vacuous non-terminal test.
+
+**Evidence (local; Actions of this repository cannot run).** 373 unit tests on Windows and 375 on Linux (a `rust:1` container ran the
+Unix-only paths for the first time) plus 4 isolation tests; fault injection fails every restore step (10 cases) and checks swap-back,
+restart and the journal; 52 manual mutations, all detected. Real Docker run on this PC (Docker Desktop 29.5, evaluation TLS, 14
+documents): install 29 s, backup `--verify` 7 s (the screen passed a real 756-entry dump), volume plus `.env` plus secrets deleted then
+`restore --into-live` 37.5 s with verification, a failed start after the swap swapped back automatically in 16 s with data intact,
+a crash after the swap recovered with `recover` in 23 s, a real dump containing `file_fdw` was refused, a tampered dump was refused
+by rollback with `.env` unchanged, support bundle with 0 of 7 real secret values in 21 files, `verify-delivery` over 195 files with
+warnings only. The first run had found seven defects unit tests could not see (chmod on a Docker bind mount, missing ACLs after
+`--no-acl`, slow IPv6 connect, relative `./_app` references, YAML-structure redaction and others).
+
+**Not run / limits.** Linux host, arm64, a real CA, a real mail server, a real release-to-release upgrade (only `--local` with the same
+version), a 1,000-document dataset (14 used), remote backup targets, signed bundles, air-gap, HA, the converter profile, real Windows
+Ctrl-C. Backups are unauthenticated and unencrypted (0600 with a loud warning; `--secrets-to` separates the secrets); redaction cannot
+know a secret that has no sensitive name nearby; Windows administrators and SYSTEM still read owner-only files; `verify-delivery` cannot
+probe TLS 1.0 and 1.1 (the claim was removed). The review of the second round of fixes was NOT repeated by an independent reviewer.
+`verify-delivery` still reports criterion 6 of Phase 0 as open (route modules name the hosted domain). Questions for the owner: keep
+`dynodoctl` proprietary; encrypt the secrets copy (and with what); make an off-host backup target mandatory at install; should
+`verify-delivery` fail or warn on criterion 6 until P0-6 closes.
+
 ## Source: native-app sign-in hand-over (decision 017) (23 October 2026)
 
 The desktop and Android apps can now sign in through the system browser. Design (decision 017, RFC 8252 with PKCE): the app makes a
