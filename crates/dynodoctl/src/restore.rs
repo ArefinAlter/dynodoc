@@ -462,3 +462,7 @@ pub fn save_report(ctx: &Ctx<'_>, report: &RestoreReport, kind: &str) -> Result<
     let _ = iso;
     Ok(path)
 }
+
+#[cfg(test)]
+#[path = "tests/restore.rs"]
+mod tests;

@@ -333,3 +333,7 @@ pub fn newest_age_days(ctx: &Ctx<'_>) -> Option<(String, i64)> {
     let created = chrono::DateTime::parse_from_rfc3339(&newest.manifest.created_utc).ok()?;
     Some((newest.manifest.created_utc.clone(), ((ctx.now)() - created.with_timezone(&chrono::Utc)).num_days()))
 }
+
+#[cfg(test)]
+#[path = "tests/backup.rs"]
+mod tests;

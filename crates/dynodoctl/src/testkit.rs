@@ -69,6 +69,7 @@ pub fn healthy_runner() -> FakeRunner {
     r.on("pg_database_size", 0, "123456\n");
     r.on("_sqlx_migrations where success", 0, FACTS_LINE);
     r.on("to_regclass", 0, "t\n");
+    r.on("select 1 from pg_database", 0, "1\n");
     r.on("select id from document", 0, "0190a1b2-0000-7000-8000-000000000001\n0190a1b2-0000-7000-8000-000000000002\n");
     r.on("pg_restore --list", 0, "; Archive\n1; 1 1 SCHEMA - public x\n2; 1 2 TABLE public event x\n");
     r.on("verify-snapshots --all", 0, "OK: document a; 1 snapshots; 3 replayed events; through seq 3\nOK: document b; 1 snapshots; 2 replayed events; through seq 2\n");
@@ -76,6 +77,41 @@ pub fn healthy_runner() -> FakeRunner {
     r.on("engine-cli", 0, "");
     r.on_file("pg_dump", b"PGDMP\x01\x0e fake custom-format dump");
     r
+}
+
+pub fn facts() -> crate::db::DbFacts {
+    crate::db::DbFacts { migrations_applied: 52, latest_migration: 52, events: 36, documents: 2, identities: 9, server_version: "16.4".into() }
+}
+
+/// A valid backup directory (real dump bytes, checksums that match). With `config_from`, the
+/// settings and secrets of that installation are copied in as `config/`.
+pub fn make_backup(backups: &Path, name: &str, created: &str, kind: &str, config_from: Option<&Path>) -> std::path::PathBuf {
+    use crate::manifest::{self, ConfigEntry, DumpEntry, FileEntry};
+    let path = backups.join(name);
+    std::fs::create_dir_all(&path).unwrap();
+    let dump = b"PGDMP\x01\x0e fake custom-format dump";
+    std::fs::write(path.join(manifest::DUMP_NAME), dump).unwrap();
+    let mut m = manifest::sample(kind, created);
+    m.database = DumpEntry { file: manifest::DUMP_NAME.into(), bytes: dump.len() as u64, sha256: crate::util::sha256_hex(dump), toc_entries: 2 };
+    m.facts = facts();
+    m.facts_after = facts();
+    if let Some(from) = config_from {
+        let root = path.join("config");
+        let mut files: Vec<FileEntry> = Vec::new();
+        let mut rels = vec![".env".to_string()];
+        for (n, _) in SEEDED {
+            rels.push(format!("secrets/{n}"));
+        }
+        for rel in rels {
+            let target = root.join(&rel);
+            std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+            std::fs::copy(from.join(&rel), &target).unwrap();
+            files.push(manifest::file_entry(&root, &rel).unwrap());
+        }
+        m.config = ConfigEntry { location: "inside".into(), dir_name: None, files };
+    }
+    manifest::write_manifest(&path, &m).unwrap();
+    path
 }
 
 pub fn confirm_yes() -> ScriptedConfirm {
