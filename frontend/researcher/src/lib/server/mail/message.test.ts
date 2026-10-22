@@ -187,6 +187,19 @@ describe('composeMessage', () => {
     );
     expect(split((await build({})).raw).headers.has('reply-to')).toBe(false);
   });
+  it('lints what the library built before anything is sent', async () => {
+    // The library wraps a bare id in angle brackets, so the header is no longer the one asked
+    // for: the lint inside composeMessage notices and refuses.
+    const error = await composeMessage(
+      FROM,
+      undefined,
+      checkMessage(ok),
+      'no-brackets@example.org'
+    ).catch((e) => e);
+    expect(error).toBeInstanceOf(MailError);
+    expect(error.errorClass).toBe('invalid-message');
+    expect(error.message).toContain('Message-ID');
+  });
   it('sends a text-only message when there is no HTML', async () => {
     const { headers, body } = split((await build({ text: 'Plain only' })).raw);
     expect(headers.get('content-type')).toMatch(/^text\/plain/);
