@@ -75,7 +75,7 @@ pub struct IssueLink {
     /// Who is doing this (default: the operating-system user). A label, not a login.
     #[arg(long)]
     operator: Option<String>,
-    /// What people type in the browser, such as https://docs.example.org (default: $ORIGIN).
+    /// What people type in the browser, such as `https://docs.example.org` (default: $ORIGIN).
     #[arg(long)]
     origin: Option<String>,
     /// The addresses in ADMIN_EMAILS, comma separated (default: $ADMIN_EMAILS).

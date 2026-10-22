@@ -11,7 +11,7 @@
 //!   compromise in the API cannot mint a link either.
 //! * **Using one is the ordinary path.** `POST /auth/verify` tries the emailed (magic) links first;
 //!   a token that is not one of those is looked up here ([`redeem`]). The link is consumed, the
-//!   login made (the same [`mint_session_with`] an emailed link uses) and the audit row written in
+//!   login made (the same function an emailed link uses) and the audit row written in
 //!   ONE transaction, so two simultaneous uses have exactly one winner and a failed login leaves
 //!   the link live. Expiry, the account being active and its session generation are checked by the
 //!   same statement that consumes the row (and expiry again by a trigger).
