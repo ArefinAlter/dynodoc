@@ -278,8 +278,9 @@ gets by really navigating the *window* to one of them is its own content, with n
 
 ### How this was tested
 
-- **Pure functions, unit tests** (`cargo test`, 97 tests on Windows; the Windows-only key test is
-  not built elsewhere, so 96 are expected there, not rerun on Linux since the last change): the address
+- **Pure functions, unit tests** (`cargo test`, 105 tests on Windows after the Android work of 22
+  October 2026; the Windows-only key test is not built elsewhere, so 104 are expected there, not
+  rerun on Linux since the 21 October change): the address
   validator, the sign-in link rule, the navigation and new-window decisions (including the
   launcher's own page only, and frame-like addresses), the hand-off rules (every
   loopback, private, link-local, mapped, NAT64 and 6to4 shape; wildcard-DNS names and names spelling
@@ -538,3 +539,27 @@ After merging the main branch that holds the Windows non-ASCII key-file fix in `
   event; three later runs passed. The probe now fails after 60 seconds without an answer instead
   of waiting. Cause not found. In round 2 a run on a loaded machine lost the app process in phase B
   the same way (see above).
+
+## What was run for Android (22 October 2026, same Windows 11 PC, x86-64)
+
+- Tool chain (JDK 17.0.20.1, command-line tools 15859902, platform 37.0, build-tools 37.0.0, NDK
+  28.2.13676358, emulator 37.2.12, system image `android-36` Google APIs x86_64) installed under
+  `E:\android`, checksums checked where the vendors publish them; versions in
+  [DESKTOP-AND-MOBILE-APPS.md](../../docs/DESKTOP-AND-MOBILE-APPS.md#android-building-on-windows).
+- `scripts/android-build.ps1`: debug APK (universal, arm64-v8a and x86_64) 63.5 MiB; release APK
+  (unsigned) 10.2 MiB, 16 minutes. `scripts/check-apk-manifest.mjs` passes on both (debug and release
+  mode) and, against the unhardened first build, failed it for the right reasons.
+- `scripts/android-probe.mjs` on an x86_64 Android 16 emulator (WHPX): all checks of the 11 phases pass
+  (ipc, links, frames, download, upload, back, deeplink, rotate, recreate, dark, offline). One earlier
+  run of the 40-link flood check failed because the loaded emulator stretched the loop past 3 s and a
+  second hand-off was correctly allowed; the check now allows one per full 3 s of the loop's length.
+- In `apps/desktop/src-tauri`: `cargo fmt --check`, `cargo clippy --all-targets --locked -- -D warnings`
+  clean; `cargo test --locked` 105 passed (97 before; new: the launcher rule, the entry page, the
+  desktop-only secret script, the Android script, the version overlay, the Android deep-link
+  config, the committed project's manifest and Kotlin, the workflow); `cargo check --lib --locked
+  --target aarch64-linux-android` clean, no warning. `node --test scripts/*.test.mjs`: 41 pass
+  (link-targets 12, harden 10, check-apk-manifest 13, blank-targets 6).
+- Desktop after the shared changes (entry page, launcher rule): debug build, `scripts/smoke.ps1`
+  passes (it now expects `GET /workspace` for the saved server), `scripts/security-probe.mjs` passes
+  (79 checks; it opened a few tabs in the default browser, as designed).
+- Not run: iOS; a physical phone or arm64 device; Google Play signing or an AAB; GitHub Actions.

@@ -200,8 +200,13 @@ const phases = {
     clearLogs();
     await page.eval(`(() => { for (let i = 0; i < 40; i++) setTimeout(() => { location.href = 'https://example.org/loop-' + i; }, i * 50); })()`).catch(() => {});
     await sleep(4000);
-    const opened = logs().filter((l) => /hand-off .*-> Opened/.test(l)).length;
-    check(opened === 1, 'a page that navigates out 40 times in 2 seconds gets one hand-off', `${opened}: ${logs().filter((l) => l.startsWith('hand-off')).join(' | ')}`);
+    // One per full 3 seconds the loop lasted (a loaded emulator stretches it), never more than 5.
+    const stamped = adb('logcat', '-d', '-v', 'epoch', '-s', 'RustStdoutStderr:I').split('\n')
+      .filter((l) => l.includes('dynodoc: hand-off '))
+      .map((l) => ({ at: Number(l.trim().split(/\s+/)[0]), opened: /-> Opened/.test(l) }));
+    const opened = stamped.filter((s) => s.opened).length;
+    const span = stamped.length > 1 ? stamped[stamped.length - 1].at - stamped[0].at : 0;
+    check(stamped.length === 40 && opened >= 1 && opened <= Math.min(5, 1 + Math.floor(span / 3)), `a page that navigates out 40 times gets one hand-off per 3 seconds (${opened} in ${span.toFixed(1)} s) and the rest are dropped`, `${stamped.length} requests`);
     shell('am', 'start', '-n', `${APP}/.MainActivity`);
     page.close();
   },

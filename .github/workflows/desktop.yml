@@ -262,6 +262,9 @@ jobs:
           node --test scripts/*.test.mjs
           node scripts/harden-android.mjs --check
         working-directory: apps/desktop
+      - name: Make the Gradle wrapper executable (the bit is set in the index; this is belt and braces)
+        run: chmod +x src-tauri/gen/android/gradlew
+        working-directory: apps/desktop
       - name: Build the debug APK (arm64 and x86-64 in one universal APK)
         run: npm run tauri -- android build --ci --debug --apk --target aarch64 x86_64 -- --locked
         working-directory: apps/desktop
