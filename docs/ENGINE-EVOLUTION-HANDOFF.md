@@ -1,5 +1,45 @@
 # Engine evolution handoff
 
+## Source: self-hosted Phase 0, web tier configuration (22 October 2026)
+
+P0-1 (hosted assumptions behind configuration) and the web half of P0-2 (configuration schema, startup validation, `*_FILE`
+secrets, environment-file generator) are built in source. Nothing is deployed; hosted behaviour is meant to be identical.
+
+**What exists.** One validated, frozen configuration module for the SvelteKit server, read once at start, stopping with one
+aggregated message that never contains a secret (typo-like `DYNODOC_*` names are warnings). `DYNODOC_MODE` is `hosted` (default)
+or `selfhosted`; the settings are `ORIGIN`, `DYNODOC_ALT_ORIGINS`, `ENGINE_API_URL`, `DYNODOC_BRAND_NAME`, `DYNODOC_ORG_NAME`,
+`DYNODOC_ORG_NOTICE` or `DYNODOC_NOTICE_FILE`, `DYNODOC_SUPPORT_URL`, `DYNODOC_TELEMETRY`, `AUTH_EMAIL_LINK` and
+`PUBLIC_WORKSPACE_URL` (full table in SELF-HOSTED-DEPLOYMENT-GUIDE.md 7.2). The five web secrets (`SESSION_SECRET`,
+`WEB_SERVICE_KEY`, `RESEND_API_KEY`, `GOOGLE_CLIENT_SECRET`, `CONVERTER_KEY`) follow the API's `NAME` / `NAME_FILE` rules
+(both set is an error, 16 KiB, UTF-8, trailing line breaks trimmed, group or other access refused on Unix). In `selfhosted` mode
+the marketing pages, sitemap, `llms*.txt` and `/source` answer 404, `/` goes to sign-in or the projects page, nothing is indexable,
+telemetry is off (no browser request, the route answers 404), the CSP `connect-src` comes from the configured origins, the
+organisation notice shows on sign-in and the workspace footer, and email sign-in can be switched off (the route answers 403). A
+Node script `dynodoc-env.mjs` generates a commented env file and random secrets (mode 0600, never overwrites, never prints a
+secret) and `check-config` validates an existing set without starting the server. `audit-hosted-strings.mjs` scans the build.
+
+**Decision for the owner / release hazard.** A hosted process with no `SESSION_SECRET` and no `WEB_SERVICE_KEY` still starts with
+warnings (the Vercel homepage runs without secrets), but a secret that IS set and is short, blank, a repeated pattern or a
+documented placeholder now stops the process in both modes. The old rule was length 32, checked on first use. **Before any hosted
+web release, run `check-config` against the production environment.** Say if hosted should require the secrets too.
+
+**Evidence (local; GitHub Actions of this repository cannot run, so the changed `ci-frontend.yml` steps are unrun).** vitest 73
+files, 743 passed, 4 skipped (Unix file modes, also run as 35 plain assertions on Linux); prettier, eslint, svelte-check (after
+`svelte-kit sync`) and the build clean on the merged tree; Chromium on an isolated stack: 21 new specs (selfhosted 12, no-email 2,
+hosted-pin 7) and 87 existing hosted specs passed, 2 skipped by design (one workspace spec failed once under load and passed
+3 of 3 alone); 95 hosted responses (5 hosts, 18 paths, telemetry) compared before and after: status, headers and head tags identical
+apart from asset hashes. Four manual mutations were each caught.
+
+**Not met: acceptance criterion 6** ("no file in the shipped images contains `dynodoc.online`"). 47 files outside third-party
+notices still do: 22 compiled marketing pages (unreachable in selfhosted but in the same build), 14 source maps of them, 3 server
+files every mode loads (hosted preset, SEO constants, robots body; dormant in selfhosted), and 8 static files (`security.txt`, a
+social image, five add-in packages built for the hosted origin, the Google zips). No script that every page loads names a hosted
+host or operator fact. Closing it needs an image build that leaves the marketing routes and source maps out (P0-6) and per-
+installation add-in packages (P0-7). **Not verified:** CI, Windows secret-file permissions, the Vercel adapter at runtime.
+Other open points: the two CLI scripts carry `@ts-nocheck`; `check-config` needs files the web image does not contain (the future
+`dynodoctl` or a tools image must ship them); the brand name does not reach logo images, the web manifest or most titles;
+`DEV_AUTH=true` in selfhosted is a warning, not an error; a self-hosted Office pane still loads the Office.js CDN (P0-7).
+
 ## Source: approvals bound to the revision seen, AI-agent proposals inbox (22 October 2026)
 
 Closes the gap recorded on 20 October ("an approval bound to the revision the reviewer saw") and builds the reviewer side of the
