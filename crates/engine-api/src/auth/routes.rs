@@ -79,6 +79,7 @@ pub fn router() -> Router<AppState> {
         .route("/auth/logout", post(logout))
         .route("/auth/me", get(me))
         .route("/auth/exchange", post(exchange))
+        .merge(super::handover::router())
 }
 
 // --- magic link request ---------------------------------------------------------
@@ -137,8 +138,8 @@ async fn magic_link_request(
 
 // --- token responses (verify + refresh) -----------------------------------------
 
-#[derive(Serialize)]
-struct TokenResponse {
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct TokenResponse {
     access_token: String,
     token_type: &'static str,
     /// Access-token lifetime in seconds.
@@ -147,7 +148,10 @@ struct TokenResponse {
     refresh_token: String,
 }
 
-async fn mint_session(state: &AppState, identity_id: Uuid) -> Result<TokenResponse, AuthError> {
+pub(super) async fn mint_session(
+    state: &AppState,
+    identity_id: Uuid,
+) -> Result<TokenResponse, AuthError> {
     let generation = store::session_generation(&state.pool, identity_id).await?;
     let session_id = Uuid::new_v4();
     let access_token = token::mint_bound_session(
@@ -282,7 +286,7 @@ async fn exchange(
     .await?;
     Ok(Json(mint_session(&state, identity.id.0).await?))
 }
-fn require_service(state: &AppState, headers: &HeaderMap) -> Result<(), AuthError> {
+pub(super) fn require_service(state: &AppState, headers: &HeaderMap) -> Result<(), AuthError> {
     match &state.auth.service_key {
         Some(expected) if expected.len() >= 32 && !expected.trim().is_empty() => {
             let presented = headers

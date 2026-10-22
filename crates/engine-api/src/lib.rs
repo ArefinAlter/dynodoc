@@ -227,6 +227,8 @@ async fn openapi_json(axum::extract::State(state): axum::extract::State<AppState
     modifiers(&WorkspaceDocs),
     paths(
         auth::routes::logout,
+        auth::handover::issue,
+        auth::handover::redeem,
         profiles::own,
         profiles::read,
         profiles::save,
@@ -253,6 +255,10 @@ async fn openapi_json(axum::extract::State(state): axum::extract::State<AppState
     ),
     components(schemas(
         auth::routes::RefreshRequest,
+        auth::routes::TokenResponse,
+        auth::handover::IssueRequest,
+        auth::handover::IssueResponse,
+        auth::handover::RedeemRequest,
         documents::routes::CreateDocumentRequest,
         ops::routes::NodeCreateRequest,
         ops::routes::FieldEditRequest,

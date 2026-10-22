@@ -228,6 +228,66 @@ paths:
           description: Refresh the current revision
       security:
       - paseto: []
+  /auth/app-handover:
+    post:
+      tags:
+      - auth
+      summary: |-
+        Make a one-time hand-over code for the signed-in account. `[web server only: service key
+        and the person's own account token]`. The code is bound to the PKCE challenge and the
+        state, valid for 60 seconds, usable once; an account holds at most three unused codes.
+      operationId: app_handover_issue
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IssueRequest'
+        required: true
+      responses:
+        '200':
+          description: A code, valid for 60 seconds, usable once
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueResponse'
+        '400':
+          description: Challenge, state or platform malformed
+        '401':
+          description: No valid account token
+        '403':
+          description: Not the trusted web server
+        '429':
+          description: The account already holds three unused codes
+      security:
+      - paseto: []
+  /auth/app-handover/redeem:
+    post:
+      tags:
+      - auth
+      summary: |-
+        Trade a hand-over code and its PKCE verifier for a session, exactly as a magic-link
+        sign-in makes one. `[web server only: service key]`; the app's own credentials are the
+        code and the verifier, so no account token is read. Every refusal is the same `401`.
+      operationId: app_handover_redeem
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RedeemRequest'
+        required: true
+      responses:
+        '200':
+          description: A new login for the account that issued the code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '401':
+          description: Refused; the same answer for every reason, a malformed code included
+        '403':
+          description: Not the trusted web server
+        '429':
+          description: Too many failed attempts from this address or for this code prefix
   /auth/logout:
     post:
       tags:
@@ -7339,6 +7399,36 @@ components:
           - string
           - 'null'
           description: Chosen name, else the email's local part; `Deleted account` after erasure.
+    IssueRequest:
+      type: object
+      required:
+      - challenge
+      - state
+      - platform
+      properties:
+        challenge:
+          type: string
+          description: '`base64url(SHA-256(verifier))`, 43 characters.'
+        platform:
+          type: string
+          description: '`desktop`, `android` or `ios`.'
+        state:
+          type: string
+          description: The app's anti-forgery value, 16 to 64 characters of `A-Za-z0-9_-`.
+      additionalProperties: false
+    IssueResponse:
+      type: object
+      required:
+      - code
+      - expires_in
+      properties:
+        code:
+          type: string
+          description: 'The one-time code: 64 lower-case hexadecimal digits. Shown once, never stored.'
+        expires_in:
+          type: integer
+          format: int64
+          description: Seconds the code stays valid.
     IssueSummary:
       type: object
       required:
@@ -7791,6 +7881,31 @@ components:
           format: int64
           description: Exact retained event revision, including zero for the empty initial state.
       additionalProperties: false
+    RedeemRequest:
+      type: object
+      required:
+      - code
+      - state
+      - verifier
+      properties:
+        client:
+          type:
+          - string
+          - 'null'
+          description: |-
+            The visitor's network address as the web server sees it, when that tells visitors
+            apart (behind a proxy that hides it, the web server leaves it out). Only its hash is
+            kept, in a rate window.
+        code:
+          type: string
+          description: The code from the browser, 64 lower-case hexadecimal digits.
+        state:
+          type: string
+          description: The state the app sent when it started and received back with the code.
+        verifier:
+          type: string
+          description: The app's PKCE verifier, 43 to 128 characters of `A-Za-z0-9-._~`.
+      additionalProperties: false
     RefreshRequest:
       type: object
       required:
@@ -7900,6 +8015,25 @@ components:
           type:
           - string
           - 'null'
+    TokenResponse:
+      type: object
+      required:
+      - access_token
+      - token_type
+      - expires_in
+      - refresh_token
+      properties:
+        access_token:
+          type: string
+        expires_in:
+          type: integer
+          format: int64
+          description: Access-token lifetime in seconds.
+        refresh_token:
+          type: string
+          description: Opaque refresh token (rotates on every use).
+        token_type:
+          type: string
     UsageRow:
       type: object
       description: One day of one client claim.
