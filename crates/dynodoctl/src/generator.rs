@@ -156,8 +156,13 @@ fn user_flag() -> Vec<String> {
     Vec::new()
 }
 
-/// The command that runs `generate-env` into `dir`.
-pub fn command(generator: &Generator, dir: &Path, args: &GenerateArgs) -> Cmd {
+/// The command that runs `generate-env` into the new subdirectory `sub` of `dir`.
+///
+/// Why a subdirectory: the generator `chmod`s the directory it writes to. Through the `tools`
+/// image it runs as a non-root user, and on Docker Desktop (Windows, macOS) the root of a bind
+/// mount belongs to root, so `chmod /bundle` fails with EPERM. A directory the container creates
+/// itself can be changed; `generate` then moves `.env` and `secrets/` up into `dir`.
+pub fn command(generator: &Generator, dir: &Path, sub: &str, args: &GenerateArgs) -> Cmd {
     match generator {
         Generator::Image(image) => {
             let mut all: Vec<String> = vec!["run".into(), "--rm".into()];
@@ -170,7 +175,7 @@ pub fn command(generator: &Generator, dir: &Path, args: &GenerateArgs) -> Cmd {
                 "scripts/dynodoc-env.mjs".into(),
                 "generate-env".into(),
                 "--dir".into(),
-                "/bundle".into(),
+                format!("/bundle/{sub}"),
             ]);
             all.extend(args.flags());
             Cmd {
@@ -185,7 +190,7 @@ pub fn command(generator: &Generator, dir: &Path, args: &GenerateArgs) -> Cmd {
                 script.display().to_string(),
                 "generate-env".into(),
                 "--dir".into(),
-                dir.display().to_string(),
+                dir.join(sub).display().to_string(),
             ];
             all.extend(args.flags());
             Cmd {
@@ -198,15 +203,59 @@ pub fn command(generator: &Generator, dir: &Path, args: &GenerateArgs) -> Cmd {
     }
 }
 
-/// Run the generator. Its own output lists the files and what they protect; it prints no secret.
+/// Name of the work directory inside the bundle directory (always starts with `.generate-`).
+pub fn work_dir_name(ctx: &Ctx<'_>) -> String {
+    format!(".generate-{}", crate::util::stamp((ctx.now)()))
+}
+
+/// Run the generator into a work directory, then move `.env` and `secrets/` into the bundle
+/// directory. Nothing is overwritten: if either target exists the move is refused and the work
+/// directory is removed. Its own output lists the files and what they protect; it prints no secret.
 pub fn generate(ctx: &Ctx<'_>, generator: &Generator, args: &GenerateArgs) -> Result<String> {
-    let out = run_cmd(ctx, &command(generator, &ctx.layout.dir, args))?;
+    let dir = &ctx.layout.dir;
+    let sub = work_dir_name(ctx);
+    let work = dir.join(&sub);
+    if work.exists() {
+        // Left behind by an interrupted run of this tool; it never holds anything of value.
+        std::fs::remove_dir_all(&work)?;
+    }
+    let cleanup = |text: &str| {
+        let _ = std::fs::remove_dir_all(&work);
+        text.to_string()
+    };
+    let out = run_cmd(ctx, &command(generator, dir, &sub, args))?;
     if !out.ok() {
         return Err(CliError::failed(
-            format!("the settings generator failed: {}", short(&out.text())),
-            "fix the option it names and run `dynodoctl install` again; nothing is overwritten, so a partial result can be removed by deleting .env and secrets/",
+            format!(
+                "the settings generator failed: {}",
+                cleanup(&short(&out.text()))
+            ),
+            "fix the option it names and run `dynodoctl install` again; nothing was written to the bundle directory",
         ));
     }
+    let (env_from, secrets_from) = (work.join(".env"), work.join("secrets"));
+    if !env_from.is_file() || !secrets_from.is_dir() {
+        cleanup("");
+        return Err(CliError::failed(
+            "the settings generator reported success but did not write .env and secrets/",
+            "this is unexpected; run the generator by hand (see the README, step 2) and report what it prints",
+        ));
+    }
+    for target in [ctx.layout.env_file(), ctx.layout.secrets_dir()] {
+        if target.exists() {
+            cleanup("");
+            return Err(CliError::refused(
+                format!(
+                    "{} appeared while the generator ran; it was not overwritten",
+                    target.display()
+                ),
+                "nothing was changed; check who else is installing here",
+            ));
+        }
+    }
+    std::fs::rename(&env_from, ctx.layout.env_file())?;
+    std::fs::rename(&secrets_from, ctx.layout.secrets_dir())?;
+    cleanup("");
     Ok(out.stdout_text())
 }
 
@@ -249,6 +298,7 @@ mod tests {
         let cmd = command(
             &Generator::Image("dynodoc-local/tools:dev".into()),
             Path::new("/srv/dynodoc"),
+            ".generate-x",
             &GenerateArgs {
                 origin: "https://x.example".into(),
                 ..Default::default()
@@ -256,7 +306,7 @@ mod tests {
         );
         let line = cmd.line();
         assert!(line.starts_with("docker run --rm"));
-        assert!(line.contains("-v /srv/dynodoc:/bundle dynodoc-local/tools:dev node scripts/dynodoc-env.mjs generate-env --dir /bundle --origin https://x.example"));
+        assert!(line.contains("-v /srv/dynodoc:/bundle dynodoc-local/tools:dev node scripts/dynodoc-env.mjs generate-env --dir /bundle/.generate-x --origin https://x.example"), "{line}");
     }
 
     #[test]
@@ -266,13 +316,92 @@ mod tests {
                 script: PathBuf::from("/repo/frontend/researcher/scripts/dynodoc-env.mjs"),
             },
             Path::new("/srv/d"),
+            ".generate-x",
             &GenerateArgs {
                 origin: "https://x.example".into(),
                 ..Default::default()
             },
         );
         assert_eq!(cmd.program, "node");
-        assert_eq!(&cmd.args[1..4], ["generate-env", "--dir", "/srv/d"]);
+        let expected = Path::new("/srv/d")
+            .join(".generate-x")
+            .display()
+            .to_string();
+        assert_eq!(
+            &cmd.args[1..4],
+            ["generate-env", "--dir", expected.as_str()]
+        );
+    }
+
+    fn gen_args() -> GenerateArgs {
+        GenerateArgs {
+            origin: "https://x.example".into(),
+            ..Default::default()
+        }
+    }
+
+    /// A fake generator that writes what the real one writes, into the directory it is given.
+    fn writing_runner(dir: &Path) -> FakeRunner {
+        let runner = FakeRunner::new();
+        let work = dir.join(".generate-20261022T120000Z");
+        runner.on_effect("generate-env", move |_| {
+            std::fs::create_dir_all(work.join("secrets")).unwrap();
+            std::fs::write(work.join(".env"), "DYNODOC_MODE=selfhosted\n").unwrap();
+            std::fs::write(work.join("secrets").join("session_secret"), "x\n").unwrap();
+        });
+        runner
+    }
+
+    #[test]
+    fn the_result_is_generated_in_a_work_directory_then_moved_into_place_and_the_work_directory_goes(
+    ) {
+        let dir = tempfile::tempdir().unwrap();
+        let runner = writing_runner(dir.path());
+        let confirm = ScriptedConfirm::new(&[]);
+        let mut ctx = Ctx::new(&runner, Layout::new(dir.path()), &confirm);
+        ctx.now = crate::testkit::fixed_now;
+        generate(&ctx, &Generator::Image("i:1".into()), &gen_args()).unwrap();
+        assert!(
+            dir.path().join(".env").is_file()
+                && dir.path().join("secrets").join("session_secret").is_file()
+        );
+        assert!(
+            !dir.path().join(".generate-20261022T120000Z").exists(),
+            "the work directory is removed"
+        );
+        assert!(
+            runner.ran("--dir /bundle/.generate-20261022T120000Z"),
+            "{:?}",
+            runner.lines()
+        );
+    }
+
+    #[test]
+    fn nothing_that_already_exists_is_overwritten_by_the_move() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(".env"), "MINE=1\n").unwrap();
+        let runner = writing_runner(dir.path());
+        let confirm = ScriptedConfirm::new(&[]);
+        let mut ctx = Ctx::new(&runner, Layout::new(dir.path()), &confirm);
+        ctx.now = crate::testkit::fixed_now;
+        let err = generate(&ctx, &Generator::Image("i:1".into()), &gen_args()).unwrap_err();
+        assert_eq!(err.code(), crate::error::exit::REFUSED);
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join(".env")).unwrap(),
+            "MINE=1\n"
+        );
+        assert!(!dir.path().join("secrets").exists());
+        assert!(!dir.path().join(".generate-20261022T120000Z").exists());
+    }
+
+    #[test]
+    fn a_generator_that_reports_success_without_writing_is_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let runner = FakeRunner::new();
+        let confirm = ScriptedConfirm::new(&[]);
+        let ctx = Ctx::new(&runner, Layout::new(dir.path()), &confirm);
+        let err = generate(&ctx, &Generator::Image("i:1".into()), &gen_args()).unwrap_err();
+        assert!(err.what.contains("did not write .env and secrets/"));
     }
 
     #[test]
@@ -331,6 +460,8 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.what.contains("generator failed"));
-        assert!(err.todo.contains("nothing is overwritten"));
+        assert!(err
+            .todo
+            .contains("nothing was written to the bundle directory"));
     }
 }

@@ -50,7 +50,7 @@ fn the_rehearsal_runs_the_target_migrations_on_a_copy_and_removes_it() {
         pos(&format!(
             "grant connect on database {SCRATCH} to dynodoc_runtime"
         )),
-        pos("sh dynodoc_restore_20261022t120000z migrate"),
+        pos("sh dynodoc_restore_20261022t120000z runtime migrate"),
         pos("grant-runtime dynodoc_runtime"),
         pos("check-runtime"),
         pos("verify-snapshots --all"),

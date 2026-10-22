@@ -244,12 +244,8 @@ impl ServerCertVerifier for Recording {
             ocsp_response,
             now,
         );
-        *self.outcome.lock().expect("verifier lock") = Some(
-            result
-                .as_ref()
-                .map(|_| ())
-                .map_err(describe_tls_error),
-        );
+        *self.outcome.lock().expect("verifier lock") =
+            Some(result.as_ref().map(|_| ()).map_err(describe_tls_error));
         Ok(ServerCertVerified::assertion())
     }
     fn verify_tls12_signature(

@@ -187,26 +187,33 @@ pub fn document_ids(c: &Compose<'_>, db: &str) -> Result<Vec<String>> {
     Ok(ids)
 }
 
-/// engine-cli against database `db` with the owner login in `MIGRATION_DATABASE_URL` and the
-/// runtime login in `DATABASE_URL`, exactly as the bundle's own jobs set them (jobs/init.sh,
-/// jobs/engine-cli.sh), except that the database name is a parameter.
+/// engine-cli against database `db`: the owner login in `MIGRATION_DATABASE_URL`, and in
+/// `DATABASE_URL` either the runtime login (as the bundle's jobs set it, jobs/init.sh and
+/// jobs/engine-cli.sh; needed by `check-runtime`) or the owner. `$2` is `runtime` or `owner`.
+///
+/// History verification uses `owner`: a database restored without ACLs (every scratch copy) has
+/// no grants for the runtime login until `grant-runtime` ran, and verification needs only to read
+/// the history and write the snapshot receipts it backfills.
 const ENGINE_SCRIPT: &str = r#"set -eu
-DB=$1; shift
+DB=$1; LOGIN=$2; shift 2
 OWNER_PW=$(cat /run/secrets/postgres_password)
 RUNTIME_PW=$(cat /run/secrets/runtime_database_password)
 export MIGRATION_DATABASE_URL="postgres://dynodoc:${OWNER_PW}@postgres:5432/${DB}"
-export DATABASE_URL="postgres://dynodoc_runtime:${RUNTIME_PW}@postgres:5432/${DB}"
+if [ "$LOGIN" = owner ]; then
+  export DATABASE_URL="$MIGRATION_DATABASE_URL"
+else
+  export DATABASE_URL="postgres://dynodoc_runtime:${RUNTIME_PW}@postgres:5432/${DB}"
+fi
 exec engine-cli "$@"
 "#;
 
-/// Verify every document one by one (ids arrive on standard input; a command line would be too
-/// long for Windows with a thousand documents).
+/// Verify every document one by one, as the owner (ids arrive on standard input; a command line
+/// would be too long for Windows with a thousand documents).
 const VERIFY_SCRIPT: &str = r#"set -eu
 DB=$1
 OWNER_PW=$(cat /run/secrets/postgres_password)
-RUNTIME_PW=$(cat /run/secrets/runtime_database_password)
 export MIGRATION_DATABASE_URL="postgres://dynodoc:${OWNER_PW}@postgres:5432/${DB}"
-export DATABASE_URL="postgres://dynodoc_runtime:${RUNTIME_PW}@postgres:5432/${DB}"
+export DATABASE_URL="$MIGRATION_DATABASE_URL"
 n=0
 while read -r id; do
   [ -n "$id" ] || continue
@@ -237,9 +244,19 @@ if [ "$ok" = 1 ]; then echo "api smoke: /healthz answered 200 after ${i}s"; exit
 echo "api smoke: /healthz did not answer 200"; tail -n 5 /tmp/api.log | cut -c1-300; exit 1
 "#;
 
+/// engine-cli with the runtime login in `DATABASE_URL` (what `check-runtime` must test).
 pub fn engine_cli(c: &Compose<'_>, db: &str, args: &[&str]) -> Result<Output> {
+    engine_cli_as(c, db, "runtime", args)
+}
+
+/// engine-cli with the owner login in `DATABASE_URL` (history verification on any copy).
+pub fn engine_cli_owner(c: &Compose<'_>, db: &str, args: &[&str]) -> Result<Output> {
+    engine_cli_as(c, db, "owner", args)
+}
+
+fn engine_cli_as(c: &Compose<'_>, db: &str, login: &str, args: &[&str]) -> Result<Output> {
     check_ident(db)?;
-    let mut all = vec![db];
+    let mut all = vec![db, login];
     all.extend_from_slice(args);
     c.run_script("database-admin", ENGINE_SCRIPT, &all, None)
 }
@@ -365,11 +382,38 @@ mod tests {
         assert!(line.contains(
             "--profile maintenance run --rm --no-deps -T --entrypoint /bin/sh database-admin -c"
         ));
-        assert!(line.ends_with(" sh dynodoc_restore_1 migrate"));
+        assert!(line.ends_with(" sh dynodoc_restore_1 runtime migrate"));
         assert!(
             !line.contains("postgres_password") || line.contains("cat /run/secrets"),
             "passwords are read inside the container"
         );
+    }
+
+    #[test]
+    fn history_verification_uses_the_owner_login_because_a_scratch_copy_has_no_runtime_grants() {
+        let runner = FakeRunner::new();
+        with_ctx(&runner, |c| {
+            engine_cli_owner(c, "dynodoc_restore_1", &["verify-snapshots", "--all"])
+        })
+        .unwrap();
+        assert!(runner
+            .lines()
+            .pop()
+            .unwrap()
+            .ends_with(" sh dynodoc_restore_1 owner verify-snapshots --all"));
+        // The per-document loop never selects the runtime login at all.
+        assert!(!VERIFY_SCRIPT.contains("dynodoc_runtime"));
+        // And check-runtime, which must test the runtime login, still gets it.
+        let r2 = FakeRunner::new();
+        with_ctx(&r2, |c| {
+            engine_cli(c, "dynodoc_restore_1", &["check-runtime"])
+        })
+        .unwrap();
+        assert!(r2
+            .lines()
+            .pop()
+            .unwrap()
+            .ends_with(" sh dynodoc_restore_1 runtime check-runtime"));
     }
 
     #[test]

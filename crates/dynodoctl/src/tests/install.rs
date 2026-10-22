@@ -13,8 +13,12 @@ fn eval_opts() -> Options {
     }
 }
 
+/// What the real generator does: it writes into the work directory the tool names (the tests use
+/// a fixed clock, so the name is fixed); `generate` then moves the result into `dir`.
 fn generator_effect(dir: std::path::PathBuf) -> impl Fn(&crate::runner::Cmd) + 'static {
+    let dir = dir.join(".generate-20261022T120000Z");
     move |_| {
+        std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
             dir.join(".env"),
             "DYNODOC_MODE=selfhosted\nORIGIN=https://localhost:18443\nAUTH_EMAIL_LINK=off\n",
@@ -463,7 +467,13 @@ fn a_mail_user_without_a_password_stops_before_the_stack_starts() {
     let d = dir.path().to_path_buf();
     runner.on_effect("generate-env", generator_effect(d.clone()));
     runner.on_effect("generate-env", move |_| {
-        std::fs::write(d.join("secrets").join("smtp_password"), "").unwrap()
+        std::fs::write(
+            d.join(".generate-20261022T120000Z")
+                .join("secrets")
+                .join("smtp_password"),
+            "",
+        )
+        .unwrap()
     });
     let confirm = ScriptedConfirm::new(&[true]);
     let ctx = testkit::ctx(&runner, dir.path(), &confirm);

@@ -200,7 +200,7 @@ pub fn restore_into(
 /// `verify-snapshots --all` and `verify` for every document of `db`. Returns the documents checked.
 pub fn verify_history(c: &Compose<'_>, db: &str, rec: &mut Recorder) -> Result<u64> {
     rec.step("engine-cli verify-snapshots --all", || {
-        let out = db::engine_cli(c, db, &["verify-snapshots", "--all"])?;
+        let out = db::engine_cli_owner(c, db, &["verify-snapshots", "--all"])?;
         if !out.ok() {
             return Err(CliError::failed(
                 format!("verify-snapshots failed: {}", short(&out.text())),
