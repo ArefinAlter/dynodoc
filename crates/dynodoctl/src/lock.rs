@@ -32,16 +32,21 @@ pub fn process_alive(pid: u32) -> bool {
     {
         use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ACCESS_DENIED};
         use windows_sys::Win32::System::Threading::{
-            OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+            GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
         };
-        // SAFETY: OpenProcess has no preconditions; a returned handle is closed at once.
+        // A process that has exited can still be opened while anything holds a handle to it
+        // (its parent, for one), so the exit code decides: 259 is STILL_ACTIVE.
+        // SAFETY: OpenProcess has no preconditions; the handle is closed before returning and
+        // the exit code is a plain output.
         unsafe {
             let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
             if handle.is_null() {
                 return GetLastError() == ERROR_ACCESS_DENIED;
             }
+            let mut code = 0u32;
+            let known = GetExitCodeProcess(handle, &mut code) != 0;
             CloseHandle(handle);
-            true
+            !known || code == 259
         }
     }
     #[cfg(not(any(unix, windows)))]
@@ -137,6 +142,52 @@ mod tests {
             "released on drop"
         );
         Lock::acquire(&layout, "restore", fixed_now()).expect("free again");
+    }
+
+    /// A process that lives until it is killed.
+    fn long_lived_child() -> std::process::Child {
+        #[cfg(windows)]
+        let mut cmd = {
+            let mut c = std::process::Command::new("ping");
+            c.args(["-n", "60", "127.0.0.1"]);
+            c
+        };
+        #[cfg(not(windows))]
+        let mut cmd = {
+            let mut c = std::process::Command::new("sleep");
+            c.arg("60");
+            c
+        };
+        cmd.stdout(std::process::Stdio::null())
+            .spawn()
+            .expect("start a helper process")
+    }
+
+    #[test]
+    fn a_lock_held_by_another_live_process_is_respected_and_released_when_it_dies() {
+        // The tests above only use this process's own id, which `process_alive` answers without
+        // asking the system. Here the holder is a different, real process.
+        let mut child = long_lived_child();
+        assert!(process_alive(child.id()), "the helper is running");
+        let dir = tempfile::tempdir().unwrap();
+        let layout = Layout::new(dir.path());
+        std::fs::create_dir_all(layout.state_dir()).unwrap();
+        std::fs::write(
+            layout.state_dir().join(".lock"),
+            format!("pid={}\nstarted=2020-01-01T00:00:00Z\n", child.id()),
+        )
+        .unwrap();
+        let err = Lock::acquire(&layout, "backup", fixed_now())
+            .err()
+            .expect("a live holder keeps the lock");
+        assert!(err.what.contains(&child.id().to_string()), "{err}");
+        child.kill().unwrap();
+        child.wait().unwrap();
+        assert!(
+            !process_alive(child.id()),
+            "a finished process is not alive"
+        );
+        Lock::acquire(&layout, "backup", fixed_now()).expect("the dead holder's lock is replaced");
     }
 
     #[test]

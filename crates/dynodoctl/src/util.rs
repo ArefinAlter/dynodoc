@@ -291,6 +291,32 @@ mod tests {
         assert!(fresh.is_dir());
     }
 
+    #[test]
+    fn an_exclusive_write_never_overwrites_and_never_follows_a_link() {
+        // H1: restoring settings creates files exclusively.
+        let dir = tempfile::tempdir().unwrap();
+        let existing = dir.path().join("existing");
+        write_private_new(&existing, b"first").unwrap();
+        assert!(write_private_new(&existing, b"second").is_err());
+        assert_eq!(fs::read(&existing).unwrap(), b"first");
+        #[cfg(unix)]
+        {
+            let outside = tempfile::tempdir().unwrap();
+            let target = outside.path().join("created-through-the-link");
+            let link = dir.path().join("link");
+            std::os::unix::fs::symlink(&target, &link).unwrap();
+            assert!(
+                write_private_new(&link, b"x").is_err(),
+                "a dangling link is not a free name"
+            );
+            assert!(!target.exists(), "nothing was created through the link");
+            // An existing file behind a link is untouched too.
+            std::fs::write(&target, b"theirs").unwrap();
+            assert!(write_private_new(&link, b"x").is_err());
+            assert_eq!(fs::read(&target).unwrap(), b"theirs");
+        }
+    }
+
     #[cfg(windows)]
     #[test]
     fn on_windows_a_private_file_really_has_one_access_entry() {
