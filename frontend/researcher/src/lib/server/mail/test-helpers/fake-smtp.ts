@@ -6,6 +6,8 @@ import net from 'node:net';
 import tls from 'node:tls';
 
 export interface FakeSmtpOptions {
+  /** The port to listen on. Default: any free one. */
+  port?: number;
   /** A certificate and key enable TLS: STARTTLS on a plain port, or TLS at once when implicit. */
   tls?: { key: string; cert: string; maxVersion?: tls.SecureVersion };
   /** TLS from the first byte, as on port 465. */
@@ -282,7 +284,7 @@ export async function startFakeSmtp(options: FakeSmtpOptions = {}): Promise<Fake
           (socket) => onConnection(socket, true)
         )
       : net.createServer((socket) => onConnection(socket, false));
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  await new Promise<void>((resolve) => server.listen(options.port ?? 0, '127.0.0.1', resolve));
   state.port = (server.address() as net.AddressInfo).port;
   return state;
 }

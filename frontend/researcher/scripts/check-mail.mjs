@@ -157,8 +157,7 @@ async function main(argv) {
     };
     const result = await checkMail(options);
     if (args.includes('--json')) {
-      const { exit: _exit, ...printable } = result;
-      console.log(JSON.stringify(printable));
+      console.log(JSON.stringify({ ...result, exit: undefined }));
     } else console.log(render(result, options));
     return result.exit;
   } catch (error) {
