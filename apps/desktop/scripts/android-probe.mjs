@@ -137,10 +137,41 @@ async function toCloud() {
   await waitFor(async () => (await here(page)).includes('tauri.localhost') && (await page.eval(`document.getElementById('about')?.textContent`)), 'the launcher');
   await page.eval(`document.getElementById('use-cloud').click()`);
   page.close();
+  // Since decision 017 a phone never stays on the server's sign-in page: when `/login` has loaded the
+  // shell shows its launcher instead (the sign-in page cannot sign this window in). The probe phases
+  // below still need a page of the hosted server to act as the "hostile page", so they take the
+  // pasted-link route, which the shell leaves alone (`/login?token=...`, a made-up token that is
+  // never confirmed): the launcher's open_sign_in_link command, as a person pasting a link would.
+  const bounced = await waitFor(async () => {
+    try {
+      const p = await connect();
+      const url = await here(p);
+      if (url.includes('tauri.localhost') && url.endsWith('#signin') && (await p.eval(`!document.getElementById('signin').hidden`))) return p;
+      p.close();
+    } catch { /* the web view is changing page */ }
+    return null;
+  }, "the launcher, brought up by the server's sign-in page", 60);
+  await bounced.eval(`window.__TAURI_INTERNALS__.invoke('open_sign_in_link', { link: ${JSON.stringify(`${CLOUD}/login?token=${'a'.repeat(40)}`)} }).then(() => 'ok')`);
+  bounced.close();
   const next = await connect();
   await waitFor(async () => (await here(next)).startsWith(`${CLOUD}/login`) && (await next.eval('document.readyState')) === 'complete' && (await next.eval('!!document.body')), 'the hosted sign-in page', 40);
   await sleep(1500);
   return next;
+}
+
+/**
+ * After the system re-creates the web view the window reloads the server's entry page. The probe's
+ * server is not signed in, so (decision 017) the entry page leads to /login and the shell shows its
+ * launcher with the browser sign-in button: either that or a page of the server is a window that is
+ * not blank. Returns the address it settled on.
+ */
+async function settledOnSiteOrSignInScreen(page, what, seconds = 60) {
+  return waitFor(async () => {
+    const url = await here(page);
+    const ready = (await page.eval('document.readyState')) === 'complete';
+    const signIn = url.includes('tauri.localhost') && url.endsWith('#signin');
+    return ready && (url.startsWith(`${CLOUD}/`) || signIn) ? url : null;
+  }, what, seconds);
 }
 
 // ---- phases ----------------------------------------------------------------------------------
@@ -388,8 +419,8 @@ const phases = {
     check(pid() === before, 'and survives it (same process)');
     page.close();
     const again = await connect();
-    await waitFor(async () => (await here(again)).startsWith(`${CLOUD}/`) && (await again.eval('document.readyState')) === 'complete', 'the site again after the renderer died', 40);
-    check(true, 'the activity was re-created and the site is shown again', await here(again));
+    const settled = await settledOnSiteOrSignInScreen(again, 'the site (or the sign-in screen) again after the renderer died', 60);
+    check(true, 'the activity was re-created and the site (for a server that is not signed in: the sign-in screen) is shown again', settled);
     again.close();
   },
 
@@ -479,8 +510,8 @@ const phases = {
     await sleep(6000);
     cloud.close();
     const again = await connect();
-    await waitFor(async () => (await here(again)).startsWith(`${CLOUD}/`) && (await again.eval('document.readyState')) === 'complete', 'the site after the re-creation', 40);
-    check(true, 'with a server saved, a re-created web view comes back on the server, not blank', await here(again));
+    const settled = await settledOnSiteOrSignInScreen(again, 'the site (or the sign-in screen) after the re-creation', 60);
+    check(true, 'with a server saved, a re-created web view comes back on the server (not signed in: its sign-in screen), not blank', settled);
     check(logs().some((l) => l.includes('launcher refused, server saved')), 'by way of the refused-launcher redirect', logs().join(' | '));
     shot('after-font-change-with-server');
     shell('settings', 'put', 'system', 'font_scale', '1.0');

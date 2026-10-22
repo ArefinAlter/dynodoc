@@ -48,7 +48,7 @@ an iPhone or a physical phone.
 | `src-tauri/tauri.android.conf.json` | Repeats the Cargo.toml version for Android (the Tauri command line gives an Android build no version otherwise: `1.0`, code 1, forever); a test keeps them equal. |
 | `src-tauri/gen/android/` | The Android project Tauri 2.12 generates, **committed** (source only; its own `.gitignore` files keep build output, `local.properties`, `keystore.properties` and the files the build writes with machine paths in them out). Changed from the template: `allowBackup="false"` and `dataExtractionRules` (everything excluded), cleartext off in every build type, `windowSoftInputMode`, the Gradle download pinned by checksum, `file_paths.xml` narrowed to the one photo folder, window and bar colours, optional release signing from `keystore.properties`, and three Kotlin files: `MainActivity.kt` (insets, Back, downloads, web view settings), `OfflineClient.kt` (a plain "Try again" page instead of Android's stock error page) and the template's own. No JavaScript bridge is added (a test greps for it). |
 | `scripts/harden-android.mjs` (+ `.test.mjs`) | Checks (`--check`, used in CI) or restores (no flag) the hardened state of the Android project: `allowBackup="false"`, extraction rules that exclude every domain, cleartext off, no network security config. Fails if anything unsafe is left. |
-| `scripts/check-apk-manifest.mjs` (+ `.test.mjs`, `fixtures/`) | After the Android build: parses the MERGED manifest of the built APK (`aapt2 dump xmltree`, or `apkanalyzer`) into a tree and fails unless backup and cleartext are off, only INTERNET (and AndroidX's own signature permission) is requested, only `MainActivity` and AndroidX's DUMP-guarded profile receiver are exported, the link filters are only `dynodoc://open/...` without `autoVerify`, SDK levels match the config, and the signing key is the debug key (debug) or not (release). Anything it cannot parse is a failure. The fixtures are real tool output. |
+| `scripts/check-apk-manifest.mjs` (+ `.test.mjs`, `fixtures/`) | After the Android build: parses the MERGED manifest of the built APK (`aapt2 dump xmltree`, or `apkanalyzer`) into a tree and fails unless backup and cleartext are off, only INTERNET (and AndroidX's own signature permission) is requested, only `MainActivity` and AndroidX's DUMP-guarded profile receiver are exported, the link filters are only `dynodoc://open/...` (one path each) and `dynodoc://signin` (no path) without `autoVerify`, SDK levels match the config, and the signing key is the debug key (debug) or not (release). Anything it cannot parse is a failure. The fixtures are real tool output. |
 | `scripts/android-build.ps1` | Windows: builds the APK with or without the right to create symbolic links (see "Mobile"). |
 | `scripts/android-probe.mjs` | Black-box probe of the debug build on an emulator or a USB device: drives the real Android WebView over adb and its debugging port, real taps (see "Mobile"). |
 | `scripts/link-targets.test.mjs` | Runs the injected click script in a Node realm against a hostile page (patched `call`/`apply`/`bind`/`closest`/getters/`window.open`, fake link objects) and fails if the secret reaches the page or a fake link starts a hand-off. Two control tests run the previous script and must see it leak. |
@@ -300,8 +300,8 @@ gets by really navigating the *window* to one of them is its own content, with n
 
 ### How this was tested
 
-- **Pure functions, unit tests** (`cargo test`, 105 tests on Windows after the Android work of 22
-  October 2026; the Windows-only key test is not built elsewhere, so 104 are expected there, not
+- **Pure functions, unit tests** (`cargo test`, 137 tests on Windows after the browser sign-in of 22
+  October 2026; the Windows-only key test is not built elsewhere, so 136 are expected there, not
   rerun on Linux since the 21 October change): the address
   validator, the sign-in link rule, the navigation and new-window decisions (including the
   launcher's own page only, and frame-like addresses), the hand-off rules (every
@@ -334,6 +334,20 @@ gets by really navigating the *window* to one of them is its own content, with n
   never or always let through. The previous injected script, built into the debug app, fails 3
   probe checks against the hostile page (its real clicks were not recognised as clicks, so the
   link was not opened by the system browser and the click-budget checks failed).
+- **Browser sign-in (22 October 2026, decision 017).** Unit tests: the deep-link table now has a fourth
+  row with its own exact whitelist over more than 400,000 generated links (accepted: exactly the 24
+  spellings of a valid `code`/`state` pair, with Windows' trailing slash), over 50 hostile sign-in links
+  (extra, missing, reordered, repeated, empty or encoded values, fragments, controls, wrong case, other
+  hosts and paths); `signin.rs` with an injectable clock and randomness (RFC 7636 appendix B pair, sizes,
+  expiry at the tick, a clock running backwards, one pending attempt, used up by the first accepted link,
+  a wrong state leaves it, a changed server drops it, no secret printable); the outbox (once, 30 s) and
+  the script that sets the fragment (every character outside the three values refused); source checks
+  that pin how `window.rs` wires them. **Mutations** (each fails a test): state check removed, expiry
+  removed, attempt not used up, server binding removed, challenge not the hash of the verifier, link
+  parameters in any order, secrets in the query, the launcher check skipped on the new command, a
+  wrong-state link cancelling the attempt. `scripts/signin-probe.mjs` (Windows, real shell, 37 checks) and
+  the `signin` phase of `scripts/android-probe.mjs` (emulator, 16 checks) drive the whole shell half; see
+  decision 017 for what each did and did not cover.
 - **Configuration tests** (`policy_tests.rs`): no `remote` capability anywhere, the exact permission
   lists, phones get no tool commands, the CSP has no unsafe source, no dangerous Tauri switches,
   banned plugins and features absent, the launcher page has no inline or remote code, the workflow

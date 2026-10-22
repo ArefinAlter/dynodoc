@@ -32,7 +32,7 @@ notarised, published or tried on a physical device.
 | Linux aarch64 | Workflow job behind a tick box | Nothing (private-repository availability of `ubuntu-24.04-arm` unverified) | Everything |
 | macOS aarch64 and x86-64 | Same source; workflow jobs on `macos-latest` and `macos-15-intel` | Nothing; the Apple targets cannot even be type-checked on Windows | Everything: no Mac build, no Keychain key creation, no notarisation |
 | Windows aarch64 | Workflow job behind a tick box | Nothing (`windows-11-arm`, availability unverified) | Everything |
-| Android | The Tauri 2.12 Android project is **committed** (`apps/desktop/src-tauri/gen/android`, hardened), mobile entry point, phone capability file, icons, `minSdkVersion` 29, `targetSdkVersion` 37, deep-link filters, a small Kotlin layer (insets, Back, narrow downloads, offline page, refusal of navigations Android does not report; no JavaScript bridge), `scripts/android-build.ps1`, `scripts/android-probe.mjs`, workflow job `android` | **22 October 2026, Windows 11 PC:** debug APK built (universal, arm64-v8a plus x86_64, 44.6 MiB), merged manifest audited against real `aapt2` output, installed and run on an x86_64 Android 16 emulator (WebView 133, hardware-accelerated through WHPX) and driven by a black-box probe (see "Android: what was run on 22 October 2026"); a release APK was built (below) | Signing in by the system browser and a one-time code is built ([decision 017](decisions/017-native-app-sign-in-handover.md), "Signing in: the browser hand-over" below); @@ANDROID@@; changing the server: sign out in the web app and the launcher returns (a saved server that cannot be reached still needs the app's data cleared); no physical device; no Play signing, no AAB run; GitHub Actions job never executed; iOS not part of this |
+| Android | The Tauri 2.12 Android project is **committed** (`apps/desktop/src-tauri/gen/android`, hardened), mobile entry point, phone capability file, icons, `minSdkVersion` 29, `targetSdkVersion` 37, deep-link filters, a small Kotlin layer (insets, Back, narrow downloads, offline page, refusal of navigations Android does not report; no JavaScript bridge), `scripts/android-build.ps1`, `scripts/android-probe.mjs`, workflow job `android` | **22 October 2026, Windows 11 PC:** debug APK built (universal, arm64-v8a plus x86_64, 44.6 MiB), merged manifest audited against real `aapt2` output, installed and run on an x86_64 Android 16 emulator (WebView 133, hardware-accelerated through WHPX) and driven by a black-box probe (see "Android: what was run on 22 October 2026"); a release APK was built (below) | Signing in by the system browser and a one-time code is built ([decision 017](decisions/017-native-app-sign-in-handover.md), "Signing in: the browser hand-over" below); its shell half ran on the same emulator (the `signin` phase of `scripts/android-probe.mjs`, with the hosted cloud as a stand-in server because the app forbids cleartext traffic, so the whole flow against a local server could not run there) and the older phases were re-run (13 phases pass; `renderer` and `recreate` now accept the sign-in screen as the place a signed-out server settles); changing the server: sign out in the web app and the launcher returns (a saved server that cannot be reached still needs the app's data cleared); no physical device; no Play signing, no AAB run; GitHub Actions job never executed; iOS not part of this |
 | iPhone | Same source, iOS 15.0 minimum; workflow job `ios` (simulator, unsigned) | Nothing | Everything: needs a Mac runner and, for devices, an Apple Developer team |
 
 ## How to build each
@@ -352,12 +352,14 @@ Nothing below exists; no key, password or account was created or invented.
    --bundle=app-universal-release.aab --output=app.apks --ks=dynodoc-upload.jks --ks-key-alias=upload`
    then `java -jar bundletool.jar install-apks --apks=app.apks`. **Not run here** (no keystore exists
    and the Windows PC cannot create the links the command needs); the APK flow above is what ran.
-4. **App Links** to replace the custom scheme of the sign-in hand-over (see limit 1): after the first Play upload, copy the **app signing
-   certificate SHA-256** from Play Console (Release > Setup > App integrity), publish
-   `/.well-known/assetlinks.json` on `app.dynodoc.online` for `online.dynodoc.client`, add an
-   `autoVerify` https intent filter for `/auth/verify` and `/login` to `plugins.deep-link.mobile`, and
-   have the shell accept those links with the rules of `server::sign_in_url`. The manifest checker
-   fails on `autoVerify` today on purpose: change it in the same commit.
+4. **App Links** to replace the custom scheme of the sign-in hand-over (see limit 1): after the first Play
+   upload, copy the **app signing certificate SHA-256** from Play Console (Release > Setup > App
+   integrity), publish `/.well-known/assetlinks.json` on `app.dynodoc.online` for
+   `online.dynodoc.client`, add an `autoVerify` https intent filter to `plugins.deep-link.mobile` for a
+   path of its own on the web host that carries the same `code` and `state` (the web app's redirect then
+   goes to that https address instead of `dynodoc://signin`), and extend the parser table, the manifest
+   checker (which fails on `autoVerify` today on purpose) and decision 017 in the same commit. PKCE, the
+   state check and the single use stay as they are.
 5. Store listing, privacy policy URL, data-safety form and content rating, and the review risk
    described below ("Store review risk"): a shell around a website can be refused.
 
@@ -392,6 +394,50 @@ current policy text). The native value planned for round 3 (biometric unlock, pu
 for review requests, a share extension, an offline review queue) exists partly to answer that.
 Until it is built, expect review risk for the iPhone app and treat the Android app the same way.
 Do not claim store readiness from this round.
+
+## Signing in: the browser hand-over
+
+22 October 2026, [decision 017](decisions/017-native-app-sign-in-handover.md) (the threat table and
+every bound are there). The emailed link and Google finish in the system browser, which shares no
+session with the app's window, so the app asks the browser to do the sign-in and to hand back a
+one-time code, with PKCE so that a program that takes the code out of the link learns nothing it can
+use.
+
+**For a person.** Desktop: **File > Sign in with your browser**, or the button in the launcher. Phone:
+open the app; when the server shows its sign-in page the app shows its own screen with **Sign in with
+your browser** instead (the server's page cannot sign this window in). The browser opens the server's
+`/app-signin` page; sign in there as usual, check the account and device it names, press **Continue**,
+and the app opens and is signed in. The request lasts ten minutes; a link used twice, late, or from
+another app does nothing. "Sign in with an emailed link" (paste) stays as a fallback on desktop. To
+choose another server on a phone: sign out in the web app (it goes to its sign-in page, the launcher
+appears). A saved server that cannot be reached still needs the app's data cleared; decision 017 weighs
+a launcher deep link and an Android shortcut and does not build them.
+
+**Where it is.** API: `crates/engine-api/src/auth/handover.rs`, migration `0046_app_handover.sql`, routes
+`POST /auth/app-handover` and `/auth/app-handover/redeem` (service key; issuing also needs the person's
+bearer token). Web: `/app-signin`, `/app-signin/finish`, `POST /auth/app-signin` and
+`/auth/app-signin/redeem`. Shell: `signin.rs` (the secrets, the one pending attempt, the outbox),
+`deeplink.rs` (the fourth link shape), `server.rs`, `nav.rs`, `window.rs`, the launcher button, the menu
+item, `allow-start-browser-sign-in` in both capability files, and the `dynodoc://signin` filter in
+`tauri.conf.json` and the committed Android manifest (the manifest checker allows it and nothing wider).
+
+**What was run (22 October 2026, one Windows 11 PC; the list is in decision 017).** The API against real
+PostgreSQL (18 integration tests including simultaneous redeems and the restricted runtime login, 6 unit
+tests, 11 manual mutations), the web pages (vitest, a Chromium suite with recording proxies), the shell (137
+unit tests, 9 manual mutations, `scripts/signin-probe.mjs` against the real Windows shell: 37 checks), and the
+Android emulator (`scripts/android-probe.mjs signin`): the launcher appears by itself when the sign-in page
+loads, the button asks Chrome for `/app-signin?...`, `dynodoc://signin?...` reaches the app through the new
+manifest filter, a link with nothing pending or the wrong state is refused, the right one takes the window
+to the finish page, `SHA-256(verifier)` is the challenge, a replay does nothing, and the verifier is not in
+the device log. **The Android run used the hosted cloud only as a stand-in server** (it has neither page
+yet, so it answered 404 pages and nothing was signed in): the app forbids cleartext traffic, `http://localhost`
+included, so the full flow against a local server could not run there. The full flow (sign in, Continue,
+finish, session cookie) ran in Chromium and on the Windows shell with a stand-in server, never as one run on
+a phone. **Not run:** a physical phone, iOS, Android App Links, a production database (migration 0046 is
+unrehearsed), GitHub Actions. **Found by the emulator run and fixed:** Android's web view logs the page's
+address next to every console message, and the verifier appeared there when it was in the address; the
+secrets now reach the finish page as a fragment set by the shell after the page has loaded, so they are in
+no requested address.
 
 ## Known limitations of the web view approach
 
