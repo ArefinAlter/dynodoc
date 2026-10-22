@@ -1005,6 +1005,37 @@ async fn unknown_fields_are_refused_on_both_routes_and_touch_nothing(pool: PgPoo
         "a refused request leaves the code alone"
     );
     assert_eq!(redeem(&router, &code, &p).await.0, StatusCode::OK);
+
+    // The issue route is the other one: an unknown field is refused and makes no code.
+    let rows = |pool: PgPool| async move {
+        sqlx::query_scalar::<_, i64>("select count(*) from app_handover_code")
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+    };
+    let before = rows(pool.clone()).await;
+    let q = pkce();
+    for extra in [
+        json!({"admin": true}),
+        json!({"identity_id": Uuid::nil()}),
+        json!({"expires_in": 99999}),
+    ] {
+        let mut body = json!({"challenge": q.challenge, "state": q.state, "platform": "android"});
+        body.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        let (status, _, _) = send(
+            &router,
+            json_post("/auth/app-handover", &body, Some(&access), true),
+        )
+        .await;
+        assert!(status.is_client_error(), "{body} -> {status}");
+    }
+    assert_eq!(
+        rows(pool.clone()).await,
+        before,
+        "a refused issue request makes no code"
+    );
 }
 
 #[sqlx::test(migrations = "../../migrations")]
