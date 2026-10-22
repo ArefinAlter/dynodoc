@@ -96,6 +96,8 @@ pub struct RealNet {
     pub extra_roots: Vec<Vec<u8>>,
     pub timeout: Duration,
     shared: std::sync::OnceLock<Result<Shared, String>>,
+    /// The address that last accepted a connection, per `host:port`.
+    good: Mutex<std::collections::HashMap<String, std::net::SocketAddr>>,
 }
 
 impl RealNet {
@@ -104,6 +106,7 @@ impl RealNet {
             extra_roots,
             timeout: Duration::from_secs(10),
             shared: std::sync::OnceLock::new(),
+            good: Mutex::new(std::collections::HashMap::new()),
         }
     }
 
@@ -130,10 +133,19 @@ impl RealNet {
     }
 
     fn connect(&self, target: &Target) -> Result<TcpStream, String> {
-        let addresses: Vec<_> = (target.connect_host.as_str(), target.port)
+        let key = format!("{}:{}", target.connect_host, target.port);
+        let mut addresses: Vec<_> = (target.connect_host.as_str(), target.port)
             .to_socket_addrs()
             .map_err(|e| format!("cannot resolve {}: {e}", target.connect_host))?
             .collect();
+        // Docker publishes on IPv4 and `localhost` lists ::1 first; on Windows a refused loopback
+        // connection takes about two seconds to fail, so try IPv4 first and then the address that
+        // worked last time, which comes first of all.
+        addresses.sort_by_key(|a| !a.is_ipv4());
+        if let Some(good) = self.good.lock().expect("address cache").get(&key).copied() {
+            addresses.retain(|a| *a != good);
+            addresses.insert(0, good);
+        }
         let mut last = format!("no address for {}", target.connect_host);
         for address in addresses {
             match TcpStream::connect_timeout(&address, self.timeout) {
@@ -144,6 +156,10 @@ impl RealNet {
                     stream
                         .set_write_timeout(Some(self.timeout))
                         .map_err(|e| e.to_string())?;
+                    self.good
+                        .lock()
+                        .expect("address cache")
+                        .insert(key, address);
                     return Ok(stream);
                 }
                 Err(e) => {
@@ -491,6 +507,33 @@ mod tests {
         };
         assert!(net.http_get(&target, "/").is_err());
         assert!(net.https_get(&target, "/").is_err());
+    }
+
+    #[test]
+    fn the_address_that_worked_is_remembered_and_ipv4_is_tried_first() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let net = RealNet::new(vec![]);
+        let target = Target {
+            connect_host: "localhost".into(),
+            port,
+            server_name: "localhost".into(),
+            host_header: "localhost".into(),
+        };
+        let started = std::time::Instant::now();
+        net.connect(&target).expect("connects to localhost");
+        let remembered = *net
+            .good
+            .lock()
+            .unwrap()
+            .get(&format!("localhost:{port}"))
+            .unwrap();
+        assert!(remembered.is_ipv4(), "{remembered}");
+        net.connect(&target).expect("second connection");
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "no per-request wait for a refused ::1"
+        );
     }
 
     #[test]
