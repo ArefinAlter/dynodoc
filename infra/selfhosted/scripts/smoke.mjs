@@ -19,7 +19,7 @@
 // It never touches the repository's own files: the bundle is copied to a temp directory, the
 // environment and secrets are generated there with scripts/dynodoc-env.mjs, the stack runs in
 // `evaluation` TLS mode on a loopback port, and everything it creates is removed at the end.
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import http from 'node:http';
@@ -44,6 +44,11 @@ const ADMIN = 'admin@smoke.test';
 const TITLE = `Smoke document ${Date.now()}`;
 const TEXT = 'Smoke test paragraph that must survive restarts.';
 
+// --only a,c,e,... runs just those groups (a ports, b redirect, c headers and TLS, d API isolation,
+// e hardening, f database role, g sign-in page, h browser, s secrets, j down/up, x failures,
+// m mail check, t provided certificate, z backup and restore); i (restarts) follows h.
+const only = opt('--only') ? opt('--only').split(',') : null;
+const on = (group) => !only || only.includes(group);
 const results = [];
 const t0 = Date.now();
 function check(id, label, ok, detail = '') {
@@ -68,6 +73,14 @@ const composeArgs = (extra) => ['compose', '-p', PROJECT, '--project-directory',
   '-f', path.join(BUNDLE, 'compose.smoke.yml'), ...extra];
 const compose = (extra, o = {}) => docker(composeArgs(extra), { cwd: BUNDLE, ...o });
 const out = (r) => `${r.stdout ?? ''}${r.stderr ?? ''}`.trim();
+/** Like compose(), but does not block the event loop (used while requests are being counted). */
+const composeAsync = (extra, extraEnv = {}) => new Promise((resolve) => {
+  const child = spawn('docker', composeArgs(extra), { cwd: BUNDLE, env: { ...cleanEnv(), ...extraEnv } });
+  let stdout = '', stderr = '';
+  child.stdout.on('data', (d) => { stdout += d; });
+  child.stderr.on('data', (d) => { stderr += d; });
+  child.on('close', (status) => resolve({ status, stdout, stderr }));
+});
 const containers = () => compose(['ps', '-a', '-q']).stdout.split(/\s+/).filter(Boolean);
 const inspectAll = () => {
   const ids = containers();
@@ -199,7 +212,7 @@ async function main() {
   info(`containers: ${Object.entries(services).map(([n, c]) => `${n}=${c.State.Status}${c.State.ExitCode ? `(${c.State.ExitCode})` : ''}`).join(' ')}`);
 
   // (a) only the proxy publishes, only on 127.0.0.1
-  {
+  if (on('a')) {
     const bindings = Object.entries(services).flatMap(([name, c]) => Object.entries(c.HostConfig.PortBindings ?? {}).flatMap(([port, list]) => (list ?? []).map((b) => ({ name, port, ip: b.HostIp, hostPort: b.HostPort }))));
     const others = bindings.filter((b) => b.name !== 'proxy');
     check('a1', 'only the proxy publishes a port (api, web, postgres and the jobs publish none)', bindings.length === 2 && others.length === 0, JSON.stringify(bindings));
@@ -213,7 +226,7 @@ async function main() {
   }
 
   // (b) HTTP -> HTTPS
-  {
+  if (on('b')) {
     const r = await request('/some/path?x=1', { secure: false });
     check('b', 'HTTP redirects to HTTPS on the configured origin (301, path and query kept)', r.status === 301 && r.headers.location === `${ORIGIN}/some/path?x=1`, `${r.status} ${r.headers.location} ${r.error ?? ''}`);
     const evil = await request('/x', { secure: false, headers: { host: 'evil.example' } });
@@ -221,7 +234,7 @@ async function main() {
   }
 
   // (c) headers, CSP, HSTS, TLS
-  {
+  if (on('c')) {
     const r = await request('/login');
     const h = r.headers;
     const csp = h['content-security-policy'];
@@ -249,7 +262,7 @@ async function main() {
   }
 
   // proxy maps are the hosted ones
-  {
+  if (on('c')) {
     const mine = readFileSync(path.join(SRC, 'proxy', 'conf', 'maps.conf'), 'utf8');
     const block = mine.slice(mine.indexOf('# BEGIN HOSTED MAPS') + '# BEGIN HOSTED MAPS\n'.length, mine.indexOf('# END HOSTED MAPS'));
     const norm = (s) => s.split('\n').filter((l) => !l.startsWith('#')).join('\n').trim();
@@ -258,7 +271,7 @@ async function main() {
   }
 
   // (d) API not reachable
-  {
+  if (on('d')) {
     const host8080 = await request('/healthz', { secure: false, port: 8080 });
     check('d1', 'the API port is not reachable from the host (127.0.0.1:8080 does not answer as the API)', !/engine-api/.test(host8080.body), `${host8080.status} ${host8080.body}`);
     const pg = await tcpOpen(5432);
@@ -276,7 +289,7 @@ async function main() {
   }
 
   // (e) hardening
-  {
+  if (on('e')) {
     const rows = [];
     const longRunning = ['postgres', 'api', 'web', 'proxy'];
     const jobs = ['preflight', 'db-roles', 'init'];
@@ -321,7 +334,7 @@ async function main() {
   }
 
   // pg_hba and role
-  {
+  if (on('f')) {
     const hba = execIn('postgres', 'grep -v "^#" /var/lib/postgresql/data/pg_hba.conf | grep -v "^$"');
     check('f0', 'PostgreSQL pg_hba.conf has no "trust" line: every connection, local socket included, needs a SCRAM password', !/\btrust\b/.test(hba.stdout) && /scram-sha-256/.test(hba.stdout), hba.stdout);
     const psql = (role, sql) => execIn('postgres', `PGPASSWORD=$(cat /run/secrets/${role === 'owner' ? 'postgres_password' : 'runtime_database_password'}) psql -h 127.0.0.1 -U ${role === 'owner' ? 'dynodoc' : 'dynodoc_runtime'} -d dynodoc -v ON_ERROR_STOP=1 -tA -c "${sql}" 2>&1; echo rc=$?`);
@@ -350,7 +363,7 @@ async function main() {
   }
 
   // (g) sign-in page in self-hosted mode
-  {
+  if (on('g')) {
     const login = await request('/login');
     check('g1', 'the sign-in page shows the organisation name and notice', login.body.includes('Smoke Test Organisation') && login.body.includes('Smoke test installation. Questions: the IT desk, extension 123.'), login.body.slice(0, 300));
     check('g2', 'it carries the configured product name, offers email sign-in and no Google button', login.body.includes('Smoke Docs') && /Email me a sign-in link/.test(login.body) && !/Continue with Google/i.test(login.body), '');
@@ -367,7 +380,7 @@ async function main() {
   // (h)(k) browser
   let session = null;
   let flow = null;
-  if (playwright) {
+  if (playwright && on('h')) {
     flow = await import(pathToFileURL(path.join(SRC, 'test', 'browser-flow.mjs')).href);
     const sinkId = () => containers().find((id) => docker(['inspect', '-f', '{{index .Config.Labels "com.docker.compose.service"}}', id]).stdout.trim() === 'mailsink');
     const readMail = async () => {
@@ -394,7 +407,7 @@ async function main() {
   }
 
   // secrets stay out of inspect, config and logs
-  {
+  if (on('s')) {
     const values = Object.values(secretValues()).flatMap((v) => v.split('\n')).map((v) => v.trim()).filter((v) => v.length >= 20);
     const inspectText = JSON.stringify(inspectAll());
     const configText = out(compose(['config']));
@@ -425,7 +438,7 @@ async function main() {
   }
 
   // (j) down / up
-  {
+  if (on('j')) {
     const fingerprintBefore = (await tlsProbe({})).cert?.fingerprint256;
     const idsBefore = Object.fromEntries(Object.entries(byService()).map(([n, c]) => [n, c.Id]));
     const again = await up('up again, nothing changed');
@@ -447,7 +460,7 @@ async function main() {
   }
 
   // failures stop the stack
-  {
+  if (on('x')) {
     const envPath = path.join(BUNDLE, '.env');
     const original = readFileSync(envPath, 'utf8');
     let r = await up('provided without files', [], { DYNODOC_TLS_MODE: 'provided' });
@@ -475,7 +488,7 @@ async function main() {
   }
 
   // the mail check, from where the web server sits
-  {
+  if (on('m')) {
     const r = compose(['--profile', 'maintenance', 'run', '--rm', '-T', 'mailcheck', '--to', 'admin@smoke.test', '--json']);
     let parsed = null;
     try { parsed = JSON.parse(r.stdout.trim().split('\n').pop()); } catch { /* reported below */ }
@@ -483,7 +496,7 @@ async function main() {
   }
 
   // a provided certificate at stack level: refusal, start, and the documented renewal
-  {
+  if (on('t')) {
     const proxyImage = `${opt('--registry', 'dynodoc-local')}/proxy:${opt('--version', 'dev')}`;
     const tlsDir = path.join(BUNDLE, 'tls');
     const mkcert = (name) => docker(['run', '--rm', '--user', '0', '--entrypoint', 'sh', '-v', `${tlsDir}:/out`, proxyImage, '-c',
@@ -505,9 +518,10 @@ async function main() {
     put('b', 'b');
     let failed = 0, total = 0, stop = false;
     const loop = (async () => { while (!stop) { total++; if ((await request('/healthz')).status !== 200) failed++; await sleep(50); } })();
-    const staged = composeP(['run', '--rm', '--no-deps', '-T', 'secrets-init']);
-    const checked = composeP(['run', '--rm', '--no-deps', '-T', 'proxy', 'check']);
-    const reloaded = composeP(['exec', '-T', 'proxy', 'proxy-entrypoint', 'reload']);
+    // Asynchronous on purpose: a blocking call would stop the request loop above from running.
+    const staged = await composeAsync(['run', '--rm', '--no-deps', '-T', 'secrets-init'], env);
+    const checked = await composeAsync(['run', '--rm', '--no-deps', '-T', 'proxy', 'check'], env);
+    const reloaded = await composeAsync(['exec', '-T', 'proxy', 'proxy-entrypoint', 'reload'], env);
     await sleep(1000);
     stop = true; await loop;
     const pb = await tlsProbe({});
@@ -527,7 +541,7 @@ async function main() {
   }
 
   // backup by hand and restore (the README's procedure)
-  {
+  if (on('z')) {
     const pgsh = (cmd, input) => spawnSync('docker', composeArgs(['exec', '-T', 'postgres', 'sh', '-c', `PGPASSWORD=$(cat /run/secrets/postgres_password); export PGPASSWORD; ${cmd}`]), { cwd: BUNDLE, env: cleanEnv(), encoding: null, input, maxBuffer: 1024 * 1024 * 1024 });
     const count = (sql) => Number(pgsh(`psql -h 127.0.0.1 -U dynodoc -d dynodoc -tAc "${sql}"`).stdout.toString().trim());
     const before = { events: count('select count(*) from event'), identities: count('select count(*) from identity'), docs: count('select count(*) from document') };
