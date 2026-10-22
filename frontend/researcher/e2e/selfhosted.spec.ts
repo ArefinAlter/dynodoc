@@ -1,3 +1,4 @@
+import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -295,5 +296,162 @@ test.describe('signed in', () => {
     await login(page);
     await page.goto('/');
     await expect(page).toHaveURL(/\/projects$/);
+  });
+});
+
+// The add-in files made for this installation (docs/SELF-HOSTED-EDITION.md section 7, P0-7).
+// The server is reached on http://localhost, which add-in files accept only because this is a
+// test stack (DEV_AUTH=true); a real installation must be on https.
+const OFFICE_HOSTS = ['word', 'excel', 'powerpoint'];
+const MANIFESTS = OFFICE_HOSTS.flatMap((host) => [`${host}.xml`, `${host}-catalog.xml`]);
+const URLS_IN_XML = /https?:\/\/[^\s"<>]+/g;
+
+test.describe('add-in files', () => {
+  test('every manifest is public and names this installation and no other address', async ({
+    request,
+    baseURL
+  }) => {
+    const origin = new URL(baseURL!).origin;
+    const ids = new Set<string>();
+    for (const name of MANIFESTS) {
+      const response = await request.get(`/connectors/addins/${name}`);
+      expect(response.status(), name).toBe(200);
+      expect(response.headers()['content-type'], name).toBe('application/xml; charset=utf-8');
+      expect(response.headers()['content-disposition'], name).toBe(
+        `attachment; filename="${name}"`
+      );
+      const text = await response.text();
+      // Every address in the file is on this installation's origin, apart from the XML
+      // namespaces and the Office schema addresses that are identifiers, not links.
+      const addresses = (text.match(URLS_IN_XML) ?? []).filter(
+        (address) => !/schemas\.microsoft\.com|w3\.org/.test(address)
+      );
+      expect(addresses.length, name).toBeGreaterThanOrEqual(name.includes('catalog') ? 4 : 10);
+      for (const address of addresses)
+        expect(new URL(address).origin, `${name}: ${address}`).toBe(origin);
+      expect(text, name).not.toMatch(/dynodoc\.online/i);
+      expect(text).toContain(`DisplayName DefaultValue="${settings.DYNODOC_BRAND_NAME} for `);
+      expect(text).toContain(`<ProviderName>${settings.DYNODOC_ORG_NAME}</ProviderName>`);
+      ids.add(/<Id>([^<]+)<\/Id>/.exec(text)![1]);
+      // The same file the second time: identifiers do not change between fetches.
+      expect(await (await request.get(`/connectors/addins/${name}`)).text()).toBe(text);
+    }
+    expect(ids.size).toBe(MANIFESTS.length);
+    const sums = await (await request.get('/connectors/addins/SHA256SUMS')).text();
+    for (const name of MANIFESTS) expect(sums).toContain(`  ${name}\n`);
+    // A test stack on http cannot have Google packages (Google calls https addresses only).
+    expect((await request.get('/connectors/addins/google-docs.zip')).status()).toBe(404);
+    expect((await request.get('/connectors/addins/nothing.xml')).status()).toBe(404);
+  });
+
+  test('the catalog-compatible manifests have no ribbon part and the others have it', async ({
+    request
+  }) => {
+    for (const host of OFFICE_HOSTS) {
+      const standard = await (await request.get(`/connectors/addins/${host}.xml`)).text();
+      const catalog = await (await request.get(`/connectors/addins/${host}-catalog.xml`)).text();
+      expect(standard).toContain('<VersionOverrides');
+      expect(catalog).not.toContain('VersionOverrides');
+      expect(catalog).toContain(`/connectors/${host}"`);
+    }
+  });
+
+  test('the page that explains the files sends a visitor who is not signed in to sign in', async ({
+    request
+  }) => {
+    const response = await request.get('/connectors/addins', { maxRedirects: 0 });
+    expect(response.status()).toBe(303);
+    expect(response.headers().location).toBe('/login?next=admin');
+  });
+
+  test('the public add-ins page links to the files made for this installation', async ({
+    page
+  }) => {
+    await page.goto('/connectors');
+    await expect(page.getByRole('link', { name: 'Download the Word add-in' })).toHaveAttribute(
+      'href',
+      '/connectors/addins/word.xml'
+    );
+    await expect(page.getByRole('link', { name: 'Download the Excel add-in' })).toHaveAttribute(
+      'href',
+      '/connectors/addins/excel.xml'
+    );
+    await expect(page.getByRole('link', { name: 'Download the Docs package' })).toHaveAttribute(
+      'href',
+      '/connectors/addins/google-docs.zip'
+    );
+  });
+
+  test.describe('signed in', () => {
+    test.skip(!signedIn, 'Requires the isolated signed-in development stack.');
+    async function signInAs(page: Page, email: string) {
+      await page.goto('/login');
+      await page.getByLabel('Your name').fill('Add-in tester');
+      await page.getByLabel('Work email').fill(email);
+      await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
+      await page.getByRole('button', { name: /Continue in local development/ }).click();
+      await expect(page).toHaveURL(/\/projects$/);
+    }
+
+    test('a person who is not an administrator is refused the page, and the files stay public', async ({
+      page,
+      request
+    }) => {
+      await signInAs(page, `member-${Date.now()}@example.test`);
+      const response = await page.goto('/connectors/addins');
+      expect(response?.status()).toBe(403);
+      await expect(page.getByText('Administrator access is required')).toBeVisible();
+      await expect(page.getByRole('link', { name: 'word.xml' })).toHaveCount(0);
+      expect((await request.get('/connectors/addins/word.xml')).status()).toBe(200);
+    });
+
+    test('an administrator gets the files, the install steps and what cannot work offline', async ({
+      page,
+      baseURL
+    }) => {
+      await signInAs(page, 'admin@example.test');
+      const response = await page.goto('/connectors/addins');
+      expect(response?.status()).toBe(200);
+      expect(response?.headers()['cache-control']).toBe('private, no-store');
+      await expect(
+        page.getByRole('heading', { name: `Add-in files for ${settings.DYNODOC_BRAND_NAME}` })
+      ).toBeVisible();
+      await expect(page.locator('main').getByText(new URL(baseURL!).origin).first()).toBeVisible();
+      // Not hidden, and in plain words: the add-ins have not been tried in an installed host.
+      await expect(
+        page.getByText('Not yet tried in an installed Office or Google editor.')
+      ).toBeVisible();
+      // What cannot work without internet access, stated plainly.
+      const impossible = page.getByRole('heading', {
+        name: 'What does not work without internet access, or on a private network'
+      });
+      await expect(impossible).toBeVisible();
+      for (const text of [
+        'The Google Docs, Sheets and Slides add-ons.',
+        'Office on the web.',
+        'Installing from Microsoft AppSource',
+        /Office\.js from Microsoft.s servers\./
+      ])
+        await expect(page.getByText(text).first()).toBeVisible();
+      await expect(page.getByRole('cell', { name: /SharePoint app catalog/ })).toBeVisible();
+      await expect(page.getByText('No Google packages were made.')).toBeVisible();
+      // With no folder set the page says where Office.js comes from.
+      await expect(
+        page.getByText('Office loads Office.js for each pane from Microsoft')
+      ).toBeVisible();
+      // The download links work, and give the file the public route gives.
+      const link = page.getByRole('link', { name: 'word.xml', exact: true });
+      const [download] = await Promise.all([page.waitForEvent('download'), link.click()]);
+      expect(download.suggestedFilename()).toBe('word.xml');
+      const saved = await download.path();
+      const text = readFileSync(saved, 'utf8');
+      expect(text).toContain(`<AppDomain>${new URL(baseURL!).origin}</AppDomain>`);
+      expect(text).not.toMatch(/dynodoc\.online/i);
+      // No accessibility violations on the page.
+      const axe = await new AxeBuilder({ page })
+        .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+        .analyze();
+      expect(axe.violations).toEqual([]);
+    });
   });
 });
