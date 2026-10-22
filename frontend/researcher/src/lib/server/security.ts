@@ -21,11 +21,15 @@ const fallback = "default-src 'none'; base-uri 'none'; object-src 'none'; form-a
 
 // `connectSrc` is the configured extra `connect-src` origins for every page (from the
 // configuration, never a fixed hostname); `connectorOrigins` applies to the Office panes only.
+// `officeJs` says where the panes get Office.js: 'cdn' (the default) lists Microsoft's hosts in
+// their script and connect policy; 'local' means the installation serves its own copy from the
+// same origin, so the panes list no Microsoft host at all (docs/SELF-HOSTED-EDITION.md 7.3).
 export function secureResponse(
   response: Response,
   url: URL,
   connectorOrigins = '',
-  connectSrc: readonly string[] = []
+  connectSrc: readonly string[] = [],
+  officeJs: 'cdn' | 'local' = 'cdn'
 ): Response {
   // Redirect headers can be immutable. Preserve the body/stream without buffering.
   const secured = new Response(response.body, response);
@@ -41,7 +45,8 @@ export function secureResponse(
   if (connectSrc.length && policy.has('connect-src'))
     policy.get('connect-src')!.push(...connectSrc);
   if (pane && policy.has('script-src')) {
-    policy.get('script-src')!.push(...officeSources);
+    const microsoft = officeJs === 'cdn' ? officeSources : [];
+    policy.get('script-src')!.push(...microsoft);
     // Operators may explicitly allow another HTTPS Dynodoc installation. Never
     // interpolate raw environment values into policy syntax or widen script-src.
     const origins = connectorOrigins.split(',').flatMap((value) => {
@@ -56,7 +61,7 @@ export function secureResponse(
     });
     policy.set('connect-src', [
       ...(policy.get('connect-src') || ["'self'"]),
-      ...officeSources,
+      ...microsoft,
       ...origins
     ]);
   }

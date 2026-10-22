@@ -7,6 +7,8 @@
 // DYNODOC_MODE=hosted (the default) keeps the hosted service exactly as it was: the fixed
 // hostnames in ./hosted.js, and a validation that rejects only what could not have worked.
 // DYNODOC_MODE=selfhosted turns the hosted-only parts off and requires a complete setup.
+import { statSync } from 'node:fs';
+import { isAbsolute, join } from 'node:path';
 import { ALLOW_OPEN_FILES, readBoundedFile, readSecret, Secret } from './secrets.js';
 import { HOSTED } from './hosted.js';
 import { SMTP_NAMES, loadMail } from './mail.js';
@@ -42,6 +44,7 @@ import { SMTP_NAMES, loadMail } from './mail.js';
  * @property {string | null} hostedDomain hosted only: hostnames under it are labelled Production in /admin
  * @property {string[]} connectSrc extra `connect-src` origins on every page
  * @property {string} connectorOrigins CONNECTOR_ORIGINS as given (parsed where it is used)
+ * @property {string | null} officeJsDir self-hosted only: the directory holding a local copy of Office.js, or null (the Microsoft CDN is used)
  * @property {{ enabled: boolean, origins: [string, string][] }} telemetry
  * @property {string | undefined} emailFrom EMAIL_FROM, the sender of the Resend transport
  * @property {import('./mail.js').MailConfig} mail which transport sends mail, and the SMTP connection
@@ -76,7 +79,8 @@ const SELF_HOSTED_ONLY = [
   'DYNODOC_ORG_NAME',
   'DYNODOC_ORG_NOTICE',
   'DYNODOC_NOTICE_FILE',
-  'DYNODOC_SUPPORT_URL'
+  'DYNODOC_SUPPORT_URL',
+  'DYNODOC_OFFICE_JS_DIR'
 ];
 
 /** Every DYNODOC_* name some Dynodoc component reads; the typo check compares against these. */
@@ -100,7 +104,18 @@ export const KNOWN_DYNODOC_NAMES = [
   'DYNODOC_WRITE',
   'DYNODOC_HOST',
   'DYNODOC_ID',
-  'DYNODOC_TARGET'
+  'DYNODOC_TARGET',
+  // The bundle's own settings (infra/selfhosted, read by dynodoctl and Compose). They share the
+  // .env file the web container reads, so they must not be reported as typos.
+  'DYNODOC_ACME_ACCEPT_TOS',
+  'DYNODOC_ACME_CA',
+  'DYNODOC_ACME_EMAIL',
+  'DYNODOC_BIND',
+  'DYNODOC_HTTP_PORT',
+  'DYNODOC_HTTPS_PORT',
+  'DYNODOC_IMAGE_REGISTRY',
+  'DYNODOC_TLS_MODE',
+  'DYNODOC_VERSION'
 ];
 
 /** Text that documents show where a secret goes; a value containing one was never generated. */
@@ -202,6 +217,28 @@ const isLoopback = (/** @type {string} */ origin) =>
 function plainTextReason(/** @type {string} */ text) {
   if (hasControl(text) || BIDI.test(text))
     return 'contains control or direction-override characters';
+  return undefined;
+}
+
+/**
+ * Why a directory cannot serve as the local copy of Office.js, or undefined. The check is made
+ * at start so that a wrong path stops the server instead of leaving every Office pane without
+ * its script.
+ * @param {string} dir
+ */
+function officeJsDirProblem(dir) {
+  if (!isAbsolute(dir) || hasControl(dir)) return 'must be an absolute path';
+  try {
+    if (!statSync(dir).isDirectory()) return 'is not a directory';
+  } catch {
+    return 'is not a directory this process can read';
+  }
+  try {
+    const entry = statSync(join(dir, 'office.js'));
+    if (!entry.isFile() || entry.size === 0) throw new Error('not a file');
+  } catch {
+    return 'holds no office.js (copy the contents of the Office.js lib/1/hosted folder into it)';
+  }
   return undefined;
 }
 
@@ -398,6 +435,8 @@ export function loadConfig(env) {
   const rawNotice = lookup('DYNODOC_ORG_NOTICE');
   const noticeFile = get('DYNODOC_NOTICE_FILE');
   const rawSupport = get('DYNODOC_SUPPORT_URL');
+  const rawOfficeJs = get('DYNODOC_OFFICE_JS_DIR');
+  /** @type {string | null} */ let officeJsDir = null;
   if (!self) {
     for (const name of SELF_HOSTED_ONLY)
       if (get(name) !== undefined)
@@ -459,6 +498,11 @@ export function loadConfig(env) {
           `DYNODOC_SUPPORT_URL must be an https:, http: or mailto: link of at most ${SUPPORT_URL_MAX} characters, without credentials`
         );
       }
+    }
+    if (rawOfficeJs !== undefined) {
+      const reason = officeJsDirProblem(rawOfficeJs.trim());
+      if (reason) problems.push(`DYNODOC_OFFICE_JS_DIR ${reason}`);
+      else officeJsDir = rawOfficeJs.trim();
     }
   }
 
@@ -538,6 +582,7 @@ export function loadConfig(env) {
     hostedDomain: self ? null : HOSTED.domain,
     connectSrc: self ? [...origins] : [...HOSTED.connectSrc],
     connectorOrigins: lookup('CONNECTOR_ORIGINS') ?? '',
+    officeJsDir,
     telemetry: { enabled: telemetryOn, origins: telemetryOrigins },
     emailFrom,
     mail,
