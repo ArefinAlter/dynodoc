@@ -563,6 +563,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
 
 [[package]]
+name = "dynodoctl"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "chrono",
+ "clap",
+ "flate2",
+ "hex",
+ "libc",
+ "ring",
+ "rustls",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "webpki-roots 1.0.7",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "ed25519-compact"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

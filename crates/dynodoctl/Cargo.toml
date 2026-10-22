@@ -1,0 +1,38 @@
+[package]
+name = "dynodoctl"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+publish.workspace = true
+description = "Operator tool for the Dynodoc self-hosted single-node bundle (install, backup, upgrade, support bundle)."
+
+[lib]
+name = "dynodoctl"
+path = "src/lib.rs"
+
+[[bin]]
+name = "dynodoctl"
+path = "src/main.rs"
+
+# Every dependency below is already in Cargo.lock through the engine crates; none adds a package.
+[dependencies]
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+ring = { workspace = true }
+hex = { workspace = true }
+base64 = { workspace = true }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = "1"
+flate2 = "1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
+
+[dev-dependencies]
+tempfile = "3"
