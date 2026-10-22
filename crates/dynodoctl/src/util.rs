@@ -123,6 +123,9 @@ pub fn unix_mode(path: &Path) -> Option<u32> {
 }
 
 /// Free bytes on the file system holding `path`, if the platform tells us.
+// `statvfs` field types differ by platform (u32 on macOS, u64 on 64-bit Linux): the casts are
+// needed on some targets and redundant on others.
+#[allow(clippy::unnecessary_cast)]
 pub fn free_bytes(path: &Path) -> Option<u64> {
     #[cfg(unix)]
     {
