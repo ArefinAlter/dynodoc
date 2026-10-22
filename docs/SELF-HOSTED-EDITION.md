@@ -1588,6 +1588,71 @@ production release is unchanged. Settings and defaults are in the deployment gui
   (billing); `ci-frontend.yml` now runs the audit and starts the two self-hosted servers, and
   has not been executed.
 
+**Implementation status (22 October 2026): P0-3, the SMTP mail transport.** Source and tests in the
+application repository; nothing here is deployed or released, and the hosted service still sends its
+mail through Resend exactly as before. Settings, messages and examples are in the deployment guide
+7.2 ("Mail").
+
+- *Built.* A mail transport in the web server (`frontend/researcher/src/lib/server/mail/`) with three
+  providers chosen by `DYNODOC_MAIL_TRANSPORT`: `resend` (the existing HTTPS request, pinned byte for
+  byte by a golden test written before the change), `smtp`, and `none` (mail is off and the product
+  says so: the sign-in page keeps "Email sign-in is awaiting administrator setup", and an invitation
+  shows the person who invited the link to send themselves). Default: `resend` when `RESEND_API_KEY`
+  is set, else `none`. SMTP is nodemailer 10.1.0 (MIT-0, no dependencies, exact pin, loaded only when
+  used; an own client was rejected as security-critical parsing). Implicit TLS (465) and STARTTLS
+  (587, the default, refuses to continue if the server does not offer it), certificate and host name
+  always verified, TLS 1.2 minimum, `SMTP_CA_FILE` replaces the built-in authorities, AUTH PLAIN or
+  LOGIN, `SMTP_SECURITY=none-local` for plain text to a loopback or private address only (a name is
+  resolved at send time and every address must qualify). One time budget per send, 10 s connect and
+  greeting, 15 s silence, at most three attempts for 4xx and network errors with jittered backoff,
+  never for 5xx or a refused certificate, at most 10 recipients and 256 KiB. Addresses outside a
+  documented subset and any control character in a header value are refused; the finished message is
+  parsed again and must hold exactly the expected headers. Message-ID under the domain of
+  `SMTP_FROM`, text and simple HTML from one template with every value escaped (no images, one
+  link, built on `ORIGIN`), UTF-8 with RFC 2047. The log has the provider, outcome, a class, the
+  attempt count and the Message-ID, nothing else. Self-hosted with email sign-in on and no way to send
+  the link stops at start (a warning in hosted; `DEV_AUTH=true` exempts a test stack).
+  `scripts/check-mail.mjs` does the real handshake (connect, TLS, EHLO, AUTH, MAIL FROM, RCPT TO,
+  dropped before the message text) and with `--send` one test message, in plain words, for
+  `dynodoctl`. `generate-env` writes a checked SMTP block (`--smtp-*`) or turns email sign-in off.
+- *Changed on purpose.* An invitation response carries `invitation_link` when no email went out
+  (mail off, or a failed send), and the notice shows it; a key without a sender (Resend) now counts
+  as not configured (503, or the development token) instead of attempting a send that fails; the
+  invitation says "on <brand>" and offers only the sign-in methods a self-hosted installation really
+  has (the hosted wording is unchanged and pinned); the Resend path now logs one line per send
+  (provider, outcome, class, id); the licences page lists nodemailer.
+- *Not built.* A database outbox with retry and administrator visibility, operator-issued sign-in
+  links (the rest of P0-3), XOAUTH2, DKIM signing (SPF, DKIM and DMARC guidance only, in the guide),
+  bounce handling, per-language templates, a cap on concurrent sends (the API's per-address limits
+  apply), the `dynodoctl` call to `check-mail`, the Compose wiring. SMTP_MAX_RECIPIENTS is not a
+  setting: the cap is fixed at 10. No real mail provider was contacted; every claim above rests on
+  the in-process server described below.
+- *Verified here.* Against the in-process mail server only, no real provider: `vitest` 84 files, 943 tests pass and 4 (Unix file modes) are
+  skipped on Windows; 11 files and 200 tests are new (address rules, message builder and header lint, retry policy on a
+  fake clock, error classes, templates and their escaping, mail settings with every error, transport selection and the
+  routes, the connection check as a function and as a command, a golden test of the Resend requests, and 51 tests of the
+  SMTP sender against a server that speaks real TLS with a certificate made at test time: STARTTLS and implicit TLS,
+  AUTH PLAIN and LOGIN, a wrong host name, an untrusted and an expired certificate, a server that omits STARTTLS or
+  refuses it, AUTH offered only before TLS, 4xx then success, every 5xx class, a silent and a slow server, the limits).
+  Existing tests were changed only where the new rule requires it: the shared self-hosted fixtures of
+  `schema.test.ts`, `startup.test.ts` and `env-tool.test.ts` now carry a mail transport, the hosted fixtures that
+  asserted "no warnings" carry Resend (the Vercel homepage host gains one warning), and the start-up spec counts four
+  problems instead of three. Chromium end-to-end against an isolated stack (disposable PostgreSQL database, this
+  tree's API, four web processes: hosted, self-hosted with no transport, with email off, with SMTP to a server the
+  spec starts): the new `selfhosted-smtp.spec.ts` passes (4: the emailed link arrives on the configured origin and
+  signs in once, the mail server's refusal is shown in plain words with nothing leaked, an invitation is emailed from
+  the project settings with the inviter as Reply-To and the title escaped), as do `selfhosted.spec.ts` (12, one
+  new: with no transport the invitation link is shown), `selfhosted-noemail.spec.ts` (2) and `hosted-pin.spec.ts`
+  (7); the whole hosted Chromium suite: 128 passed, 6 skipped by design, none failed. Twelve mutations each fail a
+  test: certificate checks off, STARTTLS not required (the downgrade test), plain text to a public address, CR and LF
+  allowed in a header, HTML escaping removed, retry on 5xx, the finished-message lint removed, TLS minimum removed, a
+  recipient put in the log line, the sign-in rule removed, an HTML part on the Resend sign-in request, and links built
+  on the request origin. `prettier --check .`, `eslint .`, `svelte-check` (0 errors), the build and the
+  hosted-string audit `--check` pass; `pnpm audit --prod` reports 24 advisories in five other packages and none in
+  nodemailer. GitHub Actions could not run (billing); `ci-frontend.yml` now also starts the SMTP web server and has not
+  been executed. **Not verified:** any real mail server or provider (Postfix, Exchange, a hosted relay, a private
+  certificate authority in the field), IPv6 targets, and the Linux file-mode and arm64 runs.
+
 ### 13.3 Phase 1: identity
 
 Goal: a university or company connects its identity provider and maps groups to roles;
