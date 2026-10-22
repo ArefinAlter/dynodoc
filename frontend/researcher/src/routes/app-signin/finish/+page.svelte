@@ -62,7 +62,11 @@
     // A fragment present at load is never acted on, whoever put it there.
     if (window.location.hash)
       window.history.replaceState(window.history.state, '', window.location.pathname);
-    if (!data.app || !bridge) {
+    // Never inside a frame: a plain link whose target is the frame could feed it a fragment, and in
+    // the app's own window the frame would carry the app's token and bridge. (The headers already
+    // refuse to be framed; this is the same rule where a header does not reach.)
+    const framed = window.top !== window;
+    if (!data.app || !bridge || framed) {
       phase = 'not-app';
       return;
     }

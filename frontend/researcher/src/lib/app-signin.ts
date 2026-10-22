@@ -94,10 +94,32 @@ export function parseFinishFragment(hash: string): Finish | null {
 
 // The Dynodoc app's own window says what it is in its User-Agent: the web view's normal one with
 // `DynodocApp/<version> (desktop|android|ios)` added at the end. The finish page and the redeem
-// route act only for such a request. It is not a secret (anyone can send it); it keeps a crafted
-// link from signing an ordinary browser in as someone else (decision 017).
-const APP_AGENT =
-  /(?:^|\s)DynodocApp\/\d{1,3}\.\d{1,3}\.\d{1,3} \((desktop|android|ios)\)(?=\s|$)/g;
+// route act only for such a request. It is NOT authentication and not a secret (anyone can send it,
+// and the kind of app the API compares comes from this very header): it is a speed bump that keeps
+// a crafted link, which cannot make a browser send it, from signing an ordinary browser in as
+// someone else (decision 017).
+//
+// ONE grammar for the version, shared by the three producers (Rust `signin::app_token`, Kotlin
+// `AppToken`) and this reader, with fixtures all three run (apps/desktop/fixtures/app-token.json):
+// `<major>.<minor>.<patch>`, each one to nine digits. A producer takes the leading dotted triple of
+// its version and drops whatever follows (`-beta.1`, `+build5`, a fourth number), and writes
+// `0.0.0` when there is none; so the token is never malformed and never silently refused.
+const VERSION = String.raw`\d{1,9}\.\d{1,9}\.\d{1,9}`;
+export const APP_VERSION = new RegExp(`^${VERSION}$`);
+const APP_AGENT = new RegExp(
+  String.raw`(?:^|\s)DynodocApp/${VERSION} \((desktop|android|ios)\)(?=\s|$)`,
+  'g'
+);
+
+/**
+ * What a producer of the token does with its own version (the web app only READS the token; this
+ * is the reference the fixtures check the Rust and Kotlin producers against): the leading dotted
+ * triple of one to nine digits each, anything after it dropped, `0.0.0` when there is none.
+ */
+export function normaliseAppVersion(raw: string): string {
+  const leading = /^(\d{1,9})\.(\d{1,9})\.(\d{1,9})(?!\d)/.exec(raw);
+  return leading ? `${leading[1]}.${leading[2]}.${leading[3]}` : '0.0.0';
+}
 
 /** The kind of app a User-Agent names, or null: exactly one such token, nothing longer than 1 KiB. */
 export function appKind(userAgent: string | null | undefined): Platform | null {
