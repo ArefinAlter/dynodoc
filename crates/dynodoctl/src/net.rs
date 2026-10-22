@@ -14,7 +14,7 @@ use rustls::{DigitallySignedStruct, Error as TlsError, RootCertStore, SignatureS
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const MAX_BODY: usize = 6 * 1024 * 1024;
 
@@ -94,7 +94,10 @@ struct Shared {
 
 pub struct RealNet {
     pub extra_roots: Vec<Vec<u8>>,
+    /// For one connect, read or write.
     pub timeout: Duration,
+    /// For a whole request, handshake and body included.
+    pub deadline: Duration,
     shared: std::sync::OnceLock<Result<Shared, String>>,
     /// The address that last accepted a connection, per `host:port`.
     good: Mutex<std::collections::HashMap<String, std::net::SocketAddr>>,
@@ -105,6 +108,7 @@ impl RealNet {
         Self {
             extra_roots,
             timeout: Duration::from_secs(10),
+            deadline: Duration::from_secs(30),
             shared: std::sync::OnceLock::new(),
             good: Mutex::new(std::collections::HashMap::new()),
         }
@@ -181,7 +185,60 @@ fn request_text(path: &str, host_header: &str) -> String {
     )
 }
 
+/// A socket with an overall deadline. The per-operation timeouts alone let a server that sends a
+/// byte every few seconds keep a run waiting for hours; here every read and write is armed with
+/// what is left of the whole request's time (TLS handshake included).
+struct Limited {
+    tcp: TcpStream,
+    deadline: Instant,
+    per_operation: Duration,
+}
+
+impl Limited {
+    fn new(tcp: TcpStream, overall: Duration, per_operation: Duration) -> Self {
+        Self {
+            tcp,
+            deadline: Instant::now() + overall,
+            per_operation,
+        }
+    }
+
+    fn arm(&self) -> std::io::Result<()> {
+        let left = self
+            .deadline
+            .checked_duration_since(Instant::now())
+            .filter(|d| !d.is_zero())
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "the request took longer than the overall time limit",
+                )
+            })?;
+        let each = left.min(self.per_operation);
+        self.tcp.set_read_timeout(Some(each))?;
+        self.tcp.set_write_timeout(Some(each))
+    }
+}
+
+impl Read for Limited {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.arm()?;
+        self.tcp.read(buf)
+    }
+}
+
+impl Write for Limited {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.arm()?;
+        self.tcp.write(buf)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.tcp.flush()
+    }
+}
+
 /// Read until the server closes (HTTP/1.0 with Connection: close), tolerating an abrupt TLS close.
+/// A timeout, or an answer larger than the limit, is an error, never a silently short answer.
 fn read_all(stream: &mut dyn Read) -> Result<Vec<u8>, String> {
     let mut data = Vec::new();
     let mut buffer = [0u8; 16 * 1024];
@@ -191,10 +248,21 @@ fn read_all(stream: &mut dyn Read) -> Result<Vec<u8>, String> {
             Ok(n) => {
                 data.extend_from_slice(&buffer[..n]);
                 if data.len() > MAX_BODY + 64 * 1024 {
-                    break;
+                    return Err(format!(
+                        "the answer is larger than the {} MiB this tool reads",
+                        MAX_BODY >> 20
+                    ));
                 }
             }
             Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof && !data.is_empty() => break,
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+                ) =>
+            {
+                return Err(format!("read timed out ({e})"));
+            }
             Err(e) => {
                 if data.is_empty() {
                     return Err(format!("read failed: {e}"));
@@ -254,8 +322,19 @@ fn decode_chunked(mut data: &[u8]) -> Result<Vec<u8>, String> {
             .position(|w| w == b"\r\n")
             .ok_or("damaged chunked body")?;
         let size_text = String::from_utf8_lossy(&data[..eol]).into_owned();
-        let size = usize::from_str_radix(size_text.split(';').next().unwrap_or("").trim(), 16)
-            .map_err(|_| "damaged chunk size")?;
+        let digits = size_text.split(';').next().unwrap_or("").trim();
+        // A hostile server can write any number here: parse it with a length limit, then compare
+        // before adding (a size near usize::MAX made `size + 2` overflow and panic).
+        if digits.is_empty() || digits.len() > 8 || !digits.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err("damaged chunk size".into());
+        }
+        let size = usize::from_str_radix(digits, 16).map_err(|_| "damaged chunk size")?;
+        if size > MAX_BODY || out.len() + size > MAX_BODY {
+            return Err(format!(
+                "the chunked body is larger than the {} MiB this tool reads",
+                MAX_BODY >> 20
+            ));
+        }
         data = &data[eol + 2..];
         if size == 0 {
             return Ok(out);
@@ -362,7 +441,7 @@ impl Net for RealNet {
             .map_err(|_| format!("`{}` is not a valid server name", target.server_name))?;
         let mut connection =
             rustls::ClientConnection::new(Arc::new(config), name).map_err(|e| e.to_string())?;
-        let mut tcp = self.connect(target)?;
+        let mut tcp = Limited::new(self.connect(target)?, self.deadline, self.timeout);
         let mut stream = rustls::Stream::new(&mut connection, &mut tcp);
         stream
             .write_all(request_text(path, &target.host_header).as_bytes())
@@ -392,7 +471,7 @@ impl Net for RealNet {
     }
 
     fn http_get(&self, target: &Target, path: &str) -> Result<HttpResponse, String> {
-        let mut tcp = self.connect(target)?;
+        let mut tcp = Limited::new(self.connect(target)?, self.deadline, self.timeout);
         tcp.write_all(request_text(path, &target.host_header).as_bytes())
             .map_err(|e| format!("write failed: {e}"))?;
         parse_response(&read_all(&mut tcp)?)
@@ -480,6 +559,104 @@ mod tests {
         assert!(
             parse_response(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nzz\r\n").is_err()
         );
+    }
+
+    #[test]
+    fn a_hostile_chunk_size_is_an_error_not_an_overflow_panic() {
+        // M4: `size + 2` overflowed for a size near usize::MAX (a panic in a debug build).
+        for size in [
+            "ffffffffffffffff",
+            "7fffffffffffffff",
+            "fffffffe",
+            "ffffffff",
+            "100000000",
+            "00000000000000005",
+            "-1",
+            "",
+            "zz",
+        ] {
+            let raw = format!(
+                "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n{size}\r\nabc\r\n0\r\n\r\n"
+            );
+            let result = std::panic::catch_unwind(|| parse_response(raw.as_bytes()));
+            assert!(result.is_ok(), "panicked on chunk size {size:?}");
+            assert!(result.unwrap().is_err(), "accepted chunk size {size:?}");
+        }
+        // Many small chunks that together pass the limit are refused too.
+        let mut body = String::from("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n");
+        let chunk = "x".repeat(1 << 20);
+        for _ in 0..7 {
+            body.push_str(&format!("100000\r\n{chunk}\r\n"));
+        }
+        body.push_str("0\r\n\r\n");
+        assert!(parse_response(body.as_bytes())
+            .unwrap_err()
+            .contains("larger than"));
+    }
+
+    #[test]
+    fn a_server_that_drips_bytes_is_cut_off_by_the_overall_deadline() {
+        // M4: per-read timeouts alone never fire when a byte arrives every few seconds.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = stop.clone();
+        let server = std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            let mut seen = [0u8; 1024];
+            let _ = socket.read(&mut seen);
+            let _ = socket.write_all(b"HTTP/1.0 200 OK\r\n\r\n");
+            while !flag.load(std::sync::atomic::Ordering::SeqCst) {
+                if socket.write_all(b"x").is_err() {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        });
+        let mut net = RealNet::new(vec![]);
+        net.timeout = Duration::from_secs(5);
+        net.deadline = Duration::from_millis(800);
+        let target = Target {
+            connect_host: "127.0.0.1".into(),
+            port,
+            server_name: "docs.example.org".into(),
+            host_header: "docs.example.org".into(),
+        };
+        let started = Instant::now();
+        let e = net.http_get(&target, "/").unwrap_err();
+        let took = started.elapsed();
+        stop.store(true, std::sync::atomic::Ordering::SeqCst);
+        server.join().unwrap();
+        assert!(e.contains("timed out"), "{e}");
+        assert!(took < Duration::from_secs(4), "{took:?}");
+    }
+
+    #[test]
+    fn an_answer_larger_than_the_limit_is_an_error_not_a_silent_truncation() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            let mut seen = [0u8; 1024];
+            let _ = socket.read(&mut seen);
+            let _ = socket.write_all(b"HTTP/1.0 200 OK\r\n\r\n");
+            let block = vec![b'x'; 1 << 20];
+            for _ in 0..8 {
+                if socket.write_all(&block).is_err() {
+                    break;
+                }
+            }
+        });
+        let net = RealNet::new(vec![]);
+        let target = Target {
+            connect_host: "127.0.0.1".into(),
+            port,
+            server_name: "docs.example.org".into(),
+            host_header: "docs.example.org".into(),
+        };
+        let e = net.http_get(&target, "/").unwrap_err();
+        let _ = server.join();
+        assert!(e.contains("larger than"), "{e}");
     }
 
     #[test]

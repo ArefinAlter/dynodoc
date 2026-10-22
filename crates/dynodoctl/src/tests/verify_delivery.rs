@@ -7,7 +7,7 @@ use chrono::{DateTime, TimeZone, Utc};
 
 const ORIGIN: &str = "https://docs.example.org";
 
-const LOGIN_HTML: &str = "<!doctype html><html><head><link rel=\"stylesheet\" href=\"/_app/immutable/app.css\"><link rel=\"icon\" href=\"/favicon.png\"><script type=\"module\" src=\"/_app/immutable/entry.js\"></script></head><body><form action=\"/auth/email\"></form><a href=\"https://example.org/help\">help</a>Example Docs</body></html>";
+const LOGIN_HTML: &str = "<!doctype html><html><head><link rel=\"stylesheet\" href=\"/_app/immutable/app.css\"><link rel=\"icon\" href=\"/favicon.png\"><script type=\"module\" src=\"/_app/immutable/entry.js\"></script></head><body><form action=\"/auth/email\"></form><a href=\"/help\">help</a>Example Docs</body></html>";
 
 fn headers(hsts: &str) -> Vec<(&'static str, String)> {
     vec![
@@ -53,11 +53,7 @@ fn site(evaluation: bool) -> FakeNet {
     );
     net.on_https(
         "/_app/immutable/entry.js",
-        ok(page(
-            200,
-            &[],
-            "export const start = () => 1; // see https://svelte.dev/e/x",
-        )),
+        ok(page(200, &[], "export const start = () => 1;")),
     );
     net.on_https("/healthz", ok(page(200, &[], "{\"status\":\"ok\"}")));
     net.on_https(
@@ -593,15 +589,18 @@ fn references_are_taken_from_the_tags_a_browser_loads_by_itself() {
     assert!(refs.contains(&("link".into(), "/_app/immutable/app.css".into())));
     assert!(refs.contains(&("form".into(), "/auth/email".into())));
     assert!(
-        !refs.iter().any(|(_, r)| r.contains("example.org/help")),
+        !refs.iter().any(|(_, r)| r == "/help"),
         "an <a href> is not loaded by itself"
     );
     assert_eq!(
-        host_of("https://Static.Example/x"),
+        split_url("https://Static.Example/x").map(|u| u.host),
         Some("static.example".into())
     );
-    assert_eq!(host_of("//cdn.example/x.js"), Some("cdn.example".into()));
-    assert_eq!(host_of("/local"), None);
+    assert_eq!(
+        split_url("//cdn.example/x.js").map(|u| u.host),
+        Some("cdn.example".into())
+    );
+    assert_eq!(split_url("/local"), None);
 }
 
 #[test]
@@ -806,9 +805,13 @@ fn the_crawl_is_bounded_and_says_how_much_it_left_unread() {
         .iter()
         .find(|c| c.id == "outbound-references")
         .unwrap();
-    assert_eq!(c.level, Level::Pass);
+    assert_eq!(
+        c.level,
+        Level::Warn,
+        "M4: a crawl cut short by its cap is never a pass"
+    );
     assert!(
-        c.detail.contains("more not read (limit 60)"),
+        c.detail.contains("more NOT read (limit 60)"),
         "{}",
         c.detail
     );
@@ -836,3 +839,6 @@ fn the_text_report_names_the_result() {
     let text = check(&site(false), &opts()).render();
     assert!(text.contains("Result: PASSED") && text.contains("NOT BUILT"));
 }
+
+#[path = "verify_delivery_review.rs"]
+mod review;

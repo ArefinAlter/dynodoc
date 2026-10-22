@@ -927,11 +927,9 @@ fn finish(
     }
 }
 
-/// The most recent upgrade record that can still be rolled back.
-pub fn latest_record(ctx: &Ctx<'_>, named: Option<&str>) -> Result<(UpgradeRecord, PathBuf)> {
-    let dir = ctx.layout.state_dir();
+fn read_records(ctx: &Ctx<'_>) -> Vec<(UpgradeRecord, PathBuf)> {
     let mut found: Vec<(UpgradeRecord, PathBuf)> = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(&dir) {
+    if let Ok(entries) = std::fs::read_dir(ctx.layout.state_dir()) {
         for e in entries.flatten() {
             let name = e.file_name().to_string_lossy().into_owned();
             if name.starts_with("upgrade-") && name.ends_with(".json") {
@@ -944,6 +942,20 @@ pub fn latest_record(ctx: &Ctx<'_>, named: Option<&str>) -> Result<(UpgradeRecor
         }
     }
     found.sort_by(|a, b| a.0.id.cmp(&b.0.id));
+    found
+}
+
+/// The newest upgrade record, if it says the switch began and no end was recorded (H3 c).
+pub fn unfinished(ctx: &Ctx<'_>) -> Option<UpgradeRecord> {
+    read_records(ctx)
+        .pop()
+        .map(|(r, _)| r)
+        .filter(|r| r.result == "switching")
+}
+
+/// The most recent upgrade record that can still be rolled back.
+pub fn latest_record(ctx: &Ctx<'_>, named: Option<&str>) -> Result<(UpgradeRecord, PathBuf)> {
+    let found = read_records(ctx);
     let pick = match named {
         Some(n) => found.into_iter().find(|(r, p)| {
             r.id == n

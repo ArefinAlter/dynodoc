@@ -462,3 +462,6 @@ fn status_output_never_contains_a_secret() {
     assert_no_seeded_secret(&r.render(), "status text");
     assert_no_seeded_secret(&serde_json::to_string(&r).unwrap(), "status json");
 }
+
+#[path = "status_review.rs"]
+mod review;

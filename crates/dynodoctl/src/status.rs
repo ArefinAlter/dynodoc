@@ -267,9 +267,36 @@ pub fn collect(ctx: &Ctx<'_>, net: &dyn Net, opts: &Options) -> Result<StatusRep
         ..StatusReport::default()
     };
 
+    // An unfinished swap or upgrade comes first: it explains most of what follows.
+    match crate::recover::read_journal(&ctx.layout) {
+        Ok(None) => {}
+        Ok(Some(j)) => report.problems.push(format!(
+            "an interrupted database swap is recorded in state/{} ({} started {}, backup {}, phase {}): run `dynodoctl recover` before anything else",
+            crate::recover::JOURNAL_NAME, j.operation, j.started_utc, j.backup, j.phase
+        )),
+        Err(e) => report.problems.push(format!("{} - {}", e.what, e.todo)),
+    }
+    if let Some(r) = crate::upgrade::unfinished(ctx) {
+        report.problems.push(format!(
+            "the upgrade {} -> {} started {} did not finish (its record says `switching`): check the services below, then `dynodoctl rollback` to go back or `docker compose up -d --wait` to go on",
+            r.from_version, r.to_version, r.started_utc
+        ));
+    }
+
     // Services.
-    report.services = c.ps().unwrap_or_default();
-    if report.services.is_empty() {
+    let mut docker_unreachable = false;
+    report.services = match c.ps() {
+        Ok(services) => services,
+        Err(e) => {
+            docker_unreachable = true;
+            report.problems.push(format!(
+                "cannot reach Docker, so the services are unknown: {}  What to do: {}",
+                e.what, e.todo
+            ));
+            Vec::new()
+        }
+    };
+    if report.services.is_empty() && !docker_unreachable {
         report.problems.push("no services exist: the installation has not been started (`dynodoctl install`, or `docker compose up -d --wait`)".into());
     }
     for name in LONG_RUNNING {

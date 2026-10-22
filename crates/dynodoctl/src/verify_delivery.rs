@@ -60,44 +60,176 @@ impl DeliveryReport {
     }
 }
 
-/// Hosts that must never appear in what an installation serves. Same ideas as
-/// `frontend/researcher/scripts/audit-hosted-strings.mjs`.
-const FORBIDDEN: [(&str, &str); 4] = [
-    ("dynodoc.online", "the hosted service's name"),
-    ("google-analytics", "analytics"),
-    ("googletagmanager", "analytics"),
-    ("plausible.io", "analytics"),
-];
-const FORBIDDEN_MORE: [(&str, &str); 8] = [
-    ("sentry.io", "analytics"),
-    ("vercel-insights", "analytics"),
-    ("cdn.jsdelivr", "a public CDN"),
-    ("unpkg.com", "a public CDN"),
-    ("cdnjs.", "a public CDN"),
-    ("fonts.googleapis", "a font CDN"),
-    ("posthog", "analytics"),
-    ("hotjar", "analytics"),
-];
-/// Known, documented, optional: reported as a warning, not a failure.
-const KNOWN: [(&str, &str); 4] = [
+/// Origins that may appear in what is served without being a third party the browser talks to:
+/// identifiers that are never fetched. Anything else outside the installation's own origin is
+/// reported (docs/SELF-HOSTED-OPERATIONS.md, "verify-delivery"). Deliberately short.
+const INERT: [&str; 1] = ["www.w3.org"];
+
+/// Known, documented, optional: reported as a warning, not a failure. The host and, when given,
+/// the first path segment after it.
+const KNOWN: [(&str, &str, &str); 4] = [
     (
         "appsforoffice.microsoft.com",
+        "",
         "the Office.js CDN (docs/SELF-HOSTED-EDITION.md 7.3)",
     ),
-    ("accounts.google.com", "optional Google sign-in"),
-    ("resend.com", "the optional Resend mail transport"),
+    ("accounts.google.com", "", "optional Google sign-in"),
+    ("resend.com", "", "the optional Resend mail transport"),
     (
-        "github.com/ArefinAlter",
+        "github.com",
+        "ArefinAlter",
         "a link to the public engine repository",
     ),
 ];
 
-fn find_hosts(text: &str, set: &[(&str, &str)]) -> Vec<String> {
-    let lower = text.to_ascii_lowercase();
-    set.iter()
-        .filter(|(needle, _)| lower.contains(&needle.to_ascii_lowercase()))
-        .map(|(n, why)| format!("{n} ({why})"))
+/// An absolute `http(s)` URL, or a protocol-relative `//host/...` one (taken as `https`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UrlParts {
+    pub scheme: String,
+    pub host: String,
+    pub port: u16,
+    /// Path without query and fragment, at least `/`.
+    pub path: String,
+    /// `user@` was present in the authority.
+    pub userinfo: bool,
+}
+
+impl UrlParts {
+    /// `scheme://host[:port]` with the default port left out.
+    pub fn origin(&self) -> String {
+        let host = if self.host.contains(':') {
+            format!("[{}]", self.host)
+        } else {
+            self.host.clone()
+        };
+        let default = if self.scheme == "https" { 443 } else { 80 };
+        if self.port == default {
+            format!("{}://{host}", self.scheme)
+        } else {
+            format!("{}://{host}:{}", self.scheme, self.port)
+        }
+    }
+
+    /// Exactly the installation's own origin: https, the same host, the same port, no user name.
+    pub fn is_own(&self, origin: &Origin) -> bool {
+        self.scheme == "https"
+            && self.host == origin.host
+            && self.port == origin.port
+            && !self.userinfo
+    }
+}
+
+fn strip_prefix_ci<'a>(text: &'a str, prefix: &str) -> Option<&'a str> {
+    text.get(..prefix.len())
+        .filter(|head| head.eq_ignore_ascii_case(prefix))
+        .map(|_| &text[prefix.len()..])
+}
+
+/// Split an absolute or protocol-relative URL the way a browser does for the parts that decide
+/// WHERE it goes: the authority ends at the first `/`, backslash, `?` or `#`; a user name before
+/// `@` is not the host; a bracketed IPv6 literal keeps its colons. `None` for other schemes and
+/// for text that is not a URL.
+pub fn split_url(reference: &str) -> Option<UrlParts> {
+    let reference = reference.trim();
+    let (scheme, rest) = if let Some(r) = strip_prefix_ci(reference, "https://") {
+        ("https", r)
+    } else if let Some(r) = strip_prefix_ci(reference, "http://") {
+        ("http", r)
+    } else if let Some(r) = reference.strip_prefix("//") {
+        ("https", r)
+    } else {
+        return None;
+    };
+    let end = rest.find(['/', '\\', '?', '#']).unwrap_or(rest.len());
+    let (authority, tail) = rest.split_at(end);
+    if authority.chars().any(|c| c.is_control() || c == ' ') {
+        return None;
+    }
+    let (userinfo, hostport) = match authority.rsplit_once('@') {
+        Some((_, h)) => (true, h),
+        None => (false, authority),
+    };
+    let (host, port_text) = if let Some(inner) = hostport.strip_prefix('[') {
+        let (h, after) = inner.split_once(']')?;
+        (h.to_string(), after.strip_prefix(':'))
+    } else {
+        match hostport.rsplit_once(':') {
+            Some((h, p)) => (h.to_string(), Some(p)),
+            None => (hostport.to_string(), None),
+        }
+    };
+    if host.is_empty()
+        || !host
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | ':'))
+    {
+        return None;
+    }
+    let port = match port_text {
+        Some(p) if !p.is_empty() => p.parse::<u16>().ok()?,
+        _ if scheme == "https" => 443,
+        _ => 80,
+    };
+    let path = tail.split(['?', '#']).next().unwrap_or("");
+    Some(UrlParts {
+        scheme: scheme.to_string(),
+        host: host.to_ascii_lowercase(),
+        port,
+        path: if path.is_empty() {
+            "/".to_string()
+        } else {
+            path.to_string()
+        },
+        userinfo,
+    })
+}
+
+/// Every absolute `http(s)` URL written in a text, as `(origin, first path segment)`.
+pub fn urls_in(text: &str) -> Vec<(String, String)> {
+    static RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+    let re = RE.get_or_init(|| {
+        Regex::new(
+            r#"(?i)\bhttps?://(?:\[[0-9a-f:.]+\][^\s"'`<>\\)\]}{,;|^*]*|[^\s"'`<>\\)\]}{,;|^*]+)"#,
+        )
+        .expect("regex")
+    });
+    re.find_iter(text)
+        .filter_map(|m| split_url(m.as_str()))
+        .map(|u| {
+            let segment = u
+                .path
+                .trim_start_matches('/')
+                .split('/')
+                .next()
+                .unwrap_or("")
+                .to_string();
+            (u.origin(), segment)
+        })
         .collect()
+}
+
+/// `--connect`: `host`, `host:port`, `[v6]`, `[v6]:port` or a bare IPv6 literal (`::1`).
+pub fn parse_connect(text: &str, default_port: u16) -> (String, u16) {
+    let text = text.trim();
+    if let Some(inner) = text.strip_prefix('[') {
+        if let Some((host, after)) = inner.split_once(']') {
+            let port = after
+                .strip_prefix(':')
+                .and_then(|p| p.parse().ok())
+                .unwrap_or(default_port);
+            return (host.to_string(), port);
+        }
+    }
+    // Two or more colons and no brackets: an IPv6 address, not host:port.
+    if text.matches(':').count() >= 2 {
+        return (text.to_string(), default_port);
+    }
+    match text.rsplit_once(':') {
+        Some((h, p)) if p.parse::<u16>().is_ok() => {
+            (h.to_string(), p.parse().unwrap_or(default_port))
+        }
+        _ => (text.to_string(), default_port),
+    }
 }
 
 /// `src`/`href`/`action` values of the tags a browser loads by itself.
@@ -139,18 +271,19 @@ const MAX_CRAWL: usize = 60;
 /// "Lazy" files are reached only through `import(...)` of another script: route modules the
 /// browser loads when it opens that route. "Eager" files are loaded by the sign-in page itself.
 struct Crawl {
-    host: String,
+    origin: Origin,
     eager: std::collections::VecDeque<String>,
     lazy: std::collections::VecDeque<String>,
     seen: std::collections::HashSet<String>,
     lazy_files: std::collections::HashSet<String>,
-    external: Vec<String>,
+    /// `(origin, what loads it)` for references to anything but the installation's own origin.
+    external: Vec<(String, String)>,
 }
 
 impl Crawl {
-    fn new(host: &str) -> Self {
+    fn new(origin: &Origin) -> Self {
         Self {
-            host: host.to_string(),
+            origin: origin.clone(),
             eager: Default::default(),
             lazy: Default::default(),
             seen: Default::default(),
@@ -160,14 +293,40 @@ impl Crawl {
     }
 
     fn enqueue(&mut self, from: &str, reference: &str, tag: &str, lazy: bool) {
-        if let Some(host) = host_of(reference) {
-            if host != self.host {
-                self.external.push(format!("<{tag}> loads {reference}"));
+        let looks_absolute = {
+            let r = reference.trim();
+            r.starts_with("//")
+                || strip_prefix_ci(r, "https://").is_some()
+                || strip_prefix_ci(r, "http://").is_some()
+        };
+        let own_path;
+        let path = if looks_absolute {
+            match split_url(reference) {
+                // The installation's own origin written out in full: crawl it like any other
+                // reference (it used to be skipped, so a file named that way was never read).
+                Some(u) if u.is_own(&self.origin) => {
+                    own_path = resolve_path("/", &u.path);
+                    match own_path {
+                        Some(p) => p,
+                        None => return,
+                    }
+                }
+                Some(u) => {
+                    self.external
+                        .push((u.origin(), format!("<{tag}> loads {reference}")));
+                    return;
+                }
+                None => {
+                    self.external
+                        .push((reference.to_string(), format!("<{tag}> loads {reference}")));
+                    return;
+                }
             }
-            return;
-        }
-        let Some(path) = resolve_path(from, reference) else {
-            return;
+        } else {
+            let Some(path) = resolve_path(from, reference) else {
+                return;
+            };
+            path
         };
         if !is_static_asset(&path) {
             return;
@@ -247,24 +406,16 @@ pub fn script_imports(text: &str) -> Vec<(String, bool)> {
         .collect()
 }
 
-fn host_of(reference: &str) -> Option<String> {
-    let rest = reference
-        .strip_prefix("https://")
-        .or_else(|| reference.strip_prefix("http://"))
-        .or_else(|| reference.strip_prefix("//"))?;
-    Some(
-        rest.split(['/', '?', '#', ':'])
-            .next()
-            .unwrap_or("")
-            .to_ascii_lowercase(),
-    )
-}
-
+/// `max-age` of a Strict-Transport-Security value. The directive name is case-insensitive
+/// (RFC 6797), and the value may be quoted.
 fn max_age(hsts: &str) -> Option<u64> {
     hsts.split(';').find_map(|p| {
-        p.trim()
-            .strip_prefix("max-age=")
-            .and_then(|n| n.trim().parse().ok())
+        let p = p.trim();
+        let (name, value) = p.split_once('=')?;
+        name.trim()
+            .eq_ignore_ascii_case("max-age")
+            .then(|| value.trim().trim_matches('"').parse().ok())
+            .flatten()
     })
 }
 
@@ -301,12 +452,7 @@ pub fn run(ctx: &Ctx<'_>, net: &dyn Net, opts: &Options) -> Result<DeliveryRepor
         })
         .unwrap_or(80);
     let (connect_host, connect_port) = match &opts.connect {
-        Some(c) => match c.rsplit_once(':') {
-            Some((h, p)) if p.parse::<u16>().is_ok() => {
-                (h.to_string(), p.parse().unwrap_or(origin.port))
-            }
-            _ => (c.clone(), origin.port),
-        },
+        Some(c) => parse_connect(c, origin.port),
         None => (origin.host.clone(), origin.port),
     };
     let https = |host_header: String| Target {
@@ -340,23 +486,34 @@ pub fn run(ctx: &Ctx<'_>, net: &dyn Net, opts: &Options) -> Result<DeliveryRepor
         || facts.protocol.contains("1_3")
         || facts.protocol.contains("1.2")
         || facts.protocol.contains("1.3");
+    // What this client negotiated. The TLS library offers 1.2 and 1.3 only, so whether the server
+    // would ALSO accept 1.0 or 1.1 is not tested, and the check does not claim it.
     add(
         "tls-version",
         if proto_ok { Level::Pass } else { Level::Fail },
-        "TLS 1.2 or newer",
-        facts.protocol.clone(),
+        "This client negotiated TLS 1.2 or newer",
+        format!(
+            "{} (whether the server also accepts TLS 1.0 or 1.1 is not tested)",
+            facts.protocol
+        ),
     );
     let leaf = facts.leaf();
-    let evaluation = mode == "evaluation"
-        || leaf.as_ref().map(|c| c.is_evaluation()).unwrap_or(false)
-        || login
-            .header("x-dynodoc-tls-mode")
-            .map(|v| v.starts_with("evaluation"))
-            .unwrap_or(false);
+    // M4: only the operator's own statement of the certificate mode relaxes a check. What the
+    // server says about itself (its certificate's subject, a header) never does.
+    let evaluation = mode == "evaluation";
     match &facts.trust {
         Ok(()) => add("tls-chain", Level::Pass, "The certificate chain is valid for this name", leaf.as_ref().map(|c| format!("issued by {}", c.issuer)).unwrap_or_default()),
         Err(why) if evaluation => add("tls-chain", Level::Warn, "Evaluation certificate", format!("{why}. Expected in evaluation mode; browsers and Office add-ins reject it. Use `provided` or `acme` for real use.")),
-        Err(why) => add("tls-chain", Level::Fail, "The certificate chain is valid for this name", why.to_string()),
+        Err(why) => add(
+            "tls-chain",
+            Level::Fail,
+            "The certificate chain is valid for this name",
+            if leaf.as_ref().map(|c| c.is_evaluation()).unwrap_or(false) {
+                format!("{why} (it is the bundle's evaluation certificate, but the certificate mode is `{}`)", if mode.is_empty() { "not given" } else { &mode })
+            } else {
+                why.to_string()
+            },
+        ),
     }
     match &leaf {
         Some(c) => {
@@ -402,10 +559,15 @@ pub fn run(ctx: &Ctx<'_>, net: &dyn Net, opts: &Options) -> Result<DeliveryRepor
         host_header: http_host,
     };
     match net.http_get(&http_target, "/") {
+        // The Location is parsed, not matched as text: `https://docs.example.org.evil.example/`
+        // and `https://docs.example.org@evil.example/` both start with the origin.
         Ok(r)
             if matches!(r.status, 301 | 302 | 307 | 308)
                 && r.header("location")
-                    .map(|l| l.starts_with(&origin.url()))
+                    // `//host/` from an http page stays on http: only an explicit https:// counts.
+                    .filter(|l| strip_prefix_ci(l.trim(), "https://").is_some())
+                    .and_then(split_url)
+                    .map(|u| u.is_own(&origin))
                     .unwrap_or(false) =>
         {
             add(
@@ -656,7 +818,7 @@ pub fn run(ctx: &Ctx<'_>, net: &dyn Net, opts: &Options) -> Result<DeliveryRepor
     // static imports of every script found, up to MAX_CRAWL files of this origin.
     // (path, text, lazy)
     let mut texts: Vec<(String, String, bool)> = vec![("/login".to_string(), login.text(), false)];
-    let mut crawl = Crawl::new(&origin.host);
+    let mut crawl = Crawl::new(&origin);
     for (tag, reference) in loaded_references(&login.text()) {
         crawl.enqueue("/login", &reference, &tag, false);
     }
@@ -664,12 +826,14 @@ pub fn run(ctx: &Ctx<'_>, net: &dyn Net, opts: &Options) -> Result<DeliveryRepor
         // The page's own inline `import("...")` loads the application: eager.
         crawl.enqueue("/login", &reference, "script", false);
     }
-    while let Some(path) = crawl.next() {
-        if texts.len() > MAX_CRAWL {
+    // Files that could not be read are not "clean": they are reported, and make the result a warning.
+    let mut unreadable: Vec<String> = Vec::new();
+    while texts.len() <= MAX_CRAWL {
+        let Some(path) = crawl.next() else {
             break;
-        }
-        if let Ok((r, _)) = net.https_get(&target, &path) {
-            if r.status == 200 {
+        };
+        match net.https_get(&target, &path) {
+            Ok((r, _)) if r.status == 200 => {
                 let body = r.text();
                 let lazy_parent = crawl.is_lazy(&path);
                 if path.ends_with(".js") || path.ends_with(".mjs") {
@@ -679,64 +843,122 @@ pub fn run(ctx: &Ctx<'_>, net: &dyn Net, opts: &Options) -> Result<DeliveryRepor
                 }
                 texts.push((path, body, lazy_parent));
             }
+            Ok((r, _)) => unreadable.push(format!("{path} (status {})", r.status)),
+            Err(e) => unreadable.push(format!("{path} ({e})")),
         }
     }
     let skipped = crawl.eager.len() + crawl.lazy.len();
-    let external_loads = crawl.external.clone();
     // A file found eagerly after it was first read as lazy is eager.
     for t in texts.iter_mut() {
         t.2 = t.2 && crawl.is_lazy(&t.0);
     }
-    let mut forbidden: Vec<String> = Vec::new();
-    let mut dormant: Vec<String> = Vec::new();
-    let mut known: Vec<String> = Vec::new();
-    for (path, text, lazy) in &texts {
-        for hit in find_hosts(text, &FORBIDDEN)
-            .into_iter()
-            .chain(find_hosts(text, &FORBIDDEN_MORE))
-        {
-            if *lazy {
-                dormant.push(format!("{path}: {hit}"));
-            } else {
-                forbidden.push(format!("{path}: {hit}"));
-            }
+    // M4: every absolute http(s) origin in what is served, whatever its name, except the
+    // installation's own, the operator's own support link, and the short INERT list. Reported once
+    // per distinct origin.
+    let support_origin = env
+        .as_ref()
+        .and_then(|e| e.get("DYNODOC_SUPPORT_URL"))
+        .and_then(split_url)
+        .map(|u| u.origin());
+    let mut outside: std::collections::BTreeMap<String, (String, bool)> = Default::default();
+    let mut known: std::collections::BTreeMap<String, String> = Default::default();
+    let mut note = |origin_text: String, where_: String, lazy: bool| {
+        let entry = outside.entry(origin_text).or_insert((where_, lazy));
+        // Found eagerly anywhere means eager.
+        entry.1 = entry.1 && lazy;
+    };
+    for (origin_text, how) in &crawl.external {
+        let parts = split_url(origin_text);
+        if parts.as_ref().is_some_and(|u| {
+            INERT.contains(&u.host.as_str())
+                || support_origin.as_deref() == Some(u.origin().as_str())
+        }) {
+            continue;
         }
-        for hit in find_hosts(text, &KNOWN) {
-            known.push(format!("{path}: {hit}"));
+        note(origin_text.clone(), how.clone(), false);
+    }
+    for (path, text, lazy) in &texts {
+        for (origin_text, segment) in urls_in(text) {
+            let Some(parts) = split_url(&origin_text) else {
+                continue;
+            };
+            if parts.is_own(&origin)
+                || INERT.contains(&parts.host.as_str())
+                || support_origin.as_deref() == Some(origin_text.as_str())
+            {
+                continue;
+            }
+            if let Some((_, _, why)) = KNOWN.iter().find(|(host, first, _)| {
+                (parts.host == *host || parts.host.ends_with(&format!(".{host}")))
+                    && (first.is_empty() || first.eq_ignore_ascii_case(&segment))
+            }) {
+                known
+                    .entry(origin_text.clone())
+                    .or_insert_with(|| format!("{origin_text} in {path} ({why})"));
+                continue;
+            }
+            note(origin_text, format!("in {path}"), *lazy);
         }
     }
-    forbidden.extend(external_loads);
+    let eager_outside: Vec<String> = outside
+        .iter()
+        .filter(|(_, (_, lazy))| !lazy)
+        .map(|(o, (w, _))| format!("{o} ({w})"))
+        .collect();
+    let dormant: Vec<String> = outside
+        .iter()
+        .filter(|(_, (_, lazy))| *lazy)
+        .map(|(o, (w, _))| format!("{o} ({w})"))
+        .collect();
+    let incomplete = skipped > 0 || !unreadable.is_empty();
+    let summary = format!(
+        "{} files read ({} bytes){}{}",
+        texts.len(),
+        texts.iter().map(|(_, t, _)| t.len()).sum::<usize>(),
+        if skipped > 0 {
+            format!(", {skipped} more NOT read (limit {MAX_CRAWL}): the check is incomplete")
+        } else {
+            String::new()
+        },
+        if unreadable.is_empty() {
+            String::new()
+        } else {
+            format!(
+                ", {} file(s) could not be read: {}",
+                unreadable.len(),
+                unreadable
+                    .iter()
+                    .take(5)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            )
+        }
+    );
     add(
         "outbound-references",
-        if forbidden.is_empty() {
-            Level::Pass
-        } else {
+        if !eager_outside.is_empty() {
             Level::Fail
-        },
-        "What is served names no outside host",
-        if forbidden.is_empty() {
-            format!(
-                "{} files read ({} bytes){}",
-                texts.len(),
-                texts.iter().map(|(_, t, _)| t.len()).sum::<usize>(),
-                if skipped > 0 {
-                    format!(", {skipped} more not read (limit {MAX_CRAWL})")
-                } else {
-                    String::new()
-                }
-            )
+        } else if incomplete {
+            Level::Warn
         } else {
-            forbidden.join("; ")
+            Level::Pass
+        },
+        "What is served names no origin but its own",
+        if eager_outside.is_empty() {
+            summary
+        } else {
+            format!("{}; {summary}", eager_outside.join("; "))
         },
     );
     if !dormant.is_empty() {
-        let shown: Vec<&str> = dormant.iter().take(3).map(String::as_str).collect();
+        let shown: Vec<&str> = dormant.iter().take(5).map(String::as_str).collect();
         add(
             "dormant-references",
             Level::Warn,
-            "Route modules that are not loaded at sign-in name the hosted site or an analytics host",
+            "Route modules that are not loaded at sign-in name another origin",
             format!(
-                "{} hit(s), for example {}. They are loaded only when the browser opens that route; the marketing routes answer 404 here. Known open item: acceptance criterion 6 of Phase 0 (task P0-6, a build without the (site) routes)",
+                "{} origin(s): {}. They are loaded only when the browser opens that route; the marketing routes answer 404 here. Known open item: acceptance criterion 6 of Phase 0 (task P0-6, a build without the (site) routes)",
                 dormant.len(),
                 shown.join("; ")
             ),
@@ -747,7 +969,7 @@ pub fn run(ctx: &Ctx<'_>, net: &dyn Net, opts: &Options) -> Result<DeliveryRepor
             "known-references",
             Level::Warn,
             "Documented optional references are present",
-            known.join("; "),
+            known.values().cloned().collect::<Vec<_>>().join("; "),
         );
     }
 
