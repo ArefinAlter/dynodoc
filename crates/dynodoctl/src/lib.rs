@@ -4,6 +4,7 @@
 //! scripted fake. Commands live in their own modules; `cli` parses arguments and `main` maps
 //! results to the exit codes documented in `docs/SELF-HOSTED-OPERATIONS.md`.
 
+pub mod admin_link;
 pub mod backup;
 pub mod cli;
 pub mod compose;

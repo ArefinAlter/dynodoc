@@ -70,6 +70,14 @@ impl Layout {
 pub trait Confirm {
     /// True only when the operator gave exactly `phrase`.
     fn confirm(&self, prompt: &str, phrase: &str) -> bool;
+
+    /// Like [`confirm`](Self::confirm), but only a person at a terminal can give it: a phrase passed
+    /// in advance with `--confirm` does not count, and neither does text piped in. For acts whose
+    /// result is a credential shown on the screen (`admin-link`), where a script must not be able to
+    /// say "yes" for the person. (Test doubles answer from their script, as with `confirm`.)
+    fn confirm_interactive(&self, prompt: &str, phrase: &str) -> bool {
+        self.confirm(prompt, phrase)
+    }
 }
 
 /// Phrases passed with `--confirm`, else a prompt on a terminal, else refusal. Whether input is a
@@ -78,6 +86,9 @@ pub trait Confirm {
 pub struct Interactive {
     pub provided: Vec<String>,
     terminal: bool,
+    /// Standard output is a terminal too (for [`Confirm::confirm_interactive`]: the credential it
+    /// leads to is printed there).
+    stdout_terminal: bool,
     input: RefCell<Box<dyn BufRead>>,
 }
 
@@ -87,6 +98,7 @@ impl Interactive {
         Self {
             provided,
             terminal: std::io::stdin().is_terminal(),
+            stdout_terminal: std::io::stdout().is_terminal(),
             input: RefCell::new(Box::new(std::io::stdin().lock())),
         }
     }
@@ -96,8 +108,27 @@ impl Interactive {
         Self {
             provided,
             terminal,
+            stdout_terminal: terminal,
             input: RefCell::new(input),
         }
+    }
+
+    /// For tests: input is a terminal but standard output is not (`dynodoctl ... > file`).
+    pub fn with_redirected_output(mut self) -> Self {
+        self.stdout_terminal = false;
+        self
+    }
+
+    /// Show the prompt, read one line, and say whether it is exactly `phrase`.
+    fn ask(&self, prompt: &str, phrase: &str) -> bool {
+        println!("{prompt}");
+        print!("Type exactly `{phrase}` to continue, anything else cancels: ");
+        let _ = std::io::stdout().flush();
+        let mut line = String::new();
+        if self.input.borrow_mut().read_line(&mut line).is_err() {
+            return false;
+        }
+        line.trim() == phrase
     }
 }
 
@@ -109,14 +140,15 @@ impl Confirm for Interactive {
         if !self.terminal {
             return false;
         }
-        println!("{prompt}");
-        print!("Type exactly `{phrase}` to continue, anything else cancels: ");
-        let _ = std::io::stdout().flush();
-        let mut line = String::new();
-        if self.input.borrow_mut().read_line(&mut line).is_err() {
+        self.ask(prompt, phrase)
+    }
+
+    fn confirm_interactive(&self, prompt: &str, phrase: &str) -> bool {
+        // `provided` (--confirm) is deliberately not consulted.
+        if !(self.terminal && self.stdout_terminal) {
             return false;
         }
-        line.trim() == phrase
+        self.ask(prompt, phrase)
     }
 }
 
@@ -312,6 +344,53 @@ mod tests {
         // M10: the right phrase is on the input, but the input is not a terminal: refused.
         let confirm = Interactive::with_input(vec![], false, answers("REPLACE LIVE DATA\n"));
         assert!(!confirm.confirm("p", "REPLACE LIVE DATA"));
+    }
+
+    #[test]
+    fn an_interactive_confirmation_ignores_phrases_given_in_advance_and_needs_two_terminals() {
+        // The phrase is on the command line and the input would say it: still no, for a
+        // credential that is shown on the screen.
+        let advance = Interactive::with_input(
+            vec!["me@example.org".into()],
+            false,
+            answers(
+                "me@example.org
+",
+            ),
+        );
+        assert!(advance.confirm("p", "me@example.org"));
+        assert!(!advance.confirm_interactive("p", "me@example.org"));
+        // A terminal for input, but the output redirected: no.
+        let redirected = Interactive::with_input(
+            vec![],
+            true,
+            answers(
+                "me@example.org
+",
+            ),
+        )
+        .with_redirected_output();
+        assert!(!redirected.confirm_interactive("p", "me@example.org"));
+        // On a terminal, only the exact phrase.
+        assert!(Interactive::with_input(
+            vec![],
+            true,
+            answers(
+                "me@example.org
+"
+            )
+        )
+        .confirm_interactive("p", "me@example.org"));
+        assert!(!Interactive::with_input(
+            vec![],
+            true,
+            answers(
+                "ME@example.org
+"
+            )
+        )
+        .confirm_interactive("p", "me@example.org"));
+        assert!(!Interactive::with_input(vec![], true, answers("")).confirm_interactive("p", "x"));
     }
 
     #[test]
