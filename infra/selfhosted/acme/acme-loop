@@ -85,7 +85,7 @@ log "Challenge: HTTP-01 through the proxy on port 80. A renewal is attempted whe
 while true; do
   wait=$CHECK_SECONDS
   # shellcheck disable=SC2086
-  if lego --path "$LEGO_DIR" --log.format text run --accept-tos --email "$DYNODOC_ACME_EMAIL" \
+  if lego --log.format text run --path "$LEGO_DIR" --accept-tos --email "$DYNODOC_ACME_EMAIL" \
         --server "$DYNODOC_ACME_CA" $domain_args --http --http.webroot "$WEBROOT" --no-random-sleep; then
     publish || { log "ERROR: lego reported success but its certificate files were not found under $LEGO_DIR"; wait=$RETRY_SECONDS; }
   else

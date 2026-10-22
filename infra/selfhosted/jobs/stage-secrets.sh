@@ -94,6 +94,9 @@ done
 
 # --- staging -----------------------------------------------------------------------------------
 
+# A previous run left the volumes' top directories read-only for everyone (0555) once filled.
+for d in /stage/*; do chmod 0755 "$d"; done
+
 # stage DIR UID GID MODE SRCFILE NAME : copy one file in, replacing any previous version.
 stage() {
   dir=$1 uid=$2 gid=$3 fmode=$4 srcfile=$5 name=$6
@@ -114,7 +117,8 @@ prune() {
   chmod 0555 "$dir"
 }
 
-api_files="paseto_local_key database_url web_service_key"
+api_only="paseto_local_key database_url"
+api_files="$api_only web_service_key"
 db_files="postgres_password runtime_database_password"
 
 # web and check: every file in secrets/ that is not reserved for the api or the database.
@@ -125,7 +129,7 @@ for f in "$SRC"/*; do
   case "$n" in
     *[!a-z0-9_]*) say "NOTE: secrets/$n is not staged (names may use only a-z, 0-9 and _)." >&2; continue ;;
   esac
-  case " $api_files $db_files " in *" $n "*) continue ;; esac
+  case " $api_only $db_files " in *" $n "*) continue ;; esac
   web_files="$web_files $n"
 done
 web_files=${web_files# }
@@ -139,9 +143,9 @@ prune /stage/web $web_files
 for n in $db_files; do stage /stage/db $DB_UID $DB_UID 0400 "$SRC/$n" "$n"; done
 prune /stage/db $db_files
 
-for n in $api_files $web_files; do stage /stage/check $APP_UID $APP_UID 0400 "$SRC/$n" "$n"; done
+for n in $api_only $web_files; do stage /stage/check $APP_UID $APP_UID 0400 "$SRC/$n" "$n"; done
 stage /stage/check $APP_UID $APP_UID 0400 "$HOST_ENV" .env
-prune /stage/check $api_files $web_files .env
+prune /stage/check $api_only $web_files .env
 
 if [ -f "$SRC/converter_key" ]; then
   stage /stage/converter $APP_UID $APP_UID 0400 "$SRC/converter_key" converter_key

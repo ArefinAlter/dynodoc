@@ -1,0 +1,26 @@
+# TESTS ONLY. Overlay used by scripts/smoke.mjs: adds a throwaway mail sink so that the email
+# sign-in can be exercised end to end without a real mail server. Not part of the product; the
+# product's compose.yml never starts it. The sink is reachable only on the internal `engine`
+# network and publishes nothing.
+services:
+  mailsink:
+    image: ${DYNODOC_IMAGE_REGISTRY:-dynodoc-local}/web:${DYNODOC_VERSION:-dev}
+    entrypoint: ["node", "/sink/smtp-sink.mjs"]
+    user: "10001:10001"
+    restart: "no"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    init: true
+    tmpfs: ["/tmp:size=8m"]
+    volumes:
+      - ./test-sink:/sink:ro
+    networks: [engine]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:2580/messages').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  web:
+    depends_on:
+      mailsink: {condition: service_healthy}

@@ -213,9 +213,11 @@ services:
     <<: *hardening
     # Every web setting comes from .env (README, "Settings"). The lines below are fixed by the
     # bundle and cannot be changed from .env.
+    # (`required: false` only so that `docker compose build` works before .env exists; with no
+    # .env, secrets-init and preflight stop the stack before the web server could start.)
     env_file:
       - path: ./.env
-        required: true
+        required: false
     environment:
       DYNODOC_MODE: selfhosted
       ENGINE_API_URL: http://api:8080
