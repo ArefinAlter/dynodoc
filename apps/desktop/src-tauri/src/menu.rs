@@ -146,8 +146,12 @@ pub fn handle(app: &AppHandle, id: &str) {
         // A menu item is the person's choice, like the launcher's button. Without a server
         // there is nothing to sign in to: the launcher is where one is chosen.
         SIGN_IN_BROWSER => {
-            if let Err(window::SignInStart::NoServer) = window::begin_browser_sign_in(app) {
-                window::show_launcher(app, None);
+            match window::begin_browser_sign_in(app) {
+                Err(window::SignInStart::NoServer) => window::show_launcher(app, None),
+                // Where this system's web view cannot name the app to the server the launcher
+                // shows the paste-a-link fallback (and says nothing of a button it does not have).
+                Err(window::SignInStart::Unsupported) => window::show_launcher(app, Some("signin")),
+                _ => {}
             }
         }
         SIGN_IN => window::show_launcher(app, Some("signin")),

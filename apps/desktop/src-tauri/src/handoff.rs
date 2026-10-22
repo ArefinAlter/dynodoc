@@ -761,13 +761,37 @@ mod tests {
                 |_| {},
             )
         };
-        for i in 0..100 {
-            try_open(&format!("https://flood{i}.example/"), Source::Page, i * 50);
-            try_open(&format!("https://click{i}.example/"), Source::Click, i * 50);
+        // One attempt a second for half a minute: each of the two budgets fills (five a minute,
+        // ten a minute) and refuses the rest.
+        let mut page_opened = 0;
+        let mut click_opened = 0;
+        for i in 0..30 {
+            if try_open(
+                &format!("https://flood{i}.example/"),
+                Source::Page,
+                i * 1_000,
+            ) == HandOff::Opened
+            {
+                page_opened += 1;
+            }
+            if try_open(
+                &format!("https://click{i}.example/"),
+                Source::Click,
+                i * 1_000,
+            ) == HandOff::Opened
+            {
+                click_opened += 1;
+            }
         }
+        assert_eq!((page_opened, click_opened), (5, 10), "both are used up");
         assert_eq!(
-            try_open("https://app.example/app-signin", Source::SignIn, 5_000),
-            HandOff::Opened
+            try_open("https://example.org/", Source::Click, 31_000),
+            HandOff::RateLimited
+        );
+        assert_eq!(
+            try_open("https://app.example/app-signin", Source::SignIn, 31_000),
+            HandOff::Opened,
+            "the sign-in request has a budget of its own"
         );
         let limiters = Limiters::new();
         let try_open = |text: &str, source, at_ms: u64| {
@@ -779,16 +803,28 @@ mod tests {
                 |_| {},
             )
         };
-        for i in 0..100 {
-            try_open("https://app.example/app-signin", Source::SignIn, i * 50);
+        let mut sign_in_opened = 0;
+        for i in 0..30 {
+            if try_open("https://app.example/app-signin", Source::SignIn, i * 1_000)
+                == HandOff::Opened
+            {
+                sign_in_opened += 1;
+            }
         }
+        assert_eq!(sign_in_opened, 6, "its own budget is used up");
         assert_eq!(
-            try_open("https://example.org/", Source::Click, 5_000),
-            HandOff::Opened
+            try_open("https://app.example/app-signin", Source::SignIn, 31_000),
+            HandOff::RateLimited
         );
         assert_eq!(
-            try_open("https://example.org/", Source::Page, 5_000),
-            HandOff::Opened
+            try_open("https://example.org/", Source::Click, 31_000),
+            HandOff::Opened,
+            "and the click budget is untouched"
+        );
+        assert_eq!(
+            try_open("https://example.org/", Source::Page, 31_000),
+            HandOff::Opened,
+            "and so is the page budget"
         );
     }
 
