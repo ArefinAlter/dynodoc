@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Behind the web view and under the system bars: the launcher's own background, so the
+         bars do not show as a different colour (values-night has the dark one). -->
+    <color name="dynodoc_window">#FFF7F5EF</color>
+</resources>

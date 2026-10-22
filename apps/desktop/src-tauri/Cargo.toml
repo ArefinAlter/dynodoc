@@ -4,7 +4,9 @@
 
 [package]
 name = "dynodoc-desktop"
-# The single source of the app version: tauri.conf.json has no "version" and falls back to this.
+# The app version: tauri.conf.json has no "version" and falls back to this on desktop. Android's
+# Tauri command line does not fall back, so tauri.android.conf.json repeats it (a test keeps the
+# two equal; change both together).
 version = "0.1.0"
 description = "Dynodoc desktop client: a native shell around the configured Dynodoc server."
 edition = "2021"

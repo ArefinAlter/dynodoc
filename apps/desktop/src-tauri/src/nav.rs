@@ -116,8 +116,48 @@ impl LauncherGrant {
     }
 }
 
-/// `launcher_allowed` is the result of `LauncherGrant::take` for this navigation (taken only
-/// for `is_launcher_page` addresses). `frames_ambiguous` is `frames_are_ambiguous()`.
+/// May the launcher page load now? Yes for a navigation the shell started (the grant, taken
+/// only for the launcher's own page), and also while NO server is configured: then the window
+/// can only ever show the launcher (every other page is refused or sent to the browser), so a
+/// load of it is the shell building its own window again and not a page asking for it. That
+/// happens on Android, where the system re-creates the activity, and with it the web view, on a
+/// font-size or display-size change or when the app is updated under it; the second load of
+/// the launcher would otherwise find the one-shot grant spent and leave a blank window. With a
+/// server configured the grant is still the only way in. `take_grant` is called only for the
+/// launcher's page.
+pub fn launcher_load_allowed(
+    target: &Url,
+    launcher: &Url,
+    server_configured: bool,
+    take_grant: impl FnOnce() -> bool,
+) -> bool {
+    if !is_launcher_page(target, launcher) {
+        return false;
+    }
+    let granted = take_grant();
+    granted || !server_configured
+}
+
+/// Where to go instead when the launcher's page was refused: on a phone, a configured server's
+/// entry page. Android re-creates the web view on a font-size or display-size change (or after a
+/// dead renderer) and reloads the address the window was FIRST created with, which is the
+/// launcher whenever the app was first run without a saved server; with a server saved that load
+/// is refused, and the window would stay blank. `None` when there is no server (the launcher is
+/// allowed then) or the address is not the launcher's page.
+#[cfg_attr(not(mobile), allow(dead_code))]
+pub fn launcher_denied_goes_to(
+    target: &Url,
+    launcher: &Url,
+    server: Option<&ServerOrigin>,
+) -> Option<Url> {
+    if !is_launcher_page(target, launcher) {
+        return None;
+    }
+    server.map(ServerOrigin::entry)
+}
+
+/// `launcher_allowed` is the result of `launcher_load_allowed` for this navigation.
+/// `frames_ambiguous` is `frames_are_ambiguous()`.
 pub fn decide(
     target: &Url,
     server: Option<&ServerOrigin>,
@@ -549,6 +589,72 @@ mod tests {
         grant.arm(t0);
         grant.arm(t0 + Duration::from_secs(10));
         assert!(grant.take(t0 + Duration::from_secs(12)));
+    }
+
+    #[test]
+    fn the_launcher_loads_again_while_no_server_is_configured_but_never_for_a_page() {
+        let launcher = launcher_origin();
+        let page = launcher_url(None);
+        // Nothing configured: the shell's own window may load its launcher any number of
+        // times (Android re-creates the web view), with or without a grant.
+        for _ in 0..3 {
+            assert!(launcher_load_allowed(&page, &launcher, false, || false));
+        }
+        // A server is configured: only the shell's grant opens it, once.
+        let mut grants = vec![true, false];
+        assert!(launcher_load_allowed(&page, &launcher, true, || grants.remove(0)));
+        assert!(!launcher_load_allowed(&page, &launcher, true, || grants.remove(0)));
+        assert!(!launcher_load_allowed(&page, &launcher, true, || false));
+        // Other addresses on the launcher's origin never load, and never spend a grant.
+        for other in ["/other.html", "/launcher.js", "/index.html/x"] {
+            let target = launcher.join(other).unwrap();
+            for configured in [false, true] {
+                assert!(!launcher_load_allowed(
+                    &target,
+                    &launcher,
+                    configured,
+                    || { panic!("the grant is only taken for the launcher's page") }
+                ));
+            }
+        }
+        // Another origin is not the launcher whatever is configured.
+        let elsewhere = Url::parse("https://app.dynodoc.online/").unwrap();
+        assert!(!launcher_load_allowed(&elsewhere, &launcher, false, || {
+            panic!("not the launcher")
+        }));
+        // And the decision that follows still denies it when the answer was no.
+        let s = server("https://app.dynodoc.online");
+        assert_eq!(
+            decide(&page, Some(&s), &launcher, false, false),
+            Decision::Deny
+        );
+    }
+
+    #[test]
+    fn a_refused_launcher_load_goes_to_the_servers_entry_when_there_is_a_server() {
+        let launcher = launcher_origin();
+        let s = server("https://app.dynodoc.online");
+        for target in [
+            launcher_url(None),
+            launcher.clone(),
+            launcher_url(Some("key")),
+        ] {
+            assert_eq!(
+                launcher_denied_goes_to(&target, &launcher, Some(&s)),
+                Some(s.entry()),
+                "{target}"
+            );
+            assert_eq!(launcher_denied_goes_to(&target, &launcher, None), None);
+        }
+        for other in ["/other.html", "/launcher.js", "/index.html/x"] {
+            let target = launcher.join(other).unwrap();
+            assert_eq!(launcher_denied_goes_to(&target, &launcher, Some(&s)), None);
+        }
+        let elsewhere = Url::parse("https://evil.example/index.html").unwrap();
+        assert_eq!(
+            launcher_denied_goes_to(&elsewhere, &launcher, Some(&s)),
+            None
+        );
     }
 
     #[test]

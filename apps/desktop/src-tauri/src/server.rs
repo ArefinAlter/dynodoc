@@ -11,6 +11,8 @@ use url::{Host, Url};
 pub const CLOUD_ORIGIN: &str = "https://app.dynodoc.online";
 /// Where the Help menu item and the launcher's help link go.
 pub const SUPPORT_URL: &str = "https://dynodoc.online/support";
+/// The path the window opens on a server (see `ServerOrigin::entry`).
+pub const ENTRY_PATH: &str = "/workspace";
 /// Longest address text accepted: `https://` + a 253 character name + `:65535` is 267.
 pub const MAX_ADDRESS_LEN: usize = 300;
 /// Longest URL the navigation policy looks at; anything longer is refused outright.
@@ -71,6 +73,16 @@ impl ServerOrigin {
     /// The URL of the server's root page.
     pub fn root(&self) -> Url {
         self.0.clone()
+    }
+
+    /// The page the window opens on the server: the web app's workspace, which sends a person
+    /// who is not signed in to the sign-in page. NOT the root: the hosted cloud's root answers
+    /// with a redirect to the marketing site (hooks.server.ts of the web app), which the shell
+    /// would hand to the system browser, leaving the window empty. Found on the first Android run.
+    pub fn entry(&self) -> Url {
+        self.0
+            .join(ENTRY_PATH)
+            .expect("a constant absolute path joins any origin")
     }
 
     /// `path` must come from a validated source (deep link, sign-in link) and start with `/`.
@@ -294,6 +306,37 @@ mod tests {
         match parse_server_address(input) {
             Ok(v) => panic!("{input:?} should be refused, got {}", v.as_text()),
             Err(e) => e,
+        }
+    }
+
+    #[test]
+    fn the_window_opens_the_workspace_never_the_root() {
+        // The hosted cloud's root redirects to the marketing site, which the shell would hand to
+        // the browser (found on the first Android run); the workspace is the app's entry.
+        for (address, expected) in [
+            (
+                "https://app.dynodoc.online",
+                "https://app.dynodoc.online/workspace",
+            ),
+            (
+                "dynodoc.example.org:8443",
+                "https://dynodoc.example.org:8443/workspace",
+            ),
+            ("http://localhost:5173", "http://localhost:5173/workspace"),
+            ("https://[2001:db8::1]", "https://[2001:db8::1]/workspace"),
+        ] {
+            let server = parse_server_address(address).unwrap();
+            let entry = server.entry();
+            assert_eq!(entry.as_str(), expected);
+            assert!(
+                server.matches(&entry),
+                "{address}: the entry stays on the server"
+            );
+            assert_eq!(
+                Some(entry),
+                server.join("/workspace"),
+                "{address}: the same page the dynodoc://open/workspace link opens"
+            );
         }
     }
 

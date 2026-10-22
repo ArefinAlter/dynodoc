@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The FileProvider is not exported and the app shares nothing. The only file it ever hands out is
+  the temporary photo the web view's file chooser asks the camera app to write (wry's
+  RustWebChromeClient: getExternalFilesDir(Pictures)). Tauri's template mapped the whole shared
+  storage and the whole cache here; this is that one folder.
+-->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+  <external-files-path name="captured_photos" path="Pictures/" />
+</paths>

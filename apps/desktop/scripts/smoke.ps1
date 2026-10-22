@@ -225,7 +225,7 @@ try {
   $p = Start-App
   $running += $p
   $line = Read-Request $listener 40
-  Check ($line -eq 'GET / HTTP/1.1') "saved server: the window requests the server's front page (got '$line')"
+  Check ($line -eq 'GET /workspace HTTP/1.1') "saved server: the window requests the app's entry page, the workspace, not the root (got '$line')"
   Start-Sleep -Seconds 2
   $p.Refresh()
   Check ($p.MainWindowTitle -eq "Dynodoc - 127.0.0.1:$port") "saved server: the title names the server (got '$($p.MainWindowTitle)')"
