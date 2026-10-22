@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1" xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="TaskPaneApp">
+  <Id>249d00bc-a3dc-51db-a3cd-172f5aa8f12d</Id>
+  <Version>1.1.0.0</Version>
+  <ProviderName>Acme Research Ltd.</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="Acme Docs for Excel" />
+  <Description DefaultValue="Connect this workbook to an Acme Docs project. Acme Docs records edits to existing cell values and formulas while this pane is open, sends them for review, and brings approved changes from your team back into the workbook." />
+  <IconUrl DefaultValue="https://dynodoc.corp.example/connectors/assets/icon-32.png" />
+  <HighResolutionIconUrl DefaultValue="https://dynodoc.corp.example/connectors/assets/icon-64.png" />
+  <SupportUrl DefaultValue="https://help.corp.example/desk" />
+  <AppDomains><AppDomain>https://dynodoc.corp.example</AppDomain></AppDomains>
+  <Hosts><Host Name="Workbook" /></Hosts>
+  <Requirements><Sets DefaultMinVersion="1.13"><Set Name="ExcelApi" /></Sets></Requirements>
+  <DefaultSettings><SourceLocation DefaultValue="https://dynodoc.corp.example/connectors/excel" /></DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+</OfficeApp>

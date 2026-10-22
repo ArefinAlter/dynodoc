@@ -19,7 +19,13 @@
 // make it pass. `--check` compares the result with scripts/hosted-strings-known.json and
 // fails on anything not listed there, so the list can only shrink.
 //
+// The hosted service keeps the add-in packages built for its address in static/; the image of
+// the self-hosted bundle has them removed (scripts/prune-hosted-static.mjs, run by its
+// Dockerfile). `--profile selfhosted-image` holds a build to the shorter list that is allowed
+// after that step, so the self-hosted image is checked as it ships.
+//
 // usage: node scripts/audit-hosted-strings.mjs [--build build] [--json out.json] [--check] [--strict]
+//          [--profile selfhosted-image]
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, posix, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -309,6 +315,17 @@ export function violations(scan, known) {
   return out;
 }
 
+/**
+ * The known list for a profile: the base list, with the profile's classes replacing the base's
+ * classes of the same name. No profile means the base list (the hosted build).
+ */
+export function knownFor(known, profile) {
+  if (!profile) return known;
+  const extra = known.profiles?.[profile];
+  if (!extra) throw new Error(`Unknown profile "${profile}" in hosted-strings-known.json`);
+  return { ...known, classes: { ...known.classes, ...extra.classes } };
+}
+
 /** The hits that break the criterion as written: dynodoc.online outside third-party notices. */
 export function strictHits(scan) {
   return scan.hits.filter((hit) => hit.class !== 'notice' && 'hosted-domain' in hit.found);
@@ -362,7 +379,7 @@ async function main() {
   }
   if (args.includes('--check')) {
     const known = JSON.parse(readFileSync(join(here, 'hosted-strings-known.json'), 'utf8'));
-    const bad = violations(scan, known);
+    const bad = violations(scan, knownFor(known, option('--profile')));
     if (bad.length) {
       console.log('\nNot in scripts/hosted-strings-known.json:');
       for (const row of bad) console.log(`  ${row.file}  ${row.why}`);

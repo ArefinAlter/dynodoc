@@ -1,4 +1,10 @@
 <script lang="ts">
+  import { page } from '$app/state';
+  // The hosted service serves the files built for its own address; a self-hosted installation
+  // serves files made for its own, under /connectors/addins (docs/SELF-HOSTED-EDITION.md 7.2).
+  const base = $derived(
+    page.data.site?.mode === 'selfhosted' ? '/connectors/addins/' : '/connectors/packages/'
+  );
   const office = [
     {
       host: 'word',
@@ -47,7 +53,7 @@
         <h3>{app.name}</h3>
         <p>{app.syncs}</p>
         <p class="needs">{app.needs}</p>
-        <a href={`/connectors/packages/${app.host}.xml`} download>Download the {app.name} add-in</a>
+        <a href={`${base}${app.host}.xml`} download>Download the {app.name} add-in</a>
       </li>{/each}
   </ul>
   <ul>
@@ -85,7 +91,7 @@
       >
         <h3>Google {name}</h3>
         <p>{syncs}</p>
-        <a href={`/connectors/packages/google-${host}.zip`} download>Download the {name} package</a>
+        <a href={`${base}google-${host}.zip`} download>Download the {name} package</a>
       </li>{/each}
   </ul>
   <p>

@@ -25,6 +25,7 @@
     type Sidecar
   } from '$lib/provenance/sidecar';
   import { downloadJson } from '$lib/workspace/projects';
+  import { officeJsUrl } from '$lib/connectors/office-js';
   let origin = $state(''),
     documentId = $state(''),
     token = $state(''),
@@ -44,7 +45,7 @@
   onMount(() => {
     origin = location.origin;
     const script = document.createElement('script');
-    script.src = 'https://appsforoffice.microsoft.com/lib/1/hosted/office.js';
+    script.src = officeJsUrl(document);
     script.onload = () => {
       const office = window as unknown as {
         Office: {

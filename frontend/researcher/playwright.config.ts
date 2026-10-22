@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { defineConfig, devices } from '@playwright/test';
 const external = process.env.PLAYWRIGHT_BASE_URL;
 // The self-hosted edition runs the same build with DYNODOC_MODE=selfhosted, so it needs its
@@ -9,6 +10,10 @@ const selfhostedUrl = external ? process.env.SELFHOSTED_BASE_URL : 'http://local
 const noEmailUrl = external ? process.env.SELFHOSTED_NOEMAIL_BASE_URL : 'http://localhost:4175';
 // A fourth server sends its mail through SMTP, to the server the spec itself starts.
 const smtpUrl = external ? process.env.SELFHOSTED_SMTP_BASE_URL : 'http://localhost:4176';
+// A fifth serves its own copy of Office.js from a folder (DYNODOC_OFFICE_JS_DIR); the folder
+// holds a stand-in file, because the real library is not in this repository.
+const officeJsUrl = external ? process.env.SELFHOSTED_OFFICEJS_BASE_URL : 'http://localhost:4177';
+const officeJsDir = fileURLToPath(new URL('./e2e/fixtures/office-js', import.meta.url));
 const settingsOf = (name: string) =>
   Object.fromEntries(
     readFileSync(new URL(`./e2e/${name}`, import.meta.url), 'utf8')
@@ -25,7 +30,7 @@ const previewSecrets = {
   SESSION_SECRET: process.env.SESSION_SECRET ?? 'e2e-preview-only-session-secret-0123456789abcdef',
   WEB_SERVICE_KEY: process.env.WEB_SERVICE_KEY ?? 'e2e-preview-only-service-key-0123456789abcdef'
 };
-const selfhostedSpecs = /selfhosted(-noemail|-smtp)?\.spec\.ts$/;
+const selfhostedSpecs = /selfhosted(-noemail|-smtp|-officejs)?\.spec\.ts$/;
 // Chromium always runs the whole suite. BROWSER_MATRIX adds Firefox, WebKit and two phone
 // emulations (docs/BROWSER-SUPPORT.md): `full` runs the authenticated specs on the desktop
 // engines and the public and workspace specs on the phones; `smoke` keeps only the tests
@@ -71,7 +76,8 @@ export default defineConfig({
           // No mail transport: email sign-in is on only because DEV_AUTH is (a test stack).
           [4174, { DEV_AUTH: 'true' }],
           [4175, { AUTH_EMAIL_LINK: 'off' }],
-          [4176, { ...smtpSettings, DEV_AUTH: 'false' }]
+          [4176, { ...smtpSettings, DEV_AUTH: 'false' }],
+          [4177, { DEV_AUTH: 'true', DYNODOC_OFFICE_JS_DIR: officeJsDir }]
         ].map(([port, extra]) => ({
           command: `pnpm preview ${process.env.CI ? '--host 127.0.0.1 ' : ''}--port ${port}`,
           timeout: 180000,
@@ -117,6 +123,15 @@ export default defineConfig({
             name: 'selfhosted-smtp',
             testMatch: /selfhosted-smtp\.spec\.ts$/,
             use: { baseURL: smtpUrl }
+          }
+        ]
+      : []),
+    ...(officeJsUrl
+      ? [
+          {
+            name: 'selfhosted-officejs',
+            testMatch: /selfhosted-officejs\.spec\.ts$/,
+            use: { baseURL: officeJsUrl }
           }
         ]
       : []),

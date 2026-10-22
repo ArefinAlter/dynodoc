@@ -26,11 +26,27 @@
         "^client/connectors/packages/",
         "^client/examples/"
       ],
-      "reason": "Files served as they are: the hosted security.txt and social image (static/), the add-in packages built for app.dynodoc.online (P0-7 generates them per installation), and demo spreadsheets whose sample data names a city."
+      "reason": "Files served as they are: the hosted security.txt and social image (static/), the add-in packages built for app.dynodoc.online (the hosted build only; the self-hosted image has them removed by scripts/prune-hosted-static.mjs, see the selfhosted-image profile below), and demo spreadsheets whose sample data names a city."
     },
     "sourcemap": {
       "patterns": ["hosted-domain", "operator"],
       "reason": "Server source maps repeat the source of the files above. They are not needed to run the server and can be left out of an image."
+    }
+  },
+  "profiles": {
+    "selfhosted-image": {
+      "note": "The build after scripts/prune-hosted-static.mjs, which is what infra/selfhosted/images/Dockerfile.web ships: the hosted add-in packages are gone (P0-7 serves packages made for the installation). Check it with: node scripts/audit-hosted-strings.mjs --build <pruned copy of build> --check --profile selfhosted-image.",
+      "classes": {
+        "static-asset": {
+          "patterns": ["hosted-domain", "operator"],
+          "paths": [
+            "^client/.well-known/security.txt$",
+            "^client/brand/social.svg$",
+            "^client/examples/"
+          ],
+          "reason": "Files served as they are: the hosted security.txt and social image (static/), and demo spreadsheets whose sample data names a city. The add-in packages are not in this list: one left in the image fails the check."
+        }
+      }
     }
   }
 }

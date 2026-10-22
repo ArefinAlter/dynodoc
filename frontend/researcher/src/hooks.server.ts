@@ -5,6 +5,8 @@ import { accessToken } from '$lib/server/session';
 import { secureResponse } from '$lib/server/security';
 import { env as publicEnv } from '$env/dynamic/public';
 import { getConfig, startupCheck } from '$lib/server/config';
+import { isOfficePane } from '$lib/security-policy';
+import { OFFICE_JS_LOCAL_PATH, OFFICE_JS_META } from '$lib/connectors/office-js';
 
 // Validate the whole configuration before the server listens (adapter-node waits for it).
 export const init: ServerInit = () => startupCheck(publicEnv);
@@ -52,7 +54,20 @@ const application: Handle = async ({ event, resolve }) => {
     )
       redirect(303, `/login?next=${encodeURIComponent(pathname + search)}`);
   }
-  const response = hidden ? notFound() : await resolve(event);
+  // With a local copy of Office.js the pane pages say so in a meta tag; every other response, and
+  // every response of a hosted process, is produced exactly as before.
+  const localOffice = config.officeJsDir !== null && isOfficePane(pathname);
+  const response = hidden
+    ? notFound()
+    : localOffice
+      ? await resolve(event, {
+          transformPageChunk: ({ html }) =>
+            html.replace(
+              '<head>',
+              `<head><meta name="${OFFICE_JS_META}" content="${OFFICE_JS_LOCAL_PATH}" />`
+            )
+        })
+      : await resolve(event);
   // Indexable only on the public host, and only for the public pages and the
   // SEO files (robots, sitemap, llms.txt, the IndexNow key). Everything else —
   // every path on app./admin., and the private routes here — is held back. A
@@ -87,7 +102,8 @@ export const handle: Handle = async (input) => {
       await application(input),
       input.event.url,
       config.connectorOrigins,
-      config.connectSrc
+      config.connectSrc,
+      config.officeJsDir === null ? 'cdn' : 'local'
     );
   } catch (error) {
     if (!isRedirect(error)) throw error;
