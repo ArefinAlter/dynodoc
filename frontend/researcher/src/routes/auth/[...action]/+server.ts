@@ -13,6 +13,7 @@ import { safeNext } from '$lib/auth-next';
 import { getConfig } from '$lib/server/config';
 import { linkOrigin, mailConfigured, sendMail } from '$lib/server/mail';
 import { signInEmail } from '$lib/server/mail/templates';
+import { parseAddress } from '$lib/server/mail/address.js';
 
 let configuration: Promise<oidc.Configuration> | undefined;
 function googleCredentials() {
@@ -185,6 +186,16 @@ export const POST: RequestHandler = async ({ params, url, request, cookies }) =>
       return json({ error: 'Enter a valid email address.' }, { status: 400 });
     if (!mailOn && !config.devAuth)
       return json({ error: 'Email sign-in is not configured yet.' }, { status: 503 });
+    // The SMTP transport takes plain addresses only (docs/SELF-HOSTED-DEPLOYMENT-GUIDE.md 7.2):
+    // say so now, before a link is issued that could not be sent.
+    if (mailOn && config.mail.transport === 'smtp' && 'reason' in parseAddress(email))
+      return json(
+        {
+          error:
+            'This form of email address is not supported here. Use a plain address such as name@example.org.'
+        },
+        { status: 400 }
+      );
     try {
       const result = await enginePost('/auth/magic-link', {
         email,

@@ -19,7 +19,7 @@ import SMTPConnection from 'nodemailer/lib/smtp-connection';
 import { checkMessage, checkSender, composeMessage, newMessageId } from './message.js';
 import { domainOf } from './address.js';
 import { isLocalAddress } from './local-address.js';
-import { MailError, classifyError, printable } from './errors.js';
+import { MailError, classifyError } from './errors.js';
 import { withRetry } from './retry.js';
 import { defaultLog } from './log.js';
 
@@ -316,13 +316,6 @@ export function createSmtpSender(settings, deps = {}) {
           : 'MAIL FROM and RCPT TO';
         return fail(during, error);
       }
-    },
-
-    messageIdDomain,
-    /** Printable settings for diagnostics: never the password. */
-    describe: () =>
-      printable(
-        `${settings.security} ${settings.host}:${settings.port}${settings.user ? ' with a login' : ''}`
-      )
+    }
   };
 }

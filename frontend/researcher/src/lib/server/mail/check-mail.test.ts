@@ -94,7 +94,9 @@ describe('checkMail', () => {
     expect(server.messages).toHaveLength(1);
     expect(server.messages[0].to).toEqual(['olivia@example.test']);
     expect(server.messages[0].data).toContain('test of the mail settings');
-    expect(result.sent.messageId).toMatch(/^<[0-9a-f]{32}@example\.org>$/);
+    expect((result.sent as { messageId: string } | null)?.messageId).toMatch(
+      /^<[0-9a-f]{32}@example\.org>$/
+    );
     expect(text(result)).toContain('the mail server took the test message');
   });
   it('refuses --send without --to', async () => {

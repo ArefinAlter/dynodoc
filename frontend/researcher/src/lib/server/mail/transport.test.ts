@@ -156,6 +156,26 @@ describe('sign-in link through SMTP', () => {
     expect(`${read.text}${read.html}`).not.toContain('other.example');
     expect(`${read.text}${read.html}${message.data}`).not.toContain('dynodoc.online');
   });
+  it('refuses an address form it cannot send to, before a link is issued', async () => {
+    const routes = await load(viaSmtp());
+    const url = new URL(`${ORIGIN}/auth/email`);
+    for (const email of ['a%b@example.test', '"quoted"@example.test', 'a|b@example.test']) {
+      const response = await routes.auth.POST({
+        params: { action: 'email' },
+        url,
+        cookies: {},
+        request: new Request(url, {
+          method: 'POST',
+          headers: { origin: url.origin, 'content-type': 'application/json' },
+          body: JSON.stringify({ email })
+        })
+      });
+      expect(response.status, email).toBe(400);
+      expect((await response.json()).error).toMatch(/not supported here/);
+    }
+    expect(engine.enginePost).not.toHaveBeenCalled();
+    expect(smtp.messages).toEqual([]);
+  });
   it('offers email sign-in when mail can be sent', async () => {
     const routes = await load(viaSmtp());
     const options = await (
