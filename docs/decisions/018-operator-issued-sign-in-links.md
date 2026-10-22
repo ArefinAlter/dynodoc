@@ -100,7 +100,7 @@ while email sign-in is off. Two things were wrong with that:
   `operator::issue`.
 * **Migration `0047_operator_sign_in_link.sql`:** one table, two trigger functions, three indexes. Additive; nothing existing
   changes; the hosted table stays empty unless the CLI is used. Like 0043 to 0046 it needs `engine-cli grant-runtime` after
-  it, and rolling back means restoring the dump. `row` rules: `token_hash` 32 bytes and unique; `expires_at` within 24 hours
+  it, and rolling back means restoring the dump. Row rules: `token_hash` 32 bytes and unique; `expires_at` within 24 hours
   of `created_at`; `consumed_at` and `outcome` (`used`, `revoked`, `expired`) set together; a row is **born live** (an insert
   trigger) and **ended exactly once** (an update trigger refuses every other edit, a second end, `used` after expiry and
   `expired` before it). Privileges: nothing for `PUBLIC`; the runtime login gets select, update, delete.
@@ -153,7 +153,60 @@ while email sign-in is off. Two things were wrong with that:
 Everything on one Windows 11 PC, 23 October 2026. Nothing ran in GitHub Actions (the private repository's Actions cannot
 start: billing).
 
-RESULTS_PLACEHOLDER
+* **API, real PostgreSQL 16:** 27 tests in `crates/engine-api/tests/operator_link_test.rs` (each a fresh migrated database):
+  issue then use once and the replay's identical 401; hash, upper case, whitespace and truncated variants refused; expiry by the
+  query and by the trigger; lifetime bounds in the tool and the table; normalised address and one account per link; the
+  `--create` rules (no administrator yet, administrator exists, ADMIN_EMAILS empty, a disabled administrator, wrong or missing
+  confirmation, refusals change nothing); roles never escalated (an ordinary account stays ordinary, `--role` mismatches make
+  nothing, an administrator is one only because of `ADMIN_EMAILS`); disabled accounts, signing out everywhere, erasure through
+  the real administration routes; the public's exhausted email window and 60 junk uses do not block the operator; one audit row a
+  minute for a replayed link, none for an unknown token; list, revoke and supersede; 8 simultaneous uses, 5 rounds, exactly one
+  winner each, and simultaneous issuing and `--create`; no token in the table, the audit rows, `Debug` output or the API's trace
+  log; the restricted runtime login can use a link but gets 42501 on every insert, trigger errors on every other edit, and
+  `check-runtime` fails if INSERT is granted by table or by column; rows born used are refused; no route (eleven guessed paths,
+  `openapi.yaml`, and a source scan for the issuing function); emailed links unchanged; the app hand-over works after an
+  operator sign-in; the use, the login and the audit row succeed or fail together (a trigger refusing the login, another refusing
+  the audit row).
+* **`engine-cli` as a real process, real database:** 8 tests in `crates/engine-cli/tests/operator_link_cli_test.rs`, all at
+  `RUST_LOG=trace`: the link is on standard output alone and once, absent from standard error, the table and the audit rows;
+  `--json`; exit 3 with nothing changed for the second confirmation; bad lifetimes and origins refused before any connection;
+  no owner credential means nothing (the API's `DATABASE_URL` is not a substitute); the runtime login's credential gets
+  "permission denied" and prints nothing; list and revoke by prefix.
+* **Retention:** the existing `retention_test.rs` (8) and the unit test now include the table: expired links swept to `expired`
+  with one audit row each, old ones pruned, the rest kept, history otherwise untouched.
+* **`dynodoctl`, against the scripted fake runner:** 9 tests in `admin_link.rs` (the link shown once and in no file, command
+  line or seeded-secret scan; nothing made without a typed address, `--confirm` and redirected output refused; no `--json`;
+  every refusal before anything runs; the second phrase; failure and strange answers show no link; the options reach the
+  container exactly; the install instructions) and 1 in `ctx.rs`; 383 `dynodoctl` tests pass in all. **Not run against the
+  real Docker bundle.**
+* **Web:** vitest 976 passed and 4 skipped over 86 files, 1 failed (see below); 3 new in `options.test.ts` (a link is confirmed with
+  email sign-in off; the refusal's wording; the old wording where it is on) next to the existing ones that pin the 403 of
+  `POST /auth/email`. Chromium against an isolated stack (disposable database, this tree's API with the restricted login, three
+  web processes): `selfhosted-noemail.spec.ts` 6 passed (3 new: the first administrator signs in with email off, the public
+  request is refused in the same test, `/admin` works because of `ADMIN_EMAILS`, the native-app page then works, the replay in
+  another browser is refused with the new words; an ordinary account is not an administrator; an expired 60-second link is
+  refused after 62 seconds), `selfhosted.spec.ts` 13, and the hosted `security`, `session-revocation`, `app-signin` (17) and
+  `launch` specs. eslint, prettier, svelte-check (0 errors) and the build pass. The one vitest failure,
+  `schema.test.ts` "know every DYNODOC_ name the Rust crates read", names `DYNODOC_TLS_MODE`, which `dynodoctl`'s sources
+  already contained at the base commit (`ca7332c`) and the web configuration's list does not; it is not caused by this work, and
+  was not run against the base commit.
+* **Gates:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` and
+  `RUSTDOCFLAGS=-D warnings cargo doc` clean; `openapi.yaml` byte-identical to the generated one; `cargo test --workspace --locked
+  --no-fail-fast`: 1,766 passed, 2 failed (the known Windows-only `sse_delivers_a_new_event_within_100ms`, and the retention unit
+  test whose expected windows lacked the new table, fixed and re-run: the 101 library tests pass; the whole workspace was not run
+  again after that line).
+* **Mutations, 19, each fails at least one test** (the first batch of results was thrown away: the build had silently failed
+  because the end-to-end API held `engine-api.exe`, which the harness mistook for failing tests; the batch was redone with the
+  failing test names read from the output): token stored without the hash (7 tests); single use removed from the query alone (7)
+  and from the query and the trigger (7); expiry ignored in the query alone (2, a 500 from the trigger) and in the query and the
+  trigger (2); the runtime login granted INSERT, grant and check both (1); `--role admin` not enforced (1); the first-
+  administrator rule always true (2); the public email request ignoring `AUTH_EMAIL_LINK=off` (the vitest cases); a disabled
+  account accepted by the link's query and the session generation ignored by it (each **survived** the first test set, because
+  the login's own insert refuses such an account in the same transaction, so nothing outside changed; an assertion on the
+  audited refusal now kills both); the token put into the audit row (1); a route calling the issuing function (the source scan);
+  the CLI printing the link on standard error too (1); the CLI's logs on standard output (several); `dynodoctl` accepting
+  `--confirm` (at least 1); `dynodoctl admin-link --json` allowed (at least 1); a new link not ending the earlier ones (at least
+  2); the end-once trigger not installed (2); the login made outside the transaction that uses the link up (at least 2).
 
 ## Not done, on purpose
 

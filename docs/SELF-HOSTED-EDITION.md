@@ -1676,7 +1676,22 @@ guide (`admin-link`) carry the as-built text.
   auth list-links`); a run against the real Docker bundle (the wrapper ran only against the scripted fake; `engine-cli` ran against
   real PostgreSQL); OIDC, SAML and SCIM (Phase 1); scrubbing the token from the address bar; a rehearsal of 0047 against a
   production-like database.
-- *Verified here.* RESULTS_EDITION_PLACEHOLDER
+- *Verified here.* Against real PostgreSQL 16: 27 API tests (`operator_link_test.rs`: the flow, expiry, bounds, the `--create` rules, roles never
+  escalated, disabled and erased accounts, the public's limits not blocking the operator, 8 simultaneous uses with exactly one
+  winner, no token anywhere, the restricted runtime login unable to insert and noticed by `check-runtime` if it could, no route
+  that issues, atomic use) and 8 tests of the real `engine-cli` process at `RUST_LOG=trace` (the link on standard output alone,
+  once); the retention tests extended. `dynodoctl`: 383 unit tests pass against the scripted fake runner (9 new for `admin-link`).
+  Chromium against an isolated stack: `selfhosted-noemail.spec.ts` 6 (3 new, including an expired 60-second link), `selfhosted.spec.ts`
+  13, and the hosted `security`, `session-revocation`, `app-signin` (17) and `launch` specs; vitest 976 passed, 3 of them new, and 1
+  failed that is not caused by this work (`schema.test.ts` finds `DYNODOC_TLS_MODE` in `dynodoctl`'s sources, which the web
+  configuration's list lacks, as at the base commit). `cargo fmt`, `clippy -D warnings`, `cargo doc -D warnings`, eslint, prettier and
+  svelte-check pass; `openapi.yaml` is byte-identical to the generated one; `cargo test --workspace --no-fail-fast`: 1,766 passed, 2
+  failed (the known Windows-only SSE timing test, and a retention unit test fixed afterwards and re-run). 19 manual mutations each
+  fail a test (token stored without the hash, single use removed, expiry ignored, the runtime login allowed to insert, `--role` not
+  enforced, the first-administrator rule bypassed, the public email request ignoring `AUTH_EMAIL_LINK=off`, and others; list in the
+  decision). GitHub Actions could not run (billing); `ci-frontend.yml` now gives the owner URL and the CLI path to the end-to-end
+  step only, and has not been executed. **Not verified:** the real Docker bundle (the wrapper ran only against the fake), a Linux host,
+  a production-like database for migration 0047, and an independent review.
 
 **Implementation status (22 October 2026): P0-4, the single-node bundle.** Source and tests in the
 application repository under `infra/selfhosted` (README there is the operator's entry point; settings

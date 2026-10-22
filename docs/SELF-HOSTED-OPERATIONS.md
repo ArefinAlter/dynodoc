@@ -652,6 +652,10 @@ the databases are right and the services are up, delete `state/restore-journal.j
 
 ## 8. What was tested, and what was not
 
+(`admin-link`, added on 23 October 2026 after the figures below: 10 more unit tests against the fake runner, 383 in all on
+Windows, and `engine-cli` against a real database; its own account is in
+[decision 018](decisions/018-operator-issued-sign-in-links.md). It was **not** run against the real Docker bundle.)
+
 See the status paragraph in [SELF-HOSTED-EDITION.md](SELF-HOSTED-EDITION.md), section 13.2 (P0-5): 373 unit tests on
 Windows and 375 on Linux (in a `rust:1` container) against a fake runner and a fake network, four tests that keep
 dynodoctl out of the public mirror, 52 manual mutation checks (each makes at least one test fail), and a run of the
