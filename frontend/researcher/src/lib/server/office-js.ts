@@ -4,20 +4,9 @@
 // one directory, read-only, by file name.
 import { readFile, realpath, stat } from 'node:fs/promises';
 import { extname, join, sep } from 'node:path';
+import { MAX_FILE_BYTES, SERVED_TYPES } from '$lib/addins/office-js-files.js';
 
-/** What may be served, by extension. Pages, SVG and everything else that can run script are not. */
-export const SERVED_TYPES: Readonly<Record<string, string>> = Object.freeze({
-  '.js': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.map': 'application/json; charset=utf-8',
-  '.txt': 'text/plain; charset=utf-8',
-  '.png': 'image/png',
-  '.gif': 'image/gif',
-  '.woff': 'font/woff',
-  '.woff2': 'font/woff2'
-});
-export const MAX_FILE_BYTES = 16 * 1024 * 1024;
+export { MAX_FILE_BYTES, SERVED_TYPES };
 const MAX_PATH_CHARS = 200;
 
 export interface ServedFile {
@@ -37,7 +26,7 @@ export async function resolveOfficeJsFile(dir: string, path: string): Promise<Se
     return null;
   const segments = path.split('/');
   if (segments.some((part) => part === '' || part.startsWith('.'))) return null;
-  const type = SERVED_TYPES[extname(path).toLowerCase()];
+  const type = (SERVED_TYPES as Readonly<Record<string, string>>)[extname(path).toLowerCase()];
   if (!type) return null;
   try {
     const root = await realpath(dir);

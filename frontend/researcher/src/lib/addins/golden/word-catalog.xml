@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1" xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="TaskPaneApp">
+  <Id>14bfbe42-c3f2-59d8-8915-7a27defb22ea</Id>
+  <Version>1.1.0.0</Version>
+  <ProviderName>Acme Research Ltd.</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="Acme Docs for Word" />
+  <Description DefaultValue="Connect this document to an Acme Docs project. Acme Docs records edits to existing paragraphs while this pane is open, sends them for review, and brings approved changes from your team back into the document." />
+  <IconUrl DefaultValue="https://dynodoc.corp.example/connectors/assets/icon-32.png" />
+  <HighResolutionIconUrl DefaultValue="https://dynodoc.corp.example/connectors/assets/icon-64.png" />
+  <SupportUrl DefaultValue="https://help.corp.example/desk" />
+  <AppDomains><AppDomain>https://dynodoc.corp.example</AppDomain></AppDomains>
+  <Hosts><Host Name="Document" /></Hosts>
+  <Requirements><Sets DefaultMinVersion="1.3"><Set Name="WordApi" /></Sets></Requirements>
+  <DefaultSettings><SourceLocation DefaultValue="https://dynodoc.corp.example/connectors/word" /></DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+</OfficeApp>

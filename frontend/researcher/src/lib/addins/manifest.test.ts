@@ -13,6 +13,7 @@ import {
   OFFICE_KINDS,
   OFFICE_VARIANTS,
   addinGuid,
+  articleFor,
   manifestFileName,
   manifestVersion,
   renderOfficeManifest,
@@ -333,6 +334,26 @@ describe('the product name and the other text', () => {
           expect(e.getAttribute('DefaultValue')!.length).toBeLessThanOrEqual(limit);
         }
       }
+  });
+  it('is introduced with the right article', () => {
+    for (const [brand, article] of [
+      ['Dynodoc', 'a'],
+      ['Acme Docs', 'an'],
+      ['Unity Docs', 'a'],
+      ['Euro Files', 'a'],
+      ['Hour Records', 'an'],
+      ['Orbit', 'an'],
+      ['Records', 'a']
+    ]) {
+      expect(articleFor(brand), brand).toBe(article);
+      const { document } = parse(renderOfficeManifest({ ...base, kind: 'word', brand }));
+      expect(value(document, 'Description')).toContain(`to ${article} ${brand} project.`);
+      expect(
+        all(document, 'bt:String')
+          .find((e) => e.getAttribute('id') === 'Open.Description')
+          ?.getAttribute('DefaultValue')
+      ).toContain(`to ${article} ${brand} project,`);
+    }
   });
   it('adds the suffix that tells staging from production to the name only', () => {
     const { document } = parse(

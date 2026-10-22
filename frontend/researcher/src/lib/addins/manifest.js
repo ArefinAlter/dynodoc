@@ -158,14 +158,27 @@ function supportAddress(value, fallback) {
  */
 
 /**
+ * "a" or "an" before a product name, by how the name starts. A heuristic for English names: a
+ * vowel letter takes "an" except where it is sounded as a consonant (Unity, Euro, Use), and a
+ * few silent-h words take "an".
+ * @param {string} brand
+ */
+export function articleFor(brand) {
+  if (/^(uni|use|usu|eu|one|once)/i.test(brand)) return 'a';
+  if (/^(hour|honest|honou?r|heir)/i.test(brand)) return 'an';
+  return /^[aeiou]/i.test(brand) ? 'an' : 'a';
+}
+
+/**
  * The description, in its full form when it fits Office's 250 characters and in a shorter
  * form for a long product name.
  * @param {typeof KINDS[OfficeKind]} k @param {string} brand
  */
 function describe(k, brand) {
-  const full = `Connect this ${k.noun} to a ${brand} project. ${brand} records edits to ${k.edits} while this pane is open, sends them for review, and brings approved changes from your team back into the ${k.noun}.`;
+  const a = articleFor(brand);
+  const full = `Connect this ${k.noun} to ${a} ${brand} project. ${brand} records edits to ${k.edits} while this pane is open, sends them for review, and brings approved changes from your team back into the ${k.noun}.`;
   if ([...full].length <= LIMITS.description) return full;
-  return `Connect this ${k.noun} to a ${brand} project. It records edits to ${k.edits} while this pane is open, sends them for review, and brings approved changes back.`;
+  return `Connect this ${k.noun} to ${a} ${brand} project. It records edits to ${k.edits} while this pane is open, sends them for review, and brings approved changes back.`;
 }
 
 /**
@@ -198,7 +211,7 @@ export function renderOfficeManifest(input) {
 
   const displayName = `${brand} for ${k.app}${suffix}`;
   const description = describe(k, brand);
-  const openDescription = `Sign in to connect this file to a ${brand} project, send your changes for review and bring in the changes your team approved.`;
+  const openDescription = `Sign in to connect this file to ${articleFor(brand)} ${brand} project, send your changes for review and bring in the changes your team approved.`;
   if ([...displayName].length > LIMITS.displayName)
     throw new RangeError(`The add-in name is longer than ${LIMITS.displayName} characters.`);
   if ([...description].length > LIMITS.description)
