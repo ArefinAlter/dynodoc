@@ -407,9 +407,23 @@ fn restoring_settings_never_writes_outside_the_bundle_even_if_the_manifest_was_n
     let (dir, runner, backup) = setup();
     let confirm = ScriptedConfirm::new(&[]);
     let ctx = testkit::ctx(&runner, dir.path(), &confirm);
+    let root = backup.join("config");
+    // An absolute path that really exists, outside the bundle: `Path::join` would replace the base.
+    let outside = tempfile::tempdir().unwrap();
+    let absolute = outside.path().join("abs.txt");
+    std::fs::write(&absolute, b"original").unwrap();
+    let absolute_text = absolute.display().to_string();
+    // Each source file EXISTS where the unchecked join would look for it, so that only the path
+    // check itself (not "the source is not a regular file") can refuse the entry.
+    let escaped = dir.path().parent().unwrap().join("escaped.txt");
+    let _ = std::fs::remove_file(&escaped);
+    std::fs::write(backup.join("escaped.txt"), b"x").unwrap(); // root/../escaped.txt
+    std::fs::write(root.join("x"), b"x").unwrap(); // root/secrets/../x
+    std::fs::create_dir_all(root.join(".git")).unwrap();
+    std::fs::write(root.join(".git").join("config"), b"x").unwrap();
     for evil in [
         "../escaped.txt",
-        "/tmp/escaped.txt",
+        absolute_text.as_str(),
         "secrets/../x",
         ".git/config",
     ] {
@@ -423,15 +437,14 @@ fn restoring_settings_never_writes_outside_the_bundle_even_if_the_manifest_was_n
             path: backup.clone(),
             manifest: m,
         };
-        let root = backup.join("config");
         let mut notes = Vec::new();
         let e = restore_config_files(&ctx, &info, &root, &mut notes).unwrap_err();
         assert_eq!(e.kind, crate::error::Kind::Refused, "{evil}");
-        assert!(
-            !dir.path().parent().unwrap().join("escaped.txt").exists(),
-            "{evil}"
-        );
+        assert!(!escaped.exists(), "{evil}: a file was written outside the bundle");
+        assert!(!dir.path().join(".git").exists(), "{evil}");
     }
+    assert_eq!(std::fs::read(&absolute).unwrap(), b"original");
+    let _ = std::fs::remove_file(&escaped);
 }
 
 #[cfg(unix)]
