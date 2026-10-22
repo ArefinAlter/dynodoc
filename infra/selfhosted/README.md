@@ -2,9 +2,10 @@
 
 Status, 22 October 2026: the first build of the single-node bundle (task P0-4 of the
 [self-hosted edition plan](../../docs/SELF-HOSTED-EDITION.md)). It is source and tests in this
-repository. It is not released, not signed and has no installer (`dynodoctl` is a later task), so
-today it is for design partners and evaluation. What was tested, and what was not, is listed at the
-end.
+repository. It is not released and not signed; the operator tool `dynodoctl` (task P0-5: install,
+configure, status, backup, restore, upgrade, support bundle, delivery check) is built from source and
+documented in the [operations guide](../../docs/SELF-HOSTED-OPERATIONS.md). Today it is for design
+partners and evaluation. What was tested, and what was not, is listed at the end.
 
 It runs Dynodoc on one Linux machine with Docker: the web application, the engine API, PostgreSQL
 and an nginx proxy that terminates TLS. Nothing is sent to Verne or to any third party. The only
@@ -56,6 +57,11 @@ The jobs, in order, each of which must succeed before the next starts:
 - Clocks kept in step with NTP. Tokens and certificates depend on it.
 
 ## Quick start
+
+`dynodoctl install` does steps 2 to 6 below in one command, with a preflight and without ever
+overwriting a secret (`dynodoctl install --dry-run --origin ... --tls evaluation` shows the plan; see
+the [operations guide](../../docs/SELF-HOSTED-OPERATIONS.md)). The steps are shown by hand because
+that is what it automates.
 
 Everything is done in the **bundle directory**: the directory that holds `compose.yml`. In a source
 checkout that is `infra/selfhosted`. In a release it is wherever you unpacked it.
@@ -285,7 +291,9 @@ links (`/view/<token>` is written as `/view/[private-link]`), and never a secret
 
 ## Backup and restore by hand
 
-Until `dynodoctl` exists, a backup is a database dump plus the secrets directory. A dump alone cannot
+`dynodoctl backup`, `restore-verify` and `restore --into-live` automate everything in this section
+(with a manifest, checksums, retention and verification); what follows is the procedure by hand, tested
+by `scripts/smoke.mjs`. A backup is a database dump plus the secrets directory. A dump alone cannot
 start an installation: the secrets (`PASETO_LOCAL_KEY` seals sessions, `SESSION_SECRET` signs cookies)
 and `.env` are needed too. Keep both, in different places.
 
@@ -336,7 +344,8 @@ docker compose up -d --wait             # secrets-init, preflight, db-roles, ini
 Before you upgrade, **take a backup** (above). Migrations only move forward and an older image
 refuses a newer database ("database schema differs from this binary"), so the way back is to restore
 the backup into the old images. Read the release notes first: some releases need a rehearsal on a copy
-of your data. `dynodoctl upgrade` will automate this; today the steps above are the procedure.
+of your data. `dynodoctl upgrade` automates this (digest check of the new images, a mandatory backup, a
+rehearsal on a copy, the switch, a health check, `dynodoctl rollback`); the steps above are what it does.
 Base images are pinned by digest; `node scripts/pin-bases.mjs` shows which pins are out of date.
 
 ## Images
@@ -416,8 +425,8 @@ the migration table or change the event history; no secret value appears in `doc
 `docker compose config`, the logs or `.env`.
 
 *Not in it:* TLS between the proxy, web, API and PostgreSQL (they share private networks); log
-shipping and metrics; automated backups, restore verification and upgrades with rehearsal
-(`dynodoctl`); high availability; operator-issued sign-in links and identity-provider sign-in; the
+shipping and metrics; scheduled or encrypted backups and remote backup targets (`dynodoctl backup` is
+run by you or by cron; its copy of the secrets is not encrypted); a signed bundle; high availability; operator-issued sign-in links and identity-provider sign-in; the
 air-gap acceptance run; image signing. The database owner is the PostgreSQL image's bootstrap
 superuser; it is held only by the jobs and by whoever runs `docker compose exec postgres`. Anyone who
 can run Docker on this machine controls everything in it; treat the host accordingly.
