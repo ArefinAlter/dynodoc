@@ -23,3 +23,14 @@ test('the options and the email route agree: off', async ({ request, baseURL }) 
   expect(response.status()).toBe(403);
   expect((await response.json()).error).toMatch(/turned off/);
 });
+
+test('the native-app sign-in page says there is no way to sign in, instead of sending the person to a page that cannot help', async ({
+  page
+}) => {
+  const challenge = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
+  const state = 'b3JkZXJseS1zdGF0ZS12YWx1ZQ';
+  await page.goto(`/app-signin?challenge=${challenge}&state=${state}&platform=android`);
+  await expect(page).toHaveURL(/\/app-signin\?/);
+  await expect(page.getByRole('heading', { name: 'No sign-in method is turned on' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Continue' })).toHaveCount(0);
+});

@@ -19,6 +19,9 @@
 //! - `auth_request_window`: past its 15-minute window. A pruned row and a reset row
 //!   behave the same (the next request starts a fresh window).
 //! - `device_enrollment_challenge`: expired more than `RETENTION_AUTH_DAYS` ago.
+//! - `app_handover_code`: expired more than `RETENTION_AUTH_DAYS` ago (a code lives 60
+//!   seconds, so this is every row, used or not, past the window). The row's audit rows
+//!   (`auth.app_handover.*`) stay: they are history.
 //! - `web_metric`: recorded more than `RETENTION_METRICS_DAYS` ago.
 //! - `idempotency_key`: older than the replay window ([`crate::idempotency::TTL`]);
 //!   `idempotency::reserve` already treats such a row as absent.
@@ -48,7 +51,7 @@ const REQUEST_WINDOW_SECONDS: f64 = 15.0 * 60.0;
 const DAY_SECONDS: f64 = 86_400.0;
 
 /// Number of tables the pass prunes.
-pub const TABLE_COUNT: usize = 6;
+pub const TABLE_COUNT: usize = 7;
 
 /// One table's prune statement. `$1` is the batch size and `$2` the number of seconds
 /// a row must be past its expiry (or older than, for metrics and idempotency keys).
@@ -93,6 +96,14 @@ static SPECS: [Spec; TABLE_COUNT] = [
                 where expires_at < now() - make_interval(secs => $2)
                 limit $1 for update skip locked)
               delete from device_enrollment_challenge using doomed where device_enrollment_challenge.ctid = doomed.row_id",
+        seconds: |c| f64::from(c.auth_days) * DAY_SECONDS,
+    },
+    Spec {
+        table: "app_handover_code",
+        sql: "with doomed as (select ctid as row_id from app_handover_code
+                where expires_at < now() - make_interval(secs => $2)
+                limit $1 for update skip locked)
+              delete from app_handover_code using doomed where app_handover_code.ctid = doomed.row_id",
         seconds: |c| f64::from(c.auth_days) * DAY_SECONDS,
     },
     Spec {
@@ -334,8 +345,9 @@ async fn tick(pool: &PgPool, config: &RetentionConfig, stats: &Stats) -> Duratio
                     refresh_token = pruned[1],
                     auth_request_window = pruned[2],
                     device_enrollment_challenge = pruned[3],
-                    web_metric = pruned[4],
-                    idempotency_key = pruned[5],
+                    app_handover_code = pruned[4],
+                    web_metric = pruned[5],
+                    idempotency_key = pruned[6],
                     "retention pass pruned expired rows"
                 );
             } else {
@@ -490,7 +502,7 @@ mod tests {
         let seconds: Vec<f64> = SPECS.iter().map(|s| (s.seconds)(&config)).collect();
         assert_eq!(
             seconds,
-            vec![172_800.0, 172_800.0, 900.0, 172_800.0, 259_200.0, 86_400.0]
+            vec![172_800.0, 172_800.0, 900.0, 172_800.0, 172_800.0, 259_200.0, 86_400.0]
         );
     }
 }

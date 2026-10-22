@@ -1,5 +1,54 @@
 # Engine evolution handoff
 
+## Source: native-app sign-in hand-over (decision 017) (23 October 2026)
+
+The desktop and Android apps can now sign in through the system browser. Design (decision 017, RFC 8252 with PKCE): the app makes a
+verifier, a state and the SHA-256 challenge in memory only and opens `<server>/app-signin?challenge&state&platform`; the page needs a
+browser session (otherwise the normal sign-in, return address rebuilt in canonical form), shows the account email, the device and a
+4-character pairing code, and offers Continue or Cancel; Continue mints a 256-bit code (stored only as a hash, bound to account,
+challenge, state, platform and session generation, 60 s by the database clock, once, at most 3 unused per account, audited without
+secrets) and sends the browser to `dynodoc://signin?code&state`; the shell checks the link with an exact whitelist table (24 accepted
+shapes), the constant-time state and the pending attempt, then loads the plain `/app-signin/finish` and sets the fragment only after
+the page is ready (so the secrets are in no requested address, log or history); the finish page redeems through the web tier, the API
+locks, checks and uses the code in one transaction and makes a normal session. Migration **0046_app_handover.sql** (schema 46,
+**amended in place during review, not rehearsed or released; a local database that applied the first version must be reset because of
+the sqlx checksum**); routes `POST /auth/app-handover` (service key plus the person's bearer) and `POST /auth/app-handover/redeem`
+(service key), web pages `/app-signin` and `/app-signin/finish`. Phone UX: when the saved server's page lands on its sign-in screen the
+shell shows its own launcher with "Sign in with your browser" (decided from the address only; remote pages still have no native
+access); sign-out in the web app returns to that screen. The paste-a-link fallback stays on desktop. Browser sign-in is offered on
+Windows and Android only; macOS, Linux and iPhone have no app token yet.
+
+**Two independent adversarial reviews (three fix rounds) found and fixed:** zero-click forced login (an attacker mints a code for their
+own account and sends the victim to a crafted finish link; closed with a User-Agent token from the shell, a bridge requirement, a
+fragment ignored at load, the shell's navigation rule refusing the finish page with a query or fragment, no framing, a top-window
+check; the token is a **speed bump against crafted links, not authentication**, because the API's app flag comes from a client-
+controlled header); Continue as a script call able to mint a portable 30-day session (now a top-level form post requiring
+Sec-Fetch-Site/Mode/User/Dest plus Origin, JSON route removed, `Cross-Origin-Opener-Policy: same-origin` against a same-origin
+popup read-back); **Continue refused behind both shipped proxies** (they force `no-referrer`, so the browser posted `Origin: null`;
+fixed with a referrer meta on the page and now tested through the real hosted nginx config and the bundled proxy image in front of the
+real web and API, 12 of 12); a stale outbox (now bound to its origin); an `HMAC`-key constant-time compare that zero-pads (now
+`subtle` with a length check); audit flooding, retention, logout not killing unused codes; version-token grammar mismatch between
+Rust, Kotlin and the web (one grammar, one shared fixture); proxy rate limit on the moved route. Test gaps closed (plain-method
+downgrade, charset injection, unknown fields, device and agent and view tokens refused by issue).
+
+**Evidence (local; Actions of this repository cannot run).** API handover tests 25, retention 8; workspace tests passed apart from the
+known Windows-only SSE timing test; fmt, clippy, rustdoc and OpenAPI clean; web vitest 974; Chromium app-signin 17 and 51 with the
+security, session, smoke and launch specs; shell 155 unit tests, 52 Node tests, Kotlin app-token tests 5; Windows `signin-probe` 53 of
+53 (real shell, real single-instance forwarding, no secret in any request, Referer or log); Android emulator (Android 16, WebView 133)
+sign-in phase and the ipc, links, deep-link and recreate phases 64 of 64 on the rebuilt app. About 40 manual mutations across the
+API, shell and web each failed a test.
+
+**Residual and not verified.** Another Android app that registers `dynodoc://signin` AND starts its own flow AND receives the link is
+not stopped by PKCE; the pairing code helps only a person who looks, and App Links (needs the release signing key) are the real fix.
+Safari and iPhone send no `Sec-Fetch-User`, so the confirmation step does not work there: **a prerequisite of the iOS slice** is a typed
+pairing code as the gesture proof. A blind-minting script on an infected page can still mint a code that goes only to the victim's own
+handler. The full flow on one phone against a real server was not run (the app forbids cleartext, the hosted cloud lacks the new
+pages); the browser half ran in Chromium and the app half on the emulator; a server redirect to the finish page was not tried on
+Android; the Linux-only `check-proxy-headers.mjs` was edited, not run; Firefox and WebKit were not driven through the proxies; no
+physical phone; no production rollout. The bundle sets neither `ADDRESS_HEADER` nor `XFF_DEPTH`, so the per-client redeem limit is
+off out of the box (documented). Questions for the owner: a launcher deep link for an unreachable saved server on a phone; App Links
+once the Play signing key exists; keep the paste-a-link fallback; set `ADDRESS_HEADER` and `XFF_DEPTH` on the hosted web service.
+
 ## Source: self-hosted Phase 0, single-node bundle (23 October 2026)
 
 P0-4 is built in source and was run end to end in Docker on this PC (Docker Desktop 29.5, Compose 5.1.4, amd64, Windows 11). Nothing is

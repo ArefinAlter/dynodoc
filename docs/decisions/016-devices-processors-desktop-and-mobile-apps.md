@@ -42,7 +42,9 @@ Date: 20 October 2026. Owner: Verne. Status: accepted; the first round is built 
    generic shell, file or network access from page content. Other origins open in the system
    browser. The page's Content-Security-Policy is unchanged. Key operations that sign or export
    require the operating system's user-presence prompt where it exists. Deep-link payloads are
-   validated and never carry tokens.
+   validated and never carry tokens. (Refined by [decision 017](017-native-app-sign-in-handover.md): still no
+   token, but one fixed link shape carries a one-time hand-over code that is useless without a verifier that
+   never leaves the app.)
 7. **Phases.**
    - **Round 1 (built here, source only):** this record; the processor matrix and prebuilt
      `engine-cli`; the PWA baseline; the browser and device matrix with fixes; a Tauri desktop

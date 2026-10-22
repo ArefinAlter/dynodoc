@@ -61,6 +61,8 @@ const MUTABLE: &[&str] = &[
     "connector_grant",
     "device_enrollment_challenge",
     "project_label",
+    // Single-use ledger: created, used up once (a trigger refuses any other edit), pruned.
+    "app_handover_code",
 ];
 /// Rows are created and pruned but never edited: a replay ledger, not a record.
 const INSERT_DELETE: &[&str] = &["device_session", "project_issue_label", "project_star"];

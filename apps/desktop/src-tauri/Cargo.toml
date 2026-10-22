@@ -49,6 +49,12 @@ tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 # Remembers the window's size, position and maximised state.
 tauri-plugin-window-state = "2"
 
+[target.'cfg(windows)'.dependencies]
+# Windows only: window.rs adds the app's `DynodocApp/<version> (desktop)` token to WebView2's own
+# User-Agent. Both are already in the tree (Tauri's web view layer uses them), at these versions.
+webview2-com = "0.39"
+windows-core = "0.62"
+
 [profile.release]
 codegen-units = 1
 lto = true

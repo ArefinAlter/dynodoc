@@ -897,6 +897,8 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-window-state",
  "url",
+ "webview2-com",
+ "windows-core",
 ]
 
 [[package]]

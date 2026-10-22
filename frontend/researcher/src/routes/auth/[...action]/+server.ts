@@ -11,6 +11,7 @@ import {
 } from '$lib/server/session';
 import { safeNext } from '$lib/auth-next';
 import { getConfig } from '$lib/server/config';
+import * as appSignin from '$lib/server/app-signin';
 import { linkOrigin, mailConfigured, sendMail } from '$lib/server/mail';
 import { signInEmail } from '$lib/server/mail/templates';
 import { parseAddress } from '$lib/server/mail/address.js';
@@ -134,9 +135,13 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
   }
   return json({ error: 'Not found' }, { status: 404 });
 };
-export const POST: RequestHandler = async ({ params, url, request, cookies }) => {
+export const POST: RequestHandler = async ({ params, url, request, cookies, getClientAddress }) => {
   if (request.headers.get('origin') !== url.origin)
     return json({ error: 'Invalid origin' }, { status: 403 });
+  // The native apps' sign-in hand-over (docs/decisions/017): the app's window trades its code. (Asking
+  // for a code is the confirmation page's form, not a route here.)
+  if (params.action === 'app-signin/redeem')
+    return appSignin.redeem({ request, url, cookies, getClientAddress });
   if (params.action === 'logout') {
     const session = await readSession(cookies);
     if (session) {

@@ -343,6 +343,29 @@ tests.
 - Do not let a WAF buffer or compress `text/event-stream` responses.
 - Rate-limit `/auth/*` at the proxy as the templates do; the API also limits magic-link
   requests to five per 15 minutes per email hash.
+- The apps' browser sign-in (`/auth/app-signin/redeem`, [decision 017](decisions/017-native-app-sign-in-handover.md))
+  also limits failed redeems per code prefix. It limits them per client address only when the
+  web server can see the real address: behind a reverse proxy set `ADDRESS_HEADER=X-Forwarded-For`
+  and `XFF_DEPTH` for the Node server (adapter-node). `XFF_DEPTH` is **the number of proxies you
+  control between the visitor and the web server** (one for a single Caddy or nginx in front): the
+  server takes that many addresses from the RIGHT of the header, so a larger number reads an address
+  the visitor wrote and lets them pick their own bucket, and a smaller one reads a proxy's address.
+  Without both settings the web server sees the proxy's own loopback or private address, sends none
+  (also for any other loopback, private, link-local, shared or malformed address, in any spelling
+  such as `0:0:0:0:0:0:0:1`, `::ffff:127.0.0.1` or `fe80::1%eth0`), and the per-client limit is
+  **off**: only the per-prefix limit and the proxy's own limit on `/auth/` apply (a shared bucket
+  would let one visitor lock all others out). The bundle in this repository sets neither variable
+  (nothing in it is configured for them), so out of the box this limit is off; set both if you want it.
+- The apps' sign-in confirmation form is a POST to `/app-signin` (outside `/auth/`). The bundled proxy
+  and `infra/demo/nginx-app.conf` limit it per client address like `/auth/` (60 a minute, burst 60,
+  POSTs only) and give `/app-signin` and `/app-signin/finish` `X-Frame-Options: DENY`. **If you run
+  your own proxy in front of the web server** do the same, let the application's
+  `Cross-Origin-Opener-Policy` header through unchanged for those two pages, and do not worry about a
+  proxy-wide `Referrer-Policy: no-referrer`: the confirmation page carries its own `<meta
+  name="referrer">`, which is what keeps its form working behind such a proxy
+  ([decision 017](decisions/017-native-app-sign-in-handover.md)).
+  `infra/selfhosted/test/proxy-app-signin.mjs` runs both shipped configurations in front of the real
+  application and checks all of this in Chromium.
 
 ---
 

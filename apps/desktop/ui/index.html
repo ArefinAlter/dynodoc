@@ -66,13 +66,33 @@
         </form>
       </section>
 
-      <section id="signin" aria-labelledby="signin-title" hidden>
-        <h2 id="signin-title">Signing in with an emailed link</h2>
+      <section id="browser-signin" aria-labelledby="browser-signin-title" hidden>
+        <h2 id="browser-signin-title">Sign in with your browser</h2>
         <p>
-          When you ask for a sign-in email in this window, the link in that email opens in your web
-          browser, not here. To sign in here instead, copy the link from the email (right-click it,
-          then Copy link) and paste it below. Signing in with Google does not work inside this
-          window yet.
+          Dynodoc opens your web browser, where you sign in with an emailed link or with Google.
+          Choose <strong>Continue</strong> on the page it shows and you come back to this app,
+          signed in.
+        </p>
+        <button type="button" id="browser-signin-go" class="primary">
+          Sign in with your browser
+        </button>
+        <p id="browser-signin-status" class="notice" role="status"></p>
+        <p id="browser-signin-pairing" class="notice" hidden>
+          Pairing code <strong id="browser-signin-code" class="pairing"></strong>. The page in your
+          browser shows the same four characters. If it shows different ones, choose Cancel there:
+          that request is not the one you started.
+        </p>
+        <p id="browser-signin-error" class="error" role="alert"></p>
+      </section>
+
+      <section id="signin" aria-labelledby="signin-title" hidden>
+        <h2 id="signin-title">Or paste an emailed sign-in link</h2>
+        <p>
+          <span id="signin-if-button">If the button above does not work for you: </span>when you
+          ask for a sign-in email in this window, the link in that email opens in your web
+          browser, not here. Copy the link from
+          the email (right-click it, then Copy link) and paste it below to sign in here. Only paste
+          a link from an email you asked for.
         </p>
         <form id="signin-form" novalidate>
           <label for="link">Sign-in link</label>

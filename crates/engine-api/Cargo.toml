@@ -36,6 +36,8 @@ thiserror = { workspace = true }
 pasetors = { workspace = true }
 hex = { workspace = true }
 ring = { workspace = true }
+subtle = { workspace = true }
+zeroize = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }
 # Stage 18: ULIDs for suggestion ids, opaque cursors, OpenAPI generation.

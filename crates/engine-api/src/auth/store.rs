@@ -108,14 +108,14 @@ pub async fn issue_refresh_generation(
 }
 
 pub async fn issue_bound_refresh(
-    pool: &PgPool,
+    executor: impl sqlx::PgExecutor<'_>,
     identity_id: Uuid,
     token_hash: &[u8],
     expires_at: DateTime<Utc>,
     generation: i64,
     session_id: Option<Uuid>,
 ) -> Result<(), AuthError> {
-    let result = sqlx::query("insert into refresh_token(identity_id,token_hash,expires_at,session_generation,session_id) select id,$2,$3,$4,$5 from identity where id=$1 and disabled_at is null and session_generation=$4").bind(identity_id).bind(token_hash).bind(expires_at).bind(generation).bind(session_id).execute(pool).await?;
+    let result = sqlx::query("insert into refresh_token(identity_id,token_hash,expires_at,session_generation,session_id) select id,$2,$3,$4,$5 from identity where id=$1 and disabled_at is null and session_generation=$4").bind(identity_id).bind(token_hash).bind(expires_at).bind(generation).bind(session_id).execute(executor).await?;
     if result.rows_affected() != 1 {
         return Err(AuthError::TokenInvalid);
     }
@@ -204,6 +204,10 @@ pub async fn revoke_login(pool: &PgPool, presented_hash: &[u8]) -> Result<(), Au
     if let Some((identity, generation, session)) = login {
         if let Some(session) = session {
             sqlx::query("update refresh_token set revoked_at=now() where identity_id=$1 and session_id=$2 and revoked_at is null")
+                .bind(identity).bind(session).execute(&mut *tx).await?;
+            // The app hand-over codes this login asked for end with it (a code is a way to
+            // become this account, so it must not outlive the login that made it).
+            sqlx::query("update app_handover_code set consumed_at=now(), outcome='burned' where identity_id=$1 and issued_session=$2 and consumed_at is null")
                 .bind(identity).bind(session).execute(&mut *tx).await?;
         } else {
             sqlx::query("update identity set session_generation=session_generation+1 where id=$1 and session_generation=$2")

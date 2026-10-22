@@ -70,6 +70,13 @@ server {
         include /etc/nginx/dynodoc/proxy-common.inc;
         proxy_pass $dynodoc_web;
     }
+    # The sign-in confirmation form (POST /app-signin) lives outside /auth/, so it is limited here.
+    location = /app-signin {
+        limit_req zone=dynodoc_app_signin burst=60 nodelay;
+        limit_req_status 429;
+        include /etc/nginx/dynodoc/proxy-common.inc;
+        proxy_pass $dynodoc_web;
+    }
     # Everything else, including the server-sent event streams (no buffering, long read timeout)
     # and WebSocket upgrades (Upgrade and Connection are passed on).
     location / {
