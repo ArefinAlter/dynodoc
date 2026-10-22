@@ -400,36 +400,50 @@ Do not claim store readiness from this round.
 22 October 2026, [decision 017](decisions/017-native-app-sign-in-handover.md) (the threat table and
 every bound are there). The emailed link and Google finish in the system browser, which shares no
 session with the app's window, so the app asks the browser to do the sign-in and to hand back a
-one-time code, with PKCE so that a program that takes the code out of the link learns nothing it can
-use.
+one-time code, with PKCE so that a program that only takes the code out of the link learns nothing it
+can use. (A program on the same device that starts a request of its own and also receives the link is
+not stopped by PKCE; the pairing code below lets a person catch it, and verified App Links, not built,
+are the real fix: decision 017, threat table.) The browser sign-in is offered on **Windows and Android
+only**: it needs the app to name itself to the server in its User-Agent, which is built and run there;
+on macOS and Linux the button is hidden and the paste fallback remains.
 
 **For a person.** Desktop: **File > Sign in with your browser**, or the button in the launcher. Phone:
 open the app; when the server shows its sign-in page the app shows its own screen with **Sign in with
-your browser** instead (the server's page cannot sign this window in). The browser opens the server's
-`/app-signin` page; sign in there as usual, check the account and device it names, press **Continue**,
-and the app opens and is signed in. The request lasts ten minutes; a link used twice, late, or from
-another app does nothing. "Sign in with an emailed link" (paste) stays as a fallback on desktop. To
+your browser** instead (the server's page cannot sign this window in). The launcher then shows four
+characters, the **pairing code**. The browser opens the server's `/app-signin` page; sign in there as
+usual, check the account and device it names and that its pairing code is the same four characters,
+press **Continue** (press **Cancel** if the code differs or you did not just ask), and the app opens and
+is signed in. The request lasts ten minutes; a link used twice, late, or from
+another app does nothing. A browser too old to say where a request came from is told to update. "Sign in with an emailed link" (paste) stays as a fallback on desktop. To
 choose another server on a phone: sign out in the web app (it goes to its sign-in page, the launcher
 appears). A saved server that cannot be reached still needs the app's data cleared; decision 017 weighs
 a launcher deep link and an Android shortcut and does not build them.
 
 **Where it is.** API: `crates/engine-api/src/auth/handover.rs`, migration `0046_app_handover.sql`, routes
 `POST /auth/app-handover` and `/auth/app-handover/redeem` (service key; issuing also needs the person's
-bearer token). Web: `/app-signin`, `/app-signin/finish`, `POST /auth/app-signin` and
-`/auth/app-signin/redeem`. Shell: `signin.rs` (the secrets, the one pending attempt, the outbox),
-`deeplink.rs` (the fourth link shape), `server.rs`, `nav.rs`, `window.rs`, the launcher button, the menu
-item, `allow-start-browser-sign-in` in both capability files, and the `dynodoc://signin` filter in
-`tauri.conf.json` and the committed Android manifest (the manifest checker allows it and nothing wider).
+bearer token; account logins only). Web: `/app-signin` (the page and its Continue form action),
+`/app-signin/finish` (the app's window only) and `POST /auth/app-signin/redeem` (needs the app's token).
+Shell: `signin.rs` (the secrets, the one pending attempt, the origin-bound outbox, the pairing code, the
+two-clock expiry), `finish_hash.js` (the script that sets the fragment, with its own Node test),
+`deeplink.rs` (the fourth link shape), `server.rs`, `nav.rs` (the finish-page rule), `handoff.rs` (the
+sign-in budget), `window.rs` (the User-Agent token on Windows), Android `AppToken.kt`/`MainActivity.kt`, the
+launcher button and pairing line, the menu item, `allow-start-browser-sign-in` in both capability files, and
+the `dynodoc://signin` filter in `tauri.conf.json` and the committed Android manifest (the manifest
+checker allows it and nothing wider).
 
 **What was run (22 October 2026, one Windows 11 PC; the list is in decision 017).** The API against real
-PostgreSQL (18 integration tests including simultaneous redeems and the restricted runtime login, 6 unit
-tests, 11 manual mutations), the web pages (vitest, a Chromium suite with recording proxies), the shell (137
-unit tests, 9 manual mutations, `scripts/signin-probe.mjs` against the real Windows shell: 37 checks), and the
-Android emulator (`scripts/android-probe.mjs signin`): the launcher appears by itself when the sign-in page
-loads, the button asks Chrome for `/app-signin?...`, `dynodoc://signin?...` reaches the app through the new
-manifest filter, a link with nothing pending or the wrong state is refused, the right one takes the window
-to the finish page, `SHA-256(verifier)` is the challenge, a replay does nothing, and the verifier is not in
-the device log. **The Android run used the hosted cloud only as a stand-in server** (it has neither page
+PostgreSQL (25 integration tests including simultaneous redeems and the restricted runtime login, unit
+tests, 17 manual mutations), the web pages (vitest 970 tests, 14 Chromium tests with recording proxies, a
+page that only the app's window can use and a Continue that only a real click can make), the shell (154
+unit tests, 51 Node tests, 22 manual mutations, `scripts/signin-probe.mjs` against the real Windows shell:
+53 checks), and the
+Android emulator (`scripts/android-probe.mjs signin`, rebuilt after the review, 18 checks): the launcher
+appears by itself when the sign-in page loads, the button asks Chrome for `/app-signin?...` and shows the
+pairing code, `dynodoc://signin?...` reaches the app through the new manifest filter, a link with nothing
+pending or the wrong state is refused, the right one takes the window to the finish page, the web view's
+User-Agent ends in `DynodocApp/0.1.0 (android)`, the shell sets the fragment only after the page says it is
+ready, `SHA-256(verifier)` is the challenge, a replay does nothing, and the verifier is not in the device
+log (the `ipc`, `links`, `deeplink` and `recreate` phases passed on the new build too). **The Android run used the hosted cloud only as a stand-in server** (it has neither page
 yet, so it answered 404 pages and nothing was signed in): the app forbids cleartext traffic, `http://localhost`
 included, so the full flow against a local server could not run there. The full flow (sign in, Continue,
 finish, session cookie) ran in Chromium and on the Windows shell with a stand-in server, never as one run on

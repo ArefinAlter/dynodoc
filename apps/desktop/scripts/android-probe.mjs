@@ -541,7 +541,11 @@ const phases = {
   //   - Android's own routing of dynodoc://signin?... reaches the app (the manifest filter);
   //   - a link with nothing pending, or with the wrong state, does nothing; the right one takes the
   //     window to /app-signin/finish with code, state and verifier in the FRAGMENT only, and
-  //     SHA-256(verifier) is the challenge the browser was given; a replay does nothing.
+  //     SHA-256(verifier) is the challenge the browser was given; a replay does nothing;
+  //   - the web view names the app in its User-Agent (DynodocApp/<version> (android), appended);
+  //   - the launcher shows the request's pairing code, the same four characters the server's page
+  //     shows; and the shell sets the fragment only once the finish page says it is ready (the
+  //     cloud's 404 page stands in for it, so the probe sets the page's ready marker itself).
   // The challenge and state are read from the browser's launch intent (dumpsys), because the app's
   // own debug log never prints a query.
   async signin() {
@@ -606,6 +610,12 @@ const phases = {
     const state = query.get('state');
     check([...query.keys()].join(',') === 'challenge,state,platform' && query.get('platform') === 'android', 'with challenge, state and platform=android', [...query.keys()].join(',') + ' ' + query.get('platform'));
     check(/^[A-Za-z0-9_-]{43}$/.test(challenge ?? '') && /^[A-Za-z0-9_-]{32}$/.test(state ?? ''), 'the challenge is 43 and the state 32 base64url characters');
+    const { createHash: sha } = await import('node:crypto');
+    const alphabet = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+    const digest = sha('sha256').update(state ?? '').digest();
+    const expectedPairing = [0, 1, 2, 3].map((i) => alphabet[digest[i] & 31]).join('');
+    const shownPairing = await live.eval(`document.getElementById('browser-signin-pairing').hidden ? '' : document.getElementById('browser-signin-code').textContent`);
+    check(shownPairing === expectedPairing && /^[2-9A-HJ-NP-Z]{4}$/.test(String(shownPairing)), "the launcher shows the request's pairing code (the same four characters the server's page shows)", `${shownPairing} vs ${expectedPairing}`);
     shot('signin-after-button');
     live.close();
     page.close();
@@ -630,6 +640,13 @@ const phases = {
       return null;
     }, 'the finish page', 60);
     check(Boolean(done), 'the right link takes the window to <server>/app-signin/finish');
+    const agent = await done.eval('navigator.userAgent');
+    check(/ DynodocApp\/\d+\.\d+\.\d+ \(android\)$/.test(String(agent)) && /Chrome\//.test(String(agent)), "the web view names the app: its own User-Agent with DynodocApp/<version> (android) at the end", String(agent).slice(-90));
+    // The cloud's 404 page stands in for the finish page and never says it is ready: say so for it,
+    // as the real page does when it listens for a change of its fragment. The shell waits for that.
+    const early = String(await done.eval('location.hash'));
+    check(early === '', 'until the page says it is ready the fragment is not set', early);
+    await done.eval(`document.documentElement.setAttribute('data-finish-ready', '1')`);
     await sleep(2500);
     const href = await done.eval('location.href');
     const hash = new URLSearchParams(String(await done.eval('location.hash')).replace(/^#/, ''));

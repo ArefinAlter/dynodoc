@@ -24,7 +24,8 @@ an iPhone or a physical phone.
 | `src-tauri/src/main.rs` | Thin desktop entry point. |
 | `src-tauri/src/lib.rs` | `run()` (also the mobile entry point): plugins, commands, window, menu. |
 | `src-tauri/src/server.rs` | Validates and normalises the server address and the pasted sign-in link; origin comparison; the two addresses of the browser sign-in (`/app-signin?...` for the system browser, `/app-signin/finish#...` for this window). Pure functions. |
-| `src-tauri/src/signin.rs` | The browser sign-in's secrets and the one pending attempt: verifier, PKCE challenge and state from the operating system's randomness, kept in memory only for ten minutes, replaced by a new attempt, used up by the first accepted link, bound to the server it was started for. No secret has a `Debug`, `Display` or `Clone`. Pure functions with an injectable clock and randomness. |
+| `src-tauri/src/signin.rs` | The browser sign-in's secrets and the one pending attempt: verifier, PKCE challenge and state from the operating system's randomness, kept in memory only for ten minutes (by the larger of the monotonic and the wall clock, because a sleeping phone stops the first), replaced by a new attempt, used up by the first accepted link, bound to the server it was started for. The outbox holds the finished attempt's fragment for that server's finish page only, for 30 seconds, once. The pairing code (four characters of SHA-256(state), the same function and vectors as the server's page) and the `DynodocApp/<version> (<kind>)` token. No secret has a `Debug`, `Display` or `Clone`, and every buffer that held one is overwritten when dropped. Pure functions with an injectable clock and randomness. |
+| `src-tauri/src/finish_hash.js` | The one script the shell runs in a page after it has loaded: sets `location.hash` to the finish fragment, but only on exactly the finish page of the server the attempt was made for (origin, path, empty query and fragment), only after the page says it is ready (`data-finish-ready`), and gives up after about five seconds. Its two placeholders are filled only from a checked origin and a checked fragment. `scripts/finish-hash.test.mjs` runs it against a fake page. |
 | `src-tauri/src/nav.rs` | The navigation policy: what may load in the window (the launcher only when the shell asked for it), what goes to the system browser, what is dropped; the window title; log redaction. Pure functions. |
 | `src-tauri/src/handoff.rs` | Handing a link to the system: public addresses only for a page (1 per 3 s, 5 per minute), mail and local addresses only for a click (a secret marker from the injected script; its own budget, 1 per second and 10 per minute) or a menu item. The secret comes from the operating system's random source. Pure functions. |
 | `src-tauri/src/deeplink.rs` | Parser for `dynodoc://` links (four accepted forms, one static table). Pure functions. |
@@ -43,7 +44,7 @@ an iPhone or a physical phone.
 | `ui/` | The launcher page: plain HTML, CSS and JavaScript shipped inside the app. No framework, no remote scripts. |
 | `scripts/prepare-sidecar.mjs` | Builds `engine-cli` from the repository root and copies it to `src-tauri/binaries/engine-cli-<triple>[.exe]` (git-ignored). |
 | `scripts/smoke.ps1` | Windows smoke test of a debug build (starts, config folder, saved server and window title, deep link, an edited config, key creation in folders with accented and Bengali names, clean exit). |
-| `scripts/signin-probe.mjs` | Windows black-box probe of the browser sign-in against the real debug shell and a stand-in server: the menu item and the launcher's button start an attempt and ask the system browser for `/app-signin?...`; a link with nothing pending, a wrong state or a replay does nothing; the right link takes the window to the finish page with code, state and verifier in the FRAGMENT only (no request, Referer or log holds them) and `SHA-256(verifier)` equals the challenge; a second attempt works while the finish page is still showing; a server page cannot start it. Opens tabs in your default browser on purpose. Not part of CI. |
+| `scripts/signin-probe.mjs` | Windows black-box probe of the browser sign-in against the real debug shell and a stand-in server: the menu item and the launcher's button start an attempt and ask the system browser for `/app-signin?...`; a link with nothing pending, a wrong state or a replay does nothing; the right link takes the window to the finish page with code, state and verifier in the FRAGMENT only (no request, Referer or log holds them) and `SHA-256(verifier)` equals the challenge; the window's User-Agent is WebView2's own with `DynodocApp/<version> (desktop)` appended; the shell waits for the page's ready marker; a second attempt works while the finish page is still showing; a server page cannot start it and cannot send the window to the finish page with a query, a fragment, an encoded spelling, `window.open` or a redirect; the launcher shows the pairing code of the request. Opens tabs in your default browser on purpose. Not part of CI. |
 | `scripts/security-probe.mjs` | Windows black-box probe of a debug build: drives WebView2 through its debugging port and tries, from inside the web view, what a hostile server page would try (see "Security model"). Not part of CI. |
 | `src-tauri/tauri.android.conf.json` | Repeats the Cargo.toml version for Android (the Tauri command line gives an Android build no version otherwise: `1.0`, code 1, forever); a test keeps them equal. |
 | `src-tauri/gen/android/` | The Android project Tauri 2.12 generates, **committed** (source only; its own `.gitignore` files keep build output, `local.properties`, `keystore.properties` and the files the build writes with machine paths in them out). Changed from the template: `allowBackup="false"` and `dataExtractionRules` (everything excluded), cleartext off in every build type, `windowSoftInputMode`, the Gradle download pinned by checksum, `file_paths.xml` narrowed to the one photo folder, window and bar colours, optional release signing from `keystore.properties`, and three Kotlin files: `MainActivity.kt` (insets, Back, downloads, web view settings), `OfflineClient.kt` (a plain "Try again" page instead of Android's stock error page) and the template's own. No JavaScript bridge is added (a test greps for it). |
@@ -126,17 +127,24 @@ server** returns to the launcher.
 browser**, which does not share a session with this window. So the window asks the browser to do it
 and to hand back a one-time code (decision 017): choose **File > Sign in with your browser** (or
 press **Sign in with your browser** in the launcher; on a phone the launcher appears by itself when
-the server's sign-in page loads). Your default browser opens the server's `/app-signin` page. Sign
-in there as you always do, check the account and the device it names, and press **Continue**: the
-browser opens the app (`dynodoc://signin?code=..&state=..`), the window opens the server's finish
-page and you are signed in, with the next page being your workspace. The request is good for ten
-minutes. If the link comes back later, or twice, nothing happens: start again.
+the server's sign-in page loads). The launcher shows four characters, the **pairing code**. Your default
+browser opens the server's `/app-signin` page. Sign in there as you always do, check the account and
+the device it names and that the pairing code is the same four characters, and press **Continue**
+(**Cancel** if it differs or you did not just ask): the browser opens the app
+(`dynodoc://signin?code=..&state=..`), the window opens the server's finish page and you are signed
+in, with the next page being your workspace. The request is good for ten minutes. If the link comes
+back later, or twice, nothing happens: start again. **Offered on Windows and Android only**: the
+server's finish page works only for a window that names the app in its User-Agent, which is built and
+run there; on macOS and Linux the button is hidden (the emailed-link fallback below remains).
 
 How it is kept safe (full table in decision 017): the app makes a random verifier and sends the
-browser only its SHA-256 (PKCE, RFC 7636); the code in the link is useless without the verifier,
-which stays in this app's memory and goes only to your server, in the part of the address (the
-fragment) that no server, proxy or log ever receives; the code works once and for a minute; a link
-whose state is not the app's is ignored; and nothing is written to disk.
+browser only its SHA-256 (PKCE, RFC 7636); the code in the link is useless to a program that only takes
+it out of the link, because the verifier stays in this app's memory and goes only to your server, in the
+part of the address (the fragment) that no server, proxy or log ever receives; the code works once and
+for a minute; a link whose state is not the app's is ignored; and nothing is written to disk. **What
+this does not cover:** a program on your device that starts a request of its own and also receives the
+link (Android lets two apps claim a custom scheme). That is what the pairing code is for, and verified
+App Links (not built) are the real fix.
 
 The older way still works as a fallback: ask for the email in this window, copy the link from the
 email and choose **File > Sign in with an emailed link** (the launcher checks it belongs to your
@@ -147,7 +155,8 @@ for**, so paste only a link from an email you asked for in this window: someone 
 sign you in as them (login CSRF). The web app's own `/login` page still shows "Continue to
 workspace" and needs a click before it uses the token, so nothing is signed in silently. The browser
 sign-in has no such gap on the start side (its confirmation page names the account before anything
-is made); a crafted link to the finish page is the one open item, see decision 017.
+is made), and a crafted link to the finish page signs nobody in: the server acts only for this app's
+own window (see decision 017, "Forced login").
 
 **This computer's key.** The launcher can create a device signing key with
 `engine-cli device keygen --out <app local data>/device-key.json --encrypt --keystore` and show its
@@ -300,9 +309,9 @@ gets by really navigating the *window* to one of them is its own content, with n
 
 ### How this was tested
 
-- **Pure functions, unit tests** (`cargo test`, 137 tests on Windows after the browser sign-in of 22
-  October 2026; the Windows-only key test is not built elsewhere, so 136 are expected there, not
-  rerun on Linux since the 21 October change): the address
+- **Pure functions, unit tests** (`cargo test`, 154 tests on Windows after the review round of the
+  browser sign-in on 22 October 2026, 137 before it; the Windows-only key test is not built elsewhere,
+  and nothing was rerun on Linux since the 21 October change): the address
   validator, the sign-in link rule, the navigation and new-window decisions (including the
   launcher's own page only, and frame-like addresses), the hand-off rules (every
   loopback, private, link-local, mapped, NAT64 and 6to4 shape; wildcard-DNS names and names spelling
@@ -345,9 +354,22 @@ gets by really navigating the *window* to one of them is its own content, with n
   that pin how `window.rs` wires them. **Mutations** (each fails a test): state check removed, expiry
   removed, attempt not used up, server binding removed, challenge not the hash of the verifier, link
   parameters in any order, secrets in the query, the launcher check skipped on the new command, a
-  wrong-state link cancelling the attempt. `scripts/signin-probe.mjs` (Windows, real shell, 37 checks) and
-  the `signin` phase of `scripts/android-probe.mjs` (emulator, 16 checks) drive the whole shell half; see
+  wrong-state link cancelling the attempt. `scripts/signin-probe.mjs` (Windows, real shell, 53 checks) and
+  the `signin` phase of `scripts/android-probe.mjs` (emulator, 18 checks; the `ipc`, `links`, `deeplink` and `recreate` phases, 42 checks, also passed on the rebuilt app) drive the whole shell half; see
   decision 017 for what each did and did not cover.
+  **Review round (same day).** More unit tests: the finish-page navigation rule in every spelling
+  (query, fragment, trailing slash, case, percent-encoded letters, repeated or backward slashes,
+  `window.open`), the outbox bound to the server it was made for and cleared by a change of server, the
+  two-clock expiry (a phone that slept), the third hand-off budget, the pairing code's vectors (shared
+  with the web page), every buffer overwritten on drop, the finish script's charset including a
+  43-character verifier of valid characters that holds `";x;"`, and the script's template
+  (`finish_hash.js`, also run in a Node realm by `scripts/finish-hash.test.mjs`, 7 tests). **Mutations**
+  (each fails a test): the navigation rule allowing the finish page with anything in its address, the
+  script's path, origin and readiness checks removed, the outbox ignoring its server, the script's
+  charset broadened, the sign-in request spending the click budget, expiry by one clock, a server
+  change not clearing, a different pairing code, a secret not overwritten, no User-Agent token. The
+  probe adds the User-Agent token (WebView2's own agent with `DynodocApp/<version> (desktop)`
+  appended), the ready marker, the pairing code and seven forged navigations to the finish page.
 - **Configuration tests** (`policy_tests.rs`): no `remote` capability anywhere, the exact permission
   lists, phones get no tool commands, the CSP has no unsafe source, no dangerous Tauri switches,
   banned plugins and features absent, the launcher page has no inline or remote code, the workflow
@@ -563,8 +585,8 @@ packaged, never run).
 - **No auto-update**: it needs update signing keys the owner has not created. There is no updater
   plugin in the project.
 - No tray icon, no analytics, no crash reporting, no push notifications.
-- Proper sign-in hand-over from the system browser (Google, or a link clicked in a mail program)
-  needs a one-time-code exchange on the server.
+- The browser sign-in hand-over (decision 017) is built for Windows and Android only; macOS, Linux
+  and iOS do not add the User-Agent token the server requires, and nothing has been run there.
 - Downloads, printing and file-open behaviour inside the web view are unverified on desktop. On
   Android (emulator): a same-site https download works, `blob:` downloads are refused with a message,
   the system file chooser opens for an upload field, printing was not tried.
