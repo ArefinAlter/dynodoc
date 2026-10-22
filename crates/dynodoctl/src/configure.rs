@@ -36,7 +36,11 @@ fn one_of(v: &str, allowed: &[&str]) -> std::result::Result<(), String> {
     }
 }
 fn port(v: &str) -> std::result::Result<(), String> {
-    v.parse::<u16>().ok().filter(|p| *p != 0).map(|_| ()).ok_or_else(|| "use a port number from 1 to 65535".to_string())
+    v.parse::<u16>()
+        .ok()
+        .filter(|p| *p != 0)
+        .map(|_| ())
+        .ok_or_else(|| "use a port number from 1 to 65535".to_string())
 }
 fn email(v: &str) -> std::result::Result<(), String> {
     if v.contains('@') && !v.contains(' ') && !v.contains(',') && v.len() <= 254 {
@@ -47,36 +51,174 @@ fn email(v: &str) -> std::result::Result<(), String> {
 }
 
 pub const SETTINGS: [Setting; 19] = [
-    Setting { name: "origin", key: "ORIGIN", help: "the address people type, https://host[:port]", validate: |v| Origin::parse(v).map(|_| ()).map_err(|e| e.what) },
-    Setting { name: "tls-mode", key: "DYNODOC_TLS_MODE", help: "evaluation | provided | acme", validate: |v| one_of(v, &TLS_MODES) },
-    Setting { name: "bind", key: "DYNODOC_BIND", help: "address the proxy listens on (127.0.0.1 = this machine only)", validate: |v| v.parse::<IpAddr>().map(|_| ()).map_err(|_| "use an IP address such as 127.0.0.1 or 0.0.0.0".to_string()) },
-    Setting { name: "http-port", key: "DYNODOC_HTTP_PORT", help: "published HTTP port", validate: port },
-    Setting { name: "https-port", key: "DYNODOC_HTTPS_PORT", help: "published HTTPS port", validate: port },
-    Setting { name: "smtp-host", key: "SMTP_HOST", help: "mail server for sign-in links", validate: |v| if nonempty_line(v).is_ok() && !v.contains(' ') { Ok(()) } else { Err("use a host name or address without spaces".into()) } },
-    Setting { name: "smtp-port", key: "SMTP_PORT", help: "mail server port", validate: port },
-    Setting { name: "smtp-security", key: "SMTP_SECURITY", help: "starttls | tls | none-local", validate: |v| one_of(v, &["starttls", "tls", "none-local"]) },
-    Setting { name: "smtp-from", key: "SMTP_FROM", help: "sender address of sign-in mail", validate: email },
-    Setting { name: "smtp-user", key: "SMTP_USER", help: "mail server login name (the password stays in secrets/smtp_password)", validate: |v| if nonempty_line(v).is_ok() && !v.contains(' ') { Ok(()) } else { Err("use a login name without spaces".into()) } },
-    Setting { name: "brand", key: "DYNODOC_BRAND_NAME", help: "product name shown to people", validate: |v| nonempty_line(v).and_then(|_| if v.len() <= 100 { Ok(()) } else { Err("at most 100 characters".into()) }) },
-    Setting { name: "org-name", key: "DYNODOC_ORG_NAME", help: "your organisation, shown on the sign-in page", validate: nonempty_line },
-    Setting { name: "telemetry", key: "DYNODOC_TELEMETRY", help: "on | off (page metrics; off by default when self-hosted)", validate: |v| one_of(v, &["on", "off"]) },
-    Setting { name: "auth-email-link", key: "AUTH_EMAIL_LINK", help: "on | off (email sign-in)", validate: |v| one_of(v, &["on", "off"]) },
-    Setting { name: "admin-emails", key: "ADMIN_EMAILS", help: "comma-separated addresses allowed to use /admin", validate: |v| if v.split(',').all(|a| email(a.trim()).is_ok()) { Ok(()) } else { Err("use addresses separated by commas".into()) } },
-    Setting { name: "dev-auth", key: "DEV_AUTH", help: "true | false (test stacks only: shows the sign-in link instead of mailing it)", validate: |v| one_of(v, &["true", "false"]) },
-    Setting { name: "acme-email", key: "DYNODOC_ACME_EMAIL", help: "contact address for the certificate authority", validate: email },
-    Setting { name: "acme-ca", key: "DYNODOC_ACME_CA", help: "letsencrypt-staging | letsencrypt | an ACME directory URL", validate: |v| if v.contains(' ') || nonempty_line(v).is_err() { Err("use a short name or a URL without spaces".into()) } else { Ok(()) } },
-    Setting { name: "acme-accept-tos", key: "DYNODOC_ACME_ACCEPT_TOS", help: "true after you read the certificate authority's terms", validate: |v| one_of(v, &["true", "false"]) },
+    Setting {
+        name: "origin",
+        key: "ORIGIN",
+        help: "the address people type, https://host[:port]",
+        validate: |v| Origin::parse(v).map(|_| ()).map_err(|e| e.what),
+    },
+    Setting {
+        name: "tls-mode",
+        key: "DYNODOC_TLS_MODE",
+        help: "evaluation | provided | acme",
+        validate: |v| one_of(v, &TLS_MODES),
+    },
+    Setting {
+        name: "bind",
+        key: "DYNODOC_BIND",
+        help: "address the proxy listens on (127.0.0.1 = this machine only)",
+        validate: |v| {
+            v.parse::<IpAddr>()
+                .map(|_| ())
+                .map_err(|_| "use an IP address such as 127.0.0.1 or 0.0.0.0".to_string())
+        },
+    },
+    Setting {
+        name: "http-port",
+        key: "DYNODOC_HTTP_PORT",
+        help: "published HTTP port",
+        validate: port,
+    },
+    Setting {
+        name: "https-port",
+        key: "DYNODOC_HTTPS_PORT",
+        help: "published HTTPS port",
+        validate: port,
+    },
+    Setting {
+        name: "smtp-host",
+        key: "SMTP_HOST",
+        help: "mail server for sign-in links",
+        validate: |v| {
+            if nonempty_line(v).is_ok() && !v.contains(' ') {
+                Ok(())
+            } else {
+                Err("use a host name or address without spaces".into())
+            }
+        },
+    },
+    Setting {
+        name: "smtp-port",
+        key: "SMTP_PORT",
+        help: "mail server port",
+        validate: port,
+    },
+    Setting {
+        name: "smtp-security",
+        key: "SMTP_SECURITY",
+        help: "starttls | tls | none-local",
+        validate: |v| one_of(v, &["starttls", "tls", "none-local"]),
+    },
+    Setting {
+        name: "smtp-from",
+        key: "SMTP_FROM",
+        help: "sender address of sign-in mail",
+        validate: email,
+    },
+    Setting {
+        name: "smtp-user",
+        key: "SMTP_USER",
+        help: "mail server login name (the password stays in secrets/smtp_password)",
+        validate: |v| {
+            if nonempty_line(v).is_ok() && !v.contains(' ') {
+                Ok(())
+            } else {
+                Err("use a login name without spaces".into())
+            }
+        },
+    },
+    Setting {
+        name: "brand",
+        key: "DYNODOC_BRAND_NAME",
+        help: "product name shown to people",
+        validate: |v| {
+            nonempty_line(v).and_then(|_| {
+                if v.len() <= 100 {
+                    Ok(())
+                } else {
+                    Err("at most 100 characters".into())
+                }
+            })
+        },
+    },
+    Setting {
+        name: "org-name",
+        key: "DYNODOC_ORG_NAME",
+        help: "your organisation, shown on the sign-in page",
+        validate: nonempty_line,
+    },
+    Setting {
+        name: "telemetry",
+        key: "DYNODOC_TELEMETRY",
+        help: "on | off (page metrics; off by default when self-hosted)",
+        validate: |v| one_of(v, &["on", "off"]),
+    },
+    Setting {
+        name: "auth-email-link",
+        key: "AUTH_EMAIL_LINK",
+        help: "on | off (email sign-in)",
+        validate: |v| one_of(v, &["on", "off"]),
+    },
+    Setting {
+        name: "admin-emails",
+        key: "ADMIN_EMAILS",
+        help: "comma-separated addresses allowed to use /admin",
+        validate: |v| {
+            if v.split(',').all(|a| email(a.trim()).is_ok()) {
+                Ok(())
+            } else {
+                Err("use addresses separated by commas".into())
+            }
+        },
+    },
+    Setting {
+        name: "dev-auth",
+        key: "DEV_AUTH",
+        help: "true | false (test stacks only: shows the sign-in link instead of mailing it)",
+        validate: |v| one_of(v, &["true", "false"]),
+    },
+    Setting {
+        name: "acme-email",
+        key: "DYNODOC_ACME_EMAIL",
+        help: "contact address for the certificate authority",
+        validate: email,
+    },
+    Setting {
+        name: "acme-ca",
+        key: "DYNODOC_ACME_CA",
+        help: "letsencrypt-staging | letsencrypt | an ACME directory URL",
+        validate: |v| {
+            if v.contains(' ') || nonempty_line(v).is_err() {
+                Err("use a short name or a URL without spaces".into())
+            } else {
+                Ok(())
+            }
+        },
+    },
+    Setting {
+        name: "acme-accept-tos",
+        key: "DYNODOC_ACME_ACCEPT_TOS",
+        help: "true after you read the certificate authority's terms",
+        validate: |v| one_of(v, &["true", "false"]),
+    },
 ];
 
 pub fn find(name: &str) -> Option<&'static Setting> {
     let wanted = name.to_ascii_lowercase().replace('_', "-");
-    SETTINGS.iter().find(|s| s.name == wanted || s.key.eq_ignore_ascii_case(name))
+    SETTINGS
+        .iter()
+        .find(|s| s.name == wanted || s.key.eq_ignore_ascii_case(name))
 }
 
 pub fn parse_assignments(items: &[String]) -> Result<Vec<(&'static Setting, String)>> {
     let mut out = Vec::new();
     for item in items {
-        let (name, value) = item.split_once('=').ok_or_else(|| CliError::usage(format!("`{item}` is not NAME=VALUE"), "write the setting and its new value, for example origin=https://docs.example.org"))?;
+        let (name, value) = item.split_once('=').ok_or_else(|| {
+            CliError::usage(
+                format!("`{item}` is not NAME=VALUE"),
+                "write the setting and its new value, for example origin=https://docs.example.org",
+            )
+        })?;
         let setting = find(name.trim()).ok_or_else(|| {
             CliError::usage(
                 format!("`{name}` is not a setting dynodoctl changes"),
@@ -84,7 +226,19 @@ pub fn parse_assignments(items: &[String]) -> Result<Vec<(&'static Setting, Stri
             )
         })?;
         let value = value.trim().to_string();
-        (setting.validate)(&value).map_err(|why| CliError::usage(format!("{} cannot be `{}`: {why}", setting.name, display_value(setting.key, &value)), format!("{} ({})", setting.help, "see docs/SELF-HOSTED-OPERATIONS.md")))?;
+        (setting.validate)(&value).map_err(|why| {
+            CliError::usage(
+                format!(
+                    "{} cannot be `{}`: {why}",
+                    setting.name,
+                    display_value(setting.key, &value)
+                ),
+                format!(
+                    "{} ({})",
+                    setting.help, "see docs/SELF-HOSTED-OPERATIONS.md"
+                ),
+            )
+        })?;
         out.push((setting, value));
     }
     Ok(out)
@@ -160,7 +314,12 @@ pub fn show(ctx: &Ctx<'_>) -> Result<Vec<ShownSetting>> {
         .map(|s| {
             let value = env.get(s.key).map(|v| display_value(s.key, v));
             let problem = env.get(s.key).and_then(|v| (s.validate)(v).err());
-            ShownSetting { name: s.name.into(), key: s.key.into(), value, problem }
+            ShownSetting {
+                name: s.name.into(),
+                key: s.key.into(),
+                value,
+                problem,
+            }
         })
         .collect())
 }
@@ -169,9 +328,20 @@ pub fn render_show(settings: &[ShownSetting]) -> String {
     let mut out = String::new();
     for s in settings {
         let value = s.value.clone().unwrap_or_else(|| "(not set)".into());
-        out.push_str(&format!("  {:<16} {:<28} {}{}\n", s.name, s.key, value, s.problem.as_ref().map(|p| format!("   <-- INVALID: {p}")).unwrap_or_default()));
+        out.push_str(&format!(
+            "  {:<16} {:<28} {}{}\n",
+            s.name,
+            s.key,
+            value,
+            s.problem
+                .as_ref()
+                .map(|p| format!("   <-- INVALID: {p}"))
+                .unwrap_or_default()
+        ));
     }
-    out.push_str("\nSecrets are not settings: they live in secrets/ and are never shown or changed here.\n");
+    out.push_str(
+        "\nSecrets are not settings: they live in secrets/ and are never shown or changed here.\n",
+    );
     out
 }
 
@@ -181,15 +351,26 @@ pub fn validate_env(ctx: &Ctx<'_>) -> Result<Vec<String>> {
     let c = Compose::new(ctx);
     let stage = c.run(&["run", "--rm", "--no-deps", "-T", "secrets-init"])?;
     if !stage.ok() {
-        return Err(CliError::failed(format!("secrets-init failed: {}", short(&stage.text())), "run `docker compose logs secrets-init`; it names the missing or wrong file"));
+        return Err(CliError::failed(
+            format!("secrets-init failed: {}", short(&stage.text())),
+            "run `docker compose logs secrets-init`; it names the missing or wrong file",
+        ));
     }
     let check = c.run(&["run", "--rm", "--no-deps", "-T", "preflight"])?;
     if check.ok() {
         return Ok(Vec::new());
     }
     let text = check.text();
-    let problems: Vec<String> = text.lines().filter(|l| l.trim_start().starts_with("- ")).map(|l| l.trim().trim_start_matches("- ").to_string()).collect();
-    Ok(if problems.is_empty() { vec![short(&text)] } else { problems })
+    let problems: Vec<String> = text
+        .lines()
+        .filter(|l| l.trim_start().starts_with("- "))
+        .map(|l| l.trim().trim_start_matches("- ").to_string())
+        .collect();
+    Ok(if problems.is_empty() {
+        vec![short(&text)]
+    } else {
+        problems
+    })
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -202,12 +383,25 @@ pub struct MailCheck {
 /// `check-mail` from the web server's network position: the real handshake, no message text.
 pub fn check_mail(ctx: &Ctx<'_>, to: &str, send: bool) -> Result<MailCheck> {
     let c = Compose::new(ctx);
-    let mut args = vec!["--profile", "maintenance", "run", "--rm", "-T", "mailcheck", "--to", to];
+    let mut args = vec![
+        "--profile",
+        "maintenance",
+        "run",
+        "--rm",
+        "-T",
+        "mailcheck",
+        "--to",
+        to,
+    ];
     if send {
         args.push("--send");
     }
     let out = c.run(&args)?;
-    Ok(MailCheck { ran: true, ok: out.ok(), message: short(&out.text()) })
+    Ok(MailCheck {
+        ran: true,
+        ok: out.ok(),
+        message: short(&out.text()),
+    })
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -230,12 +424,24 @@ impl ConfigureReport {
             o.push_str(&format!("  the previous .env is kept in {p} (mode 0600)\n"));
         }
         if let Some(m) = &self.mail {
-            o.push_str(&format!("  mail check: {}{}\n", if m.ok { "passed" } else { "FAILED - " }, if m.ok { String::new() } else { m.message.clone() }));
+            o.push_str(&format!(
+                "  mail check: {}{}\n",
+                if m.ok { "passed" } else { "FAILED - " },
+                if m.ok {
+                    String::new()
+                } else {
+                    m.message.clone()
+                }
+            ));
         }
         for n in &self.notes {
             o.push_str(&format!("  note     {n}\n"));
         }
-        o.push_str(if self.applied { "  applied: the services were restarted with the new settings\n" } else { "  saved, not applied yet: run `dynodoctl configure apply` (or add --apply)\n" });
+        o.push_str(if self.applied {
+            "  applied: the services were restarted with the new settings\n"
+        } else {
+            "  saved, not applied yet: run `dynodoctl configure apply` (or add --apply)\n"
+        });
         o
     }
 }
@@ -268,17 +474,34 @@ pub fn set(ctx: &Ctx<'_>, opts: &SetOptions) -> Result<ConfigureReport> {
         if old.as_deref() == Some(value.as_str()) {
             continue;
         }
-        lines.push(format!("{}: {} -> {}", setting.key, old.unwrap_or_else(|| "(not set)".into()), display_value(setting.key, value)));
+        lines.push(format!(
+            "{}: {} -> {}",
+            setting.key,
+            old.unwrap_or_else(|| "(not set)".into()),
+            display_value(setting.key, value)
+        ));
         env.set(setting.key, value)?;
     }
     let notes = derive(&mut env, &changes)?;
     if lines.is_empty() {
-        return Ok(ConfigureReport { changes: vec![], notes: vec!["every setting already has that value; nothing was changed".into()], previous_copy: None, applied: false, mail: None, ok: true });
+        return Ok(ConfigureReport {
+            changes: vec![],
+            notes: vec!["every setting already has that value; nothing was changed".into()],
+            previous_copy: None,
+            applied: false,
+            mail: None,
+            ok: true,
+        });
     }
-    let smtp_touched = changes.iter().any(|(s, _)| s.key.starts_with("SMTP_") || s.key == "AUTH_EMAIL_LINK");
+    let smtp_touched = changes
+        .iter()
+        .any(|(s, _)| s.key.starts_with("SMTP_") || s.key == "AUTH_EMAIL_LINK");
 
     // The dated copy first, then the change.
-    let copy = ctx.layout.state_dir().join(format!("env-{}.bak", stamp((ctx.now)())));
+    let copy = ctx
+        .layout
+        .state_dir()
+        .join(format!("env-{}.bak", stamp((ctx.now)())));
     write_private(&copy, previous.as_bytes())?;
     write_private(&ctx.layout.env_file(), env.render().as_bytes())?;
 
@@ -288,11 +511,25 @@ pub fn set(ctx: &Ctx<'_>, opts: &SetOptions) -> Result<ConfigureReport> {
     if !problems.is_empty() {
         restore_previous(ctx, &previous)?;
         return Err(CliError::refused(
-            format!("the web server's own check rejects the new settings:\n{}", problems.iter().map(|p| format!("  - {p}")).collect::<Vec<_>>().join("\n")),
+            format!(
+                "the web server's own check rejects the new settings:\n{}",
+                problems
+                    .iter()
+                    .map(|p| format!("  - {p}"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            ),
             "nothing was changed (the previous .env is back); fix the values and try again",
         ));
     }
-    let mut report = ConfigureReport { changes: lines, notes, previous_copy: Some(copy.display().to_string()), applied: false, mail: None, ok: true };
+    let mut report = ConfigureReport {
+        changes: lines,
+        notes,
+        previous_copy: Some(copy.display().to_string()),
+        applied: false,
+        mail: None,
+        ok: true,
+    };
     if let Some(to) = &opts.mail_to {
         let m = check_mail(ctx, to, opts.send_test_mail)?;
         if !m.ok {
@@ -329,11 +566,21 @@ pub fn apply(ctx: &Ctx<'_>) -> Result<()> {
     if out.ok() {
         Ok(())
     } else {
-        Err(CliError::failed(format!("the stack did not come up with these settings: {}", short(&out.text())), "run `docker compose logs <service>` for the failed job"))
+        Err(CliError::failed(
+            format!(
+                "the stack did not come up with these settings: {}",
+                short(&out.text())
+            ),
+            "run `docker compose logs <service>` for the failed job",
+        ))
     }
 }
 
-pub fn check(ctx: &Ctx<'_>, mail_to: Option<&str>, send: bool) -> Result<(Vec<String>, Option<MailCheck>)> {
+pub fn check(
+    ctx: &Ctx<'_>,
+    mail_to: Option<&str>,
+    send: bool,
+) -> Result<(Vec<String>, Option<MailCheck>)> {
     ctx.require_installed()?;
     let problems = validate_env(ctx)?;
     let mail = match mail_to {

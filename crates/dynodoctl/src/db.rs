@@ -33,7 +33,14 @@ pub fn parse_facts(text: &str) -> Option<DbFacts> {
     let documents = int()?;
     let identities = int()?;
     let server_version = parts.next()?.trim().to_string();
-    Some(DbFacts { migrations_applied: applied, latest_migration: latest, events, documents, identities, server_version })
+    Some(DbFacts {
+        migrations_applied: applied,
+        latest_migration: latest,
+        events,
+        documents,
+        identities,
+        server_version,
+    })
 }
 
 pub fn read_facts(c: &Compose<'_>, db: &str) -> Result<DbFacts> {
@@ -44,19 +51,35 @@ pub fn read_facts(c: &Compose<'_>, db: &str) -> Result<DbFacts> {
             "check that the stack is running (`dynodoctl status`) and that the database has been initialised",
         ));
     }
-    parse_facts(&out.stdout_text()).ok_or_else(|| CliError::failed(format!("unexpected answer from the database: {}", short(&out.text())), "run `dynodoctl status` and report this output"))
+    parse_facts(&out.stdout_text()).ok_or_else(|| {
+        CliError::failed(
+            format!(
+                "unexpected answer from the database: {}",
+                short(&out.text())
+            ),
+            "run `dynodoctl status` and report this output",
+        )
+    })
 }
 
 /// Has `init` ever run on this database?
 pub fn has_schema(c: &Compose<'_>, db: &str) -> Result<bool> {
-    let out = c.psql(db, "select to_regclass('public._sqlx_migrations') is not null")?;
+    let out = c.psql(
+        db,
+        "select to_regclass('public._sqlx_migrations') is not null",
+    )?;
     Ok(out.ok() && out.stdout_text().trim() == "t")
 }
 
 pub fn size_bytes(c: &Compose<'_>, db: &str) -> Result<u64> {
     check_ident(db)?;
     let out = c.psql("postgres", &format!("select pg_database_size('{db}')"))?;
-    out.stdout_text().trim().parse::<u64>().map_err(|_| CliError::failed(format!("could not read the size of `{db}`: {}", short(&out.text())), "check `dynodoctl status`"))
+    out.stdout_text().trim().parse::<u64>().map_err(|_| {
+        CliError::failed(
+            format!("could not read the size of `{db}`: {}", short(&out.text())),
+            "check `dynodoctl status`",
+        )
+    })
 }
 
 pub fn create_database(c: &Compose<'_>, name: &str) -> Result<()> {
@@ -65,7 +88,13 @@ pub fn create_database(c: &Compose<'_>, name: &str) -> Result<()> {
     if out.ok() {
         Ok(())
     } else {
-        Err(CliError::failed(format!("could not create the scratch database `{name}`: {}", short(&out.text())), "check the free disk space of the database volume and that PostgreSQL is healthy"))
+        Err(CliError::failed(
+            format!(
+                "could not create the scratch database `{name}`: {}",
+                short(&out.text())
+            ),
+            "check the free disk space of the database volume and that PostgreSQL is healthy",
+        ))
     }
 }
 
@@ -73,9 +102,15 @@ pub fn create_database(c: &Compose<'_>, name: &str) -> Result<()> {
 pub fn drop_database(c: &Compose<'_>, name: &str) -> Result<()> {
     check_ident(name)?;
     if name == LIVE_DB {
-        return Err(CliError::failed("internal: refusing to drop the live database", "this is a bug in dynodoctl; please report it"));
+        return Err(CliError::failed(
+            "internal: refusing to drop the live database",
+            "this is a bug in dynodoctl; please report it",
+        ));
     }
-    let out = c.psql("postgres", &format!("drop database if exists {name} with (force)"))?;
+    let out = c.psql(
+        "postgres",
+        &format!("drop database if exists {name} with (force)"),
+    )?;
     if out.ok() {
         Ok(())
     } else {
@@ -88,33 +123,66 @@ pub fn list_scratch_databases(c: &Compose<'_>) -> Result<Vec<String>> {
     if !out.ok() {
         return Ok(Vec::new());
     }
-    Ok(out.stdout_text().lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
+    Ok(out
+        .stdout_text()
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect())
 }
 
 /// `pg_restore` of a custom-format dump into `db`, read from the file on standard input.
 pub fn restore_dump(c: &Compose<'_>, db: &str, dump: &Path) -> Result<Output> {
     check_ident(db)?;
-    c.pg_sh_io(&format!("pg_restore {PG_CONNECT} -d {db} --no-owner --no-acl --exit-on-error"), Some(dump.to_path_buf()), None)
+    c.pg_sh_io(
+        &format!("pg_restore {PG_CONNECT} -d {db} --no-owner --no-acl --exit-on-error"),
+        Some(dump.to_path_buf()),
+        None,
+    )
 }
 
 /// Number of entries `pg_restore --list` finds in a dump (proves it is a readable custom-format dump).
 pub fn toc_entries(c: &Compose<'_>, dump: &Path) -> Result<u64> {
     let out = c.pg_sh_io("pg_restore --list", Some(dump.to_path_buf()), None)?;
     if !out.ok() {
-        return Err(CliError::failed(format!("the dump cannot be read by pg_restore: {}", short(&out.text())), "do not rely on this backup; take a new one"));
+        return Err(CliError::failed(
+            format!(
+                "the dump cannot be read by pg_restore: {}",
+                short(&out.text())
+            ),
+            "do not rely on this backup; take a new one",
+        ));
     }
-    Ok(out.stdout_text().lines().filter(|l| !l.trim().is_empty() && !l.starts_with(';')).count() as u64)
+    Ok(out
+        .stdout_text()
+        .lines()
+        .filter(|l| !l.trim().is_empty() && !l.starts_with(';'))
+        .count() as u64)
 }
 
 /// Ids of the documents in `db`, in a stable order.
 pub fn document_ids(c: &Compose<'_>, db: &str) -> Result<Vec<String>> {
     let out = c.psql(db, "select id from document order by id")?;
     if !out.ok() {
-        return Err(CliError::failed(format!("could not list the documents: {}", short(&out.text())), "check `dynodoctl status`"));
+        return Err(CliError::failed(
+            format!("could not list the documents: {}", short(&out.text())),
+            "check `dynodoctl status`",
+        ));
     }
-    let ids: Vec<String> = out.stdout_text().lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect();
-    if let Some(bad) = ids.iter().find(|id| !id.chars().all(|ch| ch.is_ascii_hexdigit() || ch == '-')) {
-        return Err(CliError::failed(format!("unexpected document id `{bad}`"), "run `dynodoctl status` and report this"));
+    let ids: Vec<String> = out
+        .stdout_text()
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect();
+    if let Some(bad) = ids
+        .iter()
+        .find(|id| !id.chars().all(|ch| ch.is_ascii_hexdigit() || ch == '-'))
+    {
+        return Err(CliError::failed(
+            format!("unexpected document id `{bad}`"),
+            "run `dynodoctl status` and report this",
+        ));
     }
     Ok(ids)
 }
@@ -180,7 +248,12 @@ pub fn verify_documents(c: &Compose<'_>, db: &str, ids: &[String]) -> Result<Out
     check_ident(db)?;
     let mut input = ids.join("\n");
     input.push('\n');
-    c.run_script("database-admin", VERIFY_SCRIPT, &[db], Some(input.into_bytes()))
+    c.run_script(
+        "database-admin",
+        VERIFY_SCRIPT,
+        &[db],
+        Some(input.into_bytes()),
+    )
 }
 
 pub fn api_smoke(c: &Compose<'_>, db: &str) -> Result<Output> {
@@ -197,7 +270,16 @@ mod tests {
     #[test]
     fn facts_parse_from_one_psql_line() {
         let f = parse_facts("52|52|36|2|9|16.4 (Debian 16.4-1.pgdg120+2)\n").unwrap();
-        assert_eq!((f.migrations_applied, f.latest_migration, f.events, f.documents, f.identities), (52, 52, 36, 2, 9));
+        assert_eq!(
+            (
+                f.migrations_applied,
+                f.latest_migration,
+                f.events,
+                f.documents,
+                f.identities
+            ),
+            (52, 52, 36, 2, 9)
+        );
         assert!(f.server_version.starts_with("16.4"));
         assert!(parse_facts("ERROR: relation does not exist").is_none());
         assert!(parse_facts("1|2|x|4|5|16").is_none());
@@ -228,17 +310,26 @@ mod tests {
     #[test]
     fn restore_uses_no_owner_no_acl_and_stops_on_error() {
         let runner = FakeRunner::new();
-        with_ctx(&runner, |c| restore_dump(c, "dynodoc_restore_1", Path::new("/tmp/x.dump"))).unwrap();
+        with_ctx(&runner, |c| {
+            restore_dump(c, "dynodoc_restore_1", Path::new("/tmp/x.dump"))
+        })
+        .unwrap();
         let line = runner.lines().pop().unwrap();
         assert!(line.contains("pg_restore -h 127.0.0.1 -U dynodoc -d dynodoc_restore_1 --no-owner --no-acl --exit-on-error"));
-        assert_eq!(runner.calls()[0].stdin_file.as_deref(), Some(Path::new("/tmp/x.dump")));
+        assert_eq!(
+            runner.calls()[0].stdin_file.as_deref(),
+            Some(Path::new("/tmp/x.dump"))
+        );
     }
 
     #[test]
     fn toc_counts_entries_and_ignores_comment_lines() {
         let runner = FakeRunner::new();
         runner.on("pg_restore --list", 0, "; Archive created at ...\n; dbname: dynodoc\n1; 2615 2200 SCHEMA - public x\n2; 1259 1 TABLE public event x\n");
-        assert_eq!(with_ctx(&runner, |c| toc_entries(c, Path::new("/tmp/x.dump"))).unwrap(), 2);
+        assert_eq!(
+            with_ctx(&runner, |c| toc_entries(c, Path::new("/tmp/x.dump"))).unwrap(),
+            2
+        );
         let bad = FakeRunner::new();
         bad.on("pg_restore --list", 1, "");
         assert!(with_ctx(&bad, |c| toc_entries(c, Path::new("/tmp/x.dump"))).is_err());
@@ -247,8 +338,17 @@ mod tests {
     #[test]
     fn document_ids_must_look_like_uuids() {
         let runner = FakeRunner::new();
-        runner.on("select id from document", 0, "0190a1b2-0000-7000-8000-000000000001\n0190a1b2-0000-7000-8000-000000000002\n");
-        assert_eq!(with_ctx(&runner, |c| document_ids(c, "dynodoc")).unwrap().len(), 2);
+        runner.on(
+            "select id from document",
+            0,
+            "0190a1b2-0000-7000-8000-000000000001\n0190a1b2-0000-7000-8000-000000000002\n",
+        );
+        assert_eq!(
+            with_ctx(&runner, |c| document_ids(c, "dynodoc"))
+                .unwrap()
+                .len(),
+            2
+        );
         let evil = FakeRunner::new();
         evil.on("select id from document", 0, "x; rm -rf /\n");
         assert!(with_ctx(&evil, |c| document_ids(c, "dynodoc")).is_err());
@@ -257,17 +357,31 @@ mod tests {
     #[test]
     fn engine_cli_runs_in_a_one_off_container_with_the_database_as_first_argument() {
         let runner = FakeRunner::new();
-        with_ctx(&runner, |c| engine_cli(c, "dynodoc_restore_1", &["migrate"])).unwrap();
+        with_ctx(&runner, |c| {
+            engine_cli(c, "dynodoc_restore_1", &["migrate"])
+        })
+        .unwrap();
         let line = runner.lines().pop().unwrap();
-        assert!(line.contains("--profile maintenance run --rm --no-deps -T --entrypoint /bin/sh database-admin -c"));
+        assert!(line.contains(
+            "--profile maintenance run --rm --no-deps -T --entrypoint /bin/sh database-admin -c"
+        ));
         assert!(line.ends_with(" sh dynodoc_restore_1 migrate"));
-        assert!(!line.contains("postgres_password") || line.contains("cat /run/secrets"), "passwords are read inside the container");
+        assert!(
+            !line.contains("postgres_password") || line.contains("cat /run/secrets"),
+            "passwords are read inside the container"
+        );
     }
 
     #[test]
     fn verify_sends_ids_on_standard_input() {
         let runner = FakeRunner::new();
-        with_ctx(&runner, |c| verify_documents(c, "dynodoc", &["a-1".to_string(), "b-2".to_string()])).unwrap();
-        assert_eq!(runner.calls()[0].stdin_bytes.as_deref(), Some(&b"a-1\nb-2\n"[..]));
+        with_ctx(&runner, |c| {
+            verify_documents(c, "dynodoc", &["a-1".to_string(), "b-2".to_string()])
+        })
+        .unwrap();
+        assert_eq!(
+            runner.calls()[0].stdin_bytes.as_deref(),
+            Some(&b"a-1\nb-2\n"[..])
+        );
     }
 }

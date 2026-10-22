@@ -32,10 +32,18 @@ impl ServiceState {
 
 /// Database names we create must be plain identifiers (they are put into shell and SQL text).
 pub fn check_ident(name: &str) -> Result<()> {
-    if !name.is_empty() && name.len() <= 63 && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_') {
+    if !name.is_empty()
+        && name.len() <= 63
+        && name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+    {
         Ok(())
     } else {
-        Err(CliError::failed(format!("`{name}` is not a safe database name"), "this is a bug in dynodoctl; please report it"))
+        Err(CliError::failed(
+            format!("`{name}` is not a safe database name"),
+            "this is a bug in dynodoctl; please report it",
+        ))
     }
 }
 
@@ -47,7 +55,11 @@ pub struct Compose<'a> {
 
 impl<'a> Compose<'a> {
     pub fn new(ctx: &'a Ctx<'a>) -> Self {
-        Self { ctx, env: Vec::new(), files: None }
+        Self {
+            ctx,
+            env: Vec::new(),
+            files: None,
+        }
     }
 
     /// Set a variable for the commands of this wrapper only (Compose interpolation: it wins over `.env`).
@@ -70,13 +82,23 @@ impl<'a> Compose<'a> {
         }
         all.push("--project-directory".into());
         all.push(self.ctx.layout.dir.display().to_string());
-        let files = self.files.clone().unwrap_or_else(|| self.ctx.layout.compose_files(&self.ctx.extra_files));
+        let files = self
+            .files
+            .clone()
+            .unwrap_or_else(|| self.ctx.layout.compose_files(&self.ctx.extra_files));
         for file in files {
             all.push("-f".into());
             all.push(file.display().to_string());
         }
         all.extend(args.iter().map(|a| a.to_string()));
-        Cmd { program: "docker".into(), args: all, cwd: Some(self.ctx.layout.dir.clone()), env: self.env.clone(), scrub_env: true, ..Cmd::default() }
+        Cmd {
+            program: "docker".into(),
+            args: all,
+            cwd: Some(self.ctx.layout.dir.clone()),
+            env: self.env.clone(),
+            scrub_env: true,
+            ..Cmd::default()
+        }
     }
 
     pub fn run(&self, args: &[&str]) -> Result<Output> {
@@ -87,7 +109,10 @@ impl<'a> Compose<'a> {
     pub fn ps(&self) -> Result<Vec<ServiceState>> {
         let out = self.run(&["ps", "-a", "--format", "json"])?;
         if !out.ok() {
-            return Err(CliError::failed(format!("`docker compose ps` failed: {}", short(&out.text())), "check that Docker is running and that you are in the bundle directory"));
+            return Err(CliError::failed(
+                format!("`docker compose ps` failed: {}", short(&out.text())),
+                "check that Docker is running and that you are in the bundle directory",
+            ));
         }
         Ok(parse_ps(&out.stdout_text()))
     }
@@ -99,7 +124,12 @@ impl<'a> Compose<'a> {
     }
 
     /// Same, with a file on standard input and/or standard output (a dump going in or out).
-    pub fn pg_sh_io(&self, script: &str, stdin: Option<PathBuf>, stdout: Option<PathBuf>) -> Result<Output> {
+    pub fn pg_sh_io(
+        &self,
+        script: &str,
+        stdin: Option<PathBuf>,
+        stdout: Option<PathBuf>,
+    ) -> Result<Output> {
         let full = format!("{PG_AUTH}{script}");
         let mut cmd = self.cmd(&["exec", "-T", "postgres", "sh", "-c", &full]);
         cmd.stdin_file = stdin;
@@ -109,8 +139,27 @@ impl<'a> Compose<'a> {
 
     /// A one-off container of `service` (profile `maintenance` services included) running `script`
     /// with `sh -c`; `args` become `$1`, `$2`, ... of the script. Standard input is optional.
-    pub fn run_script(&self, service: &str, script: &str, args: &[&str], stdin: Option<Vec<u8>>) -> Result<Output> {
-        let mut all = vec!["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "--entrypoint", "/bin/sh", service, "-c", script, "sh"];
+    pub fn run_script(
+        &self,
+        service: &str,
+        script: &str,
+        args: &[&str],
+        stdin: Option<Vec<u8>>,
+    ) -> Result<Output> {
+        let mut all = vec![
+            "--profile",
+            "maintenance",
+            "run",
+            "--rm",
+            "--no-deps",
+            "-T",
+            "--entrypoint",
+            "/bin/sh",
+            service,
+            "-c",
+            script,
+            "sh",
+        ];
         all.extend_from_slice(args);
         let mut cmd = self.cmd(&all);
         cmd.stdin_bytes = stdin;
@@ -121,9 +170,14 @@ impl<'a> Compose<'a> {
     pub fn psql(&self, db: &str, sql: &str) -> Result<Output> {
         check_ident(db)?;
         if sql.contains('"') || sql.contains('`') || sql.contains('$') {
-            return Err(CliError::failed("internal: refusing SQL with shell metacharacters", "this is a bug in dynodoctl; please report it"));
+            return Err(CliError::failed(
+                "internal: refusing SQL with shell metacharacters",
+                "this is a bug in dynodoctl; please report it",
+            ));
         }
-        self.pg_sh(&format!("psql {PG_CONNECT} -d {db} -v ON_ERROR_STOP=1 -tA -F '|' -c \"{sql}\""))
+        self.pg_sh(&format!(
+            "psql {PG_CONNECT} -d {db} -v ON_ERROR_STOP=1 -tA -F '|' -c \"{sql}\""
+        ))
     }
 }
 
@@ -169,7 +223,9 @@ pub fn parse_ps(text: &str) -> Vec<ServiceState> {
             }
         }
     }
-    let get = |v: &serde_json::Value, k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
+    let get = |v: &serde_json::Value, k: &str| {
+        v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string()
+    };
     let mut services: Vec<ServiceState> = values
         .iter()
         .map(|v| ServiceState {
@@ -208,7 +264,12 @@ mod tests {
 
     #[test]
     fn unhealthy_or_starting_is_not_up() {
-        let s = ServiceState { service: "api".into(), state: "running".into(), health: "starting".into(), ..Default::default() };
+        let s = ServiceState {
+            service: "api".into(),
+            state: "running".into(),
+            health: "starting".into(),
+            ..Default::default()
+        };
         assert!(!s.up());
     }
 
@@ -219,13 +280,18 @@ mod tests {
         let confirm = ScriptedConfirm::new(&[]);
         let mut ctx = Ctx::new(&runner, Layout::new(dir.path()), &confirm);
         ctx.project = Some("p1".into());
-        let cmd = Compose::new(&ctx).with_env("DYNODOC_VERSION", "9").cmd(&["ps"]);
+        let cmd = Compose::new(&ctx)
+            .with_env("DYNODOC_VERSION", "9")
+            .cmd(&["ps"]);
         let line = cmd.line();
         assert!(line.starts_with("docker compose -p p1 --project-directory "));
         assert!(line.contains("compose.yml"));
         assert!(line.ends_with(" ps"));
         assert!(cmd.scrub_env);
-        assert_eq!(cmd.env, vec![("DYNODOC_VERSION".to_string(), "9".to_string())]);
+        assert_eq!(
+            cmd.env,
+            vec![("DYNODOC_VERSION".to_string(), "9".to_string())]
+        );
     }
 
     #[test]
@@ -245,6 +311,14 @@ mod tests {
     #[test]
     fn short_keeps_the_last_lines() {
         assert_eq!(short("a\n\nb\nc"), "a / b / c");
-        assert_eq!(short(&(1..=10).map(|n| n.to_string()).collect::<Vec<_>>().join("\n")), "5 / 6 / 7 / 8 / 9 / 10");
+        assert_eq!(
+            short(
+                &(1..=10)
+                    .map(|n| n.to_string())
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            ),
+            "5 / 6 / 7 / 8 / 9 / 10"
+        );
     }
 }

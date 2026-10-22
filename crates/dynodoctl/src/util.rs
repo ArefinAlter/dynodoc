@@ -111,7 +111,9 @@ pub fn unix_mode(path: &Path) -> Option<u32> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        fs::metadata(path).ok().map(|m| m.permissions().mode() & 0o777)
+        fs::metadata(path)
+            .ok()
+            .map(|m| m.permissions().mode() & 0o777)
     }
     #[cfg(not(unix))]
     {
@@ -146,7 +148,8 @@ pub fn free_bytes(path: &Path) -> Option<u64> {
         let mut total = 0u64;
         let mut total_free = 0u64;
         // SAFETY: `wide` is NUL-terminated and the three outputs are valid for writes.
-        let ok = unsafe { GetDiskFreeSpaceExW(wide.as_ptr(), &mut free, &mut total, &mut total_free) };
+        let ok =
+            unsafe { GetDiskFreeSpaceExW(wide.as_ptr(), &mut free, &mut total, &mut total_free) };
         if ok != 0 {
             Some(free)
         } else {
@@ -162,7 +165,11 @@ pub fn free_bytes(path: &Path) -> Option<u64> {
 
 /// Quote one argument for display in a copy-paste shell line (display only, never executed).
 pub fn shell_quote(arg: &str) -> String {
-    if !arg.is_empty() && arg.chars().all(|c| c.is_ascii_alphanumeric() || "-_./:=@%+,".contains(c)) {
+    if !arg.is_empty()
+        && arg
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "-_./:=@%+,".contains(c))
+    {
         arg.to_string()
     } else {
         format!("'{}'", arg.replace('\'', "'\\''"))
@@ -175,7 +182,10 @@ mod tests {
 
     #[test]
     fn sha256_of_known_input() {
-        assert_eq!(sha256_hex(b"abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+        assert_eq!(
+            sha256_hex(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
     }
 
     #[test]

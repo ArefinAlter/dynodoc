@@ -26,7 +26,11 @@ pub struct Options {
 
 impl Default for Options {
     fn default() -> Self {
-        Self { max_backup_age_days: 2, volumes: true, backup_dir: None }
+        Self {
+            max_backup_age_days: 2,
+            volumes: true,
+            backup_dir: None,
+        }
     }
 }
 
@@ -111,21 +115,59 @@ impl StatusReport {
 
     pub fn render(&self) -> String {
         let mut o = String::new();
-        o.push_str(&format!("Dynodoc status: {}  ({}, project {})\n\n", self.overall.to_uppercase(), self.directory, self.project));
+        o.push_str(&format!(
+            "Dynodoc status: {}  ({}, project {})\n\n",
+            self.overall.to_uppercase(),
+            self.directory,
+            self.project
+        ));
         o.push_str("Services\n");
         for s in &self.services {
-            let health = if s.health.is_empty() { String::new() } else { format!(", {}", s.health) };
-            let exit = if s.state == "exited" { format!(" (exit {})", s.exit_code) } else { String::new() };
-            o.push_str(&format!("  {:<14} {}{}{}   {}\n", s.service, s.state, exit, health, s.image));
+            let health = if s.health.is_empty() {
+                String::new()
+            } else {
+                format!(", {}", s.health)
+            };
+            let exit = if s.state == "exited" {
+                format!(" (exit {})", s.exit_code)
+            } else {
+                String::new()
+            };
+            o.push_str(&format!(
+                "  {:<14} {}{}{}   {}\n",
+                s.service, s.state, exit, health, s.image
+            ));
         }
-        o.push_str(&format!("\nVersions\n  dynodoctl {}, bundle version {}{}\n", self.versions.dynodoctl, self.versions.bundle_version, if self.versions.image_registry.is_empty() { String::new() } else { format!(", registry {}", self.versions.image_registry) }));
-        o.push_str(&format!("\nCertificate\n  mode {}, origin {}\n", self.tls.mode, self.tls.origin));
+        o.push_str(&format!(
+            "\nVersions\n  dynodoctl {}, bundle version {}{}\n",
+            self.versions.dynodoctl,
+            self.versions.bundle_version,
+            if self.versions.image_registry.is_empty() {
+                String::new()
+            } else {
+                format!(", registry {}", self.versions.image_registry)
+            }
+        ));
+        o.push_str(&format!(
+            "\nCertificate\n  mode {}, origin {}\n",
+            self.tls.mode, self.tls.origin
+        ));
         if self.tls.reachable {
-            o.push_str(&format!("  {} - subject {}, expires {} ({} days), {}\n", self.tls.protocol, self.tls.subject, self.tls.not_after, self.tls.days_left.map(|d| d.to_string()).unwrap_or_else(|| "?".into()), match self.tls.chain_trusted {
-                Some(true) => "chain trusted".to_string(),
-                Some(false) => format!("chain NOT trusted ({})", self.tls.trust_note),
-                None => "trust not checked".to_string(),
-            }));
+            o.push_str(&format!(
+                "  {} - subject {}, expires {} ({} days), {}\n",
+                self.tls.protocol,
+                self.tls.subject,
+                self.tls.not_after,
+                self.tls
+                    .days_left
+                    .map(|d| d.to_string())
+                    .unwrap_or_else(|| "?".into()),
+                match self.tls.chain_trusted {
+                    Some(true) => "chain trusted".to_string(),
+                    Some(false) => format!("chain NOT trusted ({})", self.tls.trust_note),
+                    None => "trust not checked".to_string(),
+                }
+            ));
         } else {
             o.push_str(&format!("  not reachable at {}\n", self.tls.probe));
         }
@@ -143,7 +185,13 @@ impl StatusReport {
         }
         o.push_str("\nBackups\n");
         match &self.backup.newest {
-            Some(n) => o.push_str(&format!("  {} backup(s) in {}; newest {} ({} days ago)\n", self.backup.count, self.backup.directory, n, self.backup.newest_age_days.unwrap_or(0))),
+            Some(n) => o.push_str(&format!(
+                "  {} backup(s) in {}; newest {} ({} days ago)\n",
+                self.backup.count,
+                self.backup.directory,
+                n,
+                self.backup.newest_age_days.unwrap_or(0)
+            )),
             None => o.push_str(&format!("  none in {}\n", self.backup.directory)),
         }
         for p in &self.problems {
@@ -174,11 +222,15 @@ pub fn parse_docker_size(text: &str) -> Option<u64> {
 }
 
 fn volume_uses(ctx: &Ctx<'_>, project: &str) -> Vec<VolumeUse> {
-    let Ok(out) = docker(ctx, &["system", "df", "-v", "--format", "json"]) else { return Vec::new() };
+    let Ok(out) = docker(ctx, &["system", "df", "-v", "--format", "json"]) else {
+        return Vec::new();
+    };
     if !out.ok() {
         return Vec::new();
     }
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(&out.stdout_text()) else { return Vec::new() };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&out.stdout_text()) else {
+        return Vec::new();
+    };
     let prefix = format!("{project}_");
     let mut v: Vec<VolumeUse> = value
         .get("Volumes")
@@ -187,7 +239,14 @@ fn volume_uses(ctx: &Ctx<'_>, project: &str) -> Vec<VolumeUse> {
             a.iter()
                 .filter_map(|x| {
                     let name = x.get("Name")?.as_str()?;
-                    name.starts_with(&prefix).then(|| VolumeUse { name: name.to_string(), size: x.get("Size").and_then(|s| s.as_str()).unwrap_or("?").to_string() })
+                    name.starts_with(&prefix).then(|| VolumeUse {
+                        name: name.to_string(),
+                        size: x
+                            .get("Size")
+                            .and_then(|s| s.as_str())
+                            .unwrap_or("?")
+                            .to_string(),
+                    })
                 })
                 .collect()
         })
@@ -216,15 +275,28 @@ pub fn collect(ctx: &Ctx<'_>, net: &dyn Net, opts: &Options) -> Result<StatusRep
     for name in LONG_RUNNING {
         match report.services.iter().find(|s| s.service == name) {
             Some(s) if s.up() => {}
-            Some(s) => report.problems.push(format!("{name} is {}{}", s.state, if s.health.is_empty() { String::new() } else { format!(" and {}", s.health) })),
-            None if !report.services.is_empty() => report.problems.push(format!("{name} does not exist")),
+            Some(s) => report.problems.push(format!(
+                "{name} is {}{}",
+                s.state,
+                if s.health.is_empty() {
+                    String::new()
+                } else {
+                    format!(" and {}", s.health)
+                }
+            )),
+            None if !report.services.is_empty() => {
+                report.problems.push(format!("{name} does not exist"))
+            }
             None => {}
         }
     }
     for job in ["secrets-init", "preflight", "db-roles", "init"] {
         if let Some(s) = report.services.iter().find(|s| s.service == job) {
             if s.state == "exited" && s.exit_code != 0 {
-                report.problems.push(format!("the job {job} failed (exit {}): `docker compose logs {job}`", s.exit_code));
+                report.problems.push(format!(
+                    "the job {job} failed (exit {}): `docker compose logs {job}`",
+                    s.exit_code
+                ));
             }
         }
     }
@@ -234,7 +306,12 @@ pub fn collect(ctx: &Ctx<'_>, net: &dyn Net, opts: &Options) -> Result<StatusRep
         dynodoctl: crate::VERSION.to_string(),
         bundle_version: env.get("DYNODOC_VERSION").unwrap_or("dev").to_string(),
         image_registry: env.get("DYNODOC_IMAGE_REGISTRY").unwrap_or("").to_string(),
-        images: report.services.iter().filter(|s| !s.image.is_empty() && LONG_RUNNING.contains(&s.service.as_str())).map(|s| (s.service.clone(), s.image.clone())).collect(),
+        images: report
+            .services
+            .iter()
+            .filter(|s| !s.image.is_empty() && LONG_RUNNING.contains(&s.service.as_str()))
+            .map(|s| (s.service.clone(), s.image.clone()))
+            .collect(),
     };
 
     // Certificate.
@@ -242,10 +319,22 @@ pub fn collect(ctx: &Ctx<'_>, net: &dyn Net, opts: &Options) -> Result<StatusRep
     report.tls.mode = mode.clone();
     report.tls.origin = env.get("ORIGIN").unwrap_or("").to_string();
     if let Ok(origin) = Origin::parse(&report.tls.origin) {
-        let port: u16 = env.get("DYNODOC_HTTPS_PORT").and_then(|p| p.parse().ok()).unwrap_or(443);
+        let port: u16 = env
+            .get("DYNODOC_HTTPS_PORT")
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(443);
         report.tls.probe = format!("127.0.0.1:{port}");
-        let target = Target { connect_host: "127.0.0.1".into(), port, server_name: origin.host.clone(), host_header: origin.host_header() };
-        if report.services.iter().any(|s| s.service == "proxy" && s.running()) {
+        let target = Target {
+            connect_host: "127.0.0.1".into(),
+            port,
+            server_name: origin.host.clone(),
+            host_header: origin.host_header(),
+        };
+        if report
+            .services
+            .iter()
+            .any(|s| s.service == "proxy" && s.running())
+        {
             match net.https_get(&target, "/healthz") {
                 Ok((_, facts)) => {
                     report.tls.reachable = true;
@@ -267,13 +356,20 @@ pub fn collect(ctx: &Ctx<'_>, net: &dyn Net, opts: &Options) -> Result<StatusRep
                         if days < 0 {
                             report.problems.push(format!("the certificate expired {} days ago: renew it (README, \"Renewing without downtime\")", -days));
                         } else if days < 7 {
-                            report.problems.push(format!("the certificate expires in {days} days"));
+                            report
+                                .problems
+                                .push(format!("the certificate expires in {days} days"));
                         } else if days < 30 && !cert.is_evaluation() {
-                            report.warnings.push(format!("the certificate expires in {days} days; renew it before then"));
+                            report.warnings.push(format!(
+                                "the certificate expires in {days} days; renew it before then"
+                            ));
                         }
                     }
                 }
-                Err(e) => report.problems.push(format!("the proxy is running but HTTPS on {} did not answer: {e}", report.tls.probe)),
+                Err(e) => report.problems.push(format!(
+                    "the proxy is running but HTTPS on {} did not answer: {e}",
+                    report.tls.probe
+                )),
             }
         }
     }
@@ -288,12 +384,20 @@ pub fn collect(ctx: &Ctx<'_>, net: &dyn Net, opts: &Options) -> Result<StatusRep
     if bind != "127.0.0.1" && bind != "::1" {
         report.warnings.push(format!("DYNODOC_BIND is {bind}: the proxy is reachable from other computers. Docker publishes ports around host firewalls such as ufw."));
     }
-    if env.get("DEV_AUTH").map(|v| v.eq_ignore_ascii_case("true")).unwrap_or(false) {
+    if env
+        .get("DEV_AUTH")
+        .map(|v| v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+    {
         report.warnings.push("DEV_AUTH=true: the sign-in page shows the link instead of mailing it, so anyone who can reach the page can sign in as anyone, administrators included. Never on a machine other people can reach.".into());
     }
 
     // Database.
-    if report.services.iter().any(|s| s.service == "postgres" && s.up()) {
+    if report
+        .services
+        .iter()
+        .any(|s| s.service == "postgres" && s.up())
+    {
         match db::read_facts(&c, LIVE_DB) {
             Ok(f) => {
                 report.database = DbStatus {
@@ -313,7 +417,9 @@ pub fn collect(ctx: &Ctx<'_>, net: &dyn Net, opts: &Options) -> Result<StatusRep
                     ));
                 }
             }
-            Err(e) => report.problems.push(format!("the database did not answer: {}", e.what)),
+            Err(e) => report
+                .problems
+                .push(format!("the database did not answer: {}", e.what)),
         }
     }
 
@@ -323,9 +429,17 @@ pub fn collect(ctx: &Ctx<'_>, net: &dyn Net, opts: &Options) -> Result<StatusRep
     }
 
     // Backups.
-    let dir = opts.backup_dir.clone().unwrap_or_else(|| ctx.layout.backups_dir());
+    let dir = opts
+        .backup_dir
+        .clone()
+        .unwrap_or_else(|| ctx.layout.backups_dir());
     let all = manifest::list_backups(&dir);
-    report.backup = BackupStatus { directory: dir.display().to_string(), count: all.len(), max_age_days: opts.max_backup_age_days, ..BackupStatus::default() };
+    report.backup = BackupStatus {
+        directory: dir.display().to_string(),
+        count: all.len(),
+        max_age_days: opts.max_backup_age_days,
+        ..BackupStatus::default()
+    };
     if let Some((created, age)) = newest_age_days(ctx, &dir) {
         report.backup.newest = all.last().map(|b| b.name());
         report.backup.newest_utc = Some(created);

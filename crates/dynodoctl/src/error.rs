@@ -48,13 +48,25 @@ pub type Result<T> = std::result::Result<T, CliError>;
 
 impl CliError {
     pub fn failed(what: impl Into<String>, todo: impl Into<String>) -> Self {
-        Self { kind: Kind::Failed, what: what.into(), todo: todo.into() }
+        Self {
+            kind: Kind::Failed,
+            what: what.into(),
+            todo: todo.into(),
+        }
     }
     pub fn refused(what: impl Into<String>, todo: impl Into<String>) -> Self {
-        Self { kind: Kind::Refused, what: what.into(), todo: todo.into() }
+        Self {
+            kind: Kind::Refused,
+            what: what.into(),
+            todo: todo.into(),
+        }
     }
     pub fn usage(what: impl Into<String>, todo: impl Into<String>) -> Self {
-        Self { kind: Kind::Usage, what: what.into(), todo: todo.into() }
+        Self {
+            kind: Kind::Usage,
+            what: what.into(),
+            todo: todo.into(),
+        }
     }
     pub fn code(&self) -> i32 {
         self.kind.code()
@@ -84,6 +96,9 @@ impl From<std::io::Error> for CliError {
 
 impl From<serde_json::Error> for CliError {
     fn from(error: serde_json::Error) -> Self {
-        CliError::failed(format!("could not read or write JSON: {error}"), "the file may be damaged; do not edit it by hand")
+        CliError::failed(
+            format!("could not read or write JSON: {error}"),
+            "the file may be damaged; do not edit it by hand",
+        )
     }
 }

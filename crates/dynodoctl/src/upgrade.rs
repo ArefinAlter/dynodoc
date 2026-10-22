@@ -12,7 +12,7 @@ use crate::ctx::Ctx;
 use crate::db::{self, DbFacts, LIVE_DB};
 use crate::envfile::EnvFile;
 use crate::error::{CliError, Result};
-use crate::manifest::{KIND_PRE_UPGRADE};
+use crate::manifest::KIND_PRE_UPGRADE;
 use crate::rehearse::{self, RehearsalReport, Target};
 use crate::report::{render_steps, Recorder, Step};
 use crate::restore::{self, LiveOptions};
@@ -65,8 +65,14 @@ pub fn parse_overlay(text: &str) -> Vec<OverlayImage> {
         } else if indent >= 4 {
             if let (Some(s), Some(image)) = (&service, t.strip_prefix("image:")) {
                 let reference = image.trim().trim_matches('"').to_string();
-                let digest = reference.split_once("@sha256:").map(|(_, d)| format!("sha256:{d}"));
-                out.push(OverlayImage { service: s.clone(), reference, digest });
+                let digest = reference
+                    .split_once("@sha256:")
+                    .map(|(_, d)| format!("sha256:{d}"));
+                out.push(OverlayImage {
+                    service: s.clone(),
+                    reference,
+                    digest,
+                });
             }
         }
     }
@@ -91,18 +97,32 @@ pub fn plan(opts: &Options, env: &EnvFile, overlay_text: Option<&str>) -> Result
     let mut warnings = Vec::new();
     let (to_version, to_registry) = if opts.local {
         if opts.registry.is_some() || opts.overlay.is_some() {
-            return Err(CliError::usage("--local means the images already installed", "remove --registry/--overlay, or remove --local"));
+            return Err(CliError::usage(
+                "--local means the images already installed",
+                "remove --registry/--overlay, or remove --local",
+            ));
         }
         warnings.push("--local: no new images. This exercises the backup, rehearsal, restart and rollback mechanism with the version already installed; it is not an upgrade to a newer release.".to_string());
-        (opts.version.clone().unwrap_or_else(|| from_version.clone()), from_registry.clone())
+        (
+            opts.version.clone().unwrap_or_else(|| from_version.clone()),
+            from_registry.clone(),
+        )
     } else {
         let version = opts.version.clone().ok_or_else(|| CliError::usage("which release? --version is missing", "pass --version <tag> (and --overlay compose.release.generated.yml from the release), or --local to exercise the mechanism with the installed images"))?;
-        (version, opts.registry.clone().unwrap_or_else(|| from_registry.clone()))
+        (
+            version,
+            opts.registry
+                .clone()
+                .unwrap_or_else(|| from_registry.clone()),
+        )
     };
     let images = overlay_text.map(parse_overlay).unwrap_or_default();
     if !opts.local {
         if to_registry.is_empty() {
-            return Err(CliError::usage("no image registry is known", "pass --registry <host/path>, or install from a registry first"));
+            return Err(CliError::usage(
+                "no image registry is known",
+                "pass --registry <host/path>, or install from a registry first",
+            ));
         }
         if images.is_empty() && !opts.allow_unpinned {
             return Err(CliError::refused(
@@ -114,18 +134,33 @@ pub fn plan(opts: &Options, env: &EnvFile, overlay_text: Option<&str>) -> Result
             warnings.push("--allow-unpinned: the images are trusted by tag; nothing proves they are the tested ones.".to_string());
         }
         if !images.is_empty() && images.iter().any(|i| i.digest.is_none()) {
-            return Err(CliError::refused("the overlay names an image without a digest", "use the overlay exactly as scripts/make-release-overlay.mjs wrote it"));
+            return Err(CliError::refused(
+                "the overlay names an image without a digest",
+                "use the overlay exactly as scripts/make-release-overlay.mjs wrote it",
+            ));
         }
     }
     let mut steps = Vec::new();
     if !opts.local {
         steps.push(format!("pull the images of {to_registry} {to_version} and check each digest against the overlay"));
     }
-    steps.push(if opts.skip_backup { "NO pre-upgrade backup (--skip-backup, confirmed)".to_string() } else { "take a pre-upgrade backup (mandatory) and keep it for the rollback".to_string() });
+    steps.push(if opts.skip_backup {
+        "NO pre-upgrade backup (--skip-backup, confirmed)".to_string()
+    } else {
+        "take a pre-upgrade backup (mandatory) and keep it for the rollback".to_string()
+    });
     steps.push(if opts.skip_rehearsal { "NO rehearsal (--skip-rehearsal, confirmed)".to_string() } else { "rehearse the new release on a copy of the backup: migrations, history verification, runtime login, API start".to_string() });
     steps.push(format!("switch to {to_version}: save .env, write the new version, docker compose up -d --wait (the init job migrates)"));
     steps.push("check the services, then print how to roll back".to_string());
-    Ok(Plan { from_version, from_registry, to_version, to_registry, images, steps, warnings })
+    Ok(Plan {
+        from_version,
+        from_registry,
+        to_version,
+        to_registry,
+        images,
+        steps,
+        warnings,
+    })
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -175,7 +210,10 @@ impl UpgradeReport {
             o.push_str(&render_steps(&self.record.steps));
         }
         if let Some(r) = &self.rehearsal {
-            o.push_str(&format!("\nRehearsal: {}\n", if r.ok { "passed" } else { "FAILED" }));
+            o.push_str(&format!(
+                "\nRehearsal: {}\n",
+                if r.ok { "passed" } else { "FAILED" }
+            ));
         }
         o.push_str(&format!("\nResult: {}\n", self.record.result));
         if !self.rollback_hint.is_empty() {
@@ -191,8 +229,19 @@ impl UpgradeReport {
 fn digest_check(ctx: &Ctx<'_>, images: &[OverlayImage]) -> Result<usize> {
     let mut checked = 0;
     for image in images {
-        let Some(digest) = &image.digest else { continue };
-        let out = docker(ctx, &["image", "inspect", "--format", "{{json .RepoDigests}}", &image.reference])?;
+        let Some(digest) = &image.digest else {
+            continue;
+        };
+        let out = docker(
+            ctx,
+            &[
+                "image",
+                "inspect",
+                "--format",
+                "{{json .RepoDigests}}",
+                &image.reference,
+            ],
+        )?;
         if !out.ok() || !out.stdout_text().contains(digest.as_str()) {
             return Err(CliError::refused(
                 format!("the image {} was not pulled with the digest the overlay names ({digest})", image.service),
@@ -216,9 +265,16 @@ fn write_record(ctx: &Ctx<'_>, record: &UpgradeRecord) -> Result<PathBuf> {
 
 fn healthy(ctx: &Ctx<'_>) -> Result<Vec<String>> {
     let services = Compose::new(ctx).ps()?;
-    let mut bad: Vec<String> = LONG_RUNNING.iter().filter(|n| !services.iter().any(|s| s.service == **n && s.up())).map(|n| n.to_string()).collect();
+    let mut bad: Vec<String> = LONG_RUNNING
+        .iter()
+        .filter(|n| !services.iter().any(|s| s.service == **n && s.up()))
+        .map(|n| n.to_string())
+        .collect();
     for job in ["secrets-init", "preflight", "db-roles", "init"] {
-        if services.iter().any(|s| s.service == job && s.state == "exited" && s.exit_code != 0) {
+        if services
+            .iter()
+            .any(|s| s.service == job && s.state == "exited" && s.exit_code != 0)
+        {
             bad.push(format!("job {job}"));
         }
     }
@@ -236,7 +292,12 @@ pub fn run(ctx: &Ctx<'_>, opts: &Options) -> Result<UpgradeReport> {
     ctx.require_installed()?;
     let env = ctx.env()?;
     let overlay_text = match &opts.overlay {
-        Some(p) => Some(std::fs::read_to_string(p).map_err(|e| CliError::usage(format!("cannot read the overlay {}: {e}", p.display()), "pass the release's compose.release.generated.yml"))?),
+        Some(p) => Some(std::fs::read_to_string(p).map_err(|e| {
+            CliError::usage(
+                format!("cannot read the overlay {}: {e}", p.display()),
+                "pass the release's compose.release.generated.yml",
+            )
+        })?),
         None => None,
     };
     let plan = plan(opts, &env, overlay_text.as_deref())?;
@@ -262,28 +323,49 @@ pub fn run(ctx: &Ctx<'_>, opts: &Options) -> Result<UpgradeReport> {
         steps: Vec::new(),
     };
     if opts.plan_only {
-        return Ok(UpgradeReport { plan, record, record_path: None, rehearsal: None, rollback_hint: String::new(), ok: true });
+        return Ok(UpgradeReport {
+            plan,
+            record,
+            record_path: None,
+            rehearsal: None,
+            rollback_hint: String::new(),
+            ok: true,
+        });
     }
 
     // The two things that must never happen silently.
     if opts.skip_backup && !ctx.confirm.confirm("You are about to upgrade WITHOUT a backup. If the upgrade damages the data there is nothing to go back to.", SKIP_BACKUP_PHRASE) {
         return Err(CliError::refused("the upgrade without a backup was not confirmed; nothing was changed", format!("take the backup (drop --skip-backup), or pass --confirm \"{SKIP_BACKUP_PHRASE}\"")));
     }
-    if opts.skip_rehearsal && !ctx.confirm.confirm("You are about to upgrade WITHOUT rehearsing the new release on a copy of your data.", SKIP_REHEARSAL_PHRASE) {
-        return Err(CliError::refused("the upgrade without a rehearsal was not confirmed; nothing was changed", format!("rehearse (drop --skip-rehearsal), or pass --confirm \"{SKIP_REHEARSAL_PHRASE}\"")));
+    if opts.skip_rehearsal
+        && !ctx.confirm.confirm(
+            "You are about to upgrade WITHOUT rehearsing the new release on a copy of your data.",
+            SKIP_REHEARSAL_PHRASE,
+        )
+    {
+        return Err(CliError::refused(
+            "the upgrade without a rehearsal was not confirmed; nothing was changed",
+            format!(
+                "rehearse (drop --skip-rehearsal), or pass --confirm \"{SKIP_REHEARSAL_PHRASE}\""
+            ),
+        ));
     }
     record.skipped_backup = opts.skip_backup;
     record.skipped_rehearsal = opts.skip_rehearsal;
 
     let c = Compose::new(ctx);
     if !c.ps()?.iter().any(|s| s.service == "postgres" && s.up()) {
-        return Err(CliError::refused("PostgreSQL is not running, so the installation cannot be upgraded safely", "start it and check `dynodoctl status` first"));
+        return Err(CliError::refused(
+            "PostgreSQL is not running, so the installation cannot be upgraded safely",
+            "start it and check `dynodoctl status` first",
+        ));
     }
     let mut rec = Recorder::new();
     let changes_version = !opts.local || opts.version.is_some();
     let target = Target {
         version: changes_version.then(|| plan.to_version.clone()),
-        registry: (!plan.to_registry.is_empty() && plan.to_registry != plan.from_registry).then(|| plan.to_registry.clone()),
+        registry: (!plan.to_registry.is_empty() && plan.to_registry != plan.from_registry)
+            .then(|| plan.to_registry.clone()),
         overlay: opts.overlay.clone(),
     };
 
@@ -293,12 +375,24 @@ pub fn run(ctx: &Ctx<'_>, opts: &Options) -> Result<UpgradeReport> {
         let pulled = rec.step("docker compose pull (new images)", || {
             let out = tc.run(&["pull"])?;
             if !out.ok() {
-                return Err(CliError::failed(format!("pulling the new images failed: {}", short(&out.text())), "check the network, the registry name and `docker login`; nothing was changed"));
+                return Err(CliError::failed(
+                    format!("pulling the new images failed: {}", short(&out.text())),
+                    "check the network, the registry name and `docker login`; nothing was changed",
+                ));
             }
             Ok(((), "pulled".to_string()))
         });
         if let Err(e) = pulled {
-            return finish(ctx, plan, record, rec, None, "failed", Some(e), String::new());
+            return finish(
+                ctx,
+                plan,
+                record,
+                rec,
+                None,
+                "failed",
+                Some(e),
+                String::new(),
+            );
         }
         if !plan.images.is_empty() {
             let r = rec.step("each image matches its digest in the overlay", || {
@@ -306,7 +400,16 @@ pub fn run(ctx: &Ctx<'_>, opts: &Options) -> Result<UpgradeReport> {
                 Ok((n, format!("{n} images")))
             });
             if let Err(e) = r {
-                return finish(ctx, plan, record, rec, None, "failed", Some(e), String::new());
+                return finish(
+                    ctx,
+                    plan,
+                    record,
+                    rec,
+                    None,
+                    "failed",
+                    Some(e),
+                    String::new(),
+                );
             }
         }
     }
@@ -316,51 +419,131 @@ pub fn run(ctx: &Ctx<'_>, opts: &Options) -> Result<UpgradeReport> {
     if opts.skip_backup {
         rec.note("pre-upgrade backup", true, "SKIPPED (confirmed)");
     } else {
-        let options = backup::Options { to: opts.backup_to.clone(), secrets_to: opts.secrets_to.clone(), kind: KIND_PRE_UPGRADE.into(), label: Some("before-upgrade".into()), keep: 3, ..backup::Options::default() };
+        let options = backup::Options {
+            to: opts.backup_to.clone(),
+            secrets_to: opts.secrets_to.clone(),
+            kind: KIND_PRE_UPGRADE.into(),
+            label: Some("before-upgrade".into()),
+            keep: 3,
+            ..backup::Options::default()
+        };
         match rec.step("pre-upgrade backup", || {
             let r = backup::run(ctx, &options)?;
-            Ok((r.clone(), format!("{} ({} events, {} documents)", r.name, r.events, r.documents)))
+            Ok((
+                r.clone(),
+                format!(
+                    "{} ({} events, {} documents)",
+                    r.name, r.events, r.documents
+                ),
+            ))
         }) {
             Ok(r) => {
                 record.backup_dir = Some(r.path.display().to_string());
                 record.backup_name = Some(r.name.clone());
                 backup_info = Some(r);
             }
-            Err(e) => return finish(ctx, plan, record, rec, None, "failed", Some(e), String::new()),
+            Err(e) => {
+                return finish(
+                    ctx,
+                    plan,
+                    record,
+                    rec,
+                    None,
+                    "failed",
+                    Some(e),
+                    String::new(),
+                )
+            }
         }
     }
-    record.schema_before = db::read_facts(&c, LIVE_DB).ok().map(|f: DbFacts| f.latest_migration);
+    record.schema_before = db::read_facts(&c, LIVE_DB)
+        .ok()
+        .map(|f: DbFacts| f.latest_migration);
 
     // 3. Rehearsal on a copy of that backup.
     let mut rehearsal = None;
     if opts.skip_rehearsal {
         rec.note("rehearsal", true, "SKIPPED (confirmed)");
     } else if let Some(info) = &backup_info {
-        let config_root = opts.secrets_to.as_ref().map(|d| d.join(format!("{}-config", info.name)));
-        match rehearse::run(ctx, Some(&info.path.display().to_string()), config_root.as_deref(), &target) {
+        let config_root = opts
+            .secrets_to
+            .as_ref()
+            .map(|d| d.join(format!("{}-config", info.name)));
+        match rehearse::run(
+            ctx,
+            Some(&info.path.display().to_string()),
+            config_root.as_deref(),
+            &target,
+        ) {
             Ok(r) => {
-                rec.note("rehearsal on a copy of the backup", r.ok, &format!("schema {} -> {}, {} documents verified, API smoke {}", r.migrations_before, r.migrations_after, r.documents_verified, if r.api_smoke { "ok" } else { "FAILED" }));
+                rec.note(
+                    "rehearsal on a copy of the backup",
+                    r.ok,
+                    &format!(
+                        "schema {} -> {}, {} documents verified, API smoke {}",
+                        r.migrations_before,
+                        r.migrations_after,
+                        r.documents_verified,
+                        if r.api_smoke { "ok" } else { "FAILED" }
+                    ),
+                );
                 record.rehearsal_ok = Some(r.ok);
                 let ok = r.ok;
                 rehearsal = Some(r);
                 if !ok {
                     let err = CliError::failed("the rehearsal failed, so the installation was NOT upgraded", "read the rehearsal report above; the current version keeps running and the backup is kept");
-                    return finish(ctx, plan, record, rec, rehearsal, "rehearsal-failed", Some(err), String::new());
+                    return finish(
+                        ctx,
+                        plan,
+                        record,
+                        rec,
+                        rehearsal,
+                        "rehearsal-failed",
+                        Some(err),
+                        String::new(),
+                    );
                 }
             }
-            Err(e) => return finish(ctx, plan, record, rec, None, "rehearsal-failed", Some(e), String::new()),
+            Err(e) => {
+                return finish(
+                    ctx,
+                    plan,
+                    record,
+                    rec,
+                    None,
+                    "rehearsal-failed",
+                    Some(e),
+                    String::new(),
+                )
+            }
         }
     } else {
         // Skipped backup but a rehearsal wanted: rehearse on the newest backup there is.
         match rehearse::run(ctx, None, None, &target) {
             Ok(r) => {
-                rec.note("rehearsal on the newest existing backup", r.ok, &r.target_version);
+                rec.note(
+                    "rehearsal on the newest existing backup",
+                    r.ok,
+                    &r.target_version,
+                );
                 record.rehearsal_ok = Some(r.ok);
                 let ok = r.ok;
                 rehearsal = Some(r);
                 if !ok {
-                    let err = CliError::failed("the rehearsal failed, so the installation was NOT upgraded", "the current version keeps running");
-                    return finish(ctx, plan, record, rec, rehearsal, "rehearsal-failed", Some(err), String::new());
+                    let err = CliError::failed(
+                        "the rehearsal failed, so the installation was NOT upgraded",
+                        "the current version keeps running",
+                    );
+                    return finish(
+                        ctx,
+                        plan,
+                        record,
+                        rec,
+                        rehearsal,
+                        "rehearsal-failed",
+                        Some(err),
+                        String::new(),
+                    );
                 }
             }
             Err(e) => {
@@ -372,7 +555,16 @@ pub fn run(ctx: &Ctx<'_>, opts: &Options) -> Result<UpgradeReport> {
                 } else {
                     e
                 };
-                return finish(ctx, plan, record, rec, None, "rehearsal-failed", Some(err), String::new());
+                return finish(
+                    ctx,
+                    plan,
+                    record,
+                    rec,
+                    None,
+                    "rehearsal-failed",
+                    Some(err),
+                    String::new(),
+                );
             }
         }
     }
@@ -381,9 +573,15 @@ pub fn run(ctx: &Ctx<'_>, opts: &Options) -> Result<UpgradeReport> {
     let saved = ctx.layout.state_dir().join(format!("pre-upgrade-{id}"));
     let switch = rec.step("save .env and the overlay, write the new version", || {
         create_private_dir(&saved)?;
-        write_private(&saved.join("env"), std::fs::read(ctx.layout.env_file())?.as_slice())?;
+        write_private(
+            &saved.join("env"),
+            std::fs::read(ctx.layout.env_file())?.as_slice(),
+        )?;
         if ctx.layout.overlay_file().is_file() {
-            write_private(&saved.join(crate::ctx::OVERLAY_NAME), std::fs::read(ctx.layout.overlay_file())?.as_slice())?;
+            write_private(
+                &saved.join(crate::ctx::OVERLAY_NAME),
+                std::fs::read(ctx.layout.overlay_file())?.as_slice(),
+            )?;
         }
         let mut new_env = ctx.env()?;
         if changes_version {
@@ -394,26 +592,50 @@ pub fn run(ctx: &Ctx<'_>, opts: &Options) -> Result<UpgradeReport> {
         }
         write_private(&ctx.layout.env_file(), new_env.render().as_bytes())?;
         if let Some(overlay) = &opts.overlay {
-            write_private(&ctx.layout.overlay_file(), std::fs::read(overlay)?.as_slice())?;
+            write_private(
+                &ctx.layout.overlay_file(),
+                std::fs::read(overlay)?.as_slice(),
+            )?;
         }
         Ok(((), saved.display().to_string()))
     });
     if let Err(e) = switch {
-        return finish(ctx, plan, record, rec, rehearsal, "failed", Some(e), String::new());
+        return finish(
+            ctx,
+            plan,
+            record,
+            rec,
+            rehearsal,
+            "failed",
+            Some(e),
+            String::new(),
+        );
     }
     record.saved_state_dir = Some(saved.display().to_string());
 
-    let up = rec.step("docker compose up -d --wait (migrations run in init)", || {
-        let out = Compose::new(ctx).run(&["up", "-d", "--wait", "--wait-timeout", "300"])?;
-        if !out.ok() {
-            return Err(CliError::failed(format!("the new version did not become healthy: {}", short(&out.text())), "see below"));
-        }
-        let bad = healthy(ctx)?;
-        if !bad.is_empty() {
-            return Err(CliError::failed(format!("not healthy after the upgrade: {}", bad.join(", ")), "see below"));
-        }
-        Ok(((), "all services healthy".to_string()))
-    });
+    let up = rec.step(
+        "docker compose up -d --wait (migrations run in init)",
+        || {
+            let out = Compose::new(ctx).run(&["up", "-d", "--wait", "--wait-timeout", "300"])?;
+            if !out.ok() {
+                return Err(CliError::failed(
+                    format!(
+                        "the new version did not become healthy: {}",
+                        short(&out.text())
+                    ),
+                    "see below",
+                ));
+            }
+            let bad = healthy(ctx)?;
+            if !bad.is_empty() {
+                return Err(CliError::failed(
+                    format!("not healthy after the upgrade: {}", bad.join(", ")),
+                    "see below",
+                ));
+            }
+            Ok(((), "all services healthy".to_string()))
+        },
+    );
     if let Err(e) = up {
         let hint = rollback_hint(&record.id, &record.backup_name);
         let from_version = plan.from_version.clone();
@@ -424,28 +646,59 @@ pub fn run(ctx: &Ctx<'_>, opts: &Options) -> Result<UpgradeReport> {
             let rolled = rollback_with(ctx, &record, true);
             match rolled {
                 Ok(report) if report.ok => {
-                    rec.note("rollback to the pre-upgrade backup", true, &record.backup_name.clone().unwrap_or_default());
+                    rec.note(
+                        "rollback to the pre-upgrade backup",
+                        true,
+                        &record.backup_name.clone().unwrap_or_default(),
+                    );
                     return finish(ctx, plan, record, rec, rehearsal, "failed-rolled-back", Some(CliError::failed(format!("{}; the installation was rolled back to {} and is running the previous version", e.what, from_version), "find out why before trying again: `docker compose logs`")), String::new());
                 }
                 Ok(report) => {
-                    rec.note("rollback to the pre-upgrade backup", false, "did not verify");
+                    rec.note(
+                        "rollback to the pre-upgrade backup",
+                        false,
+                        "did not verify",
+                    );
                     return finish(ctx, plan, record, rec, rehearsal, "failed", Some(CliError::failed(format!("{}; the rollback ran but did not verify:\n{}", e.what, report.render()), "keep the pre-upgrade backup; see docs/SELF-HOSTED-OPERATIONS.md, \"If an upgrade fails\"")), hint);
                 }
                 Err(re) => {
                     rec.note("rollback to the pre-upgrade backup", false, &re.what);
-                    return finish(ctx, plan, record, rec, rehearsal, "failed", Some(CliError::failed(format!("{}; the rollback failed too: {}", e.what, re.what), re.todo)), hint);
+                    return finish(
+                        ctx,
+                        plan,
+                        record,
+                        rec,
+                        rehearsal,
+                        "failed",
+                        Some(CliError::failed(
+                            format!("{}; the rollback failed too: {}", e.what, re.what),
+                            re.todo,
+                        )),
+                        hint,
+                    );
                 }
             }
         }
         return finish(ctx, plan, record, rec, rehearsal, "failed", Some(e), hint);
     }
-    record.schema_after = db::read_facts(&Compose::new(ctx), LIVE_DB).ok().map(|f| f.latest_migration);
+    record.schema_after = db::read_facts(&Compose::new(ctx), LIVE_DB)
+        .ok()
+        .map(|f| f.latest_migration);
     let hint = rollback_hint(&record.id, &record.backup_name);
     finish(ctx, plan, record, rec, rehearsal, "completed", None, hint)
 }
 
 #[allow(clippy::too_many_arguments)]
-fn finish(ctx: &Ctx<'_>, plan: Plan, mut record: UpgradeRecord, rec: Recorder, rehearsal: Option<RehearsalReport>, result: &str, error: Option<CliError>, hint: String) -> Result<UpgradeReport> {
+fn finish(
+    ctx: &Ctx<'_>,
+    plan: Plan,
+    mut record: UpgradeRecord,
+    rec: Recorder,
+    rehearsal: Option<RehearsalReport>,
+    result: &str,
+    error: Option<CliError>,
+    hint: String,
+) -> Result<UpgradeReport> {
     record.result = result.to_string();
     record.finished_utc = iso((ctx.now)());
     record.steps = rec.steps;
@@ -461,7 +714,14 @@ fn finish(ctx: &Ctx<'_>, plan: Plan, mut record: UpgradeRecord, rec: Recorder, r
             }
             Err(message)
         }
-        None => Ok(UpgradeReport { plan, record, record_path: path, rehearsal, rollback_hint: hint, ok: true }),
+        None => Ok(UpgradeReport {
+            plan,
+            record,
+            record_path: path,
+            rehearsal,
+            rollback_hint: hint,
+            ok: true,
+        }),
     }
 }
 
@@ -483,8 +743,17 @@ pub fn latest_record(ctx: &Ctx<'_>, named: Option<&str>) -> Result<(UpgradeRecor
     }
     found.sort_by(|a, b| a.0.id.cmp(&b.0.id));
     let pick = match named {
-        Some(n) => found.into_iter().find(|(r, p)| r.id == n || p.to_string_lossy() == n || p.file_name().map(|f| f.to_string_lossy() == n).unwrap_or(false)),
-        None => found.into_iter().rev().find(|(r, _)| matches!(r.result.as_str(), "completed" | "failed")),
+        Some(n) => found.into_iter().find(|(r, p)| {
+            r.id == n
+                || p.to_string_lossy() == n
+                || p.file_name()
+                    .map(|f| f.to_string_lossy() == n)
+                    .unwrap_or(false)
+        }),
+        None => found
+            .into_iter()
+            .rev()
+            .find(|(r, _)| matches!(r.result.as_str(), "completed" | "failed")),
     };
     pick.ok_or_else(|| CliError::refused("there is no upgrade to roll back", "an upgrade leaves a record in state/; to restore any backup use `dynodoctl restore --into-live`"))
 }
@@ -501,7 +770,12 @@ impl RollbackReport {
 }
 
 fn rollback_with(ctx: &Ctx<'_>, record: &UpgradeRecord, confirmed: bool) -> Result<RollbackReport> {
-    let backup_dir = record.backup_dir.clone().ok_or_else(|| CliError::refused("that upgrade was made without a backup, so there is nothing to roll back to", "restore an older backup with `dynodoctl restore --into-live --backup <dir>`"))?;
+    let backup_dir = record.backup_dir.clone().ok_or_else(|| {
+        CliError::refused(
+            "that upgrade was made without a backup, so there is nothing to roll back to",
+            "restore an older backup with `dynodoctl restore --into-live --backup <dir>`",
+        )
+    })?;
     if !confirmed
         && !ctx.confirm.confirm(
             &format!("Roll back to the pre-upgrade backup {} and the previous version {}. Everything written since is lost.", record.backup_name.clone().unwrap_or_default(), record.from_version),
@@ -524,9 +798,21 @@ fn rollback_with(ctx: &Ctx<'_>, record: &UpgradeRecord, confirmed: bool) -> Resu
         }
     }
     let config_from = None;
-    let report = restore::restore_live(ctx, &LiveOptions { backup: Some(backup_dir), config_from, no_safety_backup: false, keep_previous: false, confirmed: true })?;
+    let report = restore::restore_live(
+        ctx,
+        &LiveOptions {
+            backup: Some(backup_dir),
+            config_from,
+            no_safety_backup: false,
+            keep_previous: false,
+            confirmed: true,
+        },
+    )?;
     let ok = report.ok;
-    Ok(RollbackReport { restore: report, ok })
+    Ok(RollbackReport {
+        restore: report,
+        ok,
+    })
 }
 
 /// `dynodoctl rollback`.
@@ -534,7 +820,11 @@ pub fn rollback(ctx: &Ctx<'_>, record_arg: Option<&str>) -> Result<RollbackRepor
     ctx.require_installed()?;
     let (mut record, path) = latest_record(ctx, record_arg)?;
     let report = rollback_with(ctx, &record, false)?;
-    record.result = if report.ok { "rolled-back".into() } else { record.result };
+    record.result = if report.ok {
+        "rolled-back".into()
+    } else {
+        record.result
+    };
     let mut text = serde_json::to_string_pretty(&record)?;
     text.push('\n');
     write_private(&path, text.as_bytes())?;

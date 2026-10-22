@@ -21,16 +21,25 @@ fn octal(value: u64, width: usize) -> Vec<u8> {
 }
 
 fn safe_name(name: &str) -> Result<()> {
-    let bad = name.is_empty() || name.starts_with('/') || name.contains('\\') || name.split('/').any(|p| p == ".." || p.is_empty());
+    let bad = name.is_empty()
+        || name.starts_with('/')
+        || name.contains('\\')
+        || name.split('/').any(|p| p == ".." || p.is_empty());
     if bad {
-        return Err(CliError::failed(format!("`{name}` is not a safe name for an archive entry"), "this is a bug in dynodoctl; please report it"));
+        return Err(CliError::failed(
+            format!("`{name}` is not a safe name for an archive entry"),
+            "this is a bug in dynodoctl; please report it",
+        ));
     }
     Ok(())
 }
 
 impl TarBuilder {
     pub fn new(mtime: u64) -> Self {
-        Self { buffer: Vec::new(), mtime }
+        Self {
+            buffer: Vec::new(),
+            mtime,
+        }
     }
 
     pub fn add_file(&mut self, name: &str, data: &[u8]) -> Result<()> {
@@ -43,8 +52,13 @@ impl TarBuilder {
                 .char_indices()
                 .filter(|(i, c)| *c == '/' && *i <= 155 && name.len() - i - 1 <= 100)
                 .map(|(i, _)| i)
-                .last()
-                .ok_or_else(|| CliError::failed(format!("the archive name `{name}` is too long"), "this is a bug in dynodoctl; please report it"))?;
+                .next_back()
+                .ok_or_else(|| {
+                    CliError::failed(
+                        format!("the archive name `{name}` is too long"),
+                        "this is a bug in dynodoctl; please report it",
+                    )
+                })?;
             (name[..split].to_string(), name[split + 1..].to_string())
         };
         let mut header = [0u8; 512];
@@ -67,13 +81,13 @@ impl TarBuilder {
         self.buffer.extend_from_slice(&header);
         self.buffer.extend_from_slice(data);
         let pad = (512 - data.len() % 512) % 512;
-        self.buffer.extend(std::iter::repeat(0u8).take(pad));
+        self.buffer.extend(std::iter::repeat_n(0u8, pad));
         Ok(())
     }
 
     /// The finished archive, uncompressed.
     pub fn finish(mut self) -> Vec<u8> {
-        self.buffer.extend(std::iter::repeat(0u8).take(1024));
+        self.buffer.extend(std::iter::repeat_n(0u8, 1024));
         self.buffer
     }
 
@@ -94,13 +108,29 @@ pub fn read_tar(mut data: &[u8]) -> Result<Vec<(String, Vec<u8>)>> {
         if header.iter().all(|b| *b == 0) {
             break;
         }
-        let text = |range: std::ops::Range<usize>| String::from_utf8_lossy(&header[range]).trim_end_matches('\0').to_string();
-        let size = usize::from_str_radix(text(124..135).trim(), 8).map_err(|_| CliError::failed("damaged archive header", "the archive is not a dynodoctl bundle"))?;
+        let text = |range: std::ops::Range<usize>| {
+            String::from_utf8_lossy(&header[range])
+                .trim_end_matches('\0')
+                .to_string()
+        };
+        let size = usize::from_str_radix(text(124..135).trim(), 8).map_err(|_| {
+            CliError::failed(
+                "damaged archive header",
+                "the archive is not a dynodoctl bundle",
+            )
+        })?;
         let prefix = text(345..500);
-        let name = if prefix.is_empty() { text(0..100) } else { format!("{prefix}/{}", text(0..100)) };
+        let name = if prefix.is_empty() {
+            text(0..100)
+        } else {
+            format!("{prefix}/{}", text(0..100))
+        };
         let end = 512 + size;
         if data.len() < end {
-            return Err(CliError::failed("truncated archive", "the archive is incomplete"));
+            return Err(CliError::failed(
+                "truncated archive",
+                "the archive is incomplete",
+            ));
         }
         out.push((name, data[512..end].to_vec()));
         data = &data[(512 + size.div_ceil(512) * 512).min(data.len())..];
@@ -156,7 +186,8 @@ mod tests {
         builder.add_file("x", b"y").unwrap();
         let tar = builder.finish();
         let mut header = tar[..512].to_vec();
-        let recorded = u32::from_str_radix(String::from_utf8_lossy(&header[148..154]).trim(), 8).unwrap();
+        let recorded =
+            u32::from_str_radix(String::from_utf8_lossy(&header[148..154]).trim(), 8).unwrap();
         header[148..156].copy_from_slice(b"        ");
         assert_eq!(recorded, header.iter().map(|b| *b as u32).sum::<u32>());
     }

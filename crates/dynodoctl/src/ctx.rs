@@ -104,7 +104,10 @@ pub struct ScriptedConfirm {
 
 impl ScriptedConfirm {
     pub fn new(answers: &[bool]) -> Self {
-        Self { answers: RefCell::new(answers.iter().rev().cloned().collect()), asked: RefCell::new(Vec::new()) }
+        Self {
+            answers: RefCell::new(answers.iter().rev().cloned().collect()),
+            asked: RefCell::new(Vec::new()),
+        }
     }
 }
 
@@ -130,7 +133,15 @@ pub struct Ctx<'a> {
 
 impl<'a> Ctx<'a> {
     pub fn new(runner: &'a dyn Runner, layout: Layout, confirm: &'a dyn Confirm) -> Self {
-        Self { runner, layout, project: None, extra_files: Vec::new(), confirm, now: Utc::now, progress_to_stderr: false }
+        Self {
+            runner,
+            layout,
+            project: None,
+            extra_files: Vec::new(),
+            confirm,
+            now: Utc::now,
+            progress_to_stderr: false,
+        }
     }
 
     /// One line of progress.
@@ -185,7 +196,9 @@ impl<'a> Ctx<'a> {
 
 /// `path` relative to `base` for display, if it is inside it.
 pub fn display_rel(base: &Path, path: &Path) -> String {
-    path.strip_prefix(base).map(|p| p.display().to_string()).unwrap_or_else(|_| path.display().to_string())
+    path.strip_prefix(base)
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|_| path.display().to_string())
 }
 
 #[cfg(test)]
@@ -233,8 +246,12 @@ mod tests {
 
     #[test]
     fn provided_phrase_confirms_without_a_terminal() {
-        let confirm = Interactive { provided: vec!["I HAVE NO BACKUP".into()] };
+        let confirm = Interactive {
+            provided: vec!["I HAVE NO BACKUP".into()],
+        };
         assert!(confirm.confirm("p", "I HAVE NO BACKUP"));
-        assert!(!Interactive { provided: vec![] }.confirm("p", "x") || std::io::stdin().is_terminal());
+        assert!(
+            !Interactive { provided: vec![] }.confirm("p", "x") || std::io::stdin().is_terminal()
+        );
     }
 }

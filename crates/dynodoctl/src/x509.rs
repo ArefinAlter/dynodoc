@@ -71,14 +71,20 @@ fn parse_time(tag: u8, body: &[u8]) -> Option<DateTime<Utc>> {
     let (year, rest) = match tag {
         0x17 => {
             let yy: i32 = digits.get(0..2)?.parse().ok()?;
-            (if yy >= 50 { 1900 + yy } else { 2000 + yy }, digits.get(2..)?)
+            (
+                if yy >= 50 { 1900 + yy } else { 2000 + yy },
+                digits.get(2..)?,
+            )
         }
         0x18 => (digits.get(0..4)?.parse().ok()?, digits.get(4..)?),
         _ => return None,
     };
     let field = |a: usize| -> Option<u32> { rest.get(a..a + 2)?.parse().ok() };
     let date = NaiveDate::from_ymd_opt(year, field(0)?, field(2)?)?;
-    Some(date.and_hms_opt(field(4)?, field(6)?, field(8).unwrap_or(0))?.and_utc())
+    Some(
+        date.and_hms_opt(field(4)?, field(6)?, field(8).unwrap_or(0))?
+            .and_utc(),
+    )
 }
 
 fn name_to_string(name: &[u8]) -> String {
@@ -105,8 +111,12 @@ fn name_to_string(name: &[u8]) -> String {
 
 /// Read a DER certificate. None when it is not one this reader understands.
 pub fn parse_cert(der: &[u8]) -> Option<CertInfo> {
-    let (0x30, cert, _) = tlv(der)? else { return None };
-    let (0x30, tbs, _) = tlv(cert)? else { return None };
+    let (0x30, cert, _) = tlv(der)? else {
+        return None;
+    };
+    let (0x30, tbs, _) = tlv(cert)? else {
+        return None;
+    };
     let mut fields = children(tbs).into_iter().peekable();
     if matches!(fields.peek(), Some((0xa0, _))) {
         fields.next(); // version
@@ -127,7 +137,9 @@ pub fn parse_cert(der: &[u8]) -> Option<CertInfo> {
         if tag != 0xa3 {
             continue;
         }
-        let Some((0x30, exts, _)) = tlv(body) else { continue };
+        let Some((0x30, exts, _)) = tlv(body) else {
+            continue;
+        };
         for (_, ext) in children(exts) {
             let parts = children(ext);
             if parts.first().map(|(_, oid)| *oid) == Some(&[0x55, 0x1d, 0x11][..]) {
@@ -187,13 +199,18 @@ mod tests {
     use chrono::TimeZone;
 
     fn der() -> Vec<u8> {
-        base64::engine::general_purpose::STANDARD.decode(TEST_CERT_B64).unwrap()
+        base64::engine::general_purpose::STANDARD
+            .decode(TEST_CERT_B64)
+            .unwrap()
     }
 
     #[test]
     fn reads_names_validity_and_alternative_names() {
         let info = parse_cert(&der()).expect("parses");
-        assert_eq!(info.subject, "O=Dynodoc, CN=Dynodoc EVALUATION - NOT FOR PRODUCTION");
+        assert_eq!(
+            info.subject,
+            "O=Dynodoc, CN=Dynodoc EVALUATION - NOT FOR PRODUCTION"
+        );
         assert_eq!(info.issuer, info.subject);
         assert_eq!(info.not_before, "2026-10-22T14:44:54Z");
         assert_eq!(info.not_after, "2046-10-17T14:44:54Z");
@@ -231,8 +248,20 @@ mod tests {
 
     #[test]
     fn two_digit_years_follow_rfc_5280() {
-        assert_eq!(parse_time(0x17, b"491231235959Z").unwrap().format("%Y").to_string(), "2049");
-        assert_eq!(parse_time(0x17, b"500101000000Z").unwrap().format("%Y").to_string(), "1950");
+        assert_eq!(
+            parse_time(0x17, b"491231235959Z")
+                .unwrap()
+                .format("%Y")
+                .to_string(),
+            "2049"
+        );
+        assert_eq!(
+            parse_time(0x17, b"500101000000Z")
+                .unwrap()
+                .format("%Y")
+                .to_string(),
+            "1950"
+        );
         assert!(parse_time(0x17, b"garbage").is_none());
     }
 }

@@ -76,29 +76,71 @@ pub struct RehearsalReport {
 
 impl RehearsalReport {
     pub fn render(&self) -> String {
-        let mut o = format!("Rehearsal (lite) of {} -> {}\n", self.installed_version, self.target_version);
-        o.push_str(&format!("  backup            {} (sha256 {})\n", self.backup, &self.backup_sha256[..self.backup_sha256.len().min(16)]));
-        o.push_str(&format!("  scratch database  {} ({})\n", self.scratch_database, if self.scratch_removed { "removed" } else { "NOT removed" }));
+        let mut o = format!(
+            "Rehearsal (lite) of {} -> {}\n",
+            self.installed_version, self.target_version
+        );
+        o.push_str(&format!(
+            "  backup            {} (sha256 {})\n",
+            self.backup,
+            &self.backup_sha256[..self.backup_sha256.len().min(16)]
+        ));
+        o.push_str(&format!(
+            "  scratch database  {} ({})\n",
+            self.scratch_database,
+            if self.scratch_removed {
+                "removed"
+            } else {
+                "NOT removed"
+            }
+        ));
         o.push_str(&render_steps(&self.steps));
-        o.push_str(&format!("  schema level      {} -> {}\n", self.migrations_before, self.migrations_after));
-        o.push_str(&format!("  hash chain        {} documents verified\n", self.documents_verified));
-        o.push_str(&format!("  api smoke         {}\n", if self.api_smoke { "the target API answered /healthz on the migrated copy" } else { "NOT passed" }));
-        o.push_str(&format!("  duration          {}\n", human_duration(self.duration_ms as u128)));
+        o.push_str(&format!(
+            "  schema level      {} -> {}\n",
+            self.migrations_before, self.migrations_after
+        ));
+        o.push_str(&format!(
+            "  hash chain        {} documents verified\n",
+            self.documents_verified
+        ));
+        o.push_str(&format!(
+            "  api smoke         {}\n",
+            if self.api_smoke {
+                "the target API answered /healthz on the migrated copy"
+            } else {
+                "NOT passed"
+            }
+        ));
+        o.push_str(&format!(
+            "  duration          {}\n",
+            human_duration(self.duration_ms as u128)
+        ));
         for n in &self.notes {
             o.push_str(&format!("  note              {n}\n"));
         }
-        o.push_str(&format!("  result            {}\n", if self.ok { "PASSED" } else { "FAILED" }));
+        o.push_str(&format!(
+            "  result            {}\n",
+            if self.ok { "PASSED" } else { "FAILED" }
+        ));
         o
     }
 }
 
-fn rehearse_on(ctx: &Ctx<'_>, info: &BackupInfo, config_from: Option<&std::path::Path>, target: &Target) -> Result<RehearsalReport> {
+fn rehearse_on(
+    ctx: &Ctx<'_>,
+    info: &BackupInfo,
+    config_from: Option<&std::path::Path>,
+    target: &Target,
+) -> Result<RehearsalReport> {
     let started = Instant::now();
     let env = ctx.env()?;
     let live = Compose::new(ctx);
     let tc = target.compose(ctx);
     let installed = env.get("DYNODOC_VERSION").unwrap_or("dev").to_string();
-    let db_name = format!("dynodoc_restore_{}", stamp((ctx.now)()).to_ascii_lowercase());
+    let db_name = format!(
+        "dynodoc_restore_{}",
+        stamp((ctx.now)()).to_ascii_lowercase()
+    );
     let mut rec = Recorder::new();
     let mut notes = Vec::new();
     ctx.say(&format!("Rehearsing {} on a copy of {} in the scratch database {db_name} (the live database is not touched)...", target.label(&installed), info.name()));
@@ -124,7 +166,13 @@ fn rehearse_on(ctx: &Ctx<'_>, info: &BackupInfo, config_from: Option<&std::path:
         })?;
         let after = rec.step("read the migrated copy", || {
             let f = db::read_facts(&live, &db_name)?;
-            Ok((f.clone(), format!("schema level {} ({} migrations)", f.latest_migration, f.migrations_applied)))
+            Ok((
+                f.clone(),
+                format!(
+                    "schema level {} ({} migrations)",
+                    f.latest_migration, f.migrations_applied
+                ),
+            ))
         })?;
         rec.step("engine-cli grant-runtime and check-runtime", || {
             let grant = db::engine_cli(&tc, &db_name, &["grant-runtime", "dynodoc_runtime"])?;
@@ -141,7 +189,13 @@ fn rehearse_on(ctx: &Ctx<'_>, info: &BackupInfo, config_from: Option<&std::path:
         rec.step("target API starts on the copy and answers /healthz", || {
             let out = db::api_smoke(&tc, &db_name)?;
             if !out.ok() {
-                return Err(CliError::failed(format!("the target API did not come up on the migrated copy: {}", short(&out.text())), "do not upgrade; read the API log lines above"));
+                return Err(CliError::failed(
+                    format!(
+                        "the target API did not come up on the migrated copy: {}",
+                        short(&out.text())
+                    ),
+                    "do not upgrade; read the API log lines above",
+                ));
             }
             Ok(((), short(&out.text())))
         })?;
@@ -184,12 +238,20 @@ fn rehearse_on(ctx: &Ctx<'_>, info: &BackupInfo, config_from: Option<&std::path:
 }
 
 /// Run a rehearsal of `target` on the latest (or the named) backup and save the report.
-pub fn run(ctx: &Ctx<'_>, backup_arg: Option<&str>, config_from: Option<&std::path::Path>, target: &Target) -> Result<RehearsalReport> {
+pub fn run(
+    ctx: &Ctx<'_>,
+    backup_arg: Option<&str>,
+    config_from: Option<&std::path::Path>,
+    target: &Target,
+) -> Result<RehearsalReport> {
     ctx.require_installed()?;
     let info = resolve_backup(ctx, backup_arg)?;
     let live = Compose::new(ctx);
     if !live.ps()?.iter().any(|s| s.service == "postgres" && s.up()) {
-        return Err(CliError::refused("PostgreSQL is not running, so there is no server to rehearse on", "start the installation first (`dynodoctl status`, `docker compose up -d --wait`)"));
+        return Err(CliError::refused(
+            "PostgreSQL is not running, so there is no server to rehearse on",
+            "start the installation first (`dynodoctl status`, `docker compose up -d --wait`)",
+        ));
     }
     let report = rehearse_on(ctx, &info, config_from, target)?;
     save(ctx, &report)?;

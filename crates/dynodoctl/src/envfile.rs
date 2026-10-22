@@ -7,7 +7,10 @@ use std::path::Path;
 enum Line {
     /// A comment, a blank line or anything that is not KEY=VALUE.
     Raw(String),
-    Pair { key: String, value: String },
+    Pair {
+        key: String,
+        value: String,
+    },
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -34,11 +37,15 @@ impl EnvFile {
                     Some((key, value)) if valid_key(key.trim()) => {
                         let mut value = value.trim().to_string();
                         if value.len() >= 2
-                            && ((value.starts_with('"') && value.ends_with('"')) || (value.starts_with('\'') && value.ends_with('\'')))
+                            && ((value.starts_with('"') && value.ends_with('"'))
+                                || (value.starts_with('\'') && value.ends_with('\'')))
                         {
                             value = value[1..value.len() - 1].to_string();
                         }
-                        Line::Pair { key: key.trim().to_string(), value }
+                        Line::Pair {
+                            key: key.trim().to_string(),
+                            value,
+                        }
                     }
                     _ => Line::Raw(raw.to_string()),
                 }
@@ -59,13 +66,10 @@ impl EnvFile {
 
     /// The value of the last uncommented `KEY=`.
     pub fn get(&self, key: &str) -> Option<&str> {
-        self.lines
-            .iter()
-            .rev()
-            .find_map(|l| match l {
-                Line::Pair { key: k, value } if k == key => Some(value.as_str()),
-                _ => None,
-            })
+        self.lines.iter().rev().find_map(|l| match l {
+            Line::Pair { key: k, value } if k == key => Some(value.as_str()),
+            _ => None,
+        })
     }
 
     pub fn has(&self, key: &str) -> bool {
@@ -75,10 +79,16 @@ impl EnvFile {
     /// Change `KEY` where it is set, or append it. Values may not contain a line break.
     pub fn set(&mut self, key: &str, value: &str) -> Result<()> {
         if !valid_key(key) {
-            return Err(CliError::usage(format!("`{key}` is not a valid setting name"), "use letters, digits and underscores"));
+            return Err(CliError::usage(
+                format!("`{key}` is not a valid setting name"),
+                "use letters, digits and underscores",
+            ));
         }
         if value.contains('\n') || value.contains('\r') {
-            return Err(CliError::usage(format!("the value for {key} contains a line break"), "give the value on one line"));
+            return Err(CliError::usage(
+                format!("the value for {key} contains a line break"),
+                "give the value on one line",
+            ));
         }
         let mut found = false;
         for line in &mut self.lines {
@@ -90,7 +100,10 @@ impl EnvFile {
             }
         }
         if !found {
-            self.lines.push(Line::Pair { key: key.to_string(), value: value.to_string() });
+            self.lines.push(Line::Pair {
+                key: key.to_string(),
+                value: value.to_string(),
+            });
         }
         Ok(())
     }
@@ -98,7 +111,8 @@ impl EnvFile {
     /// Remove every uncommented `KEY=`; returns whether one existed.
     pub fn unset(&mut self, key: &str) -> bool {
         let before = self.lines.len();
-        self.lines.retain(|l| !matches!(l, Line::Pair { key: k, .. } if k == key));
+        self.lines
+            .retain(|l| !matches!(l, Line::Pair { key: k, .. } if k == key));
         self.lines.len() != before
     }
 
@@ -162,7 +176,17 @@ pub fn is_secret_key(key: &str) -> bool {
     if upper.ends_with("_FILE") || upper.ends_with("_FILE_PATH") {
         return false;
     }
-    ["PASSWORD", "SECRET", "TOKEN", "API_KEY", "PRIVATE", "PASSPHRASE", "CREDENTIAL"].iter().any(|w| upper.contains(w))
+    [
+        "PASSWORD",
+        "SECRET",
+        "TOKEN",
+        "API_KEY",
+        "PRIVATE",
+        "PASSPHRASE",
+        "CREDENTIAL",
+    ]
+    .iter()
+    .any(|w| upper.contains(w))
         || upper.ends_with("_KEY")
         || upper == "DATABASE_URL"
         || upper == "MIGRATION_DATABASE_URL"
@@ -227,11 +251,24 @@ mod tests {
 
     #[test]
     fn secrets_are_recognised_by_name_and_never_displayed() {
-        for key in ["SMTP_PASSWORD", "SESSION_SECRET", "PASETO_LOCAL_KEY", "RESEND_API_KEY", "DATABASE_URL", "WEB_SERVICE_KEY"] {
+        for key in [
+            "SMTP_PASSWORD",
+            "SESSION_SECRET",
+            "PASETO_LOCAL_KEY",
+            "RESEND_API_KEY",
+            "DATABASE_URL",
+            "WEB_SERVICE_KEY",
+        ] {
             assert!(is_secret_key(key), "{key}");
             assert_eq!(display_value(key, "hunter2"), "[hidden]");
         }
-        for key in ["SMTP_PASSWORD_FILE", "SESSION_SECRET_FILE", "ORIGIN", "SMTP_HOST", "DYNODOC_TLS_MODE"] {
+        for key in [
+            "SMTP_PASSWORD_FILE",
+            "SESSION_SECRET_FILE",
+            "ORIGIN",
+            "SMTP_HOST",
+            "DYNODOC_TLS_MODE",
+        ] {
             assert!(!is_secret_key(key), "{key}");
         }
         assert_eq!(display_value("ORIGIN", "https://x"), "https://x");
@@ -239,7 +276,9 @@ mod tests {
 
     #[test]
     fn redacted_render_hides_a_secret_that_was_pasted_into_env() {
-        let env = EnvFile::parse("ORIGIN=https://x\nSMTP_PASSWORD=hunter2\nSESSION_SECRET_FILE=/run/secrets/s\n");
+        let env = EnvFile::parse(
+            "ORIGIN=https://x\nSMTP_PASSWORD=hunter2\nSESSION_SECRET_FILE=/run/secrets/s\n",
+        );
         let text = env.render_redacted();
         assert!(!text.contains("hunter2"));
         assert!(text.contains("SMTP_PASSWORD=[hidden]"));

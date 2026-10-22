@@ -16,7 +16,10 @@ use crate::error::{CliError, Result};
 use crate::manifest::{self, ConfigEntry, DumpEntry, FileEntry, Manifest};
 use crate::report::{render_steps, Recorder, Step};
 use crate::restore::{self, RestoreReport};
-use crate::util::{create_private_dir, free_bytes, human_bytes, human_duration, iso, set_private, stamp, write_private};
+use crate::util::{
+    create_private_dir, free_bytes, human_bytes, human_duration, iso, set_private, stamp,
+    write_private,
+};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -40,7 +43,15 @@ pub struct Options {
 
 impl Default for Options {
     fn default() -> Self {
-        Self { to: None, secrets_to: None, label: None, keep: 7, kind: manifest::KIND_ROUTINE.into(), verify: false, no_config: false }
+        Self {
+            to: None,
+            secrets_to: None,
+            label: None,
+            keep: 7,
+            kind: manifest::KIND_ROUTINE.into(),
+            verify: false,
+            no_config: false,
+        }
     }
 }
 
@@ -70,12 +81,26 @@ impl BackupReport {
         let mut out = format!("Backup {}\n", if self.ok { "written" } else { "FAILED" });
         out.push_str(&format!("  directory         {}\n", self.path.display()));
         out.push_str(&format!("  kind              {}\n", self.kind));
-        out.push_str(&format!("  database dump     {} (sha256 {}), {} entries\n", human_bytes(self.bytes), &self.sha256[..self.sha256.len().min(16)], self.toc_entries));
-        out.push_str(&format!("  content           {} events, {} documents, schema level {}\n", self.events, self.documents, self.schema_level));
-        out.push_str(&format!("  settings/secrets  {} ({} files)\n", self.config_location, self.config_files));
+        out.push_str(&format!(
+            "  database dump     {} (sha256 {}), {} entries\n",
+            human_bytes(self.bytes),
+            &self.sha256[..self.sha256.len().min(16)],
+            self.toc_entries
+        ));
+        out.push_str(&format!(
+            "  content           {} events, {} documents, schema level {}\n",
+            self.events, self.documents, self.schema_level
+        ));
+        out.push_str(&format!(
+            "  settings/secrets  {} ({} files)\n",
+            self.config_location, self.config_files
+        ));
         out.push_str(&render_steps(&self.steps));
         if !self.removed.is_empty() {
-            out.push_str(&format!("  retention         removed {} older backup(s)\n", self.removed.len()));
+            out.push_str(&format!(
+                "  retention         removed {} older backup(s)\n",
+                self.removed.len()
+            ));
             for r in &self.removed {
                 out.push_str(&format!("                    {}\n", r.display()));
             }
@@ -84,7 +109,10 @@ impl BackupReport {
             out.push_str("\nVerification of this backup\n");
             out.push_str(&v.render());
         }
-        out.push_str(&format!("  duration          {}\n", human_duration(self.duration_ms as u128)));
+        out.push_str(&format!(
+            "  duration          {}\n",
+            human_duration(self.duration_ms as u128)
+        ));
         for w in &self.warnings {
             out.push_str(&format!("\nWARNING: {w}\n"));
         }
@@ -93,11 +121,18 @@ impl BackupReport {
 }
 
 fn clean_label(label: &str) -> Result<String> {
-    let ok = !label.is_empty() && label.len() <= 40 && label.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+    let ok = !label.is_empty()
+        && label.len() <= 40
+        && label
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
     if ok {
         Ok(label.to_string())
     } else {
-        Err(CliError::usage(format!("`{label}` is not a usable label"), "use 1 to 40 characters: a-z, 0-9 and -"))
+        Err(CliError::usage(
+            format!("`{label}` is not a usable label"),
+            "use 1 to 40 characters: a-z, 0-9 and -",
+        ))
     }
 }
 
@@ -105,8 +140,14 @@ fn clean_label(label: &str) -> Result<String> {
 pub fn config_files(ctx: &Ctx<'_>) -> Result<Vec<String>> {
     let layout = &ctx.layout;
     let mut found = vec![".env".to_string()];
-    for (dir, rel) in [(layout.secrets_dir(), "secrets"), (layout.tls_dir(), "tls"), (layout.config_dir(), "config")] {
-        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+    for (dir, rel) in [
+        (layout.secrets_dir(), "secrets"),
+        (layout.tls_dir(), "tls"),
+        (layout.config_dir(), "config"),
+    ] {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
         let mut names: Vec<String> = entries
             .flatten()
             .filter(|e| e.path().is_file())
@@ -157,7 +198,10 @@ pub fn run(ctx: &Ctx<'_>, options: &Options) -> Result<BackupReport> {
             "start the installation (`docker compose up -d --wait`) and run the backup again",
         ));
     }
-    let backups_dir = options.to.clone().unwrap_or_else(|| ctx.layout.backups_dir());
+    let backups_dir = options
+        .to
+        .clone()
+        .unwrap_or_else(|| ctx.layout.backups_dir());
     create_private_dir(&backups_dir)?;
     let now = (ctx.now)();
     let name = match &label {
@@ -166,7 +210,10 @@ pub fn run(ctx: &Ctx<'_>, options: &Options) -> Result<BackupReport> {
     };
     let path = backups_dir.join(&name);
     if path.exists() {
-        return Err(CliError::refused(format!("{} already exists", path.display()), "wait a second and run again, or choose another --label; backups are never overwritten"));
+        return Err(CliError::refused(
+            format!("{} already exists", path.display()),
+            "wait a second and run again, or choose another --label; backups are never overwritten",
+        ));
     }
     let mut rec = Recorder::new();
     let mut warnings = Vec::new();
@@ -175,12 +222,21 @@ pub fn run(ctx: &Ctx<'_>, options: &Options) -> Result<BackupReport> {
     if let Some(free) = free_bytes(&backups_dir) {
         if free < size {
             return Err(CliError::refused(
-                format!("only {} is free at {} and the database is {}", human_bytes(free), backups_dir.display(), human_bytes(size)),
+                format!(
+                    "only {} is free at {} and the database is {}",
+                    human_bytes(free),
+                    backups_dir.display(),
+                    human_bytes(size)
+                ),
                 "free disk space or choose another disk with --to; nothing was written",
             ));
         }
         if free < size.saturating_mul(2) {
-            warnings.push(format!("only {} is free at {}; the next backup may not fit", human_bytes(free), backups_dir.display()));
+            warnings.push(format!(
+                "only {} is free at {}; the next backup may not fit",
+                human_bytes(free),
+                backups_dir.display()
+            ));
         }
     }
     create_private_dir(&path)?;
@@ -188,24 +244,48 @@ pub fn run(ctx: &Ctx<'_>, options: &Options) -> Result<BackupReport> {
         let env = ctx.env()?;
         let before = rec.step("read the database", || {
             let f = db::read_facts(&c, LIVE_DB)?;
-            Ok((f.clone(), format!("{} events, {} documents, schema level {}", f.events, f.documents, f.latest_migration)))
+            Ok((
+                f.clone(),
+                format!(
+                    "{} events, {} documents, schema level {}",
+                    f.events, f.documents, f.latest_migration
+                ),
+            ))
         })?;
         let dump_path = path.join(manifest::DUMP_NAME);
         rec.step("pg_dump -Fc (consistent snapshot)", || {
-            let out = c.pg_sh_io(&format!("pg_dump {} -Fc {LIVE_DB}", crate::compose::PG_CONNECT), None, Some(dump_path.clone()))?;
+            let out = c.pg_sh_io(
+                &format!("pg_dump {} -Fc {LIVE_DB}", crate::compose::PG_CONNECT),
+                None,
+                Some(dump_path.clone()),
+            )?;
             if !out.ok() {
-                return Err(CliError::failed(format!("pg_dump failed: {}", short(&out.text())), "check `docker compose logs postgres`; no backup was kept"));
+                return Err(CliError::failed(
+                    format!("pg_dump failed: {}", short(&out.text())),
+                    "check `docker compose logs postgres`; no backup was kept",
+                ));
             }
-            let head = std::fs::read(&dump_path).map(|b| b.starts_with(b"PGDMP")).unwrap_or(false);
+            let head = std::fs::read(&dump_path)
+                .map(|b| b.starts_with(b"PGDMP"))
+                .unwrap_or(false);
             if !head {
-                return Err(CliError::failed("pg_dump wrote something that is not a custom-format dump", "no backup was kept; check `docker compose logs postgres`"));
+                return Err(CliError::failed(
+                    "pg_dump wrote something that is not a custom-format dump",
+                    "no backup was kept; check `docker compose logs postgres`",
+                ));
             }
-            Ok(((), human_bytes(std::fs::metadata(&dump_path).map(|m| m.len()).unwrap_or(0))))
+            Ok((
+                (),
+                human_bytes(std::fs::metadata(&dump_path).map(|m| m.len()).unwrap_or(0)),
+            ))
         })?;
         let toc = rec.step("pg_restore --list (the dump is readable)", || {
             let n = db::toc_entries(&c, &dump_path)?;
             if n == 0 {
-                return Err(CliError::failed("the dump has no entries", "no backup was kept"));
+                return Err(CliError::failed(
+                    "the dump has no entries",
+                    "no backup was kept",
+                ));
             }
             Ok((n, format!("{n} entries")))
         })?;
@@ -213,7 +293,11 @@ pub fn run(ctx: &Ctx<'_>, options: &Options) -> Result<BackupReport> {
         let (sha, bytes) = crate::util::sha256_file(&dump_path)?;
         set_private(&dump_path)?;
 
-        let mut config = ConfigEntry { location: "none".into(), dir_name: None, files: Vec::new() };
+        let mut config = ConfigEntry {
+            location: "none".into(),
+            dir_name: None,
+            files: Vec::new(),
+        };
         if !options.no_config {
             let (root, location, dir_name) = match &options.secrets_to {
                 Some(dir) => {
@@ -224,9 +308,16 @@ pub fn run(ctx: &Ctx<'_>, options: &Options) -> Result<BackupReport> {
             };
             let files = rec.step("copy settings and secrets (mode 0600)", || {
                 let files = copy_config(ctx, &root)?;
-                Ok((files.clone(), format!("{} files to {}", files.len(), root.display())))
+                Ok((
+                    files.clone(),
+                    format!("{} files to {}", files.len(), root.display()),
+                ))
             })?;
-            config = ConfigEntry { location: location.into(), dir_name, files };
+            config = ConfigEntry {
+                location: location.into(),
+                dir_name,
+                files,
+            };
         }
 
         let mut images = BTreeMap::new();
@@ -246,7 +337,12 @@ pub fn run(ctx: &Ctx<'_>, options: &Options) -> Result<BackupReport> {
             tls_mode: env.get("DYNODOC_TLS_MODE").unwrap_or("").to_string(),
             bundle_version: env.get("DYNODOC_VERSION").unwrap_or("dev").to_string(),
             images,
-            database: DumpEntry { file: manifest::DUMP_NAME.into(), bytes, sha256: sha, toc_entries: toc },
+            database: DumpEntry {
+                file: manifest::DUMP_NAME.into(),
+                bytes,
+                sha256: sha,
+                toc_entries: toc,
+            },
             facts: before,
             facts_after: after,
             config,
@@ -254,14 +350,25 @@ pub fn run(ctx: &Ctx<'_>, options: &Options) -> Result<BackupReport> {
         };
         rec.step("write manifest.json and SHA256SUMS", || {
             manifest::write_manifest(&path, &manifest)?;
-            let mut sums = vec![FileEntry { path: manifest::DUMP_NAME.into(), bytes, sha256: manifest.database.sha256.clone() }];
+            let mut sums = vec![FileEntry {
+                path: manifest::DUMP_NAME.into(),
+                bytes,
+                sha256: manifest.database.sha256.clone(),
+            }];
             sums.push(manifest::file_entry(&path, manifest::MANIFEST_NAME)?);
             if manifest.config.location == "inside" {
                 for f in &manifest.config.files {
-                    sums.push(FileEntry { path: format!("config/{}", f.path), bytes: f.bytes, sha256: f.sha256.clone() });
+                    sums.push(FileEntry {
+                        path: format!("config/{}", f.path),
+                        bytes: f.bytes,
+                        sha256: f.sha256.clone(),
+                    });
                 }
             }
-            write_private(&path.join(manifest::SUMS_NAME), manifest::sums_text(&sums).as_bytes())?;
+            write_private(
+                &path.join(manifest::SUMS_NAME),
+                manifest::sums_text(&sums).as_bytes(),
+            )?;
             Ok(((), format!("{} checksums", sums.len())))
         })?;
         Ok((manifest.clone(), manifest.config.files.clone()))
@@ -292,9 +399,19 @@ pub fn run(ctx: &Ctx<'_>, options: &Options) -> Result<BackupReport> {
 
     let mut ok = true;
     let verification = if options.verify {
-        let info = manifest::BackupInfo { path: path.clone(), manifest: manifest.clone() };
-        let config_root = options.secrets_to.as_ref().map(|d| d.join(format!("{}-config", name)));
-        let report = restore::restore_verify(ctx, Some(&info.path.display().to_string()), config_root.as_deref())?;
+        let info = manifest::BackupInfo {
+            path: path.clone(),
+            manifest: manifest.clone(),
+        };
+        let config_root = options
+            .secrets_to
+            .as_ref()
+            .map(|d| d.join(format!("{}-config", name)));
+        let report = restore::restore_verify(
+            ctx,
+            Some(&info.path.display().to_string()),
+            config_root.as_deref(),
+        )?;
         ok = report.ok;
         Some(report)
     } else {
@@ -302,7 +419,11 @@ pub fn run(ctx: &Ctx<'_>, options: &Options) -> Result<BackupReport> {
     };
 
     // Retention runs only after this backup (and its verification, when asked) succeeded.
-    let removed = if ok { manifest::apply_retention(&backups_dir, &options.kind, options.keep, &path)? } else { Vec::new() };
+    let removed = if ok {
+        manifest::apply_retention(&backups_dir, &options.kind, options.keep, &path)?
+    } else {
+        Vec::new()
+    };
     if !ok {
         warnings.push("the verification failed; the backup was kept for inspection but should not be relied on, and older backups were not removed".to_string());
     }
@@ -331,7 +452,10 @@ pub fn run(ctx: &Ctx<'_>, options: &Options) -> Result<BackupReport> {
 pub fn newest_age_days(ctx: &Ctx<'_>, dir: &Path) -> Option<(String, i64)> {
     let newest = manifest::list_backups(dir).into_iter().last()?;
     let created = chrono::DateTime::parse_from_rfc3339(&newest.manifest.created_utc).ok()?;
-    Some((newest.manifest.created_utc.clone(), ((ctx.now)() - created.with_timezone(&chrono::Utc)).num_days()))
+    Some((
+        newest.manifest.created_utc.clone(),
+        ((ctx.now)() - created.with_timezone(&chrono::Utc)).num_days(),
+    ))
 }
 
 #[cfg(test)]

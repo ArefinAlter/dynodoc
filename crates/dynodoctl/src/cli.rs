@@ -7,7 +7,9 @@ use crate::ctx::{Confirm, Ctx, Interactive, Layout};
 use crate::error::{exit, CliError, Result};
 use crate::net::Net;
 use crate::runner::Runner;
-use crate::{backup, configure, install, rehearse, restore, status, support, upgrade, verify_delivery};
+use crate::{
+    backup, configure, install, rehearse, restore, status, support, upgrade, verify_delivery,
+};
 use clap::{Args, Parser, Subcommand};
 use serde::Serialize;
 use std::io::{BufRead, Write};
@@ -46,6 +48,8 @@ pub struct Cli {
     pub command: Command,
 }
 
+// `install` has many options; the value is built once per process, so the size difference is moot.
+#[allow(clippy::large_enum_variant)]
 #[derive(Subcommand, Debug)]
 pub enum Command {
     /// Check the machine, create settings and secrets, start the stack and say what to do next.
@@ -351,7 +355,11 @@ struct Outcome {
 }
 
 fn outcome<T: Serialize>(report: &T, text: String, code: i32) -> Result<Outcome> {
-    Ok(Outcome { text, json: serde_json::to_value(report)?, code })
+    Ok(Outcome {
+        text,
+        json: serde_json::to_value(report)?,
+        code,
+    })
 }
 
 fn bool_code(ok: bool) -> i32 {
@@ -363,36 +371,73 @@ fn bool_code(ok: bool) -> i32 {
 }
 
 fn dir_from(cli: &Cli) -> PathBuf {
-    let chosen = cli.dir.clone().or_else(|| std::env::var_os("DYNODOCTL_DIR").map(PathBuf::from)).unwrap_or_else(|| PathBuf::from("."));
+    let chosen = cli
+        .dir
+        .clone()
+        .or_else(|| std::env::var_os("DYNODOCTL_DIR").map(PathBuf::from))
+        .unwrap_or_else(|| PathBuf::from("."));
     std::path::absolute(&chosen).unwrap_or(chosen)
 }
 
 fn read_roots(files: &[PathBuf]) -> Result<Vec<Vec<u8>>> {
     let mut roots = Vec::new();
     for f in files {
-        let text = std::fs::read_to_string(f).map_err(|e| CliError::usage(format!("cannot read the CA file {}: {e}", f.display()), "pass a PEM file with --ca-file"))?;
+        let text = std::fs::read_to_string(f).map_err(|e| {
+            CliError::usage(
+                format!("cannot read the CA file {}: {e}", f.display()),
+                "pass a PEM file with --ca-file",
+            )
+        })?;
         let found = crate::x509::pem_certificates(&text);
         if found.is_empty() {
-            return Err(CliError::usage(format!("{} contains no certificate", f.display()), "--ca-file takes a PEM file with BEGIN CERTIFICATE blocks"));
+            return Err(CliError::usage(
+                format!("{} contains no certificate", f.display()),
+                "--ca-file takes a PEM file with BEGIN CERTIFICATE blocks",
+            ));
         }
         roots.extend(found);
     }
     Ok(roots)
 }
 
-fn dispatch(cli: &Cli, ctx: &Ctx<'_>, net: &dyn Net, stdin_password: &dyn Fn() -> Option<String>) -> Result<Outcome> {
+fn dispatch(
+    cli: &Cli,
+    ctx: &Ctx<'_>,
+    net: &dyn Net,
+    stdin_password: &dyn Fn() -> Option<String>,
+) -> Result<Outcome> {
     match &cli.command {
         Command::Install(a) => {
             let generator = match a.generator.as_str() {
                 "auto" => crate::generator::Choice::Auto,
                 "node" => crate::generator::Choice::Node,
                 "image" => crate::generator::Choice::Image,
-                other => return Err(CliError::usage(format!("--generator `{other}` is not known"), "use auto, node or image")),
+                other => {
+                    return Err(CliError::usage(
+                        format!("--generator `{other}` is not known"),
+                        "use auto, node or image",
+                    ))
+                }
             };
             let smtp_password = match (&a.smtp_password_file, a.smtp_password_stdin) {
-                (Some(_), true) => return Err(CliError::usage("--smtp-password-file and --smtp-password-stdin together", "choose one")),
-                (Some(p), false) => Some(std::fs::read_to_string(p).map_err(|e| CliError::usage(format!("cannot read {}: {e}", p.display()), "check --smtp-password-file"))?),
-                (None, true) => Some(stdin_password().ok_or_else(|| CliError::usage("--smtp-password-stdin got no input", "pipe the password in on one line"))?),
+                (Some(_), true) => {
+                    return Err(CliError::usage(
+                        "--smtp-password-file and --smtp-password-stdin together",
+                        "choose one",
+                    ))
+                }
+                (Some(p), false) => Some(std::fs::read_to_string(p).map_err(|e| {
+                    CliError::usage(
+                        format!("cannot read {}: {e}", p.display()),
+                        "check --smtp-password-file",
+                    )
+                })?),
+                (None, true) => Some(stdin_password().ok_or_else(|| {
+                    CliError::usage(
+                        "--smtp-password-stdin got no input",
+                        "pipe the password in on one line",
+                    )
+                })?),
                 (None, false) => None,
             };
             let opts = install::Options {
@@ -430,16 +475,41 @@ fn dispatch(cli: &Cli, ctx: &Ctx<'_>, net: &dyn Net, stdin_password: &dyn Fn() -
                 wait_timeout: a.wait_timeout,
             };
             let r = install::run(ctx, &opts)?;
-            let code = if r.dry_run && !r.ok { exit::REFUSED } else { exit::OK };
+            let code = if r.dry_run && !r.ok {
+                exit::REFUSED
+            } else {
+                exit::OK
+            };
             outcome(&r, r.render(), code)
         }
         Command::Configure { action } => match action {
             ConfigureAction::Show => {
                 let shown = configure::show(ctx)?;
-                outcome(&shown, configure::render_show(&shown), if shown.iter().any(|s| s.problem.is_some()) { exit::FAILED } else { exit::OK })
+                outcome(
+                    &shown,
+                    configure::render_show(&shown),
+                    if shown.iter().any(|s| s.problem.is_some()) {
+                        exit::FAILED
+                    } else {
+                        exit::OK
+                    },
+                )
             }
-            ConfigureAction::Set { assignments, apply, mail_to, send } => {
-                let r = configure::set(ctx, &configure::SetOptions { assignments: assignments.clone(), apply: *apply, mail_to: mail_to.clone(), send_test_mail: *send })?;
+            ConfigureAction::Set {
+                assignments,
+                apply,
+                mail_to,
+                send,
+            } => {
+                let r = configure::set(
+                    ctx,
+                    &configure::SetOptions {
+                        assignments: assignments.clone(),
+                        apply: *apply,
+                        mail_to: mail_to.clone(),
+                        send_test_mail: *send,
+                    },
+                )?;
                 outcome(&r, r.render(), exit::OK)
             }
             ConfigureAction::Check { mail_to, send } => {
@@ -449,26 +519,68 @@ fn dispatch(cli: &Cli, ctx: &Ctx<'_>, net: &dyn Net, stdin_password: &dyn Fn() -
                 if problems.is_empty() {
                     text.push_str("The web server's own check accepts the settings.\n");
                 } else {
-                    text.push_str(&format!("The web server's own check rejects the settings:\n{}\n", problems.iter().map(|p| format!("  - {p}")).collect::<Vec<_>>().join("\n")));
+                    text.push_str(&format!(
+                        "The web server's own check rejects the settings:\n{}\n",
+                        problems
+                            .iter()
+                            .map(|p| format!("  - {p}"))
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    ));
                 }
                 if let Some(m) = &mail {
-                    text.push_str(&format!("Mail check: {}{}\n", if m.ok { "passed" } else { "FAILED - " }, if m.ok { String::new() } else { m.message.clone() }));
+                    text.push_str(&format!(
+                        "Mail check: {}{}\n",
+                        if m.ok { "passed" } else { "FAILED - " },
+                        if m.ok {
+                            String::new()
+                        } else {
+                            m.message.clone()
+                        }
+                    ));
                 }
                 let json = serde_json::json!({ "problems": problems, "mail": mail });
-                Ok(Outcome { text, json, code: bool_code(problems.is_empty() && mail_ok) })
+                Ok(Outcome {
+                    text,
+                    json,
+                    code: bool_code(problems.is_empty() && mail_ok),
+                })
             }
             ConfigureAction::Apply => {
                 configure::apply(ctx)?;
-                Ok(Outcome { text: "Applied: the jobs ran and the services are healthy.\n".into(), json: serde_json::json!({ "applied": true }), code: exit::OK })
+                Ok(Outcome {
+                    text: "Applied: the jobs ran and the services are healthy.\n".into(),
+                    json: serde_json::json!({ "applied": true }),
+                    code: exit::OK,
+                })
             }
         },
         Command::Status(a) => {
-            let r = status::collect(ctx, net, &status::Options { max_backup_age_days: a.max_backup_age_days, volumes: !a.no_volumes, backup_dir: a.backup_dir.clone() })?;
+            let r = status::collect(
+                ctx,
+                net,
+                &status::Options {
+                    max_backup_age_days: a.max_backup_age_days,
+                    volumes: !a.no_volumes,
+                    backup_dir: a.backup_dir.clone(),
+                },
+            )?;
             let code = r.exit_code();
             outcome(&r, r.render(), code)
         }
         Command::Backup(a) => {
-            let r = backup::run(ctx, &backup::Options { to: a.to.clone(), secrets_to: a.secrets_to.clone(), label: a.label.clone(), keep: a.keep, verify: a.verify, no_config: a.no_config, ..backup::Options::default() })?;
+            let r = backup::run(
+                ctx,
+                &backup::Options {
+                    to: a.to.clone(),
+                    secrets_to: a.secrets_to.clone(),
+                    label: a.label.clone(),
+                    keep: a.keep,
+                    verify: a.verify,
+                    no_config: a.no_config,
+                    ..backup::Options::default()
+                },
+            )?;
             outcome(&r, r.render(), bool_code(r.ok))
         }
         Command::RestoreVerify(a) => {
@@ -480,12 +592,25 @@ fn dispatch(cli: &Cli, ctx: &Ctx<'_>, net: &dyn Net, stdin_password: &dyn Fn() -
             if !a.into_live {
                 return Err(CliError::usage("`restore` replaces the live database and needs --into-live", "to test a backup safely use `dynodoctl restore-verify`; to replace the live data add --into-live"));
             }
-            let r = restore::restore_live(ctx, &restore::LiveOptions { backup: a.backup.clone(), config_from: a.config_from.clone(), no_safety_backup: a.no_safety_backup, keep_previous: a.keep_previous, confirmed: false })?;
+            let r = restore::restore_live(
+                ctx,
+                &restore::LiveOptions {
+                    backup: a.backup.clone(),
+                    config_from: a.config_from.clone(),
+                    no_safety_backup: a.no_safety_backup,
+                    keep_previous: a.keep_previous,
+                    confirmed: false,
+                },
+            )?;
             let _ = restore::save_report(ctx, &r, "restore-live");
             outcome(&r, r.render(), bool_code(r.ok))
         }
         Command::RehearseLite(a) => {
-            let target = rehearse::Target { version: a.version.clone(), registry: a.registry.clone(), overlay: a.overlay.clone() };
+            let target = rehearse::Target {
+                version: a.version.clone(),
+                registry: a.registry.clone(),
+                overlay: a.overlay.clone(),
+            };
             let r = rehearse::run(ctx, a.backup.as_deref(), a.config_from.as_deref(), &target)?;
             outcome(&r, r.render(), bool_code(r.ok))
         }
@@ -513,11 +638,30 @@ fn dispatch(cli: &Cli, ctx: &Ctx<'_>, net: &dyn Net, stdin_password: &dyn Fn() -
             outcome(&r.restore, r.render(), bool_code(r.ok))
         }
         Command::SupportBundle(a) => {
-            let r = support::run(ctx, net, &support::Options { out_dir: a.out.clone(), log_lines: a.log_lines, keep_emails: a.keep_emails, list_only: a.list })?;
+            let r = support::run(
+                ctx,
+                net,
+                &support::Options {
+                    out_dir: a.out.clone(),
+                    log_lines: a.log_lines,
+                    keep_emails: a.keep_emails,
+                    list_only: a.list,
+                },
+            )?;
             outcome(&r, r.render(), exit::OK)
         }
         Command::VerifyDelivery(a) => {
-            let r = verify_delivery::run(ctx, net, &verify_delivery::Options { origin: a.origin.clone(), connect: a.connect.clone(), http_port: a.http_port, tls_mode: a.tls_mode.clone(), mail_to: a.mail_to.clone() })?;
+            let r = verify_delivery::run(
+                ctx,
+                net,
+                &verify_delivery::Options {
+                    origin: a.origin.clone(),
+                    connect: a.connect.clone(),
+                    http_port: a.http_port,
+                    tls_mode: a.tls_mode.clone(),
+                    mail_to: a.mail_to.clone(),
+                },
+            )?;
             let code = r.exit_code();
             outcome(&r, r.render(), code)
         }
@@ -525,16 +669,38 @@ fn dispatch(cli: &Cli, ctx: &Ctx<'_>, net: &dyn Net, stdin_password: &dyn Fn() -
 }
 
 /// Run one command line. `args` includes the program name. Returns the exit code.
-pub fn run(args: Vec<String>, runner: &dyn Runner, make_net: &dyn Fn(Vec<Vec<u8>>) -> Box<dyn Net>, confirm_for_tests: Option<&dyn Confirm>, out: &mut dyn Write, err: &mut dyn Write) -> i32 {
+pub fn run(
+    args: Vec<String>,
+    runner: &dyn Runner,
+    make_net: &dyn Fn(Vec<Vec<u8>>) -> Box<dyn Net>,
+    confirm_for_tests: Option<&dyn Confirm>,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> i32 {
     let cli = match Cli::try_parse_from(&args) {
         Ok(c) => c,
         Err(e) => {
-            let code = if e.use_stderr() { exit::USAGE } else { exit::OK };
-            let _ = if e.use_stderr() { write!(err, "{e}") } else { write!(out, "{e}") };
+            let code = if e.use_stderr() {
+                exit::USAGE
+            } else {
+                exit::OK
+            };
+            let _ = if e.use_stderr() {
+                write!(err, "{e}")
+            } else {
+                write!(out, "{e}")
+            };
             return code;
         }
     };
-    let interactive = Interactive { provided: cli.confirm.iter().cloned().chain(cli.yes.then(|| "yes".to_string())).collect() };
+    let interactive = Interactive {
+        provided: cli
+            .confirm
+            .iter()
+            .cloned()
+            .chain(cli.yes.then(|| "yes".to_string()))
+            .collect(),
+    };
     let confirm: &dyn Confirm = confirm_for_tests.unwrap_or(&interactive);
     let mut ctx = Ctx::new(runner, Layout::new(dir_from(&cli)), confirm);
     ctx.project = cli.project.clone();
@@ -544,13 +710,22 @@ pub fn run(args: Vec<String>, runner: &dyn Runner, make_net: &dyn Fn(Vec<Vec<u8>
         let net = make_net(roots);
         dispatch(&cli, &ctx, net.as_ref(), &|| {
             let mut line = String::new();
-            std::io::stdin().lock().read_line(&mut line).ok().filter(|n| *n > 0).map(|_| line.trim_end_matches(['\r', '\n']).to_string())
+            std::io::stdin()
+                .lock()
+                .read_line(&mut line)
+                .ok()
+                .filter(|n| *n > 0)
+                .map(|_| line.trim_end_matches(['\r', '\n']).to_string())
         })
     });
     match result {
         Ok(o) => {
             if cli.json {
-                let _ = writeln!(out, "{}", serde_json::to_string_pretty(&o.json).unwrap_or_default());
+                let _ = writeln!(
+                    out,
+                    "{}",
+                    serde_json::to_string_pretty(&o.json).unwrap_or_default()
+                );
             } else {
                 let _ = write!(out, "{}", o.text);
             }
@@ -558,7 +733,11 @@ pub fn run(args: Vec<String>, runner: &dyn Runner, make_net: &dyn Fn(Vec<Vec<u8>
         }
         Err(e) => {
             if cli.json {
-                let _ = writeln!(out, "{}", serde_json::json!({ "ok": false, "error": { "what": e.what, "todo": e.todo, "exit_code": e.code() } }));
+                let _ = writeln!(
+                    out,
+                    "{}",
+                    serde_json::json!({ "ok": false, "error": { "what": e.what, "todo": e.todo, "exit_code": e.code() } })
+                );
             }
             let _ = writeln!(err, "ERROR: {e}");
             e.code()

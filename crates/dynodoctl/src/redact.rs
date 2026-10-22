@@ -45,7 +45,10 @@ fn patterns() -> &'static Patterns {
 
 impl Redactor {
     pub fn new(emails: bool) -> Self {
-        Self { known: Vec::new(), emails }
+        Self {
+            known: Vec::new(),
+            emails,
+        }
     }
 
     /// Add a secret value to hide wherever it appears (kept in memory, never written anywhere).
@@ -69,8 +72,14 @@ impl Redactor {
         for (name, value) in known {
             out = out.replace(value.as_str(), &format!("[redacted:{name}]"));
         }
-        out = p.private_key.replace_all(&out, "[redacted-private-key]").into_owned();
-        out = p.url_password.replace_all(&out, "$1:[redacted]@").into_owned();
+        out = p
+            .private_key
+            .replace_all(&out, "[redacted-private-key]")
+            .into_owned();
+        out = p
+            .url_password
+            .replace_all(&out, "$1:[redacted]@")
+            .into_owned();
         out = p.paseto.replace_all(&out, "[redacted-token]").into_owned();
         out = p.jwt.replace_all(&out, "[redacted-token]").into_owned();
         out = p.bearer.replace_all(&out, "$1 [redacted]").into_owned();
@@ -78,7 +87,10 @@ impl Redactor {
             .key_value
             .replace_all(&out, |c: &Captures| {
                 let key = &c[1];
-                if key.to_ascii_lowercase().ends_with("_file") || &c[3] == "[redacted]" || c[3].starts_with("[redacted") {
+                if key.to_ascii_lowercase().ends_with("_file")
+                    || &c[3] == "[redacted]"
+                    || c[3].starts_with("[redacted")
+                {
                     c[0].to_string()
                 } else {
                     format!("{key}{}[redacted]", &c[2])
@@ -138,18 +150,36 @@ mod tests {
     #[test]
     fn credentials_in_urls_and_headers_are_hidden() {
         let r = Redactor::new(false);
-        assert_eq!(r.apply("postgres://dynodoc_runtime:s3cr3tpw@postgres:5432/dynodoc"), "postgres://dynodoc_runtime:[redacted]@postgres:5432/dynodoc");
-        assert!(!r.apply("Authorization: Bearer abcdef0123456789abcdef").contains("abcdef0123"));
-        assert!(!r.apply("token v4.local.AbCdEf_-0123456789xyz").contains("AbCdEf"));
-        assert!(!r.apply("jwt eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.sig").contains("eyJzdWIi"));
+        assert_eq!(
+            r.apply("postgres://dynodoc_runtime:s3cr3tpw@postgres:5432/dynodoc"),
+            "postgres://dynodoc_runtime:[redacted]@postgres:5432/dynodoc"
+        );
+        assert!(!r
+            .apply("Authorization: Bearer abcdef0123456789abcdef")
+            .contains("abcdef0123"));
+        assert!(!r
+            .apply("token v4.local.AbCdEf_-0123456789xyz")
+            .contains("AbCdEf"));
+        assert!(!r
+            .apply("jwt eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.sig")
+            .contains("eyJzdWIi"));
     }
 
     #[test]
     fn key_value_pairs_hide_the_value_but_keep_file_paths() {
         let r = Redactor::new(false);
         let out = r.apply("SMTP_PASSWORD=hunter22 session_secret: abc123def PASETO_LOCAL_KEY_FILE=/run/secrets/paseto_local_key api_key=\"k-1234\" Set-Cookie: dynodoc_session=zzz999");
-        assert!(!out.contains("hunter22") && !out.contains("abc123def") && !out.contains("k-1234") && !out.contains("zzz999"), "{out}");
-        assert!(out.contains("PASETO_LOCAL_KEY_FILE=/run/secrets/paseto_local_key"), "{out}");
+        assert!(
+            !out.contains("hunter22")
+                && !out.contains("abc123def")
+                && !out.contains("k-1234")
+                && !out.contains("zzz999"),
+            "{out}"
+        );
+        assert!(
+            out.contains("PASETO_LOCAL_KEY_FILE=/run/secrets/paseto_local_key"),
+            "{out}"
+        );
     }
 
     #[test]
@@ -157,7 +187,10 @@ mod tests {
         let r = Redactor::new(false);
         let pem = "before\n-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMG\nabcdef\n-----END PRIVATE KEY-----\nafter";
         let out = r.apply(pem);
-        assert!(!out.contains("MIGHAgEA") && out.contains("before") && out.contains("after"), "{out}");
+        assert!(
+            !out.contains("MIGHAgEA") && out.contains("before") && out.contains("after"),
+            "{out}"
+        );
         let truncated = r.apply("-----BEGIN EC PRIVATE KEY-----\nMHcCAQEE");
         assert!(!truncated.contains("MHcCAQEE"));
         assert_eq!(r.apply(&format!("key {HEX64}")), "key [redacted-hex]");
@@ -172,8 +205,14 @@ mod tests {
 
     #[test]
     fn emails_are_hidden_only_when_asked() {
-        assert_eq!(Redactor::new(true).apply("sign-in for a.b+c@example.org sent"), "sign-in for [email] sent");
-        assert_eq!(Redactor::new(false).apply("sign-in for a.b@example.org sent"), "sign-in for a.b@example.org sent");
+        assert_eq!(
+            Redactor::new(true).apply("sign-in for a.b+c@example.org sent"),
+            "sign-in for [email] sent"
+        );
+        assert_eq!(
+            Redactor::new(false).apply("sign-in for a.b@example.org sent"),
+            "sign-in for a.b@example.org sent"
+        );
     }
 
     #[test]

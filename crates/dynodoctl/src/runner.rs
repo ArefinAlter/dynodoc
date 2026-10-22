@@ -29,7 +29,11 @@ pub struct Cmd {
 
 impl Cmd {
     pub fn new(program: &str, args: &[&str]) -> Self {
-        Self { program: program.to_string(), args: args.iter().map(|a| a.to_string()).collect(), ..Self::default() }
+        Self {
+            program: program.to_string(),
+            args: args.iter().map(|a| a.to_string()).collect(),
+            ..Self::default()
+        }
     }
 
     /// The command as one line, for matching in tests and for display in plans.
@@ -60,7 +64,9 @@ impl Output {
     }
     /// Standard output and error together, trimmed (for messages).
     pub fn text(&self) -> String {
-        format!("{}{}", self.stdout_text(), self.stderr_text()).trim().to_string()
+        format!("{}{}", self.stdout_text(), self.stderr_text())
+            .trim()
+            .to_string()
     }
 }
 
@@ -72,10 +78,18 @@ pub trait Runner {
 /// Variables the bundle's `.env` is meant to control.
 pub fn is_bundle_variable(name: &str) -> bool {
     let upper = name.to_ascii_uppercase();
-    ["DYNODOC_", "COMPOSE_", "SMTP_"].iter().any(|p| upper.starts_with(p))
+    ["DYNODOC_", "COMPOSE_", "SMTP_"]
+        .iter()
+        .any(|p| upper.starts_with(p))
         || matches!(
             upper.as_str(),
-            "ORIGIN" | "DEV_AUTH" | "ADMIN_EMAILS" | "RUST_LOG" | "SESSION_SECRET" | "WEB_SERVICE_KEY" | "AUTH_EMAIL_LINK"
+            "ORIGIN"
+                | "DEV_AUTH"
+                | "ADMIN_EMAILS"
+                | "RUST_LOG"
+                | "SESSION_SECRET"
+                | "WEB_SERVICE_KEY"
+                | "AUTH_EMAIL_LINK"
         )
 }
 
@@ -118,17 +132,25 @@ impl Runner for SystemRunner {
         }
         let mut child = command.spawn()?;
         let writer = pending_stdin.and_then(|bytes| {
-            child.stdin.take().map(|mut stdin| std::thread::spawn(move || {
-                let _ = stdin.write_all(&bytes);
-            }))
+            child.stdin.take().map(|mut stdin| {
+                std::thread::spawn(move || {
+                    let _ = stdin.write_all(&bytes);
+                })
+            })
         });
         let output = child.wait_with_output()?;
         if let Some(handle) = writer {
             let _ = handle.join();
         }
-        Ok(Output { status: output.status.code().unwrap_or(-1), stdout: output.stdout, stderr: output.stderr })
+        Ok(Output {
+            status: output.status.code().unwrap_or(-1),
+            stdout: output.stdout,
+            stderr: output.stderr,
+        })
     }
 }
+
+type Effect = Box<dyn Fn(&Cmd)>;
 
 struct Rule {
     needle: String,
@@ -142,7 +164,7 @@ struct Rule {
 pub struct FakeRunner {
     calls: RefCell<Vec<Cmd>>,
     rules: RefCell<Vec<Rule>>,
-    effects: RefCell<Vec<(String, Box<dyn Fn(&Cmd)>)>>,
+    effects: RefCell<Vec<(String, Effect)>>,
     default: Output,
 }
 
@@ -155,13 +177,20 @@ impl Default for FakeRunner {
 impl FakeRunner {
     /// Unmatched commands succeed with no output.
     pub fn new() -> Self {
-        Self { calls: RefCell::new(Vec::new()), rules: RefCell::new(Vec::new()), effects: RefCell::new(Vec::new()), default: Output::default() }
+        Self {
+            calls: RefCell::new(Vec::new()),
+            rules: RefCell::new(Vec::new()),
+            effects: RefCell::new(Vec::new()),
+            default: Output::default(),
+        }
     }
 
     /// Run `effect` (for example, create the files a real generator would) whenever a command
     /// line contains `needle`. Effects run in addition to the answering rule.
     pub fn on_effect(&self, needle: &str, effect: impl Fn(&Cmd) + 'static) -> &Self {
-        self.effects.borrow_mut().push((needle.to_string(), Box::new(effect)));
+        self.effects
+            .borrow_mut()
+            .push((needle.to_string(), Box::new(effect)));
         self
     }
 
@@ -174,7 +203,16 @@ impl FakeRunner {
     pub fn first(&self, needle: &str, status: i32, stdout: &str) -> &Self {
         self.rules.borrow_mut().insert(
             0,
-            Rule { needle: needle.to_string(), outputs: vec![Output { status, stdout: stdout.as_bytes().to_vec(), stderr: Vec::new() }], used: 0, file_bytes: None },
+            Rule {
+                needle: needle.to_string(),
+                outputs: vec![Output {
+                    status,
+                    stdout: stdout.as_bytes().to_vec(),
+                    stderr: Vec::new(),
+                }],
+                used: 0,
+                file_bytes: None,
+            },
         );
         self
     }
@@ -184,7 +222,11 @@ impl FakeRunner {
             needle: needle.to_string(),
             outputs: answers
                 .iter()
-                .map(|(status, text)| Output { status: *status, stdout: text.as_bytes().to_vec(), stderr: Vec::new() })
+                .map(|(status, text)| Output {
+                    status: *status,
+                    stdout: text.as_bytes().to_vec(),
+                    stderr: Vec::new(),
+                })
                 .collect(),
             used: 0,
             file_bytes: None,
@@ -213,16 +255,26 @@ impl FakeRunner {
 
     /// Did any command line contain `needle`?
     pub fn ran(&self, needle: &str) -> bool {
-        self.calls.borrow().iter().any(|c| c.line().contains(needle))
+        self.calls
+            .borrow()
+            .iter()
+            .any(|c| c.line().contains(needle))
     }
 
     pub fn count(&self, needle: &str) -> usize {
-        self.calls.borrow().iter().filter(|c| c.line().contains(needle)).count()
+        self.calls
+            .borrow()
+            .iter()
+            .filter(|c| c.line().contains(needle))
+            .count()
     }
 
     /// Index of the first command containing `needle`, for ordering assertions.
     pub fn position(&self, needle: &str) -> Option<usize> {
-        self.calls.borrow().iter().position(|c| c.line().contains(needle))
+        self.calls
+            .borrow()
+            .iter()
+            .position(|c| c.line().contains(needle))
     }
 }
 
@@ -273,7 +325,9 @@ mod tests {
     fn fake_runner_sequences_repeat_the_last_answer() {
         let fake = FakeRunner::new();
         fake.on_seq("x", &[(1, "first"), (0, "second")]);
-        let answers: Vec<i32> = (0..3).map(|_| fake.run(&Cmd::new("x", &[])).unwrap().status).collect();
+        let answers: Vec<i32> = (0..3)
+            .map(|_| fake.run(&Cmd::new("x", &[])).unwrap().status)
+            .collect();
         assert_eq!(answers, vec![1, 0, 0]);
     }
 
@@ -289,6 +343,8 @@ mod tests {
 
     #[test]
     fn system_runner_reports_a_missing_program_as_an_error() {
-        assert!(SystemRunner.run(&Cmd::new("dynodoctl-no-such-program-xyz", &[])).is_err());
+        assert!(SystemRunner
+            .run(&Cmd::new("dynodoctl-no-such-program-xyz", &[]))
+            .is_err());
     }
 }

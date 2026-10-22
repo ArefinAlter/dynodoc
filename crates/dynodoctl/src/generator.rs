@@ -42,7 +42,12 @@ pub struct GenerateArgs {
 
 impl GenerateArgs {
     pub fn flags(&self) -> Vec<String> {
-        let mut args = vec!["--origin".to_string(), self.origin.clone(), "--container-secrets-dir".into(), "/run/secrets".into()];
+        let mut args = vec![
+            "--origin".to_string(),
+            self.origin.clone(),
+            "--container-secrets-dir".into(),
+            "/run/secrets".into(),
+        ];
         let mut opt = |name: &str, value: &Option<String>| {
             if let Some(v) = value {
                 args.push(name.to_string());
@@ -67,14 +72,20 @@ impl GenerateArgs {
 
 /// `registry/tools:version`, the image the `preflight` job also runs.
 pub fn tools_image(registry: Option<&str>, version: Option<&str>) -> String {
-    format!("{}/tools:{}", registry.unwrap_or("dynodoc-local"), version.unwrap_or("dev"))
+    format!(
+        "{}/tools:{}",
+        registry.unwrap_or("dynodoc-local"),
+        version.unwrap_or("dev")
+    )
 }
 
 fn node_ok(ctx: &Ctx<'_>) -> bool {
     let mut cmd = Cmd::new("node", &["--version"]);
     cmd.scrub_env = true;
     match run_cmd(ctx, &cmd) {
-        Ok(o) if o.ok() => parse_version(&o.stdout_text()).map(|v| v.0 >= 20).unwrap_or(false),
+        Ok(o) if o.ok() => parse_version(&o.stdout_text())
+            .map(|v| v.0 >= 20)
+            .unwrap_or(false),
         _ => false,
     }
 }
@@ -83,12 +94,29 @@ fn find_script(ctx: &Ctx<'_>, explicit: Option<&Path>) -> Option<PathBuf> {
     if let Some(p) = explicit {
         return p.is_file().then(|| p.to_path_buf());
     }
-    let candidate = ctx.layout.dir.join("..").join("..").join("frontend").join("researcher").join("scripts").join("dynodoc-env.mjs");
+    let candidate = ctx
+        .layout
+        .dir
+        .join("..")
+        .join("..")
+        .join("frontend")
+        .join("researcher")
+        .join("scripts")
+        .join("dynodoc-env.mjs");
     candidate.is_file().then_some(candidate)
 }
 
-pub fn choose(ctx: &Ctx<'_>, choice: Choice, script: Option<&Path>, image: &str) -> Result<Generator> {
-    let have_image = || docker(ctx, &["image", "inspect", image]).map(|o| o.ok()).unwrap_or(false);
+pub fn choose(
+    ctx: &Ctx<'_>,
+    choice: Choice,
+    script: Option<&Path>,
+    image: &str,
+) -> Result<Generator> {
+    let have_image = || {
+        docker(ctx, &["image", "inspect", image])
+            .map(|o| o.ok())
+            .unwrap_or(false)
+    };
     let node = || find_script(ctx, script).filter(|_| node_ok(ctx));
     match choice {
         Choice::Image => {
@@ -134,14 +162,38 @@ pub fn command(generator: &Generator, dir: &Path, args: &GenerateArgs) -> Cmd {
         Generator::Image(image) => {
             let mut all: Vec<String> = vec!["run".into(), "--rm".into()];
             all.extend(user_flag());
-            all.extend(["-v".into(), format!("{}:/bundle", dir.display()), image.clone(), "node".into(), "scripts/dynodoc-env.mjs".into(), "generate-env".into(), "--dir".into(), "/bundle".into()]);
+            all.extend([
+                "-v".into(),
+                format!("{}:/bundle", dir.display()),
+                image.clone(),
+                "node".into(),
+                "scripts/dynodoc-env.mjs".into(),
+                "generate-env".into(),
+                "--dir".into(),
+                "/bundle".into(),
+            ]);
             all.extend(args.flags());
-            Cmd { program: "docker".into(), args: all, scrub_env: true, ..Cmd::default() }
+            Cmd {
+                program: "docker".into(),
+                args: all,
+                scrub_env: true,
+                ..Cmd::default()
+            }
         }
         Generator::Node { script } => {
-            let mut all: Vec<String> = vec![script.display().to_string(), "generate-env".into(), "--dir".into(), dir.display().to_string()];
+            let mut all: Vec<String> = vec![
+                script.display().to_string(),
+                "generate-env".into(),
+                "--dir".into(),
+                dir.display().to_string(),
+            ];
             all.extend(args.flags());
-            Cmd { program: "node".into(), args: all, scrub_env: true, ..Cmd::default() }
+            Cmd {
+                program: "node".into(),
+                args: all,
+                scrub_env: true,
+                ..Cmd::default()
+            }
         }
     }
 }
@@ -175,16 +227,33 @@ mod tests {
             ..Default::default()
         };
         let f = a.flags();
-        assert_eq!(&f[..4], ["--origin", "https://docs.example.org", "--container-secrets-dir", "/run/secrets"]);
+        assert_eq!(
+            &f[..4],
+            [
+                "--origin",
+                "https://docs.example.org",
+                "--container-secrets-dir",
+                "/run/secrets"
+            ]
+        );
         assert!(f.windows(2).any(|w| w == ["--org-name", "Example Ltd."]));
-        assert!(f.windows(2).any(|w| w == ["--smtp-host", "smtp.example.org"]));
+        assert!(f
+            .windows(2)
+            .any(|w| w == ["--smtp-host", "smtp.example.org"]));
         assert!(f.contains(&"--with-converter".to_string()));
         assert!(!f.iter().any(|x| x == "--smtp-user"));
     }
 
     #[test]
     fn the_image_route_mounts_the_bundle_directory_and_runs_the_scripts_command() {
-        let cmd = command(&Generator::Image("dynodoc-local/tools:dev".into()), Path::new("/srv/dynodoc"), &GenerateArgs { origin: "https://x.example".into(), ..Default::default() });
+        let cmd = command(
+            &Generator::Image("dynodoc-local/tools:dev".into()),
+            Path::new("/srv/dynodoc"),
+            &GenerateArgs {
+                origin: "https://x.example".into(),
+                ..Default::default()
+            },
+        );
         let line = cmd.line();
         assert!(line.starts_with("docker run --rm"));
         assert!(line.contains("-v /srv/dynodoc:/bundle dynodoc-local/tools:dev node scripts/dynodoc-env.mjs generate-env --dir /bundle --origin https://x.example"));
@@ -192,7 +261,16 @@ mod tests {
 
     #[test]
     fn the_node_route_runs_the_script_with_the_directory() {
-        let cmd = command(&Generator::Node { script: PathBuf::from("/repo/frontend/researcher/scripts/dynodoc-env.mjs") }, Path::new("/srv/d"), &GenerateArgs { origin: "https://x.example".into(), ..Default::default() });
+        let cmd = command(
+            &Generator::Node {
+                script: PathBuf::from("/repo/frontend/researcher/scripts/dynodoc-env.mjs"),
+            },
+            Path::new("/srv/d"),
+            &GenerateArgs {
+                origin: "https://x.example".into(),
+                ..Default::default()
+            },
+        );
         assert_eq!(cmd.program, "node");
         assert_eq!(&cmd.args[1..4], ["generate-env", "--dir", "/srv/d"]);
     }
@@ -203,7 +281,10 @@ mod tests {
         let confirm = ScriptedConfirm::new(&[]);
         let with_image = FakeRunner::new();
         let ctx = Ctx::new(&with_image, Layout::new(dir.path()), &confirm);
-        assert_eq!(choose(&ctx, Choice::Auto, None, "i:1").unwrap(), Generator::Image("i:1".into()));
+        assert_eq!(
+            choose(&ctx, Choice::Auto, None, "i:1").unwrap(),
+            Generator::Image("i:1".into())
+        );
 
         let neither = FakeRunner::new();
         neither.on("image inspect", 1, "");
@@ -227,7 +308,10 @@ mod tests {
         let new = FakeRunner::new();
         new.on("node --version", 0, "v22.1.0\n");
         let ctx = Ctx::new(&new, Layout::new(dir.path()), &confirm);
-        assert_eq!(choose(&ctx, Choice::Node, Some(&script), "i:1").unwrap(), Generator::Node { script });
+        assert_eq!(
+            choose(&ctx, Choice::Node, Some(&script), "i:1").unwrap(),
+            Generator::Node { script }
+        );
     }
 
     #[test]
@@ -237,7 +321,15 @@ mod tests {
         let runner = FakeRunner::new();
         runner.on("generate-env", 2, "");
         let ctx = Ctx::new(&runner, Layout::new(dir.path()), &confirm);
-        let err = generate(&ctx, &Generator::Image("i:1".into()), &GenerateArgs { origin: "https://x.example".into(), ..Default::default() }).unwrap_err();
+        let err = generate(
+            &ctx,
+            &Generator::Image("i:1".into()),
+            &GenerateArgs {
+                origin: "https://x.example".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
         assert!(err.what.contains("generator failed"));
         assert!(err.todo.contains("nothing is overwritten"));
     }

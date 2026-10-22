@@ -11,7 +11,10 @@ const LOGIN_HTML: &str = "<!doctype html><html><head><link rel=\"stylesheet\" hr
 
 fn headers(hsts: &str) -> Vec<(&'static str, String)> {
     vec![
-        ("content-security-policy", format!("default-src 'self'; script-src 'self'; connect-src 'self' {ORIGIN}")),
+        (
+            "content-security-policy",
+            format!("default-src 'self'; script-src 'self'; connect-src 'self' {ORIGIN}"),
+        ),
         ("strict-transport-security", hsts.to_string()),
         ("x-content-type-options", "nosniff".into()),
         ("referrer-policy", "no-referrer".into()),
@@ -29,29 +32,84 @@ fn page(status: u16, hs: &[(&str, String)], body: &str) -> HttpResponse {
 /// A correctly delivered installation. `evaluation` switches to the self-signed variant.
 fn site(evaluation: bool) -> FakeNet {
     let net = FakeNet::default();
-    let facts = if evaluation { testkit::tls_facts(true, Err("not issued by an authority this tool trusts".into())) } else { testkit::tls_facts(false, Ok(())) };
-    let hsts = if evaluation { "max-age=300" } else { "max-age=31536000" };
+    let facts = if evaluation {
+        testkit::tls_facts(
+            true,
+            Err("not issued by an authority this tool trusts".into()),
+        )
+    } else {
+        testkit::tls_facts(false, Ok(()))
+    };
+    let hsts = if evaluation {
+        "max-age=300"
+    } else {
+        "max-age=31536000"
+    };
     let ok = |r: HttpResponse| Ok((r, facts.clone()));
     net.on_https("/login", ok(page(200, &headers(hsts), LOGIN_HTML)));
-    net.on_https("/_app/immutable/app.css", ok(page(200, &[], "body{color:#222}")));
-    net.on_https("/_app/immutable/entry.js", ok(page(200, &[], "export const start = () => 1; // see https://svelte.dev/e/x")));
+    net.on_https(
+        "/_app/immutable/app.css",
+        ok(page(200, &[], "body{color:#222}")),
+    );
+    net.on_https(
+        "/_app/immutable/entry.js",
+        ok(page(
+            200,
+            &[],
+            "export const start = () => 1; // see https://svelte.dev/e/x",
+        )),
+    );
     net.on_https("/healthz", ok(page(200, &[], "{\"status\":\"ok\"}")));
-    net.on_https("@dynodoc-verify-delivery.invalid/", ok(page(421, &[], "Misdirected")));
+    net.on_https(
+        "@dynodoc-verify-delivery.invalid/",
+        ok(page(421, &[], "Misdirected")),
+    );
     net.on_https("/api/engine/documents", ok(page(401, &[], "{}")));
-    net.on_https("/", ok(testkit::response(302, &[("location", "/login")], "")));
-    for p in ["/features", "/privacy", "/terms", "/pricing", "/sitemap.xml", "/llms.txt"] {
+    net.on_https(
+        "/",
+        ok(testkit::response(302, &[("location", "/login")], "")),
+    );
+    for p in [
+        "/features",
+        "/privacy",
+        "/terms",
+        "/pricing",
+        "/sitemap.xml",
+        "/llms.txt",
+    ] {
         net.on_https(p, ok(page(404, &[], "not found")));
     }
-    net.on_http("/", Ok(testkit::response(301, &[("location", "https://docs.example.org/")], "")));
+    net.on_http(
+        "/",
+        Ok(testkit::response(
+            301,
+            &[("location", "https://docs.example.org/")],
+            "",
+        )),
+    );
     net
 }
 
 fn level(report: &DeliveryReport, id: &str) -> Level {
-    report.checks.iter().find(|c| c.id == id).unwrap_or_else(|| panic!("no check {id}: {:?}", report.checks.iter().map(|c| &c.id).collect::<Vec<_>>())).level
+    report
+        .checks
+        .iter()
+        .find(|c| c.id == id)
+        .unwrap_or_else(|| {
+            panic!(
+                "no check {id}: {:?}",
+                report.checks.iter().map(|c| &c.id).collect::<Vec<_>>()
+            )
+        })
+        .level
 }
 
 fn opts() -> Options {
-    Options { origin: Some(ORIGIN.into()), tls_mode: Some("provided".into()), ..Options::default() }
+    Options {
+        origin: Some(ORIGIN.into()),
+        tls_mode: Some("provided".into()),
+        ..Options::default()
+    }
 }
 
 fn check(net: &FakeNet, o: &Options) -> DeliveryReport {
@@ -76,10 +134,34 @@ fn check_at(net: &FakeNet, o: &Options, now: fn() -> DateTime<Utc>) -> DeliveryR
 #[test]
 fn a_correctly_delivered_installation_passes_every_check_that_can_run() {
     let report = check(&site(false), &opts());
-    let bad: Vec<_> = report.checks.iter().filter(|c| matches!(c.level, Level::Fail | Level::Warn)).collect();
+    let bad: Vec<_> = report
+        .checks
+        .iter()
+        .filter(|c| matches!(c.level, Level::Fail | Level::Warn))
+        .collect();
     assert!(bad.is_empty(), "{bad:?}");
     assert_eq!((report.overall.as_str(), report.exit_code()), ("passed", 0));
-    for id in ["reachable", "tls-version", "tls-chain", "tls-expiry", "redirect", "signin", "csp", "hsts", "nosniff", "referrer", "frame", "banner", "robots", "healthz", "host-check", "api-private", "marketing", "front-page", "outbound-references"] {
+    for id in [
+        "reachable",
+        "tls-version",
+        "tls-chain",
+        "tls-expiry",
+        "redirect",
+        "signin",
+        "csp",
+        "hsts",
+        "nosniff",
+        "referrer",
+        "frame",
+        "banner",
+        "robots",
+        "healthz",
+        "host-check",
+        "api-private",
+        "marketing",
+        "front-page",
+        "outbound-references",
+    ] {
         assert_eq!(level(&report, id), Level::Pass, "{id}");
     }
 }
@@ -87,7 +169,11 @@ fn a_correctly_delivered_installation_passes_every_check_that_can_run() {
 #[test]
 fn the_add_in_check_is_a_named_stub_that_says_not_built_and_does_not_fail_the_run() {
     let report = check(&site(false), &opts());
-    let stub = report.checks.iter().find(|c| c.id == "addin-manifests").unwrap();
+    let stub = report
+        .checks
+        .iter()
+        .find(|c| c.id == "addin-manifests")
+        .unwrap();
     assert_eq!(stub.level, Level::Skip);
     assert!(stub.detail.contains("NOT BUILT") && stub.detail.contains("P0-7"));
     assert_eq!(report.overall, "passed");
@@ -95,18 +181,43 @@ fn the_add_in_check_is_a_named_stub_that_says_not_built_and_does_not_fail_the_ru
 
 #[test]
 fn an_evaluation_installation_warns_instead_of_failing() {
-    let report = check(&site(true), &Options { tls_mode: Some("evaluation".into()), ..opts() });
+    let report = check(
+        &site(true),
+        &Options {
+            tls_mode: Some("evaluation".into()),
+            ..opts()
+        },
+    );
     assert_eq!(level(&report, "tls-chain"), Level::Warn);
-    assert_eq!(level(&report, "hsts"), Level::Pass, "five-minute HSTS is the design in evaluation mode");
-    assert_eq!((report.overall.as_str(), report.exit_code()), ("warnings", crate::error::exit::WARNINGS));
-    assert!(report.checks.iter().any(|c| c.detail.contains("Expected in evaluation mode")));
+    assert_eq!(
+        level(&report, "hsts"),
+        Level::Pass,
+        "five-minute HSTS is the design in evaluation mode"
+    );
+    assert_eq!(
+        (report.overall.as_str(), report.exit_code()),
+        ("warnings", crate::error::exit::WARNINGS)
+    );
+    assert!(report
+        .checks
+        .iter()
+        .any(|c| c.detail.contains("Expected in evaluation mode")));
 }
 
 #[test]
 fn the_same_untrusted_chain_is_a_failure_when_the_mode_is_provided_or_acme() {
     let net = site(false);
-    let untrusted = testkit::tls_facts(false, Err("not issued by an authority this tool trusts (pass it with --ca-file)".into()));
-    net.on_https("/login", Ok((page(200, &headers("max-age=31536000"), LOGIN_HTML), untrusted)));
+    let untrusted = testkit::tls_facts(
+        false,
+        Err("not issued by an authority this tool trusts (pass it with --ca-file)".into()),
+    );
+    net.on_https(
+        "/login",
+        Ok((
+            page(200, &headers("max-age=31536000"), LOGIN_HTML),
+            untrusted,
+        )),
+    );
     let report = check(&net, &opts());
     assert_eq!(level(&report, "tls-chain"), Level::Fail);
     assert_eq!(report.exit_code(), crate::error::exit::FAILED);
@@ -115,27 +226,56 @@ fn the_same_untrusted_chain_is_a_failure_when_the_mode_is_provided_or_acme() {
 #[test]
 fn an_unreachable_installation_fails_once_with_what_to_check() {
     let net = FakeNet::default();
-    net.on_https("/login", Err("cannot connect to docs.example.org:443: refused".into()));
+    net.on_https(
+        "/login",
+        Err("cannot connect to docs.example.org:443: refused".into()),
+    );
     let report = check(&net, &opts());
     assert_eq!(report.checks.len(), 1);
     assert_eq!(report.checks[0].level, Level::Fail);
-    assert!(report.checks[0].detail.contains("DYNODOC_BIND") && report.checks[0].detail.contains("dynodoctl status"));
+    assert!(
+        report.checks[0].detail.contains("DYNODOC_BIND")
+            && report.checks[0].detail.contains("dynodoctl status")
+    );
 }
 
 #[test]
 fn missing_or_doubled_headers_fail() {
     for (mutate, id) in [
-        (Box::new(|h: &mut Vec<(&'static str, String)>| h.retain(|(k, _)| *k != "strict-transport-security")) as Box<dyn Fn(&mut Vec<(&'static str, String)>)>, "hsts"),
-        (Box::new(|h| h.push(("content-security-policy", "default-src *".into()))), "csp"),
-        (Box::new(|h| h.retain(|(k, _)| *k != "content-security-policy")), "csp"),
-        (Box::new(|h| h.retain(|(k, _)| *k != "referrer-policy")), "referrer"),
-        (Box::new(|h| h.retain(|(k, _)| *k != "x-content-type-options")), "nosniff"),
-        (Box::new(|h| h.retain(|(k, _)| *k != "x-frame-options")), "frame"),
+        (
+            Box::new(|h: &mut Vec<(&'static str, String)>| {
+                h.retain(|(k, _)| *k != "strict-transport-security")
+            }) as Box<dyn Fn(&mut Vec<(&'static str, String)>)>,
+            "hsts",
+        ),
+        (
+            Box::new(|h| h.push(("content-security-policy", "default-src *".into()))),
+            "csp",
+        ),
+        (
+            Box::new(|h| h.retain(|(k, _)| *k != "content-security-policy")),
+            "csp",
+        ),
+        (
+            Box::new(|h| h.retain(|(k, _)| *k != "referrer-policy")),
+            "referrer",
+        ),
+        (
+            Box::new(|h| h.retain(|(k, _)| *k != "x-content-type-options")),
+            "nosniff",
+        ),
+        (
+            Box::new(|h| h.retain(|(k, _)| *k != "x-frame-options")),
+            "frame",
+        ),
     ] {
         let net = site(false);
         let mut h = headers("max-age=31536000");
         mutate(&mut h);
-        net.on_https("/login", Ok((page(200, &h, LOGIN_HTML), testkit::tls_facts(false, Ok(())))));
+        net.on_https(
+            "/login",
+            Ok((page(200, &h, LOGIN_HTML), testkit::tls_facts(false, Ok(())))),
+        );
         assert_eq!(level(&check(&net, &opts()), id), Level::Fail, "{id}");
     }
 }
@@ -146,7 +286,10 @@ fn a_short_hsts_and_a_server_banner_are_warnings() {
     let mut h = headers("max-age=86400");
     h.retain(|(k, _)| *k != "server");
     h.push(("server", "nginx/1.27.0".into()));
-    net.on_https("/login", Ok((page(200, &h, LOGIN_HTML), testkit::tls_facts(false, Ok(())))));
+    net.on_https(
+        "/login",
+        Ok((page(200, &h, LOGIN_HTML), testkit::tls_facts(false, Ok(())))),
+    );
     let report = check(&net, &opts());
     assert_eq!(level(&report, "hsts"), Level::Warn);
     assert_eq!(level(&report, "banner"), Level::Warn);
@@ -156,7 +299,14 @@ fn a_short_hsts_and_a_server_banner_are_warnings() {
 fn the_redirect_must_go_to_the_origin_and_a_closed_port_80_is_only_a_warning() {
     let net = site(false);
     net.http.borrow_mut().clear();
-    net.on_http("/", Ok(testkit::response(301, &[("location", "https://evil.example/")], "")));
+    net.on_http(
+        "/",
+        Ok(testkit::response(
+            301,
+            &[("location", "https://evil.example/")],
+            "",
+        )),
+    );
     assert_eq!(level(&check(&net, &opts()), "redirect"), Level::Fail);
     net.http.borrow_mut().clear();
     net.on_http("/", Ok(testkit::response(200, &[], "hello")));
@@ -171,11 +321,22 @@ fn marketing_pages_the_open_api_and_a_name_it_does_not_own_are_failures() {
     let net = site(false);
     let facts = testkit::tls_facts(false, Ok(()));
     net.on_https("/pricing", Ok((page(200, &[], "Plans"), facts.clone())));
-    net.on_https("/api/engine/documents", Ok((page(200, &[], "[]"), facts.clone())));
-    net.on_https("@dynodoc-verify-delivery.invalid/", Ok((page(200, &[], "app"), facts)));
+    net.on_https(
+        "/api/engine/documents",
+        Ok((page(200, &[], "[]"), facts.clone())),
+    );
+    net.on_https(
+        "@dynodoc-verify-delivery.invalid/",
+        Ok((page(200, &[], "app"), facts)),
+    );
     // The first registered answer for a path wins in the fake, so register on a fresh site instead.
     let fresh = FakeNet::default();
-    let ok = |s: u16, b: &str| Ok((page(s, &headers("max-age=31536000"), b), testkit::tls_facts(false, Ok(()))));
+    let ok = |s: u16, b: &str| {
+        Ok((
+            page(s, &headers("max-age=31536000"), b),
+            testkit::tls_facts(false, Ok(())),
+        ))
+    };
     fresh.on_https("/login", ok(200, LOGIN_HTML));
     fresh.on_https("/healthz", ok(200, "{\"status\":\"ok\"}"));
     fresh.on_https("/pricing", ok(200, "Plans"));
@@ -184,7 +345,13 @@ fn marketing_pages_the_open_api_and_a_name_it_does_not_own_are_failures() {
     fresh.on_https("/", ok(200, "home"));
     let report = check(&fresh, &opts());
     assert_eq!(level(&report, "marketing"), Level::Fail);
-    assert!(report.checks.iter().find(|c| c.id == "marketing").unwrap().detail.contains("/pricing (200)"));
+    assert!(report
+        .checks
+        .iter()
+        .find(|c| c.id == "marketing")
+        .unwrap()
+        .detail
+        .contains("/pricing (200)"));
     assert_eq!(level(&report, "api-private"), Level::Fail);
     assert_eq!(level(&report, "host-check"), Level::Fail);
     assert_eq!(level(&report, "front-page"), Level::Fail);
@@ -192,15 +359,37 @@ fn marketing_pages_the_open_api_and_a_name_it_does_not_own_are_failures() {
 
 #[test]
 fn a_served_script_that_names_the_hosted_site_or_an_analytics_host_fails() {
-    for needle in ["https://app.dynodoc.online/x", "https://www.google-analytics.com/collect", "https://cdn.jsdelivr.net/npm/x"] {
+    for needle in [
+        "https://app.dynodoc.online/x",
+        "https://www.google-analytics.com/collect",
+        "https://cdn.jsdelivr.net/npm/x",
+    ] {
         let net = FakeNet::default();
-        let ok = |b: &str| Ok((page(200, &headers("max-age=31536000"), b), testkit::tls_facts(false, Ok(()))));
+        let ok = |b: &str| {
+            Ok((
+                page(200, &headers("max-age=31536000"), b),
+                testkit::tls_facts(false, Ok(())),
+            ))
+        };
         net.on_https("/login", ok(LOGIN_HTML));
-        net.on_https("/_app/immutable/entry.js", ok(&format!("fetch('{needle}')")));
+        net.on_https(
+            "/_app/immutable/entry.js",
+            ok(&format!("fetch('{needle}')")),
+        );
         net.on_https("/_app/immutable/app.css", ok("a{}"));
         let report = check(&net, &opts());
-        assert_eq!(level(&report, "outbound-references"), Level::Fail, "{needle}");
-        assert!(report.checks.iter().find(|c| c.id == "outbound-references").unwrap().detail.contains("/_app/immutable/entry.js"));
+        assert_eq!(
+            level(&report, "outbound-references"),
+            Level::Fail,
+            "{needle}"
+        );
+        assert!(report
+            .checks
+            .iter()
+            .find(|c| c.id == "outbound-references")
+            .unwrap()
+            .detail
+            .contains("/_app/immutable/entry.js"));
     }
 }
 
@@ -208,18 +397,34 @@ fn a_served_script_that_names_the_hosted_site_or_an_analytics_host_fails() {
 fn a_page_that_loads_a_script_from_another_host_fails() {
     let net = FakeNet::default();
     let html = "<html><head><script src=\"https://static.thirdparty.example/lib.js\"></script></head></html>";
-    net.on_https("/login", Ok((page(200, &headers("max-age=31536000"), html), testkit::tls_facts(false, Ok(())))));
+    net.on_https(
+        "/login",
+        Ok((
+            page(200, &headers("max-age=31536000"), html),
+            testkit::tls_facts(false, Ok(())),
+        )),
+    );
     let report = check(&net, &opts());
     assert_eq!(level(&report, "outbound-references"), Level::Fail);
-    assert!(report.checks.iter().any(|c| c.detail.contains("<script> loads https://static.thirdparty.example/lib.js")));
+    assert!(report.checks.iter().any(|c| c
+        .detail
+        .contains("<script> loads https://static.thirdparty.example/lib.js")));
 }
 
 #[test]
 fn documented_optional_references_are_warnings_not_failures() {
     let net = FakeNet::default();
-    let ok = |b: &str| Ok((page(200, &headers("max-age=31536000"), b), testkit::tls_facts(false, Ok(()))));
+    let ok = |b: &str| {
+        Ok((
+            page(200, &headers("max-age=31536000"), b),
+            testkit::tls_facts(false, Ok(())),
+        ))
+    };
     net.on_https("/login", ok(LOGIN_HTML));
-    net.on_https("/_app/immutable/entry.js", ok("const office = 'https://appsforoffice.microsoft.com/lib/1/hosted/office.js'"));
+    net.on_https(
+        "/_app/immutable/entry.js",
+        ok("const office = 'https://appsforoffice.microsoft.com/lib/1/hosted/office.js'"),
+    );
     net.on_https("/_app/immutable/app.css", ok("a{}"));
     let report = check(&net, &opts());
     assert_eq!(level(&report, "outbound-references"), Level::Pass);
@@ -237,11 +442,20 @@ fn the_certificate_horizon_warns_inside_thirty_days_and_fails_inside_seven_or_wh
     fn after() -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2046, 10, 20, 12, 0, 0).unwrap()
     }
-    assert_eq!(level(&check_at(&site(false), &opts(), late_sept), "tls-expiry"), Level::Warn);
-    assert_eq!(level(&check_at(&site(false), &opts(), mid_oct), "tls-expiry"), Level::Fail);
+    assert_eq!(
+        level(&check_at(&site(false), &opts(), late_sept), "tls-expiry"),
+        Level::Warn
+    );
+    assert_eq!(
+        level(&check_at(&site(false), &opts(), mid_oct), "tls-expiry"),
+        Level::Fail
+    );
     let expired = check_at(&site(false), &opts(), after);
     assert_eq!(level(&expired, "tls-expiry"), Level::Fail);
-    assert!(expired.checks.iter().any(|c| c.detail.contains("expired") && c.detail.contains("days ago")));
+    assert!(expired
+        .checks
+        .iter()
+        .any(|c| c.detail.contains("expired") && c.detail.contains("days ago")));
 }
 
 #[test]
@@ -255,17 +469,38 @@ fn the_origin_comes_from_env_or_must_be_given() {
     assert_eq!(e.code(), crate::error::exit::USAGE);
     assert!(e.todo.contains("--origin"));
     testkit::installed(dir.path(), testkit::ENV_TEXT);
-    let report = run(&ctx, &site(false), &Options { tls_mode: Some("provided".into()), ..Options::default() }).unwrap();
+    let report = run(
+        &ctx,
+        &site(false),
+        &Options {
+            tls_mode: Some("provided".into()),
+            ..Options::default()
+        },
+    )
+    .unwrap();
     assert_eq!(report.origin, ORIGIN);
 }
 
 #[test]
 fn connect_overrides_where_to_connect_but_not_the_names() {
     let net = site(false);
-    check(&net, &Options { connect: Some("10.0.0.5:8443".into()), ..opts() });
+    check(
+        &net,
+        &Options {
+            connect: Some("10.0.0.5:8443".into()),
+            ..opts()
+        },
+    );
     let requested = net.requested.borrow().clone();
-    assert!(requested.iter().any(|r| r == "https://docs.example.org/login via 10.0.0.5:8443"), "{requested:?}");
-    assert!(requested.iter().all(|r| !r.contains("via docs.example.org")));
+    assert!(
+        requested
+            .iter()
+            .any(|r| r == "https://docs.example.org/login via 10.0.0.5:8443"),
+        "{requested:?}"
+    );
+    assert!(requested
+        .iter()
+        .all(|r| !r.contains("via docs.example.org")));
 }
 
 #[test]
@@ -275,16 +510,49 @@ fn the_mail_check_runs_from_the_server_when_smtp_is_configured() {
     let runner = testkit::healthy_runner();
     let confirm = ScriptedConfirm::new(&[]);
     let ctx = testkit::ctx(&runner, dir.path(), &confirm);
-    let report = run(&ctx, &site(false), &Options { tls_mode: Some("provided".into()), ..Options::default() }).unwrap();
+    let report = run(
+        &ctx,
+        &site(false),
+        &Options {
+            tls_mode: Some("provided".into()),
+            ..Options::default()
+        },
+    )
+    .unwrap();
     assert_eq!(level(&report, "mail"), Level::Pass);
-    assert!(runner.ran("mailcheck --to admin@example.org"), "{:?}", runner.lines());
-    assert!(!runner.ran("--send"), "verify-delivery never sends a message");
+    assert!(
+        runner.ran("mailcheck --to admin@example.org"),
+        "{:?}",
+        runner.lines()
+    );
+    assert!(
+        !runner.ran("--send"),
+        "verify-delivery never sends a message"
+    );
     let failing = testkit::healthy_runner();
-    failing.first("mailcheck", 1, "TLS handshake failed: check SMTP_PORT and SMTP_SECURITY");
+    failing.first(
+        "mailcheck",
+        1,
+        "TLS handshake failed: check SMTP_PORT and SMTP_SECURITY",
+    );
     let ctx2 = testkit::ctx(&failing, dir.path(), &confirm);
-    let report2 = run(&ctx2, &site(false), &Options { tls_mode: Some("provided".into()), ..Options::default() }).unwrap();
+    let report2 = run(
+        &ctx2,
+        &site(false),
+        &Options {
+            tls_mode: Some("provided".into()),
+            ..Options::default()
+        },
+    )
+    .unwrap();
     assert_eq!(level(&report2, "mail"), Level::Fail);
-    assert!(report2.checks.iter().find(|c| c.id == "mail").unwrap().detail.contains("TLS handshake failed"));
+    assert!(report2
+        .checks
+        .iter()
+        .find(|c| c.id == "mail")
+        .unwrap()
+        .detail
+        .contains("TLS handshake failed"));
 }
 
 #[test]
@@ -292,12 +560,29 @@ fn without_an_install_directory_or_smtp_the_mail_check_is_skipped_with_a_reason(
     let report = check(&site(false), &opts());
     assert_eq!(level(&report, "mail"), Level::Skip);
     let dir = tempfile::tempdir().unwrap();
-    testkit::installed(dir.path(), &testkit::ENV_TEXT.replace("DYNODOC_MAIL_TRANSPORT=smtp", "DYNODOC_MAIL_TRANSPORT=none"));
+    testkit::installed(
+        dir.path(),
+        &testkit::ENV_TEXT.replace("DYNODOC_MAIL_TRANSPORT=smtp", "DYNODOC_MAIL_TRANSPORT=none"),
+    );
     let runner = testkit::healthy_runner();
     let confirm = ScriptedConfirm::new(&[]);
     let ctx = testkit::ctx(&runner, dir.path(), &confirm);
-    let r = run(&ctx, &site(false), &Options { tls_mode: Some("provided".into()), ..Options::default() }).unwrap();
-    assert!(r.checks.iter().find(|c| c.id == "mail").unwrap().detail.contains("not SMTP"));
+    let r = run(
+        &ctx,
+        &site(false),
+        &Options {
+            tls_mode: Some("provided".into()),
+            ..Options::default()
+        },
+    )
+    .unwrap();
+    assert!(r
+        .checks
+        .iter()
+        .find(|c| c.id == "mail")
+        .unwrap()
+        .detail
+        .contains("not SMTP"));
     assert!(!runner.ran("mailcheck"));
 }
 
@@ -307,8 +592,14 @@ fn references_are_taken_from_the_tags_a_browser_loads_by_itself() {
     assert!(refs.contains(&("script".into(), "/_app/immutable/entry.js".into())));
     assert!(refs.contains(&("link".into(), "/_app/immutable/app.css".into())));
     assert!(refs.contains(&("form".into(), "/auth/email".into())));
-    assert!(!refs.iter().any(|(_, r)| r.contains("example.org/help")), "an <a href> is not loaded by itself");
-    assert_eq!(host_of("https://Static.Example/x"), Some("static.example".into()));
+    assert!(
+        !refs.iter().any(|(_, r)| r.contains("example.org/help")),
+        "an <a href> is not loaded by itself"
+    );
+    assert_eq!(
+        host_of("https://Static.Example/x"),
+        Some("static.example".into())
+    );
     assert_eq!(host_of("//cdn.example/x.js"), Some("cdn.example".into()));
     assert_eq!(host_of("/local"), None);
 }

@@ -36,7 +36,10 @@ impl RestoreReport {
     pub fn render(&self) -> String {
         let mut out = String::new();
         out.push_str(&format!("Restore report ({})\n", self.mode));
-        out.push_str(&format!("  backup            {} (taken {})\n", self.backup, self.backup_created_utc));
+        out.push_str(&format!(
+            "  backup            {} (taken {})\n",
+            self.backup, self.backup_created_utc
+        ));
         out.push_str(&format!("  database          {}\n", self.database));
         out.push_str(&render_steps(&self.steps));
         if let Some(r) = &self.restored {
@@ -45,16 +48,40 @@ impl RestoreReport {
                 r.events, self.expected.events, r.documents, self.expected.documents, r.identities, self.expected.identities, r.migrations_applied, self.expected.migrations_applied
             ));
         }
-        out.push_str(&format!("  counts match      {}\n", if self.counts_match { "yes" } else { "NO" }));
-        out.push_str(&format!("  hash chain        {} ({} documents verified)\n", if self.history_verified { "verified" } else { "NOT verified" }, self.documents_verified));
+        out.push_str(&format!(
+            "  counts match      {}\n",
+            if self.counts_match { "yes" } else { "NO" }
+        ));
+        out.push_str(&format!(
+            "  hash chain        {} ({} documents verified)\n",
+            if self.history_verified {
+                "verified"
+            } else {
+                "NOT verified"
+            },
+            self.documents_verified
+        ));
         if let Some(removed) = self.scratch_removed {
-            out.push_str(&format!("  scratch database  {}\n", if removed { "removed" } else { "NOT removed (see notes)" }));
+            out.push_str(&format!(
+                "  scratch database  {}\n",
+                if removed {
+                    "removed"
+                } else {
+                    "NOT removed (see notes)"
+                }
+            ));
         }
-        out.push_str(&format!("  duration          {}\n", human_duration(self.duration_ms as u128)));
+        out.push_str(&format!(
+            "  duration          {}\n",
+            human_duration(self.duration_ms as u128)
+        ));
         for note in &self.notes {
             out.push_str(&format!("  note              {note}\n"));
         }
-        out.push_str(&format!("  result            {}\n", if self.ok { "PASSED" } else { "FAILED" }));
+        out.push_str(&format!(
+            "  result            {}\n",
+            if self.ok { "PASSED" } else { "FAILED" }
+        ));
         out
     }
 }
@@ -66,13 +93,23 @@ pub fn resolve_backup(ctx: &Ctx<'_>, arg: Option<&str>) -> Result<BackupInfo> {
         None | Some("latest") => {
             let all = manifest::list_backups(&backups);
             all.into_iter().last().ok_or_else(|| {
-                CliError::refused(format!("there is no backup in {}", backups.display()), "take one with `dynodoctl backup`, or pass --backup with a backup directory")
+                CliError::refused(
+                    format!("there is no backup in {}", backups.display()),
+                    "take one with `dynodoctl backup`, or pass --backup with a backup directory",
+                )
             })?
         }
         Some(path) => {
-            let candidate = if Path::new(path).is_dir() { PathBuf::from(path) } else { backups.join(path) };
+            let candidate = if Path::new(path).is_dir() {
+                PathBuf::from(path)
+            } else {
+                backups.join(path)
+            };
             let manifest = manifest::read_manifest(&candidate)?;
-            BackupInfo { path: candidate, manifest }
+            BackupInfo {
+                path: candidate,
+                manifest,
+            }
         }
     };
     Ok(chosen)
@@ -93,15 +130,29 @@ pub fn compare(manifest: &manifest::Manifest, got: &DbFacts) -> Vec<String> {
     cmp("events", x.events, y.events, got.events);
     cmp("documents", x.documents, y.documents, got.documents);
     cmp("identities", x.identities, y.identities, got.identities);
-    cmp("migrations applied", x.migrations_applied, y.migrations_applied, got.migrations_applied);
+    cmp(
+        "migrations applied",
+        x.migrations_applied,
+        y.migrations_applied,
+        got.migrations_applied,
+    );
     diffs
 }
 
 /// Check the files of the backup, load its dump into `db` and compare the counts with the manifest.
-pub fn restore_into(c: &Compose<'_>, info: &BackupInfo, config_from: Option<&Path>, db: &str, rec: &mut Recorder) -> Result<DbFacts> {
+pub fn restore_into(
+    c: &Compose<'_>,
+    info: &BackupInfo,
+    config_from: Option<&Path>,
+    db: &str,
+    rec: &mut Recorder,
+) -> Result<DbFacts> {
     rec.step("backup files match their checksums", || {
         manifest::verify_files(info, config_from).map_err(|p| {
-            CliError::refused(format!("the backup is damaged or incomplete: {}", p.join("; ")), "use an earlier backup, or take a new one; nothing was changed")
+            CliError::refused(
+                format!("the backup is damaged or incomplete: {}", p.join("; ")),
+                "use an earlier backup, or take a new one; nothing was changed",
+            )
         })?;
         Ok(((), format!("{} bytes", info.manifest.database.bytes)))
     })?;
@@ -112,20 +163,35 @@ pub fn restore_into(c: &Compose<'_>, info: &BackupInfo, config_from: Option<&Pat
     rec.step("pg_restore", || {
         let out = db::restore_dump(c, db, &info.dump_path())?;
         if !out.ok() {
-            return Err(CliError::failed(format!("pg_restore failed: {}", short(&out.text())), "the dump may be damaged or from an incompatible PostgreSQL; try an earlier backup"));
+            return Err(CliError::failed(
+                format!("pg_restore failed: {}", short(&out.text())),
+                "the dump may be damaged or from an incompatible PostgreSQL; try an earlier backup",
+            ));
         }
         Ok(((), "loaded with --no-owner --no-acl".to_string()))
     })?;
     let facts = rec.step("read the restored database", || {
         let f = db::read_facts(c, db)?;
-        Ok((f.clone(), format!("{} events, {} documents, schema {}", f.events, f.documents, f.latest_migration)))
+        Ok((
+            f.clone(),
+            format!(
+                "{} events, {} documents, schema {}",
+                f.events, f.documents, f.latest_migration
+            ),
+        ))
     })?;
     rec.step("counts equal the manifest", || {
         let diffs = compare(&info.manifest, &facts);
         if diffs.is_empty() {
             Ok(((), "events, documents, identities, migrations".to_string()))
         } else {
-            Err(CliError::failed(format!("the restored database differs from the backup: {}", diffs.join("; ")), "do not use this backup"))
+            Err(CliError::failed(
+                format!(
+                    "the restored database differs from the backup: {}",
+                    diffs.join("; ")
+                ),
+                "do not use this backup",
+            ))
         }
     })?;
     Ok(facts)
@@ -136,9 +202,16 @@ pub fn verify_history(c: &Compose<'_>, db: &str, rec: &mut Recorder) -> Result<u
     rec.step("engine-cli verify-snapshots --all", || {
         let out = db::engine_cli(c, db, &["verify-snapshots", "--all"])?;
         if !out.ok() {
-            return Err(CliError::failed(format!("verify-snapshots failed: {}", short(&out.text())), "the history in this copy does not verify; do not use it"));
+            return Err(CliError::failed(
+                format!("verify-snapshots failed: {}", short(&out.text())),
+                "the history in this copy does not verify; do not use it",
+            ));
         }
-        let n = out.stdout_text().lines().filter(|l| l.starts_with("OK:")).count();
+        let n = out
+            .stdout_text()
+            .lines()
+            .filter(|l| l.starts_with("OK:"))
+            .count();
         Ok(((), format!("{n} documents")))
     })?;
     let ids = db::document_ids(c, db)?;
@@ -147,11 +220,28 @@ pub fn verify_history(c: &Compose<'_>, db: &str, rec: &mut Recorder) -> Result<u
             return Ok((0, "no documents".to_string()));
         }
         let out = db::verify_documents(c, db, &ids)?;
-        let ok_lines = out.stdout_text().lines().filter(|l| l.starts_with("OK:")).count();
+        let ok_lines = out
+            .stdout_text()
+            .lines()
+            .filter(|l| l.starts_with("OK:"))
+            .count();
         if !out.ok() || ok_lines != ids.len() {
-            return Err(CliError::failed(format!("verify failed ({ok_lines} of {} documents passed): {}", ids.len(), short(&out.text())), "the event chain of this copy does not verify; do not use it"));
+            return Err(CliError::failed(
+                format!(
+                    "verify failed ({ok_lines} of {} documents passed): {}",
+                    ids.len(),
+                    short(&out.text())
+                ),
+                "the event chain of this copy does not verify; do not use it",
+            ));
         }
-        Ok((ids.len() as u64, format!("{} documents, event chain and snapshots verified", ids.len())))
+        Ok((
+            ids.len() as u64,
+            format!(
+                "{} documents, event chain and snapshots verified",
+                ids.len()
+            ),
+        ))
     })
 }
 
@@ -173,7 +263,11 @@ fn require_postgres(ctx: &Ctx<'_>, c: &Compose<'_>) -> Result<()> {
 }
 
 /// `restore-verify`: load the backup into a throwaway database, verify it, and remove it.
-pub fn restore_verify(ctx: &Ctx<'_>, backup_arg: Option<&str>, config_from: Option<&Path>) -> Result<RestoreReport> {
+pub fn restore_verify(
+    ctx: &Ctx<'_>,
+    backup_arg: Option<&str>,
+    config_from: Option<&Path>,
+) -> Result<RestoreReport> {
     ctx.require_installed()?;
     let started = Instant::now();
     let info = resolve_backup(ctx, backup_arg)?;
@@ -182,7 +276,10 @@ pub fn restore_verify(ctx: &Ctx<'_>, backup_arg: Option<&str>, config_from: Opti
     let db = scratch_name(ctx, "dynodoc_restore_");
     let mut rec = Recorder::new();
     let mut notes = Vec::new();
-    ctx.say(&format!("Restoring {} into the throwaway database {db} (the live database is not touched)...", info.name()));
+    ctx.say(&format!(
+        "Restoring {} into the throwaway database {db} (the live database is not touched)...",
+        info.name()
+    ));
     let outcome = (|| -> Result<(DbFacts, u64)> {
         let facts = restore_into(&c, &info, config_from, &db, &mut rec)?;
         let documents = verify_history(&c, &db, &mut rec)?;
@@ -204,7 +301,10 @@ pub fn restore_verify(ctx: &Ctx<'_>, backup_arg: Option<&str>, config_from: Opti
             (None, 0, false)
         }
     };
-    let counts_match = restored.as_ref().map(|r| compare(&info.manifest, r).is_empty()).unwrap_or(false);
+    let counts_match = restored
+        .as_ref()
+        .map(|r| compare(&info.manifest, r).is_empty())
+        .unwrap_or(false);
     let ok = outcome.is_ok() && removed;
     Ok(RestoreReport {
         mode: "restore-verify (throwaway database)".into(),
@@ -236,7 +336,12 @@ pub struct LiveOptions {
 
 /// Put the settings and secrets of a backup back where they belong, but only the files that are
 /// missing: an installation's own files are never overwritten here.
-fn restore_config_files(ctx: &Ctx<'_>, info: &BackupInfo, root: &Path, notes: &mut Vec<String>) -> Result<usize> {
+fn restore_config_files(
+    ctx: &Ctx<'_>,
+    info: &BackupInfo,
+    root: &Path,
+    notes: &mut Vec<String>,
+) -> Result<usize> {
     let mut written = 0;
     for entry in &info.manifest.config.files {
         let target = ctx.layout.dir.join(&entry.path);
@@ -244,7 +349,10 @@ fn restore_config_files(ctx: &Ctx<'_>, info: &BackupInfo, root: &Path, notes: &m
         if target.exists() {
             let (have, _) = crate::util::sha256_file(&target)?;
             if have != entry.sha256 {
-                notes.push(format!("{} differs from the backup's copy; the installation's file was kept", entry.path));
+                notes.push(format!(
+                    "{} differs from the backup's copy; the installation's file was kept",
+                    entry.path
+                ));
             }
             continue;
         }
@@ -263,7 +371,10 @@ pub fn restore_live(ctx: &Ctx<'_>, opts: &LiveOptions) -> Result<RestoreReport> 
     let mut notes = Vec::new();
     // Nothing is changed before these checks and the confirmation.
     manifest::verify_files(&info, opts.config_from.as_deref()).map_err(|p| {
-        CliError::refused(format!("the backup is damaged or incomplete: {}", p.join("; ")), "use an earlier backup; nothing was changed")
+        CliError::refused(
+            format!("the backup is damaged or incomplete: {}", p.join("; ")),
+            "use an earlier backup; nothing was changed",
+        )
     })?;
     let config_root = info.config_root(opts.config_from.as_deref());
     if !ctx.layout.is_installed() && config_root.is_none() {
@@ -292,7 +403,11 @@ pub fn restore_live(ctx: &Ctx<'_>, opts: &LiveOptions) -> Result<RestoreReport> 
     if !ctx.layout.is_installed() {
         if let Some(root) = &config_root {
             let n = restore_config_files(ctx, &info, root, &mut notes)?;
-            rec.note("restore settings and secrets from the backup", true, &format!("{n} files"));
+            rec.note(
+                "restore settings and secrets from the backup",
+                true,
+                &format!("{n} files"),
+            );
         }
     } else if let Some(root) = &config_root {
         restore_config_files(ctx, &info, root, &mut notes)?;
@@ -305,32 +420,56 @@ pub fn restore_live(ctx: &Ctx<'_>, opts: &LiveOptions) -> Result<RestoreReport> 
     rec.step("start PostgreSQL", || {
         let out = c.run(&["up", "-d", "--wait", "--wait-timeout", "180", "postgres"])?;
         if !out.ok() {
-            return Err(CliError::failed(format!("PostgreSQL did not become healthy: {}", short(&out.text())), "run `docker compose logs postgres` in the bundle directory; nothing was changed"));
+            return Err(CliError::failed(
+                format!("PostgreSQL did not become healthy: {}", short(&out.text())),
+                "run `docker compose logs postgres` in the bundle directory; nothing was changed",
+            ));
         }
         Ok(((), "healthy".to_string()))
     })?;
 
     if !opts.no_safety_backup && db::has_schema(&c, LIVE_DB).unwrap_or(false) {
-        let options = backup::Options { kind: manifest::KIND_PRE_RESTORE.into(), label: Some("before-restore".into()), keep: 3, ..backup::Options::default() };
+        let options = backup::Options {
+            kind: manifest::KIND_PRE_RESTORE.into(),
+            label: Some("before-restore".into()),
+            keep: 3,
+            ..backup::Options::default()
+        };
         let made = rec.step("safety backup of the current database", || {
             let report = backup::run(ctx, &options)?;
             Ok((report.path.clone(), report.path.display().to_string()))
         })?;
-        notes.push(format!("the database as it was before this restore is saved in {}", made.display()));
+        notes.push(format!(
+            "the database as it was before this restore is saved in {}",
+            made.display()
+        ));
     } else {
-        rec.note("safety backup of the current database", true, "skipped (empty database or --no-safety-backup)");
+        rec.note(
+            "safety backup of the current database",
+            true,
+            "skipped (empty database or --no-safety-backup)",
+        );
     }
 
     rec.step("stop proxy, web and api", || {
         let out = c.run(&["stop", "proxy", "web", "api"])?;
         if !out.ok() {
-            notes.push(format!("stopping the services reported: {}", short(&out.text())));
+            notes.push(format!(
+                "stopping the services reported: {}",
+                short(&out.text())
+            ));
         }
         Ok(((), "writers stopped".to_string()))
     })?;
 
     // Load into a new database first: a damaged dump fails here and the live database is untouched.
-    let restored_facts = match restore_into(&c, &info, opts.config_from.as_deref(), &restoring, &mut rec) {
+    let restored_facts = match restore_into(
+        &c,
+        &info,
+        opts.config_from.as_deref(),
+        &restoring,
+        &mut rec,
+    ) {
         Ok(f) => f,
         Err(e) => {
             let _ = db::drop_database(&c, &restoring);
@@ -367,24 +506,42 @@ pub fn restore_live(ctx: &Ctx<'_>, opts: &LiveOptions) -> Result<RestoreReport> 
         }
         Ok(((), "healthy".to_string()))
     })
-    .map_err(|e| {
-        notes.push(format!("previous database kept as {previous}"));
-        e
-    })?;
+    .inspect_err(|_| notes.push(format!("previous database kept as {previous}")))?;
 
     let verified = (|| -> Result<u64> {
         let after = rec.step("read the live database", || {
             let f = db::read_facts(&c, LIVE_DB)?;
-            Ok((f.clone(), format!("{} events, {} documents, schema {}", f.events, f.documents, f.latest_migration)))
+            Ok((
+                f.clone(),
+                format!(
+                    "{} events, {} documents, schema {}",
+                    f.events, f.documents, f.latest_migration
+                ),
+            ))
         })?;
         if !compare(&info.manifest, &after).is_empty() {
-            return Err(CliError::failed("the live database differs from the backup after the restore", format!("the previous database is kept as {previous}")));
+            return Err(CliError::failed(
+                "the live database differs from the backup after the restore",
+                format!("the previous database is kept as {previous}"),
+            ));
         }
         let documents = verify_history(&c, LIVE_DB, &mut rec)?;
         rec.step("engine-cli check-runtime (runtime login)", || {
-            let out = c.run(&["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "database-admin", "check-runtime"])?;
+            let out = c.run(&[
+                "--profile",
+                "maintenance",
+                "run",
+                "--rm",
+                "--no-deps",
+                "-T",
+                "database-admin",
+                "check-runtime",
+            ])?;
             if !out.ok() {
-                return Err(CliError::failed(format!("check-runtime failed: {}", short(&out.text())), "run `docker compose logs init` in the bundle directory"));
+                return Err(CliError::failed(
+                    format!("check-runtime failed: {}", short(&out.text())),
+                    "run `docker compose logs init` in the bundle directory",
+                ));
             }
             Ok(((), "runtime login and schema verified".to_string()))
         })?;
@@ -411,7 +568,10 @@ pub fn restore_live(ctx: &Ctx<'_>, opts: &LiveOptions) -> Result<RestoreReport> 
     }
     let _ = restored_facts;
     let live_facts = db::read_facts(&c, LIVE_DB).ok();
-    let counts_match = live_facts.as_ref().map(|f| compare(&info.manifest, f).is_empty()).unwrap_or(false);
+    let counts_match = live_facts
+        .as_ref()
+        .map(|f| compare(&info.manifest, f).is_empty())
+        .unwrap_or(false);
     Ok(RestoreReport {
         mode: "restore into the live installation".into(),
         backup: info.name(),
@@ -430,7 +590,14 @@ pub fn restore_live(ctx: &Ctx<'_>, opts: &LiveOptions) -> Result<RestoreReport> 
     })
 }
 
-fn failed_report(info: &BackupInfo, db: &str, rec: Recorder, mut notes: Vec<String>, error: CliError, started: Instant) -> RestoreReport {
+fn failed_report(
+    info: &BackupInfo,
+    db: &str,
+    rec: Recorder,
+    mut notes: Vec<String>,
+    error: CliError,
+    started: Instant,
+) -> RestoreReport {
     notes.push(format!("{}  {}", error.what, error.todo));
     RestoreReport {
         mode: "restore into the live installation".into(),
