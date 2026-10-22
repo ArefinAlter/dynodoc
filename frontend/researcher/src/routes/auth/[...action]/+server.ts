@@ -11,6 +11,7 @@ import {
 } from '$lib/server/session';
 import { safeNext } from '$lib/auth-next';
 import { getConfig } from '$lib/server/config';
+import * as appSignin from '$lib/server/app-signin';
 
 let configuration: Promise<oidc.Configuration> | undefined;
 function googleCredentials() {
@@ -131,9 +132,13 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
   }
   return json({ error: 'Not found' }, { status: 404 });
 };
-export const POST: RequestHandler = async ({ params, url, request, cookies }) => {
+export const POST: RequestHandler = async ({ params, url, request, cookies, getClientAddress }) => {
   if (request.headers.get('origin') !== url.origin)
     return json({ error: 'Invalid origin' }, { status: 403 });
+  // The native apps' sign-in hand-over (docs/decisions/017); each route reads its own body.
+  if (params.action === 'app-signin') return appSignin.issue({ request, url, cookies });
+  if (params.action === 'app-signin/redeem')
+    return appSignin.redeem({ request, url, cookies, getClientAddress });
   if (params.action === 'logout') {
     const session = await readSession(cookies);
     if (session) {

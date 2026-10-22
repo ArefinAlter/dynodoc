@@ -70,11 +70,11 @@ export function secureResponse(
   headers.set('x-content-type-options', 'nosniff');
   headers.set(
     'referrer-policy',
-    /^\/(auth|connectors|view)(\/|$)/.test(url.pathname)
+    /^\/(auth|connectors|view|app-signin)(\/|$)/.test(url.pathname)
       ? 'no-referrer'
       : 'strict-origin-when-cross-origin'
   );
-  if (/^\/(auth|admin|integrations|connectors|view)(\/|$)/.test(url.pathname))
+  if (/^\/(auth|admin|integrations|connectors|view|app-signin)(\/|$)/.test(url.pathname))
     headers.set('cache-control', 'private, no-store');
   if (url.protocol === 'https:') headers.set('strict-transport-security', 'max-age=31536000');
   return secured;

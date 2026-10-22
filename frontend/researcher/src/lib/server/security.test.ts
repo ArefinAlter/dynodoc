@@ -54,6 +54,21 @@ it('hardens immutable redirects and API errors without adding HSTS on plain HTTP
   expect(failed.headers.has('strict-transport-security')).toBe(false);
 });
 
+it('keeps the native-app sign-in pages out of caches, referrers and frames', () => {
+  for (const path of ['/app-signin', '/app-signin/finish', '/auth/app-signin/redeem']) {
+    const response = secureResponse(
+      new Response('page', {
+        headers: { 'content-security-policy': "script-src 'self' 'nonce-n'; connect-src 'self'" }
+      }),
+      new URL(path, 'https://app.test')
+    );
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+    expect(response.headers.get('x-frame-options')).toBe('SAMEORIGIN');
+    expect(response.headers.get('content-security-policy')).toContain("frame-ancestors 'self'");
+  }
+});
+
 it('allows configured HTTPS connector origins only for pane connections', () => {
   const response = secureResponse(
     new Response('pane', {
