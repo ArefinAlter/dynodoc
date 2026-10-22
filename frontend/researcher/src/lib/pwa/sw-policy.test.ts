@@ -53,6 +53,8 @@ describe('planFor', () => {
       '/api/connectors/pair',
       '/auth/login',
       '/auth/callback',
+      '/app-signin',
+      '/app-signin/finish',
       '/admin',
       '/admin/users',
       '/connectors/word',

@@ -27,6 +27,9 @@ export function staleCaches(names: string[], version: string): string[] {
 const NEVER_INTERCEPT = [
   '/api',
   '/auth',
+  // Native-app sign-in: the Dynodoc app's own window names itself in the User-Agent of the
+  // requests the BROWSER makes, and a worker's own fetch would drop that token (decision 017).
+  '/app-signin',
   '/admin',
   '/connectors',
   '/integrations',

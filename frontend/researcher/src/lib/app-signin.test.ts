@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  appKind,
   appLink,
   appSigninPath,
   isChallenge,
@@ -141,5 +142,35 @@ describe('returning to the sign-in page after signing in', () => {
       path.replace('desktop', 'linux')
     ])
       expect(safeNext(bad), bad).toBeNull();
+  });
+});
+
+describe('the app’s own window names itself in its User-Agent', () => {
+  const BASE =
+    'Mozilla/5.0 (Linux; Android 16; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Mobile Safari/537.36';
+  it('is one token at the end, naming one of three kinds', () => {
+    expect(appKind(`${BASE} DynodocApp/0.1.0 (android)`)).toBe('android');
+    expect(appKind(`${BASE} DynodocApp/10.20.300 (desktop)`)).toBe('desktop');
+    expect(appKind('DynodocApp/1.2.3 (ios)')).toBe('ios');
+    expect(appKind(`${BASE} DynodocApp/0.1.0 (ios) extra`)).toBe('ios');
+  });
+  it('is nothing else', () => {
+    for (const bad of [
+      null,
+      undefined,
+      '',
+      BASE,
+      `${BASE} DynodocApp/0.1.0`,
+      `${BASE} DynodocApp/0.1.0 (web)`,
+      `${BASE} DynodocApp/0.1.0 (Android)`,
+      `${BASE} DynodocApp/0.1 (android)`,
+      `${BASE} DynodocApp/0.1.0.0 (android)`,
+      `${BASE} DynodocApp/0.1.0 (android)x`,
+      `${BASE} xDynodocApp/0.1.0 (android)`,
+      `${BASE} dynodocapp/0.1.0 (android)`,
+      `${BASE} DynodocApp/0.1.0 (android) DynodocApp/0.1.0 (ios)`,
+      `${BASE} ${'x'.repeat(1100)} DynodocApp/0.1.0 (android)`
+    ])
+      expect(appKind(bad), String(bad).slice(-50)).toBeNull();
   });
 });

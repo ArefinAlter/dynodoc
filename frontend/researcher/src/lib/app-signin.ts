@@ -91,3 +91,17 @@ export function parseFinishFragment(hash: string): Finish | null {
   if (!isCode(code) || !isState(state) || !isVerifier(verifier)) return null;
   return { code, state, verifier };
 }
+
+// The Dynodoc app's own window says what it is in its User-Agent: the web view's normal one with
+// `DynodocApp/<version> (desktop|android|ios)` added at the end. The finish page and the redeem
+// route act only for such a request. It is not a secret (anyone can send it); it keeps a crafted
+// link from signing an ordinary browser in as someone else (decision 017).
+const APP_AGENT =
+  /(?:^|\s)DynodocApp\/\d{1,3}\.\d{1,3}\.\d{1,3} \((desktop|android|ios)\)(?=\s|$)/g;
+
+/** The kind of app a User-Agent names, or null: exactly one such token, nothing longer than 1 KiB. */
+export function appKind(userAgent: string | null | undefined): Platform | null {
+  if (!userAgent || userAgent.length > 1024) return null;
+  const found = [...userAgent.matchAll(APP_AGENT)];
+  return found.length === 1 ? (found[0][1] as Platform) : null;
+}

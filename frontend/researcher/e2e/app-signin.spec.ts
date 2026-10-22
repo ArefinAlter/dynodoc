@@ -1,13 +1,16 @@
-import { expect, test, type BrowserContext, type Page } from '@playwright/test';
+import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { createServer, request as httpRequest, type IncomingMessage, type Server } from 'node:http';
 import { fileURLToPath } from 'node:url';
 
 // Signing a Dynodoc app (desktop or phone) in from the system browser: docs/decisions/017.
-// The page and the routes in front of the API are exercised in Chromium. The app's own half
-// (the shell that opens the browser, receives dynodoc://signin and opens /app-signin/finish) is
-// played here by a second browser context that has no cookies, as the app's window has none.
+// The pages and routes run in Chromium. The app's own half (the shell that opens the browser,
+// receives dynodoc://signin and opens /app-signin/finish) is played by a browser context that
+// carries what the app's window carries: the `DynodocApp/<version> (<kind>)` User-Agent token and
+// the shell's `__TAURI_INTERNALS__` bridge object, with no cookies of its own. The shell hands the
+// finish page its secrets by setting `location.hash` once the page says it is ready (the
+// `data-finish-ready` attribute); `shellHands` below does what the shell's script does.
 
 const b64url = (bytes: Buffer) => bytes.toString('base64url');
 function pkce() {
@@ -21,10 +24,58 @@ function pkce() {
 type Pkce = ReturnType<typeof pkce>;
 const requestPath = (p: Pkce, platform = 'android') =>
   `/app-signin?challenge=${p.challenge}&state=${p.state}&platform=${platform}`;
-/** What the shell sets as `location.hash` once the finish page has loaded. */
-const hashOf = (code: string, p: Pkce) => `code=${code}&state=${p.state}&verifier=${p.verifier}`;
-const fragment = (code: string, p: Pkce, verifier = p.verifier, state = p.state) =>
-  `/app-signin/finish#code=${code}&state=${state}&verifier=${verifier}`;
+/** What the shell sets as `location.hash` once the finish page is ready. */
+const hashOf = (code: string, p: Pkce, verifier = p.verifier, state = p.state) =>
+  `code=${code}&state=${state}&verifier=${verifier}`;
+
+// The same function as `pairingCode` in src/lib/server/app-signin.ts and `pairing_code` in the shell.
+const ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+const pairing = (state: string) =>
+  [0, 1, 2, 3].map((i) => ALPHABET[createHash('sha256').update(state).digest()[i] & 31]).join('');
+
+let defaultAgent: string | undefined;
+/** The browser's own User-Agent, to which the app's window adds its token. */
+async function browserAgent(browser: Browser) {
+  if (!defaultAgent) {
+    const probe = await browser.newPage();
+    defaultAgent = await probe.evaluate(() => navigator.userAgent);
+    await probe.close();
+  }
+  return defaultAgent;
+}
+
+/** A browser context that looks like the Dynodoc app's window (no cookies of its own). */
+async function appContext(
+  browser: Browser,
+  baseURL?: string,
+  { token = true, bridge = true, kind = 'android' } = {}
+) {
+  const agent = await browserAgent(browser);
+  const context = await browser.newContext({
+    baseURL,
+    userAgent: token ? `${agent} DynodocApp/0.1.0 (${kind})` : agent
+  });
+  if (bridge)
+    await context.addInitScript(() => {
+      (window as unknown as { __TAURI_INTERNALS__: object }).__TAURI_INTERNALS__ = {};
+    });
+  return context;
+}
+
+/** What the shell's script does: wait until the page says it is ready, then set the fragment. */
+async function shellHands(page: Page, hash: string) {
+  await page.waitForFunction(
+    () => document.documentElement.getAttribute('data-finish-ready') === '1'
+  );
+  await page.evaluate((value) => {
+    window.location.hash = value;
+  }, hash);
+}
+
+const doesNotFinish = (page: Page) =>
+  expect(page.getByRole('heading', { name: 'Signing in did not finish' })).toBeVisible({
+    timeout: 15000
+  });
 
 // --- no API needed: what the pages and routes do for a visitor who is not signed in ------------
 
@@ -48,13 +99,15 @@ test.describe('without a session', () => {
       ).toBeVisible();
       await expect(page.getByRole('button', { name: 'Continue' })).toHaveCount(0);
     }
-    for (const response of [
-      await request.get('/app-signin'),
-      await request.get(requestPath(p), { maxRedirects: 0 }),
-      await request.get('/app-signin/finish')
-    ]) {
+    // The confirmation page shares its address with its own site only, so that its form carries a
+    // real Origin (a POST under `no-referrer` sends `Origin: null`); the finish page says nothing.
+    for (const [response, policy] of [
+      [await request.get('/app-signin'), 'same-origin'],
+      [await request.get(requestPath(p), { maxRedirects: 0 }), 'same-origin'],
+      [await request.get('/app-signin/finish'), 'no-referrer']
+    ] as const) {
       expect(response.headers()['cache-control']).toBe('private, no-store');
-      expect(response.headers()['referrer-policy']).toBe('no-referrer');
+      expect(response.headers()['referrer-policy']).toBe(policy);
       expect(response.headers()['x-frame-options']).toBeDefined();
     }
   });
@@ -69,74 +122,140 @@ test.describe('without a session', () => {
     expect(next).toBe(requestPath(p, 'ios'));
   });
 
-  test('the finish page without its fragment, or with a bad one, does not finish', async ({
-    page
+  test('an ordinary browser sent to the finish page is told to use the app, and never acts on a fragment', async ({
+    browser,
+    baseURL
   }) => {
-    const seen: string[] = [];
-    page.on('request', (r) => seen.push(r.url()));
-    for (const hash of ['#code=1&state=2&verifier=3', `#code=${'a'.repeat(64)}`, '']) {
-      await page.goto(`/app-signin/finish${hash}`);
-      // A fragment that is not three valid values fails at once; with none at all the page waits
-      // a few seconds for the shell to set one, then says it did not finish.
-      await expect(page.getByRole('heading', { name: 'Signing in did not finish' })).toBeVisible({
-        timeout: 15000
+    const p = pkce();
+    const hash = hashOf('ab'.repeat(32), p);
+    // Three browsers that are not the app's window: no token and no bridge; the token alone; the
+    // bridge alone. Each opens the finish page WITH a valid-looking triple (what a crafted link
+    // carries), then has a page script change the fragment after the load (what an attacker's page
+    // holding a window reference does).
+    for (const [name, options] of [
+      ['an ordinary browser', { token: false, bridge: false }],
+      ['the token without the bridge', { token: true, bridge: false }],
+      ['the bridge without the token', { token: false, bridge: true }]
+    ] as const) {
+      const context = await appContext(browser, baseURL, options);
+      const page = await context.newPage();
+      const redeems: string[] = [];
+      page.on('request', (r) => {
+        if (r.url().includes('/auth/app-signin/redeem')) redeems.push(r.url());
       });
-      // The fragment is removed from the address at once, valid or not.
-      expect(page.url()).toBe(new URL('/app-signin/finish', page.url()).href);
+      await page.goto(`/app-signin/finish#${hash}`);
+      await expect(
+        page.getByRole('heading', { name: 'Open this from the Dynodoc app' }),
+        name
+      ).toBeVisible();
+      // The fragment that was there at load is removed from the address bar.
+      await expect.poll(() => page.url(), name).not.toContain('verifier');
+      await page.evaluate((value) => {
+        window.location.hash = value;
+      }, hash);
+      await page.waitForTimeout(1500);
+      expect(redeems, name).toEqual([]);
+      await context.close();
     }
-    expect(seen.some((url) => url.includes('/auth/app-signin/redeem'))).toBe(false);
   });
 
-  test('the routes refuse another origin and a form post, and a refused redeem is uniform', async ({
+  test('in the app’s window a fragment already there at load is ignored; one the shell sets later is read, a bad one fails at once', async ({
+    browser,
+    baseURL
+  }) => {
+    const p = pkce();
+    const context = await appContext(browser, baseURL);
+    const page = await context.newPage();
+    const redeems: string[] = [];
+    page.on('request', (r) => {
+      if (r.url().includes('/auth/app-signin/redeem')) redeems.push(r.url());
+    });
+    // At load: ignored and removed, whoever put it there. Nothing is redeemed.
+    await page.goto(`/app-signin/finish#${hashOf('cd'.repeat(32), p)}`);
+    await expect(page.getByText('Signing you in')).toBeVisible();
+    await page.waitForTimeout(1500);
+    expect(redeems).toEqual([]);
+    expect(page.url()).toBe(new URL('/app-signin/finish', page.url()).href);
+    // With nothing arriving the page gives up after a few seconds.
+    await doesNotFinish(page);
+    // A fragment the shell sets that is not three valid values fails at once and redeems nothing.
+    await page.goto('/app-signin/finish');
+    await shellHands(page, 'code=1&state=2&verifier=3');
+    await doesNotFinish(page);
+    expect(redeems).toEqual([]);
+    await context.close();
+  });
+
+  test('the redeem route without the app’s User-Agent is refused with the one answer', async ({
+    request,
+    baseURL,
+    browser
+  }) => {
+    const p = pkce();
+    const origin = new URL(baseURL!).origin;
+    const json = { 'content-type': 'application/json', origin };
+    const agent = await browserAgent(browser);
+    const body = { code: 'ab'.repeat(32), state: p.state, verifier: p.verifier };
+    const answers = new Set<string>();
+    for (const headers of [
+      { ...json, 'user-agent': agent },
+      { ...json, 'user-agent': `${agent} DynodocApp/0.1.0 (web)` },
+      { ...json, 'user-agent': `${agent} DynodocApp/0.1 (android)` },
+      // With the token but no such code: the same refusal, whatever the reason.
+      { ...json, 'user-agent': `${agent} DynodocApp/0.1.0 (android)` }
+    ]) {
+      const refused = await request.post('/auth/app-signin/redeem', { headers, data: body });
+      expect(refused.status()).toBe(401);
+      expect(refused.headers()['set-cookie']).toBeUndefined();
+      expect(refused.headers()['cache-control']).toBe('private, no-store');
+      answers.add(await refused.text());
+    }
+    expect(answers.size).toBe(1);
+    // Another origin and a form post are refused before the token is even looked at.
+    expect(
+      (
+        await request.post('/auth/app-signin/redeem', {
+          headers: { ...json, origin: 'https://evil.example' },
+          data: body
+        })
+      ).status()
+    ).toBe(403);
+    expect(
+      (
+        await request.post('/auth/app-signin/redeem', {
+          headers: { origin, 'content-type': 'application/x-www-form-urlencoded' },
+          data: 'a=b'
+        })
+      ).status()
+    ).toBe(415);
+  });
+
+  test('asking for a code is a form of the page; the old JSON route, other origins and clients that are not browsers get nothing', async ({
     request,
     baseURL
   }) => {
     const p = pkce();
     const origin = new URL(baseURL!).origin;
-    const json = { 'content-type': 'application/json' };
-    const issue = { challenge: p.challenge, state: p.state, platform: 'ios' };
-    expect(
-      (
-        await request.post('/auth/app-signin', {
-          headers: { ...json, origin: 'https://evil.example' },
-          data: issue
-        })
-      ).status()
-    ).toBe(403);
-    expect((await request.post('/auth/app-signin', { headers: json, data: issue })).status()).toBe(
-      403
-    );
-    expect(
-      (
-        await request.post('/auth/app-signin', {
-          headers: { origin, 'content-type': 'application/x-www-form-urlencoded' },
-          data: 'challenge=x'
-        })
-      ).status()
-    ).toBe(415);
-    // Not signed in: no code.
-    const unsigned = await request.post('/auth/app-signin', {
-      headers: { ...json, origin },
-      data: issue
+    // No JSON route any more.
+    const json = await request.post('/auth/app-signin', {
+      headers: { origin, 'content-type': 'application/json' },
+      data: { challenge: p.challenge, state: p.state, platform: 'android' }
     });
-    expect(unsigned.status()).toBe(401);
-    const bodies = new Set<string>();
-    for (const data of [
-      {},
-      { code: 'x', state: p.state, verifier: p.verifier },
-      { code: 'ab'.repeat(32), state: p.state, verifier: p.verifier },
-      { code: 'ab'.repeat(32), state: p.state, verifier: p.verifier, extra: true }
-    ]) {
-      const refused = await request.post('/auth/app-signin/redeem', {
-        headers: { ...json, origin },
-        data
-      });
-      expect(refused.status()).toBe(401);
-      expect(refused.headers()['set-cookie']).toBeUndefined();
-      expect(refused.headers()['cache-control']).toBe('private, no-store');
-      bodies.add(await refused.text());
-    }
-    expect(bodies.size).toBe(1);
+    expect(json.status()).toBeGreaterThanOrEqual(400);
+    expect(await json.text()).not.toContain('dynodoc://');
+    // A client that is not a browser sends no Sec-Fetch headers: refused, and told why. (SvelteKit
+    // answers a form post from a client that does not ask for HTML with a JSON failure.)
+    const bare = await request.post(requestPath(p), { headers: { origin }, form: { x: '1' } });
+    const bareText = await bare.text();
+    expect(bareText).toContain('"type":"failure"');
+    expect(bareText).toContain('\\"browser\\"');
+    expect(bareText).not.toContain('dynodoc:');
+    // Another origin's form: refused by the framework before the page.
+    const evil = await request.post(requestPath(p), {
+      headers: { origin: 'https://evil.example' },
+      form: { x: '1' }
+    });
+    expect(evil.status()).toBe(403);
   });
 });
 
@@ -288,10 +407,14 @@ test.describe('the whole flow', () => {
     return links;
   }
 
-  /** The browser half for one attempt: open the request, press Continue, return the app link. */
+  /**
+   * The browser half for one attempt: open the request, check the pairing code, press Continue
+   * (a real click on a real form), return the code of the app link.
+   */
   async function carryOn(page: Page, p: Pkce, platform = 'android') {
     const links = await watchForApp(page);
     await page.goto(`${origin}${requestPath(p, platform)}`);
+    await expect(page.getByTestId('pairing')).toContainText(pairing(p.state));
     await page.getByRole('button', { name: 'Continue' }).click();
     await expect(page.getByRole('link', { name: 'Open the Dynodoc app' })).toBeVisible();
     await expect.poll(() => links.length).toBeGreaterThan(0);
@@ -310,14 +433,20 @@ test.describe('the whole flow', () => {
     return code;
   }
 
-  /** The app's window: a fresh browser context with no cookies, opened on the finish page. */
-  async function appWindow(browser: import('@playwright/test').Browser) {
-    const context = await browser.newContext();
-    return { context, page: await context.newPage() };
+  /** The app's window, with no cookies of its own, opened on the plain finish page. */
+  async function appWindow(browser: Browser, options?: { kind?: string }) {
+    const context = await appContext(browser, origin, options);
+    const page = await context.newPage();
+    await page.goto('/app-signin/finish');
+    return { context, page };
   }
 
   const sessionCookie = (context: BrowserContext) =>
     context.cookies(origin).then((all) => all.find((c) => c.name === 'dynodoc_session'));
+  const identityOf = async (context: BrowserContext) =>
+    (await (await context.request.get(`${origin}/auth/session`)).json()).identity_id;
+  const redeems = (list: Seen[]) => list.filter((r) => r.url.endsWith('/auth/app-signin/redeem'));
+  const issues = (list: Seen[]) => list.filter((r) => r.url.endsWith('/auth/app-handover'));
 
   test('sign in in the browser, press Continue, finish in the app window: signed in, with no secret anywhere a server could see', async ({
     browser
@@ -338,15 +467,16 @@ test.describe('the whole flow', () => {
     await page.getByRole('button', { name: /Continue in local development/ }).click();
     await expect(page).toHaveURL(`${origin}${requestPath(p)}`);
 
-    // 2. The confirmation page: who, which device, Continue and Cancel. Nothing is made yet.
+    // 2. The confirmation page: who, which device, the pairing code, Continue and Cancel. Nothing is
+    //    made yet.
     await expect(page.getByRole('heading', { name: 'Sign in to the Dynodoc app' })).toBeVisible();
     await expect(page.getByText(email)).toBeVisible();
     await expect(page.getByText('Android phone')).toBeVisible();
+    await expect(page.getByTestId('pairing')).toContainText(pairing(p.state));
     await expect(page.getByRole('button', { name: 'Cancel' })).toBeVisible();
-    expect(webProxy.seen.some((r) => r.url.startsWith('/auth/app-signin'))).toBe(false);
-    expect(apiProxy.seen.some((r) => r.url.includes('/auth/app-handover'))).toBe(false);
+    expect(issues(apiProxy.seen)).toEqual([]);
 
-    // 3. Continue makes the code and the browser goes to dynodoc://signin.
+    // 3. Continue (a real click on the form) makes the code and the browser goes to dynodoc://signin.
     await page.getByRole('button', { name: 'Continue' }).click();
     await expect.poll(() => links.length).toBeGreaterThan(0);
     const link = new URL(links[0]);
@@ -355,18 +485,11 @@ test.describe('the whole flow', () => {
     expect(code).toMatch(/^[0-9a-f]{64}$/);
     expect(link.searchParams.get('state')).toBe(p.state);
 
-    // 4. The app window (no cookies) opens the finish page with the fragment and is signed in.
+    // 4. The app window (no cookies) opens the PLAIN finish page, and the shell then sets the
+    //    fragment once the page says it is ready.
     const app = await appWindow(browser);
-    //    The shell's way: the window loads the PLAIN finish address, and once it has loaded the
-    //    shell sets the fragment (here by a script, as the shell does with its own).
-    await app.page.goto(`${origin}/app-signin/finish`);
     await expect(app.page.getByText('Signing you in')).toBeVisible();
-    await app.page.evaluate(
-      (hash) => {
-        window.location.hash = hash;
-      },
-      hashOf(code, p)
-    );
+    await shellHands(app.page, hashOf(code, p));
     await expect(app.page).toHaveURL(`${origin}/workspace`);
     expect(app.page.url()).not.toContain('verifier');
     const cookie = await sessionCookie(app.context);
@@ -380,8 +503,9 @@ test.describe('the whole flow', () => {
     expect(session.identity_id).toBe(browserSession.identity_id);
 
     // 5. What the servers saw. The verifier is only ever in the body of the redeem request, and
-    //    the code is only in that body and in the answer to the request that made it. Neither is
-    //    in any address, any header (Referer included) or any page.
+    //    the code is only in that body, in the answer to the form that made it and in the API's
+    //    answer to the web server. Neither is in any address, any header (Referer included) or any
+    //    page.
     const secrets = [p.verifier, code];
     for (const [name, list] of [
       ['web server', webProxy.seen],
@@ -399,21 +523,29 @@ test.describe('the whole flow', () => {
           expect(body, `${name} body of ${r.url}`).not.toContain(code);
         }
         expect(answer, `${name} answer to ${r.url}`).not.toContain(p.verifier);
-        if (
-          !(name === 'web server' && r.url === '/auth/app-signin') &&
-          !/\/app-handover$/.test(r.url)
-        ) {
+        const makesTheLink =
+          (name === 'web server' && r.method === 'POST' && r.url.startsWith('/app-signin')) ||
+          (name === 'API' && /\/app-handover$/.test(r.url));
+        if (!makesTheLink) {
           expect(answer, `${name} answer to ${r.url}`).not.toContain(code);
         }
       }
     }
-    expect(webProxy.seen.filter((r) => r.url.endsWith('/auth/app-signin/redeem')).length).toBe(1);
-    expect(apiProxy.seen.filter((r) => r.url.endsWith('/auth/app-handover/redeem')).length).toBe(1);
-    // The finish page's own HTML is the same for every visitor.
-    const finishPage = webProxy.seen.find((r) => r.url === '/app-signin/finish');
-    expect(finishPage).toBeTruthy();
-    // The one request for it carried no fragment.
+    expect(redeems(webProxy.seen).filter((r) => r.body.includes(code)).length).toBe(1);
+    expect(
+      apiProxy.seen.filter(
+        (r) => r.url.endsWith('/auth/app-handover/redeem') && r.body.includes(code)
+      ).length
+    ).toBe(1);
+    // The finish page was requested plain, with no fragment to send, and the web server told the API
+    // what kind of app asked.
+    const finishPage = webProxy.seen.filter((r) => r.url === '/app-signin/finish');
+    expect(finishPage.length).toBeGreaterThan(0);
     expect(webProxy.seen.every((r) => !r.url.includes('#'))).toBe(true);
+    const toApi = apiProxy.seen.find(
+      (r) => r.url.endsWith('/auth/app-handover/redeem') && r.body.includes(code)
+    );
+    expect(toApi?.body).toContain('"app":"android"');
     await app.context.close();
     await browserContext.close();
   });
@@ -427,7 +559,7 @@ test.describe('the whole flow', () => {
 
     const refused = async (hash: string) => {
       const app = await appWindow(browser);
-      await app.page.goto(`${origin}${hash}`);
+      await shellHands(app.page, hash);
       await expect(
         app.page.getByRole('heading', { name: 'Signing in did not finish' })
       ).toBeVisible();
@@ -443,25 +575,25 @@ test.describe('the whole flow', () => {
     const a = pkce();
     const codeA = await carryOn(page, a);
     const done = await appWindow(browser);
-    await done.page.goto(`${origin}${fragment(codeA, a)}`);
+    await shellHands(done.page, hashOf(codeA, a));
     await expect(done.page).toHaveURL(`${origin}/workspace`);
     await done.context.close();
-    const replay = await refused(fragment(codeA, a));
+    const replay = await refused(hashOf(codeA, a));
 
     // Wrong verifier: refused, and it uses the code up, so the right one no longer works.
     const b = pkce();
     const codeB = await carryOn(page, b);
-    const wrongVerifier = await refused(fragment(codeB, b, pkce().verifier));
-    const afterWrong = await refused(fragment(codeB, b));
+    const wrongVerifier = await refused(hashOf(codeB, b, pkce().verifier));
+    const afterWrong = await refused(hashOf(codeB, b));
 
     // Wrong state, same.
     const c = pkce();
     const codeC = await carryOn(page, c);
-    const wrongState = await refused(fragment(codeC, c, c.verifier, pkce().state));
-    const afterState = await refused(fragment(codeC, c));
+    const wrongState = await refused(hashOf(codeC, c, c.verifier, pkce().state));
+    const afterState = await refused(hashOf(codeC, c));
 
     // A code that was never issued.
-    const never = await refused(fragment('0'.repeat(64), c));
+    const never = await refused(hashOf('0'.repeat(64), c));
 
     // The person is told nothing about WHICH check failed.
     expect(new Set([replay, wrongVerifier, afterWrong, wrongState, afterState, never]).size).toBe(
@@ -483,13 +615,13 @@ test.describe('the whole flow', () => {
 
     const app = await appWindow(browser);
     // First try: a wrong verifier. The page says it did not finish, and the address is clean.
-    await app.page.goto(`${origin}${fragment(codeA, a, pkce().verifier)}`);
+    await shellHands(app.page, hashOf(codeA, a, pkce().verifier));
     await expect(
       app.page.getByRole('heading', { name: 'Signing in did not finish' })
     ).toBeVisible();
     expect(app.page.url()).toBe(`${origin}/app-signin/finish`);
     // Second try, in the same window: only the fragment changes, which is no page load.
-    await app.page.goto(`${origin}${fragment(codeB, b)}`);
+    await shellHands(app.page, hashOf(codeB, b));
     await expect(app.page).toHaveURL(`${origin}/workspace`);
     expect(await sessionCookie(app.context)).toBeDefined();
     await app.context.close();
@@ -504,20 +636,17 @@ test.describe('the whole flow', () => {
     await signIn(pageA, `owner-${Date.now()}@example.test`, /\/projects$/);
     const a = pkce();
     const code = await carryOn(pageA, a);
-    const idA = (await (await first.request.get(`${origin}/auth/session`)).json()).identity_id;
+    const idA = await identityOf(first);
 
     // The app's window already holds a session of another person.
     const app = await appWindow(browser);
-    await signIn(await app.context.newPage(), `other-${Date.now()}@example.test`, /\/projects$/);
-    const idB = (await (await app.context.request.get(`${origin}/auth/session`)).json())
-      .identity_id;
+    await signIn(app.page, `other-${Date.now()}@example.test`, /\/projects$/);
+    const idB = await identityOf(app.context);
     expect(idB).not.toBe(idA);
-    const window = await app.context.newPage();
-    await window.goto(`${origin}${fragment(code, a)}`);
-    await expect(window).toHaveURL(`${origin}/workspace`);
-    const now = (await (await app.context.request.get(`${origin}/auth/session`)).json())
-      .identity_id;
-    expect(now).toBe(idA);
+    await app.page.goto('/app-signin/finish');
+    await shellHands(app.page, hashOf(code, a));
+    await expect(app.page).toHaveURL(`${origin}/workspace`);
+    expect(await identityOf(app.context)).toBe(idA);
     await app.context.close();
     await first.close();
   });
@@ -527,15 +656,15 @@ test.describe('the whole flow', () => {
     const page = await context.newPage();
     await signIn(page, `cancel-${Date.now()}@example.test`, /\/projects$/);
     const before = webProxy.seen.length;
+    const issued = issues(apiProxy.seen).length;
     const links = await watchForApp(page);
     await page.goto(`${origin}${requestPath(pkce(), 'desktop')}`);
     await expect(page.getByText('computer')).toBeVisible();
     await page.getByRole('button', { name: 'Cancel' }).click();
     await expect(page.getByRole('heading', { name: 'Cancelled' })).toBeVisible();
     expect(links).toEqual([]);
-    expect(
-      webProxy.seen.slice(before).some((r) => r.method === 'POST' && r.url.startsWith('/auth/'))
-    ).toBe(false);
+    expect(webProxy.seen.slice(before).some((r) => r.method === 'POST')).toBe(false);
+    expect(issues(apiProxy.seen).length).toBe(issued);
     await context.close();
   });
 
@@ -550,22 +679,149 @@ test.describe('the whole flow', () => {
     await context.close();
   });
 
-  test('a request from another site cannot make a code, signed in or not', async ({ browser }) => {
+  test('no script and no other client can make a code; the real click on the form can', async ({
+    browser
+  }) => {
     const context = await browser.newContext();
     const page = await context.newPage();
-    await signIn(page, `csrf-${Date.now()}@example.test`, /\/projects$/);
+    await signIn(page, `scripted-${Date.now()}@example.test`, /\/projects$/);
     const p = pkce();
-    const data = { challenge: p.challenge, state: p.state, platform: 'ios' };
-    const attempt = (headers: Record<string, string>, body: unknown = data) =>
-      context.request.post(`${origin}/auth/app-signin`, { headers, data: body });
-    expect((await attempt({ origin: 'https://evil.example' })).status()).toBe(403);
-    expect((await attempt({ origin: 'null' })).status()).toBe(403);
-    expect((await attempt({})).status()).toBe(403);
-    expect(
-      (await attempt({ origin, 'content-type': 'text/plain' }, JSON.stringify(data))).status()
-    ).toBe(415);
-    // The same request from the page's own origin works (the signed-in cookie rides along).
-    expect((await attempt({ origin, 'content-type': 'application/json' })).status()).toBe(200);
+    const path = requestPath(p, 'ios');
+    await page.goto(`${origin}${path}`);
+    const before = issues(apiProxy.seen).length;
+    const noCode = async (what: string) => {
+      expect(issues(apiProxy.seen).length, what).toBe(before);
+    };
+
+    // What a refusal looks like to a client that does not ask for HTML: SvelteKit's JSON failure.
+    const refused = (text: string, problem: string, what: string) => {
+      expect(text, what).toContain('"type":"failure"');
+      expect(text, what).toContain(`\\"${problem}\\"`);
+      expect(text, what).not.toContain('dynodoc:');
+    };
+
+    // 1. A script's fetch to the form's address, with every header it is allowed to set (the
+    //    browser overrides the Sec-Fetch ones it is not: they say cors / empty, with no user).
+    const viaFetch = await page.evaluate(async (target) => {
+      const response = await fetch(target, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/x-www-form-urlencoded',
+          'sec-fetch-site': 'same-origin',
+          'sec-fetch-mode': 'navigate',
+          'sec-fetch-user': '?1',
+          'sec-fetch-dest': 'document'
+        },
+        body: 'x=1'
+      });
+      return await response.text();
+    }, path);
+    refused(viaFetch, 'blocked', 'fetch');
+    await noCode('fetch');
+
+    // 2. A script's XMLHttpRequest.
+    const viaXhr = await page.evaluate(
+      (target) =>
+        new Promise<string>((resolve) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST', target);
+          xhr.setRequestHeader('content-type', 'application/x-www-form-urlencoded');
+          xhr.onload = () => resolve(xhr.responseText);
+          xhr.send('x=1');
+        }),
+      path
+    );
+    refused(viaXhr, 'blocked', 'xhr');
+    await noCode('xhr');
+
+    // 3. A form a script submits without any click: a real top-level navigation, but with no user
+    //    activation, so the browser sends no Sec-Fetch-User. Every call Playwright makes into a page
+    //    (evaluate, and the polling of an expect) counts as a user gesture whose activation lasts
+    //    about five seconds, so the script waits it out and nothing touches the page meanwhile.
+    await page.evaluate(() => {
+      setTimeout(() => {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        document.body.appendChild(form);
+        form.submit();
+      }, 6500);
+    });
+    await page.waitForTimeout(9000);
+    await expect(page.getByRole('alert')).toContainText(
+      'did not come from the button on this page',
+      {
+        timeout: 15000
+      }
+    );
+    await noCode('a form submitted by a script');
+
+    // 4. Another client altogether, with the signed-in cookie (a copied one) and a made-up Origin.
+    const viaClient = await context.request.post(`${origin}${path}`, {
+      headers: { origin },
+      form: { x: '1' }
+    });
+    refused(await viaClient.text(), 'browser', 'another client');
+    await noCode('another client');
+
+    // 5. The real thing: a click on Continue.
+    await page.goto(`${origin}${path}`);
+    const links = await watchForApp(page);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect.poll(() => links.length).toBeGreaterThan(0);
+    expect(issues(apiProxy.seen).length).toBe(before + 1);
     await context.close();
+  });
+
+  test('a crafted finish link cannot sign a visitor’s browser in as someone else, with or without a later change of the fragment', async ({
+    browser
+  }) => {
+    // The attacker's own account and a valid code and verifier for it.
+    const attacker = await browser.newContext();
+    const attackerPage = await attacker.newPage();
+    await signIn(attackerPage, `attacker-${Date.now()}@example.test`, /\/projects$/);
+    const idAttacker = await identityOf(attacker);
+    const victimShapes = [
+      ['an ordinary browser', { token: false, bridge: false }],
+      ['the token without the bridge', { token: true, bridge: false }],
+      ['the bridge without the token', { token: false, bridge: true }]
+    ] as const;
+    for (const [name, options] of victimShapes) {
+      const p = pkce();
+      const code = await carryOn(attackerPage, p);
+      // The victim: a browser that is already signed in as somebody else.
+      const victim = await appContext(browser, origin, options);
+      const victimPage = await victim.newPage();
+      await signIn(
+        victimPage,
+        `victim-${Date.now()}-${Math.random().toString(16).slice(2)}@example.test`,
+        /\/projects$/
+      );
+      const idVictim = await identityOf(victim);
+      expect(idVictim, name).not.toBe(idAttacker);
+      const cookieBefore = await sessionCookie(victim);
+      const redeemsBefore = redeems(webProxy.seen).length;
+
+      // (a) the crafted link, with the triple in the fragment; then (b) a page script that holds a
+      // window reference changing the fragment after the load.
+      await victimPage.goto(`${origin}/app-signin/finish#${hashOf(code, p)}`);
+      await victimPage.evaluate(
+        (value) => {
+          window.location.hash = value;
+        },
+        hashOf(code, p)
+      );
+      await victimPage.waitForTimeout(1500);
+      expect(await sessionCookie(victim), name).toEqual(cookieBefore);
+      expect(await identityOf(victim), name).toBe(idVictim);
+      expect(redeems(webProxy.seen).length, name).toBe(redeemsBefore);
+      await victim.close();
+      // The code is still good: it was never asked for, so it can be redeemed by the real app.
+      const app = await appWindow(browser);
+      await shellHands(app.page, hashOf(code, p));
+      await expect(app.page).toHaveURL(`${origin}/workspace`);
+      expect(await identityOf(app.context)).toBe(idAttacker);
+      await app.context.close();
+    }
+    await attacker.close();
   });
 });

@@ -1,12 +1,13 @@
-import { error, redirect } from '@sveltejs/kit';
+import { error, fail, redirect } from '@sveltejs/kit';
 import { appSigninPath, parseAppSignin, PLATFORM_LABEL } from '$lib/app-signin';
 import { getConfig } from '$lib/server/config';
+import { issueForForm, pairingCode } from '$lib/server/app-signin';
 import { accessToken, engineUrl } from '$lib/server/session';
-import type { PageServerLoad } from './$types';
+import type { Actions, PageServerLoad } from './$types';
 
 // The page a Dynodoc app opens in the system browser to get signed in (docs/decisions/017).
-// It never makes a code by itself: the person must be signed in HERE and must press Continue,
-// which is a separate same-origin request (POST /auth/app-signin).
+// It never makes a code by itself: the person must be signed in HERE and must press Continue, which
+// submits a real form (see the default action below and `issueForForm`).
 export const load: PageServerLoad = async ({ url, cookies }) => {
   const config = getConfig();
   // The public homepage and the operator console host have no app to hand a session to.
@@ -36,6 +37,19 @@ export const load: PageServerLoad = async ({ url, cookies }) => {
     phase: 'ready' as const,
     email: me.email,
     device: PLATFORM_LABEL[request.platform],
-    request
+    // Four characters the app shows too, to tell this request from one another program started.
+    pairing: pairingCode(request.state)
   };
+};
+
+export const actions: Actions = {
+  // Continue. The request is read from the address (validated), never from the form's own fields.
+  default: async (event) => {
+    if (getConfig().adminSite) error(404, 'Not found');
+    const request = parseAppSignin(event.url.searchParams);
+    if (!request) return fail(400, { problem: 'invalid' as const });
+    const outcome = await issueForForm(event, request);
+    if (!outcome.ok) return fail(outcome.status, { problem: outcome.problem });
+    return { url: outcome.url };
+  }
 };

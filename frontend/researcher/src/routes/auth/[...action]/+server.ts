@@ -138,8 +138,8 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
 export const POST: RequestHandler = async ({ params, url, request, cookies, getClientAddress }) => {
   if (request.headers.get('origin') !== url.origin)
     return json({ error: 'Invalid origin' }, { status: 403 });
-  // The native apps' sign-in hand-over (docs/decisions/017); each route reads its own body.
-  if (params.action === 'app-signin') return appSignin.issue({ request, url, cookies });
+  // The native apps' sign-in hand-over (docs/decisions/017): the app's window trades its code. (Asking
+  // for a code is the confirmation page's form, not a route here.)
   if (params.action === 'app-signin/redeem')
     return appSignin.redeem({ request, url, cookies, getClientAddress });
   if (params.action === 'logout') {

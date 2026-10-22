@@ -3481,6 +3481,12 @@ export interface components {
     };
     RedeemRequest: {
       /**
+       * @description The kind of app the web server saw the request come from, read from the app's
+       *     `User-Agent` token (`desktop`, `android` or `ios`). It must equal the platform the code
+       *     was asked for; a request with no such token never reaches this route.
+       */
+      app: string;
+      /**
        * @description The visitor's network address as the web server sees it, when that tells visitors
        *     apart (behind a proxy that hides it, the web server leaves it out). Only its hash is
        *     kept, in a rate window.

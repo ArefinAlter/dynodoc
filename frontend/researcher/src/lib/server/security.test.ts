@@ -63,7 +63,11 @@ it('keeps the native-app sign-in pages out of caches, referrers and frames', () 
       new URL(path, 'https://app.test')
     );
     expect(response.headers.get('cache-control')).toBe('private, no-store');
-    expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+    // The confirmation page's form must send its real Origin, so it shares its address with its own
+    // site only; every other sign-in route says nothing about where it was reached from.
+    expect(response.headers.get('referrer-policy')).toBe(
+      path === '/app-signin' ? 'same-origin' : 'no-referrer'
+    );
     expect(response.headers.get('x-frame-options')).toBe('SAMEORIGIN');
     expect(response.headers.get('content-security-policy')).toContain("frame-ancestors 'self'");
   }
