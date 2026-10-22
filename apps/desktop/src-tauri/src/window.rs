@@ -554,4 +554,87 @@ mod tests {
         let call = production.find("handoff::hand_off(").unwrap();
         assert!(production.find(".opener()").unwrap() > call);
     }
+
+    fn production() -> &'static str {
+        let source = include_str!("window.rs");
+        &source[..source.find("#[cfg(test)]\nmod tests").unwrap()]
+    }
+
+    /// The body of the function that starts at `signature`, up to the next top-level item.
+    fn body(signature: &str) -> &'static str {
+        let production = production();
+        let start = production
+            .find(signature)
+            .unwrap_or_else(|| panic!("{signature}"));
+        let rest = &production[start..];
+        &rest[..rest.find("\n}\n").unwrap()]
+    }
+
+    #[test]
+    fn the_browser_sign_in_is_kept_only_when_the_browser_is_really_asked() {
+        // The attempt (and with it the verifier) is stored inside the closure that runs just
+        // before the system is asked to open the link, so a refused or rate-limited hand-off
+        // leaves the older attempt alone, and it is stored BEFORE the browser can answer.
+        let begin = body("pub fn begin_browser_sign_in(");
+        assert_eq!(production().matches(".signin.start(").count(), 1);
+        assert!(begin.contains(
+            "open_external_then(app, &url, Source::Click, || state.signin.start(attempt))"
+        ));
+        // It opens the page of the configured server, built from the server and the request.
+        assert!(begin.contains(
+            "server.app_signin_url(&request.challenge, &request.state, signin::PLATFORM)"
+        ));
+        // And randomness comes from the operating system or the attempt is not made.
+        assert!(begin.contains("signin::os_random"));
+        let then = body("fn open_external_then(");
+        let before = then.find("before();").unwrap();
+        assert!(before > then.find("move |target|").unwrap());
+        assert!(
+            before
+                < then
+                    .find("opener.opener()")
+                    .unwrap_or(then.find(".opener()").unwrap())
+        );
+    }
+
+    #[test]
+    fn a_returning_sign_in_link_goes_through_the_pending_attempt_and_nothing_else() {
+        // One place decides, and it is the pending attempt.
+        assert_eq!(
+            production().matches(".signin\n        .complete(").count(),
+            1
+        );
+        let finish = body("fn finish_browser_sign_in(");
+        assert!(finish.contains("server.finish_url(finish.fragment().expose())"));
+        // The secrets reach exactly one place: the address of the finish page, as a fragment.
+        for banned in ["eprintln", "println", "format!", "trace("] {
+            assert!(
+                !finish.contains(banned),
+                "finish_browser_sign_in uses {banned}"
+            );
+        }
+        assert!(finish.contains("trace_note(\"sign-in link refused\", &refusal)"));
+        // The deep-link handler hands the link to it and does nothing else with it.
+        let open = body("pub fn open_deep_link(");
+        assert!(open
+            .contains("finish_browser_sign_in(app, &state, code, link_state);\n        return;"));
+        // The debug note prints a note and no address.
+        let note = body("fn trace_note(");
+        assert!(!note.contains("url"));
+    }
+
+    #[test]
+    fn only_a_phone_hands_the_sign_in_page_to_the_launcher() {
+        // Desktop has a menu; a phone has none, so there the server's sign-in page (which cannot
+        // sign this window in) is replaced by the launcher with its browser sign-in button.
+        let production = production();
+        let call = production
+            .find("show_launcher(window.app_handle(), Some(\"signin\"))")
+            .unwrap();
+        let gate = production[..call].rfind("#[cfg(").unwrap();
+        assert!(production[gate..].starts_with("#[cfg(mobile)]"));
+        assert_eq!(production.matches("nav::needs_sign_in(").count(), 1);
+        // Decided from the finished page's address alone.
+        assert!(production[gate..call].contains("PageLoadEvent::Finished"));
+    }
 }
