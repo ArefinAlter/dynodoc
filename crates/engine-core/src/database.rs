@@ -66,6 +66,11 @@ const MUTABLE: &[&str] = &[
 ];
 /// Rows are created and pruned but never edited: a replay ledger, not a record.
 const INSERT_DELETE: &[&str] = &["device_session", "project_issue_label", "project_star"];
+/// Rows the runtime login may read, end and prune but NEVER create: only the operator's owner
+/// credential inserts them (operator-issued sign-in links, schema 47; a trigger lets a row be
+/// ended exactly once). Having no INSERT is the point: no API route, and no bug in one, can mint a
+/// sign-in link. `check_runtime` fails if the login can insert.
+const CONSUME_PRUNE: &[&str] = &["operator_sign_in_link"];
 /// Rows are created and edited but never deleted by the runtime login. Device key
 /// access mode is edited in place; a grant row only ever moves `revoked_at` (a
 /// trigger refuses any other change, so a changed scope set is revoke plus insert). The
@@ -178,6 +183,7 @@ pub async fn grant_runtime(pool: &PgPool, role: &str) -> anyhow::Result<()> {
         (HISTORY, "select,insert"),
         (INSERT_DELETE, "select,insert,delete"),
         (INSERT_UPDATE, "select,insert,update"),
+        (CONSUME_PRUNE, "select,update,delete"),
         (MUTABLE, "select,insert,update,delete"),
     ] {
         for table in tables {
@@ -233,6 +239,7 @@ async fn check_privileges(connection: &mut PgConnection, role: &str) -> anyhow::
             + READ_ONLY.len()
             + INSERT_DELETE.len()
             + INSERT_UPDATE.len()
+            + CONSUME_PRUNE.len()
     {
         bail!("runtime table inventory differs from this binary");
     }
@@ -241,7 +248,14 @@ async fn check_privileges(connection: &mut PgConnection, role: &str) -> anyhow::
         let history = HISTORY.contains(&table.as_str());
         let prunable = INSERT_DELETE.contains(&table.as_str());
         let editable = INSERT_UPDATE.contains(&table.as_str());
-        if !mutable && !history && !prunable && !editable && !READ_ONLY.contains(&table.as_str()) {
+        let consumable = CONSUME_PRUNE.contains(&table.as_str());
+        if !mutable
+            && !history
+            && !prunable
+            && !editable
+            && !consumable
+            && !READ_ONLY.contains(&table.as_str())
+        {
             bail!("unexpected runtime table {table}");
         }
         let relation = format!("public.{}", ident(&table));
@@ -254,10 +268,10 @@ async fn check_privileges(connection: &mut PgConnection, role: &str) -> anyhow::
         ).bind(role).bind(&relation).fetch_one(&mut *connection).await?;
         if !read
             || insert != (mutable || history || prunable || editable)
-            || update != (mutable || editable)
-            || delete != (mutable || prunable)
+            || update != (mutable || editable || consumable)
+            || delete != (mutable || prunable || consumable)
             || column_insert != (mutable || history || prunable || editable)
-            || column_update != (mutable || editable)
+            || column_update != (mutable || editable || consumable)
             || dangerous
         {
             bail!("runtime privileges do not match the allowlist for {table}");

@@ -17,6 +17,7 @@ use sqlx::PgPool;
 use utoipa::OpenApi;
 use uuid::Uuid;
 
+mod auth;
 mod authority;
 mod device;
 mod keyfile;
@@ -74,6 +75,12 @@ enum Command {
         project: Uuid,
         #[command(subcommand)]
         action: repository::Action,
+    },
+    /// Operator-issued sign-in links, for an installation with no mail or with email sign-in off
+    /// (owner credential: MIGRATION_DATABASE_URL). The link is a credential; see the subcommands.
+    Auth {
+        #[command(subcommand)]
+        action: auth::Action,
     },
     /// Apply migrations using MIGRATION_DATABASE_URL in a separate operator process.
     Migrate,
@@ -224,6 +231,7 @@ async fn run() -> anyhow::Result<()> {
             project,
             action,
         } => repository::run(path, project, action).await,
+        Command::Auth { action } => auth::run(action).await,
         Command::Migrate => {
             let pool = connect_migration().await?;
             engine_core::database::MIGRATOR.run(&pool).await?;

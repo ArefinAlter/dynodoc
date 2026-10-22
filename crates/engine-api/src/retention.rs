@@ -22,6 +22,9 @@
 //! - `app_handover_code`: expired more than `RETENTION_AUTH_DAYS` ago (a code lives 60
 //!   seconds, so this is every row, used or not, past the window). The row's audit rows
 //!   (`auth.app_handover.*`) stay: they are history.
+//! - `operator_sign_in_link`: expired more than `RETENTION_AUTH_DAYS` ago, used or not. Before
+//!   that, every unused link past its time is marked `expired` with an audit row
+//!   (`auth.operator_link.expired`) in the same pass. The audit rows stay.
 //! - `web_metric`: recorded more than `RETENTION_METRICS_DAYS` ago.
 //! - `idempotency_key`: older than the replay window ([`crate::idempotency::TTL`]);
 //!   `idempotency::reserve` already treats such a row as absent.
@@ -51,7 +54,7 @@ const REQUEST_WINDOW_SECONDS: f64 = 15.0 * 60.0;
 const DAY_SECONDS: f64 = 86_400.0;
 
 /// Number of tables the pass prunes.
-pub const TABLE_COUNT: usize = 7;
+pub const TABLE_COUNT: usize = 8;
 
 /// One table's prune statement. `$1` is the batch size and `$2` the number of seconds
 /// a row must be past its expiry (or older than, for metrics and idempotency keys).
@@ -121,6 +124,17 @@ static SPECS: [Spec; TABLE_COUNT] = [
                 limit $1 for update skip locked)
               delete from idempotency_key using doomed where idempotency_key.ctid = doomed.row_id",
         seconds: |_| crate::idempotency::TTL.num_seconds() as f64,
+    },
+    // Operator-issued sign-in links (docs/decisions/018): every row past its time, used or not.
+    // `operator::sweep_expired` has already marked the unused ones expired, with an audit row
+    // each; the audit rows stay. (The runtime login has DELETE but never INSERT on this table.)
+    Spec {
+        table: "operator_sign_in_link",
+        sql: "with doomed as (select ctid as row_id from operator_sign_in_link
+                where expires_at < now() - make_interval(secs => $2)
+                limit $1 for update skip locked)
+              delete from operator_sign_in_link using doomed where operator_sign_in_link.ctid = doomed.row_id",
+        seconds: |c| f64::from(c.auth_days) * DAY_SECONDS,
     },
 ];
 
@@ -305,6 +319,21 @@ async fn locked_pass(
     let deadline = Instant::now() + PASS_BUDGET;
     let mut pruned = [0u64; TABLE_COUNT];
     let mut first_error = None;
+    // Operator sign-in links past their time are marked expired, each with an audit row, before
+    // the prune below can delete the oldest of them.
+    loop {
+        match crate::auth::operator::sweep_expired(&mut *connection, config.batch_rows).await {
+            Ok(rows) if rows >= config.batch_rows as u64 && Instant::now() < deadline => {
+                tokio::time::sleep(BATCH_PAUSE).await;
+            }
+            Ok(_) => break,
+            Err(error) => {
+                tracing::warn!(error = %error, "operator sign-in link sweep failed");
+                first_error.get_or_insert(error);
+                break;
+            }
+        }
+    }
     for (index, spec) in SPECS.iter().enumerate() {
         loop {
             match prune_batch(&mut *connection, spec.table, config).await {
@@ -348,6 +377,7 @@ async fn tick(pool: &PgPool, config: &RetentionConfig, stats: &Stats) -> Duratio
                     app_handover_code = pruned[4],
                     web_metric = pruned[5],
                     idempotency_key = pruned[6],
+                    operator_sign_in_link = pruned[7],
                     "retention pass pruned expired rows"
                 );
             } else {
