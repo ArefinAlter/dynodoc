@@ -104,6 +104,9 @@ opt-level = 3
 # subcommand made `engine-cli --help` overflow it. Level 1 needs under a quarter.
 [profile.dev.package.engine-cli]
 opt-level = 1
+# dynodoctl has the same generated parser (many subcommands and options) and the same limit.
+[profile.dev.package.dynodoctl]
+opt-level = 1
 
 [profile.release]
 lto = "thin"

@@ -5,6 +5,7 @@
 //! results to the exit codes documented in `docs/SELF-HOSTED-OPERATIONS.md`.
 
 pub mod backup;
+pub mod cli;
 pub mod compose;
 pub mod configure;
 pub mod ctx;
