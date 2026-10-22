@@ -1524,14 +1524,15 @@ tests in the application repository; nothing here is deployed or released, and t
 production release is unchanged. Settings and defaults are in the deployment guide 7.2.
 
 - *Configuration, built.* `frontend/researcher/src/lib/server/config/`: `secrets.js` (the
-  API's `NAME` / `NAME_FILE` rules, same limits, same messages), `schema.js` (every web
+  API's `NAME` / `NAME_FILE` rules and limits, and its error format), `schema.js` (every web
   setting, one aggregated error, typo warnings), `hosted.js` (the hosted hostnames, kept in
   one place), `index.ts` (read once, frozen; the `init` hook in `hooks.server.ts` runs it
   before the server listens). `DYNODOC_MODE=hosted` (default) or `selfhosted`;
   `DYNODOC_ALT_ORIGINS`, `DYNODOC_BRAND_NAME`, `DYNODOC_ORG_NAME`, `DYNODOC_ORG_NOTICE` or
   `DYNODOC_NOTICE_FILE`, `DYNODOC_SUPPORT_URL`, `DYNODOC_TELEMETRY`, `AUTH_EMAIL_LINK`. The
   five web secrets take `*_FILE`. `SESSION_SECRET` is checked at start (length, blankness,
-  repeated pattern, documented placeholders) in both modes.
+  repeated pattern, documented placeholders) in both modes when it is set, and is required in
+  self-hosted mode; see the hosted allowance below.
 - *Self-hosted mode, built.* The `(site)` pages, `/sitemap.xml`, `/llms*.txt` and `/source`
   answer 404 (no redirect); `/` goes to sign-in or the workspace; no indexing anywhere
   (header, meta tags, `robots.txt`, no canonical or social tags); the CSP `connect-src` comes
@@ -1571,12 +1572,21 @@ production release is unchanged. Settings and defaults are in the deployment gui
   variables and a web image that contains the check tool (P0-4, P0-5, P0-6); `engine-cli`;
   Windows has no secret-file mode check (as in the API). The hosted `infra/demo/*`,
   `extensions/*` and `static/connectors/*` files in Appendix B are untouched.
-- *Verified here.* Unit tests (`vitest`), the build, and Chromium end-to-end specs against an
-  isolated stack with three web processes (hosted; self-hosted with secrets from files;
-  self-hosted with email sign-in off) on a disposable PostgreSQL database; the Unix-only
-  secret-file tests were also run as plain checks on Linux as a non-root user. GitHub Actions
-  could not run (billing); `ci-frontend.yml` now starts the two self-hosted servers and runs
-  the audit, and has not been executed.
+- *Verified here.* `vitest`: 73 files, 743 tests pass and 4 (Unix file modes) are skipped on
+  Windows; 133 of them are new (10 new files). The same Unix cases ran as plain checks on Linux
+  as a non-root user (35 assertions). Chromium end-to-end against an isolated stack with
+  three web processes on a disposable PostgreSQL database (hosted; self-hosted with secrets
+  from files, the API too; self-hosted with email sign-in off): 21 new specs pass
+  (`selfhosted.spec.ts` 12, `selfhosted-noemail.spec.ts` 2, `hosted-pin.spec.ts` 7) and 94 of
+  the existing hosted specs pass (home, login, telemetry, seo, workspace redirect, projects,
+  security, pwa, session revocation, repository, product, ux, browsers, agent proposals); in
+  a second pass over the final build 64 of 65 passed, and the one that failed
+  (`workspace.spec.ts`, a reviewer's suggestion) passed three times in a row alone. Mutation
+  checks: accepting a placeholder secret, changing the hosted CSP and turning metrics on in
+  self-hosted mode each fail unit tests, and the last two also fail the end-to-end specs; a
+  hosted string put back in shared browser code fails the audit. GitHub Actions could not run
+  (billing); `ci-frontend.yml` now runs the audit and starts the two self-hosted servers, and
+  has not been executed.
 
 ### 13.3 Phase 1: identity
 
