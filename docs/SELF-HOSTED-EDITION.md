@@ -1577,10 +1577,10 @@ production release is unchanged. Settings and defaults are in the deployment gui
   as a non-root user (35 assertions). Chromium end-to-end against an isolated stack with
   three web processes on a disposable PostgreSQL database (hosted; self-hosted with secrets
   from files, the API too; self-hosted with email sign-in off): 21 new specs pass
-  (`selfhosted.spec.ts` 12, `selfhosted-noemail.spec.ts` 2, `hosted-pin.spec.ts` 7) and 94 of
-  the existing hosted specs pass (home, login, telemetry, seo, workspace redirect, projects,
-  security, pwa, session revocation, repository, product, ux, browsers, agent proposals); in
-  a second pass over the final build 64 of 65 passed, and the one that failed
+  (`selfhosted.spec.ts` 12, `selfhosted-noemail.spec.ts` 2, `hosted-pin.spec.ts` 7) and 87 of
+  the existing hosted specs pass, 2 more are skipped by design (home, login, telemetry, seo,
+  workspace redirect, projects, security, pwa, session revocation, repository, product, ux,
+  browsers, agent proposals); in a second pass over the final build 64 of 65 passed, and the one that failed
   (`workspace.spec.ts`, a reviewer's suggestion) passed three times in a row alone. Mutation
   checks: accepting a placeholder secret, changing the hosted CSP and turning metrics on in
   self-hosted mode each fail unit tests, and the last two also fail the end-to-end specs; a
