@@ -421,14 +421,18 @@ parsed as a URL: it must be `https`, the origin's host, the origin's port, with 
 starts with the origin (`https://docs.example.org.evil.example/`, `https://docs.example.org@evil.example/`) fails.
 
 The outside-origin check reads the sign-in page and follows its scripts, inline `import()` calls and static imports, and
-also absolute references to the installation's own origin (up to 60 files, eager files first). **Every absolute `http(s)`
-origin found anywhere in what was read is reported, once each, whatever its name**, except: the installation's own origin;
-the origin of the operator's own `DYNODOC_SUPPORT_URL`; and `www.w3.org` (XML namespace identifiers in SVG and MathML,
-which are never fetched). An origin in a file the sign-in page loads, or in any tag the browser loads by itself, **fails**.
+also absolute references to the installation's own origin (up to 300 files, eager files first; the real web build has
+about 195, found by running it). **Every absolute `http(s)` origin found anywhere in what was read is reported, once
+each, whatever its name**, except: the installation's own origin; the origin of the operator's own `DYNODOC_SUPPORT_URL`;
+and two inert ones that the real build contains and never fetches: `www.w3.org` (XML namespace identifiers in SVG and
+MathML) and `svelte.dev` (documentation links inside the framework's own error messages). The allow-list is two names
+long on purpose. An origin in a file the sign-in page loads, or in any tag the browser loads by itself, **fails**.
 The same origins only in lazily loaded route modules **warn** and name the open item: the web build still contains the
 compiled marketing routes (acceptance criterion 6 of Phase 0, task P0-6). Documented optional references (the Office.js CDN,
-`accounts.google.com`, `resend.com`, the engine repository link) are warnings. **A crawl cut short by the 60-file cap, or a
-file that could not be read, is a warning, never a pass**; the message says how much was left unread.
+`accounts.google.com`, `resend.com`, the engine repository link) are warnings. On the real build the lazily loaded route
+modules name 37 further origins (third-party licence and documentation URLs in vendored code, and the hosted site's own
+name): all are listed in the warning, none fails. **A crawl cut short by the 300-file cap, or a file that could not be
+read, is a warning, never a pass**; the message says how much was left unread.
 
 `--connect` takes `HOST`, `HOST:PORT`, `[::1]`, `[::1]:8443` or a bare IPv6 address (`::1`). Every request has an overall
 deadline (30 s) as well as per-read timeouts, and the bytes read are capped (6 MiB), so a server that sends one byte every
@@ -572,7 +576,7 @@ the databases are right and the services are up, delete `state/restore-journal.j
 | `the rehearsal needs a backup to copy` | `--skip-backup` with no backup on disk | Take a backup, or also skip the rehearsal (confirmed) |
 | `verify-delivery`: `What is served names no origin but its own` | A file the sign-in page loads names another origin | The message lists each origin once and where it was found |
 | `verify-delivery`: route modules name another origin | Known open item (criterion 6) | A warning; closes with task P0-6 |
-| `verify-delivery`: files not read | The crawl hit its 60-file cap or a file did not answer | A warning, not a pass: the message says how much was left |
+| `verify-delivery`: files not read | The crawl hit its 300-file cap or a file did not answer | A warning, not a pass: the message says how much was left |
 | Scratch databases listed by `status` | A check was interrupted, or a rejected restore copy was kept | `docker compose exec postgres sh -c 'PGPASSWORD=$(cat /run/secrets/postgres_password) dropdb -h 127.0.0.1 -U dynodoc <name>'` |
 | `an interrupted database swap is recorded` | A restore was cut short | `dynodoctl recover` (section 6.9) |
 | `another dynodoctl is already running` | `state/.lock` is held by a live process | Wait for it; if the process is really gone and the message still appears, delete `state/.lock` |
