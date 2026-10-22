@@ -125,6 +125,13 @@ fn the_restore_verify_report_requires_both_verification_commands() {
         "{names:?}"
     );
     assert_eq!(runner.count("verify-snapshots --all"), 1);
+    // A scratch copy has no grants for the runtime login (found on the real bundle): the history
+    // is verified with the owner login.
+    assert!(
+        runner.ran("sh dynodoc_restore_20261022t120000z owner verify-snapshots --all"),
+        "{:?}",
+        runner.lines()
+    );
     assert_eq!(runner.count("verified $n documents"), 1);
 }
 
