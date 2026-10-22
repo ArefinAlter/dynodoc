@@ -96,11 +96,26 @@ file without the tools, icons, minimum versions). Verified: on one Windows 11 PC
 configuration tests, clippy, a debug build, a smoke test (including key creation in folders with
 accented and Bengali names, with an `engine-cli` built from the tree that holds the Windows
 non-ASCII key-file fix), a black-box probe of the security model inside WebView2 and unsigned debug
-NSIS and MSI bundles (built, never installed); an Android `cargo check` and `tauri android init`
-(with stand-in SDK folders, plus a script that makes the generated manifest safe and a CI step,
-untested against a real APK, that checks the merged manifest of the built one); the Linux
-compile, clippy and tests in an Ubuntu 24.04 container (see the ledger for the exact result). Not run: any GitHub Actions job (the account's Actions are blocked by a billing error),
-macOS, iOS, an Android Gradle build, any physical device. Deviations from the text above, all on
+NSIS and MSI bundles (built, never installed); the Linux
+compile, clippy and tests in an Ubuntu 24.04 container (see the ledger for the exact result).
+**Android (22 October 2026):** the generated project is now committed and hardened; a debug APK
+(arm64-v8a and x86_64, 63.5 MiB) was built on the Windows PC with JDK 17, Gradle 9.6.1, NDK
+28.2.13676358 and build-tools 37.0.0 (`scripts/android-build.ps1`, because Windows refused the
+symbolic link Tauri's command line needs), its merged manifest audited against real `aapt2`,
+`apkanalyzer` and `apksigner` output (permissions: INTERNET only; one exported activity;
+deep-link filters only `dynodoc://open/...`; backup and cleartext off), installed on an x86_64
+Android 16 emulator and driven by `scripts/android-probe.mjs` (20 app and plugin commands from a
+hosted page all refused; links out, `target=_blank`, `window.open`, rate limit, deep links
+including hostile ones, Back, downloads, file chooser, rotation, dark mode, offline, soft
+keyboard). It found and fixed defects that apply to desktop too (the window opened the server
+root, which on the hosted cloud redirects to the marketing site; the launcher could not reload) and
+Android-only ones (`target=_blank` did nothing, Back closed the app, the page drew under the system
+bars, downloads and offline had no handling). **Android limits:** signing in inside the app does
+not work (the emailed link opens in the browser, a phone cannot reach the launcher's paste form;
+needs App Links), the server cannot be changed without clearing the app's data, `blob:` downloads
+are refused with a message, mail links from pages do nothing, nothing was tried on a physical
+phone. Not run: any GitHub Actions job (the account's Actions are blocked by a billing error),
+macOS, iOS, any physical device, a Play-signed build or an AAB. Deviations from the text above, all on
 purpose: remote pages get **no** native access at all in this round (decision item 6 allowed an
 allowlist for the server's own origin), "open a link in the system browser" is done by the shell's own
 policy and not offered as a command, one command was added (`open_sign_in_link`, because an emailed

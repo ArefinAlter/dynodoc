@@ -5,7 +5,7 @@
 // real touch events, and reads the app's decisions from logcat (debug builds log them).
 //
 //   node scripts/android-probe.mjs [phase ...]      (no phase = all)
-//   phases: ipc links download upload back deeplink rotate recreate dark offline
+//   phases: ipc links frames download upload back deeplink rotate recreate dark offline
 //
 // Needs ANDROID_HOME (or ANDROID_SDK_ROOT), the debug APK installed (online.dynodoc.client) and
 // network access to the hosted cloud: the hosted sign-in page is the carrier for the test links
@@ -202,6 +202,21 @@ const phases = {
     await sleep(4000);
     const opened = logs().filter((l) => /hand-off .*-> Opened/.test(l)).length;
     check(opened === 1, 'a page that navigates out 40 times in 2 seconds gets one hand-off', `${opened}: ${logs().filter((l) => l.startsWith('hand-off')).join(' | ')}`);
+    shell('am', 'start', '-n', `${APP}/.MainActivity`);
+    page.close();
+  },
+
+  async frames() {
+    // WebKit-style web views may report a sub-frame's navigation to the shell (nav.rs assumes so on Android).
+    const page = await toCloud();
+    clearLogs();
+    await page.eval(`(() => { for (const src of ['/robots.txt', 'https://example.org/in-frame', 'about:blank']) { const f = document.createElement('iframe'); f.src = src; f.style.display = 'none'; document.body.appendChild(f); } })()`);
+    await sleep(5000);
+    const seen = logs();
+    note('log after adding three iframes (same-site, other site, about:blank): ' + (seen.join(' | ') || '(nothing)'));
+    const handed = seen.filter((l) => l.includes('hand-off') && l.includes('Opened'));
+    check(handed.length === 0 || handed.length === 1, 'a hidden iframe to another site opens the browser at most once (rate limited)', handed.join(' | '));
+    check((await here(page)).startsWith(CLOUD), 'and the window stays on the server');
     shell('am', 'start', '-n', `${APP}/.MainActivity`);
     page.close();
   },

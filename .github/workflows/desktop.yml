@@ -224,6 +224,10 @@ jobs:
 
   android:
     name: Android debug APK
+    # NEVER RUN IN CI so far: this repository's Actions cannot start jobs (billing). Every step
+    # below was run by hand on a Windows PC, but the Windows PC needs scripts/android-build.ps1
+    # instead of `tauri android build` (no right to create symbolic links), so this exact job
+    # (Linux, `tauri android build`, the sdkmanager line) has not been executed anywhere.
     if: github.event_name == 'push' || inputs.android
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -235,47 +239,41 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/desktop-setup
         with:
-          targets: aarch64-linux-android
+          targets: aarch64-linux-android x86_64-linux-android
           linux-packages: "false"
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
-      - name: Point Tauri at the runner image's NDK
+      - name: Install the exact Android build tools this was run with
+        # The versions of docs/DESKTOP-AND-MOBILE-APPS.md (run on a Windows PC on 22 October 2026).
+        # `yes` answers the licence prompts of only the packages named here.
         run: |
-          echo "ANDROID_HOME=${ANDROID_HOME:-$ANDROID_SDK_ROOT}" >> "$GITHUB_ENV"
-          echo "NDK_HOME=${ANDROID_NDK_HOME:-$ANDROID_NDK_LATEST_HOME}" >> "$GITHUB_ENV"
-          echo "sdk: ${ANDROID_HOME:-$ANDROID_SDK_ROOT}  ndk: ${ANDROID_NDK_HOME:-$ANDROID_NDK_LATEST_HOME}"
-      - name: Generate the Android project (not committed)
-        run: npm run tauri -- android init --ci
-        working-directory: apps/desktop
-      - name: Make the generated project safe, and fail if it is not
-        # Tauri's template has no android:allowBackup (the Android default is true, so a
-        # signed-in web view session could be backed up) and turns cleartext traffic on in
-        # debug builds. scripts/harden-android.mjs sets allowBackup="false" and cleartext
-        # "false" everywhere, then fails the job if allowBackup="true" or
-        # usesCleartextTraffic="true" is left anywhere in the manifest or build file.
+          sdk="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          yes | "$sdk/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$sdk" "platforms;android-37.0" "build-tools;37.0.0" "ndk;28.2.13676358" > /dev/null
+          echo "ANDROID_HOME=$sdk" >> "$GITHUB_ENV"
+          echo "NDK_HOME=$sdk/ndk/28.2.13676358" >> "$GITHUB_ENV"
+      - name: Test the Android scripts, and check the committed project is hardened
+        # The Android project is COMMITTED (src-tauri/gen/android), so there is no `android init`
+        # here. scripts/harden-android.mjs --check rewrites nothing and fails unless allowBackup is
+        # "false", the data extraction rules exclude everything and cleartext traffic is off in
+        # every build type.
         run: |
-          node --test scripts/harden-android.test.mjs
-          node scripts/harden-android.mjs
-          grep -n 'allowBackup\|usesCleartextTraffic' src-tauri/gen/android/app/src/main/AndroidManifest.xml
-          if grep -q 'allowBackup="true"\|usesCleartextTraffic="true"' src-tauri/gen/android/app/src/main/AndroidManifest.xml; then
-            echo "unsafe Android manifest"; exit 1
-          fi
+          node --test scripts/*.test.mjs
+          node scripts/harden-android.mjs --check
         working-directory: apps/desktop
-      - name: Build the debug APK (arm64)
-        run: npm run tauri -- android build --ci --debug --apk --target aarch64 -- --locked
+      - name: Build the debug APK (arm64 and x86-64 in one universal APK)
+        run: npm run tauri -- android build --ci --debug --apk --target aarch64 x86_64 -- --locked
         working-directory: apps/desktop
-      - name: Check the MERGED manifest inside the built APK
-        # The text check above looks at the generated project; this looks at what shipped,
-        # after Gradle merged every library's manifest and applied the build type's
-        # placeholders. aapt2 (build-tools of the runner image) or apkanalyzer prints
-        # <application>; the job fails unless allowBackup and usesCleartextTraffic are
-        # explicitly false, and for a release build also if debuggable is true. A network
-        # security config also fails (it can allow cleartext). The parser is tested on sample
-        # tool output only: read the printed attributes on the first run.
+      - name: Check the MERGED manifest and the signing key inside the built APK
+        # The text check above looks at the project; this looks at what shipped, after Gradle
+        # merged every library's manifest and applied the build type's placeholders. aapt2 prints
+        # the manifest tree; the job fails unless backup and cleartext are off, only INTERNET is
+        # requested, only MainActivity (and AndroidX's DUMP-guarded profile receiver) is
+        # exported, the link filters are only dynodoc://open/..., and the APK carries the SDK's
+        # debug key. The parsers were tested on REAL aapt2, apkanalyzer and apksigner output of
+        # this tool chain (scripts/fixtures).
         run: |
-          node --test scripts/check-apk-manifest.test.mjs
           apks=$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk')
           test -n "$apks" || { echo "no APK built"; exit 1; }
           for apk in $apks; do

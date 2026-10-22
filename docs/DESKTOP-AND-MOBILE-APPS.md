@@ -17,7 +17,8 @@ open in the system browser, `dynodoc://` links and the sidecar's command line ar
 
 ## Status per platform
 
-"Run" below means: run by the author on the machine named, on 21 October 2026. **No GitHub
+"Run" below means: run by the author on the machine named, on 21 October 2026 (Android: 22 October
+2026, on the same Windows PC). **No GitHub
 Actions job has run**: this repository's Actions refuse to start jobs at the moment ("recent
 account payments have failed or your spending limit needs to be increased"), and a
 `workflow_dispatch` workflow cannot be started until its file is on the default branch. So
@@ -31,7 +32,7 @@ notarised, published or tried on a physical device.
 | Linux aarch64 | Workflow job behind a tick box | Nothing (private-repository availability of `ubuntu-24.04-arm` unverified) | Everything |
 | macOS aarch64 and x86-64 | Same source; workflow jobs on `macos-latest` and `macos-15-intel` | Nothing; the Apple targets cannot even be type-checked on Windows | Everything: no Mac build, no Keychain key creation, no notarisation |
 | Windows aarch64 | Workflow job behind a tick box | Nothing (`windows-11-arm`, availability unverified) | Everything |
-| Android | Mobile entry point, phone capability file, icons, `minSdkVersion` 24; workflow job `android` generates the project and builds a debug APK | `cargo check --lib --target aarch64-linux-android` passes on Windows (also proves the sidecar declaration stays out of a phone build) | Gradle, an emulator or device; Play signing; app links; there is no sidecar on phones. `tauri android init` was run with stand-in SDK folders: the template has no `allowBackup` and enables cleartext in debug, which `scripts/harden-android.mjs` fixes and checks (README) |
+| Android | The Tauri 2.12 Android project is **committed** (`apps/desktop/src-tauri/gen/android`, hardened), mobile entry point, phone capability file, icons, `minSdkVersion` 24, `targetSdkVersion` 37, deep-link filters, a small Kotlin layer (insets, Back, downloads, offline page; no JavaScript bridge), `scripts/android-build.ps1`, `scripts/android-probe.mjs`, workflow job `android` | **22 October 2026, Windows 11 PC:** debug APK built (universal, arm64-v8a plus x86_64, 63.5 MiB), merged manifest audited against real `aapt2` output, installed and run on an x86_64 Android 16 emulator (WebView 133, hardware-accelerated through WHPX) and driven by a black-box probe (see "Android: what was run on 22 October 2026"); a release APK was built (below) | **Signing in inside the app does not work yet** (the emailed link opens in the browser and a phone has no menu to paste it; needs App Links, round 2); changing the server needs the app's data cleared; no physical device; no Play signing, no AAB run; GitHub Actions job never executed; iOS not part of this |
 | iPhone | Same source, iOS 15.0 minimum; workflow job `ios` (simulator, unsigned) | Nothing | Everything: needs a Mac runner and, for devices, an Apple Developer team |
 
 ## How to build each
@@ -46,11 +47,13 @@ prepared first on desktop: `node scripts/prepare-sidecar.mjs [--debug] [--target
 - **Linux:** `sudo apt-get install libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libxdo-dev
   libayatana-appindicator3-dev patchelf file`, then `npm run tauri -- build --bundles
   deb,rpm,appimage`.
-- **Android:** JDK 17, Android SDK and NDK (`ANDROID_HOME`, `NDK_HOME`), Rust targets
-  (`rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android
-  x86_64-linux-android`). `npm run tauri -- android init`, then `npm run tauri -- android build
-  --debug --apk --target aarch64`. The generated project lives in `src-tauri/gen/android` and is
-  git-ignored.
+- **Android:** see "Android: building on Windows" below for the exact tool versions. Short form: JDK 17,
+  Android SDK (platform 37.0, build-tools 37.0.0, NDK 28.2.13676358), `ANDROID_HOME`, `NDK_HOME`,
+  `JAVA_HOME`, Rust targets (`rustup target add aarch64-linux-android x86_64-linux-android`), then in
+  `apps/desktop`: `npm run tauri -- android build --debug --apk --target aarch64 x86_64 -- --locked`
+  (Linux, macOS, and Windows with Developer Mode on) or `powershell -File scripts\android-build.ps1`
+  (Windows without the right to create symbolic links). The Android project is **committed**: do not
+  run `android init` again unless you mean to regenerate and re-harden it.
 - **iPhone:** a Mac with Xcode, `brew install xcodegen`, `rustup target add aarch64-apple-ios-sim`.
   `npm run tauri -- ios init`, then `npm run tauri -- ios build --debug --target aarch64-sim`.
   Device builds need an Apple development team (`APPLE_DEVELOPMENT_TEAM`).
@@ -63,6 +66,204 @@ unsigned. A manual run only works once the file is on the default branch (GitHub
 `workflow_dispatch` for a workflow that exists only on another branch), and a tag run starts every
 job except the Arm ones, so check what a tag will cost first.
 
+## Android: building on Windows
+
+Everything below was installed on 22 October 2026 outside the repository and outside drive C:
+(`E:\android`), for this one task, with no change to the system or user environment (the variables
+are set per command; `scripts/android-build.ps1` and `scripts/android-probe.mjs` read them from the
+environment). Downloads were checked against the vendors' published checksums where they publish
+them; `sdkmanager` verifies its own packages.
+
+| Part | Version | Where from, how checked |
+|---|---|---|
+| JDK | Temurin 17.0.20.1+1 (zip) | Adoptium; SHA-256 `e53a79c3...c7cb0` equals Adoptium's `.sha256.txt` |
+| Android command-line tools | 15859902 (`sdkmanager` 22.0) | dl.google.com; SHA-256 `90ae805d...b04a` equals the table on developer.android.com/studio |
+| platform-tools | 37.0.1 | `sdkmanager` |
+| platform | `android-37.0` (revision 2) | `sdkmanager`; the project's compileSdk and targetSdk are 37 |
+| build-tools | 37.0.0 (`aapt2`, `apksigner`, `zipalign`) | `sdkmanager` |
+| NDK | 28.2.13676358 (r28c) | `sdkmanager`; Tauri uses whichever NDK `NDK_HOME` names |
+| emulator | 37.2.12 | `sdkmanager`; WHPX was "installed and usable" (`emulator -accel-check`) |
+| system image | `system-images;android-36;google_apis;x86_64` (revision 7, Android 16, WebView 133.0.6943.137) | `sdkmanager` |
+| Gradle | 9.6.1 (wrapper), SHA-256 `9c0f7fae...9e14` pinned in `gradle-wrapper.properties` | services.gradle.org checksum; the wrapper jar's SHA-256 is on gradle.org/release-checksums |
+| Android Gradle plugin, Kotlin | 9.3.1, 2.2.10 | Tauri 2.12.3's template (`tauri android init`) |
+| Tauri | CLI 2.12.3 (npm), `tauri` 2.12.4, `wry` 0.57.0, deep-link plugin 2.6.2, opener 2.7.2 | `package-lock.json`, `Cargo.lock` (`--locked`; the `rust-ini` 0.21.1 pin is untouched) |
+
+Only the `android-sdk-license` was accepted (the licence of the packages above). Disk used on `E:`:
+about 8.5 GB for the SDK, JDK and emulator image, 1.2 GB of Gradle cache, 1.6 GB of Rust build output
+for the debug build (more for release); nothing large in the repository. The emulator and adb also
+write a few small files under `C:\Users\<you>\.android` (adb key, emulator state); the debug signing
+key is `debug.keystore` in the Android user home (`ANDROID_USER_HOME`), outside the repository.
+
+**Commands (Windows, from `apps/desktop`, after `npm ci --ignore-scripts`).** Set `JAVA_HOME`,
+`ANDROID_HOME` (and `ANDROID_SDK_ROOT`), `NDK_HOME`, `GRADLE_USER_HOME` and, to keep the AVD off C:,
+`ANDROID_AVD_HOME`; put `platform-tools`, `emulator` and `cmdline-tools\latest\bin` on `PATH`.
+
+```powershell
+sdkmanager --sdk_root=$env:ANDROID_HOME "platform-tools" "ndk;28.2.13676358" "platforms;android-37.0" "build-tools;37.0.0" "emulator" "system-images;android-36;google_apis;x86_64"
+avdmanager create avd -n dynodoc36 -k "system-images;android-36;google_apis;x86_64" -d pixel_6
+$env:CARGO_TARGET_DIR='E:/cargo-target/android'; $env:CARGO_BUILD_JOBS='3'; $env:CARGO_PROFILE_DEV_DEBUG='0'; $env:CARGO_INCREMENTAL='0'
+powershell -ExecutionPolicy Bypass -File scripts\android-build.ps1          # debug APK, aarch64 + x86_64, universal
+node scripts\check-apk-manifest.mjs src-tauri\gen\android\app\build\outputs\apk\universal\debug\app-universal-debug.apk --build debug
+emulator -avd dynodoc36 -no-window -no-audio -gpu host      # or without -no-window to see it
+adb install -r src-tauri\gen\android\app\build\outputs\apk\universal\debug\app-universal-debug.apk
+node scripts\android-probe.mjs
+```
+
+`avdmanager` printed "Could not load devices from ...\devices.xml" for the Google APIs image and still
+created the AVD. The emulator needs about 3.5 GB of memory with 2 GB given to the guest; on a PC
+with under 2 GB free it showed "System UI isn't responding" for several minutes after the first boot
+(it settled; the first boot took 2 minutes, later ones about one).
+
+## Android: what was run on 22 October 2026
+
+Windows 11 PC, x86-64, the Windows Hypervisor Platform accelerating an x86_64 Android 16 emulator
+(Pixel 6 profile, 1080x2400, 420 dpi, 2 GB RAM, 4 cores). Nothing was run on an arm64 device: the
+arm64 library was compiled and packaged and never executed. Nothing was run in GitHub Actions.
+
+- **Build.** `tauri android build` compiled the Rust library for aarch64 and x86_64 and then stopped
+  at the symbolic link; `scripts/android-build.ps1` did the rest (copy, Gradle) and produced
+  `app-universal-debug.apk`, 63.5 MiB (two unstripped debug libraries of about 19.5 MiB each, stored
+  uncompressed because `extractNativeLibs` is false). Rebuilds after a source change took about a
+  minute. **Release build:** `scripts\android-build.ps1 -Release` (16.4 minutes for both targets, `lto = true`, three jobs, while engine tests ran
+on the same PC) built `app-universal-release-unsigned.apk`, **10.2 MiB** (the stripped release libraries are 4.13 MiB for
+arm64-v8a and 4.5 MiB for x86_64). R8 shrinking worked: a copy signed with the SDK's debug key (local test
+only; the checker correctly refuses that key for a release build) installed on the emulator, and the launcher, the
+hosted sign-in page and the offline page with its retry all worked. The release manifest audit passes
+(`debuggable` absent, `versionName 0.1.0`, `versionCode 1000`); the APK is unsigned, as it must be until the
+owner's keystore exists (`check-apk-manifest.mjs --build release --allow-unsigned`). **WebView remote
+debugging in release:** the release library contains no call to `setWebContentsDebuggingEnabled` (the
+debug library has one; wry compiles it only with debug assertions or its `devtools` feature, which no
+crate here enables) and the app is not debuggable. The emulator's DevTools socket was nevertheless open
+for the release app, because the emulator image is a `userdebug` build (`ro.debuggable=1`), where Chromium's
+WebView exposes every app; so "off in release" is verified from the library and the manifest, not on a
+production-build phone.
+- **Manifest, from the real tools** (`aapt2 dump xmltree`, `apkanalyzer manifest print`; both are now
+  fixtures of `check-apk-manifest.test.mjs`): package `online.dynodoc.client`; `versionName 0.1.0`,
+  `versionCode 1000` (from `tauri.android.conf.json`; the first build said `1.0` / `1`);
+  minSdk 24, targetSdk 37, compileSdk 37. Permissions: `INTERNET` only, plus
+  `online.dynodoc.client.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`, a signature-level permission
+  AndroidX adds for its own receivers (no other app can hold it). Exported components: `MainActivity`
+  (`singleTask`; launcher and leanback launcher filters and three `dynodoc://open/...` filters:
+  actions `VIEW` and, added by the plugin for ChromeOS, `org.chromium.arc.intent.action.VIEW`;
+  categories `DEFAULT` and `BROWSABLE`; scheme `dynodoc`, host `open`, path `/workspace` or prefix
+  `/projects/` or `/documents/`; **no `autoVerify`**), and `androidx.profileinstaller.ProfileInstallReceiver`
+  (exported, but requires `android.permission.DUMP`, which only the shell and the system hold). Not
+  exported: `FileProvider`, `InitializationProvider`. Application flags: `allowBackup=false`,
+  `dataExtractionRules` set, `usesCleartextTraffic=false`, no network security config, `debuggable=true`
+  in the debug APK only. **What the unhardened template gave** (first build): no `allowBackup`
+  (so true), cleartext true in debug, no extraction rules, no deep-link filters at all (the plugin
+  writes them only when `plugins.deep-link.mobile` is set). Signing: V2 only, `C=US, O=Android,
+  CN=Android Debug`, SHA-256 `71ad0481...8911`, the SDK's own debug key.
+- **The checker against real output.** The first version of `check-apk-manifest.mjs` (written against
+  invented samples) did parse real `aapt2` output and correctly failed the unhardened APK, but it
+  looked only at `<application>`. It now builds the element tree (real indentation: attributes two
+  columns in, children four), audits permissions, exported components, link filters (Android merges the
+  plugin's one-attribute-per-`<data>` elements, so they are checked as one filter), SDK levels and the
+  signing certificate (`apksigner` build-tools 37 prints `V2 Signer: certificate DN:` rather than
+  `Signer #1`), and exits 2 on anything it cannot parse. 13 tests; the negative cases are made by editing
+  the real output.
+- **WebView.** Android System WebView 133 (`com.google.android.webview`) supports document-start
+  scripts, so scripts the shell registers run before the page's own. (Wry falls back to
+  `evaluateJavascript` in `onPageStarted` on web views without that feature, which is **not**
+  guaranteed to run first; the desktop click secret relied on running first, which is one reason it
+  is not injected on Android.) Settings applied by Tauri's `RustWebView`: JavaScript, DOM storage,
+  database, geolocation flag (Rust refuses every permission request), autoplay without a tap,
+  `javaScriptCanOpenWindowsAutomatically` true. Settings this repository adds (`MainActivity.kt`): no
+  file or content access, mixed content never allowed, no second window, `window.open` only after a
+  tap. Remote debugging is on in the debug build only (wry's `devtools` flag, which is
+  `cfg!(debug_assertions)` here); the probe uses it, so **the probe cannot run against a release
+  build**. Safe Browsing is on (the API default).
+- **The launcher at phone size** (screenshots looked at): 16 px text, 44 px high buttons and fields,
+  no horizontal scroll in portrait (412 css px) or landscape (866x364; the camera cut-out margin
+  is applied), readable in light and dark. After the insets fix the page sits between the status and
+  navigation bars; the bars show the window colour (the launcher's background), so there is no band of
+  a different colour. The soft keyboard (email layout for the sign-in field) resizes the page and keeps
+  the focused field and the button below it in view.
+- **Probe results** (`scripts/android-probe.mjs`, run phase by phase and finally together; details in
+  the report that came with this change): 20 app and plugin commands from a hosted page refused (raw
+  `window.ipc.postMessage` needs a per-run key the page does not have); tap on an external link with and
+  without `target=_blank`, and `window.open` from a tap, open the system browser once and leave the
+  window where it is; mail, local-address and credential links, and `window.open` without a tap, do
+  nothing; a page that sets `location` 40 times in two seconds gets one hand-off and 39 are
+  rate-limited; a `target=_blank` link to the server's own page loads in the one window; three
+  iframes are not reported to the shell at all on this web view; deep links `dynodoc://open/workspace`
+  and `.../projects/<uuid>` work warm and cold, a link whose dot segments collapse to an accepted form
+  is that form (the plugin parses with the `url` crate before our parser sees it; `../admin` is
+  refused), every other hostile link (other host, other path, query, fragment, encoded dots,
+  300-character id, NUL, `https://`) either is not routed by the manifest (Android starts nothing)
+  or is dropped; the same links sent to the activity by name are dropped by the plugin's own check or
+  by our parser; Back goes back inside the site and from the first page sends the app to the
+  background; rotation does not restart the app; a font size change (which makes Android re-create the
+  activity) leaves the launcher working; the web view follows dark mode; a same-site download reaches
+  `Download/`; a `blob:` download is refused with a message; the system file chooser opens for an
+  upload field and Back returns; offline shows the retry page and **Try again** works once the
+  connection is back.
+- **Defects found and fixed** (each has a test or a probe check): window opened the server root
+  (marketing site redirect; desktop too); launcher blank after the activity was re-created;
+  `target=_blank` silently did nothing; the desktop click script would have swallowed every link out;
+  Back closed the app from any page, and the first fix (calling the platform handler from the
+  callback) did nothing on Android 16; page under the status bar and keyboard; no download handling;
+  stock offline page; launcher text mentioning a File menu; `use-cloud` throwing if tapped before the
+  app answered; template `FileProvider` exposing all shared storage; wrong app version.
+- **Not working / not done, and why.**
+  1. **Signing in inside the app.** Dynodoc signs in with an emailed link; a link tapped in a mail app
+     opens in the browser, which does not share the app's session. On desktop the menu offers "Sign in
+     with an emailed link" (paste); a phone has no menu, and the launcher is not reachable once a
+     server is saved. "Continue with Google" opens the browser too. A proper fix needs Android App Links
+     (`/.well-known/assetlinks.json` on the web host with the SHA-256 of the app signing key, and an
+     `autoVerify` intent filter) or a one-time-code hand-over from the browser: server and owner work,
+     round 2 of decision 016. **Until then the Android app can open the hosted sign-in page but nobody
+     can finish signing in inside it.**
+  2. **Changing the server** needs the app's data cleared (Settings > Apps > Dynodoc > Storage). The
+     launcher says so. A "Change server" entry needs a decision (a launcher shortcut, or a deep link
+     that shows the launcher, which weakens "the launcher only when the shell asked").
+  3. **`blob:` downloads** (the web app's CSV, device-key and project exports): refused with a message;
+     fetching a blob needs a script bridge, which this app deliberately does not have. Plain https
+     downloads work. API 24 to 28 may refuse to write to `Download/` without a storage permission the
+     app does not declare (the person is told the download could not start).
+  4. **Mail links and local-address links from a page do nothing** (no tap signal on Android).
+  5. Printing, camera, microphone, location, notifications, clipboard read: denied or not tried.
+  6. Doubled navigation on a cold deep link: the plugin delivers the link twice (event and
+     `get_current`), so the same page is requested up to three times. Harmless, not fixed.
+  7. Arm64 execution, a physical phone, Android versions other than 16 / WebView 133, Play signing,
+     an AAB, the GitHub Actions job (its Linux path, `tauri android build` and the `sdkmanager` line,
+     has not been executed anywhere; the Windows PC needs the script), iOS.
+
+## Android: what the owner must provide for Google Play
+
+Nothing below exists; no key, password or account was created or invented.
+
+1. **A Google Play Console account** (one-time registration fee; identity verification; for a new
+   personal account Google currently requires a closed test with a minimum number of testers before
+   production: check the current text) and the app entry with the **application ID
+   `online.dynodoc.client`, which cannot be changed after the first upload**.
+2. **An upload keystore, created by the owner and kept offline** (JDK's `keytool`):
+   `keytool -genkeypair -v -keystore dynodoc-upload.jks -alias upload -keyalg RSA -keysize 4096 -validity 9125`
+   (the owner chooses and records the passwords). Back it up in two places; **never commit it**.
+   Put its path and passwords in `apps/desktop/src-tauri/gen/android/keystore.properties`
+   (`storeFile=`, `keyAlias=`, `storePassword=`, `keyPassword=`; the file is ignored by version control and
+   `build.gradle.kts` signs the release build from it). Play App Signing is on for new apps: Google keeps
+   the app signing key and re-signs; the upload key only proves uploads are yours. If the upload key is
+   lost, Play support can reset it; if the app signing key were lost there is no recovery, which is why
+   Play holds it.
+3. **An AAB for the store** (APKs are not accepted for new apps): in `apps/desktop`, with the keystore in
+   place and symbolic links allowed (Developer Mode on, or run it on Linux or macOS):
+   `npm run tauri -- android build --aab --target aarch64 armv7 x86_64 i686 -- --locked`, output
+   `src-tauri/gen/android/app/build/outputs/bundle/universalRelease/app-universal-release.aab`.
+   To try the bundle on a device before uploading, use Google's `bundletool` (download the jar from its
+   GitHub releases page and check the published checksum): `java -jar bundletool.jar build-apks
+   --bundle=app-universal-release.aab --output=app.apks --ks=dynodoc-upload.jks --ks-key-alias=upload`
+   then `java -jar bundletool.jar install-apks --apks=app.apks`. **Not run here** (no keystore exists
+   and the Windows PC cannot create the links the command needs); the APK flow above is what ran.
+4. **App Links** for sign-in (see limit 1): after the first Play upload, copy the **app signing
+   certificate SHA-256** from Play Console (Release > Setup > App integrity), publish
+   `/.well-known/assetlinks.json` on `app.dynodoc.online` for `online.dynodoc.client`, add an
+   `autoVerify` https intent filter for `/auth/verify` and `/login` to `plugins.deep-link.mobile`, and
+   have the shell accept those links with the rules of `server::sign_in_url`. The manifest checker
+   fails on `autoVerify` today on purpose: change it in the same commit.
+5. Store listing, privacy policy URL, data-safety form and content rating, and the review risk
+   described below ("Store review risk"): a shell around a website can be refused.
+
 ## Signing, notarisation and updates: what the owner must add (nothing exists)
 
 No secret or certificate exists, and none is invented here. The workflow builds unsigned
@@ -74,7 +275,7 @@ be decided, not existing values) and extend the workflow; check each vendor's cu
 | macOS signing and notarisation | Developer ID Application certificate as a base64 `.p12` (`APPLE_CERTIFICATE`) and its password (`APPLE_CERTIFICATE_PASSWORD`); the signing identity (`APPLE_SIGNING_IDENTITY`); either an Apple ID, app-specific password and team (`APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`) or an App Store Connect API key (`APPLE_API_ISSUER`, `APPLE_API_KEY`, key file) | Apple Developer Program membership. Tauri reads these variables when they are set (unverified: check the current Tauri signing guide at build time). |
 | iOS signing | A distribution certificate and provisioning profile, `APPLE_DEVELOPMENT_TEAM` | The same membership. Simulator builds need none. |
 | Windows signing | Depends on the service chosen: a certificate file and password, or a cloud signing service's credentials | Tauri supports a custom sign command. Without it, SmartScreen warns. |
-| Android release signing | An upload keystore as base64, its password, the key alias and the key password | A Google Play Console account. Debug APKs are signed with a throw-away debug key and cannot be published. |
+| Android release signing | An upload keystore (as base64 for CI), its password, the key alias and the key password (`gen/android/keystore.properties` locally, ignored by version control) | A Google Play Console account; creation steps, the AAB and `bundletool` commands and App Links are in "Android: what the owner must provide for Google Play". Debug APKs are signed with the SDK's debug key and cannot be published. |
 | Auto-update | An update signing key pair (`TAURI_SIGNING_PRIVATE_KEY` and its password) and a place that hosts update manifests | Separate from operating-system signing. **No updater is built**; adding one needs the updater plugin, a manifest host and a decision on release channels. |
 | Universal links and app links | `apple-app-site-association` and `assetlinks.json` served by the web host | Needs the final identifiers (below). |
 
@@ -102,7 +303,10 @@ Do not claim store readiness from this round.
   A proper hand-over (the browser finishing sign-in and giving the app a one-time code) needs
   server work and is round 2.
 - **Downloads, printing, file pickers, drag and drop, and iframes** are whatever the platform's
-  web view does by default; none was exercised. The web app's `frame-ancestors 'self'` means it
+  web view does by default; none was exercised on desktop. On Android (emulator) a same-site https
+  download goes to the system download manager, a `blob:` download (the web app's exports) is
+  refused with a message, the system file chooser opens for upload fields, and iframes behave as in a
+  browser; printing and drag and drop were not tried. The web app's `frame-ancestors 'self'` means it
   cannot be framed by the launcher, which is why the window navigates to it instead.
 - **Web view versions** differ per platform (WebView2, WKWebView, WebKitGTK, Android System
   WebView). The browser matrix of decision 016 covers browsers, not these shells.
@@ -126,9 +330,10 @@ Do not claim store readiness from this round.
   a name at a private address and DNS can be re-pointed after the check (DNS rebinding); the shell
   cannot see either. What a page gets from it is at most one browser tab per 3 seconds, never a mail
   link.
-- **Frames on WebKit and Android are unverified.** WebView2 reports only the window's own navigations
-  to the shell; WebKitGTK, WKWebView and perhaps Android also report `<iframe>` navigations without
-  saying which is which. Nothing was observed on those platforms. The shell assumes the ambiguity there
+- **Frames on WebKit are unverified; on Android they were observed.** WebView2 reports only the window's own navigations
+  to the shell; WebKitGTK and WKWebView also report `<iframe>` navigations without
+  saying which is which. Nothing was observed there. On Android (WebView 133) three iframes added to a
+  hosted page produced no call to the shell at all. The shell assumes the ambiguity everywhere but Windows
   and lets `about:srcdoc`, `about:blank`, `data:` and the server's own `blob:` addresses through (they
   are how pages fill frames); they never use up the launcher's one-time permission. Check on a real
   WebKit build before relying on it.
@@ -164,3 +369,16 @@ Do not claim store readiness from this round.
 5. Which Windows signing route (certificate, cloud signing service, Microsoft Store)?
 6. Arm runners: try `ubuntu-24.04-arm` and `windows-11-arm` on this private repository?
 7. To run `desktop.yml` by hand the file must be on `main` first; merge it, then use "Run workflow".
+8. **Android sign-in** (see "Android: what was run", limit 1): which route, Android App Links (needs the
+   Play app signing key's SHA-256 and `assetlinks.json` on the web host), a one-time-code hand-over from the
+   browser, or a reachable "paste the link" screen in the app? Until one exists the Android app cannot
+   sign anyone in.
+9. **Changing the server on a phone** (limit 2): accept "clear the app's data", or add a launcher
+   shortcut / a deep link that shows the launcher (which the launcher-only-when-asked rule would have to allow)?
+10. **`blob:` downloads on Android** (limit 3): the web app builds its exports as blobs. Either change the
+    web app to serve them as plain https downloads (works today), or accept a script bridge in the Android
+    app (a larger security decision), or leave exports to the browser.
+11. Enable **Developer Mode** on the Windows PC (Settings > System > For developers) so that
+    `tauri android build` and `--aab` work without `scripts/android-build.ps1`? (Not done here: system setting.)
+12. The hosted cloud's root redirects to the marketing site. The shell now opens `/workspace`; is that the
+    right entry for a self-hosted server too?

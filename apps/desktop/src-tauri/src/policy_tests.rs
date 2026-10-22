@@ -214,6 +214,16 @@ fn identity_is_stable_and_the_version_has_one_source() {
         package.get("version").is_none(),
         "package.json must not carry a second version"
     );
+    // The Android project takes its versionName and versionCode from the config's version, and
+    // the Tauri command line does not fall back to Cargo.toml for it (without one the APK says
+    // 1.0 / code 1 forever, which a store would refuse to update). The Android overlay repeats
+    // the Cargo.toml version and nothing else; this test keeps the two equal.
+    let android = json("tauri.android.conf.json");
+    assert_eq!(
+        android,
+        serde_json::json!({ "version": env!("CARGO_PKG_VERSION") }),
+        "tauri.android.conf.json must hold exactly the Cargo.toml version"
+    );
     // The sidecar is a desktop-only part: the base file has none (a phone build would
     // otherwise look for engine-cli-<phone triple>), the three desktop overlays have it.
     assert!(conf["bundle"].get("externalBin").is_none());
@@ -229,13 +239,32 @@ fn identity_is_stable_and_the_version_has_one_source() {
             "{platform} overlay changes only the bundle"
         );
     }
-    for platform in ["android", "ios"] {
-        assert!(!root().join(format!("tauri.{platform}.conf.json")).exists());
-    }
+    // iPhone has no overlay; Android has the version-only one checked above (no sidecar there).
+    assert!(!root().join("tauri.ios.conf.json").exists());
     assert_eq!(
         strings(&conf["plugins"]["deep-link"]["desktop"]["schemes"]),
         [crate::deeplink::SCHEME]
     );
+    // Android: the same scheme, host open, the three path shapes, no app link (no autoVerify).
+    let mobile = conf["plugins"]["deep-link"]["mobile"].as_array().unwrap();
+    assert_eq!(mobile.len(), 3);
+    for entry in mobile {
+        assert_eq!(strings(&entry["scheme"]), [crate::deeplink::SCHEME]);
+        assert_eq!(entry["host"], "open");
+        assert_eq!(entry["appLink"], false);
+    }
+    let shapes: Vec<String> = mobile
+        .iter()
+        .map(|e| {
+            e.get("path")
+                .or_else(|| e.get("pathPrefix"))
+                .and_then(|p| p.as_array())
+                .and_then(|p| p[0].as_str())
+                .unwrap()
+                .to_string()
+        })
+        .collect();
+    assert_eq!(shapes, ["/workspace", "/projects/", "/documents/"]);
 }
 
 #[test]
@@ -397,19 +426,29 @@ fn the_workflow_builds_exactly_the_lockfile_and_hardens_android() {
     assert!(checked >= 10, "only {checked} build commands found");
     // A tag run must be gated before any signing secret is added.
     assert!(workflow.contains("protected GitHub environment"));
-    // Android: the generated project is hardened and checked after `android init` and before
-    // the build.
-    let init = workflow.find("tauri -- android init").unwrap();
-    let harden = workflow.find("scripts/harden-android.mjs").unwrap();
+    // Android: the project is COMMITTED, so CI never runs `android init` (it would rewrite the
+    // hardened files); the committed project is only checked (`--check` changes nothing), and
+    // that happens before the build.
+    assert!(!workflow.contains("tauri -- android init"));
+    let harden = workflow.find("scripts/harden-android.mjs --check").unwrap();
     let build = workflow.find("tauri -- android build").unwrap();
-    assert!(init < harden && harden < build);
-    assert!(workflow.contains("allowBackup=\"true\"\\|usesCleartextTraffic=\"true\""));
-    // And what shipped is checked too: the merged manifest of every built APK, after the build
-    // and before the upload.
+    assert!(harden < build);
+    assert!(!workflow.contains("node scripts/harden-android.mjs\n"));
+    // The scripts' own tests run in CI too (all of them, including the real-output fixtures).
+    assert!(workflow.contains("node --test scripts/*.test.mjs"));
+    // And what shipped is checked too: the merged manifest and the signing key of every built
+    // APK, after the build and before the upload.
     let merged = workflow.find("scripts/check-apk-manifest.mjs").unwrap();
     let upload = workflow.find("name: dynodoc-android-debug-apk").unwrap();
     assert!(build < merged && merged < upload);
-    assert!(workflow.contains("node --test scripts/check-apk-manifest.test.mjs"));
+    // The tools are named by version, not "whatever the runner image has".
+    for pinned in [
+        "platforms;android-37.0",
+        "build-tools;37.0.0",
+        "ndk;28.2.13676358",
+    ] {
+        assert!(workflow.contains(pinned), "{pinned}");
+    }
 }
 
 #[test]
@@ -558,4 +597,227 @@ fn the_permission_handler_and_the_launcher_bridge_are_fixed_choices() {
     let js = read("../ui/launcher.js");
     assert!(js.contains("window.__TAURI_INTERNALS__"));
     assert!(!js.contains("__TAURI__."));
+}
+
+// ---- the committed Android project (src-tauri/gen/android) ----------------------------------
+
+fn android(relative: &str) -> String {
+    read(&format!("gen/android/{relative}"))
+}
+
+/// The files under gen/android that are committed (build output and the files the build writes
+/// with machine paths in them are git-ignored by gen/android's own .gitignore files).
+fn android_sources() -> Vec<PathBuf> {
+    fn walk(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
+        for entry in fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            let name = path.file_name().unwrap().to_string_lossy().to_string();
+            if path.is_dir() {
+                if matches!(
+                    name.as_str(),
+                    "build"
+                        | ".gradle"
+                        | ".kotlin"
+                        | ".idea"
+                        | "generated"
+                        | "jniLibs"
+                        | "assets"
+                        | ".tauri"
+                ) {
+                    continue;
+                }
+                walk(&path, out);
+            } else if matches!(
+                path.extension().and_then(|e| e.to_str()),
+                Some("kt" | "kts" | "xml" | "gradle" | "properties" | "pro")
+            ) && !matches!(
+                name.as_str(),
+                "tauri.settings.gradle"
+                    | "tauri.build.gradle.kts"
+                    | "proguard-tauri.pro"
+                    | "tauri.properties"
+                    | "local.properties"
+            ) {
+                out.push(path);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(&root().join("gen/android"), &mut out);
+    out
+}
+
+#[test]
+fn the_android_project_is_committed_without_machine_paths_or_secrets() {
+    let files = android_sources();
+    assert!(
+        files.len() >= 15,
+        "only {} Android source files found",
+        files.len()
+    );
+    for path in files {
+        let text = fs::read_to_string(&path).unwrap();
+        let lower = text.to_lowercase();
+        for banned in [
+            "c:\\users",
+            "c:/users",
+            "d:\\dynodoc",
+            "e:\\android",
+            "/home/",
+            "a2i",
+            "storepassword",
+            "keypassword",
+        ] {
+            // Only the loader of the (git-ignored) keystore.properties may name the keys.
+            if path.ends_with("app/build.gradle.kts") && banned.ends_with("password") {
+                continue;
+            }
+            assert!(
+                !lower.contains(banned),
+                "{} contains {banned}",
+                path.display()
+            );
+        }
+    }
+    let ignore = android(".gitignore");
+    for ignored in [
+        "local.properties",
+        "keystore.properties",
+        "/tauri.settings.gradle",
+        ".kotlin",
+    ] {
+        assert!(
+            ignore.contains(ignored),
+            "gen/android/.gitignore lacks {ignored}"
+        );
+    }
+    let app_ignore = android("app/.gitignore");
+    for ignored in [
+        "/tauri.build.gradle.kts",
+        "/tauri.properties",
+        "/proguard-tauri.pro",
+    ] {
+        assert!(
+            app_ignore.contains(ignored),
+            "app/.gitignore lacks {ignored}"
+        );
+    }
+    // The root .gitignore of the app keeps the Android project and nothing else of gen/.
+    let top = read("../.gitignore");
+    assert!(top.contains("src-tauri/gen/*") && top.contains("!src-tauri/gen/android/"));
+}
+
+#[test]
+fn the_android_manifest_is_hardened_and_routes_only_the_deep_links() {
+    let manifest = android("app/src/main/AndroidManifest.xml");
+    assert!(manifest.contains("android:allowBackup=\"false\""));
+    assert!(manifest.contains("android:dataExtractionRules=\"@xml/data_extraction_rules\""));
+    assert!(manifest.contains("android:usesCleartextTraffic=\"${usesCleartextTraffic}\""));
+    for never in [
+        "android:networkSecurityConfig",
+        "autoVerify",
+        "android:debuggable",
+        "android:testOnly",
+        "android.permission.CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "ACCESS_FINE_LOCATION",
+        "RECORD_AUDIO",
+    ] {
+        assert!(!manifest.contains(never), "the manifest has {never}");
+    }
+    assert_eq!(manifest.matches("<uses-permission ").count(), 1);
+    assert!(manifest.contains("<uses-permission android:name=\"android.permission.INTERNET\" />"));
+    assert_eq!(
+        manifest.matches("android:exported=\"true\"").count(),
+        1,
+        "only MainActivity"
+    );
+    // The deep-link plugin writes these from tauri.conf.json at build time; the committed
+    // manifest must be exactly what it writes: scheme dynodoc, host open, three path shapes.
+    assert_eq!(
+        manifest
+            .matches("<data android:scheme=\"dynodoc\" />")
+            .count(),
+        3
+    );
+    assert_eq!(
+        manifest.matches("<data android:host=\"open\" />").count(),
+        3
+    );
+    assert_eq!(manifest.matches("<data ").count(), 9);
+    assert!(manifest.contains("<data android:path=\"/workspace\" />"));
+    assert!(manifest.contains("<data android:pathPrefix=\"/projects/\" />"));
+    assert!(manifest.contains("<data android:pathPrefix=\"/documents/\" />"));
+    let gradle = android("app/build.gradle.kts");
+    assert!(!gradle.contains("\"usesCleartextTraffic\"] = \"true\""));
+    assert!(gradle.contains("targetSdk = 37"));
+    assert!(gradle.contains("minSdk = 24"));
+    let conf = json("tauri.conf.json");
+    assert_eq!(conf["bundle"]["android"]["minSdkVersion"], 24);
+    // The extraction rules exclude every domain from both transfers (harden-android.mjs checks
+    // the same in CI; this keeps `cargo test` honest too).
+    let rules = android("app/src/main/res/xml/data_extraction_rules.xml");
+    for section in ["cloud-backup", "device-transfer"] {
+        assert!(rules.contains(&format!("<{section}>")), "{section}");
+    }
+    assert!(!rules.contains("<include"));
+    assert_eq!(rules.matches("<exclude domain=").count(), 18);
+    let wrapper = android("gradle/wrapper/gradle-wrapper.properties");
+    assert!(
+        wrapper.contains("distributionSha256Sum="),
+        "the Gradle download must be pinned by checksum"
+    );
+}
+
+#[test]
+fn the_android_code_this_repository_adds_has_no_javascript_bridge() {
+    // Tauri's generated Kotlin has one (wry's `ipc`, guarded by the permission files, probed
+    // from a hosted page: every call refused). What THIS repository adds must have none.
+    for file in ["MainActivity.kt", "OfflineClient.kt"] {
+        let source = android(&format!("app/src/main/java/online/dynodoc/client/{file}"));
+        // Comments may name what is not there.
+        let text: String = source
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        for never in [
+            "addJavascriptInterface",
+            "@JavascriptInterface",
+            "evaluateJavascript",
+            "setJavaScriptEnabled",
+            "allowUniversalAccessFromFileURLs",
+            "setWebContentsDebuggingEnabled",
+        ] {
+            assert!(!text.contains(never), "{file} uses {never}");
+        }
+    }
+    let activity = android("app/src/main/java/online/dynodoc/client/MainActivity.kt");
+    for stated in [
+        "allowFileAccess = false",
+        "allowContentAccess = false",
+        "MIXED_CONTENT_NEVER_ALLOW",
+        "setSupportMultipleWindows(false)",
+        "javaScriptCanOpenWindowsAutomatically = false",
+    ] {
+        assert!(activity.contains(stated), "MainActivity lacks {stated}");
+    }
+    // Downloads: only a plain https file from the very site shown.
+    assert!(activity.contains("file.scheme == \"https\" && page.scheme == \"https\""));
+    assert!(activity.contains("file.host == page.host"));
+    // The offline page holds no script and links only to the address that failed.
+    let offline = android("app/src/main/java/online/dynodoc/client/OfflineClient.kt");
+    assert!(!offline.contains("<script"));
+    assert!(offline.contains("Html.escapeHtml"));
+}
+
+#[test]
+fn the_android_link_script_is_the_only_page_script_android_gets() {
+    let window = read("src/window.rs");
+    let production = &window[..window.find("#[cfg(test)]\nmod tests").unwrap()];
+    assert!(production.contains("include_str!(\"blank_targets.js\")"));
+    assert!(production.contains("include_str!(\"link_targets.js\")"));
+    assert!(root().join("../scripts/blank-targets.test.mjs").exists());
+    assert!(root().join("../scripts/android-probe.mjs").exists());
 }

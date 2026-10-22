@@ -17,7 +17,9 @@
 # owner's step (docs/DESKTOP-AND-MOBILE-APPS.md).
 param(
   [string[]]$Targets = @('aarch64', 'x86_64'),
-  [switch]$SplitPerAbi
+  [switch]$SplitPerAbi,
+  # A release APK (optimised, not debuggable). Signed only if gen/android/keystore.properties exists.
+  [switch]$Release
 )
 
 $ErrorActionPreference = 'Stop'
@@ -55,10 +57,12 @@ function Test-Symlink {
 Set-Location $desktop
 $targetFlags = @('--target') + $Targets
 $split = @(); if ($SplitPerAbi) { $split = @('--split-per-abi') }
+$profileFlag = @('--debug'); $buildDir = 'debug'; $buildName = 'Debug'
+if ($Release) { $profileFlag = @(); $buildDir = 'release'; $buildName = 'Release' }
 
 if (Test-Symlink) {
   Write-Host 'android-build: symbolic links are allowed; running the normal command'
-  & npm run tauri -- android build --ci --debug --apk @targetFlags @split -- --locked
+  & npm run tauri -- android build --ci @profileFlag --apk @targetFlags @split -- --locked
   if ($LASTEXITCODE -ne 0) { throw "tauri android build failed ($LASTEXITCODE)" }
   return
 }
@@ -67,13 +71,14 @@ Write-Host 'android-build: symbolic links are NOT allowed here (enable Developer
 $cargoTarget = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $desktop 'src-tauri\target' }
 foreach ($t in $Targets) {
   $info = $known[$t]
-  $lib = Join-Path $cargoTarget "$($info.triple)\debug\libdynodoc_desktop_lib.so"
+  $lib = Join-Path $cargoTarget "$($info.triple)\$buildDir\libdynodoc_desktop_lib.so"
   # Compile through the Tauri command line (it sets the NDK linker, the manifest and the Kotlin
   # sources up). Its last step, the link, is the part that cannot work here: that one failure is
   # expected; any other failure, or no "Finished" line from cargo, is not.
   $logFile = [IO.Path]::GetTempFileName()
   try {
-    cmd /c "npm run tauri -- android build --ci --debug --apk --target $t -- --locked > `"$logFile`" 2>&1"
+    $flags = $profileFlag -join ' '
+    cmd /c "npm run tauri -- android build --ci $flags --apk --target $t -- --locked > `"$logFile`" 2>&1"
     $exit = $LASTEXITCODE
     $log = Get-Content -Raw $logFile
   } finally {
@@ -95,13 +100,13 @@ foreach ($t in $Targets) {
 
 $tasks = @()
 $skip = @()
-foreach ($t in $Targets) { $skip += @('-x', "rustBuild$($known[$t].task)Debug") }
-$skip += @('-x', 'rustBuildUniversalDebug')
+foreach ($t in $Targets) { $skip += @('-x', "rustBuild$($known[$t].task)$buildName") }
+$skip += @('-x', "rustBuildUniversal$buildName")
 $propertyFlags = @()
 if ($SplitPerAbi) {
-  foreach ($t in $Targets) { $tasks += "assemble$($known[$t].task)Debug" }
+  foreach ($t in $Targets) { $tasks += "assemble$($known[$t].task)$buildName" }
 } else {
-  $tasks += 'assembleUniversalDebug'
+  $tasks += "assembleUniversal$buildName"
   $propertyFlags = @(
     "-PabiList=$(($Targets | ForEach-Object { $known[$_].abi }) -join ',')",
     "-ParchList=$(($Targets | ForEach-Object { $known[$_].arch }) -join ',')",

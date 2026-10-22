@@ -2,6 +2,7 @@ package online.dynodoc.client
 
 import android.app.DownloadManager
 import android.content.Context
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
@@ -36,6 +37,14 @@ class MainActivity : TauriActivity() {
       view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
       WindowInsetsCompat.CONSUMED
     }
+  }
+
+  // The activity handles a light/dark switch itself (the web view must not reload), so the
+  // system bars' icon colours and the colour behind the page are updated here.
+  override fun onConfigurationChanged(newConfig: Configuration) {
+    super.onConfigurationChanged(newConfig)
+    enableEdgeToEdge()
+    window.setBackgroundDrawableResource(R.color.dynodoc_window)
   }
 
   // Called by wry when the web view exists (again after the system re-creates the activity).
@@ -95,7 +104,7 @@ class MainActivity : TauriActivity() {
     if (!samePlainHttps) {
       Toast.makeText(
         this,
-        "This download is not supported in the Dynodoc app yet. Open Dynodoc in your web browser to download it.",
+        "Not supported in the app yet. Download this in your web browser.",
         Toast.LENGTH_LONG
       ).show()
       return

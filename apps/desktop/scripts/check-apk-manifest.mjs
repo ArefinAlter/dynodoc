@@ -366,6 +366,7 @@ function run(tool, args) {
 function main() {
   const args = process.argv.slice(2);
   const apk = args.find((a) => !a.startsWith('--') && a !== args[args.indexOf('--build') + 1]);
+  // usage: check-apk-manifest.mjs <apk> [--build debug|release] [--allow-unsigned]
   const buildAt = args.indexOf('--build');
   const build = buildAt >= 0 ? args[buildAt + 1] : 'debug';
   if (!apk || !['debug', 'release'].includes(build)) {
@@ -419,6 +420,12 @@ function main() {
     const certs = result.status === 0 ? parseApksignerCerts(result.stdout) : null;
     signing = signingProblems(certs, build);
     if (certs) for (const c of certs) console.log(`check-apk-manifest: signed by ${c.dn} (SHA-256 ${c.sha256})`);
+    // A release build made without the owner's keystore is unsigned: no phone installs it and no
+    // store takes it. That is expected before the keystore exists, so it can be allowed, loudly.
+    if (!certs && args.includes('--allow-unsigned') && /no signature|not signed|Missing META-INF|DOES NOT VERIFY/i.test(`${result.stdout}${result.stderr}`)) {
+      console.log('check-apk-manifest: the APK is UNSIGNED (--allow-unsigned): it cannot be installed or uploaded until it is signed with the upload key');
+      signing = [];
+    }
   }
   problems.push(...signing);
   for (const problem of problems) console.error(`check-apk-manifest: UNSAFE: ${problem}`);
