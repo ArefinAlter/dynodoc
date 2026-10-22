@@ -1,5 +1,47 @@
 # Dynodoc: intent, current implementation and remaining work
 
+## Source: approvals bound to the revision seen, AI-agent proposals inbox (22 October 2026)
+
+Closes the gap recorded on 20 October ("an approval bound to the revision the reviewer saw") and builds the reviewer side of the
+agent write path. **Migration 0045 (schema 45) is new and NOT rehearsed or released**; like 0043 and 0044, rollback is a restore
+of the dump, and `grant-runtime` must be run again after it migrates (the review table gained an identity column, so the runtime
+role needs USAGE on its sequence; `check-runtime` fails until then).
+
+**Approval binding.** A review names the draft's revision counter it was given for. `revision` is required for `approved` and
+`changes_requested` (missing: 400 `revision_required`; the request moved: 409 `request_changed`, nothing written). The counter
+only moves forward (a trigger), and the check runs under the document row lock that already serialises every writer; an SQL
+experiment confirmed the lock orders a reviewer against a writer in both directions. An approval counts only while
+`draft_revision >= content_revision`; a stale approval stays as history, is not counted and needs a new approval. One SQL
+(`latest_counted`) serves review state, the merge check, lists and agent status. Every writer that changes draft content bumps
+the counter (editor save, pull, rebase, agent propose; a share and a partial merge deliberately do not), and **reopening a
+declined or withdrawn request now bumps it too**, so an old approval cannot be revived (the I5 case: a manager declines an agent
+request, its principal reopens it, the old approval no longer counts). The audit row `document.change_request_changed` lists the
+reviews that lapsed. Same-reviewer ordering uses a sequence, not `created_at` (a transaction-start time). Reviews written before
+0045 have no revision and keep the old timestamp rule; the web app was the only caller of the route and sends the revision.
+
+**Proposals.** `GET /projects/{id}/agent-proposals` (account session, members, bounded pages, metadata only; unsent drafts only to
+the person the agent acts for) and `GET /projects/{id}/agent/proposals` (an agent key's own list, `content:read`). Adopting an agent
+draft now requires the revision too, and the audit records both the person who adopted and the agent that proposed. A principal can
+discard an unsent agent draft (closed as withdrawn, kept in history, audited). In the app: an "AI agent" badge wherever an agent
+authored a request, an "AI proposals" tab with filters and a stale-base warning, the review dialog showing who proposed and through
+which client with the agent's reasons as plain text, Approve sending the revision on screen, and a calm "this changed while you were
+reading" reload that never resends by itself. MCP `status` does not use the new list route yet.
+
+Evidence (local; GitHub Actions of this repository cannot run until the account billing is fixed): `reviewer_proposals_test` 21 tests
+(stale 409, missing revision, approve-change-merge, partial merge, two reviewers racing, approval versus edit across 14 concurrent
+trials, own request, replay on another request, agent never counted with every other lock off, adopt, discard, reopen, pull and rebase
+lapse, demoted reviewer, sequence order against 8 concurrent double submits); full workspace tests passed except the known
+Windows-only timing test; clippy, fmt and OpenAPI drift clean; vitest 63 files and 614 tests; the Chromium e2e suite 125 passed,
+2 skipped of 127 with `AGENT_GATEWAY=on`. An independent adversarial review found no Critical or High issue; its Medium and Low
+findings (a withdraw button that could not work, two invariants with no test, reopen reviving approvals, the lapse audit overstating,
+`created_at` ordering, an unvalidated upload link) are fixed and each has a test that failed under a manual mutation. **Not
+verified:** migration 0045 on a production copy (the column scan takes a short exclusive lock; the NOT VALID check is never
+validated by design), real concurrency across two API processes, Firefox, WebKit or phones for the new screens, a screen reader,
+the copy by a non-technical administrator, any real MCP client. Questions for the owner: legacy approvals without a revision keep
+the timestamp rule (invalidate them all at deploy instead?); adoption keeps the agent as author so the principal can never approve
+(move authorship to the person?); should an agent request always need one approver other than the principal; filters by client or
+principal and the "formatting inferred" lines are not built; should MCP `status` call the new list route.
+
 ## Source: desktop client shell and mobile preparation (21 October 2026)
 
 `apps/desktop` is a Tauri 2 project (crate `dynodoc-desktop`, product name Dynodoc, bundle identifier `online.dynodoc.client`, version taken
