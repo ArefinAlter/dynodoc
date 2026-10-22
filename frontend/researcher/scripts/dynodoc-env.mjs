@@ -1,3 +1,4 @@
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-nocheck -- a command-line tool, exercised by its tests; the typed code is src/lib/server/config.
 // Environment files for a self-hosted installation.
 //

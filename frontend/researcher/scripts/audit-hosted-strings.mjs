@@ -1,3 +1,4 @@
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-nocheck -- a command-line tool, exercised by its tests; the typed code is src/lib/server/config.
 // Hosted-string audit of a built web server (acceptance criterion 6 of Phase 0 in
 // docs/SELF-HOSTED-EDITION.md: "no file in the shipped images contains dynodoc.online outside
