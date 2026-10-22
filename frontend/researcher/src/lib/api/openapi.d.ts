@@ -480,7 +480,9 @@ export interface paths {
     put?: never;
     /**
      * Approve, request changes or comment. Reviewers and above approve or request
-     *     changes on other people's requests; any contributor can comment.
+     *     changes on other people's requests; any contributor can comment. An approval or a
+     *     request for changes names the revision of the request it was given for (`revision`), and
+     *     counts only while the request's content is as it was at that revision.
      */
     post: operations['review'];
     delete?: never;
@@ -668,7 +670,12 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Ask the document's editors to review an existing personal draft. */
+    /**
+     * Ask the document's editors to review an existing personal draft. A person may also submit
+     *     the draft an AI agent wrote for them (adopt it): the request stays the agent's work, the
+     *     audit row names the person who submitted it and the agent that proposed it, and the draft's
+     *     `revision` must be sent, so what is submitted is what was read.
+     */
     post: operations['submit'];
     delete?: never;
     options?: never;
@@ -1462,6 +1469,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/projects/{id}/agent-proposals': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * The AI agents' proposals of a project: drafts waiting for the person each acts for, and
+     *     the change requests that came from agent identities, with where each stands.
+     */
+    get: operations['agent_proposals_for_reviewers'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/projects/{id}/agent-usage': {
     parameters: {
       query?: never;
@@ -1651,6 +1678,28 @@ export interface paths {
       cookie?: never;
     };
     get: operations['agent_slides'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/projects/{id}/agent/proposals': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * The agent's own proposals in this project (the list the `status` tool lacked): each with
+     *     its state, base, head, revision and size, newest first, open ones before closed. Only the
+     *     proposals of the agent identity of this key's product, in files the person can open and the
+     *     policy shows; a key that has no agent identity yet has none.
+     */
+    get: operations['agent_proposals'];
     put?: never;
     post?: never;
     delete?: never;
@@ -2571,6 +2620,59 @@ export interface components {
       name: string;
       rows: number;
     };
+    /** @description The agent's own proposals in a project (the list route of the agent plane). */
+    AgentProposalList: {
+      more: boolean;
+      n: number;
+      /** Format: int64 */
+      open: number;
+      /** Format: int64 */
+      open_limit: number;
+      /** Format: int64 */
+      opened_limit: number;
+      /**
+       * Format: int64
+       * @description Proposals the person's agents opened since midnight UTC, and have open, against the
+       *     project's limits.
+       */
+      opened_today: number;
+      /** @description Absent from the DCT form, which lists them as `proposal` lines. */
+      proposals: components['schemas']['AgentProposalRow'][];
+      protocol: string;
+      /** @description The filter that was applied: `active`, `all` or one state. */
+      state: string;
+      tool: string;
+      trust: string;
+      what: string;
+      write_mode: string;
+    };
+    /** @description One proposal in `proposals` of the agent's own list. */
+    AgentProposalRow: {
+      /**
+       * Format: int64
+       * @description The team revision the proposal started from, and the file's head now.
+       */
+      base: number;
+      /** Format: int64 */
+      behind: number;
+      created_at: string;
+      /**
+       * Format: int64
+       * @description Engine operations stored in the proposal.
+       */
+      edits: number;
+      /** @description Full document UUID. */
+      file: string;
+      /** Format: int64 */
+      head: number;
+      /** @description The id the submit, withdraw and status routes take. */
+      proposal: string;
+      /** Format: int64 */
+      revision: number;
+      /** @description `draft`, `open`, `changes_requested`, `declined`, `merged` or `withdrawn`. */
+      state: string;
+      submitted_at?: string | null;
+    };
     /** @description `status` of a proposal. */
     AgentProposalStatus: {
       /** Format: int64 */
@@ -3332,6 +3434,21 @@ export interface components {
       /** @description Override all proposals with this custom value. */
       custom_value?: unknown;
     };
+    ReviewRequest: {
+      /** @description Comment on one changed block. */
+      node_id?: string | null;
+      note?: string;
+      /**
+       * Format: int64
+       * @description The `revision` of the change request the reviewer was looking at (the one its detail
+       *     returned). **Required for `approved` and `changes_requested`**: the review is given for
+       *     that revision and for no other. If the request has moved since, the answer is `409`
+       *     with the code `request_changed`; read the request again. A comment may leave it out.
+       */
+      revision?: number | null;
+      /** @description `approved`, `changes_requested` or `commented`. */
+      verdict: string;
+    };
     SessionAnswer: {
       /** @description The challenge exactly as issued. */
       challenge: Record<string, never>;
@@ -3346,6 +3463,17 @@ export interface components {
       /** Format: int64 */
       star_count: number;
       starred: boolean;
+    };
+    SubmitRequest: {
+      note?: string;
+      /**
+       * Format: int64
+       * @description The `revision` of the draft the person was looking at. **Required to adopt a draft an
+       *     AI agent wrote** (an agent can add to its own draft until it is submitted, so the
+       *     person must send what they read); when given for a draft of the person's own it must
+       *     match as well. A draft that moved is `409` with the code `request_changed`.
+       */
+      revision?: number | null;
     };
     /** @description `POST /ops/suggest`. `detail` is the wrapped content op (internally-tagged JSON). */
     SuggestRequest: {
@@ -4747,7 +4875,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': unknown;
+        'application/json': components['schemas']['ReviewRequest'];
       };
     };
     responses: {
@@ -4760,6 +4888,13 @@ export interface operations {
           'application/json': unknown;
         };
       };
+      /** @description Invalid review; code revision_required when an approval or a request for changes names no revision */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
       /** @description Role cannot give this review */
       403: {
         headers: {
@@ -4767,7 +4902,7 @@ export interface operations {
         };
         content?: never;
       };
-      /** @description The request is closed */
+      /** @description The request is closed (code conflict), or it changed after the revision the review names (code request_changed, details.current_revision) */
       409: {
         headers: {
           [name: string]: unknown;
@@ -5297,7 +5432,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': unknown;
+        'application/json': components['schemas']['SubmitRequest'];
       };
     };
     responses: {
@@ -5310,6 +5445,13 @@ export interface operations {
           'application/json': unknown;
         };
       };
+      /** @description Invalid note; code revision_required when adopting an AI agent's draft without naming its revision */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
       /** @description Viewers cannot propose changes */
       403: {
         headers: {
@@ -5319,6 +5461,13 @@ export interface operations {
       };
       /** @description Not your open draft */
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description The draft changed after the revision named (code request_changed, details.current_revision) */
+      409: {
         headers: {
           [name: string]: unknown;
         };
@@ -5394,7 +5543,7 @@ export interface operations {
       };
     };
     responses: {
-      /** @description The contributor withdrew their request */
+      /** @description The contributor withdrew their request, or the person an AI agent acts for discarded its draft before sending it for review (closed as withdrawn and kept as history) */
       200: {
         headers: {
           [name: string]: unknown;
@@ -5405,6 +5554,13 @@ export interface operations {
       };
       /** @description Only the contributor can withdraw */
       403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Already closed, or an unsent draft that is not an AI agent's */
+      409: {
         headers: {
           [name: string]: unknown;
         };
@@ -7375,6 +7531,57 @@ export interface operations {
       };
     };
   };
+  agent_proposals_for_reviewers: {
+    parameters: {
+      query?: {
+        /** @description active (draft, open and changes_requested; the default), all, or one of draft, open, changes_requested, merged, declined, withdrawn */
+        state?: string;
+        /** @description 0 to 1000 */
+        offset?: number;
+        /** @description 1 to 50, default 25 */
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        /** @description Project */
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description items (newest activity first, open ones before closed), more, offset, state and the budgets the viewer's own agents have used (null when the viewer has none). Each item is metadata: id, name (the agent's words: untrusted text), state, revision, base_seq, head_seq, behind, stale_base, created_at, submitted_at, closed_at, document {id,title,kind}, agent {id,client_kind,display_name,principal{id,name},revoked}, mine, edits and ops {proposed,compiled}. Drafts only reach the person the agent acts for */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Unknown state, or offset or limit out of range */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Not an account session */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Not a member of the project */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
   agent_usage: {
     parameters: {
       query?: {
@@ -8149,6 +8356,65 @@ export interface operations {
       };
       /** @description File not visible */
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  agent_proposals: {
+    parameters: {
+      query?: {
+        /** @description active (draft, open and changes_requested; the default), all, or one of draft, open, changes_requested, merged, declined, withdrawn */
+        state?: string;
+        /** @description 0 to 1000 */
+        offset?: number;
+        /** @description 1 to 50, default 20 */
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        /** @description Project */
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description This agent's proposals in the project, newest activity first: proposal (the id the submit, withdraw and status routes take), file, state, base, head, behind, revision, edits (engine operations stored), created_at and submitted_at; more says whether another page exists; the budget fields say how many proposals the person's agents have opened today and have open against the limits. Ids, numbers and states only */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AgentProposalList'];
+          'text/vnd.dynodoc.dct; v=1': string;
+        };
+      };
+      /** @description Unknown state, or offset or limit out of range */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Not a project device session */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Scope, grant, key class, membership or policy refuses */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Budget */
+      429: {
         headers: {
           [name: string]: unknown;
         };

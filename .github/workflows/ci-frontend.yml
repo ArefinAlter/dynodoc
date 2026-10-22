@@ -94,6 +94,8 @@ jobs:
       BODY_SIZE_LIMIT: 16M
       PILOT_E2E: 'true'
       PLAYWRIGHT_BASE_URL: http://127.0.0.1:4173
+      # The agent routes exist only when the gateway is on; agent-proposals.spec.ts drives them.
+      AGENT_GATEWAY: 'on'
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

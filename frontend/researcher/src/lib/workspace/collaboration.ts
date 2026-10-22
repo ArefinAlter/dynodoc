@@ -224,8 +224,14 @@ export interface NotificationItem {
   created_at: string;
   read: boolean;
   payload: Record<string, unknown>;
-  document: { id: string; title: string; kind: string; role: MemberRole | null } | null;
-  actor: { id: string; name: string | null; email: string | null } | null;
+  document: {
+    id: string;
+    title: string;
+    kind: string;
+    role: MemberRole | null;
+    project_id?: string | null;
+  } | null;
+  actor: { id: string; name: string | null; email: string | null; is_agent?: boolean } | null;
   source: {
     id: string;
     title: string;
@@ -280,6 +286,9 @@ export interface Review {
   note: string;
   node_id: string | null;
   created_at: string;
+  /** The revision of the request this review was given for (older reviews name none). */
+  revision?: number | null;
+  /** The request's content has changed since the revision this review was given for. */
   stale: boolean;
   reviewer: { id: string; name: string | null; email: string | null };
 }
@@ -295,12 +304,17 @@ export interface ReviewState {
   can_override: boolean;
   can_approve: boolean;
 }
+/**
+ * Approve, ask for changes or comment. `revision` is the revision of the request the
+ * reviewer is looking at (`RequestDetail.revision`): the review is given for that revision and
+ * for no other, and the server answers `request_changed` if the request has moved since.
+ */
 export const submitReview = (
   documentId: string,
   requestId: string,
-  body: { verdict: Review['verdict']; note: string; node_id?: string | null }
+  body: { verdict: Review['verdict']; note: string; revision: number; node_id?: string | null }
 ) =>
-  workspaceRequest<{ id: string; review: ReviewState }>(
+  workspaceRequest<{ id: string; revision: number; review: ReviewState }>(
     `/documents/${documentId}/change-requests/${requestId}/reviews`,
     body
   );

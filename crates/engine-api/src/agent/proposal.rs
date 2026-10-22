@@ -26,7 +26,7 @@ use std::collections::BTreeMap;
 
 use axum::{
     body::Bytes,
-    extract::{Path, State},
+    extract::{rejection::QueryRejection, Path, Query, State},
     http::{HeaderMap, Uri},
 };
 use engine_agent::{
@@ -102,7 +102,7 @@ fn note_of(body: &[u8]) -> Result<String, AgentFail> {
 
 /// `text` as data for the agent: control and hidden characters dropped, cut to `max`
 /// characters (with an ellipsis).
-fn bounded(text: &str, max: usize) -> String {
+pub(super) fn bounded(text: &str, max: usize) -> String {
     let clean = sanitize(text);
     if clean.chars().count() > max {
         let mut cut: String = clean.chars().take(max).collect();
@@ -692,6 +692,131 @@ async fn status_call(ctx: &Ctx<'_>, call: &mut Call, proposal: Uuid) -> Result<S
             c["team"].as_str().unwrap_or("?"),
             c["draft"].as_str().unwrap_or("?")
         ));
+    }
+    let body = answer(ctx.format, Tool::Status, fields, &lines);
+    Ok(Served {
+        bytes: body.len(),
+        response: http::reply(ctx.format, body, None),
+    })
+}
+
+// --- list ------------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ListQuery {
+    state: Option<String>,
+    offset: Option<i64>,
+    limit: Option<i64>,
+}
+
+/// The agent's own proposals in this project (the list the `status` tool lacked): each with
+/// its state, base, head, revision and size, newest first, open ones before closed. Only the
+/// proposals of the agent identity of this key's product, in files the person can open and the
+/// policy shows; a key that has no agent identity yet has none.
+#[utoipa::path(operation_id="agent_proposals", get, path="/projects/{id}/agent/proposals", tag="agent", params(("id"=Uuid,Path,description="Project"),("state"=Option<String>,Query,description="active (draft, open and changes_requested; the default), all, or one of draft, open, changes_requested, merged, declined, withdrawn"),("offset"=Option<i64>,Query,description="0 to 1000"),("limit"=Option<i64>,Query,description="1 to 50, default 20")), security(("device_session"=["content:read"])), responses((status=200, description="This agent's proposals in the project, newest activity first: proposal (the id the submit, withdraw and status routes take), file, state, base, head, behind, revision, edits (engine operations stored), created_at and submitted_at; more says whether another page exists; the budget fields say how many proposals the person's agents have opened today and have open against the limits. Ids, numbers and states only", content((super::schema::AgentProposalList="application/json"),(String="text/vnd.dynodoc.dct; v=1"))),(status=400, description="Unknown state, or offset or limit out of range"),(status=401, description="Not a project device session"),(status=403, description="Scope, grant, key class, membership or policy refuses"),(status=429, description="Budget")))]
+pub(super) async fn list(
+    State(state): State<AppState>,
+    auth: AgentAuth<ContentRead>,
+    Path(project): Path<Uuid>,
+    headers: HeaderMap,
+    uri: Uri,
+    parsed: Result<Query<ListQuery>, QueryRejection>,
+) -> Out {
+    let digest = ledger::request_digest(&[
+        b"GET",
+        uri.path().as_bytes(),
+        uri.query().unwrap_or("").as_bytes(),
+    ]);
+    let ctx = Ctx::new(&state, &auth, project, &headers, Tool::Status, digest)?;
+    let mut call = Call::default();
+    let result = list_call(&ctx, &mut call, parsed).await;
+    ctx.finish(call, result).await
+}
+
+async fn list_call(
+    ctx: &Ctx<'_>,
+    call: &mut Call,
+    parsed: Result<Query<ListQuery>, QueryRejection>,
+) -> Result<Served, AgentFail> {
+    let Query(q) = parsed.map_err(|_| AgentError::BadRequest { field: "query" })?;
+    let filter = super::inbox::state_filter(q.state.as_deref())
+        .map_err(|_| AgentError::BadRequest { field: "state" })?;
+    let (offset, limit) = super::inbox::paging(q.offset, q.limit, 20)
+        .map_err(|_| AgentError::BadRequest { field: "limit" })?;
+    let mut admitted = ctx.admit(call).await?;
+    let policy = admitted.allowed.policy.clone();
+    let agent = identity::resolve(&mut admitted.db, ctx.identity, ctx.key)
+        .await
+        .map_err(ApiError::from)?;
+    let mut rows: Vec<Value> = Vec::new();
+    if let Some(agent) = &agent {
+        let matches = super::inbox::state_matches("k.state", "$7");
+        let states = reviews::state_sql("d");
+        let sql = format!(
+            "select jsonb_build_object('proposal',c.id,'file',c.document_id,'state',c.state,'base',c.base_seq,'head',x.head,'behind',greatest(x.head-c.base_seq,0),'revision',c.revision,'edits',(select count(*) from draft_edit e where e.draft_id=c.id),'created_at',c.created_at,'submitted_at',c.submitted_at) \
+             from (select k.* from (select d.id,d.revision,d.base_seq,d.created_at,d.submitted_at,d.document_id,{states} as state \
+                   from workspace_draft d join document f on f.id=d.document_id \
+                   where d.created_by=$1 and document_project(d.document_id)=$2 and f.deleted_at is null and coalesce(f.settings->>'kind','questionnaire')=any($6::text[]) and document_member_role(f.id,$3) is not null and not exists(select 1 from file_agent_policy fp where fp.document_id=f.id and fp.access='none') \
+                   order by coalesce(d.submitted_at,d.created_at) desc,d.id limit 2000) k \
+                   where {matches} \
+                   order by (k.state in ('merged','declined','withdrawn')),coalesce(k.submitted_at,k.created_at) desc,k.id limit $5 offset $4) c \
+             cross join lateral (select coalesce(max(seq),0) as head from event where document_id=c.document_id) x \
+             order by (c.state in ('merged','declined','withdrawn')),coalesce(c.submitted_at,c.created_at) desc,c.id"
+        );
+        rows = sqlx::query_scalar(&sql)
+            .bind(agent.id)
+            .bind(ctx.project)
+            .bind(ctx.identity)
+            .bind(offset)
+            .bind(limit + 1)
+            .bind(&policy.kinds)
+            .bind(filter)
+            .fetch_all(&mut *admitted.db)
+            .await
+            .map_err(ApiError::from)?;
+    }
+    let more = rows.len() as i64 > limit;
+    rows.truncate(limit as usize);
+    let (today, open) = super::write::proposal_use(&mut admitted.db, ctx.identity, ctx.project)
+        .await
+        .map_err(ApiError::from)?;
+    drop(admitted.db);
+
+    let dct = ctx.format == http::Format::Dct;
+    let mut fields = vec![
+        ("what", json!("proposals")),
+        ("state", json!(filter)),
+        ("n", json!(rows.len())),
+        ("more", json!(more)),
+        ("write_mode", json!(policy.write_mode)),
+        ("opened_today", json!(today)),
+        ("opened_limit", json!(policy.proposals_per_day)),
+        ("open", json!(open)),
+        ("open_limit", json!(policy.open_proposals)),
+    ];
+    let mut lines: Vec<String> = Vec::new();
+    if dct {
+        // Ids, numbers and state words only: nothing from a document or a person.
+        for r in &rows {
+            let file = r["file"]
+                .as_str()
+                .and_then(|f| Uuid::parse_str(f).ok())
+                .map(short)
+                .unwrap_or_default();
+            lines.push(format!(
+                "proposal {} file={} state={} base={} behind={} revision={} edits={}\n",
+                r["proposal"].as_str().unwrap_or("?"),
+                file,
+                r["state"].as_str().unwrap_or("?"),
+                r["base"],
+                r["behind"],
+                r["revision"],
+                r["edits"]
+            ));
+        }
+    } else {
+        fields.push(("proposals", json!(rows)));
     }
     let body = answer(ctx.format, Tool::Status, fields, &lines);
     Ok(Served {

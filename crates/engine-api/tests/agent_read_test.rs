@@ -1951,8 +1951,9 @@ async fn openapi_describes_every_response(pool: PgPool) {
             p.contains("/agent/") || p.contains("dynodoc-agent") || p.ends_with("/agent/files")
         })
         .collect();
-    // Eleven read paths (this file's) and the four of the write half (`agent_write_test`).
-    assert_eq!(agent_paths.len(), 15, "{agent_paths:?}");
+    // Eleven read paths (this file's), the four of the write half (`agent_write_test`) and
+    // the agent's own list of proposals (`reviewer_proposals_test`).
+    assert_eq!(agent_paths.len(), 16, "{agent_paths:?}");
     for path in &agent_paths {
         for (_, operation) in paths[*path].as_object().unwrap() {
             assert_eq!(operation["tags"], json!(["agent"]), "{path}");

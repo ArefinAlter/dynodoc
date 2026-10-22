@@ -473,6 +473,10 @@ a prerequisite for Phase 1 (listed in section 11).
 
 ### 6.2 What a reviewer sees (app change)
 
+Built on 21 October 2026, except the filters by client and by principal and the
+"formatting inferred" and "macro" lines: see the status paragraph at the end of section
+11.3.
+
 - A badge "Claude for Olivia" with the client product, on the request, each changed
   block and the activity feed.
 - Per-change `why` text, labelled as the agent's statement.
@@ -568,7 +572,9 @@ New read endpoints (all `GET` under `/projects/{id}/agent/files/{file}/…`): `o
 `blocks` (node range, section, batch with ETags via `POST …/blocks:read`), `cells` (A1
 range), `sheets/{sheet}/profile`, `slides`, `find`, `diff`; plus `files`, proposals
 (`POST`, `GET`, submit, withdraw) and `access`. Fifteen routes in total, with the
-discovery document.
+discovery document. A sixteenth, `GET /projects/{id}/agent/proposals` (`content:read`),
+lists the calling agent's own proposals (21 October 2026; the MCP `status` tool does not
+call it yet).
 
 ### 7.2 Management plane (account session only)
 
@@ -580,6 +586,7 @@ discovery document.
 | `GET/PUT /projects/{id}/agent-policy` | Project policy with `revision`. |
 | `PUT /documents/{id}/agent-policy` | File `agent_access`. |
 | `GET /projects/{id}/agent-usage` | Calls, bytes, proposals, denials by client and day. |
+| `GET /projects/{id}/agent-proposals` | What the project's agents proposed and where each stands, for reviewers (any member who can open the file; a draft only to the person its agent acts for). |
 | `POST /projects/{id}/agent-policy/kill` | Immediate disable (also revokes sessions). |
 | `POST /agent/keys`, `DELETE /agent/keys/{id}` | API keys (Path C). |
 | Admin: `POST /admin/agent-gateway` | Operator on or off, client block list. |
@@ -1178,8 +1185,8 @@ project policy, budgets"; its other items stand.) Built, in `crates/engine-api` 
   OAuth, API keys, layer C, the evals, the reviewer usability test; macros, `fill`, `add_slide`,
   `delete_slide` and the other ops the compiler refuses; `diff proposal=` (still `404`); `agent.denied`
   audit rows; `status what=proposals`; the `Idempotency-Key` ledger on submit and withdraw; DLP, client
-  allow-lists, retention and pruning of receipts; an approval bound to the revision the reviewer saw (see
-  below). **Not verified:** no real MCP client or model produced a proposal; nothing was measured under
+  allow-lists, retention and pruning of receipts; an approval bound to the revision the reviewer saw (built
+  on 21 October 2026, see the last status paragraph of this section). **Not verified:** no real MCP client or model produced a proposal; nothing was measured under
   load (a write holds the document lock while its ops compile, now for at most 2 s); migration 0044 has not
   been rehearsed on a production copy or released; the review-screen behaviour is only the data it will read.
 - *Changes after the independent review of the write path (20 October 2026; it found no Critical or High
@@ -1274,6 +1281,112 @@ change:
   The `${VAR:-default}` form in the plugin's `.mcp.json`, `--plugin-dir` and the plugin layout are vendor facts
   not checked. The resend after a lost connection was exercised only on Windows. Whether a model proposes
   well, keeps to the note's wording or pays for 3.6 KB more of definitions on every turn is not measured.
+
+**Implementation status, the reviewer's side (Phase 1), 21 October 2026.** (This paragraph supersedes item (5)
+of the independent-review list above, "an approval is not bound to the revision the reviewer saw", and the
+"Not built" clauses about the app: badges, inbox, per-change `why` display, behind-base warning, adopt action.)
+Built, in migration `0045_review_revision_binding.sql` (schema 45), `crates/engine-api` (`reviews`, `workspace`,
+`agent::{inbox,proposal,write}`, `notifications`, `project_activity`, `error`) and `frontend/researcher`:
+
+- *Approval bound to the revision read.* The revision is the draft's counter (`workspace_draft.revision`, which
+  moves on every content change, pull, rebase, merge and agent extension), not a hash: it is per draft and only
+  moves forward (a trigger refuses a decrease), so `(draft, revision)` names one state for ever, it cannot be
+  reused by another request or after a revert, and the check runs under the document lock that already
+  serialises every writer of a draft. A hash of the content could repeat after a revert and says nothing about
+  the base. `POST /documents/{id}/change-requests/{draft}/reviews` takes `revision` and **requires it for
+  `approved` and `changes_requested`** (a comment may leave it out): missing is `400` with `code`
+  `revision_required`; a request that is not at that revision is `409` with `code` `request_changed` and
+  `details.current_revision`, and nothing is written. `workspace_draft.content_revision` is the revision at which
+  the content last changed (a partial merge moves `revision` and not it), and a review counts while its
+  `draft_revision >= content_revision`; one rule (`reviews::latest_counted`) serves the review state, the
+  merge check, the lists and the agent's status. **Stale approvals are kept as history, marked stale, and not
+  counted; re-approval is required.** The table is append-only, so the row cannot change; the revision it names
+  says it is stale (`stale: true` in the review list), and `document.change_request_changed` is audited in the
+  transaction of each content change that lapses a counted review (draft, revisions, the reviews and reviewers
+  that lapsed), so the trail reads approved at revision N, changed, revision N+1. Re-approval, not carry-over,
+  because the reviewer approved content they read and the new content is not it. Reviews written before 0045
+  keep a null revision and the older timestamp rule (written after the last change); they cannot be edited and
+  nothing new can be written without a revision (a `NOT VALID` CHECK, new rows only, and a trigger that locks
+  the draft row in share mode and refuses any revision but its current one). I5 and I4 are unchanged and apply
+  to agent and person requests alike: an agent's request needs the configured approvals, its principal and the
+  agent identity never count.
+- *Compatibility.* A client that sends no `revision` to the review route gets `400 revision_required` for an
+  approval or a request for changes (comments still work); a client that sends a stale one gets `409
+  request_changed`. Neither is silent. Every caller in the repository was updated (the web app; the engine CLI
+  and the MCP server do not call the route; the agent plane has no review route). The error envelope is the
+  existing `{error, code, details}`, not RFC 7807: the repository has no `application/problem+json`.
+- *Adopt.* Existing and reused: the person an agent acts for submits its draft with `POST
+  /documents/{id}/drafts/{draft}/submit`, no agent scope. New: **adopting an agent's draft requires `revision`**
+  (an agent can add to its draft until it is submitted, so what is submitted must be what was read): missing is
+  `400 revision_required`, moved is `409 request_changed`; for a person's own draft `revision` is optional and
+  checked when sent. The request stays the agent's work (`created_by` and the edits keep the agent: layer A), so
+  its principal still cannot approve it; the audit row `document.change_request_submitted` has the person as
+  `actor_id`, `contributor` the agent identity, `contributor_kind` `agent`, the client product and principal,
+  and `adopted: true`; `agent.proposal.created` names the agent that proposed it (layers A and B only).
+- *Routes.* `GET /projects/{id}/agent-proposals?state&offset&limit` (account session; `401` for any other
+  token; `403` for a non-member; `state` is `active` (default: draft, open, changes_requested), `all` or one of
+  the six states; `limit` 1 to 50, default 25; `offset` 0 to 1,000; the newest 2,000 visible proposals are
+  considered) lists drafts waiting for the person their agent acts for (only to them) and change requests that
+  came from agent identities (to every member who can open the file), with `state`, `revision`, `base_seq`,
+  `head_seq`, `behind`, `stale_base`, the file, the agent (`display_name`, `client_kind`, principal, `revoked`),
+  `mine`, `edits`, `ops {proposed, compiled}` and, for a person who has agents, `budgets` (opened today and open
+  against the limits, the operations per proposal). Metadata only; the `name` is the agent's own words. `GET
+  /projects/{id}/agent/proposals?state&offset&limit` (`content:read`, JSON or DCT, limit default 20) lists the
+  calling agent's own proposals (id, file, state, base, head, behind, revision, edits) and the budget use; a key
+  with no agent identity yet gets an empty list. The review detail (`GET /documents/{id}/change-requests/{id}`)
+  gains `agent_statement` for an agent's request: the totals of its propose calls and its reasons per operation
+  (at most 100, each cut to 280 characters and cleaned again), labelled `trust: untrusted_text`. Notification
+  items gain `actor.is_agent` (and no placeholder address) and `document.project_id`; the project activity feed
+  gains `by_agent` on request rows.
+- *Screens.* An "AI agent" badge (the icon and words of the signing keys screen) on a request or draft written by
+  an agent identity in the project's pull request list, "Your drafts", a file's request list, the editor's
+  request and draft cards, the review dialog, the activity feed and the notification bell. A project tab "AI
+  proposals" (reachable from the project page and from `?tab=agent`, and from a notification about an agent's
+  request through "All AI proposals"): a "Show" filter (In progress, Waiting for you to send, Waiting for
+  review, Changes requested, Merged, Declined, Withdrawn, Everything), plain state names with an icon beside the
+  words, an empty state per filter, the base-behind warning, the budgets sentence, newer/older paging. In the
+  review dialog: who proposed it and through which client, the agent's stated reasons and note as plain text
+  with a line saying they are its words and are not followed as instructions, and Approve sending the revision
+  on screen; on `request_changed` a calm message (nothing was recorded; read the new version, then decide) takes
+  focus, the new version loads and what was typed is kept. An agent's draft opens in the same dialog with
+  "Adopt and send for review" and no merge, decline or approve. The review dialog's header and footer elements
+  became plain blocks: they were page landmarks (two banners and two contentinfos).
+- *Evidence.* `tests/reviewer_proposals_test.rs` (14 tests under the restricted runtime login), the updated
+  callers in `review_test`, `copies_test`, `api_test` and `agent_write_test` (their raw SQL approvals now name a
+  revision, so they still reach the guards they were written for); vitest for the client module, the inbox and the
+  review dialog; `e2e/agent-proposals.spec.ts` (4 tests on Chromium, the agent driven through the real agent API
+  with a device key). Controls removed one at a time to see their tests fail: the route's revision comparison
+  (5 tests failed), the stale exclusion (4), the agent exclusion of the counting query (1, with the database
+  triggers that keep an agent out switched off in the test), the adopt binding (1).
+- *Not built or not verified.* Filters by client and by principal, the "formatting inferred" and macro-count lines
+  of 6.2, a count of the reasons beyond 100, a link from the notification to the proposal row (it opens the
+  request and, separately, the inbox), real devices and screen readers, any run on CI (the repository's Actions
+  cannot run), migration 0045 on a production copy. The MCP `status` tool does not call the new list route. The
+  stack for the browser tests was a local copy of the CI stack with `AGENT_GATEWAY=on`; `ci-frontend.yml` now
+  sets it for the authenticated job so the new spec runs there.
+
+*Follow-ups after the independent review of the reviewer's side (21 October 2026).* (1) *A new round on reopen.*
+Sending a declined or withdrawn request for review again (`mark_submitted` with `reopen`) bumps `revision` and
+`content_revision` (and `content_changed_at`, for reviews that name no revision) and audits what lapsed with
+`cause: reopened`: before this, an approval that predated a decline counted again after resubmission, so an
+AI agent's principal could revive a declined agent request. Both counters, not a comparison with the decline
+time, because every counting path goes through one predicate over the counters, a clock cannot be skewed
+past it, and it needs no new state. (2) *The lapse audit* is `latest_counted` (each eligible reviewer's
+latest decision), no longer every fresh row: superseded rows and people without a reviewer role are not listed,
+and nothing is written when nothing counted; the row carries `cause` (`edited` or `reopened`). (3) *Order of one
+reviewer's decisions* is the new identity column `change_request_review.seq` (drawn under the document lock,
+so commit order), not `created_at`, which is the transaction's start; rows from before 0045 (null revision)
+keep `created_at` and count as older than new ones. Migration 0045 was amended for this (it had not run in any
+shared environment); the runtime login needs `USAGE` on `change_request_review_seq_seq` (`grant-runtime`
+adds it: re-run it after migrating). (4) *Discarding an unsent agent draft.* The person an AI agent acts for
+can withdraw its draft before sending it: `POST /documents/{id}/drafts/{draft}/withdraw` closes it as
+`withdrawn` (what the agent's own withdraw does), audited as `document.draft_withdrawn` with the agent and
+principal; the edits, receipts and row stay; only the principal can see it, an ordinary unsent draft is still
+`409`. The review dialog's button for it is "Discard this draft". (5) *Stored file link* in the review dialog
+now accepts only a UUID as the file id. Tests: pull, rebase and share (a share keeps the approval, a pull or
+rebase lapses it), a demoted reviewer and a contributor or viewer never count, reopen after a decline for an
+agent's request (the I5 scenario) and a person's, the lapse audit, the latest decision under skew and under
+concurrent double submits, discard. Each control was removed in turn and its test failed.
 
 ### 11.4 Phase 2 detail (remote MCP and OAuth)
 

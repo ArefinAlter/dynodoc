@@ -17,7 +17,9 @@ export async function workspaceRequest<T>(path: string, body?: unknown): Promise
   }));
   if (!response.ok) {
     const error = new Error(data.error || `Request failed (${response.status})`);
-    Object.assign(error, { status: response.status });
+    // `code` is the server's stable name for the refusal (for example `request_changed`);
+    // `details` carries what a screen needs to act on it.
+    Object.assign(error, { status: response.status, code: data.code, details: data.details });
     throw error;
   }
   return data as T;
@@ -46,6 +48,8 @@ export interface Draft {
   base_seq: number;
   created_at: string;
   merged_at: string | null;
+  /** Set when an AI agent wrote this draft for the person. */
+  agent?: { id: string; client_kind: string; display_name: string | null } | null;
 }
 export type Kind = 'document' | 'spreadsheet' | 'questionnaire' | 'presentation';
 export function documentKind(document: DocumentDetail | { settings: unknown }): Kind {

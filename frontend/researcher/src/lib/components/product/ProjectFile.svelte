@@ -22,6 +22,7 @@
   import FilePreview from '$lib/components/product/FilePreview.svelte';
   import ProvenancePanel from '$lib/components/product/ProvenancePanel.svelte';
   import ChangeRequestReview from '$lib/components/workspace/ChangeRequestReview.svelte';
+  import AgentBadge from '$lib/components/workspace/AgentBadge.svelte';
   import DiffText from '$lib/components/workspace/DiffText.svelte';
   import HistoryRecovery from '$lib/components/workspace/HistoryRecovery.svelte';
   import PushFileDialog from '$lib/components/workspace/PushFileDialog.svelte';
@@ -363,7 +364,13 @@
               onsubmit={(e) => {
                 e.preventDefault();
                 void run(async () => {
-                  await submitDraft(id, branch, note);
+                  // An AI agent's draft is adopted at the revision on screen.
+                  await submitDraft(
+                    id,
+                    branch,
+                    note,
+                    selected?.draft.agent ? selected.draft.revision : undefined
+                  );
                   notice = 'Pull request opened';
                   await load();
                   await selectTab('requests');
@@ -478,7 +485,7 @@
                 <button class="repo-linkbtn strong" onclick={() => (reviewId = r.id)}
                   >{r.name}</button
                 >
-                <span class="repo-badge">{r.status}</span>
+                <span class="repo-badge">{r.status}</span>{#if r.agent}<AgentBadge />{/if}
                 <span class="rp-pr-by"
                   >{r.author.name || 'Project member'} · Based on revision {r.base_seq}{#if r.submitted_at}
                     · opened {relativeTime(r.submitted_at)}{/if}</span

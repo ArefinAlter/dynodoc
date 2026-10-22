@@ -9,6 +9,25 @@ export interface Person {
   name: string | null;
   email: string;
 }
+/** The AI agent that wrote a request or draft, as the server names it. Untrusted text. */
+export interface AgentRef {
+  id: string;
+  client_kind: string;
+  display_name: string | null;
+  principal: { id: string; name: string | null };
+  revoked: boolean;
+}
+/** What an agent said about its proposal: its own words, never instructions. */
+export interface AgentStatement {
+  calls: number;
+  ops_in: number;
+  ops_engine: number;
+  /** Operations that edited text that had changed since the agent read it. */
+  stale: number;
+  reasons: { call: number; i: number | null; op: string | null; id: string | null; why: string }[];
+  more: boolean;
+  trust: 'untrusted_text';
+}
 export interface ChangeRequest {
   id: string;
   name: string;
@@ -43,6 +62,8 @@ export interface ChangeRequest {
   edits: number;
   status: 'open' | 'merged' | 'declined' | 'withdrawn';
   mine: boolean;
+  /** Present when an AI agent wrote the request. */
+  agent?: AgentRef;
 }
 export interface Conflict {
   key: string;
@@ -69,6 +90,8 @@ export interface RequestDetail {
   >;
   behind?: number;
   review?: import('./collaboration').ReviewState;
+  /** Present when an AI agent wrote the request. */
+  agent_statement?: AgentStatement;
 }
 const base = (documentId: string) => `/documents/${documentId}`;
 export const listRequests = (documentId: string) =>
@@ -93,8 +116,15 @@ export const mergeRequest = (
   );
 export const declineRequest = (documentId: string, id: string, note: string) =>
   workspaceRequest(`${base(documentId)}/change-requests/${id}/decline`, { note });
-export const submitDraft = (documentId: string, id: string, note: string) =>
-  workspaceRequest(`${base(documentId)}/drafts/${id}/submit`, { note });
+/**
+ * Send a draft for review. Adopting a draft an AI agent wrote needs `revision`, the one the
+ * person was looking at; if the agent added to it since, the server answers `request_changed`.
+ */
+export const submitDraft = (documentId: string, id: string, note: string, revision?: number) =>
+  workspaceRequest(
+    `${base(documentId)}/drafts/${id}/submit`,
+    revision === undefined ? { note } : { note, revision }
+  );
 export const withdrawDraft = (documentId: string, id: string) =>
   workspaceRequest(`${base(documentId)}/drafts/${id}/withdraw`, {});
 

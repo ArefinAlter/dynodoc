@@ -473,6 +473,50 @@ pub struct AgentSubmit {
     trust: String,
 }
 
+/// One proposal in `proposals` of the agent's own list.
+#[derive(ToSchema, Serialize)]
+#[allow(dead_code)]
+pub struct AgentProposalRow {
+    /// The id the submit, withdraw and status routes take.
+    proposal: String,
+    /// Full document UUID.
+    file: String,
+    /// `draft`, `open`, `changes_requested`, `declined`, `merged` or `withdrawn`.
+    state: String,
+    /// The team revision the proposal started from, and the file's head now.
+    base: i64,
+    head: i64,
+    behind: i64,
+    revision: i64,
+    /// Engine operations stored in the proposal.
+    edits: i64,
+    created_at: String,
+    submitted_at: Option<String>,
+}
+
+/// The agent's own proposals in a project (the list route of the agent plane).
+#[derive(ToSchema, Serialize)]
+#[allow(dead_code)]
+pub struct AgentProposalList {
+    protocol: String,
+    tool: String,
+    what: String,
+    /// The filter that was applied: `active`, `all` or one state.
+    state: String,
+    n: usize,
+    more: bool,
+    write_mode: String,
+    /// Proposals the person's agents opened since midnight UTC, and have open, against the
+    /// project's limits.
+    opened_today: i64,
+    opened_limit: i64,
+    open: i64,
+    open_limit: i64,
+    /// Absent from the DCT form, which lists them as `proposal` lines.
+    proposals: Vec<AgentProposalRow>,
+    trust: String,
+}
+
 #[derive(ToSchema, Serialize)]
 #[allow(dead_code)]
 pub struct AgentReviewNote {
@@ -570,7 +614,8 @@ pub struct AgentDiscovery {
         super::write::propose,
         super::proposal::submit,
         super::proposal::withdraw,
-        super::proposal::status
+        super::proposal::status,
+        super::proposal::list
     ),
     components(schemas(
         AgentEnvelope,
@@ -605,7 +650,9 @@ pub struct AgentDiscovery {
         AgentSubmit,
         AgentReviewNote,
         AgentConflict,
-        AgentProposalStatus
+        AgentProposalStatus,
+        AgentProposalRow,
+        AgentProposalList
     ))
 )]
 pub struct AgentApi;

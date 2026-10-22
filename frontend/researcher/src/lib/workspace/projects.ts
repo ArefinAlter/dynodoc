@@ -35,6 +35,8 @@ export interface ProjectRequest {
   document: { id: string; title: string; kind: string };
   author?: { id: string; name: string | null; email: string };
   created_at: string;
+  /** Present when an AI agent wrote the request or draft. */
+  agent?: { id: string; client_kind: string; display_name: string | null };
 }
 export function downloadJson(value: unknown, filename: string) {
   const url = URL.createObjectURL(

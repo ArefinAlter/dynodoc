@@ -1,5 +1,12 @@
 # Database runtime boundary
 
+Schema 45 binds reviews to the revision a reviewer read. `change_request_review` stays in the
+SELECT/INSERT history class and gains `draft_revision` and an identity column `seq` (the order of
+one reviewer's decisions, in commit order); the runtime login needs USAGE, not UPDATE, on
+`change_request_review_seq_seq`, so **re-run `grant-runtime` after migrating** (`check-runtime`
+fails until then). `workspace_draft` gains `content_revision`; two triggers keep the revision
+counter monotone and refuse a deciding review for any revision but the draft's current one.
+
 Schema 44 adds two tables for the review-gated write path of AI agents. `agent_identity`
 joins the SELECT/INSERT/UPDATE class (no DELETE): the sidecar of an agent identity (the
 `identity` row under which an agent's drafts and audit rows are recorded), created once and

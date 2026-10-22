@@ -36,6 +36,8 @@ export interface ActivityItem {
   document_title: string | null;
   summary: string | null;
   seq: number | null;
+  /** The change request this row is about was written by an AI agent. */
+  by_agent?: boolean;
 }
 export interface ActivityPage {
   items: ActivityItem[];
@@ -137,7 +139,8 @@ function normalise(raw: unknown): ActivityItem | null {
     document_id: text(row.document_id),
     document_title: text(row.document_title),
     summary: text(row.summary),
-    seq: typeof row.seq === 'number' ? row.seq : null
+    seq: typeof row.seq === 'number' ? row.seq : null,
+    ...(row.by_agent === true ? { by_agent: true } : {})
   };
 }
 

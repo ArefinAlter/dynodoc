@@ -91,6 +91,7 @@ const SEQUENCES: &[&str] = &[
     "draft_edit_id_seq",
     "operation_audit_id_seq",
     "project_history_review_id_seq",
+    "change_request_review_seq_seq",
 ];
 const READ_ONLY: &[&str] = &[
     "_sqlx_migrations",

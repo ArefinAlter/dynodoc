@@ -28,6 +28,10 @@ to pass back as `before`, or null on the last page. A malformed cursor is a 400.
 item has `at`, `kind`, `actor_id`, `actor_name`, `document_id`, `document_title`,
 `summary`, `seq`, and `count` for edits. Kinds:
 
+An item gains `"by_agent": true` when the change request it is about was written by an
+AI agent identity (`request_opened`, `declined` and `merged` items only); the key is
+absent otherwise, so no other row changes.
+
 - `edit`: team events. Events of one write transaction are one item (`count`,
   `summary` "Made N changes", `seq` the newest event). A merge's events are folded
   into its `merged` item.
