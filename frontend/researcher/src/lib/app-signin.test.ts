@@ -202,14 +202,23 @@ describe('the version in the app’s token: one grammar for the app and the serv
     for (const { raw, version } of [...fixture.cases, ...generated]) {
       expect(version).toMatch(APP_VERSION);
       for (const kind of ['desktop', 'android', 'ios'] as const)
-        expect(appKind(`${BASE} DynodocApp/${version} (${kind})`), `${raw.slice(0, 30)} ${kind}`).toBe(
-          kind
-        );
+        expect(
+          appKind(`${BASE} DynodocApp/${version} (${kind})`),
+          `${raw.slice(0, 30)} ${kind}`
+        ).toBe(kind);
     }
   });
 
   it('refuses a token carrying a version that was not normalised, which is why producers normalise', () => {
-    for (const raw of ['0.1.0-beta.1', '10.0.0+build5', '1.2.3.4', '', '1.2', 'v1.2.3', '1234567890.0.0'])
+    for (const raw of [
+      '0.1.0-beta.1',
+      '10.0.0+build5',
+      '1.2.3.4',
+      '',
+      '1.2',
+      'v1.2.3',
+      '1234567890.0.0'
+    ])
       expect(appKind(`${BASE} DynodocApp/${raw} (android)`), JSON.stringify(raw)).toBeNull();
     // Dates and long numbers within the grammar are accepted: nothing here has a three-digit limit.
     expect(appKind(`${BASE} DynodocApp/2026.10.22 (desktop)`)).toBe('desktop');

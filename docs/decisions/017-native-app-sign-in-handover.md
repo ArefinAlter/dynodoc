@@ -399,6 +399,37 @@ cannot start: billing). The branch includes `main` as of 0257d46 (the self-hoste
   `Sec-Fetch-User`, the finish page open to any browser, acting on a fragment present at load, and not
   needing the bridge object (the last four fail the browser tests).
 
+### Second review round: what was run (same day, same PC)
+
+* **Through the two shipped proxies:** `infra/selfhosted/test/proxy-app-signin.mjs` (hosted
+  `nginx-app.conf` in an nginx container and the bundled proxy image in evaluation TLS, each in front
+  of the real built web app and the real API, Chromium): 12 checks, all passed. Each edge: signed in
+  through the proxy, headers (DENY, `frame-ancestors 'none'`, COOP) on both pages while other pages
+  keep SAMEORIGIN, Continue works although the proxy says `no-referrer` (the real Origin arrives),
+  a popup read-back attack fails, the proxy answers 429 after the burst to POSTs and never to GETs.
+  The same browser checks are in `scripts/smoke.mjs` (h3 to h7) with static checks c14 and c15 (the
+  hosted maps and the zones equal in both configurations; c14 and c15 were run on the tree on their own,
+  **the full bundle smoke was not run**: it builds the shared `dynodoc-local/*:dev` images, which
+  another session was using). The Linux-only `scripts/check-proxy-headers.mjs` gained assertions for
+  the two pages and was **not run** (it needs Linux and nginx on the host).
+* **Web:** vitest 974 passed, 4 skipped (86 files); eslint, prettier, svelte-check (0 errors),
+  hosted-string audit; Chromium: 17 tests in `e2e/app-signin.spec.ts` (three new: headers and the real
+  Origin, the popup read-back with the answer's COOP, a framed finish page with the frame headers
+  removed), 51 in the run with the security, session-revocation, smoke and launch specs, 3 in
+  `selfhosted-noemail.spec.ts`.
+* **Shell:** 155 unit tests, fmt and clippy clean, 52 Node tests (the finish script has 8: one new for
+  a frame), JVM `AppTokenTest` 5 tests with the shared fixture; `signin-probe.mjs` 53/53 on the
+  rebuilt Windows shell. **Android emulator** on the rebuilt app: the `signin` phase now also tries
+  three forged navigations to the finish page from an ordinary page (fragment, query, trailing slash)
+  and the shell's rule refuses each (marker kept, `-> Deny` logged), 64 checks with the `ipc`, `links`,
+  `deeplink` and `recreate` phases, all passed. **Not tried on Android:** a server redirect to the
+  finish page (the hosted cloud has no endpoint that redirects there).
+* **Mutations, each fails a test:** the referrer meta removed (through both proxies); COOP removed
+  (unit test and the proxy checks); `X-Frame-Options` not DENY; the finish page's frame check removed;
+  the web reader back to three digits; the hosted `DENY` map entry removed; the bundle's `DENY` removed;
+  the hosted POST limit removed; the bundle's POST limit removed; the finish script's top-window check
+  removed (Rust and Node); the Rust producer not normalising; the Kotlin producer keeping a suffix.
+
 ## Not done, on purpose
 
 * Android App Links and iOS universal links (they need the release signing key and the final

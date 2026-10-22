@@ -97,7 +97,9 @@ it('leaves every other page framable by its own site and in the default window g
       new URL(path, 'https://app.test')
     );
     expect(response.headers.get('x-frame-options'), path).toBe('SAMEORIGIN');
-    expect(response.headers.get('content-security-policy'), path).toContain("frame-ancestors 'self'");
+    expect(response.headers.get('content-security-policy'), path).toContain(
+      "frame-ancestors 'self'"
+    );
     expect(response.headers.has('cross-origin-opener-policy'), path).toBe(false);
   }
 });
