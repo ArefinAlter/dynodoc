@@ -27,12 +27,12 @@ notarised, published or tried on a physical device.
 
 | Platform | In the repository | Run so far | Not done |
 |---|---|---|---|
-| Windows x86-64 | Source, launcher, sidecar, menu, deep link, probes | Windows 11 PC, after the security-review fixes and a merge of main: format, clippy, 91 tests (including the real `engine-cli` creating a DPAPI-bound key), debug build, `smoke.ps1` (which also creates keys in folders with accented and Bengali names), `security-probe.mjs` (four phases inside WebView2, also with `--unicode-home`); earlier: unsigned debug NSIS and MSI bundles, a release build that ran | Installers never installed; no release-profile run; no signing, so SmartScreen will warn |
+| Windows x86-64 | Source, launcher, sidecar, menu, deep link, probes | Windows 11 PC, after the security-review fixes and a merge of main: format, clippy, 91 tests (including the real `engine-cli` creating a DPAPI-bound key), debug build, `smoke.ps1` (which also creates keys in folders with accented and Bengali names), `security-probe.mjs` (four phases inside WebView2, also with `--unicode-home`), `signin-probe.mjs` (the browser sign-in through the real shell); earlier: unsigned debug NSIS and MSI bundles, a release build that ran | Installers never installed; no release-profile run; no signing, so SmartScreen will warn |
 | Linux x86-64 | The same source | In an Ubuntu 24.04 container on the Windows PC (the steps of the `linux` job, with a stub in place of `engine-cli`): format, clippy with `-D warnings`, tests, release build, `.deb` (2.0 MiB), `.rpm` (2.0 MiB) and AppImage (77 MiB) bundles, repeated after the security-review fixes (90 tests); the release binary under Xvfb with a D-Bus session (stays up, creates its config and data folders, a second launch is forwarded to it and exits) was run before those fixes and not repeated | Not run on a real desktop; the real `engine-cli` was not built on Linux; the bundles were not installed; AppImage does not register `dynodoc://`; no Secret Service key creation exercised; the app was ended with SIGTERM (exit 143), not by closing its window |
 | Linux aarch64 | Workflow job behind a tick box | Nothing (private-repository availability of `ubuntu-24.04-arm` unverified) | Everything |
 | macOS aarch64 and x86-64 | Same source; workflow jobs on `macos-latest` and `macos-15-intel` | Nothing; the Apple targets cannot even be type-checked on Windows | Everything: no Mac build, no Keychain key creation, no notarisation |
 | Windows aarch64 | Workflow job behind a tick box | Nothing (`windows-11-arm`, availability unverified) | Everything |
-| Android | The Tauri 2.12 Android project is **committed** (`apps/desktop/src-tauri/gen/android`, hardened), mobile entry point, phone capability file, icons, `minSdkVersion` 29, `targetSdkVersion` 37, deep-link filters, a small Kotlin layer (insets, Back, narrow downloads, offline page, refusal of navigations Android does not report; no JavaScript bridge), `scripts/android-build.ps1`, `scripts/android-probe.mjs`, workflow job `android` | **22 October 2026, Windows 11 PC:** debug APK built (universal, arm64-v8a plus x86_64, 44.6 MiB), merged manifest audited against real `aapt2` output, installed and run on an x86_64 Android 16 emulator (WebView 133, hardware-accelerated through WHPX) and driven by a black-box probe (see "Android: what was run on 22 October 2026"); a release APK was built (below) | **Signing in inside the app does not work yet** (the emailed link opens in the browser and a phone has no menu to paste it; needs App Links, round 2); changing the server needs the app's data cleared; no physical device; no Play signing, no AAB run; GitHub Actions job never executed; iOS not part of this |
+| Android | The Tauri 2.12 Android project is **committed** (`apps/desktop/src-tauri/gen/android`, hardened), mobile entry point, phone capability file, icons, `minSdkVersion` 29, `targetSdkVersion` 37, deep-link filters, a small Kotlin layer (insets, Back, narrow downloads, offline page, refusal of navigations Android does not report; no JavaScript bridge), `scripts/android-build.ps1`, `scripts/android-probe.mjs`, workflow job `android` | **22 October 2026, Windows 11 PC:** debug APK built (universal, arm64-v8a plus x86_64, 44.6 MiB), merged manifest audited against real `aapt2` output, installed and run on an x86_64 Android 16 emulator (WebView 133, hardware-accelerated through WHPX) and driven by a black-box probe (see "Android: what was run on 22 October 2026"); a release APK was built (below) | Signing in by the system browser and a one-time code is built ([decision 017](decisions/017-native-app-sign-in-handover.md), "Signing in: the browser hand-over" below); @@ANDROID@@; changing the server: sign out in the web app and the launcher returns (a saved server that cannot be reached still needs the app's data cleared); no physical device; no Play signing, no AAB run; GitHub Actions job never executed; iOS not part of this |
 | iPhone | Same source, iOS 15.0 minimum; workflow job `ios` (simulator, unsigned) | Nothing | Everything: needs a Mac runner and, for devices, an Apple Developer team |
 
 ## How to build each
@@ -207,17 +207,20 @@ production-build phone.
   stock offline page; launcher text mentioning a File menu; `use-cloud` throwing if tapped before the
   app answered; template `FileProvider` exposing all shared storage; wrong app version.
 - **Not working / not done, and why.**
-  1. **Signing in inside the app.** Dynodoc signs in with an emailed link; a link tapped in a mail app
-     opens in the browser, which does not share the app's session. On desktop the menu offers "Sign in
-     with an emailed link" (paste); a phone has no menu, and the launcher is not reachable once a
-     server is saved. "Continue with Google" opens the browser too. A proper fix needs Android App Links
-     (`/.well-known/assetlinks.json` on the web host with the SHA-256 of the app signing key, and an
-     `autoVerify` intent filter) or a one-time-code hand-over from the browser: server and owner work,
-     round 2 of decision 016. **Until then the Android app can open the hosted sign-in page but nobody
-     can finish signing in inside it.**
-  2. **Changing the server** needs the app's data cleared (Settings > Apps > Dynodoc > Storage). The
-     launcher says so. A "Change server" entry needs a decision (a launcher shortcut, or a deep link
-     that shows the launcher, which weakens "the launcher only when the shell asked").
+  1. **Signing in inside the app** was not possible on 22 October (the emailed link and Google finish in
+     the browser, which does not share the app's session, and a phone has no menu to paste a link).
+     Replaced on 22 October by the browser hand-over of
+     [decision 017](decisions/017-native-app-sign-in-handover.md): the launcher's "Sign in with your
+     browser" button opens the browser, a one-time code comes back in `dynodoc://signin?...`, and the
+     app's own window redeems it with a PKCE verifier that never left the app. Android App Links
+     (`/.well-known/assetlinks.json` with the SHA-256 of the app signing key and an `autoVerify` filter)
+     can later replace the custom scheme; they are not part of it, because they need the release signing
+     key. See "Signing in: the browser hand-over" below for what was and was not run.
+  2. **Changing the server.** Sign out in the web app: it goes to its sign-in page, the shell shows the
+     launcher there (phones only, decided from the address alone), and a server can be chosen. A saved
+     server that cannot be reached (a mistyped address) shows the offline page with "Try again" and
+     still needs the app's data cleared (Settings > Apps > Dynodoc > Storage). A launcher deep link or
+     an Android long-press shortcut would remove that; decision 017 weighs it and does not build it.
   3. **Downloads of signed-in files and `blob:` downloads** (the web app's CSV, device-key and project
      exports): refused with a message. A blob needs a script bridge, which this app deliberately does not
      have; a signed-in file needs cookies, which the app now never sends (see "Android: review follow-ups").
@@ -349,7 +352,7 @@ Nothing below exists; no key, password or account was created or invented.
    --bundle=app-universal-release.aab --output=app.apks --ks=dynodoc-upload.jks --ks-key-alias=upload`
    then `java -jar bundletool.jar install-apks --apks=app.apks`. **Not run here** (no keystore exists
    and the Windows PC cannot create the links the command needs); the APK flow above is what ran.
-4. **App Links** for sign-in (see limit 1): after the first Play upload, copy the **app signing
+4. **App Links** to replace the custom scheme of the sign-in hand-over (see limit 1): after the first Play upload, copy the **app signing
    certificate SHA-256** from Play Console (Release > Setup > App integrity), publish
    `/.well-known/assetlinks.json` on `app.dynodoc.online` for `online.dynodoc.client`, add an
    `autoVerify` https intent filter for `/auth/verify` and `/login` to `plugins.deep-link.mobile`, and
@@ -392,10 +395,10 @@ Do not claim store readiness from this round.
 
 ## Known limitations of the web view approach
 
-- **Sign-in:** the emailed link opens in the system browser. The shell offers "Sign in with an
-  emailed link" (paste it) as a workaround. Google sign-in does not complete inside the window.
-  A proper hand-over (the browser finishing sign-in and giving the app a one-time code) needs
-  server work and is round 2.
+- **Sign-in:** the emailed link and Google finish in the system browser. The shell hands the sign-in
+  to the browser and takes a one-time code back (decision 017, below); "Sign in with an emailed link"
+  (paste it) stays as a fallback. One open item: a crafted link to the finish page can sign a window
+  in as the attacker's own account (decision 017, threat table).
 - **Downloads, printing, file pickers, drag and drop, and iframes** are whatever the platform's
   web view does by default; none was exercised on desktop. On Android (emulator) a same-site https
   download of a public file goes to the system download manager (a signed-in one, and a `blob:` download
@@ -435,7 +438,8 @@ Do not claim store readiness from this round.
   and takes it to that page, even if you were working in it. The protection for unsaved work is the web
   app's own leave-page warning. Checked: WebView2 runs the page's `beforeunload` handler for the shell's
   own navigation and shows its "Leave site?" dialog, and answering Stay keeps the page.
-- **A pasted sign-in link signs in whichever account issued it.** Only paste a link from an email you
+- **A pasted sign-in link signs in whichever account issued it** (the fallback; the browser sign-in
+  names the account before anything is made). Only paste a link from an email you
   asked for in this window. The web `/login` page still needs a click ("Continue to workspace") before
   it uses the token. Showing the account's email address there before the click would close the gap;
   that is server work (owner question 3).
@@ -455,20 +459,20 @@ Do not claim store readiness from this round.
    is fixed ("recent account payments have failed or your spending limit needs to be increased").
    Until then no installer, APK or simulator build can be produced or tested in CI.
 2. Is `online.dynodoc.client` the right identifier (and is the reverse-domain `online.dynodoc` correct for the company)?
-3. Should the shell's "Sign in with an emailed link" workaround stay, or should sign-in hand-over
-   (server work) come first? Either way: should the web `/login` page show the account's email
-   address before the person confirms a token (server work; it closes the login-CSRF gap of a pasted
-   link)?
+3. The browser hand-over (decision 017) is built, so "Sign in with an emailed link" (paste) is now the
+   fallback. Keep it? Should the web `/login` page show the account's email address before the person
+   confirms a token (server work; it closes the login-CSRF gap of a pasted link)?
 4. Accept the permission denial for all pages, or allow clipboard read for the web app's origin?
 5. Which Windows signing route (certificate, cloud signing service, Microsoft Store)?
 6. Arm runners: try `ubuntu-24.04-arm` and `windows-11-arm` on this private repository?
 7. To run `desktop.yml` by hand the file must be on `main` first; merge it, then use "Run workflow".
-8. **Android sign-in** (see "Android: what was run", limit 1): which route, Android App Links (needs the
-   Play app signing key's SHA-256 and `assetlinks.json` on the web host), a one-time-code hand-over from the
-   browser, or a reachable "paste the link" screen in the app? Until one exists the Android app cannot
-   sign anyone in.
-9. **Changing the server on a phone** (limit 2): accept "clear the app's data", or add a launcher
-   shortcut / a deep link that shows the launcher (which the launcher-only-when-asked rule would have to allow)?
+8. **Android sign-in** (limit 1): the browser hand-over is built on the custom scheme. When the Play app
+   signing key's SHA-256 is known, replace the scheme with Android App Links and an `assetlinks.json` on
+   the web host? (A custom scheme can be claimed by any other app; PKCE makes what it sees useless, but
+   App Links also remove the chooser and the lost-link case.)
+9. **Changing the server on a phone** (limit 2): accept "sign out, then choose again" (and "clear the
+   app's data" for a server that cannot be reached), or add a launcher deep link and an Android
+   long-press shortcut (decision 017 weighs them; the launcher would then appear whenever any program asks)?
 10. **`blob:` downloads on Android** (limit 3): the web app builds its exports as blobs. Either change the
     web app to serve them as plain https downloads (works today), or accept a script bridge in the Android
     app (a larger security decision), or leave exports to the browser.

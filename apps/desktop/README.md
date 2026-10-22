@@ -23,12 +23,13 @@ an iPhone or a physical phone.
 | `src-tauri/Cargo.toml` | Crate `dynodoc-desktop`, **its own Cargo workspace and lockfile** (the engine workspace excludes `apps/`). The version here is the only version of the app. |
 | `src-tauri/src/main.rs` | Thin desktop entry point. |
 | `src-tauri/src/lib.rs` | `run()` (also the mobile entry point): plugins, commands, window, menu. |
-| `src-tauri/src/server.rs` | Validates and normalises the server address and the pasted sign-in link; origin comparison. Pure functions. |
+| `src-tauri/src/server.rs` | Validates and normalises the server address and the pasted sign-in link; origin comparison; the two addresses of the browser sign-in (`/app-signin?...` for the system browser, `/app-signin/finish#...` for this window). Pure functions. |
+| `src-tauri/src/signin.rs` | The browser sign-in's secrets and the one pending attempt: verifier, PKCE challenge and state from the operating system's randomness, kept in memory only for ten minutes, replaced by a new attempt, used up by the first accepted link, bound to the server it was started for. No secret has a `Debug`, `Display` or `Clone`. Pure functions with an injectable clock and randomness. |
 | `src-tauri/src/nav.rs` | The navigation policy: what may load in the window (the launcher only when the shell asked for it), what goes to the system browser, what is dropped; the window title; log redaction. Pure functions. |
 | `src-tauri/src/handoff.rs` | Handing a link to the system: public addresses only for a page (1 per 3 s, 5 per minute), mail and local addresses only for a click (a secret marker from the injected script; its own budget, 1 per second and 10 per minute) or a menu item. The secret comes from the operating system's random source. Pure functions. |
-| `src-tauri/src/deeplink.rs` | Parser for `dynodoc://` links (three accepted forms). Pure functions. |
+| `src-tauri/src/deeplink.rs` | Parser for `dynodoc://` links (four accepted forms, one static table). Pure functions. |
 | `src-tauri/src/sidecar.rs` | Runs the bundled `engine-cli` with a fixed argument list, a time limit and an output limit; recognises a cut-off key file and says how to start again. |
-| `src-tauri/src/commands.rs` | The seven commands the launcher page may call. |
+| `src-tauri/src/commands.rs` | The eight commands the launcher page may call. |
 | `src-tauri/src/config.rs` | Saves the chosen server in the app's config folder (atomic, re-validated on read) with a SHA-256 seal in the local data folder; a config that no longer matches its seal is shown, not opened. |
 | `src-tauri/src/window.rs` | Creates the window and hooks navigation, new-window and deep-link events to the policy. In debug builds it prints each decision to standard error. |
 | `src-tauri/src/blank_targets.js` | **Android only.** The one script Android injects (no secret, no marker): a tap on `<a target="_blank">` is dropped by Android's web view without any callback, so the script turns the target into `_self` for that click and puts it back; the link then goes through the navigation rule like any other. `scripts/blank-targets.test.mjs` runs it against fake nodes. |
@@ -42,6 +43,7 @@ an iPhone or a physical phone.
 | `ui/` | The launcher page: plain HTML, CSS and JavaScript shipped inside the app. No framework, no remote scripts. |
 | `scripts/prepare-sidecar.mjs` | Builds `engine-cli` from the repository root and copies it to `src-tauri/binaries/engine-cli-<triple>[.exe]` (git-ignored). |
 | `scripts/smoke.ps1` | Windows smoke test of a debug build (starts, config folder, saved server and window title, deep link, an edited config, key creation in folders with accented and Bengali names, clean exit). |
+| `scripts/signin-probe.mjs` | Windows black-box probe of the browser sign-in against the real debug shell and a stand-in server: the menu item and the launcher's button start an attempt and ask the system browser for `/app-signin?...`; a link with nothing pending, a wrong state or a replay does nothing; the right link takes the window to the finish page with code, state and verifier in the FRAGMENT only (no request, Referer or log holds them) and `SHA-256(verifier)` equals the challenge; a second attempt works while the finish page is still showing; a server page cannot start it. Opens tabs in your default browser on purpose. Not part of CI. |
 | `scripts/security-probe.mjs` | Windows black-box probe of a debug build: drives WebView2 through its debugging port and tries, from inside the web view, what a hostile server page would try (see "Security model"). Not part of CI. |
 | `src-tauri/tauri.android.conf.json` | Repeats the Cargo.toml version for Android (the Tauri command line gives an Android build no version otherwise: `1.0`, code 1, forever); a test keeps them equal. |
 | `src-tauri/gen/android/` | The Android project Tauri 2.12 generates, **committed** (source only; its own `.gitignore` files keep build output, `local.properties`, `keystore.properties` and the files the build writes with machine paths in them out). Changed from the template: `allowBackup="false"` and `dataExtractionRules` (everything excluded), cleartext off in every build type, `windowSoftInputMode`, the Gradle download pinned by checksum, `file_paths.xml` narrowed to the one photo folder, window and bar colours, optional release signing from `keystore.properties`, and three Kotlin files: `MainActivity.kt` (insets, Back, downloads, web view settings), `OfflineClient.kt` (a plain "Try again" page instead of Android's stock error page) and the template's own. No JavaScript bridge is added (a test greps for it). |
@@ -120,20 +122,32 @@ your own server (see "Server address rules" below). The choice is saved in the a
 folder and the window opens it. Next time the window opens the server directly. **File > Change
 server** returns to the launcher.
 
-**Signing in.** Dynodoc signs in with an emailed link. A link clicked in your mail program opens
-in your **web browser**, which does not share a session with this window. So: ask for the email in
-this window, copy the link from the email, then choose **File > Sign in with an emailed link** and
-paste it (the launcher checks it belongs to your server's sign-in page and carries one token and
-nothing else, then opens it here). "Continue with Google" does not work inside this window yet:
-Google's page opens in the system browser, and a proper hand-over from the browser to the app
-needs server work that is not built (round 2 of decision 016).
+**Signing in.** Dynodoc signs in with an emailed link or with Google, and both finish in your **web
+browser**, which does not share a session with this window. So the window asks the browser to do it
+and to hand back a one-time code (decision 017): choose **File > Sign in with your browser** (or
+press **Sign in with your browser** in the launcher; on a phone the launcher appears by itself when
+the server's sign-in page loads). Your default browser opens the server's `/app-signin` page. Sign
+in there as you always do, check the account and the device it names, and press **Continue**: the
+browser opens the app (`dynodoc://signin?code=..&state=..`), the window opens the server's finish
+page and you are signed in, with the next page being your workspace. The request is good for ten
+minutes. If the link comes back later, or twice, nothing happens: start again.
+
+How it is kept safe (full table in decision 017): the app makes a random verifier and sends the
+browser only its SHA-256 (PKCE, RFC 7636); the code in the link is useless without the verifier,
+which stays in this app's memory and goes only to your server, in the part of the address (the
+fragment) that no server, proxy or log ever receives; the code works once and for a minute; a link
+whose state is not the app's is ignored; and nothing is written to disk.
+
+The older way still works as a fallback: ask for the email in this window, copy the link from the
+email and choose **File > Sign in with an emailed link** (the launcher checks it belongs to your
+server's sign-in page and carries one token and nothing else, then opens it here).
 
 *Whose account?* A pasted link signs this window in as **whichever account the link was issued
 for**, so paste only a link from an email you asked for in this window: someone else's link would
 sign you in as them (login CSRF). The web app's own `/login` page still shows "Continue to
-workspace" and needs a click before it uses the token, so nothing is signed in silently. Showing the
-account's email address on that page before the click would close the gap; that is server work, not
-built, and is on the owner's question list.
+workspace" and needs a click before it uses the token, so nothing is signed in silently. The browser
+sign-in has no such gap on the start side (its confirmation page names the account before anything
+is made); a crafted link to the finish page is the one open item, see decision 017.
 
 **This computer's key.** The launcher can create a device signing key with
 `engine-cli device keygen --out <app local data>/device-key.json --encrypt --keystore` and show its
@@ -153,7 +167,7 @@ you, and creation still refuses to replace any file. The key file is under the l
 writes a key file itself: all key code stays in `engine-cli`. The macOS and Linux key-store paths
 have not been run on those systems (stated in KEY-FILE-FORMAT.md too).
 
-**Menu.** File (Change server, Sign in with an emailed link, This computer's key, Open server in
+**Menu.** File (Change server, Sign in with your browser, Sign in with an emailed link, This computer's key, Open server in
 browser, Quit), Edit, View (Reload), Help (Dynodoc support, About). No tray icon, no auto-update,
 no analytics. The window remembers its size, position and maximised state, follows the system
 light or dark theme, and is high-DPI aware.
@@ -238,10 +252,13 @@ and tested.
    `[::1]`, for testing), no user name, password, path, query or fragment, no backslashes, percent
    escapes, spaces or trailing dot, bounded length. International names are shown in their ASCII
    (punycode) form so a look-alike is visible.
-4. **Links into the app are checked.** `dynodoc://` links come from anywhere, so only three exact
-   forms are accepted, identifiers must be UUIDs, nothing can carry a token, a query, a port or a
-   server name, and the page always opens on **your configured server**, never one named in the
-   link.
+4. **Links into the app are checked.** `dynodoc://` links come from anywhere, so only four exact
+   forms are accepted. The three page links need UUIDs and carry no query at all. The fourth,
+   `dynodoc://signin?code=<64 hex digits>&state=<16 to 64 base64url characters>`, carries exactly
+   those two values in that order and nothing else; it opens no page, it only finishes the sign-in
+   this app started (see `signin.rs`), and does nothing when none is pending, when the state is not
+   this app's, or when it has already been used. No link carries a token, a port or a server name,
+   and the window always goes to **your configured server**, never one named in a link.
 5. **The local tool runs with a fixed command line.** The launcher cannot pass an argument. The app
    builds one of three argument lists itself, refuses any other, closes standard input, switches
    off logging, limits time and output, and checks the answer's shape. The public key is read only
@@ -354,12 +371,13 @@ Examples that work: `https://app.dynodoc.online`, `dynodoc.example.org` (https i
 
 - **Capabilities, desktop (`launcher.json`):** window `main`, local content only: `allow-get-state`,
   `allow-set-server`, `allow-open-sign-in-link`, `allow-tools-version`, `allow-device-key-status`,
-  `allow-device-key-create`, `allow-device-public-key`. Phones (`launcher-mobile.json`): the first
-  three only. No core, plugin, file, shell, http or opener permission is granted to anything.
+  `allow-device-key-create`, `allow-device-public-key`, and `allow-start-browser-sign-in`. Phones
+  (`launcher-mobile.json`): `allow-get-state`, `allow-set-server`, `allow-open-sign-in-link` and
+  `allow-start-browser-sign-in` only. No core, plugin, file, shell, http or opener permission is granted to anything.
 - **Sidecar argument lists:** `--version`; `device keygen --out <key> --encrypt --keystore`;
   `device public-key <key>`, where `<key>` is always `<local data dir>/device-key.json`.
 - **Deep links:** `dynodoc://open/workspace`, `dynodoc://open/projects/<uuid>`,
-  `dynodoc://open/documents/<uuid>`.
+  `dynodoc://open/documents/<uuid>`, and `dynodoc://signin?code=<code>&state=<state>`.
 - **Handed to the system (page-initiated):** public-looking `http(s)` addresses without credentials
   (not the listed wildcard-DNS services, not names spelling an address); at most one per 3 s and five
   per minute. **Only for a click or a menu item:** `mailto:` and loopback, private, link-local or

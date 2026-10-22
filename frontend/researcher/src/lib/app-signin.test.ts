@@ -44,7 +44,7 @@ describe('the request an app puts in the sign-in page address', () => {
       // The last character of a canonical challenge carries only four bits.
       good.replace(CHALLENGE, `${CHALLENGE.slice(0, 42)}N`),
       good.replace(CHALLENGE, CHALLENGE.replace('-', '+')),
-      good.replace(CHALLENGE, `${CHALLENGE.slice(0, 40)}%2d%2d%4d`),
+      good.replace(CHALLENGE, `${CHALLENGE.slice(0, 40)}%2b%2b%4d`),
       good.replace(STATE, 'tiny'),
       good.replace(STATE, 'a'.repeat(65)),
       good.replace(STATE, `${STATE}%0a`),

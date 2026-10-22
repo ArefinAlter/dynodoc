@@ -118,6 +118,7 @@ remembering to remove them.
 | 20 | Offboarding workflow with ownership report | PARTIAL | Admin erase reports blockers (owned documents, owned workspaces); no deactivation report. |
 | 21 | Live streams stop promptly after revocation | PARTIAL | Checked only when the next event is delivered; idle streams keep heartbeating ([SECURITY-HARDENING.md](SECURITY-HARDENING.md)). |
 | 22 | Role ladder, spaces, project floors | EXISTS | `access.rs` (viewer, contributor, reviewer, editor, manager, owner), `access_space` kinds organization, team, folder, project. |
+| 23 | Sign-in of the native apps from the system browser | EXISTS | One-time hand-over code with PKCE ([decision 017](decisions/017-native-app-sign-in-handover.md)): web pages `/app-signin` and `/app-signin/finish`, web routes `POST /auth/app-signin` and `/auth/app-signin/redeem`, API routes `POST /auth/app-handover` and `/auth/app-handover/redeem` (both need the service key; issuing also needs the person's own bearer token), table `app_handover_code` (`0046_app_handover.sql`): code stored as SHA-256, 60 seconds, once, at most three unused per account, audit `auth.app_handover.*`. Works at any configured origin; with email sign-in off and no Google the page says no method is turned on. Nothing new to configure. |
 
 ---
 

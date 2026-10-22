@@ -330,6 +330,12 @@ tests.
 - Do not let a WAF buffer or compress `text/event-stream` responses.
 - Rate-limit `/auth/*` at the proxy as the templates do; the API also limits magic-link
   requests to five per 15 minutes per email hash.
+- The apps' browser sign-in (`/auth/app-signin/redeem`, [decision 017](decisions/017-native-app-sign-in-handover.md))
+  also limits failed redeems per code prefix. It limits them per client address only when the
+  web server can see the real address: behind a reverse proxy set `ADDRESS_HEADER=X-Forwarded-For`
+  and `XFF_DEPTH` for the Node server (adapter-node). Without them the web server sees the proxy's
+  own loopback or private address, sends none, and only the per-prefix limit and the proxy's own
+  limit on `/auth/` apply (a shared bucket would let one visitor lock all others out).
 
 ---
 

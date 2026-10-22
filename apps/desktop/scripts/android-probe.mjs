@@ -5,7 +5,11 @@
 // real touch events, and reads the app's decisions from logcat (debug builds log them).
 //
 //   node scripts/android-probe.mjs [phase ...]      (no phase = all)
-//   phases: ipc links frames download upload back bypass renderer deeplink rotate recreate dark offline
+//   phases: ipc links frames download upload back bypass renderer deeplink rotate recreate dark offline signin
+//
+// The `signin` phase is the one that needs no network access to the hosted cloud: it needs the local
+// stack of docs/decisions/017 (the engine API, and the web build started with ORIGIN=http://localhost:14173
+// PORT=14174 and DEV_AUTH=true, see SIGNIN_* below) and `adb reverse`, which it sets up itself.
 //
 // Needs ANDROID_HOME (or ANDROID_SDK_ROOT), the debug APK installed (online.dynodoc.client) and
 // network access to the hosted cloud: the hosted sign-in page is the carrier for the test links
@@ -145,7 +149,7 @@ const phases = {
     const page = await toCloud();
     const calls = [
       ['get_state', {}], ['set_server', { address: 'https://evil.example' }], ['open_sign_in_link', { link: 'https://x' }],
-      ['tools_version', {}], ['device_key_status', {}], ['device_key_create', {}], ['device_public_key', {}],
+      ['start_browser_sign_in', {}], ['tools_version', {}], ['device_key_status', {}], ['device_key_create', {}], ['device_public_key', {}],
       ['plugin:opener|open_url', { url: 'https://example.org' }], ['plugin:opener|open_path', { path: '/sdcard' }],
       ['plugin:deep-link|get_current', {}], ['plugin:deep-link|register', { protocol: 'x' }],
       ['plugin:app|version', {}], ['plugin:app|exit', {}], ['plugin:window|close', { label: 'main' }],
@@ -495,6 +499,128 @@ const phases = {
     check(!logs().some((l) => l.includes(`/projects/${id}`)), 'and the re-created activity does not open it again', logs().join(' | '));
     shell('settings', 'put', 'system', 'font_scale', '1.0');
     await sleep(2000);
+  },
+
+  // The browser sign-in (docs/decisions/017) on the real Android shell and WebView. The system
+  // browser is the emulator's own (it is really asked to open the page); the person in it is played
+  // by this script, which signs in over HTTP and presses Continue the way the page does, then hands
+  // the app link to Android with `am start`, as the browser would.
+  //   SIGNIN_WEB    where the web build listens on this PC (default 127.0.0.1:14174), started with
+  //                 ORIGIN=http://localhost:14173 so that the phone's own address is its origin
+  //   SIGNIN_PORT   the port the phone reaches through `adb reverse` (default 14173); this script
+  //                 listens there and forwards to SIGNIN_WEB, keeping what it saw
+  async signin() {
+    const { createServer, request: httpRequest } = await import('node:http');
+    const web = new URL(process.env.SIGNIN_WEB ?? 'http://127.0.0.1:14174');
+    const port = Number(process.env.SIGNIN_PORT ?? 14173);
+    const origin = `http://localhost:${port}`;
+    const seen = [];
+    const proxy = createServer((req, res) => {
+      seen.push(`${req.method} ${req.url} referer=${req.headers.referer ?? '-'}`);
+      const out = httpRequest({ host: web.hostname, port: web.port, method: req.method, path: req.url, headers: req.headers }, (back) => {
+        res.writeHead(back.statusCode ?? 502, back.headers);
+        back.pipe(res);
+      });
+      out.on('error', () => { res.writeHead(502); res.end(); });
+      req.pipe(out);
+    });
+    await new Promise((ok) => proxy.listen(port, '127.0.0.1', ok));
+    adb('reverse', `tcp:${port}`, `tcp:${port}`);
+    try {
+      // 1. A fresh app shows its launcher; choose the local server. The server is not signed in,
+      //    so the window lands on its sign-in page, and on a phone the app shows its launcher there.
+      const first = await launch({ fresh: true });
+      await waitFor(async () => (await here(first)).includes('tauri.localhost') && (await first.eval(`document.getElementById('about')?.textContent`)), 'the launcher');
+      clearLogs();
+      await first.eval(`window.__TAURI_INTERNALS__.invoke('set_server', { address: ${JSON.stringify(origin)} }).then(() => 'ok')`);
+      first.close();
+      let page = await waitFor(async () => {
+        try {
+          const p = await connect();
+          const url = await here(p);
+          if (url.includes('tauri.localhost') && url.endsWith('#signin') && (await p.eval(`document.getElementById('browser-signin') && !document.getElementById('browser-signin').hidden`))) return p;
+          p.close();
+        } catch { /* the web view is changing page */ }
+        return null;
+      }, 'the launcher, brought up by the server\'s sign-in page', 60);
+      check(true, 'a saved server that is not signed in: the app shows its launcher with "Sign in with your browser"');
+      check(seen.some((l) => l.startsWith('GET /workspace')) && seen.some((l) => l.startsWith('GET /login')), 'after the server had sent the window to /workspace and then to /login', seen.slice(0, 3).join(' | '));
+      check(logs().some((l) => l.includes('sign-in page, showing the launcher')), 'the shell says why', logs().filter((l) => l.includes('showing the launcher')).join(' | '));
+      shot('signin-launcher');
+
+      // 2. The button asks the system browser for the sign-in page.
+      clearLogs();
+      const before = seen.length;
+      await page.eval(`document.getElementById('browser-signin-go').click()`);
+      await sleep(1500);
+      check(logs().some((l) => l.startsWith(`hand-off ${origin}/app-signin?... -> Opened`)), 'the button asks the system browser to open <server>/app-signin?...', logs().join(' | '));
+      let start = null;
+      try {
+        start = await waitFor(async () => seen.slice(before).find((l) => l.startsWith('GET /app-signin?')), 'the browser to ask for the page', 60);
+      } catch { /* checked below */ }
+      check(Boolean(start), 'and the emulator\'s browser really requests it', start ?? 'no request seen (is a browser installed and allowed to start?)');
+      shot('signin-after-button');
+      if (!start) return;
+      const query = new URL(start.split(' ')[1], origin).searchParams;
+      const state = query.get('state');
+      check([...query.keys()].join(',') === 'challenge,state,platform' && query.get('platform') === 'android', 'with challenge, state and platform=android', [...query.keys()].join(',') + ' ' + query.get('platform'));
+
+      // 3. A link with no matching state, then the browser's part: sign in, press Continue.
+      const open = (link) => shell('am', 'start', '-a', 'android.intent.action.VIEW', '-d', `'${link}'`, APP);
+      const hex = (n) => [...Array(n)].map(() => Math.floor(Math.random() * 16).toString(16)).join('');
+      clearLogs();
+      open(`dynodoc://signin?code=${hex(64)}&state=${'a'.repeat(32)}`);
+      await sleep(3000);
+      check(logs().some((l) => l.includes('sign-in link refused -> StateMismatch')), 'a link with the wrong state is refused and the attempt stays', logs().join(' | '));
+
+      const email = `android-${Date.now()}@example.test`;
+      const post = async (path, body, cookie) => {
+        const res = await fetch(`http://${web.host}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', origin, ...(cookie ? { cookie } : {}) }, body: JSON.stringify(body), redirect: 'manual' });
+        return { res, json: await res.json().catch(() => ({})) };
+      };
+      const mailed = await post('/auth/email', { email, display_name: 'Android tester' });
+      const verified = await post('/auth/verify', { token: mailed.json.development_token });
+      const cookie = (verified.res.headers.getSetCookie?.() ?? []).map((c) => c.split(';')[0]).join('; ');
+      check(Boolean(cookie), 'the person signs in in the browser (played over HTTP)');
+      const issued = await post('/auth/app-signin', { challenge: query.get('challenge'), state, platform: 'android' }, cookie);
+      check(typeof issued.json.url === 'string' && issued.json.url.startsWith('dynodoc://signin?code='), 'presses Continue: the page makes the app link', String(issued.json.url ?? issued.res.status).slice(0, 40));
+      const link = issued.json.url;
+      const code = new URL(link).searchParams.get('code');
+
+      // 4. Android hands the link to the app; the window finishes in its own web view.
+      clearLogs();
+      open(link);
+      const done = await waitFor(async () => {
+        try {
+          const p = await connect();
+          const url = await here(p);
+          if (url === `${origin}/workspace` && (await p.eval('document.readyState')) === 'complete') return p;
+          p.close();
+        } catch { /* the web view is changing page */ }
+        return null;
+      }, 'the workspace, signed in', 60);
+      check(true, 'the app link takes the window through /app-signin/finish to /workspace');
+      const session = await done.eval(`fetch('/auth/session').then((r) => r.json())`);
+      check(session?.authenticated === true, 'and the window is signed in (a session cookie of its own)', JSON.stringify(session));
+      shot('signin-workspace');
+      const finishSeen = seen.filter((l) => l.includes('/app-signin/finish'));
+      check(finishSeen.length > 0 && finishSeen.every((l) => l.startsWith('GET /app-signin/finish referer=')), 'the finish page was fetched without any query', finishSeen.join(' | '));
+      check(!seen.some((l) => l.includes(code)), 'no request the server saw holds the code (address or Referer)');
+      check(!logs().some((l) => l.includes(code)) && !adb('logcat', '-d').includes(code), 'and the code is nowhere in the device log');
+      const ids = await done.eval(`fetch('/auth/session').then((r) => r.json()).then((j) => j.identity_id)`);
+      check(Boolean(ids), 'the account is the one the browser signed in');
+
+      // 5. The same link again does nothing.
+      clearLogs();
+      open(link);
+      await sleep(3500);
+      check(logs().some((l) => l.includes('sign-in link refused -> NothingPending')), 'the same link again (a replay) finds nothing pending', logs().join(' | '));
+      check((await here(done)) === `${origin}/workspace`, 'and the window stays on the workspace');
+      done.close();
+    } finally {
+      proxy.close();
+      adb('reverse', '--remove', `tcp:${port}`);
+    }
   },
 
   async dark() {

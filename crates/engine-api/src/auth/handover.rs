@@ -347,6 +347,22 @@ async fn record_failure(state: &AppState, key: &[u8]) -> Result<(), sqlx::Error>
     Ok(())
 }
 
+/// What a redeem needs to know about the code it was given.
+#[derive(sqlx::FromRow)]
+struct Row {
+    id: Uuid,
+    identity_id: Uuid,
+    challenge: Vec<u8>,
+    state: String,
+    platform: String,
+    /// Not used up yet.
+    unused: bool,
+    /// Not expired, by the database clock.
+    fresh: bool,
+    /// The account is active and still at the generation the code was issued at.
+    account: bool,
+}
+
 enum Redeemed {
     Account(Uuid),
     Refused,
@@ -361,17 +377,26 @@ async fn consume(
 ) -> Result<Redeemed, sqlx::Error> {
     let mut tx = state.pool.begin().await?;
     // The row lock makes simultaneous redeems of one code take turns: the second sees it used.
-    let row: Option<(Uuid, Uuid, Vec<u8>, String, String, bool, bool, bool)> = sqlx::query_as(
+    let row: Option<Row> = sqlx::query_as(
         "select h.id, h.identity_id, h.challenge, h.state, h.platform,
-                h.consumed_at is null, h.expires_at > now(),
-                exists(select 1 from identity i where i.id=h.identity_id and i.disabled_at is null and i.session_generation=h.session_generation)
+                h.consumed_at is null as unused, h.expires_at > now() as fresh,
+                exists(select 1 from identity i where i.id=h.identity_id and i.disabled_at is null and i.session_generation=h.session_generation) as account
          from app_handover_code h where h.code_hash=$1 for update of h",
     )
     .bind(sha256(code.as_bytes()))
     .fetch_optional(&mut *tx)
     .await?;
     // Nothing to attribute an unknown code to, so no audit row; the rate windows count it.
-    let Some((id, identity, challenge, stored_state, platform, unused, fresh, account)) = row
+    let Some(Row {
+        id,
+        identity_id: identity,
+        challenge,
+        state: stored_state,
+        platform,
+        unused,
+        fresh,
+        account,
+    }) = row
     else {
         return Ok(Redeemed::Refused);
     };
