@@ -141,6 +141,16 @@ before any customer installs.
 | converter | 0 or 1 | Optional; needed only for legacy `.doc` import |
 | database-admin | on demand | Profile `maintenance`; runs `engine-cli` with the owner URL |
 
+*As built (22 October 2026, P0-4; `infra/selfhosted`, README there).* The diagram is kept, with
+these differences. There are five networks: `published` (the proxy alone; the only one Docker
+publishes a port from), `frontend` (internal; the proxy and the web server, so the proxy has no
+route to the API or the database), `engine` (internal; web, API, PostgreSQL and the jobs),
+`conversion` (internal; web and the optional converter) and `egress` (the web server, and the ACME
+client when it runs; remove the web server from it with `compose.no-egress.yml`). Four one-shot jobs
+run on every `up` and stop the stack if they fail: `secrets-init`, `preflight`, `db-roles`, `init`.
+`database-admin` and `mailcheck` (the real SMTP handshake) are on-demand services of profile
+`maintenance`. Details: README of `infra/selfhosted`.
+
 ### 3.2 Profile B: replicated, external PostgreSQL
 
 ```
@@ -273,9 +283,12 @@ to change later (runbook 9.9).
 
 | Mode | When | Notes |
 |---|---|---|
-| ACME (HTTP-01 or DNS-01) via certbot or lego | Public name | The current production proxy answers `/.well-known/acme-challenge/` from a webroot |
-| Customer-provided certificate and key (internal CA) | Intranet, air-gap | Provide full chain; reload the proxy on renewal |
-| Evaluation self-signed | Test only | Office hosts and `engine-cli` will reject it; never for add-in pilots |
+| ACME (HTTP-01 or DNS-01) via certbot or lego | Public name | The current production proxy answers `/.well-known/acme-challenge/` from a webroot. **Built** in the bundle: lego v5.5.2, HTTP-01 only, `DYNODOC_TLS_MODE=acme`; no default authority; terms must be accepted in `.env` |
+| Customer-provided certificate and key (internal CA) | Intranet, air-gap | Provide full chain; reload the proxy on renewal. **Built**: `DYNODOC_TLS_MODE=provided`; the proxy checks key, dates, names and chain order and refuses to start otherwise; a replaced certificate is checked, then loaded without downtime |
+| Evaluation self-signed | Test only | Office hosts and `engine-cli` will reject it; never for add-in pilots. **Built**: `DYNODOC_TLS_MODE=evaluation`, labelled in the certificate, a response header and the log, five-minute HSTS |
+
+The bundle has no default mode: `DYNODOC_TLS_MODE` must be set, so no production certificate is ever
+chosen or generated silently. Renewal and reload commands are in the README of `infra/selfhosted`.
 
 Settings carried over from the production templates: `ssl_protocols TLSv1.2 TLSv1.3`,
 `Strict-Transport-Security: max-age=31536000` (no `includeSubDomains`, no preload
@@ -734,7 +747,8 @@ run), `--json` for tools. `dynodoctl` is meant to call both.
 | Converter | `CONVERTER_KEY` | Constants in `server.py`: 3,000,000-byte cap, two conversion slots, 45 s timeout, macros disabled by profile registry. Listens on 8090. |
 | PostgreSQL image | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | Compose uses `dynodoc`/`dynodoc`. The password is the owner credential, not the runtime one. |
 | Operator tool | `MIGRATION_DATABASE_URL`, `DATABASE_URL` | `engine-cli migrate` and `grant-runtime` use the first; `check-runtime`, `verify` use the second. CLI binaries read the environment, not dotenv files. |
-| Compose helper | `REF_AUTHORITY_KEY_FILE` | Only with `compose.schema38.override.yml`. |
+| Compose helper | `REF_AUTHORITY_KEY_FILE` | Only with `compose.schema38.override.yml` (hosted). Not wired into `infra/selfhosted` yet. |
+| Bundle (`infra/selfhosted`, **built**) | `DYNODOC_TLS_MODE` (required: `provided`, `evaluation`, `acme`), `DYNODOC_BIND` (default `127.0.0.1`), `DYNODOC_HTTP_PORT`, `DYNODOC_HTTPS_PORT`, `DYNODOC_HSTS_MAX_AGE`, `DYNODOC_TLS_RELOAD_SECONDS`, `DYNODOC_ACME_EMAIL`, `DYNODOC_ACME_ACCEPT_TOS`, `DYNODOC_ACME_CA`, `DYNODOC_IMAGE_REGISTRY`, `DYNODOC_VERSION`, `DYNODOC_POSTGRES_IMAGE`, `COMPOSE_PROFILES` | Set in `.env` beside the web settings of 7.2; documented in `infra/selfhosted/bundle.env.example` and its README. The bundle fixes the database names (login `dynodoc_runtime`, database `dynodoc`, host `postgres`). |
 
 ### 7.4 Proposed variables
 
@@ -869,7 +883,14 @@ with a record: who, when, version, checks run, results.
 
 ### 9.1 Install, Profile A
 
-Proposed:
+*Today (P0-4, no `dynodoctl` yet):* follow the README of `infra/selfhosted`: build or pull the
+images, `generate-env`, choose `DYNODOC_TLS_MODE`, `docker compose run --rm mailcheck --to ...`,
+`docker compose up -d --wait`. The four jobs of the start-up do steps 1 to 4 below on every `up`
+(secrets and settings checked, runtime login created, migrate, grant, check). Step 2 of 9.2 needs
+a working mail transport: operator-issued sign-in links (P0-3) are not built, so the first
+administrator signs in by an emailed link, and the first request for a link creates an account.
+
+Proposed (`dynodoctl`):
 
 ```sh
 sha256sum -c SHA256SUMS
@@ -1346,6 +1367,16 @@ certificate, skew a clock, drop the listener, revoke the database ACL).
 ## 15. Appendices
 
 ### Appendix A: Profile A Compose project (proposed, abridged)
+
+*The built project is `infra/selfhosted/compose.yml` (22 October 2026); this sketch is older and
+differs from it as follows.* Secrets are not Compose `secrets:` (Compose ignores `uid`, `gid` and
+`mode` for file secrets, so a 0600 file is unreadable to the container user): the job
+`secrets-init` copies them into one volume per service, owned by that service's user, mode 0400.
+Four networks plus `published`; a `tools` image runs `preflight`; the `database-admin` and
+`mailcheck` services are on demand; the proxy is a built image (`images/Dockerfile.proxy`), not
+a bare nginx; images are referenced as `${DYNODOC_IMAGE_REGISTRY}/name:${DYNODOC_VERSION}` and a
+generated overlay (`scripts/make-release-overlay.mjs`) pins them by digest. The sketch below is
+left as the original design record.
 
 ```yaml
 # docker-compose.yml, release 1.0 (proposed). Images pinned by digest; no build section.

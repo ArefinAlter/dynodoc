@@ -1,0 +1,37 @@
+# Build the bundle's images from this source tree (development, evaluation, a first release).
+# Not needed when the images come from a registry (compose.release.yml).
+#
+#   docker compose -f compose.yml -f compose.build.yml build
+#   docker compose -f compose.yml -f compose.build.yml --profile '*' build     # also acme, converter
+#
+# The Rust build of the API takes a long time the first time (about the time of `cargo build
+# --release` for the workspace); BuildKit caches the dependencies, so the second build is quick.
+# Image names follow DYNODOC_IMAGE_REGISTRY and DYNODOC_VERSION (defaults dynodoc-local and dev).
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: infra/selfhosted/images/Dockerfile.api
+  web:
+    build:
+      context: ../..
+      dockerfile: infra/selfhosted/images/Dockerfile.web
+      target: runtime
+  # The configuration checker is the web image plus scripts; the `preflight` job runs it.
+  preflight:
+    build:
+      context: ../..
+      dockerfile: infra/selfhosted/images/Dockerfile.web
+      target: tools
+  proxy:
+    build:
+      context: .
+      dockerfile: images/Dockerfile.proxy
+  acme:
+    build:
+      context: .
+      dockerfile: images/Dockerfile.acme
+  converter:
+    build:
+      context: ../..
+      dockerfile: infra/converter/Dockerfile

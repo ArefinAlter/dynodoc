@@ -1,0 +1,93 @@
+#!/bin/sh
+# Dynodoc bundled proxy.
+#
+#   proxy-entrypoint run      (default) prepare TLS, write the nginx configuration, run nginx, and
+#                             reload it without downtime when the certificate changes
+#   proxy-entrypoint check    validate the TLS settings and certificate files, change nothing
+#   proxy-entrypoint reload   validate the certificate files now and reload the running nginx
+#
+# TLS mode (DYNODOC_TLS_MODE, required, no default):
+#   provided    the operator's certificate and key, mounted read-only; refuses to start if wrong
+#   evaluation  a self-signed certificate made here for the configured name; NOT FOR PRODUCTION
+#   acme        a certificate issued automatically by the `acme` service (HTTP-01)
+set -eu
+. /usr/local/lib/dynodoc/tls-lib.sh
+
+RELOAD_SECONDS=${DYNODOC_TLS_RELOAD_SECONDS:-60}
+
+prepare() {
+  parse_origin || return 1
+  mode_prepare || return 1
+  return 0
+}
+
+# Rewrite the configuration and reload nginx; keep the old configuration if the new one is bad.
+reconfigure() {
+  rm -rf "$RENDER_DIR.bak"
+  cp -a "$RENDER_DIR" "$RENDER_DIR.bak"
+  if prepare && render_config && nginx -t -q 2>/dev/null; then
+    if nginx -s reload; then
+      log "Configuration reloaded (TLS mode: $DYNODOC_TLS_MODE, HTTPS: $HTTPS). Connections in progress were not interrupted."
+      [ "$DYNODOC_TLS_MODE" != evaluation ] || banner_evaluation
+      rm -rf "$RENDER_DIR.bak"
+      return 0
+    fi
+    err "nginx did not accept the reload signal"
+  else
+    err "The new certificate or configuration was NOT applied; the proxy keeps serving with the previous one."
+  fi
+  rm -rf "$RENDER_DIR"
+  mv "$RENDER_DIR.bak" "$RENDER_DIR"
+  return 1
+}
+
+watch() {
+  last=$(fingerprint)
+  while sleep "$RELOAD_SECONDS"; do
+    if [ "${DYNODOC_TLS_MODE:-}" = evaluation ]; then
+      # Renew the self-signed certificate before it expires; a renewal changes the files, so the
+      # fingerprint check below picks it up.
+      eval_ensure || err "could not renew the evaluation certificate; will try again"
+    fi
+    now=$(fingerprint)
+    if [ "$now" != "$last" ]; then
+      log "The certificate files changed; checking them."
+      reconfigure || true
+      last=$now
+    fi
+  done
+}
+
+cmd=${1:-run}
+case "$cmd" in
+  check)
+    if prepare; then
+      log "TLS mode '$DYNODOC_TLS_MODE': OK."
+      exit 0
+    fi
+    exit 78
+    ;;
+  reload)
+    if reconfigure; then exit 0; fi
+    exit 1
+    ;;
+  run) ;;
+  *)
+    exec "$@"
+    ;;
+esac
+
+mkdir -p "$RENDER_DIR"
+if ! prepare; then
+  err "The proxy will not start. Nothing is listening on the published ports."
+  exit 78
+fi
+render_config
+log "TLS mode: $DYNODOC_TLS_MODE. Public address: $ORIGIN_URL. Names served: $ALL_HOSTS."
+[ "$DYNODOC_TLS_MODE" != evaluation ] || banner_evaluation
+if ! nginx -t; then
+  err "nginx rejected the generated configuration"
+  exit 78
+fi
+watch &
+exec nginx -g 'daemon off;'

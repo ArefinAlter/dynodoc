@@ -1,0 +1,96 @@
+#!/bin/sh
+# Obtains and renews the proxy's certificate with lego (HTTP-01 challenge) and hands it over.
+#
+# The proxy serves /.well-known/acme-challenge/ from the shared webroot, so port 80 of the
+# installation must be reachable from the certificate authority under the name in ORIGIN.
+# lego keeps its account and certificates under lego/ (private to this container's user); each
+# time a new certificate arrives it is copied to acme/v-<time>/ and acme/current is switched to
+# it with one rename, so the proxy never sees a certificate paired with the wrong key.
+# The proxy notices the change within DYNODOC_TLS_RELOAD_SECONDS and reloads without downtime.
+#
+# Settings (compose.yml passes them): ORIGIN, DYNODOC_ALT_ORIGINS, DYNODOC_ACME_EMAIL,
+# DYNODOC_ACME_ACCEPT_TOS (must be true), DYNODOC_ACME_CA (a lego shortcode such as
+# letsencrypt or letsencrypt-staging, or the URL of an ACME directory; required, no default),
+# DYNODOC_BIND (only used to warn).
+set -eu
+
+STATE=/var/lib/dynodoc-tls
+LEGO_DIR=$STATE/lego
+OUT=$STATE/acme
+WEBROOT=$STATE/acme-webroot
+CHECK_SECONDS=${DYNODOC_ACME_CHECK_SECONDS:-43200}
+RETRY_SECONDS=${DYNODOC_ACME_RETRY_SECONDS:-900}
+
+log() { printf '[dynodoc-acme] %s\n' "$*"; }
+die() { printf '[dynodoc-acme] ERROR: %s\n' "$*" >&2; exit 78; }
+
+[ -n "${ORIGIN:-}" ] || die "ORIGIN is not set"
+ORIGIN_LC=$(printf '%s' "$ORIGIN" | tr 'A-Z' 'a-z')
+printf '%s' "$ORIGIN_LC" | grep -Eq '^https://[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]{1,5})?$' || die "ORIGIN '$ORIGIN' is not an https://host[:port] origin"
+HOST=${ORIGIN_LC#https://}
+HOST=${HOST%%:*}
+DOMAINS=$HOST
+for o in $(printf '%s' "${DYNODOC_ALT_ORIGINS:-}" | tr 'A-Z,' 'a-z '); do
+  h=${o#https://}
+  h=${h%%:*}
+  case " $DOMAINS " in *" $h "*) ;; *) DOMAINS="$DOMAINS $h" ;; esac
+done
+for d in $DOMAINS; do
+  if printf '%s' "$d" | grep -Eq '^[0-9]+(\.[0-9]+){3}$' || [ "$d" = localhost ] || ! printf '%s' "$d" | grep -q '\.'; then
+    die "'$d' is not a public DNS name. Automatic certificates need a name that the certificate authority can resolve and reach; use DYNODOC_TLS_MODE=provided or evaluation instead."
+  fi
+done
+[ -n "${DYNODOC_ACME_EMAIL:-}" ] || die "DYNODOC_ACME_EMAIL is not set (the contact address the certificate authority keeps for expiry and problem notices)"
+[ "${DYNODOC_ACME_ACCEPT_TOS:-}" = true ] || die "DYNODOC_ACME_ACCEPT_TOS is not 'true'. Read the certificate authority's terms of service and set DYNODOC_ACME_ACCEPT_TOS=true to accept them. Nothing is requested until you do."
+[ -n "${DYNODOC_ACME_CA:-}" ] || die "DYNODOC_ACME_CA is not set. Use letsencrypt-staging first to test (its certificates are not trusted), then letsencrypt; or the URL of another ACME directory."
+case "${DYNODOC_BIND:-127.0.0.1}" in
+  127.*|::1|"[::1]") log "WARNING: DYNODOC_BIND=${DYNODOC_BIND:-127.0.0.1} publishes the proxy on the loopback address only. A public certificate authority cannot reach port 80 there, so issuing will fail. Publish the proxy on the public address (DYNODOC_BIND=0.0.0.0) or use a different TLS mode." ;;
+esac
+
+mkdir -p "$LEGO_DIR" "$OUT" "$WEBROOT/.well-known/acme-challenge"
+chmod 700 "$LEGO_DIR"
+
+domain_args=""
+for d in $DOMAINS; do domain_args="$domain_args --domains $d"; done
+
+# The newest certificate lego holds for the first name, as "CERT KEY" paths.
+find_lego_files() {
+  crt=$(find "$LEGO_DIR" -type f -name "$HOST.crt" 2>/dev/null | head -n 1)
+  key=$(find "$LEGO_DIR" -type f -name "$HOST.key" 2>/dev/null | head -n 1)
+  [ -n "$crt" ] && [ -n "$key" ] && printf '%s %s\n' "$crt" "$key"
+}
+
+# Copy lego's certificate to a new version directory if it differs from the published one.
+publish() {
+  files=$(find_lego_files) || return 1
+  crt=${files% *}
+  key=${files#* }
+  if [ -s "$OUT/current/fullchain.pem" ] && cmp -s "$crt" "$OUT/current/fullchain.pem" && cmp -s "$key" "$OUT/current/privkey.pem"; then
+    return 0
+  fi
+  newdir=$OUT/v-$(date -u +%Y%m%d%H%M%S)
+  mkdir -p "$newdir"
+  cp "$crt" "$newdir/fullchain.pem"
+  cp "$key" "$newdir/privkey.pem"
+  chmod 600 "$newdir/privkey.pem"
+  ln -s "$(basename "$newdir")" "$OUT/current.tmp"
+  mv -T -f "$OUT/current.tmp" "$OUT/current"
+  ls -1d "$OUT"/v-* 2>/dev/null | sort -r | tail -n +3 | while read -r old; do rm -rf "$old"; done
+  log "Published a new certificate for: $DOMAINS ($(openssl x509 -in "$newdir/fullchain.pem" -noout -enddate))"
+  return 0
+}
+
+log "Certificate authority: $DYNODOC_ACME_CA. Names: $DOMAINS. Contact: $DYNODOC_ACME_EMAIL."
+log "Challenge: HTTP-01 through the proxy on port 80. A renewal is attempted when the certificate is due (checked every ${CHECK_SECONDS}s)."
+while true; do
+  wait=$CHECK_SECONDS
+  # shellcheck disable=SC2086
+  if lego --log.format text run --path "$LEGO_DIR" --accept-tos --email "$DYNODOC_ACME_EMAIL" \
+        --server "$DYNODOC_ACME_CA" $domain_args --http --http.webroot "$WEBROOT" --no-random-sleep; then
+    publish || { log "ERROR: lego reported success but its certificate files were not found under $LEGO_DIR"; wait=$RETRY_SECONDS; }
+  else
+    log "ERROR: the certificate request failed (see lines above). The proxy keeps any certificate it already has. Trying again in ${RETRY_SECONDS}s."
+    wait=$RETRY_SECONDS
+  fi
+  sleep "$wait"
+done
