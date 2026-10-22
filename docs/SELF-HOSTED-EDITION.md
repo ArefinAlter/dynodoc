@@ -1569,7 +1569,7 @@ production release is unchanged. Settings and defaults are in the deployment gui
 - *Not built.* Product name in the logo images, the installable-app name (`site.webmanifest`)
   and page titles outside sign-in, workspace, shared link and administration; the Office.js
   CDN (P0-7); operator-issued sign-in links (P0-3; SMTP was built the same day, see below); the Compose wiring of the new
-  variables and a web image that contains the check tool (P0-4, P0-5, P0-6); `engine-cli`;
+  variables and a web image that contains the check tool (built on 22 October in P0-4, see its status paragraph; the `dynodoctl` call remains P0-5); `engine-cli`;
   Windows has no secret-file mode check (as in the API). The hosted `infra/demo/*`,
   `extensions/*` and `static/connectors/*` files in Appendix B are untouched.
 - *Verified here.* `vitest`: 73 files, 743 tests pass and 4 (Unix file modes) are skipped on
@@ -1624,7 +1624,7 @@ mail through Resend exactly as before. Settings, messages and examples are in th
 - *Not built.* A database outbox with retry and administrator visibility, operator-issued sign-in
   links (the rest of P0-3), XOAUTH2, DKIM signing (SPF, DKIM and DMARC guidance only, in the guide),
   bounce handling, per-language templates, a cap on concurrent sends (the API's per-address limits
-  apply), the `dynodoctl` call to `check-mail`, the Compose wiring. SMTP_MAX_RECIPIENTS is not a
+  apply), the `dynodoctl` call to `check-mail` (the Compose wiring was built in P0-4: `docker compose run --rm mailcheck`). SMTP_MAX_RECIPIENTS is not a
   setting: the cap is fixed at 10. No real mail provider was contacted; every claim above rests on
   the in-process server described below.
 - *Verified here.* Against the in-process mail server only, no real provider: `vitest` 84 files, 943 tests pass and 4 (Unix file modes) are

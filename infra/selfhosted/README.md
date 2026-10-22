@@ -339,6 +339,35 @@ the backup into the old images. Read the release notes first: some releases need
 of your data. `dynodoctl upgrade` will automate this; today the steps above are the procedure.
 Base images are pinned by digest; `node scripts/pin-bases.mjs` shows which pins are out of date.
 
+## Images
+
+| Image | Built from | Size on disk | Cold build (12 cores, shared) | Platforms of the base |
+|---|---|---|---|---|
+| `api` | `images/Dockerfile.api`: Rust 1.96 build, `debian:bookworm-slim` runtime; `engine-api` and `engine-cli` | 182 MB | 23 min (cached: seconds) | amd64, arm64 |
+| `web` | `images/Dockerfile.web` target `runtime`: `node:24-bookworm-slim` | 536 MB | 9 min | amd64, arm64 |
+| `tools` | the same file, target `tools`: `web` plus the settings generator and checkers (about 100 KB more; shares every other layer) | 536 MB (shared) | 10 s | amd64, arm64 |
+| `proxy` | `images/Dockerfile.proxy`: `nginxinc/nginx-unprivileged:stable-alpine3.24` plus openssl | 92 MB | seconds | amd64, arm64 |
+| `acme` | `images/Dockerfile.acme`: `alpine:3.24` plus lego v5.5.2 | 103 MB | seconds | amd64, arm64 (lego also arm/v6, arm/v7) |
+| `postgres` | `postgres:16` as published | 642 MB | pulled | amd64, arm64 |
+
+Every base image is pinned by digest (the digest of the multi-platform index, so one pin serves
+amd64 and arm64). `node scripts/pin-bases.mjs` shows which pins are out of date and `--update`
+rewrites them; rebuild and run the tests afterwards. The API image is built for amd64 and arm64 by
+the engine repository's CI; the web, proxy and acme images are plain multi-platform builds
+(`docker buildx build --platform linux/amd64,linux/arm64`). Only amd64 was built and run here.
+
+For a release, push the images and generate the overlay that names them by digest:
+
+```sh
+node scripts/make-release-overlay.mjs --registry registry.example.org/dynodoc --version 1.0.0
+docker compose -f compose.yml -f compose.release.generated.yml up -d --wait
+```
+
+`node scripts/sbom.mjs` writes an SPDX bill of materials per image with the Docker Scout CLI. It
+lists operating-system packages and the Node dependencies of the web image; the API image's Rust
+crates are not in it (the binary carries no dependency table; building it with `cargo auditable`
+is part of P0-6). Signing is a later task (P3-1).
+
 ## Optional parts
 
 - **Legacy `.doc` import.** Generate the settings with `--with-converter`, then

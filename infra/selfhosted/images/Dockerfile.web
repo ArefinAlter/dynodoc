@@ -28,8 +28,9 @@ WORKDIR /app
 COPY --from=build --chown=node:node /app/build ./build
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/package.json ./package.json
-# The bundle runs every Dynodoc container as 10001:10001 (compose.yml `user:`), so file ownership
-# in the image does not matter: everything under /app is read-only for a non-owner.
+# compose.yml runs the web server as 10001:10001 (`user:`), not as the image's `node` user, so
+# the ownership of files in the image does not matter: everything under /app is readable and
+# nothing in it is writable by that user.
 USER node
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000 BODY_SIZE_LIMIT=16M
 EXPOSE 3000
