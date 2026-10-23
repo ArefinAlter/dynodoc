@@ -1,5 +1,46 @@
 # Engine evolution handoff
 
+## Source: operator-issued sign-in links and first administrator (decision 018) (23 October 2026)
+
+The self-hosted installation can now be signed into without email delivery, which closes the first-administrator gap (Phase 0
+acceptance criterion 1) and the dead end of `AUTH_EMAIL_LINK=off`. An operator with shell access and the OWNER database credential
+mints a one-time link: `engine-cli auth issue-link --email <addr> [--ttl 15m] [--create] [--role admin|user]` (also `list-links` and
+`revoke-link`), run through `dynodoctl admin-link`, which needs a terminal and the typed address, prints the link once, saves it
+nowhere and has no `--json`. Migration **0047_operator_sign_in_link.sql** (additive; **amended in place during review, not rehearsed or
+released**): the token is stored only as SHA-256; lifetime 60 s to 24 h (default 15 min); a link is ended exactly once by triggers (used,
+revoked or expired; `used` after expiry refused in the table too); one live link per account (a new one revokes earlier unused ones);
+`CHECK`s refuse control, bidi and other invisible characters in the operator label and reason. The runtime database login can select,
+update and delete but **never insert** (a new `CONSUME_PRUNE` privilege class enforced by `check-runtime`, by table and by column), and
+**no HTTP route issues links**. `POST /auth/verify` tries emailed links first (hosted behaviour unchanged; a miss costs one indexed
+existence check), then this table; use-up, login and audit run in one transaction. It works with `AUTH_EMAIL_LINK=off`, which still
+only stops the public request for an emailed link. Roles come from `ADMIN_EMAILS` only: `--role` asserts and refuses on mismatch;
+`--create` makes an account only for the first administrator (address in `ADMIN_EMAILS`, no active admin account, one fixed advisory
+lock so concurrent creates cannot both pass) or after `--confirm-create <address again>` (dynodoctl asks `CREATE ACCOUNT <address>`).
+A disabled account gets no link; sign-out-everywhere or disabling kills outstanding links; erasure deletes them; nothing is counted in
+the public request window, so the public cannot lock the operator out. Retention sweeps expired links with an audit row. The web page
+keeps the token in memory and removes it from the address bar once the request is made. The bundle's `database-admin` service uses
+`logging: driver none` so a killed wrapper cannot leave the link in `docker logs` (cost: other maintenance commands leave no post-hoc
+log; verified by the reviewer on Compose 5.1.4, not run against the real bundle by the author).
+
+**Review.** An independent adversarial review found no Critical or High issue (no remote path to mint; token kinds cannot be confused;
+single use holds under 8 x 5 concurrent uses; hosted 401 body byte-identical). Its Lows are fixed with tests that fail under mutation:
+"first administrator only" was not atomic across two configured admin addresses (23 of 25 concurrent rounds both succeeded); failed
+hosted verifies cost four extra statements; bidi characters in the operator label could spoof terminal output; the "emailed link
+first" order and the reserved-agent-address guard were unpinned by tests. **Stated limit:** a disabled sole administrator cannot be
+restored for the same address (way out: a second `ADMIN_EMAILS` address or owner SQL; no `--restore` was built). Note in the threat
+table: `/auth/exchange` (service key only) already mints sessions for any address and the runtime role can insert refresh tokens, so
+this feature does not close SQL-injection-to-session paths.
+
+**Evidence (local; Actions of this repository cannot run).** `operator_link_test` 32, `engine-cli` operator tests 8, `dynodoctl` 384,
+`engine-api` lib 102; the full workspace run after the last Rust change had one failure, the known Windows-only SSE timing test; fmt,
+clippy, rustdoc and OpenAPI clean (no route added); frontend vitest 97 files and 1,141 passed; Chromium on an isolated stack with the
+restricted runtime role: operator-link flow with email sign-in off (including an expired 60 s link, replay, an ordinary account that stays
+non-admin, and `/app-signin` working afterwards) and the selfhosted, security, session-revocation, app-signin and launch specs all pass.
+27 manual mutations each failed a test. **Not verified:** `dynodoctl admin-link` and `logging: none` against the real Docker bundle;
+Linux; migration 0047 on a production-sized database; the changed CI step (owner URL given only to the one e2e project that needs it)
+is unexecuted. Owner questions: one live link per account is accepted; `dynodoctl list-links` and `revoke-link` wrappers (today:
+`docker compose --profile maintenance run --rm database-admin auth list-links`); a `--restore` path for a disabled sole administrator.
+
 ## Source: self-hosted Phase 0, add-in manifests, offline builder, local Office.js (23 October 2026)
 
 P0-7 is built in source for the web tier (frontend only; no API, auth or `dynodoctl` change). A self-hosted installation can now give
