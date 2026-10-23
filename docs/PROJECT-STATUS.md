@@ -1,5 +1,23 @@
 # Dynodoc: intent, current implementation and remaining work
 
+## Live: schema 47 release (23 October 2026, 05:35 UTC)
+
+The VPS workspace (app.dynodoc.online), private API and admin site run application `3fa06fd` at PostgreSQL schema 47; the previous
+release was `f62d62c` at schema 41. Record, evidence and rollback: [2026-10-23-schema47-release.md](operations/2026-10-23-schema47-release.md).
+It brings migrations 0042 to 0047 to production (agent read, policy and write paths, review revision binding, native-app sign-in hand-over,
+operator-issued sign-in links) and the web build with the installable web app, the AI-proposals inbox and the revision-bound review
+screens. **Dormant or off on this installation:** the agent gateway (`AGENT_GATEWAY` unset, no agent key), the retention jobs (the hosted
+compose file passes `RETENTION_JOBS=off`; the API's own default is on), operator links (an `engine-cli` command with the owner
+credential only, no route), and the native-app sign-in (live but only the undistributed apps use it). The `app.dynodoc.online` nginx
+server block was replaced with the repository version (live file first proved identical to the previous release's file).
+
+Rehearsal on a production copy: migrations 0.7 s, event and snapshot digests identical (2 documents, 38 events, 1 snapshot, 9 identities),
+the candidate API and both web variants started with the PRODUCTION secrets and passed the new start-up validation. Activation: verified
+backup 325,990 bytes, fingerprints identical apart from the schema number, 28 live checks passed, unrelated containers unchanged, about
+twenty to thirty seconds of maintenance. App-repository Actions could not run (billing); local gates and the green public engine CI
+stood in. **Not verified:** a signed-in session on the live site (the owner should sign in once and open a document). The public
+marketing site is deployed by Vercel on every push to `main` and had been running this web build since 22 October.
+
 ## Source: operator-issued sign-in links and first administrator (decision 018) (23 October 2026)
 
 The self-hosted installation can now be signed into without email delivery, which closes the first-administrator gap (Phase 0
