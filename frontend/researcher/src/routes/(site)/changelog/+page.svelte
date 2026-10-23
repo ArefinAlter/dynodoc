@@ -3,6 +3,7 @@
   import Ptero from '$lib/art/Ptero.svelte';
   import InfoHero from '$lib/components/marketing/InfoHero.svelte';
   import { Btn, Section } from '$lib/components/site';
+  import { production } from '$lib/site/production';
 
   const description =
     'Plain-language release notes for Dynodoc, newest first: what changed for you, and whether it runs in the hosted pilot or only in source.';
@@ -20,6 +21,22 @@
 
   // Newest first. Distilled from docs/PROJECT-STATUS.md; no dates beyond those recorded there.
   const entries: Entry[] = [
+    {
+      id: 'source-15-to-23-october',
+      iso: '2026-10-23',
+      date: '15 to 23 Oct 2026',
+      state: 'source',
+      title: 'Built since 14 October: browsers, command-line builds, approvals and AI agents',
+      summary:
+        'Everything in this entry is in source and waiting for a release. None of it runs on the hosted pilot yet.',
+      changes: [
+        'Browsers: the web app’s tests now also run in Firefox and in WebKit, the engine Safari uses, with phone-sized screens emulated. Layout and touch fixes for small screens are built. An installable web app (a manifest, an offline page and a service worker that keeps only public script, style and font files) is built. Real phones and Safari itself have not been tested, and installing it on a real operating system has not been tried.',
+        'Command-line tools and engine: the public engine repository builds and tests on Linux, macOS and Windows, on Intel or AMD and on Arm processors (Windows on Arm is a lower tier), and a release workflow builds the command-line tools for all six. These are automated builds only. No prebuilt tools are published yet, and the binaries would not be signed.',
+        'Approvals: an approval counts only for the draft the reviewer looked at. If the draft changes afterwards, the approval stops counting and a new one is needed. This needs schema 45, which has not been released.',
+        'AI-agent connectors: an AI agent can read what a project’s policy allows and propose changes as a draft. A person has to submit the draft, and the project’s usual review rules apply. Agents are off by default, the hosted pilot does not offer them, and none has been run with a real AI client.'
+      ],
+      refs: 'Source only · schemas 42 to 47 · not released'
+    },
     {
       id: 'schema-41-release',
       iso: '2026-10-14',
@@ -220,7 +237,7 @@
   <InfoHero
     eyebrow="CHANGELOG"
     title="Changelog"
-    lede="What changed, in plain language, newest first. Production runs application f62d62c on schema 41. Entries marked In source describe work that was implemented before the 12 October release; the newest entry says which parts are now deployed."
+    lede="What changed, in plain language, newest first. The hosted workspace runs application {production.app} on schema {production.schema}. Entries marked In source describe work as it was when it was built and tested, before release; later entries and the roadmap say what has since been deployed."
   >
     {#snippet actions()}
       <Btn href="/roadmap" arrow>See the roadmap</Btn>
@@ -235,7 +252,7 @@
     id="entries"
     eyebrow="RELEASE NOTES"
     title="October 2026."
-    lede="Eight entries from the project record, newest first."
+    lede="Thirteen entries from the project record, newest first."
     layout="split"
   >
     <ol class="log">
@@ -265,7 +282,7 @@
     align="center"
     eyebrow="WHAT NEXT"
     title="The next entries are on the roadmap."
-    lede="Rollout of schema 36 and project-scoped sign-in are the next steps that would change what runs in the hosted pilot."
+    lede="The next step that changes what runs in the hosted pilot is a release of the work built since 14 October. The roadmap lists it."
   >
     <div class="closing" data-reveal>
       <Btn href="/roadmap" size="lg" arrow>Open the roadmap</Btn>

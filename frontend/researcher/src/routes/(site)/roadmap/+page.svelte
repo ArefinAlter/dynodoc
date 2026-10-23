@@ -4,6 +4,10 @@
   import InfoHero from '$lib/components/marketing/InfoHero.svelte';
   import { Btn, Section, Stat } from '$lib/components/site';
   import { GITHUB_URL } from '$lib/components/site/nav';
+  import { production } from '$lib/site/production';
+
+  // Highest database schema in the repository's migrations. Change it with the migrations.
+  const SOURCE_SCHEMA = 47;
 
   const DOCS = `${GITHUB_URL}/blob/main/docs`;
   const description =
@@ -23,8 +27,7 @@
       id: 'live',
       label: 'Live',
       heading: 'Running in the hosted pilot.',
-      blurb:
-        'Deployed at application f62d62c on database schema 41, activated on 14 October 2026 (UTC) after a verified backup and a rehearsal on a production copy.',
+      blurb: `Deployed at application ${production.app} on database schema ${production.schema}, activated on ${production.date} (UTC) after a verified backup and a rehearsal on a production copy.`,
       items: [
         {
           title: 'Projects workspace',
@@ -83,7 +86,7 @@
       label: 'In source',
       heading: 'Built and tested, not enabled on the hosted pilot.',
       blurb:
-        'Implemented in the repository and passing CI. These are client libraries and opt-in writers that the hosted pilot does not use, and none of it counts as installed-editor acceptance.',
+        'Implemented in the repository and tested there. These are client libraries, opt-in writers and changes waiting for a release that the hosted pilot does not use yet, and none of it counts as installed-editor acceptance.',
       items: [
         {
           title: 'Typed shared storage',
@@ -124,6 +127,26 @@
           title: 'Selected-history sync client',
           body: 'Plan, push, fetch and fast-forward pull from the command line, with verified objects and receipts.',
           when: '12 Oct 2026'
+        },
+        {
+          title: 'Browser test matrix and installable web app',
+          body: 'In source; release pending. The web app’s tests now also run in Firefox and in WebKit, the engine Safari uses, with phone-sized screens emulated. Layout and touch fixes for small screens and an installable web app (a manifest and a service worker that keeps only public script, style and font files and an offline page) are built. Real phones and Safari itself have not been tested, and installing on a real operating system has not been tried.',
+          when: '21 Oct 2026'
+        },
+        {
+          title: 'Six-platform builds of the command-line tools and engine',
+          body: 'In source; release pending. The public engine repository builds and tests on Linux, macOS and Windows, on Intel or AMD and on Arm processors, and a release workflow builds the command-line tools for all six. These are automated builds only: no prebuilt tools are published, and the binaries would be unsigned.',
+          when: '21 Oct 2026'
+        },
+        {
+          title: 'Approvals bound to the version reviewed',
+          body: 'In source; release pending. An approval counts only for the draft the reviewer looked at. If the draft changes afterwards, the approval stops counting and a new one is needed. Needs schema 45, which has not been released.',
+          when: '22 Oct 2026'
+        },
+        {
+          title: 'AI-agent connectors (off by default)',
+          body: 'In source; release pending. An AI agent can read what a project’s policy allows and propose changes as a draft. A draft reaches the shared version only after the person the agent acts for submits it and the project’s usual review rules are met. Agents are off unless a project turns them on, the hosted pilot does not offer them, and none has been run with a real AI client.',
+          when: '18 to 22 Oct 2026'
         }
       ]
     },
@@ -144,7 +167,7 @@
         },
         {
           title: 'Projects and add-in adoption',
-          body: 'A read-only Branches tab exists in source. Creating, reviewing and merging project-wide branches in the interface, and adoption by the six connectors, remain.'
+          body: 'A read-only Branches tab is live. Creating, reviewing and merging project-wide branches in the interface, and adoption by the six connectors, remain.'
         },
         {
           title: 'Storage packing and retention',
@@ -157,10 +180,6 @@
         {
           title: 'Installed-editor acceptance',
           body: 'The owner runs a prepared worksheet against real Word, Excel, PowerPoint and Google editors. No results are recorded yet.'
-        },
-        {
-          title: 'Marketplace publication',
-          body: 'Listing copy, scopes and a submission checklist are prepared. Nothing has been submitted and no listing exists.'
         }
       ]
     },
@@ -170,6 +189,10 @@
       heading: 'Needs earlier work first.',
       blurb: 'Intended, with no date and no promise.',
       items: [
+        {
+          title: 'Marketplace publication',
+          body: 'Paused. Listing copy, scopes and a submission checklist are prepared. Nothing has been submitted and no listing exists. No date.'
+        },
         {
           title: 'Independent witnesses',
           body: 'External timestamps or gossip, and server key rotation and compromise recovery, so a complete rewrite by the operator can be detected.'
@@ -218,7 +241,7 @@
 <main id="main">
   <InfoHero
     eyebrow="ROADMAP"
-    lede="What is live, what exists only in source, what is being worked on and what comes later. A date appears only where a record gives one. Last reviewed 12 October 2026."
+    lede="What is live, what exists only in source, what is being worked on and what comes later. A date appears only where a record gives one. Last reviewed 23 October 2026."
   >
     {#snippet heading()}The roadmap, <span class="hl">without promises</span>.{/snippet}
     {#snippet actions()}
@@ -239,9 +262,14 @@
   >
     <ul class="stats">
       <li data-reveal>
-        <Stat value={29} label="Database schema on the hosted pilot (11 October 2026)" />
+        <Stat
+          value={production.schema}
+          label="Database schema on the hosted pilot ({production.date})"
+        />
       </li>
-      <li data-reveal><Stat value={36} label="Schema reached in source, not yet deployed" /></li>
+      <li data-reveal>
+        <Stat value={SOURCE_SCHEMA} label="Schema reached in source, release pending" />
+      </li>
       <li data-reveal><Stat value={6} label="Editor connectors, all test builds" /></li>
       <li data-reveal><Stat value={0} label="Marketplace listings submitted or approved" /></li>
     </ul>

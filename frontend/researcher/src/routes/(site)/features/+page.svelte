@@ -8,6 +8,7 @@
   import { Btn, CopyCode, Faq, Section, scrollable } from '$lib/components/site';
   import { workspaceHref } from '$lib/components/site/nav';
   import { scriptTag, type FaqEntry } from '$lib/seo';
+  import { production } from '$lib/site/production';
   import BranchDiagram from './BranchDiagram.svelte';
   import FeatureRow from './FeatureRow.svelte';
   import IdentityDiagram from './IdentityDiagram.svelte';
@@ -31,8 +32,7 @@
     },
     {
       question: 'What runs today, and what exists only in source?',
-      answer:
-        'The hosted pilot runs application f62d62c on database schema 41, as of 14 October 2026. Shared project history is deployed with its writers off and no receipt-signing key installed, so publishing to shared branches is refused. The local repository and the sync client are implemented and tested in source. The roadmap lists each item with its status.'
+      answer: `The hosted pilot runs application ${production.app} on database schema ${production.schema}, as of ${production.date}. Shared project history is deployed with its writers off and no receipt-signing key installed, so publishing to shared branches is refused. The local repository and the sync client are implemented and tested in source. The roadmap lists each item with its status.`
     },
     {
       question: 'How large can a file be?',
@@ -170,8 +170,8 @@
     <p class="eyebrow">Status labels</p>
     <ul>
       <li>
-        <span class="lg lg--live">Live</span> In the hosted pilot today (application f62d62c, database
-        schema 41).
+        <span class="lg lg--live">Live</span> In the hosted pilot today (application {production.app},
+        database schema {production.schema}).
       </li>
       <li>
         <span class="lg lg--source">In source</span> Implemented and tested in source, not yet deployed.
@@ -323,14 +323,14 @@
       n="06"
       flip
       title="Local-first project history and selected-history sync."
-      chips={[{ kind: 'source', label: 'In source', detail: 'needs schema 36' }]}
+      chips={[{ kind: 'source', label: 'In source', detail: 'shared writers off' }]}
       body="The project repository lives on your device in SQLite, so commits survive a restart and offline work. A command-line client plans what would become shared, pushes only the selected history and the objects the server is missing, then fetches and fast-forwards a branch while checking every signature and receipt."
       points={[
         'The plan lists every commit and dependency that would become shared, including private ancestry. A push cannot add anything the plan did not show.',
         'Retries cost nothing: accepted objects and commits are reused, and stale refs and corrupted objects fail closed.',
         'Pull fast-forwards one chosen local branch with compare-and-swap. It never writes to an open document.'
       ]}
-      boundary="Schema 36 is not deployed to the hosted pilot, and the client uses an ordinary account token. Project-scoped device sign-in is still open."
+      boundary="Schema 36 is deployed, but shared writers are off and no receipt-signing key is installed, so a push is refused on the hosted pilot. The example commands use an account token; the client can also sign in with a device key limited to one project."
       caption="Commands from the selected-history sync guide. PROJECT and COMMIT are IDs; the file names are yours."
     >
       {#snippet visual()}
