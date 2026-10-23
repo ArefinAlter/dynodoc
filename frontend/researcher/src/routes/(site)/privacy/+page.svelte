@@ -30,7 +30,8 @@
     <p>
       This draft covers the Dynodoc website at dynodoc.online, the hosted workspace and
       administration sites (app.dynodoc.online and admin.dynodoc.online) and the Dynodoc editor
-      add-ins for Microsoft Word, Excel and PowerPoint and for Google Docs, Sheets and Slides.
+      add-ins for Microsoft Word, Excel and PowerPoint and for Google Docs, Sheets and Slides. It
+      also covers the workspace as an installable web app, which is built but not yet released.
       Dynodoc is a document provenance, review and synchronization service: it records who changed
       what in a document, helps a team review and merge changes, and keeps that history checkable. A
       separately operated installation of the open-source engine and API may have a different
@@ -364,9 +365,11 @@
       Dynodoc sets first-party cookies for your sign-in session, the sign-in handshake, your light
       or dark preference and, if you change it, your performance-measurement choice, plus a
       short-lived cookie for the optional Google Forms import. There are no advertising cookies and
-      no persistent visitor-tracking identifiers. The browser also stores a few preferences and the
-      optional recovery copies you enable. The <a href="/cookies">cookies page</a> lists every item with
-      its lifetime and lets you control the optional measurements.
+      no persistent visitor-tracking identifiers. The browser also stores a few preferences, the
+      optional recovery copies you enable, and, through a service worker, an offline page and copies
+      of the site’s public script, style and font files (never pages, documents or account data).
+      The <a href="/cookies">cookies page</a> lists every item with its lifetime and lets you control
+      the optional measurements.
     </p>
   </section>
   <section id="retention">

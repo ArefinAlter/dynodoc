@@ -229,17 +229,17 @@
     {
       name: 'Chromium-based browsers (Chrome, Edge)',
       level: 'yes',
-      note: 'Automated and live checks so far have run in Chromium.'
+      note: 'The project’s browser tests run in Chromium.'
     },
     {
       name: 'Firefox and Safari',
       level: 'partial',
-      note: 'Targeted at their two most recent major versions. They are not yet part of the automated checks.'
+      note: 'Targeted at their two most recent major versions. Firefox and WebKit, the engine Safari uses, are in the project’s test matrix. Safari itself is not tested.'
     },
     {
       name: 'Phones and tablets',
       level: 'partial',
-      note: 'Public pages adapt to phone widths. The workspace and editors are desktop-first and not tested on phones.'
+      note: 'Public pages adapt to phone widths. The workspace and editors are desktop-first. Phone-sized screens are emulated in the test matrix, not tried on real devices, and layout changes for small screens are built but not yet released.'
     },
     {
       name: 'Accessibility',
@@ -285,7 +285,7 @@
   <header class="hero dotgrid dotgrid--fade spotlight" use:spotlight>
     <div class="container hero__grid">
       <div class="hero__copy">
-        <Eyebrow label="COMPATIBILITY · UPDATED 12 OCTOBER 2026" />
+        <Eyebrow label="COMPATIBILITY · UPDATED 23 OCTOBER 2026" />
         <h1 class="h-1">What works where, and <span class="hl">what does not yet</span>.</h1>
         <p class="lede">
           Dynodoc records and reviews supported changes in Word, Excel, PowerPoint and the three

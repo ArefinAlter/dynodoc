@@ -21,8 +21,8 @@
         Version control for the documents <span class="hl">you already write.</span>
       </h1>
       <p class="lede">
-        Every change you make in Word, Docs, Excel, Sheets, PowerPoint and Slides is captured,
-        reviewed, merged and provable.
+        Edits to the text, cells and slides in Word, Docs, Excel, Sheets, PowerPoint and Slides are
+        captured, reviewed, merged and recorded in a history you can verify.
       </p>
       <div class="actions">
         <Btn href={workspace} size="lg" arrow>Open workspace</Btn>
