@@ -114,10 +114,7 @@
         <Mail size={22} />
         <p>Your secure sign-in link is ready.</p>
       </div>
-      <button
-        class="primary"
-        disabled={busy}
-        onclick={() => verify(linkToken)}
+      <button class="primary" disabled={busy} onclick={() => verify(linkToken)}
         >Continue to workspace <ArrowRight size={18} /></button
       >
     {:else if sent}

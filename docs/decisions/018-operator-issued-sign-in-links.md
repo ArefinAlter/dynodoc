@@ -213,6 +213,41 @@ start: billing).
   `--confirm` (at least 1); `dynodoctl admin-link --json` allowed (at least 1); a new link not ending the earlier ones (at least
   2); the end-once trigger not installed (2); the login made outside the transaction that uses the link up (at least 2).
 
+### Independent review follow-up (23 October 2026, same PC)
+
+The review of the first version found no Critical or High issue and five Low ones, two test gaps and two notes; all are
+addressed (`main` merged first: it carries the add-in slice and the known-names fix, so the vitest failure above is gone).
+
+* **LOW-1** the first-administrator rule was not atomic across addresses (two at once both succeeded, 23 of 25 rounds):
+  account creation now takes one fixed advisory lock before the check. Test: two addresses, 25 rounds, exactly one made and one
+  stopped each round.
+* **LOW-2** every failed `/auth/verify` paid a transaction and writes on the new table: a token now takes one indexed read
+  first and a miss is the same 401 with no write. Test with a write-blocking table lock.
+* **LOW-3** chosen: state the limit (no `--restore`), the smaller change; in this record, the identity document, the
+  operations guide and the bundle README.
+* **LOW-4** invisible and direction-changing characters refused in the label, the reason and the address (tool, table, `dynodoctl`);
+  migration 0047 amended in place (it has run nowhere shared). My first edit of the migration was silently changed by the editor
+  tool: it turned the `\uXXXX` escapes into raw invisible characters in the SQL file, which still worked in the database but is
+  exactly what this guards against; found when a mutation did not apply, rewritten as plain ASCII escapes, and a scan found no raw
+  invisible character in any file I touched.
+* **LOW-5** `logging: { driver: none }` on `database-admin`. **Not run against the real bundle** (no image on this machine); the
+  reviewer's check on Compose v5.1.4 is relied on.
+* **Test gaps:** an emailed link is tried first (the operator table renamed away from under it; an emailed verify still works);
+  an existing agent identity at a reserved address is refused by the guard's own message.
+* **Notes:** the `/auth/exchange` sentence is in the threat table; the CI comment was wrong (the spec `app-signin.spec.ts` starts a
+  web server from the step's environment), so the owner URL is now in a step of its own that runs only `--project=selfhosted-noemail`
+  against an already running server; the token leaves the address bar when the request is made (`replaceState`), tested in the browser
+  (failure case: no token in the address, a reload sends nothing and shows the ordinary page) and by a unit test.
+* **Run:** `operator_link_test` 32 tests (5 new); `dynodoctl` 384; engine-api library 102 (6 for `operator.rs`); vitest 97 files,
+  1,141 passed, 5 skipped; Chromium `selfhosted-noemail` 6, `selfhosted` 19, hosted `security`, `session-revocation`, `app-signin` (17)
+  and `launch` 44 together; `cargo fmt`, clippy `-D warnings`, `cargo doc -D warnings`, prettier, eslint, svelte-check (0 errors), the
+  web build; `openapi.yaml` unchanged; `cargo test --workspace --locked --no-fail-fast` AFTER the last change: 1,774 passed, 1 failed
+  (the known Windows-only `sse_delivers_a_new_event_within_100ms`).
+* **Mutations, 8 more, each fails a test:** no fixed lock for account creation (the 25-round race); no cheap miss (the lock test);
+  the operator table looked at before the emailed link (the renamed-table test); no reserved-domain guard; the tool letting
+  U+202A to U+202E through; the table letting U+2060 to U+206F through; `dynodoctl` letting the overrides through; the login page
+  leaving the token in the address (the unit test of the function that removes it).
+
 ## Not done, on purpose
 
 * A real-bundle run of `dynodoctl admin-link` (the API image build is about 25 minutes cold; the wrapper is tested against the

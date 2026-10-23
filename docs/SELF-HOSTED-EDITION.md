@@ -1803,17 +1803,19 @@ guide (`admin-link`) carry the as-built text.
   auth list-links`); a run against the real Docker bundle (the wrapper ran only against the scripted fake; `engine-cli` ran against
   real PostgreSQL); OIDC, SAML and SCIM (Phase 1); scrubbing the token from the address bar; a rehearsal of 0047 against a
   production-like database.
-- *Verified here.* Against real PostgreSQL 16: 27 API tests (`operator_link_test.rs`: the flow, expiry, bounds, the `--create` rules, roles never
+- *Verified here.* Against real PostgreSQL 16: 32 API tests (`operator_link_test.rs`: the flow, expiry, bounds, the `--create` rules, roles never
   escalated, disabled and erased accounts, the public's limits not blocking the operator, 8 simultaneous uses with exactly one
   winner, no token anywhere, the restricted runtime login unable to insert and noticed by `check-runtime` if it could, no route
   that issues, atomic use) and 8 tests of the real `engine-cli` process at `RUST_LOG=trace` (the link on standard output alone,
-  once); the retention tests extended. `dynodoctl`: 383 unit tests pass against the scripted fake runner (9 new for `admin-link`).
+  once); the retention tests extended. `dynodoctl`: 384 unit tests pass against the scripted fake runner (10 new for `admin-link`).
+  An independent review (no Critical or High; five Low and two test gaps) was answered the same day: one lock for account creation,
+  a cheap miss path, invisible and direction-changing characters refused (migration 0047 amended in place), no container log for
+  `database-admin`, the token removed from the address bar, the CI owner credential in a step of its own (decision 018, follow-up).
   Chromium against an isolated stack: `selfhosted-noemail.spec.ts` 6 (3 new, including an expired 60-second link), `selfhosted.spec.ts`
-  13, and the hosted `security`, `session-revocation`, `app-signin` (17) and `launch` specs; vitest 976 passed, 3 of them new, and 1
-  failed that is not caused by this work (`schema.test.ts` finds `DYNODOC_TLS_MODE` in `dynodoctl`'s sources, which the web
-  configuration's list lacks, as at the base commit). `cargo fmt`, `clippy -D warnings`, `cargo doc -D warnings`, eslint, prettier and
-  svelte-check pass; `openapi.yaml` is byte-identical to the generated one; `cargo test --workspace --no-fail-fast`: 1,766 passed, 2
-  failed (the known Windows-only SSE timing test, and a retention unit test fixed afterwards and re-run). 19 manual mutations each
+  19, and the hosted `security`, `session-revocation`, `app-signin` (17) and `launch` specs (44 together); vitest 1,141 passed and 5 skipped over 97
+  files (4 new for the sign-in page and its refusal). `cargo fmt`, `clippy -D warnings`, `cargo doc -D warnings`, eslint, prettier and
+  svelte-check pass; `openapi.yaml` is byte-identical to the generated one; `cargo test --workspace --no-fail-fast` after the last change: 1,774 passed, 1
+  failed (the known Windows-only SSE timing test). 27 manual mutations each
   fail a test (token stored without the hash, single use removed, expiry ignored, the runtime login allowed to insert, `--role` not
   enforced, the first-administrator rule bypassed, the public email request ignoring `AUTH_EMAIL_LINK=off`, and others; list in the
   decision). GitHub Actions could not run (billing); `ci-frontend.yml` now gives the owner URL and the CLI path to the end-to-end
