@@ -153,13 +153,13 @@
         <CopyCode code="cargo run --locked -p engine-cli -- --version" label="version command" />
       </li>
       <li data-reveal>
-        <span class="num">STEP 04 · run the tests</span>
+        <span class="num">STEP 04 · run the tests (needs PostgreSQL 16)</span>
         <CopyCode code="cargo test --workspace --locked" label="test command" />
       </li>
     </ol>
     <p class="after">
-      The tests create and drop databases and roles, so point them at a throwaway PostgreSQL, never
-      at one that holds data you keep. Running the API itself needs a few settings and a restricted
+      The tests create databases and roles, so point them at a throwaway PostgreSQL, never at one
+      that holds data you keep. Running the API itself needs a few settings and a restricted
       database login. The repository README gives those steps, from <code>task up</code> to
       <code>task run</code>.
       <a class="link-sweep" href="{REPO}#local-development">Read the README</a>

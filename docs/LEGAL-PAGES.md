@@ -2,9 +2,13 @@
 
 13 October 2026. These pages are product drafts, not legal advice, and are not
 represented as adopted agreements. Each one keeps the visible banner and the
-"Draft revised 13 October 2026 · Not yet effective" line (rendered by
-`LegalPage.svelte`; the e2e test in `e2e/smoke.spec.ts` asserts the exact text, so
-change both together). Nothing records acceptance: the account form links to the
+"Draft revised <date> · Not yet effective" line (rendered by `LegalPage.svelte`; the
+e2e test in `e2e/smoke.spec.ts` asserts the exact text per page, so change both
+together). The date is the page's `lastmod` in `src/lib/seo/site.ts`, so the visible
+line, the sitemap and the structured data agree; bump it only when the page's content
+changes. Two pages are statements of fact, not proposed terms, and are rendered with
+the `statement` prop (23 October 2026): Security and Licenses carry "Updated <date>"
+and no draft banner. Nothing records acceptance: the account form links to the
 pages for information and has no agreement checkbox. The owner has not adopted the
 policies, so the pages carry no effective date.
 
