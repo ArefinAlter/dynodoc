@@ -49,6 +49,19 @@ describe('robots.txt', () => {
       expect(text).toContain(`User-agent: ${agent}\nAllow: /`);
   });
 
+  it('holds back the native-app sign-in pages, which end in a session', async () => {
+    const text = await body(robots, `${PUBLIC}/robots.txt`);
+    expect(text).toMatch(/^Disallow: \/app-signin$/m);
+    // Disallow rules match by prefix, so one entry covers the finish page too.
+    for (const path of ['/app-signin', '/app-signin/finish'])
+      expect(
+        DISALLOWED_PATHS.some((prefix) => path.startsWith(prefix)),
+        path
+      ).toBe(true);
+    const xml = await body(sitemap, `${PUBLIC}/sitemap.xml`);
+    expect(xml).not.toContain('app-signin');
+  });
+
   it('closes the workspace and admin hosts entirely', async () => {
     for (const host of PRIVATE_HOSTS)
       expect(await body(robots, `${host}/robots.txt`)).toBe('User-agent: *\nDisallow: /\n');

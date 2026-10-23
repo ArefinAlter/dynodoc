@@ -192,6 +192,50 @@ test('pages link the manifest and carry the install and bar-colour tags @smoke',
   expect(await page.evaluate(() => (window as unknown as { __csp: string[] }).__csp)).toEqual([]);
 });
 
+const INSTALL_METAS = [
+  'application-name',
+  'apple-mobile-web-app-title',
+  'apple-mobile-web-app-capable',
+  'mobile-web-app-capable',
+  'apple-mobile-web-app-status-bar-style'
+];
+
+test('the public marketing pages do not advertise the web app @smoke', async ({ page }) => {
+  // The manifest starts at /workspace, which the marketing host sends to another host, so an
+  // install offered from these pages could never start. Their icons stay.
+  for (const path of ['/', '/features', '/compatibility', '/privacy', '/open-source']) {
+    await page.goto(path);
+    await expect(page.getByRole('heading', { level: 1 }).first(), path).toBeVisible();
+    await expect(page.locator('link[rel="manifest"]'), path).toHaveCount(0);
+    for (const name of INSTALL_METAS)
+      await expect(page.locator(`meta[name="${name}"]`), `${path} ${name}`).toHaveCount(0);
+    // The site sets one bar colour of its own; the app's pair (light and dark) is not there.
+    await expect(page.locator('meta[name="theme-color"]'), path).toHaveCount(1);
+    await expect(page.locator('link[rel="apple-touch-icon"]').first(), path).toHaveAttribute(
+      'href',
+      /\/apple-touch-icon\.png$/
+    );
+  }
+});
+
+test('the sign-in page and the signed-in app advertise the web app @smoke', async ({ page }) => {
+  await page.goto('/login');
+  await expect(page.locator('link[rel="manifest"]')).toHaveCount(1);
+  for (const name of INSTALL_METAS)
+    await expect(page.locator(`meta[name="${name}"]`), name).toHaveCount(1);
+  test.skip(!signedIn, 'The signed-in pages need the isolated signed-in development stack.');
+  await signIn(page);
+  for (const path of ['/projects', '/workspace']) {
+    await page.goto(path);
+    await expect(page.locator('link[rel="manifest"]'), path).toHaveAttribute(
+      'href',
+      '/site.webmanifest'
+    );
+    for (const name of INSTALL_METAS)
+      await expect(page.locator(`meta[name="${name}"]`), `${path} ${name}`).toHaveCount(1);
+  }
+});
+
 test('a service worker registers and controls the page @smoke', async ({ page }) => {
   await controlled(page);
   const registration = await page.evaluate(async () => {

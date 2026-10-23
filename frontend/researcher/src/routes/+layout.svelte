@@ -7,6 +7,7 @@
   import { onMount } from 'svelte';
   import { loadSession } from '$lib/stores/session.svelte';
   import { pwa } from '$lib/pwa/client.svelte';
+  import { isAppRoute } from '$lib/pwa/head';
   import { trackKeyboard } from '$lib/viewport';
   import { theme, setThemeCookieDomain } from '$lib/theme.svelte';
   import PwaUpdate from '$lib/components/PwaUpdate.svelte';
@@ -67,9 +68,18 @@
 </script>
 
 <svelte:head>
-  {#if !$page.route.id?.startsWith('/(site)')}
+  <!-- App pages only (see $lib/pwa/head): the manifest starts at /workspace, which the public
+       marketing host sends to the workspace host. The Home Screen metas are for iOS, which does
+       not read them from the manifest, and for Android. -->
+  {#if isAppRoute($page.route.id)}
     <meta name="theme-color" content={barByDay} media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content={barByNight} media="(prefers-color-scheme: dark)" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="application-name" content="Dynodoc" />
+    <meta name="apple-mobile-web-app-title" content="Dynodoc" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   {/if}
   {#if seo && canonical}
     <link rel="canonical" href={canonical} />
