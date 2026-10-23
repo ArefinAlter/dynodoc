@@ -18,6 +18,38 @@ twenty to thirty seconds of maintenance. App-repository Actions could not run (b
 stood in. **Not verified:** a signed-in session on the live site (the owner should sign in once and open a document). The public
 marketing site is deployed by Vercel on every push to `main` and had been running this web build since 22 October.
 
+## Source: public website brought in line with the product (23 October 2026)
+
+Every push to `main` deploys the public site (dynodoc.online) on Vercel at once, so it had been running the new web build since
+22 October; this change is live on it. An audit (read-only, quoted claims with file and line) found wrong, stale or over-claiming
+text; the fixes are in the `(site)` routes and are backed by documents in `docs/`. **Fixed:** the roadmap and features pages stated
+schema 29 and 36 as current; a "needs schema 36 / not deployed" note and a "signing keys (in source)" row contradicted the same page;
+the compatibility page said only Chromium had been tested; the cookies and privacy pages did not mention the service worker and its
+cache; the changelog count and "next step" were stale; the proof section quoted 360 tests and 12 October; the home page and site
+description claimed every change is "provable" (reworded to what the add-ins capture and what the history lets you verify);
+marketplace publication was shown as in progress (it is paused, nothing submitted); the legal-page "Draft ... Not yet effective"
+banner no longer sits on the security and licences pages, which are statements of fact with their own date. **Added:** `L/site/production.ts`
+(one place for the production revision, schema and date: now `3fa06fd`, 47, 23 October 2026; change it in each release commit); an
+`/open-source` page (MIT, build from source, the platform matrix with tiers and the 20 October CI figures, real key stores, the
+unsigned-binaries warning, the container image, known limits; **no download links and it says no release is published**); a live
+changelog entry for the 23 October release and a separate in-source entry; the full browser/device text from BROWSER-SUPPORT.md
+(emulation is not a device; Safari itself not tested), a "use it as an app" note; a security row for approvals bound to the revision
+seen. The web-app manifest and its install tags now appear only on the workspace and sign-in pages (the manifest start page redirects
+off-scope on the marketing host); `/app-signin` is disallowed in robots and redirects from the marketing host to the app host.
+Not named anywhere on the site, by decision: the desktop, Android and iPhone apps, the self-hosted edition, download hosting, pricing.
+
+Evidence (local; Actions cannot run): vitest 98 files and 1,152 passed; prettier, eslint, svelte-check (0 errors), build and the
+hosted-string audit clean; Chromium on a local stack (pwa, smoke, editorial, hosted-pin, browsers) 40 passed and 2 skipped, 21 launch
+axe pages plus `/open-source` clean; a 390 px overflow check on seven changed pages clean; live sweep after deployment: the new pages
+answer 200, the home page has no manifest link, `/app-signin` redirects to the app host. **Open for the owner:** (1) the cookies page
+says measurements are "removed after 30 days" and the privacy policy "kept for 30 days", but the only code that deletes them is the
+retention job, which is OFF on production (a read-only count on 23 October: 1,859 metric rows, none older than 30 days, and one
+expired sign-in link, so switching `RETENTION_JOBS=on` today would remove almost nothing and make the sentences true; the legal text was
+not touched); (2) the copyright holder differs between the footer (Verne Ltd.) and the licences page (Verne Systems); (3) the engine
+repository README still describes 12 October; (4) pricing, self-hosted and app wording; (5) the security page rows for backup
+retention, rate-limit numbers and erasure were carried forward from 14 October, not re-checked; (6) a 404 page on the marketing host
+still carries the install tags.
+
 ## Source: operator-issued sign-in links and first administrator (decision 018) (23 October 2026)
 
 The self-hosted installation can now be signed into without email delivery, which closes the first-administrator gap (Phase 0
