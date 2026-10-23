@@ -28,7 +28,7 @@
       state: 'source',
       title: 'Built since 14 October: browsers, command-line builds, approvals and AI agents',
       summary:
-        'Everything in this entry is in source and waiting for a release. None of it runs on the hosted pilot yet.',
+        'Everything in this entry is in source and waiting for a release. None of it runs in the hosted workspace yet.',
       changes: [
         'Browsers: the web app’s tests now also run in Firefox and in WebKit, the engine Safari uses, with phone-sized screens emulated. Layout and touch fixes for small screens are built. An installable web app (a manifest, an offline page and a service worker that keeps only public script, style and font files) is built. Real phones and Safari itself have not been tested, and installing it on a real operating system has not been tried.',
         'Command-line tools and engine: the public engine repository builds and tests on Linux, macOS and Windows, on Intel or AMD and on Arm processors (Windows on Arm is a lower tier), and a release workflow builds the command-line tools for all six. These are automated builds only. No prebuilt tools are published yet, and the binaries would not be signed.',

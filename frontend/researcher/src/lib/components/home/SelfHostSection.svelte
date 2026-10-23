@@ -44,6 +44,7 @@
       </p>
       <div class="links" data-reveal>
         <Btn href={GITHUB_URL} variant="secondary" external arrow>Engine on GitHub (MIT)</Btn>
+        <Btn href="/open-source" variant="link" arrow>Platforms and building from source</Btn>
       </div>
     </div>
     <div class="art" aria-hidden="true">
