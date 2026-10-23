@@ -227,25 +227,97 @@
 
   const platforms: { name: string; level: Level; note: string }[] = [
     {
-      name: 'Chromium-based browsers (Chrome, Edge)',
+      name: 'Chrome and Edge',
       level: 'yes',
-      note: 'Automated and live checks so far have run in Chromium.'
+      note: 'Chrome on Windows, macOS, Linux and Android; Edge on Windows and macOS, which has the same engine. Chrome on Android is the phone target. The whole browser test suite runs on Chromium 148.'
     },
     {
-      name: 'Firefox and Safari',
+      name: 'Firefox',
       level: 'partial',
-      note: 'Targeted at their two most recent major versions. They are not yet part of the automated checks.'
+      note: 'Windows, macOS and Linux. The whole suite has been run on Firefox 150; three tests failed once in a long run and pass when run alone. Firefox on a computer cannot install the web app.'
+    },
+    {
+      name: 'Safari',
+      level: 'partial',
+      note: 'macOS, iOS and iPadOS. Safari on iPhone and iPad is the Apple phone and tablet target, and every browser on iOS uses the same WebKit engine. The suite has been run on a WebKit 26.4 build, about the engine of Safari 26.4, and not on Safari itself. A test of several people editing one document fails on WebKit in every run and is unexplained, so treat that as unverified there.'
     },
     {
       name: 'Phones and tablets',
       level: 'partial',
-      note: 'Public pages adapt to phone widths. The workspace and editors are desktop-first and not tested on phones.'
+      note: 'Public pages adapt to phone widths, and the workspace has small-screen layouts since 23 October. Phone-sized screens are emulated in the tests; no real phone or tablet has been tried. The limits are listed below.'
     },
     {
       name: 'Accessibility',
       level: 'partial',
       note: 'Labelled controls, keyboard navigation and document-language support. Public pages are checked with automated WCAG A and AA rules, which does not establish full conformance. Manual screen-reader testing is not complete.'
     }
+  ];
+
+  // Facts: docs/BROWSER-SUPPORT.md, run on 21 October 2026.
+  const runs: { name: string; engine: string; covers: string }[] = [
+    { name: 'Chromium', engine: 'Chrome for Testing 148', covers: 'The whole suite, every time.' },
+    { name: 'Firefox', engine: 'Firefox 150', covers: 'The whole suite, run locally.' },
+    {
+      name: 'WebKit',
+      engine: 'The Playwright WebKit build, about the engine of Safari 26.4',
+      covers: 'The whole suite, run locally. Not Safari itself.'
+    },
+    {
+      name: 'Pixel (emulated)',
+      engine:
+        'A Pixel 7 profile: 412 × 839 screen, touch, an Android 14 Chrome user agent, on a Chromium engine',
+      covers: 'The public, workspace and projects tests.'
+    },
+    {
+      name: 'iPhone (emulated)',
+      engine:
+        'An iPhone 15 profile: 393 × 659 screen, touch, an iOS 17.5 Safari user agent, on WebKit',
+      covers: 'The public, workspace and projects tests.'
+    }
+  ];
+
+  const notRun = [
+    'Any real phone or tablet, and Safari itself on macOS or iOS.',
+    'Safari’s zoom into a focused field (the tests check that fields are at least 16 px, the rule that prevents it), its collapsing address bar, the notch, and the on-screen keyboard covering the page.',
+    'Real touch behaviour such as long-press menus, momentum scrolling, pinch zoom and edge-swipe back.',
+    'Installing the app through an operating system’s own flow, and how it behaves once installed.',
+    'How fast it runs on a phone’s processor and memory.'
+  ];
+
+  const smallScreens = [
+    'Documents open in continuous view, which reflows to the screen. A printed page cannot be shown at a readable size on a phone. “Print layout” in the status bar still shows the page as it prints, and you pan to read it.',
+    'Comments, version history and sharing take the whole screen.',
+    'Spreadsheets can be read, scrolled, selected, and a cell’s value changed in the formula bar. Typing straight into cells is cramped, and the sheet says once per visit that spreadsheets are easier to edit on a larger screen. A double tap edits a cell in place.',
+    'A presentation opens and shows its slides. Editing slides on a phone was not exercised, and moving shapes by dragging is awkward on a small screen.',
+    'The toolbar rows, tab bar and status line take most of a phone’s height. On the iPhone 15 profile the sheet grid shows about two rows until the notice is dismissed.',
+    'Tablets under about 700 px wide behave as phones; wider ones as a desktop with touch. Landscape phones leave little room for the document, and padding for a notch could not be checked without a device.',
+    'WebKit’s tracking prevention can delete script-written storage, such as the editor’s local recovery copies, for a site not visited for seven days. WebKit documents this; it was not tested here.'
+  ];
+
+  const install: { where: string; how: string }[] = [
+    {
+      where: 'Chrome or Edge on Windows, macOS or Linux',
+      how: 'Use the install icon at the right of the address bar, the browser menu (“Install Dynodoc”), or the Install app button on your profile page.'
+    },
+    {
+      where: 'Chrome on Android',
+      how: 'The Install app button on your profile page, or the menu: “Install app” or “Add to Home screen”.'
+    },
+    {
+      where: 'Safari on iPhone or iPad',
+      how: 'Share, then Add to Home Screen, then Add. On iOS 16.4 and later other browsers can do this too.'
+    },
+    { where: 'Safari 17 or later on macOS', how: 'File, then Add to Dock.' },
+    { where: 'Firefox on Android', how: 'Menu, then Install.' },
+    {
+      where: 'Firefox on a computer',
+      how: 'Not possible. Use another browser, or keep a pinned tab.'
+    }
+  ];
+
+  const offlineDoes = [
+    'If a page cannot load because the network is missing or the server cannot be reached, it shows a small “You are offline” page with a Try again button instead of the browser’s error page. A reply from the server, including an error, is shown as sent.',
+    'It keeps the site’s public script, style and font files after they are first used, so repeat visits start faster.'
   ];
 
   const web = [
@@ -285,7 +357,7 @@
   <header class="hero dotgrid dotgrid--fade spotlight" use:spotlight>
     <div class="container hero__grid">
       <div class="hero__copy">
-        <Eyebrow label="COMPATIBILITY · UPDATED 12 OCTOBER 2026" />
+        <Eyebrow label="COMPATIBILITY · UPDATED 23 OCTOBER 2026" />
         <h1 class="h-1">What works where, and <span class="hl">what does not yet</span>.</h1>
         <p class="lede">
           Dynodoc records and reviews supported changes in Word, Excel, PowerPoint and the three
@@ -426,7 +498,12 @@
     </ul>
   </Section>
 
-  <Section id="platforms" eyebrow="BROWSERS AND ACCESSIBILITY" title="Where the web app runs.">
+  <Section
+    id="platforms"
+    eyebrow="BROWSERS AND ACCESSIBILITY"
+    title="Where the web app runs."
+    lede="The commitment is the last two major versions of Chrome, Edge, Firefox and Safari, and Chrome on Android. Older versions may work; nothing here promises it."
+  >
     <div class="table-wrap" data-reveal>
       <table>
         <caption class="sr-only">Browsers and accessibility</caption>
@@ -453,6 +530,96 @@
         </tbody>
       </table>
     </div>
+    <p class="small after">
+      The features the code relies on set a practical floor of Chrome and Edge 111, Firefox 121 and
+      Safari or iOS 16.4. Those versions are read from the features used. They are not tested.
+    </p>
+  </Section>
+
+  <Section
+    id="tested"
+    eyebrow="WHAT WAS RUN"
+    title="Which browsers the tests have used."
+    lede="Run on 21 October 2026, on a Windows 11 computer, against a local copy of the whole stack. Emulation sets a screen size, touch input and a user agent on a desktop browser engine. It is not a phone."
+    tone="muted"
+  >
+    <div class="table-wrap" data-reveal>
+      <table>
+        <caption class="sr-only">Browsers and devices used by the tests</caption>
+        <thead>
+          <tr>
+            <th scope="col">Run</th>
+            <th scope="col">Engine and device</th>
+            <th scope="col">What it covers</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each runs as row (row.name)}
+            <tr><th scope="row">{row.name}</th><td>{row.engine}</td><td>{row.covers}</td></tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
+    <h3 class="h-3 sub">What the tests do not cover</h3>
+    <ul class="bullets" data-reveal>
+      {#each notRun as item (item)}<li>{item}</li>{/each}
+    </ul>
+    <p class="small after">
+      On WebKit two tests fail: the several-people test mentioned above, and one page-layout test
+      that misses a boundary by 1/16 of a pixel, with no visible effect. The Firefox failures looked
+      like timing under load.
+    </p>
+  </Section>
+
+  <Section
+    id="small-screens"
+    eyebrow="SMALL SCREENS"
+    title="What a phone cannot do well yet."
+    lede="These apply to screens under about 700 px wide. They come from the same test run and are listed so nobody has to find them."
+  >
+    <ul class="bullets" data-reveal>
+      {#each smallScreens as item (item)}<li>{item}</li>{/each}
+    </ul>
+  </Section>
+
+  <Section
+    id="app"
+    eyebrow="USE IT AS AN APP"
+    title="Install the workspace from your browser."
+    lede="The workspace can be installed as a web app. It opens at the workspace and has Workspace and Projects shortcuts. Your profile page has an Install app section that shows what applies to the browser you are using."
+    tone="muted"
+  >
+    <div class="table-wrap" data-reveal>
+      <table>
+        <caption class="sr-only">How to install the web app, by browser</caption>
+        <thead>
+          <tr><th scope="col">Where</th><th scope="col">How</th></tr>
+        </thead>
+        <tbody>
+          {#each install as row (row.where)}
+            <tr><th scope="row">{row.where}</th><td>{row.how}</td></tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
+    <p class="small after">
+      These steps follow each browser’s own flow. Installing on a real operating system has not been
+      tried by the project.
+    </p>
+    <h3 class="h-3 sub">What offline does and does not do</h3>
+    <p class="after">The service worker that makes the app installable does two things only.</p>
+    <ul class="bullets" data-reveal>
+      {#each offlineDoes as item (item)}<li>{item}</li>{/each}
+    </ul>
+    <p class="after">
+      It does not make documents available offline, queue edits for later, store anything from your
+      account on the device, or change how sign-in cookies work. An editor holding unsaved work
+      keeps it on screen while offline, but saving needs the server.
+    </p>
+    <p class="small after">
+      A new version installs in the background and waits. The page then says that a new version is
+      ready, and nothing reloads until you press Update now.
+    </p>
   </Section>
 
   <Section
@@ -659,6 +826,22 @@
   .after {
     max-width: 68ch;
     margin: 20px 0 0;
+  }
+  .sub {
+    margin: 32px 0 0;
+  }
+  .bullets {
+    display: grid;
+    gap: 10px;
+    margin: 16px 0 0;
+    padding: 0 0 0 1.1em;
+    max-width: 72ch;
+    color: var(--color-ink-soft);
+    font-size: 0.9375rem;
+    line-height: 1.55;
+  }
+  .bullets li::marker {
+    color: var(--color-muted);
   }
   .link-sweep {
     color: var(--color-accent-strong);

@@ -17,7 +17,7 @@ export const INDEXABLE_HOSTS = ['dynodoc.online', 'www.dynodoc.online'];
 export const SITE_NAME = 'Dynodoc';
 export const SITE_TAGLINE = 'Version control for the documents you already write';
 export const SITE_DESCRIPTION =
-  'Capture, review, merge and prove every change to Word, Docs, Excel, Sheets, PowerPoint and Slides files, with an append-only, hash-chained history. Open-source engine.';
+  'Capture, review and merge edits to text, cells and slides in Word, Docs, Excel, Sheets, PowerPoint and Slides, and keep them in a hash-chained history you can verify. Open-source engine.';
 export const SITE_IMAGE = `${CANONICAL_ORIGIN}/brand/social.png`;
 
 export type IndexablePage = {
@@ -36,8 +36,8 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     path: '/compatibility',
     title: 'Compatibility: editors, formats and limits · Dynodoc',
     description:
-      'What Dynodoc captures, reviews and applies in Word, Excel, PowerPoint, Google Docs, Sheets and Slides today, with minimum host versions, file formats and limits.',
-    lastmod: '2026-10-12',
+      'What Dynodoc captures, reviews and applies in Word, Excel, PowerPoint, Google Docs, Sheets and Slides today, with minimum host versions, file formats, supported browsers, small-screen limits and how to install the web app.',
+    lastmod: '2026-10-23',
     changefreq: 'monthly',
     priority: '0.7'
   },
@@ -45,7 +45,7 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     path: '/',
     title: `${SITE_NAME} — ${SITE_TAGLINE}`,
     description: SITE_DESCRIPTION,
-    lastmod: '2026-10-13',
+    lastmod: '2026-10-23',
     changefreq: 'weekly',
     priority: '1.0'
   },
@@ -54,7 +54,7 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     title: `Privacy policy · ${SITE_NAME}`,
     description:
       'How Dynodoc handles account information, documents, project history, signing keys, audit records and editor add-in data, and what can and cannot be erased. A draft.',
-    lastmod: '2026-10-13',
+    lastmod: '2026-10-23',
     changefreq: 'monthly',
     priority: '0.5'
   },
@@ -72,7 +72,7 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     title: 'Features · Dynodoc',
     description:
       'Stable identity for every paragraph, cell and shape; reviewed change requests under project rules; private drafts; recoverable history; tamper-evident records; local-first sync; connectors for six editors.',
-    lastmod: '2026-10-12',
+    lastmod: '2026-10-23',
     changefreq: 'monthly',
     priority: '0.7'
   },
@@ -90,7 +90,7 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     title: 'Roadmap · Dynodoc',
     description:
       'What Dynodoc has built, what exists only in source, what is in progress and what comes later. Dated where a record gives a date, with no promised release dates.',
-    lastmod: '2026-10-12',
+    lastmod: '2026-10-23',
     changefreq: 'monthly',
     priority: '0.7'
   },
@@ -99,8 +99,17 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     title: 'Changelog · Dynodoc',
     description:
       'Plain-language release notes for Dynodoc, newest first: what changed for you, and whether it runs in the hosted pilot or only in source.',
-    lastmod: '2026-10-12',
+    lastmod: '2026-10-23',
     changefreq: 'weekly',
+    priority: '0.6'
+  },
+  {
+    path: '/open-source',
+    title: 'Open source: build from source and platforms · Dynodoc',
+    description:
+      'The engine, API and command-line tools are MIT licensed. How to build them from source, the platforms they are built and tested on, what that testing covers, and what is not published yet.',
+    lastmod: '2026-10-23',
+    changefreq: 'monthly',
     priority: '0.6'
   },
   {
@@ -116,8 +125,8 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     path: '/help',
     title: 'Help: projects, review and history · Dynodoc',
     description:
-      'Create a project, capture changes from an editor, review and merge a pull request, restore or revert earlier content, name versions and verify history.',
-    lastmod: '2026-10-12',
+      'Create a project, capture changes from an editor, review and merge a pull request, restore or revert earlier content, name versions, verify history and install the web app.',
+    lastmod: '2026-10-23',
     changefreq: 'monthly',
     priority: '0.7'
   },
@@ -126,7 +135,7 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     title: 'Editors & add-ins · Dynodoc',
     description:
       'Add-ins for Word, Excel, PowerPoint, Google Docs, Sheets and Slides: what each captures, requirements, test installation, what is stored and sent, and marketplace status.',
-    lastmod: '2026-10-12',
+    lastmod: '2026-10-23',
     changefreq: 'monthly',
     priority: '0.8'
   },
@@ -143,8 +152,8 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     path: '/cookies',
     title: 'Cookies & local storage · Dynodoc',
     description:
-      'Every cookie and local-storage item Dynodoc sets, why, and for how long, plus the control for optional performance measurements.',
-    lastmod: '2026-10-13',
+      'Every cookie, local-storage item and cached file Dynodoc sets in your browser, why, and for how long, plus the control for optional performance measurements.',
+    lastmod: '2026-10-23',
     changefreq: 'monthly',
     priority: '0.5'
   },
@@ -153,7 +162,7 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     title: 'Security · Dynodoc',
     description:
       'What protects the history of your documents and access to it, what is live today, what exists only in source, what is not claimed, and how to report a vulnerability.',
-    lastmod: '2026-10-13',
+    lastmod: '2026-10-23',
     changefreq: 'monthly',
     priority: '0.6'
   },
@@ -198,7 +207,7 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     title: 'Licenses · Dynodoc',
     description:
       'The engine, API and command-line tools are open source under the MIT licence; the workspace and website are not published as open source. Font licenses, direct dependencies and artwork.',
-    lastmod: '2026-10-13',
+    lastmod: '2026-10-22',
     changefreq: 'monthly',
     priority: '0.4'
   }
@@ -226,7 +235,9 @@ export const DISALLOWED_PATHS = [
   '/integrations/',
   '/source',
   '/telemetry',
-  '/healthz'
+  '/healthz',
+  // The native apps' sign-in pages belong to the workspace host and end in a session.
+  '/app-signin'
 ];
 
 export function canonicalUrl(path: string): string {

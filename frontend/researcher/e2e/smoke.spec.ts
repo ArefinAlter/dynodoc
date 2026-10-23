@@ -103,20 +103,30 @@ test('legal pages are linked, readable on mobile and explicitly marked as drafts
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  for (const [path, title] of [
-    ['/privacy', 'Privacy policy'],
-    ['/terms', 'Terms & conditions'],
-    ['/cookies', 'Cookies & local storage'],
-    ['/security', 'Security'],
-    ['/subprocessors', 'Subprocessors'],
-    ['/acceptable-use', 'Acceptable use'],
-    ['/accessibility', 'Accessibility statement'],
-    ['/dpa', 'Data processing terms (draft)'],
-    ['/licenses', 'Licenses']
+  // Each page shows the date its content last changed (its sitemap lastmod). The security and
+  // licences pages state facts rather than propose terms, so they carry no draft notice.
+  for (const [path, title, dateLine] of [
+    ['/privacy', 'Privacy policy', 'Draft revised 23 October 2026 · Not yet effective'],
+    ['/terms', 'Terms & conditions', 'Draft revised 13 October 2026 · Not yet effective'],
+    ['/cookies', 'Cookies & local storage', 'Draft revised 23 October 2026 · Not yet effective'],
+    ['/security', 'Security', 'Updated 23 October 2026'],
+    ['/subprocessors', 'Subprocessors', 'Draft revised 13 October 2026 · Not yet effective'],
+    ['/acceptable-use', 'Acceptable use', 'Draft revised 13 October 2026 · Not yet effective'],
+    [
+      '/accessibility',
+      'Accessibility statement',
+      'Draft revised 13 October 2026 · Not yet effective'
+    ],
+    ['/dpa', 'Data processing terms (draft)', 'Draft revised 13 October 2026 · Not yet effective'],
+    ['/licenses', 'Licenses', 'Updated 22 October 2026']
   ]) {
     await page.goto(path);
     await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
-    await expect(page.getByText('Draft revised 13 October 2026 · Not yet effective')).toBeVisible();
+    await expect(page.getByText(dateLine, { exact: true })).toBeVisible();
+    if (dateLine.startsWith('Updated')) {
+      await expect(page.getByText('Not yet effective')).toHaveCount(0);
+      await expect(page.getByText('A transparent draft, not yet adopted')).toHaveCount(0);
+    }
     // Facts the owner has not decided are omitted, never shown as a placeholder.
     expect((await page.locator('main').textContent()) ?? '').not.toMatch(
       /awaiting confirmation|not set\b|to be confirmed|pending (counsel|legal) review|open items|AGPL/i

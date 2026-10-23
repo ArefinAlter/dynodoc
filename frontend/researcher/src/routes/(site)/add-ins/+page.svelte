@@ -5,7 +5,6 @@
   import Ptero from '$lib/art/Ptero.svelte';
   import { pageMeta, scriptTag, type FaqEntry } from '$lib/seo';
 
-  const INSTALL_GUIDE = '/connectors';
   const DATA_DOC = '/privacy#addins';
   const meta = pageMeta('/add-ins');
   const title = meta?.title ?? 'Editors & add-ins · Dynodoc';
@@ -216,7 +215,7 @@
       <p class="num">{String(index + 1).padStart(2, '0')}</p>
       <h3 class="h-2">{card.name}</h3>
       <p class="status small">
-        <span class="dot" aria-hidden="true"></span>Test install today · marketplace listing pending
+        <span class="dot" aria-hidden="true"></span>Test install today · no marketplace listing
       </p>
       <p class="covers">{card.covers}</p>
       <dl>
@@ -254,7 +253,7 @@
         </p>
         <ul class="chips" aria-label="Current status">
           <li><span class="badge badge--accent">Test install today</span></li>
-          <li><span class="badge">Marketplace listings pending</span></li>
+          <li><span class="badge">No marketplace listing</span></li>
           <li><span class="badge">Installed-host acceptance pending</span></li>
         </ul>
         <div class="actions">
@@ -352,8 +351,7 @@
       same screen can be pasted under Advanced.
     </p>
     <div class="actions" data-reveal>
-      <Btn href="/connectors" arrow>Download the add-in files</Btn>
-      <Btn href={INSTALL_GUIDE} variant="secondary" external arrow>Full install guide</Btn>
+      <Btn href="/connectors" arrow>Download the add-in files and install guide</Btn>
     </div>
   </Section>
 
@@ -408,7 +406,7 @@
     <div class="status-box card card--raised" data-reveal>
       <p class="status-box__lead">
         No Microsoft Marketplace or Google Workspace Marketplace listing exists for these add-ins.
-        None has been submitted and none is approved.
+        None has been submitted and none is approved. Publication is paused, with no date.
       </p>
       <ul>
         <li>

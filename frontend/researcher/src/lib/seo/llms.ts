@@ -43,7 +43,8 @@ const FACTS = [
   `Operator: ${OPERATOR.legalName} (trading as ${OPERATOR.tradingAs}), Dhaka, Bangladesh. Contact: ${OPERATOR.email}.`,
   `Licence: ${OPEN_SOURCE_STATEMENT} Private document content placed in the hosted app does not become open source.`,
   'Self-hosting the open engine and API: PostgreSQL 16, Docker, Rust and Task; see the engine repository README. Commands: task up, task migrate, task db:grant-runtime, task run.',
-  `Source code: the open-source engine, API and command-line tools are at ${ENGINE_REPO_URL}. The workspace and website source is not published.`
+  `Source code: the open-source engine, API and command-line tools are at ${ENGINE_REPO_URL}. The workspace and website source is not published.`,
+  'Prebuilt tools: none is published yet. The command-line tools are built from source; the open-source page lists the platforms they are tested on.'
 ];
 
 function bullets(lines: string[]): string {

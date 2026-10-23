@@ -2,7 +2,7 @@
   "id": "/",
   "name": "Dynodoc",
   "short_name": "Dynodoc",
-  "description": "Version control and provenance for Word, Docs, Excel, Sheets, PowerPoint and Slides documents: capture, review, merge and prove every change.",
+  "description": "Version control and provenance for Word, Docs, Excel, Sheets, PowerPoint and Slides documents: capture, review and merge edits, and keep them in a history you can verify.",
   "lang": "en",
   "dir": "ltr",
   "start_url": "/workspace?source=pwa",

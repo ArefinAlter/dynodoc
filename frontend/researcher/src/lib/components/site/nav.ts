@@ -63,6 +63,11 @@ export const NAV_GROUPS: NavGroup[] = [
         description: 'Supported formats and known limits.'
       },
       { label: 'Changelog', href: '/changelog', description: 'Release notes.' },
+      {
+        label: 'Open source',
+        href: '/open-source',
+        description: 'Build from source, platforms and what is checked.'
+      },
       { label: 'Support', href: '/support', description: 'Ask a question or report a problem.' }
     ]
   }
@@ -92,7 +97,8 @@ export const FOOTER_COLUMNS: FooterColumn[] = [
       { label: 'Help', href: '/help' },
       { label: 'Why provenance', href: '/why-dynodoc' },
       { label: 'Roadmap', href: '/roadmap' },
-      { label: 'Changelog', href: '/changelog' }
+      { label: 'Changelog', href: '/changelog' },
+      { label: 'Open source', href: '/open-source' }
     ]
   },
   {

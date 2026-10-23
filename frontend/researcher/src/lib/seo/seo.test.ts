@@ -6,6 +6,7 @@ import { GET as sitemap } from '../../routes/sitemap.xml/+server';
 import { GET as llms } from '../../routes/llms.txt/+server';
 import { GET as llmsFull } from '../../routes/llms-full.txt/+server';
 import { buildPayload, describeStatus, readKey } from '../../../scripts/indexnow.mjs';
+import { FOOTER_COLUMNS, NAV_GROUPS } from '../components/site/nav';
 import { FAQ } from './faq';
 import { INDEXNOW_KEY, INDEXNOW_KEY_PATH } from './indexnow';
 import { structuredDataScript } from './structured-data';
@@ -47,6 +48,19 @@ describe('robots.txt', () => {
       'Google-Extended'
     ])
       expect(text).toContain(`User-agent: ${agent}\nAllow: /`);
+  });
+
+  it('holds back the native-app sign-in pages, which end in a session', async () => {
+    const text = await body(robots, `${PUBLIC}/robots.txt`);
+    expect(text).toMatch(/^Disallow: \/app-signin$/m);
+    // Disallow rules match by prefix, so one entry covers the finish page too.
+    for (const path of ['/app-signin', '/app-signin/finish'])
+      expect(
+        DISALLOWED_PATHS.some((prefix) => path.startsWith(prefix)),
+        path
+      ).toBe(true);
+    const xml = await body(sitemap, `${PUBLIC}/sitemap.xml`);
+    expect(xml).not.toContain('app-signin');
   });
 
   it('closes the workspace and admin hosts entirely', async () => {
@@ -191,6 +205,45 @@ describe('licence and operator statements', () => {
     expect(structuredDataScript).toContain('"legalName":"Verne Systems"');
     expect(structuredDataScript).toContain('"telephone":"+880 1870 034384"');
     expect(`${structuredDataScript}${text}`).not.toMatch(/\bTIN\b|D-U-N-S|DUNS/);
+  });
+});
+
+describe('the open-source page', () => {
+  const source = readFileSync(
+    resolve(process.cwd(), 'src/routes/(site)/open-source/+page.svelte'),
+    'utf8'
+  );
+
+  it('is indexable, listed in the sitemap, llms.txt and the navigation', async () => {
+    expect(INDEXABLE_PAGES.map((page) => page.path)).toContain('/open-source');
+    expect(INDEXABLE_PAGES).toHaveLength(20);
+    expect(await body(sitemap, `${PUBLIC}/sitemap.xml`)).toContain(
+      `<loc>${canonicalUrl('/open-source')}</loc>`
+    );
+    expect(await body(llms, `${PUBLIC}/llms.txt`)).toContain(canonicalUrl('/open-source'));
+    const links = [
+      ...NAV_GROUPS.flatMap((group) => group.links),
+      ...FOOTER_COLUMNS.flatMap((c) => c.links)
+    ];
+    expect(links.map((link) => link.href)).toContain('/open-source');
+    expect(
+      NAV_GROUPS.find((group) => group.id === 'resources')?.links.map((l) => l.href)
+    ).toContain('/open-source');
+  });
+
+  it('offers no download and does not say a release exists', () => {
+    expect(source).toContain('none is published yet');
+    // No link to a release, an archive or a package: the publish path has never run.
+    expect(source).not.toMatch(
+      /href=["'{][^>]*(releases|download|\.zip|\.tar\.gz|crates\.io|ghcr\.io)/i
+    );
+    // Unsigned binaries are stated, never the opposite.
+    expect(source).toMatch(/will not be signed or notarised/);
+    expect(source).not.toMatch(/\bsigned and notarised\b|\bnotarized\b/i);
+  });
+
+  it('keeps to the public engine repository: no desktop, phone-app or self-hosted work', () => {
+    expect(source).not.toMatch(/self-host|desktop|android|iphone|tauri|marketplace/i);
   });
 });
 

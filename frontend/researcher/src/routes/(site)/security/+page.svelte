@@ -19,6 +19,7 @@
   title="Security"
   description="How Dynodoc protects the history of your documents and access to it, what is live today, what is only in source code so far, and how to report a vulnerability."
   {sections}
+  statement
 >
   <section id="summary">
     <h2>Overview</h2>
@@ -48,7 +49,7 @@
   <section id="status">
     <h2>What is live today</h2>
     <p>
-      As of 12 October 2026 the hosted service runs the controls marked <strong>Live</strong>. Those
+      As of 23 October 2026 the hosted service runs the controls marked <strong>Live</strong>. Those
       marked <strong>In source</strong> are implemented and tested in the code but not yet deployed.
       Those marked <strong>Not built</strong> do not exist.
     </p>
@@ -88,6 +89,13 @@
               titles, settings and archive state are recorded with before and after digests.</td
             ><td><strong>Live</strong></td></tr
           ><tr
+            ><td>Approvals tied to the version reviewed</td><td
+              >A review names the version of the request the reviewer saw. If the request changes
+              afterwards, the approval stops counting and a new one is needed. Reopening a declined
+              or withdrawn request also lapses older approvals, so an old approval cannot be
+              revived. Approvals given before 23 October 2026 keep the older rule.</td
+            ><td><strong>Live</strong></td></tr
+          ><tr
             ><td>Browser policy</td><td
               >Nonce-based content security policy, HSTS over HTTPS, no MIME sniffing, strict
               referrer policy and restricted framing.</td
@@ -124,7 +132,8 @@
           ><tr
             ><td>Account signing keys</td><td
               >An Ed25519 public key is bound to your account by proving possession of the private
-              key. Revocation is permanent.</td
+              key. Revocation is permanent. A key opens only the projects and permissions its owner
+              grants, and approving a review is a separate permission.</td
             ><td><strong>Live</strong></td></tr
           ><tr
             ><td>Signed project history and branch receipts</td><td
@@ -194,9 +203,9 @@
         or grant access, expires after seven days and can be revoked at once.
       </li>
       <li>
-        <strong>Signing keys (in source):</strong> enrolment needs a five-minute, single-use challenge
-        signed by the private key, which never leaves your device. Challenge requests and active keys
-        per account are limited.
+        <strong>Signing keys (live):</strong> enrolment needs a five-minute, single-use challenge signed
+        by the private key, which never leaves your device. Challenge requests and active keys per account
+        are limited.
       </li>
     </ul>
   </section>

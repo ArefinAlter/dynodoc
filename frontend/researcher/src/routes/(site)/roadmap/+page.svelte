@@ -4,6 +4,7 @@
   import InfoHero from '$lib/components/marketing/InfoHero.svelte';
   import { Btn, Section, Stat } from '$lib/components/site';
   import { GITHUB_URL } from '$lib/components/site/nav';
+  import { production } from '$lib/site/production';
 
   const DOCS = `${GITHUB_URL}/blob/main/docs`;
   const description =
@@ -23,8 +24,7 @@
       id: 'live',
       label: 'Live',
       heading: 'Running in the hosted pilot.',
-      blurb:
-        'Deployed at application f62d62c on database schema 41, activated on 14 October 2026 (UTC) after a verified backup and a rehearsal on a production copy.',
+      blurb: `Deployed at application ${production.app} on database schema ${production.schema}, activated on ${production.date} (UTC) after a verified backup and a rehearsal on a production copy.`,
       items: [
         {
           title: 'Projects workspace',
@@ -75,6 +75,21 @@
           title: 'Shared-history schema and project-scoped device sessions',
           body: 'Schemas 30 to 38 are deployed: signing keys, storage budgets, private transfers, shared project history, activity read APIs and one-hour project-scoped device tokens. Shared writers stay off and no receipt-signing key is installed, so publishing to shared branches is refused.',
           when: '12 Oct 2026'
+        },
+        {
+          title: 'Installable web app and small-screen layouts',
+          body: 'The workspace can be installed as a web app from a supported browser, and shows a short offline page when the network is missing. Documents and edits are not available offline. Layout and touch fixes for small screens came with it. The web app’s tests also run in Firefox and in WebKit, the engine Safari uses, with phone-sized screens emulated. Real phones and Safari itself have not been tested, and installing on a real operating system has not been tried.',
+          when: '23 Oct 2026'
+        },
+        {
+          title: 'Approvals tied to the version reviewed (schema 45)',
+          body: 'An approval counts only for the version of the request the reviewer looked at. If the request changes afterwards, the approval stops counting and a new one is needed. Reopening a declined or withdrawn request does the same. Approvals given before this release keep the older rule.',
+          when: '23 Oct 2026'
+        },
+        {
+          title: 'AI-agent connectors: released but off',
+          body: 'The feature exists on the server and is switched off on the hosted pilot, so no agent can connect. Where it is on, a project’s policy decides what an agent may read and whether it may propose changes as a draft, and nothing is allowed by default. A person must submit the draft, and the number of approvals required is set per project (the default is none). The AI-proposals inbox appears only when an agent has proposed something. None has been run with a real AI client.',
+          when: '23 Oct 2026'
         }
       ]
     },
@@ -83,7 +98,7 @@
       label: 'In source',
       heading: 'Built and tested, not enabled on the hosted pilot.',
       blurb:
-        'Implemented in the repository and passing CI. These are client libraries and opt-in writers that the hosted pilot does not use, and none of it counts as installed-editor acceptance.',
+        'Implemented in the repository and tested there. These are client libraries, opt-in writers and command-line builds that the hosted pilot does not use, and none of it counts as installed-editor acceptance.',
       items: [
         {
           title: 'Typed shared storage',
@@ -124,6 +139,11 @@
           title: 'Selected-history sync client',
           body: 'Plan, push, fetch and fast-forward pull from the command line, with verified objects and receipts.',
           when: '12 Oct 2026'
+        },
+        {
+          title: 'Six-platform builds of the command-line tools and engine',
+          body: 'The public engine repository builds and tests on Linux, macOS and Windows, on Intel or AMD and on Arm processors, and a release workflow builds the command-line tools for all six. These are automated builds only: no prebuilt tools are published, and the binaries would be unsigned.',
+          when: '21 Oct 2026'
         }
       ]
     },
@@ -144,7 +164,7 @@
         },
         {
           title: 'Projects and add-in adoption',
-          body: 'A read-only Branches tab exists in source. Creating, reviewing and merging project-wide branches in the interface, and adoption by the six connectors, remain.'
+          body: 'A read-only Branches tab is live. Creating, reviewing and merging project-wide branches in the interface, and adoption by the six connectors, remain.'
         },
         {
           title: 'Storage packing and retention',
@@ -157,10 +177,6 @@
         {
           title: 'Installed-editor acceptance',
           body: 'The owner runs a prepared worksheet against real Word, Excel, PowerPoint and Google editors. No results are recorded yet.'
-        },
-        {
-          title: 'Marketplace publication',
-          body: 'Listing copy, scopes and a submission checklist are prepared. Nothing has been submitted and no listing exists.'
         }
       ]
     },
@@ -170,6 +186,10 @@
       heading: 'Needs earlier work first.',
       blurb: 'Intended, with no date and no promise.',
       items: [
+        {
+          title: 'Marketplace publication',
+          body: 'Paused. Listing copy, scopes and a submission checklist are prepared. Nothing has been submitted and no listing exists. No date.'
+        },
         {
           title: 'Independent witnesses',
           body: 'External timestamps or gossip, and server key rotation and compromise recovery, so a complete rewrite by the operator can be detected.'
@@ -218,7 +238,7 @@
 <main id="main">
   <InfoHero
     eyebrow="ROADMAP"
-    lede="What is live, what exists only in source, what is being worked on and what comes later. A date appears only where a record gives one. Last reviewed 12 October 2026."
+    lede="What is live, what exists only in source, what is being worked on and what comes later. A date appears only where a record gives one. Last reviewed 23 October 2026."
   >
     {#snippet heading()}The roadmap, <span class="hl">without promises</span>.{/snippet}
     {#snippet actions()}
@@ -234,14 +254,19 @@
     id="standing"
     eyebrow="WHERE THINGS STAND"
     title="Four numbers that keep this honest."
-    lede="The distance between source and production is the most useful thing to know before relying on any feature."
+    lede="What production runs, and what has not been published or listed, is the most useful thing to know before relying on any feature."
     layout="split"
   >
     <ul class="stats">
       <li data-reveal>
-        <Stat value={29} label="Database schema on the hosted pilot (11 October 2026)" />
+        <Stat
+          value={production.schema}
+          label="Database schema on the hosted pilot ({production.date})"
+        />
       </li>
-      <li data-reveal><Stat value={36} label="Schema reached in source, not yet deployed" /></li>
+      <li data-reveal>
+        <Stat value={0} label="Prebuilt command-line tools published" />
+      </li>
       <li data-reveal><Stat value={6} label="Editor connectors, all test builds" /></li>
       <li data-reveal><Stat value={0} label="Marketplace listings submitted or approved" /></li>
     </ul>

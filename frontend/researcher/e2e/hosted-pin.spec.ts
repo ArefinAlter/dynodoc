@@ -25,6 +25,7 @@ const PUBLIC_PAGES = [
   '/why-dynodoc',
   '/roadmap',
   '/changelog',
+  '/open-source',
   '/brand',
   '/help',
   '/add-ins',
@@ -60,7 +61,7 @@ test('every page carries the same policy and headers, with the app host in conne
 test('the public pages are all there, each with its canonical address and index tags', async ({
   request
 }) => {
-  expect(PUBLIC_PAGES).toHaveLength(19);
+  expect(PUBLIC_PAGES).toHaveLength(20);
   for (const path of PUBLIC_PAGES) {
     const response = await request.get(path);
     expect(response.status(), path).toBe(200);

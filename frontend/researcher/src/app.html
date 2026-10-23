@@ -10,14 +10,8 @@
     <link rel="icon" sizes="48x48" type="image/png" href="/favicon-48.png" />
     <link rel="shortcut icon" href="/favicon.ico" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-    <link rel="manifest" href="/site.webmanifest" />
-    <!-- Installed-app behaviour on iOS (no manifest support for these) and Android. The
-         browser bar colour (theme-color) is set per route in +layout.svelte. -->
-    <meta name="application-name" content="Dynodoc" />
-    <meta name="apple-mobile-web-app-title" content="Dynodoc" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <!-- The web app manifest, the installed-app metas and the browser bar colour are set per
+         route in +layout.svelte: the public marketing pages do not carry them. -->
     <script src="%sveltekit.assets%/theme-init.js"></script>
     %sveltekit.head%
   </head>

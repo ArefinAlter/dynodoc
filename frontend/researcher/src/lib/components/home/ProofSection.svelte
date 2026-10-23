@@ -1,17 +1,21 @@
 <script lang="ts">
   import { Btn, Section, Stat } from '$lib/components/site';
   import { GITHUB_URL } from '$lib/components/site/nav';
+  import { production } from '$lib/site/production';
 </script>
 
 <Section
   id="proof"
   eyebrow="PROOF"
   title="Facts about the code, not adoption."
-  lede="Dynodoc is early software. These numbers come from the repository and its CI as of 12 October 2026; none of them counts customers, users or uptime."
+  lede="Dynodoc is early software. The test count is from one run of the public engine repository’s CI on 20 October 2026 (UTC), and the schema is the one the hosted workspace has run since {production.date}. None of it counts customers, users or uptime."
 >
   <div class="stats">
     <div data-reveal>
-      <Stat value={360} label="Rust tests passing in CI on the latest synced revision." />
+      <Stat
+        value={1285}
+        label="Rust tests passing in the public engine’s CI on Linux, macOS and Windows (1,284 on Intel Macs, where one timing test is excluded)."
+      />
     </div>
     <div data-reveal>
       <Stat
@@ -20,7 +24,10 @@
       />
     </div>
     <div data-reveal>
-      <Stat value={41} label="PostgreSQL schema version, deployed on the hosted workspace." />
+      <Stat
+        value={production.schema}
+        label="PostgreSQL schema version, deployed on the hosted workspace."
+      />
     </div>
   </div>
   <div class="links" data-reveal>

@@ -4,6 +4,7 @@
   const sections = [
     { id: 'signin', title: 'Sign-in and security' },
     { id: 'preferences', title: 'Preferences on your device' },
+    { id: 'offline', title: 'Offline page and cache' },
     { id: 'addins', title: 'Editor add-ins' },
     { id: 'measurements', title: 'Performance measurements' },
     { id: 'controls', title: 'Connected services and browser controls' }
@@ -124,6 +125,44 @@
               >Copies expire after seven days, at the next storage check, and are cleared on
               sign-out or when you disable recovery. At most 30 copies of 10 MiB each. The
               preference stays until cleared.</td
+            ></tr
+          ></tbody
+        >
+      </table>
+    </div>
+  </section>
+  <section id="offline">
+    <h2>Offline page and cache</h2>
+    <p>
+      The website and the workspace register a service worker, which makes the workspace installable
+      as a web app. A service worker is a small script your browser keeps for a site and runs in the
+      background. This one does two things. If a page cannot load because the network or the server
+      cannot be reached, it shows a short “You are offline” page. It also keeps copies of the site’s
+      public script, style and font files after first use, so repeat visits start faster. It never
+      stores a page, a document, an API reply, a sign-in response or anything from your account, and
+      it does not make documents available offline. The administration, sign-in link, shared-link,
+      print and add-in pages, and a few technical routes, do not register it.
+    </p>
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <div
+      class="table-scroll"
+      role="region"
+      aria-label="Offline page and cache storage"
+      tabindex="0"
+    >
+      <table>
+        <thead><tr><th>Storage</th><th>Purpose</th><th>Duration</th></tr></thead><tbody
+          ><tr
+            ><td>Service worker (<code>/service-worker.js</code>)</td><td
+              >Shows the offline page and keeps the public files below. It is not used for tracking.</td
+            ><td>Until you clear the site’s data or remove the worker in your browser.</td></tr
+          ><tr
+            ><td>Cache Storage (<code>dynodoc-shell-…</code>, <code>dynodoc-assets-…</code>)</td><td
+              >The offline page, two icons, and public script, style and font files. The names carry
+              the build number.</td
+            ><td
+              >Until you clear the site’s data. The caches of older builds are deleted when a new
+              build takes over.</td
             ></tr
           ></tbody
         >
