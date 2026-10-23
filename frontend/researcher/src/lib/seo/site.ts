@@ -126,7 +126,7 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     title: 'Editors & add-ins · Dynodoc',
     description:
       'Add-ins for Word, Excel, PowerPoint, Google Docs, Sheets and Slides: what each captures, requirements, test installation, what is stored and sent, and marketplace status.',
-    lastmod: '2026-10-12',
+    lastmod: '2026-10-23',
     changefreq: 'monthly',
     priority: '0.8'
   },
