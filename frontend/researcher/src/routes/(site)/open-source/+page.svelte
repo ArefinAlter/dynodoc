@@ -158,9 +158,12 @@
       </li>
     </ol>
     <p class="after">
-      The tests create databases and roles, so point them at a throwaway PostgreSQL, never at one
-      that holds data you keep. Running the API itself needs a few settings and a restricted
-      database login. The repository README gives those steps, from <code>task up</code> to
+      The tests need a database login that is allowed to create databases and roles, so point them
+      at a throwaway PostgreSQL, never at one that holds data you keep. Running the API itself needs
+      a few settings and a restricted database login. The repository README gives those steps, from <code
+        >task up</code
+      >
+      to
       <code>task run</code>.
       <a class="link-sweep" href="{REPO}#local-development">Read the README</a>
     </p>
