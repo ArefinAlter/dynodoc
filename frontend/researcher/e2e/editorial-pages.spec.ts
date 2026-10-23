@@ -7,6 +7,7 @@ const PAGES: [path: string, heading: RegExp][] = [
   ['/why-dynodoc', /^Documents have no provenance\.$/],
   ['/roadmap', /^The roadmap, without promises\.$/],
   ['/changelog', /^Changelog$/],
+  ['/open-source', /^Open source, and what that covers\.$/],
   ['/brand', /^Brand and press kit$/]
 ];
 
