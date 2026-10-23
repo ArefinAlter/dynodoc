@@ -125,9 +125,10 @@ The documents give dependency detail; this is the product order.
 
 On 14 October 2026 receipt-authority rotation, passphrase-encrypted key files with optional OS key
 storage, and transparent compression of local repository objects were built the same day as the
-designs. Between 18 and 22 October 2026 the pieces below were built **in source**. Nothing here is
-deployed: production runs the schema 41 release, and schemas 42 to 45
-need the usual rehearsal and release. Each row links to its ledger entry in
+designs. Between 18 and 23 October 2026 the pieces below were built **in source**. The server-side
+parts that belong on the VPS (API, web, migrations 0042 to 0047) were released on 23 October 2026 at schema
+47 (agent gateway and retention jobs off); the self-hosted bundle, `dynodoctl`, the command-line tools and
+the desktop and Android apps are customer or device artefacts and are not deployed anywhere. Each row links to its ledger entry in
 [PROJECT-STATUS.md](PROJECT-STATUS.md), which says exactly what exists, what was verified and what was not.
 
 | Roadmap item | State | What exists | What does not |

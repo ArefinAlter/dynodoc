@@ -107,7 +107,7 @@ def wait_health(url, tries=60):
 LIVE_ENV_PATH = Path('/opt/dynodoc-demo/infra/demo/.env')
 
 
-def live_env():
+def read_live_env():
     """The production .env as a dict (values are secrets: never print or log them)."""
     out = {}
     for line in LIVE_ENV_PATH.read_text().splitlines():
@@ -204,7 +204,7 @@ def main():
     step('fingerprint-after', **after)
     # 4. candidate API with the restricted login and the PRODUCTION secrets (the new start-up checks
     #    must accept the real values; the database is the throwaway copy, never production).
-    live = live_env()
+    live = read_live_env()
     api_env = write_env_file('rehearsal-api.env', {
         'PASETO_LOCAL_KEY': live['PASETO_LOCAL_KEY'], 'WEB_SERVICE_KEY': live['WEB_SERVICE_KEY'],
         'TOKEN_TTL_SECONDS': live.get('TOKEN_TTL_SECONDS') or '3600',
@@ -229,8 +229,11 @@ def main():
     checks['agent-files-absent'] = http(
         'http://%s:8080/projects/00000000-0000-0000-0000-000000000000/agent/files' % ip)[0]
     checks['app-handover-no-key'] = http('http://%s:8080/auth/app-handover' % ip, data=b'{}', method='POST')[0]
+    # The body extractor runs before the service-key check on this route, so a well-formed body is needed to
+    # reach the key check (an empty object would be refused as malformed with 422 first).
     checks['app-handover-redeem-no-key'] = http(
-        'http://%s:8080/auth/app-handover/redeem' % ip, data=b'{}', method='POST')[0]
+        'http://%s:8080/auth/app-handover/redeem' % ip, method='POST',
+        data=b'{"code":"x","state":"x","verifier":"x","app":"desktop"}')[0]
     assert checks['agent-files-absent'] == 404, checks
     assert checks['app-handover-no-key'] in (401, 403) and checks['app-handover-redeem-no-key'] in (401, 403), checks
     assert 'retention jobs are off' in container_logs(APIC), 'RETENTION_JOBS=off was not honoured'
