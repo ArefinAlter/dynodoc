@@ -49,7 +49,7 @@
   <section id="status">
     <h2>What is live today</h2>
     <p>
-      As of 14 October 2026 the hosted service runs the controls marked <strong>Live</strong>. Those
+      As of 23 October 2026 the hosted service runs the controls marked <strong>Live</strong>. Those
       marked <strong>In source</strong> are implemented and tested in the code but not yet deployed.
       Those marked <strong>Not built</strong> do not exist.
     </p>
@@ -87,6 +87,13 @@
             ><td>Project rules and metadata audit</td><td
               >Project rules set a floor of protection and approvals for every file. Changes to
               titles, settings and archive state are recorded with before and after digests.</td
+            ><td><strong>Live</strong></td></tr
+          ><tr
+            ><td>Approvals tied to the version reviewed</td><td
+              >A review names the version of the request the reviewer saw. If the request changes
+              afterwards, the approval stops counting and a new one is needed. Reopening a declined
+              or withdrawn request also lapses older approvals, so an old approval cannot be
+              revived. Approvals given before 23 October 2026 keep the older rule.</td
             ><td><strong>Live</strong></td></tr
           ><tr
             ><td>Browser policy</td><td

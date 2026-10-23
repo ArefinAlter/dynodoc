@@ -134,14 +134,14 @@
   <section id="offline">
     <h2>Offline page and cache</h2>
     <p>
-      The website registers a service worker, and the workspace does too from the release that adds
-      the installable web app. A service worker is a small script your browser keeps for a site and
-      runs in the background. This one does two things. If a page cannot load because the network or
-      the server cannot be reached, it shows a short “You are offline” page. It also keeps copies of
-      the site’s public script, style and font files after first use, so repeat visits start faster.
-      It never stores a page, a document, an API reply, a sign-in response or anything from your
-      account, and it does not make documents available offline. The administration, shared-link,
-      print and add-in pages do not register it.
+      The website and the workspace register a service worker, which makes the workspace installable
+      as a web app. A service worker is a small script your browser keeps for a site and runs in the
+      background. This one does two things. If a page cannot load because the network or the server
+      cannot be reached, it shows a short “You are offline” page. It also keeps copies of the site’s
+      public script, style and font files after first use, so repeat visits start faster. It never
+      stores a page, a document, an API reply, a sign-in response or anything from your account, and
+      it does not make documents available offline. The administration, sign-in link, shared-link,
+      print and add-in pages, and a few technical routes, do not register it.
     </p>
     <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
     <div
