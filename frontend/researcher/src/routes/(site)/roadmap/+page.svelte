@@ -6,9 +6,6 @@
   import { GITHUB_URL } from '$lib/components/site/nav';
   import { production } from '$lib/site/production';
 
-  // Highest database schema in the repository's migrations. Change it with the migrations.
-  const SOURCE_SCHEMA = 47;
-
   const DOCS = `${GITHUB_URL}/blob/main/docs`;
   const description =
     'What Dynodoc has built, what exists only in source, what is in progress and what comes later. Dated where a record gives a date, with no promised release dates.';
@@ -78,6 +75,21 @@
           title: 'Shared-history schema and project-scoped device sessions',
           body: 'Schemas 30 to 38 are deployed: signing keys, storage budgets, private transfers, shared project history, activity read APIs and one-hour project-scoped device tokens. Shared writers stay off and no receipt-signing key is installed, so publishing to shared branches is refused.',
           when: '12 Oct 2026'
+        },
+        {
+          title: 'Installable web app and small-screen layouts',
+          body: 'The workspace can be installed as a web app from a supported browser, and shows a short offline page when the network is missing. Documents and edits are not available offline. Layout and touch fixes for small screens came with it. The web app’s tests also run in Firefox and in WebKit, the engine Safari uses, with phone-sized screens emulated. Real phones and Safari itself have not been tested, and installing on a real operating system has not been tried.',
+          when: '23 Oct 2026'
+        },
+        {
+          title: 'Approvals tied to the version reviewed (schema 45)',
+          body: 'An approval counts only for the version of the request the reviewer looked at. If the request changes afterwards, the approval stops counting and a new one is needed. Reopening a declined or withdrawn request does the same. Approvals given before this release keep the older rule.',
+          when: '23 Oct 2026'
+        },
+        {
+          title: 'AI-agent connectors: released but off',
+          body: 'The feature exists on the server and is switched off on the hosted pilot, so no agent can connect. Where it is on, a project’s policy decides what an agent may read and whether it may propose changes as a draft, and nothing is allowed by default. A person must submit the draft, and the number of approvals required is set per project (the default is none). The AI-proposals inbox appears only when an agent has proposed something. None has been run with a real AI client.',
+          when: '23 Oct 2026'
         }
       ]
     },
@@ -86,7 +98,7 @@
       label: 'In source',
       heading: 'Built and tested, not enabled on the hosted pilot.',
       blurb:
-        'Implemented in the repository and tested there. These are client libraries, opt-in writers and changes waiting for a release that the hosted pilot does not use yet, and none of it counts as installed-editor acceptance.',
+        'Implemented in the repository and tested there. These are client libraries, opt-in writers and command-line builds that the hosted pilot does not use, and none of it counts as installed-editor acceptance.',
       items: [
         {
           title: 'Typed shared storage',
@@ -129,24 +141,9 @@
           when: '12 Oct 2026'
         },
         {
-          title: 'Browser test matrix and installable web app',
-          body: 'In source; release pending. The web app’s tests now also run in Firefox and in WebKit, the engine Safari uses, with phone-sized screens emulated. Layout and touch fixes for small screens and an installable web app (a manifest and a service worker that keeps only public script, style and font files and an offline page) are built. Real phones and Safari itself have not been tested, and installing on a real operating system has not been tried.',
-          when: '21 Oct 2026'
-        },
-        {
           title: 'Six-platform builds of the command-line tools and engine',
-          body: 'In source; release pending. The public engine repository builds and tests on Linux, macOS and Windows, on Intel or AMD and on Arm processors, and a release workflow builds the command-line tools for all six. These are automated builds only: no prebuilt tools are published, and the binaries would be unsigned.',
+          body: 'The public engine repository builds and tests on Linux, macOS and Windows, on Intel or AMD and on Arm processors, and a release workflow builds the command-line tools for all six. These are automated builds only: no prebuilt tools are published, and the binaries would be unsigned.',
           when: '21 Oct 2026'
-        },
-        {
-          title: 'Approvals bound to the version reviewed',
-          body: 'In source; release pending. An approval counts only for the draft the reviewer looked at. If the draft changes afterwards, the approval stops counting and a new one is needed. Needs schema 45, which has not been released.',
-          when: '22 Oct 2026'
-        },
-        {
-          title: 'AI-agent connectors (off by default)',
-          body: 'In source; release pending. An AI agent can read what a project’s policy allows and propose changes as a draft. A draft reaches the shared version only after the person the agent acts for submits it and the project’s usual review rules are met. Agents are off unless a project turns them on, the hosted pilot does not offer them, and none has been run with a real AI client.',
-          when: '18 to 22 Oct 2026'
         }
       ]
     },
@@ -257,7 +254,7 @@
     id="standing"
     eyebrow="WHERE THINGS STAND"
     title="Four numbers that keep this honest."
-    lede="The distance between source and production is the most useful thing to know before relying on any feature."
+    lede="What production runs, and what has not been published or listed, is the most useful thing to know before relying on any feature."
     layout="split"
   >
     <ul class="stats">
@@ -268,7 +265,7 @@
         />
       </li>
       <li data-reveal>
-        <Stat value={SOURCE_SCHEMA} label="Schema reached in source, release pending" />
+        <Stat value={0} label="Prebuilt command-line tools published" />
       </li>
       <li data-reveal><Stat value={6} label="Editor connectors, all test builds" /></li>
       <li data-reveal><Stat value={0} label="Marketplace listings submitted or approved" /></li>

@@ -31,11 +31,10 @@
       This draft covers the Dynodoc website at dynodoc.online, the hosted workspace and
       administration sites (app.dynodoc.online and admin.dynodoc.online) and the Dynodoc editor
       add-ins for Microsoft Word, Excel and PowerPoint and for Google Docs, Sheets and Slides. It
-      also covers the workspace as an installable web app, which is built but not yet released.
-      Dynodoc is a document provenance, review and synchronization service: it records who changed
-      what in a document, helps a team review and merge changes, and keeps that history checkable. A
-      separately operated installation of the open-source engine and API may have a different
-      operator and a different notice.
+      also covers the workspace as an installable web app. Dynodoc is a document provenance, review
+      and synchronization service: it records who changed what in a document, helps a team review
+      and merge changes, and keeps that history checkable. A separately operated installation of the
+      open-source engine and API may have a different operator and a different notice.
     </p>
     <p>
       “Dynodoc,” “we” and “our” refer to the operator of this hosted service, {OPERATOR.legalName}

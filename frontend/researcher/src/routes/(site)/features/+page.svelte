@@ -251,6 +251,7 @@
       points={[
         'Independent edits combine after validation. Overlapping edits and shared constraints stop for an explicit resolution instead of a silent guess.',
         'Project rules are a floor: a file rule can raise the approvals required, never lower them. Owning a file does not bypass review.',
+        'An approval names the version of the request the reviewer saw. If the request changes afterwards, that approval stops counting and a new one is needed.',
         'Approvals, merges and overrides are written to the audit trail with the acting account.'
       ]}
       boundary="Review is deliberate. There is no live co-editing and there are no collaborator cursors."
