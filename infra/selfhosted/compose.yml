@@ -171,6 +171,13 @@ services:
     user: "999:999"
     restart: "no"
     <<: *hardening
+    # No container log at all (this key wins over the one merged in above): `auth issue-link` prints a
+    # sign-in link, and with a log driver the link would stay in `docker logs` of the stopped container
+    # if dynodoctl were killed before `run --rm` removed it. The output still reaches the caller of
+    # `docker compose run`. Cost: the other maintenance commands (verify, check-runtime, ...) leave no
+    # log to read afterwards; keep their output from the terminal (decision 018).
+    logging:
+      driver: none
     tmpfs: ["/tmp:size=8m"]
     volumes:
       - secrets-db:/run/secrets:ro

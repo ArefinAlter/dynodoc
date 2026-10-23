@@ -104,14 +104,47 @@ impl Report {
     }
 }
 
-/// The address as engine-cli will see it: trimmed and lower-cased, one `@`, no spaces or control
-/// characters, at most 254 bytes. (engine-cli checks again; this keeps nonsense out of the prompt.)
+/// Characters that print as nothing or reorder the text around them (the Unicode format
+/// characters such as U+202E and U+200B, tags, variation selectors, the line and paragraph
+/// separators). The same list as `engine_api::auth::operator::is_invisible_or_bidi`, copied
+/// because `dynodoctl` depends on no engine crate (a test in each keeps them to the same cases).
+pub fn is_invisible(c: char) -> bool {
+    matches!(u32::from(c),
+        0x00AD
+        | 0x0600..=0x0605
+        | 0x061C
+        | 0x06DD
+        | 0x070F
+        | 0x0890..=0x0891
+        | 0x08E2
+        | 0x180B..=0x180F
+        | 0x200B..=0x200F
+        | 0x2028..=0x202E
+        | 0x2060..=0x206F
+        | 0xFE00..=0xFE0F
+        | 0xFEFF
+        | 0xFFF9..=0xFFFB
+        | 0x110BD
+        | 0x110CD
+        | 0x13430..=0x1343F
+        | 0x1BCA0..=0x1BCA3
+        | 0x1D173..=0x1D17A
+        | 0xE0001
+        | 0xE0020..=0xE007F
+        | 0xE0100..=0xE01EF)
+}
+
+/// The address as engine-cli will see it: trimmed and lower-cased, one `@`, no spaces, control or
+/// invisible characters, at most 254 bytes. (engine-cli checks again; this keeps nonsense out of the prompt.)
 pub fn clean_email(raw: &str) -> Result<String> {
     let email = raw.trim().to_lowercase();
     let ok = !email.is_empty()
         && email.len() <= 254
         && !email.chars().any(|c| {
-            c.is_whitespace() || c.is_control() || matches!(c, ',' | ';' | '<' | '>' | '"' | '\\')
+            c.is_whitespace()
+                || c.is_control()
+                || is_invisible(c)
+                || matches!(c, ',' | ';' | '<' | '>' | '"' | '\\')
         })
         && email.matches('@').count() == 1
         && email.split_once('@').is_some_and(|(l, d)| {
@@ -127,9 +160,12 @@ pub fn clean_email(raw: &str) -> Result<String> {
     }
 }
 
-/// Text safe to put in a message: no control characters, at most 60 characters.
+/// Text safe to put in a message: no control or invisible characters, at most 60 characters.
 fn printable(text: &str) -> String {
-    text.chars().filter(|c| !c.is_control()).take(60).collect()
+    text.chars()
+        .filter(|c| !c.is_control() && !is_invisible(*c))
+        .take(60)
+        .collect()
 }
 
 fn clean_ttl(ttl: &str) -> Result<String> {
@@ -145,10 +181,10 @@ fn clean_ttl(ttl: &str) -> Result<String> {
 }
 
 fn clean_text(what: &str, text: &str, max: usize) -> Result<String> {
-    if text.len() > max || text.chars().any(char::is_control) {
+    if text.len() > max || text.chars().any(|c| c.is_control() || is_invisible(c)) {
         return Err(CliError::usage(
             format!("the {what} must be at most {max} characters of plain text"),
-            "shorten it and leave out line breaks",
+            "shorten it; leave out line breaks and invisible or direction-changing characters",
         ));
     }
     Ok(text.to_string())
@@ -175,7 +211,7 @@ pub fn run(ctx: &Ctx<'_>, options: &Options) -> Result<Report> {
     let operator: String = options
         .operator
         .chars()
-        .filter(|c| !c.is_control())
+        .filter(|c| !c.is_control() && !is_invisible(*c))
         .take(48)
         .collect();
     let operator = if operator.trim().is_empty() {

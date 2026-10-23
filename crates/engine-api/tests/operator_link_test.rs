@@ -1529,3 +1529,346 @@ async fn using_a_link_and_the_login_it_makes_succeed_or_fail_together(pool: PgPo
     assert_eq!(outcome(&pool, &token).await.as_deref(), Some("used"));
     assert_eq!(verify(&router, &token).await.0, StatusCode::UNAUTHORIZED);
 }
+
+// --- review follow-ups (23 October 2026) -------------------------------------------------------
+
+/// "No administrator has an account yet" looks at the OTHER configured addresses, so a lock per
+/// address cannot make the first-administrator rule atomic: two first administrators made at once
+/// both saw none (23 of 25 rounds in the review). Each round uses two fresh addresses.
+#[sqlx::test(migrations = "../../migrations")]
+async fn two_first_administrators_made_at_once_are_made_one_at_a_time(pool: PgPool) {
+    for round in 0..25 {
+        let (a, b) = (
+            format!("first-a{round}@example.test"),
+            format!("first-b{round}@example.test"),
+        );
+        let admins = format!("{a}, {b}");
+        let attempts = [a.clone(), b.clone()].map(|email| {
+            let (pool, admins) = (pool.clone(), admins.clone());
+            tokio::spawn(async move {
+                let mut r = request(&email);
+                r.create = true;
+                r.admin_emails = &admins;
+                operator::issue(&pool, &r)
+                    .await
+                    .map(|issued| issued.created_account)
+            })
+        });
+        let results: Vec<_> = join_all(attempts)
+            .await
+            .into_iter()
+            .map(|r| r.unwrap())
+            .collect();
+        let made = results.iter().filter(|r| matches!(r, Ok(true))).count();
+        let stopped = results
+            .iter()
+            .filter(|r| {
+                matches!(
+                    r,
+                    Err(IssueError::NeedsConfirmation(
+                        NeedsConfirmation::AdministratorExists
+                    ))
+                )
+            })
+            .count();
+        assert_eq!((made, stopped), (1, 1), "round {round}: {results:?}");
+        let accounts: i64 =
+            sqlx::query_scalar("select count(*) from identity where email in ($1, $2)")
+                .bind(&a)
+                .bind(&b)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(accounts, 1, "round {round}");
+    }
+}
+
+/// Almost every token that fails at `/auth/verify` is not an operator link at all (a used emailed
+/// link, a probe). It costs one indexed read: no transaction, no write, no audit row. A lock that
+/// blocks writes to the table (but not reads) shows which it is.
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_token_that_is_no_operator_link_costs_one_read_and_no_write(pool: PgPool) {
+    use std::time::Duration;
+    let router = router(&pool);
+    account(&pool, "cheap@example.test").await;
+    let used = issue(&pool, "cheap@example.test").await;
+    assert_eq!(verify(&router, used.token.expose()).await.0, StatusCode::OK);
+    // (A new link ends the earlier unused ones, so this one is made after the first was used.)
+    let known = issue(&pool, "cheap@example.test").await;
+    let rows_before = actions(&pool).await.len();
+
+    let mut holder = pool.begin().await.unwrap();
+    sqlx::query("lock table operator_sign_in_link in share mode")
+        .execute(&mut *holder)
+        .await
+        .unwrap();
+    // Unknown, well shaped: answered at once although every write to the table would wait.
+    let unknown = "ab".repeat(32);
+    let (status, body) = tokio::time::timeout(Duration::from_secs(5), verify(&router, &unknown))
+        .await
+        .expect("a token that names no row must not wait for a write lock");
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    // A link that exists does take the path with the write, so the lock shows (the test can see).
+    let mut waiting = tokio::spawn({
+        let (router, token) = (router.clone(), known.token.expose().to_string());
+        async move { verify(&router, &token).await.0 }
+    });
+    assert!(
+        tokio::time::timeout(Duration::from_millis(1500), &mut waiting)
+            .await
+            .is_err(),
+        "a real link waits for the lock (it is about to write)"
+    );
+    holder.rollback().await.unwrap();
+    assert_eq!(waiting.await.unwrap(), StatusCode::OK);
+
+    // The same 401 and body as the replay of a used link, and nothing was recorded for the unknown one.
+    let (replay_status, replay_body) = verify(&router, used.token.expose()).await;
+    assert_eq!((replay_status, &replay_body), (status, &body));
+    let (again_status, again_body) = verify(&router, &unknown).await;
+    assert_eq!((again_status, &again_body), (status, &body));
+    let after = audit(&pool).await;
+    assert_eq!(
+        after.len(),
+        rows_before + 2,
+        "the link used, and the replay refused: {after:?}"
+    );
+}
+
+/// An emailed link is tried FIRST: the operator table is not read for it, so hosted behaviour (and
+/// its cost) is what it was. With the table gone from under it, an emailed link still signs in.
+#[sqlx::test(migrations = "../../migrations")]
+async fn an_emailed_link_is_tried_first_and_never_touches_the_operator_table(pool: PgPool) {
+    let router = router(&pool);
+    let (status, link) = send(
+        &router,
+        post(
+            "/auth/magic-link",
+            &json!({"email": "emailed@example.test"}),
+            true,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let token = link["magic_link_token"].as_str().unwrap();
+    sqlx::raw_sql("alter table operator_sign_in_link rename to operator_sign_in_link_away")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (status, tokens) = verify(&router, token).await;
+    assert_eq!(status, StatusCode::OK, "{tokens}");
+    assert!(tokens["access_token"].is_string());
+    // Only a miss goes on to the operator table (here: absent, so it is an error, which proves it
+    // is the next thing looked at).
+    assert_eq!(
+        verify(&router, token).await.0,
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
+}
+
+/// The reserved domain of the AI-agent identities has a guard of its own. Without it, an existing
+/// agent identity would be refused only by accident (it is born disabled), and a new one by the
+/// need for --create.
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_reserved_agent_domain_is_refused_by_its_own_guard_even_for_an_existing_agent(
+    pool: PgPool,
+) {
+    let principal = account(&pool, "principal@example.test").await;
+    let agent = Uuid::new_v4();
+    let email = format!("agent+{agent}@agents.invalid");
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::query(
+        "insert into identity(id,email,display_name,disabled_at) values($1,$2,'Agent',now())",
+    )
+    .bind(agent)
+    .bind(&email)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    sqlx::query("insert into agent_identity(identity_id,principal_id,client_kind,client_ref) values($1,$2,'claude','k')")
+        .bind(agent)
+        .bind(principal)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    for create in [false, true] {
+        let mut r = request(&email);
+        r.create = create;
+        r.confirm_create = Some(&email);
+        match operator::issue(&pool, &r).await {
+            Err(IssueError::Invalid(why)) => {
+                assert!(why.contains("reserved"), "create={create}: {why}")
+            }
+            other => panic!("create={create}: {other:?}"),
+        }
+    }
+    // Nor does a subdomain or a trailing dot get around it.
+    for spelling in ["a@x.agents.invalid", "A@AGENTS.INVALID"] {
+        let mut r = request(spelling);
+        r.create = true;
+        r.confirm_create = Some(spelling);
+        assert!(
+            matches!(
+                operator::issue(&pool, &r).await,
+                Err(IssueError::Invalid(_))
+            ),
+            "{spelling}"
+        );
+    }
+    assert_eq!(count(&pool, "operator_sign_in_link").await, 0);
+    assert!(audit(&pool).await.is_empty());
+}
+
+/// Characters that print as nothing or reorder the text around them (U+202E and the other bidi
+/// controls, zero-width characters, tags, variation selectors, line and paragraph separators) are
+/// refused by the tool AND by the table. Every range's ends are tried against both, so the two
+/// lists cannot drift; the characters next to the ranges are allowed by both.
+#[sqlx::test(migrations = "../../migrations")]
+async fn invisible_and_bidirectional_characters_are_refused_in_the_tool_and_in_the_table(
+    pool: PgPool,
+) {
+    let id = account(&pool, "bidi@example.test").await;
+    let refused = [
+        '\u{00AD}',
+        '\u{0600}',
+        '\u{0605}',
+        '\u{061C}',
+        '\u{06DD}',
+        '\u{070F}',
+        '\u{0890}',
+        '\u{0891}',
+        '\u{08E2}',
+        '\u{180B}',
+        '\u{180E}',
+        '\u{180F}',
+        '\u{200B}',
+        '\u{200C}',
+        '\u{200D}',
+        '\u{200E}',
+        '\u{200F}',
+        '\u{2028}',
+        '\u{2029}',
+        '\u{202A}',
+        '\u{202D}',
+        '\u{202E}',
+        '\u{2060}',
+        '\u{2064}',
+        '\u{2066}',
+        '\u{2067}',
+        '\u{2069}',
+        '\u{206F}',
+        '\u{FE00}',
+        '\u{FE0F}',
+        '\u{FEFF}',
+        '\u{FFF9}',
+        '\u{FFFB}',
+        '\u{110BD}',
+        '\u{110CD}',
+        '\u{13430}',
+        '\u{1343F}',
+        '\u{1BCA0}',
+        '\u{1BCA3}',
+        '\u{1D173}',
+        '\u{1D17A}',
+        '\u{E0001}',
+        '\u{E0020}',
+        '\u{E0041}',
+        '\u{E007F}',
+        '\u{E0100}',
+        '\u{E01EF}',
+    ];
+    let allowed = [
+        '\u{00AC}',
+        '\u{00AE}',
+        '\u{0606}',
+        '\u{061B}',
+        '\u{200A}',
+        '\u{2010}',
+        '\u{2027}',
+        '\u{202F}',
+        '\u{2070}',
+        '\u{FDFF}',
+        '\u{FE10}',
+        '\u{FEFE}',
+        '\u{FFFC}',
+        '\u{1BCA4}',
+        '\u{1D17B}',
+        '\u{E01F0}',
+        '\u{e9}',
+        '\u{5c71}',
+        '\u{1F600}',
+    ];
+    let mut n = 0u32;
+    let mut insert = |operator: String, reason: String| {
+        n += 1;
+        let pool = pool.clone();
+        async move {
+            sqlx::query("insert into operator_sign_in_link(identity_id,token_hash,session_generation,operator,reason,expires_at) values($1,$2,0,$3,$4,now()+interval '5 minutes')")
+                .bind(id)
+                .bind(sha(&format!("bidi-{n}-{operator}-{reason}")))
+                .bind(operator)
+                .bind(reason)
+                .execute(&pool)
+                .await
+        }
+    };
+    for c in refused {
+        assert!(
+            operator::is_invisible_or_bidi(c),
+            "{c:?} in the tool's list"
+        );
+        let text = format!("al{c}ice");
+        // The tool refuses it as a label and as a reason ...
+        for (who, why) in [(text.as_str(), "ok"), ("alice", text.as_str())] {
+            let mut r = request("bidi@example.test");
+            r.operator = who;
+            r.reason = why;
+            assert!(
+                matches!(
+                    operator::issue(&pool, &r).await,
+                    Err(IssueError::Invalid(_))
+                ),
+                "{c:?}"
+            );
+        }
+        // ... and so does the table, in either column, whoever the writer is.
+        for (who, why) in [
+            (text.clone(), String::new()),
+            ("alice".to_string(), text.clone()),
+        ] {
+            let error = insert(who, why).await.unwrap_err();
+            assert!(
+                error.to_string().contains("violates check constraint"),
+                "{c:?}: {error}"
+            );
+        }
+    }
+    for c in allowed {
+        assert!(
+            !operator::is_invisible_or_bidi(c),
+            "{c:?} in the tool's list"
+        );
+        let text = format!("al{c}ice");
+        let mut r = request("bidi@example.test");
+        r.operator = &text;
+        r.reason = &text;
+        assert!(
+            operator::issue(&pool, &r).await.is_ok(),
+            "{c:?} in the tool"
+        );
+        insert(text.clone(), text.clone())
+            .await
+            .unwrap_or_else(|e| panic!("{c:?} in the table: {e}"));
+    }
+    // The three the review named, in the sentence they could disguise.
+    for hidden in [
+        "\u{202E}gnp.exe",
+        "ok\u{2066}evil\u{2069}",
+        "zero\u{200B}width",
+    ] {
+        let mut r = request("bidi@example.test");
+        r.reason = hidden;
+        assert!(operator::issue(&pool, &r).await.is_err(), "{hidden:?}");
+    }
+}

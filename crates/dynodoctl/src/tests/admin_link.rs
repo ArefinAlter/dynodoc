@@ -329,6 +329,72 @@ fn arguments_are_checked_before_docker_is_used() {
 }
 
 #[test]
+fn invisible_and_direction_changing_characters_are_refused_before_docker_is_used() {
+    let (dir, runner) = installation();
+    runner.first("auth issue-link", 0, &answer());
+    for hidden in [
+        '\u{202E}',
+        '\u{2066}',
+        '\u{200B}',
+        '\u{FEFF}',
+        '\u{2028}',
+        '\u{E0041}',
+        '\u{FE0F}',
+        '\u{00AD}',
+        '\u{061C}',
+        '\u{1343F}',
+    ] {
+        assert!(is_invisible(hidden), "{hidden:?}");
+        let reason = format!("al{hidden}ice");
+        let email = format!("al{hidden}ice@example.org");
+        for args in [
+            vec![
+                "admin-link",
+                "--email",
+                "a@example.org",
+                "--reason",
+                reason.as_str(),
+            ],
+            vec!["admin-link", "--email", email.as_str()],
+        ] {
+            let (code, out, _) =
+                run_cli(&args, dir.path(), &runner, &ScriptedConfirm::new(&[true]));
+            assert_eq!(code, crate::error::exit::USAGE, "{args:?}");
+            assert!(!out.contains(TOKEN));
+        }
+    }
+    assert!(issue_calls(&runner).is_empty());
+    // Ordinary non-ASCII text is not caught.
+    for plain in [
+        '\u{e9}',
+        '\u{5c71}',
+        '\u{1F600}',
+        '\u{202F}',
+        '\u{200A}',
+        '\u{FFFC}',
+    ] {
+        assert!(!is_invisible(plain), "{plain:?}");
+    }
+    // The operator label is cleaned, not refused (it comes from the environment).
+    let confirm = ScriptedConfirm::new(&[true]);
+    let ctx = testkit::ctx(&runner, dir.path(), &confirm);
+    let _ = run(
+        &ctx,
+        &Options {
+            email: "admin@example.org".into(),
+            operator: "al\u{202E}ice\u{200B}".into(),
+            ..Options::default()
+        },
+    );
+    let call = &issue_calls(&runner)[0];
+    assert!(call.contains("--operator alice"), "{call}");
+    assert!(
+        !call.contains('\u{202E}') && !call.contains('\u{200B}'),
+        "{call}"
+    );
+}
+
+#[test]
 fn an_account_the_first_administrator_rule_does_not_allow_needs_a_second_typed_phrase() {
     let (dir, runner) = installation();
     runner.first_seq(

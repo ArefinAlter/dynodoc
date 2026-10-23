@@ -25,6 +25,13 @@
 -- unless an operator uses the CLI). Like 0043 to 0046 this is not rollback-safe by leaving the
 -- table unused: the API refuses a newer schema, so rolling back means restoring the dump. The
 -- restricted runtime login needs `engine-cli grant-runtime` after this migration, as always.
+--
+-- Amended in place on 23 October 2026 (the independent review of the first version): the operator
+-- and reason CHECKs now also refuse invisible and direction-changing format characters. The file had
+-- run in no shared environment (only in disposable test databases, created fresh each run), which is
+-- the condition AGENTS.md sets for editing a migration. If it has run anywhere by the time this is
+-- read, the change must become a new numbered file instead; a database that applied the first
+-- version has a different checksum and must be reset (development databases only).
 create table operator_sign_in_link (
     id uuid primary key default gen_random_uuid(),
     identity_id uuid not null references identity(id) on delete cascade,
@@ -34,10 +41,16 @@ create table operator_sign_in_link (
     -- everywhere (or removing it) between issue and use ends the link, as it ends a magic link.
     session_generation bigint not null,
     -- Who made it: the operator's operating-system user name as the CLI saw it. A label, not
-    -- an authentication (the owner credential can write any value); no control characters.
-    operator text not null check (octet_length(operator) between 1 and 64 and operator !~ '[[:cntrl:]]'),
+    -- an authentication (the owner credential can write any value); no control characters and no
+    -- invisible or direction-changing format characters (category Cf: U+202E and the other overrides
+    -- and isolates, zero-width and joiner characters, the byte order mark, tags; the line and
+    -- paragraph separators; the variation selectors), which could make a label read as something
+    -- else in a terminal or a viewer. The same ranges are listed in `is_invisible_or_bidi`
+    -- (engine-api, auth/operator.rs), which the tool applies first.
+    operator text not null check (octet_length(operator) between 1 and 64 and operator !~ '[[:cntrl:]­؀-؅؜۝܏࢐-࢑࣢᠋-᠏​-‏ -‮⁠-⁯︀-️﻿￹-￻\U000110BD\U000110CD\U00013430-\U0001343F\U0001BCA0-\U0001BCA3\U0001D173-\U0001D17A\U000E0001\U000E0020-\U000E007F\U000E0100-\U000E01EF]'),
     -- Free text from the operator. Keep personal data out of it: the audit row keeps it for good.
-    reason text not null default '' check (octet_length(reason) <= 200 and reason !~ '[[:cntrl:]]'),
+    -- Same character rule as the label.
+    reason text not null default '' check (octet_length(reason) <= 200 and reason !~ '[[:cntrl:]­؀-؅؜۝܏࢐-࢑࣢᠋-᠏​-‏ -‮⁠-⁯︀-️﻿￹-￻\U000110BD\U000110CD\U00013430-\U0001343F\U0001BCA0-\U0001BCA3\U0001D173-\U0001D17A\U000E0001\U000E0020-\U000E007F\U000E0100-\U000E01EF]'),
     created_at timestamptz not null default now(),
     expires_at timestamptz not null,
     consumed_at timestamptz,

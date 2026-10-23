@@ -156,6 +156,7 @@ pub fn normalise_email(raw: &str) -> Result<String, IssueError> {
         && email.chars().all(|c| {
             !c.is_whitespace()
                 && !c.is_control()
+                && !is_invisible_or_bidi(c)
                 && !matches!(c, ',' | ';' | '<' | '>' | '"' | '\\')
         })
         && email.matches('@').count() == 1
@@ -174,11 +175,51 @@ pub fn normalise_email(raw: &str) -> Result<String, IssueError> {
     }
 }
 
-/// A label or a reason: bounded, no control characters (they would reach the terminal and the audit).
+/// Characters that print as nothing, or that reorder or hide the text around them, so a label,
+/// a reason or an address could read as something else in a terminal or an audit viewer: the
+/// Unicode "format" characters (category Cf: soft hyphen, zero-width space and joiners, the
+/// left-to-right and right-to-left marks, embeddings, overrides and isolates U+202A to U+202E and
+/// U+2066 to U+2069, the word joiner, the byte order mark, tags U+E0001 and U+E0020 to U+E007F,
+/// ...), the line and paragraph separators U+2028 and U+2029 (Zl, Zp) and the variation selectors.
+/// Rust's standard library has no category lookup, so the ranges are listed; migration 0047's
+/// CHECK constraints list the same ones (a test inserts one of each range).
+pub fn is_invisible_or_bidi(c: char) -> bool {
+    matches!(u32::from(c),
+        0x00AD
+        | 0x0600..=0x0605
+        | 0x061C
+        | 0x06DD
+        | 0x070F
+        | 0x0890..=0x0891
+        | 0x08E2
+        | 0x180B..=0x180F
+        | 0x200B..=0x200F
+        | 0x2028..=0x202E
+        | 0x2060..=0x206F
+        | 0xFE00..=0xFE0F
+        | 0xFEFF
+        | 0xFFF9..=0xFFFB
+        | 0x110BD
+        | 0x110CD
+        | 0x13430..=0x1343F
+        | 0x1BCA0..=0x1BCA3
+        | 0x1D173..=0x1D17A
+        | 0xE0001
+        | 0xE0020..=0xE007F
+        | 0xE0100..=0xE01EF)
+}
+
+/// A label or a reason: bounded, no control or invisible/bidirectional-format characters (they
+/// would reach the terminal and the audit).
 fn free_text(what: &str, text: &str, max: usize, allow_empty: bool) -> Result<(), IssueError> {
-    if (text.is_empty() && !allow_empty) || text.len() > max || text.chars().any(char::is_control) {
+    if (text.is_empty() && !allow_empty)
+        || text.len() > max
+        || text
+            .chars()
+            .any(|c| c.is_control() || is_invisible_or_bidi(c))
+    {
         return Err(IssueError::Invalid(format!(
-            "{what} must be {} to {max} bytes of text without control characters",
+            "{what} must be {} to {max} bytes of plain text without control or invisible formatting characters",
             if allow_empty { 0 } else { 1 }
         )));
     }
@@ -328,6 +369,18 @@ pub async fn issue(pool: &PgPool, request: &IssueRequest<'_>) -> Result<Issued, 
     };
 
     let mut tx = pool.begin().await?;
+    if request.create {
+        // "No administrator has an account yet" looks at OTHER addresses than this one, so the lock
+        // per address below cannot make it atomic: two first administrators made at once (two
+        // addresses in ADMIN_EMAILS) would both see none. One fixed lock for every account creation,
+        // taken before the check and held to the commit, makes it one at a time. (Always taken
+        // before the per-address lock, and only by `create`, so there is no lock cycle.)
+        sqlx::query(
+            "select pg_advisory_xact_lock(hashtextextended('dynodoc/operator-link/create', 47))",
+        )
+        .execute(&mut *tx)
+        .await?;
+    }
     sqlx::query("select pg_advisory_xact_lock(hashtextextended($1, 47))")
         .bind(format!("dynodoc/operator-link/{email}"))
         .execute(&mut *tx)
@@ -521,6 +574,18 @@ pub async fn redeem(state: &AppState, token: &str) -> Result<TokenResponse, Auth
         return Err(AuthError::MagicLinkInvalid);
     }
     let hash = sha256(token.as_bytes());
+    // Most tokens that reach this point are not operator links at all (a used or expired emailed
+    // link, a probe): one indexed read answers them with the same 401, without a transaction, a
+    // write or an audit row. Only a token that names a row takes the path below.
+    let known: bool = sqlx::query_scalar(
+        "select exists(select 1 from operator_sign_in_link where token_hash=$1)",
+    )
+    .bind(&hash)
+    .fetch_one(&state.pool)
+    .await?;
+    if !known {
+        return Err(AuthError::MagicLinkInvalid);
+    }
     let mut tx = state.pool.begin().await?;
     // The statement that checks the row also uses it up, so two simultaneous uses take turns on
     // the row lock and the second finds it used. Expiry is the database clock's (and a trigger's).
@@ -653,6 +718,48 @@ mod tests {
         assert!(free_text("x", &"a".repeat(65), 64, false).is_err());
         assert!(free_text("x", "a\u{1b}[31m", 64, false).is_err());
         assert!(free_text("x", "line\nbreak", 200, true).is_err());
+    }
+
+    #[test]
+    fn invisible_and_bidirectional_format_characters_are_refused_everywhere_text_is_taken() {
+        for c in [
+            '\u{202E}',
+            '\u{202A}',
+            '\u{2066}',
+            '\u{2069}',
+            '\u{200B}',
+            '\u{200D}',
+            '\u{200F}',
+            '\u{FEFF}',
+            '\u{00AD}',
+            '\u{2028}',
+            '\u{2029}',
+            '\u{2060}',
+            '\u{061C}',
+            '\u{E0041}',
+            '\u{E0001}',
+            '\u{FE0F}',
+            '\u{E0100}',
+        ] {
+            assert!(is_invisible_or_bidi(c), "{c:?}");
+            let text = format!("al{c}ice");
+            assert!(free_text("x", &text, 64, false).is_err(), "{c:?}");
+            assert!(
+                normalise_email(&format!("al{c}ice@example.org")).is_err(),
+                "{c:?}"
+            );
+        }
+        for plain in [
+            "alice",
+            "Jos\u{e9}",
+            "DOMAIN\\alice",
+            "Zo\u{eb} M\u{fc}ller",
+            "\u{5c71}\u{7530}",
+            "\u{1F600}",
+            "\u{627}\u{644}\u{639}\u{631}\u{628}\u{64a}\u{629}",
+        ] {
+            assert!(free_text("x", plain, 64, false).is_ok(), "{plain:?}");
+        }
     }
 
     #[test]
