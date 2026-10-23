@@ -169,7 +169,7 @@ everyone else signs in with an emailed link, or with a link you make for them.
 - **It does not make anyone an administrator.** Administrators are the addresses in `ADMIN_EMAILS`;
   a link only signs the person in as who they already are. `--create` makes a missing account for
   the first administrator (an address in `ADMIN_EMAILS` while none of those has an account); any
-  other new account needs the address typed a second time. A removed (disabled) account gets no link.
+  other new account needs the address typed a second time. A removed (disabled) account gets no link, and the tool cannot restore it (restore it in `/admin`; for the only administrator, add a second address to `ADMIN_EMAILS` and make its first link). The `database-admin` service keeps no container log, so a link never stays in `docker logs`; the other maintenance commands leave no log either, so read their output as they run.
 - **Who can make one:** whoever can run Docker in this directory, because the command runs
   `engine-cli` with the database owner credential in a one-off container. Nothing on the network
   can: the API has no route for it and its database login is not allowed to write the table.

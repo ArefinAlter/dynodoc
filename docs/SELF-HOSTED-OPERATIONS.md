@@ -471,9 +471,18 @@ default 15 minutes), `--create`, `--role admin|user`, `--reason TEXT` (kept in t
 - **`--create`.** Without it an address with no account is refused. With it, the account is made without a second question only
   for the first administrator (an address in `ADMIN_EMAILS` while none of those addresses has an account yet). In every
   other case (another administrator exists, or the address is not in `ADMIN_EMAILS`) nothing is made until you also type
-  `CREATE ACCOUNT <address>`. A disabled account gets no link: restore it in `/admin` first. An erased person's address is free
-  again, so `--create` would make a new person.
+  `CREATE ACCOUNT <address>`. A disabled account gets no link: restore it in `/admin` first. **Limit:** the tool cannot restore the account of the ONLY
+  administrator (there is no `--restore`, and configured administrators cannot be disabled in `/admin` anyway); if that account was
+  disabled by other means, add a second address to `ADMIN_EMAILS` (`configure set admin-emails=... --apply`) and run `admin-link
+  --create` for it (a disabled account does not count as an administrator, so the first-administrator rule applies again), or
+  re-enable the row in SQL as the database owner. An erased person's address is free again, so `--create` would make a new person.
 - **One live link per account.** A new link ends the earlier unused ones; the output says how many.
+- **No container log.** The `database-admin` service has `logging: { driver: none }`, so the link is never kept in `docker logs`,
+  even if `dynodoctl` is killed while the container runs. The price: the other maintenance commands run in that service
+  (`verify`, `verify-snapshots`, `check-runtime`, ...) leave no log to read afterwards; read their output from the terminal
+  when they run.
+- **Invisible characters.** The address, `--reason` and the operator label refuse control characters and invisible or
+  direction-changing format characters (such as U+202E and U+200B), by `dynodoctl`, by `engine-cli` and by the table.
 - **It works with `AUTH_EMAIL_LINK=off`**, and it changes nothing about the public request for an emailed link, which stays
   refused. It is not affected by the rate limits of the public sign-in, and the public cannot trip a limit that blocks it.
 - **Using the link:** open it, press **Continue to workspace** (one click, so a mail scanner or a link preview cannot use it up),

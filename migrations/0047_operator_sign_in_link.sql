@@ -47,10 +47,10 @@ create table operator_sign_in_link (
     -- paragraph separators; the variation selectors), which could make a label read as something
     -- else in a terminal or a viewer. The same ranges are listed in `is_invisible_or_bidi`
     -- (engine-api, auth/operator.rs), which the tool applies first.
-    operator text not null check (octet_length(operator) between 1 and 64 and operator !~ '[[:cntrl:]­؀-؅؜۝܏࢐-࢑࣢᠋-᠏​-‏ -‮⁠-⁯︀-️﻿￹-￻\U000110BD\U000110CD\U00013430-\U0001343F\U0001BCA0-\U0001BCA3\U0001D173-\U0001D17A\U000E0001\U000E0020-\U000E007F\U000E0100-\U000E01EF]'),
+    operator text not null check (octet_length(operator) between 1 and 64 and operator !~ '[[:cntrl:]\u00AD\u0600-\u0605\u061C\u06DD\u070F\u0890-\u0891\u08E2\u180B-\u180F\u200B-\u200F\u2028-\u202E\u2060-\u206F\uFE00-\uFE0F\uFEFF\uFFF9-\uFFFB\U000110BD\U000110CD\U00013430-\U0001343F\U0001BCA0-\U0001BCA3\U0001D173-\U0001D17A\U000E0001\U000E0020-\U000E007F\U000E0100-\U000E01EF]'),
     -- Free text from the operator. Keep personal data out of it: the audit row keeps it for good.
     -- Same character rule as the label.
-    reason text not null default '' check (octet_length(reason) <= 200 and reason !~ '[[:cntrl:]­؀-؅؜۝܏࢐-࢑࣢᠋-᠏​-‏ -‮⁠-⁯︀-️﻿￹-￻\U000110BD\U000110CD\U00013430-\U0001343F\U0001BCA0-\U0001BCA3\U0001D173-\U0001D17A\U000E0001\U000E0020-\U000E007F\U000E0100-\U000E01EF]'),
+    reason text not null default '' check (octet_length(reason) <= 200 and reason !~ '[[:cntrl:]\u00AD\u0600-\u0605\u061C\u06DD\u070F\u0890-\u0891\u08E2\u180B-\u180F\u200B-\u200F\u2028-\u202E\u2060-\u206F\uFE00-\uFE0F\uFEFF\uFFF9-\uFFFB\U000110BD\U000110CD\U00013430-\U0001343F\U0001BCA0-\U0001BCA3\U0001D173-\U0001D17A\U000E0001\U000E0020-\U000E007F\U000E0100-\U000E01EF]'),
     created_at timestamptz not null default now(),
     expires_at timestamptz not null,
     consumed_at timestamptz,

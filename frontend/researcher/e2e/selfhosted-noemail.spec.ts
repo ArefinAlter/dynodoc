@@ -114,8 +114,19 @@ test.describe('operator-issued sign-in link', () => {
     await second.goto(made.link);
     await second.getByRole('button', { name: /Continue to workspace/ }).click();
     await expect(second.getByRole('alert')).toContainText('Ask your administrator for a new one');
-    await expect(second).toHaveURL(/\/login\?token=/);
     expect((await other.cookies()).some((c) => c.name === 'dynodoc_session')).toBe(false);
+    // The failure is shown, and the link is no longer in the address: not in the history, and a
+    // reload sends nothing (it shows the ordinary sign-in page).
+    expect(second.url()).not.toContain('token');
+    const reSent: string[] = [];
+    second.on('request', (request) => {
+      if (request.url().includes('/auth/verify')) reSent.push(request.url());
+    });
+    await second.reload();
+    await expect(second.getByText('No sign-in method is turned on')).toBeVisible();
+    await expect(second.getByText('Your secure sign-in link is ready.')).toHaveCount(0);
+    expect(reSent).toEqual([]);
+    expect(second.url()).not.toContain('token');
     await other.close();
   });
 
@@ -156,5 +167,7 @@ test.describe('operator-issued sign-in link', () => {
     await page.getByRole('button', { name: /Continue to workspace/ }).click();
     await expect(page.getByRole('alert')).toContainText('Ask your administrator for a new one');
     expect((await page.context().cookies()).some((c) => c.name === 'dynodoc_session')).toBe(false);
+    // The link left the address when the request was made, expired or not.
+    expect(page.url()).not.toContain('token');
   });
 });

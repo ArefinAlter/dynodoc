@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { goto } from '$app/navigation';
+  import { goto, replaceState } from '$app/navigation';
   import { page } from '$app/stores';
   import { session } from '$lib/stores/session.svelte';
-  import { rememberNext, safeNext, takeRememberedNext } from '$lib/auth-next';
+  import { rememberNext, safeNext, takeRememberedNext, withoutToken } from '$lib/auth-next';
   import { ArrowRight, ArrowLeft, Mail, CheckCircle2 } from '@lucide/svelte';
   import ThemeToggle from '$lib/components/ThemeToggle.svelte';
   import OrgNotice from '$lib/components/product/OrgNotice.svelte';
@@ -12,6 +12,9 @@
   const hosted = $derived(site.mode === 'hosted');
   // A protected page sent the visitor here; return there once they have signed in.
   const next = $derived(safeNext($page.url.searchParams.get('next')));
+  // The sign-in link's token (from the emailed link, or one the operator made), read once. It stays
+  // in memory so a failed try can be repeated; the ADDRESS loses it as soon as the request is made.
+  let linkToken = $state($page.url.searchParams.get('token') || '');
   let email = $state(''),
     name = $state(''),
     message = $state(''),
@@ -59,9 +62,21 @@
       busy = false;
     }
   }
+  function scrubAddress() {
+    // A link left in the address bar stays in the history, a bookmark or a screen share, and a
+    // reload would send it again. Failing to clean it must not stop the sign-in.
+    try {
+      const clean = withoutToken(window.location.href);
+      if (clean !== window.location.pathname + window.location.search + window.location.hash)
+        replaceState(clean, {});
+    } catch {
+      /* The router may not be ready; the link is single use anyway. */
+    }
+  }
   async function verify(token: string) {
     busy = true;
     error = '';
+    if (token && token === linkToken) scrubAddress();
     try {
       const res = await fetch('/auth/verify', {
         method: 'POST',
@@ -94,7 +109,7 @@
     <p class="eyebrow">YOUR DOCUMENTS, WITH A HISTORY</p>
     <h1>Welcome to your workspace.</h1>
     <p class="intro">A little less file chaos.<br />A clear history for every document.</p>
-    {#if $page.url.searchParams.get('token')}
+    {#if linkToken}
       <div class="notice">
         <Mail size={22} />
         <p>Your secure sign-in link is ready.</p>
@@ -102,7 +117,7 @@
       <button
         class="primary"
         disabled={busy}
-        onclick={() => verify($page.url.searchParams.get('token') || '')}
+        onclick={() => verify(linkToken)}
         >Continue to workspace <ArrowRight size={18} /></button
       >
     {:else if sent}

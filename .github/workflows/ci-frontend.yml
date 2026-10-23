@@ -188,13 +188,18 @@ jobs:
       - name: Production proxy header regression
         run: node scripts/check-proxy-headers.mjs
       - name: Browser workflows with real local sessions
-        # The operator-issued sign-in link specs (selfhosted-noemail.spec.ts) run the built engine-cli
-        # with the database OWNER credential, as an operator would. Only this step has it: the API
-        # and the web servers started above never see it.
+        # No database owner credential here: app-signin.spec.ts starts a web server of its own from
+        # this step's environment, and the operator-link specs skip themselves without it.
+        run: pnpm test:e2e
+      - name: Operator-issued sign-in link specs (run engine-cli with the database OWNER credential)
+        # selfhosted-noemail.spec.ts runs the built engine-cli as an operator would. The owner URL is
+        # in this step only, and this step starts no server: the API and every web server were started
+        # in earlier steps without it, and the one project run here (self-hosted, email sign-in off)
+        # uses a server that is already running.
         env:
           MIGRATION_DATABASE_URL: postgres://dynodoc:isolated-ci-only@127.0.0.1:5432/dynodoc
           ENGINE_CLI: ../../target/debug/engine-cli
-        run: pnpm test:e2e
+        run: pnpm test:e2e --project=selfhosted-noemail
       - name: Retain failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v4

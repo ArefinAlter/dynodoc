@@ -643,7 +643,11 @@ guide's note remains true: a From address does not create an inbound mailbox.
   `ADMIN_EMAILS` while none of those addresses has an account), or after the address is typed a second time.
 - *Limits.* No per-address lockout (it would let the public lock the operator out; a 256-bit token needs none) and no
   use of the emailed-link request window. A disabled account gets no link, and signing the account out everywhere or
-  disabling it ends its outstanding links.
+  disabling it ends its outstanding links. **There is no `--restore`:** the account of the only administrator, if it was
+  disabled by other means, is not brought back by this tool (add a second address to `ADMIN_EMAILS` and make its first link, or
+  re-enable the row in SQL as the owner). Account creation is one at a time (one fixed database lock), so two first
+  administrators cannot be made at once. The `database-admin` service keeps no container log, so a link never stays in
+  `docker logs`; the other maintenance commands leave no log either.
 - *Not built:* a list of break-glass addresses, mail-free invitations beyond the existing copyable link, OIDC/SAML/SCIM
   (Phase 1), and a `dynodoctl` wrapper for `list-links` and `revoke-link` (run
   `docker compose --profile maintenance run --rm database-admin auth list-links` instead).
