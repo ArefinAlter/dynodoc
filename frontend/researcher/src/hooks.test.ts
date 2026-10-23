@@ -123,6 +123,20 @@ describe('hosted mode', () => {
     });
     expect(here.response.headers.get('location')).toBe('/login?next=%2Fprojects');
   });
+  it('sends the native-app sign-in pages from the public host to the workspace host', async () => {
+    const hooks = await start({}, { PUBLIC_WORKSPACE_URL: 'https://app.dynodoc.online/' });
+    for (const path of ['/app-signin', '/app-signin/finish']) {
+      const away = await request(hooks, `https://dynodoc.online${path}?challenge=x`, {
+        route: path
+      });
+      expect(away.response.status).toBe(303);
+      expect(away.response.headers.get('location')).toBe(
+        `https://app.dynodoc.online${path}?challenge=x`
+      );
+      const here = await request(hooks, `https://app.dynodoc.online${path}`, { route: path });
+      expect(here.response.status).not.toBe(303);
+    }
+  });
   it('signs in before the workspace and keeps the admin site on /admin', async () => {
     const hooks = await start({});
     const { response } = await request(hooks, 'https://app.dynodoc.online/workspace', {

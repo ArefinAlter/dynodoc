@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Activate the schema 29 -> 38 release on the production VPS.
+"""Activate a schema release (FROM_SCHEMA -> TO_SCHEMA, e.g. 41 -> 47) on the production VPS.
 
 Order: preflight -> nginx maintenance (503) -> stop api/web/admin -> verified backup
 -> source copy -> operator migration + grants + verification -> start new containers
@@ -243,6 +243,18 @@ def activate():
         checks.append({'pane': pane, 'status': code})
     code, _, body = fetch('https://app.dynodoc.online/connectors/packages/word.xml')
     assert code == 200 and b'Dynodoc for Word' in body
+    # New in the 41 -> 47 release: the installable web app files, the native-app sign-in page (a signed-out
+    # visitor is sent on, never a server error) and the self-hosted-only add-in routes that must stay absent.
+    for path in ['/service-worker.js', '/offline.html', '/site.webmanifest']:
+        code, headers, _ = fetch('https://app.dynodoc.online' + path)
+        assert code == 200, (path, code)
+        checks.append({'host': 'app', 'path': path, 'status': code})
+    code, headers, _ = fetch('https://app.dynodoc.online/app-signin')
+    assert code in (200, 303), ('/app-signin', code)
+    checks.append({'host': 'app', 'path': '/app-signin', 'status': code})
+    code, _, _ = fetch('https://app.dynodoc.online/connectors/addins')
+    assert code == 404, ('/connectors/addins', code)
+    checks.append({'host': 'app', 'path': '/connectors/addins', 'status': code})
     code, headers, _ = fetch('https://app.dynodoc.online/source')
     loc = {k.lower(): v for k, v in headers.items()}.get('location', '')
     assert code == 302 and 'dynodoc-engine' in loc, ('source must redirect to the engine repo', code, loc)

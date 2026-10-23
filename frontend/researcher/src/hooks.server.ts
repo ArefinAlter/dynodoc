@@ -22,6 +22,10 @@ const notFound = () =>
     { status: 404, headers: { 'content-type': 'text/html; charset=utf-8' } }
   );
 
+/** The two pages of the native-app sign-in (decision 017): they belong to the workspace host. */
+const isAppSignIn = (pathname: string) =>
+  pathname === '/app-signin' || pathname === '/app-signin/finish';
+
 const application: Handle = async ({ event, resolve }) => {
   const config = getConfig();
   event.locals.indexable = config.indexable;
@@ -42,8 +46,12 @@ const application: Handle = async ({ event, resolve }) => {
       );
     hidden = true;
   }
-  if (!config.adminSite && (requiresSignIn(pathname) || pathname === '/login')) {
-    // The public homepage host has no sessions; send workspace visits to the workspace host.
+  if (
+    !config.adminSite &&
+    (requiresSignIn(pathname) || pathname === '/login' || isAppSignIn(pathname))
+  ) {
+    // The public homepage host has no sessions; send workspace visits (and the sign-in pages of the
+    // native apps, which end in a session) to the workspace host.
     const workspace = config.workspaceUrl;
     if (workspace && new URL(workspace).host !== event.url.host)
       redirect(303, `${workspace}${pathname}${search}`);

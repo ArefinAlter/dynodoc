@@ -31,6 +31,10 @@ services:
       APP_ENV: production
       ADMIN_EMAILS: ${ADMIN_EMAILS:-}
       RUST_LOG: info
+      # The retention jobs (expired sign-in rows, old page metrics) are built in but stay OFF on this
+      # installation until the owner has looked at what the first pass would remove (set
+      # RETENTION_JOBS=on in .env to enable them). The API's own default is on.
+      RETENTION_JOBS: ${RETENTION_JOBS:-off}
     depends_on:
       postgres:
         condition: service_healthy
