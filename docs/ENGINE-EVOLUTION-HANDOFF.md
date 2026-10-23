@@ -1,5 +1,52 @@
 # Engine evolution handoff
 
+## Source: self-hosted Phase 0, add-in manifests, offline builder, local Office.js (23 October 2026)
+
+P0-7 is built in source for the web tier (frontend only; no API, auth or `dynodoctl` change). A self-hosted installation can now give
+Office and Google editors manifests and packages that name ITS OWN origin instead of the hosted one.
+
+**What exists.** A pure generator `renderOfficeManifest({ origin, brand, kind: word | excel | powerpoint, variant: standard | catalog,
+version, guid?, ... })` (escape-by-default XML template tag, deterministic ZIP writer, deterministic add-in ids as UUIDv5 over origin,
+kind and variant so regeneration keeps the same id, version `1.<major>.<minor>.<patch>` of `package.json`). Origin rule: canonical
+https origin only; http only for loopback when the caller allows it; the hosted domain is refused. Given the hosted values the
+generator reproduces `extensions/*/manifest.xml` and `static/connectors/packages/*.xml` **byte for byte** (a test), and the Google
+templates rebuild every hosted package file except `INSTALL.md`, so hosted behaviour is pinned. Routes in self-hosted mode:
+`/connectors/addins/<file>` (public downloads, nothing secret) and `/connectors/addins` (administrator-only page with per-channel
+install steps and a plain list of what cannot work air-gapped); in hosted mode the new routes answer 404 and the existing static files are
+served unchanged. (The route path differs from the design's `/connectors/packages/{host}.xml` because a static file is served before
+any route.) The offline builder `node scripts/build-addins.mjs --origin ... --out dir [--brand ... --json ...]` writes the manifests and
+Google packages with a checksum file, using the same function as the server (exit codes 0 ok, 1 internal, 2 usage, 3 input refused,
+4 output problem); `dynodoctl addin build` is left for later and the tools image already carries the script.
+
+**Office.js.** Not vendored (redistribution licence unsettled, owner decision Q7). With `DYNODOC_OFFICE_JS_DIR` set the server hands out
+only regular files of allowed types from that one directory (real-path containment, no hidden segments, no backslash or NUL, size
+cap), the pane pages load it from `/office-js/` and their CSP drops the three Microsoft hosts; with no directory configured the CSP is
+pinned to the previous exact string. `stage-office-js.mjs` copies an operator folder into place.
+
+**Criterion 6** ("no file in the shipped images contains `dynodoc.online`") **is still not met**: hosted build 47 files unchanged; the
+self-hosted image, after `prune-hosted-static.mjs` runs in `Dockerfile.web`, 41 (CI step added). Remaining: 11 marketing pages in the
+browser build, 11 on the server, 14 source maps, 3 shared server files (hosted preset, SEO constants, robots body), 2 static files
+(`security.txt`, a social image).
+
+**Evidence (local; Actions of this repository cannot run).** vitest 97 files, 1137 passed, 5 skipped on the merged tree (163 new
+tests across the generator, packages, builder CLI, staging, config, routes, Office.js route, CSP in both states and the hooks);
+prettier, eslint, svelte-check, `check:connectors`, build and the hosted-string audit clean; Chromium on an isolated stack: 10 new
+specs (manifests name only the stack origin, stable ids, headers, catalog variant, admin page signed out / member 403 / admin with a
+download and axe, public page links, a local Office.js pane loads a stand-in and makes no Microsoft request), the hosted pin +1; the
+full Chromium run had 11 first-run failures that were the author's own harness (the app-signin spec's server lacked the environment) and
+one File-menu timing, both rerun green (59 of 59 final confirmation run). Ten manual mutations each failed tests. One side fix: the
+config test that lists every `DYNODOC_*` name the Rust crates read was already red at base (dynodoctl reads `DYNODOC_TLS_MODE` and
+others) and now knows the nine bundle names.
+
+**Not verified.** No Word, Excel, PowerPoint or Google host was driven (installed-host acceptance stays the owner's and is not claimed);
+no Microsoft validator (the manifests are checked structurally and against the hosted bytes, no XSD vendored); no docker image build
+(the prune and audit ran on a local copy of the build); no nginx proxy check; no CI job. Open points for the owner: `commands.html` is
+a static file and still loads Office.js from Microsoft even with a local copy (accept, drop FunctionFile from self-hosted manifests, or add
+a bundle-only proxy map entry); ids derive from the origin so a new address means new add-ins; `package.json` is 0.1.0 and never bumped
+(who bumps it per release); strip `security.txt` and the social image from the image too; Google add-on block or private Marketplace
+listing (menu text still says Dynodoc); after sign-in the admin page redirect lands on `/projects` like `/admin`; Office.js redistribution
+licence.
+
 ## Source: self-hosted Phase 0, `dynodoctl` v1 (23 October 2026)
 
 P0-5 is built in source as the crate `crates/dynodoctl` (one Rust binary, no async runtime, every dependency already in the lockfile;

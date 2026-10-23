@@ -232,9 +232,9 @@ limitation), **MISSING** (not present). "Today" means the repository at commit `
 | # | Capability | Tag | Evidence and limitation |
 |---|---|---|---|
 | 42 | Six add-ins as test builds | EXISTS | `extensions/{word,excel,powerpoint}/manifest.xml`, `extensions/google-*`. Not listed on any marketplace ([ADDIN-PUBLICATION-AND-ACCEPTANCE.md](ADDIN-PUBLICATION-AND-ACCEPTANCE.md)). |
-| 43 | Manifest and package for a customer origin | PARTIAL | Documented as a manual find-and-replace of `https://app.dynodoc.online` on six lines of each Office manifest (plus a `SupportUrl` line that names the marketing site) and in `Code.gs`/`appsscript.json` for Google ([extensions/INSTALL.md](../extensions/INSTALL.md)). Packages are static files built by `scripts/build-connectors.mjs`. |
-| 44 | Office.js served locally | MISSING | Panes load `https://appsforoffice.microsoft.com/lib/1/hosted/office.js` (`routes/connectors/word/+page.svelte`, `static/connectors/commands.html`). |
-| 45 | Manifest without `VersionOverrides` for SharePoint catalogs | MISSING | All three manifests use `VersionOverrides` for the ribbon group. |
+| 43 | Manifest and package for a customer origin | EXISTS (23 Oct 2026, P0-7; not tried in a host) | The web server makes the manifests and the Google packages for its own `ORIGIN` (`/connectors/addins/`), and `scripts/build-addins.mjs` writes the same files offline; the hosted packages stay static files built by `scripts/build-connectors.mjs` (section 7.9). The manual find-and-replace in [extensions/INSTALL.md](../extensions/INSTALL.md) is still how a developer points a source checkout at a staging server. |
+| 44 | Office.js served locally | PARTIAL (23 Oct 2026, P0-7) | With `DYNODOC_OFFICE_JS_DIR` set the panes load Office.js from the installation and drop Microsoft's hosts from their policy; the files are the operator's (not shipped), the command page `static/connectors/commands.html` still names Microsoft's address, and nothing was tried in a host. Without the setting the panes load `https://appsforoffice.microsoft.com/lib/1/hosted/office.js` as before. |
+| 45 | Manifest without `VersionOverrides` for SharePoint catalogs | EXISTS (23 Oct 2026, P0-7; not tried in a host) | `/connectors/addins/{word,excel,powerpoint}-catalog.xml`: the same add-in without the ribbon part. The hosted manifests keep `VersionOverrides`. |
 
 ### 3.6 Licensing, supply chain and storage
 
@@ -862,6 +862,131 @@ variant, trust path for the certificate, whether the ribbon group appears, a
 connect-capture-push-approve-apply scenario on a disposable file, revocation test (grant
 expiry is seven days; revoke under Sync & connections). `ACCEPTANCE.md` in
 `extensions/` is the worksheet.
+
+### 7.9 Implementation status (23 October 2026): P0-7
+
+Source and tests in the application repository; nothing is deployed or released, and the
+hosted service serves exactly the files it served before. Settings and commands are in the
+deployment guide 7.2 ("Add-in files and a local Office.js"). **No Word, Excel, PowerPoint or
+Google editor was driven and Microsoft's own manifest validator was not run**: installed-host
+acceptance stays the owner's work ([DESIGN-INSTALLED-HOST-ACCEPTANCE.md](DESIGN-INSTALLED-HOST-ACCEPTANCE.md))
+and is not claimed.
+
+- *Generator, built.* `frontend/researcher/src/lib/addins/` (plain JavaScript, shared by the web
+  server, the tests and the offline builder). `renderOfficeManifest` makes the three Office
+  manifests in two variants: `standard` (the committed manifest's ribbon group) and `catalog`
+  (the same add-in without `VersionOverrides`, for SharePoint and trusted add-in catalogs, 7.4).
+  Fed the hosted values it reproduces the three committed `extensions/*/manifest.xml` and
+  `static/connectors/packages/*.xml` byte for byte (a test compares the bytes), so the template
+  cannot drift from what the hosted service serves. The origin must be exactly what a browser
+  writes as `location.origin` and `https` (no user name, path, query, trailing slash, default
+  port, port 0, upper case or non-ASCII name; `http://localhost` and the loopback addresses only
+  where the caller says this is a test stack; the hosted domain refused for an installation).
+  Every value goes into the XML through a template tag that escapes it, and the text XML cannot
+  hold is refused. Add-in ids are UUID version 5 of origin, host and variant under a fixed
+  namespace, so they never change for an address and never repeat across addresses. `Version` is
+  `1.<major>.<minor>.<patch>` of the web application's version. The product name replaces
+  "Dynodoc" in the add-in names and strings (up to 60 characters; the description falls back to a
+  shorter sentence when a long name would pass Office's 250 characters; "a" or "an" follows the
+  name); the provider is the organisation name when there is one.
+- *Routes, built, self-hosted mode only.* `/connectors/addins/<file>` serves the six manifests,
+  the three Google packages and `SHA256SUMS`; `/connectors/addins` is the administrators' page
+  (downloads with ids and checksums, a row for each way of installing from 7.4, the TLS note, the
+  API-set requirements, where Office.js comes from, and the 7.6 list of what does not work
+  without internet access). **Decisions.** (1) The downloads are public and the page is for
+  administrators: a manifest holds nothing secret and has to be fetchable by a person who was
+  sent a link and by the Microsoft 365 admin center; the page describes the installation's setup
+  and uses the same sign-in and administrator rule as `/admin` (a cheap `GET /admin/records`
+  through the person's own token, not the overview, which counts every table). (2) The path is
+  `/connectors/addins/`, not the `/connectors/packages/{host}.xml` of 7.2: a static file at that
+  path is served before any route, so the hosted copy would answer in a self-hosted process that
+  was started from an unpruned build, with the wrong address; a path with no static file cannot
+  be shadowed. The public `/connectors` page links to the new path in self-hosted mode (it reads
+  the mode that every page already receives, so its hosted HTML is unchanged). (3) Hosted mode
+  answers 404 for all of it and does not change.
+- *Google packages, built.* `scripts/build-connectors.mjs` also writes
+  `src/lib/addins/google-templates.generated.js`, the same sources as the hosted packages with
+  the hosted origin replaced by a placeholder (`pnpm check:connectors` fails if it is stale).
+  The generator puts the installation's origin in `Code.gs` and in `urlFetchWhitelist` (checked:
+  exactly the connector API), writes an `INSTALL.md` for that address that says plainly that
+  Google's servers make the requests and Google stores the queue, and stores the files in a ZIP
+  with no compression, so the same package has the same bytes on every machine. Given the hosted
+  origin it rebuilds every file of the hosted packages except the guide. Nothing is published to
+  Google; there is no `addOns` block or Marketplace listing, which is a decision for the owner.
+  The menu and sidebar still say "Dynodoc" (the product name changes the Office add-ins and the
+  guide only). An `http://` origin gets no Google package.
+- *Offline builder, built.* `scripts/build-addins.mjs` (interface, exit codes 0 to 4 and JSON in
+  the deployment guide 7.2). The same function as the server, so the bytes are identical for the
+  same settings (a test builds both). `dynodoctl addin build` is not changed.
+- *Local Office.js, built.* `DYNODOC_OFFICE_JS_DIR` (self-hosted only, checked at start);
+  `/office-js/<file>` serves the files of that folder only (extension list, no hidden files, no
+  links out of the folder, 16 MiB each, revalidated on every load); the three pane pages get a
+  meta tag from the request hook and load the script from there; and only then the pane policy
+  drops Microsoft's three hosts from `script-src` and `connect-src` (the policy with no folder
+  is pinned to the exact string it always was). `scripts/stage-office-js.mjs` copies an
+  operator-supplied folder into place. Office.js is not in the repository and not in any image:
+  whether it may be passed on is the open licence question (Q7). **Limit:** the command page
+  `static/connectors/commands.html` is a static file whose policy lives in the proxy maps, which
+  the bundle keeps byte for byte as the hosted ones; it still asks Microsoft's address for
+  Office.js. It defines no ribbon command, but an installation with that address blocked has not
+  been tried, and the manifests still declare it as the function file.
+- *Hosted-string audit, improved, not closed.* `scripts/prune-hosted-static.mjs` removes the six
+  hosted packages (and their compressed copies) from a build; `Dockerfile.web` runs it, and
+  `scripts/audit-hosted-strings.mjs --profile selfhosted-image` holds the pruned build to the
+  shorter known list (a package left in the image fails it; CI has a step for it). Files outside
+  third-party notices that contain `dynodoc.online`: **47 in the hosted build (unchanged), 41 in
+  the self-hosted image**; files with any hosted string: 83 and 77. The 41 that remain: 22
+  compiled `(site)` pages (11 browser files, 11 server files), 14 source maps of those, 3 server
+  files every mode loads (the hosted preset, the hosted search-engine constants, the hosted
+  `robots.txt` body) and 2 static files (`.well-known/security.txt`, `brand/social.svg`).
+  Criterion 6 does not hold yet; the `(site)` pages need the image pipeline (P0-6), and the two
+  static files were outside this task. The shared-code count stayed at 3: the new code names no
+  hosted domain (the builder gets it from the hosted preset, which was already counted).
+- *Also changed.* The web process's list of known `DYNODOC_*` names now includes the bundle's own
+  (`DYNODOC_TLS_MODE`, `_BIND`, `_HTTP_PORT`, `_HTTPS_PORT`, `_ACME_*`, `_IMAGE_REGISTRY`,
+  `_VERSION`): they share `.env` with the web container and `schema.test.ts` was failing on
+  `DYNODOC_TLS_MODE` since `dynodoctl` was merged.
+- *Not built.* Microsoft AppSource (parked); the managed Microsoft 365 flows (admin center,
+  Centralized Deployment, group policy, SharePoint catalog) are the customer's to run; a vendored
+  `office-addin-manifest validate` (7.2 item 4: it is not installed here, so manifests are checked
+  structurally only: well-formed, element order, required elements, one origin, resource ids,
+  Office's length limits); the `dynodoctl addin build` call and the product form of
+  `verify-delivery` (7.2 items 2 and 3); ids derived from the installation UUID (they come from
+  the origin, so a new address means new ids); a web setting for the name suffix (the generator
+  and the builder take it); the unified manifest; Google `addOns` configuration and a private
+  Marketplace listing; the command-page limit above.
+- *Verified here.* `vitest`: 97 files, 1137 tests pass and 5 are skipped (4 Unix file modes, and
+  a file-symlink case that needs a privilege on this machine; the directory-junction case ran).
+  New: 163 tests in 11 files (generator and origin rules, hostile inputs, id determinism and a
+  published RFC vector, XML escaping, structure of every kind and variant, the hosted bytes, the
+  Google packages against the hosted ones, the ZIP writer, the bundle and its checksums, the
+  builder as a command with golden manifests and every exit code, the staging tool, the routes in
+  both modes with their sign-in and administrator rules, the Office.js file finder and route, the
+  pane policy in both states, the request hook, the prune step and the audit profile). Chromium
+  end-to-end against an isolated stack (disposable PostgreSQL, this tree's API, five web
+  processes): 10 new specs pass (public manifests naming only the stack's origin and stable ids,
+  catalog variant, administrator page signed out, as a member and as an administrator with a
+  download and an accessibility check, the public page's links, the local Office.js server with a
+  pane that loads the stand-in file and no request to Microsoft), plus one new hosted-pin spec
+  (the committed packages served byte for byte, the new routes absent, the panes unchanged).
+  The whole Chromium suite (181 tests over the hosted and the four self-hosted projects) gave
+  164 passed, 6 skipped by design and 11 failed on the first pass: 10 in `app-signin.spec.ts`,
+  because the shell that ran Playwright had not given the web server that spec starts for itself
+  the development-sign-in setting, the secrets and the API address, and one in `ux.spec.ts`
+  (the File menu), a timing failure inside the long run. With the settings given, `app-signin`
+  and `hosted-pin` pass (25 of 25), and the File menu spec passes alone. Ten mutations each
+  fail tests: the hosted support link in the output, the origin check off, random ids, the
+  policy widened without a folder, the policy narrowed without a folder, the administrator page
+  public (also 2 Playwright specs), the hosted process serving the files, the folder escape check
+  off, XML escaping reduced to ampersands, a package missing from the prune list.
+  `prettier --check .`, `eslint .`, `svelte-check` (0 errors, 0 warnings), `pnpm check:connectors`,
+  the build and the audit `--check` (hosted build, and the pruned build with
+  `--profile selfhosted-image`) pass. **Not verified:** any Office or Google host; Microsoft's validator; building the
+  Docker image (the Dockerfile edits and the prune and audit steps ran on a local copy of the
+  build); the proxy header check (`check-proxy-headers.mjs` needs nginx); a file link out of the
+  Office.js folder on this machine; GitHub Actions (billing); an `https://` origin end to end
+  in a browser (the stack is on `http://localhost`, which the code accepts only for a test
+  stack).
 
 ---
 
@@ -1565,7 +1690,9 @@ production release is unchanged. Settings and defaults are in the deployment gui
   social image). No browser script that every page loads names a hosted host or an operator
   fact. `--check` (run in CI) fails on anything not in `scripts/hosted-strings-known.json`;
   `--strict` applies the criterion as written. Closing the rest needs a build that leaves the
-  `(site)` routes out (P0-6) and per-installation add-in packages (P0-7).
+  `(site)` routes out (P0-6) and per-installation add-in packages (P0-7; built on 23 October,
+  section 7.9: the self-hosted image no longer carries the six hosted packages, 41 files remain
+  instead of 47, and the hosted build is unchanged).
 - *Not built.* Product name in the logo images, the installable-app name (`site.webmanifest`)
   and page titles outside sign-in, workspace, shared link and administration; the Office.js
   CDN (P0-7); operator-issued sign-in links (P0-3; built later, 23 October 2026: see the P0-3 operator-link paragraph below); the Compose wiring of the new
@@ -1768,7 +1895,7 @@ in the deployment guide 3.1, 5.2, 7.3, 9.1). Nothing is deployed, signed or rele
 **Implementation status (22 October 2026, revised 23 October 2026 after an independent review): P0-5, `dynodoctl` v1.** Source and tests in the application
 repository (`crates/dynodoctl`, seventh member of the root workspace); command reference, exit codes, decisions
 and runbooks in [SELF-HOSTED-OPERATIONS.md](SELF-HOSTED-OPERATIONS.md). Nothing is deployed, signed or released.
-`addin build` is not part of it (the manifest generator, P0-7, does not exist).
+`addin build` is not part of it (the manifest generator and the offline builder script it is meant to call were built afterwards in P0-7, section 7.9; the `dynodoctl` command is still a stub).
 
 - *Built.* One Rust binary with: `install` (preflight of Docker, Compose, memory, clock, disk, ports and DNS; the
   certificate mode is required and has no default; calls the bundle's own settings generator; never overwrites a secret;
@@ -1896,7 +2023,7 @@ and runbooks in [SELF-HOSTED-OPERATIONS.md](SELF-HOSTED-OPERATIONS.md). Nothing 
   files; the redaction cannot know a secret that has no sensitive name beside it; `verify-delivery` cannot probe TLS 1.0/1.1;
   a real Ctrl-C on Windows and a real release-to-release upgrade were not exercised; the engine repository CI and GitHub
   Actions did not run (billing).
-- *Not built.* `addin build` and the manifest check (P0-7; stub reports `NOT BUILT`); signed bundles, `bundle verify` and
+- *Not built.* The `dynodoctl addin build` call of `scripts/build-addins.mjs` and the manifest check (the script exists since P0-7, section 7.9; the command's stub reports `NOT BUILT`); signed bundles, `bundle verify` and
   `bundle import` (P3-1); air-gapped import and the egress-blocked run (P0-9); backup encryption and remote or off-host
   targets; scheduled backups (use cron); PITR and physical backups (P2-9); binary rollback without a restore (P2-5);
   high availability, Profile B and C; rotation helpers; an interactive prompt for the
@@ -1910,6 +2037,10 @@ and runbooks in [SELF-HOSTED-OPERATIONS.md](SELF-HOSTED-OPERATIONS.md). Nothing 
   the fake only), a dataset of 1,000 documents (14 were used, so acceptance criterion 4's dataset size is not met), remote
   backup targets, a signed bundle, the converter profile, `--no-egress`, and any run where dynodoctl is installed on a
   different machine from the one running Docker.
+
+**Implementation status (23 October 2026): P0-7, the add-in files.** Section 7.9 is the status
+(generator, public downloads and administrators' page, offline builder, Google packages, local
+Office.js, audit 47 to 41); nothing is deployed, and no Office or Google host was driven.
 
 ### 13.3 Phase 1: identity
 
@@ -2226,7 +2357,8 @@ shared-link, administration and help screens, `robots.txt`). What stays as hoste
 never served in self-hosted mode: the search-engine constants in `src/lib/seo/`, `nav.ts`,
 the `(site)` pages, `src/lib/site/operator.ts`, `/sitemap.xml`, `/llms*.txt` and `/source`.
 `scripts/audit-hosted-strings.mjs` lists what remains in a build. `extensions/*`,
-`infra/demo/*` and `static/connectors/*` are untouched (P0-4, P0-7).
+`infra/demo/*` and `static/connectors/*` are untouched (P0-4, P0-7: the hosted files stay for
+the hosted service, and the self-hosted image drops the packages and serves its own, 7.9).
 
 | Path | Assumption |
 |---|---|

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1" xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="TaskPaneApp">
+  <Id>7f2c86af-c8ac-52fb-8b82-e53987ff67ed</Id>
+  <Version>1.1.0.0</Version>
+  <ProviderName>Acme Research Ltd.</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="Acme Docs for PowerPoint" />
+  <Description DefaultValue="Connect this presentation to an Acme Docs project. Acme Docs records edits to existing slide text while this pane is open, sends them for review, and brings approved changes from your team back into the presentation." />
+  <IconUrl DefaultValue="https://dynodoc.corp.example/connectors/assets/icon-32.png" />
+  <HighResolutionIconUrl DefaultValue="https://dynodoc.corp.example/connectors/assets/icon-64.png" />
+  <SupportUrl DefaultValue="https://help.corp.example/desk" />
+  <AppDomains><AppDomain>https://dynodoc.corp.example</AppDomain></AppDomains>
+  <Hosts><Host Name="Presentation" /></Hosts>
+  <Requirements><Sets DefaultMinVersion="1.4"><Set Name="PowerPointApi" /></Sets></Requirements>
+  <DefaultSettings><SourceLocation DefaultValue="https://dynodoc.corp.example/connectors/powerpoint" /></DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+</OfficeApp>

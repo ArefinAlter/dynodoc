@@ -414,6 +414,15 @@ is part of P0-6). Signing is a later task (P3-1).
   `AUTH_EMAIL_LINK=off` until another sign-in method exists.
 - **Receipt authority key** (`DYNODOC_REF_SIGNING_KEY_FILE`, signed shared-branch writes) is not wired
   into this bundle yet.
+- **Word, Excel, PowerPoint and Google add-in files.** The web server makes manifests and packages
+  that name your `ORIGIN`: administrators open `/connectors/addins` (downloads, install steps per
+  way of installing, and what cannot work without internet access); the downloads under
+  `/connectors/addins/` are public. `node scripts/build-addins.mjs --origin <ORIGIN> --out <folder>`
+  (in the `tools` image) writes the same files for hand-out, with a `SHA256SUMS`. To serve Office.js
+  from this installation instead of Microsoft's servers, copy a folder of Office.js files you
+  obtained yourself (Dynodoc does not ship it) to `config/office-js` and set
+  `DYNODOC_OFFICE_JS_DIR=/etc/dynodoc/office-js`. Deployment guide 7.2, "Add-in files and a local
+  Office.js". No add-in has been tried in an installed Office or Google editor.
 
 ## Troubleshooting
 
