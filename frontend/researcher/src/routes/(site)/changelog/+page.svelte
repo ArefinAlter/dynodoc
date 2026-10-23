@@ -22,20 +22,36 @@
   // Newest first. Distilled from docs/PROJECT-STATUS.md; no dates beyond those recorded there.
   const entries: Entry[] = [
     {
-      id: 'source-15-to-23-october',
+      id: 'schema-47-release',
       iso: '2026-10-23',
-      date: '15 to 23 Oct 2026',
-      state: 'source',
-      title: 'Built since 14 October: browsers, command-line builds, approvals and AI agents',
+      date: '23 Oct 2026',
+      state: 'live',
+      title:
+        'The installable web app, small-screen layouts and approvals tied to the version reviewed go live',
       summary:
-        'Everything in this entry is in source and waiting for a release. None of it runs in the hosted workspace yet.',
+        'The hosted pilot moved to application 3fa06fd on schema 47 after a verified backup and a rehearsal on a copy of production. The history digests before and after are identical. The site was closed for about half a minute during the switch.',
       changes: [
-        'Browsers: the web app’s tests now also run in Firefox and in WebKit, the engine Safari uses, with phone-sized screens emulated. Layout and touch fixes for small screens are built. An installable web app (a manifest, an offline page and a service worker that keeps only public script, style and font files) is built. Real phones and Safari itself have not been tested, and installing it on a real operating system has not been tried.',
-        'Command-line tools and engine: the public engine repository builds and tests on Linux, macOS and Windows, on Intel or AMD and on Arm processors (Windows on Arm is a lower tier), and a release workflow builds the command-line tools for all six. These are automated builds only. No prebuilt tools are published yet, and the binaries would not be signed.',
-        'Approvals: an approval counts only for the draft the reviewer looked at. If the draft changes afterwards, the approval stops counting and a new one is needed. This needs schema 45, which has not been released.',
-        'AI-agent connectors: an AI agent can read what a project’s policy allows and propose changes as a draft. A person has to submit the draft, and the project’s usual review rules apply. Agents are off by default, the hosted pilot does not offer them, and none has been run with a real AI client.'
+        'The workspace can be installed as a web app from a supported browser. It shows a short offline page when the network is missing; documents and edits are not available offline. The same release brings layout and touch fixes for small screens. The web app’s tests now also run in Firefox and in WebKit, the engine Safari uses, with phone-sized screens emulated. Real phones and Safari itself have not been tested, and installing it on a real operating system has not been tried.',
+        'An approval now names the version of the request the reviewer saw. If the request changes afterwards, the approval stops counting and a new one is needed. Reopening a declined or withdrawn request does the same. Approvals given before this release keep the older rule.',
+        'The AI-proposals inbox and the “AI agent” badge appear only if an AI agent has proposed something. Agents are off: the feature is switched off on the hosted pilot, so no agent can connect. A person must submit an agent’s draft, and the number of approvals required is set per project (the default is none).',
+        'Automatic clean-up of expired sign-in records and of page measurements older than 30 days is part of this release but switched off, until the owner has looked at what a first pass would remove.'
       ],
-      refs: 'Source only · schemas 42 to 47 · not released'
+      refs: 'Application 3fa06fd · schema 47 · migrations 0042 to 0047'
+    },
+    {
+      id: 'six-platform-builds',
+      iso: '2026-10-21',
+      date: '21 Oct 2026',
+      state: 'source',
+      title: 'The command-line tools and engine are built and tested on six platforms',
+      summary:
+        'The public engine repository builds and tests on Linux, macOS and Windows, on Intel or AMD and on Arm processors. Nothing is published yet.',
+      changes: [
+        'Linux x86-64 and Arm, macOS on Apple silicon and Intel, Windows x86-64 and Windows on Arm (a lower tier that does not block) are built and tested on every change. In the run of 20 October 2026 (UTC), 1,285 tests passed on four of them and 1,284 on Intel Macs.',
+        'A release workflow builds the command-line tools for all six, but no prebuilt tools are published yet, and the binaries would not be signed.',
+        'A container image for amd64 and arm64 is built and started in CI. It is not published either.'
+      ],
+      refs: 'Public engine repository · run 39493540615 · see Open source'
     },
     {
       id: 'schema-41-release',
@@ -252,7 +268,7 @@
     id="entries"
     eyebrow="RELEASE NOTES"
     title="October 2026."
-    lede="Thirteen entries from the project record, newest first."
+    lede="Fourteen entries from the project record, newest first."
     layout="split"
   >
     <ol class="log">
@@ -282,7 +298,7 @@
     align="center"
     eyebrow="WHAT NEXT"
     title="The next entries are on the roadmap."
-    lede="The next step that changes what runs in the hosted pilot is a release of the work built since 14 October. The roadmap lists it."
+    lede="What is being worked on and what comes later is on the roadmap, with no promised dates."
   >
     <div class="closing" data-reveal>
       <Btn href="/roadmap" size="lg" arrow>Open the roadmap</Btn>
