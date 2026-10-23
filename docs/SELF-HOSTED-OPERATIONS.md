@@ -124,10 +124,12 @@ dynodoctl install --dry-run ...                                                 
 - **Mail password:** `--smtp-user` makes the generator create an empty `secrets/smtp_password`; give the password with
   `--smtp-password-file FILE` or `--smtp-password-stdin` (never an argument), or fill the file and run again. The
   install stops before starting if it is empty.
-- **The first administrator**, as it works today: people in `ADMIN_EMAILS` may use `/admin` once they have signed in by an
-  emailed link. Email sign-in needs a working mail transport; without one nobody can sign in, the first administrator
-  included. There is no operator-issued sign-in link yet (task P0-3), and the first request for a link creates the
-  account, so limit who can reach the installation (`DYNODOC_BIND`, a firewall, a VPN). `install` prints exactly this.
+- **The first administrator.** People in `ADMIN_EMAILS` may use `/admin` once they have signed in. The first one signs in
+  with an operator-issued link, which needs no mail server: `dynodoctl admin-link --email you@example.org --create`
+  (section 4, `admin-link`). `install` prints that command with the first address of `ADMIN_EMAILS`. While email
+  sign-in is on, the first request for an emailed link creates the account, so anyone who can reach the sign-in page can
+  make one: limit who can reach the installation (`DYNODOC_BIND`, a firewall, a VPN), or turn email sign-in off
+  (`dynodoctl configure set auth-email-link=off --apply`) and let people in with `admin-link` only.
 
 ### `configure`
 
@@ -442,6 +444,66 @@ The check uses the Mozilla roots built into the program; the operating system's 
 company certificate authority pass `--ca-file`. The add-in manifest check is a named stub that reports `NOT BUILT` (task
 P0-7) and does not change the result. Exit 1 if anything failed, 4 if only warnings, else 0.
 
+### `admin-link`
+
+```sh
+dynodoctl admin-link --email you@example.org --create            # the first administrator
+dynodoctl admin-link --email colleague@example.org --ttl 30m     # break-glass or no mail server
+dynodoctl admin-link --email new.person@example.org --create     # another new account: asks twice
+```
+
+Makes a one-time sign-in link for an address **without sending any email**, for the first administrator and as a way in
+when mail or email sign-in is off or an identity provider is down (design: [decision 018](decisions/018-operator-issued-sign-in-links.md)).
+It runs `engine-cli auth issue-link` in a one-off `database-admin` container, the one place besides the migration job
+that holds the database owner credential; the API never does. Options: `--ttl` (`90s`, `15m`, `2h`; 60 seconds to 24 hours,
+default 15 minutes), `--create`, `--role admin|user`, `--reason TEXT` (kept in the audit trail for good: no personal data).
+
+- **You type the address.** Nothing is made until a person at a terminal types the address exactly. `--confirm` does not
+  count here, nor does piped input, nor a redirected output: the link is shown on the screen, so a script must not be able to
+  say yes for you (exit 3 without it).
+- **The link is shown once**, as `https://<ORIGIN>/login?token=...`, with its end time, and is saved nowhere: not in
+  `state/`, a report, the lock, a log or an argument. There is **no `--json` mode**; a machine-readable form is how a
+  credential ends up in a log. It is a bearer credential: anyone who holds it can sign in as that person, from any
+  browser, until it is used or expires. Hand it over privately and keep the lifetime short.
+- **It does not change roles.** Administrators are the addresses in `ADMIN_EMAILS`. The command says whether the address is
+  one; `--role admin` or `--role user` makes it refuse if the installation disagrees. To make an administrator, add the
+  address with `dynodoctl configure set admin-emails=... --apply` first.
+- **`--create`.** Without it an address with no account is refused. With it, the account is made without a second question only
+  for the first administrator (an address in `ADMIN_EMAILS` while none of those addresses has an account yet). In every
+  other case (another administrator exists, or the address is not in `ADMIN_EMAILS`) nothing is made until you also type
+  `CREATE ACCOUNT <address>`. A disabled account gets no link: restore it in `/admin` first. **Limit:** the tool cannot restore the account of the ONLY
+  administrator (there is no `--restore`, and configured administrators cannot be disabled in `/admin` anyway); if that account was
+  disabled by other means, add a second address to `ADMIN_EMAILS` (`configure set admin-emails=... --apply`) and run `admin-link
+  --create` for it (a disabled account does not count as an administrator, so the first-administrator rule applies again), or
+  re-enable the row in SQL as the database owner. An erased person's address is free again, so `--create` would make a new person.
+- **One live link per account.** A new link ends the earlier unused ones; the output says how many.
+- **No container log.** The `database-admin` service has `logging: { driver: none }`, so the link is never kept in `docker logs`,
+  even if `dynodoctl` is killed while the container runs. The price: the other maintenance commands run in that service
+  (`verify`, `verify-snapshots`, `check-runtime`, ...) leave no log to read afterwards; read their output from the terminal
+  when they run.
+- **Invisible characters.** The address, `--reason` and the operator label refuse control characters and invisible or
+  direction-changing format characters (such as U+202E and U+200B), by `dynodoctl`, by `engine-cli` and by the table.
+- **It works with `AUTH_EMAIL_LINK=off`**, and it changes nothing about the public request for an emailed link, which stays
+  refused. It is not affected by the rate limits of the public sign-in, and the public cannot trip a limit that blocks it.
+- **Using the link:** open it, press **Continue to workspace** (one click, so a mail scanner or a link preview cannot use it up),
+  and you are signed in as after any link. The native apps' "Sign in with your browser" then works from that browser.
+  A used, expired, revoked or unknown link gives "Ask your administrator for a new one" when email sign-in is off.
+- **Ending a link early, and the list.** Engine tools, in the bundle directory:
+
+  ```sh
+  docker compose --profile maintenance run --rm database-admin auth list-links          # outstanding ones (add --all for history)
+  docker compose --profile maintenance run --rm database-admin auth revoke-link 3f9a1c20   # at least 8 digits of the hash
+  ```
+
+  The listing shows the first digits of each link's hash, the address, the end time, who made it and why; never a token.
+- **Audit.** `operation_audit` rows `auth.operator_link.issued` (operator label = your operating-system user name as the
+  tool saw it, reason, lifetime, whether it made the account), `.used` (with the login's id), `.refused` (a known link that was
+  used, expired, revoked or whose account changed; at most one row a minute per link), `.revoked`, `.expired` (swept by the
+  retention job). No row holds a token or an address. The label is not authenticated: whoever holds the owner credential
+  can write any value, or the audit table.
+- **Exit codes:** 0 shown; 1 the container failed; 2 wrong arguments; 3 refused before changing anything (not installed, PostgreSQL
+  stopped, address not confirmed, account not confirmed).
+
 ## 5. Decisions
 
 | Question | Decision | Why |
@@ -457,7 +519,8 @@ P0-7) and does not change the result. Exit 1 if anything failed, 4 if only warni
 | Concurrency and interrupts | `state/.lock` for mutating commands; a signal sets a flag honoured at step boundaries; destructive children run in their own process group | A second run, a Ctrl-C or a kill between two steps must not leave a half-done restore. |
 | Files and access | Owner-only on every platform, enforced and read back on Windows with `icacls`; refuse when it cannot be done (`--allow-insecure-files` accepts) | A step that says "private" must be true. |
 | Verification | `verify-snapshots --all` plus `verify` for each document, on the restored copy | The hosted release routine and acceptance criterion 3. |
-| Confirmations | Typed phrases, accepted from `--confirm` or a terminal only | A script cannot confirm by accident; `--yes` covers only the install question. |
+| Confirmations | Typed phrases, accepted from `--confirm` or a terminal only; `admin-link` accepts a terminal only | A script cannot confirm by accident; `--yes` covers only the install question. `admin-link` shows a credential on the screen, so a phrase given in advance cannot stand for the person. |
+| Operator-issued sign-in links | `engine-cli auth issue-link` with the owner credential in a one-off `database-admin` container; `dynodoctl admin-link` is a thin wrapper; no HTTP route | The runtime login (the API) has no INSERT on the table, so the API cannot mint a link; the network gets no way to ask for one. The owner credential already reads and changes the whole database, so nothing is added to what it can do. |
 | TLS client | rustls with a verifier that records the result and continues | An evaluation certificate can still be inspected; trust is reported, not assumed. |
 
 ## 6. Runbooks
@@ -470,7 +533,11 @@ Each ends with a record: who, when, version, checks run, results. The tool write
 2. `dynodoctl install --dry-run ...` and read the preflight and the plan. Fix what fails.
 3. `dynodoctl install ...`. Expect about a minute and a half for a first start with images present.
 4. `dynodoctl status`, then `dynodoctl verify-delivery` (add `--ca-file` for a company authority).
-5. `dynodoctl backup --verify --secrets-to <another disk>` and copy both to another machine.
+5. Create the first administrator: make sure `ADMIN_EMAILS` has the address (`install --admin-emails`, or `configure set
+   admin-emails=...  --apply`), then `dynodoctl admin-link --email you@example.org --create`. Type the address, open the link in
+   your browser within 15 minutes, press Continue, and `/admin` is yours. No mail server is needed. If the link expires
+   or is lost, run the command again (the new link ends the old one).
+6. `dynodoctl backup --verify --secrets-to <another disk>` and copy both to another machine.
 
 ### 6.2 Daily and weekly
 
@@ -579,6 +646,12 @@ the databases are right and the services are up, delete `state/restore-journal.j
 | `verify-delivery`: files not read | The crawl hit its 300-file cap or a file did not answer | A warning, not a pass: the message says how much was left |
 | Scratch databases listed by `status` | A check was interrupted, or a rejected restore copy was kept | `docker compose exec postgres sh -c 'PGPASSWORD=$(cat /run/secrets/postgres_password) dropdb -h 127.0.0.1 -U dynodoc <name>'` |
 | `an interrupted database swap is recorded` | A restore was cut short | `dynodoctl recover` (section 6.9) |
+| `admin-link`: `the address was not confirmed` | Not a terminal, `--confirm` used, or the address typed differently | Run it in a terminal and type the address exactly as shown |
+| `admin-link`: `there is no account for this address` / `needs a second confirmation` | No account yet; `--create` is only free for the first administrator | Add `--create`; for any other new account type `CREATE ACCOUNT <address>` when asked |
+| `admin-link`: `--role admin, but this address is not in ADMIN_EMAILS` | A link never makes an administrator | `dynodoctl configure set admin-emails=... --apply`, then ask again |
+| `admin-link`: `the account ... is disabled` | The person was removed | Restore the account in `/admin` (another administrator), then ask again |
+| `admin-link`: `could not be made` with `database schema differs` | The images are older than the database, or the database is older than the images | `dynodoctl status`; `dynodoctl upgrade` |
+| The sign-in page says "Ask your administrator for a new one" | The link was used, expired or ended (or the installation was changed since) | Run `admin-link` again; the old links are ended |
 | `another dynodoctl is already running` | `state/.lock` is held by a live process | Wait for it; if the process is really gone and the message still appears, delete `state/.lock` |
 | `containers of the Compose project ... already exist for another directory` | Two bundle directories share a project name | Give this one its own `COMPOSE_PROJECT_NAME` in `.env`, or `--project` |
 | `the dump contains SQL that a Dynodoc backup never has` | The screen found a rule it refuses (Trust) | Do not restore that backup; find out how it differs from the ones you made |
@@ -587,6 +660,10 @@ the databases are right and the services are up, delete `state/restore-journal.j
 | `could not be restricted to the current user` (Windows) | The folder's file system has no access lists | Use an NTFS folder, or pass `--allow-insecure-files` knowingly |
 
 ## 8. What was tested, and what was not
+
+(`admin-link`, added on 23 October 2026 after the figures below: 10 more unit tests against the fake runner, 383 in all on
+Windows, and `engine-cli` against a real database; its own account is in
+[decision 018](decisions/018-operator-issued-sign-in-links.md). It was **not** run against the real Docker bundle.)
 
 See the status paragraph in [SELF-HOSTED-EDITION.md](SELF-HOSTED-EDITION.md), section 13.2 (P0-5): 373 unit tests on
 Windows and 375 on Linux (in a `rust:1` container) against a fake runner and a fake network, four tests that keep

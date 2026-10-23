@@ -117,6 +117,7 @@ fn help_and_version_exit_zero_and_describe_the_exit_codes() {
         "rollback",
         "support-bundle",
         "verify-delivery",
+        "admin-link",
     ] {
         assert!(out.contains(command), "{command}");
     }

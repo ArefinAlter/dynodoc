@@ -162,7 +162,8 @@ services:
       secrets-init: {condition: service_completed_successfully}
 
   # On demand, never started by `up`: engine-cli with the owner credential for operator tasks
-  # (docker compose run --rm database-admin verify-snapshots --all).
+  # (docker compose run --rm database-admin verify-snapshots --all). `dynodoctl admin-link` runs
+  # `auth issue-link` here to make a one-time sign-in link: the API's login cannot (decision 018).
   database-admin:
     profiles: [maintenance]
     image: *api-image
@@ -170,6 +171,13 @@ services:
     user: "999:999"
     restart: "no"
     <<: *hardening
+    # No container log at all (this key wins over the one merged in above): `auth issue-link` prints a
+    # sign-in link, and with a log driver the link would stay in `docker logs` of the stopped container
+    # if dynodoctl were killed before `run --rm` removed it. The output still reaches the caller of
+    # `docker compose run`. Cost: the other maintenance commands (verify, check-runtime, ...) leave no
+    # log to read afterwards; keep their output from the terminal (decision 018).
+    logging:
+      driver: none
     tmpfs: ["/tmp:size=8m"]
     volumes:
       - secrets-db:/run/secrets:ro

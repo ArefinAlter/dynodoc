@@ -8,7 +8,8 @@ use crate::error::{exit, CliError, Result};
 use crate::net::Net;
 use crate::runner::Runner;
 use crate::{
-    backup, configure, install, rehearse, restore, status, support, upgrade, verify_delivery,
+    admin_link, backup, configure, install, rehearse, restore, status, support, upgrade,
+    verify_delivery,
 };
 use clap::{Args, Parser, Subcommand};
 use serde::Serialize;
@@ -83,6 +84,30 @@ pub enum Command {
     SupportBundle(SupportArgs),
     /// Check a running installation from the operator's side: HTTPS, headers, pages, references.
     VerifyDelivery(VerifyArgs),
+    /// Make a one-time sign-in link for an address without sending any email (the first
+    /// administrator; a way in when mail or email sign-in is off). The link is shown once.
+    AdminLink(AdminLinkArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct AdminLinkArgs {
+    /// The person's email address. You are asked to type it again before anything is made.
+    #[arg(long)]
+    pub email: String,
+    /// How long the link works: 60s to 24h, written 90s, 15m or 2h (default 15m).
+    #[arg(long)]
+    pub ttl: Option<String>,
+    /// Make the account when there is none. Without a second confirmation this works only for the
+    /// first administrator (an address in ADMIN_EMAILS while no administrator has an account yet).
+    #[arg(long)]
+    pub create: bool,
+    /// Refuse unless the installation agrees about the role. Never changes a role: administrators
+    /// are the addresses in ADMIN_EMAILS (`dynodoctl configure set admin-emails=...`).
+    #[arg(long, value_parser = ["admin", "user"])]
+    pub role: Option<String>,
+    /// Why you are making it (kept in the audit trail for good: no personal data).
+    #[arg(long)]
+    pub reason: Option<String>,
 }
 
 #[derive(Args, Debug, Default)]
@@ -376,6 +401,14 @@ fn bool_code(ok: bool) -> i32 {
     }
 }
 
+/// The operating-system user, for the audit trail of `admin-link` (a label, not a login).
+fn os_user() -> String {
+    ["USERNAME", "USER", "LOGNAME"]
+        .iter()
+        .find_map(|name| std::env::var(name).ok().filter(|v| !v.trim().is_empty()))
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
 fn dir_from(cli: &Cli) -> PathBuf {
     let chosen = cli
         .dir
@@ -660,6 +693,31 @@ fn dispatch(
             )?;
             outcome(&r, r.render(), exit::OK)
         }
+        Command::AdminLink(a) => {
+            // The link is a credential: no machine-readable form of this command exists.
+            if cli.json {
+                return Err(CliError::usage(
+                    "`admin-link` has no --json mode: the link is a credential, shown once, on the terminal",
+                    "run it without --json, at a terminal",
+                ));
+            }
+            let r = admin_link::run(
+                ctx,
+                &admin_link::Options {
+                    email: a.email.clone(),
+                    ttl: a.ttl.clone(),
+                    create: a.create,
+                    role: a.role.clone(),
+                    reason: a.reason.clone(),
+                    operator: os_user(),
+                },
+            )?;
+            Ok(Outcome {
+                text: r.render(),
+                json: r.public_json(),
+                code: exit::OK,
+            })
+        }
         Command::VerifyDelivery(a) => {
             let r = verify_delivery::run(
                 ctx,
@@ -696,6 +754,7 @@ fn lock_name(command: &Command) -> Option<&'static str> {
         Command::Upgrade(a) if !a.plan => Some("upgrade"),
         Command::Rollback(_) => Some("rollback"),
         Command::Recover => Some("recover"),
+        Command::AdminLink(_) => Some("admin-link"),
         _ => None,
     }
 }

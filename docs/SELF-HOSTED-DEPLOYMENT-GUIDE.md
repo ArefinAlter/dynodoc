@@ -742,7 +742,7 @@ SMTP_FROM=docs@example.org
 ```
 
 *Not built:* a database outbox with retry and administrator visibility (a failed send is
-reported to the person, not queued), operator-issued sign-in links, XOAUTH2, DKIM signing
+reported to the person, not queued), XOAUTH2, DKIM signing
 (Dynodoc does not sign: SPF, DKIM and DMARC belong to the relay. Publish SPF for the machines the
 relay sends from, have the relay sign for the domain of `SMTP_FROM`, and keep `SMTP_FROM` in a
 domain you control so that DMARC aligns), bounce handling, and per-language templates.
@@ -851,7 +851,7 @@ holds a pruned build to the shorter list.
 | `DYNODOC_AIRGAP=true` | P0-1, P0-9 | Refuses to start features that need outbound access; tightens CSP (`img-src`, Office hosts) |
 | Support link in add-in manifests | P0-7 | `DYNODOC_SUPPORT_URL` exists (7.2); the manifest generator does not read it yet |
 | Mail delivery | P0-3 | **Built** as `DYNODOC_MAIL_TRANSPORT` and `SMTP_*` (7.2), not under the names proposed here (`MAIL_TRANSPORT`, `SMTP_URL`, `SMTP_REQUIRE_TLS`): TLS is required by default and `SMTP_SECURITY=none-local` is the only way out |
-| Operator-issued sign-in links | P0-3 | `AUTH_EMAIL_LINK` and SMTP exist (7.2); the operator-issued link does not |
+| Operator-issued sign-in links | P0-3 | **Built** (23 October 2026): `engine-cli auth issue-link`, `dynodoctl admin-link`, table `operator_sign_in_link` (migration 0047); works with `AUTH_EMAIL_LINK=off` and with no mail server. Not an HTTP route: it needs the database owner credential ([decision 018](decisions/018-operator-issued-sign-in-links.md), operations guide `admin-link`) |
 | `OIDC_PROVIDERS_FILE`, `SAML_PROVIDERS_FILE` | P1-1, P1-8 | Provider definitions ([identity document](SELF-HOSTED-IDENTITY-AND-ACCESS.md)) |
 | `SCIM_ENABLED` | P1-5 | Mount `/scim/v2` |
 | `SESSION_IDLE_TIMEOUT_SECONDS`, `SESSION_ABSOLUTE_TIMEOUT_SECONDS`, `REFRESH_TTL_SECONDS`, `REFRESH_REUSE_INTERVAL_SECONDS` | P1-6, P2-3 | Session policy |
@@ -981,7 +981,7 @@ equivalent is: `install` (9.1), `backup` and `backup --verify` (9.6), `restore-v
 `restore --into-live` (9.7), `rehearse-lite` and `upgrade` (9.8; the plan is `upgrade --plan`, and
 `rehearse` is `rehearse-lite`), `rollback` (9.10, level 3 only), `status` and `verify-delivery` (the proposed `check`
 and `verify-delivery`), `configure` (9.9 partly: the origin is changed, the add-in manifests are not regenerated),
-`support-bundle`. Not built: `bundle verify` and `bundle import` (signed bundles, P3-1), `admin sign-in-link` (P0-3),
+`support-bundle`, and `admin-link` (the proposed `admin sign-in-link`, built as an owner-credential command rather than a service-key call, 9.1 and decision 018). Not built: `bundle verify` and `bundle import` (signed bundles, P3-1),
 `addin build` (P0-7), encryption and remote targets for backups (9.6), binary rollback without a restore (9.10 level 2),
 rotation helpers (9.12), the Helm and Profile B/C paths. The backup is `pg_dump -Fc`; its copy of the secrets is not
 encrypted (decision recorded in the operations guide). DQ1 is settled as a Rust binary in the application repository.
@@ -995,8 +995,9 @@ bypassed by a flag (9.8), and `rollback` validates before it changes anything (9
 images, `generate-env`, choose `DYNODOC_TLS_MODE`, `docker compose run --rm mailcheck --to ...`,
 `docker compose up -d --wait`. The four jobs of the start-up do steps 1 to 4 below on every `up`
 (secrets and settings checked, runtime login created, migrate, grant, check). Step 2 of 9.2 needs
-a working mail transport: operator-issued sign-in links (P0-3) are not built, so the first
-administrator signs in by an emailed link, and the first request for a link creates an account.
+a working mail transport only for people who ask for emailed links. The first administrator needs none:
+`dynodoctl admin-link --email admin@example.org --create` (P0-3, built 23 October 2026) shows a one-time link on the
+terminal. While email sign-in is on, the first request for an emailed link creates an account.
 
 Proposed (`dynodoctl`):
 
@@ -1006,7 +1007,7 @@ dynodoctl bundle verify dynodoc-1.0.0-linux-amd64.bundle --public-key cosign.pub
 dynodoctl install --origin https://docs.example.org \
     --tls provided --cert fullchain.pem --key privkey.pem \
     --data /srv/dynodoc --backups /mnt/backups --mail smtp://relay.example.org:587
-dynodoctl admin sign-in-link admin@example.org     # one-time link, 15 minutes
+dynodoctl admin-link --email admin@example.org --create   # one-time link, 15 minutes (built)
 dynodoctl check                                     # health, auth options, delivery, runtime gate
 ```
 

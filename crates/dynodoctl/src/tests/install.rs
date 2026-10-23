@@ -246,11 +246,16 @@ fn a_fresh_install_runs_the_steps_in_order_and_explains_the_first_administrator(
         "{env}"
     );
     let text = report.next_steps.join("\n");
+    // No mail server was given: the way in is the operator-issued link, with the exact command.
     assert!(
-        text.contains("you@example.org") && text.contains("nobody can sign in"),
+        text.contains("dynodoctl admin-link --email you@example.org --create")
+            && text.contains("Email sign-in is OFF"),
         "{text}"
     );
-    assert!(text.contains("no operator-issued sign-in link"), "{text}");
+    assert!(
+        !text.contains("nobody can sign in") && !text.contains("no operator-issued sign-in link"),
+        "{text}"
+    );
     assert!(report
         .warnings
         .iter()

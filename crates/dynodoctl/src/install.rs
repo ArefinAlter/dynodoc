@@ -410,16 +410,28 @@ pub fn next_steps(origin: &Origin, tls: &str, env: &EnvFile, mail_configured: bo
             ""
         }
     )];
+    // The first administrator signs in with an operator-issued link: no mail server is needed.
     match admins {
-        Some(a) => v.push(format!("Administrators (/admin) are the addresses in ADMIN_EMAILS: {a}. An address becomes an administrator once its owner has signed in with an emailed link.")),
-        None => v.push("No ADMIN_EMAILS is set, so nobody can use /admin yet: `dynodoctl configure set admin-emails=you@example.org --apply`.".into()),
+        Some(a) => {
+            v.push(format!("Administrators (/admin) are the addresses in ADMIN_EMAILS: {a}. An address becomes an administrator once its owner has signed in."));
+            let first = a
+                .split(',')
+                .map(str::trim)
+                .find(|s| !s.is_empty())
+                .unwrap_or("you@example.org");
+            v.push(format!("Create the first administrator with: `dynodoctl admin-link --email {first} --create`. You type the address to confirm, and it shows a one-time sign-in link (works once, in any browser, 15 minutes) without sending any email. Treat the link like a password."));
+        }
+        None => {
+            v.push("No ADMIN_EMAILS is set, so nobody can use /admin yet: `dynodoctl configure set admin-emails=you@example.org --apply`.".into());
+            v.push("Then create the first administrator with: `dynodoctl admin-link --email you@example.org --create`. You type the address to confirm, and it shows a one-time sign-in link (works once, in any browser, 15 minutes) without sending any email. Treat the link like a password.".into());
+        }
     }
     if mail_configured {
-        v.push("Sign in by asking for an email link on the sign-in page. Check the mail server first: `dynodoctl configure check --mail-to you@example.org`.".into());
+        v.push("People can also sign in by asking for an email link on the sign-in page. Check the mail server first: `dynodoctl configure check --mail-to you@example.org`.".into());
+        v.push("While email sign-in is on, the first request for a link creates the account, so anyone who can reach the sign-in page can make one: limit who can reach the installation (DYNODOC_BIND, a firewall, a VPN), or turn email sign-in off (`dynodoctl configure set auth-email-link=off --apply`) and let people in with `dynodoctl admin-link` only.".into());
     } else {
-        v.push("Email sign-in is OFF because no mail server was given, and today it is the only way in (besides Google sign-in, which needs internet access): nobody can sign in, the first administrator included. Add a mail server with `dynodoctl configure set smtp-host=... smtp-from=... --apply`.".into());
+        v.push("Email sign-in is OFF because no mail server was given, so operator-issued links (`dynodoctl admin-link`) are the way in; nobody can ask for a link on the sign-in page. Add a mail server later with `dynodoctl configure set smtp-host=... smtp-from=... --apply`.".into());
     }
-    v.push("There is no operator-issued sign-in link yet (task P0-3 is not built). The first request for a link creates the account, so anyone who can reach the sign-in page can make one: limit who can reach the installation (DYNODOC_BIND, a firewall, a VPN) until the identity features exist.".into());
     v.push("Take a backup now and keep .env and secrets/ somewhere separate from this server: `dynodoctl backup --secrets-to <other disk>`.".into());
     v.push("Check the installation from the outside with `dynodoctl verify-delivery`, and any time with `dynodoctl status`.".into());
     v

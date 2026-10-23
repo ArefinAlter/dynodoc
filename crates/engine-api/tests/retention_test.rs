@@ -18,7 +18,7 @@ use sqlx::{Connection, PgPool};
 use std::{collections::BTreeMap, time::Duration};
 use uuid::Uuid;
 
-const TARGETS: [&str; 7] = [
+const TARGETS: [&str; 8] = [
     "magic_link",
     "refresh_token",
     "auth_request_window",
@@ -26,6 +26,7 @@ const TARGETS: [&str; 7] = [
     "app_handover_code",
     "web_metric",
     "idempotency_key",
+    "operator_sign_in_link",
 ];
 
 async fn new_identity(pool: &PgPool) -> Uuid {
@@ -155,6 +156,56 @@ async fn seed(pool: &PgPool, identity: Uuid) {
     sqlx::raw_sql(&sql).execute(pool).await.unwrap();
 }
 
+/// Operator sign-in links (schema 47). Only the owner credential can make one, so this takes the
+/// owner pool. Labels: P = pruned by the default configuration, K = kept, S = swept to `expired`
+/// (with an audit row) by the pass before the prune. Rows that "were used long ago" are made with
+/// the table's triggers off, because the table rightly refuses to mark an expired link used.
+async fn seed_operator_links(owner: &PgPool, identity: Uuid) {
+    let mut sql = String::from("alter table operator_sign_in_link disable trigger user;");
+    // (tag, created, expires, consumed, outcome)
+    for (n, created, expires, consumed, outcome) in [
+        (
+            1,
+            "now() - interval '30 days'",
+            "now() - interval '30 days' + interval '15 minutes'",
+            "null",
+            "null",
+        ), // P and S: expired long ago, never used
+        (
+            2,
+            "now() - interval '1 day'",
+            "now() - interval '1 day' + interval '15 minutes'",
+            "null",
+            "null",
+        ), // K and S: expired inside the window
+        (
+            3,
+            "now() - interval '1 minute'",
+            "now() + interval '14 minutes'",
+            "null",
+            "null",
+        ), // K live
+        (
+            4,
+            "now() - interval '10 days'",
+            "now() - interval '10 days' + interval '15 minutes'",
+            "now() - interval '10 days'",
+            "'used'",
+        ), // P used long ago
+        (
+            5,
+            "now() - interval '2 minutes'",
+            "now() + interval '13 minutes'",
+            "now() - interval '1 minute'",
+            "'used'",
+        ), // K used just now
+    ] {
+        sql += &format!("insert into operator_sign_in_link(identity_id,token_hash,session_generation,operator,created_at,expires_at,consumed_at,outcome) values('{identity}',{},0,'retention-test',{created},{expires},{consumed},{outcome});", tag(n));
+    }
+    sql += "alter table operator_sign_in_link enable trigger user;";
+    sqlx::raw_sql(&sql).execute(owner).await.unwrap();
+}
+
 async fn survivors(pool: &PgPool, query: &str) -> Vec<String> {
     sqlx::query_scalar(query).fetch_all(pool).await.unwrap()
 }
@@ -191,14 +242,34 @@ async fn only_expired_rows_are_pruned_under_the_restricted_login(pool: PgPool) {
     let runtime = RuntimeDatabase::new(pool).await;
     let identity = new_identity(&runtime.pool).await;
     seed(&runtime.pool, identity).await;
+    seed_operator_links(&runtime.owner, identity).await;
     let stats = Stats::default();
 
     let outcome = retention::run_once(&runtime.pool, &config(1000), &stats)
         .await
         .unwrap();
     // Table order: magic_link, refresh_token, auth_request_window,
-    // device_enrollment_challenge, app_handover_code, web_metric, idempotency_key.
-    assert_eq!(outcome, Outcome::Ran([2, 2, 2, 1, 2, 1, 2]));
+    // device_enrollment_challenge, app_handover_code, web_metric, idempotency_key,
+    // operator_sign_in_link.
+    assert_eq!(outcome, Outcome::Ran([2, 2, 2, 1, 2, 1, 2, 2]));
+    // The unused links past their time (1 and 2) were marked expired, each with one audit row,
+    // before the old one (1) was pruned; the others are as they were.
+    assert_eq!(
+        survivors(
+            &runtime.pool,
+            "select get_byte(token_hash,0)::text || ':' || coalesce(outcome,'live') from operator_sign_in_link order by 1"
+        )
+        .await,
+        ["2:expired", "3:live", "5:used"]
+    );
+    assert_eq!(
+        survivors(
+            &runtime.pool,
+            "select action from operation_audit where action like 'auth.operator_link.%'"
+        )
+        .await,
+        ["auth.operator_link.expired", "auth.operator_link.expired"]
+    );
 
     let tags = |table: &str, column: &str| {
         format!("select get_byte({column},0)::text from {table} order by 1")
@@ -252,7 +323,15 @@ async fn only_expired_rows_are_pruned_under_the_restricted_login(pool: PgPool) {
     let outcome = retention::run_once(&runtime.pool, &config(1000), &stats)
         .await
         .unwrap();
-    assert_eq!(outcome, Outcome::Ran([0; 7]));
+    assert_eq!(outcome, Outcome::Ran([0; 8]));
+    // ... and no second audit row for a link that was already swept.
+    let swept: i64 = sqlx::query_scalar(
+        "select count(*) from operation_audit where action='auth.operator_link.expired'",
+    )
+    .fetch_one(&runtime.pool)
+    .await
+    .unwrap();
+    assert_eq!(swept, 2);
     let snapshot = stats.snapshot();
     assert_eq!(snapshot["runs"], 2);
     assert_eq!(snapshot["pruned"]["magic_link"], 2);
@@ -266,6 +345,7 @@ async fn windows_are_configurable(pool: PgPool) {
     let runtime = RuntimeDatabase::new(pool).await;
     let identity = new_identity(&runtime.pool).await;
     seed(&runtime.pool, identity).await;
+    seed_operator_links(&runtime.owner, identity).await;
     // One-day windows still keep the 1-day-old row only if it has not passed a full
     // day yet; the 29-day-old metric goes with a 10-day metrics window.
     let tight = RetentionConfig {
@@ -278,7 +358,7 @@ async fn windows_are_configurable(pool: PgPool) {
         .unwrap();
     // A year of grace keeps every auth row except the request windows (always 15
     // minutes) and the 25-hour-old idempotency keys; metrics older than 10 days go.
-    assert_eq!(outcome, Outcome::Ran([0, 0, 2, 0, 0, 2, 2]));
+    assert_eq!(outcome, Outcome::Ran([0, 0, 2, 0, 0, 2, 2, 0]));
     runtime.close().await;
 }
 
@@ -323,7 +403,7 @@ async fn batches_are_bounded_and_the_pass_drains_the_backlog(pool: PgPool) {
     let outcome = retention::run_once(&runtime.pool, &config(10), &Stats::default())
         .await
         .unwrap();
-    assert_eq!(outcome, Outcome::Ran([0, 0, 0, 0, 0, 25, 0]));
+    assert_eq!(outcome, Outcome::Ran([0, 0, 0, 0, 0, 25, 0, 0]));
     // An unknown table name is refused rather than interpolated.
     let mut connection = runtime.pool.acquire().await.unwrap();
     assert!(retention::prune_batch(&mut connection, "event", &cfg)
@@ -370,6 +450,7 @@ async fn history_and_every_other_table_are_untouched(pool: PgPool) {
     .await
     .unwrap();
     seed(&runtime.pool, identity).await;
+    seed_operator_links(&runtime.owner, identity).await;
 
     let before = row_counts(&runtime.pool).await;
     for history in ["event", "snapshot", "operation_audit", "document"] {
@@ -382,6 +463,21 @@ async fn history_and_every_other_table_are_untouched(pool: PgPool) {
     for (table, count) in &before {
         if TARGETS.contains(&table.as_str()) {
             assert!(after[table] < *count, "{table} should have lost rows");
+        } else if table == "operation_audit" {
+            // The one thing the pass adds to history: an audit row for each operator sign-in
+            // link it marks expired. Nothing is edited or removed.
+            let swept: i64 = sqlx::query_scalar(
+                "select count(*) from operation_audit where action='auth.operator_link.expired'",
+            )
+            .fetch_one(&runtime.pool)
+            .await
+            .unwrap();
+            assert_eq!(swept, 2);
+            assert_eq!(
+                after[table],
+                *count + swept,
+                "{table} only gains the expiry rows"
+            );
         } else {
             assert_eq!(after[table], *count, "{table} must not change");
         }
@@ -445,7 +541,7 @@ async fn only_one_instance_prunes_at_a_time(pool: PgPool) {
     let outcome = retention::run_once(&runtime.pool, &config(1000), &stats)
         .await
         .unwrap();
-    assert_eq!(outcome, Outcome::Ran([0, 0, 0, 0, 0, 40, 0]));
+    assert_eq!(outcome, Outcome::Ran([0, 0, 0, 0, 0, 40, 0, 0]));
 
     // Two passes started together: one runs, the other skips, nothing is deleted twice.
     sqlx::raw_sql(expired).execute(&runtime.pool).await.unwrap();
@@ -457,7 +553,7 @@ async fn only_one_instance_prunes_at_a_time(pool: PgPool) {
     let outcomes = [first.unwrap(), second.unwrap()];
     assert!(outcomes.contains(&Outcome::Skipped), "{outcomes:?}");
     assert!(
-        outcomes.contains(&Outcome::Ran([0, 0, 0, 0, 0, 40, 0])),
+        outcomes.contains(&Outcome::Ran([0, 0, 0, 0, 0, 40, 0, 0])),
         "{outcomes:?}"
     );
     runtime.close().await;
@@ -535,6 +631,7 @@ async fn the_loop_survives_a_database_error_and_retries(pool: PgPool) {
     let runtime = RuntimeDatabase::new(pool).await;
     let identity = new_identity(&runtime.pool).await;
     seed(&runtime.pool, identity).await;
+    seed_operator_links(&runtime.owner, identity).await;
     // web_metric disappears (a failing table); the other tables must still be pruned.
     sqlx::raw_sql("alter table web_metric rename to web_metric_away")
         .execute(&runtime.owner)

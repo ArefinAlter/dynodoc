@@ -17,6 +17,7 @@ use sqlx::PgPool;
 use utoipa::OpenApi;
 use uuid::Uuid;
 
+mod auth;
 mod authority;
 mod device;
 mod keyfile;
@@ -74,6 +75,12 @@ enum Command {
         project: Uuid,
         #[command(subcommand)]
         action: repository::Action,
+    },
+    /// Operator-issued sign-in links, for an installation with no mail or with email sign-in off
+    /// (owner credential: MIGRATION_DATABASE_URL). The link is a credential; see the subcommands.
+    Auth {
+        #[command(subcommand)]
+        action: auth::Action,
     },
     /// Apply migrations using MIGRATION_DATABASE_URL in a separate operator process.
     Migrate,
@@ -189,8 +196,9 @@ async fn run() -> anyhow::Result<()> {
     let logs = tracing_subscriber::fmt().with_env_filter(
         tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
     );
-    if matches!(cli.command, Command::Mcp(_)) {
-        // `mcp` speaks its protocol on stdout: its logs, and only its, go to stderr.
+    if matches!(cli.command, Command::Mcp(_) | Command::Auth { .. }) {
+        // `mcp` speaks its protocol on stdout, and `auth issue-link` prints a sign-in link there
+        // (and nothing else, so it can be piped): their logs go to stderr.
         logs.with_writer(std::io::stderr).init();
     } else {
         logs.init();
@@ -224,6 +232,7 @@ async fn run() -> anyhow::Result<()> {
             project,
             action,
         } => repository::run(path, project, action).await,
+        Command::Auth { action } => auth::run(action).await,
         Command::Migrate => {
             let pool = connect_migration().await?;
             engine_core::database::MIGRATOR.run(&pool).await?;

@@ -52,8 +52,9 @@ The jobs, in order, each of which must succeed before the next starts:
 - About 4 GB of memory and 10 GB of disk for a trial. Idle, the four services use about 110 MiB;
   their limits add up to 5.25 GiB (`web` 1 GiB, `api` 2 GiB, `postgres` 2 GiB, `proxy` 256 MiB).
 - Node 20 or newer, **or** the `tools` image (below), to create the settings files.
-- For anything beyond a trial: a DNS name for the machine, and an outbound mail server (SMTP) so
-  people can receive sign-in links. See "The first administrator".
+- For anything beyond a trial: a DNS name for the machine. The first administrator signs in with a
+  link you make on the machine (no mail server needed); for everyone else, an outbound mail server
+  (SMTP) so people can receive sign-in links. See "The first administrator".
 - Clocks kept in step with NTP. Tokens and certificates depend on it.
 
 ## Quick start
@@ -137,8 +138,17 @@ The first start creates the database and takes about two minutes. If a job fails
 stops and says which one; `docker compose logs <job>` has the reason in plain words (see
 "Troubleshooting").
 
-**6. Open it.** `https://<your ORIGIN>/`. In `evaluation` mode the browser warns about the
-certificate; that is expected. Sign in with the address you put in `ADMIN_EMAILS`.
+**6. Open it, and let the first administrator in.** `https://<your ORIGIN>/`. In `evaluation` mode
+the browser warns about the certificate; that is expected. Sign-in links are not emailed unless you
+set up mail, so make the first one on the machine, for the address you put in `ADMIN_EMAILS`:
+
+```sh
+dynodoctl admin-link --email you@example.org --create
+```
+
+Type the address when asked, open the link it shows (works once, 15 minutes), press **Continue to
+workspace**. Without `dynodoctl` the same thing is
+`docker compose --profile maintenance run --rm database-admin auth issue-link --email you@example.org --create --origin https://<your ORIGIN> --admin-emails you@example.org`.
 
 **7. Look at it** (optional): `docker compose ps` shows every service healthy;
 `curl -k https://localhost:8443/healthz` answers `{"status":"ok",...}`.
@@ -146,21 +156,36 @@ certificate; that is expected. Sign in with the address you put in `ADMIN_EMAILS
 ## The first administrator
 
 The people who may use `/admin` are the addresses listed in `ADMIN_EMAILS` in `.env` (comma
-separated). Today there is no invitation-only mode and no operator-issued sign-in link (that is part
-of task P0-3, not built). What that means, as the code stands:
+separated). The first one signs in with a **link the operator makes**, which needs no mail server;
+everyone else signs in with an emailed link, or with a link you make for them.
 
-- To sign in, a person asks for an email link on the sign-in page and clicks it. The link only
-  arrives if the installation can send mail (SMTP configured and working). **Without a working
-  mail transport nobody can sign in**, the first administrator included. The web server refuses to
-  start with email sign-in on and no transport, and `generate-env` without `--smtp-host` turns email
-  sign-in off, which also means nobody can sign in. Google sign-in is the only other method today
-  and needs internet access.
-- The first request for a link **creates the account**. Anyone who can reach the sign-in page and
-  read mail at an address can make an account (they see only their own documents). Until the
-  identity features of Phase 1 exist, limit who can reach the installation (`DYNODOC_BIND`, a
-  firewall, a VPN) instead of relying on the sign-in page.
-- An address in `ADMIN_EMAILS` gets the administration page once it has signed in that way. Its
-  owner proves the address by receiving the link.
+- **Make a link:** `dynodoctl admin-link --email you@example.org --create` (the first administrator; run
+  it in the bundle directory, at a terminal). It asks you to type the address, then shows a
+  one-time link `https://<ORIGIN>/login?token=...` **once**, and saves it nowhere. It works once, from
+  any browser, for 15 minutes (`--ttl 90s` to `24h`). **It is a password:** anyone who holds it can
+  sign in as that person until it is used or expires, so hand it over privately. It makes no
+  email and works with email sign-in switched off (`AUTH_EMAIL_LINK=off`, which `install` chooses
+  when you give no mail server).
+- **It does not make anyone an administrator.** Administrators are the addresses in `ADMIN_EMAILS`;
+  a link only signs the person in as who they already are. `--create` makes a missing account for
+  the first administrator (an address in `ADMIN_EMAILS` while none of those has an account); any
+  other new account needs the address typed a second time. A removed (disabled) account gets no link, and the tool cannot restore it (restore it in `/admin`; for the only administrator, add a second address to `ADMIN_EMAILS` and make its first link). The `database-admin` service keeps no container log, so a link never stays in `docker logs`; the other maintenance commands leave no log either, so read their output as they run.
+- **Who can make one:** whoever can run Docker in this directory, because the command runs
+  `engine-cli` with the database owner credential in a one-off container. Nothing on the network
+  can: the API has no route for it and its database login is not allowed to write the table.
+  Anyone who holds that credential can already read and change everything, so this adds no
+  power to it. Every link is audited (`operation_audit`, actions `auth.operator_link.*`).
+- **List and end links:** `docker compose --profile maintenance run --rm database-admin auth list-links`
+  and `... auth revoke-link <first 8 digits of the hash>`. The listing never shows a token.
+- To sign in, any other person asks for an email link on the sign-in page and clicks it. The link
+  only arrives if the installation can send mail (SMTP configured and working). The web server
+  refuses to start with email sign-in on and no transport, and `generate-env` without `--smtp-host`
+  turns email sign-in off; then **links you make are the only way in** (besides Google sign-in,
+  which needs internet access).
+- While email sign-in is **on**, the first request for a link **creates the account**. Anyone who can
+  reach the sign-in page and read mail at an address can make an account (they see only their own
+  documents). Until the identity features of Phase 1 exist, limit who can reach the installation
+  (`DYNODOC_BIND`, a firewall, a VPN), or turn email sign-in off and make links yourself.
 - `DEV_AUTH=true` makes the sign-in page show the link instead of mailing it. It exists for test
   stacks. Anyone who can reach the page can then sign in as anyone, administrators included. Do
   not use it on a machine other people can reach.
@@ -435,7 +460,7 @@ the migration table or change the event history; no secret value appears in `doc
 
 *Not in it:* TLS between the proxy, web, API and PostgreSQL (they share private networks); log
 shipping and metrics; scheduled or encrypted backups and remote backup targets (`dynodoctl backup` is
-run by you or by cron; its copy of the secrets is not encrypted); a signed bundle; high availability; operator-issued sign-in links and identity-provider sign-in; the
+run by you or by cron; its copy of the secrets is not encrypted); a signed bundle; high availability; identity-provider sign-in (OpenID Connect, SAML, SCIM; Phase 1); the
 air-gap acceptance run; image signing. The database owner is the PostgreSQL image's bootstrap
 superuser; it is held only by the jobs and by whoever runs `docker compose exec postgres`. Anyone who
 can run Docker on this machine controls everything in it; treat the host accordingly.

@@ -56,6 +56,7 @@ async function postEmail(values: Record<string, string>) {
 }
 beforeEach(() => {
   engine.enginePost.mockClear();
+  engine.saveSession.mockClear();
   vi.stubGlobal(
     'fetch',
     vi.fn(async () => new Response('{}', { status: 200 }))
@@ -128,6 +129,50 @@ describe('POST /auth/email', () => {
     expect(url).toBe('https://api.resend.com/emails');
     expect((init.headers as Record<string, string>).Authorization).toBe(
       'Bearer re_from_a_file_0123456789'
+    );
+  });
+});
+
+// Confirming a sign-in link (an emailed one, or one the operator made with `engine-cli auth
+// issue-link`, docs/decisions/018) is the same route and the same engine call; it works with email
+// sign-in switched off, and its refusal does not offer a request that would be refused.
+async function postVerify(values: Record<string, string>, token = 'a'.repeat(64)) {
+  const { POST } = await route(values);
+  const url = new URL('https://dynodoc.example.test/auth/verify');
+  return POST({
+    params: { action: 'verify' },
+    url,
+    cookies: {},
+    request: new Request(url, {
+      method: 'POST',
+      headers: { origin: url.origin, 'content-type': 'application/json' },
+      body: JSON.stringify({ token })
+    })
+  });
+}
+describe('POST /auth/verify', () => {
+  it('confirms a link with email sign-in switched off, passing the token to the engine as is', async () => {
+    engine.enginePost.mockResolvedValueOnce({ access_token: 'a', refresh_token: 'r' } as never);
+    const response = await postVerify({ ...self, AUTH_EMAIL_LINK: 'off' }, 'b'.repeat(64));
+    expect(response.status).toBe(200);
+    expect(engine.enginePost).toHaveBeenCalledWith('/auth/verify', { token: 'b'.repeat(64) });
+    expect(engine.saveSession).toHaveBeenCalledTimes(1);
+  });
+  it('tells a person where email sign-in is off to ask the administrator, not to request a link', async () => {
+    engine.enginePost.mockRejectedValueOnce(new Error('401'));
+    const off = await postVerify({ ...self, AUTH_EMAIL_LINK: 'off' });
+    expect(off.status).toBe(401);
+    const text = (await off.json()).error as string;
+    expect(text).toMatch(/Ask your administrator/);
+    expect(text).not.toMatch(/Request another link/);
+    expect(engine.saveSession).not.toHaveBeenCalled();
+  });
+  it('keeps the old wording where email sign-in is on', async () => {
+    engine.enginePost.mockRejectedValueOnce(new Error('401'));
+    const on = await postVerify({ ...self, ...mail });
+    expect(on.status).toBe(401);
+    expect((await on.json()).error).toBe(
+      'This link has expired or has already been used. Request another link.'
     );
   });
 });

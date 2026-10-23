@@ -38,6 +38,18 @@ export function safeNext(next: string | null | undefined): string | null {
     : null;
 }
 
+/**
+ * The same address (path, query and fragment) without the sign-in link's `token`, so it can replace
+ * the one in the address bar once the page has read the token: a link kept in history, a bookmark
+ * or a screen share is then no longer one, and a reload does not send it again. Every other
+ * parameter (`next`) stays.
+ */
+export function withoutToken(address: string | URL): string {
+  const url = new URL(address, 'https://sign-in.invalid');
+  url.searchParams.delete('token');
+  return url.pathname + url.search + url.hash;
+}
+
 const key = 'dynodoc.login-next';
 /** Email links open in a new tab, so the destination is kept briefly in this browser. */
 export function rememberNext(next: string | null) {

@@ -202,13 +202,21 @@ struct VerifyRequest {
     token: String,
 }
 
-/// Exchange a magic-link token for an access token + refresh token.
+/// Exchange a sign-in link token for an access token + refresh token. An emailed (magic) link is
+/// tried first; a token that is not one is looked up as an operator-issued link
+/// ([`super::operator`], docs/decisions/018). Both make the same kind of login, and an unknown,
+/// used, expired or revoked token of either kind is the same `401`.
 async fn verify(
     State(state): State<AppState>,
     Json(req): Json<VerifyRequest>,
 ) -> Result<Json<TokenResponse>, AuthError> {
-    let identity_id = store::consume_magic_link(&state.pool, &sha256(req.token.as_bytes())).await?;
-    Ok(Json(mint_session(&state, identity_id).await?))
+    match store::consume_magic_link(&state.pool, &sha256(req.token.as_bytes())).await {
+        Ok(identity_id) => Ok(Json(mint_session(&state, identity_id).await?)),
+        Err(AuthError::MagicLinkInvalid) => {
+            Ok(Json(super::operator::redeem(&state, &req.token).await?))
+        }
+        Err(other) => Err(other),
+    }
 }
 
 #[derive(Deserialize, utoipa::ToSchema)]

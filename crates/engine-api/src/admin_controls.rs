@@ -214,6 +214,7 @@ async fn erase_one(
         for table in [
             "refresh_token",
             "magic_link",
+            "operator_sign_in_link",
             "idempotency_key",
             "document_access",
             "space_member",
