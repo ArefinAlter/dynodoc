@@ -4,7 +4,7 @@
   import { ArrowUpRight, FileText } from '@lucide/svelte';
   import Eyebrow from '$lib/components/site/Eyebrow.svelte';
   import { page } from '$app/stores';
-  import { legalPageStructuredData } from '$lib/seo';
+  import { legalPageStructuredData, pageMeta } from '$lib/seo';
   import { OPERATOR } from '$lib/site/operator';
   // Legal documents: left table of contents with scrollspy, 68ch reading column, print
   // styles. The site header and footer come from the (site) layout.
@@ -12,15 +12,39 @@
     title,
     description,
     sections,
+    statement = false,
     children
   }: {
     title: string;
     description: string;
     sections: { id: string; title: string }[];
+    /** A statement of fact (security, licences) rather than proposed terms: no draft notice. */
+    statement?: boolean;
     children: Snippet;
   } = $props();
 
   let active = $state('');
+
+  // The page's date is the date its content last changed, kept with the sitemap entry in
+  // lib/seo/site.ts so the visible line, the sitemap and the structured data cannot disagree.
+  const MONTHS = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December'
+  ];
+  const revised = $derived.by(() => {
+    const [year, month, day] = (pageMeta($page.url.pathname)?.lastmod ?? '').split('-').map(Number);
+    return year && month && day ? `${day} ${MONTHS[month - 1]} ${year}` : '';
+  });
 
   // Every legal and trust document, in reading order.
   const RELATED = [
@@ -86,21 +110,26 @@
       <Eyebrow label="LEGAL" />
       <h1>{title}</h1>
       <p class="intro">{description}</p>
-      <p class="date">Draft revised 13 October 2026 · Not yet effective</p>
+      <p class="date">
+        {statement ? 'Updated' : 'Draft revised'}
+        {revised}{statement ? '' : ' · Not yet effective'}
+      </p>
     </div>
   </header>
   <div class="container legal-body">
-    <div class="draft-notice" role="note">
-      <FileText size={20} aria-hidden="true" />
-      <div>
-        <strong>A transparent draft, not yet adopted</strong>
-        <p>
-          {OPERATOR.legalName}, the operator of the hosted service, has not adopted this page. It
-          describes how the service currently works and the terms proposed for it, and it takes
-          effect only when adopted.
-        </p>
+    {#if !statement}
+      <div class="draft-notice" role="note">
+        <FileText size={20} aria-hidden="true" />
+        <div>
+          <strong>A transparent draft, not yet adopted</strong>
+          <p>
+            {OPERATOR.legalName}, the operator of the hosted service, has not adopted this page. It
+            describes how the service currently works and the terms proposed for it, and it takes
+            effect only when adopted.
+          </p>
+        </div>
       </div>
-    </div>
+    {/if}
     <div class="legal-grid">
       <aside>
         <nav aria-label="On this page">

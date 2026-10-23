@@ -59,6 +59,7 @@
   title="Licenses"
   description="The licenses that apply to Dynodoc: the open-source engine, API and command-line tools, the workspace and website, bundled fonts, direct dependencies and artwork."
   {sections}
+  statement
 >
   <section id="engine">
     <h2>Engine, API and command-line tools</h2>

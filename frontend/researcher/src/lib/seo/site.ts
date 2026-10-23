@@ -153,7 +153,7 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     title: 'Security · Dynodoc',
     description:
       'What protects the history of your documents and access to it, what is live today, what exists only in source, what is not claimed, and how to report a vulnerability.',
-    lastmod: '2026-10-13',
+    lastmod: '2026-10-23',
     changefreq: 'monthly',
     priority: '0.6'
   },
@@ -198,7 +198,7 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     title: 'Licenses · Dynodoc',
     description:
       'The engine, API and command-line tools are open source under the MIT licence; the workspace and website are not published as open source. Font licenses, direct dependencies and artwork.',
-    lastmod: '2026-10-13',
+    lastmod: '2026-10-22',
     changefreq: 'monthly',
     priority: '0.4'
   }
