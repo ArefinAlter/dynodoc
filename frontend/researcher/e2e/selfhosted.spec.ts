@@ -35,6 +35,7 @@ const MARKETING = [
   '/compatibility',
   '/roadmap',
   '/changelog',
+  '/open-source',
   '/brand',
   '/sitemap.xml',
   '/llms.txt',

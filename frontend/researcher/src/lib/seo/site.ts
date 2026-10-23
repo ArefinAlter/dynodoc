@@ -104,6 +104,15 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     priority: '0.6'
   },
   {
+    path: '/open-source',
+    title: 'Open source: build from source and platforms · Dynodoc',
+    description:
+      'The engine, API and command-line tools are MIT licensed. How to build them from source, the platforms they are built and tested on, what that testing covers, and what is not published yet.',
+    lastmod: '2026-10-23',
+    changefreq: 'monthly',
+    priority: '0.6'
+  },
+  {
     path: '/brand',
     title: 'Brand and press kit · Dynodoc',
     description:

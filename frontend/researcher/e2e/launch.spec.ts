@@ -62,6 +62,7 @@ const PUBLIC_PATHS = [
   '/why-dynodoc',
   '/roadmap',
   '/changelog',
+  '/open-source',
   '/brand',
   '/help',
   '/add-ins',
