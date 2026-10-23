@@ -36,7 +36,7 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     path: '/compatibility',
     title: 'Compatibility: editors, formats and limits · Dynodoc',
     description:
-      'What Dynodoc captures, reviews and applies in Word, Excel, PowerPoint, Google Docs, Sheets and Slides today, with minimum host versions, file formats and limits.',
+      'What Dynodoc captures, reviews and applies in Word, Excel, PowerPoint, Google Docs, Sheets and Slides today, with minimum host versions, file formats, supported browsers, small-screen limits and how to install the web app.',
     lastmod: '2026-10-23',
     changefreq: 'monthly',
     priority: '0.7'
@@ -125,8 +125,8 @@ export const INDEXABLE_PAGES: IndexablePage[] = [
     path: '/help',
     title: 'Help: projects, review and history · Dynodoc',
     description:
-      'Create a project, capture changes from an editor, review and merge a pull request, restore or revert earlier content, name versions and verify history.',
-    lastmod: '2026-10-12',
+      'Create a project, capture changes from an editor, review and merge a pull request, restore or revert earlier content, name versions, verify history and install the web app.',
+    lastmod: '2026-10-23',
     changefreq: 'monthly',
     priority: '0.7'
   },

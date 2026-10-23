@@ -64,6 +64,11 @@
       keywords: 'web editor tour documents spreadsheets presentations share public link trash'
     },
     {
+      id: 'app',
+      title: 'Use it as an app',
+      keywords: 'install app home screen dock offline phone browser web app'
+    },
+    {
       id: 'words',
       title: 'Version-control words, in plain language',
       keywords: 'git commit branch push pull merge conflict blame vocabulary'
@@ -263,6 +268,10 @@
               The project’s review rules set how many approvals are needed. The request shows how
               many it has.
             </li>
+            <li>
+              An approval is tied to the version of the request you were looking at. If the request
+              changes afterwards, the approval stops counting and the request needs a new one.
+            </li>
           </ul>
           <figure data-reveal>
             <ReviewMock />
@@ -408,6 +417,33 @@
               </li>
             {/each}
           </ol>
+        </section>
+
+        <section id="app">
+          <h2>Use it as an app</h2>
+          <p>
+            You can install the workspace as a web app from a supported browser. It opens at the
+            workspace, and you can keep it on your home screen or dock. Open your profile page and
+            look for <strong>Install app</strong>: it shows what applies to the browser you are
+            using.
+          </p>
+          <ul>
+            <li>Chrome or Edge on a computer: the install icon in the address bar, or the menu.</li>
+            <li>
+              Chrome on Android: <strong>Install app</strong> or
+              <strong>Add to Home screen</strong>.
+            </li>
+            <li>Safari on iPhone or iPad: Share, then <strong>Add to Home Screen</strong>.</li>
+            <li>Safari on a Mac: <strong>File</strong>, then <strong>Add to Dock</strong>.</li>
+            <li>Firefox on a computer cannot install it; use another browser or a pinned tab.</li>
+          </ul>
+          <p>
+            The app is the same workspace in its own window. When the network is missing it shows a
+            short “You are offline” page. It does not keep your documents or edits for offline use,
+            and saving needs a connection. The
+            <a href="/compatibility#app">compatibility page</a> has the full steps and what has and has
+            not been tested.
+          </p>
         </section>
 
         <section id="words">
