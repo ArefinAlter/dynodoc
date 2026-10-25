@@ -18,6 +18,51 @@ twenty to thirty seconds of maintenance. App-repository Actions could not run (b
 stood in. **Not verified:** a signed-in session on the live site (the owner should sign in once and open a document). The public
 marketing site is deployed by Vercel on every push to `main` and had been running this web build since 22 October.
 
+## Source: open pull requests of the public engine repository (25 October 2026)
+
+22 of the 28 open pull requests were reviewed and merged; six stay open on purpose. Every contributor PR was merged with a `--no-ff` merge
+commit so its commits stay in history and GitHub shows it as merged; review patches are separate commits. The private repository
+received the same changes (it is the source of truth) and was verified there; the application repository's own Actions still cannot run
+(billing), so the stand-in was local gates plus the public engine CI.
+
+**Dependabot (#44 to #48), applied and proved in the private repository, recorded in the engine with a content-neutral merge:** tokio-stream
+0.1.19, tokio-test 0.4.6, regex 1.13.1 (fixes unsound reverse-suffix optimisations), **pasetors 0.7.8 to 0.8.1** and **argon2 0.5.3 to
+0.6.0**. The two security-critical ones carry evidence: tokens made by pasetors 0.7.8 are committed as test vectors
+(`crates/engine-api/tests/fixtures/paseto-v4-local-vectors.json`, never regenerate) and verify unchanged under 0.8.1, and 600 random tokens
+decrypted identically in both directions across the two versions, so no session ends at deploy and a rollback to the old binary still reads
+new tokens; the committed key-file vectors (including the one made by the reference C implementation) derive byte-identical keys, and 326
+(m, t, p) combinations plus password and salt lengths agreed. The only production source change is splitting one function out of
+`verify_project_device`. No new network or TLS crate; argon2 0.6 adds six small RustCrypto crates and drops one. Not yet in production.
+
+**Contributor batch 1 (#41, #42, #43, #50 to #55, #61), all merged:** test-only coverage (Bengali rich text, attribution and metadata audit
+boundaries, draft recovery, merge scenarios, embedded-image event size, stable node identities), read-only structural invariant diagnostics,
+column-ID cell matching (`similarity::VERSION` 1 to 2, so stored fingerprints are recomputed by the background indexer; nothing hashed or
+signed is affected, and no producer of the sheet-level `column_ids` field exists in our code), the v1 event-hash boundary documentation, and a
+scheduled synthetic-integrity workflow. Patches: #41 per-sheet lookup map (was quadratic), #50 restored two test names, #55 fork guard and a
+missing docs section, #61 stale wording. #43's one CI failure was the known 100 ms SSE timing test on a macOS runner, not the PR.
+
+**Contributor batch 2, write-path validation (#57, #58, #63, #64, #65, #67, #68), all merged:** the API is stricter (restore of a live node, new
+operations on a removed choice, new-ID and position-key validation, private 409 for globally reused IDs, a lost-update guard, project-scoped
+search with bounded pagination). Checked against what the web editors, the agent compiler and the CLI actually send, which found four real
+breaks, patched: #65 would have made a question with a removed choice undeletable (the editor deletes every child of a deleted question);
+#68's 1,024-byte position-key cap would reject keys the editor produces after about 2,200 sequential inserts (raised to 8,192, with all 8,421
+valid vectors of the TypeScript algorithm proved acceptable); #58's canonical-ID rule on selections would block sharing, merging and recovering
+a document that has any historical non-canonical id (selections now accept any existing spelling, new-node IDs stay strictly ULID); #63's
+conflict answer is tested identical for readable and unreadable documents. Evidence: engine 1,464 tests passed (only the known SSE test
+failed), app 1,852 passed, the isolated Chromium suite 154 passed and 2 skipped by design; engine CI green on the earlier batches. **Before the
+next production release run these read-only on the live database:** `select count(*) from node where pos='' or pos ~ '[^ -~]' or pos ~ ' $'
+or octet_length(pos)>8192` (a hit means a client that copies such a key back, as restore and swap do, would get 400) and a count of ids not
+matching `^[0-7][0-9A-HJKMNP-TV-Z]{25}$` (informational). None of this is deployed: production still runs `3fa06fd`.
+
+**Left open (6):** #39 (explicit grouping for interleaved insertions: held since 18 October for the reasons in my comment on it: the trigger
+fires too often and keys grow on every pull; needs the tie-break rule decision), and, at the owner's instruction on 25 October, #56 (opt-in
+verified-prefix cache for writes), #59 (reject unrepresentable event diffs), #60 (bind new snapshots and audit proofs to the event-prefix
+Merkle root), #62 (poisoned-lock recovery and removal of unchecked panics, 32 files) and #66 (remove the duplicate event index). Reviewers
+for these were started and stopped before they merged anything. When they are taken up: #60 and #66 add migrations numbered 0045 and 0046 by
+the contributor, which collide with the real migrations; they must be renumbered to 0048 and later and rehearsed on a production copy, and
+#60 must keep every existing snapshot verifying unchanged and carries a known-answer vector requirement; #59 and #62 overlap heavily with this
+week's files; #56 must be proven identical to the uncached path with multiple API processes sharing a database.
+
 ## Source: public website brought in line with the product (23 October 2026)
 
 Every push to `main` deploys the public site (dynodoc.online) on Vercel at once, so it had been running the new web build since
