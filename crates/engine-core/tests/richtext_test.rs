@@ -237,6 +237,41 @@ fn golden_browser_replay_fixture() {
 }
 
 #[test]
+fn image_attr_edit_event_size() {
+    let src = format!("data:image/png;base64,{}", "A".repeat(375_000));
+    let mut content = json!({"type":"image","attrs":{"src":src,"alt":"Original","width":100}});
+    let mut current = state(content.clone());
+    for (attribute, value) in [
+        ("alt", json!("Revised alternative text")),
+        ("width", json!(640)),
+    ] {
+        content["attrs"][attribute] = value;
+        let edit = EventPayload::FieldEdited {
+            node_id: NodeId("stable".into()),
+            field: "content".into(),
+            value: content.clone(),
+        };
+        let compacted = richtext::compact_event(&current, &edit);
+        let bytes = serde_json::to_vec(&compacted).unwrap().len();
+        eprintln!("image {attribute} edit: {bytes} serialized payload bytes");
+        // V1 replaces the attribute object, including the embedded source. A future
+        // attribute-only patch format must deliberately revise this known limit.
+        assert!(matches!(compacted, EventPayload::FieldEdited { .. }));
+        assert!(
+            bytes > 375_000,
+            "the current event still contains the image: {bytes}"
+        );
+        assert!(bytes < 376_024, "unexpected overhead: {bytes}");
+        apply_payload(&mut current, &compacted).unwrap();
+        assert_eq!(
+            current.nodes[&NodeId("stable".into())].current_fields["content"],
+            content
+        );
+        assert_eq!(content["attrs"]["src"], src);
+    }
+}
+
+#[test]
 fn image_attributes_merge_key_by_key() {
     let img = json!({"type":"image","attrs":{"src":"a.png","width":100,"alt":""}});
     let mut width = img.clone();
@@ -315,4 +350,93 @@ fn a_literal_object_replacement_character_is_not_an_atom() {
     let team = para(json!([t("A\u{fffc}b"), json!({"type":"hardBreak"})]));
     let draft = para(json!([t("a\u{fffc}B"), json!({"type":"hardBreak"})]));
     assert!(richtext::merge(&base, &team, &draft).is_none());
+}
+
+#[test]
+fn paragraph_layout_merges_with_spacing_and_wording_but_competing_indents_conflict() {
+    let base = p("alpha beta");
+    let mut indent = base.clone();
+    indent["attrs"]["indent"] = json!(2);
+    let mut spacing = base.clone();
+    spacing["attrs"]["spaceBefore"] = json!(12);
+    let mut expected = indent.clone();
+    expected["attrs"]["spaceBefore"] = json!(12);
+    for (left, right) in [(&indent, &spacing), (&spacing, &indent)] {
+        assert_eq!(richtext::merge(&base, left, right), Some(expected.clone()));
+    }
+    let wording = p("alpha revised");
+    let mut expected = wording.clone();
+    expected["attrs"]["indent"] = json!(2);
+    for (left, right) in [(&indent, &wording), (&wording, &indent)] {
+        assert_eq!(richtext::merge(&base, left, right), Some(expected.clone()));
+    }
+    let mut other_indent = base.clone();
+    other_indent["attrs"]["indent"] = json!(4);
+    assert!(richtext::merge(&base, &indent, &other_indent).is_none());
+    assert!(richtext::merge(&base, &other_indent, &indent).is_none());
+}
+
+#[test]
+fn underline_and_highlight_merge_with_independent_marks() {
+    for (left, right) in [
+        (json!({"type":"bold"}), json!({"type":"underline"})),
+        (
+            json!({"type":"highlight","attrs":{"color":"#ffff00"}}),
+            json!({"type":"italic"}),
+        ),
+    ] {
+        let base = p("Findings");
+        let a = styled("Findings", json!([left]));
+        let b = styled("Findings", json!([right]));
+        for (a, b) in [(&a, &b), (&b, &a)] {
+            let merged = richtext::merge(&base, a, b).unwrap();
+            let marks = merged["content"][0]["marks"].as_array().unwrap();
+            assert_eq!(marks.len(), 2);
+            assert!(marks.contains(&left) && marks.contains(&right));
+            assert_eq!(richtext::plain_text(&merged), "Findings");
+        }
+    }
+}
+
+#[test]
+fn bold_and_link_changes_preserve_a_reword_elsewhere() {
+    let base = p("alpha beta");
+    for mark in [
+        json!({"type":"bold"}),
+        json!({"type":"link","attrs":{"href":"https://example.test/"}}),
+    ] {
+        let mut marked = base.clone();
+        marked["content"] = json!([
+            {"type":"text","text":"alpha","marks":[mark]},
+            {"type":"text","text":" beta"},
+        ]);
+        let wording = p("alpha revised");
+        let mut expected = marked.clone();
+        expected["content"][1]["text"] = json!(" revised");
+        for (left, right) in [(&marked, &wording), (&wording, &marked)] {
+            assert_eq!(richtext::merge(&base, left, right), Some(expected.clone()));
+        }
+    }
+}
+
+#[test]
+fn same_word_replaced_differently_conflicts() {
+    let base = p("alpha beta");
+    let team = p("alpha team");
+    let draft = p("alpha draft");
+    assert!(richtext::merge(&base, &team, &draft).is_none());
+    assert!(richtext::merge(&base, &draft, &team).is_none());
+}
+
+#[test]
+fn concurrent_nested_table_cell_edits_require_explicit_resolution() {
+    let cell = |text| json!({"type":"tableCell","content":[p(text)]});
+    let base = json!({"type":"table","content":[{"type":"tableRow","content":[cell("left"),cell("right")]}]});
+    let mut team = base.clone();
+    team["content"][0]["content"][0] = cell("team");
+    let mut draft = base.clone();
+    draft["content"][0]["content"][1] = cell("draft");
+    // Nested cells have no stable merge identity in the current patch contract.
+    assert!(richtext::merge(&base, &team, &draft).is_none());
+    assert!(richtext::merge(&base, &draft, &team).is_none());
 }

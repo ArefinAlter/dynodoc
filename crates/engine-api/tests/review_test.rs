@@ -881,3 +881,86 @@ async fn viewers_cannot_push_and_outsiders_cannot_see_requests(pool: PgPool) {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(listed["items"].as_array().unwrap().len(), 1);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn merged_request_records_merger_as_actor(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let owner = identity(&pool, "merger@example.test").await;
+    let contributor = identity(&pool, "contributor@example.test").await;
+    let (status, created) = post(
+        &router,
+        "/documents",
+        &owner,
+        json!({"title":"Attribution"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    let doc = Uuid::parse_str(created["id"].as_str().unwrap()).unwrap();
+    let (status, member) = post(
+        &router,
+        &format!("/documents/{doc}/members"),
+        &owner,
+        json!({"email":"contributor@example.test","role":"reviewer"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{member}");
+    let root = ulid::Ulid::generate().to_string();
+    let (status, seeded) = post(&router, &format!("/documents/{doc}/batch"), &owner,
+        json!({"base_seq":0,"ops":[{"type":"NodeCreated","node_id":root,"node_type":"form","pos":"a0","fields":{"label":"Original"}}]})).await;
+    assert_eq!(status, StatusCode::OK, "{seeded}");
+    let (status, request) = post(&router, &format!("/documents/{doc}/change-requests"), &contributor,
+        json!({"name":"Contributor edit","base_seq":1,"submit":true,"ops":[{"type":"FieldEdited","node_id":root,"field":"label","value":"Contributed"}]})).await;
+    assert_eq!(status, StatusCode::OK, "{request}");
+    let uri = format!(
+        "/documents/{doc}/change-requests/{}",
+        request["id"].as_str().unwrap()
+    );
+    let (status, preview) = get(&router, &uri, &owner).await;
+    assert_eq!(status, StatusCode::OK, "{preview}");
+    let (status, merged) = post(
+        &router,
+        &format!("{uri}/merge"),
+        &owner,
+        json!({"team_seq":preview["team_seq"],"revision":preview["revision"]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{merged}");
+    assert_eq!(merged["completed"], true);
+    let merger: Uuid =
+        sqlx::query_scalar("select id from identity where email='merger@example.test'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let proposer: Uuid =
+        sqlx::query_scalar("select id from identity where email='contributor@example.test'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_ne!(merger, proposer);
+    let events: Vec<(Uuid, Value)> = sqlx::query_as(
+        "select actor_id,payload from event where document_id=$1 and seq>1 order by seq",
+    )
+    .bind(doc)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].0, merger);
+    assert_eq!(events[0].1["value"], "Contributed");
+    let creator: Uuid = sqlx::query_scalar("select created_by from workspace_draft where id=$1")
+        .bind(Uuid::parse_str(request["id"].as_str().unwrap()).unwrap())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        creator, proposer,
+        "the draft retains the distinct contributor"
+    );
+    let (_, team) = get(&router, &format!("/documents/{doc}"), &owner).await;
+    assert_eq!(
+        team["state"]["nodes"][&root]["current_fields"]["label"],
+        "Contributed"
+    );
+    let (_, verified) = get(&router, &format!("/documents/{doc}/verify"), &owner).await;
+    assert_eq!(verified["ok"], true);
+}

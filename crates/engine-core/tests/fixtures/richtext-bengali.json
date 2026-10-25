@@ -1,0 +1,9 @@
+[
+  {"name":"conjunct consonant", "before":"ক্ষ", "after":"ক্খ"},
+  {"name":"precomposed ya to decomposed", "before":"য়", "after":"য়"},
+  {"name":"decomposed ya to precomposed", "before":"য়", "after":"য়"},
+  {"name":"khanda ta", "before":"ত্", "after":"ৎ"},
+  {"name":"zero width joiner", "before":"ক্ষ", "after":"ক্‍ষ"},
+  {"name":"zero width non joiner", "before":"ক্ষ", "after":"ক্‌ষ"},
+  {"name":"joiner to non joiner", "before":"ক্‍ষ", "after":"ক্‌ষ"}
+]

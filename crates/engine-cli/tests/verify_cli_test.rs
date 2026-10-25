@@ -168,3 +168,104 @@ async fn verify_accepts_only_a_head_in_the_verified_chain(pool: PgPool) {
 
     drop_login(&pool, &role).await;
 }
+
+/// Exercise the Linux/GNU-timeout scheduler against a disposable DB, not a mock CLI.
+#[cfg(target_os = "linux")]
+#[sqlx::test(migrations = "../../migrations")]
+async fn scheduled_checks_notify_on_projection_or_snapshot_failure(pool: PgPool) {
+    use std::os::unix::fs::PermissionsExt;
+
+    let actor = actor(&pool).await;
+    let (doc, root) = document(&pool, actor, "Scheduled").await;
+    let snapshot = engine_core::snapshot::SnapshotEngine::new(pool.clone())
+        .take(doc, engine_core::snapshot::SnapshotReason::Periodic)
+        .await
+        .unwrap();
+    // Model a historical snapshot without a receipt. Runtime backfill must work.
+    sqlx::raw_sql("alter table snapshot_verification disable trigger snapshot_verification_no_delete; delete from snapshot_verification; alter table snapshot_verification enable trigger snapshot_verification_no_delete")
+        .execute(&pool).await.unwrap();
+    let (url, role) = runtime_login(&pool).await;
+    let dir = std::env::temp_dir().join(format!("dynodoc-verification-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir(&dir).unwrap();
+    let alert = dir.join("capture-alert");
+    let capture = dir.join("alerts");
+    std::fs::write(&alert, "#!/bin/sh\ncat >> \"$ALERT_CAPTURE\"\n").unwrap();
+    std::fs::set_permissions(&alert, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let check = || {
+        Command::new("sh")
+            .arg(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../scripts/verify-scheduled.sh"
+            ))
+            .env("DATABASE_URL", &url)
+            .env("ENGINE_CLI", env!("CARGO_BIN_EXE_engine-cli"))
+            .env("DYNODOC_VERIFY_ALERT", &alert)
+            .env("DYNODOC_VERIFY_TIMEOUT", "30s")
+            .env("ALERT_CAPTURE", &capture)
+            .env("RUST_LOG", "off")
+            .output()
+            .unwrap()
+    };
+    let clean = check();
+    assert!(clean.status.success(), "{clean:?}");
+    assert!(!capture.exists(), "a successful run must stay quiet");
+    let receipts: i64 = sqlx::query_scalar("select count(*) from snapshot_verification")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(receipts, 1);
+
+    sqlx::query("update node set pos='zz' where id=$1")
+        .bind(&root)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let drift = check();
+    assert_eq!(drift.status.code(), Some(1), "{drift:?}");
+    let alert_text = std::fs::read_to_string(&capture).unwrap();
+    assert!(
+        alert_text.contains("verify-projection=1 verify-snapshots=0"),
+        "{alert_text}"
+    );
+    assert!(!alert_text.contains(&doc.0.to_string()));
+    assert!(!alert_text.contains(&root));
+    assert!(!alert_text.contains(&url));
+
+    sqlx::query("update node set pos='a0' where id=$1")
+        .bind(&root)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::query("alter table snapshot disable trigger snapshot_no_update")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    sqlx::query(
+        "update snapshot set state=jsonb_set(state,$2,'\"Corrupted snapshot\"') where id=$1",
+    )
+    .bind(snapshot.id.0)
+    .bind(vec!["nodes", &root, "current_fields", "title"])
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    sqlx::query("alter table snapshot enable trigger snapshot_no_update")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let corrupt = check();
+    assert_eq!(corrupt.status.code(), Some(1), "{corrupt:?}");
+    let alerts = std::fs::read_to_string(&capture).unwrap();
+    assert_eq!(alerts.lines().count(), 2, "{alerts}");
+    assert!(
+        alerts
+            .lines()
+            .last()
+            .unwrap()
+            .contains("verify-snapshots=1"),
+        "{alerts}"
+    );
+    drop_login(&pool, &role).await;
+    std::fs::remove_dir_all(&dir).unwrap();
+}

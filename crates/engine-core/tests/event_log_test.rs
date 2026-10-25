@@ -374,3 +374,100 @@ async fn append_in_tx_rolls_back_without_commit(pool: PgPool) -> anyhow::Result<
     assert!(events.is_empty(), "rolled-back appends leave no events");
     Ok(())
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn known_limit_created_at_not_hashed(pool: PgPool) -> anyhow::Result<()> {
+    let (actor, doc, node) = seed(&pool).await?;
+    let original = append(&pool, doc, &field_edit(&node, "label", "Synthetic"), actor).await?;
+    // Only this disposable database owner bypasses the production append-only guard.
+    let mut tx = pool.begin().await?;
+    sqlx::query("alter table event disable trigger event_no_update")
+        .execute(&mut *tx)
+        .await?;
+    let changed: chrono::DateTime<chrono::Utc> = sqlx::query_scalar(
+        "update event set created_at=created_at+interval '1 day' where id=$1 returning created_at",
+    )
+    .bind(&original.id.0)
+    .fetch_one(&mut *tx)
+    .await?;
+    sqlx::query("alter table event enable trigger event_no_update")
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    assert_ne!(changed, original.created_at);
+    let stored = read_range(&pool, doc, 1, 1).await?.remove(0);
+    assert_eq!(stored.content_hash, original.content_hash);
+    assert_eq!(stored.chain_hash, original.chain_hash);
+    verify_chain(&pool, doc).await?;
+    Ok(())
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn known_limit_event_id_not_hashed(pool: PgPool) -> anyhow::Result<()> {
+    let (actor, doc, _) = seed(&pool).await?;
+    let original = append(
+        &pool,
+        doc,
+        &EventPayload::CommentAdded {
+            node_id: None,
+            body: "Synthetic comment".into(),
+        },
+        actor,
+    )
+    .await?;
+    let replacement = ulid::Ulid::generate().to_string();
+    assert_ne!(replacement, original.id.0);
+    let mut tx = pool.begin().await?;
+    sqlx::query("alter table event disable trigger event_no_update")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("update event set id=$1 where id=$2")
+        .bind(&replacement)
+        .bind(&original.id.0)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("alter table event enable trigger event_no_update")
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    let stored = read_range(&pool, doc, 1, 1).await?.remove(0);
+    assert_eq!(stored.id.0, replacement);
+    assert_eq!(stored.content_hash, original.content_hash);
+    assert_eq!(stored.chain_hash, original.chain_hash);
+    verify_chain(&pool, doc).await?;
+    // The discussions reader uses event IDs as thread IDs. The base materializer
+    // retains comment content only; this assertion is about the event commitment.
+    Ok(())
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn known_limit_chain_copy_to_other_document_verifies(pool: PgPool) -> anyhow::Result<()> {
+    let (actor, source, _) = seed(&pool).await?;
+    let original = append(
+        &pool,
+        source,
+        &EventPayload::CommentAdded {
+            node_id: None,
+            body: "Synthetic unanchored comment".into(),
+        },
+        actor,
+    )
+    .await?;
+    let other: uuid::Uuid = sqlx::query_scalar(
+        "insert into document(title,created_by) values('Other synthetic document',$1) returning id",
+    )
+    .bind(actor.0)
+    .fetch_one(&pool)
+    .await?;
+    sqlx::query("insert into event(id,document_id,seq,type,actor_id,target_node_id,payload,content_hash,prev_chain_hash,chain_hash,created_at) select $1,$2,seq,type,actor_id,target_node_id,payload,content_hash,prev_chain_hash,chain_hash,created_at from event where document_id=$3")
+        .bind(ulid::Ulid::generate().to_string()).bind(other).bind(source.0).execute(&pool).await?;
+    let copied = read_range(&pool, DocumentId(other), 1, 1).await?.remove(0);
+    assert_ne!(copied.document_id, original.document_id);
+    assert_ne!(copied.id, original.id);
+    assert_eq!(copied.payload, original.payload);
+    assert_eq!(copied.content_hash, original.content_hash);
+    assert_eq!(copied.chain_hash, original.chain_hash);
+    verify_chain(&pool, source).await?;
+    verify_chain(&pool, DocumentId(other)).await?;
+    Ok(())
+}

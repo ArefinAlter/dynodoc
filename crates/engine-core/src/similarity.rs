@@ -22,11 +22,13 @@
 //! platforms, so stored fingerprints stay comparable: changing a constant or the
 //! normalisation requires re-indexing (bump [`VERSION`]).
 use crate::materializer::DocumentState;
+use engine_shared::NodeId;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 
 /// Stored fingerprints with a different version are recomputed.
-pub const VERSION: i16 = 1;
+pub const VERSION: i16 = 2;
 /// MinHash signature length; a power of two so the bin is the hash's top bits.
 pub const SIGNATURE_LEN: usize = 128;
 const BIN_BITS: u32 = 7;
@@ -498,8 +500,14 @@ fn field_text(value: &Value) -> Option<String> {
 /// The comparable text of every live block: paragraphs and headings, questionnaire
 /// items, spreadsheet rows (cells joined in column order), slide text boxes and
 /// speaker notes. Root nodes carry the title, which is compared separately.
+/// A sheet may declare `column_ids: ["id", ...]` in display order. Its rows then
+/// use `cell_<id>` fields; numeric `columns` counts and legacy `cell_N` rows remain
+/// supported. Undeclared ID cells are not guessed into an arbitrary order.
 pub fn block_texts(state: &DocumentState) -> Vec<String> {
     let mut out = Vec::new();
+    // Declared column positions per sheet, built once so wide sheets with many rows
+    // do not rescan the ID list for every cell. A repeated ID keeps its first position.
+    let mut positions: HashMap<&NodeId, Option<HashMap<&str, usize>>> = HashMap::new();
     for node in state.nodes.values() {
         if node.deleted || node.parent_id.is_none() || state.removed_choices.contains(&node.id) {
             continue;
@@ -512,12 +520,36 @@ pub fn block_texts(state: &DocumentState) -> Vec<String> {
                 .map(crate::richtext::plain_text)
                 .filter(|t| !t.trim().is_empty())
         });
+        let column_ids = node.parent_id.as_ref().and_then(|id| {
+            positions
+                .entry(id)
+                .or_insert_with(|| {
+                    let parent = state.nodes.get(id)?;
+                    if parent.deleted || state.removed_choices.contains(&parent.id) {
+                        return None;
+                    }
+                    let ids = parent.current_fields.get("column_ids")?.as_array()?;
+                    let mut map = HashMap::new();
+                    for (position, id) in ids.iter().enumerate() {
+                        if let Some(id) = id.as_str() {
+                            map.entry(id).or_insert(position);
+                        }
+                    }
+                    Some(map)
+                })
+                .as_ref()
+        });
         let mut cells: Vec<(usize, String)> = fields
             .as_object()
             .into_iter()
             .flat_map(|o| o.iter())
             .filter_map(|(key, value)| {
-                let column = key.strip_prefix("cell_")?.parse::<usize>().ok()?;
+                let suffix = key.strip_prefix("cell_")?;
+                let column = if let Some(ids) = column_ids {
+                    *ids.get(suffix)?
+                } else {
+                    suffix.parse::<usize>().ok()?
+                };
                 Some((column, field_text(value)?))
             })
             .collect();
@@ -722,5 +754,74 @@ mod tests {
         let mut texts = block_texts(&state);
         texts.sort();
         assert_eq!(texts, vec!["Agenda", "Say hello", "Tariq | 12 | x"]);
+    }
+
+    fn sheet(fields: Value, columns: Value) -> DocumentState {
+        use crate::materializer::MaterializedNode;
+        use engine_shared::NodeId;
+        let mut state = DocumentState::default();
+        for (id, parent, fields) in [
+            ("sheet", None, columns),
+            ("row", Some(NodeId("sheet".into())), fields),
+        ] {
+            let node = MaterializedNode {
+                id: NodeId(id.into()),
+                parent_id: parent,
+                node_type: "item".into(),
+                pos: "a".into(),
+                current_fields: fields,
+                var_name: None,
+                deleted: false,
+            };
+            state.nodes.insert(node.id.clone(), node);
+        }
+        state
+    }
+
+    #[test]
+    fn column_id_cells_match_legacy_fingerprints_in_declared_order() {
+        let legacy = sheet(
+            serde_json::json!({"cell_0":"A complete household report", "cell_2":false, "cell_10":12}),
+            serde_json::json!({"columns":11}),
+        );
+        let ids = sheet(
+            serde_json::json!({"cell_z":"A complete household report", "cell_a":false, "cell_m":12}),
+            serde_json::json!({"column_ids":["z", "blank", "a", "m"]}),
+        );
+        assert_eq!(block_texts(&ids), block_texts(&legacy));
+        assert_eq!(
+            serde_json::to_value(fingerprint_state(&ids)).unwrap(),
+            serde_json::to_value(fingerprint_state(&legacy)).unwrap()
+        );
+    }
+
+    #[test]
+    fn column_order_is_sheet_scoped_and_hides_undeclared_cells() {
+        let mut state = sheet(
+            serde_json::json!({"cell_z":"first", "cell_a":"second", "cell_0":"stale", "cell_orphan":"hidden"}),
+            serde_json::json!({"column_ids":["z", "a", "z", null]}),
+        );
+        assert_eq!(block_texts(&state), vec!["first | second"]);
+        state
+            .nodes
+            .get_mut(&engine_shared::NodeId("sheet".into()))
+            .unwrap()
+            .current_fields["column_ids"] = serde_json::json!(["a", "z"]);
+        assert_eq!(block_texts(&state), vec!["second | first"]);
+        state
+            .nodes
+            .get_mut(&engine_shared::NodeId("sheet".into()))
+            .unwrap()
+            .current_fields["column_ids"] = serde_json::json!([]);
+        assert!(block_texts(&state).is_empty());
+    }
+
+    #[test]
+    fn column_id_rows_require_metadata_but_numeric_rows_keep_their_order() {
+        let state = sheet(
+            serde_json::json!({"cell_10":"ten", "cell_2":"two", "cell_z":"unknown"}),
+            serde_json::json!({"column_ids":"invalid"}),
+        );
+        assert_eq!(block_texts(&state), vec!["two | ten"]);
     }
 }

@@ -30,6 +30,9 @@ use serde::{Deserialize, Serialize};
 use crate::expr;
 use crate::materializer::{DocumentState, MaterializedNode};
 
+mod invariants;
+pub use invariants::{check_invariants, InvariantViolation};
+
 /// The `current_fields` keys whose string values are reference-bearing expressions
 /// (docs/21 item 2: relevance, constraint, calculation). All are scanned for `${var}`
 /// references and parsed for the richer type/choice checks.

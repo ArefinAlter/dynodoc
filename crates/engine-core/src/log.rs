@@ -22,6 +22,20 @@
 //! field) makes the concatenation unambiguous. The payload is canonicalized
 //! (recursively sorted keys, no whitespace) so the digest is reproducible across
 //! the JSONB round-trip.
+//!
+//! V1 does **not** hash `document_id`, `seq`, the event `id`, or `created_at`.
+//! Verification separately checks the requested document, sequence continuity and
+//! predecessor hashes; these checks do not cryptographically bind those excluded
+//! fields. In particular, a privileged writer can copy a complete chain to another
+//! document and it still passes chain verification. Changing an event ID also changes
+//! a `CommentAdded` thread's identity without changing its v1 commitment. Database
+//! `now()` timestamps may be identical for all events in a transaction and are not
+//! independently witnessed creation times.
+//!
+//! Append-only storage and an externally retained head remain separate safeguards.
+//! An event-v2 contract would need version-aware hashing/readers; these exclusions
+//! must not be repaired by changing historical v1 hash bytes. Portable signed commits
+//! and receipts are distinct formats; see the evolution plan, part 6.
 
 use engine_shared::{DocumentId, Event, EventPayload, IdentityId};
 use futures::TryStreamExt;
