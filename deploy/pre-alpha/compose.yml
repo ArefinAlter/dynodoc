@@ -1,0 +1,60 @@
+# Dynodoc pre-alpha service, next to the existing workspace stack (compose project dynodoc-demo).
+# Both containers sit only on that stack's internal engine network (no route out of the host);
+# the service answers on a unix socket (./run/svc.sock) that nginx proxies as https://app.dynodoc.online/svc/.
+name: dynodoc-prealpha
+x-common: &common
+  build: .
+  image: dynodoc-prealpha-svc:0.0.1-alpha
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  tmpfs: [/tmp:size=16m]
+  pids_limit: 64
+  networks: [engine]
+  logging:
+    driver: json-file
+    options: { max-size: 10m, max-file: '3' }
+services:
+  svc:
+    <<: *common
+    command: [node, svc.mjs]
+    environment:
+      PUBLIC_ORIGIN: https://app.dynodoc.online
+      ENGINE_API_URL: http://api:8080
+      SESSION_SECRET_FILE: /run/secrets/session_secret
+      PREALPHA_DB: /data/prealpha.sqlite
+      PREALPHA_SOCKET: /run/prealpha/svc.sock
+      PREALPHA_SANDBOX_HOURS: '24'
+    secrets: [session_secret]
+    volumes:
+      - data:/data
+      - ./run:/run/prealpha
+    mem_limit: 256m
+    cpus: 0.5
+  provisioner:
+    <<: *common
+    command: [node, provisioner.mjs]
+    environment:
+      ENGINE_API_URL: http://api:8080
+      WEB_SERVICE_KEY_FILE: /run/secrets/web_service_key
+      PREALPHA_DB: /data/prealpha.sqlite
+      PREALPHA_POOL: '3'
+      PREALPHA_MAX_LIVE: '300'
+      PREALPHA_SANDBOX_HOURS: '24'
+    secrets: [web_service_key]
+    volumes:
+      - data:/data
+    mem_limit: 256m
+    cpus: 0.5
+networks:
+  engine:
+    name: dynodoc-demo_engine
+    external: true
+secrets:
+  session_secret:
+    file: ./secrets/session_secret
+  web_service_key:
+    file: ./secrets/web_service_key
+volumes:
+  data: {}
