@@ -7,22 +7,21 @@
   // Commands from the engine repository's README and Taskfile.yml. The workspace and website
   // live in a private repository and have no public setup.
   const steps = [
-    { n: '01', label: 'Start PostgreSQL 16 on loopback port 5548', code: 'task up' },
-    { n: '02', label: 'Apply migrations with the operator login', code: 'task migrate' },
+    { n: '1', label: 'Start PostgreSQL 16 on loopback port 5548', code: 'task up' },
+    { n: '2', label: 'Apply migrations with the operator login', code: 'task migrate' },
     {
-      n: '03',
+      n: '3',
       label: 'Grant the restricted runtime login its allowlist',
       code: 'task db:grant-runtime'
     },
-    { n: '04', label: 'Run the HTTP API on loopback port 8080', code: 'task run' }
+    { n: '4', label: 'Run the HTTP API on loopback port 8080', code: 'task run' }
   ];
 </script>
 
 <Section
   id="self-host"
   tone="muted"
-  eyebrow="OPEN ENGINE"
-  title="The engine is open source. Run it yourself."
+  title="Running the open-source engine"
   lede="The engine, API and command-line tools are open source under the MIT licence. Run the API on your own machine against PostgreSQL 16. The workspace and website are not published as open source."
   layout="split"
 >
@@ -31,7 +30,7 @@
       <ol class="steps">
         {#each steps as step (step.n)}
           <li data-reveal>
-            <span class="num">STEP {step.n}</span>
+            <span class="num">Step {step.n}</span>
             <p>{step.label}</p>
             <CopyCode code={step.code} label={step.code} />
           </li>

@@ -9,7 +9,7 @@ export const FAQ: FaqEntry[] = [
   {
     question: 'What is Dynodoc?',
     answer:
-      'Dynodoc is version control for documents written in Word, Google Docs, Excel, Google Sheets, PowerPoint and Google Slides. It records changes against stable paragraph, cell and slide identities, routes them through change requests and review, and keeps an append-only, hash-chained history that can be verified. You keep editing in the tools you already use.'
+      'Dynodoc is version control for documents written in Word, Google Docs, Excel, Google Sheets, PowerPoint and Google Slides. It records changes against stable paragraph, cell and slide identities, routes them through change requests and review, and keeps an append-only, hash-chained history that can be verified. Editing stays in those editors.'
   },
   {
     question: 'How is it different from track changes or version history?',

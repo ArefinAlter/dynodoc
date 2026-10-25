@@ -7,12 +7,11 @@
   import { Check } from '@lucide/svelte';
 
   /**
-   * One numbered feature: number and status chips, title, short body, concrete points and
-   * an honest boundary on one side; a product mockup on the other (`flip` swaps them).
+   * One feature: status chips, title, short body, concrete points and
+   * the limits on one side; a product mockup on the other (`flip` swaps them).
    */
   let {
     id,
-    n,
     title,
     chips,
     body,
@@ -23,7 +22,6 @@
     visual
   }: {
     id: string;
-    n: string;
     title: string;
     chips: FeatureChip[];
     body: string;
@@ -38,7 +36,6 @@
 <article {id} class="row" class:flip data-reveal aria-labelledby="{id}-title">
   <div class="text">
     <div class="meta">
-      <span class="num">{n}</span>
       <ul class="chips" aria-label="Status">
         {#each chips as chip (chip.label)}
           <li class="chip chip--{chip.kind}">
@@ -57,7 +54,7 @@
         <li><Check size={16} aria-hidden="true" /><span>{point}</span></li>
       {/each}
     </ul>
-    <p class="boundary"><span class="eyebrow">Boundary</span>{boundary}</p>
+    <p class="boundary"><span class="eyebrow">Limits</span>{boundary}</p>
   </div>
   <figure class="visual">
     {@render visual()}
@@ -91,10 +88,6 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 10px 14px;
-  }
-  .num {
-    font-size: 0.875rem;
-    color: var(--color-ink);
   }
   .chips {
     display: flex;

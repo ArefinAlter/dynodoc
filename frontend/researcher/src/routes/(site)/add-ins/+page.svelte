@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Btn, Eyebrow, Faq, Section, scrollable, spotlight } from '$lib/components/site';
+  import { Btn, Faq, Section, scrollable, spotlight } from '$lib/components/site';
   import { AddinMock } from '$lib/components/mock';
   import Dino from '$lib/art/Dino.svelte';
   import Ptero from '$lib/art/Ptero.svelte';
@@ -99,22 +99,22 @@
 
   const steps = [
     {
-      n: '01',
+      n: '1',
       title: 'Connect',
       text: 'Choose Sign in to Dynodoc in the pane. A browser window opens, you check the code matches, pick one file and approve. The editor never sees your password.'
     },
     {
-      n: '02',
+      n: '2',
       title: 'Capture',
       text: 'Turn capture on. While the pane is open, Dynodoc compares snapshots and keeps edits to existing text in a queue on your device. Nothing is sent yet.'
     },
     {
-      n: '03',
+      n: '3',
       title: 'Review',
       text: 'Push the queue for review. It becomes a pull request in your project, where teammates compare before and after, approve or request changes, and merge.'
     },
     {
-      n: '04',
+      n: '4',
       title: 'Apply',
       text: 'Preview the merged team changes in the pane, then apply them. If the file changed after the preview, Dynodoc stops instead of overwriting your work.'
     }
@@ -203,7 +203,7 @@
   {@html faqScript}
 </svelte:head>
 
-{#snippet hostCard(card: Card, index: number)}
+{#snippet hostCard(card: Card)}
   <article class="host" data-reveal>
     <div class="host__mock">
       <AddinMock host={card.host} />
@@ -212,7 +212,6 @@
       </p>
     </div>
     <div class="host__body">
-      <p class="num">{String(index + 1).padStart(2, '0')}</p>
       <h3 class="h-2">{card.name}</h3>
       <p class="status small">
         <span class="dot" aria-hidden="true"></span>Test install today · no marketplace listing
@@ -244,8 +243,7 @@
   <header class="hero dotgrid dotgrid--fade spotlight" use:spotlight>
     <div class="container hero__grid">
       <div class="hero__copy">
-        <Eyebrow label="EDITORS & ADD-INS" />
-        <h1 class="h-1">Keep editing where <span class="hl">you already work</span>.</h1>
+        <h1 class="h-1">Editors and add-ins</h1>
         <p class="lede">
           Connect Word, Excel, PowerPoint, Google Docs, Sheets and Slides to a Dynodoc project.
           Edits to existing text are recorded while the pane is open, sent for review, and approved
@@ -267,15 +265,11 @@
     </div>
   </header>
 
-  <Section
-    id="how-it-works"
-    eyebrow="HOW IT WORKS"
-    title="Four steps from a typed edit to a team-approved change."
-  >
+  <Section id="how-it-works" title="How the add-ins work">
     <ol class="steps">
       {#each steps as step (step.n)}
         <li class="card step" data-reveal>
-          <span class="num">STEP {step.n}</span>
+          <span class="num">Step {step.n}</span>
           <h3 class="h-3">{step.title}</h3>
           <p>{step.text}</p>
         </li>
@@ -285,31 +279,28 @@
 
   <Section
     id="microsoft"
-    eyebrow="MICROSOFT OFFICE"
-    title="Word, Excel and PowerPoint."
+    title="Word, Excel and PowerPoint"
     lede="Task-pane add-ins. After installing, open the Home tab and choose the Dynodoc button."
     tone="muted"
   >
     <div class="hosts">
-      {#each office as card, i (card.host)}{@render hostCard(card, i)}{/each}
+      {#each office as card (card.host)}{@render hostCard(card)}{/each}
     </div>
   </Section>
 
   <Section
     id="google"
-    eyebrow="GOOGLE WORKSPACE"
-    title="Docs, Sheets and Slides."
+    title="Google Docs, Sheets and Slides"
     lede="Editor add-ons that open in a sidebar from the Extensions menu. Each editor is its own add-on."
   >
     <div class="hosts">
-      {#each google as card, i (card.host)}{@render hostCard(card, i)}{/each}
+      {#each google as card (card.host)}{@render hostCard(card)}{/each}
     </div>
   </Section>
 
   <Section
     id="install"
-    eyebrow="INSTALL A TEST COPY"
-    title="Install it yourself, for your own account."
+    title="Installing a test copy"
     lede="There is no store listing yet, so each add-in is installed directly. Both routes need only your own Office or Google sign-in. Use a disposable copy of a small file in a Dynodoc project."
     tone="muted"
   >
@@ -357,8 +348,7 @@
 
   <Section
     id="data"
-    eyebrow="WHAT IT STORES AND SENDS"
-    title="What stays on your device, and what leaves it."
+    title="What is stored and what is sent"
     lede="The add-in reads only what its adapter covers, only while the pane is open. It does not read other files, other tabs, your contacts, mail, calendar or Drive listing."
   >
     <div class="table-wrap" data-reveal>
@@ -397,12 +387,7 @@
     </div>
   </Section>
 
-  <Section
-    id="marketplace-status"
-    eyebrow="MARKETPLACE STATUS"
-    title="Where the listings stand."
-    tone="muted"
-  >
+  <Section id="marketplace-status" title="Marketplace status" tone="muted">
     <div class="status-box card card--raised" data-reveal>
       <p class="status-box__lead">
         No Microsoft Marketplace or Google Workspace Marketplace listing exists for these add-ins.
@@ -425,16 +410,15 @@
     </div>
   </Section>
 
-  <Section id="faq" eyebrow="QUESTIONS" title="Short answers." layout="split">
+  <Section id="faq" title="Common questions" layout="split">
     <div data-reveal><Faq items={faq} exclusive /></div>
   </Section>
 
   <Section
     id="try"
     tone="ink"
-    eyebrow="TRY IT"
-    title="Start with one disposable file."
-    lede="Add a small file to a project, install a test copy, and send a single edit through review."
+    title="Testing with a disposable file"
+    lede="A small copy of a file in a project is enough to install a test copy and send one edit through review."
   >
     <div class="actions" data-reveal>
       <Btn href="/connectors" arrow>Get the add-in files</Btn>

@@ -153,9 +153,8 @@
 
 <main id="main" use:scrollable>
   <InfoHero
-    eyebrow="FEATURES"
     title="Features"
-    lede="Every paragraph, cell and slide shape keeps an identity. Every change is recorded, reviewed and recoverable. This page says what exists, where it runs and where the edges are."
+    lede="Paragraphs, cells and slide shapes keep a stable identity, and changes to them go through review into a recoverable history. This page says what exists, where it runs and what its limits are."
   >
     {#snippet actions()}
       <Btn href={workspace} arrow>Open Projects</Btn>
@@ -184,17 +183,15 @@
 
   <Section
     id="record"
-    eyebrow="THE RECORD"
-    title="A history that knows what each part is."
-    lede="Two ideas hold everything else up: every part of a document keeps a permanent identity, and every change is appended to a log that can be checked."
+    title="Identity and history"
+    lede="The rest of the product depends on two things: each part of a document keeps a permanent identity, and each change is appended to a log that can be checked."
     layout="split"
   >
     <FeatureRow
       id="identity"
-      n="01"
-      title="Every paragraph, cell and shape keeps its identity."
+      title="Stable identity for paragraphs, cells and shapes"
       chips={[{ kind: 'live', label: 'Live' }]}
-      body="Dynodoc reads a file as logical nodes: paragraphs, table cells, worksheet rows and cells, slides and shapes. Each gets a permanent ID the first time it is seen. Moving, rewording or reformatting changes the node’s content, never who it is, so history follows the thing, not its position."
+      body="Dynodoc reads a file as logical nodes: paragraphs, table cells, worksheet rows and cells, slides and shapes. Each gets a permanent ID the first time it is seen. Moving, rewording or reformatting changes the node’s content but not its ID, so its history stays attached to it when it moves."
       points={[
         'Text inside a node is kept as formatting runs. Bolding a word splits runs and joins them again; the node and its history stay put.',
         'Equal-looking text in unrelated places never becomes one node.',
@@ -212,9 +209,8 @@
 
     <FeatureRow
       id="history"
-      n="02"
       flip
-      title="A history you can check, not just trust."
+      title="Hash-chained history and signed commits"
       chips={[
         { kind: 'live', label: 'Live', detail: 'hash-chained events' },
         { kind: 'source', label: 'In source', detail: 'signed commits and receipts' }
@@ -236,16 +232,14 @@
 
   <Section
     id="review"
-    eyebrow="REVIEW"
-    title="Nothing becomes the team’s version by accident."
-    lede="Edits travel as proposals. Rules decide who must agree, and every outcome is recorded with the account that did it."
+    title="Review"
+    lede="Edits are proposed as change requests. Project rules decide who must approve, and each outcome is recorded with the account that made it."
     layout="split"
     tone="muted"
   >
     <FeatureRow
       id="change-requests"
-      n="03"
-      title="Change requests, review and merge under rules."
+      title="Change requests, review and merge"
       chips={[{ kind: 'live', label: 'Live' }]}
       body="A change request carries selected block changes against a base. Reviewers see what changed in content, formatting and structure, approve or ask for changes, and a merge records its parents, resolutions and result without discarding either contributor."
       points={[
@@ -264,9 +258,8 @@
 
     <FeatureRow
       id="drafts"
-      n="04"
       flip
-      title="Private drafts and branches."
+      title="Private drafts and branches"
       chips={[
         { kind: 'live', label: 'Live', detail: 'per-file drafts' },
         { kind: 'source', label: 'In source', detail: 'project-wide branches' }
@@ -290,15 +283,13 @@
 
   <Section
     id="recover"
-    eyebrow="RECOVER AND SYNC"
-    title="Go back without losing what came after."
-    lede="Old states are readable, recoverable and portable. Recovery adds new work and names its source; it never rewinds the log."
+    title="Recovery and sync"
+    lede="Earlier states can be read and recovered. Recovery adds a new change that names its source; it does not rewind the log."
     layout="split"
   >
     <FeatureRow
       id="recovery"
-      n="05"
-      title="Named versions, restore, revert and cherry-pick."
+      title="Named versions, restore, revert and cherry-pick"
       chips={[
         { kind: 'live', label: 'Live', detail: 'per-file recovery' },
         { kind: 'source', label: 'In source', detail: 'commit-addressed recovery' }
@@ -321,14 +312,13 @@
 
     <FeatureRow
       id="local-first"
-      n="06"
       flip
-      title="Local-first project history and selected-history sync."
+      title="Local project history and selected-history sync"
       chips={[{ kind: 'source', label: 'In source', detail: 'shared writers off' }]}
       body="The project repository lives on your device in SQLite, so commits survive a restart and offline work. A command-line client plans what would become shared, pushes only the selected history and the objects the server is missing, then fetches and fast-forwards a branch while checking every signature and receipt."
       points={[
         'The plan lists every commit and dependency that would become shared, including private ancestry. A push cannot add anything the plan did not show.',
-        'Retries cost nothing: accepted objects and commits are reused, and stale refs and corrupted objects fail closed.',
+        'A retry reuses objects and commits the server already accepted. Stale refs and corrupted objects fail closed.',
         'Pull fast-forwards one chosen local branch with compare-and-swap. It never writes to an open document.'
       ]}
       boundary="Schema 36 is deployed, but shared writers are off and no receipt-signing key is installed, so a push is refused on the hosted pilot. The example commands use an account token; the client can also sign in with a device key limited to one project."
@@ -338,7 +328,7 @@
         <ol class="steps">
           {#each syncSteps as [name, command], index (name)}
             <li>
-              <span class="num">STEP {String(index + 1).padStart(2, '0')} · {name}</span>
+              <span class="num">Step {index + 1}: {name}</span>
               <CopyCode code={command} label="{name} command" />
             </li>
           {/each}
@@ -349,16 +339,14 @@
 
   <Section
     id="control"
-    eyebrow="CONTROL AND CONNECT"
-    title="Your permissions, your editors, your files."
-    lede="Dynodoc is the review and history layer. Microsoft and Google stay the editors, and access rules follow the people involved."
+    title="Access, editors and file formats"
+    lede="Dynodoc handles review and history. Microsoft and Google remain the editors, and access follows each person’s role in the project."
     layout="split"
     tone="muted"
   >
     <FeatureRow
       id="access"
-      n="07"
-      title="Roles, audit and erasure."
+      title="Roles, audit and erasure"
       chips={[{ kind: 'live', label: 'Live' }]}
       body="Access follows the team. Owners and managers control sharing; editors, reviewers and viewers get what their role allows. Reads, downloads, proposals and merges recheck current access every time, and permission and metadata changes keep their own operational audit."
       points={[
@@ -378,9 +366,8 @@
 
     <FeatureRow
       id="editors"
-      n="08"
       flip
-      title="Six editors, one history."
+      title="Editor add-ins"
       chips={[{ kind: 'test', label: 'Test build', detail: 'no marketplace listing' }]}
       body="Add-ins for Word, Excel and PowerPoint and add-ons for Google Docs, Sheets and Slides record edits to existing text and cell values while the pane is open. Send them for review, then preview approved team changes and apply them in one step. Sign-in happens in the browser; each connection reaches one file, expires after seven days and can be revoked."
       points={[
@@ -405,8 +392,7 @@
 
     <FeatureRow
       id="formats"
-      n="09"
-      title="File adapters."
+      title="File adapters"
       chips={[{ kind: 'live', label: 'Live' }]}
       body="Adapters read each format into the same logical nodes and runs, so review and history work the same across files. Add Word, Excel and PowerPoint files, plain text, Markdown and LaTeX to a project. Original uploads are kept, and supported content exports back."
       points={[
@@ -433,8 +419,7 @@
 
   <Section
     id="compare"
-    eyebrow="COMPARE"
-    title="Track changes, version history and Dynodoc."
+    title="Compared with Track changes and version history"
     lede="The built-in tools are good at what they do, and Dynodoc does not replace live co-authoring. The table shows where a recorded, reviewed history adds something and where it gives something up."
     layout="split"
   >
@@ -472,8 +457,7 @@
 
   <Section
     id="questions"
-    eyebrow="QUESTIONS"
-    title="Short answers."
+    title="Common questions"
     lede="Longer answers are in the compatibility guide and on the roadmap."
     layout="split"
     tone="muted"
@@ -489,9 +473,8 @@
   <Section
     tone="ink"
     align="center"
-    eyebrow="START SMALL"
-    title="Start with one file."
-    lede="Create an invite-only project, add a document, and make the first change request."
+    title="Open Projects"
+    lede="Create an invite-only project, add a document and open a change request."
   >
     <div class="closing" data-reveal>
       <Btn href={workspace} size="lg" arrow>Open Projects</Btn>

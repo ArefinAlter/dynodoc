@@ -6,7 +6,7 @@
   const sections = [
     { id: 'summary', title: 'Overview' },
     { id: 'status', title: 'What is live today' },
-    { id: 'history', title: 'What the history guarantees' },
+    { id: 'history', title: 'What the history check covers' },
     { id: 'access', title: 'Access, sessions and keys' },
     { id: 'infrastructure', title: 'Hosting and network' },
     { id: 'limits', title: 'Limits and what we do not claim' },
@@ -42,7 +42,7 @@
       </li>
       <li>
         There is no external audit, no certification and no independent witness of the history yet.
-        The limits are listed below rather than left for you to find.
+        The limits are listed below.
       </li>
     </ul>
   </section>
@@ -160,7 +160,7 @@
     </div>
   </section>
   <section id="history">
-    <h2>What the history guarantees</h2>
+    <h2>What the history check covers</h2>
     <p>
       Each event stores a SHA-256 hash of its type, target, payload and actor, plus a chain hash
       that combines it with the previous event. Altering, removing or reordering an earlier event

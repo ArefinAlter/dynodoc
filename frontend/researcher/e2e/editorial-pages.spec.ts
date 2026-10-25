@@ -4,10 +4,10 @@ import { expect, test } from '@playwright/test';
 // stale research-product vocabulary, and no horizontal overflow on a phone.
 const PAGES: [path: string, heading: RegExp][] = [
   ['/features', /^Features$/],
-  ['/why-dynodoc', /^Documents have no provenance\.$/],
-  ['/roadmap', /^The roadmap, without promises\.$/],
+  ['/why-dynodoc', /^Why document provenance matters$/],
+  ['/roadmap', /^Roadmap$/],
   ['/changelog', /^Changelog$/],
-  ['/open-source', /^Open source, and what that covers\.$/],
+  ['/open-source', /^Open source$/],
   ['/brand', /^Brand and press kit$/]
 ];
 

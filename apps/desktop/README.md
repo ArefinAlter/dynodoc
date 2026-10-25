@@ -41,7 +41,8 @@ an iPhone or a physical phone.
 | `src-tauri/tauri.{windows,linux,macos}.conf.json` | Add the `engine-cli` sidecar on desktop only (a phone build must not look for it). |
 | `src-tauri/capabilities/` | Who may call what. `launcher.json` (desktop) and `launcher-mobile.json` (phones). No `remote` section anywhere. |
 | `src-tauri/icons/` | Generated from the Dynodoc mark with `tauri icon` (desktop, Android and iOS sets). |
-| `ui/` | The launcher page: plain HTML, CSS and JavaScript shipped inside the app. No framework, no remote scripts. |
+| `ui/` | The launcher page shipped inside the app: `index.html` (the launcher's own controls, unchanged, plus an empty `#app` for the client), `launcher.js` and `launcher.css` (both **generated** from `client/` and committed), `mark.svg`. No framework, no remote scripts. |
+| `client/` | The client (see "The client" below): TypeScript sources (`src/`), the build (`build.mjs`), the hosted copy's page (`web/index.html`) and the tests of its pure logic (`test/`). |
 | `scripts/prepare-sidecar.mjs` | Builds `engine-cli` from the repository root and copies it to `src-tauri/binaries/engine-cli-<triple>[.exe]` (git-ignored). |
 | `scripts/smoke.ps1` | Windows smoke test of a debug build (starts, config folder, saved server and window title, deep link, an edited config, key creation in folders with accented and Bengali names, clean exit). |
 | `scripts/signin-probe.mjs` | Windows black-box probe of the browser sign-in against the real debug shell and a stand-in server: the menu item and the launcher's button start an attempt and ask the system browser for `/app-signin?...`; a link with nothing pending, a wrong state or a replay does nothing; the right link takes the window to the finish page with code, state and verifier in the FRAGMENT only (no request, Referer or log holds them) and `SHA-256(verifier)` equals the challenge; the window's User-Agent is WebView2's own with `DynodocApp/<version> (desktop)` appended; the shell waits for the page's ready marker; a second attempt works while the finish page is still showing; a server page cannot start it and cannot send the window to the finish page with a query, a fragment, an encoded spelling, `window.open` or a redirect; the launcher shows the pairing code of the request. Opens tabs in your default browser on purpose. Not part of CI. |
@@ -53,8 +54,54 @@ an iPhone or a physical phone.
 | `scripts/android-build.ps1` | Windows: builds the APK with or without the right to create symbolic links (see "Mobile"). |
 | `scripts/android-probe.mjs` | Black-box probe of the debug build on an emulator or a USB device: drives the real Android WebView over adb and its debugging port, real taps (see "Mobile"). |
 | `scripts/link-targets.test.mjs` | Runs the injected click script in a Node realm against a hostile page (patched `call`/`apply`/`bind`/`closest`/getters/`window.open`, fake link objects) and fails if the secret reaches the page or a fake link starts a hand-off. Two control tests run the previous script and must see it leak. |
-| `package.json` | Holds `@tauri-apps/cli` only. Nothing in it ships. |
+| `package.json` | Holds `@tauri-apps/cli`, `esbuild` and `typescript` (the client's build and type check). Nothing in it ships. |
 | `../../.github/workflows/desktop.yml` | Manual or tag-only builds: desktop bundles, Android debug APK, iOS simulator. |
+
+## The client (pre-alpha release, sample data)
+
+The launcher page is also a full client in the manner of T3 Code, with GitHub Desktop's and Git
+GUI's version control: a 272 px sidebar with the **current project** and **current branch** pickers
+(recent and all lists, a filter) and a **Branch menu**; a top bar with the breadcrumb, **Fetch/Push**
+with "last fetched" and status pills; **Changes** (unstaged and staged lists with checkboxes, a
+per-change diff of paragraph text, cell values and slide text, unified or side by side, a summary
+and description commit box, "Commit to <branch>", discard with confirmation); **History** (revisions
+with author, time, revision number and chain hash, the selected revision's diff, hash-chain
+verification per revision, revert and cherry-pick as recovery drafts, Compare a draft with main, a
+history graph); **Change requests** (list, review with comments per change, approvals against the
+project's rules, conflicts with a choice per block, merge and decline); **Documents** (versions,
+drafts, discussions, people and rules, connection keys of the add-ins, read-only links, copies);
+**Projects** (issues and labels, people and roles, review rules, AI agent policy, activity);
+**Connectors**; **Activity** (notifications); **Agent** (threads, Read only or Propose access, a
+closed tool table, refused calls shown, cards a person presses); and **Settings** (General,
+Accounts, Appearance, Keybindings with recording and conflicts, Integrations, Version control,
+Notifications, Prompts, Providers (bring your own key, a ladder of nine providers), Agent, Skills,
+Connectors, Team and roles, Signing keys, Administration, Advanced, Accessibility, About). Command
+palette on Ctrl+K; GitHub Desktop's shortcuts (Ctrl+1/2 Changes/History, Ctrl+T projects, Ctrl+B
+branches, Ctrl+Shift+P push or fetch, Ctrl+Shift+N new draft, ...); light and dark themes.
+
+**What is real and what is scripted.** Every screen of the client runs on a **scripted backend**
+(`client/src/data/`): a neutral sample project (a team handbook, a 2027 budget, a quarterly review
+deck, invented people at example.org) held in memory. The rules are real code: the diff model, the
+SHA-256 hash chain that "Verify" recomputes, drafts, rebase with conflicts, the review rules, the
+agent's access check. The agent's replies are prepared; no model is called. **No screen reads a
+real Dynodoc server yet**: the launcher's policy (`connect-src ipc:` only, no `fetch`) keeps this page
+off the network, and the session lives in the server's own pages. What is real in the desktop app is
+unchanged: Settings, Accounts holds the launcher's own controls (choose a server, sign in with the
+browser or an emailed link, this computer's key), with the same ids, texts and commands, and the
+server pill in the top bar opens your real workspace in this window (`set_server`). When the app
+shows the launcher because of the File menu, a sign-in or a changed saved address, the client opens
+on that section; with no server chosen it opens on the sample project. Preferences last for the
+window's life (this page may not use the web view's storage). The window keeps its native frame:
+it also shows your server's pages, and a frameless window would need window permissions for them.
+
+**Build.** `npm run build:client` regenerates `ui/launcher.js` and `ui/launcher.css` from
+`client/src`; `npm run check:client` type-checks and fails if the committed files are stale; `npm
+run test:client` runs the tests of the pure logic (diff model, branch-menu availability, agent tool
+access, keybindings, provider ladder, SHA-256, the scripted backend's rules). `node client/build.mjs
+--web <dir>` writes the hosted copy (noindex, no network, nothing stored); it is published at
+`frontend/researcher/static/desktop/` (https://dynodoc.online/desktop/). The build refuses a bundle
+that contains anything the launcher's policy test refuses (`innerHTML`, `fetch(`, storage, `eval`,
+...).
 
 ## Identity (owner to confirm)
 

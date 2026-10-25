@@ -21,9 +21,8 @@
 <Section
   id="history"
   tone="muted"
-  eyebrow="HISTORY"
-  title="A history that checks itself."
-  lede="Who changed what, and when, is recorded as typed events in a log that is hard to edit quietly and easy to verify."
+  title="An append-only, hash-chained history"
+  lede="Who changed what, and when, is recorded as typed events in a log that anyone with access can check."
   layout="split"
 >
   <ul class="points">
@@ -54,8 +53,8 @@
 
   <aside class="limits callout" data-reveal>
     <p>
-      <strong>Tamper-evident, not tamper-proof.</strong> A database-only rewrite by an administrator is
-      detectable only against a hash or backup you kept independently. Outside witnesses are planned,
+      <strong>The log is tamper-evident, not tamper-proof.</strong> A database-only rewrite by an administrator
+      is detectable only against a hash or backup you kept independently. Outside witnesses are planned,
       not shipped.
     </p>
     <Btn href="/security" variant="link" arrow>How data is protected</Btn>

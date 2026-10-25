@@ -6,8 +6,7 @@
 
 <Section
   id="proof"
-  eyebrow="PROOF"
-  title="Facts about the code, not adoption."
+  title="Where the project stands"
   lede="Dynodoc is early software. The test count is from one run of the public engine repository’s CI on 20 October 2026 (UTC), and the schema is the one the hosted workspace has run since {production.date}. None of it counts customers, users or uptime."
 >
   <div class="stats">
@@ -32,7 +31,7 @@
   </div>
   <div class="links" data-reveal>
     <Btn href="/roadmap" variant="secondary" arrow>Read the roadmap</Btn>
-    <Btn href={GITHUB_URL} variant="link" external arrow>Inspect the open engine</Btn>
+    <Btn href={GITHUB_URL} variant="link" external arrow>Engine repository</Btn>
   </div>
 </Section>
 

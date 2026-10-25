@@ -24,9 +24,8 @@
 
 <Section
   id="projects"
-  eyebrow="PROJECTS"
-  title="A repository for documents."
-  lede="Group related files into a project, give people roles, and let every file keep its own history, drafts and change requests."
+  title="Projects, drafts and named versions"
+  lede="A project groups related files and gives people roles. Each file keeps its own history, drafts and change requests."
   layout="split"
 >
   <div class="projects">
@@ -36,9 +35,8 @@
       />
     </div>
     <ul class="points">
-      {#each points as point, index (point.title)}
+      {#each points as point (point.title)}
         <li data-reveal>
-          <span class="num">{String(index + 1).padStart(2, '0')}</span>
           <div>
             <h3 class="h-3">{point.title}</h3>
             <p>{point.text}</p>
@@ -70,9 +68,6 @@
     border-top: 1px solid var(--color-border-strong);
   }
   .points li {
-    display: grid;
-    grid-template-columns: 2.5rem minmax(0, 1fr);
-    gap: 4px 12px;
     padding: 18px 0;
     border-bottom: 1px solid var(--color-border);
   }

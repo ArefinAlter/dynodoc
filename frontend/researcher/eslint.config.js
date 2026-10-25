@@ -34,7 +34,9 @@ export default ts.config(
       'dist/',
       'node_modules/',
       'playwright-report/',
-      'test-results/'
+      'test-results/',
+      // The desktop client's hosted copy: generated from apps/desktop/client (checked there).
+      'static/desktop/'
     ]
   }
 );

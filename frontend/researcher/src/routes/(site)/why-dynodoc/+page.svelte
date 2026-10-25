@@ -23,55 +23,46 @@
 
   const problems = [
     [
-      '01',
-      'Overwriting keeps the answer and loses the question.',
+      'Saving overwrites the earlier version.',
       'Each save replaces the last. A budget or a contract keeps its conclusion without the reasoning, the discarded alternative or the person who objected.'
     ],
     [
-      '02',
-      'Authorship is a label.',
+      'Author names are editable metadata.',
       'Track changes names are metadata stored in the file, and whoever holds the file can edit them. A name in a margin is not evidence of who made a change.'
     ],
     [
-      '03',
-      'Approval lives somewhere else.',
+      'Approvals are recorded somewhere else.',
       'Who agreed is in an email thread, a chat message or someone’s memory. The file does not know it was approved, so it cannot show it.'
     ]
   ] as const;
 
   const questions = [
     [
-      '01',
       'What exactly changed?',
       'Typed events name the node, the field and the before and after values, down to one paragraph, cell or shape.',
       'live'
     ],
     [
-      '02',
       'Who did it?',
       'The authenticated account that made the change, not a name typed into the file. Project commits are also signed with a device key.',
       'both'
     ],
     [
-      '03',
       'Who agreed, and under which rule?',
       'Change requests record each approval, the rule that required it and the merge that applied it.',
       'live'
     ],
     [
-      '04',
-      'What did it say last Tuesday, and can I get it back?',
+      'What did it say last week, and can I get it back?',
       'Every retained revision can be read. Recovery restores selected parts as a new reviewed change, so newer work survives.',
       'live'
     ],
     [
-      '05',
       'Has the record itself been altered?',
       'A hash chain and verified snapshots expose edits to old events. Signed receipts and pinned heads extend the check to branches.',
       'both'
     ],
     [
-      '06',
       'Can I take it with me?',
       'Export supported files and retained originals. In source, a full project repository lives on your own device.',
       'both'
@@ -149,13 +140,12 @@
 
 <main id="main" use:scrollable>
   <InfoHero
-    eyebrow="WHY PROVENANCE"
-    lede="A file tells you what it says now. It cannot tell you who changed it, who agreed, or what it said last Tuesday. That gap is what Dynodoc is built to close."
+    title="Why document provenance matters"
+    lede="A file shows what it says now. It does not record who changed it, who agreed, or what it said last week. Dynodoc keeps that record next to the file."
   >
-    {#snippet heading()}Documents have <span class="hl">no provenance</span>.{/snippet}
     {#snippet actions()}
       <Btn href="/features" arrow>Explore the features</Btn>
-      <Btn href="#principles" variant="secondary">Read the design rules</Btn>
+      <Btn href="#principles" variant="secondary">Read the design principles</Btn>
     {/snippet}
     {#snippet art()}
       <Dino name="fossil" art={Fossil} />
@@ -164,9 +154,8 @@
 
   <Section
     id="problem"
-    eyebrow="THE PROBLEM"
-    title="Edits vanish into “final_v7”."
-    lede="Documents are where decisions end up, and the least able to say how they got there."
+    title="How document history gets lost"
+    lede="Most documents keep only their latest state, and teams make copies to keep the rest."
     layout="split"
   >
     <div class="problem">
@@ -177,13 +166,12 @@
           {/each}
         </ol>
         <p class="small">
-          Six copies, one real history, and nothing that says which edit came from whom or why.
+          Six copies of one document. None of them records which edit came from whom, or why.
         </p>
       </div>
       <ol class="observations">
-        {#each problems as [n, title, body] (n)}
+        {#each problems as [title, body] (title)}
           <li data-reveal>
-            <span class="num">{n}</span>
             <h3 class="h-3">{title}</h3>
             <p>{body}</p>
           </li>
@@ -194,16 +182,14 @@
 
   <Section
     id="needs"
-    eyebrow="WHAT A HISTORY NEEDS"
-    title="Six questions a record should answer."
-    lede="If a document’s history cannot answer these, it is a pile of copies. Next to each answer is where it runs today."
+    title="What a document history should answer"
+    lede="Each answer says how Dynodoc handles the question and whether that runs in the hosted workspace today."
     layout="split"
     tone="muted"
   >
     <ol class="questions">
-      {#each questions as [n, question, answer, status] (n)}
+      {#each questions as [question, answer, status] (question)}
         <li class="card card--raised" data-reveal>
-          <span class="num">{n}</span>
           <h3 class="h-3">{question}</h3>
           <p>{answer}</p>
           <p class="tags">
@@ -218,21 +204,19 @@
 
   <Section
     id="principles"
-    eyebrow="DESIGN RULES"
-    title="Four rules the design does not bend."
-    lede="They come from the versioning design volumes in the repository, restated without the jargon."
+    title="Design principles"
+    lede="Each comes from the versioning design volumes in the engine repository."
     layout="split"
   >
     <div class="principles">
       <article class="principle" data-reveal>
         <div class="p-text">
-          <span class="num">01</span>
-          <h3 class="h-2">Identity before content.</h3>
+          <h3 class="h-2">Stable identity</h3>
           <p>
             Every paragraph, cell and shape gets an ID once, and it never changes or comes back
             under another meaning. Rewording or moving something edits the thing; it does not delete
-            one thing and create another. The design volume puts it directly: the identity rules
-            matter more than the choice of architecture.
+            one thing and create another. The design volume treats the identity rules as more
+            important than the choice of architecture.
           </p>
           <p class="ref small">Design volume 1, section 4.2 (stable identity).</p>
         </div>
@@ -251,12 +235,11 @@
 
       <article class="principle principle--flip" data-reveal>
         <div class="p-text">
-          <span class="num">02</span>
-          <h3 class="h-2">History is a log of facts.</h3>
+          <h3 class="h-2">An append-only event log</h3>
           <p>
             Current state is computed from recorded events. Snapshots are shortcuts that are checked
             against the log, never the authority. A correction is a new event, not an edit to an old
-            one, so the order of what happened is the one thing nobody can quietly change.
+            one, so earlier events are not rewritten in place.
           </p>
           <p class="ref small">
             Design volume 1, section 5.2 (event log) and section 2.2 (content addressing).
@@ -272,13 +255,12 @@
 
       <article class="principle" data-reveal>
         <div class="p-text">
-          <span class="num">03</span>
-          <h3 class="h-2">Same inputs, same result.</h3>
+          <h3 class="h-2">Deterministic merge</h3>
           <p>
             Merging matches parts by ID, applies a rule for each kind of field and validates the
-            outcome. Independent edits combine without a wall of conflict markers. Anything
-            ambiguous stops for a person, who sees the whole paragraph, cell or slide, and the
-            resolution is recorded.
+            outcome. The same inputs give the same result. Independent edits combine without
+            conflict markers. Anything ambiguous stops for a person, who sees the whole paragraph,
+            cell or slide, and the resolution is recorded.
           </p>
           <p class="ref small">
             Design volume 1, sections 1.1, 4.4 and 4.5 (typed merge and validation).
@@ -299,13 +281,12 @@
 
       <article class="principle principle--flip" data-reveal>
         <div class="p-text">
-          <span class="num">04</span>
-          <h3 class="h-2">Evidence, not trust.</h3>
+          <h3 class="h-2">Evidence with stated limits</h3>
           <p>
-            A hash chain, signed commits and receipts are things you can check for yourself, and
-            each has a stated limit. Integrity is not authorship, a signature is not a timestamp,
-            and observed editor activity is not a keystroke log. Dynodoc says which claim each piece
-            of evidence supports.
+            A hash chain, signed commits and receipts can be checked by anyone with access, and each
+            has a limit. Integrity does not show authorship, a signature does not carry a trusted
+            time, and observed editor activity is not a keystroke log. The list beside this says
+            which claim each piece of evidence supports.
           </p>
           <p class="ref small">
             Design volume 1, section 7.4, and the correctness contract in the product specification.
@@ -332,19 +313,11 @@
     </div>
   </Section>
 
-  <Section
-    id="limits"
-    eyebrow="LIMITS"
-    title="What a history does not prove."
-    lede="A provenance tool that overstates itself is worse than none. These are the edges."
-    layout="split"
-    tone="muted"
-  >
+  <Section id="limits" title="What the history does not prove" layout="split" tone="muted">
     <div class="limits">
       <ul class="limit-list">
-        {#each limits as [title, body], index (title)}
+        {#each limits as [title, body] (title)}
           <li class="card card--raised" data-reveal>
-            <span class="num">LIMIT {String(index + 1).padStart(2, '0')}</span>
             <h3 class="h-3">{title}</h3>
             <p>{body}</p>
           </li>
@@ -354,22 +327,15 @@
     </div>
   </Section>
 
-  <Section
-    id="faq"
-    eyebrow="QUESTIONS"
-    title="Plain answers."
-    lede="Short answers to the questions people ask first."
-    layout="split"
-  >
+  <Section id="faq" title="Common questions" layout="split">
     <div data-reveal><Faq items={faq} exclusive /></div>
   </Section>
 
   <Section
     tone="ink"
     align="center"
-    eyebrow="SEE IT"
-    title="See what a history looks like."
-    lede="The features page shows each part with a mockup, a status label and its boundary."
+    title="Features in detail"
+    lede="The features page describes each part with a mockup, a status label and its limits."
   >
     <div class="closing" data-reveal>
       <Btn href="/features" size="lg" arrow>Explore the features</Btn>
@@ -441,7 +407,7 @@
   }
   .questions li {
     display: grid;
-    grid-template-rows: auto auto 1fr auto;
+    grid-template-rows: auto 1fr auto;
     gap: 10px;
     align-content: start;
   }

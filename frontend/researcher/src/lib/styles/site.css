@@ -379,7 +379,7 @@ body:has(.site) {
   color: var(--color-accent);
 }
 
-/* .num: mono numerals for `01`, `STEP 01`, counters. */
+/* .num: mono numerals for step labels, dates and counters. */
 :where(.site) .num {
   font-family: var(--site-font-mono);
   font-size: 0.75rem;

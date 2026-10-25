@@ -1,6 +1,6 @@
 <script lang="ts">
   import { ReviewMock } from '$lib/components/mock';
-  import { DiffCard, Eyebrow, Section, type DiffLine } from '$lib/components/site';
+  import { DiffCard, Section, type DiffLine } from '$lib/components/site';
 
   const points = [
     {
@@ -47,8 +47,7 @@
 
 <Section
   id="review"
-  eyebrow="REVIEW"
-  title="Review the change, not the file."
+  title="Change requests and review"
   lede="A change request shows which paragraphs, cells and slides moved. Reviewers approve or ask for changes, and the merge follows the project’s rules."
   layout="split"
 >
@@ -69,7 +68,7 @@
   </div>
 
   <div class="changes">
-    <div data-reveal><Eyebrow label="WHAT CHANGED, IN ANY FORMAT" /></div>
+    <h3 class="h-3" data-reveal>Example diffs in Word, Excel and PowerPoint</h3>
     <div class="cards">
       {#each examples as example (example.path)}
         <div data-reveal>

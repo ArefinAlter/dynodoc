@@ -1,13 +1,19 @@
 {
   "name": "dynodoc-desktop-tooling",
   "private": true,
-  "description": "Holds the Tauri command line for apps/desktop. Nothing here is shipped; the app's version is in src-tauri/Cargo.toml.",
+  "description": "Holds the Tauri command line and the client build tools (esbuild, TypeScript) for apps/desktop. Nothing here is shipped; the app's version is in src-tauri/Cargo.toml.",
   "scripts": {
     "tauri": "tauri",
     "prepare-sidecar": "node scripts/prepare-sidecar.mjs",
+    "build:client": "node client/build.mjs",
+    "build:web": "node client/build.mjs --web client/dist-web --base /desktop/",
+    "check:client": "tsc -p client && node client/build.mjs --check",
+    "test:client": "node --test \"client/test/*.test.mjs\"",
     "test": "cargo test --manifest-path src-tauri/Cargo.toml"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "2.12.3"
+    "@tauri-apps/cli": "2.12.3",
+    "esbuild": "0.25.11",
+    "typescript": "5.9.3"
   }
 }

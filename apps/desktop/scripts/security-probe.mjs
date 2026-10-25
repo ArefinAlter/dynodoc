@@ -358,9 +358,13 @@ const siteNone = (server, from, path) => server.details.slice(from).some((d) => 
 // The launcher is ready when its script has run and filled in the footer.
 async function launcherReady() {
   for (let i = 0; i < 60; i += 1) {
-    if (String(await text("about")).includes("Dynodoc desktop")) return;
+    if (String(await text("about")).includes("Dynodoc desktop")) break;
     await sleep(250);
   }
+  // The launcher's controls live in the client's Settings, Accounts. With no server saved the client
+  // opens on its sample project, so bring that section up before a real click on its buttons.
+  await evaluate(`(() => { const b = document.getElementById('nav-account'); if (b) b.click(); return 0; })()`);
+  await sleep(300);
 }
 
 try {

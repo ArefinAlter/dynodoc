@@ -84,9 +84,8 @@
 <Section
   id="editors"
   tone="muted"
-  eyebrow="EDITORS"
-  title="Stay in the editor you use."
-  lede="The same capture protocol runs in six hosts. Choose one to see the pane that opens beside your file."
+  title="Supported editors"
+  lede="The same capture protocol runs in six hosts. Each tab shows the pane that opens beside the file and what it captures."
 >
   <div class="tabs" role="tablist" aria-label="Editor">
     {#each hosts as host, index (host.id)}

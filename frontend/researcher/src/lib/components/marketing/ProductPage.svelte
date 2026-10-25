@@ -1,17 +1,12 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import Eyebrow from '$lib/components/site/Eyebrow.svelte';
   import { reveal } from '$lib/components/site/reveal';
   import { scrollable } from '$lib/components/site/scrollable';
   import { spotlight } from '$lib/components/site/spotlight';
   // Page shell for simple marketing pages. The site header and footer come from the
   // (site) layout, so this renders only <main id="main">.
-  let {
-    title,
-    description,
-    eyebrow = 'DYNODOC',
-    children
-  }: { title: string; description: string; eyebrow?: string; children: Snippet } = $props();
+  let { title, description, children }: { title: string; description: string; children: Snippet } =
+    $props();
 </script>
 
 <svelte:head
@@ -23,7 +18,6 @@
 <main id="main" class="product-page">
   <header class="hero dotgrid dotgrid--fade spotlight" use:spotlight>
     <div class="container head">
-      <Eyebrow label={eyebrow} />
       <h1>{title}</h1>
       <p class="lede">{description}</p>
     </div>
