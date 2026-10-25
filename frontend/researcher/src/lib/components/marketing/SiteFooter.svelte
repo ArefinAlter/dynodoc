@@ -21,7 +21,7 @@
       <a class="brand" href={href('/')} aria-label="Dynodoc home"
         ><img src="/brand/mark.svg?v=2" width="28" height="28" alt="" /><span>dynodoc</span></a
       >
-      <p>Provenance, review and synchronization for the documents your team already writes.</p>
+      <p>Provenance, review and synchronization for documents, spreadsheets and presentations.</p>
       <a class="open" href={workspace}
         >Open workspace<ArrowUpRight size={15} aria-hidden="true" /></a
       >

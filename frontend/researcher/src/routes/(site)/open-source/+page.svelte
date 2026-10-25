@@ -28,7 +28,7 @@
       text: 'The web workspace, the editor add-ins and this website are proprietary and live in a private repository. The public repository has no browser editors, no production configuration, no credentials and no user documents.'
     },
     {
-      title: 'Your documents stay yours',
+      title: 'Document content is not open source',
       text: 'Private document content you put into the hosted app does not become open source. Open source here describes the code, not the content.'
     }
   ];
@@ -98,10 +98,9 @@
 
 <main id="main" use:scrollable>
   <InfoHero
-    eyebrow="OPEN SOURCE · 23 OCTOBER 2026"
-    lede="The engine, the HTTP API and the command-line tools are open source under the MIT licence. This page says how to build them from source, which platforms they are tested on, what that testing covers and what is not published yet."
+    title="Open source"
+    lede="The engine, the HTTP API and the command-line tools are open source under the MIT licence. This page says how to build them from source, which platforms they are tested on, what that testing covers and what is not published yet. Updated 23 October 2026."
   >
-    {#snippet heading()}Open source, and <span class="hl">what that covers</span>.{/snippet}
     {#snippet actions()}
       <Btn href={REPO} external arrow>Open the repository</Btn>
       <Btn href="/licenses" variant="secondary">Read the licences</Btn>
@@ -113,8 +112,7 @@
 
   <Section
     id="covers"
-    eyebrow="WHAT IS OPEN"
-    title="Which parts you can read and run."
+    title="What is open source"
     lede="The public repository is the core that records and verifies history. It is not the hosted application."
     layout="split"
   >
@@ -130,30 +128,29 @@
 
   <Section
     id="build"
-    eyebrow="BUILD FROM SOURCE"
-    title="Build and test it yourself."
+    title="Building from source"
     lede="You need Rust at the version the repository pins. To run the tests you also need PostgreSQL 16, and the repository uses Docker and Task to start one."
     layout="split"
     tone="muted"
   >
     <ol class="steps">
       <li data-reveal>
-        <span class="num">STEP 01 · get the source</span>
+        <span class="num">Step 1: get the source</span>
         <CopyCode
           code="git clone https://github.com/ArefinAlter/dynodoc-engine.git"
           label="clone command"
         />
       </li>
       <li data-reveal>
-        <span class="num">STEP 02 · build everything</span>
+        <span class="num">Step 2: build everything</span>
         <CopyCode code="cargo build --workspace --locked" label="build command" />
       </li>
       <li data-reveal>
-        <span class="num">STEP 03 · check the command-line tool</span>
+        <span class="num">Step 3: check the command-line tool</span>
         <CopyCode code="cargo run --locked -p engine-cli -- --version" label="version command" />
       </li>
       <li data-reveal>
-        <span class="num">STEP 04 · run the tests (needs PostgreSQL 16)</span>
+        <span class="num">Step 4: run the tests (needs PostgreSQL 16)</span>
         <CopyCode code="cargo test --workspace --locked" label="test command" />
       </li>
     </ol>
@@ -171,8 +168,7 @@
 
   <Section
     id="platforms"
-    eyebrow="PLATFORMS"
-    title="Where it is built and tested."
+    title="Platforms"
     lede="Linux, macOS and Windows, on Intel or AMD processors and on Arm. Every job builds the whole workspace and runs the whole test suite against PostgreSQL."
   >
     <div class="table-wrap" data-reveal>
@@ -212,8 +208,7 @@
 
   <Section
     id="checks"
-    eyebrow="WHAT THE CHECKS PROVE"
-    title="One run, with its date."
+    title="The test run behind these figures"
     lede="A row above is true for the commit its run names. The figures here come from one run of the engine repository’s platform workflow."
     layout="split"
     tone="muted"
@@ -242,8 +237,7 @@
 
   <Section
     id="prebuilt"
-    eyebrow="PREBUILT TOOLS"
-    title="No release is published yet."
+    title="Prebuilt tools"
     lede="Prebuilt command-line tools will be published as GitHub releases; none is published yet. Until one is, build from source."
     layout="split"
   >
@@ -314,8 +308,7 @@
 
   <Section
     id="container"
-    eyebrow="CONTAINER IMAGE"
-    title="Built for amd64 and arm64."
+    title="Container image"
     lede="A container image of the API and the command-line tool is built and started in CI. It is not published yet."
     layout="split"
     tone="muted"
@@ -338,9 +331,8 @@
 
   <Section
     id="limits"
-    eyebrow="KNOWN LIMITS"
-    title="What these checks do not cover."
-    lede="The support record lists these too. They are repeated here so nobody has to find them."
+    title="What these checks do not cover"
+    lede="The support record lists these too."
   >
     <ul class="limits" data-reveal>
       {#each limits as limit (limit)}
@@ -352,9 +344,8 @@
   <Section
     tone="ink"
     align="center"
-    eyebrow="READ IT, RUN IT, TELL US"
-    title="The code is public."
-    lede="Found a problem? A security issue goes through private reporting. Anything else goes to the issue tracker."
+    title="Reporting problems"
+    lede="A security issue goes through private reporting. Anything else goes to the issue tracker."
   >
     <div class="closing" data-reveal>
       <Btn href={REPO} size="lg" external arrow>Open the repository</Btn>

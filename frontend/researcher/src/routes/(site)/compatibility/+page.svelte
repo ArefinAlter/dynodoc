@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Btn, Eyebrow, Section, scrollable, spotlight } from '$lib/components/site';
+  import { Btn, Section, scrollable, spotlight } from '$lib/components/site';
   import Dino from '$lib/art/Dino.svelte';
   import Fossil from '$lib/art/Fossil.svelte';
   import { pageMeta } from '$lib/seo';
@@ -357,12 +357,12 @@
   <header class="hero dotgrid dotgrid--fade spotlight" use:spotlight>
     <div class="container hero__grid">
       <div class="hero__copy">
-        <Eyebrow label="COMPATIBILITY · UPDATED 23 OCTOBER 2026" />
-        <h1 class="h-1">What works where, and <span class="hl">what does not yet</span>.</h1>
+        <h1 class="h-1">Compatibility</h1>
         <p class="lede">
           Dynodoc records and reviews supported changes in Word, Excel, PowerPoint and the three
           Google editors. This page lists what is covered today, the minimum host versions, the file
-          formats and the hard limits. It is not a claim of full Office parity.
+          formats and the hard limits. It is not a claim of full Office parity. Updated 23 October
+          2026.
         </p>
         <ul class="legend" aria-label="How to read the chips">
           {#each legend as item (item.level)}
@@ -378,8 +378,7 @@
 
   <Section
     id="editors"
-    eyebrow="EDITORS"
-    title="What each editor add-in does today."
+    title="Editor add-in coverage"
     lede="Add-ins capture edits to existing text and values while the pane or sidebar is open. Everything else goes through an edited-file push, which keeps the same review and merge rules."
   >
     <div class="table-wrap matrix" data-reveal>
@@ -423,8 +422,7 @@
 
   <Section
     id="hosts"
-    eyebrow="MINIMUM HOST VERSIONS"
-    title="What your editor needs."
+    title="Minimum host versions"
     lede="The pane checks the requirement set at runtime and says so in an unsupported host. An installed program or a valid manifest does not prove the add-in works."
     tone="muted"
   >
@@ -459,8 +457,7 @@
 
   <Section
     id="formats"
-    eyebrow="FILE FORMATS"
-    title="Files you can bring into a project."
+    title="File formats"
     lede="Dynodoc keeps the original upload and builds a reviewable copy with stable block identities. Check the conversion report before relying on a complex file."
   >
     <div class="table-wrap" data-reveal>
@@ -486,7 +483,7 @@
     </div>
   </Section>
 
-  <Section id="limits" eyebrow="LIMITS" title="The numbers to know." tone="muted">
+  <Section id="limits" title="Limits" tone="muted">
     <ul class="limits" data-reveal>
       {#each limits as limit (limit.label)}
         <li class="card card--raised">
@@ -500,8 +497,7 @@
 
   <Section
     id="platforms"
-    eyebrow="BROWSERS AND ACCESSIBILITY"
-    title="Where the web app runs."
+    title="Browsers and accessibility"
     lede="The commitment is the last two major versions of Chrome, Edge, Firefox and Safari, and Chrome on Android. Older versions may work; nothing here promises it."
   >
     <div class="table-wrap" data-reveal>
@@ -538,8 +534,7 @@
 
   <Section
     id="tested"
-    eyebrow="WHAT WAS RUN"
-    title="Which browsers the tests have used."
+    title="Browsers used by the tests"
     lede="Run on 21 October 2026, on a Windows 11 computer, against a local copy of the whole stack. Emulation sets a screen size, touch input and a user agent on a desktop browser engine. It is not a phone."
     tone="muted"
   >
@@ -573,9 +568,8 @@
 
   <Section
     id="small-screens"
-    eyebrow="SMALL SCREENS"
-    title="What a phone cannot do well yet."
-    lede="These apply to screens under about 700 px wide. They come from the same test run and are listed so nobody has to find them."
+    title="Small-screen limits"
+    lede="These apply to screens under about 700 px wide and come from the same test run."
   >
     <ul class="bullets" data-reveal>
       {#each smallScreens as item (item)}<li>{item}</li>{/each}
@@ -584,8 +578,7 @@
 
   <Section
     id="app"
-    eyebrow="USE IT AS AN APP"
-    title="Install the workspace from your browser."
+    title="Installing the workspace as an app"
     lede="The workspace can be installed as a web app. It opens at the workspace and has Workspace and Projects shortcuts. Your profile page has an Install app section that shows what applies to the browser you are using."
     tone="muted"
   >
@@ -624,8 +617,7 @@
 
   <Section
     id="web-editors"
-    eyebrow="WEB EDITORS"
-    title="The built-in editors."
+    title="Web editors"
     lede="The web editors stay available for quick edits and for documents that began there. Matching Word, Excel or PowerPoint is not their goal."
     tone="muted"
   >
@@ -641,8 +633,7 @@
 
   <Section
     id="check"
-    eyebrow="BEFORE YOU RELY ON IT"
-    title="Check a representative file."
+    title="Checking a representative file"
     lede="Add a copy to a project, review the conversion report, change a paragraph or a formula, and compare the result with your original before you depend on a complex workflow."
   >
     <div class="actions" data-reveal>

@@ -15,7 +15,7 @@ export const CANONICAL_ORIGIN = 'https://dynodoc.online';
 export const INDEXABLE_HOSTS = ['dynodoc.online', 'www.dynodoc.online'];
 
 export const SITE_NAME = 'Dynodoc';
-export const SITE_TAGLINE = 'Version control for the documents you already write';
+export const SITE_TAGLINE = 'Version control for documents, spreadsheets and presentations';
 export const SITE_DESCRIPTION =
   'Capture, review and merge edits to text, cells and slides in Word, Docs, Excel, Sheets, PowerPoint and Slides, and keep them in a hash-chained history you can verify. Open-source engine.';
 export const SITE_IMAGE = `${CANONICAL_ORIGIN}/brand/social.png`;

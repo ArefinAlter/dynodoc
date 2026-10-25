@@ -23,7 +23,7 @@
     {
       id: 'live',
       label: 'Live',
-      heading: 'Running in the hosted pilot.',
+      heading: 'Running in the hosted pilot',
       blurb: `Deployed at application ${production.app} on database schema ${production.schema}, activated on ${production.date} (UTC) after a verified backup and a rehearsal on a production copy.`,
       items: [
         {
@@ -96,7 +96,7 @@
     {
       id: 'source',
       label: 'In source',
-      heading: 'Built and tested, not enabled on the hosted pilot.',
+      heading: 'Built and tested, not enabled on the hosted pilot',
       blurb:
         'Implemented in the repository and tested there. These are client libraries, opt-in writers and command-line builds that the hosted pilot does not use, and none of it counts as installed-editor acceptance.',
       items: [
@@ -150,7 +150,7 @@
     {
       id: 'progress',
       label: 'In progress',
-      heading: 'Being worked on now.',
+      heading: 'In progress',
       blurb:
         'These come next. They are listed in the order the dependencies run, not as dated commitments.',
       items: [
@@ -183,7 +183,7 @@
     {
       id: 'later',
       label: 'Later',
-      heading: 'Needs earlier work first.',
+      heading: 'Needs earlier work first',
       blurb: 'Intended, with no date and no promise.',
       items: [
         {
@@ -212,15 +212,15 @@
 
   const rules = [
     [
-      'No capacity claims.',
+      'No capacity claims',
       'Hundreds-of-megabyte files and very large user counts are targets. They are not measured capacity today.'
     ],
     [
-      'No acceptance claims.',
+      'No acceptance claims',
       'Source tests and CI are not installed-editor or marketplace acceptance, and are never reported as such.'
     ],
     [
-      'No Office parity goal.',
+      'No Office parity goal',
       'The web editors stay, but matching Word or Excel feature for feature is not the roadmap.'
     ]
   ] as const;
@@ -237,10 +237,9 @@
 
 <main id="main">
   <InfoHero
-    eyebrow="ROADMAP"
-    lede="What is live, what exists only in source, what is being worked on and what comes later. A date appears only where a record gives one. Last reviewed 23 October 2026."
+    title="Roadmap"
+    lede="What is live, what exists only in source, what is being worked on and what comes later. A date appears only where a record gives one; there are no promised release dates. Last reviewed 23 October 2026."
   >
-    {#snippet heading()}The roadmap, <span class="hl">without promises</span>.{/snippet}
     {#snippet actions()}
       <Btn href="/features" arrow>See the features</Btn>
       <Btn href="/changelog" variant="secondary">Read the changelog</Btn>
@@ -252,9 +251,8 @@
 
   <Section
     id="standing"
-    eyebrow="WHERE THINGS STAND"
-    title="Four numbers that keep this honest."
-    lede="What production runs, and what has not been published or listed, is the most useful thing to know before relying on any feature."
+    title="Current status"
+    lede="What production runs, and what has not been published or listed yet."
     layout="split"
   >
     <ul class="stats">
@@ -274,9 +272,8 @@
 
   <Section
     id="board"
-    eyebrow="THE LIST"
-    title="Everything, by state."
-    lede="Four states, each with its own meaning. An item moves down this page only when evidence says it did."
+    title="All items, by state"
+    lede="An item moves to a later state only when a test, deployment or release record shows it."
     layout="split"
     tone="muted"
   >
@@ -303,17 +300,10 @@
     </div>
   </Section>
 
-  <Section
-    id="rules"
-    eyebrow="GROUND RULES"
-    title="What this page will not do."
-    lede="A roadmap can quietly turn into a promise. These three rules stop that."
-    layout="split"
-  >
+  <Section id="rules" title="How this page is kept" layout="split">
     <ol class="rules">
-      {#each rules as [title, body], index (title)}
+      {#each rules as [title, body] (title)}
         <li data-reveal>
-          <span class="num">{String(index + 1).padStart(2, '0')}</span>
           <h3 class="h-3">{title}</h3>
           <p>{body}</p>
         </li>
@@ -336,9 +326,8 @@
   <Section
     tone="ink"
     align="center"
-    eyebrow="FOLLOW ALONG"
-    title="Watch it move."
-    lede="Each change that reaches production or source is written up in plain language."
+    title="Changelog"
+    lede="Each change that reaches production or source is described in the changelog."
   >
     <div class="closing" data-reveal>
       <Btn href="/changelog" size="lg" arrow>Read the changelog</Btn>

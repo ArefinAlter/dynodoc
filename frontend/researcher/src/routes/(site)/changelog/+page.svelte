@@ -172,7 +172,7 @@
         'Three pieces that make remote history safe to build on: who may upload, how much, and which device signed.',
       changes: [
         'Signing keys are bound to an account through a short-lived challenge. Revoking one is permanent, and earlier signatures stay verifiable.',
-        'Shared storage has durable budgets (by default 1 GiB per document and 4 GiB per creator), and capacity errors say so plainly.',
+        'Shared storage has durable budgets (by default 1 GiB per document and 4 GiB per creator), and exceeding one returns a capacity error.',
         'Private object and commit staging means a guessed hash cannot expose someone else’s draft. Quotas and erasure are enforced.'
       ],
       refs: 'Application be538a6 · schemas 33 to 35'
@@ -251,7 +251,6 @@
 
 <main id="main">
   <InfoHero
-    eyebrow="CHANGELOG"
     title="Changelog"
     lede="What changed, in plain language, newest first. The hosted workspace runs application {production.app} on schema {production.schema}. Entries marked In source describe work as it was when it was built and tested, before release; later entries and the roadmap say what has since been deployed."
   >
@@ -266,8 +265,7 @@
 
   <Section
     id="entries"
-    eyebrow="RELEASE NOTES"
-    title="October 2026."
+    title="October 2026"
     lede="Fourteen entries from the project record, newest first."
     layout="split"
   >
@@ -296,9 +294,8 @@
   <Section
     tone="ink"
     align="center"
-    eyebrow="WHAT NEXT"
-    title="The next entries are on the roadmap."
-    lede="What is being worked on and what comes later is on the roadmap, with no promised dates."
+    title="What comes next"
+    lede="Work in progress and later items are listed on the roadmap, with no promised dates."
   >
     <div class="closing" data-reveal>
       <Btn href="/roadmap" size="lg" arrow>Open the roadmap</Btn>

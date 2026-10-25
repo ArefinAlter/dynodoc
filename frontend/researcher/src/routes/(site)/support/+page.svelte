@@ -1,6 +1,6 @@
 <script lang="ts">
   import { ArrowUpRight } from '@lucide/svelte';
-  import { Btn, Eyebrow, Faq, Section, spotlight } from '$lib/components/site';
+  import { Btn, Faq, Section, spotlight } from '$lib/components/site';
   import Dino from '$lib/art/Dino.svelte';
   import Trike from '$lib/art/Trike.svelte';
   import { pageMeta, scriptTag, type FaqEntry } from '$lib/seo';
@@ -101,11 +101,10 @@
   <header class="hero dotgrid dotgrid--fade spotlight" use:spotlight>
     <div class="container hero__grid">
       <div class="hero__copy">
-        <Eyebrow label="SUPPORT" />
-        <h1 class="h-1">Get help with <span class="hl">Dynodoc</span>.</h1>
+        <h1 class="h-1">Support</h1>
         <p class="lede">
           Where to read, how to report a problem and what to expect back. Dynodoc is in testing, so
-          this page also says plainly what is not available yet.
+          this page also lists what is not available yet.
         </p>
         <div class="actions">
           <Btn href="/help" arrow>Read the guide</Btn>
@@ -120,8 +119,7 @@
 
   <Section
     id="routes"
-    eyebrow="WAYS TO GET HELP"
-    title="Start with the page that fits."
+    title="Ways to get help"
     lede="Most questions about setup, limits and editors are answered in these pages."
   >
     <ul class="routes" data-reveal>
@@ -167,8 +165,7 @@
 
   <Section
     id="report"
-    eyebrow="REPORT A PROBLEM"
-    title="Report a bug or ask a question."
+    title="Reporting a problem"
     lede="Email is the channel for questions and bug reports about the workspace, the website and the add-ins. Use public GitHub Issues only for the open-source engine, API and command-line tools, and write each one as if a stranger will read it."
     layout="split"
   >
@@ -199,8 +196,7 @@
 
   <Section
     id="security"
-    eyebrow="SECURITY"
-    title="Found a vulnerability?"
+    title="Reporting a vulnerability"
     lede="Do not open a public issue. The security page explains what to report and how."
     tone="muted"
   >
@@ -211,8 +207,7 @@
 
   <Section
     id="contact"
-    eyebrow="CONTACT AND STATUS"
-    title="What exists today, and what does not."
+    title="Contact and status"
     lede="These are stated as they are so that nobody waits on a channel that is not there."
   >
     <dl class="facts" data-reveal>
@@ -262,13 +257,7 @@
     </dl>
   </Section>
 
-  <Section
-    id="add-in-help"
-    eyebrow="ADD-IN HELP"
-    title="Common questions about the editor add-ins."
-    layout="split"
-    tone="muted"
-  >
+  <Section id="add-in-help" title="Add-in questions" layout="split" tone="muted">
     <div data-reveal>
       <Faq items={faq} exclusive />
     </div>

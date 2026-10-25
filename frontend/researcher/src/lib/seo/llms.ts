@@ -12,7 +12,7 @@ import { FAQ } from './faq';
 import { CANONICAL_ORIGIN, INDEXABLE_PAGES, SITE_NAME, canonicalUrl } from './site';
 
 const SUMMARY =
-  'Version control and provenance for Word, Google Docs, Excel, Google Sheets, PowerPoint and Google Slides: every change is captured, reviewed as a change request, merged and recorded in an append-only, hash-chained history.';
+  'Version control and provenance for Word, Google Docs, Excel, Google Sheets, PowerPoint and Google Slides. Supported edits are captured, reviewed as change requests, merged and recorded in an append-only, hash-chained history.';
 
 const CAPABILITIES = [
   'Add-ins for Word, Excel and PowerPoint (task panes) and Google Docs, Sheets and Slides (Apps Script) that capture edits to existing paragraph text, cell values and formulas, and slide text while the pane is open.',
@@ -63,7 +63,7 @@ export function llmsTxt(): string {
 
 > ${SUMMARY}
 
-${SITE_NAME} sits beside the editors a team already uses. It records what changed in each document, spreadsheet and presentation, who proposed it and who approved it, and keeps that record in a log that can be verified.
+${SITE_NAME} runs beside the editors a team already uses. It records what changed in each document, spreadsheet and presentation, who proposed it and who approved it, and keeps that record in a log that can be verified.
 
 ## Pages
 

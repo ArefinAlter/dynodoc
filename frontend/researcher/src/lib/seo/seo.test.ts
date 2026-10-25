@@ -148,7 +148,7 @@ describe('homepage copy', () => {
   const stale = /questionnaire|xlsform|\bodk\b|kobo|redcap|survey|research|respondent|pilot/i;
 
   it('describes document provenance for the six editors in the tagline and description', () => {
-    expect(SITE_TAGLINE).toBe('Version control for the documents you already write');
+    expect(SITE_TAGLINE).toBe('Version control for documents, spreadsheets and presentations');
     for (const editor of ['Word', 'Docs', 'Excel', 'Sheets', 'PowerPoint', 'Slides'])
       expect(SITE_DESCRIPTION).toContain(editor);
   });

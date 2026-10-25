@@ -2,7 +2,7 @@
   import Dino from '$lib/art/Dino.svelte';
   import Rex from '$lib/art/Rex.svelte';
   import { AddinMock } from '$lib/components/mock';
-  import { Btn, Eyebrow, spotlight } from '$lib/components/site';
+  import { Btn, spotlight } from '$lib/components/site';
   import { parallax } from './parallax';
 
   let { workspace }: { workspace: string } = $props();
@@ -16,13 +16,13 @@
 >
   <div class="container grid">
     <div class="copy">
-      <Eyebrow label="DOCUMENT PROVENANCE" accent />
       <h1 id="hero-title" class="title">
-        Version control for the documents <span class="hl">you already write.</span>
+        Version control for <span class="hl">documents, spreadsheets and presentations</span>
       </h1>
       <p class="lede">
-        Edits to the text, cells and slides in Word, Docs, Excel, Sheets, PowerPoint and Slides are
-        captured, reviewed, merged and recorded in a history you can verify.
+        Dynodoc records edits to paragraph text, cell values and slide text in Word, Docs, Excel,
+        Sheets, PowerPoint and Slides, routes them through review, and keeps the merged result in a
+        hash-chained history that can be checked.
       </p>
       <div class="actions">
         <Btn href={workspace} size="lg" arrow>Open workspace</Btn>

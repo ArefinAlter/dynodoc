@@ -42,9 +42,8 @@
   <SelfHostSection />
   <Section
     id="faq"
-    eyebrow="FAQ"
-    title="Questions, answered plainly."
-    lede="Short answers, including what Dynodoc does not do."
+    title="Common questions"
+    lede="Including what Dynodoc does not do."
     layout="split"
   >
     <div data-reveal>

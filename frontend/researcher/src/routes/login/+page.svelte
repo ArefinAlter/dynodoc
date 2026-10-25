@@ -106,9 +106,8 @@
     <a class="brand" href={site.homeUrl}
       ><img src="/brand/mark.svg?v=2" width="52" height="52" alt={site.brand} /></a
     >
-    <p class="eyebrow">YOUR DOCUMENTS, WITH A HISTORY</p>
     <h1>Welcome to your workspace.</h1>
-    <p class="intro">A little less file chaos.<br />A clear history for every document.</p>
+    <p class="intro">Sign in to open your projects and documents.</p>
     {#if linkToken}
       <div class="notice">
         <Mail size={22} />
@@ -227,17 +226,11 @@
     color: var(--color-accent-strong);
     text-decoration: none;
   }
-  .eyebrow {
-    font-size: 13px;
-    letter-spacing: 2px;
-    color: var(--color-ink-soft);
-    margin: 24px 0 12px;
-  }
   h1 {
     font: 600 34px/1.15 var(--font-ui);
     letter-spacing: -1px;
     color: var(--color-ink-strong);
-    margin: 0 0 12px;
+    margin: 24px 0 12px;
   }
   .intro {
     font-size: 14px;

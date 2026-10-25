@@ -1,21 +1,19 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import { Eyebrow, spotlight } from '$lib/components/site';
+  import { spotlight } from '$lib/components/site';
 
   /**
    * Hero for the editorial marketing pages (features, why, roadmap, changelog, brand):
-   * eyebrow, the page's single h1, a lede, optional actions and a dinosaur plate that
+   * the page's single h1, a lede, optional actions and a dinosaur plate that
    * stands on the hairline under the hero. Pass a decorative `<Dino>` as `art`.
    */
   let {
-    eyebrow,
     title,
     heading,
     lede,
     actions,
     art
   }: {
-    eyebrow: string;
     title?: string;
     /** Rich title (use instead of `title` for a highlighted phrase). */
     heading?: Snippet;
@@ -28,7 +26,6 @@
 <header class="hero dotgrid dotgrid--fade spotlight" use:spotlight>
   <div class="container grid" class:has-art={!!art}>
     <div class="copy">
-      <Eyebrow label={eyebrow} accent />
       <h1 class="h-1">
         {#if heading}{@render heading()}{:else}{title}{/if}
       </h1>

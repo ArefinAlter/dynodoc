@@ -1,7 +1,7 @@
 <script lang="ts">
   import Dino from '$lib/art/Dino.svelte';
   import Egg from '$lib/art/Egg.svelte';
-  import { Btn, Eyebrow } from '$lib/components/site';
+  import { Btn } from '$lib/components/site';
 
   let { workspace }: { workspace: string } = $props();
 
@@ -17,8 +17,7 @@
 <section id="start" class="closing tone-ink" aria-labelledby="start-title">
   <div class="container grid">
     <div class="copy">
-      <Eyebrow label="GET STARTED" />
-      <h2 id="start-title" class="h-1 title">Start your first project.</h2>
+      <h2 id="start-title" class="h-1 title">Open the hosted workspace</h2>
       <p class="lede">
         Create a project, add a Word, Excel or PowerPoint file, and open the first change request.
         The hosted workspace is a test deployment with no paid plan.

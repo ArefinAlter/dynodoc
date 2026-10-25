@@ -7,7 +7,7 @@ test('homepage states the product, links the calls to action and carries one JSO
   await expect(
     page.getByRole('heading', {
       level: 1,
-      name: 'Version control for the documents you already write.'
+      name: 'Version control for documents, spreadsheets and presentations'
     })
   ).toBeVisible();
   const main = page.getByRole('main');
@@ -219,7 +219,7 @@ test('homepage tabs wait for hydration on a slow connection', async ({ page }) =
     await expect.poll(() => heldScripts).toBeGreaterThan(0);
     // The server-rendered page is complete and readable; only the tabs wait.
     await expect(
-      page.getByRole('heading', { level: 1, name: /Version control for the documents/ })
+      page.getByRole('heading', { level: 1, name: /Version control for documents/ })
     ).toBeVisible();
     await expect(page.getByRole('tab', { name: 'Excel', exact: true })).toBeDisabled();
     resumeScripts();

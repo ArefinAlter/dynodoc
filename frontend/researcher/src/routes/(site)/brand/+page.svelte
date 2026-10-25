@@ -63,7 +63,12 @@
     ['Rule', '#d9d4c4', '--color-rule', 'Hairlines and borders'],
     ['Accent', '#0f6b3f', '--color-accent', 'Links, marks, emphasis'],
     ['Accent wash', '#e3efe6', '--color-accent-bg', 'Callouts and badges'],
-    ['Highlighter', '#d7f25c', '--site-highlighter', 'One highlighted phrase in a heading']
+    [
+      'Highlighter',
+      '#d7f25c',
+      '--site-highlighter',
+      'The highlighted phrase in the home-page headline'
+    ]
   ] as const;
   const nightPalette = [
     ['Night paper', '#12120f', 'Page background'],
@@ -119,7 +124,6 @@
 
 <main id="main" use:scrollable>
   <InfoHero
-    eyebrow="BRAND"
     title="Brand and press kit"
     lede="Logos, colour, type and original artwork for press, partners and anyone writing about Dynodoc. Please use them as supplied."
   >
@@ -136,8 +140,7 @@
 
   <Section
     id="logo"
-    eyebrow="LOGO"
-    title="Logo and mark."
+    title="Logo and mark"
     lede="Three SVG files with transparent backgrounds, and a social preview image."
     layout="split"
   >
@@ -186,8 +189,7 @@
 
   <Section
     id="colour"
-    eyebrow="COLOUR"
-    title="Paper, ink and one green."
+    title="Colour"
     lede="The site uses warm paper, near-black ink and a single forest green. These are the exact values and the tokens that carry them."
     layout="split"
     tone="muted"
@@ -239,8 +241,7 @@
 
   <Section
     id="type"
-    eyebrow="TYPE"
-    title="Geist and Geist Mono."
+    title="Typography"
     lede="Geist for text and headings, Geist Mono for labels, numbers and code. Both are open fonts that the site hosts itself."
     layout="split"
   >
@@ -248,13 +249,13 @@
       <div class="specimen card card--raised" data-reveal>
         <span class="eyebrow">Geist</span>
         <p class="aa" aria-hidden="true">Aa</p>
-        <p class="sample">Every change has an author, a reason and a place in the record.</p>
+        <p class="sample">Each change records who made it and where it sits in the history.</p>
         <p class="small">Regular, medium and semibold. Headings use tight tracking.</p>
       </div>
       <div class="specimen card card--raised mono-spec" data-reveal>
         <span class="eyebrow">Geist Mono</span>
         <p class="aa" aria-hidden="true">01</p>
-        <p class="sample">[ LABEL ] · STEP 01 · e7d31b09</p>
+        <p class="sample">Step 1 · 23 Oct 2026 · e7d31b09</p>
         <p class="small">Labels, numbering, hashes and code.</p>
       </div>
     </div>
@@ -266,8 +267,7 @@
 
   <Section
     id="art"
-    eyebrow="ART"
-    title="The dinosaur plates."
+    title="Artwork"
     lede="Pencil and halftone, one plate per idea. Each is a vector drawing that follows the page’s ink and green."
     layout="split"
     tone="muted"
@@ -297,9 +297,8 @@
 
   <Section
     id="words"
-    eyebrow="WORDS"
-    title="Boilerplate and facts."
-    lede="Copy these as written. They claim only what exists today."
+    title="Boilerplate and facts"
+    lede="Text to copy as written. It describes only what exists today."
     layout="split"
   >
     <div class="words">
@@ -332,8 +331,7 @@
 
   <Section
     id="contact"
-    eyebrow="CONTACT"
-    title="Press and licensing."
+    title="Press and licensing"
     lede="Press and licensing enquiries go to the operator. The same details appear in the legal pages."
     layout="split"
     tone="muted"

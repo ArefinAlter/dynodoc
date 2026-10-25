@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { Search } from '@lucide/svelte';
   import { env } from '$env/dynamic/public';
-  import { Btn, Eyebrow, reveal, scrollable, spotlight } from '$lib/components/site';
+  import { Btn, reveal, scrollable, spotlight } from '$lib/components/site';
   import { workspaceHref } from '$lib/components/site/nav';
   import { ReviewMock, TimelineMock } from '$lib/components/mock';
   import Dino from '$lib/art/Dino.svelte';
@@ -147,8 +147,7 @@
   <header class="hero dotgrid dotgrid--fade spotlight" use:spotlight>
     <div class="container hero__grid">
       <div class="hero__copy">
-        <Eyebrow label="HELP" />
-        <h1 class="h-1">From your first project to <span class="hl">a verified history</span>.</h1>
+        <h1 class="h-1">Help</h1>
         <p class="lede">
           How to create a project, bring changes in from an editor, review and merge them, recover
           earlier content and check that the history is intact.
