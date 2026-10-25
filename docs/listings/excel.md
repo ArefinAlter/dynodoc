@@ -7,7 +7,7 @@ Draft copy prepared from this repository for the owner to paste into **Partner C
 | Field | Value | Limit |
 | --- | --- | --- |
 | Name (manifest `DisplayName` and reserved offer name; keep identical) | Dynodoc for Excel | 50 in Partner Center, 125 in the manifest |
-| Publisher / developer name | Verne Systems (trading as Verne), 8/A, Sher-e-Bangla Road, Zighatola, Dhaka-1209, Bangladesh; confirm it matches the Partner Center verification | |
+| Publisher / developer name | Verne Ltd., 8/A, Sher-e-Bangla Road, Zighatola, Dhaka-1209, Bangladesh; confirm it matches the Partner Center verification | |
 | Summary / tagline | Send your Excel cell edits to Dynodoc for review and bring approved team changes back. | 100 |
 | Manifest description | Connect this workbook to a Dynodoc project. Dynodoc records edits to existing cell values and formulas while this pane is open, sends them for review, and brings approved changes from your team back into the workbook. | 250 |
 | Category | Collaboration (secondary: Productivity). Choose from the list Partner Center shows. | |

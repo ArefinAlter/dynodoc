@@ -246,7 +246,7 @@
         <dd>
           <span class="badge">Policies are drafts</span>
           <p>
-            Dynodoc is operated by {OPERATOR.legalName}, trading as {OPERATOR.tradingAs},
+            Dynodoc is operated by {OPERATOR.legalName},
             {OPERATOR.address}. Company registration {OPERATOR.companyRegistration}; trade licence
             {OPERATOR.tradeLicence}. Phone: <a href={OPERATOR.phoneHref}>{OPERATOR.phone}</a>. The
             <a href="/privacy">privacy policy</a> and <a href="/terms">terms</a> remain drafts until the

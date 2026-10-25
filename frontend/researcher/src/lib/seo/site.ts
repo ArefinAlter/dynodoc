@@ -33,6 +33,15 @@ export type IndexablePage = {
 
 export const INDEXABLE_PAGES: IndexablePage[] = [
   {
+    path: '/try',
+    title: `Try the pre-alpha · ${SITE_NAME}`,
+    description:
+      'Try Dynodoc 0.0.1a, a pre-alpha: a sample workspace of your own in the browser, removed after 24 hours, or the unsigned desktop app for Windows and Linux, with file sizes and SHA-256 sums.',
+    lastmod: '2026-10-25',
+    changefreq: 'weekly',
+    priority: '0.9'
+  },
+  {
     path: '/compatibility',
     title: 'Compatibility: editors, formats and limits · Dynodoc',
     description:

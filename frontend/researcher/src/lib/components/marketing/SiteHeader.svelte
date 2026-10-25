@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import { page } from '$app/stores';
-  import { env } from '$env/dynamic/public';
   import { ArrowUpRight, ChevronDown, Menu, X } from '@lucide/svelte';
   import ThemeToggle from '$lib/components/ThemeToggle.svelte';
   import {
@@ -9,7 +8,6 @@
     NAV_GROUPS,
     isAppHost,
     siteHref,
-    workspaceHref,
     type NavLink
   } from '$lib/components/site/nav';
 
@@ -44,7 +42,6 @@
   let hoverTimer: ReturnType<typeof setTimeout> | undefined;
 
   const relative = $derived(!isAppHost($page.url.hostname));
-  const workspace = $derived(workspaceHref(env.PUBLIC_WORKSPACE_URL));
   const href = (path: string) => siteHref(path, relative);
   const current = (link: NavLink) =>
     !link.external && link.href === $page.url.pathname ? 'page' : undefined;
@@ -265,8 +262,8 @@
       <div class="actions">
         <ThemeToggle variant={desktop ? 'icon' : 'label'} />
         <a class="signin" href="/login" onclick={closeAll}>Sign in</a>
-        <a class="cta" href={workspace} onclick={closeAll}
-          >Open workspace<ArrowUpRight class="cta-arrow" size={15} aria-hidden="true" /></a
+        <a class="cta" href={href('/try')} onclick={closeAll}
+          >Try the pre-alpha<ArrowUpRight class="cta-arrow" size={15} aria-hidden="true" /></a
         >
       </div>
     </nav>

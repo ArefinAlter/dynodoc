@@ -40,7 +40,7 @@ const FACTS = [
   `Product: ${SITE_NAME}, a document provenance, review and synchronization platform.`,
   'Status: early software under active development; hosted test deployment with email and Google sign-in, no paid plan.',
   'Hosting: a hosted application at dynodoc.online; the workspace runs at app.dynodoc.online.',
-  `Operator: ${OPERATOR.legalName} (trading as ${OPERATOR.tradingAs}), Dhaka, Bangladesh. Contact: ${OPERATOR.email}.`,
+  `Operator: ${OPERATOR.legalName}, Dhaka, Bangladesh. Contact: ${OPERATOR.email}.`,
   `Licence: ${OPEN_SOURCE_STATEMENT} Private document content placed in the hosted app does not become open source.`,
   'Self-hosting the open engine and API: PostgreSQL 16, Docker, Rust and Task; see the engine repository README. Commands: task up, task migrate, task db:grant-runtime, task run.',
   `Source code: the open-source engine, API and command-line tools are at ${ENGINE_REPO_URL}. The workspace and website source is not published.`,

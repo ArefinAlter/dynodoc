@@ -37,8 +37,8 @@
       open-source engine and API may have a different operator and a different notice.
     </p>
     <p>
-      “Dynodoc,” “we” and “our” refer to the operator of this hosted service, {OPERATOR.legalName}
-      (trading as {OPERATOR.tradingAs}), of Dhaka, Bangladesh, whose details are under
+      “Dynodoc,” “we” and “our” refer to the operator of this hosted service, {OPERATOR.legalName},
+      of Dhaka, Bangladesh, whose details are under
       <a href="#contact">Contact and operator details</a>. For account and service-operation
       information we decide how and why it is processed. For the documents and project history a
       team places in Dynodoc, that team or its organization generally decides what is uploaded, who
@@ -286,6 +286,24 @@
       manifests. The add-ins contain no analytics, advertising, fingerprinting or error-reporting
       service, set no cookies and capture nothing while the pane or sidebar is closed. They record
       what they observe at snapshot times; they do not prove who typed a change.
+    </p>
+  </section>
+  <section id="sample-workspaces">
+    <h2>Sample workspaces and the desktop app (pre-alpha)</h2>
+    <p>
+      Anyone can start a sample workspace from the <a href="/try">Try the pre-alpha</a> page without
+      an account. It is a separate account with an invented address on
+      <code>visitors.dynodoc.invalid</code>, filled with invented sample content. It is removed 24
+      hours after it was started: you are taken out of its projects and its files are moved to the
+      trash. To limit misuse, the address you start one from is counted for an hour, kept only as a
+      shortened one-way hash. Please do not put personal or confidential information in a sample
+      workspace.
+    </p>
+    <p>
+      The desktop app keeps your preferences in a file on your computer. When it is signed in, a
+      small service beside the workspace keeps, for your account, the changes captured but not yet
+      committed, commits not yet pushed, commit messages and the agent threads you start in the app.
+      They are removed with a sample workspace, and on request for any account.
     </p>
   </section>
   <section id="measurements">

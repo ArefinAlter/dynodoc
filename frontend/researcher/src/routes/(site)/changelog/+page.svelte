@@ -95,7 +95,7 @@
         'The hosted pilot moved to application 1b469a2 on schema 39 after a verified backup and a rehearsal on a copy of production. The history digests before and after are identical.',
       changes: [
         'Projects have an Issues tab with labels, assignees and immutable comments, and projects can be starred. Only members of a project can see or change them.',
-        'The privacy, terms, security and support pages name Verne Systems as the operator and give its registered address and contact. They are still drafts and are not yet in effect.',
+        'The privacy, terms, security and support pages name the operator (now Verne Ltd.) and give its registered address and contact. They are still drafts and are not yet in effect.',
         'Only the engine, API and command-line tools are open source (MIT). The workspace and website are not published as open source, so the source download now points to the engine repository.',
         'Two read-only command-line reports are available for local repositories: a retention plan and a dry-run merge report for files edited on both sides.'
       ],

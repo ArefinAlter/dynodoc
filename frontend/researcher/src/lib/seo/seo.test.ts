@@ -200,9 +200,9 @@ describe('licence and operator statements', () => {
 
   it('names the operator and its contact, and never a tax or commercial identifier', async () => {
     const text = await body(llms, `${PUBLIC}/llms.txt`);
-    expect(text).toContain('Verne Systems');
+    expect(text).toContain('Verne Ltd.');
     expect(text).toContain('info@vernesystems.com');
-    expect(structuredDataScript).toContain('"legalName":"Verne Systems"');
+    expect(structuredDataScript).toContain('"legalName":"Verne Ltd."');
     expect(structuredDataScript).toContain('"telephone":"+880 1870 034384"');
     expect(`${structuredDataScript}${text}`).not.toMatch(/\bTIN\b|D-U-N-S|DUNS/);
   });
@@ -216,7 +216,7 @@ describe('the open-source page', () => {
 
   it('is indexable, listed in the sitemap, llms.txt and the navigation', async () => {
     expect(INDEXABLE_PAGES.map((page) => page.path)).toContain('/open-source');
-    expect(INDEXABLE_PAGES).toHaveLength(20);
+    expect(INDEXABLE_PAGES).toHaveLength(21);
     expect(await body(sitemap, `${PUBLIC}/sitemap.xml`)).toContain(
       `<loc>${canonicalUrl('/open-source')}</loc>`
     );

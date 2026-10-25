@@ -17,14 +17,13 @@ import {
 
 const REPOSITORY = ENGINE_REPO_URL;
 
-// The publisher is the operator, Verne Systems; Dynodoc is its product. No tax or commercial
+// The publisher is the operator, Verne Ltd.; Dynodoc is its product. No tax or commercial
 // identifier is published here.
 const organization = {
   '@type': 'Organization',
   '@id': `${CANONICAL_ORIGIN}/#organization`,
   name: OPERATOR.legalName,
   legalName: OPERATOR.legalName,
-  alternateName: OPERATOR.tradingAs,
   url: OPERATOR.website,
   brand: {
     '@type': 'Brand',

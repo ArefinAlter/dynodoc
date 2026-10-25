@@ -51,7 +51,7 @@ function makeBuild(name: string, extra: (build: string) => void = () => {}) {
   put(
     build,
     `${IMM}/chunks/privacy.js`,
-    'export const a="Run by Verne Systems, Dhaka. See https://dynodoc.online/privacy";'
+    'export const a="Run by Verne Ltd., Dhaka. See https://dynodoc.online/privacy";'
   );
   put(build, 'server/index.js', 'import"./chunks/hooks.js";');
   put(build, 'server/chunks/hooks.js', 'export const h="clean";');
@@ -169,7 +169,7 @@ describe('the audit', () => {
   });
   it('flags an operator fact in shared server code beyond the listed files', async () => {
     const leaky = makeBuild('operator', (b) =>
-      put(b, 'server/chunks/hooks.js', 'export const h="Verne Systems";')
+      put(b, 'server/chunks/hooks.js', 'export const h="Verne Ltd.";')
     );
     const bad = violations(await scanBuild(leaky), known);
     expect(bad.map((v: { why: string }) => v.why)).toEqual([

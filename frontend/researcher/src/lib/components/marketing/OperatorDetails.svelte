@@ -8,7 +8,7 @@
 
 <dl class="contact-details">
   <dt>Legal operator</dt>
-  <dd>{OPERATOR.legalName}, trading as {OPERATOR.tradingAs}</dd>
+  <dd>{OPERATOR.legalName}</dd>
   <dt>Registered address</dt>
   <dd>{OPERATOR.address}</dd>
   <dt>Company registration</dt>

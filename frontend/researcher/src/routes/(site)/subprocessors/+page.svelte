@@ -140,7 +140,7 @@
     </p>
     <dl class="contact-details">
       <dt>Legal operator</dt>
-      <dd>{OPERATOR.legalName}, trading as {OPERATOR.tradingAs}</dd>
+      <dd>{OPERATOR.legalName}</dd>
       <dt>Contact for questions</dt>
       <dd>
         <a href={EMAIL_HREF}>{OPERATOR.email}</a>. See also the

@@ -17,14 +17,15 @@
 <section id="start" class="closing tone-ink" aria-labelledby="start-title">
   <div class="container grid">
     <div class="copy">
-      <h2 id="start-title" class="h-1 title">Open the hosted workspace</h2>
+      <h2 id="start-title" class="h-1 title">Try the pre-alpha</h2>
       <p class="lede">
-        Create a project, add a Word, Excel or PowerPoint file, and open the first change request.
-        The hosted workspace is a test deployment with no paid plan.
+        Start a sample workspace of your own (no account, removed after 24 hours), sign in to create
+        your own projects, or install the desktop app for Windows or Linux. The hosted workspace is
+        a test deployment with no paid plan.
       </p>
       <div class="actions">
-        <Btn href={workspace} size="lg" arrow>Open workspace</Btn>
-        <Btn href="/add-ins" variant="secondary" size="lg">Get the add-ins</Btn>
+        <Btn href="/try" size="lg" arrow>Try the pre-alpha</Btn>
+        <Btn href={workspace} variant="secondary" size="lg">Open workspace</Btn>
       </div>
       <nav aria-label="More about Dynodoc">
         <ul class="links">

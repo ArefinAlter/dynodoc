@@ -19,7 +19,7 @@ the dashboard wins.
 
 ## 0. Decide first
 
-- [ ] Publisher identity: Verne Systems (trading as Verne), 8/A, Sher-e-Bangla Road,
+- [ ] Publisher identity: Verne Ltd., 8/A, Sher-e-Bangla Road,
       Zighatola, Dhaka-1209, Bangladesh, as supplied by the owner on 13 October 2026. Both
       stores show or verify these; confirm they match the registration documents. The
       public legal pages name the operator but are still unadopted drafts.

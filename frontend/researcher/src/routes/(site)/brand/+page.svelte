@@ -104,7 +104,7 @@
     ['Name', 'Dynodoc'],
     ['Website', 'dynodoc.online'],
     ['Workspace', 'app.dynodoc.online'],
-    ['Operator', `${OPERATOR.legalName}, trading as ${OPERATOR.tradingAs}, Dhaka, Bangladesh`],
+    ['Operator', `${OPERATOR.legalName}, Dhaka, Bangladesh`],
     [
       'Licence',
       'Engine, API and command-line tools: MIT. Workspace and website: not published as open source.'

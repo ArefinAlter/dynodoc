@@ -13,7 +13,7 @@ Draft copy prepared from this repository for the owner to paste into the **Googl
 | Search keywords | spreadsheet review, approvals, version history, change tracking, audit trail, collaboration, provenance, sheet history, team review | |
 | Language | English | |
 | Editor | Google Sheets (Editor add-on, standalone Apps Script project; source in `extensions/google-sheets/`) | |
-| Developer name / contact | Verne Systems (trading as Verne); info@vernesystems.com, +880 1870 034384 (owner to confirm the mailbox is monitored) | developer contact email required |
+| Developer name / contact | Verne Ltd.; info@vernesystems.com, +880 1870 034384 (owner to confirm the mailbox is monitored) | developer contact email required |
 | Support / privacy / terms links | https://dynodoc.online/support, https://dynodoc.online/privacy, https://dynodoc.online/terms (the privacy and terms pages are drafts and not yet effective; the owner must adopt them first) | all required |
 | Icons | `extensions/marketplace/assets/google-icon-128.png` and `google-icon-32.png` (`google-icon-96.png` only for a listing that includes a web app) | 128 and 32 required |
 | Card banner | `extensions/marketplace/assets/google-card-banner-220x140.png` (a 440 x 280 version is alongside) | 220 x 140 |

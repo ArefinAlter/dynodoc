@@ -293,6 +293,6 @@ This repository is private and proprietary: Copyright (c) 2026 Verne Ltd., all r
 reserved (see [`LICENSE`](LICENSE)). The web workspace, website and editor connectors
 are not published as open source. Only the
 [engine, API and command-line tools](https://github.com/ArefinAlter/dynodoc-engine) are
-open source, under the MIT licence, in their own repository. The operator is Verne Systems
-(trading as Verne), Dhaka, Bangladesh; see [the legal pages notes](docs/LEGAL-PAGES.md) and
+open source, under the MIT licence, in their own repository. The operator is Verne Ltd.,
+Dhaka, Bangladesh; see [the legal pages notes](docs/LEGAL-PAGES.md) and
 [the licensing decision](docs/decisions/013-private-application-licence.md).

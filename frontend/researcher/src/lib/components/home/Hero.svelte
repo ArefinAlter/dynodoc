@@ -25,11 +25,12 @@
         hash-chained history that can be checked.
       </p>
       <div class="actions">
-        <Btn href={workspace} size="lg" arrow>Open workspace</Btn>
-        <Btn href="/add-ins" variant="secondary" size="lg">Get the add-ins</Btn>
+        <Btn href="/try" size="lg" arrow>Try the pre-alpha</Btn>
+        <Btn href={workspace} variant="secondary" size="lg">Open workspace</Btn>
       </div>
       <p class="note">
-        Add-ins ship as test installs today; marketplace listings are not live. The engine, API and
+        Pre-alpha 0.0.1a: a sample workspace in your browser, or the desktop app for Windows and
+        Linux. Add-ins ship as test installs; marketplace listings are not live. The engine, API and
         command-line tools are open source (MIT).
       </p>
     </div>

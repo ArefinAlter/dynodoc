@@ -32,7 +32,7 @@ operator block. Do not retype a value in a page.
 
 | Fact | Value |
 | --- | --- |
-| Legal entity / trading name | Verne Systems, trading as Verne |
+| Legal entity / trading name | Verne Ltd. |
 | Registered address | 8/A, Sher-e-Bangla Road, Zighatola, Dhaka-1209, Bangladesh |
 | Company registration | C-201411-1 |
 | Trade licence | TRAD/DSCC/035498/2024 |
