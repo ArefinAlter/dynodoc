@@ -1,6 +1,10 @@
 // GENERATED from apps/desktop/client/src by client/build.mjs. Do not edit; edit the sources and rebuild.
 "use strict";
 (() => {
+  var __defProp = Object.defineProperty;
+  var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: !0, configurable: !0, writable: !0, value }) : obj[key] = value;
+  var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key != "symbol" ? key + "" : key, value);
+
   // client/src/dom.ts
   function append(parent, child) {
     if (!(child == null || child === !1)) {
@@ -32,17 +36,17 @@
           } else key === "value" || key === "checked" || key === "disabled" || key === "hidden" || key === "indeterminate" || key === "selected" ? el[key] = value : key === "ref" && typeof value == "function" ? value(el) : value === !0 ? el.setAttribute(key, "") : el.setAttribute(key, String(value));
       }
   }
-  function h(tag, props, ...children) {
+  function h(tag, props, ...children2) {
     let el = document.createElement(tag);
     apply(el, props);
-    for (let c of children) append(el, c);
+    for (let c of children2) append(el, c);
     return el;
   }
   var SVG = "http://www.w3.org/2000/svg";
-  function s(tag, props, ...children) {
+  function s(tag, props, ...children2) {
     let el = document.createElementNS(SVG, tag);
     apply(el, props);
-    for (let c of children) append(el, c);
+    for (let c of children2) append(el, c);
     return el;
   }
   function clear(el) {
@@ -220,11 +224,11 @@
     return out;
   }
   function hunks(base, edits2, context = 3) {
-    let all = rows(base, edits2), ctx = Math.max(0, context), keep = new Array(all.length).fill(!1);
+    let all = rows(base, edits2), ctx2 = Math.max(0, context), keep = new Array(all.length).fill(!1);
     all.forEach((r, i) => {
       if (r.kind === "context") return;
-      let lo = Math.max(0, i - ctx), hi = Number.isFinite(ctx) ? Math.min(all.length - 1, i + ctx) : all.length - 1;
-      for (let k = Number.isFinite(ctx) ? lo : 0; k <= hi; k++) keep[k] = !0;
+      let lo = Math.max(0, i - ctx2), hi = Number.isFinite(ctx2) ? Math.min(all.length - 1, i + ctx2) : all.length - 1;
+      for (let k = Number.isFinite(ctx2) ? lo : 0; k <= hi; k++) keep[k] = !0;
     });
     let out = [], current3 = [], close = () => {
       if (!current3.length) return;
@@ -463,13 +467,27 @@
     return commit;
   }
   function verify(db, docId) {
-    let out = [], branches = new Set(db.commits.filter((c) => c.docId === docId).map((c) => c.branch));
+    let out = [];
+    if (db.remote) {
+      let check = db.remote.verify[docId] ?? { ok: !0 };
+      for (let c of db.commits.filter((x) => x.docId === docId)) {
+        if (c.local) continue;
+        if (c.branch !== "main") {
+          out.push({ commitId: c.id, ok: !0, detail: "a draft revision; its changes join the chain when merged" });
+          continue;
+        }
+        let ok2 = check.ok || check.brokenAt !== void 0 && c.seq < check.brokenAt;
+        out.push({ commitId: c.id, ok: ok2, detail: ok2 ? "verified by the server: the chain replays to this hash" : check.detail ?? `the chain breaks at event ${check.brokenAt ?? "?"}` });
+      }
+      return out;
+    }
+    let branches = new Set(db.commits.filter((c) => c.docId === docId).map((c) => c.branch));
     for (let branch of branches) {
       let prev = branch === "main" ? GENESIS : "";
       for (let c of branchCommits(db, docId, branch)) {
         prev || (prev = c.prevChainHash);
-        let content = sha256(canonical(c.edits)), ok = content === c.contentHash && c.prevChainHash === prev && chainHash(prev, content) === c.chainHash;
-        out.push({ commitId: c.id, ok, detail: ok ? "chain hash recomputed and equal" : content !== c.contentHash ? "content hash differs from the edits" : "chain hash does not follow from the previous one" }), prev = c.chainHash;
+        let content = sha256(canonical(c.edits)), ok2 = content === c.contentHash && c.prevChainHash === prev && chainHash(prev, content) === c.chainHash;
+        out.push({ commitId: c.id, ok: ok2, detail: ok2 ? "chain hash recomputed and equal" : content !== c.contentHash ? "content hash differs from the edits" : "chain hash does not follow from the previous one" }), prev = c.chainHash;
       }
     }
     return out;
@@ -1126,7 +1144,15 @@ Suggest, do not order.` }
     /** The desktop shell's bridge, when this page runs inside the app's window. */
     desktop: !1,
     /** The desktop app's version, from its get_state command. */
-    desktopVersion: ""
+    desktopVersion: "",
+    /** Live mode: the screens show a real server's workspace (data/live.ts). */
+    live: {
+      mode: "offline",
+      server: "",
+      saving: !1,
+      error: "",
+      visitor: null
+    }
   };
   function structuredCloneSafe(v) {
     return JSON.parse(JSON.stringify(v));
@@ -1135,13 +1161,17 @@ Suggest, do not order.` }
     return state.ui.branchByProject[projectId] ?? "main";
   }
   var scheduled = !1, renderer = () => {
+  }, afterRender = () => {
   };
+  function setAfterRender(fn) {
+    afterRender = fn;
+  }
   function setRenderer(fn) {
     renderer = fn;
   }
   function render() {
     scheduled || (scheduled = !0, requestAnimationFrame(() => {
-      scheduled = !1, renderer();
+      scheduled = !1, renderer(), afterRender();
     }));
   }
   var toastId = 0;
@@ -1156,6 +1186,1032 @@ Suggest, do not order.` }
   }
   function resetSample() {
     state.db = seed(), state.ui.verified = {}, state.ui.changes = { selected: null, filter: "", summary: "", description: "", amend: !1 }, state.ui.history.selected = null, state.ui.requests.selected = null, state.ui.branchByProject = { p_handbook: "main", p_field: "main", p_grant: "main" }, render();
+  }
+
+  // client/src/bridge.ts
+  function bridgeInvoke() {
+    let internals = window.__TAURI_INTERNALS__;
+    return internals && typeof internals.invoke == "function" ? internals.invoke : null;
+  }
+  function inDesktop() {
+    return bridgeInvoke() !== null;
+  }
+  function $(id) {
+    let el = document.getElementById(id);
+    if (!el) throw new Error(`launcher element #${id} is missing`);
+    return el;
+  }
+  function show(el, on) {
+    el.hidden = !on;
+  }
+  function say(id, text) {
+    let el = $(id);
+    el.textContent = text || "", el.getAttribute("role") || show(el, !!text);
+  }
+  function message(e) {
+    return typeof e == "string" ? e : (e instanceof Error ? e.message : e && typeof e == "object" && "message" in e ? String(e.message) : "") || "Something went wrong. Please try again.";
+  }
+  function busy(button2, on, working2) {
+    let b = button2;
+    on ? (b.dataset.label = b.textContent ?? "", b.textContent = working2 ?? "") : b.dataset.label && (b.textContent = b.dataset.label), b.disabled = on;
+  }
+  var invoke = null, current = null;
+  function desktopState() {
+    return current;
+  }
+  async function refreshDesktopState() {
+    if (!invoke) return current;
+    try {
+      current = await invoke("get_state");
+    } catch {
+    }
+    return current;
+  }
+  async function call(cmd, args) {
+    let fn = invoke ?? bridgeInvoke();
+    if (!fn) throw new Error("This needs the Dynodoc desktop app.");
+    try {
+      return await fn(cmd, args);
+    } catch (e) {
+      throw new Error(message(e));
+    }
+  }
+  async function connect(address, errorId, button2, working2) {
+    if (!invoke) return !1;
+    say(errorId, ""), busy(button2, !0, working2);
+    try {
+      let opened = await invoke("set_server", { address });
+      say("current", "Opening " + opened + " ...");
+    } catch (e) {
+      return say(errorId, message(e)), busy(button2, !1), !1;
+    }
+    return !0;
+  }
+  async function openServer() {
+    if (!invoke || !current || !current.server) return null;
+    try {
+      return await invoke("set_server", { address: current.server });
+    } catch (e) {
+      return Promise.reject(new Error(message(e)));
+    }
+  }
+  async function loadKey() {
+    if (!invoke) return;
+    let status = await invoke("device_key_status");
+    if (show($("key-public"), !1), !status.exists) {
+      show($("key-none"), !0), show($("key-create"), !0), show($("key-have"), !1);
+      return;
+    }
+    if (show($("key-none"), !1), show($("key-create"), !1), status.damaged) {
+      show($("key-have"), !1), say("key-error", status.recovery);
+      return;
+    }
+    show($("key-have"), !0), $("key-where").textContent = "Stored at " + status.path;
+  }
+  function wire() {
+    $("use-cloud").addEventListener("click", function() {
+      current && connect(current.cloud, "cloud-error", $("use-cloud"), "Opening ...");
+    }), $("confirm").addEventListener("click", function() {
+      !current || !current.unconfirmed || connect(current.unconfirmed, "confirm-error", $("confirm"), "Opening ...");
+    }), $("own-form").addEventListener("submit", async function(event) {
+      event.preventDefault(), await connect($("address").value, "address-error", $("connect"), "Connecting ...") || $("address").focus();
+    }), $("signin-form").addEventListener("submit", async function(event) {
+      if (event.preventDefault(), !!invoke) {
+        say("link-error", ""), busy($("signin-go"), !0, "Signing in ...");
+        try {
+          await invoke("open_sign_in_link", { link: $("link").value }), $("link").value = "";
+        } catch (e) {
+          say("link-error", message(e)), busy($("signin-go"), !1), $("link").focus();
+          return;
+        }
+        busy($("signin-go"), !1);
+      }
+    }), $("browser-signin-go").addEventListener("click", async function() {
+      if (invoke) {
+        say("browser-signin-error", ""), say("browser-signin-status", ""), show($("browser-signin-pairing"), !1), busy($("browser-signin-go"), !0, "Opening your browser ...");
+        try {
+          let pairing = await invoke("start_browser_sign_in");
+          $("browser-signin-code").textContent = pairing, show($("browser-signin-pairing"), !0), say(
+            "browser-signin-status",
+            "Your browser has opened. Sign in there, check that the pairing code matches, choose Continue, and you will come back to this app. This request is good for 10 minutes."
+          );
+        } catch (e) {
+          say("browser-signin-error", message(e));
+        }
+        busy($("browser-signin-go"), !1);
+      }
+    }), $("key-create").addEventListener("click", async function() {
+      if (invoke) {
+        say("key-error", ""), say("key-status", ""), busy($("key-create"), !0, "Creating ...");
+        try {
+          let publicKey = await invoke("device_key_create");
+          await loadKey(), $("public-key").value = publicKey, show($("key-show"), !1), show($("key-public"), !0), say("key-status", "Key created. Add its public key in the web app to use it.");
+        } catch (e) {
+          say("key-error", message(e));
+          try {
+            await loadKey();
+          } catch {
+          }
+        }
+        busy($("key-create"), !1);
+      }
+    }), $("key-show").addEventListener("click", async function() {
+      if (invoke) {
+        say("key-error", ""), say("key-status", ""), busy($("key-show"), !0, "Reading the key ...");
+        try {
+          $("public-key").value = await invoke("device_public_key"), show($("key-show"), !1), show($("key-public"), !0);
+        } catch (e) {
+          say("key-error", message(e));
+        }
+        busy($("key-show"), !1);
+      }
+    }), $("key-copy").addEventListener("click", async function() {
+      let field2 = $("public-key");
+      try {
+        await navigator.clipboard.writeText(field2.value), say("key-status", "Public key copied.");
+      } catch {
+        field2.focus(), field2.select(), say("key-status", "Select the public key and copy it with your keyboard.");
+      }
+    });
+  }
+  async function startBridge() {
+    if (invoke = bridgeInvoke(), !invoke || !document.getElementById("launcher")) return null;
+    wire();
+    try {
+      current = await invoke("get_state");
+    } catch (e) {
+      return say("app-error", message(e)), null;
+    }
+    let state2 = current, phone = state2.platform === "android" || state2.platform === "ios";
+    if ($("about").textContent = (phone ? "Dynodoc " : "Dynodoc desktop ") + state2.version + " (" + state2.platform + ")", phone && ($("lede").textContent = "Dynodoc opens your workspace in this app. Choose the Dynodoc cloud, or the address of a server your organisation runs. To choose a different server later, sign out in Dynodoc: this screen comes back."), $("help").href = state2.support, state2.unconfirmed && ($("unconfirmed-address").textContent = state2.unconfirmed, show($("unconfirmed"), !0)), state2.server && (say("current", "Currently set to " + state2.server + "."), $("address").value = state2.server === state2.cloud ? "" : state2.server, show($("browser-signin"), state2.browser_signin), show($("signin-if-button"), state2.browser_signin), show($("signin"), !0)), state2.tools) {
+      show($("key"), !0);
+      try {
+        await loadKey();
+      } catch (e) {
+        say("key-error", message(e));
+      }
+      try {
+        let tools = await invoke("tools_version");
+        $("about").textContent += ". Tools: " + tools + ".";
+      } catch (e) {
+        $("about").textContent += ". Local tools unavailable: " + message(e);
+      }
+    }
+    return state2;
+  }
+  function launcherSection() {
+    return location.hash === "#signin" ? "signin" : location.hash === "#key" ? "key" : null;
+  }
+  function focusSection(section2) {
+    section2 === "signin" && !$("browser-signin").hidden && $("browser-signin-go").focus(), section2 === "key" && !$("key").hidden && $("key").scrollIntoView();
+  }
+
+  // client/src/data/remote-map.ts
+  var fieldsOf = (n) => n.current_fields ?? n.fields ?? {}, byPos = (a, b) => a.pos < b.pos ? -1 : a.pos > b.pos ? 1 : a.id < b.id ? -1 : 1;
+  function hex(v) {
+    return v ? typeof v == "string" ? v : v.map((b) => b.toString(16).padStart(2, "0")).join("") : "";
+  }
+  function textOf(v) {
+    if (typeof v == "string") return v;
+    if (typeof v == "number" || typeof v == "boolean") return String(v);
+    if (!v || typeof v != "object") return "";
+    let o = v;
+    return typeof o.text == "string" ? o.text : Array.isArray(o.content) ? o.content.map(textOf).join(o.type === "doc" ? `
+` : "") : "";
+  }
+  function children(nodes, parent) {
+    return Object.values(nodes).filter((n) => !n.deleted && (n.parent_id ?? null) === (parent ?? null)).sort(byPos);
+  }
+  function rootOf(nodes) {
+    return children(nodes, null)[0];
+  }
+  var columnLetter = (i) => {
+    let s2 = "", n = i;
+    do
+      s2 = String.fromCharCode(65 + n % 26) + s2, n = Math.floor(n / 26) - 1;
+    while (n >= 0);
+    return s2;
+  }, cellIndex = (field2) => {
+    let m = /^cell_(\d{1,4})$/.exec(field2);
+    return m ? Number(m[1]) : null;
+  }, cellText = (v) => v == null ? "" : typeof v == "object" ? textOf(v) : String(v);
+  function blocksOf2(kind, nodes) {
+    let blocks = [], slots = {}, root2 = rootOf(nodes);
+    if (!root2) return { blocks, slots };
+    let top = children(nodes, root2.id);
+    if (kind === "spreadsheet") {
+      for (let sheet of top) {
+        let sf = fieldsOf(sheet);
+        if (sf.kind !== "sheet") continue;
+        let name2 = String(sf.label ?? "Sheet"), rows3 = children(nodes, sheet.id), header = rows3[0] ? fieldsOf(rows3[0]) : {};
+        rows3.forEach((row2, r) => {
+          let f = fieldsOf(row2), cells = Object.keys(f).map((k) => [k, cellIndex(k)]).filter((x) => x[1] !== null).sort((a, b) => a[1] - b[1]);
+          for (let [field2, c] of cells) {
+            let text = cellText(f[field2]);
+            if (!text) continue;
+            let rowName = c > 0 && r > 0 ? cellText(f.cell_0) : "", colName = c > 0 && r > 0 ? cellText(header[field2]) : "", what = [rowName, colName].filter(Boolean).join(", "), id = `${row2.id}:${field2}`;
+            blocks.push({ id, label: `${name2}!${columnLetter(c)}${r + 1}${what ? ` · ${what}` : ""}`, text }), slots[id] = { node: row2.id, field: field2, own: !1, kind: "cell", parent: sheet.id };
+          }
+        });
+      }
+      return { blocks, slots };
+    }
+    if (kind === "presentation") {
+      let n = 0;
+      for (let slide of top) {
+        let sf = fieldsOf(slide);
+        if (sf.kind !== "slide") continue;
+        n += 1;
+        let last = "";
+        for (let shape of children(nodes, slide.id)) {
+          let f = fieldsOf(shape);
+          if (f.kind && f.kind !== "text") continue;
+          let role = String(f.role ?? "body"), part = role === "title" ? "Title" : role === "subtitle" ? "Subtitle" : role === "body" ? "Body" : "Text";
+          blocks.push({ id: shape.id, label: `Slide ${n} · ${part}`, text: cellText(f.text) }), slots[shape.id] = { node: shape.id, field: "text", own: !0, kind: "shape", parent: slide.id, pos: shape.pos }, last = shape.id;
+        }
+        let notes = cellText(sf.notes);
+        if (notes) {
+          let id = `${slide.id}:notes`;
+          blocks.push({ id, label: `Slide ${n} · Notes`, text: notes }), slots[id] = { node: slide.id, field: "notes", own: !1, kind: "notes", parent: root2.id };
+        } else
+          slots[`${slide.id}:notes`] = { node: slide.id, field: "notes", own: !1, kind: "notes", parent: root2.id };
+      }
+      return { blocks, slots };
+    }
+    let i = 0, walk = (parent) => {
+      for (let node of children(nodes, parent)) {
+        let f = fieldsOf(node);
+        if (node.type === "item" || node.type === "paragraph" || node.type === "clause") {
+          i += 1;
+          let heading = f.content?.type === "heading", text = typeof f.label == "string" ? f.label : textOf(f.content);
+          blocks.push({ id: node.id, label: `¶ ${i}${heading ? " · Heading" : ""}`, text }), slots[node.id] = { node: node.id, field: "label", own: !0, kind: "paragraph", parent, pos: node.pos, heading };
+        }
+        walk(node.id);
+      }
+    };
+    return walk(root2.id), { blocks, slots };
+  }
+  function applyEvent(nodes, payload) {
+    let type = payload.type, id = String(payload.node_id ?? "");
+    type === "NodeCreated" ? nodes[id] = {
+      id,
+      parent_id: payload.parent_id ?? null,
+      type: String(payload.node_type),
+      pos: String(payload.pos ?? ""),
+      current_fields: { ...payload.fields ?? {} },
+      deleted: !1
+    } : type === "FieldEdited" && nodes[id] ? nodes[id].current_fields = { ...fieldsOf(nodes[id]), [String(payload.field)]: payload.value } : type === "NodeMoved" && nodes[id] ? nodes[id] = { ...nodes[id], parent_id: payload.new_parent_id ?? nodes[id].parent_id, pos: String(payload.new_pos ?? nodes[id].pos) } : type === "NodeDeleted" && nodes[id] ? nodes[id] = { ...nodes[id], deleted: !0 } : type === "NodeRestored" && nodes[id] && (nodes[id] = { ...nodes[id], deleted: !1 });
+  }
+  function cloneNodes(nodes) {
+    let out = {};
+    for (let [k, v] of Object.entries(nodes)) out[k] = { ...v, current_fields: { ...fieldsOf(v) } };
+    return out;
+  }
+  var EDITING = /* @__PURE__ */ new Set(["NodeCreated", "FieldEdited", "RichTextPatched", "NodeMoved", "NodeDeleted", "NodeRestored"]);
+  function runsOf(events, ranges) {
+    let sorted = [...events].sort((a, b) => a.seq - b.seq), out = [];
+    for (let e of sorted) {
+      let at = Date.parse(e.created_at), range = ranges.find((r) => e.seq >= r.from && e.seq <= r.to), key = range ? `range:${range.from}:${range.to}` : `actor:${e.actor_id}:${EDITING.has(e.type) ? "edit" : "other"}`, cur = out[out.length - 1];
+      cur && cur.key === key && (range || at - cur.last < 2e3) ? (cur.to = e.seq, cur.last = at, cur.events.push(e)) : out.push({ key, last: at, from: e.seq, to: e.seq, actor: e.actor_id, at, events: [e] });
+    }
+    return out.map(({ key: _k, last: _l, ...run }) => run);
+  }
+  function describeRun(run, edits2, labels) {
+    let types = new Set(run.events.map((e) => e.type));
+    if (types.has("CommentAdded")) return "Comment added";
+    if (types.has("CommentReplied")) return "Comment replied to";
+    if (types.has("CommentResolved")) return "Discussion resolved or reopened";
+    if (types.has("SuggestionProposed")) return "Suggestion proposed";
+    if (!edits2.length) return run.events.length === 1 ? `${run.events[0].type.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase()}` : `${run.events.length} changes`;
+    if (edits2.length === 1) {
+      let e = edits2[0], label = labels[e.blockId] ?? e.label ?? "a block";
+      return e.op === "edit" ? `Edit ${label}` : e.op === "add" ? `Add ${label}` : `Remove ${label}`;
+    }
+    return `Edit ${edits2.length} blocks`;
+  }
+  function between(left, right) {
+    let prefix = "";
+    for (let i = 0; i < 200; i++) {
+      let a = left.charCodeAt(i) || 32, b = (right ?? "").charCodeAt(i) || 126;
+      if (b - a > 1) return prefix + String.fromCharCode(Math.floor((a + b) / 2));
+      prefix += String.fromCharCode(a);
+    }
+    return left + "P";
+  }
+  function paragraphContent(text, existing, heading) {
+    return { ...existing && typeof existing == "object" ? { ...existing } : { type: heading ? "heading" : "paragraph", ...heading ? { attrs: { level: 2 } } : {} }, content: text ? [{ type: "text", text }] : [] };
+  }
+  var Unsupported = class extends Error {
+  };
+  function editsToOps(edits2, ctx2) {
+    let nodes = cloneNodes(ctx2.nodes), slots = { ...ctx2.slots }, ops = [], push2 = (op) => {
+      ops.push(op), applyEvent(nodes, op);
+    };
+    for (let e of edits2) {
+      let slot = slots[e.blockId];
+      if (e.op === "edit") {
+        if (!slot || !nodes[slot.node] || nodes[slot.node].deleted) throw new Unsupported(`${e.label ?? "A block"} is no longer in the file.`);
+        let f = fieldsOf(nodes[slot.node]), text = e.after ?? "";
+        slot.kind === "paragraph" ? (push2({ type: "FieldEdited", node_id: slot.node, field: "content", value: paragraphContent(text, f.content, !!slot.heading) }), push2({ type: "FieldEdited", node_id: slot.node, field: "label", value: text })) : slot.kind === "shape" ? (push2({ type: "FieldEdited", node_id: slot.node, field: "text", value: text }), push2({ type: "FieldEdited", node_id: slot.node, field: "label", value: text.replace(/\s+/g, " ").trim().slice(0, 120) }), f.role === "title" && slot.parent && push2({ type: "FieldEdited", node_id: slot.parent, field: "label", value: text.replace(/\s+/g, " ").trim().slice(0, 120) || "Untitled slide" })) : push2({ type: "FieldEdited", node_id: slot.node, field: slot.field, value: text });
+      } else if (e.op === "remove") {
+        if (!slot || !nodes[slot.node]) continue;
+        slot.own ? push2({ type: "NodeDeleted", node_id: slot.node }) : push2({ type: "FieldEdited", node_id: slot.node, field: slot.field, value: "" }), delete slots[e.blockId];
+      } else {
+        let text = e.after ?? "", existing = slots[e.blockId];
+        if (existing && !existing.own) {
+          push2({ type: "FieldEdited", node_id: existing.node, field: existing.field, value: text });
+          continue;
+        }
+        let after = e.afterId ? slots[e.afterId] : void 0;
+        if (ctx2.kind === "document" || !["spreadsheet", "presentation"].includes(String(ctx2.kind))) {
+          let root2 = rootOf(nodes);
+          if (!root2) throw new Unsupported("The file has no content to add to.");
+          let siblings = children(nodes, after?.parent ?? root2.id), i = after ? siblings.findIndex((s2) => s2.id === after.node) : -1, left = i >= 0 ? siblings[i].pos : "", right = siblings[i + 1]?.pos, id = ctx2.newId(), heading = /Heading/.test(e.label ?? "");
+          push2({ type: "NodeCreated", node_id: id, node_type: "item", parent_id: after?.parent ?? root2.id, pos: between(left, right), fields: { label: text, content: paragraphContent(text, void 0, heading) } }), slots[e.blockId] = { node: id, field: "label", own: !0, kind: "paragraph", parent: after?.parent ?? root2.id, heading };
+        } else if (ctx2.kind === "presentation") {
+          let slide = after?.kind === "notes" ? after.node : after?.parent;
+          if (!slide || !nodes[slide]) throw new Unsupported("New text needs a slide to go on.");
+          let shapes = children(nodes, slide), i = after ? shapes.findIndex((s2) => s2.id === after.node) : -1, id = ctx2.newId();
+          push2({ type: "NodeCreated", node_id: id, node_type: "item", parent_id: slide, pos: between(i >= 0 ? shapes[i].pos : "", shapes[i + 1]?.pos), fields: { kind: "text", role: "body", text, x: 6.25, y: 60, w: 87.5, h: 20, style: { size: 20 }, label: text.slice(0, 120) } }), slots[e.blockId] = { node: id, field: "text", own: !0, kind: "shape", parent: slide };
+        } else
+          throw new Unsupported("A new cell is added in the spreadsheet itself.");
+      }
+    }
+    return ops;
+  }
+  function nodeOf(blockId) {
+    let i = blockId.indexOf(":");
+    return i < 0 ? blockId : blockId.slice(0, i);
+  }
+  function blockOfKey(key, slots) {
+    let [node, field2] = key.split(":");
+    return field2 && slots[`${node}:${field2}`] ? `${node}:${field2}` : node;
+  }
+  var EXT = { document: "docx", spreadsheet: "xlsx", presentation: "pptx" };
+  function filenameOf(title, kind) {
+    return `${title.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "untitled"}.${EXT[kind] ?? "docx"}`;
+  }
+  var POLICY_ROLE_TO_CLIENT = { viewer: "viewer", contributor: "reviewer", reviewer: "approver", editor: "editor", manager: "manager", owner: "owner" }, CLIENT_ROLE_TO_POLICY = { viewer: "viewer", reviewer: "contributor", approver: "reviewer", editor: "editor", manager: "manager", owner: "owner" };
+
+  // client/src/data/remote.ts
+  var RemoteError = class extends Error {
+    constructor(status, message2) {
+      super(message2);
+      __publicField(this, "status");
+      this.status = status;
+    }
+  };
+  function ok(r, what) {
+    if (r.status >= 200 && r.status < 300) return r.body;
+    let text = r.body && typeof r.body == "object" && typeof r.body.error == "string" ? r.body.error : "", plain = r.status === 401 ? "Your session on the server has ended. Sign in again." : r.status === 403 ? text && text !== "forbidden" ? text : `Your role does not allow this (${what}).` : r.status === 409 ? text && text !== "conflict" ? text : "Someone changed this on the server first. The latest version is shown; try again." : r.status === 429 ? "The server asks to slow down. Try again in a moment." : text || `The server could not ${what} (${r.status}).`;
+    throw new RemoteError(r.status, plain);
+  }
+  var optional = async (p2, fallback) => {
+    let r = await p2;
+    return r.status >= 200 && r.status < 300 ? r.body : fallback;
+  };
+  async function pool(items, n, fn) {
+    let i = 0, workers = Array.from({ length: Math.min(n, items.length) }, async () => {
+      for (; i < items.length; ) {
+        let x = items[i++];
+        await fn(x);
+      }
+    });
+    await Promise.all(workers);
+  }
+  var ms = (s2) => (s2 ? Date.parse(s2) : 0) || 0, sleep = (n) => new Promise((r) => setTimeout(r, n));
+  function gentle(t) {
+    let active2 = 0, waiting = [], serial = Promise.resolve(), slot = async (fn) => {
+      for (; active2 >= 8; ) await new Promise((r) => waiting.push(r));
+      active2 += 1;
+      try {
+        return await fn();
+      } finally {
+        active2 -= 1, waiting.shift()?.();
+      }
+    }, retry = async (fn) => {
+      let r = await slot(fn);
+      for (let i = 1; i <= 4 && r.status === 429; i++)
+        await sleep(400 * i + Math.floor(Math.random() * 200)), r = await slot(fn);
+      return r;
+    }, expensive = (path) => /^(devices|projects\/[^/]+\/(activity|issues|issues\/\d+|contributors))(\?|$)/.test(path);
+    return {
+      apiGet: (path) => {
+        if (!expensive(path)) return retry(() => t.apiGet(path));
+        let next = serial.then(() => retry(() => t.apiGet(path)));
+        return serial = next.catch(() => {
+        }), next;
+      },
+      apiSend: (m, p2, b, i) => retry(() => t.apiSend(m, p2, b, i)),
+      svcGet: (p2) => retry(() => t.svcGet(p2)),
+      svcSend: (m, p2, b) => retry(() => t.svcSend(m, p2, b))
+    };
+  }
+  var KIND_MAP = { edit: "commit", file_added: "commit", merged: "merge", request_opened: "request", declined: "request", version: "version", member_added: "member" };
+  function person2(people3, id, name2, email) {
+    if (!id) return;
+    let had = people3.get(id);
+    had ? (name2 && had.name === "Someone" && (had.name = name2), email && !had.email && (had.email = email)) : people3.set(id, { id, name: name2 || "Someone", email: email || "" });
+  }
+  function draftState(row2, request) {
+    let status = request?.status ?? (row2?.merged_at ? "merged" : row2?.review_outcome === "declined" ? "declined" : row2?.submitted_at ? "open" : "private");
+    return status === "merged" ? "merged" : status === "declined" || status === "withdrawn" ? "withdrawn" : status === "open" ? "in_review" : "private";
+  }
+  var fileCache = /* @__PURE__ */ new Map(), stateCache = /* @__PURE__ */ new Map();
+  async function allEvents(t, docId, after = 0, known = []) {
+    let out = [...known], cursor = "";
+    for (let page = 0; page < 50; page++) {
+      let body = ok(await t.apiGet(`documents/${docId}/events?limit=1000${after ? `&from_seq=${after + 1}` : ""}${cursor ? `&cursor=${cursor}` : ""}`), "read the history");
+      if (out.push(...body.items ?? []), !body.next_cursor || (cursor = String(body.next_cursor), !/^[A-Za-z0-9_.:-]{1,64}$/.test(cursor))) break;
+    }
+    return out;
+  }
+  async function load(raw0, session, now = Date.now()) {
+    let t = gentle(raw0), people3 = /* @__PURE__ */ new Map(), [profile2, projectList, spaceList, notes0, devices, notifications2] = await Promise.all([
+      t.apiGet("profile").then((r) => ok(r, "read your profile")),
+      t.apiGet("projects").then((r) => ok(r, "list your projects")),
+      optional(t.apiGet("spaces"), { items: [] }),
+      Promise.resolve(null),
+      optional(t.apiGet("devices"), { keys: [] }),
+      optional(t.apiGet("notifications"), { items: [] })
+    ]), me = profile2.id;
+    person2(people3, me, profile2.name);
+    let ctx2 = { me, docs: {}, drafts: {}, crs: {}, projects: {}, threads: {}, issues: {}, base: null, saved: { working: "", local: "", threads: "", client: "" }, client: { copies: {}, hiddenDrafts: [] } }, projects = [], docs = [], drafts2 = [], requests = [], commits = [], activity = [], raw = [];
+    await pool(projectList.items ?? [], 4, async (p2) => {
+      let [files, crs, labels, issues2, act2, policy, members] = await Promise.all([
+        t.apiGet(`projects/${p2.id}/files`).then((r) => ok(r, "list the files")),
+        optional(t.apiGet(`projects/${p2.id}/change-requests`), { items: [] }),
+        optional(t.apiGet(`projects/${p2.id}/labels`), { items: [] }),
+        optional(t.apiGet(`projects/${p2.id}/issues?state=all&limit=100`), { items: [] }),
+        optional(t.apiGet(`projects/${p2.id}/activity?limit=100`), { items: [] }),
+        optional(t.apiGet(`projects/${p2.id}/agent-policy`), null),
+        optional(t.apiGet(`spaces/${p2.id}/members`), { items: [] })
+      ]), emails = {}, mem = [];
+      for (let m of members.items ?? [])
+        person2(people3, m.id, m.name, m.email), emails[m.id] = m.email, mem.some((x) => x.personId === m.id) || mem.push({ personId: m.id, role: m.role, via: m.inherited ? "workspace" : "direct" });
+      let issueList = [];
+      await pool(issues2.items ?? [], 4, async (it) => {
+        let full = await optional(t.apiGet(`projects/${p2.id}/issues/${it.number}`), it);
+        ctx2.issues[`${p2.id}:${it.number}`] = full.revision ?? 0, person2(people3, it.author?.id, it.author?.name), it.assignee && person2(people3, it.assignee.id, it.assignee.name);
+        let comments = (full.comments?.items ?? []).map((c) => (person2(people3, c.author?.id, c.author?.name), { authorId: c.author?.id ?? "", at: ms(c.created_at), text: c.body }));
+        issueList.push({ number: it.number, title: it.title, body: full.body ?? "", state: it.state, authorId: it.author?.id ?? "", assigneeId: it.assignee?.id, labels: (it.labels ?? []).map((l) => l.id), comments, createdAt: ms(it.created_at), closedAt: it.closed_at ? ms(it.closed_at) : void 0 });
+      }), issueList.sort((a, b) => b.number - a.number);
+      let owner = mem.find((m) => m.role === "owner" && m.via === "direct") ?? mem.find((m) => m.role === "owner"), project2 = {
+        id: p2.id,
+        name: p2.name,
+        description: p2.description ?? "",
+        ownerId: owner?.personId ?? "",
+        role: p2.role,
+        private: !0,
+        starred: !!p2.starred,
+        stars: p2.star_count ?? 0,
+        watch: p2.watch === "requests" ? "requests" : "ignore",
+        updatedAt: Math.max(0, ...(files.items ?? []).map((f) => ms(f.updated_at))) || now,
+        rules: { protectMain: !!p2.policy?.protect_team_version, requiredApprovals: p2.policy?.required_approvals ?? 0, mergeRoles: p2.policy?.merge_roles === "owners" ? "owners" : "editors" },
+        members: mem,
+        issues: issueList,
+        labels: (labels.items ?? []).map((l) => ({ id: l.id, name: l.name, color: String(l.color ?? "").replace("#", "") })),
+        agentPolicy: policy ? { enabled: !!policy.enabled, minRole: POLICY_ROLE_TO_CLIENT[policy.min_role] ?? "editor", callsPerMinute: policy.calls_per_minute ?? 30, openProposals: policy.open_proposals ?? 3, proposalsPerDay: policy.proposals_per_day ?? 10, submitRequiresPerson: policy.submit_requires_person !== !1 } : { enabled: !1, minRole: "editor", callsPerMinute: 30, openProposals: 3, proposalsPerDay: 10, submitRequiresPerson: !0 },
+        space: ""
+      };
+      ctx2.projects[p2.id] = { id: p2.id, name: p2.name, description: p2.description ?? "", revision: p2.revision ?? 0, policyRevision: policy ? policy.revision ?? 0 : null, emails }, projects.push(project2);
+      for (let a of act2.items ?? []) {
+        person2(people3, a.actor_id, a.actor_name);
+        let title = a.document_title ?? "", summary = a.kind === "edit" ? `made ${a.count ?? 1} change${(a.count ?? 1) === 1 ? "" : "s"} to ${title}` : a.kind === "merged" ? `merged ${a.summary} into ${title}` : a.kind === "request_opened" ? `opened the change request ${a.summary} on ${title}` : a.kind === "declined" ? `declined ${a.summary} on ${title}` : a.kind === "version" ? `saved the version "${a.summary}" of ${title}` : a.kind === "file_added" ? `added the file ${title}` : a.kind === "member_added" ? `added ${a.summary}` : String(a.summary ?? a.kind);
+        activity.push({ id: `act_${p2.id.slice(0, 8)}_${activity.length}`, at: ms(a.at), actorId: a.actor_id, projectId: p2.id, docId: a.document_id ?? void 0, kind: KIND_MAP[a.kind] ?? "commit", summary, byAgent: !!a.by_agent });
+      }
+      raw.push({ project: p2, files: files.items ?? [], crs: crs.items ?? [], ownDrafts: [] });
+    });
+    let allFiles = raw.flatMap((r) => r.files.map((f) => ({ ...f, projectId: r.project.id }))), notes = [];
+    for (let i = 0; i < allFiles.length; i += 40) {
+      let q = allFiles.slice(i, i + 40).map((f) => `document=${f.id}`).join("&"), body = await optional(t.svcGet(`notes?${q}`), { items: [] });
+      notes.push(...body.items ?? []);
+    }
+    let [working2, local, threads, client] = await Promise.all(
+      ["working", "local", "threads", "client"].map((k) => optional(t.svcGet(`state/${k}`), { value: null }))
+    ), verify2 = {};
+    await pool(allFiles, 3, async (f) => {
+      let cached = fileCache.get(f.id), fresh = cached && cached.latest === (f.latest_seq ?? -1), [doc2, events, ownDrafts, versions2, discussions2, links, connectors2, copies, check] = await Promise.all([
+        fresh ? cached.doc : t.apiGet(`documents/${f.id}`).then((r) => ok(r, "open a file")),
+        fresh ? cached.events : cached && cached.latest < (f.latest_seq ?? 0) ? allEvents(t, f.id, cached.latest, cached.events) : allEvents(t, f.id),
+        optional(t.apiGet(`documents/${f.id}/drafts`), { items: [] }),
+        optional(t.apiGet(`documents/${f.id}/versions`), { items: [] }),
+        optional(t.apiGet(`documents/${f.id}/discussions`), { items: [] }),
+        optional(t.apiGet(`documents/${f.id}/public-links`), { items: [] }),
+        optional(t.apiGet(`documents/${f.id}/connectors`), { items: [] }),
+        optional(t.apiGet(`documents/${f.id}/copies`), { items: [] }),
+        fresh ? cached.check : optional(t.apiGet(`documents/${f.id}/verify`), { ok: !0 })
+      ]);
+      fileCache.set(f.id, { latest: doc2.latest_seq ?? f.latest_seq ?? 0, doc: doc2, events, check });
+      let kind = String(f.kind ?? doc2.settings?.kind ?? "document"), nodes = doc2.state?.nodes ?? {}, mapped = blocksOf2(kind, nodes);
+      verify2[f.id] = { ok: !!check.ok, brokenAt: check.broken_at_seq ?? void 0, detail: check.detail ?? void 0 }, ctx2.docs[f.id] = { id: f.id, kind, projectId: f.projectId, latest: doc2.latest_seq ?? f.latest_seq ?? 0, nodes: cloneNodes(nodes), slots: mapped.slots, manage: f.role === "owner" || f.role === "manager" };
+      let blockForNode = (node) => node ? mapped.slots[node] ? node : mapped.blocks.find((b) => nodeOf(b.id) === node)?.id ?? node : "", d = {
+        id: f.id,
+        projectId: f.projectId,
+        title: f.title,
+        filename: filenameOf(f.title, kind),
+        kind: ["document", "spreadsheet", "presentation"].includes(kind) ? kind : "document",
+        blocks: mapped.blocks,
+        versions: (versions2.items ?? []).map((v) => ({ id: v.id, name: v.name, note: v.note ?? "", throughSeq: v.through_seq, at: ms(v.created_at), authorId: v.created_by })),
+        connections: (connectors2.items ?? []).map((c) => ({ id: String(c.id ?? c.grant ?? c.grant_id), host: c.host ?? c.kind ?? "word", createdAt: ms(c.created_at), expiresAt: ms(c.expires_at) || ms(c.created_at) + 7 * 864e5, revoked: !!c.revoked_at, lastUsed: c.last_used_at ? ms(c.last_used_at) : void 0 })),
+        createdAt: ms(doc2.created_at),
+        discussions: (discussions2.items ?? []).map((th) => (ctx2.threads[th.id] = th.revision ?? 0, person2(people3, th.actor_id, th.author), {
+          id: th.id,
+          blockId: blockForNode(th.node_id),
+          authorId: th.actor_id,
+          text: th.body,
+          at: ms(th.created_at),
+          resolved: !!th.resolved,
+          replies: (th.replies ?? []).map((rp) => (person2(people3, rp.actor_id, rp.author), { authorId: rp.actor_id, text: rp.body, at: ms(rp.created_at) }))
+        })),
+        copies: (copies.items ?? []).map((c) => ({ id: String(c.id ?? c.match_id), title: c.title ?? c.document?.title ?? "A similar file", relation: c.relation ?? "copy", score: Number(c.similarity ?? c.score ?? 0), status: c.status ?? "open" })),
+        publicLinks: (links.items ?? []).map((l) => ({ id: l.id, createdAt: ms(l.created_at), expiresAt: l.expires_at ? ms(l.expires_at) : void 0, revoked: !!l.revoked_at }))
+      };
+      docs.push(d);
+      let mainNotes = notes.filter((n) => n.document_id === f.id).filter((n) => n.branch === "main" && n.kind !== "request"), runs = runsOf(events, mainNotes.map((n) => ({ from: n.from_seq, to: n.to_seq }))), live = {}, before = blocksOf2(kind, live).blocks;
+      for (let run of runs) {
+        for (let e of run.events) applyEvent(live, e.payload);
+        let after = blocksOf2(kind, live), edits2 = compareBlocks(before, after.blocks), note = mainNotes.find((n) => n.from_seq === run.from && n.to_seq === run.to), labels = {};
+        for (let b of [...before, ...after.blocks]) labels[b.id] = b.label;
+        person2(people3, run.actor);
+        let first = run.events[0], last = run.events[run.events.length - 1];
+        commits.push({
+          id: `ev_${first.id}`,
+          docId: f.id,
+          branch: "main",
+          seq: run.to,
+          summary: note?.summary ?? describeRun(run, edits2, labels),
+          description: note?.description ?? "",
+          authorId: run.actor,
+          at: run.at,
+          edits: edits2,
+          kind: note?.kind ?? "revision",
+          mergedFrom: note?.merged_from ?? void 0,
+          contentHash: hex(last.content_hash),
+          prevChainHash: hex(first.prev_chain_hash),
+          chainHash: hex(last.chain_hash),
+          local: !1
+        }), before = after.blocks;
+      }
+      for (let row2 of ownDrafts.items ?? []) raw.find((r) => r.project.id === f.projectId).ownDrafts.push({ ...row2, docId: f.id });
+    });
+    let stateAt = /* @__PURE__ */ new Map(), nodesAt = (docId, seq) => {
+      let k = `${docId}@${seq}`, known = stateCache.get(k);
+      return known ? Promise.resolve(cloneNodes(known)) : (stateAt.has(k) || stateAt.set(k, t.apiGet(`documents/${docId}/state?through_seq=${seq}`).then((r) => {
+        let nodes = ok(r, "read an earlier revision").state?.nodes ?? {};
+        return stateCache.set(k, nodes), cloneNodes(nodes);
+      })), stateAt.get(k).then(cloneNodes));
+    };
+    for (let r of raw) {
+      let p2 = r.project;
+      await pool(r.ownDrafts, 3, async (row2) => {
+        let dc = ctx2.docs[row2.docId], detail = await optional(t.apiGet(`documents/${row2.docId}/drafts/${row2.id}`), null), nodes = detail?.state?.nodes ?? dc.nodes, mapped = blocksOf2(dc.kind, nodes);
+        ctx2.drafts[row2.id] = { id: row2.id, docId: row2.docId, revision: detail?.draft?.revision ?? row2.revision ?? 0, own: !0, submitted: !!row2.submitted_at, nodes, slots: mapped.slots }, drafts2.push({ id: row2.id, docId: row2.docId, projectId: p2.id, name: row2.name, authorId: row2.created_by ?? me, baseSeq: row2.base_seq ?? 0, createdAt: ms(row2.created_at), state: draftState(row2), blocks: mapped.blocks });
+      });
+      let sortedCrs = [...r.crs].sort((a, b) => ms(a.created_at) - ms(b.created_at));
+      await pool(sortedCrs, 3, async (cr) => {
+        let docId = cr.document?.id, dc = ctx2.docs[docId];
+        if (!dc) return;
+        let detail = await optional(t.apiGet(`documents/${docId}/change-requests/${cr.id}`), { request: cr });
+        person2(people3, cr.author?.id, cr.author?.name, cr.author?.email);
+        let open2 = cr.status === "open", baseNodes = open2 ? await nodesAt(docId, cr.base_seq ?? 0).catch(() => dc.nodes) : dc.nodes, base = blocksOf2(dc.kind, baseNodes), draftNodes = cloneNodes(baseNodes);
+        if (open2 && detail.nodes)
+          for (let [id, v] of Object.entries(detail.nodes))
+            v?.draft ? draftNodes[id] = { ...v.draft, current_fields: v.draft.current_fields ?? {} } : v && v.draft === null && delete draftNodes[id];
+        else draftNodes = cloneNodes(dc.nodes);
+        let draftMapped = blocksOf2(dc.kind, draftNodes), keys2 = {}, conflicts2 = [];
+        for (let c of detail.conflicts ?? []) {
+          let blockId = blockOfKey(c.key, { ...base.slots, ...draftMapped.slots });
+          if ((keys2[blockId] ?? (keys2[blockId] = [])).push(c.key), conflicts2.some((x) => x.blockId === blockId)) continue;
+          let label = [...draftMapped.blocks, ...base.blocks].find((b) => b.id === blockId)?.label ?? blockId, val = (v) => textOf(v);
+          conflicts2.push({ blockId, label, ancestor: val(c.ancestor), team: val(c.team), draft: val(c.draft) });
+        }
+        let titleNote = notes.filter((n) => n.branch === cr.id && n.kind === "request").pop(), mergeCommit = commits.find((c) => c.mergedFrom === cr.id), edits2 = open2 ? compareBlocks(base.blocks, draftMapped.blocks) : titleNote?.edits ?? mergeCommit?.edits ?? [];
+        ctx2.crs[cr.id] = { id: cr.id, docId, revision: detail.revision ?? cr.revision ?? 0, teamSeq: detail.team_seq ?? dc.latest, keys: keys2, titleNote: !!titleNote?.edits?.length };
+        let reviews = [], comments = [];
+        for (let rv of detail.review?.reviews ?? [])
+          person2(people3, rv.reviewer?.id, rv.reviewer?.name, rv.reviewer?.email), reviews.push({ reviewerId: rv.reviewer?.id, verdict: rv.verdict, note: rv.note ?? "", at: ms(rv.created_at), stale: !!rv.stale }), rv.note && comments.push({ id: rv.id, authorId: rv.reviewer?.id, blockId: rv.node_id ? draftMapped.blocks.find((b) => nodeOf(b.id) === rv.node_id)?.id ?? rv.node_id : void 0, text: rv.note, at: ms(rv.created_at) });
+        let number = sortedCrs.indexOf(cr) + 1;
+        requests.push({
+          id: cr.id,
+          number,
+          projectId: p2.id,
+          docId,
+          draftId: cr.id,
+          name: titleNote?.summary ?? cr.name,
+          note: cr.note ?? "",
+          authorId: cr.author?.id ?? "",
+          status: cr.status,
+          createdAt: ms(cr.submitted_at ?? cr.created_at),
+          mergedAt: cr.merged_at ? ms(cr.merged_at) : void 0,
+          baseSeq: cr.base_seq ?? 0,
+          edits: edits2,
+          excluded: [],
+          conflicts: conflicts2,
+          reviews,
+          comments,
+          byAgent: !!cr.agent,
+          agentStatement: cr.agent ? String(cr.agent.statement ?? cr.agent.note ?? "") : void 0
+        });
+        let own = drafts2.find((x) => x.id === cr.id);
+        own ? (own.state = draftState(null, cr), own.name = cr.name) : (drafts2.push({ id: cr.id, docId, projectId: p2.id, name: cr.name, authorId: cr.author?.id ?? "", baseSeq: cr.base_seq ?? 0, createdAt: ms(cr.created_at), state: draftState(null, cr), blocks: draftMapped.blocks }), ctx2.drafts[cr.id] = { id: cr.id, docId, revision: detail.revision ?? cr.revision ?? 0, own: cr.author?.id === me, submitted: !0, nodes: draftNodes, slots: draftMapped.slots });
+      });
+    }
+    for (let d of drafts2) {
+      let dn = notes.filter((n) => n.document_id === d.docId && n.branch === d.id && n.kind !== "request").sort((a, b) => a.to_seq - b.to_seq), base = await (async () => {
+        let dc = ctx2.docs[d.docId];
+        if (d.state !== "private" && d.state !== "in_review") return blocksOf2(dc.kind, dc.nodes).blocks;
+        try {
+          return blocksOf2(dc.kind, await nodesAt(d.docId, d.baseSeq)).blocks;
+        } catch {
+          return blocksOf2(dc.kind, dc.nodes).blocks;
+        }
+      })(), all = d.state === "private" || d.state === "in_review" ? compareBlocks(base, d.blocks) : [], list2 = dn.length ? dn : [{ id: 0, summary: `Changes in ${d.name}`, description: "", author_id: d.authorId, created_at: d.createdAt, to_seq: 1, edits: null, kind: "revision" }];
+      list2.forEach((n, i) => {
+        commits.push({
+          id: `dn_${d.id}_${n.id}`,
+          docId: d.docId,
+          branch: d.id,
+          seq: i + 1,
+          summary: n.summary,
+          description: n.description ?? "",
+          authorId: n.author_id,
+          at: Number(n.created_at) || d.createdAt,
+          edits: n.edits ?? (i === list2.length - 1 ? all : []),
+          kind: n.kind ?? "revision",
+          contentHash: "",
+          prevChainHash: "",
+          chainHash: "",
+          local: !1
+        });
+      });
+    }
+    let knownDocs = new Set(docs.map((d) => d.id)), knownBranches = /* @__PURE__ */ new Set(["main", ...drafts2.map((d) => d.id)]), workingList = (Array.isArray(working2.value) ? working2.value : []).filter((w) => knownDocs.has(w.docId) && knownBranches.has(w.branch)), localList = (Array.isArray(local.value) ? local.value : []).filter((c) => knownDocs.has(c.docId) && knownBranches.has(c.branch)).map((c) => ({ ...c, local: !0 }));
+    for (let c of localList.sort((a, b) => a.at - b.at)) {
+      if (c.branch === "main") {
+        let d = docs.find((x) => x.id === c.docId);
+        d.blocks = applyEdits(d.blocks, c.edits);
+        let top = commits.filter((x) => x.docId === c.docId && x.branch === "main").reduce((m, x) => Math.max(m, x.seq), 0);
+        c.seq = top + 1;
+      } else {
+        let d = drafts2.find((x) => x.id === c.branch);
+        d.blocks = applyEdits(d.blocks, c.edits), c.seq = commits.filter((x) => x.branch === c.branch).length + 1;
+      }
+      commits.push(c);
+    }
+    ctx2.client = { copies: {}, hiddenDrafts: [], ...client.value && typeof client.value == "object" ? client.value : {} };
+    for (let d of docs) for (let c of d.copies) ctx2.client.copies[c.id] && (c.status = ctx2.client.copies[c.id]);
+    let spaces = [];
+    for (let s2 of (spaceList.items ?? []).filter((x) => x.kind === "organization" || x.kind === "team")) {
+      let members = await optional(t.apiGet(`spaces/${s2.id}/members`), { items: [] });
+      for (let m of members.items ?? []) person2(people3, m.id, m.name, m.email);
+      spaces.push({ id: s2.id, name: s2.name, kind: s2.kind, parentId: s2.parent_id ?? void 0, members: (members.items ?? []).filter((m) => !m.inherited).map((m) => ({ personId: m.id, role: m.role, via: "direct" })) });
+    }
+    let notif = (notifications2.items ?? []).map((n) => {
+      person2(people3, n.actor?.id, n.actor?.name, n.actor?.email), n.actor?.is_agent && people3.get(n.actor.id) && (people3.get(n.actor.id).agent = !0);
+      let name2 = n.request ? requests.find((r) => r.id === n.request.id)?.name ?? n.request.name : "", title = n.document?.title ?? "a file", text = n.kind === "change_request_submitted" ? `opened ${name2} on ${title}` : n.kind === "change_request_reviewed" ? `reviewed ${name2} on ${title}` : n.kind === "change_request_merged" ? `merged ${name2} into ${title}` : n.kind === "change_request_declined" ? `declined ${name2} on ${title}` : n.kind === "copy_detected" ? `found a copy of ${title}` : n.kind === "access_granted" ? `gave you access to ${title}` : n.kind === "mention" ? `mentioned you in ${title}` : `${String(n.kind).replace(/_/g, " ")} ${title}`;
+      return { id: n.id, kind: n.kind, at: ms(n.created_at), read: !!n.read, actorId: n.actor?.id ?? "", projectId: n.document?.project_id ?? projects[0]?.id ?? "", docId: n.document?.id, requestId: n.request?.id, text };
+    }), deviceKeys = (devices.keys ?? []).map((k) => ({ id: k.id, name: k.label || "Signing key", kind: k.class === "agent" ? "agent" : "person", publicKey: k.public_key, createdAt: ms(k.registered_at), revoked: !!k.revoked_at, scopes: [...new Set((k.grants ?? []).flatMap((g) => g.scopes ?? []))] }));
+    projects.sort((a, b) => b.updatedAt - a.updatedAt), docs.sort((a, b) => a.title.localeCompare(b.title)), activity.sort((a, b) => b.at - a.at);
+    let db = {
+      me,
+      people: [...people3.values()],
+      spaces,
+      projects,
+      docs,
+      commits,
+      drafts: drafts2.filter((d) => !ctx2.client.hiddenDrafts.includes(d.id)),
+      requests,
+      working: workingList,
+      notifications: notif,
+      activity,
+      deviceKeys,
+      lastFetched: now,
+      incoming: 0,
+      remote: { verify: verify2, visitor: session.visitor, identity: me }
+    };
+    return ctx2.saved = { working: JSON.stringify(workingList), local: JSON.stringify(localList), threads: JSON.stringify(threads.value ?? null), client: JSON.stringify(ctx2.client) }, ctx2.base = JSON.parse(JSON.stringify(db)), { db, ctx: ctx2 };
+  }
+  async function loadThreads(t) {
+    return (await optional(t.svcGet("state/threads"), { value: null })).value;
+  }
+  function newUlid() {
+    let A = "0123456789ABCDEFGHJKMNPQRSTVWXYZ", t = Date.now(), time = "";
+    for (let i = 0; i < 10; i++)
+      time = A[t % 32] + time, t = Math.floor(t / 32);
+    let bytes = new Uint8Array(16);
+    globalThis.crypto.getRandomValues(bytes);
+    let rand = "";
+    for (let i = 0; i < 16; i++) rand += A[bytes[i] % 32];
+    return time + rand;
+  }
+  var same = (a, b) => JSON.stringify(a) === JSON.stringify(b), isLocalId = (id) => !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id);
+  function serverView(db) {
+    return { ...db, working: [], commits: db.commits.filter((c) => !c.local), lastFetched: 0, incoming: 0 };
+  }
+  function changed(ctx2, next, threads) {
+    return !same(serverView(ctx2.base), serverView(next)) || JSON.stringify(next.working) !== ctx2.saved.working || JSON.stringify(next.commits.filter((c) => c.local)) !== ctx2.saved.local || JSON.stringify(threads ?? null) !== ctx2.saved.threads;
+  }
+  async function reconcile(raw0, ctx2, next, threads) {
+    let t = gentle(raw0), prev = ctx2.base, out = { ids: {}, done: [], errors: [] }, run = async (what, fn) => {
+      try {
+        await fn();
+      } catch (e) {
+        out.errors.push(e instanceof Error ? e.message : String(e));
+      }
+    }, idOf = (id) => out.ids[id] ?? id, pDoc = (id) => prev.docs.find((d) => d.id === id), note = (n) => t.svcSend("POST", "notes", n).then((r) => ok(r, "record the commit message"));
+    for (let p2 of next.projects) {
+      let before = prev.projects.find((x) => x.id === p2.id);
+      if (!before) {
+        await run("create a project", async () => {
+          let body = ok(await t.apiSend("POST", "projects", { name: p2.name, description: p2.description }), "create the project");
+          out.ids[p2.id] = body.id, out.done.push(`Created the project ${p2.name}`);
+        });
+        continue;
+      }
+      let pc = ctx2.projects[p2.id];
+      p2.starred !== before.starred && await run("star", async () => void ok(await t.apiSend(p2.starred ? "PUT" : "DELETE", `projects/${p2.id}/star`), "star the project")), p2.watch !== before.watch && await run("watch", async () => void ok(await t.apiSend("POST", `projects/${p2.id}/watch`, { level: p2.watch }), "change watching")), (!same(p2.rules, before.rules) || p2.name !== before.name || p2.description !== before.description) && await run("rules", async () => {
+        ok(await t.apiSend("POST", `projects/${p2.id}/settings`, { name: p2.name, description: p2.description, revision: pc.revision, protect_team_version: p2.rules.protectMain, required_approvals: p2.rules.requiredApprovals, merge_roles: p2.rules.mergeRoles }), "save the review rules"), out.done.push("Saved the project settings");
+      }), same(p2.agentPolicy, before.agentPolicy) || await run("agents", async () => {
+        let a = p2.agentPolicy;
+        ok(await t.apiSend("PUT", `projects/${p2.id}/agent-policy`, { enabled: a.enabled, min_role: CLIENT_ROLE_TO_POLICY[a.minRole] ?? "editor", calls_per_minute: a.callsPerMinute, open_proposals: a.openProposals, proposals_per_day: a.proposalsPerDay, submit_requires_person: a.submitRequiresPerson }, `"${pc.policyRevision ?? 0}"`), "save the AI agent policy"), out.done.push("Saved the AI agent policy");
+      });
+      for (let m of p2.members) {
+        let was = before.members.find((x) => x.personId === m.personId), email = next.people.find((x) => x.id === m.personId)?.email ?? pc.emails[m.personId];
+        (!was || was.role !== m.role) && email && await run("member", async () => {
+          ok(await t.apiSend("POST", `spaces/${p2.id}/members`, { email, role: m.role }), "change access"), out.done.push(was ? `Changed a role in ${p2.name}` : `Gave ${email} access to ${p2.name}`);
+        });
+      }
+      for (let m of before.members)
+        !p2.members.some((x) => x.personId === m.personId) && pc.emails[m.personId] && await run("remove", async () => void ok(await t.apiSend("POST", `spaces/${p2.id}/members`, { email: pc.emails[m.personId], role: "remove" }), "remove access"));
+      for (let it of p2.issues) {
+        let was = before.issues.find((x) => x.number === it.number);
+        if (!was) {
+          await run("issue", async () => {
+            ok(await t.apiSend("POST", `projects/${p2.id}/issues`, { title: it.title, body: it.body, labels: it.labels.filter((l) => !isLocalId(l)) }), "open the issue"), out.done.push(`Opened the issue ${it.title}`);
+          });
+          continue;
+        }
+        let patch = {};
+        it.state !== was.state && (patch.state = it.state), (it.assigneeId ?? null) !== (was.assigneeId ?? null) && (patch.assignee_id = it.assigneeId ?? null), same(it.labels, was.labels) || (patch.labels = it.labels), (it.title !== was.title || it.body !== was.body) && Object.assign(patch, { title: it.title, body: it.body, revision: ctx2.issues[`${p2.id}:${it.number}`] ?? 0 }), Object.keys(patch).length && await run("issue", async () => void ok(await t.apiSend("PATCH", `projects/${p2.id}/issues/${it.number}`, patch), "change the issue"));
+        for (let c of it.comments.slice(was.comments.length)) await run("comment", async () => void ok(await t.apiSend("POST", `projects/${p2.id}/issues/${it.number}/comments`, { body: c.text }), "comment on the issue"));
+      }
+      for (let l of p2.labels) before.labels.some((x) => x.id === l.id) || await run("label", async () => void ok(await t.apiSend("POST", `projects/${p2.id}/labels`, { name: l.name, color: l.color.replace("#", "") }), "add the label"));
+      for (let l of before.labels) p2.labels.some((x) => x.id === l.id) || await run("label", async () => void ok(await t.apiSend("DELETE", `projects/${p2.id}/labels/${l.id}`), "remove the label"));
+    }
+    for (let d of next.docs) {
+      let before = pDoc(d.id);
+      if (before) {
+        for (let v of d.versions) before.versions.some((x) => x.id === v.id) || await run("version", async () => {
+          ok(await t.apiSend("POST", `documents/${d.id}/versions`, { name: v.name, note: v.note }), "save the version"), out.done.push(`Saved the version ${v.name}`);
+        });
+        for (let th of d.discussions) {
+          let was = before.discussions.find((x) => x.id === th.id);
+          if (was && was.resolved !== th.resolved && await run("discussion", async () => void ok(await t.apiSend("POST", `documents/${d.id}/discussions/${th.id}`, { revision: ctx2.threads[th.id] ?? 0, resolved: th.resolved }), "resolve the discussion")), was) for (let rp of th.replies.slice(was.replies.length)) await run("reply", async () => void ok(await t.apiSend("POST", `documents/${d.id}/discussions/${th.id}`, { revision: ctx2.threads[th.id] ?? 0, body: rp.text }), "reply"));
+        }
+        for (let l of d.publicLinks) l.revoked && before.publicLinks.some((x) => x.id === l.id && !x.revoked) && await run("link", async () => void ok(await t.apiSend("POST", `documents/${d.id}/public-links/${l.id}/revoke`), "revoke the published copy"));
+        for (let k of d.connections) k.revoked && before.connections.some((x) => x.id === k.id && !x.revoked) && await run("key", async () => void ok(await t.apiSend("POST", `documents/${d.id}/connectors/${k.id}/revoke`), "revoke the connection key"));
+        for (let c of d.copies) before.copies.some((x) => x.id === c.id && x.status !== c.status) && (ctx2.client.copies[c.id] = c.status);
+      }
+    }
+    let newDrafts = new Set(next.drafts.filter((d) => !prev.drafts.some((x) => x.id === d.id)).map((d) => d.id)), pushed = next.commits.filter(
+      (c) => !c.local && (prev.commits.some((x) => x.id === c.id && x.local) || !prev.commits.some((x) => x.id === c.id) && c.kind === "revision" && c.id.startsWith("rev_") && !newDrafts.has(c.branch))
+    );
+    for (let c of pushed.sort((a, b) => a.at - b.at)) {
+      let dc = ctx2.docs[c.docId];
+      await run("push", async () => {
+        if (c.branch === "main") {
+          let ops = editsToOps(c.edits, { kind: dc.kind, nodes: dc.nodes, slots: dc.slots, newId: newUlid });
+          if (!ops.length) return;
+          let res = ok(await t.apiSend("POST", `documents/${c.docId}/batch`, { ops, base_seq: dc.latest }), "push to main"), seqs = (res.events ?? []).map((e) => e.seq);
+          for (let e of res.events ?? []) applyEvent(dc.nodes, e.payload);
+          dc.slots = blocksOf2(dc.kind, dc.nodes).slots, dc.latest = Math.max(dc.latest, ...seqs), seqs.length && await note({ document_id: c.docId, branch: "main", from_seq: Math.min(...seqs), to_seq: Math.max(...seqs), kind: "revision", summary: c.summary, description: c.description });
+        } else {
+          let branch = idOf(c.branch), dr = ctx2.drafts[branch];
+          if (!dr) throw new Error("The draft is not on the server yet.");
+          let ops = editsToOps(c.edits, { kind: dc.kind, nodes: dr.nodes, slots: dr.slots, newId: newUlid });
+          if (!ops.length) return;
+          let res = ok(await t.apiSend("POST", `documents/${c.docId}/drafts/${branch}`, { ops, revision: dr.revision }), "push to the draft");
+          dr.revision = res.revision, dr.nodes = res.state?.nodes ?? dr.nodes, dr.slots = blocksOf2(dc.kind, dr.nodes).slots, await note({ document_id: c.docId, branch, from_seq: dr.revision, to_seq: dr.revision, kind: "revision", summary: c.summary, description: c.description, edits: c.edits });
+        }
+      });
+    }
+    pushed.length && out.done.push(`Pushed ${pushed.length} commit${pushed.length === 1 ? "" : "s"}`);
+    for (let d of next.drafts) {
+      let before = prev.drafts.find((x) => x.id === d.id), dc = ctx2.docs[d.docId];
+      if (!before) {
+        await run("draft", async () => {
+          let body = ok(await t.apiSend("POST", `documents/${d.docId}/drafts`, { name: d.name, base_seq: dc.latest }), "create the draft");
+          out.ids[d.id] = body.id;
+          let revision = 0, own = next.commits.filter((c) => c.branch === d.id && !c.local).sort((a, b) => a.seq - b.seq), nodes = dc.nodes;
+          try {
+            nodes = ok(await t.apiGet(`documents/${d.docId}/drafts/${body.id}`), "open the draft").state?.nodes ?? dc.nodes;
+          } catch {
+          }
+          let slots = blocksOf2(dc.kind, nodes).slots;
+          for (let c of own) {
+            let ops = editsToOps(c.edits, { kind: dc.kind, nodes, slots, newId: newUlid });
+            if (!ops.length) continue;
+            let res = ok(await t.apiSend("POST", `documents/${d.docId}/drafts/${body.id}`, { ops, revision }), "write to the draft");
+            revision = res.revision, nodes = res.state?.nodes ?? nodes, slots = blocksOf2(dc.kind, nodes).slots, await note({ document_id: d.docId, branch: body.id, from_seq: revision, to_seq: revision, kind: c.kind, summary: c.summary, description: c.description, edits: c.edits });
+          }
+          out.done.push(`Created the draft ${d.name}`);
+        });
+        continue;
+      }
+      d.state === "withdrawn" && before.state !== "withdrawn" && d.authorId === next.me && (ctx2.drafts[d.id]?.submitted ? await run("withdraw", async () => void ok(await t.apiSend("POST", `documents/${d.docId}/drafts/${d.id}/withdraw`, { note: "" }), "withdraw the request")) : ctx2.client.hiddenDrafts.includes(d.id) || ctx2.client.hiddenDrafts.push(d.id), out.done.push(`Withdrew ${d.name}`)), d.baseSeq !== before.baseSeq && (d.state === "private" || d.state === "in_review") && await run("rebase", async () => {
+        let dr = ctx2.drafts[d.id], preview = ok(await t.apiSend("POST", `documents/${d.docId}/drafts/${d.id}/sync`, { action: "preview", team_seq: dc.latest, revision: dr?.revision ?? 0 }), "compare the draft with main"), resolutions = {}, slots = blocksOf2(dc.kind, dc.nodes).slots;
+        for (let c of preview.conflicts ?? []) {
+          let blockId = blockOfKey(c.key, slots), mine = d.blocks.find((b) => b.id === blockId)?.text;
+          resolutions[c.key] = mine !== void 0 && mine === textOf(c.team) ? "team" : "draft";
+        }
+        ok(await t.apiSend("POST", `documents/${d.docId}/drafts/${d.id}/sync`, { action: "rebase", team_seq: preview.team_seq, revision: preview.revision, resolutions }), "rebase the draft"), out.done.push(`${d.name} now builds on the latest main`);
+      });
+    }
+    for (let r of next.requests) {
+      let before = prev.requests.find((x) => x.id === r.id), draftId = idOf(r.draftId);
+      if (!before) {
+        await run("request", async () => {
+          ok(await t.apiSend("POST", `documents/${r.docId}/drafts/${draftId}/submit`, { note: r.note }), "open the change request"), await note({ document_id: r.docId, branch: draftId, from_seq: 0, to_seq: 0, kind: "request", summary: r.name, description: "", edits: r.edits }), out.ids[r.id] = draftId, out.done.push(`Opened the change request ${r.name}`);
+        });
+        continue;
+      }
+      let cc = ctx2.crs[r.id], newReviews = r.reviews.slice(before.reviews.length);
+      for (let rv of newReviews)
+        await run("review", async () => {
+          let body = { verdict: rv.verdict, note: rv.note || (rv.verdict === "approved" ? "" : "Comment"), revision: cc?.revision ?? 0 };
+          ok(await t.apiSend("POST", `documents/${r.docId}/change-requests/${r.id}/reviews`, body), "review the request"), out.done.push(rv.verdict === "approved" ? `Approved ${r.name}` : rv.verdict === "changes_requested" ? `Asked for changes on ${r.name}` : `Commented on ${r.name}`);
+        });
+      for (let c of r.comments.slice(before.comments.length))
+        newReviews.some((rv) => rv.note && rv.note === c.text) || r.status !== "open" && before.status === "open" && r.status === "declined" || await run("comment", async () => {
+          let body = { verdict: "commented", note: c.text, revision: cc?.revision ?? 0 };
+          c.blockId && (body.node_id = nodeOf(c.blockId)), ok(await t.apiSend("POST", `documents/${r.docId}/change-requests/${r.id}/reviews`, body), "comment on the request");
+        });
+      r.status === "merged" && before.status === "open" && await run("merge", async () => {
+        let fresh = ok(await t.apiGet(`documents/${r.docId}/change-requests/${r.id}`), "read the request"), resolutions = {};
+        for (let c of r.conflicts) for (let key of cc?.keys[c.blockId] ?? []) c.choice && (resolutions[key] = c.choice);
+        let body = { team_seq: fresh.team_seq, revision: fresh.revision, resolutions };
+        r.excluded.length && (body.included_nodes = [...new Set(r.edits.filter((e) => !r.excluded.includes(e.blockId)).map((e) => nodeOf(e.blockId)))]);
+        let seqs = (ok(await t.apiSend("POST", `documents/${r.docId}/change-requests/${r.id}/merge`, body), "merge the request").events ?? []).map((e) => e.seq);
+        seqs.length && await note({ document_id: r.docId, branch: "main", from_seq: Math.min(...seqs), to_seq: Math.max(...seqs), kind: "merge", summary: `Merge #${r.number}: ${r.name}`, description: r.note, merged_from: r.id }), out.done.push(`Merged ${r.name}`);
+      }), r.status === "declined" && before.status === "open" && await run("decline", async () => {
+        let last = r.comments.slice(before.comments.length).pop();
+        ok(await t.apiSend("POST", `documents/${r.docId}/change-requests/${r.id}/decline`, { note: last?.text ?? "" }), "decline the request"), out.done.push(`Declined ${r.name}`);
+      });
+    }
+    let read = next.notifications.filter((n) => n.read && prev.notifications.some((x) => x.id === n.id && !x.read)).map((n) => n.id);
+    read.length && await run("read", async () => void ok(await t.apiSend("POST", "notifications/read", { ids: read }), "mark notifications read"));
+    for (let k of next.deviceKeys) k.revoked && prev.deviceKeys.some((x) => x.id === k.id && !x.revoked) && await run("key", async () => void ok(await t.apiSend("POST", `devices/${k.id}/revoke`), "revoke the key"));
+    let rename = (v) => {
+      let s2 = JSON.stringify(v);
+      for (let [from, to] of Object.entries(out.ids)) s2 = s2.split(JSON.stringify(from)).join(JSON.stringify(to));
+      return s2;
+    }, workingNow = rename(next.working), localNow = rename(next.commits.filter((c) => c.local)), threadsNow = JSON.stringify(threads ?? null), clientNow = JSON.stringify(ctx2.client);
+    return workingNow !== ctx2.saved.working && await run("save", async () => void ok(await t.svcSend("PUT", "state/working", { value: JSON.parse(workingNow) }), "save the captured changes")), localNow !== ctx2.saved.local && await run("save", async () => void ok(await t.svcSend("PUT", "state/local", { value: JSON.parse(localNow) }), "save the unpushed commits")), threadsNow !== ctx2.saved.threads && await run("save", async () => void ok(await t.svcSend("PUT", "state/threads", { value: threads ?? null }), "save the agent threads")), clientNow !== ctx2.saved.client && await run("save", async () => void ok(await t.svcSend("PUT", "state/client", { value: ctx2.client }), "save your choices")), ctx2.saved = { working: workingNow, local: localNow, threads: threadsNow, client: clientNow }, out;
+  }
+  function renameIds(value, ids) {
+    if (!Object.keys(ids).length) return value;
+    let s2 = JSON.stringify(value);
+    for (let [from, to] of Object.entries(ids)) s2 = s2.split(JSON.stringify(from)).join(JSON.stringify(to));
+    return JSON.parse(s2);
+  }
+
+  // client/src/data/live.ts
+  var desktopTransport = {
+    apiGet: (path) => call("api_get", { path }),
+    apiSend: (method, path, body, ifMatch) => call("api_send", { method, path, body: body ?? null, ifMatch: ifMatch ?? null }),
+    svcGet: (path) => call("svc_get", { path }),
+    svcSend: (method, path, body) => call("svc_send", { method, path, body: body ?? null })
+  }, ctx = null, transport = desktopTransport, timer = null, running = !1, again = !1;
+  function isLive() {
+    return state.live.mode === "live";
+  }
+  async function connect2(t = desktopTransport) {
+    transport = t, state.live.mode = "connecting", state.live.error = "", render();
+    try {
+      let session = await t.svcGet("session").then((r) => r.status === 200 ? r.body : null).catch(() => null), threads = await loadThreads(t).catch(() => null), out = await load(t, { identity: session?.identity_id ?? null, visitor: session?.visitor ?? null });
+      return adopt(out.db, out.ctx), Array.isArray(threads) ? (state.ui.agent.threads = threads, ctx.saved.threads = JSON.stringify(threads)) : ctx.saved.threads = JSON.stringify(state.ui.agent.threads.length ? state.ui.agent.threads : null), state.live.mode = "live", state.live.server = state.live.server || "", render(), !0;
+    } catch (e) {
+      return ctx = null, state.live.mode = "offline", state.live.error = e instanceof Error ? e.message : String(e), render(), !1;
+    }
+  }
+  function adopt(db, next) {
+    if (ctx = next, state.db = db, state.ui.verified = {}, !db.projects.some((p2) => p2.id === state.ui.projectId)) {
+      let files = (id) => db.docs.filter((d) => d.projectId === id).length;
+      state.ui.projectId = [...db.projects].sort((a, b) => files(b.id) - files(a.id))[0]?.id ?? "";
+    }
+    let me = db.people.find((p2) => p2.id === db.me);
+    me && (state.prefs.authorName = me.name, me.email && (state.prefs.authorEmail = me.email));
+    for (let p2 of db.projects) {
+      let b = state.ui.branchByProject[p2.id];
+      (!b || b !== "main" && !db.drafts.some((d) => d.id === b)) && (state.ui.branchByProject[p2.id] = "main");
+    }
+    let ui = state.ui;
+    ui.requests.selected && !db.requests.some((r) => r.id === ui.requests.selected) && (ui.requests.selected = null), ui.history.selected && !db.commits.some((c) => c.id === ui.history.selected) && (ui.history.selected = null), ui.documents.selected && !db.docs.some((d) => d.id === ui.documents.selected) && (ui.documents.selected = null), ui.projects.selected && !db.projects.some((p2) => p2.id === ui.projects.selected) && (ui.projects.selected = null);
+  }
+  function disconnect() {
+    ctx = null, state.live.mode = "offline", state.live.visitor = null, resetSample();
+  }
+  async function refresh(quiet = !1) {
+    if (isLive()) {
+      if (running) {
+        again = !0;
+        return;
+      }
+      running = !0, state.ui.fetching = !0, render();
+      try {
+        let session = { identity: state.db.me, visitor: state.db.remote?.visitor ?? null }, out = await load(transport, session), saved = ctx?.saved;
+        adopt(out.db, out.ctx), saved && (ctx.saved.threads = saved.threads), quiet || toast("success", "Up to date", "Read the latest from the server.");
+      } catch (e) {
+        fail(e);
+      } finally {
+        running = !1, state.ui.fetching = !1, render();
+      }
+    }
+  }
+  function fail(e) {
+    let message2 = e instanceof Error ? e.message : String(e);
+    if (e instanceof RemoteError && e.status === 401) {
+      toast("error", "Signed out", message2), disconnect();
+      return;
+    }
+    toast("error", "The server did not accept this", message2);
+  }
+  function noticeChanges() {
+    !isLive() || !ctx || (timer && clearTimeout(timer), timer = setTimeout(() => {
+      timer = null, sync();
+    }, 350));
+  }
+  async function sync() {
+    if (!ctx || !isLive()) return;
+    if (running) {
+      again = !0;
+      return;
+    }
+    let threads = state.ui.agent.threads.length ? state.ui.agent.threads : null;
+    if (!changed(ctx, state.db, threads)) return;
+    running = !0, state.live.saving = !0, render();
+    let sent = JSON.stringify(state.db);
+    try {
+      let outcome = await reconcile(transport, ctx, JSON.parse(sent), JSON.parse(JSON.stringify(threads)));
+      state.ui = renameIds(state.ui, outcome.ids);
+      let session = { identity: state.db.me, visitor: state.db.remote?.visitor ?? null }, out = await load(transport, session), saved = ctx.saved;
+      JSON.stringify(state.db) === sent ? (adopt(out.db, out.ctx), ctx.saved = { ...ctx.saved, threads: saved.threads }) : (state.db = renameIds(state.db, outcome.ids), out.ctx.base = renameIds(JSON.parse(sent), outcome.ids), out.ctx.saved = saved, ctx = out.ctx, again = !0), outcome.errors.length ? toast("error", "The server did not accept a change", outcome.errors.join(" ")) : outcome.done.length && toast("success", "Saved to the server", outcome.done.slice(0, 3).join(" · "));
+    } catch (e) {
+      fail(e);
+      try {
+        let out = await load(transport, { identity: state.db.me, visitor: state.db.remote?.visitor ?? null });
+        adopt(out.db, out.ctx);
+      } catch {
+      }
+    } finally {
+      running = !1, state.live.saving = !1, render(), again && (again = !1, noticeChanges());
+    }
+  }
+  async function startVisitor() {
+    state.live.mode = "connecting", render();
+    try {
+      let v = await call("visitor_start");
+      state.live.visitor = v;
+      let ds = await refreshDesktopState();
+      state.live.server = ds?.server ?? state.live.server, await connect2() && toast("success", "Your sample workspace is ready", `It is yours alone and is removed ${v.expires_at ? `on ${new Date(v.expires_at).toLocaleString()}` : "after 24 hours"}.`);
+    } catch (e) {
+      state.live.mode = "offline", state.live.error = e instanceof Error ? e.message : String(e), toast("error", "No sample workspace", state.live.error), render();
+    }
+  }
+  async function signOut() {
+    try {
+      await call("sign_out");
+    } catch (e) {
+      toast("error", "Sign-out did not complete", e instanceof Error ? e.message : String(e));
+    }
+    disconnect(), toast("success", "Signed out", "This window now shows the offline sample.");
+  }
+  async function startLive() {
+    try {
+      let info = await call("session_info");
+      return state.live.server = info.server ?? "", info.signed_in && await connect2(), info;
+    } catch (e) {
+      return state.live.error = e instanceof Error ? e.message : String(e), null;
+    }
+  }
+  var savedPrefs = "", prefsTimer = null;
+  async function loadPrefs() {
+    try {
+      let value = await call("prefs_load");
+      value && typeof value == "object" && Object.assign(state.prefs, value), savedPrefs = JSON.stringify(state.prefs);
+    } catch {
+      savedPrefs = JSON.stringify(state.prefs);
+    }
+  }
+  function noticePrefs() {
+    !state.desktop || !savedPrefs || JSON.stringify(state.prefs) === savedPrefs || (prefsTimer && clearTimeout(prefsTimer), prefsTimer = setTimeout(() => {
+      prefsTimer = null;
+      let text = JSON.stringify(state.prefs);
+      call("prefs_save", { prefs: JSON.parse(text) }).then(() => {
+        savedPrefs = text;
+      }).catch((e) => toast("error", "Preferences not saved", e instanceof Error ? e.message : String(e)));
+    }, 800));
   }
 
   // client/src/theme.ts
@@ -1325,27 +2381,27 @@ Suggest, do not order.` }
 
   // client/src/lib/format.ts
   var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"], pad = (n) => String(n).padStart(2, "0");
-  function formatDate(ms, p2) {
-    let d = new Date(ms), y = d.getUTCFullYear(), m = d.getUTCMonth(), day = d.getUTCDate();
+  function formatDate(ms2, p2) {
+    let d = new Date(ms2), y = d.getUTCFullYear(), m = d.getUTCMonth(), day = d.getUTCDate();
     return p2.dateFormat === "iso" ? `${y}-${pad(m + 1)}-${pad(day)}` : p2.dateFormat === "dmy" ? `${pad(day)}/${pad(m + 1)}/${y}` : `${MONTHS[m]} ${day}, ${y}`;
   }
-  function formatTime(ms, p2) {
-    let d = new Date(ms), h2 = d.getUTCHours(), min = d.getUTCMinutes();
+  function formatTime(ms2, p2) {
+    let d = new Date(ms2), h2 = d.getUTCHours(), min = d.getUTCMinutes();
     return p2.timeFormat === "24h" ? `${pad(h2)}:${pad(min)}` : `${h2 % 12 === 0 ? 12 : h2 % 12}:${pad(min)} ${h2 < 12 ? "am" : "pm"}`;
   }
-  function relative(ms, now, p2) {
-    if (p2.absoluteDates) return `${formatDate(ms, p2)} ${formatTime(ms, p2)}`;
-    let s2 = Math.max(0, Math.round((now - ms) / 1e3));
+  function relative(ms2, now, p2) {
+    if (p2.absoluteDates) return `${formatDate(ms2, p2)} ${formatTime(ms2, p2)}`;
+    let s2 = Math.max(0, Math.round((now - ms2) / 1e3));
     if (s2 < 45) return "just now";
     let min = Math.round(s2 / 60);
     if (min < 60) return `${min} min ago`;
     let hr = Math.round(min / 60);
     if (hr < 24) return `${hr} h ago`;
     let d = Math.round(hr / 24);
-    return d === 1 ? "yesterday" : d < 14 ? `${d} d ago` : formatDate(ms, p2);
+    return d === 1 ? "yesterday" : d < 14 ? `${d} d ago` : formatDate(ms2, p2);
   }
-  function age(ms, now) {
-    let s2 = Math.max(0, Math.round((now - ms) / 1e3));
+  function age(ms2, now) {
+    let s2 = Math.max(0, Math.round((now - ms2) / 1e3));
     if (s2 < 60) return "now";
     let m = Math.floor(s2 / 60);
     if (m < 60) return `${m}m`;
@@ -1464,17 +2520,17 @@ Suggest, do not order.` }
       control ? h("div", { class: "srow-control" }, control) : null
     );
   }
-  function rows2(...children) {
-    return h("div", { class: "rows" }, ...children);
+  function rows2(...children2) {
+    return h("div", { class: "rows" }, ...children2);
   }
-  function section(title, description, ...children) {
-    return h("section", { class: "ssection" }, h("h3", { class: "ssection-title" }, title), description ? h("p", { class: "ssection-desc" }, description) : null, ...children);
+  function section(title, description, ...children2) {
+    return h("section", { class: "ssection" }, h("h3", { class: "ssection-title" }, title), description ? h("p", { class: "ssection-desc" }, description) : null, ...children2);
   }
   function empty(iconName, title, text, action) {
     return h("div", { class: "empty" }, h("div", { class: "empty-icon" }, icon(iconName, 22)), h("div", { class: "empty-title" }, title), h("div", { class: "empty-text" }, text), action ?? null);
   }
-  function notice(tone, ...children) {
-    return h("div", { class: cx("notice", `notice-${tone}`), role: tone === "error" ? "alert" : void 0 }, icon(tone === "success" ? "check" : tone === "info" ? "info" : "warning", 15), h("div", null, ...children));
+  function notice(tone, ...children2) {
+    return h("div", { class: cx("notice", `notice-${tone}`), role: tone === "error" ? "alert" : void 0 }, icon(tone === "success" ? "check" : tone === "info" ? "info" : "warning", 15), h("div", null, ...children2));
   }
   function untrusted(label, text) {
     return h("div", { class: "untrusted" }, h("div", { class: "untrusted-label" }, label), h("div", { class: "untrusted-text" }, text));
@@ -1500,8 +2556,8 @@ Suggest, do not order.` }
   function field(label, control, hint) {
     return h("label", { class: "field" }, h("span", { class: "field-label" }, label), control, hint ? h("span", { class: "field-hint" }, hint) : null);
   }
-  function hash(hex, n = 8) {
-    return h("code", { class: "hash", title: hex }, hex.slice(0, n));
+  function hash(hex2, n = 8) {
+    return h("code", { class: "hash", title: hex2 }, hex2.slice(0, n));
   }
 
   // client/src/ui/layer.ts
@@ -1720,11 +2776,11 @@ Suggest, do not order.` }
     reviewer: "Comments and suggests through drafts; cannot approve.",
     viewer: "Reads files and their history."
   };
-  function when(ms) {
-    return relative(ms, Date.now(), state.prefs);
+  function when(ms2) {
+    return relative(ms2, Date.now(), state.prefs);
   }
-  function short(ms) {
-    return age(ms, Date.now());
+  function short(ms2) {
+    return age(ms2, Date.now());
   }
   function rev(c) {
     return `${c.branch === "main" ? "r" : "d"}${c.seq}`;
@@ -1777,10 +2833,10 @@ Suggest, do not order.` }
     return h("span", { class: `vf ${cls}`, title: label, "aria-label": label }, icon(name2, 14));
   }
   function runVerify(docId) {
-    let res = verify(state.db, docId), ok = 0, bad = 0;
+    let res = verify(state.db, docId), ok2 = 0, bad = 0;
     for (let r of res)
-      state.ui.verified[r.commitId] = { ok: r.ok, at: Date.now() }, r.ok ? ok++ : bad++;
-    return { ok, bad };
+      state.ui.verified[r.commitId] = { ok: r.ok, at: Date.now() }, r.ok ? ok2++ : bad++;
+    return { ok: ok2, bad };
   }
   function viewHeader(title, subtitle, ...actions) {
     return h("div", { class: "view-head" }, h("div", null, h("h1", { class: "view-title" }, title), subtitle ? h("div", { class: "view-sub" }, subtitle) : null), actions.length ? h("div", { class: "view-actions" }, actions) : null);
@@ -1804,14 +2860,20 @@ Suggest, do not order.` }
     ) : doSwitch();
   }
   function fetchNow() {
+    if (isLive()) return void refresh();
     state.ui.fetching || (state.ui.fetching = !0, render(), setTimeout(() => {
       state.ui.fetching = !1, state.db.lastFetched = Date.now();
       let next = INCOMING[state.db.incoming];
       next ? (state.db.incoming += 1, toast("info", "Fetched", next.apply(state.db))) : toast("success", "Up to date", "Nothing new on the server."), render();
     }, 650));
   }
-  function sync() {
+  function sync2() {
     if (!aheadOf(state.db, state.ui.projectId, currentBranch())) return fetchNow();
+    if (isLive()) {
+      let n = push(state.db, state.ui.projectId, currentBranch());
+      toast("info", `Pushing ${n} commit${n === 1 ? "" : "s"} to ${branchLabel()}`, "They are sent to the server now."), render();
+      return;
+    }
     state.ui.fetching = !0, render(), setTimeout(() => {
       state.ui.fetching = !1;
       let n = push(state.db, state.ui.projectId, currentBranch());
@@ -1951,7 +3013,7 @@ Suggest, do not order.` }
     r && (state.ui.requests.selected = r.id, state.ui.requests.filter = "open", go("requests"));
   }
   function runBranchAction(id) {
-    let ctx = branchContext(), item = branchMenu(ctx).find((a) => a.id === id);
+    let ctx2 = branchContext(), item = branchMenu(ctx2).find((a) => a.id === id);
     if (!item || !item.enabled) {
       item && toast("info", item.label.replace("…", ""), item.note);
       return;
@@ -2075,167 +3137,6 @@ Suggest, do not order.` }
     );
   }
 
-  // client/src/bridge.ts
-  function bridgeInvoke() {
-    let internals = window.__TAURI_INTERNALS__;
-    return internals && typeof internals.invoke == "function" ? internals.invoke : null;
-  }
-  function inDesktop() {
-    return bridgeInvoke() !== null;
-  }
-  function $(id) {
-    let el = document.getElementById(id);
-    if (!el) throw new Error(`launcher element #${id} is missing`);
-    return el;
-  }
-  function show(el, on) {
-    el.hidden = !on;
-  }
-  function say(id, text) {
-    let el = $(id);
-    el.textContent = text || "", el.getAttribute("role") || show(el, !!text);
-  }
-  function message(e) {
-    return typeof e == "string" ? e : (e instanceof Error ? e.message : e && typeof e == "object" && "message" in e ? String(e.message) : "") || "Something went wrong. Please try again.";
-  }
-  function busy(button2, on, working2) {
-    let b = button2;
-    on ? (b.dataset.label = b.textContent ?? "", b.textContent = working2 ?? "") : b.dataset.label && (b.textContent = b.dataset.label), b.disabled = on;
-  }
-  var invoke = null, current = null;
-  function desktopState() {
-    return current;
-  }
-  async function connect(address, errorId, button2, working2) {
-    if (!invoke) return !1;
-    say(errorId, ""), busy(button2, !0, working2);
-    try {
-      let opened = await invoke("set_server", { address });
-      say("current", "Opening " + opened + " ...");
-    } catch (e) {
-      return say(errorId, message(e)), busy(button2, !1), !1;
-    }
-    return !0;
-  }
-  async function openServer() {
-    if (!invoke || !current || !current.server) return null;
-    try {
-      return await invoke("set_server", { address: current.server });
-    } catch (e) {
-      return Promise.reject(new Error(message(e)));
-    }
-  }
-  async function loadKey() {
-    if (!invoke) return;
-    let status = await invoke("device_key_status");
-    if (show($("key-public"), !1), !status.exists) {
-      show($("key-none"), !0), show($("key-create"), !0), show($("key-have"), !1);
-      return;
-    }
-    if (show($("key-none"), !1), show($("key-create"), !1), status.damaged) {
-      show($("key-have"), !1), say("key-error", status.recovery);
-      return;
-    }
-    show($("key-have"), !0), $("key-where").textContent = "Stored at " + status.path;
-  }
-  function wire() {
-    $("use-cloud").addEventListener("click", function() {
-      current && connect(current.cloud, "cloud-error", $("use-cloud"), "Opening ...");
-    }), $("confirm").addEventListener("click", function() {
-      !current || !current.unconfirmed || connect(current.unconfirmed, "confirm-error", $("confirm"), "Opening ...");
-    }), $("own-form").addEventListener("submit", async function(event) {
-      event.preventDefault(), await connect($("address").value, "address-error", $("connect"), "Connecting ...") || $("address").focus();
-    }), $("signin-form").addEventListener("submit", async function(event) {
-      if (event.preventDefault(), !!invoke) {
-        say("link-error", ""), busy($("signin-go"), !0, "Signing in ...");
-        try {
-          await invoke("open_sign_in_link", { link: $("link").value }), $("link").value = "";
-        } catch (e) {
-          say("link-error", message(e)), busy($("signin-go"), !1), $("link").focus();
-          return;
-        }
-        busy($("signin-go"), !1);
-      }
-    }), $("browser-signin-go").addEventListener("click", async function() {
-      if (invoke) {
-        say("browser-signin-error", ""), say("browser-signin-status", ""), show($("browser-signin-pairing"), !1), busy($("browser-signin-go"), !0, "Opening your browser ...");
-        try {
-          let pairing = await invoke("start_browser_sign_in");
-          $("browser-signin-code").textContent = pairing, show($("browser-signin-pairing"), !0), say(
-            "browser-signin-status",
-            "Your browser has opened. Sign in there, check that the pairing code matches, choose Continue, and you will come back to this app. This request is good for 10 minutes."
-          );
-        } catch (e) {
-          say("browser-signin-error", message(e));
-        }
-        busy($("browser-signin-go"), !1);
-      }
-    }), $("key-create").addEventListener("click", async function() {
-      if (invoke) {
-        say("key-error", ""), say("key-status", ""), busy($("key-create"), !0, "Creating ...");
-        try {
-          let publicKey = await invoke("device_key_create");
-          await loadKey(), $("public-key").value = publicKey, show($("key-show"), !1), show($("key-public"), !0), say("key-status", "Key created. Add its public key in the web app to use it.");
-        } catch (e) {
-          say("key-error", message(e));
-          try {
-            await loadKey();
-          } catch {
-          }
-        }
-        busy($("key-create"), !1);
-      }
-    }), $("key-show").addEventListener("click", async function() {
-      if (invoke) {
-        say("key-error", ""), say("key-status", ""), busy($("key-show"), !0, "Reading the key ...");
-        try {
-          $("public-key").value = await invoke("device_public_key"), show($("key-show"), !1), show($("key-public"), !0);
-        } catch (e) {
-          say("key-error", message(e));
-        }
-        busy($("key-show"), !1);
-      }
-    }), $("key-copy").addEventListener("click", async function() {
-      let field2 = $("public-key");
-      try {
-        await navigator.clipboard.writeText(field2.value), say("key-status", "Public key copied.");
-      } catch {
-        field2.focus(), field2.select(), say("key-status", "Select the public key and copy it with your keyboard.");
-      }
-    });
-  }
-  async function startBridge() {
-    if (invoke = bridgeInvoke(), !invoke || !document.getElementById("launcher")) return null;
-    wire();
-    try {
-      current = await invoke("get_state");
-    } catch (e) {
-      return say("app-error", message(e)), null;
-    }
-    let state2 = current, phone = state2.platform === "android" || state2.platform === "ios";
-    if ($("about").textContent = (phone ? "Dynodoc " : "Dynodoc desktop ") + state2.version + " (" + state2.platform + ")", phone && ($("lede").textContent = "Dynodoc opens your workspace in this app. Choose the Dynodoc cloud, or the address of a server your organisation runs. To choose a different server later, sign out in Dynodoc: this screen comes back."), $("help").href = state2.support, state2.unconfirmed && ($("unconfirmed-address").textContent = state2.unconfirmed, show($("unconfirmed"), !0)), state2.server && (say("current", "Currently set to " + state2.server + "."), $("address").value = state2.server === state2.cloud ? "" : state2.server, show($("browser-signin"), state2.browser_signin), show($("signin-if-button"), state2.browser_signin), show($("signin"), !0)), state2.tools) {
-      show($("key"), !0);
-      try {
-        await loadKey();
-      } catch (e) {
-        say("key-error", message(e));
-      }
-      try {
-        let tools = await invoke("tools_version");
-        $("about").textContent += ". Tools: " + tools + ".";
-      } catch (e) {
-        $("about").textContent += ". Local tools unavailable: " + message(e);
-      }
-    }
-    return state2;
-  }
-  function launcherSection() {
-    return location.hash === "#signin" ? "signin" : location.hash === "#key" ? "key" : null;
-  }
-  function focusSection(section2) {
-    section2 === "signin" && !$("browser-signin").hidden && $("browser-signin-go").focus(), section2 === "key" && !$("key").hidden && $("key").scrollIntoView();
-  }
-
   // client/src/views/shell.ts
   var NAV = [
     {
@@ -2292,7 +3193,7 @@ Suggest, do not order.` }
     );
   }
   function sidebar() {
-    let ctx = branchContext(), p2 = currentProject(), open2 = state.db.requests.filter((r) => r.projectId === p2.id && r.status === "open").sort((a, b) => b.createdAt - a.createdAt), ds = desktopState();
+    let ctx2 = branchContext(), p2 = currentProject(), open2 = state.db.requests.filter((r) => r.projectId === p2.id && r.status === "open").sort((a, b) => b.createdAt - a.createdAt), ds = desktopState();
     return h(
       "aside",
       { class: "sidebar", "aria-label": "Navigation" },
@@ -2309,7 +3210,7 @@ Suggest, do not order.` }
           picker("Current branch", branchLabel(), "branch", (e) => openBranchList(e.currentTarget), "branch-picker", "Branches (Ctrl+B)"),
           h("button", { type: "button", class: "icon-btn branch-menu-btn", "aria-label": "Branch menu", title: "Branch menu", "aria-haspopup": "menu", onClick: (e) => openBranchMenu(e.currentTarget) }, icon("more", 16))
         ),
-        ctx.kind === "draft" ? h("div", { class: "branch-state" }, ctx.behind ?? 0 ? h("span", { title: "Revisions of main this draft does not have" }, icon("down", 12), `${ctx.behind} behind`) : null, ctx.ahead ?? 0 ? h("span", { title: "Commits not pushed" }, icon("up", 12), `${ctx.ahead} to push`) : null, h("span", { class: "muted" }, ctx.state === "in_review" ? "in review" : ctx.state)) : null
+        ctx2.kind === "draft" ? h("div", { class: "branch-state" }, ctx2.behind ?? 0 ? h("span", { title: "Revisions of main this draft does not have" }, icon("down", 12), `${ctx2.behind} behind`) : null, ctx2.ahead ?? 0 ? h("span", { title: "Commits not pushed" }, icon("up", 12), `${ctx2.ahead} to push`) : null, h("span", { class: "muted" }, ctx2.state === "in_review" ? "in review" : ctx2.state)) : null
       ),
       h("button", { type: "button", class: "search-row", onClick: () => openPalette() }, icon("search", 15), h("span", null, "Search"), h("span", { class: "spacer" }), kbd("Ctrl+K")),
       h(
@@ -2349,7 +3250,7 @@ Suggest, do not order.` }
     return parts;
   }
   function topbar() {
-    let ctx = branchContext(), ahead = ctx.ahead ?? 0, ds = desktopState(), fetching = state.ui.fetching;
+    let ctx2 = branchContext(), ahead = ctx2.ahead ?? 0, ds = desktopState(), fetching = state.ui.fetching;
     return h(
       "header",
       { class: "topbar" },
@@ -2361,15 +3262,15 @@ Suggest, do not order.` }
       h(
         "span",
         { class: "status-pills" },
-        pill("Sample data", "warning", { mono: !1, title: "This release runs on sample data. See Settings, About." }),
+        state.live.mode === "connecting" ? pill("Connecting…", "info", { mono: !1, title: "Reading your workspace from the server" }) : isLive() ? pill(state.live.saving ? "Saving…" : state.db.remote?.visitor ? "Sample workspace" : "Live", state.live.saving ? "info" : "success", { mono: !1, title: state.db.remote?.visitor ? `Your own sample workspace on the server, until ${new Date(state.db.remote.visitor.expires_at).toLocaleString()}. Everything you do is saved there.` : "Showing your workspace on the server. Everything you do is saved there." }) : pill("Sample data", "warning", { mono: !1, title: "Offline sample: nothing leaves this window. See Settings, Accounts to use a server." }),
         ds?.server ? h("button", { type: "button", class: "server-btn", title: "Open your workspace on this server in this window", onClick: () => {
           openServer().catch((e) => toast("error", e instanceof Error ? e.message : String(e)));
         } }, icon("globe", 13), new URL(ds.server).host, icon("external", 12)) : pill(ds ? "No server" : "Offline copy", "neutral", { mono: !1, title: ds ? "Choose a server in Settings, Accounts" : "This copy connects to nothing" }),
-        ctx.kind === "draft" && (ctx.behind ?? 0) ? pill(`${ctx.behind} behind main`, "warning", { mono: !1 }) : null
+        ctx2.kind === "draft" && (ctx2.behind ?? 0) ? pill(`${ctx2.behind} behind main`, "warning", { mono: !1 }) : null
       ),
       h(
         "button",
-        { type: "button", class: cx("sync-btn", fetching && "is-busy"), id: "sync-button", title: ahead ? "Push (Ctrl+Shift+P)" : "Fetch (Ctrl+Shift+T)", disabled: fetching, onClick: () => ahead ? sync() : fetchNow() },
+        { type: "button", class: cx("sync-btn", fetching && "is-busy"), id: "sync-button", title: ahead ? "Push (Ctrl+Shift+P)" : "Fetch (Ctrl+Shift+T)", disabled: fetching, onClick: () => ahead ? sync2() : fetchNow() },
         icon(ahead ? "up" : "sync", 15, cx("icon", fetching && "spin")),
         h("span", { class: "sync-text" }, h("span", { class: "sync-title" }, fetching ? ahead ? "Pushing…" : "Fetching…" : ahead ? `Push ${ahead} commit${ahead === 1 ? "" : "s"}` : "Fetch"), h("span", { class: "sync-sub" }, `Last fetched ${when(state.db.lastFetched)}`))
       )
@@ -2437,8 +3338,8 @@ Suggest, do not order.` }
   function diffView(base, edits2, o = {}) {
     let p2 = state.prefs, layout = o.layout ?? p2.diffLayout, context = o.context ?? p2.diffContext, list2 = hunks(base, edits2, context);
     if (!list2.length) return h("div", { class: "diff-empty" }, o.emptyText ?? "No changes.");
-    let excluded = new Set(o.excluded ?? []), seenToggle = /* @__PURE__ */ new Set(), control = (blockId, changed) => {
-      if (!changed) return h("span", { class: "diff-gutter-ctl" });
+    let excluded = new Set(o.excluded ?? []), seenToggle = /* @__PURE__ */ new Set(), control = (blockId, changed2) => {
+      if (!changed2) return h("span", { class: "diff-gutter-ctl" });
       let parts = [];
       return o.onToggle && !seenToggle.has(blockId) ? (seenToggle.add(blockId), parts.push(
         h("input", {
@@ -2449,9 +3350,9 @@ Suggest, do not order.` }
           onChange: (e) => o.onToggle?.(blockId, e.target.checked)
         })
       )) : p2.checkMarks && !o.onToggle && parts.push(h("span", { class: "diff-mark" }, icon("check", 12))), h("span", { class: "diff-gutter-ctl" }, parts);
-    }, after = (blockId, changed) => {
+    }, after = (blockId, changed2) => {
       let out = [];
-      return changed && o.onComment && out.push(h("button", { type: "button", class: "diff-comment-btn", title: "Comment on this change", "aria-label": "Comment on this change", onClick: () => o.onComment?.(blockId) }, icon("comment", 13))), out;
+      return changed2 && o.onComment && out.push(h("button", { type: "button", class: "diff-comment-btn", title: "Comment on this change", "aria-label": "Comment on this change", onClick: () => o.onComment?.(blockId) }, icon("comment", 13))), out;
     }, commentRow = (blockId, span) => {
       let c = o.comments?.[blockId];
       return !c || !c.length ? null : h("tr", { class: "diff-comments" }, h("td", { colspan: span }, h("div", { class: "diff-comment-list" }, c)));
@@ -2471,17 +3372,17 @@ Suggest, do not order.` }
               "tbody",
               null,
               lines2.map((l) => {
-                let changed = l.kind !== "context", first = !done.has(l.blockId);
+                let changed2 = l.kind !== "context", first = !done.has(l.blockId);
                 return done.add(l.blockId), [
                   h(
                     "tr",
                     { class: cx("diff-row", `k-${l.kind}`, excluded.has(l.blockId) && "is-excluded") },
-                    h("td", { class: "diff-ctl" }, first ? control(l.blockId, changed) : null),
+                    h("td", { class: "diff-ctl" }, first ? control(l.blockId, changed2) : null),
                     h("td", { class: "diff-no" }, l.left ? String(l.left.no) : ""),
-                    h("td", { class: cx("diff-cell", l.left && changed && (l.kind === "del" || l.kind === "edit") && "side-del", !l.left && "side-none") }, l.left ? [h("div", { class: "diff-label" }, l.left.label), h("div", { class: "diff-text" }, segs(l.left.segs, p2.wordDiff))] : null),
+                    h("td", { class: cx("diff-cell", l.left && changed2 && (l.kind === "del" || l.kind === "edit") && "side-del", !l.left && "side-none") }, l.left ? [h("div", { class: "diff-label" }, l.left.label), h("div", { class: "diff-text" }, segs(l.left.segs, p2.wordDiff))] : null),
                     h("td", { class: "diff-no" }, l.right ? String(l.right.no) : ""),
-                    h("td", { class: cx("diff-cell", l.right && changed && (l.kind === "add" || l.kind === "edit") && "side-add", !l.right && "side-none") }, l.right ? [h("div", { class: "diff-label" }, l.right.label), h("div", { class: "diff-text" }, segs(l.right.segs, p2.wordDiff))] : null),
-                    h("td", { class: "diff-after" }, after(l.blockId, changed))
+                    h("td", { class: cx("diff-cell", l.right && changed2 && (l.kind === "add" || l.kind === "edit") && "side-add", !l.right && "side-none") }, l.right ? [h("div", { class: "diff-label" }, l.right.label), h("div", { class: "diff-text" }, segs(l.right.segs, p2.wordDiff))] : null),
+                    h("td", { class: "diff-after" }, after(l.blockId, changed2))
                   ),
                   commentRow(l.blockId, 6)
                 ];
@@ -2499,17 +3400,17 @@ Suggest, do not order.` }
             "tbody",
             null,
             lines.map((l, i) => {
-              let changed = l.sign !== " ", last = !lines[i + 1] || lines[i + 1].blockId !== l.blockId;
+              let changed2 = l.sign !== " ", last = !lines[i + 1] || lines[i + 1].blockId !== l.blockId;
               return [
                 h(
                   "tr",
                   { class: cx("diff-row", l.sign === "-" ? "k-del" : l.sign === "+" ? "k-add" : "k-context", excluded.has(l.blockId) && "is-excluded") },
-                  h("td", { class: "diff-ctl" }, control(l.blockId, changed)),
+                  h("td", { class: "diff-ctl" }, control(l.blockId, changed2)),
                   h("td", { class: "diff-no" }, l.oldNo === void 0 ? "" : String(l.oldNo)),
                   h("td", { class: "diff-no" }, l.newNo === void 0 ? "" : String(l.newNo)),
                   h("td", { class: "diff-sign", "aria-hidden": "true" }, l.sign),
                   h("td", { class: "diff-cell" }, h("div", { class: "diff-label" }, l.label), h("div", { class: "diff-text" }, segs(l.segs, p2.wordDiff))),
-                  h("td", { class: "diff-after" }, l.sign === "+" || l.sign === "-" && last ? after(l.blockId, changed) : null)
+                  h("td", { class: "diff-after" }, l.sign === "+" || l.sign === "-" && last ? after(l.blockId, changed2) : null)
                 ),
                 last ? commentRow(l.blockId, 6) : null
               ];
@@ -2738,7 +3639,7 @@ Suggest, do not order.` }
       h("div", { class: "list-card" }, p2.members.map((m) => h("div", { class: "list-item" }, avatar(personName(m.personId), isAgent(m.personId)), h("div", { class: "grow" }, h("strong", null, personName(m.personId)), h("div", { class: "muted small" }, person(state.db, m.personId).email)), badge(ROLE_LABEL[m.role]), h("span", { class: "muted small" }, m.via === "workspace" ? "via workspace" : "direct"))))
     );
   }
-  function sync2(d) {
+  function sync3(d) {
     let hosts = HOSTS_FOR[d.kind], host = hosts[0];
     return h(
       "div",
@@ -2816,7 +3717,7 @@ Suggest, do not order.` }
         viewHeader("Documents", `${docs.length} file${docs.length === 1 ? "" : "s"} in ${project(state.db, state.ui.projectId).name}`, button("New draft…", { icon: "branch", onClick: () => newDraftDialog() }), button("Add file", { icon: "plus", disabled: !0, title: "Uploading files is in the web workspace and the add-ins; not in this release of the client." })),
         docs.length ? h("div", { class: "card flush" }, fileTable(docs)) : empty("documents", "No files", "Add a file in the web workspace or from an add-in.")
       );
-    let counts = { drafts: state.db.drafts.filter((x) => x.docId === sel.id).length, versions: sel.versions.length, disc: sel.discussions.filter((t) => !t.resolved).length }, body = ui.tab === "versions" ? versions(sel) : ui.tab === "drafts" ? drafts(sel) : ui.tab === "discussions" ? discussions(sel) : ui.tab === "people" ? people(sel) : ui.tab === "sync" ? sync2(sel) : overview(sel);
+    let counts = { drafts: state.db.drafts.filter((x) => x.docId === sel.id).length, versions: sel.versions.length, disc: sel.discussions.filter((t) => !t.resolved).length }, body = ui.tab === "versions" ? versions(sel) : ui.tab === "drafts" ? drafts(sel) : ui.tab === "discussions" ? discussions(sel) : ui.tab === "people" ? people(sel) : ui.tab === "sync" ? sync3(sel) : overview(sel);
     return h(
       "div",
       { class: "page" },
@@ -2954,7 +3855,7 @@ Suggest, do not order.` }
         "div",
         { class: "commit-options" },
         h("label", { class: "inline-check is-disabled", title: "Dynodoc history is append-only: a revision cannot be changed after it is made." }, h("input", { type: "checkbox", class: "check", disabled: !0 }), "Amend last commit"),
-        h("span", { class: "muted small" }, state.prefs.signCommits ? "Signed with this computer’s key" : "Unsigned")
+        h("span", { class: "muted small" }, state.db.remote ? "Pushed to the server as you" : state.prefs.signCommits ? "Signed with this computer’s key" : "Unsigned")
       ),
       target.ok ? null : notice("info", target.note),
       button(label, { variant: "primary", id: "commit-button", class: "commit-button", disabled: !c.summary.trim() || !staged.length || !target.ok, onClick: commitStaged2 }),
@@ -2963,8 +3864,8 @@ Suggest, do not order.` }
     );
   }
   function nothingHere() {
-    let ctx = branchContext(), cards = [];
-    return (ctx.ahead ?? 0) > 0 && cards.push(h("div", { class: "suggest" }, h("div", null, h("div", { class: "suggest-title" }, `Push ${ctx.ahead} commit${ctx.ahead === 1 ? "" : "s"} to the server`), h("div", { class: "suggest-text" }, "Your commits are on this computer only until you push.")), button("Push", { variant: "primary", icon: "up", onClick: sync }))), ctx.kind === "draft" && ctx.state === "private" && !(ctx.ahead ?? 0) && cards.push(h("div", { class: "suggest" }, h("div", null, h("div", { class: "suggest-title" }, "Send this draft for review"), h("div", { class: "suggest-text" }, "Open a change request so the team can review and merge it.")), button("Send for review", { onClick: () => sendForReviewDialog() }))), cards.push(h("div", { class: "suggest" }, h("div", null, h("div", { class: "suggest-title" }, "Fetch from the server"), h("div", { class: "suggest-text" }, "See new revisions, reviews and change requests.")), button("Fetch", { icon: "sync", onClick: fetchNow }))), cards.push(h("div", { class: "suggest" }, h("div", null, h("div", { class: "suggest-title" }, "Edit in your editor"), h("div", { class: "suggest-text" }, "Editing happens in Word, Excel, PowerPoint or Google’s editors with the Dynodoc add-in. Captured edits appear here.")), button("Open a file…", { onClick: () => {
+    let ctx2 = branchContext(), cards = [];
+    return (ctx2.ahead ?? 0) > 0 && cards.push(h("div", { class: "suggest" }, h("div", null, h("div", { class: "suggest-title" }, `Push ${ctx2.ahead} commit${ctx2.ahead === 1 ? "" : "s"} to the server`), h("div", { class: "suggest-text" }, "Your commits are on this computer only until you push.")), button("Push", { variant: "primary", icon: "up", onClick: sync2 }))), ctx2.kind === "draft" && ctx2.state === "private" && !(ctx2.ahead ?? 0) && cards.push(h("div", { class: "suggest" }, h("div", null, h("div", { class: "suggest-title" }, "Send this draft for review"), h("div", { class: "suggest-text" }, "Open a change request so the team can review and merge it.")), button("Send for review", { onClick: () => sendForReviewDialog() }))), cards.push(h("div", { class: "suggest" }, h("div", null, h("div", { class: "suggest-title" }, "Fetch from the server"), h("div", { class: "suggest-text" }, "See new revisions, reviews and change requests.")), button("Fetch", { icon: "sync", onClick: fetchNow }))), cards.push(h("div", { class: "suggest" }, h("div", null, h("div", { class: "suggest-title" }, "Edit in your editor"), h("div", { class: "suggest-text" }, "Editing happens in Word, Excel, PowerPoint or Google’s editors with the Dynodoc add-in. Captured edits appear here.")), button("Open a file…", { onClick: () => {
       state.ui.view = "documents", render();
     } }))), h("div", { class: "no-changes" }, empty("check", "No captured changes", `Nothing waiting on ${branchLabel()}. Here are some friendly suggestions for what to do next.`), h("div", { class: "suggests" }, cards));
   }
@@ -3263,12 +4164,12 @@ Suggest, do not order.` }
       h("div", { class: "pane-sub muted small" }, `${list2.length} revision${list2.length === 1 ? "" : "s"} on ${branchLabel()}${currentBranch() !== "main" ? " (and main before it)" : ""}`),
       h("div", { class: "pane-scroll", role: "listbox", "aria-label": "Revisions", "data-scroll-key": "history-list" }, list2.length ? list2.map((c) => commitRow(c, c.id === ui.selected)) : h("div", { class: "change-none" }, "No revisions match.")),
       h("div", { class: "pane-foot" }, button("Verify every file", { icon: "shield", size: "sm", onClick: () => {
-        let bad = 0, ok = 0;
+        let bad = 0, ok2 = 0;
         for (let d of docs) {
           let r = runVerify(d.id);
-          bad += r.bad, ok += r.ok;
+          bad += r.bad, ok2 += r.ok;
         }
-        act(() => bad ? `${bad} revisions do not verify` : `Verified ${ok} revisions in ${docs.length} files: every chain is intact`);
+        act(() => bad ? `${bad} revisions do not verify` : `Verified ${ok2} revisions in ${docs.length} files: every chain is intact`);
       } }))
     ), right;
     return ui.mode === "compare" ? right = compareView() : ui.mode === "graph" ? right = graphView() : right = sel ? commitDetail(sel) : h("div", { class: "pane pane-main" }, empty("history", "No revisions", "Nothing has been committed here yet.")), h("div", { class: "split-view" }, left, right);
@@ -4040,9 +4941,9 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
   function execute(p2, access, enabled) {
     let calls = [], refused = [];
     for (let s2 of p2.steps) {
-      let t0 = performance.now(), ok = mayCall(s2.tool, access, enabled);
-      if (!ok.ok) {
-        calls.push({ tool: s2.tool, input: s2.input, output: "", refused: ok.reason, ms: 0 }), refused.push(`${s2.tool} was refused because ${ok.reason}`);
+      let t0 = performance.now(), ok2 = mayCall(s2.tool, access, enabled);
+      if (!ok2.ok) {
+        calls.push({ tool: s2.tool, input: s2.input, output: "", refused: ok2.reason, ms: 0 }), refused.push(`${s2.tool} was refused because ${ok2.reason}`);
         continue;
       }
       let output;
@@ -4173,11 +5074,11 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
   }
   function callsView(m) {
     if (!m.calls?.length) return null;
-    let refused = m.calls.filter((c) => c.refused).length, ms = m.calls.reduce((n, c) => n + c.ms, 0);
+    let refused = m.calls.filter((c) => c.refused).length, ms2 = m.calls.reduce((n, c) => n + c.ms, 0);
     return h(
       "details",
       { class: "calls" },
-      h("summary", null, icon("chevronRight", 13, "icon calls-chev"), `Worked · ${m.calls.length} tool call${m.calls.length === 1 ? "" : "s"}${refused ? ` · ${refused} refused` : ""} · ${(ms / 1e3).toFixed(1)} s`),
+      h("summary", null, icon("chevronRight", 13, "icon calls-chev"), `Worked · ${m.calls.length} tool call${m.calls.length === 1 ? "" : "s"}${refused ? ` · ${refused} refused` : ""} · ${(ms2 / 1e3).toFixed(1)} s`),
       h("div", { class: "calls-list" }, m.calls.map((c) => h("div", { class: cx("call", c.refused && "is-refused") }, h("div", { class: "call-head" }, h("code", null, c.tool), h("span", { class: "muted" }, c.input), h("span", { class: "spacer" }), c.refused ? pill("refused", "error") : h("span", { class: "muted small" }, `${c.ms} ms`)), h("div", { class: "call-out" }, c.refused ? `Refused: ${c.refused}.` : c.output))))
     );
   }
@@ -4281,30 +5182,36 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
 
   // client/src/views/about.ts
   function aboutBody() {
-    let shell2 = state.desktop;
+    let shell2 = state.desktop, live = isLive();
     return [
       h(
         "div",
         { class: "about-hero card pad" },
         h("div", { class: "about-title" }, h("strong", null, "Dynodoc"), " ", pill("Pre-alpha release", "warning", { mono: !1 })),
         h("p", null, "Version control for documents, spreadsheets and presentations: edits in Word, Excel, PowerPoint and Google’s editors become change requests, are reviewed and merged, and land in a hash-chained history."),
-        h("p", { class: "muted small" }, `Client 0.1.0${shell2 ? `, desktop app ${state.desktopVersion}` : ""}.`)
+        h("p", { class: "muted small" }, `Client 0.0.1-alpha${shell2 ? `, desktop app ${state.desktopVersion}` : ""}.`)
       ),
-      section("This release runs on sample data", null, h(
+      live ? section("This window shows a real Dynodoc server", null, h(
         "p",
         null,
-        "Every project, person, file, revision and figure here is invented. There is no backend behind these screens: a script inside the page stands in for a Dynodoc server, and nothing you do here leaves this ",
-        shell2 ? "window." : "tab. The page makes no network requests."
+        `The screens read and change your workspace on ${state.live.server || "the server"}. `,
+        state.db.remote?.visitor ? "It is a sample workspace made for you alone: the projects, files and colleagues in it are invented (example.org), and it is removed after 24 hours." : "What you see is what the server holds; every change you make is sent to it."
+      )) : section("This window shows an offline sample", null, h(
+        "p",
+        null,
+        "Every project, person, file, revision and figure here is invented, and a script inside the page stands in for a Dynodoc server: nothing you do leaves this ",
+        shell2 ? "window. Settings, Accounts starts a sample workspace on the hosted pre-alpha server, or signs in to yours." : "tab. The page makes no network requests."
       )),
-      section("Real and prepared", null, rows2(
-        row("Real", "The interface and its rules: the diff model (paragraph, cell and slide text, with word marks and context), staging and committing, the hash chain (each revision’s SHA-256 chain hash is computed and “Verify” recomputes it), drafts, rebase with conflict choices, the review rules (approvals, who may merge), revert and cherry-pick as recovery drafts, the agent’s closed tool table and its access check, the keybinding conflict check, the provider ladder’s validation.", null),
-        row("Prepared", "The data, the arrival of new revisions when you fetch, and the agent’s replies: no model is called. Connection keys shown here are random characters that connect nothing.", null),
-        shell2 ? row("Real, in the desktop app", "Accounts, Dynodoc server: choosing a server, signing in with your browser or an emailed link, and this computer’s signing key use the app’s own commands, unchanged. Opening your server shows its real workspace in this window.", null) : null,
-        row("Not in this release", "Reading your real server’s data in these screens, editing documents (that is the add-ins’ job), uploading files, exports and administration actions.", null)
+      section("Where each part runs", null, rows2(
+        row("On the Dynodoc server", "Projects, files and their content, the hash-chained history (verified by the server), drafts, change requests, reviews, merges with conflict choices, versions, discussions, published copies, people and roles, review rules, the AI agent policy, issues and labels, stars and watching, notifications and signing keys. The desktop app reaches them through the server’s own web workspace routes, with your session, so the server’s permission rules apply unchanged.", null),
+        row("On the pre-alpha service", "Beside the server (the same address, under /svc): the changes your editor add-ins captured and nobody committed yet, commits you have not pushed, commit messages (the server records changes, not messages), agent threads and dismissed copies. It also makes the sample workspaces. It is part of this pre-alpha release, not of the product.", null),
+        row("On this computer", "Your preferences (theme, keybindings, providers without their keys) in the app’s settings file; this computer’s signing key in the operating system’s key store. Provider keys are held in memory only.", null),
+        row("Prepared, not computed", "The agent’s replies: no model is called. The connector catalogue lists what exists; connection keys come from the server.", null),
+        row("Not in this release", "Editing a document’s content in this client (that is the add-ins’ and the web workspace’s job), uploads, exports and administration actions. macOS is not built yet.", null)
       )),
       section("Privacy", null, rows2(
         row("No telemetry", "No analytics, no crash reports, no usage statistics.", null, { fixed: !0 }),
-        row("Keys stay in memory", "Provider keys typed in Settings are held in memory only, shown as “stored” with the last four characters, and never sent.", null, { fixed: !0 })
+        row("Keys stay in memory", "Provider keys typed in Settings are held in memory only, shown as “stored” with the last four characters, and never sent or saved.", null, { fixed: !0 })
       )),
       h("p", { class: "muted small" }, "A Verne Ltd. product.")
     ];
@@ -4349,13 +5256,38 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
     ];
   }
   var profile = { name: "Jordan Lee", bio: "Operations, Sample organisation." };
+  function workspaceCard() {
+    let live = state.live, visitor = state.db.remote?.visitor;
+    return live.mode === "connecting" ? notice("info", "Reading your workspace from the server…") : isLive() ? h(
+      "div",
+      { class: "card pad" },
+      h("p", null, visitor ? [h("strong", null, "Your sample workspace on the pre-alpha server. "), `It is yours alone (signed in as ${visitor.display_name}) and is removed on ${new Date(visitor.expires_at).toLocaleString()}. Every click is saved there; nothing private belongs in it.`] : [h("strong", null, "Signed in. "), `These screens show your workspace on ${live.server || "the server"}, and every change is saved there.`]),
+      h(
+        "div",
+        { class: "row-actions" },
+        button("Read everything again", { size: "sm", icon: "sync", onClick: () => void refresh() }),
+        button("Sign out", { size: "sm", variant: "ghost", onClick: () => confirmDialog("Sign out", h("p", null, "This window signs out of the server and shows the offline sample again."), "Sign out", () => void signOut()) })
+      )
+    ) : h(
+      "div",
+      { class: "card pad" },
+      h("p", null, "These screens show an offline sample: nothing you do leaves this window. To try them on a real Dynodoc server, start a sample workspace on the hosted pre-alpha server (no account needed, removed after 24 hours), or sign in to your server below."),
+      live.error ? notice("error", live.error) : null,
+      h("div", { class: "row-actions" }, button("Start a sample workspace", { size: "sm", variant: "primary", icon: "globe", onClick: () => void startVisitor() }))
+    );
+  }
+  async function saveProfile(name2, bio) {
+    let current3 = await call("api_get", { path: "profile" }), reply = await call("api_send", { method: "POST", path: "profile", body: { name: name2, bio, revision: current3.body?.revision ?? 0 }, ifMatch: null });
+    if (reply.status >= 300) throw new Error(reply.body?.error || "The server did not save the profile.");
+  }
   function accounts() {
-    let slot = h("div", { id: "launcher-slot", class: "launcher-slot" });
-    return [
+    let slot = h("div", { id: "launcher-slot", class: "launcher-slot" }), me = isLive() ? state.db.people.find((x) => x.id === state.db.me) : null;
+    return me && profile.name === "Jordan Lee" && (profile = { name: me.name, bio: "" }), [
+      state.desktop ? section("Workspace", "Where the data on these screens comes from.", workspaceCard()) : null,
       section("Profile", "Your name on revisions, reviews and comments.", h(
         "div",
         { class: "card pad" },
-        h("div", { class: "profile-row" }, avatar(profile.name, !1, "md"), h("div", null, h("strong", null, profile.name), h("div", { class: "muted small" }, p().authorEmail))),
+        h("div", { class: "profile-row" }, avatar(profile.name, !1, "md"), h("div", null, h("strong", null, profile.name), h("div", { class: "muted small" }, me && me.email || p().authorEmail))),
         field("Name", input(profile.name, (v) => {
           profile.name = v;
         }, { id: "profile-name" })),
@@ -4363,7 +5295,14 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
           profile.bio = v;
         }, { id: "profile-bio", rows: 2, maxlength: 280 }), "Up to 280 characters."),
         h("div", { class: "row-actions" }, button("Save profile", { size: "sm", variant: "primary", onClick: () => {
-          p().authorName = profile.name, toast("success", "Profile saved", "Sample data: kept in this window only."), render();
+          if (p().authorName = profile.name, !isLive()) {
+            toast("success", "Profile saved", "Offline sample: kept on this computer only."), render();
+            return;
+          }
+          saveProfile(profile.name, profile.bio).then(() => {
+            let meNow = state.db.people.find((x) => x.id === state.db.me);
+            meNow && (meNow.name = profile.name), toast("success", "Profile saved on the server"), render();
+          }).catch((e) => toast("error", "Profile not saved", e instanceof Error ? e.message : String(e)));
         } }))
       )),
       section(
@@ -4757,8 +5696,8 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
         row("Show status icons in the project list", "Marks projects with local commits or open requests.", toggle(p().statusIcons, (v) => set(() => p().statusIcons = v), "Status icons"))
       )),
       section("Usage", null, rows2(row("Send usage statistics", "Off by default. This release has no telemetry at all: the switch only records your choice.", toggle(p().usageStats, (v) => set(() => p().usageStats = v), "Usage statistics")))),
-      section("Sample data", null, rows2(
-        row("Reset the sample project", "Brings back the sample history, drafts and requests as they were at start.", button("Reset", { size: "sm", onClick: () => confirmDialog("Reset sample data", h("p", null, "Every change you made to the sample is lost."), "Reset", () => {
+      section(isLive() ? "Settings" : "Sample data", null, rows2(
+        isLive() ? null : row("Reset the sample project", "Brings back the sample history, drafts and requests as they were at start.", button("Reset", { size: "sm", onClick: () => confirmDialog("Reset sample data", h("p", null, "Every change you made to the sample is lost."), "Reset", () => {
           resetSample(), toast("success", "Sample data reset");
         }) })),
         row("Restore default settings", null, button("Restore", { size: "sm", onClick: () => {
@@ -4872,7 +5811,7 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
       state.ui.settings.section = s2.id, go("settings");
     } });
     let ahead = branchContext().ahead ?? 0;
-    out.push({ id: "sync", label: ahead ? `Push ${ahead} commit${ahead === 1 ? "" : "s"}` : "Fetch", group: "Project", icon: ahead ? "up" : "sync", shortcut: "Ctrl+Shift+P", run: sync }), out.push({ id: "commit", label: "Commit staged changes", group: "Project", icon: "check", shortcut: "Ctrl+Enter", run: () => {
+    out.push({ id: "sync", label: ahead ? `Push ${ahead} commit${ahead === 1 ? "" : "s"}` : "Fetch", group: "Project", icon: ahead ? "up" : "sync", shortcut: "Ctrl+Shift+P", run: sync2 }), out.push({ id: "commit", label: "Commit staged changes", group: "Project", icon: "check", shortcut: "Ctrl+Enter", run: () => {
       go("changes"), commitStaged2();
     } }), out.push({ id: "stage", label: "Stage all changes", group: "Project", icon: "up", run: () => {
       setStaged(state.db, working(state.db, state.ui.projectId, currentBranch()).map((w) => w.id), !0), render();
@@ -4890,9 +5829,9 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
     } });
     return out.push({ id: "agent.new", label: "New agent thread", group: "Agent", icon: "agent", shortcut: "Ctrl+Shift+O", run: startThread }), out.push({ id: "theme", label: "Toggle light and dark", group: "Appearance", icon: "moon", shortcut: "Ctrl+Shift+L", run: () => {
       toggleTheme(), render();
-    } }), out.push({ id: "reset", label: "Reset the sample project", group: "Advanced", icon: "revert", run: () => {
+    } }), isLive() || out.push({ id: "reset", label: "Reset the sample project", group: "Advanced", icon: "revert", run: () => {
       resetSample(), toast("success", "Sample data reset");
-    } }), state.desktop && out.push({ id: "server", label: "Open my server’s workspace in this window", group: "Account", icon: "globe", run: () => {
+    } }), state.desktop && !isLive() && out.push({ id: "visitor", label: "Start a sample workspace on the pre-alpha server", group: "Account", icon: "globe", run: () => void startVisitor() }), isLive() && out.push({ id: "reload", label: "Read everything from the server again", group: "Account", icon: "sync", run: () => void refresh() }), isLive() && out.push({ id: "signout", label: "Sign out of the server", group: "Account", icon: "user", run: () => void signOut() }), state.desktop && out.push({ id: "server", label: "Open my server’s workspace in this window", group: "Account", icon: "globe", run: () => {
       openServer().then((s2) => {
         s2 || (state.ui.settings.section = "accounts", go("settings"), toast("info", "Choose a server first"));
       }).catch((e) => toast("error", e instanceof Error ? e.message : String(e)));
@@ -4925,7 +5864,7 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
       case "theme.toggle":
         return toggleTheme(), render();
       case "sync":
-        return sync();
+        return sync2();
       case "fetch":
         return fetchNow();
       case "commit":
@@ -4962,16 +5901,23 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
     !cmd || target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT") && !(e.ctrlKey || e.metaKey || e.altKey) || (e.preventDefault(), !(cmd === "palette" && paletteIsOpen()) && runCommand(cmd));
   }
   async function boot() {
-    root = document.getElementById("app") ?? document.body.appendChild(h("div", { id: "app" })), layer = document.body.appendChild(h("div", { id: "layer" })), document.body.appendChild(h("div", { id: "menus" })), launcher = document.getElementById("launcher"), launcher && (launcherHome = document.body.appendChild(h("div", { id: "launcher-home", hidden: !0 })), launcherHome.appendChild(launcher), launcher.classList.add("is-embedded")), document.documentElement.classList.add("client"), applyAppearance(), setRenderer(draw), setCommands(commands), document.addEventListener("keydown", onKey), window.matchMedia?.("(prefers-color-scheme: dark)").addEventListener?.("change", () => render()), setInterval(() => {
+    root = document.getElementById("app") ?? document.body.appendChild(h("div", { id: "app" })), layer = document.body.appendChild(h("div", { id: "layer" })), document.body.appendChild(h("div", { id: "menus" })), launcher = document.getElementById("launcher"), launcher && (launcherHome = document.body.appendChild(h("div", { id: "launcher-home", hidden: !0 })), launcherHome.appendChild(launcher), launcher.classList.add("is-embedded")), document.documentElement.classList.add("client"), applyAppearance(), setRenderer(draw), setAfterRender(() => {
+      noticeChanges(), noticePrefs();
+    }), setCommands(commands), document.addEventListener("keydown", onKey), window.matchMedia?.("(prefers-color-scheme: dark)").addEventListener?.("change", () => render()), setInterval(() => {
       !dialogOpen() && !paletteIsOpen() && render();
     }, 6e4), setInterval(() => {
-      state.prefs.backgroundFetch && Date.now() - state.db.lastFetched > state.prefs.fetchMinutes * 6e4 && fetchNow();
+      state.prefs.backgroundFetch && Date.now() - state.db.lastFetched > state.prefs.fetchMinutes * 6e4 && (isLive() ? refresh(!0) : fetchNow());
     }, 3e4);
     let section2 = launcherSection();
     if (inDesktop() && launcher) {
       state.desktop = !0, draw();
       let ds = await startBridge();
-      ds && (state.desktopVersion = ds.version, (section2 || ds.unconfirmed || ds.server) && (state.ui.settings.section = "accounts", state.ui.view = "settings")), draw(), focusSection(section2);
+      if (ds) {
+        state.desktopVersion = ds.version, await loadPrefs(), applyAppearance();
+        let info = await startLive();
+        (section2 || ds.unconfirmed || !info?.signed_in && !section2) && (state.ui.settings.section = "accounts", state.ui.view = "settings");
+      }
+      draw(), focusSection(section2);
     } else
       draw();
   }

@@ -223,6 +223,14 @@ export const state = {
   desktop: false,
   /** The desktop app's version, from its get_state command. */
   desktopVersion: '',
+  /** Live mode: the screens show a real server's workspace (data/live.ts). */
+  live: {
+    mode: 'offline' as 'offline' | 'connecting' | 'live',
+    server: '',
+    saving: false,
+    error: '',
+    visitor: null as { display_name: string; expires_at: string } | null,
+  },
 };
 
 function structuredCloneSafe<T>(v: T): T {
@@ -235,6 +243,12 @@ export function branchOf(projectId = state.ui.projectId): string {
 
 let scheduled = false;
 let renderer: () => void = () => {};
+let afterRender: () => void = () => {};
+
+/** Runs after every render (live mode sends changes to the server from here). */
+export function setAfterRender(fn: () => void): void {
+  afterRender = fn;
+}
 
 export function setRenderer(fn: () => void): void {
   renderer = fn;
@@ -247,6 +261,7 @@ export function render(): void {
   requestAnimationFrame(() => {
     scheduled = false;
     renderer();
+    afterRender();
   });
 }
 

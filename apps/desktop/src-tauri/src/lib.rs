@@ -14,6 +14,7 @@ mod handoff;
 #[cfg(desktop)]
 mod menu;
 mod nav;
+mod remote;
 mod server;
 mod sidecar;
 mod signin;
@@ -178,6 +179,15 @@ pub fn run() {
             commands::device_key_status,
             commands::device_key_create,
             commands::device_public_key,
+            commands::session_info,
+            commands::visitor_start,
+            commands::sign_out,
+            commands::api_get,
+            commands::api_send,
+            commands::svc_get,
+            commands::svc_send,
+            commands::prefs_load,
+            commands::prefs_save,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

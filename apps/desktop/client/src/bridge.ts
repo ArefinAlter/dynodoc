@@ -73,6 +73,28 @@ export function desktopState(): DesktopState | null {
   return current;
 }
 
+/** Reads the app's state again (after a command changed the server). */
+export async function refreshDesktopState(): Promise<DesktopState | null> {
+  if (!invoke) return current;
+  try {
+    current = (await invoke('get_state')) as DesktopState;
+  } catch {
+    /* keep what we had */
+  }
+  return current;
+}
+
+/** One of the app's commands (the new ones in remote.rs reach the configured server). */
+export async function call(cmd: string, args?: Record<string, unknown>): Promise<unknown> {
+  const fn = invoke ?? bridgeInvoke();
+  if (!fn) throw new Error('This needs the Dynodoc desktop app.');
+  try {
+    return await fn(cmd, args);
+  } catch (e) {
+    throw new Error(message(e));
+  }
+}
+
 async function connect(address: string, errorId: string, button: HTMLElement, working: string): Promise<boolean> {
   if (!invoke) return false;
   say(errorId, '');

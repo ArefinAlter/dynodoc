@@ -141,6 +141,21 @@ export interface Verification {
 /** Recomputes every chain hash of a file's history (main and its drafts) from the edits. */
 export function verify(db: Db, docId: string): Verification[] {
   const out: Verification[] = [];
+  if (db.remote) {
+    // A real server's history: the server replays the chain itself (its hashes are over the
+    // engine's events, not over the client's edits). Revisions before a break verify.
+    const check = db.remote.verify[docId] ?? { ok: true };
+    for (const c of db.commits.filter((x) => x.docId === docId)) {
+      if (c.local) continue;
+      if (c.branch !== 'main') {
+        out.push({ commitId: c.id, ok: true, detail: 'a draft revision; its changes join the chain when merged' });
+        continue;
+      }
+      const ok = check.ok || (check.brokenAt !== undefined && c.seq < check.brokenAt);
+      out.push({ commitId: c.id, ok, detail: ok ? 'verified by the server: the chain replays to this hash' : check.detail ?? `the chain breaks at event ${check.brokenAt ?? '?'}` });
+    }
+    return out;
+  }
   const branches = new Set(db.commits.filter((c) => c.docId === docId).map((c) => c.branch));
   for (const branch of branches) {
     let prev = branch === 'main' ? GENESIS : '';

@@ -14,6 +14,7 @@ import { openBranchList, openBranchMenu, openProjectList, sync, fetchNow } from 
 import { unread } from './activity.ts';
 import { desktopState, openServer } from '../bridge.ts';
 import { toast } from '../state.ts';
+import { isLive } from '../data/live.ts';
 
 interface NavItem {
   view: View;
@@ -156,7 +157,11 @@ function topbar(): HTMLElement {
     h('nav', { class: 'crumbs-bar', 'aria-label': 'Breadcrumb' }, crumbs()),
     h('span', { class: 'spacer' }),
     h('span', { class: 'status-pills' },
-      pill('Sample data', 'warning', { mono: false, title: 'This release runs on sample data. See Settings, About.' }),
+      state.live.mode === 'connecting'
+        ? pill('Connecting…', 'info', { mono: false, title: 'Reading your workspace from the server' })
+        : isLive()
+          ? pill(state.live.saving ? 'Saving…' : state.db.remote?.visitor ? 'Sample workspace' : 'Live', state.live.saving ? 'info' : 'success', { mono: false, title: state.db.remote?.visitor ? `Your own sample workspace on the server, until ${new Date(state.db.remote.visitor.expires_at).toLocaleString()}. Everything you do is saved there.` : 'Showing your workspace on the server. Everything you do is saved there.' })
+          : pill('Sample data', 'warning', { mono: false, title: 'Offline sample: nothing leaves this window. See Settings, Accounts to use a server.' }),
       ds?.server
         ? h('button', { type: 'button', class: 'server-btn', title: 'Open your workspace on this server in this window', onClick: () => { openServer().catch((e) => toast('error', e instanceof Error ? e.message : String(e))); } }, icon('globe', 13), new URL(ds.server).host, icon('external', 12))
         : pill(ds ? 'No server' : 'Offline copy', 'neutral', { mono: false, title: ds ? 'Choose a server in Settings, Accounts' : 'This copy connects to nothing' }),

@@ -224,11 +224,11 @@ try {
 
   $p = Start-App
   $running += $p
-  $line = Read-Request $listener 40
-  Check ($line -eq 'GET /workspace HTTP/1.1') "saved server: the window requests the app's entry page, the workspace, not the root (got '$line')"
-  Start-Sleep -Seconds 2
+  # The window opens on the client, not the server's pages: nothing is requested without a session.
+  $line = Read-Request $listener 6
+  Check ($null -eq $line) "saved server: the window opens on the client and requests nothing without a session (got '$line')"
   $p.Refresh()
-  Check ($p.MainWindowTitle -eq "Dynodoc - 127.0.0.1:$port") "saved server: the title names the server (got '$($p.MainWindowTitle)')"
+  Check ($p.MainWindowTitle -eq 'Dynodoc') "saved server: the client's title is 'Dynodoc' (got '$($p.MainWindowTitle)')"
   Save-Shot $p 'server'
 
   # Phase 3: a second launch carrying a link is handed to the running copy.
@@ -237,6 +237,9 @@ try {
   Check $exitedFast 'deep link: the second launch exits (single instance)'
   $line = Read-Request $listener 20
   Check ($line -eq 'GET /workspace HTTP/1.1') "deep link: the running window loads /workspace on the saved server (got '$line')"
+  Start-Sleep -Seconds 2
+  $p.Refresh()
+  Check ($p.MainWindowTitle -eq "Dynodoc - 127.0.0.1:$port") "deep link: the title names the server (got '$($p.MainWindowTitle)')"
 
   $refused = Start-App @('dynodoc://open/admin')
   [void]$refused.WaitForExit(20000)

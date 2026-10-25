@@ -15,6 +15,8 @@ import { applyAppearance } from '../theme.ts';
 import { ROLE_LABEL, personName, when, isAgent } from './common.ts';
 import { installSteps } from './connectors.ts';
 import { aboutBody } from './about.ts';
+import { isLive, refresh, signOut, startVisitor } from '../data/live.ts';
+import { call } from '../bridge.ts';
 import type { AddinHost, Role } from '../data/types.ts';
 
 export const SECTIONS: { id: SettingsSection; label: string; icon: string; group: string }[] = [
@@ -58,14 +60,45 @@ function general(): Child {
 
 let profile = { name: 'Jordan Lee', bio: 'Operations, Sample organisation.' };
 
+function workspaceCard(): Child {
+  const live = state.live;
+  const visitor = state.db.remote?.visitor;
+  if (live.mode === 'connecting') return notice('info', 'Reading your workspace from the server…');
+  if (isLive())
+    return h('div', { class: 'card pad' },
+      h('p', null, visitor
+        ? [h('strong', null, 'Your sample workspace on the pre-alpha server. '), `It is yours alone (signed in as ${visitor.display_name}) and is removed on ${new Date(visitor.expires_at).toLocaleString()}. Every click is saved there; nothing private belongs in it.`]
+        : [h('strong', null, 'Signed in. '), `These screens show your workspace on ${live.server || 'the server'}, and every change is saved there.`]),
+      h('div', { class: 'row-actions' },
+        button('Read everything again', { size: 'sm', icon: 'sync', onClick: () => void refresh() }),
+        button('Sign out', { size: 'sm', variant: 'ghost', onClick: () => confirmDialog('Sign out', h('p', null, 'This window signs out of the server and shows the offline sample again.'), 'Sign out', () => void signOut()) })));
+  return h('div', { class: 'card pad' },
+    h('p', null, 'These screens show an offline sample: nothing you do leaves this window. To try them on a real Dynodoc server, start a sample workspace on the hosted pre-alpha server (no account needed, removed after 24 hours), or sign in to your server below.'),
+    live.error ? notice('error', live.error) : null,
+    h('div', { class: 'row-actions' }, button('Start a sample workspace', { size: 'sm', variant: 'primary', icon: 'globe', onClick: () => void startVisitor() })));
+}
+
+async function saveProfile(name: string, bio: string): Promise<void> {
+  const current = (await call('api_get', { path: 'profile' })) as { status: number; body: { revision?: number } };
+  const reply = (await call('api_send', { method: 'POST', path: 'profile', body: { name, bio, revision: current.body?.revision ?? 0 }, ifMatch: null })) as { status: number; body: { error?: string } };
+  if (reply.status >= 300) throw new Error(reply.body?.error || 'The server did not save the profile.');
+}
+
 function accounts(): Child {
   const slot = h('div', { id: 'launcher-slot', class: 'launcher-slot' });
+  const me = isLive() ? state.db.people.find((x) => x.id === state.db.me) : null;
+  if (me && profile.name === 'Jordan Lee') profile = { name: me.name, bio: '' };
   return [
+    state.desktop ? section('Workspace', 'Where the data on these screens comes from.', workspaceCard()) : null,
     section('Profile', 'Your name on revisions, reviews and comments.', h('div', { class: 'card pad' },
-      h('div', { class: 'profile-row' }, avatar(profile.name, false, 'md'), h('div', null, h('strong', null, profile.name), h('div', { class: 'muted small' }, p().authorEmail))),
+      h('div', { class: 'profile-row' }, avatar(profile.name, false, 'md'), h('div', null, h('strong', null, profile.name), h('div', { class: 'muted small' }, (me && me.email) || p().authorEmail))),
       field('Name', input(profile.name, (v) => { profile.name = v; }, { id: 'profile-name' })),
       field('Bio', textarea(profile.bio, (v) => { profile.bio = v; }, { id: 'profile-bio', rows: 2, maxlength: 280 }), 'Up to 280 characters.'),
-      h('div', { class: 'row-actions' }, button('Save profile', { size: 'sm', variant: 'primary', onClick: () => { p().authorName = profile.name; toast('success', 'Profile saved', 'Sample data: kept in this window only.'); render(); } })),
+      h('div', { class: 'row-actions' }, button('Save profile', { size: 'sm', variant: 'primary', onClick: () => {
+        p().authorName = profile.name;
+        if (!isLive()) { toast('success', 'Profile saved', 'Offline sample: kept on this computer only.'); render(); return; }
+        saveProfile(profile.name, profile.bio).then(() => { const meNow = state.db.people.find((x) => x.id === state.db.me); if (meNow) meNow.name = profile.name; toast('success', 'Profile saved on the server'); render(); }).catch((e) => toast('error', 'Profile not saved', e instanceof Error ? e.message : String(e)));
+      } })),
     )),
     section(
       'Dynodoc server',
@@ -361,8 +394,8 @@ function advanced(): Child {
       row('Show status icons in the project list', 'Marks projects with local commits or open requests.', toggle(p().statusIcons, (v) => set(() => (p().statusIcons = v)), 'Status icons')),
     )),
     section('Usage', null, rows(row('Send usage statistics', 'Off by default. This release has no telemetry at all: the switch only records your choice.', toggle(p().usageStats, (v) => set(() => (p().usageStats = v)), 'Usage statistics')))),
-    section('Sample data', null, rows(
-      row('Reset the sample project', 'Brings back the sample history, drafts and requests as they were at start.', button('Reset', { size: 'sm', onClick: () => confirmDialog('Reset sample data', h('p', null, 'Every change you made to the sample is lost.'), 'Reset', () => { resetSample(); toast('success', 'Sample data reset'); }) })),
+    section(isLive() ? 'Settings' : 'Sample data', null, rows(
+      isLive() ? null : row('Reset the sample project', 'Brings back the sample history, drafts and requests as they were at start.', button('Reset', { size: 'sm', onClick: () => confirmDialog('Reset sample data', h('p', null, 'Every change you made to the sample is lost.'), 'Reset', () => { resetSample(); toast('success', 'Sample data reset'); }) })),
       row('Restore default settings', null, button('Restore', { size: 'sm', onClick: () => { const keep = p().ladder; state.prefs = JSON.parse(JSON.stringify(DEFAULT_PREFS)); state.prefs.ladder = keep; applyAppearance(); render(); } })),
     )),
   ];

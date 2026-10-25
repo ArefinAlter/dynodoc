@@ -9,6 +9,7 @@ import { openDialog, closeDialog, confirmDialog, openMenu, type MenuItem } from 
 import { button, input, textarea, field, select, notice } from '../ui/controls.ts';
 import { act, branchContext, currentBranch, currentDraft, currentProject, docOf, branchLabel, draftWord } from './common.ts';
 import { icon } from '../icons.ts';
+import { isLive, refresh } from '../data/live.ts';
 
 export function switchProject(id: string): void {
   state.ui.projectId = id;
@@ -40,6 +41,7 @@ export function switchBranch(branch: string): void {
 }
 
 export function fetchNow(): void {
+  if (isLive()) return void refresh();
   if (state.ui.fetching) return;
   state.ui.fetching = true;
   render();
@@ -59,6 +61,13 @@ export function fetchNow(): void {
 export function sync(): void {
   const ahead = B.aheadOf(state.db, state.ui.projectId, currentBranch());
   if (!ahead) return fetchNow();
+  if (isLive()) {
+    // The commits go to the server with the next save (data/live.ts sends them as engine edits).
+    const n = B.push(state.db, state.ui.projectId, currentBranch());
+    toast('info', `Pushing ${n} commit${n === 1 ? '' : 's'} to ${branchLabel()}`, 'They are sent to the server now.');
+    render();
+    return;
+  }
   state.ui.fetching = true;
   render();
   setTimeout(() => {

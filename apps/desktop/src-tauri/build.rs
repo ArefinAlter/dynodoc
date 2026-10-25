@@ -10,6 +10,15 @@ const COMMANDS: &[&str] = &[
     "device_key_status",
     "device_key_create",
     "device_public_key",
+    "session_info",
+    "visitor_start",
+    "sign_out",
+    "api_get",
+    "api_send",
+    "svc_get",
+    "svc_send",
+    "prefs_load",
+    "prefs_save",
 ];
 
 fn main() {

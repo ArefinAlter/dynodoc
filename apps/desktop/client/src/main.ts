@@ -2,7 +2,8 @@
 // across renders, wires the keyboard and the command palette, and in the desktop app starts the
 // launcher's own controls (bridge.ts) and gives them a place in Settings, Accounts.
 import { h, clear } from './dom.ts';
-import { state, setRenderer, render, go, toast, resetSample } from './state.ts';
+import { state, setRenderer, setAfterRender, render, go, toast, resetSample } from './state.ts';
+import { isLive, loadPrefs, noticeChanges, noticePrefs, refresh, signOut, startLive, startVisitor } from './data/live.ts';
 import * as B from './data/backend.ts';
 import { applyAppearance, toggleTheme } from './theme.ts';
 import { commandFor } from './lib/keys.ts';
@@ -112,7 +113,10 @@ function commands(): Command[] {
   for (const r of state.db.requests.filter((x) => x.projectId === state.ui.projectId)) out.push({ id: `cr.${r.id}`, label: `#${r.number} ${r.name}`, group: 'Change requests', icon: 'request', keywords: r.status, run: () => { state.ui.requests.selected = r.id; state.ui.requests.filter = r.status === 'open' ? 'open' : r.status === 'merged' ? 'merged' : 'closed'; go('requests'); } });
   out.push({ id: 'agent.new', label: 'New agent thread', group: 'Agent', icon: 'agent', shortcut: 'Ctrl+Shift+O', run: startThread });
   out.push({ id: 'theme', label: 'Toggle light and dark', group: 'Appearance', icon: 'moon', shortcut: 'Ctrl+Shift+L', run: () => { toggleTheme(); render(); } });
-  out.push({ id: 'reset', label: 'Reset the sample project', group: 'Advanced', icon: 'revert', run: () => { resetSample(); toast('success', 'Sample data reset'); } });
+  if (!isLive()) out.push({ id: 'reset', label: 'Reset the sample project', group: 'Advanced', icon: 'revert', run: () => { resetSample(); toast('success', 'Sample data reset'); } });
+  if (state.desktop && !isLive()) out.push({ id: 'visitor', label: 'Start a sample workspace on the pre-alpha server', group: 'Account', icon: 'globe', run: () => void startVisitor() });
+  if (isLive()) out.push({ id: 'reload', label: 'Read everything from the server again', group: 'Account', icon: 'sync', run: () => void refresh() });
+  if (isLive()) out.push({ id: 'signout', label: 'Sign out of the server', group: 'Account', icon: 'user', run: () => void signOut() });
   if (state.desktop) out.push({ id: 'server', label: 'Open my server’s workspace in this window', group: 'Account', icon: 'globe', run: () => { openServer().then((s) => { if (!s) { state.ui.settings.section = 'accounts'; go('settings'); toast('info', 'Choose a server first'); } }).catch((e) => toast('error', e instanceof Error ? e.message : String(e))); } });
   return out;
 }
@@ -180,12 +184,16 @@ async function boot(): Promise<void> {
   document.documentElement.classList.add('client');
   applyAppearance();
   setRenderer(draw);
+  setAfterRender(() => {
+    noticeChanges();
+    noticePrefs();
+  });
   setCommands(commands);
   document.addEventListener('keydown', onKey);
   window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', () => render());
   // Times on screen ("3 min ago") move on.
   setInterval(() => { if (!dialogOpen() && !paletteIsOpen()) render(); }, 60_000);
-  setInterval(() => { if (state.prefs.backgroundFetch && Date.now() - state.db.lastFetched > state.prefs.fetchMinutes * 60_000) fetchNow(); }, 30_000);
+  setInterval(() => { if (state.prefs.backgroundFetch && Date.now() - state.db.lastFetched > state.prefs.fetchMinutes * 60_000) { if (isLive()) void refresh(true); else fetchNow(); } }, 30_000);
 
   const section = launcherSection();
   if (inDesktop() && launcher) {
@@ -194,9 +202,13 @@ async function boot(): Promise<void> {
     const ds = await startBridge();
     if (ds) {
       state.desktopVersion = ds.version;
+      await loadPrefs();
+      applyAppearance();
+      // Signed in to the configured server: the screens show its workspace.
+      const info = await startLive();
       // The launcher shows because the app was asked for it (File menu, a sign-in, a changed
       // saved address) or because no server is chosen yet. In the first case go straight to it.
-      if (section || ds.unconfirmed || ds.server) {
+      if (section || ds.unconfirmed || (!info?.signed_in && !section)) {
         state.ui.settings.section = 'accounts';
         state.ui.view = 'settings';
       }

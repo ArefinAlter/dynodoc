@@ -13,6 +13,8 @@ const SIGN_IN: &str = "sign-in-link";
 const DEVICE_KEY: &str = "device-key";
 const OPEN_IN_BROWSER: &str = "open-in-browser";
 const RELOAD: &str = "reload";
+const CLIENT: &str = "client";
+const WORKSPACE: &str = "web-workspace";
 const SUPPORT: &str = "support";
 
 pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
@@ -103,7 +105,20 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     )?;
 
     let reload = MenuItem::with_id(app, RELOAD, "Reload", true, Some("CmdOrCtrl+R"))?;
-    let view = Submenu::with_items(app, "View", true, &[&reload])?;
+    let client = MenuItem::with_id(
+        app,
+        CLIENT,
+        "Dynodoc client",
+        true,
+        Some("CmdOrCtrl+Shift+D"),
+    )?;
+    let workspace = MenuItem::with_id(app, WORKSPACE, "Web workspace", true, None::<&str>)?;
+    let view = Submenu::with_items(
+        app,
+        "View",
+        true,
+        &[&client, &workspace, &separator()?, &reload],
+    )?;
 
     let support = MenuItem::with_id(app, SUPPORT, "Dynodoc support", true, None::<&str>)?;
     #[cfg(not(target_os = "macos"))]
@@ -162,6 +177,15 @@ pub fn handle(app: &AppHandle, id: &str) {
             None => window::show_launcher(app, None),
         },
         RELOAD => window::reload_main(app),
+        CLIENT => window::show_launcher(app, None),
+        // The configured server's own web workspace in this window (the launcher if none).
+        WORKSPACE => match app.try_state::<AppState>().and_then(|s| s.server()) {
+            Some(server) => {
+                window::focus_main(app);
+                window::navigate_main(app, server.entry());
+            }
+            None => window::show_launcher(app, None),
+        },
         SUPPORT => {
             if let Ok(url) = Url::parse(SUPPORT_URL) {
                 window::open_external(app, &url, Source::Menu);

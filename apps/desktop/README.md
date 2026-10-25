@@ -30,7 +30,8 @@ an iPhone or a physical phone.
 | `src-tauri/src/handoff.rs` | Handing a link to the system: public addresses only for a page (1 per 3 s, 5 per minute), mail and local addresses only for a click (a secret marker from the injected script; its own budget, 1 per second and 10 per minute) or a menu item. The secret comes from the operating system's random source. Pure functions. |
 | `src-tauri/src/deeplink.rs` | Parser for `dynodoc://` links (four accepted forms, one static table). Pure functions. |
 | `src-tauri/src/sidecar.rs` | Runs the bundled `engine-cli` with a fixed argument list, a time limit and an output limit; recognises a cut-off key file and says how to start again. |
-| `src-tauri/src/commands.rs` | The eight commands the launcher page may call. |
+| `src-tauri/src/commands.rs` | The seventeen commands the launcher page may call: the eight of the launcher, and nine for the client's live mode (session, sample workspace, sign-out, reads and writes on fixed routes of the configured server, preferences). |
+| `src-tauri/src/remote.rs` | The only network code in the app: one request at a time to the CONFIGURED server, on a path from fixed tables (`<server>/api/engine/...`, the web workspace's own engine proxy, and `<server>/svc/v1/...`, the pre-alpha service), with the web view's own session cookie read in Rust per request and a renewed one written back; no redirects, time and size limits, JSON only. The client preferences file. Pure route tables with tests. |
 | `src-tauri/src/config.rs` | Saves the chosen server in the app's config folder (atomic, re-validated on read) with a SHA-256 seal in the local data folder; a config that no longer matches its seal is shown, not opened. |
 | `src-tauri/src/window.rs` | Creates the window and hooks navigation, new-window and deep-link events to the policy. In debug builds it prints each decision to standard error. |
 | `src-tauri/src/blank_targets.js` | **Android only.** The one script Android injects (no secret, no marker): a tap on `<a target="_blank">` is dropped by Android's web view without any callback, so the script turns the target into `_self` for that click and puts it back; the link then goes through the navigation rule like any other. `scripts/blank-targets.test.mjs` runs it against fake nodes. |
@@ -79,27 +80,63 @@ Connectors, Team and roles, Signing keys, Administration, Advanced, Accessibilit
 palette on Ctrl+K; GitHub Desktop's shortcuts (Ctrl+1/2 Changes/History, Ctrl+T projects, Ctrl+B
 branches, Ctrl+Shift+P push or fetch, Ctrl+Shift+N new draft, ...); light and dark themes.
 
-**What is real and what is scripted.** Every screen of the client runs on a **scripted backend**
-(`client/src/data/`): a neutral sample project (a team handbook, a 2027 budget, a quarterly review
-deck, invented people at example.org) held in memory. The rules are real code: the diff model, the
-SHA-256 hash chain that "Verify" recomputes, drafts, rebase with conflicts, the review rules, the
-agent's access check. The agent's replies are prepared; no model is called. **No screen reads a
-real Dynodoc server yet**: the launcher's policy (`connect-src ipc:` only, no `fetch`) keeps this page
-off the network, and the session lives in the server's own pages. What is real in the desktop app is
-unchanged: Settings, Accounts holds the launcher's own controls (choose a server, sign in with the
-browser or an emailed link, this computer's key), with the same ids, texts and commands, and the
-server pill in the top bar opens your real workspace in this window (`set_server`). When the app
-shows the launcher because of the File menu, a sign-in or a changed saved address, the client opens
-on that section; with no server chosen it opens on the sample project. Preferences last for the
-window's life (this page may not use the web view's storage). The window keeps its native frame:
-it also shows your server's pages, and a frameless window would need window permissions for them.
+**Live mode: every screen on a real server (0.0.1a).** When this window is signed in to its
+configured server, the client shows that server's workspace and every click is saved there
+(`client/src/data/remote.ts`, `live.ts`). The page still has no network of its own (`connect-src
+ipc:` only, no `fetch`, no storage): it asks the app, through the commands in `commands.rs`, to make
+each request, and `remote.rs` sends it to the configured server only, on fixed routes, with the web
+view's own session cookie (see "Security model"). Where the data lives:
+
+- **On the Dynodoc server** (its engine API, through the web workspace's `/api/engine` proxy, so the
+  server's permission rules apply unchanged): projects, files and their content as blocks
+  (paragraphs, non-empty cells, slide text and notes), the hash-chained history (verified by the
+  server's own `/verify`), drafts, change requests, reviews and comments, merges with conflict
+  choices and left-out changes, declines and withdrawals, rebases (`sync`), revert and cherry-pick
+  and restore as new drafts, versions, discussions, published copies, connection keys, people and
+  roles, review rules, the AI agent policy, issues and labels, stars and watching, notifications,
+  signing keys, and your profile. A commit pushed to main becomes one `batch` of engine edits; a
+  commit pushed to a draft becomes one draft revision.
+- **On the pre-alpha service** (`deploy/pre-alpha`, at `<server>/svc/`): what the server has no
+  place for: changes the editor add-ins captured and nobody committed yet, commits not yet pushed,
+  commit messages (the engine records changes, not messages), agent threads and dismissed copies;
+  and visitor sample workspaces.
+- **On this computer**: preferences (theme, keybindings, providers without their keys, ...) in
+  `client-settings.json` in the app's config folder (`prefs_load`/`prefs_save`; a value that looks
+  like a provider key is refused), and this computer's key in the operating system's key store.
+
+How a change reaches the server: the views keep working on the same model as with the scripted
+backend; after each render the client compares the model with the server's copy, sends the
+difference as the server's own requests (in order: projects, files, pushes, drafts, requests,
+notifications), and reads the server back. A refusal (for example a role that may not merge) is
+shown in the person's words and the screen goes back to what the server holds.
+
+**Signing in.** Settings, Accounts, Workspace: **Start a sample workspace** asks the configured
+server (the hosted pre-alpha server when none is chosen) for a visitor sample workspace; the app
+confirms its one-use sign-in token at the server's `/auth/verify` and keeps the session cookie in the
+web view, so the token never reaches the page. With your own account, sign in with the browser (or
+an emailed link) as before; the next time the client opens, it is live. **Sign out** ends the login
+on the server.
+
+**Offline sample.** Without a session the client runs on the **scripted backend**
+(`client/src/data/`): a neutral sample project held in memory, the same rules (the diff model, a
+SHA-256 hash chain that "Verify" recomputes, drafts, rebase with conflicts, review rules, the agent's
+access check). The hosted copy (`--web`) is only this offline sample. The agent's replies are
+prepared in both modes; no model is called.
+
+**The window.** On desktop the window opens on the client; **View > Web workspace** (or the server
+pill in the top bar) opens the server's own pages in this window, and **View > Dynodoc client**
+(Ctrl+Shift+D) comes back. Settings, Accounts keeps the launcher's own controls (choose a server,
+sign in with the browser or an emailed link, this computer's key), with the same ids, texts and
+commands. Phones open on the configured server as before. The window keeps its native frame: it also
+shows your server's pages, and a frameless window would need window permissions for them.
 
 **Build.** `npm run build:client` regenerates `ui/launcher.js` and `ui/launcher.css` from
 `client/src`; `npm run check:client` type-checks and fails if the committed files are stale; `npm
 run test:client` runs the tests of the pure logic (diff model, branch-menu availability, agent tool
 access, keybindings, provider ladder, SHA-256, the scripted backend's rules). `node client/build.mjs
---web <dir>` writes the hosted copy (noindex, no network, nothing stored); it is published at
-`frontend/researcher/static/desktop/` (https://dynodoc.online/desktop/). The build refuses a bundle
+--web <dir>` writes an offline copy (noindex, no network, nothing stored, the offline sample only).
+It is no longer published: https://dynodoc.online/desktop/ now sends a visitor to a sample
+workspace of their own on the hosted pre-alpha server. The build refuses a bundle
 that contains anything the launcher's policy test refuses (`innerHTML`, `fetch(`, storage, `eval`,
 ...).
 
@@ -165,7 +202,7 @@ is a `package.json` in this folder; it holds that one dev dependency and nothing
 
 ## Using it
 
-On first run the window shows the **launcher**. Choose "Use Dynodoc cloud", or type the address of
+On first run the window shows the **client** on Settings, Accounts. Choose "Use Dynodoc cloud", or type the address of
 your own server (see "Server address rules" below). The choice is saved in the app's config
 folder and the window opens it. Next time the window opens the server directly. **File > Change
 server** returns to the launcher.
@@ -224,7 +261,7 @@ writes a key file itself: all key code stays in `engine-cli`. The macOS and Linu
 have not been run on those systems (stated in KEY-FILE-FORMAT.md too).
 
 **Menu.** File (Change server, Sign in with your browser, Sign in with an emailed link, This computer's key, Open server in
-browser, Quit), Edit, View (Reload), Help (Dynodoc support, About). No tray icon, no auto-update,
+browser, Quit), Edit, View (Dynodoc client, Web workspace, Reload), Help (Dynodoc support, About). No tray icon, no auto-update,
 no analytics. The window remembers its size, position and maximised state, follows the system
 light or dark theme, and is high-DPI aware.
 
@@ -324,6 +361,16 @@ and tested.
    No `eval` or remote script in the launcher, whose Content-Security-Policy is
    `default-src 'none'` plus its own scripts and styles. One copy of the app runs at a time.
    The debug log (debug builds only) never prints a query string or the click secret.
+7. **The client's requests go to your server only, on fixed routes.** The launcher page still has no
+   network (`connect-src ipc:`, no `fetch`, no storage; the build refuses a bundle that has them).
+   The live-mode commands take a path, which `remote.rs` checks against fixed tables (see
+   "Allowlists") before anything is sent, joins to the CONFIGURED server's address (never one the
+   page names), and sends with the app's User-Agent token, no redirects, a 30-second limit and an
+   8 MiB answer limit. The session is the web view's own `dynodoc_session` cookie for that server,
+   read in Rust for each request (WebView2's cookie store, off the main thread) and never given to
+   the page; a renewed cookie is written back, bound to the server's host, `HttpOnly`, `Secure` on
+   https. A server page still cannot call any command (the capability names the launcher's local
+   content only, and each command checks the caller first).
 
 **What "the window can only go to your server" means on Android** (corrected on review): the Rust rule
 decides every GET link navigation the web view reports; Android does not report a form POST or a
@@ -454,7 +501,15 @@ Examples that work: `https://app.dynodoc.online`, `dynodoc.example.org` (https i
 
 - **Capabilities, desktop (`launcher.json`):** window `main`, local content only: `allow-get-state`,
   `allow-set-server`, `allow-open-sign-in-link`, `allow-tools-version`, `allow-device-key-status`,
-  `allow-device-key-create`, `allow-device-public-key`, and `allow-start-browser-sign-in`. Phones
+  `allow-device-key-create`, `allow-device-public-key`, `allow-start-browser-sign-in`, and for the
+  client's live mode `allow-session-info`, `allow-visitor-start`, `allow-sign-out`, `allow-api-get`,
+  `allow-api-send`, `allow-svc-get`, `allow-svc-send`, `allow-prefs-load` and `allow-prefs-save`.
+  Phones get none of the live-mode commands.
+- **Server routes (`remote.rs`):** reads and writes on the fixed tables `API_GET`, `API_SEND`,
+  `SVC_GET`, `SVC_SEND` (each segment a literal, a lower-case UUID, a number or a short opaque id;
+  only listed query names with short plain values; no `auth/`, `admin/`, uploads or streams), always
+  on the configured server; `visitor_start`, `sign_out` and `session_info` each use one fixed path
+  (`/svc/v1/visitor` then `/auth/verify`, `/auth/logout`, `/auth/session`). Phones
   (`launcher-mobile.json`): `allow-get-state`, `allow-set-server`, `allow-open-sign-in-link` and
   `allow-start-browser-sign-in` only. No core, plugin, file, shell, http or opener permission is granted to anything.
 - **Sidecar argument lists:** `--version`; `device keygen --out <key> --encrypt --keystore`;
@@ -477,7 +532,10 @@ it; desktop only); `tauri-plugin-window-state` (remember size and position, desk
 left out of debug runs that use a test home so they never write to a real profile); `url`
 (parsing, the same crate Tauri uses); `sha2` (the config seal; already in Tauri's own tree); `getrandom` 0.3 (the click secret from the
 operating system's random source; already in Tauri's tree, the lockfile only gains an edge);
-`serde`, `serde_json` (the config file and command answers). **Not used on purpose:** `tauri-plugin-shell` (the sidecar is started with
+`serde`, `serde_json` (the config file and command answers); `reqwest` (no default features:
+`rustls-no-provider`) and `rustls` with `ring` (the client's requests to the configured server in
+`remote.rs`, with the operating system's certificate store through rustls-platform-verifier; no
+cookie jar, no redirects). **Not used on purpose:** `tauri-plugin-shell` (the sidecar is started with
 `std::process::Command`, so there are no generic "run a program" commands in the app, and we control
 the time and output limits), and no file, http, dialog, updater, notification, clipboard or process
 plugin. A test fails if one appears in `Cargo.toml`.
@@ -626,6 +684,11 @@ packaged, never run).
 
 ## What is not done
 
+- The live mode reads the whole workspace again after each change (about three seconds on the
+  hosted server for a sample workspace; files whose history did not change are not read again). It
+  is meant for small workspaces; a large one needs the server to say what changed.
+- Live mode is desktop only: Android's web view gives the app no cookies, so phones keep opening
+  the server's own pages.
 - No signing, notarisation, store submission, or physical-device test. Windows will warn about an
   unsigned installer (SmartScreen); macOS will refuse an unsigned, un-notarised app on first open
   unless the user overrides it.
@@ -644,6 +707,32 @@ packaged, never run).
   `workflow_dispatch` workflow cannot be started until its file is on the default branch.
 - macOS and iPhone builds have not been run. Android: debug APK built and run on an emulator
   only (below); no physical phone, no Play signing.
+
+## What was run for the 0.0.1a pre-alpha (25 October 2026, Windows 11, x86-64)
+
+- `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test` in `src-tauri`
+  (161 tests, including the new route tables, the cookie binding, the preferences file, the
+  `If-Match` check and the source check that every command, the nine new ones included, takes the
+  second lock first). `npm run check:client` and `npm run test:client` (61 tests; the new
+  `remote.test.mjs` maps documents, sheets and decks to blocks and back, groups events into
+  revisions, and loads and reconciles against a fake engine).
+- Against the hosted pre-alpha server, with a visitor sample workspace: the loader read 3 projects,
+  6 files, 35 revisions, 8 drafts and 7 change requests (about 3.5 s cold, 2.8 s warm); a node
+  harness sent a commit pushed to main, a star, an approval, a new draft, a merge, a decline, a
+  request opened from a draft, a revert as a new draft, a saved version, a new issue, a closed issue
+  with a comment, a resolved discussion, notifications read, the watch level and the agent policy,
+  all accepted by the server and read back.
+- The debug app, driven through WebView2's debugging port: Settings, Accounts, Start a sample
+  workspace (the token went from the service to `/auth/verify` in Rust and the cookie into the web
+  view); `session_info` signed in; `api_get` on a listed route answered, `admin/overview` was
+  refused; preferences saved and read back, a key-shaped value refused; on the Changes screen a
+  commit of two staged changes and a push reached the server ("Saved to the server") and History
+  showed the new revisions with the server's chain hashes.
+- `scripts/smoke.ps1` was run once while a release build was compiling on the same machine and
+  failed its timing checks (the window took longer than six seconds to set its title); started by
+  hand on an idle machine the window opened on the client with its folders created. Not rerun.
+- Not run: `scripts/security-probe.mjs` (its server-page phases expect the window to open on the
+  saved server, which desktop builds no longer do), Android, macOS.
 
 ## What was run on the author's machine (21 October 2026, Windows 11, x86-64)
 

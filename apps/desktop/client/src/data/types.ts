@@ -291,4 +291,14 @@ export interface Db {
   lastFetched: number;
   /** Scripted events that a fetch brings in, in order. */
   incoming: number;
+  /** Present when the client shows a real server's workspace (data/remote.ts). */
+  remote?: RemoteInfo;
+}
+
+export interface RemoteInfo {
+  /** The server's own check of each file's hash chain (GET /documents/{id}/verify). */
+  verify: Record<string, { ok: boolean; brokenAt?: number; detail?: string }>;
+  /** A visitor sandbox: who and until when. */
+  visitor: { display_name: string; expires_at: string } | null;
+  identity: string;
 }

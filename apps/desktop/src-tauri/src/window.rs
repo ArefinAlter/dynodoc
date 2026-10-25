@@ -68,7 +68,10 @@ fn trace_note(what: &str, note: &dyn std::fmt::Debug) {
 /// Only one thread creates the window at a time (start-up and a second launch meanwhile).
 static CREATE: Mutex<()> = Mutex::new(());
 
-/// Create the window: on the configured server when there is one, otherwise on the launcher.
+/// Create the window. On desktop it opens on the launcher page, which is also the client: with a
+/// server chosen and a session for it the client shows that server's workspace (remote.rs), and
+/// View > Web workspace opens the server's own pages in this window. On phones it opens on the
+/// configured server when there is one, otherwise on the launcher.
 /// Returns the existing window if there already is one.
 pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     let _creating = CREATE.lock().unwrap_or_else(|e| e.into_inner());
@@ -77,8 +80,8 @@ pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     }
     let state = app.state::<AppState>();
     let start = match state.server() {
-        Some(server) => WebviewUrl::External(server.entry()),
-        None => {
+        Some(server) if cfg!(mobile) => WebviewUrl::External(server.entry()),
+        _ => {
             // The shell itself starts at the launcher: the one navigation it may make there.
             state.arm_launcher_grant();
             WebviewUrl::App("index.html".into())

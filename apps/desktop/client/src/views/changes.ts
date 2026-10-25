@@ -165,7 +165,7 @@ function commitBox(staged: WorkingChange[]): HTMLElement {
       'div',
       { class: 'commit-options' },
       h('label', { class: 'inline-check is-disabled', title: 'Dynodoc history is append-only: a revision cannot be changed after it is made.' }, h('input', { type: 'checkbox', class: 'check', disabled: true }), 'Amend last commit'),
-      h('span', { class: 'muted small' }, state.prefs.signCommits ? 'Signed with this computer’s key' : 'Unsigned'),
+      h('span', { class: 'muted small' }, state.db.remote ? 'Pushed to the server as you' : state.prefs.signCommits ? 'Signed with this computer’s key' : 'Unsigned'),
     ),
     !target.ok ? notice('info', target.note) : null,
     button(label, { variant: 'primary', id: 'commit-button', class: 'commit-button', disabled: !c.summary.trim() || !staged.length || !target.ok, onClick: commitStaged }),

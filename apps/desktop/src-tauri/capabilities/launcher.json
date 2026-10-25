@@ -13,6 +13,15 @@
     "allow-tools-version",
     "allow-device-key-status",
     "allow-device-key-create",
-    "allow-device-public-key"
+    "allow-device-public-key",
+    "allow-session-info",
+    "allow-visitor-start",
+    "allow-sign-out",
+    "allow-api-get",
+    "allow-api-send",
+    "allow-svc-get",
+    "allow-svc-send",
+    "allow-prefs-load",
+    "allow-prefs-save"
   ]
 }

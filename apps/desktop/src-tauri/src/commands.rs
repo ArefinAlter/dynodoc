@@ -7,11 +7,13 @@
 //! strings that are validated here.
 
 use crate::nav;
-use crate::server::{parse_server_address, sign_in_url, CLOUD_ORIGIN, SUPPORT_URL};
+use crate::remote::{self, Method, Reply, Target};
+use crate::server::{parse_server_address, sign_in_url, ServerOrigin, CLOUD_ORIGIN, SUPPORT_URL};
 use crate::sidecar::{self, KeyPath, Operation, Recovery, SidecarError};
 use crate::signin;
 use crate::{config, window, AppState};
 use serde::Serialize;
+use serde_json::Value;
 use std::io::Read;
 use tauri::{AppHandle, Manager, Webview};
 use url::Url;
@@ -19,7 +21,7 @@ use url::Url;
 /// Every command, in the order of `generate_handler!` in lib.rs and of build.rs. A test
 /// compares this list with the capability files and with build.rs.
 #[cfg(test)]
-pub const COMMANDS: [&str; 8] = [
+pub const COMMANDS: [&str; 17] = [
     "get_state",
     "set_server",
     "open_sign_in_link",
@@ -28,6 +30,15 @@ pub const COMMANDS: [&str; 8] = [
     "device_key_status",
     "device_key_create",
     "device_public_key",
+    "session_info",
+    "visitor_start",
+    "sign_out",
+    "api_get",
+    "api_send",
+    "svc_get",
+    "svc_send",
+    "prefs_load",
+    "prefs_save",
 ];
 
 const NOT_HERE: &str = "Not available from this page.";
@@ -245,6 +256,328 @@ pub async fn device_public_key(webview: Webview) -> Result<String, String> {
         .map_err(|message| with_recovery(message, &key, Recovery::CannotOpen))
 }
 
+// ---- the client's way to the configured server (remote.rs) ------------------------------------
+
+#[derive(Serialize)]
+pub struct SessionView {
+    /// The configured server, or None.
+    server: Option<String>,
+    /// Whether this window holds a session for it that the server accepts.
+    signed_in: bool,
+    identity: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct VisitorView {
+    display_name: String,
+    expires_at: String,
+}
+
+const NO_SERVER: &str = "Choose a server first.";
+
+fn configured(webview: &Webview) -> Result<ServerOrigin, String> {
+    state_of(webview.app_handle())
+        .server()
+        .ok_or_else(|| NO_SERVER.to_string())
+}
+
+/// The web view's session cookie for the server, read off the main thread (WebView2 answers
+/// cookie questions on its own thread and would wait forever for a blocked one).
+async fn session_cookie(webview: &Webview, server: &ServerOrigin) -> Option<String> {
+    let view = webview.clone();
+    let root = server.root();
+    tauri::async_runtime::spawn_blocking(move || view.cookies_for_url(root).ok())
+        .await
+        .ok()
+        .flatten()
+        .and_then(|cookies| remote::session_value(&cookies))
+}
+
+/// Store (or clear) a session cookie the server sent back, for this server only.
+async fn keep_cookie(webview: &Webview, server: &ServerOrigin, set_cookie: Option<String>) {
+    let Some((cookie, cleared)) = set_cookie.and_then(|v| remote::web_view_cookie(server, &v))
+    else {
+        return;
+    };
+    let view = webview.clone();
+    let _ = tauri::async_runtime::spawn_blocking(move || {
+        if cleared {
+            view.delete_cookie(cookie)
+        } else {
+            view.set_cookie(cookie)
+        }
+    })
+    .await;
+}
+
+/// One request on a fixed route of the configured server (see remote.rs for the tables).
+async fn call(
+    webview: &Webview,
+    target: Target,
+    method: Method,
+    path: &str,
+    body: Option<Value>,
+    if_match: Option<&str>,
+) -> Result<Reply, String> {
+    let server = configured(webview)?;
+    remote::allowed(target, method, path).map_err(str::to_string)?;
+    if let Some(value) = &body {
+        if serde_json::to_vec(value).map_or(true, |b| b.len() > remote::MAX_BODY_BYTES) {
+            return Err("That change is too large to send at once.".to_string());
+        }
+    }
+    let url = remote::address(&server, target, path)
+        .ok_or_else(|| "That request is not available from the client.".to_string())?;
+    let cookie = session_cookie(webview, &server).await;
+    let (reply, renewed) = remote::send(
+        &server,
+        url,
+        target,
+        method,
+        cookie.as_deref(),
+        body.as_ref(),
+        if_match,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    keep_cookie(webview, &server, renewed).await;
+    Ok(reply)
+}
+
+/// `If-Match` for a settings save: the revision it was made from, `N`, `"N"` or `W/"N"`.
+fn if_match_ok(tag: &str) -> bool {
+    let inner = tag.strip_prefix("W/").unwrap_or(tag);
+    let inner = inner
+        .strip_prefix('"')
+        .and_then(|t| t.strip_suffix('"'))
+        .unwrap_or(inner);
+    !inner.is_empty() && inner.len() <= 12 && inner.bytes().all(|b| b.is_ascii_digit())
+}
+
+fn write_method(method: &str) -> Result<Method, String> {
+    Method::parse(method)
+        .filter(|m| *m != Method::Get)
+        .ok_or_else(|| "That request is not available from the client.".to_string())
+}
+
+/// Whether this window is signed in to the configured server.
+#[tauri::command]
+pub async fn session_info(webview: Webview) -> Result<SessionView, String> {
+    require_launcher(webview.url())?;
+    let Some(server) = state_of(webview.app_handle()).server() else {
+        return Ok(SessionView {
+            server: None,
+            signed_in: false,
+            identity: None,
+        });
+    };
+    let cookie = session_cookie(&webview, &server).await;
+    let mut view = SessionView {
+        server: Some(server.as_text()),
+        signed_in: false,
+        identity: None,
+    };
+    let (Some(cookie), Some(url)) = (cookie, server.join("/auth/session")) else {
+        return Ok(view);
+    };
+    let (reply, renewed) = remote::send(
+        &server,
+        url,
+        Target::Api,
+        Method::Get,
+        Some(&cookie),
+        None,
+        None,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    keep_cookie(&webview, &server, renewed).await;
+    if reply.status == 200 && reply.body["authenticated"] == Value::Bool(true) {
+        view.signed_in = true;
+        view.identity = reply.body["identity_id"].as_str().map(str::to_string);
+    }
+    Ok(view)
+}
+
+/// Start a visitor sandbox on the configured server (the hosted pre-alpha server when none is
+/// chosen yet) and sign this window in to it. The one-use sign-in token goes from the server's
+/// pre-alpha service to the server's own sign-in route without reaching the page.
+#[tauri::command]
+pub async fn visitor_start(webview: Webview) -> Result<VisitorView, String> {
+    require_launcher(webview.url())?;
+    let app = webview.app_handle();
+    let state = state_of(app);
+    let server = match state.server() {
+        Some(server) => server,
+        None => {
+            let cloud = parse_server_address(CLOUD_ORIGIN).map_err(|e| e.to_string())?;
+            config::save(&state.config_dir, &state.data_dir, &cloud)
+                .map_err(|_| "Your choice could not be saved on this computer.".to_string())?;
+            state.set_server(cloud.clone());
+            cloud
+        }
+    };
+    let claim_url = server
+        .join("/svc/v1/visitor")
+        .ok_or_else(|| NO_SERVER.to_string())?;
+    let (claim, _) = remote::send(
+        &server,
+        claim_url,
+        Target::Svc,
+        Method::Post,
+        None,
+        Some(&serde_json::json!({})),
+        None,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    if claim.status != 200 {
+        return Err(claim.body["error"]
+            .as_str()
+            .unwrap_or("This server does not offer sample workspaces.")
+            .chars()
+            .take(200)
+            .collect());
+    }
+    let token = claim.body["token"].as_str().unwrap_or_default();
+    if token.len() != 64 || !token.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err("This server does not offer sample workspaces.".to_string());
+    }
+    let verify_url = server
+        .join("/auth/verify")
+        .ok_or_else(|| NO_SERVER.to_string())?;
+    let (verified, cookie) = remote::send(
+        &server,
+        verify_url,
+        Target::Api,
+        Method::Post,
+        None,
+        Some(&serde_json::json!({ "token": token })),
+        None,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    if verified.status != 200 || cookie.is_none() {
+        return Err("The sample workspace could not be opened. Please try again.".to_string());
+    }
+    keep_cookie(&webview, &server, cookie).await;
+    Ok(VisitorView {
+        display_name: claim.body["display_name"]
+            .as_str()
+            .unwrap_or("Visitor")
+            .chars()
+            .take(80)
+            .collect(),
+        expires_at: claim.body["expires_at"]
+            .as_str()
+            .unwrap_or_default()
+            .chars()
+            .take(40)
+            .collect(),
+    })
+}
+
+/// Sign this window out of the configured server (the server ends the login; the cookie goes).
+#[tauri::command]
+pub async fn sign_out(webview: Webview) -> Result<(), String> {
+    require_launcher(webview.url())?;
+    let server = configured(&webview)?;
+    let cookie = session_cookie(&webview, &server).await;
+    let url = server
+        .join("/auth/logout")
+        .ok_or_else(|| NO_SERVER.to_string())?;
+    let (_, cleared) = remote::send(
+        &server,
+        url,
+        Target::Api,
+        Method::Post,
+        cookie.as_deref(),
+        None,
+        None,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    let clear =
+        cleared.unwrap_or_else(|| format!("{}=; Path=/; Max-Age=0", remote::SESSION_COOKIE));
+    keep_cookie(&webview, &server, Some(clear)).await;
+    Ok(())
+}
+
+/// Read from the server's engine proxy (fixed routes; see remote.rs).
+#[tauri::command]
+pub async fn api_get(webview: Webview, path: String) -> Result<Reply, String> {
+    require_launcher(webview.url())?;
+    call(&webview, Target::Api, Method::Get, &path, None, None).await
+}
+
+/// Change something through the server's engine proxy (fixed routes and methods).
+#[tauri::command]
+pub async fn api_send(
+    webview: Webview,
+    method: String,
+    path: String,
+    body: Option<Value>,
+    if_match: Option<String>,
+) -> Result<Reply, String> {
+    require_launcher(webview.url())?;
+    let method = write_method(&method)?;
+    if let Some(tag) = if_match.as_deref() {
+        if !if_match_ok(tag) {
+            return Err("That request is not available from the client.".to_string());
+        }
+    }
+    call(
+        &webview,
+        Target::Api,
+        method,
+        &path,
+        body,
+        if_match.as_deref(),
+    )
+    .await
+}
+
+/// Read from the server's pre-alpha service.
+#[tauri::command]
+pub async fn svc_get(webview: Webview, path: String) -> Result<Reply, String> {
+    require_launcher(webview.url())?;
+    call(&webview, Target::Svc, Method::Get, &path, None, None).await
+}
+
+/// Write to the server's pre-alpha service.
+#[tauri::command]
+pub async fn svc_send(
+    webview: Webview,
+    method: String,
+    path: String,
+    body: Option<Value>,
+) -> Result<Reply, String> {
+    require_launcher(webview.url())?;
+    let method = write_method(&method)?;
+    call(&webview, Target::Svc, method, &path, body, None).await
+}
+
+/// The client's preferences (theme, keybindings, providers without keys, ...), from the app's
+/// config folder. Null when none were saved.
+#[tauri::command]
+pub fn prefs_load(webview: Webview) -> Result<Value, String> {
+    require_launcher(webview.url())?;
+    Ok(remote::load_prefs(
+        &state_of(webview.app_handle()).config_dir,
+    ))
+}
+
+/// Save the client's preferences. A value that looks like a provider key is refused: keys stay
+/// in the page's memory only.
+#[tauri::command]
+pub fn prefs_save(webview: Webview, prefs: Value) -> Result<(), String> {
+    require_launcher(webview.url())?;
+    if remote::looks_like_a_key(&prefs) {
+        return Err("Preferences never hold a key.".to_string());
+    }
+    remote::save_prefs(&state_of(webview.app_handle()).config_dir, &prefs).map_err(str::to_string)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -275,6 +608,20 @@ mod tests {
             require_launcher(Err(tauri::Error::WebviewNotFound)),
             refused
         );
+    }
+
+    #[test]
+    fn settings_revisions_and_methods_are_checked() {
+        for ok in ["0", "12", "\"7\"", "W/\"7\""] {
+            assert!(if_match_ok(ok), "{ok}");
+        }
+        for bad in ["", "\"\"", "abc", "7, 8", "\"7", "1234567890123", "W/abc"] {
+            assert!(!if_match_ok(bad), "{bad}");
+        }
+        assert!(write_method("GET").is_err());
+        assert!(write_method("post").is_err());
+        assert!(write_method("CONNECT").is_err());
+        assert_eq!(write_method("PATCH"), Ok(Method::Patch));
     }
 
     #[test]
