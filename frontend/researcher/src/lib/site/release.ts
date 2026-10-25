@@ -8,7 +8,8 @@ export const RELEASE = {
   tag: 'v0.0.1a',
   date: '2026-10-25',
   page: 'https://github.com/ArefinAlter/dynodoc/releases/tag/v0.0.1a',
-  sums: 'https://github.com/ArefinAlter/dynodoc/releases/download/v0.0.1a/SHA256SUMS.txt'
+  sums: 'https://github.com/ArefinAlter/dynodoc/releases/download/v0.0.1a/SHA256SUMS.txt',
+  sumsFile: 'SHA256SUMS.txt'
 } as const;
 
 /** A visitor's own sample workspace on the hosted pre-alpha server (no account needed). */
@@ -62,3 +63,50 @@ export const ASSETS: (Asset & { url: string })[] = (
 export function size(bytes: number): string {
   return `${(bytes / 1_000_000).toFixed(1)} MB`;
 }
+
+export type DownloadFile = { kind: string; file: string; url: string; bytes: number };
+export type PlatformDownloads = {
+  os: 'windows' | 'linux';
+  name: string;
+  /** One line: what the system needs. */
+  requirement: string;
+  primary: DownloadFile;
+  more: DownloadFile[];
+};
+
+const file = (kind: string, name: string, bytes: number): DownloadFile => ({
+  kind,
+  file: name,
+  url: download(name),
+  bytes
+});
+
+/** The download cards on the Try page: one primary file per platform, the rest as secondary links. */
+export const PLATFORMS: PlatformDownloads[] = [
+  {
+    os: 'windows',
+    name: 'Windows',
+    requirement:
+      'Windows 10 or 11, x64. The installer adds WebView2 only if Windows does not have it (Windows 11 does).',
+    primary: file('Installer', 'Dynodoc_0.0.1-alpha_x64-setup.exe', 7004111),
+    more: [
+      file(
+        'Portable .zip (keep engine-cli.exe beside Dynodoc.exe)',
+        'Dynodoc_0.0.1a_windows-x64-portable.zip',
+        9439514
+      ),
+      file('engine-cli on its own, .exe', 'engine-cli_0.0.1a_windows-x64.exe', 19295744)
+    ]
+  },
+  {
+    os: 'linux',
+    name: 'Linux',
+    requirement:
+      'x64, Ubuntu 22.04 or newer, Debian 12 or similar. AppImage on most distributions (needs FUSE 2), .deb for Debian and Ubuntu.',
+    primary: file('Desktop app', 'Dynodoc_0.0.1-alpha_amd64.AppImage', 88185336),
+    more: [
+      file('Debian package, .deb', 'Dynodoc_0.0.1-alpha_amd64.deb', 10544586),
+      file('engine-cli on its own', 'engine-cli_0.0.1a_linux-x64', 18830328)
+    ]
+  }
+];

@@ -3,7 +3,10 @@
   import { Btn, Section, scrollable, spotlight } from '$lib/components/site';
   import { workspaceHref } from '$lib/components/site/nav';
   import { pageMeta } from '$lib/seo';
-  import { ASSETS, RELEASE, SAMPLE_WORKSPACE_URL, size } from '$lib/site/release';
+  import { onMount } from 'svelte';
+  import DownloadCards from '$lib/components/site/DownloadCards.svelte';
+  import { PLATFORMS, RELEASE, SAMPLE_WORKSPACE_URL } from '$lib/site/release';
+  import { detectOS, type DetectedOS } from '$lib/site/os';
 
   const meta = pageMeta('/try');
   const title = meta?.title ?? 'Try the pre-alpha · Dynodoc';
@@ -11,6 +14,13 @@
     meta?.description ??
     'Try Dynodoc 0.0.1a: a sample workspace of your own in the browser, or the desktop app for Windows and Linux.';
   const workspace = $derived(workspaceHref(env.PUBLIC_WORKSPACE_URL));
+
+  // The visitor's platform, after mount only: the server-rendered page has equal cards.
+  let os = $state<DetectedOS>('');
+  onMount(() => {
+    os = detectOS();
+  });
+  const heroPlatform = $derived(PLATFORMS.find((p) => p.os === os));
 </script>
 
 <svelte:head>
@@ -34,7 +44,13 @@
       </p>
       <div class="actions">
         <Btn href={SAMPLE_WORKSPACE_URL} size="lg" arrow>Start a sample workspace</Btn>
-        <Btn href="#download" variant="secondary" size="lg">Download the desktop app</Btn>
+        <Btn
+          href={heroPlatform ? heroPlatform.primary.url : '#download'}
+          variant="secondary"
+          size="lg"
+          data-dl-hero
+          >{heroPlatform ? `Download for ${heroPlatform.name}` : 'Download the desktop app'}</Btn
+        >
       </div>
     </div>
   </header>
@@ -80,37 +96,10 @@
     title="Desktop app"
     lede="The desktop app opens on the client: change requests, history and drafts in the manner of GitHub Desktop. It connects to the hosted pre-alpha server by default, where it can start a sample workspace for you; Settings, Accounts lets you sign in or choose your own server. macOS is not built yet."
   >
-    <div class="table-wrap" data-reveal>
-      <table>
-        <caption class="sr-only">Downloads of {RELEASE.name}</caption>
-        <thead>
-          <tr>
-            <th scope="col">System</th>
-            <th scope="col">File</th>
-            <th scope="col">Size</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each ASSETS as asset (asset.file)}
-            <tr>
-              <th scope="row">{asset.platform}<span class="kind">{asset.kind}</span></th>
-              <td><a href={asset.url}>{asset.file}</a><span class="note">{asset.note}</span></td>
-              <td class="nowrap">{size(asset.bytes)}</td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
+    <div data-reveal>
+      <DownloadCards {os} />
     </div>
-    <p class="links" data-reveal>
-      <a href={RELEASE.sums}>Verify download (SHA-256)</a> ·
-      <a href={RELEASE.page}>Release notes and all files</a>
-    </p>
     <ul class="facts" data-reveal>
-      <li>
-        <strong>Unsigned.</strong> Neither build is signed yet. Windows SmartScreen will warn before
-        it runs the installer; check the file against
-        <a href={RELEASE.sums}>SHA256SUMS.txt</a> first.
-      </li>
       <li>
         <strong>The bundled engine-cli</strong> creates this computer's signing key in the operating system's
         key store. The release also has engine-cli on its own for Windows and Linux.
@@ -185,63 +174,11 @@
     margin: 0;
     color: var(--color-ink-soft);
   }
-  .table-wrap {
-    overflow: auto;
-    border: 1px solid var(--color-border);
-    border-radius: var(--site-radius);
-    background: var(--color-surface-raised);
-  }
-  table {
-    width: 100%;
-    min-width: 520px;
-    border-collapse: collapse;
-    font-size: 0.9375rem;
-    line-height: 1.55;
-  }
-  th,
-  td {
-    padding: 14px 16px;
-    border-bottom: 1px solid var(--color-border);
-    text-align: left;
-    vertical-align: top;
-  }
-  thead th {
-    background: var(--color-surface-muted);
-    color: var(--color-ink);
-    font-family: var(--site-font-mono);
-    font-size: 0.75rem;
-    font-weight: 500;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-  }
-  tbody th {
-    color: var(--color-ink-strong);
-    font-weight: 560;
-  }
-  td {
-    color: var(--color-ink-soft);
-  }
-  tbody tr:last-child > * {
-    border-bottom: 0;
-  }
-  .kind,
-  .note {
-    display: block;
-    margin-top: 4px;
-    color: var(--color-muted);
-    font-size: 0.8125rem;
-    font-weight: 400;
-  }
-  .nowrap {
-    white-space: nowrap;
-  }
-  .links {
-    margin: 16px 0 0;
-  }
   .facts {
     display: grid;
     gap: 10px;
-    margin: 20px 0 0;
+    max-width: 980px;
+    margin: 28px auto 0;
     padding-left: 18px;
     color: var(--color-ink-soft);
   }
