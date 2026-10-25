@@ -196,6 +196,12 @@ pub fn verify_project_device(key: &[u8], token: &str) -> Result<DeviceClaims, Au
     )
     .map_err(|_| AuthError::TokenInvalid)?;
     let claims = trusted.payload_claims().ok_or(AuthError::TokenInvalid)?;
+    device_claims(claims)
+}
+
+/// The claim checks of [`verify_project_device`] that follow decryption and the
+/// clock check; separate so a stored token can be mapped without a live clock.
+fn device_claims(claims: &Claims) -> Result<DeviceClaims, AuthError> {
     let text = |name: &str| {
         claims
             .get_claim(name)
@@ -415,5 +421,288 @@ mod tests {
             mint(&[0u8; 8], Uuid::nil(), 60),
             Err(AuthError::InvalidKey)
         ));
+    }
+
+    #[test]
+    fn bound_session_round_trips_generation_and_session_id() {
+        let id = Uuid::from_u128(0x1234);
+        let sid = Uuid::from_u128(0x5678);
+        let token = mint_bound_session(&KEY, id, 3600, 42, Some(sid)).unwrap();
+        assert_eq!(
+            verify_bound_session(&KEY, &token).unwrap(),
+            (id, 42, Some(sid))
+        );
+        let token = mint_generation(&KEY, id, 3600, 9).unwrap();
+        assert_eq!(verify_bound_session(&KEY, &token).unwrap(), (id, 9, None));
+    }
+
+    // --- tokens issued by the deployed release must keep verifying ------------------
+    //
+    // `paseto-v4-local-vectors.json` holds tokens made by pasetors 0.7.8, the release
+    // the running API was built with. A library change that cannot read them would end
+    // every live session (they last up to 30 days), so these tests never regenerate
+    // the file; see its `description` and `validity_note`.
+
+    use pasetors::version4::LocalToken;
+    use serde_json::Value;
+
+    const VECTORS: &str = include_str!("../../tests/fixtures/paseto-v4-local-vectors.json");
+
+    fn vectors() -> Value {
+        serde_json::from_str(VECTORS).unwrap()
+    }
+
+    fn vector_key() -> Vec<u8> {
+        hex::decode(vectors()["key_hex"].as_str().unwrap()).unwrap()
+    }
+
+    fn vector(name: &str) -> Value {
+        let doc = vectors();
+        let found = doc["tokens"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|v| v["name"] == name)
+            .cloned();
+        found.unwrap_or_else(|| panic!("no vector named {name}"))
+    }
+
+    fn vectors_of_kind(kind: &str) -> Vec<Value> {
+        let doc = vectors();
+        doc["tokens"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|v| v["kind"] == kind)
+            .cloned()
+            .collect()
+    }
+
+    /// The authentication and decryption layer alone: no clock, no claim parsing. The
+    /// exact plaintext the token carries.
+    fn raw_payload(
+        key: &[u8],
+        token: &str,
+        footer: Option<&[u8]>,
+        implicit: Option<&[u8]>,
+    ) -> Result<String, pasetors::errors::Error> {
+        let sk = SymmetricKey::<V4>::from(key).unwrap();
+        let untrusted = UntrustedToken::<Local, V4>::try_from(token).unwrap();
+        LocalToken::decrypt(&sk, &untrusted, footer, implicit).map(|t| t.payload().to_string())
+    }
+
+    #[test]
+    fn account_tokens_issued_by_pasetors_0_7_8_still_verify() {
+        let key = vector_key();
+        let accounts = vectors_of_kind("account");
+        assert_eq!(accounts.len(), 4);
+        for v in &accounts {
+            let name = v["name"].as_str().unwrap();
+            let token = v["token"].as_str().unwrap();
+            let want = &v["expect"];
+            let (id, generation, session) = verify_bound_session(&key, token)
+                .unwrap_or_else(|_| panic!("{name} no longer verifies"));
+            assert_eq!(id.to_string(), want["identity_id"].as_str().unwrap());
+            assert_eq!(generation, want["generation"].as_i64().unwrap(), "{name}");
+            assert_eq!(
+                session.map(|s| s.to_string()).as_deref(),
+                want["session_id"].as_str(),
+                "{name}"
+            );
+            assert_eq!(verify(&key, token).unwrap(), id);
+            assert_eq!(verify_session(&key, token).unwrap(), (id, generation));
+            // The exact plaintext 0.7.8 encrypted, byte for byte, and no footer.
+            assert_eq!(
+                raw_payload(&key, token, None, None).unwrap(),
+                v["payload"].as_str().unwrap(),
+                "{name}"
+            );
+            let untrusted = UntrustedToken::<Local, V4>::try_from(token).unwrap();
+            assert!(untrusted.untrusted_footer().is_empty());
+            // Account tokens stay account tokens; other keys and damaged copies fail.
+            assert!(!is_project_device_token(token));
+            assert!(verify_project_device(&key, token).is_err());
+            assert!(matches!(
+                verify(&[9u8; 32], token),
+                Err(AuthError::TokenInvalid)
+            ));
+            assert!(matches!(
+                verify(&key, &format!("{token}x")),
+                Err(AuthError::TokenInvalid)
+            ));
+            let mut damaged = token.as_bytes().to_vec();
+            let at = damaged.len() - 5;
+            damaged[at] = if damaged[at] == b'A' { b'B' } else { b'A' };
+            assert!(matches!(
+                verify(&key, std::str::from_utf8(&damaged).unwrap()),
+                Err(AuthError::TokenInvalid)
+            ));
+        }
+    }
+
+    #[test]
+    fn an_expired_token_from_0_7_8_is_authentic_but_refused() {
+        let key = vector_key();
+        let v = vector("session-expired");
+        let token = v["token"].as_str().unwrap();
+        // Authentic and readable, so the refusal below is the expiry alone.
+        assert_eq!(
+            raw_payload(&key, token, None, None).unwrap(),
+            v["payload"].as_str().unwrap()
+        );
+        assert!(matches!(verify(&key, token), Err(AuthError::TokenInvalid)));
+        assert!(matches!(
+            verify_bound_session(&key, token),
+            Err(AuthError::TokenInvalid)
+        ));
+    }
+
+    #[test]
+    fn device_token_issued_by_pasetors_0_7_8_still_authenticates_and_maps() {
+        let key = vector_key();
+        let doc = vectors();
+        assert_eq!(
+            doc["device_footer_json"].as_str().unwrap().as_bytes(),
+            DEVICE_FOOTER_JSON
+        );
+        assert_eq!(
+            doc["device_implicit_assertion"]
+                .as_str()
+                .unwrap()
+                .as_bytes(),
+            DEVICE_IMPLICIT
+        );
+        let v = vector("device-session");
+        let token = v["token"].as_str().unwrap();
+        assert!(is_project_device_token(token));
+
+        // Authentication, footer and implicit assertion, then the exact plaintext.
+        let payload =
+            raw_payload(&key, token, Some(DEVICE_FOOTER_JSON), Some(DEVICE_IMPLICIT)).unwrap();
+        assert_eq!(payload, v["payload"].as_str().unwrap());
+        assert!(raw_payload(&key, token, Some(DEVICE_FOOTER_JSON), None).is_err());
+        assert!(raw_payload(&key, token, Some(b"{}"), Some(DEVICE_IMPLICIT)).is_err());
+        assert!(raw_payload(&[9u8; 32], token, None, None).is_err());
+
+        // The full decrypt is valid for one hour after generation and expired after;
+        // any other failure means the token is no longer read.
+        let sk = SymmetricKey::<V4>::from(&key).unwrap();
+        let untrusted = UntrustedToken::<Local, V4>::try_from(token).unwrap();
+        match local::decrypt(
+            &sk,
+            &untrusted,
+            &ClaimsValidationRules::new(),
+            Some(&device_footer()),
+            Some(DEVICE_IMPLICIT),
+        ) {
+            Ok(_) | Err(pasetors::errors::Error::ClaimValidation(_)) => {}
+            Err(other) => panic!("device token no longer authenticates: {other:?}"),
+        }
+
+        // The claim mapping the verifier applies after the clock check.
+        let want = &v["expect"];
+        let uuid = |name: &str| Uuid::parse_str(want[name].as_str().unwrap()).unwrap();
+        let expected = DeviceClaims {
+            identity: uuid("identity"),
+            key: uuid("key"),
+            project: uuid("project"),
+            session: uuid("session"),
+            scopes: want["scopes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|s| s.as_str().unwrap().to_owned())
+                .collect(),
+            generation: want["generation"].as_i64().unwrap(),
+        };
+        let claims = Claims::from_string(&payload).unwrap();
+        assert_eq!(device_claims(&claims).unwrap(), expected);
+
+        // The account verifiers refuse it, as before.
+        assert!(verify(&key, token).is_err());
+        assert!(verify_bound_session(&key, token).is_err());
+    }
+
+    fn shape(payload: &str) -> Vec<(String, &'static str)> {
+        let value: Value = serde_json::from_str(payload).unwrap();
+        let mut out: Vec<_> = value
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(name, v)| {
+                let kind = match v {
+                    Value::Null => "null",
+                    Value::Bool(_) => "bool",
+                    Value::Number(_) => "number",
+                    Value::String(_) => "string",
+                    Value::Array(_) => "array",
+                    Value::Object(_) => "object",
+                };
+                (name.clone(), kind)
+            })
+            .collect();
+        out.sort();
+        out
+    }
+
+    fn is_utc_whole_seconds(text: &str) -> bool {
+        text.len() == 20
+            && text.ends_with('Z')
+            && chrono::DateTime::parse_from_rfc3339(text).is_ok()
+    }
+
+    #[test]
+    fn tokens_issued_now_have_the_shape_of_the_0_7_8_tokens() {
+        let key = vector_key();
+
+        // Account token: same prefix, no footer segment, same claim names and types.
+        let fresh = mint_bound_session(&key, Uuid::from_u128(7), 3600, 7, Some(Uuid::from_u128(8)))
+            .unwrap();
+        let old = vector("session-bound");
+        let old_token = old["token"].as_str().unwrap();
+        for t in [fresh.as_str(), old_token] {
+            assert!(t.starts_with("v4.local."));
+            assert_eq!(t.matches('.').count(), 2, "no footer segment");
+        }
+        let fresh_payload = raw_payload(&key, &fresh, None, None).unwrap();
+        assert_eq!(
+            shape(&fresh_payload),
+            shape(old["payload"].as_str().unwrap())
+        );
+        let claims: Value = serde_json::from_str(&fresh_payload).unwrap();
+        for name in ["iat", "nbf", "exp"] {
+            assert!(
+                is_utc_whole_seconds(claims[name].as_str().unwrap()),
+                "{name}"
+            );
+        }
+
+        // Device token: same footer segment, same claim names and types.
+        let fresh = mint_project_device(&key, &device(), 3600).unwrap();
+        let old = vector("device-session");
+        let old_token = old["token"].as_str().unwrap();
+        for t in [fresh.as_str(), old_token] {
+            assert!(t.starts_with("v4.local."));
+            assert_eq!(t.matches('.').count(), 3, "footer segment");
+        }
+        assert_eq!(fresh.rsplit('.').next(), old_token.rsplit('.').next());
+        let fresh_payload = raw_payload(
+            &key,
+            &fresh,
+            Some(DEVICE_FOOTER_JSON),
+            Some(DEVICE_IMPLICIT),
+        )
+        .unwrap();
+        assert_eq!(
+            shape(&fresh_payload),
+            shape(old["payload"].as_str().unwrap())
+        );
+        let claims: Value = serde_json::from_str(&fresh_payload).unwrap();
+        for name in ["iat", "nbf", "exp"] {
+            assert!(
+                is_utc_whole_seconds(claims[name].as_str().unwrap()),
+                "{name}"
+            );
+        }
     }
 }

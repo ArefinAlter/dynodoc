@@ -69,11 +69,11 @@ subtle = "2.6"
 zeroize = "1"
 # Memory-hard key derivation for encrypted key files (RFC 9106 Argon2id). RustCrypto;
 # MIT OR Apache-2.0.
-argon2 = { version = "0.5", default-features = false, features = ["alloc"] }
+argon2 = { version = "0.6", default-features = false, features = ["alloc"] }
 
 # Auth: Paseto v4 local tokens (symmetric AEAD) instead of JWT — no alg-confusion or
 # `none`-algorithm footguns (docs/17, NFR-8). `hex` decodes the 32-byte signing key.
-pasetors = "0.7"
+pasetors = "0.8"
 hex = "0.4"
 
 # Errors + logging

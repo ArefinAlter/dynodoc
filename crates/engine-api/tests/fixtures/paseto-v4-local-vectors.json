@@ -1,0 +1,81 @@
+{
+  "description": "PASETO v4.local compatibility vectors for crates/engine-api/src/auth/token.rs. Every token was produced by pasetors 0.7.8, the release that issued the access tokens of the deployed API, and must keep verifying after a pasetors upgrade. Never regenerate or edit a token to make a test pass: a failure means the library change is not backwards compatible with tokens that are still in clients' hands (sessions live up to 30 days).",
+  "generated_with": "pasetors 0.7.8 (Cargo.lock at commit 5b194f4). Account tokens came from the production functions mint_bound_session, mint_generation and mint with a 4,000,000,000 second lifetime; session-expired is mint with a lifetime of -100,000,000 seconds; session-legacy-no-generation-claim was built with the pasetors API directly and has the claim set issued before the session_generation claim existed; device-session is mint_project_device with its one-hour lifetime.",
+  "generated_at": "2026-10-25T05:10:27Z",
+  "key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "validity_note": "Account tokens expire in 2153 (exp 2153-07-27T12:17:07Z), so the production verifier (real clock) accepts them for as long as this repository is maintained. The device token is valid for one hour after generated_at only; the tests therefore check it below the clock (authentication, footer, implicit assertion, exact payload and claim mapping) and accept only 'valid' or 'expired' from the full verifier.",
+  "device_footer_json": "{\"typ\":\"dynodoc.project-device-session.v1\"}",
+  "device_implicit_assertion": "dynodoc.project-device-session.v1/implicit",
+  "tokens": [
+    {
+      "expect": {
+        "generation": 7,
+        "identity_id": "3f2b8c1e-5a47-4d09-9c6e-0b1a2c3d4e5f",
+        "session_id": "9d7c1a42-6b3e-4f58-8a21-5c0e9b7d3f16"
+      },
+      "kind": "account",
+      "name": "session-bound",
+      "payload": "{\"iat\":\"2026-10-25T05:10:27Z\",\"session_generation\":7,\"exp\":\"2153-07-27T12:17:07Z\",\"session_id\":\"9d7c1a42-6b3e-4f58-8a21-5c0e9b7d3f16\",\"identity_id\":\"3f2b8c1e-5a47-4d09-9c6e-0b1a2c3d4e5f\",\"nbf\":\"2026-10-25T05:10:27Z\"}",
+      "token": "v4.local.nN2lw5FREi2F6FwQDX9uTaRfzOTI6LCDYZVcgyDYoQkaq27IXgLEQF0DDIowjmPMXwee7ArlsvuHaZIiAQvUayDWgnjrGUB5Jo6waK06q30JJICC1Glp40i8iQ53VkKDKOyV68j40CzXIs9mZ3Zdgcj8nRAWrEqIHhPmBvoa8D2J0fYB8ej6YDSqZuRi2rvgATFBP9c6Z_3vL74Tc32UjiUCb2ZtKO_6UFM4PRfSaFsiUYz4QxyiWiCbMqfHE7Lg-Z-UGuwzdbhtLYPchO3XiB_gUvz_R3-fj1tvbvE_-j3yxrGOM3E8Hmf-BgdIen5p7s0VYlNievh3ve3Zh-0kuIRIfL4zAOs6P_43sp5z1WcQKOSMBKngcw"
+    },
+    {
+      "expect": {
+        "generation": 3,
+        "identity_id": "3f2b8c1e-5a47-4d09-9c6e-0b1a2c3d4e5f",
+        "session_id": null
+      },
+      "kind": "account",
+      "name": "session-generation-only",
+      "payload": "{\"identity_id\":\"3f2b8c1e-5a47-4d09-9c6e-0b1a2c3d4e5f\",\"nbf\":\"2026-10-25T05:10:27Z\",\"session_generation\":3,\"iat\":\"2026-10-25T05:10:27Z\",\"exp\":\"2153-07-27T12:17:07Z\"}",
+      "token": "v4.local.ltl-t09cK8w7JAeODpgnkC8RfvCAVvGSnc0ytPEj4MvM4lzNJixpLvT5HMOlvHWwsYxtAV0sm3mLLnLl3MbIo7mbw_tgHedDh9h8yG-NyuTWSKkAHqGq36LCpuKjjbHNzFsQ6V8elIEjxOI-MWYQ5Y6NMaaVsb0ipNw1XHfCgGfsi3LfxOFFnKgirZqP3D6Rlv1OMCiudb3qvfF39fEKBXlBsfQtB14-aGSsXrnF1PkkgCB6b6x5IFvZNkv85TaqDPmA5mw3ct-KDa4s_EM4eIF0LcWs3hSQrfimP57WssTfUoxm"
+    },
+    {
+      "expect": {
+        "generation": 0,
+        "identity_id": "3f2b8c1e-5a47-4d09-9c6e-0b1a2c3d4e5f",
+        "session_id": null
+      },
+      "kind": "account",
+      "name": "session-plain",
+      "payload": "{\"nbf\":\"2026-10-25T05:10:27Z\",\"identity_id\":\"3f2b8c1e-5a47-4d09-9c6e-0b1a2c3d4e5f\",\"session_generation\":0,\"iat\":\"2026-10-25T05:10:27Z\",\"exp\":\"2153-07-27T12:17:07Z\"}",
+      "token": "v4.local.RwZQHsSVcZ3mVOThQ1yS8amsnQ4GrlYQzvM2KGn8_Haz8_R7JPjLeFVSEydfZARZAIPHErxcUN6hyTyPBXeWkZtUJKa5RBpdAKTphIm2dZlIt42w2dEUeFAWihRFMnC35ZQYgAdDyHkcybth9i57VctxblPF5mxU1ujYdNyRKGqmoee5HmTXKb1GV1tRp50L1F3t3nTw7nox7e1m9a1cQjK763LcfY0PZFgX4wzj5Rd9OT7XRHIu_szG6lBrYpSxSpvTmNwkIt58DR0vVl1aNN5-CFtxqcvhLCaHEKeIGk5jhLnu"
+    },
+    {
+      "expect": {
+        "generation": 0,
+        "identity_id": "3f2b8c1e-5a47-4d09-9c6e-0b1a2c3d4e5f",
+        "session_id": null
+      },
+      "kind": "account",
+      "name": "session-legacy-no-generation-claim",
+      "payload": "{\"iat\":\"2026-10-25T05:10:27Z\",\"nbf\":\"2026-10-25T05:10:27Z\",\"identity_id\":\"3f2b8c1e-5a47-4d09-9c6e-0b1a2c3d4e5f\",\"exp\":\"2153-07-27T12:17:07Z\"}",
+      "token": "v4.local.l-5VY5Et3nAu_zi6yVl6xx2UucS5NOyvDFgBwcU80DOBw5CjmjxAAmrZ43knBamvwzLpziOarnDXnsFzMayBPvH_c-hZOKUlsv98LLrCzb5Q2aRaviKxAQun4elZAqsGbdbCbpCtRsB8TLeF5zHr2wy8olI9jZ_LWx5GVkaDrfHXvNVoJJguJr_CnpAGFe_7c43IVeJsptPZP0aUsye6AuZU-8fzO2QEf2RVkkLRYwILc6BmPr4BFeLJYoRUX-H5ohOCmXM83BZwhmDR0A"
+    },
+    {
+      "expect": {
+        "identity_id": "3f2b8c1e-5a47-4d09-9c6e-0b1a2c3d4e5f"
+      },
+      "kind": "account-expired",
+      "name": "session-expired",
+      "payload": "{\"iat\":\"2026-10-25T05:10:27Z\",\"nbf\":\"2026-10-25T05:10:27Z\",\"session_generation\":0,\"exp\":\"2023-08-24T19:23:47Z\",\"identity_id\":\"3f2b8c1e-5a47-4d09-9c6e-0b1a2c3d4e5f\"}",
+      "token": "v4.local.Qq61ssOLlU9L8RPfOhtxXSYUc4hGTJPT0UCG5IhBD3VyQ6-nybov6gcS-7GknCLclTxMR23rQ9JZtR-1LKZJpMiK-ocE0R1t2cYNPg-r_m4HziGaCCbTlmQh1lPNy8zuwggAIhOkF26PgUtZIm6nBomNP8asdAXM6FURyfFDxNspOhP586GkxeX0QsJDg499OPHqid7c0w5w_cabQ-tVNOmlVoN7siWXVFhb0JDC-FbrlGarME1qOkSk7NGjn1U1-HVaFVHWCui2QVs6FUYroRKTy_wnAepkt_NH_GMMFpVnwL1e"
+    },
+    {
+      "expect": {
+        "generation": 5,
+        "identity": "00000000-0000-0000-0000-000000000001",
+        "key": "00000000-0000-0000-0000-000000000002",
+        "project": "00000000-0000-0000-0000-000000000003",
+        "scopes": [
+          "history:read",
+          "history:write"
+        ],
+        "session": "00000000-0000-0000-0000-000000000004"
+      },
+      "kind": "device",
+      "name": "device-session",
+      "payload": "{\"nbf\":\"2026-10-25T05:10:27Z\",\"jti\":\"00000000-0000-0000-0000-000000000004\",\"iat\":\"2026-10-25T05:10:27Z\",\"project\":\"00000000-0000-0000-0000-000000000003\",\"device_generation\":5,\"device_key\":\"00000000-0000-0000-0000-000000000002\",\"exp\":\"2026-10-25T06:10:27Z\",\"scopes\":[\"history:read\",\"history:write\"],\"typ\":\"dynodoc.project-device-session.v1\",\"device_identity\":\"00000000-0000-0000-0000-000000000001\"}",
+      "token": "v4.local.8LevMu5t73pVQ1ZWVxZCOShcM9uBnBuofuL7IrTNK3RJXJ08s6C88C05unqzJJeEZvgyPfrZaF3ZmdL4kilzEa1DGCkrY41bQTrKEtMl7JxsI1g-vDm_ZI5jR4tWaym6OQLvZW3ox6NozGDw-WiMW2U0eE8BdCxSITkd4kTYBSzHI9GfMtpG0VsVTLFBd2f0T1_afGXdlH2FGuz8SSBKzKxAvw-Aq9TOmXr7UNB03P7bBkk_wFGobESTqYemm9jLDzVUaWbr9qN0opjDHI6Fe6db_09uDn2LiAh_ZV3jjudEsL1xMODsdksAvdkOJNICDEWfexo_N4G1RGwXxFEjTIzBtu1IV0h_fjhX5taUp6y2LAC0zQHWF0Uk83Zn88rqAGoRYtfyMnm2kTefzO1G3quKngmACVuyYSTvILhKpy3vAWT_a4ywS2zb7LsD9Mljd9WAeXMww1z4bDGSxivj34cEK7lABAazRqquprozT8PWrCNMfkXD4ZMBK5Gm1VTfEVhmO6nZ8moa5rPzOoH9w-1nUtDIEQLNBzYPUYC8GJE0BuBL1yVAl3l0id9dlZ6Ao4TWoFTI5NWc0FgMGZFrayPjCtM4ngTbrxQiAGU.eyJ0eXAiOiJkeW5vZG9jLnByb2plY3QtZGV2aWNlLXNlc3Npb24udjEifQ"
+    }
+  ]
+}
