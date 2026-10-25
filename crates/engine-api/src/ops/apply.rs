@@ -309,7 +309,45 @@ pub(crate) async fn materialize_node_change(
         if fields {
             query = query.bind(&node.current_fields);
         }
-        query.execute(&mut **tx).await?;
+        let result = query.execute(&mut **tx).await?;
+        if result.rows_affected() != 1 {
+            return Err(ApiError::Internal(format!(
+                "node {id} no longer has a row in document {}",
+                document_id.0
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn node_id_conflict() -> ApiError {
+    ApiError::Conflict {
+        reason: "A new node ID is already in use. Generate a fresh ID.".into(),
+    }
+}
+
+/// Early feedback for private uploads. This is not a reservation: the primary-key
+/// constraint and insert error mapping remain authoritative when documents race.
+pub(crate) async fn ensure_new_node_ids_available(
+    tx: &mut Transaction<'_, Postgres>,
+    ops: &[EventPayload],
+) -> Result<(), ApiError> {
+    let ids: Vec<String> = ops
+        .iter()
+        .filter_map(|op| match op {
+            EventPayload::NodeCreated { node_id, .. } => Some(node_id.0.clone()),
+            EventPayload::ChoiceAdded { choice_id, .. } => Some(choice_id.0.clone()),
+            _ => None,
+        })
+        .collect();
+    if !ids.is_empty() {
+        let exists: bool = sqlx::query_scalar("select exists(select 1 from node where id=any($1))")
+            .bind(&ids)
+            .fetch_one(&mut **tx)
+            .await?;
+        if exists {
+            return Err(node_id_conflict());
+        }
     }
     Ok(())
 }
@@ -337,7 +375,17 @@ async fn insert_node(
     .bind(fields)
     .bind(var_name)
     .execute(&mut **tx)
-    .await?;
+    .await
+    .map_err(|error| {
+        if error.as_database_error().is_some_and(|database| {
+            database.code().as_deref() == Some("23505")
+                && database.constraint() == Some("node_pkey")
+        }) {
+            node_id_conflict()
+        } else {
+            ApiError::from(error)
+        }
+    })?;
     Ok(())
 }
 

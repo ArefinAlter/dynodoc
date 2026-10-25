@@ -1156,6 +1156,77 @@ async fn rich_text_history_replays_compact_edits_and_rejects_stale_patches(pool:
     assert_eq!(send(&router, request).await.0, StatusCode::FORBIDDEN);
 }
 
+#[sqlx::test(migrations = "../../migrations")]
+async fn restore_rejects_live_nodes_atomically_and_restores_removed_choices(pool: PgPool) {
+    let runtime = common::RuntimeDatabase::new(pool.clone()).await;
+    let router = app(test_state(runtime.pool.clone()));
+    let token = bearer(seed_identity(&runtime.pool, "restore@example.test").await);
+    let doc = create_document(&router, &token, "Restore preconditions").await;
+    let [root, item, choice] = std::array::from_fn(|_| ulid::Ulid::generate().to_string());
+    let uri = format!("/documents/{doc}/batch");
+    let setup = json!({"ops":[
+        {"type":"NodeCreated","node_id":root,"node_type":"form","pos":"a0","fields":{"label":"Original"}},
+        {"type":"NodeCreated","node_id":item,"node_type":"item","parent_id":root,"pos":"a0","fields":{}},
+        {"type":"ChoiceAdded","node_id":item,"choice_id":choice,"fields":{"label":"Option"}}
+    ]});
+    let (status, body) = send(&router, auth_post(&uri, &token, &setup)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    for id in [&root, &item, &choice] {
+        let (status, body) = send(
+            &router,
+            auth_post(
+                &uri,
+                &token,
+                &json!({"ops":[
+                    {"type":"FieldEdited","node_id":root,"field":"label","value":"Must roll back"},
+                    {"type":"NodeRestored","node_id":id}
+                ]}),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert!(body.to_string().contains("already live"), "{body}");
+        let seq: i64 = sqlx::query_scalar("select max(seq) from event where document_id=$1")
+            .bind(doc)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(seq, 3, "rejected restore must roll back the whole batch");
+        let fields: Value = sqlx::query_scalar("select current_fields from node where id=$1")
+            .bind(&root)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(fields["label"], "Original");
+    }
+    for op in [
+        json!({"type":"ChoiceRemoved","node_id":item,"choice_id":choice}),
+        json!({"type":"NodeRestored","node_id":choice}),
+        json!({"type":"NodeDeleted","node_id":choice}),
+        json!({"type":"NodeRestored","node_id":choice}),
+    ] {
+        let (status, body) = send(&router, auth_post(&uri, &token, &json!({"ops":[op]}))).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+    let (status, body) = send(
+        &router,
+        auth_post(
+            &uri,
+            &token,
+            &json!({"ops":[
+                {"type":"NodeRestored","node_id":choice}
+            ]}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    let (status, body) = send(&router, auth_post_get(&format!("/documents/{doc}"), &token)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["state"]["nodes"][&choice]["id"], choice);
+    assert_eq!(body["state"]["nodes"][&choice]["deleted"], false);
+    runtime.close().await;
+}
+
 /// Every node-table write path, checked as the runtime login: only the removed-choice
 /// encoding differs. Rows written now follow the fold, so null fields match replay.
 #[sqlx::test(migrations = "../../migrations")]
@@ -1291,38 +1362,276 @@ async fn node_rows_follow_restored_choices_and_report_missing_rows(pool: PgPool)
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn removed_choices_stay_consistent_when_edited_deleted_and_restored(pool: PgPool) {
-    use engine_core::projection::{verify_projection, KNOWN_REMOVED_CHOICE};
-    let router = app(test_state(pool.clone()));
+async fn removed_choices_reject_new_writes_atomically_until_restored(pool: PgPool) {
+    use engine_core::{
+        projection::verify_projection,
+        snapshot::{merkle_root, SnapshotEngine},
+    };
+    let runtime = common::RuntimeDatabase::new(pool.clone()).await;
+    let router = app(test_state(runtime.pool.clone()));
     let token = bearer(seed_identity(&pool, "choices@example.test").await);
     let doc = create_document(&router, &token, "Choices").await;
     let [root, question, choice] = std::array::from_fn(|_| ulid::Ulid::generate().to_string());
     let uri = format!("/documents/{doc}/batch");
-    for (step, op) in [
-        json!({"type":"NodeCreated","node_id":root,"node_type":"form","pos":"a0","fields":{}}),
-        json!({"type":"NodeCreated","node_id":question,"node_type":"item","parent_id":root,"pos":"a0","fields":{"label":"Q"}}),
-        json!({"type":"ChoiceAdded","node_id":question,"choice_id":choice,"fields":{"label":"C"}}),
+    let before = json!({"type":"paragraph","content":[{"type":"text","text":"Original"}]});
+    let after = json!({"type":"paragraph","content":[{"type":"text","text":"Changed"}]});
+    let (status, body) = send(&router, auth_post(&uri, &token, &json!({"ops":[
+        {"type":"NodeCreated","node_id":root,"node_type":"form","pos":"a0","fields":{}},
+        {"type":"NodeCreated","node_id":question,"node_type":"item","parent_id":root,"pos":"a0","fields":{"label":"Q"}},
+        {"type":"ChoiceAdded","node_id":question,"choice_id":choice,"fields":{"label":"C","content":before}}
+    ]}))).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let snapshots = SnapshotEngine::new(runtime.pool.clone());
+    let live = snapshots.read_current_state(DocumentId(doc)).await.unwrap();
+    let (status, body) = send(
+        &router,
+        auth_post(
+            &uri,
+            &token,
+            &json!({"ops":[
+                {"type":"ChoiceRemoved","node_id":question,"choice_id":choice}
+            ]}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let removed = snapshots.read_current_state(DocumentId(doc)).await.unwrap();
+    assert_ne!(live, removed);
+    // V1 hashes nodes, not the removed-choice set. Keep historical roots readable.
+    assert_eq!(merkle_root(&live).unwrap(), merkle_root(&removed).unwrap());
+    // The table marks the removed choice deleted; replay lists it as removed. Nothing else differs.
+    let report = verify_projection(&runtime.pool, DocumentId(doc))
+        .await
+        .unwrap();
+    assert_eq!(report.differences.len(), 1, "{:?}", report.differences);
+    assert_eq!(
+        report.differences[0].known,
+        Some(engine_core::projection::KNOWN_REMOVED_CHOICE)
+    );
+    let patch = engine_core::richtext::make_patch(&before, &after).unwrap();
+    for op in [
+        json!({"type":"FieldEdited","node_id":choice,"field":"label","value":"Changed"}),
+        json!({"type":"FieldEdited","node_id":choice,"field":"var_name","value":"renamed"}),
+        json!({"type":"RichTextPatched","node_id":choice,"patch":patch}),
+        json!({"type":"NodeMoved","node_id":choice,"new_parent_id":question,"new_pos":"b0"}),
         json!({"type":"ChoiceRemoved","node_id":question,"choice_id":choice}),
-        json!({"type":"FieldEdited","node_id":choice,"field":"label","value":"Edited after removal"}),
-        json!({"type":"NodeDeleted","node_id":choice}),
-        json!({"type":"NodeRestored","node_id":choice}),
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        let (status, body) = send(&router, auth_post(&uri, &token, &json!({ "ops": [op] }))).await;
-        assert_eq!(status, StatusCode::OK, "step {step}: {body}");
-        // The table may differ from replay only by the known removed-choice marker.
-        let report = verify_projection(&pool, DocumentId(doc)).await.unwrap();
-        assert!(
-            report
-                .differences
-                .iter()
-                .all(|d| d.known == Some(KNOWN_REMOVED_CHOICE)),
-            "step {step}: {:?}",
-            report.differences
+    ] {
+        let (status, body) = send(&router, auth_post(&uri, &token, &json!({"ops":[
+            {"type":"FieldEdited","node_id":question,"field":"label","value":"Must roll back"}, op
+        ]}))).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        let seq: i64 = sqlx::query_scalar("select max(seq) from event where document_id=$1")
+            .bind(doc)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(seq, 4);
+        assert_eq!(
+            snapshots.read_current_state(DocumentId(doc)).await.unwrap(),
+            removed
         );
+        let label: Value =
+            sqlx::query_scalar("select current_fields->'label' from node where id=$1")
+                .bind(&question)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(label, "Q");
     }
+    let (status, body) = send(
+        &router,
+        auth_post(
+            &uri,
+            &token,
+            &json!({"ops":[
+                {"type":"NodeRestored","node_id":choice},
+                {"type":"FieldEdited","node_id":choice,"field":"label","value":"Restored"},
+                {"type":"NodeMoved","node_id":choice,"new_parent_id":question,"new_pos":"b0"}
+            ]}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(verify_projection(&runtime.pool, DocumentId(doc))
+        .await
+        .unwrap()
+        .differences
+        .is_empty());
+    runtime.close().await;
+}
+
+/// The editors delete a question's whole subtree, removed choices included (state diffs and
+/// the questionnaire editor list every child that is not tombstoned). Rejecting that would make
+/// a question with a removed choice undeletable.
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_question_with_a_removed_choice_can_still_be_deleted(pool: PgPool) {
+    use engine_core::projection::{verify_projection, KNOWN_REMOVED_CHOICE};
+    let runtime = common::RuntimeDatabase::new(pool.clone()).await;
+    let router = app(test_state(runtime.pool.clone()));
+    let token = bearer(seed_identity(&runtime.pool, "delete-choices@example.test").await);
+    let doc = create_document(&router, &token, "Delete with removed choice").await;
+    let [root, question, kept, removed] =
+        std::array::from_fn(|_| ulid::Ulid::generate().to_string());
+    let uri = format!("/documents/{doc}/batch");
+    let (status, body) = send(&router, auth_post(&uri, &token, &json!({"ops":[
+        {"type":"NodeCreated","node_id":root,"node_type":"form","pos":"a0","fields":{}},
+        {"type":"NodeCreated","node_id":question,"node_type":"item","parent_id":root,"pos":"a0","fields":{"label":"Q"}},
+        {"type":"ChoiceAdded","node_id":question,"choice_id":kept,"fields":{"label":"Kept"}},
+        {"type":"ChoiceAdded","node_id":question,"choice_id":removed,"fields":{"label":"Removed"}},
+        {"type":"ChoiceRemoved","node_id":question,"choice_id":removed}
+    ]}))).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    // Children first, as the editor orders them: both choices, then the question.
+    let (status, body) = send(
+        &router,
+        auth_post(
+            &uri,
+            &token,
+            &json!({"ops":[
+                {"type":"NodeDeleted","node_id":removed},
+                {"type":"NodeDeleted","node_id":kept},
+                {"type":"NodeDeleted","node_id":question}
+            ]}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let deleted: Vec<(String, bool)> =
+        sqlx::query_as("select id, deleted from node where document_id=$1 order by id")
+            .bind(doc)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert!(
+        deleted
+            .iter()
+            .filter(|(id, _)| [&removed, &kept, &question].contains(&id))
+            .all(|(_, deleted)| *deleted),
+        "{deleted:?}"
+    );
+    // Tombstoning twice is still refused, and the refusal appends nothing.
+    let (status, body) = send(
+        &router,
+        auth_post(
+            &uri,
+            &token,
+            &json!({"ops":[{"type":"NodeDeleted","node_id":removed}]}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    let seq: i64 = sqlx::query_scalar("select max(seq) from event where document_id=$1")
+        .bind(doc)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(seq, 8);
+    let report = verify_projection(&runtime.pool, DocumentId(doc))
+        .await
+        .unwrap();
+    assert!(
+        report
+            .differences
+            .iter()
+            .all(|d| d.known == Some(KNOWN_REMOVED_CHOICE)),
+        "{:?}",
+        report.differences
+    );
+    // Bringing the choice back is still one explicit restore, parent first.
+    let (status, body) = send(
+        &router,
+        auth_post(
+            &uri,
+            &token,
+            &json!({"ops":[
+                {"type":"NodeRestored","node_id":question},
+                {"type":"NodeRestored","node_id":removed}
+            ]}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let report = verify_projection(&runtime.pool, DocumentId(doc))
+        .await
+        .unwrap();
+    assert!(
+        report
+            .differences
+            .iter()
+            .all(|d| d.known == Some(KNOWN_REMOVED_CHOICE)),
+        "{:?}",
+        report.differences
+    );
+    runtime.close().await;
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn reused_node_and_choice_ids_conflict_even_after_deletion_or_removal(pool: PgPool) {
+    let runtime = common::RuntimeDatabase::new(pool.clone()).await;
+    let router = app(test_state(runtime.pool.clone()));
+    let token = bearer(seed_identity(&runtime.pool, "reuse@example.test").await);
+    let doc = create_document(&router, &token, "Stable identity regression").await;
+    let [root, question, choice] = std::array::from_fn(|_| ulid::Ulid::generate().to_string());
+    let uri = format!("/documents/{doc}/batch");
+    let (status, body) = send(&router, auth_post(&uri, &token, &json!({"ops":[
+        {"type":"NodeCreated","node_id":root,"node_type":"form","pos":"a0","fields":{"label":"Original"}},
+        {"type":"NodeCreated","node_id":question,"node_type":"item","parent_id":root,"pos":"a0","fields":{"label":"Question"}},
+        {"type":"ChoiceAdded","node_id":question,"choice_id":choice,"fields":{"label":"Choice"}}
+    ]}))).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    for (stage, expected_seq) in [3_i64, 4, 6].into_iter().enumerate() {
+        let transition = match stage {
+            0 => vec![],
+            1 => vec![json!({"type":"NodeDeleted","node_id":choice})],
+            _ => vec![
+                json!({"type":"NodeRestored","node_id":choice}),
+                json!({"type":"ChoiceRemoved","node_id":question,"choice_id":choice}),
+            ],
+        };
+        if !transition.is_empty() {
+            let (status, body) =
+                send(&router, auth_post(&uri, &token, &json!({"ops":transition}))).await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+        }
+        for existing in [&root, &question, &choice] {
+            for collision in [
+                json!({"type":"NodeCreated","node_id":existing,"node_type":"form","pos":"new","fields":{}}),
+                json!({"type":"ChoiceAdded","node_id":question,"choice_id":existing,"fields":{"label":"Replacement"}}),
+            ] {
+                let (status, body) = send(&router, auth_post(&uri, &token, &json!({"ops":[
+                    {"type":"FieldEdited","node_id":root,"field":"label","value":"Must roll back"},
+                    collision
+                ]}))).await;
+                assert_eq!(status, StatusCode::CONFLICT, "stage {stage}: {body}");
+                let seq: i64 =
+                    sqlx::query_scalar("select max(seq) from event where document_id=$1")
+                        .bind(doc)
+                        .fetch_one(&pool)
+                        .await
+                        .unwrap();
+                assert_eq!(seq, expected_seq, "ID reuse must append no event");
+                let fields: Value =
+                    sqlx::query_scalar("select current_fields from node where id=$1")
+                        .bind(&root)
+                        .fetch_one(&pool)
+                        .await
+                        .unwrap();
+                assert_eq!(fields["label"], "Original", "earlier writes must roll back");
+            }
+        }
+    }
+    let report = engine_core::projection::verify_projection(&runtime.pool, DocumentId(doc))
+        .await
+        .unwrap();
+    assert!(
+        report
+            .differences
+            .iter()
+            .all(|d| d.known == Some(engine_core::projection::KNOWN_REMOVED_CHOICE)),
+        "{:?}",
+        report.differences
+    );
+    runtime.close().await;
 }
 
 fn test_state(pool: PgPool) -> AppState {
@@ -1442,6 +1751,198 @@ async fn anonymous_read_requires_auth(pool: PgPool) {
 }
 
 // --- write path + governance ----------------------------------------------------
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn new_node_ids_are_strict_at_each_wire_write_boundary(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let token = bearer(seed_identity(&pool, "strict-ids@example.test").await);
+    let malformed = [
+        String::new(),
+        "<script>".into(),
+        "X".repeat(100_000),
+        "random".repeat(500),
+        "01arz3ndektsv4rrffq69g5fav".into(),
+        "8ZZZZZZZZZZZZZZZZZZZZZZZZZ".into(),
+    ];
+    for kind in ["node-create", "batch", "draft", "review", "suggest"] {
+        let doc = create_document(&router, &token, "Synthetic ID boundary").await;
+        let draft = if kind == "draft" {
+            let (status, body) = send(
+                &router,
+                auth_post(
+                    &format!("/documents/{doc}/drafts"),
+                    &token,
+                    &json!({"name":"Private"}),
+                ),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            body["id"].as_str().unwrap().to_owned()
+        } else {
+            Uuid::nil().to_string()
+        };
+        let valid = ulid::Ulid::generate().to_string();
+        for (id, expected) in malformed
+            .iter()
+            .map(|id| (id, StatusCode::BAD_REQUEST))
+            .chain(std::iter::once((&valid, StatusCode::OK)))
+        {
+            let op = json!({"type":"NodeCreated","node_id":id,"node_type":"form","pos":"a0","fields":{}});
+            let (path, body) = match kind {
+                "node-create" => (format!("/documents/{doc}/ops/node-create"), op.clone()),
+                "batch" => (format!("/documents/{doc}/batch"), json!({"ops":[op]})),
+                "draft" => (
+                    format!("/documents/{doc}/drafts/{draft}"),
+                    json!({"revision":0,"ops":[op]}),
+                ),
+                "review" => (
+                    format!("/documents/{doc}/change-requests"),
+                    json!({"name":"File change","base_seq":0,"ops":[op]}),
+                ),
+                _ => (
+                    format!("/documents/{doc}/ops/suggest"),
+                    json!({"detail":op}),
+                ),
+            };
+            let (status, result) = send(&router, auth_post(&path, &token, &body)).await;
+            assert_eq!(status, expected, "{kind}, id length {}: {result}", id.len());
+            if expected == StatusCode::BAD_REQUEST {
+                assert!(result.to_string().len() < 1024, "do not echo oversized IDs");
+            }
+        }
+    }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn selection_ids_and_new_choice_ids_are_validated_without_partial_writes(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let token = bearer(seed_identity(&pool, "selection-ids@example.test").await);
+    let doc = create_document(&router, &token, "Synthetic selected IDs").await;
+    let (status, draft) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc}/drafts"),
+            &token,
+            &json!({"name":"Selection"}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{draft}");
+    let draft = draft["id"].as_str().unwrap();
+    for field in ["included_nodes", "dropped_nodes"] {
+        for ids in [
+            json!([""]),
+            json!(["X".repeat(129)]),
+            json!(vec![ulid::Ulid::generate().to_string(); 20_001]),
+        ] {
+            let mut body = json!({"action":"preview"});
+            body[field] = ids;
+            let (status, result) = send(
+                &router,
+                auth_post(
+                    &format!("/documents/{doc}/drafts/{draft}/sync"),
+                    &token,
+                    &body,
+                ),
+            )
+            .await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{field}: {result}");
+        }
+        // A selection names nodes that already exist, so a historical spelling is accepted.
+        for id in [ulid::Ulid::generate().to_string(), "01NODE00000000".into()] {
+            let mut body = json!({"action":"preview"});
+            body[field] = json!([id]);
+            let (status, result) = send(
+                &router,
+                auth_post(
+                    &format!("/documents/{doc}/drafts/{draft}/sync"),
+                    &token,
+                    &body,
+                ),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{result}");
+        }
+    }
+    let root = ulid::Ulid::generate().to_string();
+    let question = ulid::Ulid::generate().to_string();
+    let (status,result)=send(&router,auth_post(&format!("/documents/{doc}/batch"),&token,&json!({"ops":[
+        {"type":"NodeCreated","node_id":root,"node_type":"form","pos":"a0","fields":{}},
+        {"type":"NodeCreated","node_id":question,"parent_id":root,"node_type":"item","pos":"a0","fields":{"label":"Question"}}
+    ]}))).await;
+    assert_eq!(status, StatusCode::OK, "{result}");
+    for choice in ["bad".to_owned(), ulid::Ulid::generate().to_string()] {
+        let (status,result)=send(&router,auth_post(&format!("/documents/{doc}/batch"),&token,&json!({"ops":[
+            {"type":"ChoiceAdded","node_id":question,"choice_id":choice,"fields":{"label":"Choice"}}
+        ]}))).await;
+        assert_eq!(
+            status,
+            if choice == "bad" {
+                StatusCode::BAD_REQUEST
+            } else {
+                StatusCode::OK
+            },
+            "{result}"
+        );
+    }
+    let other = create_document(&router, &token, "Review selection").await;
+    let review_id = ulid::Ulid::generate().to_string();
+    let (status, review) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{other}/change-requests"),
+            &token,
+            &json!({"name":"Selected review","base_seq":0,"submit":true,"ops":[
+                {"type":"NodeCreated","node_id":review_id,"node_type":"form","pos":"a0","fields":{}}
+            ]}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{review}");
+    let review = review["id"].as_str().unwrap();
+    for (ids, expected) in [
+        (json!([""]), StatusCode::BAD_REQUEST),
+        (json!(["X".repeat(129)]), StatusCode::BAD_REQUEST),
+        (
+            json!(vec![review_id.clone(); 20_001]),
+            StatusCode::BAD_REQUEST,
+        ),
+        // A historical spelling in the selection is accepted next to a canonical one.
+        (json!([review_id, "01NODE00000000"]), StatusCode::OK),
+    ] {
+        let (status, result) = send(
+            &router,
+            auth_post(
+                &format!("/documents/{other}/change-requests/{review}/merge"),
+                &token,
+                &json!({"team_seq":0,"revision":1,"included_nodes":ids,"override_rules":true}),
+            ),
+        )
+        .await;
+        assert_eq!(status, expected, "{result}");
+    }
+}
+
+#[test]
+fn historical_node_ids_still_validate_and_fold_without_rewriting() {
+    let id = engine_shared::NodeId("01NODE00000000".into());
+    let op = engine_shared::EventPayload::NodeCreated {
+        node_id: id.clone(),
+        node_type: engine_shared::NodeType::Form,
+        parent_id: None,
+        pos: "a0".into(),
+        fields: json!({}),
+        var_name: None,
+    };
+    let mut state = engine_core::materializer::DocumentState::default();
+    engine_core::ops::validate_op(&state, &op).unwrap();
+    engine_core::materializer::apply_payload(&mut state, &op).unwrap();
+    assert_eq!(state.nodes[&id].id, id);
+    assert_eq!(
+        serde_json::to_value(&op).unwrap()["node_id"],
+        "01NODE00000000"
+    );
+}
 
 #[sqlx::test(migrations = "../../migrations")]
 async fn node_create_and_field_edit_round_trip(pool: PgPool) {
@@ -1919,7 +2420,7 @@ async fn idempotency_key_dedupes_writes(pool: PgPool) {
     let token = bearer(author);
     let doc_id = create_document(&router, &token, "Form").await;
 
-    let body = json!({ "node_type": "form", "pos": "a0", "node_id": "01IDEMPOTENT0000000000000" });
+    let body = json!({ "node_type": "form", "pos": "a0", "node_id": "01ARZ3NDEKTSV4RRFFQ69G5FAV" });
     let req = || {
         Request::builder()
             .method("POST")
@@ -1947,6 +2448,32 @@ async fn idempotency_key_dedupes_writes(pool: PgPool) {
     .await
     .unwrap();
     assert_eq!(count, 1, "idempotent replay must not duplicate the event");
+
+    // A response stored before the stricter boundary remains replayable during
+    // the existing idempotency TTL, even when its historical request ID is old.
+    let path = format!("/documents/{doc_id}/ops/node-create");
+    let cached = json!({"historical_response": true});
+    sqlx::query("insert into idempotency_key(identity_id,idempotency_key,request_path,response_status,response_body) values($1,'legacy-key',$2,200,$3)")
+        .bind(author).bind(&path).bind(&cached).execute(&pool).await.unwrap();
+    let request = Request::builder()
+        .method("POST")
+        .uri(&path)
+        .header("content-type", "application/json")
+        .header(header::AUTHORIZATION, &token)
+        .header("idempotency-key", "legacy-key")
+        .body(Body::from(
+            json!({"node_type":"form","pos":"a0","node_id":"legacy-node"}).to_string(),
+        ))
+        .unwrap();
+    let (status, replay) = send(&router, request).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(replay, cached);
+    let after: i64 = sqlx::query_scalar("select count(*) from event where document_id=$1")
+        .bind(doc_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(after, 1);
 }
 
 // --- pagination -----------------------------------------------------------------
@@ -2118,6 +2645,381 @@ fn auth_post_get(uri: &str, token: &str) -> Request<Body> {
         .unwrap()
 }
 
+fn assert_private_node_conflict(status: StatusCode, body: &Value, foreign: Uuid, node: &str) {
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    let response = body.to_string();
+    assert!(!response.contains(&foreign.to_string()));
+    assert!(!response.contains(node));
+}
+
+/// A person who cannot read the other document learns no more from the conflict than one who
+/// can: the answer is the same status and body, and names neither the document, its title,
+/// its owner nor its text. (That the ID is taken is unavoidable: IDs are global and random.)
+#[sqlx::test(migrations = "../../migrations")]
+async fn node_id_conflict_is_identical_for_readable_and_unreadable_documents(pool: PgPool) {
+    let runtime = common::RuntimeDatabase::new(pool).await;
+    let pool = runtime.pool.clone();
+    let router = app(test_state(pool.clone()));
+    let owner = bearer(seed_identity(&pool, "private-owner@example.test").await);
+    let outsider = bearer(seed_identity(&pool, "private-outsider@example.test").await);
+    let private = create_document(&router, &owner, "Confidential board minutes").await;
+    let readable = create_document(&router, &outsider, "Outsider reference file").await;
+    let target = create_document(&router, &outsider, "Outsider working file").await;
+    let secret = ulid::Ulid::generate().to_string();
+    let open = ulid::Ulid::generate().to_string();
+    let create = |id: &str, text: &str| json!({"type":"NodeCreated","node_id":id,"node_type":"form","pos":"a0","fields":{"label":text}});
+    for (doc, token, id, text) in [
+        (private, &owner, &secret, "Confidential board text"),
+        (readable, &outsider, &open, "Outsider text"),
+    ] {
+        let (status, body) = send(
+            &router,
+            auth_post(
+                &format!("/documents/{doc}/batch"),
+                token,
+                &json!({"ops":[create(id, text)]}),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+    // The outsider really cannot read the private file.
+    let (status, _) = send(
+        &router,
+        auth_post_get(&format!("/documents/{private}/node/{secret}"), &outsider),
+    )
+    .await;
+    assert!(matches!(
+        status,
+        StatusCode::FORBIDDEN | StatusCode::NOT_FOUND
+    ));
+    let mut answers = Vec::new();
+    for id in [&secret, &open] {
+        for (suffix, body) in [
+            ("ops/node-create", create(id, "Reused")),
+            ("batch", json!({"ops":[create(id, "Reused")]})),
+            (
+                "change-requests",
+                json!({"name":"Reuse","base_seq":0,"ops":[create(id, "Reused")]}),
+            ),
+        ] {
+            let (status, body) = send(
+                &router,
+                auth_post(&format!("/documents/{target}/{suffix}"), &outsider, &body),
+            )
+            .await;
+            assert_eq!(status, StatusCode::CONFLICT, "{suffix}: {body}");
+            let text = body.to_string();
+            for leak in [
+                private.to_string(),
+                readable.to_string(),
+                secret.clone(),
+                open.clone(),
+                "Confidential".into(),
+                "private-owner".into(),
+            ] {
+                assert!(!text.contains(&leak), "{suffix} leaks {leak}: {text}");
+            }
+            answers.push((suffix, body));
+        }
+    }
+    for pair in answers.chunks(3).collect::<Vec<_>>().windows(2) {
+        assert_eq!(pair[0], pair[1], "conflict answers differ by readability");
+    }
+    let events: i64 = sqlx::query_scalar("select count(*) from event where document_id=$1")
+        .bind(target)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(events, 0);
+    runtime.close().await;
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn node_id_from_another_document_is_conflict(pool: PgPool) {
+    let runtime = common::RuntimeDatabase::new(pool).await;
+    let pool = runtime.pool.clone();
+    let router = app(test_state(pool.clone()));
+    let owner = bearer(seed_identity(&pool, "collision-owner@example.test").await);
+    let foreign = create_document(&router, &owner, "Synthetic foreign file").await;
+    let target = create_document(&router, &owner, "Synthetic target file").await;
+    let node = ulid::Ulid::generate().to_string();
+    let op = json!({"type":"NodeCreated","node_id":node,"node_type":"form","pos":"a0","fields":{}});
+    // A private draft saved before another file reserves the ID must still fail
+    // at the authoritative insert when it is shared later.
+    let (_, draft) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{target}/drafts"),
+            &owner,
+            &json!({"name":"Private before collision"}),
+        ),
+    )
+    .await;
+    let draft_uri = format!(
+        "/documents/{target}/drafts/{}",
+        draft["id"].as_str().unwrap()
+    );
+    let (status, result) = send(
+        &router,
+        auth_post(
+            &draft_uri,
+            &owner,
+            &json!({"revision":0,"ops":[op.clone()]}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{result}");
+    assert_eq!(
+        send(
+            &router,
+            auth_post(
+                &format!("/documents/{foreign}/ops/node-create"),
+                &owner,
+                &op
+            )
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    for (suffix, body) in [
+        ("ops/node-create", op.clone()),
+        ("batch", json!({"ops":[op]})),
+    ] {
+        let (status, body) = send(
+            &router,
+            auth_post(&format!("/documents/{target}/{suffix}"), &owner, &body),
+        )
+        .await;
+        assert_private_node_conflict(status, &body, foreign, &node);
+    }
+    let root = ulid::Ulid::generate().to_string();
+    let item = ulid::Ulid::generate().to_string();
+    let (status, body) = send(&router, auth_post(&format!("/documents/{target}/batch"), &owner,
+        &json!({"ops":[
+            {"type":"NodeCreated","node_id":root,"node_type":"form","pos":"a0","fields":{}},
+            {"type":"NodeCreated","node_id":item,"node_type":"item","parent_id":root,"pos":"a0","fields":{"type":"select_one"}},
+            {"type":"ChoiceAdded","node_id":item,"choice_id":node,"fields":{"label":"One"}}
+        ]}))).await;
+    assert_private_node_conflict(status, &body, foreign, &node);
+    let sync = format!("{draft_uri}/sync");
+    let (_, preview) = send(
+        &router,
+        auth_post(&sync, &owner, &json!({"action":"preview"})),
+    )
+    .await;
+    let (status, body) = send(&router, auth_post(&sync, &owner,
+        &json!({"action":"share","team_seq":preview["team_seq"],"revision":preview["revision"],"included_nodes":[node],"override_rules":true}))).await;
+    assert_private_node_conflict(status, &body, foreign, &node);
+    let events: i64 = sqlx::query_scalar("select count(*) from event where document_id=$1")
+        .bind(target)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let nodes: i64 = sqlx::query_scalar("select count(*) from node where document_id=$1")
+        .bind(target)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!((events, nodes), (0, 0));
+    let actual: Uuid = sqlx::query_scalar("select document_id from node where id=$1")
+        .bind(node)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(actual, foreign);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn private_uploads_check_global_ids_before_storing_edits(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let token = bearer(seed_identity(&pool, "early-collision@example.test").await);
+    let foreign = create_document(&router, &token, "Synthetic source").await;
+    let target = create_document(&router, &token, "Synthetic destination").await;
+    let node = ulid::Ulid::generate().to_string();
+    let op = json!({"type":"NodeCreated","node_id":node,"node_type":"form","pos":"a0","fields":{}});
+    assert_eq!(
+        send(
+            &router,
+            auth_post(
+                &format!("/documents/{foreign}/ops/node-create"),
+                &token,
+                &op
+            )
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let (status, body) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{target}/change-requests"),
+            &token,
+            &json!({"name":"Collision","base_seq":0,"ops":[op.clone()]}),
+        ),
+    )
+    .await;
+    assert_private_node_conflict(status, &body, foreign, &node);
+    let (_, draft) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{target}/drafts"),
+            &token,
+            &json!({"name":"Private"}),
+        ),
+    )
+    .await;
+    let (status, body) = send(
+        &router,
+        auth_post(
+            &format!(
+                "/documents/{target}/drafts/{}",
+                draft["id"].as_str().unwrap()
+            ),
+            &token,
+            &json!({"revision":0,"ops":[op]}),
+        ),
+    )
+    .await;
+    assert_private_node_conflict(status, &body, foreign, &node);
+    let (count, revision): (i64, i64) =
+        sqlx::query_as("select count(*),max(revision) from workspace_draft where document_id=$1")
+            .bind(target)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!((count, revision), (1, 0));
+    let edits: i64 = sqlx::query_scalar("select count(*) from draft_edit e join workspace_draft d on d.id=e.draft_id where d.document_id=$1")
+        .bind(target).fetch_one(&pool).await.unwrap();
+    assert_eq!(edits, 0);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn concurrent_global_id_insert_returns_conflict_after_waiting(pool: PgPool) {
+    use engine_shared::{EventPayload, IdentityId, NodeId, NodeType};
+    let runtime = common::RuntimeDatabase::new(pool).await;
+    let pool = runtime.pool.clone();
+    let router = app(test_state(pool.clone()));
+    let actor = seed_identity(&pool, "id-race@example.test").await;
+    let token = bearer(actor);
+    let foreign = create_document(&router, &token, "Synthetic first writer").await;
+    let target = create_document(&router, &token, "Synthetic second writer").await;
+    let node = ulid::Ulid::generate().to_string();
+    let mut first = pool.begin().await.unwrap();
+    let pid: i32 = sqlx::query_scalar("select pg_backend_pid()")
+        .fetch_one(&mut *first)
+        .await
+        .unwrap();
+    sqlx::query(
+        "insert into node(id,document_id,type,pos,current_fields) values($1,$2,'form','a0','{}')",
+    )
+    .bind(&node)
+    .bind(foreign)
+    .execute(&mut *first)
+    .await
+    .unwrap();
+    engine_core::log::append_in_tx(
+        &mut first,
+        DocumentId(foreign),
+        &EventPayload::NodeCreated {
+            node_id: NodeId(node.clone()),
+            node_type: NodeType::Form,
+            parent_id: None,
+            pos: "a0".into(),
+            fields: json!({}),
+            var_name: None,
+        },
+        IdentityId(actor),
+    )
+    .await
+    .unwrap();
+    let body = json!({"node_type":"form","node_id":node,"pos":"a0"});
+    let request = auth_post(
+        &format!("/documents/{target}/ops/node-create"),
+        &token,
+        &body,
+    );
+    let writer = tokio::spawn(async move { send(&router, request).await });
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let waiting: bool = sqlx::query_scalar(
+                "select exists(select 1 from pg_stat_activity where $1=any(pg_blocking_pids(pid)))",
+            )
+            .bind(pid)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            if waiting {
+                break;
+            }
+            assert!(
+                !writer.is_finished(),
+                "second writer did not wait for the primary key"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    first.commit().await.unwrap();
+    let (status, body) = writer.await.unwrap();
+    assert_private_node_conflict(status, &body, foreign, &node);
+    let count: i64 = sqlx::query_scalar("select count(*) from event where document_id=$1")
+        .bind(target)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn another_unique_constraint_keeps_its_existing_error_mapping(pool: PgPool) {
+    // This index exists only in this isolated fixture, to exercise a different
+    // SQLSTATE 23505 without changing production constraints.
+    sqlx::query(
+        "create unique index synthetic_other_unique on node(var_name) where var_name is not null",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let router = app(test_state(pool.clone()));
+    let token = bearer(seed_identity(&pool, "other-constraint@example.test").await);
+    let foreign = create_document(&router, &token, "Synthetic other index").await;
+    let target = create_document(&router, &token, "Synthetic failed insert").await;
+    let path = |id| format!("/documents/{id}/ops/node-create");
+    assert_eq!(
+        send(
+            &router,
+            auth_post(
+                &path(foreign),
+                &token,
+                &json!({"node_type":"form","pos":"a0","var_name":"shared_name"})
+            )
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let (status, body) = send(
+        &router,
+        auth_post(
+            &path(target),
+            &token,
+            &json!({"node_type":"form","pos":"a0","var_name":"shared_name"}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{body}");
+    let count: i64 = sqlx::query_scalar("select count(*) from event where document_id=$1")
+        .bind(target)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
+}
+
 // --- audit ----------------------------------------------------------------------
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -2213,7 +3115,36 @@ async fn private_document_reads_are_scoped_to_members(pool: PgPool) {
     let owner = seed_identity(&pool, "owner@example.test").await;
     let stranger = seed_identity(&pool, "stranger@example.test").await;
     let doc = create_document(&router, &bearer(owner), "Private study").await;
-    for suffix in ["", "/events", "/stream", "/verify", "/conflicts"] {
+    let (status, created) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc}/ops/node-create"),
+            &bearer(owner),
+            &json!({"node_type":"form","pos":"a0","fields":{"label":"Private text"}}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    let node = created["event"]["target_node_id"].as_str().unwrap();
+    let event = created["event"]["id"].as_str().unwrap();
+    let snapshot = engine_core::snapshot::SnapshotEngine::new(pool.clone())
+        .take(
+            DocumentId(doc),
+            engine_core::snapshot::SnapshotReason::Periodic,
+        )
+        .await
+        .unwrap();
+    for suffix in [
+        "".into(),
+        "/events".into(),
+        "/stream".into(),
+        "/verify".into(),
+        "/conflicts".into(),
+        "/discussions".into(),
+        format!("/node/{node}"),
+        format!("/merkle-proof/{event}"),
+        format!("/snapshot/{}", snapshot.id.0),
+    ] {
         let (status, _) = send(
             &router,
             auth_post_get(&format!("/documents/{doc}{suffix}"), &bearer(stranger)),
@@ -2227,6 +3158,151 @@ async fn private_document_reads_are_scoped_to_members(pool: PgPool) {
     }
     let (_, list) = send(&router, auth_post_get("/documents", &bearer(stranger))).await;
     assert!(list["items"].as_array().unwrap().is_empty());
+}
+
+/// A concurrent projection move can commit after the scoped SELECT and before
+/// UPDATE. PostgreSQL must recheck the UPDATE predicate and roll back the event.
+#[sqlx::test(migrations = "../../migrations")]
+async fn node_updates_never_touch_another_documents_rows(pool: PgPool) {
+    let runtime = common::RuntimeDatabase::new(pool.clone()).await;
+    let router = app(test_state(runtime.pool.clone()));
+    let owner = bearer(seed_identity(&runtime.pool, "update-scope-owner@example.test").await);
+    let stranger = bearer(seed_identity(&runtime.pool, "update-scope-other@example.test").await);
+    for kind in ["FieldEdited", "NodeDeleted"] {
+        let doc = create_document(&router, &owner, "Source projection").await;
+        let other = create_document(&router, &stranger, "Foreign projection").await;
+        let root = ulid::Ulid::generate().to_string();
+        let node = ulid::Ulid::generate().to_string();
+        let (status,body)=send(&router,auth_post(&format!("/documents/{doc}/batch"),&owner,&json!({"ops":[
+            {"type":"NodeCreated","node_id":root,"node_type":"form","pos":"a0","fields":{}},
+            {"type":"NodeCreated","node_id":node,"node_type":"item","parent_id":root,"pos":"a0","fields":{"label":"Original"}}
+        ]}))).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let mut mover = pool.begin().await.unwrap();
+        let pid: i32 = sqlx::query_scalar("select pg_backend_pid()")
+            .fetch_one(&mut *mover)
+            .await
+            .unwrap();
+        sqlx::query("update node set document_id=$2 where id=$1")
+            .bind(&node)
+            .bind(other)
+            .execute(&mut *mover)
+            .await
+            .unwrap();
+        let expected: Value = sqlx::query_scalar("select to_jsonb(n) from node n where id=$1")
+            .bind(&node)
+            .fetch_one(&mut *mover)
+            .await
+            .unwrap();
+        let op = if kind == "FieldEdited" {
+            json!({"type":kind,"node_id":node,"field":"label","value":"Must roll back"})
+        } else {
+            json!({"type":kind,"node_id":node})
+        };
+        let (writer_router, writer_token) = (router.clone(), owner.clone());
+        let writer = tokio::spawn(async move {
+            send(
+                &writer_router,
+                auth_post(
+                    &format!("/documents/{doc}/batch"),
+                    &writer_token,
+                    &json!({"ops":[op]}),
+                ),
+            )
+            .await
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(5),async {
+            loop {
+                let blocked:bool=sqlx::query_scalar("select exists(select 1 from pg_stat_activity where datname=current_database() and $1=any(pg_blocking_pids(pid)) and lower(query) like '%update node set%')")
+                    .bind(pid).fetch_one(&pool).await.unwrap();
+                if blocked { break; }
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        }).await.expect("writer did not reach the node UPDATE after its scoped SELECT");
+        mover.commit().await.unwrap();
+        let (status, body) = tokio::time::timeout(std::time::Duration::from_secs(5), writer)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{kind}: {body}");
+        let actual: Value = sqlx::query_scalar("select to_jsonb(n) from node n where id=$1")
+            .bind(&node)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(actual, expected, "{kind} must not change the foreign row");
+        let count: i64 = sqlx::query_scalar("select count(*) from event where document_id=$1")
+            .bind(doc)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 2, "a lost projection must append no event");
+        let foreign_count: i64 =
+            sqlx::query_scalar("select count(*) from event where document_id=$1")
+                .bind(other)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(foreign_count, 0);
+    }
+    runtime.close().await;
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn cross_document_node_event_and_snapshot_ids_are_not_found(pool: PgPool) {
+    let runtime = common::RuntimeDatabase::new(pool.clone()).await;
+    let router = app(test_state(runtime.pool.clone()));
+    let token = bearer(seed_identity(&runtime.pool, "scope-owner@example.test").await);
+    let a = create_document(&router, &token, "First synthetic document").await;
+    let b = create_document(&router, &token, "Second synthetic document").await;
+    let mut rows = Vec::new();
+    for doc in [a, b] {
+        let (status, body) = send(
+            &router,
+            auth_post(
+                &format!("/documents/{doc}/ops/node-create"),
+                &token,
+                &json!({"node_type":"form","pos":"a0","fields":{"label":"Scoped content"}}),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let snapshot = engine_core::snapshot::SnapshotEngine::new(runtime.pool.clone())
+            .take(
+                DocumentId(doc),
+                engine_core::snapshot::SnapshotReason::Periodic,
+            )
+            .await
+            .unwrap();
+        rows.push((
+            doc,
+            body["event"]["target_node_id"].as_str().unwrap().to_owned(),
+            body["event"]["id"].as_str().unwrap().to_owned(),
+            snapshot.id.0,
+        ));
+    }
+    for (i, (doc, node, event, snapshot)) in rows.iter().enumerate() {
+        for suffix in [
+            format!("/node/{node}"),
+            format!("/merkle-proof/{event}"),
+            format!("/snapshot/{snapshot}"),
+        ] {
+            let (status, body) = send(
+                &router,
+                auth_post_get(&format!("/documents/{doc}{suffix}"), &token),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{suffix}: {body}");
+            let other = rows[1 - i].0;
+            let (status, body) = send(
+                &router,
+                auth_post_get(&format!("/documents/{other}{suffix}"), &token),
+            )
+            .await;
+            assert_eq!(status, StatusCode::NOT_FOUND, "{suffix}: {body}");
+        }
+    }
+    runtime.close().await;
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -2577,12 +3653,34 @@ async fn content_search_never_returns_another_teams_document(pool: PgPool) {
     let (status, found) = send(&router, auth_post_get("/search?q=community", &token)).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(found["items"].as_array().unwrap().len(), 1);
-    let (_, hidden) = send(
+    // The stranger owns matching content too. A missing document/node join must not
+    // let their authorized row drag another team's node into the search results.
+    let own = create_document(&router, &bearer(stranger), "Community notes").await;
+    let (created, body) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{own}/ops/node-create"),
+            &bearer(stranger),
+            &json!({"node_type":"form","pos":"a0","fields":{"label":"public community notes"}}),
+        ),
+    )
+    .await;
+    assert_eq!(created, StatusCode::OK, "{body}");
+    let (status, found) = send(
         &router,
         auth_post_get("/search?q=community", &bearer(stranger)),
     )
     .await;
-    assert!(hidden["items"].as_array().unwrap().is_empty());
+    assert_eq!(status, StatusCode::OK, "{found}");
+    let items = found["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1, "{found}");
+    assert!(
+        items
+            .iter()
+            .all(|item| item["document_id"] == own.to_string()),
+        "{found}"
+    );
+    assert!(!found.to_string().contains("confidential"), "{found}");
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -3465,4 +4563,103 @@ async fn title_and_settings_change_writes_no_event_but_one_audit_row(pool: PgPoo
     assert!(engine_core::log::verify_chain(&pool, DocumentId(doc))
         .await
         .is_ok());
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn new_pos_keys_are_validated_at_write_boundaries(pool: PgPool) {
+    let router = app(test_state(pool.clone()));
+    let token = bearer(seed_identity(&pool, "pos-validator@example.test").await);
+    let doc = create_document(&router, &token, "Pos Validation").await;
+    let node_id = ulid::Ulid::generate().to_string();
+
+    // Batch with empty pos returns 400 Bad Request
+    let (status, body) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc}/batch"),
+            &token,
+            &json!({
+                "ops": [{
+                    "type": "NodeCreated",
+                    "node_id": node_id,
+                    "node_type": "form",
+                    "pos": "",
+                    "fields": {}
+                }]
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "expected 400 for empty pos: {body}"
+    );
+
+    // Batch with trailing space pos "m " returns 400 Bad Request
+    let (status, body) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc}/batch"),
+            &token,
+            &json!({
+                "ops": [{
+                    "type": "NodeCreated",
+                    "node_id": node_id,
+                    "node_type": "form",
+                    "pos": "m ",
+                    "fields": {}
+                }]
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "expected 400 for trailing space pos: {body}"
+    );
+
+    // Batch with valid pos succeeds
+    let (status, body) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc}/batch"),
+            &token,
+            &json!({
+                "ops": [{
+                    "type": "NodeCreated",
+                    "node_id": node_id,
+                    "node_type": "form",
+                    "pos": "a0",
+                    "fields": {}
+                }]
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "expected 200 for valid pos: {body}");
+
+    // NodeMoved with invalid new_pos returns 400 Bad Request
+    let (status, body) = send(
+        &router,
+        auth_post(
+            &format!("/documents/{doc}/batch"),
+            &token,
+            &json!({
+                "base_seq": 1,
+                "ops": [{
+                    "type": "NodeMoved",
+                    "node_id": node_id,
+                    "new_pos": "\n"
+                }]
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "expected 400 for newline new_pos: {body}"
+    );
 }

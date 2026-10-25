@@ -27,6 +27,9 @@ pub enum OpError {
     /// it can only be moved or renamed so that a restore brings it back elsewhere.
     #[error("node {0} is deleted")]
     NodeDeleted(String),
+    /// Only a deleted node or a removed choice can be restored by a new write.
+    #[error("node {0} is already live")]
+    NodeAlreadyLive(String),
     #[error("move or remove the children of node {0} before removing it")]
     NodeHasChildren(String),
     /// A `NodeCreated`/`ChoiceAdded` reused an id already present in the tree.
@@ -100,6 +103,7 @@ pub fn validate_op(state: &DocumentState, op: &EventPayload) -> Result<(), OpErr
             field,
             value,
         } => {
+            require_not_removed(state, node_id)?;
             if field == "var_name" || field == "varName" {
                 // A deleted block may take the name it comes back with; the restore
                 // checks it.
@@ -124,6 +128,9 @@ pub fn validate_op(state: &DocumentState, op: &EventPayload) -> Result<(), OpErr
 
         EventPayload::NodeRestored { node_id } => {
             let node = require_present(state, node_id)?;
+            if !node.deleted && !state.removed_choices.contains(node_id) {
+                return Err(OpError::NodeAlreadyLive(node_id.0.clone()));
+            }
             if let Some(parent) = &node.parent_id {
                 require_live(state, parent)?;
             }
@@ -142,8 +149,12 @@ pub fn validate_op(state: &DocumentState, op: &EventPayload) -> Result<(), OpErr
             }) {
                 return Err(OpError::NodeHasChildren(node_id.0.clone()));
             }
-            // Deleting an already-deleted node is a no-op error; require it live.
-            require_live(state, node_id)?;
+            // Deleting an already-deleted node is a no-op error. A removed choice may
+            // still be tombstoned: the editors delete a question's whole subtree, removed
+            // choices included, and the removal already hides the choice.
+            if require_present(state, node_id)?.deleted {
+                return Err(OpError::NodeDeleted(node_id.0.clone()));
+            }
             Ok(())
         }
 
@@ -167,6 +178,7 @@ pub fn validate_op(state: &DocumentState, op: &EventPayload) -> Result<(), OpErr
             if choice.parent_id.as_ref() != Some(node_id) {
                 return Err(OpError::ChoiceNotFound(choice_id.0.clone()));
             }
+            require_live(state, choice_id)?;
             Ok(())
         }
 
@@ -301,6 +313,7 @@ fn validate_node_moved(
     new_parent_id: Option<&NodeId>,
 ) -> Result<(), OpError> {
     // A deleted block may move to where it comes back; the restore checks the parent.
+    require_not_removed(state, node_id)?;
     let node = require_present(state, node_id)?;
     let Some(new_parent_id) = new_parent_id else {
         // Moving to the root: legal only for a root-eligible type.
@@ -376,10 +389,17 @@ fn require_live<'a>(
     node_id: &NodeId,
 ) -> Result<&'a MaterializedNode, OpError> {
     let node = require_present(state, node_id)?;
-    if node.deleted {
+    if node.deleted || state.removed_choices.contains(node_id) {
         return Err(OpError::NodeDeleted(node_id.0.clone()));
     }
     Ok(node)
+}
+
+fn require_not_removed(state: &DocumentState, node_id: &NodeId) -> Result<(), OpError> {
+    if state.removed_choices.contains(node_id) {
+        return Err(OpError::NodeDeleted(node_id.0.clone()));
+    }
+    Ok(())
 }
 
 fn require_choice_bearing(node: &MaterializedNode) -> Result<(), OpError> {
@@ -467,6 +487,88 @@ mod tests {
             suggestions: BTreeMap::new(),
             removed_choices: BTreeSet::new(),
         }
+    }
+
+    #[test]
+    fn restoring_requires_a_deleted_node_or_removed_choice() {
+        let mut s = state(vec![
+            n("root", NodeType::Form, None, None),
+            n("item", NodeType::Item, Some("root"), None),
+            n("choice", NodeType::Choice, Some("item"), None),
+        ]);
+        let restore = |id: &str| EventPayload::NodeRestored {
+            node_id: NodeId(id.into()),
+        };
+        assert_eq!(
+            validate_op(&s, &restore("item")),
+            Err(OpError::NodeAlreadyLive("item".into()))
+        );
+        assert!(matches!(
+            validate_op(&s, &restore("missing")),
+            Err(OpError::NodeNotFound(_))
+        ));
+        s.nodes.get_mut(&NodeId("item".into())).unwrap().deleted = true;
+        validate_op(&s, &restore("item")).unwrap();
+        s.nodes.get_mut(&NodeId("item".into())).unwrap().deleted = false;
+        s.removed_choices.insert(NodeId("choice".into()));
+        validate_op(&s, &restore("choice")).unwrap();
+        s.nodes.get_mut(&NodeId("item".into())).unwrap().deleted = true;
+        assert!(matches!(
+            validate_op(&s, &restore("choice")),
+            Err(OpError::NodeDeleted(_))
+        ));
+    }
+
+    #[test]
+    fn historical_live_restore_keeps_replaying_without_new_write_validation() {
+        let mut s = state(vec![n("legacy", NodeType::Form, None, None)]);
+        let before = s.clone();
+        let op = EventPayload::NodeRestored {
+            node_id: NodeId("legacy".into()),
+        };
+        assert!(matches!(
+            validate_op(&s, &op),
+            Err(OpError::NodeAlreadyLive(_))
+        ));
+        crate::materializer::apply_payload(&mut s, &op).unwrap();
+        assert_eq!(s, before);
+    }
+
+    #[test]
+    fn a_removed_choice_can_be_tombstoned_but_not_edited_or_moved() {
+        let mut s = state(vec![
+            n("root", NodeType::Form, None, None),
+            n("item", NodeType::Item, Some("root"), None),
+            n("choice", NodeType::Choice, Some("item"), None),
+        ]);
+        s.removed_choices.insert(NodeId("choice".into()));
+        let id = NodeId("choice".into());
+        validate_op(
+            &s,
+            &EventPayload::NodeDeleted {
+                node_id: id.clone(),
+            },
+        )
+        .unwrap();
+        for op in [
+            EventPayload::FieldEdited {
+                node_id: id.clone(),
+                field: "label".into(),
+                value: json!("x"),
+            },
+            EventPayload::NodeMoved {
+                node_id: id.clone(),
+                new_parent_id: Some(NodeId("item".into())),
+                new_pos: "b0".into(),
+            },
+        ] {
+            assert!(matches!(validate_op(&s, &op), Err(OpError::NodeDeleted(_))));
+        }
+        s.nodes.get_mut(&id).unwrap().deleted = true;
+        assert!(matches!(
+            validate_op(&s, &EventPayload::NodeDeleted { node_id: id }),
+            Err(OpError::NodeDeleted(_))
+        ));
     }
 
     fn created(id: &str, ty: NodeType, parent: Option<&str>, var: Option<&str>) -> EventPayload {
@@ -810,5 +912,39 @@ mod tests {
             .unwrap_err(),
             OpError::SuggestionNotFound(_)
         ));
+    }
+
+    #[test]
+    fn historical_replay_retains_arbitrary_pos_keys() {
+        let s = state(vec![n("01F", NodeType::Form, None, None)]);
+        // Historical logs may contain unusual or legacy position keys.
+        // validate_op is total and permissive over pos during historical replay.
+        for legacy_pos in ["", "\n", "\t", "m ", "🦀", "any legacy string"] {
+            let create = EventPayload::NodeCreated {
+                node_id: NodeId("01NEW".into()),
+                node_type: NodeType::Item,
+                parent_id: Some(NodeId("01F".into())),
+                pos: legacy_pos.into(),
+                fields: json!({}),
+                var_name: None,
+            };
+            assert!(validate_op(&s, &create).is_ok(), "failed on {legacy_pos:?}");
+        }
+
+        let with_item = state(vec![
+            n("01F", NodeType::Form, None, None),
+            n("01I", NodeType::Item, Some("01F"), None),
+        ]);
+        for legacy_pos in ["", "\n", "\t", "m ", "🦀"] {
+            let mv = EventPayload::NodeMoved {
+                node_id: NodeId("01I".into()),
+                new_parent_id: Some(NodeId("01F".into())),
+                new_pos: legacy_pos.into(),
+            };
+            assert!(
+                validate_op(&with_item, &mv).is_ok(),
+                "failed on {legacy_pos:?}"
+            );
+        }
     }
 }

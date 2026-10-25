@@ -840,6 +840,14 @@ pub fn diff(from: &DocumentState, to: &DocumentState) -> Vec<EventPayload> {
             continue;
         }
         let p = prior.unwrap();
+        // Removed choices cannot move or be edited until explicitly restored.
+        // Ordinary tombstones still move/rename before their restore.
+        let restored_choice = p.deleted && from.removed_choices.contains(&n.id);
+        if restored_choice {
+            result.push(EventPayload::NodeRestored {
+                node_id: n.id.clone(),
+            });
+        }
         let renamed_later = (p.var_name != n.var_name || p.deleted) && name_later(n);
         if p.parent_id != n.parent_id || p.pos != n.pos {
             result.push(EventPayload::NodeMoved {
@@ -863,9 +871,11 @@ pub fn diff(from: &DocumentState, to: &DocumentState) -> Vec<EventPayload> {
                     value: json!(name),
                 });
             }
-            result.push(EventPayload::NodeRestored {
-                node_id: n.id.clone(),
-            });
+            if !restored_choice {
+                result.push(EventPayload::NodeRestored {
+                    node_id: n.id.clone(),
+                });
+            }
         }
         let keys: BTreeSet<_> = p
             .current_fields
@@ -2207,6 +2217,44 @@ mod tests {
             apply(&from, &to),
             (Some("q".into()), Some("r".into()), Some("s".into()))
         );
+    }
+
+    #[test]
+    fn removed_choice_diff_restores_before_moving_or_editing() {
+        let id = |s: &str| NodeId(s.into());
+        let mut from = state();
+        for (name, kind, parent) in [
+            ("item", "item", "root"),
+            ("other", "item", "root"),
+            ("choice", "choice", "item"),
+        ] {
+            let mut node = from.nodes[&id("root")].clone();
+            node.id = id(name);
+            node.node_type = kind.into();
+            node.parent_id = Some(id(parent));
+            node.current_fields = json!({"label":"Original"});
+            node.var_name = None;
+            from.nodes.insert(node.id.clone(), node);
+        }
+        from.removed_choices.insert(id("choice"));
+        for parent in ["item", "other"] {
+            let mut to = from.clone();
+            to.removed_choices.clear();
+            let choice = to.nodes.get_mut(&id("choice")).unwrap();
+            choice.parent_id = Some(id(parent));
+            choice.pos = "moved".into();
+            choice.current_fields["label"] = json!("Restored");
+            let ops = diff(&from, &to);
+            assert!(
+                matches!(&ops[0], EventPayload::NodeRestored { node_id } if *node_id == id("choice"))
+            );
+            let mut applied = from.clone();
+            for op in ops {
+                crate::ops::validate_op(&applied, &op).unwrap();
+                crate::materializer::apply_payload(&mut applied, &op).unwrap();
+            }
+            assert_eq!(applied, to);
+        }
     }
 
     #[test]
