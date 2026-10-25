@@ -73,7 +73,7 @@ argon2 = { version = "0.5", default-features = false, features = ["alloc"] }
 
 # Auth: Paseto v4 local tokens (symmetric AEAD) instead of JWT — no alg-confusion or
 # `none`-algorithm footguns (docs/17, NFR-8). `hex` decodes the 32-byte signing key.
-pasetors = "0.7"
+pasetors = "0.8"
 hex = "0.4"
 
 # Errors + logging
