@@ -9,7 +9,10 @@
     <script src="launcher.js" defer></script>
   </head>
   <body>
-    <main>
+    <!-- The client (client/src, built into launcher.js) draws itself here. The launcher's own
+         controls below keep their ids and texts; the client moves them into Settings, Accounts. -->
+    <div id="app"></div>
+    <main id="launcher">
       <header>
         <img src="mark.svg" alt="" width="48" height="48" />
         <h1>Dynodoc</h1>
