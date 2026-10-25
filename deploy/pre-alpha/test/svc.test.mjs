@@ -154,3 +154,13 @@ test('ulids and position keys', () => {
   assert.ok(m > '00000016' && m < '00000032');
   assert.ok(between('00000016') > '00000016');
 });
+
+test('a same-origin form posted under no-referrer (Origin: null) is accepted; a cross-site one is not', async () => {
+  const { handler } = setup();
+  const ok = await call(handler, 'POST', '/svc/visitor/start', { headers: { origin: 'null', 'sec-fetch-site': 'same-origin' }, body: '' });
+  assert.notEqual(ok.status, 403);
+  const cross = await call(handler, 'POST', '/svc/visitor/start', { headers: { origin: 'null', 'sec-fetch-site': 'cross-site' }, body: '' });
+  assert.equal(cross.status, 403);
+  const bare = await call(handler, 'POST', '/svc/visitor/start', { headers: { origin: 'null' }, body: '' });
+  assert.equal(bare.status, 403);
+});

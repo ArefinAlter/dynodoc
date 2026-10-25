@@ -138,7 +138,11 @@ export function makeHandler({ db, api, cfg, now = () => Date.now() }) {
     return { token: row.token, email: row.email, display_name: row.display_name, expires_at: new Date(expires).toISOString() };
   }
 
-  const sameOrigin = (req) => req.headers.origin === cfg.origin;
+  // The app sends Referrer-Policy: no-referrer, so Chrome posts same-origin forms with `Origin: null`. Accept that
+  // only when the browser itself marks the request as same-origin (Sec-Fetch-Site cannot be set by a page).
+  const sameOrigin = (req) =>
+    req.headers.origin === cfg.origin ||
+    (req.headers.origin === 'null' && req.headers['sec-fetch-site'] === 'same-origin');
   const clientIp = (req) => String(req.headers['x-real-ip'] || req.socket.remoteAddress || 'unknown');
 
   return async function handle(req, res) {
