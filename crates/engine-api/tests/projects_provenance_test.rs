@@ -1413,3 +1413,84 @@ async fn connector_rechecks_current_access_sessions_expiry_and_private_account_e
     assert_eq!(remaining, 0);
     runtime.close().await;
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn bundle_reusing_foreign_node_id_is_rejected_at_upload(pool: PgPool) {
+    let runtime = common::RuntimeDatabase::new(pool).await;
+    let pool = runtime.pool.clone();
+    let router = app(test_state(pool.clone()));
+    let owner = identity(&pool, "bundle-id-collision@example.test").await;
+    let (foreign, foreign_node) = document(&router, &owner).await;
+    let (target, block) = document(&router, &owner).await;
+    let (status, grant) = post(
+        &router,
+        &format!("/documents/{target}/connectors"),
+        &owner,
+        json!({"host":"word"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{grant}");
+    let connector = format!("Bearer {}", grant["token"].as_str().unwrap());
+    let checkpoint = get(
+        &router,
+        &format!("/connector/documents/{target}/checkpoint"),
+        &connector,
+    )
+    .await
+    .1;
+    let target_root: String =
+        sqlx::query_scalar("select parent_id from node where id=$1 and document_id=$2")
+            .bind(&block)
+            .bind(target)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let foreign_root: String =
+        sqlx::query_scalar("select parent_id from node where id=$1 and document_id=$2")
+            .bind(&foreign_node)
+            .bind(foreign)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let mut input = upload(target, &checkpoint, &block, "word", true);
+    input["bundle"]["changes"][0]["operation"] = json!({"type":"NodeCreated","node_id":foreign_node,"node_type":"item","parent_id":target_root,"pos":"a1","fields":{"label":"Synthetic imported block","type":"text"}});
+    let (status, body) = post(
+        &router,
+        &format!("/connector/documents/{target}/bundles"),
+        &connector,
+        input.clone(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert!(!body.to_string().contains(&foreign.to_string()));
+    assert!(!body.to_string().contains(&foreign_node));
+    for table in ["workspace_draft", "provenance_bundle"] {
+        let count: i64 = sqlx::query_scalar(&format!(
+            "select count(*) from {table} where document_id=$1"
+        ))
+        .bind(target)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(count, 0, "{table}");
+    }
+    let count: i64 = sqlx::query_scalar("select count(*) from event where document_id=$1")
+        .bind(target)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 2, "upload must not append canonical events");
+    let fresh = ulid::Ulid::generate().to_string();
+    input["bundle"]["changes"][0]["operation"]["node_id"] = json!(fresh);
+    let endpoint = format!("/connector/documents/{target}/bundles");
+    let (status, created) = post(&router, &endpoint, &connector, input.clone()).await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    // The private upload does not reserve the ID. Another document can take it;
+    // a retry must replay its existing receipt before the availability preflight.
+    let (status, body) = post(&router, &format!("/documents/{foreign}/ops/node-create"), &owner,
+        json!({"node_id":fresh,"node_type":"item","parent_id":foreign_root,"pos":"a1","fields":{"type":"text"}})).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, replay) = post(&router, &endpoint, &connector, input).await;
+    assert_eq!(status, StatusCode::OK, "{replay}");
+    assert_eq!(replay, created);
+}

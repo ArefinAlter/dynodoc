@@ -890,6 +890,58 @@ mod tests {
         repo: LocalRepository,
     }
 
+    async fn remove_test_database(path: &std::path::Path) -> std::io::Result<()> {
+        // SQLite shutdown is awaited first. Windows scanners can briefly retain
+        // a handle afterwards; retry only sharing/locking violations, boundedly.
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+        let mut delay = std::time::Duration::from_millis(25);
+        loop {
+            match std::fs::remove_file(path) {
+                Ok(()) => return Ok(()),
+                Err(error)
+                    if cfg!(windows)
+                        && matches!(error.raw_os_error(), Some(32 | 33))
+                        && tokio::time::Instant::now() < deadline =>
+                {
+                    tokio::time::sleep(
+                        delay.min(deadline.saturating_duration_since(tokio::time::Instant::now())),
+                    )
+                    .await;
+                    delay = (delay * 2).min(std::time::Duration::from_millis(250));
+                }
+                Err(error) => return Err(error),
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn database_cleanup_waits_for_a_windows_sharing_handle() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let fixture = Fixture::new().await;
+        let path = fixture.path.clone();
+        fixture.repo.close().await;
+        let handle = std::fs::OpenOptions::new()
+            .read(true)
+            // Permit readers/writers, but deliberately deny file deletion.
+            .share_mode(3)
+            .open(&path)
+            .unwrap();
+        assert_eq!(
+            std::fs::remove_file(&path).unwrap_err().raw_os_error(),
+            Some(32)
+        );
+        let release = std::thread::spawn(move || {
+            // Hold it longer than the old 20 * 25 ms cleanup window.
+            std::thread::sleep(std::time::Duration::from_millis(750));
+            drop(handle);
+        });
+        let result = remove_test_database(&path).await;
+        release.join().unwrap();
+        result.expect("cleanup after sharing handle is released");
+        assert!(!path.exists());
+    }
+
     impl Fixture {
         async fn new() -> Self {
             let path = std::env::temp_dir().join(format!(
@@ -940,15 +992,9 @@ mod tests {
         }
         async fn finish(self) {
             self.repo.close().await;
-            for attempt in 0..20 {
-                match std::fs::remove_file(&self.path) {
-                    Ok(()) => return,
-                    Err(_) if attempt < 19 => {
-                        tokio::time::sleep(std::time::Duration::from_millis(25)).await
-                    }
-                    Err(error) => panic!("test database cleanup: {error}"),
-                }
-            }
+            remove_test_database(&self.path)
+                .await
+                .expect("test database cleanup");
         }
     }
 

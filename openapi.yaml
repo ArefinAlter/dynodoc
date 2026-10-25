@@ -5390,10 +5390,24 @@ paths:
       parameters:
       - name: q
         in: query
-        description: Literal search term, 2–200 characters
+        description: Literal search term, 2–200 UTF-8 bytes
         required: true
         schema:
           type: string
+      - name: project_id
+        in: query
+        description: Search only this project and its folders; requires current project membership
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: offset
+        in: query
+        description: Result offset, 0–1000000; 50 results per page
+        required: false
+        schema:
+          type: integer
+          format: int64
       responses:
         '200':
           description: Success; requires document membership
@@ -7647,6 +7661,8 @@ components:
           type:
           - string
           - 'null'
+          description: A new canonical uppercase ULID; historical node readers remain permissive.
+          pattern: ^[0-7][0-9A-HJKMNP-TV-Z]{25}$
         node_type:
           type: string
         parent_id:
@@ -7655,6 +7671,7 @@ components:
           - 'null'
         pos:
           type: string
+          description: 'Position key among siblings: 1 to 8,192 bytes of printable ASCII, not ending in a space.'
         var_name:
           type:
           - string

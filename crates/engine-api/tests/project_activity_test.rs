@@ -776,3 +776,295 @@ async fn admin_project_rows_and_audit_detail_are_gated_filtered_and_bounded(pool
     );
     runtime.close().await;
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn project_search_scopes_folders_and_rechecks_membership(pool: PgPool) {
+    let runtime = common::RuntimeDatabase::new(pool.clone()).await;
+    let router = app(state(runtime.pool.clone(), ""));
+    let (owner, _) = person(&pool, "search-owner@example.test", "Owner").await;
+    let (member, member_id) = person(&pool, "search-member@example.test", "Member").await;
+    let (stranger, _) = person(&pool, "search-stranger@example.test", "Stranger").await;
+    let pid = project(
+        &router,
+        &owner,
+        "Selected",
+        &[("search-member@example.test", "editor")],
+    )
+    .await;
+    let other = project(&router, &owner, "Other", &[]).await;
+    let (status, folder) = post(
+        &router,
+        "/spaces",
+        &owner,
+        json!({"name":"Nested", "kind":"folder", "parent_id":pid}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{folder}");
+    let folder = folder["id"].as_str().unwrap();
+    let (doc, block) = document(&router, &owner, "Selected report").await;
+    move_into(&router, &owner, doc, folder).await;
+    let (elsewhere, _) = document(&router, &owner, "Other report").await;
+    move_into(&router, &owner, elsewhere, &other).await;
+    let (_personal, _) = document(&router, &owner, "Personal report").await;
+    let uri = format!("/search?q=Original&project_id={pid}");
+    for actor in [&owner, &member] {
+        let (status, found) = get(&router, &uri, actor).await;
+        assert_eq!(status, StatusCode::OK, "{found}");
+        assert_eq!(items(&found).len(), 1, "{found}");
+        assert_eq!(found["items"][0]["document_id"], doc.to_string());
+        assert_eq!(found["more"], false);
+    }
+    assert_eq!(
+        items(&get(&router, "/search?q=Original", &owner).await.1).len(),
+        3
+    );
+    let (status, draft) = post(
+        &router,
+        &format!("/documents/{doc}/drafts"),
+        &owner,
+        json!({"name":"Private"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{draft}");
+    let draft = draft["id"].as_str().unwrap();
+    let (status, body) = post(&router, &format!("/documents/{doc}/drafts/{draft}"), &owner, json!({"revision":0, "ops":[{"type":"FieldEdited","node_id":block,"field":"label","value":"SecretHidden"}]})).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    for actor in [&owner, &member] {
+        assert!(items(
+            &get(
+                &router,
+                &format!("/search?q=SecretHidden&project_id={pid}"),
+                actor
+            )
+            .await
+            .1
+        )
+        .is_empty());
+    }
+    for actor in [&stranger, &member] {
+        let forbidden = if actor == &member { &other } else { &pid };
+        for term in ["Original", "x"] {
+            assert_eq!(
+                get(
+                    &router,
+                    &format!("/search?q={term}&project_id={forbidden}"),
+                    actor
+                )
+                .await
+                .0,
+                StatusCode::FORBIDDEN
+            );
+        }
+    }
+    assert_eq!(get(&router, &uri, "").await.0, StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        get(
+            &router,
+            &format!("/search?q=Original&project_id={}", Uuid::new_v4()),
+            &owner
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        get(&router, "/search?q=Original&project_id=invalid", &owner)
+            .await
+            .0,
+        StatusCode::BAD_REQUEST
+    );
+    sqlx::query("delete from space_member where space_id=$1 and identity_id=$2")
+        .bind(Uuid::parse_str(&pid).unwrap())
+        .bind(member_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(get(&router, &uri, &member).await.0, StatusCode::FORBIDDEN);
+    runtime.close().await;
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn project_search_pages_tied_positions_and_treats_wildcards_literally(pool: PgPool) {
+    let runtime = common::RuntimeDatabase::new(pool.clone()).await;
+    let router = app(state(runtime.pool.clone(), ""));
+    let (owner, _) = person(&pool, "search-pages@example.test", "Owner").await;
+    let pid = project(&router, &owner, "Search pages", &[]).await;
+    let (doc, block) = document(&router, &owner, "Corpus").await;
+    move_into(&router, &owner, doc, &pid).await;
+    let mut ids = Vec::new();
+    let ops: Vec<_> = (0..53).flat_map(|_| {
+        let id = ulid::Ulid::generate().to_string(); ids.push(id.clone());
+        [json!({"type":"ChoiceAdded", "node_id":block, "choice_id":id, "fields":{"label":"Literal %_ fixture"}}), json!({"type":"NodeMoved", "node_id":id, "new_parent_id":block, "new_pos":"a0"})]
+    }).collect();
+    let (status, body) = post(
+        &router,
+        &format!("/documents/{doc}/batch"),
+        &owner,
+        json!({"ops":ops}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    ids.sort();
+    let uri = format!("/search?q=%25_&project_id={pid}");
+    let (status, first) = get(&router, &uri, &owner).await;
+    assert_eq!(status, StatusCode::OK, "{first}");
+    assert_eq!(first["more"], true);
+    assert_eq!(items(&first).len(), 50);
+    let second = get(&router, &format!("{uri}&offset=50"), &owner).await.1;
+    assert_eq!(second["more"], false);
+    assert_eq!(second["offset"], 50);
+    let found: Vec<_> = items(&first)
+        .into_iter()
+        .chain(items(&second))
+        .map(|x| x["node_id"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(found, ids);
+    assert_eq!(get(&router, &uri, &owner).await.1, first);
+    assert!(items(&get(&router, &format!("{uri}&offset=100"), &owner).await.1).is_empty());
+    for offset in [-1, 1_000_001] {
+        assert_eq!(
+            get(&router, &format!("{uri}&offset={offset}"), &owner)
+                .await
+                .0,
+            StatusCode::BAD_REQUEST
+        );
+    }
+    // A title-only match still returns a document that has no node rows.
+    let (status, empty) = post(
+        &router,
+        "/documents",
+        &owner,
+        json!({"title":"Literal %_ empty"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let empty = Uuid::parse_str(empty["id"].as_str().unwrap()).unwrap();
+    move_into(&router, &owner, empty, &pid).await;
+    let found = get(&router, &format!("{uri}&offset=0"), &owner).await.1;
+    assert!(items(&found)
+        .iter()
+        .any(|x| x["document_id"] == empty.to_string() && x["node_id"].is_null()));
+    let (status, body) = post(
+        &router,
+        &format!("/documents/{empty}/metadata"),
+        &owner,
+        json!({"archived":true}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(!items(&get(&router, &uri, &owner).await.1)
+        .iter()
+        .any(|x| x["document_id"] == empty.to_string()));
+    runtime.close().await;
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn project_request_notifications_require_current_watch_and_membership(pool: PgPool) {
+    let runtime = common::RuntimeDatabase::new(pool.clone()).await;
+    let router = app(state(runtime.pool.clone(), ""));
+    let (owner, owner_id) = person(&pool, "watch-owner@example.test", "Owner").await;
+    let (watcher, watcher_id) = person(&pool, "watch-reader@example.test", "Reader").await;
+    let (_, editor_id) = person(&pool, "watch-editor@example.test", "Editor").await;
+    let (_, ignored_id) = person(&pool, "watch-ignored@example.test", "Ignored").await;
+    let (revoked, revoked_id) = person(&pool, "watch-revoked@example.test", "Revoked").await;
+    let (disabled, disabled_id) = person(&pool, "watch-disabled@example.test", "Disabled").await;
+    let pid = project(
+        &router,
+        &owner,
+        "Watch policy",
+        &[
+            ("watch-reader@example.test", "viewer"),
+            ("watch-editor@example.test", "editor"),
+            ("watch-ignored@example.test", "viewer"),
+            ("watch-revoked@example.test", "viewer"),
+            ("watch-disabled@example.test", "viewer"),
+        ],
+    )
+    .await;
+    let (doc, _) = document(&router, &owner, "Notification target").await;
+    move_into(&router, &owner, doc, &pid).await;
+    for actor in [&watcher, &revoked, &disabled] {
+        let (status, body) = post(
+            &router,
+            &format!("/projects/{pid}/watch"),
+            actor,
+            json!({"level":"requests"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+    let project_id = Uuid::parse_str(&pid).unwrap();
+    sqlx::query("delete from space_member where space_id=$1 and identity_id=$2")
+        .bind(project_id)
+        .bind(revoked_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("update identity set disabled_at=now() where id=$1")
+        .bind(disabled_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let subject = Uuid::new_v4();
+    {
+        let mut db = runtime.pool.acquire().await.unwrap();
+        engine_api::notifications::notify_reviewers(
+            &mut db,
+            doc,
+            owner_id,
+            "change_request_submitted",
+            Some(subject),
+            json!({}),
+        )
+        .await
+        .unwrap();
+    }
+    let recipients: Vec<Uuid> = sqlx::query_scalar(
+        "select recipient_id from notification where subject_id=$1 order by recipient_id",
+    )
+    .bind(subject)
+    .fetch_all(&runtime.pool)
+    .await
+    .unwrap();
+    let mut expected = vec![editor_id, watcher_id];
+    expected.sort();
+    assert_eq!(recipients, expected);
+    assert!(!recipients.contains(&owner_id));
+    assert!(!recipients.contains(&ignored_id));
+    assert!(!recipients.contains(&revoked_id));
+    assert!(!recipients.contains(&disabled_id));
+    let inbox = get(&router, "/notifications", &watcher).await.1;
+    assert!(items(&inbox)
+        .iter()
+        .any(|n| n["kind"] == "change_request_submitted"));
+    let (status, body) = post(
+        &router,
+        &format!("/projects/{pid}/watch"),
+        &watcher,
+        json!({"level":"ignore"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let second = Uuid::new_v4();
+    {
+        let mut db = runtime.pool.acquire().await.unwrap();
+        engine_api::notifications::notify_reviewers(
+            &mut db,
+            doc,
+            owner_id,
+            "change_request_submitted",
+            Some(second),
+            json!({}),
+        )
+        .await
+        .unwrap();
+    }
+    let recipients: Vec<Uuid> =
+        sqlx::query_scalar("select recipient_id from notification where subject_id=$1")
+            .bind(second)
+            .fetch_all(&runtime.pool)
+            .await
+            .unwrap();
+    assert_eq!(recipients, vec![editor_id]);
+    runtime.close().await;
+}

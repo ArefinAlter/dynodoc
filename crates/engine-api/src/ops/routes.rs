@@ -45,12 +45,15 @@ pub fn router() -> Router<AppState> {
 /// `POST /ops/node-create`. `node_id` is optional; absent, the server mints a ULID.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct NodeCreateRequest {
+    /// A new canonical uppercase ULID; historical node readers remain permissive.
     #[serde(default)]
+    #[schema(pattern = "^[0-7][0-9A-HJKMNP-TV-Z]{25}$")]
     pub node_id: Option<String>,
     #[schema(value_type = String)]
     pub node_type: NodeType,
     #[serde(default)]
     pub parent_id: Option<String>,
+    /// Position key among siblings: 1 to 8,192 bytes of printable ASCII, not ending in a space.
     pub pos: String,
     #[serde(default)]
     pub fields: Value,
@@ -317,8 +320,10 @@ async fn write(
     path: &str,
     op: EventPayload,
 ) -> Result<Json<Value>, ApiError> {
+    super::pos::validate_operation_pos(&op)?;
     let actor = IdentityId(auth.identity_id);
     with_idempotency(state, headers, actor, path, document_id, || async {
+        super::ids::new_identities(&op)?;
         let event = apply::apply_op(state, document_id, actor, op.clone()).await?;
         Ok(json!({ "event": event }))
     })

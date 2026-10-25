@@ -371,6 +371,120 @@ mod tests {
         }
     }
 
+    #[test]
+    fn historical_restore_of_a_live_node_still_folds_identically() {
+        let created = event(
+            1,
+            EventPayload::NodeCreated {
+                node_id: NodeId("legacy-node".into()),
+                node_type: engine_shared::NodeType::Form,
+                parent_id: None,
+                pos: "legacy-pos".into(),
+                fields: json!({"title":"Historical"}),
+                var_name: None,
+            },
+        );
+        let before = Materializer::fold(std::slice::from_ref(&created)).unwrap();
+        let restored = event(
+            2,
+            EventPayload::NodeRestored {
+                node_id: NodeId("legacy-node".into()),
+            },
+        );
+        assert_eq!(Materializer::fold(&[created, restored]).unwrap(), before);
+    }
+
+    #[test]
+    fn historical_removed_choice_edits_still_replay() {
+        let root = NodeId("root".into());
+        let question = NodeId("question".into());
+        let choice = NodeId("choice".into());
+        let before = json!({"type":"paragraph","content":[{"type":"text","text":"Old"}]});
+        let after = json!({"type":"paragraph","content":[{"type":"text","text":"New"}]});
+        let patch = crate::richtext::make_patch(&before, &after).unwrap();
+        let operations = vec![
+            EventPayload::NodeCreated {
+                node_id: root.clone(),
+                node_type: engine_shared::NodeType::Form,
+                parent_id: None,
+                pos: "a0".into(),
+                fields: json!({}),
+                var_name: None,
+            },
+            EventPayload::NodeCreated {
+                node_id: question.clone(),
+                node_type: engine_shared::NodeType::Item,
+                parent_id: Some(root),
+                pos: "a0".into(),
+                fields: json!({}),
+                var_name: None,
+            },
+            EventPayload::ChoiceAdded {
+                node_id: question.clone(),
+                choice_id: choice.clone(),
+                fields: json!({"label":"Old", "content":before}),
+            },
+            EventPayload::ChoiceRemoved {
+                node_id: question.clone(),
+                choice_id: choice.clone(),
+            },
+            EventPayload::FieldEdited {
+                node_id: choice.clone(),
+                field: "label".into(),
+                value: json!("New"),
+            },
+            EventPayload::RichTextPatched {
+                node_id: choice.clone(),
+                patch,
+            },
+            EventPayload::NodeMoved {
+                node_id: choice.clone(),
+                new_parent_id: Some(question.clone()),
+                new_pos: "b0".into(),
+            },
+            EventPayload::ChoiceRemoved {
+                node_id: question,
+                choice_id: choice.clone(),
+            },
+        ];
+        let events: Vec<_> = operations
+            .into_iter()
+            .enumerate()
+            .map(|(i, op)| event(i as i64 + 1, op))
+            .collect();
+        let state = Materializer::fold(&events).unwrap();
+        let prefix = Materializer::fold(&events[..4]).unwrap();
+        let snapshot = Snapshot {
+            id: SnapshotId(Uuid::nil()),
+            document_id: DocumentId(Uuid::nil()),
+            through_seq: 4,
+            state: serde_json::to_value(&prefix).unwrap(),
+            merkle_root: crate::snapshot::merkle_root(&prefix).unwrap().to_vec(),
+            event_chain_hash: vec![0; 32],
+            created_at: chrono::Utc::now(),
+        };
+        assert_eq!(
+            Materializer::from_snapshot(&snapshot, &events[4..]).unwrap(),
+            state
+        );
+        assert!(state.removed_choices.contains(&choice));
+        assert!(!state.nodes[&choice].deleted);
+        assert_eq!(state.nodes[&choice].current_fields["label"], "New");
+        assert_eq!(state.nodes[&choice].current_fields["content"], after);
+        assert_eq!(state.nodes[&choice].pos, "b0");
+        assert!(matches!(
+            crate::ops::validate_op(
+                &state,
+                &EventPayload::FieldEdited {
+                    node_id: choice,
+                    field: "label".into(),
+                    value: json!("Another")
+                }
+            ),
+            Err(crate::ops::OpError::NodeDeleted(_))
+        ));
+    }
+
     // Materialization correctness at scale: a 1000-node snapshot + 500-event tail
     // folds to the right state. The wall-clock perf target (<10 ms, release build) is
     // the deferred `criterion` bench — a hard timing assert in a debug `cargo test`

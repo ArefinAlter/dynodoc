@@ -72,6 +72,8 @@ async fn batch(
     auth: AuthContext,
     Json(mut req): Json<BatchRequest>,
 ) -> Result<Json<Value>, ApiError> {
+    crate::ops::ids::operations(&req.ops)?;
+    crate::ops::pos::validate_operations_pos(&req.ops)?;
     if req.ops.is_empty() || req.ops.len() > 20_000 {
         return Err(bad(
             "A batch must contain 1–5000 changes, or up to 20,000 initial import nodes",
@@ -590,6 +592,8 @@ async fn edit_draft(
     auth: AuthContext,
     Json(req): Json<BatchRequest>,
 ) -> Result<Json<Value>, ApiError> {
+    crate::ops::ids::operations(&req.ops)?;
+    crate::ops::pos::validate_operations_pos(&req.ops)?;
     if req.ops.is_empty() || req.ops.len() > 5000 {
         return Err(bad("A draft save must contain 1–5000 changes"));
     }
@@ -605,6 +609,7 @@ async fn edit_draft(
             reason: "This draft changed in another tab. Reopen it before saving.".into(),
         });
     }
+    apply::ensure_new_node_ids_available(&mut tx, &req.ops).await?;
     let base:Value=sqlx::query_scalar(&format!("select base_state from workspace_draft where id=$1 and document_id=$2 and {owned} and merged_at is null for update")).bind(draft).bind(id).bind(auth.identity_id).fetch_optional(&mut *tx).await?.ok_or(ApiError::NotFound)?;
     let mut current = crate::draft_storage::decode(&mut tx, DocumentId(id), &base).await?;
     let prior: Vec<Value> =
@@ -934,6 +939,8 @@ async fn sync_draft(
     auth: AuthContext,
     Json(req): Json<SyncRequest>,
 ) -> Result<Json<Value>, ApiError> {
+    crate::ops::ids::selection(req.included_nodes.as_deref().unwrap_or_default())?;
+    crate::ops::ids::selection(&req.dropped_nodes)?;
     let doc = DocumentId(id);
     let actor = IdentityId(auth.identity_id);
     let (mut tx, role, mut team) = apply::begin_write(&state, doc, actor).await?;
@@ -1142,19 +1149,22 @@ async fn restore_version(
 #[derive(Deserialize)]
 struct SearchQuery {
     q: String,
+    project_id: Option<Uuid>,
+    #[serde(default)]
+    offset: i64,
 }
-#[utoipa::path(get, path="/search", tag="workspace", params(("q" = String, Query, description = "Literal search term, 2–200 characters")), responses((status=200, description="Success; requires document membership", body=Value),(status=401, description="Sign in required"),(status=403, description="Insufficient access"),(status=409, description="Review a concurrent change before retrying")))]
+#[utoipa::path(get, path="/search", tag="workspace", params(("q" = String, Query, description = "Literal search term, 2–200 UTF-8 bytes"), ("project_id" = Option<Uuid>, Query, description = "Search only this project and its folders; requires current project membership"), ("offset" = Option<i64>, Query, description = "Result offset, 0–1000000; 50 results per page")), responses((status=200, description="Success; requires document membership", body=Value),(status=401, description="Sign in required"),(status=403, description="Insufficient access"),(status=409, description="Review a concurrent change before retrying")))]
 async fn search(
     State(state): State<AppState>,
     axum::extract::Query(query): axum::extract::Query<SearchQuery>,
     auth: AuthContext,
 ) -> Result<Json<Value>, ApiError> {
-    let term = query.q.trim();
-    if term.len() < 2 {
-        return Ok(Json(json!({"items":[]})));
+    if !(0..=1_000_000).contains(&query.offset) {
+        return Err(bad("Invalid page offset"));
     }
+    let term = query.q.trim();
     if term.len() > 200 {
-        return Err(bad("Search in 200 characters or fewer"));
+        return Err(bad("Search in 200 bytes or fewer"));
     }
     let _budget = state.workloads.enter(auth.identity_id, None)?;
     let mut tx = state.pool.begin().await?;
@@ -1163,9 +1173,27 @@ async fn search(
     sqlx::query("set local statement_timeout = '2s'")
         .execute(&mut *tx)
         .await?;
-    let items:Vec<Value>=sqlx::query_scalar("select jsonb_build_object('document_id',d.id,'title',d.title,'node_id',n.id,'text',left(n.current_fields::text,4000)) from document d left join node n on n.document_id=d.id and not n.deleted where effective_document_role(d.id,$1) is not null and d.status<>'archived' and (strpos(lower(d.title),lower($2))>0 or strpos(lower(n.current_fields::text),lower($2))>0) order by d.updated_at desc,n.pos limit 50").bind(auth.identity_id).bind(term).fetch_all(&mut *tx).await?;
+    if let Some(project) = query.project_id {
+        crate::projects::require(&mut tx, project, auth.identity_id).await?;
+    }
+    if term.len() < 2 {
+        return Ok(Json(
+            json!({"items":[], "more":false, "offset":query.offset}),
+        ));
+    }
+    let items: Vec<Value> = sqlx::query_scalar(
+        "select jsonb_build_object('document_id',d.id,'title',d.title,'node_id',n.id,'text',left(n.current_fields::text,4000))
+         from document d left join node n on n.document_id=d.id and not n.deleted
+         where effective_document_role(d.id,$1) is not null and d.status<>'archived' and d.deleted_at is null
+           and ($3::uuid is null or (document_project(d.id)=$3 and inherited_space_role($3,$1) is not null))
+           and (strpos(lower(d.title),lower($2))>0 or strpos(lower(n.current_fields::text),lower($2))>0)
+         order by d.updated_at desc,d.id,n.pos,n.id limit 51 offset $4"
+    ).bind(auth.identity_id).bind(term).bind(query.project_id).bind(query.offset).fetch_all(&mut *tx).await?;
     tx.commit().await?;
-    Ok(Json(json!({"items":items})))
+    let more = items.len() > 50;
+    Ok(Json(
+        json!({"items":items.into_iter().take(50).collect::<Vec<_>>(), "more":more, "offset":query.offset}),
+    ))
 }
 
 #[derive(utoipa::OpenApi)]

@@ -82,6 +82,43 @@ fn rust_reproduces_every_typescript_chain() {
     );
 }
 
+/// The API refuses a new `pos` that is empty, outside printable ASCII, ends in a space or is
+/// longer than `MAX_POS_KEY_BYTES`. Everything the web editor's `between()` returns for
+/// neighbours that are themselves acceptable keys, and every key in its long append chains,
+/// must pass, or a legitimate client would be refused at the wire.
+#[test]
+fn every_key_the_editor_produces_is_a_valid_wire_key() {
+    use engine_shared::is_valid_pos_key;
+    let v = vectors();
+    let acceptable = |k: Option<&str>| k.is_none_or(|k| k.is_empty() || is_valid_pos_key(k));
+    let (mut checked, mut skipped) = (0, 0);
+    for c in v["cases"].as_array().unwrap() {
+        let (left, right, key) = (c[0].as_str().unwrap(), opt(&c[1]), c[2].as_str().unwrap());
+        if !acceptable(Some(left)) || !acceptable(right) {
+            skipped += 1;
+            continue;
+        }
+        checked += 1;
+        assert!(
+            is_valid_pos_key(key),
+            "between({left:?}, {right:?}) = {key:?} would be refused"
+        );
+    }
+    // The vectors have both kinds of neighbours; most are printable ASCII.
+    assert!(checked >= 5000, "{checked} checked, {skipped} skipped");
+    assert!(skipped > 0, "the vectors also hold keys outside the rule");
+    let mut longest = 0;
+    for chain in v["chains"].as_array().unwrap() {
+        for key in chain["keys"].as_array().unwrap() {
+            let key = key.as_str().unwrap();
+            longest = longest.max(key.len());
+            assert!(is_valid_pos_key(key), "chain key {key:?} would be refused");
+        }
+    }
+    // The chains run past the 200-character mark where keys keep growing, one per insert.
+    assert!(longest >= MAX_KEY_STEPS, "longest chain key {longest}");
+}
+
 #[test]
 fn the_vectors_come_from_the_current_typescript_source() {
     // The function text is stored next to the vectors. When the web editor source is in the
