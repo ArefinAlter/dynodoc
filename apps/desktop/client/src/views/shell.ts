@@ -91,7 +91,7 @@ function sidebar(): HTMLElement {
   return h(
     'aside',
     { class: 'sidebar', 'aria-label': 'Navigation' },
-    h('div', { class: 'brand-row' }, h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Hide sidebar', title: 'Hide sidebar (Ctrl+\\)', onClick: () => { state.prefs.sidebarOpen = false; render(); } }, icon('sidebar', 16)), h('img', { src: 'mark.svg', alt: '', class: 'mark-img', width: 18, height: 18 }), h('span', { class: 'brand-name' }, 'Dynodoc')),
+    h('div', { class: 'brand-row' }, h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Hide sidebar', title: 'Hide sidebar (Ctrl+\\)', onClick: () => { state.prefs.sidebarOpen = false; render(); } }, icon('sidebar', 16)), h('img', { src: `${__ASSET_BASE__}mark.svg`, alt: '', class: 'mark-img', width: 18, height: 18 }), h('span', { class: 'brand-name' }, 'Dynodoc')),
     h(
       'div',
       { class: 'pickers' },

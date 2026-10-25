@@ -6,7 +6,7 @@
     "tauri": "tauri",
     "prepare-sidecar": "node scripts/prepare-sidecar.mjs",
     "build:client": "node client/build.mjs",
-    "build:web": "node client/build.mjs --web client/dist-web",
+    "build:web": "node client/build.mjs --web client/dist-web --base /desktop/",
     "check:client": "tsc -p client && node client/build.mjs --check",
     "test:client": "node --test \"client/test/*.test.mjs\"",
     "test": "cargo test --manifest-path src-tauri/Cargo.toml"

@@ -2298,7 +2298,7 @@ Suggest, do not order.` }
       { class: "sidebar", "aria-label": "Navigation" },
       h("div", { class: "brand-row" }, h("button", { type: "button", class: "icon-btn", "aria-label": "Hide sidebar", title: "Hide sidebar (Ctrl+\\)", onClick: () => {
         state.prefs.sidebarOpen = !1, render();
-      } }, icon("sidebar", 16)), h("img", { src: "mark.svg", alt: "", class: "mark-img", width: 18, height: 18 }), h("span", { class: "brand-name" }, "Dynodoc")),
+      } }, icon("sidebar", 16)), h("img", { src: "/desktop/mark.svg", alt: "", class: "mark-img", width: 18, height: 18 }), h("span", { class: "brand-name" }, "Dynodoc")),
       h(
         "div",
         { class: "pickers" },

@@ -2,7 +2,7 @@
 //
 //   node client/build.mjs            -> ui/launcher.js and ui/launcher.css (the desktop app's page)
 //   node client/build.mjs --check    -> fails if ui/launcher.js or ui/launcher.css differ from a fresh build
-//   node client/build.mjs --web DIR  -> a hosted copy in DIR: index.html (noindex), launcher.js, launcher.css, mark.svg
+//   node client/build.mjs --web DIR [--base /desktop/]  -> a hosted copy in DIR: index.html (noindex), launcher.js, launcher.css, mark.svg
 //
 // ui/launcher.js and ui/launcher.css are committed: Tauri ships ui/ as it is, and the policy tests in
 // src-tauri read them. They are generated from client/src; edit the sources and rebuild. The bundle is
@@ -22,7 +22,7 @@ const VERSION = /^version\s*=\s*"([^"]+)"/m.exec(readFileSync(join(app, 'src-tau
 const HEADER = '// GENERATED from apps/desktop/client/src by client/build.mjs. Do not edit; edit the sources and rebuild.\n';
 const CSS_ORDER = ['tokens.css', 'app.css'];
 
-async function bundle(web) {
+async function bundle(web, base = '') {
   const out = await build({
     entryPoints: [join(here, 'src', 'main.ts')],
     bundle: true,
@@ -33,7 +33,7 @@ async function bundle(web) {
     charset: 'utf8',
     legalComments: 'none',
     minifySyntax: true,
-    define: { __WEB__: String(web), __CLIENT_VERSION__: JSON.stringify(VERSION) },
+    define: { __WEB__: String(web), __ASSET_BASE__: JSON.stringify(base), __CLIENT_VERSION__: JSON.stringify(VERSION) },
     logLevel: 'warning',
   });
   return HEADER + out.outputFiles[0].text;
@@ -58,14 +58,18 @@ function audit(js, styles) {
 const args = process.argv.slice(2);
 if (args[0] === '--web') {
   const dir = resolve(args[1] ?? join(here, 'dist-web'));
-  const js = await bundle(true);
+  // --base /desktop/: the path the copy is served under, so /desktop (no slash) still finds its files.
+  const bi = args.indexOf('--base');
+  const base = bi > 0 ? args[bi + 1] : '';
+  if (base && !/^\/[a-z0-9/-]*\/$/.test(base)) throw new Error('--base is a path such as /desktop/');
+  const js = await bundle(true, base);
   const styles = css();
   audit(js, styles);
   if (existsSync(dir)) for (const f of readdirSync(dir)) rmSync(join(dir, f), { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'launcher.js'), js);
   writeFileSync(join(dir, 'launcher.css'), styles);
-  copyFileSync(join(here, 'web', 'index.html'), join(dir, 'index.html'));
+  writeFileSync(join(dir, 'index.html'), readFileSync(join(here, 'web', 'index.html'), 'utf8').replaceAll('{{BASE}}', base));
   copyFileSync(join(ui, 'mark.svg'), join(dir, 'mark.svg'));
   console.log(`web copy written to ${dir}`);
 } else {
