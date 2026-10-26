@@ -16,7 +16,6 @@ import { openMenu, confirmDialog } from '../ui/layer.ts';
 import { act, branchContext, branchLabel, currentBranch, docOf, fileIcon, short } from './common.ts';
 import { newDraftDialog, sync, fetchNow, sendForReviewDialog } from './actions.ts';
 import { openInEditor } from './documents.ts';
-import { watchNotices } from './watchbar.ts';
 import { isLocal } from '../data/live.ts';
 
 const OP: Record<string, [string, string]> = { edit: ['M', 'Modified'], add: ['A', 'Added'], remove: ['D', 'Removed'] };
@@ -252,6 +251,5 @@ export function changesView(): HTMLElement {
     );
   }
   const split = h('div', { class: 'split-view' }, left, right);
-  const bar = watchNotices(state.ui.projectId);
-  return bar ? h('div', { class: 'split-wrap' }, bar, split) : split;
+  return split;
 }

@@ -143,7 +143,7 @@ function review(r: ChangeRequest): HTMLElement {
                   'label',
                   { class: cx('conflict-choice', c.choice === side && 'is-on') },
                   h('input', { type: 'radio', name: `rc-${r.id}-${c.blockId}`, checked: c.choice === side, onChange: () => { c.choice = side; render(); } }),
-                  h('span', { class: 'conflict-side' }, side === 'team' ? "Keep the team's current version" : `Use ${personName(r.authorId)}'s version`),
+                  h('span', { class: 'conflict-side' }, side === 'team' ? "Keep the team's current version" : (r.authorId === state.db.me ? 'Use your version' : `Use ${personName(r.authorId)}'s version`)),
                   h('span', { class: 'conflict-text' }, side === 'team' ? c.team : c.draft),
                 ),
               ),

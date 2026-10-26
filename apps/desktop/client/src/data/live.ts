@@ -83,6 +83,10 @@ export async function connect(t: Transport = desktopTransport): Promise<boolean>
 }
 
 function adopt(db: Db, next: Ctx): void {
+  // Picks a person made for conflicts survive reading the server again.
+  const picks = new Map<string, 'team' | 'draft'>();
+  for (const r of state.db.requests) for (const c of r.conflicts) if (c.choice) picks.set(`${r.id}:${c.blockId}`, c.choice);
+  for (const r of db.requests) for (const c of r.conflicts) c.choice = picks.get(`${r.id}:${c.blockId}`) ?? c.choice;
   ctx = next;
   state.db = db;
   state.ui.verified = {};
@@ -148,7 +152,7 @@ function fail(e: unknown): void {
     disconnect();
     return;
   }
-  toast('error', 'The server did not accept this', message);
+  toast('error', state.live.env === 'local' ? 'This workspace did not accept this' : 'The server did not accept this', message);
 }
 
 /** Called after every render: if the model differs from the server's copy, send the change. */
@@ -192,8 +196,8 @@ async function sync(): Promise<void> {
       ctx = out.ctx;
       again = true;
     }
-    if (outcome.errors.length) toast('error', 'The server did not accept a change', outcome.errors.join(' '));
-    else if (outcome.done.length) toast('success', 'Saved to the server', outcome.done.slice(0, 3).join(' · '));
+    if (outcome.errors.length) toast('error', state.live.env === 'local' ? 'This workspace did not accept a change' : 'The server did not accept a change', outcome.errors.join(' '));
+    else if (outcome.done.length) toast('success', state.live.env === 'local' ? 'Saved on this computer' : 'Saved to the server', outcome.done.slice(0, 3).join(' · '));
   } catch (e) {
     fail(e);
     // Show the server's state rather than a change it did not take.

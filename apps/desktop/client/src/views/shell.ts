@@ -15,6 +15,7 @@ import { unread } from './activity.ts';
 import { desktopState, openServer } from '../bridge.ts';
 import { toast } from '../state.ts';
 import { isLive } from '../data/live.ts';
+import { watchNotices } from './watchbar.ts';
 
 interface NavItem {
   view: View;
@@ -200,7 +201,7 @@ export function shell(main: HTMLElement): HTMLElement {
     'div',
     { class: cx('app', !state.prefs.sidebarOpen && 'sidebar-closed') },
     state.prefs.sidebarOpen ? sidebar() : null,
-    h('div', { class: 'main-col' }, topbar(), h('span', { id: 'topbar-anchor', class: 'anchor' }), h('main', { class: 'content', id: 'content' }, main)),
+    h('div', { class: 'main-col' }, topbar(), h('span', { id: 'topbar-anchor', class: 'anchor' }), h('main', { class: 'content', id: 'content' }, state.ui.view === 'settings' ? null : watchNotices(state.ui.projectId), main)),
     bottomBar(),
   );
 }

@@ -172,6 +172,8 @@ pub async fn file_export(
     ext: String,
     base64: String,
     open: bool,
+    document_id: Option<String>,
+    base_seq: Option<i32>,
 ) -> Result<Exported, String> {
     require_launcher(webview.url())?;
     if !files::OFFICE_EXTENSIONS.contains(&ext.as_str()) {
@@ -184,7 +186,8 @@ pub async fn file_export(
         return Err("That file is too large to write.".to_string());
     }
     let state = state_of(&webview);
-    let dir = match state.local.folder_of(&project_id).await? {
+    let bound = state.local.folder_of(&project_id).await?;
+    let dir = match bound.clone() {
         Some(dir) => dir,
         None => {
             let documents = webview
@@ -204,6 +207,24 @@ pub async fn file_export(
     })
     .await
     .map_err(|_| "The file could not be written.".to_string())??;
+    // A copy written into the project's own folder is in step with the revision it was made from:
+    // the file watch reports only what is saved after this.
+    if let (Some(folder), Some(doc), Some(seq)) = (bound, document_id.as_deref(), base_seq) {
+        if let Some(rel) = path.strip_prefix(&folder).ok().map(|r| r.to_string_lossy().replace('\\', "/")) {
+            if let Ok(bytes) = std::fs::read(&path) {
+                let mtime = std::fs::metadata(&path)
+                    .and_then(|m| m.modified())
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_millis() as i64)
+                    .unwrap_or(0);
+                let _ = state
+                    .local
+                    .note_file(&project_id, &rel, doc, seq, &hex::encode(Sha256::digest(&bytes)), mtime)
+                    .await;
+            }
+        }
+    }
     let mut opened = false;
     if open {
         use tauri_plugin_opener::OpenerExt;

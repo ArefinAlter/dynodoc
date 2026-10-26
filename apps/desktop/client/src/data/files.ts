@@ -200,6 +200,8 @@ export async function exportFile(docId: string, open: boolean): Promise<string |
       ext: EXT[d.kind] ?? 'docx',
       base64: toBase64(bytes),
       open,
+      documentId: docId,
+      baseSeq: seq,
     })) as { path: string; opened: boolean };
     toast('success', open && out.opened ? `Opened in ${EDITOR[d.kind]}` : 'Copy saved', out.path);
     return out.path;
@@ -238,6 +240,18 @@ async function tick(): Promise<void> {
 
 async function onChange(c: WatchChange): Promise<void> {
   if (c.kind === 'new') {
+    // A copy that Dynodoc wrote for a file of this project (it names its document and revision)
+    // is another saved version of that file, not a new file.
+    try {
+      const file = (await call('file_read', { token: c.token })) as { base64: string };
+      const origin = await office().originOf(fromBase64(file.base64));
+      if (origin.documentId && state.db.docs.some((d) => d.id === origin.documentId && d.projectId === c.project_id)) {
+        await pushSaved(c);
+        return;
+      }
+    } catch {
+      /* it is offered as a new file below */
+    }
     state.watch.newFiles = state.watch.newFiles.filter((n) => !(n.project_id === c.project_id && n.rel_path === c.rel_path));
     state.watch.newFiles.push(c);
     render();

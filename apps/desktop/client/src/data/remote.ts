@@ -248,6 +248,20 @@ export async function load(raw0: Transport, session: Session, now = Date.now()):
   const activity: ActivityItem[] = [];
   const raw: { project: any; files: any[]; crs: any[]; ownDrafts: any[] }[] = [];
 
+  const stateAt = new Map<string, Promise<Nodes>>();
+  const nodesAt = (docId: string, seq: number): Promise<Nodes> => {
+    const k = `${docId}@${seq}`;
+    const known = stateCache.get(k);
+    if (known) return Promise.resolve(cloneNodes(known));
+    if (!stateAt.has(k))
+      stateAt.set(k, t.apiGet(`documents/${docId}/state?through_seq=${seq}`).then((r) => {
+        const nodes = ok(r, 'read an earlier revision').state?.nodes ?? {};
+        stateCache.set(k, nodes);
+        return cloneNodes(nodes);
+      }));
+    return stateAt.get(k)!.then(cloneNodes);
+  };
+
   // ---- projects ----------------------------------------------------------------------------------
   await pool<any>(projectList.items ?? [], 4, async (p) => {
     const [files, crs, labels, issues, act, policy, members] = await Promise.all([
@@ -391,7 +405,18 @@ export async function load(raw0: Transport, session: Session, now = Date.now()):
     const live: Nodes = {};
     let before = blocksOf(kind, live).blocks;
     for (const run of runs) {
-      for (const e of run.events) applyEvent(live, e.payload);
+      let patched = false;
+      for (const e of run.events) {
+        applyEvent(live, e.payload);
+        if (e.payload.type === 'RichTextPatched') patched = true;
+      }
+      // A compact rich-text patch is the engine's own to apply: read the file as it was at the end of
+      // the revision instead of replaying it here.
+      if (patched) {
+        const snapshot = await nodesAt(f.id, run.to);
+        for (const key of Object.keys(live)) delete live[key];
+        Object.assign(live, snapshot);
+      }
       const after = blocksOf(kind, live);
       const edits = compareBlocks(before, after.blocks);
       const note = mainNotes.find((n) => n.from_seq === run.from && n.to_seq === run.to);
@@ -423,19 +448,6 @@ export async function load(raw0: Transport, session: Session, now = Date.now()):
   });
 
   // ---- drafts and change requests -------------------------------------------------------------------
-  const stateAt = new Map<string, Promise<Nodes>>();
-  const nodesAt = (docId: string, seq: number): Promise<Nodes> => {
-    const k = `${docId}@${seq}`;
-    const known = stateCache.get(k);
-    if (known) return Promise.resolve(cloneNodes(known));
-    if (!stateAt.has(k))
-      stateAt.set(k, t.apiGet(`documents/${docId}/state?through_seq=${seq}`).then((r) => {
-        const nodes = ok(r, 'read an earlier revision').state?.nodes ?? {};
-        stateCache.set(k, nodes);
-        return cloneNodes(nodes);
-      }));
-    return stateAt.get(k)!.then(cloneNodes);
-  };
   for (const r of raw) {
     const p = r.project;
     // Own drafts first (they carry their own state), then the requests of others.
@@ -659,7 +671,10 @@ const isLocalId = (id: string) => !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f
 
 /** The client's model without what only this client holds (the parts the server never sees). */
 function serverView(db: Db): unknown {
-  return { ...db, working: [], commits: db.commits.filter((c) => !c.local), lastFetched: 0, incoming: 0 };
+  // A person's pick for a conflict is a choice they have not merged yet: the server has no place
+  // for it, so it is not a change to send (and not one to wipe by reading the server again).
+  const requests = db.requests.map((r) => (r.conflicts.some((c) => c.choice) ? { ...r, conflicts: r.conflicts.map((c) => ({ ...c, choice: undefined })) } : r));
+  return { ...db, requests, working: [], commits: db.commits.filter((c) => !c.local), lastFetched: 0, incoming: 0 };
 }
 
 /** True when `next` differs from the server's copy in something the server or the service keeps. */

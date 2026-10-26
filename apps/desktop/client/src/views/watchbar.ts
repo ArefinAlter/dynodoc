@@ -4,7 +4,7 @@ import { h } from '../dom.ts';
 import { state, render } from '../state.ts';
 import { button, notice } from '../ui/controls.ts';
 import { addFolderFiles, ignoreFolderFiles } from '../data/files.ts';
-import { short } from './common.ts';
+import { when } from './common.ts';
 import { switchBranch } from './actions.ts';
 import { go } from '../state.ts';
 
@@ -29,7 +29,7 @@ export function watchNotices(projectId: string): HTMLElement | null {
       h(
         'div',
         { class: 'watch-notice' },
-        notice('success', h('strong', null, `${r.name} was saved in its editor ${short(r.at)} ago`), h('div', { class: 'muted small' }, `${r.changes} change${r.changes === 1 ? '' : 's'} are in the draft "${r.draftName}" of ${r.title}.`)),
+        notice('success', h('strong', null, `${r.name} was saved in its editor, ${when(r.at)}`), h('div', { class: 'muted small' }, `${r.changes} change${r.changes === 1 ? ' is' : 's are'} in the draft "${r.draftName}" of ${r.title}.`)),
         h(
           'div',
           { class: 'watch-actions' },

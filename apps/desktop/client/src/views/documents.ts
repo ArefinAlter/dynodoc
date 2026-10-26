@@ -17,7 +17,6 @@ import { act, fileIcon, isAgent, personName, short, when, ROLE_LABEL, KIND_LABEL
 import { newDraftDialog, switchBranch } from './actions.ts';
 import { isLive, isLocal } from '../data/live.ts';
 import { addFilesDialog, exportFile } from '../data/files.ts';
-import { watchNotices } from './watchbar.ts';
 
 const HOSTS_FOR: Record<Doc['kind'], [AddinHost, AddinHost]> = {
   document: ['word', 'google-docs'],
@@ -80,7 +79,7 @@ function fileTable(docs: Doc[]): HTMLElement {
           h('td', null, last ? h('span', null, last.summary, h('span', { class: 'muted' }, ` · ${personName(last.authorId)}`)) : '—'),
           h('td', null, drafts ? String(drafts) : h('span', { class: 'muted' }, '0')),
           h('td', null, reqs ? pill(`${reqs} open`, 'success') : h('span', { class: 'muted' }, '0')),
-          h('td', null, keys.length ? pill(`${HOST_LABEL[keys[0].host]}`, 'success', { mono: false }) : pill('not connected', 'neutral')),
+          h('td', null, isLocal() ? pill({ document: 'Word', spreadsheet: 'Excel', presentation: 'PowerPoint' }[d.kind], 'neutral', { mono: false, title: 'Opens in the program your computer uses for this kind of file' }) : keys.length ? pill(`${HOST_LABEL[keys[0].host]}`, 'success', { mono: false }) : pill('not connected', 'neutral')),
           h('td', { class: 'muted' }, last ? short(last.at) : ''),
         );
       }),
@@ -293,7 +292,6 @@ export function documentsView(): HTMLElement {
       'div',
       { class: 'page' },
       viewHeader('Documents', `${docs.length} file${docs.length === 1 ? '' : 's'} in ${B.project(state.db, state.ui.projectId).name}`, button('New draft…', { icon: 'branch', onClick: () => newDraftDialog() }), state.desktop && isLive() ? button('Add files…', { icon: 'plus', variant: 'primary', id: 'add-files', onClick: () => void addFilesDialog() }) : button('Add file', { icon: 'plus', disabled: true, title: 'Uploading files is in the web workspace and the add-ins; not in this release of the client.' })),
-      watchNotices(state.ui.projectId),
       docs.length ? h('div', { class: 'card flush' }, fileTable(docs)) : empty('documents', 'No files yet', isLocal() ? 'Add Word, Excel or PowerPoint files from your computer. Each keeps its history from the moment you add it.' : 'Add a file in the web workspace or from an add-in.', state.desktop && isLive() ? button('Add files…', { variant: 'primary', icon: 'plus', onClick: () => void addFilesDialog() }) : undefined),
     );
   }

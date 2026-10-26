@@ -1662,7 +1662,13 @@ Suggest, do not order.` }
       optional(t.apiGet("notifications"), { items: [] })
     ]), me = profile2.id;
     person2(people3, me, profile2.name);
-    let ctx2 = { me, docs: {}, drafts: {}, crs: {}, projects: {}, threads: {}, issues: {}, base: null, saved: { working: "", local: "", threads: "", client: "" }, client: { copies: {}, hiddenDrafts: [] } }, projects = [], docs = [], drafts2 = [], requests = [], commits = [], activity = [], raw = [];
+    let ctx2 = { me, docs: {}, drafts: {}, crs: {}, projects: {}, threads: {}, issues: {}, base: null, saved: { working: "", local: "", threads: "", client: "" }, client: { copies: {}, hiddenDrafts: [] } }, projects = [], docs = [], drafts2 = [], requests = [], commits = [], activity = [], raw = [], stateAt = /* @__PURE__ */ new Map(), nodesAt = (docId, seq) => {
+      let k = `${docId}@${seq}`, known = stateCache.get(k);
+      return known ? Promise.resolve(cloneNodes(known)) : (stateAt.has(k) || stateAt.set(k, t.apiGet(`documents/${docId}/state?through_seq=${seq}`).then((r) => {
+        let nodes = ok(r, "read an earlier revision").state?.nodes ?? {};
+        return stateCache.set(k, nodes), cloneNodes(nodes);
+      })), stateAt.get(k).then(cloneNodes));
+    };
     await pool(projectList.items ?? [], 4, async (p2) => {
       let [files, crs, labels, issues2, act2, policy, members] = await Promise.all([
         t.apiGet(`projects/${p2.id}/files`).then((r) => ok(r, "list the files")),
@@ -1756,7 +1762,14 @@ Suggest, do not order.` }
       docs.push(d);
       let mainNotes = notes.filter((n) => n.document_id === f.id).filter((n) => n.branch === "main" && n.kind !== "request"), runs = runsOf(events, mainNotes.map((n) => ({ from: n.from_seq, to: n.to_seq }))), live = {}, before = blocksOf2(kind, live).blocks;
       for (let run of runs) {
-        for (let e of run.events) applyEvent(live, e.payload);
+        let patched = !1;
+        for (let e of run.events)
+          applyEvent(live, e.payload), e.payload.type === "RichTextPatched" && (patched = !0);
+        if (patched) {
+          let snapshot = await nodesAt(f.id, run.to);
+          for (let key of Object.keys(live)) delete live[key];
+          Object.assign(live, snapshot);
+        }
         let after = blocksOf2(kind, live), edits2 = compareBlocks(before, after.blocks), note = mainNotes.find((n) => n.from_seq === run.from && n.to_seq === run.to), labels = {};
         for (let b of [...before, ...after.blocks]) labels[b.id] = b.label;
         person2(people3, run.actor);
@@ -1781,13 +1794,6 @@ Suggest, do not order.` }
       }
       for (let row2 of ownDrafts.items ?? []) raw.find((r) => r.project.id === f.projectId).ownDrafts.push({ ...row2, docId: f.id });
     });
-    let stateAt = /* @__PURE__ */ new Map(), nodesAt = (docId, seq) => {
-      let k = `${docId}@${seq}`, known = stateCache.get(k);
-      return known ? Promise.resolve(cloneNodes(known)) : (stateAt.has(k) || stateAt.set(k, t.apiGet(`documents/${docId}/state?through_seq=${seq}`).then((r) => {
-        let nodes = ok(r, "read an earlier revision").state?.nodes ?? {};
-        return stateCache.set(k, nodes), cloneNodes(nodes);
-      })), stateAt.get(k).then(cloneNodes));
-    };
     for (let r of raw) {
       let p2 = r.project;
       await pool(r.ownDrafts, 3, async (row2) => {
@@ -1933,7 +1939,8 @@ Suggest, do not order.` }
   }
   var same = (a, b) => JSON.stringify(a) === JSON.stringify(b), isLocalId = (id) => !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id);
   function serverView(db) {
-    return { ...db, working: [], commits: db.commits.filter((c) => !c.local), lastFetched: 0, incoming: 0 };
+    let requests = db.requests.map((r) => r.conflicts.some((c) => c.choice) ? { ...r, conflicts: r.conflicts.map((c) => ({ ...c, choice: void 0 })) } : r);
+    return { ...db, requests, working: [], commits: db.commits.filter((c) => !c.local), lastFetched: 0, incoming: 0 };
   }
   function changed(ctx2, next, threads) {
     return !same(serverView(ctx2.base), serverView(next)) || JSON.stringify(next.working) !== ctx2.saved.working || JSON.stringify(next.commits.filter((c) => c.local)) !== ctx2.saved.local || JSON.stringify(threads ?? null) !== ctx2.saved.threads;
@@ -2136,6 +2143,9 @@ Suggest, do not order.` }
     }
   }
   function adopt(db, next) {
+    let picks = /* @__PURE__ */ new Map();
+    for (let r of state.db.requests) for (let c of r.conflicts) c.choice && picks.set(`${r.id}:${c.blockId}`, c.choice);
+    for (let r of db.requests) for (let c of r.conflicts) c.choice = picks.get(`${r.id}:${c.blockId}`) ?? c.choice;
     if (ctx = next, state.db = db, state.ui.verified = {}, !db.projects.some((p2) => p2.id === state.ui.projectId)) {
       let files = (id) => db.docs.filter((d) => d.projectId === id).length;
       state.ui.projectId = [...db.projects].sort((a, b) => files(b.id) - files(a.id))[0]?.id ?? "";
@@ -2175,7 +2185,7 @@ Suggest, do not order.` }
       toast("error", "Signed out", message2), disconnect();
       return;
     }
-    toast("error", "The server did not accept this", message2);
+    toast("error", state.live.env === "local" ? "This workspace did not accept this" : "The server did not accept this", message2);
   }
   function noticeChanges() {
     !isLive() || !ctx || (timer && clearTimeout(timer), timer = setTimeout(() => {
@@ -2196,7 +2206,7 @@ Suggest, do not order.` }
       let outcome = await reconcile(transport, ctx, JSON.parse(sent), JSON.parse(JSON.stringify(threads)));
       state.ui = renameIds(state.ui, outcome.ids);
       let session = { identity: state.db.me, visitor: state.db.remote?.visitor ?? null }, out = await load(transport, session), saved = ctx.saved;
-      JSON.stringify(state.db) === sent ? (adopt(out.db, out.ctx), ctx.saved = { ...ctx.saved, threads: saved.threads }) : (state.db = renameIds(state.db, outcome.ids), out.ctx.base = renameIds(JSON.parse(sent), outcome.ids), out.ctx.saved = saved, ctx = out.ctx, again = !0), outcome.errors.length ? toast("error", "The server did not accept a change", outcome.errors.join(" ")) : outcome.done.length && toast("success", "Saved to the server", outcome.done.slice(0, 3).join(" · "));
+      JSON.stringify(state.db) === sent ? (adopt(out.db, out.ctx), ctx.saved = { ...ctx.saved, threads: saved.threads }) : (state.db = renameIds(state.db, outcome.ids), out.ctx.base = renameIds(JSON.parse(sent), outcome.ids), out.ctx.saved = saved, ctx = out.ctx, again = !0), outcome.errors.length ? toast("error", state.live.env === "local" ? "This workspace did not accept a change" : "The server did not accept a change", outcome.errors.join(" ")) : outcome.done.length && toast("success", state.live.env === "local" ? "Saved on this computer" : "Saved to the server", outcome.done.slice(0, 3).join(" · "));
     } catch (e) {
       fail(e);
       try {
@@ -3169,6 +3179,256 @@ Suggest, do not order.` }
     );
   }
 
+  // client/src/data/files.ts
+  function office() {
+    let api = window.dynodocOffice;
+    if (!api) throw new Error("The file converter did not load. Close the app and open it again.");
+    return api;
+  }
+  var text = (e) => e instanceof Error ? e.message : String(e);
+  function fromBase64(b64) {
+    let bin = atob(b64), out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  function toBase64(bytes) {
+    let bin = "";
+    for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode(...bytes.subarray(i, i + 8192));
+    return btoa(bin);
+  }
+  function body(r, what) {
+    if (r.status >= 200 && r.status < 300) return r.body;
+    let detail = r.body && typeof r.body == "object" && typeof r.body.error == "string" ? r.body.error : "";
+    throw new Error(detail && detail !== "forbidden" ? detail : r.status === 403 ? `Your role does not allow this (${what}).` : `The workspace could not ${what} (${r.status}).`);
+  }
+  var EXT2 = { document: "docx", spreadsheet: "xlsx", presentation: "pptx" }, EDITOR = { document: "Word", spreadsheet: "Excel", presentation: "PowerPoint" };
+  function chunks(ops, limit = 4e5) {
+    let out = [], cur = [], size = 0;
+    for (let op of ops) {
+      let n = JSON.stringify(op).length;
+      cur.length && (size + n > limit || cur.length >= 500) && (out.push(cur), cur = [], size = 0), cur.push(op), size += n;
+    }
+    return cur.length && out.push(cur), out;
+  }
+  async function addFile(t, projectId, token) {
+    let file = await call("file_read", { token }), bytes = fromBase64(file.base64), imported = await office().importFile(bytes, file.name), title = file.name.replace(/\.[^.]+$/, "").slice(0, 200) || "Untitled", id = body(await t.apiSend("POST", "documents", { title }), "create the file").id;
+    try {
+      body(await t.apiSend("POST", `documents/${id}/metadata`, { settings: { kind: imported.kind, import_warnings: imported.warnings } }), "describe the file");
+      let seq = 0;
+      for (let part of chunks(imported.ops)) {
+        let events = body(await t.apiSend("POST", `documents/${id}/batch`, { ops: part, base_seq: seq }), "add the content").events ?? [];
+        events.length && (seq = events[events.length - 1].seq);
+      }
+      try {
+        body(await t.apiSend("POST", `documents/${id}/uploads`, { filename: file.name, content_type: "application/octet-stream", content: file.base64, report: { warnings: imported.warnings } }), "keep the original");
+      } catch {
+      }
+      body(await t.apiSend("POST", `documents/${id}/location`, { space_id: projectId }), "put the file in the project");
+      try {
+        await t.svcSend("POST", "notes", { document_id: id, branch: "main", from_seq: 1, to_seq: seq, kind: "revision", summary: `Added ${file.name}`.slice(0, 200), description: `Imported from ${file.name} on this computer.` });
+      } catch {
+      }
+      return { id, title, kind: imported.kind, seq, warnings: imported.warnings };
+    } catch (e) {
+      throw new Error(`${file.name} could not be added: ${text(e)} The partly added file is in the project's trash if it appears at all.`);
+    }
+  }
+  async function addFilesDialog() {
+    if (!state.desktop) return toast("info", "Add files", "Adding files needs the Dynodoc desktop app.");
+    let projectId = state.ui.projectId, picked;
+    try {
+      picked = await call("files_pick", { purpose: "import" });
+    } catch (e) {
+      return toast("error", "The file dialog did not open", text(e));
+    }
+    picked.length && await addPicked(projectId, picked);
+  }
+  async function addPicked(projectId, picked, onAdded) {
+    let t = currentTransport();
+    state.live.saving = !0, render();
+    let problems = [], warnings = [], added = 0;
+    for (let p2 of picked)
+      try {
+        let a = await addFile(t, projectId, p2.token);
+        added += 1;
+        for (let w of a.warnings) warnings.includes(w) || warnings.push(w);
+        await onAdded?.(p2, a);
+      } catch (e) {
+        problems.push(text(e));
+      }
+    return state.live.saving = !1, await refresh(!0), added && toast("success", `Added ${added} file${added === 1 ? "" : "s"}`, warnings[0] ?? "Each file keeps its history from here on."), problems.length && toast("error", "Some files were not added", problems.join(" ")), added;
+  }
+  async function exportFile(docId, open2) {
+    let d = state.db.docs.find((x) => x.id === docId), project2 = state.db.projects.find((p2) => p2.id === d?.projectId);
+    if (!d || !project2) return null;
+    try {
+      let t = currentTransport(), detail = body(await t.apiGet(`documents/${docId}`), "read the file"), seq = detail.latest_seq ?? 0, bytes = await office().exportFile(d.kind, detail.state, detail.title ?? d.title, { documentId: docId, seq }), safe = (detail.title ?? d.title).replace(/[\\/:*?"<>|]+/g, " ").trim() || "Document", out = await call("file_export", {
+        projectId: project2.id,
+        projectName: project2.name,
+        name: `${safe} (v${seq})`,
+        ext: EXT2[d.kind] ?? "docx",
+        base64: toBase64(bytes),
+        open: open2,
+        documentId: docId,
+        baseSeq: seq
+      });
+      return toast("success", open2 && out.opened ? `Opened in ${EDITOR[d.kind]}` : "Copy saved", out.path), out.path;
+    } catch (e) {
+      return toast("error", "The copy could not be written", text(e)), null;
+    }
+  }
+  var watching = !1, busy2 = !1;
+  function startWatch() {
+    watching || !state.desktop || (watching = !0, setInterval(() => {
+      busy2 || state.live.env !== "local" || state.live.mode !== "live" || tick();
+    }, 2500));
+  }
+  async function tick() {
+    busy2 = !0;
+    try {
+      let found = await call("watch_poll");
+      for (let c of found) await onChange(c);
+    } catch {
+    } finally {
+      busy2 = !1;
+    }
+  }
+  async function onChange(c) {
+    if (c.kind === "new") {
+      try {
+        let file = await call("file_read", { token: c.token }), origin = await office().originOf(fromBase64(file.base64));
+        if (origin.documentId && state.db.docs.some((d) => d.id === origin.documentId && d.projectId === c.project_id)) {
+          await pushSaved(c);
+          return;
+        }
+      } catch {
+      }
+      state.watch.newFiles = state.watch.newFiles.filter((n) => !(n.project_id === c.project_id && n.rel_path === c.rel_path)), state.watch.newFiles.push(c), render();
+      return;
+    }
+    await pushSaved(c);
+  }
+  async function pushSaved(c) {
+    let t = currentTransport(), label = c.name;
+    try {
+      let file = await call("file_read", { token: c.token }), bytes = fromBase64(file.base64), origin = await office().originOf(bytes), docId = c.document_id ?? origin.documentId ?? null, doc2 = docId ? state.db.docs.find((d) => d.id === docId && d.projectId === c.project_id) : void 0;
+      if (!doc2) {
+        state.watch.newFiles.push({ ...c, kind: "new" }), render();
+        return;
+      }
+      let latest = body(await t.apiGet(`documents/${doc2.id}/history-points`), "read the history").latest_seq ?? 0, baseSeq = Math.min(latest, c.base_seq ?? origin.seq ?? latest), baseState = body(await t.apiGet(`documents/${doc2.id}/state?through_seq=${baseSeq}`), "read the file").state, plan2 = (await office().planPush(bytes, file.name, baseState, doc2.title)).plan;
+      if (!plan2.ops.length) {
+        await call("watch_seen", { projectId: c.project_id, relPath: c.rel_path, token: c.token, documentId: doc2.id, baseSeq: latest }), toast("info", `${label} was saved`, "Nothing in it differs from the project, so there is nothing to review.");
+        return;
+      }
+      let stamp = (/* @__PURE__ */ new Date()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), name2 = `Edited in ${EDITOR[doc2.kind]} ${stamp}`, made = body(
+        await t.apiSend("POST", `documents/${doc2.id}/change-requests`, {
+          name: name2,
+          note: `Saved from ${file.name} in the project's folder.`,
+          base_seq: baseSeq,
+          ops: plan2.ops,
+          submit: !1,
+          source: { kind: "file", filename: file.name.slice(0, 255), base_reason: "file", anchored: plan2.anchored, summary: summarise(plan2) }
+        }),
+        "keep the changes"
+      );
+      await call("watch_seen", { projectId: c.project_id, relPath: c.rel_path, token: c.token, documentId: doc2.id, baseSeq: latest }), state.watch.recent.unshift({ docId: doc2.id, title: doc2.title, name: file.name, draftId: String(made.id), draftName: name2, changes: plan2.changes.length, at: Date.now() }), state.watch.recent = state.watch.recent.slice(0, 20), await refresh(!0), toast("success", `${label} was saved`, `${plan2.changes.length} change${plan2.changes.length === 1 ? "" : "s"} are in the draft "${name2}". Review them under Changes and send them for review.`);
+    } catch (e) {
+      toast("error", `${label} could not be read as changes`, text(e));
+    }
+  }
+  function summarise(plan2) {
+    let s2 = { added: 0, edited: 0, removed: 0, moved: 0 };
+    for (let ch of plan2.changes) s2[ch.kind] += 1;
+    return s2;
+  }
+  async function addFolderFiles(projectId) {
+    let mine = state.watch.newFiles.filter((n) => n.project_id === projectId);
+    if (!mine.length) return;
+    state.watch.newFiles = state.watch.newFiles.filter((n) => n.project_id !== projectId), render();
+    let byToken = new Map(mine.map((m) => [m.token, m]));
+    await addPicked(
+      projectId,
+      mine.map((m) => ({ token: m.token, name: m.name, size: m.size, path: m.rel_path })),
+      async (p2, a) => {
+        let m = byToken.get(p2.token);
+        m && await call("watch_seen", { projectId, relPath: m.rel_path, token: m.token, documentId: a.id, baseSeq: a.seq });
+      }
+    );
+  }
+  function ignoreFolderFiles(projectId) {
+    state.watch.newFiles = state.watch.newFiles.filter((n) => n.project_id !== projectId), render();
+  }
+  async function chooseFolder(projectId) {
+    try {
+      let picked = await call("files_pick", { purpose: "folder" });
+      if (!picked.length) return;
+      let where = await call("folder_bind", { projectId, token: picked[0].token });
+      toast("success", "Folder bound", `Word, Excel and PowerPoint files saved in ${where} are picked up as changes.`), state.watch.folders[projectId] = where, render();
+    } catch (e) {
+      toast("error", "The folder could not be used", text(e));
+    }
+  }
+  async function stopWatching(projectId) {
+    try {
+      await call("folder_unbind", { projectId }), delete state.watch.folders[projectId], state.watch.newFiles = state.watch.newFiles.filter((n) => n.project_id !== projectId), toast("success", "Folder released", "Files in it are no longer watched. Nothing in it was changed."), render();
+    } catch (e) {
+      toast("error", "The folder could not be released", text(e));
+    }
+  }
+  async function loadFolders() {
+    if (!(!state.desktop || state.live.env !== "local")) {
+      for (let p2 of state.db.projects)
+        try {
+          let s2 = await call("folder_status", { projectId: p2.id });
+          s2 ? state.watch.folders[p2.id] = s2.path : delete state.watch.folders[p2.id];
+        } catch {
+        }
+      render();
+    }
+  }
+
+  // client/src/views/watchbar.ts
+  function watchNotices(projectId) {
+    let fresh = state.watch.newFiles.filter((n) => n.project_id === projectId), recent = state.watch.recent.filter((r) => state.db.docs.some((d) => d.id === r.docId && d.projectId === projectId)).slice(0, 3);
+    if (!fresh.length && !recent.length) return null;
+    let out = [];
+    if (fresh.length) {
+      let names = fresh.slice(0, 3).map((f) => f.name).join(", ") + (fresh.length > 3 ? ` and ${fresh.length - 3} more` : "");
+      out.push(
+        h(
+          "div",
+          { class: "watch-notice", id: "watch-new" },
+          notice("info", h("strong", null, `${fresh.length} file${fresh.length === 1 ? "" : "s"} in the project's folder ${fresh.length === 1 ? "is" : "are"} not in the project yet`), h("div", { class: "muted small" }, names)),
+          h("div", { class: "watch-actions" }, button("Add to the project", { variant: "primary", size: "sm", id: "watch-add", onClick: () => void addFolderFiles(projectId) }), button("Ignore", { size: "sm", onClick: () => ignoreFolderFiles(projectId) }))
+        )
+      );
+    }
+    for (let r of recent)
+      out.push(
+        h(
+          "div",
+          { class: "watch-notice" },
+          notice("success", h("strong", null, `${r.name} was saved in its editor, ${when(r.at)}`), h("div", { class: "muted small" }, `${r.changes} change${r.changes === 1 ? " is" : "s are"} in the draft "${r.draftName}" of ${r.title}.`)),
+          h(
+            "div",
+            { class: "watch-actions" },
+            button("Review the changes", {
+              variant: "primary",
+              size: "sm",
+              onClick: () => {
+                state.db.drafts.some((d) => d.id === r.draftId) && switchBranch(r.draftId), state.watch.recent = state.watch.recent.filter((x) => x !== r), go("history");
+              }
+            }),
+            button("Dismiss", { size: "sm", onClick: () => {
+              state.watch.recent = state.watch.recent.filter((x) => x !== r), render();
+            } })
+          )
+        )
+      );
+    return h("div", { class: "watch-notices" }, out);
+  }
+
   // client/src/views/shell.ts
   var NAV = [
     {
@@ -3330,7 +3590,7 @@ Suggest, do not order.` }
       "div",
       { class: cx("app", !state.prefs.sidebarOpen && "sidebar-closed") },
       state.prefs.sidebarOpen ? sidebar() : null,
-      h("div", { class: "main-col" }, topbar(), h("span", { id: "topbar-anchor", class: "anchor" }), h("main", { class: "content", id: "content" }, main)),
+      h("div", { class: "main-col" }, topbar(), h("span", { id: "topbar-anchor", class: "anchor" }), h("main", { class: "content", id: "content" }, state.ui.view === "settings" ? null : watchNotices(state.ui.projectId), main)),
       bottomBar()
     );
   }
@@ -3453,246 +3713,6 @@ Suggest, do not order.` }
     );
   }
 
-  // client/src/data/files.ts
-  function office() {
-    let api = window.dynodocOffice;
-    if (!api) throw new Error("The file converter did not load. Close the app and open it again.");
-    return api;
-  }
-  var text = (e) => e instanceof Error ? e.message : String(e);
-  function fromBase64(b64) {
-    let bin = atob(b64), out = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-    return out;
-  }
-  function toBase64(bytes) {
-    let bin = "";
-    for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode(...bytes.subarray(i, i + 8192));
-    return btoa(bin);
-  }
-  function body(r, what) {
-    if (r.status >= 200 && r.status < 300) return r.body;
-    let detail = r.body && typeof r.body == "object" && typeof r.body.error == "string" ? r.body.error : "";
-    throw new Error(detail && detail !== "forbidden" ? detail : r.status === 403 ? `Your role does not allow this (${what}).` : `The workspace could not ${what} (${r.status}).`);
-  }
-  var EXT2 = { document: "docx", spreadsheet: "xlsx", presentation: "pptx" }, EDITOR = { document: "Word", spreadsheet: "Excel", presentation: "PowerPoint" };
-  function chunks(ops, limit = 4e5) {
-    let out = [], cur = [], size = 0;
-    for (let op of ops) {
-      let n = JSON.stringify(op).length;
-      cur.length && (size + n > limit || cur.length >= 500) && (out.push(cur), cur = [], size = 0), cur.push(op), size += n;
-    }
-    return cur.length && out.push(cur), out;
-  }
-  async function addFile(t, projectId, token) {
-    let file = await call("file_read", { token }), bytes = fromBase64(file.base64), imported = await office().importFile(bytes, file.name), title = file.name.replace(/\.[^.]+$/, "").slice(0, 200) || "Untitled", id = body(await t.apiSend("POST", "documents", { title }), "create the file").id;
-    try {
-      body(await t.apiSend("POST", `documents/${id}/metadata`, { settings: { kind: imported.kind, import_warnings: imported.warnings } }), "describe the file");
-      let seq = 0;
-      for (let part of chunks(imported.ops)) {
-        let events = body(await t.apiSend("POST", `documents/${id}/batch`, { ops: part, base_seq: seq }), "add the content").events ?? [];
-        events.length && (seq = events[events.length - 1].seq);
-      }
-      try {
-        body(await t.apiSend("POST", `documents/${id}/uploads`, { filename: file.name, content_type: "application/octet-stream", content: file.base64, report: { warnings: imported.warnings } }), "keep the original");
-      } catch {
-      }
-      body(await t.apiSend("POST", `documents/${id}/location`, { space_id: projectId }), "put the file in the project");
-      try {
-        await t.svcSend("POST", "notes", { document_id: id, branch: "main", from_seq: 1, to_seq: seq, kind: "revision", summary: `Added ${file.name}`.slice(0, 200), description: `Imported from ${file.name} on this computer.` });
-      } catch {
-      }
-      return { id, title, kind: imported.kind, seq, warnings: imported.warnings };
-    } catch (e) {
-      throw new Error(`${file.name} could not be added: ${text(e)} The partly added file is in the project's trash if it appears at all.`);
-    }
-  }
-  async function addFilesDialog() {
-    if (!state.desktop) return toast("info", "Add files", "Adding files needs the Dynodoc desktop app.");
-    let projectId = state.ui.projectId, picked;
-    try {
-      picked = await call("files_pick", { purpose: "import" });
-    } catch (e) {
-      return toast("error", "The file dialog did not open", text(e));
-    }
-    picked.length && await addPicked(projectId, picked);
-  }
-  async function addPicked(projectId, picked, onAdded) {
-    let t = currentTransport();
-    state.live.saving = !0, render();
-    let problems = [], warnings = [], added = 0;
-    for (let p2 of picked)
-      try {
-        let a = await addFile(t, projectId, p2.token);
-        added += 1;
-        for (let w of a.warnings) warnings.includes(w) || warnings.push(w);
-        await onAdded?.(p2, a);
-      } catch (e) {
-        problems.push(text(e));
-      }
-    return state.live.saving = !1, await refresh(!0), added && toast("success", `Added ${added} file${added === 1 ? "" : "s"}`, warnings[0] ?? "Each file keeps its history from here on."), problems.length && toast("error", "Some files were not added", problems.join(" ")), added;
-  }
-  async function exportFile(docId, open2) {
-    let d = state.db.docs.find((x) => x.id === docId), project2 = state.db.projects.find((p2) => p2.id === d?.projectId);
-    if (!d || !project2) return null;
-    try {
-      let t = currentTransport(), detail = body(await t.apiGet(`documents/${docId}`), "read the file"), seq = detail.latest_seq ?? 0, bytes = await office().exportFile(d.kind, detail.state, detail.title ?? d.title, { documentId: docId, seq }), safe = (detail.title ?? d.title).replace(/[\\/:*?"<>|]+/g, " ").trim() || "Document", out = await call("file_export", {
-        projectId: project2.id,
-        projectName: project2.name,
-        name: `${safe} (v${seq})`,
-        ext: EXT2[d.kind] ?? "docx",
-        base64: toBase64(bytes),
-        open: open2
-      });
-      return toast("success", open2 && out.opened ? `Opened in ${EDITOR[d.kind]}` : "Copy saved", out.path), out.path;
-    } catch (e) {
-      return toast("error", "The copy could not be written", text(e)), null;
-    }
-  }
-  var watching = !1, busy2 = !1;
-  function startWatch() {
-    watching || !state.desktop || (watching = !0, setInterval(() => {
-      busy2 || state.live.env !== "local" || state.live.mode !== "live" || tick();
-    }, 2500));
-  }
-  async function tick() {
-    busy2 = !0;
-    try {
-      let found = await call("watch_poll");
-      for (let c of found) await onChange(c);
-    } catch {
-    } finally {
-      busy2 = !1;
-    }
-  }
-  async function onChange(c) {
-    if (c.kind === "new") {
-      state.watch.newFiles = state.watch.newFiles.filter((n) => !(n.project_id === c.project_id && n.rel_path === c.rel_path)), state.watch.newFiles.push(c), render();
-      return;
-    }
-    await pushSaved(c);
-  }
-  async function pushSaved(c) {
-    let t = currentTransport(), label = c.name;
-    try {
-      let file = await call("file_read", { token: c.token }), bytes = fromBase64(file.base64), origin = await office().originOf(bytes), docId = c.document_id ?? origin.documentId ?? null, doc2 = docId ? state.db.docs.find((d) => d.id === docId && d.projectId === c.project_id) : void 0;
-      if (!doc2) {
-        state.watch.newFiles.push({ ...c, kind: "new" }), render();
-        return;
-      }
-      let latest = body(await t.apiGet(`documents/${doc2.id}/history-points`), "read the history").latest_seq ?? 0, baseSeq = Math.min(latest, c.base_seq ?? origin.seq ?? latest), baseState = body(await t.apiGet(`documents/${doc2.id}/state?through_seq=${baseSeq}`), "read the file").state, plan2 = (await office().planPush(bytes, file.name, baseState, doc2.title)).plan;
-      if (!plan2.ops.length) {
-        await call("watch_seen", { projectId: c.project_id, relPath: c.rel_path, token: c.token, documentId: doc2.id, baseSeq: latest }), toast("info", `${label} was saved`, "Nothing in it differs from the project, so there is nothing to review.");
-        return;
-      }
-      let stamp = (/* @__PURE__ */ new Date()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), name2 = `Edited in ${EDITOR[doc2.kind]} ${stamp}`, made = body(
-        await t.apiSend("POST", `documents/${doc2.id}/change-requests`, {
-          name: name2,
-          note: `Saved from ${file.name} in the project's folder.`,
-          base_seq: baseSeq,
-          ops: plan2.ops,
-          submit: !1,
-          source: { kind: "file", filename: file.name.slice(0, 255), base_reason: "file", anchored: plan2.anchored, summary: summarise(plan2) }
-        }),
-        "keep the changes"
-      );
-      await call("watch_seen", { projectId: c.project_id, relPath: c.rel_path, token: c.token, documentId: doc2.id, baseSeq: latest }), state.watch.recent.unshift({ docId: doc2.id, title: doc2.title, name: file.name, draftId: String(made.id), draftName: name2, changes: plan2.changes.length, at: Date.now() }), state.watch.recent = state.watch.recent.slice(0, 20), await refresh(!0), toast("success", `${label} was saved`, `${plan2.changes.length} change${plan2.changes.length === 1 ? "" : "s"} are in the draft "${name2}". Review them under Changes and send them for review.`);
-    } catch (e) {
-      toast("error", `${label} could not be read as changes`, text(e));
-    }
-  }
-  function summarise(plan2) {
-    let s2 = { added: 0, edited: 0, removed: 0, moved: 0 };
-    for (let ch of plan2.changes) s2[ch.kind] += 1;
-    return s2;
-  }
-  async function addFolderFiles(projectId) {
-    let mine = state.watch.newFiles.filter((n) => n.project_id === projectId);
-    if (!mine.length) return;
-    state.watch.newFiles = state.watch.newFiles.filter((n) => n.project_id !== projectId), render();
-    let byToken = new Map(mine.map((m) => [m.token, m]));
-    await addPicked(
-      projectId,
-      mine.map((m) => ({ token: m.token, name: m.name, size: m.size, path: m.rel_path })),
-      async (p2, a) => {
-        let m = byToken.get(p2.token);
-        m && await call("watch_seen", { projectId, relPath: m.rel_path, token: m.token, documentId: a.id, baseSeq: a.seq });
-      }
-    );
-  }
-  function ignoreFolderFiles(projectId) {
-    state.watch.newFiles = state.watch.newFiles.filter((n) => n.project_id !== projectId), render();
-  }
-  async function chooseFolder(projectId) {
-    try {
-      let picked = await call("files_pick", { purpose: "folder" });
-      if (!picked.length) return;
-      let where = await call("folder_bind", { projectId, token: picked[0].token });
-      toast("success", "Folder bound", `Word, Excel and PowerPoint files saved in ${where} are picked up as changes.`), state.watch.folders[projectId] = where, render();
-    } catch (e) {
-      toast("error", "The folder could not be used", text(e));
-    }
-  }
-  async function stopWatching(projectId) {
-    try {
-      await call("folder_unbind", { projectId }), delete state.watch.folders[projectId], state.watch.newFiles = state.watch.newFiles.filter((n) => n.project_id !== projectId), toast("success", "Folder released", "Files in it are no longer watched. Nothing in it was changed."), render();
-    } catch (e) {
-      toast("error", "The folder could not be released", text(e));
-    }
-  }
-  async function loadFolders() {
-    if (!(!state.desktop || state.live.env !== "local")) {
-      for (let p2 of state.db.projects)
-        try {
-          let s2 = await call("folder_status", { projectId: p2.id });
-          s2 ? state.watch.folders[p2.id] = s2.path : delete state.watch.folders[p2.id];
-        } catch {
-        }
-      render();
-    }
-  }
-
-  // client/src/views/watchbar.ts
-  function watchNotices(projectId) {
-    let fresh = state.watch.newFiles.filter((n) => n.project_id === projectId), recent = state.watch.recent.filter((r) => state.db.docs.some((d) => d.id === r.docId && d.projectId === projectId)).slice(0, 3);
-    if (!fresh.length && !recent.length) return null;
-    let out = [];
-    if (fresh.length) {
-      let names = fresh.slice(0, 3).map((f) => f.name).join(", ") + (fresh.length > 3 ? ` and ${fresh.length - 3} more` : "");
-      out.push(
-        h(
-          "div",
-          { class: "watch-notice", id: "watch-new" },
-          notice("info", h("strong", null, `${fresh.length} file${fresh.length === 1 ? "" : "s"} in the project's folder ${fresh.length === 1 ? "is" : "are"} not in the project yet`), h("div", { class: "muted small" }, names)),
-          h("div", { class: "watch-actions" }, button("Add to the project", { variant: "primary", size: "sm", id: "watch-add", onClick: () => void addFolderFiles(projectId) }), button("Ignore", { size: "sm", onClick: () => ignoreFolderFiles(projectId) }))
-        )
-      );
-    }
-    for (let r of recent)
-      out.push(
-        h(
-          "div",
-          { class: "watch-notice" },
-          notice("success", h("strong", null, `${r.name} was saved in its editor ${short(r.at)} ago`), h("div", { class: "muted small" }, `${r.changes} change${r.changes === 1 ? "" : "s"} are in the draft "${r.draftName}" of ${r.title}.`)),
-          h(
-            "div",
-            { class: "watch-actions" },
-            button("Review the changes", {
-              variant: "primary",
-              size: "sm",
-              onClick: () => {
-                state.db.drafts.some((d) => d.id === r.draftId) && switchBranch(r.draftId), state.watch.recent = state.watch.recent.filter((x) => x !== r), go("history");
-              }
-            }),
-            button("Dismiss", { size: "sm", onClick: () => {
-              state.watch.recent = state.watch.recent.filter((x) => x !== r), render();
-            } })
-          )
-        )
-      );
-    return h("div", { class: "watch-notices" }, out);
-  }
-
   // client/src/views/documents.ts
   var HOSTS_FOR = {
     document: ["word", "google-docs"],
@@ -3752,7 +3772,7 @@ Suggest, do not order.` }
             h("td", null, last ? h("span", null, last.summary, h("span", { class: "muted" }, ` · ${personName(last.authorId)}`)) : "—"),
             h("td", null, drafts2 ? String(drafts2) : h("span", { class: "muted" }, "0")),
             h("td", null, reqs ? pill(`${reqs} open`, "success") : h("span", { class: "muted" }, "0")),
-            h("td", null, keys2.length ? pill(`${HOST_LABEL[keys2[0].host]}`, "success", { mono: !1 }) : pill("not connected", "neutral")),
+            h("td", null, isLocal() ? pill({ document: "Word", spreadsheet: "Excel", presentation: "PowerPoint" }[d.kind], "neutral", { mono: !1, title: "Opens in the program your computer uses for this kind of file" }) : keys2.length ? pill(`${HOST_LABEL[keys2[0].host]}`, "success", { mono: !1 }) : pill("not connected", "neutral")),
             h("td", { class: "muted" }, last ? short(last.at) : "")
           );
         })
@@ -3991,7 +4011,6 @@ Suggest, do not order.` }
         "div",
         { class: "page" },
         viewHeader("Documents", `${docs.length} file${docs.length === 1 ? "" : "s"} in ${project(state.db, state.ui.projectId).name}`, button("New draft…", { icon: "branch", onClick: () => newDraftDialog() }), state.desktop && isLive() ? button("Add files…", { icon: "plus", variant: "primary", id: "add-files", onClick: () => void addFilesDialog() }) : button("Add file", { icon: "plus", disabled: !0, title: "Uploading files is in the web workspace and the add-ins; not in this release of the client." })),
-        watchNotices(state.ui.projectId),
         docs.length ? h("div", { class: "card flush" }, fileTable(docs)) : empty("documents", "No files yet", isLocal() ? "Add Word, Excel or PowerPoint files from your computer. Each keeps its history from the moment you add it." : "Add a file in the web workspace or from an add-in.", state.desktop && isLive() ? button("Add files…", { variant: "primary", icon: "plus", onClick: () => void addFilesDialog() }) : void 0)
       );
     let counts = { drafts: state.db.drafts.filter((x) => x.docId === sel.id).length, versions: sel.versions.length, disc: sel.discussions.filter((t) => !t.resolved).length }, body2 = ui.tab === "versions" ? versions(sel) : ui.tab === "drafts" ? drafts(sel) : ui.tab === "discussions" ? discussions(sel) : ui.tab === "people" ? people(sel) : ui.tab === "sync" ? sync3(sel) : overview(sel);
@@ -4198,8 +4217,7 @@ Suggest, do not order.` }
         )
       );
     }
-    let split2 = h("div", { class: "split-view" }, left, right), bar = watchNotices(state.ui.projectId);
-    return bar ? h("div", { class: "split-wrap" }, bar, split2) : split2;
+    return h("div", { class: "split-view" }, left, right);
   }
 
   // client/src/views/history.ts
@@ -4592,7 +4610,7 @@ Suggest, do not order.` }
                 h("input", { type: "radio", name: `rc-${r.id}-${c.blockId}`, checked: c.choice === side, onChange: () => {
                   c.choice = side, render();
                 } }),
-                h("span", { class: "conflict-side" }, side === "team" ? "Keep the team's current version" : `Use ${personName(r.authorId)}'s version`),
+                h("span", { class: "conflict-side" }, side === "team" ? "Keep the team's current version" : r.authorId === state.db.me ? "Use your version" : `Use ${personName(r.authorId)}'s version`),
                 h("span", { class: "conflict-text" }, side === "team" ? c.team : c.draft)
               )
             )
