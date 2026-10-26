@@ -63,8 +63,9 @@ function failed(): HTMLElement {
 }
 
 export function splash(): HTMLElement | null {
-  if (!state.local.splash) return null;
+  if (!state.local.splash && !state.local.busy) return null;
   if (state.local.phase === 'failed') return failed();
+  if (state.local.busy) return card(h('div', { class: 'splash-step', role: 'status' }, icon('sync', 16, 'icon spin'), h('span', null, state.local.busy)), h('p', { class: 'muted small' }, 'This takes a moment. Nothing is lost if it fails.'));
   if (state.local.phase === 'profile') return profileForm();
   return starting();
 }

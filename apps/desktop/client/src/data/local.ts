@@ -137,3 +137,47 @@ export async function openLocalFolder(): Promise<void> {
     toast('error', 'Could not open the folder', e instanceof Error ? e.message : String(e));
   }
 }
+
+/** Writes one archive of the whole workspace (the database is closed for a moment). */
+export async function backupNow(): Promise<void> {
+  try {
+    const picked = (await call('files_pick', { purpose: 'backup_save' })) as { token: string }[];
+    if (!picked.length) return;
+    await withBusy('Closing the database for a moment to make the backup…', async () => {
+      const info = (await call('backup_export', { token: picked[0].token })) as { path: string; bytes: number; files: number };
+      toast('success', 'Backup written', `${info.path} (${(info.bytes / 1048576).toFixed(1)} MB). It holds your documents unencrypted: keep it as private as the files themselves.`);
+    });
+  } catch (e) {
+    toast('error', 'The backup was not made', e instanceof Error ? e.message : String(e));
+  }
+}
+
+/** Replaces the workspace with the one in a backup. */
+export async function restoreNow(): Promise<void> {
+  try {
+    const picked = (await call('files_pick', { purpose: 'backup_open' })) as { token: string }[];
+    if (!picked.length) return;
+    await withBusy('Restoring the backup…', async () => {
+      await call('backup_import', { token: picked[0].token });
+      await readLocal();
+      await connectLocal();
+      state.ui.projectId = state.db.projects[0]?.id ?? '';
+      toast('success', 'Backup restored', 'The workspace is the one in the backup. What it replaced is kept in the workspace folder, in a folder named pgdata.before-restore.');
+    });
+  } catch (e) {
+    toast('error', 'The backup was not restored', e instanceof Error ? e.message : String(e));
+    await readLocal();
+    await connectLocal();
+  }
+}
+
+async function withBusy(what: string, work: () => Promise<void>): Promise<void> {
+  state.local.busy = what;
+  render();
+  try {
+    await work();
+  } finally {
+    state.local.busy = '';
+    render();
+  }
+}

@@ -23,6 +23,7 @@ export type View =
 export type SettingsSection =
   | 'general'
   | 'accounts'
+  | 'workspace'
   | 'appearance'
   | 'keybindings'
   | 'integrations'
@@ -254,6 +255,8 @@ export const state = {
     secretsIn: '',
     restarts: 0,
     profile: null as { name: string; email: string } | null,
+    /** Set while the app has the database closed for a backup or a restore. */
+    busy: '' as string,
     /** The first-run form. */
     form: { name: '', project: 'My documents', email: '', busy: false, error: '' },
   },

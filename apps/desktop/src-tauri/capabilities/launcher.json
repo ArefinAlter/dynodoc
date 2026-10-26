@@ -27,6 +27,8 @@
     "allow-local-create-profile",
     "allow-local-retry",
     "allow-local-open-folder",
+    "allow-backup-export",
+    "allow-backup-import",
     "allow-files-pick",
     "allow-file-read",
     "allow-file-export",

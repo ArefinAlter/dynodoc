@@ -15,13 +15,14 @@ import { applyAppearance } from '../theme.ts';
 import { ROLE_LABEL, personName, when, isAgent } from './common.ts';
 import { installSteps } from './connectors.ts';
 import { aboutBody } from './about.ts';
-import { isLive, refresh, signOut, startVisitor } from '../data/live.ts';
-import { call } from '../bridge.ts';
+import { isLive, refresh, signOut, startVisitor, currentTransport } from '../data/live.ts';
+import { backupNow, restoreNow, openLocalFolder } from '../data/local.ts';
 import type { AddinHost, Role } from '../data/types.ts';
 
 export const SECTIONS: { id: SettingsSection; label: string; icon: string; group: string }[] = [
   { id: 'general', label: 'General', icon: 'settings', group: 'App' },
   { id: 'accounts', label: 'Accounts', icon: 'user', group: 'App' },
+  { id: 'workspace', label: 'This computer', icon: 'documents', group: 'App' },
   { id: 'appearance', label: 'Appearance', icon: 'palette', group: 'App' },
   { id: 'keybindings', label: 'Keybindings', icon: 'keyboard', group: 'App' },
   { id: 'integrations', label: 'Integrations', icon: 'external', group: 'App' },
@@ -79,8 +80,9 @@ function workspaceCard(): Child {
 }
 
 async function saveProfile(name: string, bio: string): Promise<void> {
-  const current = (await call('api_get', { path: 'profile' })) as { status: number; body: { revision?: number } };
-  const reply = (await call('api_send', { method: 'POST', path: 'profile', body: { name, bio, revision: current.body?.revision ?? 0 }, ifMatch: null })) as { status: number; body: { error?: string } };
+  const t = currentTransport();
+  const current = await t.apiGet('profile');
+  const reply = await t.apiSend('POST', 'profile', { name, bio, revision: current.body?.revision ?? 0 });
   if (reply.status >= 300) throw new Error(reply.body?.error || 'The server did not save the profile.');
 }
 
@@ -107,6 +109,25 @@ function accounts(): Child {
         : 'Signing in to a server and keeping a key for this computer are in the desktop app. This copy runs on sample data and connects to nothing.',
       state.desktop ? slot : notice('info', 'Pre-alpha release on sample data: no server, no sign-in. Install the desktop app to connect to the Dynodoc cloud or your own server.'),
     ),
+  ];
+}
+
+/** The workspace on this computer: where it lives, what holds its keys, backup and restore. */
+function workspaceSection(): Child {
+  const l = state.local;
+  if (!state.desktop) return notice('info', 'The workspace on this computer is part of the desktop app. This copy runs on sample data and stores nothing.');
+  const running = l.phase === 'ready';
+  return [
+    section('Workspace on this computer', 'Your documents, their history and your reviews live in a database this app starts for you when it opens and stops when it closes. No server and no account are needed.', rows(
+      row('Status', running ? 'The database and the engine are running on this computer, on a loopback address nothing else can reach.' : l.detail || l.step, pill(running ? 'Running' : l.phase === 'failed' ? 'Stopped' : 'Starting', running ? 'success' : l.phase === 'failed' ? 'error' : 'info', { mono: false })),
+      row('Folder', 'Everything the workspace stores on this computer (the logs are in its logs folder).', h('div', { class: 'row-actions' }, h('code', { class: 'small folder-path', id: 'workspace-folder' }, l.folder), button('Open the logs', { size: 'sm', onClick: () => void openLocalFolder() }))),
+      row('Secrets', 'The database passwords and the engine keys are made on the first start and kept in ' + (l.secretsIn || 'the credential store') + '. They are never in a file you could copy by mistake, in a backup, or in a log.', null, { fixed: true }),
+      row('Engine restarts', 'The app starts the engine again if it stops. This counts the restarts since the app opened.', h('span', { class: 'mono' }, String(l.restarts))),
+    )),
+    section('Backup and restore', 'One archive holds the whole workspace. It opens only with the same kind of operating system and the same PostgreSQL version, and it holds your documents unencrypted.', rows(
+      row('Back up this workspace', 'The database closes for a few seconds while the archive is written, then opens again.', button('Back up…', { size: 'sm', id: 'backup-now', disabled: !running, onClick: () => void backupNow() })),
+      row('Restore from a backup', 'Replaces everything in this workspace with the backup. What it replaces is kept beside it, not deleted. New passwords and keys are made for the restored data.', button('Restore…', { size: 'sm', id: 'restore-now', disabled: !running, onClick: () => confirmDialog('Restore a backup', h('p', null, 'This replaces everything in this workspace (documents, history, reviews, and the settings kept with the workspace) with the contents of a backup you choose. What it replaces is kept in the workspace folder and can be put back by hand.'), 'Choose a backup…', () => void restoreNow(), { danger: true }) })),
+    )),
   ];
 }
 
@@ -411,7 +432,7 @@ function accessibility(): Child {
 }
 
 const RENDER: Record<SettingsSection, () => Child> = {
-  general, accounts, appearance, keybindings, integrations, versioncontrol: versionControl, notifications, prompts, providers, agent, skills, connectors, team, keys, admin, advanced, accessibility, about: aboutBody,
+  general, accounts, workspace: workspaceSection, appearance, keybindings, integrations, versioncontrol: versionControl, notifications, prompts, providers, agent, skills, connectors, team, keys, admin, advanced, accessibility, about: aboutBody,
 };
 
 export function settingsView(): HTMLElement {

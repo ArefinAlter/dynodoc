@@ -13,6 +13,7 @@
 
 pub mod appdb;
 pub mod applog;
+pub mod backup;
 pub mod engine;
 pub mod folders;
 pub mod layout;

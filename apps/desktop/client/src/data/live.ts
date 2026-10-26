@@ -121,7 +121,7 @@ export function disconnect(): void {
 
 /** Read the server again (Fetch). */
 export async function refresh(quiet = false): Promise<void> {
-  if (!isLive()) return;
+  if (!isLive() || state.local.busy) return;
   if (running) {
     again = true;
     return;
@@ -166,7 +166,7 @@ export function noticeChanges(): void {
 }
 
 async function sync(): Promise<void> {
-  if (!ctx || !isLive()) return;
+  if (!ctx || !isLive() || state.local.busy) return;
   if (running) {
     again = true;
     return;

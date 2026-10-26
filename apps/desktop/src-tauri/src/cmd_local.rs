@@ -7,7 +7,7 @@ use crate::AppState;
 use tauri::{Manager, Webview};
 
 #[cfg(test)]
-pub const COMMANDS: [&str; 4] = ["local_status", "local_create_profile", "local_retry", "local_open_folder"];
+pub const COMMANDS: [&str; 6] = ["local_status", "local_create_profile", "local_retry", "local_open_folder", "backup_export", "backup_import"];
 
 fn state_of(webview: &Webview) -> tauri::State<'_, AppState> {
     webview.app_handle().state::<AppState>()
@@ -54,4 +54,27 @@ pub fn local_open_folder(webview: Webview) -> Result<(), String> {
         .opener()
         .open_path(logs.to_string_lossy().to_string(), None::<&str>)
         .map_err(|_| "The folder could not be opened.".to_string())
+}
+
+/// Writes one archive of the whole workspace to a place the person chose (a token from
+/// `files_pick("backup_save")`). The database is closed for a moment while it is written.
+#[tauri::command]
+pub async fn backup_export(webview: Webview, token: String) -> Result<crate::local::backup::BackupInfo, String> {
+    require_launcher(webview.url())?;
+    let state = state_of(&webview);
+    let mut path = state.picks.path(&token).ok_or_else(|| "Choose where to save the backup again.".to_string())?;
+    if path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()) != Some("zip".to_string()) {
+        path.set_extension("zip");
+    }
+    state.local.backup(path).await
+}
+
+/// Replaces the workspace with the one in a backup the person chose (a token from
+/// `files_pick("backup_open")`). The data it replaces is kept beside it, not deleted.
+#[tauri::command]
+pub async fn backup_import(webview: Webview, token: String) -> Result<crate::local::backup::Manifest, String> {
+    require_launcher(webview.url())?;
+    let state = state_of(&webview);
+    let path = state.picks.path(&token).ok_or_else(|| "Choose the backup again.".to_string())?;
+    state.local.restore(path).await
 }

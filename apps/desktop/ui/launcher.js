@@ -1176,6 +1176,8 @@ Suggest, do not order.` }
       secretsIn: "",
       restarts: 0,
       profile: null,
+      /** Set while the app has the database closed for a backup or a restore. */
+      busy: "",
       /** The first-run form. */
       form: { name: "", project: "My documents", email: "", busy: !1, error: "" }
     }
@@ -2163,7 +2165,7 @@ Suggest, do not order.` }
     ctx = null, state.live.mode = "offline", state.live.visitor = null, resetSample();
   }
   async function refresh(quiet = !1) {
-    if (isLive()) {
+    if (!(!isLive() || state.local.busy)) {
       if (running) {
         again = !0;
         return;
@@ -2193,7 +2195,7 @@ Suggest, do not order.` }
     }, 350));
   }
   async function sync() {
-    if (!ctx || !isLive()) return;
+    if (!ctx || !isLive() || state.local.busy) return;
     if (running) {
       again = !0;
       return;
@@ -5532,10 +5534,113 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
     ];
   }
 
+  // client/src/data/local.ts
+  var sleep2 = (n) => new Promise((r) => setTimeout(r, n));
+  function take(s2) {
+    let l = state.local;
+    l.phase = s2.phase, l.step = s2.step, l.detail = s2.detail ?? "", l.firstRun = s2.first_run, l.folder = s2.folder, l.secretsIn = s2.secrets_in, l.restarts = s2.engine_restarts, l.profile = s2.profile;
+  }
+  async function readLocal() {
+    try {
+      let s2 = await call("local_status");
+      return take(s2), s2;
+    } catch {
+      return null;
+    }
+  }
+  async function startLocalWorkspace() {
+    state.local.splash = !0, state.live.mode = "connecting", render();
+    for (let i = 0; i < 3e3; i++) {
+      let s2 = await readLocal();
+      if (!s2)
+        return state.local.phase = "failed", state.local.detail = "The app did not answer. Close it and open it again.", render(), !1;
+      if (s2.phase === "ready") break;
+      if (s2.phase === "failed")
+        return state.live.mode = "offline", render(), !1;
+      render(), await sleep2(s2.phase === "profile" ? 700 : 350);
+    }
+    return connectLocal();
+  }
+  async function connectLocal() {
+    let ok2 = await connectEnv("local");
+    return ok2 ? (state.local.splash = !1, state.live.server = "", render()) : (state.local.phase = "failed", state.local.detail = state.live.error || "The local workspace could not be read.", render()), ok2;
+  }
+  async function createProfile() {
+    let f = state.local.form;
+    if (!f.busy) {
+      if (!f.name.trim()) {
+        f.error = "Enter your name.", render();
+        return;
+      }
+      f.busy = !0, f.error = "", render();
+      try {
+        await call("local_create_profile", { name: f.name, email: f.email.trim() || null });
+        let t = transportFor("local"), projects = await t.apiGet("projects");
+        if (!(projects.status === 200 && Array.isArray(projects.body?.items) && projects.body.items.length > 0)) {
+          let name2 = f.project.trim() || "My documents", made = await t.apiSend("POST", "projects", { name: name2, description: "" });
+          if (made.status < 200 || made.status >= 300) throw new Error(typeof made.body?.error == "string" ? made.body.error : "The first project could not be created.");
+        }
+        await readLocal(), await connectLocal();
+      } catch (e) {
+        f.error = e instanceof Error ? e.message : String(e);
+      } finally {
+        f.busy = !1, render();
+      }
+    }
+  }
+  async function retryLocal() {
+    state.local.phase = "starting", state.local.step = "Starting again", state.local.detail = "", render();
+    try {
+      await call("local_retry");
+    } catch (e) {
+      toast("error", "Could not start again", e instanceof Error ? e.message : String(e));
+    }
+    await startLocalWorkspace();
+  }
+  async function openLocalFolder() {
+    try {
+      await call("local_open_folder");
+    } catch (e) {
+      toast("error", "Could not open the folder", e instanceof Error ? e.message : String(e));
+    }
+  }
+  async function backupNow() {
+    try {
+      let picked = await call("files_pick", { purpose: "backup_save" });
+      if (!picked.length) return;
+      await withBusy("Closing the database for a moment to make the backup…", async () => {
+        let info = await call("backup_export", { token: picked[0].token });
+        toast("success", "Backup written", `${info.path} (${(info.bytes / 1048576).toFixed(1)} MB). It holds your documents unencrypted: keep it as private as the files themselves.`);
+      });
+    } catch (e) {
+      toast("error", "The backup was not made", e instanceof Error ? e.message : String(e));
+    }
+  }
+  async function restoreNow() {
+    try {
+      let picked = await call("files_pick", { purpose: "backup_open" });
+      if (!picked.length) return;
+      await withBusy("Restoring the backup…", async () => {
+        await call("backup_import", { token: picked[0].token }), await readLocal(), await connectLocal(), state.ui.projectId = state.db.projects[0]?.id ?? "", toast("success", "Backup restored", "The workspace is the one in the backup. What it replaced is kept in the workspace folder, in a folder named pgdata.before-restore.");
+      });
+    } catch (e) {
+      toast("error", "The backup was not restored", e instanceof Error ? e.message : String(e)), await readLocal(), await connectLocal();
+    }
+  }
+  async function withBusy(what, work) {
+    state.local.busy = what, render();
+    try {
+      await work();
+    } finally {
+      state.local.busy = "", render();
+    }
+  }
+
   // client/src/views/settings.ts
   var SECTIONS = [
     { id: "general", label: "General", icon: "settings", group: "App" },
     { id: "accounts", label: "Accounts", icon: "user", group: "App" },
+    { id: "workspace", label: "This computer", icon: "documents", group: "App" },
     { id: "appearance", label: "Appearance", icon: "palette", group: "App" },
     { id: "keybindings", label: "Keybindings", icon: "keyboard", group: "App" },
     { id: "integrations", label: "Integrations", icon: "external", group: "App" },
@@ -5592,7 +5697,7 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
     );
   }
   async function saveProfile(name2, bio) {
-    let current3 = await call("api_get", { path: "profile" }), reply = await call("api_send", { method: "POST", path: "profile", body: { name: name2, bio, revision: current3.body?.revision ?? 0 }, ifMatch: null });
+    let t = currentTransport(), current3 = await t.apiGet("profile"), reply = await t.apiSend("POST", "profile", { name: name2, bio, revision: current3.body?.revision ?? 0 });
     if (reply.status >= 300) throw new Error(reply.body?.error || "The server did not save the profile.");
   }
   function accounts() {
@@ -5625,6 +5730,23 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
         state.desktop ? "Where this app opens your real workspace, how it signs in, and this computer’s signing key. These controls are real: they use the desktop app’s own commands." : "Signing in to a server and keeping a key for this computer are in the desktop app. This copy runs on sample data and connects to nothing.",
         state.desktop ? slot : notice("info", "Pre-alpha release on sample data: no server, no sign-in. Install the desktop app to connect to the Dynodoc cloud or your own server.")
       )
+    ];
+  }
+  function workspaceSection() {
+    let l = state.local;
+    if (!state.desktop) return notice("info", "The workspace on this computer is part of the desktop app. This copy runs on sample data and stores nothing.");
+    let running2 = l.phase === "ready";
+    return [
+      section("Workspace on this computer", "Your documents, their history and your reviews live in a database this app starts for you when it opens and stops when it closes. No server and no account are needed.", rows2(
+        row("Status", running2 ? "The database and the engine are running on this computer, on a loopback address nothing else can reach." : l.detail || l.step, pill(running2 ? "Running" : l.phase === "failed" ? "Stopped" : "Starting", running2 ? "success" : l.phase === "failed" ? "error" : "info", { mono: !1 })),
+        row("Folder", "Everything the workspace stores on this computer (the logs are in its logs folder).", h("div", { class: "row-actions" }, h("code", { class: "small folder-path", id: "workspace-folder" }, l.folder), button("Open the logs", { size: "sm", onClick: () => void openLocalFolder() }))),
+        row("Secrets", "The database passwords and the engine keys are made on the first start and kept in " + (l.secretsIn || "the credential store") + ". They are never in a file you could copy by mistake, in a backup, or in a log.", null, { fixed: !0 }),
+        row("Engine restarts", "The app starts the engine again if it stops. This counts the restarts since the app opened.", h("span", { class: "mono" }, String(l.restarts)))
+      )),
+      section("Backup and restore", "One archive holds the whole workspace. It opens only with the same kind of operating system and the same PostgreSQL version, and it holds your documents unencrypted.", rows2(
+        row("Back up this workspace", "The database closes for a few seconds while the archive is written, then opens again.", button("Back up…", { size: "sm", id: "backup-now", disabled: !running2, onClick: () => void backupNow() })),
+        row("Restore from a backup", "Replaces everything in this workspace with the backup. What it replaces is kept beside it, not deleted. New passwords and keys are made for the restored data.", button("Restore…", { size: "sm", id: "restore-now", disabled: !running2, onClick: () => confirmDialog("Restore a backup", h("p", null, "This replaces everything in this workspace (documents, history, reviews, and the settings kept with the workspace) with the contents of a backup you choose. What it replaces is kept in the workspace folder and can be put back by hand."), "Choose a backup…", () => void restoreNow(), { danger: !0 }) }))
+      ))
     ];
   }
   var ACCENTS = ["", "#2563eb", "#7c3aed", "#0f766e", "#be123c", "#b45309"];
@@ -6033,6 +6155,7 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
   var RENDER = {
     general,
     accounts,
+    workspace: workspaceSection,
     appearance,
     keybindings,
     integrations,
@@ -6070,77 +6193,6 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
       ),
       h("div", { class: "settings-body", "data-scroll-key": `settings-${ui.section}` }, h("div", { class: "settings-inner" }, h("h1", { class: "view-title" }, current3.label), RENDER[current3.id]()))
     );
-  }
-
-  // client/src/data/local.ts
-  var sleep2 = (n) => new Promise((r) => setTimeout(r, n));
-  function take(s2) {
-    let l = state.local;
-    l.phase = s2.phase, l.step = s2.step, l.detail = s2.detail ?? "", l.firstRun = s2.first_run, l.folder = s2.folder, l.secretsIn = s2.secrets_in, l.restarts = s2.engine_restarts, l.profile = s2.profile;
-  }
-  async function readLocal() {
-    try {
-      let s2 = await call("local_status");
-      return take(s2), s2;
-    } catch {
-      return null;
-    }
-  }
-  async function startLocalWorkspace() {
-    state.local.splash = !0, state.live.mode = "connecting", render();
-    for (let i = 0; i < 3e3; i++) {
-      let s2 = await readLocal();
-      if (!s2)
-        return state.local.phase = "failed", state.local.detail = "The app did not answer. Close it and open it again.", render(), !1;
-      if (s2.phase === "ready") break;
-      if (s2.phase === "failed")
-        return state.live.mode = "offline", render(), !1;
-      render(), await sleep2(s2.phase === "profile" ? 700 : 350);
-    }
-    return connectLocal();
-  }
-  async function connectLocal() {
-    let ok2 = await connectEnv("local");
-    return ok2 ? (state.local.splash = !1, state.live.server = "", render()) : (state.local.phase = "failed", state.local.detail = state.live.error || "The local workspace could not be read.", render()), ok2;
-  }
-  async function createProfile() {
-    let f = state.local.form;
-    if (!f.busy) {
-      if (!f.name.trim()) {
-        f.error = "Enter your name.", render();
-        return;
-      }
-      f.busy = !0, f.error = "", render();
-      try {
-        await call("local_create_profile", { name: f.name, email: f.email.trim() || null });
-        let t = transportFor("local"), projects = await t.apiGet("projects");
-        if (!(projects.status === 200 && Array.isArray(projects.body?.items) && projects.body.items.length > 0)) {
-          let name2 = f.project.trim() || "My documents", made = await t.apiSend("POST", "projects", { name: name2, description: "" });
-          if (made.status < 200 || made.status >= 300) throw new Error(typeof made.body?.error == "string" ? made.body.error : "The first project could not be created.");
-        }
-        await readLocal(), await connectLocal();
-      } catch (e) {
-        f.error = e instanceof Error ? e.message : String(e);
-      } finally {
-        f.busy = !1, render();
-      }
-    }
-  }
-  async function retryLocal() {
-    state.local.phase = "starting", state.local.step = "Starting again", state.local.detail = "", render();
-    try {
-      await call("local_retry");
-    } catch (e) {
-      toast("error", "Could not start again", e instanceof Error ? e.message : String(e));
-    }
-    await startLocalWorkspace();
-  }
-  async function openLocalFolder() {
-    try {
-      await call("local_open_folder");
-    } catch (e) {
-      toast("error", "Could not open the folder", e instanceof Error ? e.message : String(e));
-    }
   }
 
   // client/src/views/splash.ts
@@ -6202,7 +6254,7 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
     );
   }
   function splash() {
-    return state.local.splash ? state.local.phase === "failed" ? failed() : state.local.phase === "profile" ? profileForm() : starting() : null;
+    return !state.local.splash && !state.local.busy ? null : state.local.phase === "failed" ? failed() : state.local.busy ? card(h("div", { class: "splash-step", role: "status" }, icon("sync", 16, "icon spin"), h("span", null, state.local.busy)), h("p", { class: "muted small" }, "This takes a moment. Nothing is lost if it fails.")) : state.local.phase === "profile" ? profileForm() : starting();
   }
 
   // client/src/main.ts

@@ -23,6 +23,8 @@ const COMMANDS: &[&str] = &[
     "local_create_profile",
     "local_retry",
     "local_open_folder",
+    "backup_export",
+    "backup_import",
     "files_pick",
     "file_read",
     "file_export",
