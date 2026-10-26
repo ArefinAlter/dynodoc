@@ -55,7 +55,7 @@ function accountRow(id: string): Child {
       ? h(
           'div',
           { class: 'notice-block', role: 'status' },
-          h('p', null, 'Your browser has opened this server’s sign-in page. Sign in there, check that the pairing code is ', h('strong', { id: 'signin-pairing' }, flow.pairing ?? ''), ', and choose Continue. The page then hands the sign-in back to this app. This request is good for 10 minutes. If that page says the link is not valid, the server is older than this app and needs to be updated.'),
+          h('p', null, 'Your browser has opened this server’s sign-in page. Sign in there, check that the pairing code is ', h('strong', { id: 'signin-pairing' }, flow.pairing ?? ''), ', and choose Continue. The page then hands the sign-in back to this app. This request is good for 10 minutes. ' + (flow.via === 'link' ? 'This server has not been updated for the faster hand-over, so the page ends with a dynodoc:// link that the system gives to this app: that works when the app was installed with its installer.' : 'If the page says the link is not valid, the server is older than this app and needs to be updated.')),
           h('div', { class: 'row-actions' }, button('Cancel', { size: 'sm', id: 'signin-cancel', onClick: () => void cancelSignIn() })),
         )
       : null,
@@ -70,7 +70,7 @@ function accountRow(id: string): Child {
           ]
         : [
             button('Sign in with your browser', { size: 'sm', variant: 'primary', id: `signin-${a.id}`, disabled: waiting, onClick: () => void startSignIn(a.id) }),
-            button('Server older than this app?', { size: 'sm', variant: 'ghost', id: `signin-link-${a.id}`, disabled: waiting, title: 'For a server that has not been updated to hand the sign-in back on this computer: the sign-in ends with a dynodoc:// link, which works when the app is installed.', onClick: () => void startSignIn(a.id, true) }),
+            button('Use the dynodoc:// link instead', { size: 'sm', variant: 'ghost', id: `signin-link-${a.id}`, disabled: waiting, title: 'For a server that has not been updated to hand the sign-in back on this computer: the sign-in ends with a dynodoc:// link, which works when the app is installed.', onClick: () => void startSignIn(a.id, true) }),
           ],
       button('Remove', { size: 'sm', variant: 'ghost', onClick: () => confirmDialog('Remove this server', h('p', null, `${a.host} is taken out of this app and its session is removed from this computer. Nothing on the server changes, and projects linked to it stay as they are here.`), 'Remove', () => void removeServer(a.id), { danger: true }) }),
     ),

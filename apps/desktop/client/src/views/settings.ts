@@ -57,7 +57,7 @@ function general(): Child {
     )),
     section('Links', null, rows(
       row('Web links open in your browser', 'Links to other sites never open in this window.', null, { fixed: true }),
-      row('Preferences are kept for this session', state.desktop ? 'This window does not write the web view’s storage; settings return to their defaults when the app restarts.' : 'The hosted copy keeps nothing in your browser: settings last until you close the tab.', null, { fixed: true }),
+      row(state.desktop ? 'Preferences are saved on this computer' : 'Preferences are kept for this session', state.desktop ? 'Theme, keybindings, providers (never their keys) and the other choices on these pages are written to a settings file in the app’s folder, and used again the next time the app opens. This window does not write the web view’s storage.' : 'The hosted copy keeps nothing in your browser: settings last until you close the tab.', null, { fixed: true }),
     )),
   ];
 }

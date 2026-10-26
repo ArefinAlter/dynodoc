@@ -252,7 +252,7 @@ fn identity_is_stable_and_the_version_has_one_source() {
         let overlay = json(&format!("tauri.{platform}.conf.json"));
         assert_eq!(
             strings(&overlay["bundle"]["externalBin"]),
-            ["binaries/engine-cli"]
+            ["binaries/engine-cli", "binaries/engine-api"]
         );
         assert_eq!(
             overlay.as_object().unwrap().len(),

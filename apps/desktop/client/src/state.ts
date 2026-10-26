@@ -206,6 +206,8 @@ export interface ServerFlow {
   account_id: string | null;
   pairing: string | null;
   message: string;
+  /** How the server hands the sign-in back: this computer's own address, or a dynodoc:// link. */
+  via: 'loopback' | 'link';
 }
 
 /** What the app keeps for the agent (src-tauri/src/agent/config.rs) and what holds the keys. */
@@ -276,7 +278,7 @@ export const state = {
     cloud: '',
     store: '',
     accounts: [] as ServerAccount[],
-    flow: { state: 'none', account_id: null, pairing: null, message: '' } as ServerFlow,
+    flow: { state: 'none', account_id: null, pairing: null, message: '', via: 'loopback' } as ServerFlow,
     /** What a request to the server is doing now, in words ("" when idle). */
     busy: '',
     /** Projects on each server the person is signed in to (by account id). */

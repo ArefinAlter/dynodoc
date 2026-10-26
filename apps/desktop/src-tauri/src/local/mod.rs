@@ -129,17 +129,23 @@ fn http_client() -> reqwest::Client {
 impl Local {
     /// `ordinary` is true for the per-user data folder and false for a portable or test folder
     /// (which then gets a credential-store service name of its own, see `secrets::service_for`).
+    /// `portable` keeps the database's and the engine's secrets in files in the folder instead.
     pub fn new(
         data_dir: &Path,
         resource_dir: Option<&Path>,
         exe_dir: &Path,
         ordinary: bool,
+        portable: bool,
     ) -> Self {
         let layout = Layout::new(data_dir);
-        let secrets = Preferred::open(
-            &data_dir.join("secrets"),
-            &secrets::service_for(data_dir, ordinary),
-        );
+        let secrets = if portable {
+            Preferred::portable(&data_dir.join("secrets"))
+        } else {
+            Preferred::open(
+                &data_dir.join("secrets"),
+                &secrets::service_for(data_dir, ordinary),
+            )
+        };
         let status = Status {
             phase: "starting",
             step: "Starting".into(),

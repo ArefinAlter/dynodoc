@@ -1151,7 +1151,7 @@ Suggest, do not order.` }
       cloud: "",
       store: "",
       accounts: [],
-      flow: { state: "none", account_id: null, pairing: null, message: "" },
+      flow: { state: "none", account_id: null, pairing: null, message: "", via: "loopback" },
       /** What a request to the server is doing now, in words ("" when idle). */
       busy: "",
       /** Projects on each server the person is signed in to (by account id). */
@@ -3482,7 +3482,7 @@ ${text3}` : out.push({ role, text: text3 });
   async function startSignIn(id, viaLink = !1) {
     try {
       let pairing = await call("account_signin_start", { id, viaLink });
-      srv().flow = { state: "waiting", account_id: id, pairing, message: "" }, render(), follow();
+      srv().flow = { state: "waiting", account_id: id, pairing, message: "", via: viaLink ? "link" : "loopback" }, render(), follow();
     } catch (e) {
       toast("error", "The browser sign-in did not start", text(e));
     }
@@ -3519,7 +3519,7 @@ ${text3}` : out.push({ role, text: text3 });
       await call("account_signin_cancel");
     } catch {
     }
-    srv().flow = { state: "none", account_id: null, pairing: null, message: "" }, render();
+    srv().flow = { state: "none", account_id: null, pairing: null, message: "", via: "loopback" }, render();
   }
   async function signOutOf(id) {
     try {
@@ -3851,7 +3851,7 @@ ${text3}` : out.push({ role, text: text3 });
     if (!aheadOf(state.db, state.ui.projectId, currentBranch())) return fetchNow();
     if (isLive()) {
       let n = push(state.db, state.ui.projectId, currentBranch());
-      toast("info", `Pushing ${n} commit${n === 1 ? "" : "s"} to ${branchLabel()}`, "They are sent to the server now."), render();
+      toast("info", `Pushing ${n} commit${n === 1 ? "" : "s"} to ${branchLabel()}`, isLocal() ? "They are saved in the workspace now." : "They are sent to the server now."), render();
       return;
     }
     state.ui.fetching = !0, render(), setTimeout(() => {
@@ -5099,7 +5099,7 @@ ${text3}` : out.push({ role, text: text3 });
         "div",
         { class: "commit-options" },
         h("label", { class: "inline-check is-disabled", title: "Dynodoc history is append-only: a revision cannot be changed after it is made." }, h("input", { type: "checkbox", class: "check", disabled: !0 }), "Amend last commit"),
-        h("span", { class: "muted small" }, state.db.remote ? "Pushed to the server as you" : state.prefs.signCommits ? "Signed with this computer’s key" : "Unsigned")
+        h("span", { class: "muted small" }, state.db.remote ? isLocal() ? "Saved in this workspace as you" : "Pushed to the server as you" : state.prefs.signCommits ? "Signed with this computer’s key" : "Unsigned")
       ),
       target.ok ? null : notice("info", target.note),
       button(label, { variant: "primary", id: "commit-button", class: "commit-button", disabled: !c.summary.trim() || !staged.length || !target.ok, onClick: commitStaged2 }),
@@ -5109,7 +5109,7 @@ ${text3}` : out.push({ role, text: text3 });
   }
   function nothingHere() {
     let ctx2 = branchContext(), cards = [];
-    return (ctx2.ahead ?? 0) > 0 && cards.push(h("div", { class: "suggest" }, h("div", null, h("div", { class: "suggest-title" }, `Push ${ctx2.ahead} commit${ctx2.ahead === 1 ? "" : "s"} to the server`), h("div", { class: "suggest-text" }, "Your commits are on this computer only until you push.")), button("Push", { variant: "primary", icon: "up", onClick: sync2 }))), ctx2.kind === "draft" && ctx2.state === "private" && !(ctx2.ahead ?? 0) && cards.push(h("div", { class: "suggest" }, h("div", null, h("div", { class: "suggest-title" }, "Send this draft for review"), h("div", { class: "suggest-text" }, "Open a change request so the team can review and merge it.")), button("Send for review", { onClick: () => sendForReviewDialog() }))), isLocal() ? (cards.push(h("div", { class: "suggest" }, h("div", null, h("div", { class: "suggest-title" }, "Edit a file in Word, Excel or PowerPoint"), h("div", { class: "suggest-text" }, "Open a file from Documents; the copy opens in the program your computer uses for it. When you save it there, the changes arrive as a draft to review. Bind the project to a folder to pick up files you save yourself.")), button("Open Documents", { onClick: () => {
+    return (ctx2.ahead ?? 0) > 0 && cards.push(h("div", { class: "suggest" }, h("div", null, h("div", { class: "suggest-title" }, `Push ${ctx2.ahead} commit${ctx2.ahead === 1 ? "" : "s"} ${isLocal() ? "to the workspace" : "to the server"}`), h("div", { class: "suggest-text" }, isLocal() ? "Your commits are kept in this window until you push them into the workspace’s main line." : "Your commits are on this computer only until you push.")), button("Push", { variant: "primary", icon: "up", onClick: sync2 }))), ctx2.kind === "draft" && ctx2.state === "private" && !(ctx2.ahead ?? 0) && cards.push(h("div", { class: "suggest" }, h("div", null, h("div", { class: "suggest-title" }, "Send this draft for review"), h("div", { class: "suggest-text" }, "Open a change request so the team can review and merge it.")), button("Send for review", { onClick: () => sendForReviewDialog() }))), isLocal() ? (cards.push(h("div", { class: "suggest" }, h("div", null, h("div", { class: "suggest-title" }, "Edit a file in Word, Excel or PowerPoint"), h("div", { class: "suggest-text" }, "Open a file from Documents; the copy opens in the program your computer uses for it. When you save it there, the changes arrive as a draft to review. Bind the project to a folder to pick up files you save yourself.")), button("Open Documents", { onClick: () => {
       state.ui.view = "documents", render();
     } }))), h("div", { class: "no-changes" }, empty("check", "Nothing waiting", `No captured changes on ${branchLabel()}. Edits you save in an editor arrive as drafts, and the changes you make in this app are committed as you go.`), h("div", { class: "suggests" }, cards))) : (cards.push(h("div", { class: "suggest" }, h("div", null, h("div", { class: "suggest-title" }, "Fetch from the server"), h("div", { class: "suggest-text" }, "See new revisions, reviews and change requests.")), button("Fetch", { icon: "sync", onClick: fetchNow }))), cards.push(h("div", { class: "suggest" }, h("div", null, h("div", { class: "suggest-title" }, "Edit in your editor"), h("div", { class: "suggest-text" }, "Editing happens in Word, Excel, PowerPoint or Google’s editors with the Dynodoc add-in. Captured edits appear here.")), button("Open a file…", { onClick: () => {
       state.ui.view = "documents", render();
@@ -6496,7 +6496,7 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
       waiting ? h(
         "div",
         { class: "notice-block", role: "status" },
-        h("p", null, "Your browser has opened this server’s sign-in page. Sign in there, check that the pairing code is ", h("strong", { id: "signin-pairing" }, flow.pairing ?? ""), ", and choose Continue. The page then hands the sign-in back to this app. This request is good for 10 minutes. If that page says the link is not valid, the server is older than this app and needs to be updated."),
+        h("p", null, "Your browser has opened this server’s sign-in page. Sign in there, check that the pairing code is ", h("strong", { id: "signin-pairing" }, flow.pairing ?? ""), ", and choose Continue. The page then hands the sign-in back to this app. This request is good for 10 minutes. " + (flow.via === "link" ? "This server has not been updated for the faster hand-over, so the page ends with a dynodoc:// link that the system gives to this app: that works when the app was installed with its installer." : "If the page says the link is not valid, the server is older than this app and needs to be updated.")),
         h("div", { class: "row-actions" }, button("Cancel", { size: "sm", id: "signin-cancel", onClick: () => void cancelSignIn() }))
       ) : null,
       mine && flow.state === "failed" ? notice("warning", flow.message || "The sign-in did not finish.") : null,
@@ -6508,7 +6508,7 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
           button("Check the session", { size: "sm", variant: "ghost", onClick: () => void checkServer(a.id) })
         ] : [
           button("Sign in with your browser", { size: "sm", variant: "primary", id: `signin-${a.id}`, disabled: waiting, onClick: () => void startSignIn(a.id) }),
-          button("Server older than this app?", { size: "sm", variant: "ghost", id: `signin-link-${a.id}`, disabled: waiting, title: "For a server that has not been updated to hand the sign-in back on this computer: the sign-in ends with a dynodoc:// link, which works when the app is installed.", onClick: () => void startSignIn(a.id, !0) })
+          button("Use the dynodoc:// link instead", { size: "sm", variant: "ghost", id: `signin-link-${a.id}`, disabled: waiting, title: "For a server that has not been updated to hand the sign-in back on this computer: the sign-in ends with a dynodoc:// link, which works when the app is installed.", onClick: () => void startSignIn(a.id, !0) })
         ],
         button("Remove", { size: "sm", variant: "ghost", onClick: () => confirmDialog("Remove this server", h("p", null, `${a.host} is taken out of this app and its session is removed from this computer. Nothing on the server changes, and projects linked to it stay as they are here.`), "Remove", () => void removeServer(a.id), { danger: !0 }) })
       )
@@ -6636,7 +6636,7 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
 
   // client/src/views/about.ts
   function aboutBody() {
-    let shell2 = state.desktop, live = isLive();
+    let shell2 = state.desktop, live = isLive(), local2 = live && state.live.env === "local";
     return [
       h(
         "div",
@@ -6645,7 +6645,11 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
         h("p", null, "Version control for documents, spreadsheets and presentations: edits in Word, Excel, PowerPoint and Google’s editors become change requests, are reviewed and merged, and land in a hash-chained history."),
         h("p", { class: "muted small" }, `Client 0.0.1-beta${shell2 ? `, desktop app ${state.desktopVersion}` : ""}.`)
       ),
-      live ? section("This window shows a real Dynodoc server", null, h(
+      local2 ? section("This window shows the workspace on this computer", null, h(
+        "p",
+        null,
+        "Your files, their history, drafts, change requests and reviews are in a database this app started on this computer. It needs no server, no account and no network. Everything you do here is saved there, and nothing leaves this computer unless you sign in to a server and sync a project (Settings, Accounts) or use your own model provider for the agent (Settings, Providers)."
+      )) : live ? section("This window shows a real Dynodoc server", null, h(
         "p",
         null,
         `The screens read and change your workspace on ${state.live.server || "the server"}. `,
@@ -6654,18 +6658,17 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
         "p",
         null,
         "Every project, person, file, revision and figure here is invented, and a script inside the page stands in for a Dynodoc server: nothing you do leaves this ",
-        shell2 ? "window. Settings, Accounts starts a sample workspace on the hosted pre-alpha server, or signs in to yours." : "tab. The page makes no network requests."
+        shell2 ? "window." : "tab. The page makes no network requests. The desktop app has the real workspace."
       )),
       section("Where each part runs", null, rows2(
-        row("On the Dynodoc server", "Projects, files and their content, the hash-chained history (verified by the server), drafts, change requests, reviews, merges with conflict choices, versions, discussions, published copies, people and roles, review rules, the AI agent policy, issues and labels, stars and watching, notifications and signing keys. The desktop app reaches them through the server’s own web workspace routes, with your session, so the server’s permission rules apply unchanged.", null),
-        row("On the pre-alpha service", "Beside the server (the same address, under /svc): the changes your editor add-ins captured and nobody committed yet, commits you have not pushed, commit messages (the server records changes, not messages), agent threads and dismissed copies. It also makes the sample workspaces. It is part of this pre-alpha release, not of the product.", null),
-        row("On this computer", "Your preferences (theme, keybindings, providers without their keys) in the app’s settings file; this computer’s signing key in the operating system’s key store. Provider keys are held in memory only.", null),
-        row("Prepared, not computed", "The agent’s replies: no model is called. The connector catalogue lists what exists; connection keys come from the server.", null),
-        row("Not in this release", "Editing a document’s content in this client (that is the add-ins’ and the web workspace’s job), uploads, exports and administration actions. macOS is not built yet.", null)
+        row("On this computer", "The workspace: a PostgreSQL database and the Dynodoc engine, started by the app on loopback addresses only and stopped when it closes. Your files are imported from and exported to Word, Excel and PowerPoint formats by a converter that runs in this window without network access. Preferences are a file in the app’s settings folder; secrets (the database passwords, sessions on servers, your provider keys) are in the operating system’s credential store.", null),
+        row("On a server you sign in to", "Only what you link and sync: the content of the files of a linked project. History, comments, change requests and discussions stay where they were made. Each side keeps its own hash-chained history and verifies it on its own.", null),
+        row("At a model provider", "Only when you turn the agent on with your own key, allow that provider’s address, and ask a question: the conversation and the tools’ answers go from this computer to that address, and nowhere else. No Dynodoc server sees them.", null),
+        row("Not in this release", "Editing a document’s content inside this window (use Word, Excel or PowerPoint on a copy; saving it in the project’s folder turns the changes into a draft), the Google editors without a server, macOS (not built yet), automatic background sync (you press Sync), and phones (the Android and iPhone apps are separate and still need a server).", null)
       )),
       section("Privacy", null, rows2(
         row("No telemetry", "No analytics, no crash reports, no usage statistics.", null, { fixed: !0 }),
-        row("Keys stay in memory", "Provider keys typed in Settings are held in memory only, shown as “stored” with the last four characters, and never sent or saved.", null, { fixed: !0 })
+        row("Keys stay in the credential store", "Provider keys and sessions are kept by the operating system’s credential store, shown here only as “stored” with the last four characters, and never written to a log or this window’s storage. Where a system has no credential store (some Linux sessions) provider keys go to one file encrypted with a passphrase you type, and sessions to a file only you can read.", null, { fixed: !0 })
       )),
       h("p", { class: "muted small" }, "A Verne Ltd. product.")
     ];
@@ -6808,7 +6811,7 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
       )),
       section("Links", null, rows2(
         row("Web links open in your browser", "Links to other sites never open in this window.", null, { fixed: !0 }),
-        row("Preferences are kept for this session", state.desktop ? "This window does not write the web view’s storage; settings return to their defaults when the app restarts." : "The hosted copy keeps nothing in your browser: settings last until you close the tab.", null, { fixed: !0 })
+        row(state.desktop ? "Preferences are saved on this computer" : "Preferences are kept for this session", state.desktop ? "Theme, keybindings, providers (never their keys) and the other choices on these pages are written to a settings file in the app’s folder, and used again the next time the app opens. This window does not write the web view’s storage." : "The hosted copy keeps nothing in your browser: settings last until you close the tab.", null, { fixed: !0 })
       ))
     ];
   }

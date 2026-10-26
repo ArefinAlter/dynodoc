@@ -207,12 +207,23 @@ impl Store for OsStore {
 /// machine with no credential store). Not used for provider keys.
 pub struct FileStore {
     dir: PathBuf,
+    portable: bool,
 }
 
 impl FileStore {
     pub fn new(dir: &Path) -> Self {
         Self {
             dir: dir.to_path_buf(),
+            portable: false,
+        }
+    }
+
+    /// The store of a portable copy: the secrets travel with the folder (a credential store belongs
+    /// to one computer and one account, and a copy on a stick must open wherever it is taken).
+    pub fn portable(dir: &Path) -> Self {
+        Self {
+            dir: dir.to_path_buf(),
+            portable: true,
         }
     }
 
@@ -278,7 +289,11 @@ impl Store for FileStore {
     }
 
     fn describe(&self) -> &'static str {
-        "a file only you can read in the app's data folder (no credential store was found)"
+        if self.portable {
+            "a file in this portable folder, so the copy opens wherever you take it (anyone who can read the folder can read it)"
+        } else {
+            "a file only you can read in the app's data folder (no credential store was found)"
+        }
     }
 }
 
@@ -289,6 +304,14 @@ pub struct Preferred {
 }
 
 impl Preferred {
+    /// Files in the portable folder, never the credential store.
+    pub fn portable(dir: &Path) -> Self {
+        Self {
+            os: None,
+            file: FileStore::portable(dir),
+        }
+    }
+
     pub fn open(fallback_dir: &Path, service: &str) -> Self {
         Self {
             os: OsStore::available(service).then(|| OsStore::new(service)),

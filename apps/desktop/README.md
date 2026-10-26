@@ -1,22 +1,37 @@
-# Dynodoc desktop client (Tauri 2)
+# Dynodoc desktop app (Tauri 2)
 
-A native window for Dynodoc on Windows, macOS and Linux, built with Tauri 2, and the same
-project prepared for Android and iPhone. It is a **shell**: it does not bundle the web app. It
-opens the Dynodoc server you choose (the hosted workspace at `https://app.dynodoc.online`, or
-your own installation) in the system web view, and adds a few things a browser tab cannot: a
-signing key kept by the operating system, `dynodoc://` links, and a bundled `engine-cli` for
-local tools.
+**0.0.1b (pre-alpha): the desktop app is software of its own.** One installer (Windows) or one file
+(Linux): the first launch starts a PostgreSQL database and the Dynodoc engine on loopback addresses,
+and everything works on this computer with no server, no account and no network: import Word, Excel
+and PowerPoint files, history, drafts, change requests, reviews, merges with conflict choices,
+restore, export (and open in the program the system uses), a folder watch that turns a file saved by
+Word, Excel or PowerPoint into a draft, backup and restore of the whole workspace, and an agent that
+uses your own model provider with your own key. A server is an addition: sign in with the system
+browser (OAuth-style code with PKCE on a loopback address, the session in the operating system's
+credential store) to the hosted Dynodoc or one you run, link a project, and sync it.
 
-Design and decisions: [decision 016](../../docs/decisions/016-devices-processors-desktop-and-mobile-apps.md).
-Status per platform, owner prerequisites and store risk:
-[DESKTOP-AND-MOBILE-APPS.md](../../docs/DESKTOP-AND-MOBILE-APPS.md).
+- Decisions: [019 the standalone workspace](../../docs/decisions/019-standalone-desktop-local-workspace.md),
+  [020 sign-in and sync](../../docs/decisions/020-desktop-web-sign-in-and-sync.md); earlier:
+  [016](../../docs/decisions/016-devices-processors-desktop-and-mobile-apps.md),
+  [017](../../docs/decisions/017-native-app-sign-in-handover.md).
+- What was run, with evidence and what could not be tested: [ACCEPTANCE-0.0.1b.md](../../docs/ACCEPTANCE-0.0.1b.md).
+- Status per platform, owner prerequisites and store risk: [DESKTOP-AND-MOBILE-APPS.md](../../docs/DESKTOP-AND-MOBILE-APPS.md).
 
-**Status (see the end of this file for exactly what was run):** the desktop shell is tried on
-Windows (and compiled on Linux); the Android app was **built and run on an Android 16 emulator on
-22 October 2026** (see "Mobile" below). Nothing is signed, notarised, in a store, or tried on a Mac,
-an iPhone or a physical phone.
+How it is put together (`src-tauri/src`):
 
-## What each file does
+| Part | What it does |
+|---|---|
+| `local/` | The workspace on this computer: finds the bundled programs (`layout.rs`), makes the database (`initdb`) and starts it on a random loopback port (`pg.rs`), keeps its passwords and the engine's keys in the credential store (`secrets.rs`), starts and supervises `engine-api` (`engine.rs`), signs the person in to it with its own keys (`session.rs`), keeps the client's own state in a second database (`appdb.rs`), backs up and restores (`backup.rs`) |
+| `agent/` | The model providers (Anthropic, Gemini, OpenAI and the services that speak its format, Ollama), keys, consent, caps and the usage ledger, the closed tool table, one run |
+| `accounts/` | Servers the person signed in to: the list, the loopback listener for the browser sign-in, sessions in the credential store |
+| `remote.rs`, `envs.rs` | The only network code the page can reach: fixed route tables, per place (`local`, `acct:<id>`, or the 0.0.1a `server`) |
+| `cmd_*.rs`, `commands.rs` | The commands the page may call, each behind a second lock (`require_launcher`), each listed in `build.rs`, `capabilities/launcher.json` and a test |
+| `client/` | The page (TypeScript, bundled by `client/build.mjs` into `ui/launcher.js`, plus the Office codec `ui/office-worker.js` that imports and exports Word, Excel and PowerPoint files without network access) |
+
+The window has no network: its policy is `connect-src ipc:`. Model requests, server requests, file
+access and the database all go through typed commands in Rust.
+
+## What each file does (0.0.1a shell)
 
 | Path | Purpose |
 |---|---|
@@ -160,45 +175,55 @@ Prerequisites, any desktop: Rust (the version pinned by the repository's `rust-t
 used automatically), Node 20 or newer with npm.
 
 - **Windows:** Visual Studio Build Tools (C++ workload) and WebView2 (included in Windows 11).
-- **macOS:** Xcode command line tools.
-- **Linux (Debian/Ubuntu):** `sudo apt-get install libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libxdo-dev libayatana-appindicator3-dev patchelf file build-essential`.
+- **macOS:** not built in 0.0.1b.
+- **Linux (Debian/Ubuntu):** `sudo apt-get install libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libxdo-dev libayatana-appindicator3-dev libsecret-1-dev patchelf file build-essential`.
 
 ```sh
 cd apps/desktop
-npm ci --ignore-scripts              # installs the Tauri command line (no install script is needed)
-node scripts/prepare-sidecar.mjs     # builds engine-cli (release) and copies it into src-tauri/binaries
-npm run tauri -- dev                 # run a debug build
-npm run tauri -- build               # installers/bundles in src-tauri/target/release/bundle
-npm run tauri -- build --debug --no-bundle   # just the debug executable
+npm ci --ignore-scripts              # the Tauri command line, esbuild, TypeScript
+node scripts/prepare-sidecar.mjs     # builds engine-api and engine-cli (release) into src-tauri/binaries
+node scripts/prepare-pg.mjs          # downloads the PostgreSQL 16.15 binaries, checks them, cuts them down: src-tauri/resources/pg
+node client/build.mjs                # the page: ui/launcher.js (committed; `--check` fails if it is stale)
+npm run tauri -- build --debug --no-bundle                                 # the debug executable (test seams below)
+npm run tauri -- build --bundles nsis --config src-tauri/tauri.bundle.conf.json   # Windows installer
+npm run tauri -- build --bundles appimage,deb --config src-tauri/tauri.bundle.conf.json   # Linux
 ```
 
-`prepare-sidecar.mjs --debug` is faster for development; `--target <triple>` builds for another
-target; `--skip-build` only copies an `engine-cli` you built yourself. The build refuses to start
-without the sidecar file (Tauri checks `externalBin`), so run it first, also before `cargo test`
-and `cargo clippy` in `src-tauri`.
+`src-tauri/tauri.bundle.conf.json` adds what only a bundle needs (the PostgreSQL tree and the notices
+as resources, the installer's hooks), so `cargo test` and `cargo clippy` need only the two sidecar
+files. `prepare-sidecar.mjs --debug` is faster for development; `--target <triple>` builds for
+another target; `--skip-build` only copies programs you built yourself.
 
-Rust checks (inside `apps/desktop/src-tauri`):
+A **portable** copy is the installed layout in a folder with an empty folder named `dynodoc-data`
+beside the program: the settings, the workspace and the web view's data then live there, and the
+credential-store entries get a name of their own, so a portable copy and an installed one never
+share or overwrite each other's data.
+
+Rust checks (inside `apps/desktop/src-tauri`; CI runs them, see `.github/workflows/desktop.yml`):
 
 ```sh
 cargo fmt --check
-cargo clippy --all-targets -- -D warnings
-cargo test
+cargo clippy --all-targets --locked -- -D warnings
+cargo test --locked
+node --test "client/test/*.test.mjs"   # in apps/desktop: the page's logic (sync, agent tools, the diff, ...)
 ```
 
 On this repository's machines set `CARGO_TARGET_DIR`, `CARGO_PROFILE_DEV_DEBUG=0` and
 `CARGO_INCREMENTAL=0` as for the engine. The engine's own `cargo fmt/clippy/test --workspace` at
 the repository root does not see this project.
 
+**Test seams (debug builds only; a release build does not read them):** `DYNODOC_DESKTOP_HOME`
+(a scratch folder for everything the app keeps), `DYNODOC_PROGRAMS` (a folder holding the engine
+programs and the `pg` tree), `DYNODOC_TEST_PICK` (a JSON file that answers the file dialogs) and
+`DYNODOC_TEST_BROWSER` (a file the app writes the sign-in address to instead of opening a
+browser). The acceptance run drives the real window through WebView2's remote debugging port
+(`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<n>`); the scripts are in
+`scripts/acceptance/`.
+
 Smoke test (Windows, debug build; it uses a throw-away home folder and a local listener, never
 your real profile): `powershell -ExecutionPolicy Bypass -File scripts\smoke.ps1`. Security probe
 (Windows, debug build, same throw-away home; it opens a few tabs in your system browser on
 purpose, because that is what a blocked in-window link must do): `node scripts\security-probe.mjs`.
-Both honour `DYNODOC_DESKTOP_HOME`, which only debug builds read.
-
-**Why `@tauri-apps/cli` from npm rather than `cargo install tauri-cli`:** it is pinned by a
-lockfile, installs in seconds with no compile (the native binary comes as an optional platform
-package, so `--ignore-scripts` is enough), and the CI workflow reuses the same lockfile. The cost
-is a `package.json` in this folder; it holds that one dev dependency and nothing else.
 
 ## Using it
 

@@ -117,6 +117,9 @@ mod imp {
         /// Four characters the server's page shows too.
         pub pairing: Option<String>,
         pub message: String,
+        /// How the server hands the sign-in back: `loopback` (this computer's own address) or `link`
+        /// (a `dynodoc://` link, for a server without the loopback hand-over).
+        pub via: &'static str,
     }
 
     impl FlowView {
@@ -126,8 +129,40 @@ mod imp {
                 account_id: None,
                 pairing: None,
                 message: String::new(),
+                via: "loopback",
             }
         }
+    }
+
+    /// A valid request of the shapes the server checks, to ask a server whether it knows the loopback
+    /// value (nothing is made by it: nobody is signed in, so the answer is a redirect to the sign-in).
+    const PROBE_CHALLENGE: &str = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
+    const PROBE_STATE: &str = "b3JkZXJseS1zdGF0ZS12YWx1ZQ";
+
+    /// Whether the server's sign-in page accepts the loopback value. A server that has not been
+    /// updated answers a request carrying it with its "not valid" page (status 200); an updated one
+    /// sends a visitor who is not signed in to its login (a redirect), or says plainly that no
+    /// sign-in method is on. A server that cannot be reached is not judged here.
+    async fn supports_loopback(origin: &ServerOrigin) -> bool {
+        let Some(http) = remote::client() else {
+            return true;
+        };
+        let url =
+            origin.app_signin_url_loopback(PROBE_CHALLENGE, PROBE_STATE, signin::PLATFORM, 49152);
+        let Ok(mut response) = http.get(url).send().await else {
+            return true;
+        };
+        if response.status().as_u16() != 200 {
+            return true;
+        }
+        let mut body: Vec<u8> = Vec::new();
+        while let Ok(Some(chunk)) = response.chunk().await {
+            body.extend_from_slice(&chunk);
+            if body.len() > 256 * 1024 {
+                break;
+            }
+        }
+        !String::from_utf8_lossy(&body).contains("is not valid")
     }
 
     struct Flow {
@@ -536,6 +571,8 @@ mod imp {
                     let _ = tx.send(true);
                 }
             }
+            // A server that has not been updated for the loopback hand-over gets the link instead.
+            let via_link = via_link || !supports_loopback(&origin).await;
             let (attempt, request) =
                 Attempt::new(&origin.as_text(), Moment::now(), signin::os_random).ok_or_else(
                     || {
@@ -570,6 +607,7 @@ mod imp {
                     account_id: Some(id.to_string()),
                     pairing: Some(pairing.clone()),
                     message: String::new(),
+                    via: "loopback",
                 };
             }
             if let Err(message) = open(url.as_str()) {
@@ -617,6 +655,7 @@ mod imp {
                     account_id: Some(id.to_string()),
                     pairing: Some(pairing.clone()),
                     message: String::new(),
+                    via: "link",
                 };
             }
             if let Err(message) = open(url.as_str()) {
@@ -642,6 +681,7 @@ mod imp {
                         account_id: Some(mine.id.clone()),
                         pairing: Some(mine.pairing.clone()),
                         message: "The sign-in took too long. Start again.".to_string(),
+                        via: "link",
                     });
                 }
             });
@@ -675,6 +715,7 @@ mod imp {
                             account_id: Some(attempt.id.clone()),
                             pairing: Some(attempt.pairing.clone()),
                             message,
+                            via: "link",
                         });
                     });
                     true
@@ -689,6 +730,7 @@ mod imp {
                         account_id: Some(attempt.id.clone()),
                         pairing: Some(attempt.pairing.clone()),
                         message: "The sign-in took too long. Start again.".to_string(),
+                        via: "link",
                     });
                     true
                 }
@@ -713,6 +755,7 @@ mod imp {
                     account_id: Some(id.clone()),
                     pairing: Some(pairing.clone()),
                     message: message.to_string(),
+                    via: "loopback",
                 });
             };
             loop {
@@ -930,6 +973,61 @@ mod imp {
             assert_eq!(a.flow().state, "failed");
             assert!(!a.view(&v.id).unwrap().signed_in);
             let _ = std::fs::remove_dir_all(&dir);
+        }
+
+        /// A server that answers every request with `answer`, on loopback.
+        async fn answering(answer: &'static str) -> ServerOrigin {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            tokio::spawn(async move {
+                loop {
+                    let Ok((mut stream, _)) = listener.accept().await else {
+                        return;
+                    };
+                    let mut buffer = [0u8; 2048];
+                    let _ = stream.read(&mut buffer).await;
+                    let _ = stream.write_all(answer.as_bytes()).await;
+                    let _ = stream.shutdown().await;
+                }
+            });
+            parse_server_address(&format!("http://127.0.0.1:{port}")).unwrap()
+        }
+
+        #[tokio::test]
+        async fn a_server_that_does_not_know_the_loopback_value_is_told_apart() {
+            let older = answering(
+                "HTTP/1.1 200 OK
+Content-Type: text/html
+Content-Length: 44
+Connection: close
+
+<h1>This sign-in link is not valid</h1> .....",
+            )
+            .await;
+            assert!(!supports_loopback(&older).await);
+            let updated = answering(
+                "HTTP/1.1 303 See Other
+Location: /login?next=x
+Content-Length: 0
+Connection: close
+
+",
+            )
+            .await;
+            assert!(supports_loopback(&updated).await);
+            let no_method = answering(
+                "HTTP/1.1 200 OK
+Content-Length: 38
+Connection: close
+
+<h1>No sign-in method is turned on</h1>",
+            )
+            .await;
+            assert!(supports_loopback(&no_method).await);
+            // Nobody there: not judged here, the sign-in itself says what is wrong.
+            let nothing = parse_server_address("http://127.0.0.1:1").unwrap();
+            assert!(supports_loopback(&nothing).await);
         }
 
         #[test]

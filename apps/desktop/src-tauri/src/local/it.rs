@@ -41,7 +41,7 @@ async fn a_new_workspace_starts_signs_in_works_and_closes_cleanly() {
     let dir = scratch("one");
     let exe_dir =
         std::path::PathBuf::from(std::env::var("DYNODOC_PROGRAMS").expect("DYNODOC_PROGRAMS"));
-    let local = Local::new(&dir, None, &exe_dir, false);
+    let local = Local::new(&dir, None, &exe_dir, false, false);
     local.start();
     wait_for(&local, "profile", 300).await;
     assert!(local.status().first_run);
@@ -92,7 +92,7 @@ async fn a_new_workspace_starts_signs_in_works_and_closes_cleanly() {
         .exists());
 
     // A second start finds the cluster, needs no first run, and still knows the person and project.
-    let again = Local::new(&dir, None, &exe_dir, false);
+    let again = Local::new(&dir, None, &exe_dir, false, false);
     again.start();
     wait_for(&again, "ready", 120).await;
     assert!(!again.status().first_run);

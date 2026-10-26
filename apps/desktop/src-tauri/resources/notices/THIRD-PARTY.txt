@@ -1,0 +1,44 @@
+Third-party software shipped with the Dynodoc desktop app
+==========================================================
+
+Dynodoc itself is licensed as the LICENSE file of its repository says. The programs below are
+bundled so that the workspace on this computer works without anything else installed. Each is used
+under its own licence, named here; the licence texts are in the projects' own distributions.
+
+PostgreSQL 16 (programs, modules and data files in the "pg" folder)
+  Portions Copyright (c) 1996-2025, The PostgreSQL Global Development Group
+  Portions Copyright (c) 1994, The Regents of the University of California
+  Licence: the PostgreSQL License, reproduced here as it requires:
+
+  Permission to use, copy, modify, and distribute this software and its documentation for any
+  purpose, without fee, and without a written agreement is hereby granted, provided that the above
+  copyright notice and this paragraph and the following two paragraphs appear in all copies.
+
+  IN NO EVENT SHALL THE UNIVERSITY OF CALIFORNIA BE LIABLE TO ANY PARTY FOR DIRECT, INDIRECT,
+  SPECIAL, INCIDENTAL, OR CONSEQUENTIAL DAMAGES, INCLUDING LOST PROFITS, ARISING OUT OF THE USE OF
+  THIS SOFTWARE AND ITS DOCUMENTATION, EVEN IF THE UNIVERSITY OF CALIFORNIA HAS BEEN ADVISED OF THE
+  POSSIBILITY OF SUCH DAMAGE.
+
+  THE UNIVERSITY OF CALIFORNIA SPECIFICALLY DISCLAIMS ANY WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+  THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. THE SOFTWARE
+  PROVIDED HEREUNDER IS ON AN "AS IS" BASIS, AND THE UNIVERSITY OF CALIFORNIA HAS NO OBLIGATIONS TO
+  PROVIDE MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR MODIFICATIONS.
+
+Where the PostgreSQL programs come from
+  The binaries are the embedded PostgreSQL 16.15 builds of the zonky.io "embedded-postgres-binaries"
+  project (Apache License 2.0 for the packaging), taken from Maven Central and checked against the
+  SHA-256 published there (scripts/prepare-pg.mjs). They load these libraries, which sit beside them:
+    ICU (icu*.dll)                  the Unicode License
+    OpenSSL 3 (libcrypto, libssl)   Apache License 2.0
+    libxml2                         MIT licence
+    zlib                            the zlib licence
+    Zstandard (libzstd)             BSD licence (also offered under GPL v2; used under the BSD)
+    LZ4 (liblz4)                    BSD 2-Clause licence
+    GNU libiconv and libintl        GNU LGPL 2.1 or later; loaded as separate DLLs, which you may replace
+    winpthreads (MinGW-w64)         permissive (MIT-style)
+  On Windows the Microsoft Visual C++ runtime (vcruntime140.dll, vcruntime140_1.dll, msvcp140.dll)
+  is redistributed as Microsoft permits for the runtime of applications built with Visual C++.
+
+The Dynodoc engine (engine-api, engine-cli) and the Office codec are Dynodoc's own code with the
+open-source Rust and JavaScript libraries listed in Cargo.lock and package-lock.json of the
+repository, under their own licences.

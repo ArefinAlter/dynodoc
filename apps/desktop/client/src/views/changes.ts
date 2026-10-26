@@ -166,7 +166,7 @@ function commitBox(staged: WorkingChange[]): HTMLElement {
       'div',
       { class: 'commit-options' },
       h('label', { class: 'inline-check is-disabled', title: 'Dynodoc history is append-only: a revision cannot be changed after it is made.' }, h('input', { type: 'checkbox', class: 'check', disabled: true }), 'Amend last commit'),
-      h('span', { class: 'muted small' }, state.db.remote ? 'Pushed to the server as you' : state.prefs.signCommits ? 'Signed with this computer’s key' : 'Unsigned'),
+      h('span', { class: 'muted small' }, state.db.remote ? (isLocal() ? 'Saved in this workspace as you' : 'Pushed to the server as you') : state.prefs.signCommits ? 'Signed with this computer’s key' : 'Unsigned'),
     ),
     !target.ok ? notice('info', target.note) : null,
     button(label, { variant: 'primary', id: 'commit-button', class: 'commit-button', disabled: !c.summary.trim() || !staged.length || !target.ok, onClick: commitStaged }),
@@ -179,7 +179,7 @@ function nothingHere(): HTMLElement {
   const ctx = branchContext();
   const cards: HTMLElement[] = [];
   if ((ctx.ahead ?? 0) > 0)
-    cards.push(h('div', { class: 'suggest' }, h('div', null, h('div', { class: 'suggest-title' }, `Push ${ctx.ahead} commit${ctx.ahead === 1 ? '' : 's'} to the server`), h('div', { class: 'suggest-text' }, 'Your commits are on this computer only until you push.')), button('Push', { variant: 'primary', icon: 'up', onClick: sync })));
+    cards.push(h('div', { class: 'suggest' }, h('div', null, h('div', { class: 'suggest-title' }, `Push ${ctx.ahead} commit${ctx.ahead === 1 ? '' : 's'} ${isLocal() ? 'to the workspace' : 'to the server'}`), h('div', { class: 'suggest-text' }, isLocal() ? 'Your commits are kept in this window until you push them into the workspace’s main line.' : 'Your commits are on this computer only until you push.')), button('Push', { variant: 'primary', icon: 'up', onClick: sync })));
   if (ctx.kind === 'draft' && ctx.state === 'private' && !(ctx.ahead ?? 0))
     cards.push(h('div', { class: 'suggest' }, h('div', null, h('div', { class: 'suggest-title' }, 'Send this draft for review'), h('div', { class: 'suggest-text' }, 'Open a change request so the team can review and merge it.')), button('Send for review', { onClick: () => sendForReviewDialog() })));
   if (isLocal()) {

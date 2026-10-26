@@ -90,7 +90,7 @@ let polling = false;
 export async function startSignIn(id: string, viaLink = false): Promise<void> {
   try {
     const pairing = (await call('account_signin_start', { id, viaLink })) as string;
-    srv().flow = { state: 'waiting', account_id: id, pairing, message: '' };
+    srv().flow = { state: 'waiting', account_id: id, pairing, message: '', via: viaLink ? 'link' : 'loopback' };
     render();
     void follow();
   } catch (e) {
@@ -136,7 +136,7 @@ export async function cancelSignIn(): Promise<void> {
   } catch {
     /* it is over either way */
   }
-  srv().flow = { state: 'none', account_id: null, pairing: null, message: '' };
+  srv().flow = { state: 'none', account_id: null, pairing: null, message: '', via: 'loopback' };
   render();
 }
 

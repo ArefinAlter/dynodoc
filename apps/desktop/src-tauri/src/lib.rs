@@ -156,7 +156,9 @@ fn split_loaded(
 }
 
 fn resolve_state(app: &tauri::AppHandle) -> tauri::Result<AppState> {
-    let home = home_override().or_else(portable_home);
+    let test_home = home_override();
+    let portable = test_home.is_none() && portable_home().is_some();
+    let home = test_home.or_else(portable_home);
     let ordinary = home.is_none();
     let (config_dir, data_dir, webview_dir) = match home {
         Some(home) => (
@@ -183,6 +185,7 @@ fn resolve_state(app: &tauri::AppHandle) -> tauri::Result<AppState> {
             app.path().resource_dir().ok().as_deref(),
             &exe_dir,
             ordinary,
+            portable,
         )
     };
     #[cfg(desktop)]
@@ -417,6 +420,7 @@ mod tests {
                 std::path::Path::new("."),
                 None,
                 std::path::Path::new("."),
+                false,
                 false,
             ),
             picks: files::Picks::default(),
