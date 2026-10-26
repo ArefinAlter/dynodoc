@@ -162,9 +162,9 @@
 `);
 
   // client/src/lib/diff.ts
-  function tokenize(text2) {
+  function tokenize(text3) {
     let out = [], re = /(\s+|[A-Za-z0-9À-ɏঀ-৿'’]+|[^\sA-Za-z0-9À-ɏঀ-৿'’])/gu, m;
-    for (; (m = re.exec(text2)) !== null; ) out.push(m[0]);
+    for (; (m = re.exec(text3)) !== null; ) out.push(m[0]);
     return out;
   }
   function pushSeg(out, t, s2) {
@@ -257,8 +257,8 @@
       return { kind: r.kind, blockId: r.blockId, left, right };
     });
   }
-  function words(text2) {
-    return tokenize(text2).filter((t) => /\S/.test(t) && /[\p{L}\p{N}]/u.test(t)).length;
+  function words(text3) {
+    return tokenize(text3).filter((t) => /\S/.test(t) && /[\p{L}\p{N}]/u.test(t)).length;
   }
   function stats(edits2) {
     let out = { edited: 0, added: 0, removed: 0, wordsAdded: 0, wordsRemoved: 0 };
@@ -353,8 +353,8 @@
     3204031479,
     3329325298
   ]);
-  function utf8(text2) {
-    return new TextEncoder().encode(text2);
+  function utf8(text3) {
+    return new TextEncoder().encode(text3);
   }
   function sha256(input2) {
     let bytes = typeof input2 == "string" ? utf8(input2) : input2, bitLength = bytes.length * 8, padded = new Uint8Array(bytes.length + 9 + 63 >> 6 << 6);
@@ -506,10 +506,10 @@
     let before = db.working.length;
     return db.working = db.working.filter((w) => !ids.includes(w.id)), before - db.working.length;
   }
-  function commitStaged(db, projectId, branch, summary, description) {
+  function commitStaged(db, projectId, branch, summary2, description) {
     let staged = working(db, projectId, branch).filter((w) => w.staged);
     if (!staged.length) throw new Error("Nothing is staged.");
-    if (!summary.trim()) throw new Error("A summary is required.");
+    if (!summary2.trim()) throw new Error("A summary is required.");
     let byDoc = /* @__PURE__ */ new Map();
     for (let w of staged) byDoc.set(w.docId, [...byDoc.get(w.docId) ?? [], w]);
     let out = [];
@@ -518,9 +518,9 @@
         let b = current3.find((x) => x.id === w.edit.blockId);
         return w.edit.op === "add" ? w.edit : { ...w.edit, before: b ? b.text : w.edit.before };
       });
-      out.push(addCommit(db, { docId, branch, edits: edits2, summary: summary.trim(), description: description.trim(), authorId: db.me, local: !0 }));
+      out.push(addCommit(db, { docId, branch, edits: edits2, summary: summary2.trim(), description: description.trim(), authorId: db.me, local: !0 }));
     }
-    return discard(db, staged.map((w) => w.id)), project(db, projectId).updatedAt = Date.now(), log(db, { actorId: db.me, projectId, kind: "commit", summary: `committed "${summary.trim()}" to ${branchName(db, branch)}` }), out;
+    return discard(db, staged.map((w) => w.id)), project(db, projectId).updatedAt = Date.now(), log(db, { actorId: db.me, projectId, kind: "commit", summary: `committed "${summary2.trim()}" to ${branchName(db, branch)}` }), out;
   }
   function branchName(db, branch) {
     return branch === "main" ? "main" : draft(db, branch)?.name ?? branch;
@@ -654,11 +654,11 @@
     let word = verdict === "approved" ? "approved" : verdict === "changes_requested" ? "requested changes on" : "commented on";
     log(db, { actorId: db.me, projectId: r.projectId, docId: r.docId, kind: "review", summary: `${word} #${r.number} ${r.name}` });
   }
-  function comment(db, requestId, text2, blockId, proposedByAgent = !1) {
+  function comment(db, requestId, text3, blockId, proposedByAgent = !1) {
     let r = db.requests.find((x) => x.id === requestId);
     if (!r) throw new Error("No such request.");
-    if (!text2.trim()) throw new Error("Write a comment first.");
-    r.comments.push({ id: uid("cmt"), authorId: db.me, text: text2.trim(), at: Date.now(), blockId, proposedByAgent });
+    if (!text3.trim()) throw new Error("Write a comment first.");
+    r.comments.push({ id: uid("cmt"), authorId: db.me, text: text3.trim(), at: Date.now(), blockId, proposedByAgent });
   }
   function merge(db, requestId) {
     let r = db.requests.find((x) => x.id === requestId);
@@ -861,9 +861,9 @@
     }), mkDoc = (id, projectId, title, filename, kind, createdAt) => {
       let d = { id, projectId, title, filename, kind, blocks: [], versions: [], connections: [], createdAt, discussions: [], copies: [], publicLinks: [] };
       return db.docs.push(d), d;
-    }, rev2 = (d, ago, authorId, summary, changes, extra = {}) => {
+    }, rev2 = (d, ago, authorId, summary2, changes, extra = {}) => {
       let branch = extra.branch ?? "main", blocks = branch === "main" ? d.blocks : db.drafts.find((x) => x.id === branch).blocks;
-      return addCommit(db, { docId: d.id, branch, edits: edits(blocks, changes), summary, description: extra.description, authorId, at: now - ago, kind: extra.kind, mergedFrom: extra.mergedFrom });
+      return addCommit(db, { docId: d.id, branch, edits: edits(blocks, changes), summary: summary2, description: extra.description, authorId, at: now - ago, kind: extra.kind, mergedFrom: extra.mergedFrom });
     }, mkDraft = (id, d, name2, authorId, ago, state2, baseSeq = mainSeq(db, d.id)) => {
       let dr = { id, docId: d.id, projectId: d.projectId, name: name2, authorId, baseSeq, createdAt: now - ago, state: state2, blocks: d.blocks.map((b) => ({ ...b })) };
       return db.drafts.push(dr), dr;
@@ -1038,7 +1038,7 @@
       { id: "n5", kind: "access_granted", at: now - 8 * DAY, read: !0, actorId: "u_lena", projectId: "p_grant", text: "gave you Contributor access to Grant application" },
       { id: "n6", kind: "change_request_merged", at: now - 21 * DAY, read: !0, actorId: "u_alex", projectId: "p_handbook", docId: bu.id, requestId: "cr11", text: "merged #11 Plan software renewals at the new price" }
     ];
-    let act2 = (ago, actorId, projectId, kind, summary, docId, byAgent = !1) => db.activity.push({ id: `a${db.activity.length}`, at: now - ago, actorId, projectId, kind, summary, docId, byAgent });
+    let act2 = (ago, actorId, projectId, kind, summary2, docId, byAgent = !1) => db.activity.push({ id: `a${db.activity.length}`, at: now - ago, actorId, projectId, kind, summary: summary2, docId, byAgent });
     return act2(5 * HOUR, "u_agent", "p_handbook", "request", "proposed #16 Fix the month on the title slide", dk.id, !0), act2(3 * HOUR, "u_sam", "p_handbook", "request", "opened #15 Travel forecast for the January offsite", bu.id), act2(1 * DAY, "u_jordan", "p_handbook", "draft", "pushed remote-work-update (1 commit)", hb.id), act2(1 * DAY, "u_alex", "p_handbook", "review", "approved #14 Parental leave: 16 weeks for every parent", hb.id), act2(2 * DAY, "u_priya", "p_handbook", "commit", 'committed "Fix heading case" to main (r9)', hb.id), act2(3 * DAY, "u_alex", "p_handbook", "commit", 'committed "Add the next quarter slide" to main (r3)', dk.id), act2(5 * DAY, "u_mei", "p_handbook", "commit", 'committed "Travel forecast down: fewer conference trips" to main (r5)', bu.id), act2(6 * DAY, "u_tomas", "p_handbook", "issue", "opened issue #3 Remote work section does not mention working from another country"), act2(6 * DAY, "u_tomas", "p_handbook", "commit", 'committed "Say how to request leave" to main', hb.id), act2(8 * DAY, "u_priya", "p_grant", "commit", 'committed "Venue at the community centre rate" to main', gb.id), act2(12 * DAY, "u_tomas", "p_field", "commit", 'committed "Add the check-in call" to main', fg.id), act2(19 * DAY, "u_alex", "p_handbook", "version", 'saved the version "Autumn 2026 edition" of Team handbook', hb.id), act2(21 * DAY, "u_alex", "p_handbook", "merge", "merged #11 Plan software renewals at the new price", bu.id), db.activity.sort((a, b) => b.at - a.at), db;
   }
   var INCOMING = [
@@ -1226,9 +1226,9 @@ Suggest, do not order.` }
     }));
   }
   var toastId = 0;
-  function toast(kind, title, text2) {
+  function toast(kind, title, text3) {
     let id = ++toastId;
-    state.ui.toasts = [...state.ui.toasts.slice(-3), { id, kind, title, text: text2 }], render(), setTimeout(() => {
+    state.ui.toasts = [...state.ui.toasts.slice(-3), { id, kind, title, text: text3 }], render(), setTimeout(() => {
       state.ui.toasts = state.ui.toasts.filter((t) => t.id !== id), render();
     }, kind === "error" ? 7e3 : 4500);
   }
@@ -1255,9 +1255,9 @@ Suggest, do not order.` }
   function show(el, on) {
     el.hidden = !on;
   }
-  function say(id, text2) {
+  function say(id, text3) {
     let el = $(id);
-    el.textContent = text2 || "", el.getAttribute("role") || show(el, !!text2);
+    el.textContent = text3 || "", el.getAttribute("role") || show(el, !!text3);
   }
   function message(e) {
     return typeof e == "string" ? e : (e instanceof Error ? e.message : e && typeof e == "object" && "message" in e ? String(e.message) : "") || "Something went wrong. Please try again.";
@@ -1607,21 +1607,21 @@ ${editLines(r.edits, labels(doc(db, r.docId)))}`
         case "review.propose_comment": {
           let r = findRequest(db, projectId, args2.number);
           if (r.status !== "open") throw new ToolError(`#${r.number} is ${r.status}; comments are only proposed on open requests.`);
-          let text2 = clip(str(args2.text), 900);
-          if (!text2) throw new ToolError("Give the comment text.");
+          let text3 = clip(str(args2.text), 900);
+          if (!text3) throw new ToolError("Give the comment text.");
           let ref = str(args2.block).toLowerCase(), edit = ref ? r.edits.find((e) => e.blockId.toLowerCase() === ref || (e.label ?? "").toLowerCase().includes(ref)) : void 0;
           if (ref && !edit) throw new ToolError(`#${r.number} has no changed block "${clip(ref, 60)}". Its changed blocks: ${r.edits.map((e) => e.label ?? e.blockId).slice(0, 12).join(", ")}.`);
           return {
             output: "Proposed to the person as a card. It is not posted; they press the button if they want it posted.",
-            card: { kind: "comment", title: `Proposed comment on #${r.number}`, requestId: r.id, blockId: edit?.blockId, text: text2 }
+            card: { kind: "comment", title: `Proposed comment on #${r.number}`, requestId: r.id, blockId: edit?.blockId, text: text3 }
           };
         }
         case "commit.draft_summary": {
-          let summary = clip(str(args2.summary), 60);
-          if (!summary) throw new ToolError("Give a summary of up to 60 characters.");
+          let summary2 = clip(str(args2.summary), 60);
+          if (!summary2) throw new ToolError("Give a summary of up to 60 characters.");
           return {
             output: `Proposed to the person as a card (${working(db, projectId, branch).filter((w) => w.staged).length} staged change(s) on this branch). Committing stays theirs.`,
-            card: { kind: "summary", title: "Proposed commit summary", text: summary, description: str(args2.description).slice(0, 1500) }
+            card: { kind: "summary", title: "Proposed commit summary", text: summary2, description: str(args2.description).slice(0, 1500) }
           };
         }
         default:
@@ -1801,11 +1801,11 @@ ${editLines(r.edits, labels(doc(db, r.docId)))}`
     });
     return t.value = value, t;
   }
-  function pill(text2, tone = "neutral", o = {}) {
-    return h("span", { class: cx("pill", `tone-${tone}`, o.mono !== !1 && "mono"), title: o.title }, h("span", { class: "pill-dot" }), text2);
+  function pill(text3, tone = "neutral", o = {}) {
+    return h("span", { class: cx("pill", `tone-${tone}`, o.mono !== !1 && "mono"), title: o.title }, h("span", { class: "pill-dot" }), text3);
   }
-  function badge(text2, tone = "neutral") {
-    return h("span", { class: cx("badge", `tone-${tone}`) }, text2);
+  function badge(text3, tone = "neutral") {
+    return h("span", { class: cx("badge", `tone-${tone}`) }, text3);
   }
   function avatar(name2, agent2 = !1, size = "sm") {
     return h("span", { class: cx("avatar", `avatar-${size}`, agent2 && "is-agent"), title: name2, "aria-hidden": "true" }, agent2 ? icon("agent", size === "sm" ? 12 : 14) : initials(name2));
@@ -1824,14 +1824,14 @@ ${editLines(r.edits, labels(doc(db, r.docId)))}`
   function section(title, description, ...children2) {
     return h("section", { class: "ssection" }, h("h3", { class: "ssection-title" }, title), description ? h("p", { class: "ssection-desc" }, description) : null, ...children2);
   }
-  function empty(iconName, title, text2, action) {
-    return h("div", { class: "empty" }, h("div", { class: "empty-icon" }, icon(iconName, 22)), h("div", { class: "empty-title" }, title), h("div", { class: "empty-text" }, text2), action ?? null);
+  function empty(iconName, title, text3, action) {
+    return h("div", { class: "empty" }, h("div", { class: "empty-icon" }, icon(iconName, 22)), h("div", { class: "empty-title" }, title), h("div", { class: "empty-text" }, text3), action ?? null);
   }
   function notice(tone, ...children2) {
     return h("div", { class: cx("notice", `notice-${tone}`), role: tone === "error" ? "alert" : void 0 }, icon(tone === "success" ? "check" : tone === "info" ? "info" : "warning", 15), h("div", null, ...children2));
   }
-  function untrusted(label, text2) {
-    return h("div", { class: "untrusted" }, h("div", { class: "untrusted-label" }, label), h("div", { class: "untrusted-text" }, text2));
+  function untrusted(label, text3) {
+    return h("div", { class: "untrusted" }, h("div", { class: "untrusted-label" }, label), h("div", { class: "untrusted-text" }, text3));
   }
   function segmented(value, options, onChange2, label) {
     return h(
@@ -1910,12 +1910,12 @@ ${editLines(r.edits, labels(doc(db, r.docId)))}`
   function dialogOpen() {
     return dialog !== null;
   }
-  function confirmDialog(title, text2, confirmLabel, onConfirm, o = {}) {
+  function confirmDialog(title, text3, confirmLabel, onConfirm, o = {}) {
     openDialog({
       title,
       plain: !0,
       width: 480,
-      body: () => h("div", { class: "dialog-text" }, text2),
+      body: () => h("div", { class: "dialog-text" }, text3),
       actions: () => [
         button("Cancel", { onClick: closeDialog }),
         button(confirmLabel, {
@@ -2144,12 +2144,12 @@ ${skills2}` : ""
   function historyOf(t) {
     let out = [];
     for (let m of t.messages.slice(-30)) {
-      let text2 = m.text.trim().slice(0, 19e3);
-      if (!text2) continue;
+      let text3 = m.text.trim().slice(0, 19e3);
+      if (!text3) continue;
       let role = m.role === "user" ? "user" : "assistant", last = out[out.length - 1];
       last && last.role === role ? last.text += `
 
-${text2}` : out.push({ role, text: text2 });
+${text3}` : out.push({ role, text: text3 });
     }
     for (; out.length && out[0].role !== "user"; ) out.shift();
     return out;
@@ -2169,8 +2169,8 @@ ${text2}` : out.push({ role, text: text2 });
     };
   }
   function args(a) {
-    let text2 = Object.entries(a).map(([k, v]) => `${k}=${typeof v == "string" ? v : JSON.stringify(v)}`).join(" ");
-    return text2.length > 160 ? `${text2.slice(0, 159)}…` : text2;
+    let text3 = Object.entries(a).map(([k, v]) => `${k}=${typeof v == "string" ? v : JSON.stringify(v)}`).join(" ");
+    return text3.length > 160 ? `${text3.slice(0, 159)}…` : text3;
   }
   function askConsent(e, preview) {
     return new Promise((resolve) => {
@@ -2236,8 +2236,8 @@ ${text2}` : out.push({ role, text: text2 });
       paintScheduled = !1, render();
     }, 60));
   }
-  function fail(t, text2) {
-    t.messages.push({ id: `m${Date.now()}e`, role: "agent", text: "", at: Date.now(), error: text2 }), t.working = !1, render();
+  function fail(t, text3) {
+    t.messages.push({ id: `m${Date.now()}e`, role: "agent", text: "", at: Date.now(), error: text3 }), t.working = !1, render();
   }
   async function runModel(t, projectId, branch) {
     let e = entryOf(t);
@@ -2348,10 +2348,10 @@ ${text2}` : out.push({ role, text: text2 });
         rows3.forEach((row2, r) => {
           let f = fieldsOf(row2), cells = Object.keys(f).map((k) => [k, cellIndex(k)]).filter((x) => x[1] !== null).sort((a, b) => a[1] - b[1]);
           for (let [field2, c] of cells) {
-            let text2 = cellText(f[field2]);
-            if (!text2) continue;
+            let text3 = cellText(f[field2]);
+            if (!text3) continue;
             let rowName = c > 0 && r > 0 ? cellText(f.cell_0) : "", colName = c > 0 && r > 0 ? cellText(header[field2]) : "", what = [rowName, colName].filter(Boolean).join(", "), id = `${row2.id}:${field2}`;
-            blocks.push({ id, label: `${name2}!${columnLetter(c)}${r + 1}${what ? ` · ${what}` : ""}`, text: text2 }), slots[id] = { node: row2.id, field: field2, own: !1, kind: "cell", parent: sheet.id };
+            blocks.push({ id, label: `${name2}!${columnLetter(c)}${r + 1}${what ? ` · ${what}` : ""}`, text: text3 }), slots[id] = { node: row2.id, field: field2, own: !1, kind: "cell", parent: sheet.id };
           }
         });
       }
@@ -2384,8 +2384,8 @@ ${text2}` : out.push({ role, text: text2 });
         let f = fieldsOf(node);
         if (node.type === "item" || node.type === "paragraph" || node.type === "clause") {
           i += 1;
-          let heading = f.content?.type === "heading", text2 = typeof f.label == "string" ? f.label : textOf(f.content);
-          blocks.push({ id: node.id, label: `¶ ${i}${heading ? " · Heading" : ""}`, text: text2 }), slots[node.id] = { node: node.id, field: "label", own: !0, kind: "paragraph", parent, pos: node.pos, heading };
+          let heading = f.content?.type === "heading", text3 = typeof f.label == "string" ? f.label : textOf(f.content);
+          blocks.push({ id: node.id, label: `¶ ${i}${heading ? " · Heading" : ""}`, text: text3 }), slots[node.id] = { node: node.id, field: "label", own: !0, kind: "paragraph", parent, pos: node.pos, heading };
         }
         walk(node.id);
       }
@@ -2439,8 +2439,8 @@ ${text2}` : out.push({ role, text: text2 });
     }
     return left + "P";
   }
-  function paragraphContent(text2, existing, heading) {
-    return { ...existing && typeof existing == "object" ? { ...existing } : { type: heading ? "heading" : "paragraph", ...heading ? { attrs: { level: 2 } } : {} }, content: text2 ? [{ type: "text", text: text2 }] : [] };
+  function paragraphContent(text3, existing, heading) {
+    return { ...existing && typeof existing == "object" ? { ...existing } : { type: heading ? "heading" : "paragraph", ...heading ? { attrs: { level: 2 } } : {} }, content: text3 ? [{ type: "text", text: text3 }] : [] };
   }
   var Unsupported = class extends Error {
   };
@@ -2452,15 +2452,15 @@ ${text2}` : out.push({ role, text: text2 });
       let slot = slots[e.blockId];
       if (e.op === "edit") {
         if (!slot || !nodes[slot.node] || nodes[slot.node].deleted) throw new Unsupported(`${e.label ?? "A block"} is no longer in the file.`);
-        let f = fieldsOf(nodes[slot.node]), text2 = e.after ?? "";
-        slot.kind === "paragraph" ? (push2({ type: "FieldEdited", node_id: slot.node, field: "content", value: paragraphContent(text2, f.content, !!slot.heading) }), push2({ type: "FieldEdited", node_id: slot.node, field: "label", value: text2 })) : slot.kind === "shape" ? (push2({ type: "FieldEdited", node_id: slot.node, field: "text", value: text2 }), push2({ type: "FieldEdited", node_id: slot.node, field: "label", value: text2.replace(/\s+/g, " ").trim().slice(0, 120) }), f.role === "title" && slot.parent && push2({ type: "FieldEdited", node_id: slot.parent, field: "label", value: text2.replace(/\s+/g, " ").trim().slice(0, 120) || "Untitled slide" })) : push2({ type: "FieldEdited", node_id: slot.node, field: slot.field, value: text2 });
+        let f = fieldsOf(nodes[slot.node]), text3 = e.after ?? "";
+        slot.kind === "paragraph" ? (push2({ type: "FieldEdited", node_id: slot.node, field: "content", value: paragraphContent(text3, f.content, !!slot.heading) }), push2({ type: "FieldEdited", node_id: slot.node, field: "label", value: text3 })) : slot.kind === "shape" ? (push2({ type: "FieldEdited", node_id: slot.node, field: "text", value: text3 }), push2({ type: "FieldEdited", node_id: slot.node, field: "label", value: text3.replace(/\s+/g, " ").trim().slice(0, 120) }), f.role === "title" && slot.parent && push2({ type: "FieldEdited", node_id: slot.parent, field: "label", value: text3.replace(/\s+/g, " ").trim().slice(0, 120) || "Untitled slide" })) : push2({ type: "FieldEdited", node_id: slot.node, field: slot.field, value: text3 });
       } else if (e.op === "remove") {
         if (!slot || !nodes[slot.node]) continue;
         slot.own ? push2({ type: "NodeDeleted", node_id: slot.node }) : push2({ type: "FieldEdited", node_id: slot.node, field: slot.field, value: "" }), delete slots[e.blockId];
       } else {
-        let text2 = e.after ?? "", existing = slots[e.blockId];
+        let text3 = e.after ?? "", existing = slots[e.blockId];
         if (existing && !existing.own) {
-          push2({ type: "FieldEdited", node_id: existing.node, field: existing.field, value: text2 });
+          push2({ type: "FieldEdited", node_id: existing.node, field: existing.field, value: text3 });
           continue;
         }
         let after = e.afterId ? slots[e.afterId] : void 0;
@@ -2468,12 +2468,12 @@ ${text2}` : out.push({ role, text: text2 });
           let root2 = rootOf(nodes);
           if (!root2) throw new Unsupported("The file has no content to add to.");
           let siblings = children(nodes, after?.parent ?? root2.id), i = after ? siblings.findIndex((s2) => s2.id === after.node) : -1, left = i >= 0 ? siblings[i].pos : "", right = siblings[i + 1]?.pos, id = ctx2.newId(), heading = /Heading/.test(e.label ?? "");
-          push2({ type: "NodeCreated", node_id: id, node_type: "item", parent_id: after?.parent ?? root2.id, pos: between(left, right), fields: { label: text2, content: paragraphContent(text2, void 0, heading) } }), slots[e.blockId] = { node: id, field: "label", own: !0, kind: "paragraph", parent: after?.parent ?? root2.id, heading };
+          push2({ type: "NodeCreated", node_id: id, node_type: "item", parent_id: after?.parent ?? root2.id, pos: between(left, right), fields: { label: text3, content: paragraphContent(text3, void 0, heading) } }), slots[e.blockId] = { node: id, field: "label", own: !0, kind: "paragraph", parent: after?.parent ?? root2.id, heading };
         } else if (ctx2.kind === "presentation") {
           let slide = after?.kind === "notes" ? after.node : after?.parent;
           if (!slide || !nodes[slide]) throw new Unsupported("New text needs a slide to go on.");
           let shapes = children(nodes, slide), i = after ? shapes.findIndex((s2) => s2.id === after.node) : -1, id = ctx2.newId();
-          push2({ type: "NodeCreated", node_id: id, node_type: "item", parent_id: slide, pos: between(i >= 0 ? shapes[i].pos : "", shapes[i + 1]?.pos), fields: { kind: "text", role: "body", text: text2, x: 6.25, y: 60, w: 87.5, h: 20, style: { size: 20 }, label: text2.slice(0, 120) } }), slots[e.blockId] = { node: id, field: "text", own: !0, kind: "shape", parent: slide };
+          push2({ type: "NodeCreated", node_id: id, node_type: "item", parent_id: slide, pos: between(i >= 0 ? shapes[i].pos : "", shapes[i + 1]?.pos), fields: { kind: "text", role: "body", text: text3, x: 6.25, y: 60, w: 87.5, h: 20, style: { size: 20 }, label: text3.slice(0, 120) } }), slots[e.blockId] = { node: id, field: "text", own: !0, kind: "shape", parent: slide };
         } else
           throw new Unsupported("A new cell is added in the spreadsheet itself.");
       }
@@ -2504,8 +2504,8 @@ ${text2}` : out.push({ role, text: text2 });
   };
   function ok(r, what) {
     if (r.status >= 200 && r.status < 300) return r.body;
-    let text2 = r.body && typeof r.body == "object" && typeof r.body.error == "string" ? r.body.error : "", plain = r.status === 401 ? "Your session on the server has ended. Sign in again." : r.status === 403 ? text2 && text2 !== "forbidden" ? text2 : `Your role does not allow this (${what}).` : r.status === 409 ? text2 && text2 !== "conflict" ? text2 : "Someone changed this on the server first. The latest version is shown; try again." : r.status === 429 ? "The server asks to slow down. Try again in a moment." : text2 || `The server could not ${what} (${r.status}).`;
-    throw new RemoteError(r.status, plain);
+    let text3 = r.body && typeof r.body == "object" && typeof r.body.error == "string" ? r.body.error : "", plain2 = r.status === 401 ? "Your session on the server has ended. Sign in again." : r.status === 403 ? text3 && text3 !== "forbidden" ? text3 : `Your role does not allow this (${what}).` : r.status === 409 ? text3 && text3 !== "conflict" ? text3 : "Someone changed this on the server first. The latest version is shown; try again." : r.status === 429 ? "The server asks to slow down. Try again in a moment." : text3 || `The server could not ${what} (${r.status}).`;
+    throw new RemoteError(r.status, plain2);
   }
   var optional = async (p2, fallback) => {
     let r = await p2;
@@ -2562,8 +2562,8 @@ ${text2}` : out.push({ role, text: text2 });
   async function allEvents(t, docId, after = 0, known = []) {
     let out = [...known], cursor = "";
     for (let page = 0; page < 50; page++) {
-      let body2 = ok(await t.apiGet(`documents/${docId}/events?limit=1000${after ? `&from_seq=${after + 1}` : ""}${cursor ? `&cursor=${cursor}` : ""}`), "read the history");
-      if (out.push(...body2.items ?? []), !body2.next_cursor || (cursor = String(body2.next_cursor), !/^[A-Za-z0-9_.:-]{1,64}$/.test(cursor))) break;
+      let body3 = ok(await t.apiGet(`documents/${docId}/events?limit=1000${after ? `&from_seq=${after + 1}` : ""}${cursor ? `&cursor=${cursor}` : ""}`), "read the history");
+      if (out.push(...body3.items ?? []), !body3.next_cursor || (cursor = String(body3.next_cursor), !/^[A-Za-z0-9_.:-]{1,64}$/.test(cursor))) break;
     }
     return out;
   }
@@ -2624,21 +2624,21 @@ ${text2}` : out.push({ role, text: text2 });
       ctx2.projects[p2.id] = { id: p2.id, name: p2.name, description: p2.description ?? "", revision: p2.revision ?? 0, policyRevision: policy ? policy.revision ?? 0 : null, emails }, projects.push(project2);
       for (let a of act2.items ?? []) {
         person2(people3, a.actor_id, a.actor_name);
-        let title = a.document_title ?? "", summary = a.kind === "edit" ? `made ${a.count ?? 1} change${(a.count ?? 1) === 1 ? "" : "s"} to ${title}` : a.kind === "merged" ? `merged ${a.summary} into ${title}` : a.kind === "request_opened" ? `opened the change request ${a.summary} on ${title}` : a.kind === "declined" ? `declined ${a.summary} on ${title}` : a.kind === "version" ? `saved the version "${a.summary}" of ${title}` : a.kind === "file_added" ? `added the file ${title}` : a.kind === "member_added" ? `added ${a.summary}` : String(a.summary ?? a.kind);
-        activity.push({ id: `act_${p2.id.slice(0, 8)}_${activity.length}`, at: ms(a.at), actorId: a.actor_id, projectId: p2.id, docId: a.document_id ?? void 0, kind: KIND_MAP[a.kind] ?? "commit", summary, byAgent: !!a.by_agent });
+        let title = a.document_title ?? "", summary2 = a.kind === "edit" ? `made ${a.count ?? 1} change${(a.count ?? 1) === 1 ? "" : "s"} to ${title}` : a.kind === "merged" ? `merged ${a.summary} into ${title}` : a.kind === "request_opened" ? `opened the change request ${a.summary} on ${title}` : a.kind === "declined" ? `declined ${a.summary} on ${title}` : a.kind === "version" ? `saved the version "${a.summary}" of ${title}` : a.kind === "file_added" ? `added the file ${title}` : a.kind === "member_added" ? `added ${a.summary}` : String(a.summary ?? a.kind);
+        activity.push({ id: `act_${p2.id.slice(0, 8)}_${activity.length}`, at: ms(a.at), actorId: a.actor_id, projectId: p2.id, docId: a.document_id ?? void 0, kind: KIND_MAP[a.kind] ?? "commit", summary: summary2, byAgent: !!a.by_agent });
       }
       raw.push({ project: p2, files: files.items ?? [], crs: crs.items ?? [], ownDrafts: [] });
     });
     let allFiles = raw.flatMap((r) => r.files.map((f) => ({ ...f, projectId: r.project.id }))), notes = [];
     for (let i = 0; i < allFiles.length; i += 40) {
-      let q = allFiles.slice(i, i + 40).map((f) => `document=${f.id}`).join("&"), body2 = await optional(t.svcGet(`notes?${q}`), { items: [] });
-      notes.push(...body2.items ?? []);
+      let q = allFiles.slice(i, i + 40).map((f) => `document=${f.id}`).join("&"), body3 = await optional(t.svcGet(`notes?${q}`), { items: [] });
+      notes.push(...body3.items ?? []);
     }
-    let [working2, local, threads, client] = await Promise.all(
+    let [working2, local2, threads, client] = await Promise.all(
       ["working", "local", "threads", "client"].map((k) => optional(t.svcGet(`state/${k}`), { value: null }))
     ), verify2 = {};
     await pool(allFiles, 3, async (f) => {
-      let cached = fileCache.get(f.id), fresh = cached && cached.latest === (f.latest_seq ?? -1), [doc2, events, ownDrafts, versions2, discussions2, links, connectors2, copies, check] = await Promise.all([
+      let cached = fileCache.get(f.id), fresh = cached && cached.latest === (f.latest_seq ?? -1), [doc2, events, ownDrafts, versions2, discussions2, links2, connectors2, copies, check] = await Promise.all([
         fresh ? cached.doc : t.apiGet(`documents/${f.id}`).then((r) => ok(r, "open a file")),
         fresh ? cached.events : cached && cached.latest < (f.latest_seq ?? 0) ? allEvents(t, f.id, cached.latest, cached.events) : allEvents(t, f.id),
         optional(t.apiGet(`documents/${f.id}/drafts`), { items: [] }),
@@ -2672,7 +2672,7 @@ ${text2}` : out.push({ role, text: text2 });
           replies: (th.replies ?? []).map((rp) => (person2(people3, rp.actor_id, rp.author), { authorId: rp.actor_id, text: rp.body, at: ms(rp.created_at) }))
         })),
         copies: (copies.items ?? []).map((c) => ({ id: String(c.id ?? c.match_id), title: c.title ?? c.document?.title ?? "A similar file", relation: c.relation ?? "copy", score: Number(c.similarity ?? c.score ?? 0), status: c.status ?? "open" })),
-        publicLinks: (links.items ?? []).map((l) => ({ id: l.id, createdAt: ms(l.created_at), expiresAt: l.expires_at ? ms(l.expires_at) : void 0, revoked: !!l.revoked_at }))
+        publicLinks: (links2.items ?? []).map((l) => ({ id: l.id, createdAt: ms(l.created_at), expiresAt: l.expires_at ? ms(l.expires_at) : void 0, revoked: !!l.revoked_at }))
       };
       docs.push(d);
       let mainNotes = notes.filter((n) => n.document_id === f.id).filter((n) => n.branch === "main" && n.kind !== "request"), runs2 = runsOf(events, mainNotes.map((n) => ({ from: n.from_seq, to: n.to_seq }))), live = {}, before = blocksOf2(kind, live).blocks;
@@ -2793,7 +2793,7 @@ ${text2}` : out.push({ role, text: text2 });
         });
       });
     }
-    let knownDocs = new Set(docs.map((d) => d.id)), knownBranches = /* @__PURE__ */ new Set(["main", ...drafts2.map((d) => d.id)]), workingList = (Array.isArray(working2.value) ? working2.value : []).filter((w) => knownDocs.has(w.docId) && knownBranches.has(w.branch)), localList = (Array.isArray(local.value) ? local.value : []).filter((c) => knownDocs.has(c.docId) && knownBranches.has(c.branch)).map((c) => ({ ...c, local: !0 }));
+    let knownDocs = new Set(docs.map((d) => d.id)), knownBranches = /* @__PURE__ */ new Set(["main", ...drafts2.map((d) => d.id)]), workingList = (Array.isArray(working2.value) ? working2.value : []).filter((w) => knownDocs.has(w.docId) && knownBranches.has(w.branch)), localList = (Array.isArray(local2.value) ? local2.value : []).filter((c) => knownDocs.has(c.docId) && knownBranches.has(c.branch)).map((c) => ({ ...c, local: !0 }));
     for (let c of localList.sort((a, b) => a.at - b.at)) {
       if (c.branch === "main") {
         let d = docs.find((x) => x.id === c.docId);
@@ -2816,8 +2816,8 @@ ${text2}` : out.push({ role, text: text2 });
     }
     let notif = (notifications2.items ?? []).map((n) => {
       person2(people3, n.actor?.id, n.actor?.name, n.actor?.email), n.actor?.is_agent && people3.get(n.actor.id) && (people3.get(n.actor.id).agent = !0);
-      let name2 = n.request ? requests.find((r) => r.id === n.request.id)?.name ?? n.request.name : "", title = n.document?.title ?? "a file", text2 = n.kind === "change_request_submitted" ? `opened ${name2} on ${title}` : n.kind === "change_request_reviewed" ? `reviewed ${name2} on ${title}` : n.kind === "change_request_merged" ? `merged ${name2} into ${title}` : n.kind === "change_request_declined" ? `declined ${name2} on ${title}` : n.kind === "copy_detected" ? `found a copy of ${title}` : n.kind === "access_granted" ? `gave you access to ${title}` : n.kind === "mention" ? `mentioned you in ${title}` : `${String(n.kind).replace(/_/g, " ")} ${title}`;
-      return { id: n.id, kind: n.kind, at: ms(n.created_at), read: !!n.read, actorId: n.actor?.id ?? "", projectId: n.document?.project_id ?? projects[0]?.id ?? "", docId: n.document?.id, requestId: n.request?.id, text: text2 };
+      let name2 = n.request ? requests.find((r) => r.id === n.request.id)?.name ?? n.request.name : "", title = n.document?.title ?? "a file", text3 = n.kind === "change_request_submitted" ? `opened ${name2} on ${title}` : n.kind === "change_request_reviewed" ? `reviewed ${name2} on ${title}` : n.kind === "change_request_merged" ? `merged ${name2} into ${title}` : n.kind === "change_request_declined" ? `declined ${name2} on ${title}` : n.kind === "copy_detected" ? `found a copy of ${title}` : n.kind === "access_granted" ? `gave you access to ${title}` : n.kind === "mention" ? `mentioned you in ${title}` : `${String(n.kind).replace(/_/g, " ")} ${title}`;
+      return { id: n.id, kind: n.kind, at: ms(n.created_at), read: !!n.read, actorId: n.actor?.id ?? "", projectId: n.document?.project_id ?? projects[0]?.id ?? "", docId: n.document?.id, requestId: n.request?.id, text: text3 };
     }), deviceKeys = (devices.keys ?? []).map((k) => ({ id: k.id, name: k.label || "Signing key", kind: k.class === "agent" ? "agent" : "person", publicKey: k.public_key, createdAt: ms(k.registered_at), revoked: !!k.revoked_at, scopes: [...new Set((k.grants ?? []).flatMap((g) => g.scopes ?? []))] }));
     projects.sort((a, b) => b.updatedAt - a.updatedAt), docs.sort((a, b) => a.title.localeCompare(b.title)), activity.sort((a, b) => b.at - a.at);
     let db = {
@@ -2872,8 +2872,8 @@ ${text2}` : out.push({ role, text: text2 });
       let before = prev.projects.find((x) => x.id === p2.id);
       if (!before) {
         await run("create a project", async () => {
-          let body2 = ok(await t.apiSend("POST", "projects", { name: p2.name, description: p2.description }), "create the project");
-          out.ids[p2.id] = body2.id, out.done.push(`Created the project ${p2.name}`);
+          let body3 = ok(await t.apiSend("POST", "projects", { name: p2.name, description: p2.description }), "create the project");
+          out.ids[p2.id] = body3.id, out.done.push(`Created the project ${p2.name}`);
         });
         continue;
       }
@@ -2949,19 +2949,19 @@ ${text2}` : out.push({ role, text: text2 });
       let before = prev.drafts.find((x) => x.id === d.id), dc = ctx2.docs[d.docId];
       if (!before) {
         await run("draft", async () => {
-          let body2 = ok(await t.apiSend("POST", `documents/${d.docId}/drafts`, { name: d.name, base_seq: dc.latest }), "create the draft");
-          out.ids[d.id] = body2.id;
+          let body3 = ok(await t.apiSend("POST", `documents/${d.docId}/drafts`, { name: d.name, base_seq: dc.latest }), "create the draft");
+          out.ids[d.id] = body3.id;
           let revision = 0, own = next.commits.filter((c) => c.branch === d.id && !c.local).sort((a, b) => a.seq - b.seq), nodes = dc.nodes;
           try {
-            nodes = ok(await t.apiGet(`documents/${d.docId}/drafts/${body2.id}`), "open the draft").state?.nodes ?? dc.nodes;
+            nodes = ok(await t.apiGet(`documents/${d.docId}/drafts/${body3.id}`), "open the draft").state?.nodes ?? dc.nodes;
           } catch {
           }
           let slots = blocksOf2(dc.kind, nodes).slots;
           for (let c of own) {
             let ops = editsToOps(c.edits, { kind: dc.kind, nodes, slots, newId: newUlid });
             if (!ops.length) continue;
-            let res = ok(await t.apiSend("POST", `documents/${d.docId}/drafts/${body2.id}`, { ops, revision }), "write to the draft");
-            revision = res.revision, nodes = res.state?.nodes ?? nodes, slots = blocksOf2(dc.kind, nodes).slots, await note({ document_id: d.docId, branch: body2.id, from_seq: revision, to_seq: revision, kind: c.kind, summary: c.summary, description: c.description, edits: c.edits });
+            let res = ok(await t.apiSend("POST", `documents/${d.docId}/drafts/${body3.id}`, { ops, revision }), "write to the draft");
+            revision = res.revision, nodes = res.state?.nodes ?? nodes, slots = blocksOf2(dc.kind, nodes).slots, await note({ document_id: d.docId, branch: body3.id, from_seq: revision, to_seq: revision, kind: c.kind, summary: c.summary, description: c.description, edits: c.edits });
           }
           out.done.push(`Created the draft ${d.name}`);
         });
@@ -2987,20 +2987,20 @@ ${text2}` : out.push({ role, text: text2 });
       let cc = ctx2.crs[r.id], newReviews = r.reviews.slice(before.reviews.length);
       for (let rv of newReviews)
         await run("review", async () => {
-          let body2 = { verdict: rv.verdict, note: rv.note || (rv.verdict === "approved" ? "" : "Comment"), revision: cc?.revision ?? 0 };
-          ok(await t.apiSend("POST", `documents/${r.docId}/change-requests/${r.id}/reviews`, body2), "review the request"), out.done.push(rv.verdict === "approved" ? `Approved ${r.name}` : rv.verdict === "changes_requested" ? `Asked for changes on ${r.name}` : `Commented on ${r.name}`);
+          let body3 = { verdict: rv.verdict, note: rv.note || (rv.verdict === "approved" ? "" : "Comment"), revision: cc?.revision ?? 0 };
+          ok(await t.apiSend("POST", `documents/${r.docId}/change-requests/${r.id}/reviews`, body3), "review the request"), out.done.push(rv.verdict === "approved" ? `Approved ${r.name}` : rv.verdict === "changes_requested" ? `Asked for changes on ${r.name}` : `Commented on ${r.name}`);
         });
       for (let c of r.comments.slice(before.comments.length))
         newReviews.some((rv) => rv.note && rv.note === c.text) || r.status !== "open" && before.status === "open" && r.status === "declined" || await run("comment", async () => {
-          let body2 = { verdict: "commented", note: c.text, revision: cc?.revision ?? 0 };
-          c.blockId && (body2.node_id = nodeOf(c.blockId)), ok(await t.apiSend("POST", `documents/${r.docId}/change-requests/${r.id}/reviews`, body2), "comment on the request");
+          let body3 = { verdict: "commented", note: c.text, revision: cc?.revision ?? 0 };
+          c.blockId && (body3.node_id = nodeOf(c.blockId)), ok(await t.apiSend("POST", `documents/${r.docId}/change-requests/${r.id}/reviews`, body3), "comment on the request");
         });
       r.status === "merged" && before.status === "open" && await run("merge", async () => {
         let fresh = ok(await t.apiGet(`documents/${r.docId}/change-requests/${r.id}`), "read the request"), resolutions = {};
         for (let c of r.conflicts) for (let key of cc?.keys[c.blockId] ?? []) c.choice && (resolutions[key] = c.choice);
-        let body2 = { team_seq: fresh.team_seq, revision: fresh.revision, resolutions };
-        r.excluded.length && (body2.included_nodes = [...new Set(r.edits.filter((e) => !r.excluded.includes(e.blockId)).map((e) => nodeOf(e.blockId)))]);
-        let seqs = (ok(await t.apiSend("POST", `documents/${r.docId}/change-requests/${r.id}/merge`, body2), "merge the request").events ?? []).map((e) => e.seq);
+        let body3 = { team_seq: fresh.team_seq, revision: fresh.revision, resolutions };
+        r.excluded.length && (body3.included_nodes = [...new Set(r.edits.filter((e) => !r.excluded.includes(e.blockId)).map((e) => nodeOf(e.blockId)))]);
+        let seqs = (ok(await t.apiSend("POST", `documents/${r.docId}/change-requests/${r.id}/merge`, body3), "merge the request").events ?? []).map((e) => e.seq);
         seqs.length && await note({ document_id: r.docId, branch: "main", from_seq: Math.min(...seqs), to_seq: Math.max(...seqs), kind: "merge", summary: `Merge #${r.number}: ${r.name}`, description: r.note, merged_from: r.id }), out.done.push(`Merged ${r.name}`);
       }), r.status === "declined" && before.status === "open" && await run("decline", async () => {
         let last = r.comments.slice(before.comments.length).pop();
@@ -3029,9 +3029,9 @@ ${text2}` : out.push({ role, text: text2 });
     let e = env ?? null;
     return {
       apiGet: (path) => call("api_get", { path, env: e }),
-      apiSend: (method, path, body2, ifMatch) => call("api_send", { method, path, body: body2 ?? null, ifMatch: ifMatch ?? null, env: e }),
+      apiSend: (method, path, body3, ifMatch) => call("api_send", { method, path, body: body3 ?? null, ifMatch: ifMatch ?? null, env: e }),
       svcGet: (path) => call("svc_get", { path, env: e }),
-      svcSend: (method, path, body2) => call("svc_send", { method, path, body: body2 ?? null, env: e })
+      svcSend: (method, path, body3) => call("svc_send", { method, path, body: body3 ?? null, env: e })
     };
   }
   var desktopTransport = transportFor();
@@ -3164,11 +3164,480 @@ ${text2}` : out.push({ role, text: text2 });
   function noticePrefs() {
     !state.desktop || !savedPrefs || JSON.stringify(state.prefs) === savedPrefs || (prefsTimer && clearTimeout(prefsTimer), prefsTimer = setTimeout(() => {
       prefsTimer = null;
-      let text2 = JSON.stringify(state.prefs);
-      call("prefs_save", { prefs: JSON.parse(text2) }).then(() => {
-        savedPrefs = text2;
+      let text3 = JSON.stringify(state.prefs);
+      call("prefs_save", { prefs: JSON.parse(text3) }).then(() => {
+        savedPrefs = text3;
       }).catch((e) => toast("error", "Preferences not saved", e instanceof Error ? e.message : String(e)));
     }, 800));
+  }
+
+  // client/src/data/sync.ts
+  var SyncError = class extends Error {
+    constructor(message2, status = 0) {
+      super(message2);
+      __publicField(this, "status");
+      this.status = status;
+    }
+  };
+  function body(r, what) {
+    if (r.status >= 200 && r.status < 300) return r.body;
+    let said = r.body && typeof r.body == "object" && typeof r.body.error == "string" ? r.body.error : "", text3 = r.status === 401 ? "Your session on the server has ended. Sign in again." : r.status === 403 ? said && said !== "forbidden" ? said : `Your role does not allow this (${what}).` : r.status === 409 ? "It changed on the other side while syncing. Sync again." : r.status === 429 ? "The server asks to slow down. Try again in a moment." : said || `Could not ${what} (${r.status}).`;
+    throw new SyncError(text3, r.status);
+  }
+  var MAX_FILES = 500;
+  async function listFiles(t, projectId) {
+    let out = [];
+    for (let offset = 0; offset < MAX_FILES; ) {
+      let items = body(await t.apiGet(`projects/${projectId}/files${offset ? `?offset=${offset}` : ""}`), "list the files").items ?? [], known = new Set(out.map((f) => f.id)), fresh = items.filter((f) => !known.has(String(f.id)));
+      for (let f of fresh) out.push({ id: String(f.id), title: String(f.title ?? "Untitled"), kind: String(f.kind ?? f.settings?.kind ?? "document"), latest: Number(f.latest_seq ?? 0) });
+      if (!fresh.length || items.length < 20) break;
+      offset += items.length;
+    }
+    return out;
+  }
+  async function readDoc(t, id) {
+    let d = body(await t.apiGet(`documents/${id}`), "read a file");
+    return { nodes: d.state?.nodes ?? {}, seq: Number(d.latest_seq ?? 0), title: String(d.title ?? "Untitled"), kind: String(d.settings?.kind ?? "document") };
+  }
+  async function nodesThrough(t, id, seq) {
+    return body(await t.apiGet(`documents/${id}/state?through_seq=${seq}`), "read an earlier revision").state?.nodes ?? {};
+  }
+  var fieldsOf2 = (n) => n.current_fields ?? n.fields ?? {};
+  function canon(v) {
+    if (v === void 0) return "null";
+    if (v === null || typeof v != "object") return JSON.stringify(v);
+    if (Array.isArray(v)) return `[${v.map(canon).join(",")}]`;
+    let o = v;
+    return `{${Object.keys(o).sort().map((k) => `${JSON.stringify(k)}:${canon(o[k])}`).join(",")}}`;
+  }
+  var same2 = (a, b) => canon(a) === canon(b);
+  function depth(nodes, n) {
+    let d = 0, cur = n, seen = /* @__PURE__ */ new Set();
+    for (; cur && cur.parent_id && !seen.has(cur.id); )
+      seen.add(cur.id), d += 1, cur = nodes[cur.parent_id];
+    return d;
+  }
+  function diffNodes(from, to) {
+    let created = [], edits2 = [];
+    for (let n of Object.values(to)) {
+      let old = from[n.id];
+      if (!old) {
+        n.deleted || created.push(n);
+        continue;
+      }
+      !!n.deleted != !!old.deleted && edits2.push({ type: n.deleted ? "NodeDeleted" : "NodeRestored", node_id: n.id }), ((n.parent_id ?? null) !== (old.parent_id ?? null) || n.pos !== old.pos) && edits2.push({ type: "NodeMoved", node_id: n.id, new_parent_id: n.parent_id ?? null, new_pos: n.pos });
+      let a = fieldsOf2(old), b = fieldsOf2(n);
+      for (let key of [.../* @__PURE__ */ new Set([...Object.keys(a), ...Object.keys(b)])].sort())
+        same2(a[key], b[key]) || edits2.push({ type: "FieldEdited", node_id: n.id, field: key, value: key in b ? b[key] : null });
+    }
+    return created.sort((x, y) => depth(to, x) - depth(to, y) || (x.pos < y.pos ? -1 : x.pos > y.pos ? 1 : x.id < y.id ? -1 : 1)), [...created.map((n) => ({ type: "NodeCreated", node_id: n.id, node_type: n.type, parent_id: n.parent_id ?? null, pos: n.pos, fields: { ...fieldsOf2(n) } })), ...edits2];
+  }
+  function changesOf(base, now) {
+    let out = /* @__PURE__ */ new Map();
+    for (let n of Object.values(now)) {
+      let old = base[n.id];
+      if (!old) {
+        n.deleted || out.set(`new:${n.id}`, { node: n.id, value: { type: n.type, parent: n.parent_id ?? null, pos: n.pos, fields: fieldsOf2(n) } });
+        continue;
+      }
+      !!n.deleted != !!old.deleted && out.set(`del:${n.id}`, { node: n.id, value: !!n.deleted }), ((n.parent_id ?? null) !== (old.parent_id ?? null) || n.pos !== old.pos) && out.set(`move:${n.id}`, { node: n.id, value: { parent: n.parent_id ?? null, pos: n.pos } });
+      let a = fieldsOf2(old), b = fieldsOf2(n);
+      for (let key of /* @__PURE__ */ new Set([...Object.keys(a), ...Object.keys(b)]))
+        same2(a[key], b[key]) || out.set(`f:${n.id}:${key}`, { node: n.id, value: key in b ? b[key] : null });
+    }
+    return out;
+  }
+  function clone(nodes) {
+    let out = {};
+    for (let [k, v] of Object.entries(nodes)) out[k] = { ...v, current_fields: { ...fieldsOf2(v) } };
+    return out;
+  }
+  function put(nodes, key, c) {
+    let [kind, id, ...rest] = key.split(":");
+    if (kind === "new") {
+      let v = c.value;
+      nodes[id] = { id, type: v.type, parent_id: v.parent, pos: v.pos, current_fields: { ...v.fields }, deleted: !1 };
+    } else if (nodes[id])
+      if (kind === "del")
+        nodes[id] = { ...nodes[id], deleted: !!c.value };
+      else if (kind === "move") {
+        let v = c.value;
+        nodes[id] = { ...nodes[id], parent_id: v.parent, pos: v.pos };
+      } else kind === "f" && (nodes[id] = { ...nodes[id], current_fields: { ...fieldsOf2(nodes[id]), [rest.join(":")]: c.value } });
+    else return;
+  }
+  var keysOfNode = (m, id) => [...m.entries()].filter(([, c]) => c.node === id).map(([k]) => k);
+  function merge3(base, local2, remote, picks, describe, labelOf3) {
+    let conflicts2 = [], skipLocal = /* @__PURE__ */ new Set(), skipRemote = /* @__PURE__ */ new Set(), nodeConflicts = /* @__PURE__ */ new Set(), deletedOn = (m) => [...m.entries()].filter(([k, c]) => k.startsWith("del:") && c.value === !0).map(([, c]) => c.node);
+    for (let [mine, theirs] of [[local2, remote], [remote, local2]])
+      for (let id of deletedOn(mine))
+        keysOfNode(theirs, id).filter((k) => k.startsWith("f:") || k.startsWith("move:")).length && !theirs.has(`del:${id}`) && nodeConflicts.add(id);
+    for (let id of nodeConflicts) {
+      let key = `node:${id}`, pick = picks[key];
+      if (conflicts2.push({ key, nodeId: id, label: labelOf3(id), local: describe(id, "local", key), remote: describe(id, "remote", key), pick }), pick === "local") for (let k of keysOfNode(remote, id)) skipRemote.add(k);
+      else if (pick === "remote") for (let k of keysOfNode(local2, id)) skipLocal.add(k);
+      else {
+        for (let k of keysOfNode(remote, id)) skipRemote.add(k);
+        for (let k of keysOfNode(local2, id)) skipLocal.add(k);
+      }
+    }
+    let merged = clone(base), ordered = [.../* @__PURE__ */ new Set([...local2.keys(), ...remote.keys()])].sort((a, b) => (a.startsWith("new:") ? 0 : 1) - (b.startsWith("new:") ? 0 : 1));
+    for (let key of ordered) {
+      let l = skipLocal.has(key) ? void 0 : local2.get(key), r = skipRemote.has(key) ? void 0 : remote.get(key);
+      if (l && r && !same2(l.value, r.value)) {
+        let pick = picks[key];
+        conflicts2.push({ key, nodeId: l.node, label: labelOf3(l.node), local: describe(l.node, "local", key), remote: describe(l.node, "remote", key), pick }), pick === "local" ? put(merged, key, l) : pick === "remote" && put(merged, key, r);
+        continue;
+      }
+      let one = l ?? r;
+      one && put(merged, key, one);
+    }
+    return { merged, conflicts: conflicts2 };
+  }
+  function plain(v) {
+    if (typeof v == "string") return v;
+    if (typeof v == "number" || typeof v == "boolean") return String(v);
+    if (!v || typeof v != "object") return "";
+    let o = v;
+    return typeof o.text == "string" ? o.text : Array.isArray(o.content) ? o.content.map(plain).join(o.type === "doc" ? `
+` : "") : "";
+  }
+  function nodeText(n) {
+    if (!n) return "";
+    let f = fieldsOf2(n);
+    return ((typeof f.label == "string" ? f.label : "") || plain(f.text) || plain(f.content) || Object.entries(f).filter(([k]) => k.startsWith("cell_")).map(([, v]) => plain(v)).filter(Boolean).join("  ")).replace(/\s+/g, " ").trim();
+  }
+  function clip2(s2, n = 160) {
+    return s2.length > n ? `${s2.slice(0, n - 1)}…` : s2;
+  }
+  var ACTIONS = ["same", "send", "receive", "both", "conflict", "add-remote", "add-local", "missing-remote", "missing-local", "waiting", "needs-review"];
+  function counted(items) {
+    let counts = Object.fromEntries(ACTIONS.map((a) => [a, 0]));
+    for (let i of items) counts[i.action] += 1;
+    return { items, counts };
+  }
+  async function planSync(sides, link, picks = {}) {
+    let [lf, rf] = await Promise.all([listFiles(sides.local, sides.localProjectId), listFiles(sides.remote, link.remoteProjectId)]), items = [], claimed = /* @__PURE__ */ new Set();
+    for (let f of lf) {
+      let m = link.files[f.id];
+      if (!m) {
+        let doc2 = await readDoc(sides.local, f.id);
+        items.push({ action: "add-remote", title: f.title, kind: doc2.kind, localId: f.id, local: doc2, toRemote: diffNodes({}, doc2.nodes), toLocal: [], conflicts: [] });
+        continue;
+      }
+      claimed.add(m.remoteDocId);
+      let r = rf.find((x) => x.id === m.remoteDocId);
+      if (!r) {
+        items.push({ action: "missing-remote", title: f.title, kind: f.kind, localId: f.id, remoteId: m.remoteDocId, toRemote: [], toLocal: [], conflicts: [], note: "It is no longer on the server (deleted, moved to another project, or you lost access). It stays here and is not sent again." });
+        continue;
+      }
+      items.push(await planPair(sides, f, r, m, picks[f.id] ?? {}));
+    }
+    for (let r of rf) {
+      if (claimed.has(r.id)) continue;
+      let mapped = Object.entries(link.files).find(([, m]) => m.remoteDocId === r.id);
+      if (mapped) {
+        items.push({ action: "missing-local", title: r.title, kind: r.kind, localId: mapped[0], remoteId: r.id, toRemote: [], toLocal: [], conflicts: [], note: "You removed it from this computer. It stays on the server and is not brought back." });
+        continue;
+      }
+      let doc2 = await readDoc(sides.remote, r.id);
+      items.push({ action: "add-local", title: r.title, kind: doc2.kind, remoteId: r.id, remote: doc2, toRemote: [], toLocal: diffNodes({}, doc2.nodes), conflicts: [] });
+    }
+    return counted(items);
+  }
+  async function planPair(sides, lf, rf, m, picks) {
+    let base = { action: "same", title: lf.title, kind: lf.kind, localId: lf.id, remoteId: rf.id, toRemote: [], toLocal: [], conflicts: [] }, localMoved = lf.latest !== m.localSeq, remoteMoved = rf.latest !== m.remoteSeq;
+    if (!localMoved && !remoteMoved) return base;
+    let [l, r] = await Promise.all([readDoc(sides.local, lf.id), readDoc(sides.remote, rf.id)]), lBase = localMoved ? await nodesThrough(sides.local, lf.id, m.localSeq) : l.nodes, rBase = remoteMoved ? await nodesThrough(sides.remote, rf.id, m.remoteSeq) : r.nodes, lc = changesOf(lBase, l.nodes), rc = changesOf(rBase, r.nodes), label = (id) => nodeText(l.nodes[id] ?? r.nodes[id]) ? clip2(nodeText(l.nodes[id] ?? r.nodes[id]), 60) : `${(l.nodes[id] ?? r.nodes[id])?.type ?? "item"}`, describe = (id, side, key) => {
+      let n = (side === "local" ? l.nodes : r.nodes)[id];
+      if (key.startsWith("node:")) return n?.deleted ? "Deleted here" : clip2(nodeText(n)) || "Changed here";
+      if (key.startsWith("del:")) return n?.deleted ? "Deleted" : "Kept";
+      if (key.startsWith("move:")) return "Moved to a different place";
+      let field2 = key.split(":").slice(2).join(":"), v = n ? fieldsOf2(n)[field2] : void 0;
+      return clip2(plain(v) || (v == null ? "(empty)" : canon(v)));
+    }, { merged, conflicts: conflicts2 } = merge3(lBase, lc, rc, picks, describe, label), out = { ...base, local: l, remote: r, conflicts: conflicts2 };
+    if (conflicts2.some((c) => !c.pick)) return { ...out, action: "conflict", note: `${conflicts2.filter((c) => !c.pick).length} change${conflicts2.filter((c) => !c.pick).length === 1 ? " is" : "s are"} in conflict. Choose a side for each.` };
+    let toRemote = diffNodes(r.nodes, merged), toLocal = diffNodes(l.nodes, merged);
+    return out.toRemote = toRemote, out.toLocal = toLocal, m.pending && m.pending.localSeq === lf.latest && toRemote.length && !toLocal.length ? { ...out, action: "waiting", note: "The changes are waiting for review on the server." } : (out.action = toRemote.length && toLocal.length ? "both" : toRemote.length ? "send" : toLocal.length ? "receive" : "same", out);
+  }
+  var MAX_OPS_PER_BATCH = 400, MAX_BYTES_PER_BATCH = 300 * 1024;
+  function chunkOps(ops) {
+    let out = [], cur = [], bytes = 0;
+    for (let op of ops) {
+      let n = JSON.stringify(op).length;
+      cur.length && (cur.length >= MAX_OPS_PER_BATCH || bytes + n > MAX_BYTES_PER_BATCH) && (out.push(cur), cur = [], bytes = 0), cur.push(op), bytes += n;
+    }
+    return cur.length && out.push(cur), out;
+  }
+  async function writeOps(t, docId, ops, baseSeq) {
+    let seq = baseSeq;
+    for (let part of chunkOps(ops)) {
+      let events = body(await t.apiSend("POST", `documents/${docId}/batch`, { ops: part, base_seq: seq }), "write the changes").events ?? [];
+      events.length && (seq = events[events.length - 1].seq);
+    }
+    return seq;
+  }
+  async function createDoc(t, projectId, title, kind, ops) {
+    let doc2 = body(await t.apiSend("POST", "documents", { title: title.slice(0, 200) || "Untitled" }), "create a file"), id = String(doc2.id);
+    body(await t.apiSend("POST", `documents/${id}/metadata`, { settings: { kind } }), "describe the file");
+    let seq = await writeOps(t, id, ops, 0);
+    return body(await t.apiSend("POST", `documents/${id}/location`, { space_id: projectId }), "put the file in the project"), { id, seq };
+  }
+  async function applyPlan(sides, link, plan2, o = { host: "the server" }) {
+    let done = { sent: 0, received: 0, created: 0, unchanged: 0, held: [], needs: 0 };
+    for (let item of plan2.items)
+      try {
+        if (item.action === "same" && item.localId && item.remoteId) {
+          let m = link.files[item.localId];
+          if (m) {
+            let [lf, rf] = [item.local?.seq, item.remote?.seq];
+            lf !== void 0 && (m.localSeq = lf), rf !== void 0 && (m.remoteSeq = rf);
+          }
+          done.unchanged += 1;
+        } else if (item.action === "add-remote" && item.local && item.localId) {
+          let made = await createDoc(sides.remote, link.remoteProjectId, item.title, item.kind, item.toRemote);
+          link.files[item.localId] = { remoteDocId: made.id, localSeq: item.local.seq, remoteSeq: made.seq }, await o.onNote?.(made.id, 1, made.seq, "Sent from a computer", `Created from the file "${item.title}" on another computer.`, "remote"), done.created += 1;
+        } else if (item.action === "add-local" && item.remote && item.remoteId) {
+          let made = await createDoc(sides.local, sides.localProjectId, item.title, item.kind, item.toLocal);
+          link.files[made.id] = { remoteDocId: item.remoteId, localSeq: made.seq, remoteSeq: item.remote.seq }, await o.onNote?.(made.id, 1, made.seq, `Received from ${o.host}`.slice(0, 200), `Copied from the file "${item.title}" on ${o.host}.`, "local"), done.created += 1;
+        } else if ((item.action === "send" || item.action === "receive" || item.action === "both") && item.localId && item.remoteId && item.local && item.remote) {
+          let m = link.files[item.localId], rSeq = item.remote.seq, lSeq = item.local.seq;
+          if (item.toRemote.length) {
+            try {
+              rSeq = await writeOps(sides.remote, item.remoteId, item.toRemote, item.remote.seq);
+            } catch (e) {
+              if (e instanceof SyncError && e.status === 403) {
+                done.needs += 1, item.action = "needs-review", item.note = "The server’s rules do not let you change this file directly. Send the changes for review.", done.held.push({ title: item.title, why: item.note });
+                continue;
+              }
+              throw e;
+            }
+            done.sent += 1, await o.onNote?.(item.remoteId, item.remote.seq + 1, rSeq, "Synced from a computer", `${item.toRemote.length} change${item.toRemote.length === 1 ? "" : "s"} from the copy on another computer.`, "remote");
+          }
+          item.toLocal.length && (lSeq = await writeOps(sides.local, item.localId, item.toLocal, item.local.seq), done.received += 1, await o.onNote?.(item.localId, item.local.seq + 1, lSeq, `Synced from ${o.host}`.slice(0, 200), `${item.toLocal.length} change${item.toLocal.length === 1 ? "" : "s"} from ${o.host}.`, "local")), m.localSeq = lSeq, m.remoteSeq = rSeq, delete m.pending;
+        } else item.action === "conflict" ? (done.needs += 1, done.held.push({ title: item.title, why: item.note ?? "In conflict." })) : (item.action === "waiting" || item.action === "missing-remote" || item.action === "missing-local") && done.held.push({ title: item.title, why: item.note ?? "" });
+      } catch (e) {
+        done.held.push({ title: item.title, why: e instanceof Error ? e.message : String(e) });
+      }
+    return link.lastSyncedAt = Date.now(), done;
+  }
+  async function sendForReview2(sides, link, item, who2) {
+    if (!item.localId || !item.remoteId || !item.remote || !item.local) throw new SyncError("That file is not linked.");
+    let m = link.files[item.localId], made = body(
+      await sides.remote.apiSend("POST", `documents/${item.remoteId}/change-requests`, {
+        name: `Changes from ${who2}`.slice(0, 120),
+        note: "Sent by a sync from a computer. Review the changes, then merge.",
+        base_seq: item.remote.seq,
+        ops: item.toRemote,
+        submit: !0
+      }),
+      "send the changes for review"
+    ), requestId = String(made.id ?? made.request?.id ?? "");
+    return m && (m.pending = { requestId, localSeq: item.local.seq, at: Date.now() }), { requestId };
+  }
+  function newLink(accountId, remoteProjectId, remoteName) {
+    return { accountId, remoteProjectId, remoteName, linkedAt: Date.now(), lastSyncedAt: null, files: {} };
+  }
+
+  // client/src/data/accounts.ts
+  var text = (e) => e instanceof Error ? e.message : String(e), sleep2 = (n) => new Promise((r) => setTimeout(r, n)), srv = () => state.servers, local = () => transportFor("local"), remoteOf = (accountId) => transportFor(`acct:${accountId}`), links = () => srv().links, planOf = (projectId) => srv().plans[projectId] ?? null, accountOf = (id) => srv().accounts.find((a) => a.id === id);
+  async function loadServers() {
+    if (state.desktop) {
+      try {
+        let list2 = await call("accounts_list");
+        srv().cloud = list2.cloud, srv().accounts = list2.accounts, srv().store = list2.store, srv().loaded = !0;
+      } catch {
+      }
+      try {
+        let got = await local().svcGet("state/links"), value = got.status === 200 ? got.body?.value : null;
+        srv().links = value && typeof value == "object" && !Array.isArray(value) ? value : {};
+      } catch {
+      }
+      render();
+    }
+  }
+  async function saveLinks() {
+    let r = await local().svcSend("PUT", "state/links", { value: srv().links });
+    if (r.status < 200 || r.status >= 300) throw new Error("The links could not be saved.");
+  }
+  async function addServer(address) {
+    try {
+      let account = await call("account_add", { address });
+      return srv().addDraft = "", await loadServers(), account;
+    } catch (e) {
+      return toast("error", "That server was not added", text(e)), null;
+    }
+  }
+  async function removeServer(id) {
+    try {
+      await call("account_remove", { id });
+      for (let [pid, l] of Object.entries(links())) l.accountId === id && delete links()[pid];
+      await saveLinks().catch(() => {
+      }), delete srv().projects[id], await loadServers(), toast("success", "The server was removed from this app", "Projects that were linked to it stay here as they are.");
+    } catch (e) {
+      toast("error", "The server was not removed", text(e));
+    }
+  }
+  var polling = !1;
+  async function startSignIn(id) {
+    try {
+      let pairing = await call("account_signin_start", { id });
+      srv().flow = { state: "waiting", account_id: id, pairing, message: "" }, render(), follow();
+    } catch (e) {
+      toast("error", "The browser sign-in did not start", text(e));
+    }
+  }
+  async function follow() {
+    if (!polling) {
+      polling = !0;
+      try {
+        for (let i = 0; i < 1e3; i++) {
+          await sleep2(700);
+          let flow;
+          try {
+            flow = await call("account_signin_status");
+          } catch {
+            break;
+          }
+          if (srv().flow = flow, flow.state !== "waiting") {
+            if (render(), flow.state === "done" && flow.account_id) {
+              await loadServers();
+              let a = accountOf(flow.account_id);
+              toast("success", `Signed in to ${a?.host ?? "the server"}`, a?.email ? `As ${a.email}.` : void 0), await loadRemoteProjects(flow.account_id);
+            } else flow.state === "failed" && toast("error", "The sign-in did not finish", flow.message);
+            break;
+          }
+          render();
+        }
+      } finally {
+        polling = !1;
+      }
+    }
+  }
+  async function cancelSignIn() {
+    try {
+      await call("account_signin_cancel");
+    } catch {
+    }
+    srv().flow = { state: "none", account_id: null, pairing: null, message: "" }, render();
+  }
+  async function signOutOf(id) {
+    try {
+      let r = await call("account_signout", { id });
+      delete srv().projects[id], await loadServers(), toast("success", "Signed out", r.server_confirmed ? "The server ended the session, and it is gone from this computer." : "The session is gone from this computer. The server could not be reached to end it there: it ends by itself.");
+    } catch (e) {
+      toast("error", "Not signed out", text(e));
+    }
+  }
+  async function checkServer(id) {
+    try {
+      await call("account_check", { id });
+    } catch (e) {
+      toast("warning", "The server could not be reached", text(e));
+    }
+    await loadServers();
+  }
+  async function loadRemoteProjects(id) {
+    var _a;
+    srv().busy = "Reading the projects on the server…", render();
+    try {
+      let r = await remoteOf(id).apiGet("projects");
+      if (r.status === 401)
+        throw await loadServers(), new Error("Your session on the server has ended. Sign in again.");
+      if (r.status < 200 || r.status >= 300) throw new Error(`The server answered ${r.status}.`);
+      srv().projects[id] = (r.body?.items ?? []).map((p2) => ({ id: String(p2.id), name: String(p2.name ?? "Untitled"), description: String(p2.description ?? "") }));
+    } catch (e) {
+      (_a = srv().projects)[id] ?? (_a[id] = []), toast("error", "The projects could not be read", text(e));
+    } finally {
+      srv().busy = "", render();
+    }
+  }
+  async function linkProject(localProjectId, accountId, remoteProjectId) {
+    try {
+      let project2 = state.db.projects.find((p2) => p2.id === localProjectId), id = remoteProjectId, name2 = srv().projects[accountId]?.find((p2) => p2.id === remoteProjectId)?.name ?? "";
+      if (remoteProjectId === "new") {
+        let made = await remoteOf(accountId).apiSend("POST", "projects", { name: project2?.name ?? "Project", description: project2?.description ?? "" });
+        if (made.status < 200 || made.status >= 300) throw new Error(typeof made.body?.error == "string" ? made.body.error : "The project could not be made on the server.");
+        id = String(made.body.id), name2 = String(made.body.name ?? project2?.name ?? "Project"), await loadRemoteProjects(accountId);
+      }
+      links()[localProjectId] = newLink(accountId, id, name2), delete srv().plans[localProjectId], await saveLinks(), toast("success", "Linked", "Nothing has been sent yet. Check what a sync would do, then sync.");
+    } catch (e) {
+      toast("error", "The project was not linked", text(e));
+    }
+    render();
+  }
+  async function unlinkProject(localProjectId) {
+    delete links()[localProjectId], delete srv().plans[localProjectId], delete srv().picks[localProjectId];
+    try {
+      await saveLinks(), toast("success", "Unlinked", "The files stay where they are, on both sides.");
+    } catch (e) {
+      toast("error", "Not saved", text(e));
+    }
+    render();
+  }
+  var sidesFor = (localProjectId, l) => ({ local: local(), remote: remoteOf(l.accountId), localProjectId });
+  function picksFor(localProjectId) {
+    return srv().picks[localProjectId] ?? {};
+  }
+  function choose(localProjectId, docId, key, side) {
+    var _a;
+    let p2 = (_a = srv().picks)[localProjectId] ?? (_a[localProjectId] = {});
+    (p2[docId] ?? (p2[docId] = {}))[key] = side, render();
+  }
+  async function checkSync(localProjectId) {
+    let l = links()[localProjectId];
+    if (!l || srv().running[localProjectId]) return null;
+    srv().running[localProjectId] = !0, srv().last[localProjectId] = "Reading both sides…", render();
+    try {
+      let plan2 = await planSync(sidesFor(localProjectId, l), l, picksFor(localProjectId));
+      return srv().plans[localProjectId] = plan2, srv().last[localProjectId] = "", plan2;
+    } catch (e) {
+      return srv().last[localProjectId] = text(e), toast("error", "Could not read both sides", text(e)), null;
+    } finally {
+      srv().running[localProjectId] = !1, render();
+    }
+  }
+  function summary(done, host) {
+    let bits = [];
+    return done.created && bits.push(`${done.created} new file${done.created === 1 ? "" : "s"}`), done.sent && bits.push(`${done.sent} sent to ${host}`), done.received && bits.push(`${done.received} received`), bits.length || bits.push("already in sync"), done.needs && bits.push(`${done.needs} need${done.needs === 1 ? "s" : ""} your choice`), bits.join(", ");
+  }
+  async function syncNow(localProjectId) {
+    let l = links()[localProjectId];
+    if (!l || srv().running[localProjectId]) return;
+    let host = accountOf(l.accountId)?.host ?? "the server";
+    srv().running[localProjectId] = !0, srv().last[localProjectId] = "Syncing…", render();
+    try {
+      let sides = sidesFor(localProjectId, l), plan2 = await planSync(sides, l, picksFor(localProjectId)), done = await applyPlan(sides, l, plan2, {
+        host,
+        onNote: async (docId, from, to, summaryText, description, on) => {
+          try {
+            await (on === "local" ? local() : remoteOf(l.accountId)).svcSend("POST", "notes", { document_id: docId, branch: "main", from_seq: from, to_seq: to, kind: "revision", summary: summaryText.slice(0, 200), description: description.slice(0, 4e3) });
+          } catch {
+          }
+        }
+      });
+      await saveLinks(), srv().plans[localProjectId] = await planSync(sides, l, picksFor(localProjectId));
+      let said = summary(done, host);
+      srv().last[localProjectId] = `${said}.${done.held.length ? ` ${done.held.map((h2) => `${h2.title}: ${h2.why}`).join(" ")}` : ""}`, toast(done.needs || done.held.length ? "warning" : "success", `Synced ${state.db.projects.find((p2) => p2.id === localProjectId)?.name ?? "the project"}`, said), isLocal() && (done.created || done.received) && await refresh(!0);
+    } catch (e) {
+      srv().last[localProjectId] = text(e), toast("error", "The sync did not finish", text(e));
+    } finally {
+      srv().running[localProjectId] = !1, render();
+    }
+  }
+  async function sendForReview3(localProjectId, localDocId) {
+    let l = links()[localProjectId], item = planOf(localProjectId)?.items.find((i) => i.localId === localDocId);
+    if (!(!l || !item))
+      try {
+        await sendForReview2(sidesFor(localProjectId, l), l, item, state.local.profile?.name ?? "a computer"), await saveLinks(), toast("success", "Sent for review", `The changes to ${item.title} are a change request on ${accountOf(l.accountId)?.host ?? "the server"}. A person there merges it; the next sync here picks the result up.`), await checkSync(localProjectId);
+      } catch (e) {
+        toast("error", "Not sent", text(e));
+      }
+  }
+  function lastSynced(l, now = Date.now()) {
+    if (!l.lastSyncedAt) return "not synced yet";
+    let s2 = Math.max(0, Math.round((now - l.lastSyncedAt) / 1e3));
+    return s2 < 60 ? "just now" : s2 < 3600 ? `${Math.round(s2 / 60)} min ago` : s2 < 86400 ? `${Math.round(s2 / 3600)} h ago` : new Date(l.lastSyncedAt).toLocaleDateString();
   }
 
   // client/src/theme.ts
@@ -3624,7 +4093,7 @@ ${text2}` : out.push({ role, text: text2 });
     return state.db.notifications.filter((n) => !n.read).length;
   }
   function activityView() {
-    let ui = state.ui.activity, list2 = [...state.db.notifications].sort((a, b) => Number(a.read) - Number(b.read) || b.at - a.at), body2 = ui.tab === "notifications" ? list2.length ? h("div", { class: "list-card" }, list2.map((n) => h(
+    let ui = state.ui.activity, list2 = [...state.db.notifications].sort((a, b) => Number(a.read) - Number(b.read) || b.at - a.at), body3 = ui.tab === "notifications" ? list2.length ? h("div", { class: "list-card" }, list2.map((n) => h(
       "div",
       { class: cx("list-item notif", !n.read && "is-unread") },
       h("span", { class: "notif-icon" }, icon(KIND_ICON2[n.kind], 15)),
@@ -3644,7 +4113,7 @@ ${text2}` : out.push({ role, text: text2 });
       tabs(ui.tab, [["notifications", "Notifications", unread()], ["activity", "All activity"]], (v) => {
         ui.tab = v, render();
       }, "Activity"),
-      h("div", { class: "tab-body" }, body2)
+      h("div", { class: "tab-body" }, body3)
     );
   }
 
@@ -3654,7 +4123,7 @@ ${text2}` : out.push({ role, text: text2 });
     if (!api) throw new Error("The file converter did not load. Close the app and open it again.");
     return api;
   }
-  var text = (e) => e instanceof Error ? e.message : String(e);
+  var text2 = (e) => e instanceof Error ? e.message : String(e);
   function fromBase64(b64) {
     let bin = atob(b64), out = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
@@ -3665,7 +4134,7 @@ ${text2}` : out.push({ role, text: text2 });
     for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode(...bytes.subarray(i, i + 8192));
     return btoa(bin);
   }
-  function body(r, what) {
+  function body2(r, what) {
     if (r.status >= 200 && r.status < 300) return r.body;
     let detail = r.body && typeof r.body == "object" && typeof r.body.error == "string" ? r.body.error : "";
     throw new Error(detail && detail !== "forbidden" ? detail : r.status === 403 ? `Your role does not allow this (${what}).` : `The workspace could not ${what} (${r.status}).`);
@@ -3680,26 +4149,26 @@ ${text2}` : out.push({ role, text: text2 });
     return cur.length && out.push(cur), out;
   }
   async function addFile(t, projectId, token) {
-    let file = await call("file_read", { token }), bytes = fromBase64(file.base64), imported = await office().importFile(bytes, file.name), title = file.name.replace(/\.[^.]+$/, "").slice(0, 200) || "Untitled", id = body(await t.apiSend("POST", "documents", { title }), "create the file").id;
+    let file = await call("file_read", { token }), bytes = fromBase64(file.base64), imported = await office().importFile(bytes, file.name), title = file.name.replace(/\.[^.]+$/, "").slice(0, 200) || "Untitled", id = body2(await t.apiSend("POST", "documents", { title }), "create the file").id;
     try {
-      body(await t.apiSend("POST", `documents/${id}/metadata`, { settings: { kind: imported.kind, import_warnings: imported.warnings } }), "describe the file");
+      body2(await t.apiSend("POST", `documents/${id}/metadata`, { settings: { kind: imported.kind, import_warnings: imported.warnings } }), "describe the file");
       let seq = 0;
       for (let part of chunks(imported.ops)) {
-        let events = body(await t.apiSend("POST", `documents/${id}/batch`, { ops: part, base_seq: seq }), "add the content").events ?? [];
+        let events = body2(await t.apiSend("POST", `documents/${id}/batch`, { ops: part, base_seq: seq }), "add the content").events ?? [];
         events.length && (seq = events[events.length - 1].seq);
       }
       try {
-        body(await t.apiSend("POST", `documents/${id}/uploads`, { filename: file.name, content_type: "application/octet-stream", content: file.base64, report: { warnings: imported.warnings } }), "keep the original");
+        body2(await t.apiSend("POST", `documents/${id}/uploads`, { filename: file.name, content_type: "application/octet-stream", content: file.base64, report: { warnings: imported.warnings } }), "keep the original");
       } catch {
       }
-      body(await t.apiSend("POST", `documents/${id}/location`, { space_id: projectId }), "put the file in the project");
+      body2(await t.apiSend("POST", `documents/${id}/location`, { space_id: projectId }), "put the file in the project");
       try {
         await t.svcSend("POST", "notes", { document_id: id, branch: "main", from_seq: 1, to_seq: seq, kind: "revision", summary: `Added ${file.name}`.slice(0, 200), description: `Imported from ${file.name} on this computer.` });
       } catch {
       }
       return { id, title, kind: imported.kind, seq, warnings: imported.warnings };
     } catch (e) {
-      throw new Error(`${file.name} could not be added: ${text(e)} The partly added file is in the project's trash if it appears at all.`);
+      throw new Error(`${file.name} could not be added: ${text2(e)} The partly added file is in the project's trash if it appears at all.`);
     }
   }
   async function addFilesDialog() {
@@ -3708,7 +4177,7 @@ ${text2}` : out.push({ role, text: text2 });
     try {
       picked = await call("files_pick", { purpose: "import" });
     } catch (e) {
-      return toast("error", "The file dialog did not open", text(e));
+      return toast("error", "The file dialog did not open", text2(e));
     }
     picked.length && await addPicked(projectId, picked);
   }
@@ -3723,7 +4192,7 @@ ${text2}` : out.push({ role, text: text2 });
         for (let w of a.warnings) warnings.includes(w) || warnings.push(w);
         await onAdded?.(p2, a);
       } catch (e) {
-        problems.push(text(e));
+        problems.push(text2(e));
       }
     return state.live.saving = !1, await refresh(!0), added && toast("success", `Added ${added} file${added === 1 ? "" : "s"}`, warnings[0] ?? "Each file keeps its history from here on."), problems.length && toast("error", "Some files were not added", problems.join(" ")), added;
   }
@@ -3731,7 +4200,7 @@ ${text2}` : out.push({ role, text: text2 });
     let d = state.db.docs.find((x) => x.id === docId), project2 = state.db.projects.find((p2) => p2.id === d?.projectId);
     if (!d || !project2) return null;
     try {
-      let t = currentTransport(), detail = body(await t.apiGet(`documents/${docId}`), "read the file"), seq = detail.latest_seq ?? 0, bytes = await office().exportFile(d.kind, detail.state, detail.title ?? d.title, { documentId: docId, seq }), safe = (detail.title ?? d.title).replace(/[\\/:*?"<>|]+/g, " ").trim() || "Document", out = await call("file_export", {
+      let t = currentTransport(), detail = body2(await t.apiGet(`documents/${docId}`), "read the file"), seq = detail.latest_seq ?? 0, bytes = await office().exportFile(d.kind, detail.state, detail.title ?? d.title, { documentId: docId, seq }), safe = (detail.title ?? d.title).replace(/[\\/:*?"<>|]+/g, " ").trim() || "Document", out = await call("file_export", {
         projectId: project2.id,
         projectName: project2.name,
         name: `${safe} (v${seq})`,
@@ -3743,7 +4212,7 @@ ${text2}` : out.push({ role, text: text2 });
       });
       return toast("success", open2 && out.opened ? `Opened in ${EDITOR[d.kind]}` : "Copy saved", out.path), out.path;
     } catch (e) {
-      return toast("error", "The copy could not be written", text(e)), null;
+      return toast("error", "The copy could not be written", text2(e)), null;
     }
   }
   var watching = !1, busy2 = !1;
@@ -3785,12 +4254,12 @@ ${text2}` : out.push({ role, text: text2 });
         state.watch.newFiles.push({ ...c, kind: "new" }), render();
         return;
       }
-      let latest = body(await t.apiGet(`documents/${doc2.id}/history-points`), "read the history").latest_seq ?? 0, baseSeq = Math.min(latest, c.base_seq ?? origin.seq ?? latest), baseState = body(await t.apiGet(`documents/${doc2.id}/state?through_seq=${baseSeq}`), "read the file").state, plan2 = (await office().planPush(bytes, file.name, baseState, doc2.title)).plan;
+      let latest = body2(await t.apiGet(`documents/${doc2.id}/history-points`), "read the history").latest_seq ?? 0, baseSeq = Math.min(latest, c.base_seq ?? origin.seq ?? latest), baseState = body2(await t.apiGet(`documents/${doc2.id}/state?through_seq=${baseSeq}`), "read the file").state, plan2 = (await office().planPush(bytes, file.name, baseState, doc2.title)).plan;
       if (!plan2.ops.length) {
         await call("watch_seen", { projectId: c.project_id, relPath: c.rel_path, token: c.token, documentId: doc2.id, baseSeq: latest }), toast("info", `${label} was saved`, "Nothing in it differs from the project, so there is nothing to review.");
         return;
       }
-      let stamp = (/* @__PURE__ */ new Date()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), name2 = `Edited in ${EDITOR[doc2.kind]} ${stamp}`, made = body(
+      let stamp = (/* @__PURE__ */ new Date()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), name2 = `Edited in ${EDITOR[doc2.kind]} ${stamp}`, made = body2(
         await t.apiSend("POST", `documents/${doc2.id}/change-requests`, {
           name: name2,
           note: `Saved from ${file.name} in the project's folder.`,
@@ -3803,7 +4272,7 @@ ${text2}` : out.push({ role, text: text2 });
       );
       await call("watch_seen", { projectId: c.project_id, relPath: c.rel_path, token: c.token, documentId: doc2.id, baseSeq: latest }), state.watch.recent.unshift({ docId: doc2.id, title: doc2.title, name: file.name, draftId: String(made.id), draftName: name2, changes: plan2.changes.length, at: Date.now() }), state.watch.recent = state.watch.recent.slice(0, 20), await refresh(!0), toast("success", `${label} was saved`, `${plan2.changes.length} change${plan2.changes.length === 1 ? "" : "s"} are in the draft "${name2}". Review them under Changes and send them for review.`);
     } catch (e) {
-      toast("error", `${label} could not be read as changes`, text(e));
+      toast("error", `${label} could not be read as changes`, text2(e));
     }
   }
   function summarise(plan2) {
@@ -3835,14 +4304,14 @@ ${text2}` : out.push({ role, text: text2 });
       let where = await call("folder_bind", { projectId, token: picked[0].token });
       toast("success", "Folder bound", `Word, Excel and PowerPoint files saved in ${where} are picked up as changes.`), state.watch.folders[projectId] = where, render();
     } catch (e) {
-      toast("error", "The folder could not be used", text(e));
+      toast("error", "The folder could not be used", text2(e));
     }
   }
   async function stopWatching(projectId) {
     try {
       await call("folder_unbind", { projectId }), delete state.watch.folders[projectId], state.watch.newFiles = state.watch.newFiles.filter((n) => n.project_id !== projectId), toast("success", "Folder released", "Files in it are no longer watched. Nothing in it was changed."), render();
     } catch (e) {
-      toast("error", "The folder could not be released", text(e));
+      toast("error", "The folder could not be released", text2(e));
     }
   }
   async function loadFolders() {
@@ -4026,7 +4495,7 @@ ${text2}` : out.push({ role, text: text2 });
         state.live.mode === "connecting" ? pill("Connecting…", "info", { mono: !1, title: "Reading your workspace" }) : isLive() ? pill(state.live.saving ? "Saving…" : state.live.env === "local" ? "On this computer" : state.db.remote?.visitor ? "Sample workspace" : "Live", state.live.saving ? "info" : "success", { mono: !1, title: state.live.env === "local" ? "Your workspace is on this computer: its own database and engine, no account, no network. Everything you do is saved here." : state.db.remote?.visitor ? `Your own sample workspace on the server, until ${new Date(state.db.remote.visitor.expires_at).toLocaleString()}. Everything you do is saved there.` : "Showing your workspace on the server. Everything you do is saved there." }) : pill("Sample data", "warning", { mono: !1, title: "Offline sample: nothing leaves this window. See Settings, Accounts to use a server." }),
         ds?.server ? h("button", { type: "button", class: "server-btn", title: "Open your workspace on this server in this window", onClick: () => {
           openServer().catch((e) => toast("error", e instanceof Error ? e.message : String(e)));
-        } }, icon("globe", 13), new URL(ds.server).host, icon("external", 12)) : pill(ds ? "No server" : "Offline copy", "neutral", { mono: !1, title: ds ? "Choose a server in Settings, Accounts" : "This copy connects to nothing" }),
+        } }, icon("globe", 13), new URL(ds.server).host, icon("external", 12)) : serverChip(ds),
         ctx2.kind === "draft" && (ctx2.behind ?? 0) ? pill(`${ctx2.behind} behind main`, "warning", { mono: !1 }) : null
       ),
       h(
@@ -4053,6 +4522,16 @@ ${text2}` : out.push({ role, text: text2 });
         { label: "Switch branch…", icon: "branch", onSelect: () => openBranchList(document.getElementById("topbar-anchor") ?? document.body) }
       ], { align: "right", width: 240 }) }, icon("more", 18), h("span", null, "More"))
     );
+  }
+  function serverChip(ds) {
+    let open2 = () => {
+      state.ui.settings.section = "accounts", go("settings");
+    };
+    if (ds && state.live.env === "local") {
+      let l = links()[state.ui.projectId], a = l ? accountOf(l.accountId) : void 0;
+      return l && a ? h("button", { type: "button", class: "server-btn", id: "sync-chip", title: `This project syncs with ${a.host}. Open Settings, Accounts.`, onClick: open2 }, icon("sync", 13), `${a.host} · ${lastSynced(l)}`) : h("button", { type: "button", class: "server-btn", id: "sync-chip", title: "No server is linked to this project. Add one in Settings, Accounts to sync it.", onClick: open2 }, "No server");
+    }
+    return pill(ds ? "No server" : "Offline copy", "neutral", { mono: !1, title: ds ? "Choose a server in Settings, Accounts" : "This copy connects to nothing" });
   }
   function shell(main) {
     return h(
@@ -4388,11 +4867,11 @@ ${text2}` : out.push({ role, text: text2 });
     );
   }
   function replyDialog(t) {
-    let text2 = "";
-    openDialog({ title: "Reply", width: 480, body: () => textarea(text2, (v) => {
-      text2 = v;
+    let text3 = "";
+    openDialog({ title: "Reply", width: 480, body: () => textarea(text3, (v) => {
+      text3 = v;
     }, { id: "reply-text", rows: 3 }), actions: () => [button("Cancel", { onClick: closeDialog }), button("Reply", { variant: "primary", onClick: () => {
-      text2.trim() && (t.replies.push({ authorId: state.db.me, text: text2.trim(), at: Date.now() }), closeDialog());
+      text3.trim() && (t.replies.push({ authorId: state.db.me, text: text3.trim(), at: Date.now() }), closeDialog());
     } })] });
   }
   function people(d) {
@@ -4482,7 +4961,7 @@ ${text2}` : out.push({ role, text: text2 });
         viewHeader("Documents", `${docs.length} file${docs.length === 1 ? "" : "s"} in ${project(state.db, state.ui.projectId).name}`, button("New draft…", { icon: "branch", onClick: () => newDraftDialog() }), state.desktop && isLive() ? button("Add files…", { icon: "plus", variant: "primary", id: "add-files", onClick: () => void addFilesDialog() }) : button("Add file", { icon: "plus", disabled: !0, title: "Uploading files is in the web workspace and the add-ins; not in this release of the client." })),
         docs.length ? h("div", { class: "card flush" }, fileTable(docs)) : empty("documents", "No files yet", isLocal() ? "Add Word, Excel or PowerPoint files from your computer. Each keeps its history from the moment you add it." : "Add a file in the web workspace or from an add-in.", state.desktop && isLive() ? button("Add files…", { variant: "primary", icon: "plus", onClick: () => void addFilesDialog() }) : void 0)
       );
-    let counts = { drafts: state.db.drafts.filter((x) => x.docId === sel.id).length, versions: sel.versions.length, disc: sel.discussions.filter((t) => !t.resolved).length }, body2 = ui.tab === "versions" ? versions(sel) : ui.tab === "drafts" ? drafts(sel) : ui.tab === "discussions" ? discussions(sel) : ui.tab === "people" ? people(sel) : ui.tab === "sync" ? sync3(sel) : overview(sel);
+    let counts = { drafts: state.db.drafts.filter((x) => x.docId === sel.id).length, versions: sel.versions.length, disc: sel.discussions.filter((t) => !t.resolved).length }, body3 = ui.tab === "versions" ? versions(sel) : ui.tab === "drafts" ? drafts(sel) : ui.tab === "discussions" ? discussions(sel) : ui.tab === "people" ? people(sel) : ui.tab === "sync" ? sync3(sel) : overview(sel);
     return h(
       "div",
       { class: "page" },
@@ -4493,7 +4972,7 @@ ${text2}` : out.push({ role, text: text2 });
       tabs(ui.tab, [["overview", "Overview"], ["versions", "Versions", counts.versions], ["drafts", "Drafts", counts.drafts], ["discussions", "Discussions", counts.disc], ["people", "People & rules"], ["sync", "Sync & connections"]], (v) => {
         ui.tab = v, render();
       }, "File sections"),
-      h("div", { class: "tab-body" }, body2)
+      h("div", { class: "tab-body" }, body3)
     );
   }
 
@@ -4532,9 +5011,9 @@ ${text2}` : out.push({ role, text: text2 });
       { label: "Discard change…", icon: "trash", danger: !0, onSelect: () => discardOne(w) }
     ]);
   }
-  async function copy(text2) {
+  async function copy(text3) {
     try {
-      await navigator.clipboard.writeText(text2), toast("success", "Copied", text2);
+      await navigator.clipboard.writeText(text3), toast("success", "Copied", text3);
     } catch {
       toast("warning", "Copying is not available here");
     }
@@ -5020,15 +5499,15 @@ ${text2}` : out.push({ role, text: text2 });
     });
   }
   function commentDialog(r, blockId) {
-    let text2 = "", label = blocksOf(state.db, r.docId, r.draftId).find((b) => b.id === blockId)?.label ?? blockId;
+    let text3 = "", label = blocksOf(state.db, r.docId, r.draftId).find((b) => b.id === blockId)?.label ?? blockId;
     openDialog({
       title: `Comment on ${label}`,
       width: 520,
-      body: () => textarea(text2, (v) => {
-        text2 = v;
+      body: () => textarea(text3, (v) => {
+        text3 = v;
       }, { id: "block-comment", rows: 4, placeholder: "Leave a comment on this change" }),
       actions: () => [button("Cancel", { onClick: closeDialog }), button("Comment", { variant: "primary", onClick: () => {
-        act(() => comment(state.db, r.id, text2, blockId), "Comment added") && closeDialog();
+        act(() => comment(state.db, r.id, text3, blockId), "Comment added") && closeDialog();
       } })]
     });
   }
@@ -5513,7 +5992,7 @@ ${text2}` : out.push({ role, text: text2 });
         list2.length ? h("div", { class: "project-grid" }, list2.map(projectCard)) : empty("projects", "No projects match", "Try another filter, or create a project.")
       );
     }
-    let body2 = ui.tab === "issues" ? issues(sel) : ui.tab === "people" ? people2(sel) : ui.tab === "rules" ? rules(sel) : ui.tab === "agents" ? agents(sel) : ui.tab === "activity" ? projectActivity(sel) : overview2(sel);
+    let body3 = ui.tab === "issues" ? issues(sel) : ui.tab === "people" ? people2(sel) : ui.tab === "rules" ? rules(sel) : ui.tab === "agents" ? agents(sel) : ui.tab === "activity" ? projectActivity(sel) : overview2(sel);
     return h(
       "div",
       { class: "page" },
@@ -5524,7 +6003,7 @@ ${text2}` : out.push({ role, text: text2 });
       tabs(ui.tab, [["overview", "Overview"], ["issues", "Issues", sel.issues.filter((i) => i.state === "open").length], ["people", "People", sel.members.length], ["rules", "Review rules"], ["agents", "AI agents"], ["activity", "Activity"]], (v) => {
         ui.tab = v, ui.issue = null, render();
       }, "Project sections"),
-      h("div", { class: "tab-body" }, body2)
+      h("div", { class: "tab-body" }, body3)
     );
   }
 
@@ -5614,8 +6093,8 @@ ${text2}` : out.push({ role, text: text2 });
   function name(db, id) {
     return person(db, id).name;
   }
-  function plan(db, projectId, branch, text2) {
-    let t = text2.toLowerCase(), open2 = () => db.requests.filter((r) => r.projectId === projectId && r.status === "open");
+  function plan(db, projectId, branch, text3) {
+    let t = text3.toLowerCase(), open2 = () => db.requests.filter((r) => r.projectId === projectId && r.status === "open");
     if (/\bmerge|approve|decline\b/.test(t) && !/summar|comment/.test(t)) {
       let num2 = /#?(\d+)/.exec(t)?.[1], r = db.requests.find((x) => x.projectId === projectId && String(x.number) === num2) ?? open2()[0];
       return {
@@ -5630,11 +6109,11 @@ ${text2}` : out.push({ role, text: text2 });
       };
     }
     if (/commit|summary for|staged/.test(t)) {
-      let staged = working(db, projectId, branch).filter((w) => w.staged), files = [...new Set(staged.map((w) => doc(db, w.docId).filename))], summary = staged.length ? files.length === 1 ? `Update ${files[0].replace(/\.[a-z]+$/, "")}: ${staged.length} change${staged.length === 1 ? "" : "s"}` : `Update ${files.map((f) => f.replace(/\.[a-z]+$/, "").replace(/-\d{4}$/, "")).join(" and ")}` : "", description = staged.map((w) => `${doc(db, w.docId).filename}: ${w.edit.op === "edit" ? "edited" : w.edit.op === "add" ? "added" : "removed"} ${w.edit.label ?? w.edit.blockId}`).join(`
+      let staged = working(db, projectId, branch).filter((w) => w.staged), files = [...new Set(staged.map((w) => doc(db, w.docId).filename))], summary2 = staged.length ? files.length === 1 ? `Update ${files[0].replace(/\.[a-z]+$/, "")}: ${staged.length} change${staged.length === 1 ? "" : "s"}` : `Update ${files.map((f) => f.replace(/\.[a-z]+$/, "").replace(/-\d{4}$/, "")).join(" and ")}` : "", description = staged.map((w) => `${doc(db, w.docId).filename}: ${w.edit.op === "edit" ? "edited" : w.edit.op === "add" ? "added" : "removed"} ${w.edit.label ?? w.edit.blockId}`).join(`
 `);
       return {
-        steps: [{ tool: "commit.draft_summary", input: `${staged.length} staged change(s) on ${branchName(db, branch)}`, run: () => staged.length ? `summary: ${summary}` : "nothing staged" }],
-        finish: (refused) => refused.length ? { text: `I could not draft it: ${refused[0]}. Switch this thread to Propose access if you want me to.` } : staged.length ? { text: "Here is a summary drafted from your staged changes. It goes into the commit box only if you use it; committing stays yours.", card: { kind: "summary", title: "Proposed commit summary", text: summary.slice(0, 60), description } } : { text: "Nothing is staged on this branch. Stage the changes you want in Changes and ask again." }
+        steps: [{ tool: "commit.draft_summary", input: `${staged.length} staged change(s) on ${branchName(db, branch)}`, run: () => staged.length ? `summary: ${summary2}` : "nothing staged" }],
+        finish: (refused) => refused.length ? { text: `I could not draft it: ${refused[0]}. Switch this thread to Propose access if you want me to.` } : staged.length ? { text: "Here is a summary drafted from your staged changes. It goes into the commit box only if you use it; committing stays yours.", card: { kind: "summary", title: "Proposed commit summary", text: summary2.slice(0, 60), description } } : { text: "Nothing is staged on this branch. Stage the changes you want in Changes and ask again." }
       };
     }
     if (/summar|open (change )?requests|what.*waiting|review state/.test(t)) {
@@ -5753,12 +6232,12 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
     let a = state.ui.agent;
     return a.threads.find((t) => t.id === a.active) ?? newThread();
   }
-  function inline(text2) {
-    return text2.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((part) => part.startsWith("**") && part.endsWith("**") && part.length > 4 ? h("strong", null, part.slice(2, -2)) : part.startsWith("`") && part.endsWith("`") && part.length > 2 ? h("code", null, part.slice(1, -1)) : part);
+  function inline(text3) {
+    return text3.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((part) => part.startsWith("**") && part.endsWith("**") && part.length > 4 ? h("strong", null, part.slice(2, -2)) : part.startsWith("`") && part.endsWith("`") && part.length > 2 ? h("code", null, part.slice(1, -1)) : part);
   }
-  function prose(text2) {
+  function prose(text3) {
     let out = [], list2 = null, kind = "";
-    for (let raw of text2.split(`
+    for (let raw of text3.split(`
 `)) {
       let bullet = /^\s*[-*] (.*)$/.exec(raw), numbered = /^\s*\d+[.)] (.*)$/.exec(raw), item = bullet ?? numbered;
       if (item) {
@@ -5772,15 +6251,15 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
     }
     return h("div", { class: "prose" }, out);
   }
-  function send(text2) {
+  function send(text3) {
     let t = current2();
-    if (!text2.trim() || t.working) return;
-    let user = { id: `m${Date.now()}`, role: "user", text: text2.trim(), at: Date.now() };
-    if (t.messages.push(user), t.title === "New thread" && (t.title = text2.trim().slice(0, 48)), state.ui.agent.draft = "", t.working = !0, render(), canCallModels() && entryOf(t)) {
+    if (!text3.trim() || t.working) return;
+    let user = { id: `m${Date.now()}`, role: "user", text: text3.trim(), at: Date.now() };
+    if (t.messages.push(user), t.title === "New thread" && (t.title = text3.trim().slice(0, 48)), state.ui.agent.draft = "", t.working = !0, render(), canCallModels() && entryOf(t)) {
       runModel(t, state.ui.projectId, currentBranch());
       return;
     }
-    let p2 = plan(state.db, state.ui.projectId, currentBranch(), text2), { calls, refused } = execute(p2, t.access, state.prefs.agentTools), total = calls.reduce((n, c) => n + c.ms, 0);
+    let p2 = plan(state.db, state.ui.projectId, currentBranch(), text3), { calls, refused } = execute(p2, t.access, state.prefs.agentTools), total = calls.reduce((n, c) => n + c.ms, 0);
     setTimeout(() => {
       let out = p2.finish(refused);
       t.messages.push({ id: `m${Date.now()}a`, role: "agent", text: out.text, at: Date.now(), calls, card: out.card }), t.working = !1, render();
@@ -5975,6 +6454,183 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
     );
   }
 
+  // client/src/views/servers.ts
+  var LABEL = {
+    same: "In sync",
+    send: "Send changes",
+    receive: "Receive changes",
+    both: "Send and receive",
+    conflict: "Needs your choice",
+    "add-remote": "New here: will be created on the server",
+    "add-local": "New on the server: will be added here",
+    "missing-remote": "No longer on the server",
+    "missing-local": "Removed from this computer",
+    waiting: "Waiting for review on the server",
+    "needs-review": "The server wants a review"
+  }, TONE = {
+    same: "success",
+    send: "info",
+    receive: "info",
+    both: "info",
+    conflict: "warning",
+    "add-remote": "info",
+    "add-local": "info",
+    "missing-remote": "neutral",
+    "missing-local": "neutral",
+    waiting: "neutral",
+    "needs-review": "warning"
+  };
+  function accountRow(id) {
+    let a = accountOf(id);
+    if (!a) return null;
+    let flow = state.servers.flow, mine = flow.account_id === a.id, waiting = mine && flow.state === "waiting";
+    return h(
+      "div",
+      { class: "card pad server-card", "data-server": a.id },
+      h(
+        "div",
+        { class: "server-head" },
+        h("div", { class: "grow" }, h("strong", null, a.cloud ? `Dynodoc cloud (${a.host})` : a.host), h("div", { class: "muted small" }, a.signed_in ? `Signed in${a.email || a.name ? ` as ${a.email ?? a.name}` : ""}.` : "Not signed in.")),
+        a.signed_in ? pill("Signed in", "success", { mono: !1 }) : pill("Not signed in", "neutral", { mono: !1 })
+      ),
+      waiting ? h(
+        "div",
+        { class: "notice-block", role: "status" },
+        h("p", null, "Your browser has opened this server’s sign-in page. Sign in there, check that the pairing code is ", h("strong", { id: "signin-pairing" }, flow.pairing ?? ""), ", and choose Continue. The page then hands the sign-in back to this app. This request is good for 10 minutes."),
+        h("div", { class: "row-actions" }, button("Cancel", { size: "sm", id: "signin-cancel", onClick: () => void cancelSignIn() }))
+      ) : null,
+      mine && flow.state === "failed" ? notice("warning", flow.message || "The sign-in did not finish.") : null,
+      h(
+        "div",
+        { class: "row-actions" },
+        a.signed_in ? [
+          button("Sign out", { size: "sm", id: `signout-${a.id}`, onClick: () => confirmDialog("Sign out", h("p", null, `This ends the session on ${a.host} and removes it from this computer. Linked projects stay as they are on both sides.`), "Sign out", () => void signOutOf(a.id)) }),
+          button("Check the session", { size: "sm", variant: "ghost", onClick: () => void checkServer(a.id) })
+        ] : button("Sign in with your browser", { size: "sm", variant: "primary", id: `signin-${a.id}`, disabled: waiting, onClick: () => void startSignIn(a.id) }),
+        button("Remove", { size: "sm", variant: "ghost", onClick: () => confirmDialog("Remove this server", h("p", null, `${a.host} is taken out of this app and its session is removed from this computer. Nothing on the server changes, and projects linked to it stay as they are here.`), "Remove", () => void removeServer(a.id), { danger: !0 }) })
+      )
+    );
+  }
+  function conflictList(projectId, item, host) {
+    if (!item.localId || !item.conflicts.length) return null;
+    let docId = item.localId, picks = state.servers.picks[projectId]?.[docId] ?? {};
+    return h(
+      "div",
+      { class: "conflicts" },
+      item.conflicts.map(
+        (c, i) => h(
+          "fieldset",
+          { class: "conflict", "data-conflict": c.key },
+          h("legend", null, c.label || "A change"),
+          ["local", "remote"].map(
+            (side) => h(
+              "label",
+              { class: cx("radio", picks[c.key] === side && "is-on") },
+              h("input", { type: "radio", name: `c-${projectId}-${docId}-${i}`, checked: picks[c.key] === side, onChange: () => choose(projectId, docId, c.key, side) }),
+              h("span", null, h("strong", null, side === "local" ? "This computer: " : `${host}: `), side === "local" ? c.local : c.remote)
+            )
+          )
+        )
+      )
+    );
+  }
+  function planView(projectId, host) {
+    let plan2 = planOf(projectId);
+    return plan2 ? plan2.items.length ? h(
+      "div",
+      { class: "sync-plan" },
+      h(
+        "table",
+        { class: "table compact" },
+        h("thead", null, h("tr", null, h("th", null, "File"), h("th", null, "A sync would"))),
+        h(
+          "tbody",
+          null,
+          plan2.items.map(
+            (i) => h(
+              "tr",
+              { "data-action": i.action },
+              h("td", null, h("strong", null, i.title), h("div", { class: "muted small" }, i.kind)),
+              h(
+                "td",
+                null,
+                pill(LABEL[i.action], TONE[i.action], { mono: !1 }),
+                i.note ? h("div", { class: "muted small" }, i.note) : null,
+                i.action === "send" || i.action === "both" || i.action === "receive" ? h("div", { class: "muted small" }, `${i.toRemote.length ? `${i.toRemote.length} change${i.toRemote.length === 1 ? "" : "s"} to the server` : ""}${i.toRemote.length && i.toLocal.length ? ", " : ""}${i.toLocal.length ? `${i.toLocal.length} change${i.toLocal.length === 1 ? "" : "s"} here` : ""}`) : null,
+                conflictList(projectId, i, host),
+                i.action === "needs-review" && i.localId ? button("Send for review", { size: "sm", onClick: () => void sendForReview3(projectId, i.localId) }) : null
+              )
+            )
+          )
+        )
+      )
+    ) : h("p", { class: "muted small" }, "There are no files on either side yet.") : null;
+  }
+  function projectCard2(projectId, name2) {
+    let l = links()[projectId], running2 = !!state.servers.running[projectId], last = state.servers.last[projectId];
+    if (l) {
+      let a = accountOf(l.accountId), host = a?.host ?? "the server";
+      return h(
+        "div",
+        { class: "card pad sync-card", "data-project": projectId },
+        h("div", { class: "server-head" }, h("div", { class: "grow" }, h("strong", null, name2), h("div", { class: "muted small" }, `Linked to “${l.remoteName || "a project"}” on ${host} · ${lastSynced(l)}`)), a?.signed_in ? null : pill("Sign in to sync", "warning", { mono: !1 })),
+        h(
+          "div",
+          { class: "row-actions" },
+          button("Check", { size: "sm", id: `sync-check-${projectId}`, disabled: running2 || !a?.signed_in, onClick: () => void checkSync(projectId) }),
+          button("Sync now", { size: "sm", variant: "primary", id: `sync-now-${projectId}`, disabled: running2 || !a?.signed_in, onClick: () => void syncNow(projectId) }),
+          button("Unlink", { size: "sm", variant: "ghost", disabled: running2, onClick: () => confirmDialog("Unlink", h("p", null, `${name2} stops syncing with ${host}. The files stay where they are, on both sides.`), "Unlink", () => void unlinkProject(projectId)) })
+        ),
+        last ? h("p", { class: "small", role: "status", id: `sync-status-${projectId}` }, last) : null,
+        planView(projectId, host)
+      );
+    }
+    let options = [["", "Choose a project on a server…"]];
+    for (let a of state.servers.accounts.filter((x) => x.signed_in)) {
+      options.push([`new|${a.id}`, `Make a new project on ${a.host}`]);
+      for (let p2 of state.servers.projects[a.id] ?? []) options.push([`${a.id}|${p2.id}`, `${p2.name} on ${a.host}`]);
+    }
+    return h(
+      "div",
+      { class: "card pad sync-card", "data-project": projectId },
+      h("div", { class: "server-head" }, h("div", { class: "grow" }, h("strong", null, name2), h("div", { class: "muted small" }, "Not linked to a server."))),
+      options.length > 1 ? h("div", { class: "row-actions" }, select("", options, (v) => {
+        if (!v) return;
+        let [first, second] = v.split("|");
+        first === "new" ? linkProject(projectId, second, "new") : linkProject(projectId, first, second);
+      }, { label: `Link ${name2} to a server project`, id: `link-${projectId}` })) : h("p", { class: "muted small" }, "Sign in to a server above to link this project to one of its projects.")
+    );
+  }
+  function serversSection() {
+    if (!state.desktop) return null;
+    let s2 = state.servers, signedIn = s2.accounts.filter((a) => a.signed_in);
+    for (let a of signedIn) !s2.projects[a.id] && !s2.busy && loadRemoteProjects(a.id);
+    let inLocal = state.live.env === "local";
+    return [
+      section(
+        "Servers",
+        "A server is optional: the workspace on this computer works without one. Add the Dynodoc cloud or a server your organisation runs, sign in with your browser, and link projects to sync them.",
+        notice("info", `Your sign-in to a server is kept in ${s2.store || "the credential store"}. The page that signs you in is the server’s own, in your browser; this app never sees your password or an emailed link.`),
+        s2.accounts.length ? h("div", { class: "servers" }, s2.accounts.map((a) => accountRow(a.id))) : h("p", { class: "muted small" }, "No server added yet."),
+        h(
+          "div",
+          { class: "server-add" },
+          field("Server address", input(s2.addDraft, (v) => {
+            s2.addDraft = v;
+          }, { id: "server-address", placeholder: "https://dynodoc.example.org", onEnter: () => void addServer(s2.addDraft) }), "An https:// address (http://localhost works for testing)."),
+          h("div", { class: "row-actions" }, button("Add server", { size: "sm", id: "server-add", onClick: () => void addServer(s2.addDraft) }), s2.cloud && !s2.accounts.some((a) => a.cloud) ? button("Add the Dynodoc cloud", { size: "sm", id: "server-add-cloud", onClick: () => void addServer(s2.cloud) }) : null)
+        )
+      ),
+      section(
+        "Sync projects",
+        "Linking matches a project on this computer with a project on a server. A sync sends changes that were made here and receives changes made there, file by file. Changes to the same text on both sides wait for your choice; nothing is overwritten. History stays on each side: only the content travels.",
+        inLocal ? null : notice("info", "Sync works from the workspace on this computer. The screens show something else now."),
+        signedIn.length ? h("div", { class: "row-actions" }, signedIn.map((a) => button(`Read projects on ${a.host}`, { size: "sm", variant: "ghost", onClick: () => void loadRemoteProjects(a.id) }))) : null,
+        inLocal ? h("div", { class: "servers" }, state.db.projects.map((p2) => projectCard2(p2.id, p2.name))) : null
+      )
+    ];
+  }
+
   // client/src/views/about.ts
   function aboutBody() {
     let shell2 = state.desktop, live = isLive();
@@ -6013,7 +6669,7 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
   }
 
   // client/src/data/local.ts
-  var sleep2 = (n) => new Promise((r) => setTimeout(r, n));
+  var sleep3 = (n) => new Promise((r) => setTimeout(r, n));
   function take(s2) {
     let l = state.local;
     l.phase = s2.phase, l.step = s2.step, l.detail = s2.detail ?? "", l.firstRun = s2.first_run, l.folder = s2.folder, l.secretsIn = s2.secrets_in, l.restarts = s2.engine_restarts, l.profile = s2.profile;
@@ -6035,7 +6691,7 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
       if (s2.phase === "ready") break;
       if (s2.phase === "failed")
         return state.live.mode = "offline", render(), !1;
-      render(), await sleep2(s2.phase === "profile" ? 700 : 350);
+      render(), await sleep3(s2.phase === "profile" ? 700 : 350);
     }
     return connectLocal();
   }
@@ -6203,9 +6859,10 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
           }).catch((e) => toast("error", "Profile not saved", e instanceof Error ? e.message : String(e)));
         } }))
       )),
+      serversSection(),
       section(
-        "Dynodoc server",
-        state.desktop ? "Where this app opens your real workspace, how it signs in, and this computer’s signing key. These controls are real: they use the desktop app’s own commands." : "Signing in to a server and keeping a key for this computer are in the desktop app. This copy runs on sample data and connects to nothing.",
+        state.desktop ? "Web workspace in this window" : "Dynodoc server",
+        state.desktop ? "Optional and separate from syncing: this opens a server’s own web workspace in this window in place of the workspace on this computer, with its own sign-in kept by the window, and holds this computer’s signing key for the Office add-ins." : "Signing in to a server and keeping a key for this computer are in the desktop app. This copy runs on sample data and connects to nothing.",
         state.desktop ? slot : notice("info", "Pre-alpha release on sample data: no server, no sign-in. Install the desktop app to connect to the Dynodoc cloud or your own server.")
       )
     ];
@@ -6791,7 +7448,7 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
         groups.map((g) => {
           let items = SECTIONS.filter((s2) => s2.group === g && s2.label.toLowerCase().includes(q));
           return items.length ? [h("div", { class: "nav-group" }, g), items.map((s2) => h("button", { type: "button", class: cx("nav-row", s2.id === ui.section && "is-selected"), "aria-current": s2.id === ui.section ? "page" : void 0, "data-section": s2.id, onClick: () => {
-            ui.section = s2.id, s2.id === "providers" && state.desktop && loadAgentCfg().then(render), render();
+            ui.section = s2.id, s2.id === "providers" && state.desktop && loadAgentCfg().then(render), s2.id === "accounts" && state.desktop && loadServers(), render();
           } }, icon(s2.icon, 15), h("span", null, s2.label)))] : null;
         })
       ),
@@ -7016,7 +7673,7 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
     if (inDesktop() && launcher) {
       state.desktop = !0, state.local.splash = !0, draw();
       let ds = await startBridge();
-      ds && (state.desktopVersion = ds.version, await loadPrefs(), applyAppearance(), loadAgentCfg().then(refreshKeyHints), state.local.splash = !0, draw(), await startLocalWorkspace() && (loadAgentCfg().then(refreshKeyHints), startWatch(), loadFolders()), (section2 || ds.unconfirmed) && (state.ui.settings.section = "accounts", state.ui.view = "settings")), draw(), focusSection(section2);
+      ds && (state.desktopVersion = ds.version, await loadPrefs(), applyAppearance(), loadAgentCfg().then(refreshKeyHints), state.local.splash = !0, draw(), await startLocalWorkspace() && (loadAgentCfg().then(refreshKeyHints), loadServers(), startWatch(), loadFolders()), (section2 || ds.unconfirmed) && (state.ui.settings.section = "accounts", state.ui.view = "settings")), draw(), focusSection(section2);
     } else
       draw();
   }

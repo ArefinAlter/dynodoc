@@ -9,6 +9,8 @@ import { CONNECTORS, HOST_LABEL } from '../data/connectors.ts';
 import { DEFAULT_BINDINGS, comboOf, conflicts, normalize, usable } from '../lib/keys.ts';
 import { ACCESS_INFO, NEVER, TOOLS, DEFAULT_INSTRUCTIONS } from '../lib/agentTools.ts';
 import { PROVIDERS, validate, active, keyHint, type LadderEntry, type ProviderKind } from '../lib/ladder.ts';
+import { serversSection } from './servers.ts';
+import { loadServers } from '../data/accounts.ts';
 import { dropEntry, forgetKey, loadAgentCfg, setAgentCfg, setConsent, storeKey, unlockKeys } from '../data/agentRun.ts';
 import { button, input, row, rows, section, select, toggle, textarea, segmented, pill, badge, notice, field, avatar, iconButton } from '../ui/controls.ts';
 import { openDialog, closeDialog, confirmDialog } from '../ui/layer.ts';
@@ -103,10 +105,11 @@ function accounts(): Child {
         saveProfile(profile.name, profile.bio).then(() => { const meNow = state.db.people.find((x) => x.id === state.db.me); if (meNow) meNow.name = profile.name; toast('success', 'Profile saved on the server'); render(); }).catch((e) => toast('error', 'Profile not saved', e instanceof Error ? e.message : String(e)));
       } })),
     )),
+    serversSection(),
     section(
-      'Dynodoc server',
+      state.desktop ? 'Web workspace in this window' : 'Dynodoc server',
       state.desktop
-        ? 'Where this app opens your real workspace, how it signs in, and this computer’s signing key. These controls are real: they use the desktop app’s own commands.'
+        ? 'Optional and separate from syncing: this opens a server’s own web workspace in this window in place of the workspace on this computer, with its own sign-in kept by the window, and holds this computer’s signing key for the Office add-ins.'
         : 'Signing in to a server and keeping a key for this computer are in the desktop app. This copy runs on sample data and connects to nothing.',
       state.desktop ? slot : notice('info', 'Pre-alpha release on sample data: no server, no sign-in. Install the desktop app to connect to the Dynodoc cloud or your own server.'),
     ),
@@ -553,7 +556,7 @@ export function settingsView(): HTMLElement {
       groups.map((g) => {
         const items = SECTIONS.filter((s) => s.group === g && s.label.toLowerCase().includes(q));
         if (!items.length) return null;
-        return [h('div', { class: 'nav-group' }, g), items.map((s) => h('button', { type: 'button', class: cx('nav-row', s.id === ui.section && 'is-selected'), 'aria-current': s.id === ui.section ? 'page' : undefined, 'data-section': s.id, onClick: () => { ui.section = s.id; if (s.id === 'providers' && state.desktop) void loadAgentCfg().then(render); render(); } }, icon(s.icon, 15), h('span', null, s.label)))];
+        return [h('div', { class: 'nav-group' }, g), items.map((s) => h('button', { type: 'button', class: cx('nav-row', s.id === ui.section && 'is-selected'), 'aria-current': s.id === ui.section ? 'page' : undefined, 'data-section': s.id, onClick: () => { ui.section = s.id; if (s.id === 'providers' && state.desktop) void loadAgentCfg().then(render); if (s.id === 'accounts' && state.desktop) void loadServers(); render(); } }, icon(s.icon, 15), h('span', null, s.label)))];
       })),
     h('div', { class: 'settings-body', 'data-scroll-key': `settings-${ui.section}` }, h('div', { class: 'settings-inner' }, h('h1', { class: 'view-title' }, current.label), RENDER[current.id]())),
   );

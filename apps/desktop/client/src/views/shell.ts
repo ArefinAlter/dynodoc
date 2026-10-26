@@ -15,6 +15,7 @@ import { unread } from './activity.ts';
 import { desktopState, openServer } from '../bridge.ts';
 import { toast } from '../state.ts';
 import { isLive } from '../data/live.ts';
+import { accountOf, lastSynced, links } from '../data/accounts.ts';
 import { watchNotices } from './watchbar.ts';
 
 interface NavItem {
@@ -165,7 +166,7 @@ function topbar(): HTMLElement {
           : pill('Sample data', 'warning', { mono: false, title: 'Offline sample: nothing leaves this window. See Settings, Accounts to use a server.' }),
       ds?.server
         ? h('button', { type: 'button', class: 'server-btn', title: 'Open your workspace on this server in this window', onClick: () => { openServer().catch((e) => toast('error', e instanceof Error ? e.message : String(e))); } }, icon('globe', 13), new URL(ds.server).host, icon('external', 12))
-        : pill(ds ? 'No server' : 'Offline copy', 'neutral', { mono: false, title: ds ? 'Choose a server in Settings, Accounts' : 'This copy connects to nothing' }),
+        : serverChip(ds),
       ctx.kind === 'draft' && (ctx.behind ?? 0) ? pill(`${ctx.behind} behind main`, 'warning', { mono: false }) : null,
     ),
     h(
@@ -194,6 +195,18 @@ function bottomBar(): HTMLElement {
       { label: 'Switch branch…', icon: 'branch', onSelect: () => openBranchList(document.getElementById('topbar-anchor') ?? document.body) },
     ], { align: 'right', width: 240 }) }, icon('more', 18), h('span', null, 'More')),
   );
+}
+
+/** The topbar's word about servers: where the current project syncs to, or that there is none. */
+function serverChip(ds: unknown): Child {
+  const open = () => { state.ui.settings.section = 'accounts'; go('settings'); };
+  if (ds && state.live.env === 'local') {
+    const l = links()[state.ui.projectId];
+    const a = l ? accountOf(l.accountId) : undefined;
+    if (l && a) return h('button', { type: 'button', class: 'server-btn', id: 'sync-chip', title: `This project syncs with ${a.host}. Open Settings, Accounts.`, onClick: open }, icon('sync', 13), `${a.host} · ${lastSynced(l)}`);
+    return h('button', { type: 'button', class: 'server-btn', id: 'sync-chip', title: 'No server is linked to this project. Add one in Settings, Accounts to sync it.', onClick: open }, 'No server');
+  }
+  return pill(ds ? 'No server' : 'Offline copy', 'neutral', { mono: false, title: ds ? 'Choose a server in Settings, Accounts' : 'This copy connects to nothing' });
 }
 
 export function shell(main: HTMLElement): HTMLElement {

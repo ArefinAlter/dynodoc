@@ -128,15 +128,12 @@ pub async fn account_check(webview: Webview, id: String) -> Result<AccountView, 
 }
 
 /// The system browser, at an address this app built from a server the person added. In a debug
-/// build a test can name a program in `DYNODOC_TEST_BROWSER` that receives the address instead.
+/// build a test can name a file in `DYNODOC_TEST_BROWSER`: the address is written there instead,
+/// for the test to open in a browser it drives.
 fn open_browser(app: &AppHandle, url: &str) -> Result<(), String> {
     #[cfg(debug_assertions)]
-    if let Ok(program) = std::env::var("DYNODOC_TEST_BROWSER") {
-        return std::process::Command::new(program)
-            .arg(url)
-            .spawn()
-            .map(|_| ())
-            .map_err(|_| "The test browser did not start.".to_string());
+    if let Ok(file) = std::env::var("DYNODOC_TEST_BROWSER") {
+        return std::fs::write(file, url).map_err(|_| "The test browser file could not be written.".to_string());
     }
     use tauri_plugin_opener::OpenerExt;
     app.opener()

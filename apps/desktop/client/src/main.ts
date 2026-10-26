@@ -4,6 +4,7 @@
 import { h, clear } from './dom.ts';
 import { state, setRenderer, setAfterRender, render, go, toast, resetSample } from './state.ts';
 import { loadAgentCfg, refreshKeyHints } from './data/agentRun.ts';
+import { loadServers } from './data/accounts.ts';
 import { isLive, loadPrefs, noticeChanges, noticePrefs, refresh, signOut, startVisitor } from './data/live.ts';
 import * as B from './data/backend.ts';
 import { applyAppearance, toggleTheme } from './theme.ts';
@@ -221,6 +222,7 @@ async function boot(): Promise<void> {
       const here = await startLocalWorkspace();
       if (here) {
         void loadAgentCfg().then(refreshKeyHints);
+        void loadServers();
         startWatch();
         void loadFolders();
       }
