@@ -1,7 +1,14 @@
 //! Tests of the configuration files that carry the security model, so a careless edit to
 //! a capability, the CSP or a dependency fails `cargo test` instead of shipping.
 
-use crate::commands::COMMANDS;
+/// Every command the page may call, across the command modules, in the order of build.rs and of
+/// the handler list in lib.rs.
+fn commands() -> Vec<&'static str> {
+    let mut all: Vec<&'static str> = crate::commands::COMMANDS.to_vec();
+    all.extend(crate::cmd_local::COMMANDS);
+    all.extend(crate::cmd_files::COMMANDS);
+    all
+}
 use serde_json::Value;
 use std::fs;
 use std::path::PathBuf;
@@ -53,7 +60,7 @@ fn remote_pages_get_no_capability_at_all() {
         );
         assert_eq!(strings(&object["windows"]), ["main"], "{name}");
         assert!(!object.contains_key("webviews"), "{name}");
-        let allowed: Vec<String> = COMMANDS.iter().map(|c| permission(c)).collect();
+        let allowed: Vec<String> = commands().iter().map(|c| permission(c)).collect();
         for item in strings(&object["permissions"]) {
             assert!(
                 allowed.contains(&item),
@@ -84,7 +91,7 @@ fn remote_pages_get_no_capability_at_all() {
 fn desktop_gets_all_commands_and_phones_get_no_tools() {
     let desktop = json("capabilities/launcher.json");
     let mobile = json("capabilities/launcher-mobile.json");
-    let all: Vec<String> = COMMANDS.iter().map(|c| permission(c)).collect();
+    let all: Vec<String> = commands().iter().map(|c| permission(c)).collect();
     let mut got = strings(&desktop["permissions"]);
     got.sort();
     let mut want = all.clone();
@@ -128,18 +135,28 @@ fn build_script_and_handler_list_the_same_commands() {
         .map(|s| s.trim().trim_matches('"'))
         .filter(|s| !s.is_empty())
         .collect();
-    assert_eq!(in_build, COMMANDS);
+    assert_eq!(in_build, commands());
 
     let lib = read("src/lib.rs");
-    for command in COMMANDS {
-        assert!(
-            lib.contains(&format!("commands::{command},")),
-            "{command} not in invoke_handler"
-        );
+    for (module, list) in [
+        ("commands", crate::commands::COMMANDS.to_vec()),
+        ("cmd_local", crate::cmd_local::COMMANDS.to_vec()),
+        ("cmd_files", crate::cmd_files::COMMANDS.to_vec()),
+    ] {
+        for command in list {
+            assert!(
+                lib.contains(&format!("{module}::{command},")),
+                "{command} not in invoke_handler"
+            );
+        }
     }
     let handler = &lib[lib.find("generate_handler![").unwrap()..];
-    let handler = &handler[..handler.find(']').unwrap()];
-    assert_eq!(handler.matches("commands::").count(), COMMANDS.len());
+    let handler = &handler[..handler.find("])").unwrap()];
+    assert_eq!(
+        handler.matches("::").count(),
+        commands().len(),
+        "the handler lists exactly the commands"
+    );
 }
 
 #[test]
@@ -334,9 +351,11 @@ fn the_launcher_page_is_static_and_has_no_inline_or_remote_code() {
     let js = fs::read_to_string(root().join("../ui/launcher.js")).unwrap();
     let css = fs::read_to_string(root().join("../ui/launcher.css")).unwrap();
 
-    // Every script and stylesheet is a local file.
-    assert_eq!(html.matches("<script").count(), 1);
+    // Every script and stylesheet is a local file: the client, and the host of the Office codec
+    // (which starts the codec's worker; see `the_office_codec_has_no_network_of_its_own`).
+    assert_eq!(html.matches("<script").count(), 2);
     assert!(html.contains("<script src=\"launcher.js\" defer></script>"));
+    assert!(html.contains("<script src=\"office-host.js\" defer></script>"));
     assert_eq!(html.matches("<link").count(), 1);
     assert!(html.contains("<link rel=\"stylesheet\" href=\"launcher.css\" />"));
     for never in [
@@ -403,6 +422,30 @@ fn the_launcher_page_is_static_and_has_no_inline_or_remote_code() {
     );
     // Page text is only ever put in with textContent / value.
     assert!(js.contains("textContent"));
+}
+
+#[test]
+fn the_office_codec_has_no_network_of_its_own() {
+    let host = fs::read_to_string(root().join("../ui/office-host.js")).unwrap();
+    let worker = fs::read_to_string(root().join("../ui/office-worker.js")).unwrap();
+    let launcher = fs::read_to_string(root().join("../ui/launcher.js")).unwrap();
+    // The page's side only starts a worker from a file of the app and passes data; the client
+    // itself (launcher.js) stays free of cross-context messaging.
+    assert!(host.contains("new Worker(\"office-worker.js\")") || host.contains("new Worker('office-worker.js')"));
+    assert!(!launcher.contains("new Worker"));
+    // Neither file may reach the network (the page's CSP allows nothing but `ipc:` as well).
+    for never in ["fetch(", "WebSocket", "sendBeacon", "EventSource", "importScripts(\"http"] {
+        assert!(!host.contains(never), "office-host.js has {never}");
+        assert!(!worker.contains(never), "office-worker.js has {never}");
+    }
+    // The worker is built from the web workspace's own importers, exporters and push planner.
+    for want in ["_ddcomments", "DynodocRevision", "DynodocDocument"] {
+        assert!(worker.contains(want), "office-worker.js lacks {want}");
+    }
+    // The CSP must keep allowing a worker from the app's own files and nothing else.
+    let csp = json("tauri.conf.json")["app"]["security"]["csp"].as_str().unwrap().to_string();
+    assert!(!csp.contains("worker-src") || csp.contains("worker-src 'self'"));
+    assert!(csp.contains("script-src 'self'") && !csp.contains("blob:"));
 }
 
 #[test]

@@ -7,7 +7,7 @@ name = "dynodoc-desktop"
 # The app version: tauri.conf.json has no "version" and falls back to this on desktop. Android's
 # Tauri command line does not fall back, so tauri.android.conf.json repeats it (a test keeps the
 # two equal; change both together).
-version = "0.0.1-alpha"
+version = "0.0.1-beta"
 description = "Dynodoc desktop client: a native shell around the configured Dynodoc server."
 edition = "2021"
 license-file = "../../../LICENSE"
@@ -45,7 +45,7 @@ serde_json = "1"
 # The client's requests to the configured server (remote.rs): no redirects, the operating system's
 # certificate store (rustls-platform-verifier), ring as the one crypto provider. No cookie jar: the
 # session cookie is the web view's own, read per request.
-reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "stream", "json"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
@@ -54,7 +54,30 @@ tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 # Remembers the window's size, position and maximised state.
 tauri-plugin-window-state = "2"
 
+# --- The local workspace (0.0.1b, decision 019): the app starts and supervises its own database and
+# engine on loopback, so it needs a process supervisor, a PostgreSQL client for the app-side state,
+# the operating system's credential store, and a few small helpers. ---
+tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "macros", "process", "net", "time", "sync", "io-util", "fs"] }
+tokio-postgres = { version = "0.7", default-features = false, features = ["runtime", "with-serde_json-1"] }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+# Windows Credential Manager, macOS Keychain, Linux Secret Service (no libdbus: zbus). Secrets for the
+# local database and engine, sign-in tokens per server, and the user's provider keys live there.
+keyring = "4"
+zeroize = { version = "1", features = ["derive"] }
+base64 = "0.22"
+hex = "0.4"
+# The backup archive (one .zip of the local workspace).
+zip = { version = "8", default-features = false, features = ["deflate"] }
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies.rfd]
+# Native open and save dialogs, called from Rust only (the page has no file access).
+version = "0.17"
+default-features = false
+features = ["gtk3"]
+
 [target.'cfg(windows)'.dependencies]
+# Keeps the engine process inside a job that dies with the app (a crash leaves no orphan).
+win32job = "2"
 # Windows only: window.rs adds the app's `DynodocApp/<version> (desktop)` token to WebView2's own
 # User-Agent. Both are already in the tree (Tauri's web view layer uses them), at these versions.
 webview2-com = "0.39"

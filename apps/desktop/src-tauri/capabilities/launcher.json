@@ -22,6 +22,16 @@
     "allow-svc-get",
     "allow-svc-send",
     "allow-prefs-load",
-    "allow-prefs-save"
+    "allow-prefs-save",
+    "allow-local-status",
+    "allow-local-create-profile",
+    "allow-files-pick",
+    "allow-file-read",
+    "allow-file-export",
+    "allow-folder-bind",
+    "allow-folder-unbind",
+    "allow-folder-status",
+    "allow-watch-poll",
+    "allow-watch-seen"
   ]
 }

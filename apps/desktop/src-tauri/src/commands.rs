@@ -6,6 +6,7 @@
 //! `require_launcher`, that the page asking is the bundled launcher. Arguments are plain
 //! strings that are validated here.
 
+use crate::envs::{self, Env};
 use crate::nav;
 use crate::remote::{self, Method, Reply, Target};
 use crate::server::{parse_server_address, sign_in_url, ServerOrigin, CLOUD_ORIGIN, SUPPORT_URL};
@@ -313,12 +314,17 @@ async fn keep_cookie(webview: &Webview, server: &ServerOrigin, set_cookie: Optio
 /// One request on a fixed route of the configured server (see remote.rs for the tables).
 async fn call(
     webview: &Webview,
+    env: Option<&str>,
     target: Target,
     method: Method,
     path: &str,
     body: Option<Value>,
     if_match: Option<&str>,
 ) -> Result<Reply, String> {
+    let place = Env::parse(env)?;
+    if place != Env::Server {
+        return envs::call(webview.app_handle(), &place, target, method, path, body, if_match).await;
+    }
     let server = configured(webview)?;
     remote::allowed(target, method, path).map_err(str::to_string)?;
     if let Some(value) = &body {
@@ -505,9 +511,9 @@ pub async fn sign_out(webview: Webview) -> Result<(), String> {
 
 /// Read from the server's engine proxy (fixed routes; see remote.rs).
 #[tauri::command]
-pub async fn api_get(webview: Webview, path: String) -> Result<Reply, String> {
+pub async fn api_get(webview: Webview, path: String, env: Option<String>) -> Result<Reply, String> {
     require_launcher(webview.url())?;
-    call(&webview, Target::Api, Method::Get, &path, None, None).await
+    call(&webview, env.as_deref(), Target::Api, Method::Get, &path, None, None).await
 }
 
 /// Change something through the server's engine proxy (fixed routes and methods).
@@ -518,6 +524,7 @@ pub async fn api_send(
     path: String,
     body: Option<Value>,
     if_match: Option<String>,
+    env: Option<String>,
 ) -> Result<Reply, String> {
     require_launcher(webview.url())?;
     let method = write_method(&method)?;
@@ -528,6 +535,7 @@ pub async fn api_send(
     }
     call(
         &webview,
+        env.as_deref(),
         Target::Api,
         method,
         &path,
@@ -539,9 +547,9 @@ pub async fn api_send(
 
 /// Read from the server's pre-alpha service.
 #[tauri::command]
-pub async fn svc_get(webview: Webview, path: String) -> Result<Reply, String> {
+pub async fn svc_get(webview: Webview, path: String, env: Option<String>) -> Result<Reply, String> {
     require_launcher(webview.url())?;
-    call(&webview, Target::Svc, Method::Get, &path, None, None).await
+    call(&webview, env.as_deref(), Target::Svc, Method::Get, &path, None, None).await
 }
 
 /// Write to the server's pre-alpha service.
@@ -551,10 +559,11 @@ pub async fn svc_send(
     method: String,
     path: String,
     body: Option<Value>,
+    env: Option<String>,
 ) -> Result<Reply, String> {
     require_launcher(webview.url())?;
     let method = write_method(&method)?;
-    call(&webview, Target::Svc, method, &path, body, None).await
+    call(&webview, env.as_deref(), Target::Svc, method, &path, body, None).await
 }
 
 /// The client's preferences (theme, keybindings, providers without keys, ...), from the app's
@@ -627,19 +636,28 @@ mod tests {
     #[test]
     fn every_command_takes_the_second_lock_first() {
         // Source check: each `#[tauri::command]` function begins with require_launcher, so
-        // removing the call from one of them is caught here.
-        let source = include_str!("commands.rs");
-        let body = &source[..source.find("#[cfg(test)]\nmod tests").unwrap()];
-        let functions: Vec<&str> = body.split("#[tauri::command]").skip(1).collect();
-        assert_eq!(functions.len(), COMMANDS.len());
-        for (function, name) in functions.iter().zip(COMMANDS) {
-            let head = function.split("\n}\n").next().unwrap();
-            let after_signature = head.split(") -> ").nth(1).expect(name);
-            let first_statement = after_signature.split('{').nth(1).unwrap().trim_start();
-            assert!(
-                first_statement.starts_with("require_launcher(webview.url())?;"),
-                "{name} must check the caller first: {first_statement:.60}"
-            );
+        // removing the call from one of them is caught here. Every command module is checked.
+        let modules: [(&str, &str, &[&str]); 3] = [
+            ("commands.rs", include_str!("commands.rs"), &COMMANDS),
+            ("cmd_local.rs", include_str!("cmd_local.rs"), &crate::cmd_local::COMMANDS),
+            ("cmd_files.rs", include_str!("cmd_files.rs"), &crate::cmd_files::COMMANDS),
+        ];
+        for (file, source, names) in modules {
+            let body = source.split("#[cfg(test)]
+mod tests").next().unwrap();
+            let functions: Vec<&str> = body.split("#[tauri::command]").skip(1).collect();
+            assert_eq!(functions.len(), names.len(), "{file}");
+            for (function, name) in functions.iter().zip(names) {
+                let head = function.split("
+}
+").next().unwrap();
+                let after_signature = head.split(") -> ").nth(1).expect(name);
+                let first_statement = after_signature.split('{').nth(1).unwrap().trim_start();
+                assert!(
+                    first_statement.starts_with("require_launcher(webview.url())?;"),
+                    "{name} must check the caller first: {first_statement:.60}"
+                );
+            }
         }
     }
 }

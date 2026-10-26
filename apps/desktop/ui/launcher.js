@@ -5189,7 +5189,7 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
         { class: "about-hero card pad" },
         h("div", { class: "about-title" }, h("strong", null, "Dynodoc"), " ", pill("Pre-alpha release", "warning", { mono: !1 })),
         h("p", null, "Version control for documents, spreadsheets and presentations: edits in Word, Excel, PowerPoint and Google’s editors become change requests, are reviewed and merged, and land in a hash-chained history."),
-        h("p", { class: "muted small" }, `Client 0.0.1-alpha${shell2 ? `, desktop app ${state.desktopVersion}` : ""}.`)
+        h("p", { class: "muted small" }, `Client 0.0.1-beta${shell2 ? `, desktop app ${state.desktopVersion}` : ""}.`)
       ),
       live ? section("This window shows a real Dynodoc server", null, h(
         "p",

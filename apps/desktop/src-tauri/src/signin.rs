@@ -1263,11 +1263,13 @@ mod tests {
             .all(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())));
         assert_eq!(kind, format!("{PLATFORM})"));
         assert_eq!(version, normalise_version(env!("CARGO_PKG_VERSION")));
-        // The version this build has is already in the grammar, so nothing is lost by normalising.
-        assert_eq!(
-            normalise_version(env!("CARGO_PKG_VERSION")),
-            env!("CARGO_PKG_VERSION")
-        );
+        // The leading triple of this build's version is what the token carries; a pre-release
+        // suffix such as `-beta` is dropped on purpose (see `normalise_version`).
+        let triple = env!("CARGO_PKG_VERSION")
+            .split(['-', '+'])
+            .next()
+            .unwrap();
+        assert_eq!(normalise_version(env!("CARGO_PKG_VERSION")), triple);
         // Only where it is built and has been run is the browser sign-in offered.
         assert_eq!(APP_TOKEN, cfg!(any(windows, target_os = "android")));
     }

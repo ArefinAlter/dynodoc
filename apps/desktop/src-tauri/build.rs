@@ -19,6 +19,16 @@ const COMMANDS: &[&str] = &[
     "svc_send",
     "prefs_load",
     "prefs_save",
+    "local_status",
+    "local_create_profile",
+    "files_pick",
+    "file_read",
+    "file_export",
+    "folder_bind",
+    "folder_unbind",
+    "folder_status",
+    "watch_poll",
+    "watch_seen",
 ];
 
 fn main() {

@@ -7,10 +7,19 @@
 //! apps/desktop/README.md before changing the security-relevant modules (`nav`, `handoff`,
 //! `server`, `deeplink`, `signin`, `sidecar`, `commands`, the capability file and tauri.conf.json).
 
+mod accounts;
 mod commands;
+#[cfg(desktop)]
+mod cmd_files;
+#[cfg(desktop)]
+mod cmd_local;
 mod config;
 mod deeplink;
+mod envs;
+mod files;
 mod handoff;
+#[cfg(desktop)]
+mod local;
 #[cfg(desktop)]
 mod menu;
 mod nav;
@@ -18,6 +27,7 @@ mod remote;
 mod server;
 mod sidecar;
 mod signin;
+mod watch;
 mod window;
 
 #[cfg(test)]
@@ -49,6 +59,15 @@ pub struct AppState {
     pub signin: signin::Pending,
     /// A finished attempt's fragment, waiting for the finish page to load (see signin.rs).
     pub outbox: signin::Outbox,
+    /// The workspace on this computer: its own database and engine (decision 019).
+    #[cfg(desktop)]
+    pub local: local::Local,
+    /// Files and folders the person chose: the page holds tokens, the app holds paths.
+    #[cfg(desktop)]
+    pub picks: files::Picks,
+    /// Folder watch: what the bound folders showed since the page last asked.
+    #[cfg(desktop)]
+    pub watcher: watch::Watcher,
 }
 
 impl AppState {
@@ -102,6 +121,16 @@ fn home_override() -> Option<PathBuf> {
     home.is_absolute().then_some(home)
 }
 
+/// Portable mode: a folder named `dynodoc-data` beside the program keeps the config, the local
+/// workspace and the web view's data there instead of in the per-user folders (the portable zip
+/// ships it empty; delete it to go back). The secrets of such a copy get a credential-store name of
+/// their own, so a portable copy and an installed one never share or overwrite each other's.
+fn portable_home() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?.join("dynodoc-data");
+    dir.is_dir().then_some(dir)
+}
+
 /// The server to open at start-up, and the saved one that is held back. A saved address is
 /// opened only when it matches its seal.
 fn split_loaded(
@@ -115,7 +144,9 @@ fn split_loaded(
 }
 
 fn resolve_state(app: &tauri::AppHandle) -> tauri::Result<AppState> {
-    let (config_dir, data_dir, webview_dir) = match home_override() {
+    let home = home_override().or_else(portable_home);
+    let ordinary = home.is_none();
+    let (config_dir, data_dir, webview_dir) = match home {
         Some(home) => (
             home.join("config"),
             home.join("data"),
@@ -129,6 +160,14 @@ fn resolve_state(app: &tauri::AppHandle) -> tauri::Result<AppState> {
     };
     std::fs::create_dir_all(&config_dir)?;
     std::fs::create_dir_all(&data_dir)?;
+    #[cfg(desktop)]
+    let local = {
+        let exe_dir = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(std::path::Path::to_path_buf))
+            .unwrap_or_default();
+        local::Local::new(&data_dir, app.path().resource_dir().ok().as_deref(), &exe_dir, ordinary)
+    };
     let (server, unconfirmed) = split_loaded(config::load(&config_dir, &data_dir));
     Ok(AppState {
         server: Mutex::new(server),
@@ -142,6 +181,12 @@ fn resolve_state(app: &tauri::AppHandle) -> tauri::Result<AppState> {
             .map_err(|e| std::io::Error::other(format!("no operating-system randomness: {e}")))?,
         signin: signin::Pending::default(),
         outbox: signin::Outbox::default(),
+        #[cfg(desktop)]
+        local,
+        #[cfg(desktop)]
+        picks: files::Picks::default(),
+        #[cfg(desktop)]
+        watcher: watch::Watcher::default(),
     })
 }
 
@@ -159,7 +204,7 @@ pub fn run() {
                 .build(),
         );
         // A test home keeps its own folders; the plugin would write to the real profile.
-        if home_override().is_none() {
+        if home_override().is_none() && portable_home().is_none() {
             builder = builder.plugin(tauri_plugin_window_state::Builder::default().build());
         }
     }
@@ -188,10 +233,36 @@ pub fn run() {
             commands::svc_send,
             commands::prefs_load,
             commands::prefs_save,
+            #[cfg(desktop)]
+            cmd_local::local_status,
+            #[cfg(desktop)]
+            cmd_local::local_create_profile,
+            #[cfg(desktop)]
+            cmd_files::files_pick,
+            #[cfg(desktop)]
+            cmd_files::file_read,
+            #[cfg(desktop)]
+            cmd_files::file_export,
+            #[cfg(desktop)]
+            cmd_files::folder_bind,
+            #[cfg(desktop)]
+            cmd_files::folder_unbind,
+            #[cfg(desktop)]
+            cmd_files::folder_status,
+            #[cfg(desktop)]
+            cmd_files::watch_poll,
+            #[cfg(desktop)]
+            cmd_files::watch_seen,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
             app.manage(resolve_state(&handle)?);
+            // The workspace on this computer starts in the background while the window opens.
+            #[cfg(desktop)]
+            {
+                app.state::<AppState>().local.start();
+                cmd_files::spawn_watch_loop(&handle);
+            }
             window::create_main(&handle)?;
             // Links that arrived while this was still starting are handled here.
             window::watch_deep_links(&handle);
@@ -205,9 +276,27 @@ pub fn run() {
             .on_menu_event(|app, event| menu::handle(app, event.id().as_ref()));
     }
 
-    builder
-        .run(tauri::generate_context!())
-        .expect("error while running Dynodoc");
+    let app = builder
+        .build(tauri::generate_context!())
+        .expect("error while building Dynodoc");
+    app.run(|handle, event| {
+        // Closing the app closes the engine and the database first, cleanly.
+        #[cfg(desktop)]
+        if let tauri::RunEvent::ExitRequested { api, .. } = &event {
+            let state = handle.state::<AppState>();
+            if !state.local.is_closing() {
+                api.prevent_exit();
+                let local = state.local.clone();
+                let handle = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    local.shutdown().await;
+                    handle.exit(0);
+                });
+            }
+        }
+        #[cfg(not(desktop))]
+        let _ = (handle, &event);
+    });
 }
 
 #[cfg(test)]
@@ -241,6 +330,15 @@ mod tests {
             click_secret: String::new(),
             signin: signin::Pending::default(),
             outbox: signin::Outbox::default(),
+            #[cfg(desktop)]
+            local: local::Local::new(
+                std::path::Path::new("."),
+                None,
+                std::path::Path::new("."),
+                false,
+            ),
+            picks: files::Picks::default(),
+            watcher: watch::Watcher::default(),
         }
     }
 
