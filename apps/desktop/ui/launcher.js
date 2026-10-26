@@ -162,9 +162,9 @@
 `);
 
   // client/src/lib/diff.ts
-  function tokenize(text) {
+  function tokenize(text2) {
     let out = [], re = /(\s+|[A-Za-z0-9À-ɏঀ-৿'’]+|[^\sA-Za-z0-9À-ɏঀ-৿'’])/gu, m;
-    for (; (m = re.exec(text)) !== null; ) out.push(m[0]);
+    for (; (m = re.exec(text2)) !== null; ) out.push(m[0]);
     return out;
   }
   function pushSeg(out, t, s2) {
@@ -257,8 +257,8 @@
       return { kind: r.kind, blockId: r.blockId, left, right };
     });
   }
-  function words(text) {
-    return tokenize(text).filter((t) => /\S/.test(t) && /[\p{L}\p{N}]/u.test(t)).length;
+  function words(text2) {
+    return tokenize(text2).filter((t) => /\S/.test(t) && /[\p{L}\p{N}]/u.test(t)).length;
   }
   function stats(edits2) {
     let out = { edited: 0, added: 0, removed: 0, wordsAdded: 0, wordsRemoved: 0 };
@@ -353,8 +353,8 @@
     3204031479,
     3329325298
   ]);
-  function utf8(text) {
-    return new TextEncoder().encode(text);
+  function utf8(text2) {
+    return new TextEncoder().encode(text2);
   }
   function sha256(input2) {
     let bytes = typeof input2 == "string" ? utf8(input2) : input2, bitLength = bytes.length * 8, padded = new Uint8Array(bytes.length + 9 + 63 >> 6 << 6);
@@ -654,11 +654,11 @@
     let word = verdict === "approved" ? "approved" : verdict === "changes_requested" ? "requested changes on" : "commented on";
     log(db, { actorId: db.me, projectId: r.projectId, docId: r.docId, kind: "review", summary: `${word} #${r.number} ${r.name}` });
   }
-  function comment(db, requestId, text, blockId, proposedByAgent = !1) {
+  function comment(db, requestId, text2, blockId, proposedByAgent = !1) {
     let r = db.requests.find((x) => x.id === requestId);
     if (!r) throw new Error("No such request.");
-    if (!text.trim()) throw new Error("Write a comment first.");
-    r.comments.push({ id: uid("cmt"), authorId: db.me, text: text.trim(), at: Date.now(), blockId, proposedByAgent });
+    if (!text2.trim()) throw new Error("Write a comment first.");
+    r.comments.push({ id: uid("cmt"), authorId: db.me, text: text2.trim(), at: Date.now(), blockId, proposedByAgent });
   }
   function merge(db, requestId) {
     let r = db.requests.find((x) => x.id === requestId);
@@ -1151,7 +1151,33 @@ Suggest, do not order.` }
       server: "",
       saving: !1,
       error: "",
-      visitor: null
+      visitor: null,
+      /** Which place the screens show: the workspace on this computer, the configured server, or
+       *  an account's server ("acct:<id>"); empty while nothing is connected. */
+      env: ""
+    },
+    /** Folder watch (data/files.ts): files in bound folders the project does not have yet, the
+     *  last files saved by an editor and what became of them, and each project's folder. */
+    watch: {
+      newFiles: [],
+      recent: [],
+      folders: {}
+    },
+    /** The workspace on this computer (data/local.ts): its start-up and who the person is. */
+    local: {
+      /** Show the start-up screen instead of the app (until the workspace is ready or the person
+       *  chose the offline sample). */
+      splash: !1,
+      phase: "starting",
+      step: "Starting",
+      detail: "",
+      firstRun: !1,
+      folder: "",
+      secretsIn: "",
+      restarts: 0,
+      profile: null,
+      /** The first-run form. */
+      form: { name: "", project: "My documents", email: "", busy: !1, error: "" }
     }
   };
   function structuredCloneSafe(v) {
@@ -1175,9 +1201,9 @@ Suggest, do not order.` }
     }));
   }
   var toastId = 0;
-  function toast(kind, title, text) {
+  function toast(kind, title, text2) {
     let id = ++toastId;
-    state.ui.toasts = [...state.ui.toasts.slice(-3), { id, kind, title, text }], render(), setTimeout(() => {
+    state.ui.toasts = [...state.ui.toasts.slice(-3), { id, kind, title, text: text2 }], render(), setTimeout(() => {
       state.ui.toasts = state.ui.toasts.filter((t) => t.id !== id), render();
     }, kind === "error" ? 7e3 : 4500);
   }
@@ -1204,9 +1230,9 @@ Suggest, do not order.` }
   function show(el, on) {
     el.hidden = !on;
   }
-  function say(id, text) {
+  function say(id, text2) {
     let el = $(id);
-    el.textContent = text || "", el.getAttribute("role") || show(el, !!text);
+    el.textContent = text2 || "", el.getAttribute("role") || show(el, !!text2);
   }
   function message(e) {
     return typeof e == "string" ? e : (e instanceof Error ? e.message : e && typeof e == "object" && "message" in e ? String(e.message) : "") || "Something went wrong. Please try again.";
@@ -1407,10 +1433,10 @@ Suggest, do not order.` }
         rows3.forEach((row2, r) => {
           let f = fieldsOf(row2), cells = Object.keys(f).map((k) => [k, cellIndex(k)]).filter((x) => x[1] !== null).sort((a, b) => a[1] - b[1]);
           for (let [field2, c] of cells) {
-            let text = cellText(f[field2]);
-            if (!text) continue;
+            let text2 = cellText(f[field2]);
+            if (!text2) continue;
             let rowName = c > 0 && r > 0 ? cellText(f.cell_0) : "", colName = c > 0 && r > 0 ? cellText(header[field2]) : "", what = [rowName, colName].filter(Boolean).join(", "), id = `${row2.id}:${field2}`;
-            blocks.push({ id, label: `${name2}!${columnLetter(c)}${r + 1}${what ? ` · ${what}` : ""}`, text }), slots[id] = { node: row2.id, field: field2, own: !1, kind: "cell", parent: sheet.id };
+            blocks.push({ id, label: `${name2}!${columnLetter(c)}${r + 1}${what ? ` · ${what}` : ""}`, text: text2 }), slots[id] = { node: row2.id, field: field2, own: !1, kind: "cell", parent: sheet.id };
           }
         });
       }
@@ -1443,8 +1469,8 @@ Suggest, do not order.` }
         let f = fieldsOf(node);
         if (node.type === "item" || node.type === "paragraph" || node.type === "clause") {
           i += 1;
-          let heading = f.content?.type === "heading", text = typeof f.label == "string" ? f.label : textOf(f.content);
-          blocks.push({ id: node.id, label: `¶ ${i}${heading ? " · Heading" : ""}`, text }), slots[node.id] = { node: node.id, field: "label", own: !0, kind: "paragraph", parent, pos: node.pos, heading };
+          let heading = f.content?.type === "heading", text2 = typeof f.label == "string" ? f.label : textOf(f.content);
+          blocks.push({ id: node.id, label: `¶ ${i}${heading ? " · Heading" : ""}`, text: text2 }), slots[node.id] = { node: node.id, field: "label", own: !0, kind: "paragraph", parent, pos: node.pos, heading };
         }
         walk(node.id);
       }
@@ -1498,8 +1524,8 @@ Suggest, do not order.` }
     }
     return left + "P";
   }
-  function paragraphContent(text, existing, heading) {
-    return { ...existing && typeof existing == "object" ? { ...existing } : { type: heading ? "heading" : "paragraph", ...heading ? { attrs: { level: 2 } } : {} }, content: text ? [{ type: "text", text }] : [] };
+  function paragraphContent(text2, existing, heading) {
+    return { ...existing && typeof existing == "object" ? { ...existing } : { type: heading ? "heading" : "paragraph", ...heading ? { attrs: { level: 2 } } : {} }, content: text2 ? [{ type: "text", text: text2 }] : [] };
   }
   var Unsupported = class extends Error {
   };
@@ -1511,15 +1537,15 @@ Suggest, do not order.` }
       let slot = slots[e.blockId];
       if (e.op === "edit") {
         if (!slot || !nodes[slot.node] || nodes[slot.node].deleted) throw new Unsupported(`${e.label ?? "A block"} is no longer in the file.`);
-        let f = fieldsOf(nodes[slot.node]), text = e.after ?? "";
-        slot.kind === "paragraph" ? (push2({ type: "FieldEdited", node_id: slot.node, field: "content", value: paragraphContent(text, f.content, !!slot.heading) }), push2({ type: "FieldEdited", node_id: slot.node, field: "label", value: text })) : slot.kind === "shape" ? (push2({ type: "FieldEdited", node_id: slot.node, field: "text", value: text }), push2({ type: "FieldEdited", node_id: slot.node, field: "label", value: text.replace(/\s+/g, " ").trim().slice(0, 120) }), f.role === "title" && slot.parent && push2({ type: "FieldEdited", node_id: slot.parent, field: "label", value: text.replace(/\s+/g, " ").trim().slice(0, 120) || "Untitled slide" })) : push2({ type: "FieldEdited", node_id: slot.node, field: slot.field, value: text });
+        let f = fieldsOf(nodes[slot.node]), text2 = e.after ?? "";
+        slot.kind === "paragraph" ? (push2({ type: "FieldEdited", node_id: slot.node, field: "content", value: paragraphContent(text2, f.content, !!slot.heading) }), push2({ type: "FieldEdited", node_id: slot.node, field: "label", value: text2 })) : slot.kind === "shape" ? (push2({ type: "FieldEdited", node_id: slot.node, field: "text", value: text2 }), push2({ type: "FieldEdited", node_id: slot.node, field: "label", value: text2.replace(/\s+/g, " ").trim().slice(0, 120) }), f.role === "title" && slot.parent && push2({ type: "FieldEdited", node_id: slot.parent, field: "label", value: text2.replace(/\s+/g, " ").trim().slice(0, 120) || "Untitled slide" })) : push2({ type: "FieldEdited", node_id: slot.node, field: slot.field, value: text2 });
       } else if (e.op === "remove") {
         if (!slot || !nodes[slot.node]) continue;
         slot.own ? push2({ type: "NodeDeleted", node_id: slot.node }) : push2({ type: "FieldEdited", node_id: slot.node, field: slot.field, value: "" }), delete slots[e.blockId];
       } else {
-        let text = e.after ?? "", existing = slots[e.blockId];
+        let text2 = e.after ?? "", existing = slots[e.blockId];
         if (existing && !existing.own) {
-          push2({ type: "FieldEdited", node_id: existing.node, field: existing.field, value: text });
+          push2({ type: "FieldEdited", node_id: existing.node, field: existing.field, value: text2 });
           continue;
         }
         let after = e.afterId ? slots[e.afterId] : void 0;
@@ -1527,12 +1553,12 @@ Suggest, do not order.` }
           let root2 = rootOf(nodes);
           if (!root2) throw new Unsupported("The file has no content to add to.");
           let siblings = children(nodes, after?.parent ?? root2.id), i = after ? siblings.findIndex((s2) => s2.id === after.node) : -1, left = i >= 0 ? siblings[i].pos : "", right = siblings[i + 1]?.pos, id = ctx2.newId(), heading = /Heading/.test(e.label ?? "");
-          push2({ type: "NodeCreated", node_id: id, node_type: "item", parent_id: after?.parent ?? root2.id, pos: between(left, right), fields: { label: text, content: paragraphContent(text, void 0, heading) } }), slots[e.blockId] = { node: id, field: "label", own: !0, kind: "paragraph", parent: after?.parent ?? root2.id, heading };
+          push2({ type: "NodeCreated", node_id: id, node_type: "item", parent_id: after?.parent ?? root2.id, pos: between(left, right), fields: { label: text2, content: paragraphContent(text2, void 0, heading) } }), slots[e.blockId] = { node: id, field: "label", own: !0, kind: "paragraph", parent: after?.parent ?? root2.id, heading };
         } else if (ctx2.kind === "presentation") {
           let slide = after?.kind === "notes" ? after.node : after?.parent;
           if (!slide || !nodes[slide]) throw new Unsupported("New text needs a slide to go on.");
           let shapes = children(nodes, slide), i = after ? shapes.findIndex((s2) => s2.id === after.node) : -1, id = ctx2.newId();
-          push2({ type: "NodeCreated", node_id: id, node_type: "item", parent_id: slide, pos: between(i >= 0 ? shapes[i].pos : "", shapes[i + 1]?.pos), fields: { kind: "text", role: "body", text, x: 6.25, y: 60, w: 87.5, h: 20, style: { size: 20 }, label: text.slice(0, 120) } }), slots[e.blockId] = { node: id, field: "text", own: !0, kind: "shape", parent: slide };
+          push2({ type: "NodeCreated", node_id: id, node_type: "item", parent_id: slide, pos: between(i >= 0 ? shapes[i].pos : "", shapes[i + 1]?.pos), fields: { kind: "text", role: "body", text: text2, x: 6.25, y: 60, w: 87.5, h: 20, style: { size: 20 }, label: text2.slice(0, 120) } }), slots[e.blockId] = { node: id, field: "text", own: !0, kind: "shape", parent: slide };
         } else
           throw new Unsupported("A new cell is added in the spreadsheet itself.");
       }
@@ -1549,7 +1575,7 @@ Suggest, do not order.` }
   }
   var EXT = { document: "docx", spreadsheet: "xlsx", presentation: "pptx" };
   function filenameOf(title, kind) {
-    return `${title.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "untitled"}.${EXT[kind] ?? "docx"}`;
+    return `${title.replace(/[\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 150) || "Untitled"}.${EXT[kind] ?? "docx"}`;
   }
   var POLICY_ROLE_TO_CLIENT = { viewer: "viewer", contributor: "reviewer", reviewer: "approver", editor: "editor", manager: "manager", owner: "owner" }, CLIENT_ROLE_TO_POLICY = { viewer: "viewer", reviewer: "contributor", approver: "reviewer", editor: "editor", manager: "manager", owner: "owner" };
 
@@ -1563,7 +1589,7 @@ Suggest, do not order.` }
   };
   function ok(r, what) {
     if (r.status >= 200 && r.status < 300) return r.body;
-    let text = r.body && typeof r.body == "object" && typeof r.body.error == "string" ? r.body.error : "", plain = r.status === 401 ? "Your session on the server has ended. Sign in again." : r.status === 403 ? text && text !== "forbidden" ? text : `Your role does not allow this (${what}).` : r.status === 409 ? text && text !== "conflict" ? text : "Someone changed this on the server first. The latest version is shown; try again." : r.status === 429 ? "The server asks to slow down. Try again in a moment." : text || `The server could not ${what} (${r.status}).`;
+    let text2 = r.body && typeof r.body == "object" && typeof r.body.error == "string" ? r.body.error : "", plain = r.status === 401 ? "Your session on the server has ended. Sign in again." : r.status === 403 ? text2 && text2 !== "forbidden" ? text2 : `Your role does not allow this (${what}).` : r.status === 409 ? text2 && text2 !== "conflict" ? text2 : "Someone changed this on the server first. The latest version is shown; try again." : r.status === 429 ? "The server asks to slow down. Try again in a moment." : text2 || `The server could not ${what} (${r.status}).`;
     throw new RemoteError(r.status, plain);
   }
   var optional = async (p2, fallback) => {
@@ -1621,8 +1647,8 @@ Suggest, do not order.` }
   async function allEvents(t, docId, after = 0, known = []) {
     let out = [...known], cursor = "";
     for (let page = 0; page < 50; page++) {
-      let body = ok(await t.apiGet(`documents/${docId}/events?limit=1000${after ? `&from_seq=${after + 1}` : ""}${cursor ? `&cursor=${cursor}` : ""}`), "read the history");
-      if (out.push(...body.items ?? []), !body.next_cursor || (cursor = String(body.next_cursor), !/^[A-Za-z0-9_.:-]{1,64}$/.test(cursor))) break;
+      let body2 = ok(await t.apiGet(`documents/${docId}/events?limit=1000${after ? `&from_seq=${after + 1}` : ""}${cursor ? `&cursor=${cursor}` : ""}`), "read the history");
+      if (out.push(...body2.items ?? []), !body2.next_cursor || (cursor = String(body2.next_cursor), !/^[A-Za-z0-9_.:-]{1,64}$/.test(cursor))) break;
     }
     return out;
   }
@@ -1684,8 +1710,8 @@ Suggest, do not order.` }
     });
     let allFiles = raw.flatMap((r) => r.files.map((f) => ({ ...f, projectId: r.project.id }))), notes = [];
     for (let i = 0; i < allFiles.length; i += 40) {
-      let q = allFiles.slice(i, i + 40).map((f) => `document=${f.id}`).join("&"), body = await optional(t.svcGet(`notes?${q}`), { items: [] });
-      notes.push(...body.items ?? []);
+      let q = allFiles.slice(i, i + 40).map((f) => `document=${f.id}`).join("&"), body2 = await optional(t.svcGet(`notes?${q}`), { items: [] });
+      notes.push(...body2.items ?? []);
     }
     let [working2, local, threads, client] = await Promise.all(
       ["working", "local", "threads", "client"].map((k) => optional(t.svcGet(`state/${k}`), { value: null }))
@@ -1869,8 +1895,8 @@ Suggest, do not order.` }
     }
     let notif = (notifications2.items ?? []).map((n) => {
       person2(people3, n.actor?.id, n.actor?.name, n.actor?.email), n.actor?.is_agent && people3.get(n.actor.id) && (people3.get(n.actor.id).agent = !0);
-      let name2 = n.request ? requests.find((r) => r.id === n.request.id)?.name ?? n.request.name : "", title = n.document?.title ?? "a file", text = n.kind === "change_request_submitted" ? `opened ${name2} on ${title}` : n.kind === "change_request_reviewed" ? `reviewed ${name2} on ${title}` : n.kind === "change_request_merged" ? `merged ${name2} into ${title}` : n.kind === "change_request_declined" ? `declined ${name2} on ${title}` : n.kind === "copy_detected" ? `found a copy of ${title}` : n.kind === "access_granted" ? `gave you access to ${title}` : n.kind === "mention" ? `mentioned you in ${title}` : `${String(n.kind).replace(/_/g, " ")} ${title}`;
-      return { id: n.id, kind: n.kind, at: ms(n.created_at), read: !!n.read, actorId: n.actor?.id ?? "", projectId: n.document?.project_id ?? projects[0]?.id ?? "", docId: n.document?.id, requestId: n.request?.id, text };
+      let name2 = n.request ? requests.find((r) => r.id === n.request.id)?.name ?? n.request.name : "", title = n.document?.title ?? "a file", text2 = n.kind === "change_request_submitted" ? `opened ${name2} on ${title}` : n.kind === "change_request_reviewed" ? `reviewed ${name2} on ${title}` : n.kind === "change_request_merged" ? `merged ${name2} into ${title}` : n.kind === "change_request_declined" ? `declined ${name2} on ${title}` : n.kind === "copy_detected" ? `found a copy of ${title}` : n.kind === "access_granted" ? `gave you access to ${title}` : n.kind === "mention" ? `mentioned you in ${title}` : `${String(n.kind).replace(/_/g, " ")} ${title}`;
+      return { id: n.id, kind: n.kind, at: ms(n.created_at), read: !!n.read, actorId: n.actor?.id ?? "", projectId: n.document?.project_id ?? projects[0]?.id ?? "", docId: n.document?.id, requestId: n.request?.id, text: text2 };
     }), deviceKeys = (devices.keys ?? []).map((k) => ({ id: k.id, name: k.label || "Signing key", kind: k.class === "agent" ? "agent" : "person", publicKey: k.public_key, createdAt: ms(k.registered_at), revoked: !!k.revoked_at, scopes: [...new Set((k.grants ?? []).flatMap((g) => g.scopes ?? []))] }));
     projects.sort((a, b) => b.updatedAt - a.updatedAt), docs.sort((a, b) => a.title.localeCompare(b.title)), activity.sort((a, b) => b.at - a.at);
     let db = {
@@ -1924,8 +1950,8 @@ Suggest, do not order.` }
       let before = prev.projects.find((x) => x.id === p2.id);
       if (!before) {
         await run("create a project", async () => {
-          let body = ok(await t.apiSend("POST", "projects", { name: p2.name, description: p2.description }), "create the project");
-          out.ids[p2.id] = body.id, out.done.push(`Created the project ${p2.name}`);
+          let body2 = ok(await t.apiSend("POST", "projects", { name: p2.name, description: p2.description }), "create the project");
+          out.ids[p2.id] = body2.id, out.done.push(`Created the project ${p2.name}`);
         });
         continue;
       }
@@ -2001,19 +2027,19 @@ Suggest, do not order.` }
       let before = prev.drafts.find((x) => x.id === d.id), dc = ctx2.docs[d.docId];
       if (!before) {
         await run("draft", async () => {
-          let body = ok(await t.apiSend("POST", `documents/${d.docId}/drafts`, { name: d.name, base_seq: dc.latest }), "create the draft");
-          out.ids[d.id] = body.id;
+          let body2 = ok(await t.apiSend("POST", `documents/${d.docId}/drafts`, { name: d.name, base_seq: dc.latest }), "create the draft");
+          out.ids[d.id] = body2.id;
           let revision = 0, own = next.commits.filter((c) => c.branch === d.id && !c.local).sort((a, b) => a.seq - b.seq), nodes = dc.nodes;
           try {
-            nodes = ok(await t.apiGet(`documents/${d.docId}/drafts/${body.id}`), "open the draft").state?.nodes ?? dc.nodes;
+            nodes = ok(await t.apiGet(`documents/${d.docId}/drafts/${body2.id}`), "open the draft").state?.nodes ?? dc.nodes;
           } catch {
           }
           let slots = blocksOf2(dc.kind, nodes).slots;
           for (let c of own) {
             let ops = editsToOps(c.edits, { kind: dc.kind, nodes, slots, newId: newUlid });
             if (!ops.length) continue;
-            let res = ok(await t.apiSend("POST", `documents/${d.docId}/drafts/${body.id}`, { ops, revision }), "write to the draft");
-            revision = res.revision, nodes = res.state?.nodes ?? nodes, slots = blocksOf2(dc.kind, nodes).slots, await note({ document_id: d.docId, branch: body.id, from_seq: revision, to_seq: revision, kind: c.kind, summary: c.summary, description: c.description, edits: c.edits });
+            let res = ok(await t.apiSend("POST", `documents/${d.docId}/drafts/${body2.id}`, { ops, revision }), "write to the draft");
+            revision = res.revision, nodes = res.state?.nodes ?? nodes, slots = blocksOf2(dc.kind, nodes).slots, await note({ document_id: d.docId, branch: body2.id, from_seq: revision, to_seq: revision, kind: c.kind, summary: c.summary, description: c.description, edits: c.edits });
           }
           out.done.push(`Created the draft ${d.name}`);
         });
@@ -2039,20 +2065,20 @@ Suggest, do not order.` }
       let cc = ctx2.crs[r.id], newReviews = r.reviews.slice(before.reviews.length);
       for (let rv of newReviews)
         await run("review", async () => {
-          let body = { verdict: rv.verdict, note: rv.note || (rv.verdict === "approved" ? "" : "Comment"), revision: cc?.revision ?? 0 };
-          ok(await t.apiSend("POST", `documents/${r.docId}/change-requests/${r.id}/reviews`, body), "review the request"), out.done.push(rv.verdict === "approved" ? `Approved ${r.name}` : rv.verdict === "changes_requested" ? `Asked for changes on ${r.name}` : `Commented on ${r.name}`);
+          let body2 = { verdict: rv.verdict, note: rv.note || (rv.verdict === "approved" ? "" : "Comment"), revision: cc?.revision ?? 0 };
+          ok(await t.apiSend("POST", `documents/${r.docId}/change-requests/${r.id}/reviews`, body2), "review the request"), out.done.push(rv.verdict === "approved" ? `Approved ${r.name}` : rv.verdict === "changes_requested" ? `Asked for changes on ${r.name}` : `Commented on ${r.name}`);
         });
       for (let c of r.comments.slice(before.comments.length))
         newReviews.some((rv) => rv.note && rv.note === c.text) || r.status !== "open" && before.status === "open" && r.status === "declined" || await run("comment", async () => {
-          let body = { verdict: "commented", note: c.text, revision: cc?.revision ?? 0 };
-          c.blockId && (body.node_id = nodeOf(c.blockId)), ok(await t.apiSend("POST", `documents/${r.docId}/change-requests/${r.id}/reviews`, body), "comment on the request");
+          let body2 = { verdict: "commented", note: c.text, revision: cc?.revision ?? 0 };
+          c.blockId && (body2.node_id = nodeOf(c.blockId)), ok(await t.apiSend("POST", `documents/${r.docId}/change-requests/${r.id}/reviews`, body2), "comment on the request");
         });
       r.status === "merged" && before.status === "open" && await run("merge", async () => {
         let fresh = ok(await t.apiGet(`documents/${r.docId}/change-requests/${r.id}`), "read the request"), resolutions = {};
         for (let c of r.conflicts) for (let key of cc?.keys[c.blockId] ?? []) c.choice && (resolutions[key] = c.choice);
-        let body = { team_seq: fresh.team_seq, revision: fresh.revision, resolutions };
-        r.excluded.length && (body.included_nodes = [...new Set(r.edits.filter((e) => !r.excluded.includes(e.blockId)).map((e) => nodeOf(e.blockId)))]);
-        let seqs = (ok(await t.apiSend("POST", `documents/${r.docId}/change-requests/${r.id}/merge`, body), "merge the request").events ?? []).map((e) => e.seq);
+        let body2 = { team_seq: fresh.team_seq, revision: fresh.revision, resolutions };
+        r.excluded.length && (body2.included_nodes = [...new Set(r.edits.filter((e) => !r.excluded.includes(e.blockId)).map((e) => nodeOf(e.blockId)))]);
+        let seqs = (ok(await t.apiSend("POST", `documents/${r.docId}/change-requests/${r.id}/merge`, body2), "merge the request").events ?? []).map((e) => e.seq);
         seqs.length && await note({ document_id: r.docId, branch: "main", from_seq: Math.min(...seqs), to_seq: Math.max(...seqs), kind: "merge", summary: `Merge #${r.number}: ${r.name}`, description: r.note, merged_from: r.id }), out.done.push(`Merged ${r.name}`);
       }), r.status === "declined" && before.status === "open" && await run("decline", async () => {
         let last = r.comments.slice(before.comments.length).pop();
@@ -2077,14 +2103,28 @@ Suggest, do not order.` }
   }
 
   // client/src/data/live.ts
-  var desktopTransport = {
-    apiGet: (path) => call("api_get", { path }),
-    apiSend: (method, path, body, ifMatch) => call("api_send", { method, path, body: body ?? null, ifMatch: ifMatch ?? null }),
-    svcGet: (path) => call("svc_get", { path }),
-    svcSend: (method, path, body) => call("svc_send", { method, path, body: body ?? null })
-  }, ctx = null, transport = desktopTransport, timer = null, running = !1, again = !1;
+  function transportFor(env) {
+    let e = env ?? null;
+    return {
+      apiGet: (path) => call("api_get", { path, env: e }),
+      apiSend: (method, path, body2, ifMatch) => call("api_send", { method, path, body: body2 ?? null, ifMatch: ifMatch ?? null, env: e }),
+      svcGet: (path) => call("svc_get", { path, env: e }),
+      svcSend: (method, path, body2) => call("svc_send", { method, path, body: body2 ?? null, env: e })
+    };
+  }
+  var desktopTransport = transportFor();
+  function currentTransport() {
+    return transport;
+  }
+  var ctx = null, transport = desktopTransport, timer = null, running = !1, again = !1;
   function isLive() {
     return state.live.mode === "live";
+  }
+  function isLocal() {
+    return state.live.mode === "live" && state.live.env === "local";
+  }
+  async function connectEnv(env) {
+    return state.live.env = env, connect2(transportFor(env === "server" ? null : env));
   }
   async function connect2(t = desktopTransport) {
     transport = t, state.live.mode = "connecting", state.live.error = "", render();
@@ -2174,7 +2214,7 @@ Suggest, do not order.` }
       let v = await call("visitor_start");
       state.live.visitor = v;
       let ds = await refreshDesktopState();
-      state.live.server = ds?.server ?? state.live.server, await connect2() && toast("success", "Your sample workspace is ready", `It is yours alone and is removed ${v.expires_at ? `on ${new Date(v.expires_at).toLocaleString()}` : "after 24 hours"}.`);
+      state.live.server = ds?.server ?? state.live.server, state.live.env = "server", await connect2(desktopTransport) && toast("success", "Your sample workspace is ready", `It is yours alone and is removed ${v.expires_at ? `on ${new Date(v.expires_at).toLocaleString()}` : "after 24 hours"}.`);
     } catch (e) {
       state.live.mode = "offline", state.live.error = e instanceof Error ? e.message : String(e), toast("error", "No sample workspace", state.live.error), render();
     }
@@ -2186,14 +2226,6 @@ Suggest, do not order.` }
       toast("error", "Sign-out did not complete", e instanceof Error ? e.message : String(e));
     }
     disconnect(), toast("success", "Signed out", "This window now shows the offline sample.");
-  }
-  async function startLive() {
-    try {
-      let info = await call("session_info");
-      return state.live.server = info.server ?? "", info.signed_in && await connect2(), info;
-    } catch (e) {
-      return state.live.error = e instanceof Error ? e.message : String(e), null;
-    }
   }
   var savedPrefs = "", prefsTimer = null;
   async function loadPrefs() {
@@ -2207,9 +2239,9 @@ Suggest, do not order.` }
   function noticePrefs() {
     !state.desktop || !savedPrefs || JSON.stringify(state.prefs) === savedPrefs || (prefsTimer && clearTimeout(prefsTimer), prefsTimer = setTimeout(() => {
       prefsTimer = null;
-      let text = JSON.stringify(state.prefs);
-      call("prefs_save", { prefs: JSON.parse(text) }).then(() => {
-        savedPrefs = text;
+      let text2 = JSON.stringify(state.prefs);
+      call("prefs_save", { prefs: JSON.parse(text2) }).then(() => {
+        savedPrefs = text2;
       }).catch((e) => toast("error", "Preferences not saved", e instanceof Error ? e.message : String(e)));
     }, 800));
   }
@@ -2435,7 +2467,7 @@ Suggest, do not order.` }
   function iconButton(name2, label, onClick, o = {}) {
     return h("button", { type: "button", class: cx("icon-btn", o.active && "is-active", o.class), "aria-label": label, title: label, disabled: o.disabled, id: o.id, onClick }, icon(name2, o.size ?? 16));
   }
-  function toggle(on, onChange, label, o = {}) {
+  function toggle(on, onChange2, label, o = {}) {
     return h(
       "button",
       {
@@ -2446,12 +2478,12 @@ Suggest, do not order.` }
         "aria-label": label,
         disabled: o.disabled,
         id: o.id,
-        onClick: () => onChange(!on)
+        onClick: () => onChange2(!on)
       },
       h("span", { class: "switch-thumb" })
     );
   }
-  function checkbox(checked, onChange, label, o = {}) {
+  function checkbox(checked, onChange2, label, o = {}) {
     return h("input", {
       type: "checkbox",
       class: "check",
@@ -2461,13 +2493,13 @@ Suggest, do not order.` }
       id: o.id,
       disabled: o.disabled,
       onClick: (e) => e.stopPropagation(),
-      onChange: (e) => onChange(e.target.checked)
+      onChange: (e) => onChange2(e.target.checked)
     });
   }
-  function select(value, options, onChange, o = {}) {
+  function select(value, options, onChange2, o = {}) {
     return h(
       "select",
-      { class: cx("select", o.class), id: o.id, "aria-label": o.label, disabled: o.disabled, onChange: (e) => onChange(e.target.value) },
+      { class: cx("select", o.class), id: o.id, "aria-label": o.label, disabled: o.disabled, onChange: (e) => onChange2(e.target.value) },
       options.map(([v, l]) => h("option", { value: v, selected: v === value }, l))
     );
   }
@@ -2503,11 +2535,11 @@ Suggest, do not order.` }
     });
     return t.value = value, t;
   }
-  function pill(text, tone = "neutral", o = {}) {
-    return h("span", { class: cx("pill", `tone-${tone}`, o.mono !== !1 && "mono"), title: o.title }, h("span", { class: "pill-dot" }), text);
+  function pill(text2, tone = "neutral", o = {}) {
+    return h("span", { class: cx("pill", `tone-${tone}`, o.mono !== !1 && "mono"), title: o.title }, h("span", { class: "pill-dot" }), text2);
   }
-  function badge(text, tone = "neutral") {
-    return h("span", { class: cx("badge", `tone-${tone}`) }, text);
+  function badge(text2, tone = "neutral") {
+    return h("span", { class: cx("badge", `tone-${tone}`) }, text2);
   }
   function avatar(name2, agent2 = !1, size = "sm") {
     return h("span", { class: cx("avatar", `avatar-${size}`, agent2 && "is-agent"), title: name2, "aria-hidden": "true" }, agent2 ? icon("agent", size === "sm" ? 12 : 14) : initials(name2));
@@ -2526,30 +2558,30 @@ Suggest, do not order.` }
   function section(title, description, ...children2) {
     return h("section", { class: "ssection" }, h("h3", { class: "ssection-title" }, title), description ? h("p", { class: "ssection-desc" }, description) : null, ...children2);
   }
-  function empty(iconName, title, text, action) {
-    return h("div", { class: "empty" }, h("div", { class: "empty-icon" }, icon(iconName, 22)), h("div", { class: "empty-title" }, title), h("div", { class: "empty-text" }, text), action ?? null);
+  function empty(iconName, title, text2, action) {
+    return h("div", { class: "empty" }, h("div", { class: "empty-icon" }, icon(iconName, 22)), h("div", { class: "empty-title" }, title), h("div", { class: "empty-text" }, text2), action ?? null);
   }
   function notice(tone, ...children2) {
     return h("div", { class: cx("notice", `notice-${tone}`), role: tone === "error" ? "alert" : void 0 }, icon(tone === "success" ? "check" : tone === "info" ? "info" : "warning", 15), h("div", null, ...children2));
   }
-  function untrusted(label, text) {
-    return h("div", { class: "untrusted" }, h("div", { class: "untrusted-label" }, label), h("div", { class: "untrusted-text" }, text));
+  function untrusted(label, text2) {
+    return h("div", { class: "untrusted" }, h("div", { class: "untrusted-label" }, label), h("div", { class: "untrusted-text" }, text2));
   }
-  function segmented(value, options, onChange, label) {
+  function segmented(value, options, onChange2, label) {
     return h(
       "div",
       { class: "segmented", role: "radiogroup", "aria-label": label },
       options.map(
-        ([v, l, ic]) => h("button", { type: "button", role: "radio", "aria-checked": String(v === value), class: cx("seg", v === value && "is-on"), onClick: () => onChange(v) }, ic ? icon(ic, 14) : null, l ? h("span", null, l) : null)
+        ([v, l, ic]) => h("button", { type: "button", role: "radio", "aria-checked": String(v === value), class: cx("seg", v === value && "is-on"), onClick: () => onChange2(v) }, ic ? icon(ic, 14) : null, l ? h("span", null, l) : null)
       )
     );
   }
-  function tabs(value, options, onChange, label) {
+  function tabs(value, options, onChange2, label) {
     return h(
       "div",
       { class: "tabs", role: "tablist", "aria-label": label },
       options.map(
-        ([v, l, n]) => h("button", { type: "button", role: "tab", "aria-selected": String(v === value), class: cx("tab", v === value && "is-on"), onClick: () => onChange(v) }, l, n !== void 0 ? h("span", { class: "tab-count" }, String(n)) : null)
+        ([v, l, n]) => h("button", { type: "button", role: "tab", "aria-selected": String(v === value), class: cx("tab", v === value && "is-on"), onClick: () => onChange2(v) }, l, n !== void 0 ? h("span", { class: "tab-count" }, String(n)) : null)
       )
     );
   }
@@ -2612,12 +2644,12 @@ Suggest, do not order.` }
   function dialogOpen() {
     return dialog !== null;
   }
-  function confirmDialog(title, text, confirmLabel, onConfirm, o = {}) {
+  function confirmDialog(title, text2, confirmLabel, onConfirm, o = {}) {
     openDialog({
       title,
       plain: !0,
       width: 480,
-      body: () => h("div", { class: "dialog-text" }, text),
+      body: () => h("div", { class: "dialog-text" }, text2),
       actions: () => [
         button("Cancel", { onClick: closeDialog }),
         button(confirmLabel, {
@@ -3113,7 +3145,7 @@ Suggest, do not order.` }
     return state.db.notifications.filter((n) => !n.read).length;
   }
   function activityView() {
-    let ui = state.ui.activity, list2 = [...state.db.notifications].sort((a, b) => Number(a.read) - Number(b.read) || b.at - a.at), body = ui.tab === "notifications" ? list2.length ? h("div", { class: "list-card" }, list2.map((n) => h(
+    let ui = state.ui.activity, list2 = [...state.db.notifications].sort((a, b) => Number(a.read) - Number(b.read) || b.at - a.at), body2 = ui.tab === "notifications" ? list2.length ? h("div", { class: "list-card" }, list2.map((n) => h(
       "div",
       { class: cx("list-item notif", !n.read && "is-unread") },
       h("span", { class: "notif-icon" }, icon(KIND_ICON2[n.kind], 15)),
@@ -3133,7 +3165,7 @@ Suggest, do not order.` }
       tabs(ui.tab, [["notifications", "Notifications", unread()], ["activity", "All activity"]], (v) => {
         ui.tab = v, render();
       }, "Activity"),
-      h("div", { class: "tab-body" }, body)
+      h("div", { class: "tab-body" }, body2)
     );
   }
 
@@ -3262,7 +3294,7 @@ Suggest, do not order.` }
       h(
         "span",
         { class: "status-pills" },
-        state.live.mode === "connecting" ? pill("Connecting…", "info", { mono: !1, title: "Reading your workspace from the server" }) : isLive() ? pill(state.live.saving ? "Saving…" : state.db.remote?.visitor ? "Sample workspace" : "Live", state.live.saving ? "info" : "success", { mono: !1, title: state.db.remote?.visitor ? `Your own sample workspace on the server, until ${new Date(state.db.remote.visitor.expires_at).toLocaleString()}. Everything you do is saved there.` : "Showing your workspace on the server. Everything you do is saved there." }) : pill("Sample data", "warning", { mono: !1, title: "Offline sample: nothing leaves this window. See Settings, Accounts to use a server." }),
+        state.live.mode === "connecting" ? pill("Connecting…", "info", { mono: !1, title: "Reading your workspace" }) : isLive() ? pill(state.live.saving ? "Saving…" : state.live.env === "local" ? "On this computer" : state.db.remote?.visitor ? "Sample workspace" : "Live", state.live.saving ? "info" : "success", { mono: !1, title: state.live.env === "local" ? "Your workspace is on this computer: its own database and engine, no account, no network. Everything you do is saved here." : state.db.remote?.visitor ? `Your own sample workspace on the server, until ${new Date(state.db.remote.visitor.expires_at).toLocaleString()}. Everything you do is saved there.` : "Showing your workspace on the server. Everything you do is saved there." }) : pill("Sample data", "warning", { mono: !1, title: "Offline sample: nothing leaves this window. See Settings, Accounts to use a server." }),
         ds?.server ? h("button", { type: "button", class: "server-btn", title: "Open your workspace on this server in this window", onClick: () => {
           openServer().catch((e) => toast("error", e instanceof Error ? e.message : String(e)));
         } }, icon("globe", 13), new URL(ds.server).host, icon("external", 12)) : pill(ds ? "No server" : "Offline copy", "neutral", { mono: !1, title: ds ? "Choose a server in Settings, Accounts" : "This copy connects to nothing" }),
@@ -3421,6 +3453,246 @@ Suggest, do not order.` }
     );
   }
 
+  // client/src/data/files.ts
+  function office() {
+    let api = window.dynodocOffice;
+    if (!api) throw new Error("The file converter did not load. Close the app and open it again.");
+    return api;
+  }
+  var text = (e) => e instanceof Error ? e.message : String(e);
+  function fromBase64(b64) {
+    let bin = atob(b64), out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  function toBase64(bytes) {
+    let bin = "";
+    for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode(...bytes.subarray(i, i + 8192));
+    return btoa(bin);
+  }
+  function body(r, what) {
+    if (r.status >= 200 && r.status < 300) return r.body;
+    let detail = r.body && typeof r.body == "object" && typeof r.body.error == "string" ? r.body.error : "";
+    throw new Error(detail && detail !== "forbidden" ? detail : r.status === 403 ? `Your role does not allow this (${what}).` : `The workspace could not ${what} (${r.status}).`);
+  }
+  var EXT2 = { document: "docx", spreadsheet: "xlsx", presentation: "pptx" }, EDITOR = { document: "Word", spreadsheet: "Excel", presentation: "PowerPoint" };
+  function chunks(ops, limit = 4e5) {
+    let out = [], cur = [], size = 0;
+    for (let op of ops) {
+      let n = JSON.stringify(op).length;
+      cur.length && (size + n > limit || cur.length >= 500) && (out.push(cur), cur = [], size = 0), cur.push(op), size += n;
+    }
+    return cur.length && out.push(cur), out;
+  }
+  async function addFile(t, projectId, token) {
+    let file = await call("file_read", { token }), bytes = fromBase64(file.base64), imported = await office().importFile(bytes, file.name), title = file.name.replace(/\.[^.]+$/, "").slice(0, 200) || "Untitled", id = body(await t.apiSend("POST", "documents", { title }), "create the file").id;
+    try {
+      body(await t.apiSend("POST", `documents/${id}/metadata`, { settings: { kind: imported.kind, import_warnings: imported.warnings } }), "describe the file");
+      let seq = 0;
+      for (let part of chunks(imported.ops)) {
+        let events = body(await t.apiSend("POST", `documents/${id}/batch`, { ops: part, base_seq: seq }), "add the content").events ?? [];
+        events.length && (seq = events[events.length - 1].seq);
+      }
+      try {
+        body(await t.apiSend("POST", `documents/${id}/uploads`, { filename: file.name, content_type: "application/octet-stream", content: file.base64, report: { warnings: imported.warnings } }), "keep the original");
+      } catch {
+      }
+      body(await t.apiSend("POST", `documents/${id}/location`, { space_id: projectId }), "put the file in the project");
+      try {
+        await t.svcSend("POST", "notes", { document_id: id, branch: "main", from_seq: 1, to_seq: seq, kind: "revision", summary: `Added ${file.name}`.slice(0, 200), description: `Imported from ${file.name} on this computer.` });
+      } catch {
+      }
+      return { id, title, kind: imported.kind, seq, warnings: imported.warnings };
+    } catch (e) {
+      throw new Error(`${file.name} could not be added: ${text(e)} The partly added file is in the project's trash if it appears at all.`);
+    }
+  }
+  async function addFilesDialog() {
+    if (!state.desktop) return toast("info", "Add files", "Adding files needs the Dynodoc desktop app.");
+    let projectId = state.ui.projectId, picked;
+    try {
+      picked = await call("files_pick", { purpose: "import" });
+    } catch (e) {
+      return toast("error", "The file dialog did not open", text(e));
+    }
+    picked.length && await addPicked(projectId, picked);
+  }
+  async function addPicked(projectId, picked, onAdded) {
+    let t = currentTransport();
+    state.live.saving = !0, render();
+    let problems = [], warnings = [], added = 0;
+    for (let p2 of picked)
+      try {
+        let a = await addFile(t, projectId, p2.token);
+        added += 1;
+        for (let w of a.warnings) warnings.includes(w) || warnings.push(w);
+        await onAdded?.(p2, a);
+      } catch (e) {
+        problems.push(text(e));
+      }
+    return state.live.saving = !1, await refresh(!0), added && toast("success", `Added ${added} file${added === 1 ? "" : "s"}`, warnings[0] ?? "Each file keeps its history from here on."), problems.length && toast("error", "Some files were not added", problems.join(" ")), added;
+  }
+  async function exportFile(docId, open2) {
+    let d = state.db.docs.find((x) => x.id === docId), project2 = state.db.projects.find((p2) => p2.id === d?.projectId);
+    if (!d || !project2) return null;
+    try {
+      let t = currentTransport(), detail = body(await t.apiGet(`documents/${docId}`), "read the file"), seq = detail.latest_seq ?? 0, bytes = await office().exportFile(d.kind, detail.state, detail.title ?? d.title, { documentId: docId, seq }), safe = (detail.title ?? d.title).replace(/[\\/:*?"<>|]+/g, " ").trim() || "Document", out = await call("file_export", {
+        projectId: project2.id,
+        projectName: project2.name,
+        name: `${safe} (v${seq})`,
+        ext: EXT2[d.kind] ?? "docx",
+        base64: toBase64(bytes),
+        open: open2
+      });
+      return toast("success", open2 && out.opened ? `Opened in ${EDITOR[d.kind]}` : "Copy saved", out.path), out.path;
+    } catch (e) {
+      return toast("error", "The copy could not be written", text(e)), null;
+    }
+  }
+  var watching = !1, busy2 = !1;
+  function startWatch() {
+    watching || !state.desktop || (watching = !0, setInterval(() => {
+      busy2 || state.live.env !== "local" || state.live.mode !== "live" || tick();
+    }, 2500));
+  }
+  async function tick() {
+    busy2 = !0;
+    try {
+      let found = await call("watch_poll");
+      for (let c of found) await onChange(c);
+    } catch {
+    } finally {
+      busy2 = !1;
+    }
+  }
+  async function onChange(c) {
+    if (c.kind === "new") {
+      state.watch.newFiles = state.watch.newFiles.filter((n) => !(n.project_id === c.project_id && n.rel_path === c.rel_path)), state.watch.newFiles.push(c), render();
+      return;
+    }
+    await pushSaved(c);
+  }
+  async function pushSaved(c) {
+    let t = currentTransport(), label = c.name;
+    try {
+      let file = await call("file_read", { token: c.token }), bytes = fromBase64(file.base64), origin = await office().originOf(bytes), docId = c.document_id ?? origin.documentId ?? null, doc2 = docId ? state.db.docs.find((d) => d.id === docId && d.projectId === c.project_id) : void 0;
+      if (!doc2) {
+        state.watch.newFiles.push({ ...c, kind: "new" }), render();
+        return;
+      }
+      let latest = body(await t.apiGet(`documents/${doc2.id}/history-points`), "read the history").latest_seq ?? 0, baseSeq = Math.min(latest, c.base_seq ?? origin.seq ?? latest), baseState = body(await t.apiGet(`documents/${doc2.id}/state?through_seq=${baseSeq}`), "read the file").state, plan2 = (await office().planPush(bytes, file.name, baseState, doc2.title)).plan;
+      if (!plan2.ops.length) {
+        await call("watch_seen", { projectId: c.project_id, relPath: c.rel_path, token: c.token, documentId: doc2.id, baseSeq: latest }), toast("info", `${label} was saved`, "Nothing in it differs from the project, so there is nothing to review.");
+        return;
+      }
+      let stamp = (/* @__PURE__ */ new Date()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), name2 = `Edited in ${EDITOR[doc2.kind]} ${stamp}`, made = body(
+        await t.apiSend("POST", `documents/${doc2.id}/change-requests`, {
+          name: name2,
+          note: `Saved from ${file.name} in the project's folder.`,
+          base_seq: baseSeq,
+          ops: plan2.ops,
+          submit: !1,
+          source: { kind: "file", filename: file.name.slice(0, 255), base_reason: "file", anchored: plan2.anchored, summary: summarise(plan2) }
+        }),
+        "keep the changes"
+      );
+      await call("watch_seen", { projectId: c.project_id, relPath: c.rel_path, token: c.token, documentId: doc2.id, baseSeq: latest }), state.watch.recent.unshift({ docId: doc2.id, title: doc2.title, name: file.name, draftId: String(made.id), draftName: name2, changes: plan2.changes.length, at: Date.now() }), state.watch.recent = state.watch.recent.slice(0, 20), await refresh(!0), toast("success", `${label} was saved`, `${plan2.changes.length} change${plan2.changes.length === 1 ? "" : "s"} are in the draft "${name2}". Review them under Changes and send them for review.`);
+    } catch (e) {
+      toast("error", `${label} could not be read as changes`, text(e));
+    }
+  }
+  function summarise(plan2) {
+    let s2 = { added: 0, edited: 0, removed: 0, moved: 0 };
+    for (let ch of plan2.changes) s2[ch.kind] += 1;
+    return s2;
+  }
+  async function addFolderFiles(projectId) {
+    let mine = state.watch.newFiles.filter((n) => n.project_id === projectId);
+    if (!mine.length) return;
+    state.watch.newFiles = state.watch.newFiles.filter((n) => n.project_id !== projectId), render();
+    let byToken = new Map(mine.map((m) => [m.token, m]));
+    await addPicked(
+      projectId,
+      mine.map((m) => ({ token: m.token, name: m.name, size: m.size, path: m.rel_path })),
+      async (p2, a) => {
+        let m = byToken.get(p2.token);
+        m && await call("watch_seen", { projectId, relPath: m.rel_path, token: m.token, documentId: a.id, baseSeq: a.seq });
+      }
+    );
+  }
+  function ignoreFolderFiles(projectId) {
+    state.watch.newFiles = state.watch.newFiles.filter((n) => n.project_id !== projectId), render();
+  }
+  async function chooseFolder(projectId) {
+    try {
+      let picked = await call("files_pick", { purpose: "folder" });
+      if (!picked.length) return;
+      let where = await call("folder_bind", { projectId, token: picked[0].token });
+      toast("success", "Folder bound", `Word, Excel and PowerPoint files saved in ${where} are picked up as changes.`), state.watch.folders[projectId] = where, render();
+    } catch (e) {
+      toast("error", "The folder could not be used", text(e));
+    }
+  }
+  async function stopWatching(projectId) {
+    try {
+      await call("folder_unbind", { projectId }), delete state.watch.folders[projectId], state.watch.newFiles = state.watch.newFiles.filter((n) => n.project_id !== projectId), toast("success", "Folder released", "Files in it are no longer watched. Nothing in it was changed."), render();
+    } catch (e) {
+      toast("error", "The folder could not be released", text(e));
+    }
+  }
+  async function loadFolders() {
+    if (!(!state.desktop || state.live.env !== "local")) {
+      for (let p2 of state.db.projects)
+        try {
+          let s2 = await call("folder_status", { projectId: p2.id });
+          s2 ? state.watch.folders[p2.id] = s2.path : delete state.watch.folders[p2.id];
+        } catch {
+        }
+      render();
+    }
+  }
+
+  // client/src/views/watchbar.ts
+  function watchNotices(projectId) {
+    let fresh = state.watch.newFiles.filter((n) => n.project_id === projectId), recent = state.watch.recent.filter((r) => state.db.docs.some((d) => d.id === r.docId && d.projectId === projectId)).slice(0, 3);
+    if (!fresh.length && !recent.length) return null;
+    let out = [];
+    if (fresh.length) {
+      let names = fresh.slice(0, 3).map((f) => f.name).join(", ") + (fresh.length > 3 ? ` and ${fresh.length - 3} more` : "");
+      out.push(
+        h(
+          "div",
+          { class: "watch-notice", id: "watch-new" },
+          notice("info", h("strong", null, `${fresh.length} file${fresh.length === 1 ? "" : "s"} in the project's folder ${fresh.length === 1 ? "is" : "are"} not in the project yet`), h("div", { class: "muted small" }, names)),
+          h("div", { class: "watch-actions" }, button("Add to the project", { variant: "primary", size: "sm", id: "watch-add", onClick: () => void addFolderFiles(projectId) }), button("Ignore", { size: "sm", onClick: () => ignoreFolderFiles(projectId) }))
+        )
+      );
+    }
+    for (let r of recent)
+      out.push(
+        h(
+          "div",
+          { class: "watch-notice" },
+          notice("success", h("strong", null, `${r.name} was saved in its editor ${short(r.at)} ago`), h("div", { class: "muted small" }, `${r.changes} change${r.changes === 1 ? "" : "s"} are in the draft "${r.draftName}" of ${r.title}.`)),
+          h(
+            "div",
+            { class: "watch-actions" },
+            button("Review the changes", {
+              variant: "primary",
+              size: "sm",
+              onClick: () => {
+                state.db.drafts.some((d) => d.id === r.draftId) && switchBranch(r.draftId), state.watch.recent = state.watch.recent.filter((x) => x !== r), go("history");
+              }
+            }),
+            button("Dismiss", { size: "sm", onClick: () => {
+              state.watch.recent = state.watch.recent.filter((x) => x !== r), render();
+            } })
+          )
+        )
+      );
+    return h("div", { class: "watch-notices" }, out);
+  }
+
   // client/src/views/documents.ts
   var HOSTS_FOR = {
     document: ["word", "google-docs"],
@@ -3431,6 +3703,10 @@ Suggest, do not order.` }
     return d.connections.filter((k) => !k.revoked && k.expiresAt > Date.now());
   }
   function openInEditor(docId) {
+    if (state.desktop && isLive()) {
+      exportFile(docId, !0);
+      return;
+    }
     let d = doc(state.db, docId), pref = state.prefs.editorFor[d.kind], host = HOSTS_FOR[d.kind][pref === "office" ? 0 : 1], keys2 = activeKeys(d).filter((k) => k.host === host);
     openDialog({
       title: `Open in ${HOST_LABEL[host]}`,
@@ -3514,7 +3790,7 @@ Suggest, do not order.` }
           } }),
           button(`Open in ${HOST_LABEL[HOSTS_FOR[d.kind][state.prefs.editorFor[d.kind] === "office" ? 0 : 1]]}`, { icon: "external", size: "sm", onClick: () => openInEditor(d.id) }),
           button("New draft…", { icon: "branch", size: "sm", onClick: () => newDraftDialog(d.id) }),
-          button("Download", { icon: "down", size: "sm", disabled: !0, title: "Exporting a native file is in the web workspace; not in this release of the client." })
+          state.desktop && isLive() ? button("Save a copy…", { icon: "down", size: "sm", id: "doc-save-copy", title: "Writes a Word, Excel or PowerPoint copy of the team version to your folder, without opening it.", onClick: () => void exportFile(d.id, !1) }) : button("Download", { icon: "down", size: "sm", disabled: !0, title: "Exporting a native file is in the web workspace; not in this release of the client." })
         )
       ),
       h("div", { class: "section-title" }, "Content at main", h("span", { class: "muted small" }, " · read only")),
@@ -3623,11 +3899,11 @@ Suggest, do not order.` }
     );
   }
   function replyDialog(t) {
-    let text = "";
-    openDialog({ title: "Reply", width: 480, body: () => textarea(text, (v) => {
-      text = v;
+    let text2 = "";
+    openDialog({ title: "Reply", width: 480, body: () => textarea(text2, (v) => {
+      text2 = v;
     }, { id: "reply-text", rows: 3 }), actions: () => [button("Cancel", { onClick: closeDialog }), button("Reply", { variant: "primary", onClick: () => {
-      text.trim() && (t.replies.push({ authorId: state.db.me, text: text.trim(), at: Date.now() }), closeDialog());
+      text2.trim() && (t.replies.push({ authorId: state.db.me, text: text2.trim(), at: Date.now() }), closeDialog());
     } })] });
   }
   function people(d) {
@@ -3714,10 +3990,11 @@ Suggest, do not order.` }
       return h(
         "div",
         { class: "page" },
-        viewHeader("Documents", `${docs.length} file${docs.length === 1 ? "" : "s"} in ${project(state.db, state.ui.projectId).name}`, button("New draft…", { icon: "branch", onClick: () => newDraftDialog() }), button("Add file", { icon: "plus", disabled: !0, title: "Uploading files is in the web workspace and the add-ins; not in this release of the client." })),
-        docs.length ? h("div", { class: "card flush" }, fileTable(docs)) : empty("documents", "No files", "Add a file in the web workspace or from an add-in.")
+        viewHeader("Documents", `${docs.length} file${docs.length === 1 ? "" : "s"} in ${project(state.db, state.ui.projectId).name}`, button("New draft…", { icon: "branch", onClick: () => newDraftDialog() }), state.desktop && isLive() ? button("Add files…", { icon: "plus", variant: "primary", id: "add-files", onClick: () => void addFilesDialog() }) : button("Add file", { icon: "plus", disabled: !0, title: "Uploading files is in the web workspace and the add-ins; not in this release of the client." })),
+        watchNotices(state.ui.projectId),
+        docs.length ? h("div", { class: "card flush" }, fileTable(docs)) : empty("documents", "No files yet", isLocal() ? "Add Word, Excel or PowerPoint files from your computer. Each keeps its history from the moment you add it." : "Add a file in the web workspace or from an add-in.", state.desktop && isLive() ? button("Add files…", { variant: "primary", icon: "plus", onClick: () => void addFilesDialog() }) : void 0)
       );
-    let counts = { drafts: state.db.drafts.filter((x) => x.docId === sel.id).length, versions: sel.versions.length, disc: sel.discussions.filter((t) => !t.resolved).length }, body = ui.tab === "versions" ? versions(sel) : ui.tab === "drafts" ? drafts(sel) : ui.tab === "discussions" ? discussions(sel) : ui.tab === "people" ? people(sel) : ui.tab === "sync" ? sync3(sel) : overview(sel);
+    let counts = { drafts: state.db.drafts.filter((x) => x.docId === sel.id).length, versions: sel.versions.length, disc: sel.discussions.filter((t) => !t.resolved).length }, body2 = ui.tab === "versions" ? versions(sel) : ui.tab === "drafts" ? drafts(sel) : ui.tab === "discussions" ? discussions(sel) : ui.tab === "people" ? people(sel) : ui.tab === "sync" ? sync3(sel) : overview(sel);
     return h(
       "div",
       { class: "page" },
@@ -3728,7 +4005,7 @@ Suggest, do not order.` }
       tabs(ui.tab, [["overview", "Overview"], ["versions", "Versions", counts.versions], ["drafts", "Drafts", counts.drafts], ["discussions", "Discussions", counts.disc], ["people", "People & rules"], ["sync", "Sync & connections"]], (v) => {
         ui.tab = v, render();
       }, "File sections"),
-      h("div", { class: "tab-body" }, body)
+      h("div", { class: "tab-body" }, body2)
     );
   }
 
@@ -3767,9 +4044,9 @@ Suggest, do not order.` }
       { label: "Discard change…", icon: "trash", danger: !0, onSelect: () => discardOne(w) }
     ]);
   }
-  async function copy(text) {
+  async function copy(text2) {
     try {
-      await navigator.clipboard.writeText(text), toast("success", "Copied", text);
+      await navigator.clipboard.writeText(text2), toast("success", "Copied", text2);
     } catch {
       toast("warning", "Copying is not available here");
     }
@@ -3865,9 +4142,11 @@ Suggest, do not order.` }
   }
   function nothingHere() {
     let ctx2 = branchContext(), cards = [];
-    return (ctx2.ahead ?? 0) > 0 && cards.push(h("div", { class: "suggest" }, h("div", null, h("div", { class: "suggest-title" }, `Push ${ctx2.ahead} commit${ctx2.ahead === 1 ? "" : "s"} to the server`), h("div", { class: "suggest-text" }, "Your commits are on this computer only until you push.")), button("Push", { variant: "primary", icon: "up", onClick: sync2 }))), ctx2.kind === "draft" && ctx2.state === "private" && !(ctx2.ahead ?? 0) && cards.push(h("div", { class: "suggest" }, h("div", null, h("div", { class: "suggest-title" }, "Send this draft for review"), h("div", { class: "suggest-text" }, "Open a change request so the team can review and merge it.")), button("Send for review", { onClick: () => sendForReviewDialog() }))), cards.push(h("div", { class: "suggest" }, h("div", null, h("div", { class: "suggest-title" }, "Fetch from the server"), h("div", { class: "suggest-text" }, "See new revisions, reviews and change requests.")), button("Fetch", { icon: "sync", onClick: fetchNow }))), cards.push(h("div", { class: "suggest" }, h("div", null, h("div", { class: "suggest-title" }, "Edit in your editor"), h("div", { class: "suggest-text" }, "Editing happens in Word, Excel, PowerPoint or Google’s editors with the Dynodoc add-in. Captured edits appear here.")), button("Open a file…", { onClick: () => {
+    return (ctx2.ahead ?? 0) > 0 && cards.push(h("div", { class: "suggest" }, h("div", null, h("div", { class: "suggest-title" }, `Push ${ctx2.ahead} commit${ctx2.ahead === 1 ? "" : "s"} to the server`), h("div", { class: "suggest-text" }, "Your commits are on this computer only until you push.")), button("Push", { variant: "primary", icon: "up", onClick: sync2 }))), ctx2.kind === "draft" && ctx2.state === "private" && !(ctx2.ahead ?? 0) && cards.push(h("div", { class: "suggest" }, h("div", null, h("div", { class: "suggest-title" }, "Send this draft for review"), h("div", { class: "suggest-text" }, "Open a change request so the team can review and merge it.")), button("Send for review", { onClick: () => sendForReviewDialog() }))), isLocal() ? (cards.push(h("div", { class: "suggest" }, h("div", null, h("div", { class: "suggest-title" }, "Edit a file in Word, Excel or PowerPoint"), h("div", { class: "suggest-text" }, "Open a file from Documents; the copy opens in the program your computer uses for it. When you save it there, the changes arrive as a draft to review. Bind the project to a folder to pick up files you save yourself.")), button("Open Documents", { onClick: () => {
       state.ui.view = "documents", render();
-    } }))), h("div", { class: "no-changes" }, empty("check", "No captured changes", `Nothing waiting on ${branchLabel()}. Here are some friendly suggestions for what to do next.`), h("div", { class: "suggests" }, cards));
+    } }))), h("div", { class: "no-changes" }, empty("check", "Nothing waiting", `No captured changes on ${branchLabel()}. Edits you save in an editor arrive as drafts, and the changes you make in this app are committed as you go.`), h("div", { class: "suggests" }, cards))) : (cards.push(h("div", { class: "suggest" }, h("div", null, h("div", { class: "suggest-title" }, "Fetch from the server"), h("div", { class: "suggest-text" }, "See new revisions, reviews and change requests.")), button("Fetch", { icon: "sync", onClick: fetchNow }))), cards.push(h("div", { class: "suggest" }, h("div", null, h("div", { class: "suggest-title" }, "Edit in your editor"), h("div", { class: "suggest-text" }, "Editing happens in Word, Excel, PowerPoint or Google’s editors with the Dynodoc add-in. Captured edits appear here.")), button("Open a file…", { onClick: () => {
+      state.ui.view = "documents", render();
+    } }))), h("div", { class: "no-changes" }, empty("check", "No captured changes", `Nothing waiting on ${branchLabel()}. Here are some friendly suggestions for what to do next.`), h("div", { class: "suggests" }, cards)));
   }
   function changesView() {
     let c = state.ui.changes, branch = currentBranch(), all = working(state.db, state.ui.projectId, branch), q = c.filter.toLowerCase(), shown = all.filter((w) => !q || `${docOf(w.docId).filename} ${labelOf(w)}`.toLowerCase().includes(q)), unstaged = shown.filter((w) => !w.staged), staged = shown.filter((w) => w.staged);
@@ -3919,7 +4198,8 @@ Suggest, do not order.` }
         )
       );
     }
-    return h("div", { class: "split-view" }, left, right);
+    let split2 = h("div", { class: "split-view" }, left, right), bar = watchNotices(state.ui.projectId);
+    return bar ? h("div", { class: "split-wrap" }, bar, split2) : split2;
   }
 
   // client/src/views/history.ts
@@ -4253,15 +4533,15 @@ Suggest, do not order.` }
     });
   }
   function commentDialog(r, blockId) {
-    let text = "", label = blocksOf(state.db, r.docId, r.draftId).find((b) => b.id === blockId)?.label ?? blockId;
+    let text2 = "", label = blocksOf(state.db, r.docId, r.draftId).find((b) => b.id === blockId)?.label ?? blockId;
     openDialog({
       title: `Comment on ${label}`,
       width: 520,
-      body: () => textarea(text, (v) => {
-        text = v;
+      body: () => textarea(text2, (v) => {
+        text2 = v;
       }, { id: "block-comment", rows: 4, placeholder: "Leave a comment on this change" }),
       actions: () => [button("Cancel", { onClick: closeDialog }), button("Comment", { variant: "primary", onClick: () => {
-        act(() => comment(state.db, r.id, text, blockId), "Comment added") && closeDialog();
+        act(() => comment(state.db, r.id, text2, blockId), "Comment added") && closeDialog();
       } })]
     });
   }
@@ -4474,6 +4754,22 @@ Suggest, do not order.` }
       h("div", { class: "project-card-meta" }, h("span", null, `${docs.length} files`), h("span", null, `${open2} open request${open2 === 1 ? "" : "s"}`), h("span", null, `${p2.issues.filter((i) => i.state === "open").length} open issues`), h("span", null, `You: ${ROLE_LABEL[p2.role]}`), h("span", { class: "muted" }, `updated ${short(p2.updatedAt)}`))
     );
   }
+  function folderCard(p2) {
+    if (!state.desktop || !isLocal()) return null;
+    let where = state.watch.folders[p2.id];
+    return h(
+      "div",
+      { class: "card pad folder-card", id: "project-folder" },
+      h("div", { class: "card-head" }, icon("projects", 16), h("strong", null, "Project folder")),
+      where ? h("p", { class: "mono small folder-path" }, where) : h("p", { class: "muted small" }, "Not bound. Bind a folder and Word, Excel and PowerPoint files saved in it are picked up as changes to review. Until you do, copies you open from Documents are written to the Dynodoc folder in your Documents, in a folder named for the project."),
+      h(
+        "div",
+        { class: "row-actions" },
+        button(where ? "Choose another folder…" : "Choose a folder…", { size: "sm", variant: where ? "secondary" : "primary", id: "folder-choose", onClick: () => void chooseFolder(p2.id) }),
+        where ? button("Stop watching", { size: "sm", onClick: () => void stopWatching(p2.id) }) : null
+      )
+    );
+  }
   function overview2(p2) {
     let contributors = /* @__PURE__ */ new Map(), docIds = new Set(docsOf(state.db, p2.id).map((d) => d.id));
     for (let c of state.db.commits) docIds.has(c.docId) && contributors.set(c.authorId, (contributors.get(c.authorId) ?? 0) + 1);
@@ -4491,6 +4787,7 @@ Suggest, do not order.` }
             p2.watch = v, render();
           }, { label: "Watch" })
         )),
+        folderCard(p2),
         h("div", { class: "section-title" }, "Files"),
         h("div", { class: "list-card" }, docsOf(state.db, p2.id).map((d) => h("div", { class: "list-item" }, icon(d.kind === "document" ? "word" : d.kind === "spreadsheet" ? "sheet" : "slides", 15), h("div", { class: "grow" }, h("strong", null, d.filename)), h("span", { class: "mono muted" }, `r${mainSeq(state.db, d.id)}`))))
       ),
@@ -4729,7 +5026,7 @@ Suggest, do not order.` }
         list2.length ? h("div", { class: "project-grid" }, list2.map(projectCard)) : empty("projects", "No projects match", "Try another filter, or create a project.")
       );
     }
-    let body = ui.tab === "issues" ? issues(sel) : ui.tab === "people" ? people2(sel) : ui.tab === "rules" ? rules(sel) : ui.tab === "agents" ? agents(sel) : ui.tab === "activity" ? projectActivity(sel) : overview2(sel);
+    let body2 = ui.tab === "issues" ? issues(sel) : ui.tab === "people" ? people2(sel) : ui.tab === "rules" ? rules(sel) : ui.tab === "agents" ? agents(sel) : ui.tab === "activity" ? projectActivity(sel) : overview2(sel);
     return h(
       "div",
       { class: "page" },
@@ -4740,13 +5037,13 @@ Suggest, do not order.` }
       tabs(ui.tab, [["overview", "Overview"], ["issues", "Issues", sel.issues.filter((i) => i.state === "open").length], ["people", "People", sel.members.length], ["rules", "Review rules"], ["agents", "AI agents"], ["activity", "Activity"]], (v) => {
         ui.tab = v, ui.issue = null, render();
       }, "Project sections"),
-      h("div", { class: "tab-body" }, body)
+      h("div", { class: "tab-body" }, body2)
     );
   }
 
   // client/src/views/connectors.ts
   function installSteps(c) {
-    let office = c.host === "word" || c.host === "excel" || c.host === "powerpoint";
+    let office2 = c.host === "word" || c.host === "excel" || c.host === "powerpoint";
     openDialog({
       title: `Install the ${c.name}`,
       width: 600,
@@ -4754,7 +5051,7 @@ Suggest, do not order.` }
         h(
           "ol",
           { class: "steps" },
-          office ? [
+          office2 ? [
             h("li", null, "Download the add-in manifest for your server from the web workspace (Connectors, Add Dynodoc to your editor)."),
             h("li", null, "In the editor: Insert, Add-ins, My add-ins, Upload my add-in, and choose the manifest. An administrator can deploy it for everyone instead."),
             h("li", null, 'Open a file, open the Dynodoc pane and choose Sign in to Dynodoc. Compare the pairing code, approve the connection in your browser, then choose "I approved this connection".'),
@@ -4830,8 +5127,8 @@ Suggest, do not order.` }
   function name(db, id) {
     return person(db, id).name;
   }
-  function plan(db, projectId, branch, text) {
-    let t = text.toLowerCase(), open2 = () => db.requests.filter((r) => r.projectId === projectId && r.status === "open");
+  function plan(db, projectId, branch, text2) {
+    let t = text2.toLowerCase(), open2 = () => db.requests.filter((r) => r.projectId === projectId && r.status === "open");
     if (/\bmerge|approve|decline\b/.test(t) && !/summar|comment/.test(t)) {
       let num = /#?(\d+)/.exec(t)?.[1], r = db.requests.find((x) => x.projectId === projectId && String(x.number) === num) ?? open2()[0];
       return {
@@ -5013,22 +5310,22 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
     let a = state.ui.agent;
     return a.threads.find((t) => t.id === a.active) ?? newThread();
   }
-  function inline(text) {
-    return text.split(/(\*\*[^*]+\*\*)/g).map((part) => part.startsWith("**") && part.endsWith("**") ? h("strong", null, part.slice(2, -2)) : part);
+  function inline(text2) {
+    return text2.split(/(\*\*[^*]+\*\*)/g).map((part) => part.startsWith("**") && part.endsWith("**") ? h("strong", null, part.slice(2, -2)) : part);
   }
-  function prose(text) {
+  function prose(text2) {
     let out = [], list2 = null;
-    for (let line of text.split(`
+    for (let line of text2.split(`
 `))
       line.startsWith("- ") ? (list2 || (list2 = h("ul", null), out.push(list2)), list2.appendChild(h("li", null, inline(line.slice(2))))) : (list2 = null, line.trim() && out.push(h("p", null, inline(line))));
     return h("div", { class: "prose" }, out);
   }
-  function send(text) {
+  function send(text2) {
     let t = current2();
-    if (!text.trim() || t.working) return;
-    let user = { id: `m${Date.now()}`, role: "user", text: text.trim(), at: Date.now() };
-    t.messages.push(user), t.title === "New thread" && (t.title = text.trim().slice(0, 48)), state.ui.agent.draft = "", t.working = !0, render();
-    let p2 = plan(state.db, state.ui.projectId, currentBranch(), text), { calls, refused } = execute(p2, t.access, state.prefs.agentTools), total = calls.reduce((n, c) => n + c.ms, 0);
+    if (!text2.trim() || t.working) return;
+    let user = { id: `m${Date.now()}`, role: "user", text: text2.trim(), at: Date.now() };
+    t.messages.push(user), t.title === "New thread" && (t.title = text2.trim().slice(0, 48)), state.ui.agent.draft = "", t.working = !0, render();
+    let p2 = plan(state.db, state.ui.projectId, currentBranch(), text2), { calls, refused } = execute(p2, t.access, state.prefs.agentTools), total = calls.reduce((n, c) => n + c.ms, 0);
     setTimeout(() => {
       let out = p2.finish(refused);
       t.messages.push({ id: `m${Date.now()}a`, role: "agent", text: out.text, at: Date.now(), calls, card: out.card }), t.working = !1, render();
@@ -5405,7 +5702,7 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
           ["document", "Documents", "word", "google-docs"],
           ["spreadsheet", "Spreadsheets", "excel", "google-sheets"],
           ["presentation", "Presentations", "powerpoint", "google-slides"]
-        ].map(([k, label, office, google]) => row(label, null, select(p().editorFor[k], [["office", HOST_LABEL[office]], ["google", HOST_LABEL[google]]], (v) => set(() => p().editorFor[k] = v), { label })))
+        ].map(([k, label, office2, google]) => row(label, null, select(p().editorFor[k], [["office", HOST_LABEL[office2]], ["google", HOST_LABEL[google]]], (v) => set(() => p().editorFor[k] = v), { label })))
       )),
       section("Add-ins", "Install state as Dynodoc knows it: a file is connected when its add-in holds a live connection key.", h(
         "div",
@@ -5757,6 +6054,139 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
     );
   }
 
+  // client/src/data/local.ts
+  var sleep2 = (n) => new Promise((r) => setTimeout(r, n));
+  function take(s2) {
+    let l = state.local;
+    l.phase = s2.phase, l.step = s2.step, l.detail = s2.detail ?? "", l.firstRun = s2.first_run, l.folder = s2.folder, l.secretsIn = s2.secrets_in, l.restarts = s2.engine_restarts, l.profile = s2.profile;
+  }
+  async function readLocal() {
+    try {
+      let s2 = await call("local_status");
+      return take(s2), s2;
+    } catch {
+      return null;
+    }
+  }
+  async function startLocalWorkspace() {
+    state.local.splash = !0, state.live.mode = "connecting", render();
+    for (let i = 0; i < 3e3; i++) {
+      let s2 = await readLocal();
+      if (!s2)
+        return state.local.phase = "failed", state.local.detail = "The app did not answer. Close it and open it again.", render(), !1;
+      if (s2.phase === "ready") break;
+      if (s2.phase === "failed")
+        return state.live.mode = "offline", render(), !1;
+      render(), await sleep2(s2.phase === "profile" ? 700 : 350);
+    }
+    return connectLocal();
+  }
+  async function connectLocal() {
+    let ok2 = await connectEnv("local");
+    return ok2 ? (state.local.splash = !1, state.live.server = "", render()) : (state.local.phase = "failed", state.local.detail = state.live.error || "The local workspace could not be read.", render()), ok2;
+  }
+  async function createProfile() {
+    let f = state.local.form;
+    if (!f.busy) {
+      if (!f.name.trim()) {
+        f.error = "Enter your name.", render();
+        return;
+      }
+      f.busy = !0, f.error = "", render();
+      try {
+        await call("local_create_profile", { name: f.name, email: f.email.trim() || null });
+        let t = transportFor("local"), projects = await t.apiGet("projects");
+        if (!(projects.status === 200 && Array.isArray(projects.body?.items) && projects.body.items.length > 0)) {
+          let name2 = f.project.trim() || "My documents", made = await t.apiSend("POST", "projects", { name: name2, description: "" });
+          if (made.status < 200 || made.status >= 300) throw new Error(typeof made.body?.error == "string" ? made.body.error : "The first project could not be created.");
+        }
+        await readLocal(), await connectLocal();
+      } catch (e) {
+        f.error = e instanceof Error ? e.message : String(e);
+      } finally {
+        f.busy = !1, render();
+      }
+    }
+  }
+  async function retryLocal() {
+    state.local.phase = "starting", state.local.step = "Starting again", state.local.detail = "", render();
+    try {
+      await call("local_retry");
+    } catch (e) {
+      toast("error", "Could not start again", e instanceof Error ? e.message : String(e));
+    }
+    await startLocalWorkspace();
+  }
+  async function openLocalFolder() {
+    try {
+      await call("local_open_folder");
+    } catch (e) {
+      toast("error", "Could not open the folder", e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  // client/src/views/splash.ts
+  function card(...children2) {
+    return h(
+      "div",
+      { class: "splash" },
+      h("div", { class: "splash-card card" }, h("div", { class: "splash-brand" }, h("img", { src: "mark.svg", alt: "", width: 22, height: 22 }), h("span", null, "Dynodoc")), ...children2)
+    );
+  }
+  function starting() {
+    let l = state.local;
+    return card(
+      h("div", { class: "splash-step", role: "status" }, icon("sync", 16, "icon spin"), h("span", null, l.step || "Starting")),
+      h("p", { class: "muted small" }, l.firstRun ? "The first start makes your local database and can take a minute or two. It happens once." : "Your files are on this computer; nothing is sent anywhere.")
+    );
+  }
+  function profileForm() {
+    let f = state.local.form;
+    return card(
+      h("h1", { class: "splash-title" }, "Welcome to Dynodoc"),
+      h("p", { class: "muted" }, "Everything here stays on this computer: your documents, their history and your reviews live in a database the app keeps for you. You do not need an account. You can sign in to a server later to share and sync."),
+      h(
+        "form",
+        {
+          onSubmit: (e) => {
+            e.preventDefault(), createProfile();
+          }
+        },
+        field("Your name", input(f.name, (v) => {
+          f.name = v;
+        }, { id: "profile-name", placeholder: "Priya Raman", maxlength: 80, autofocus: !0, disabled: f.busy }), "Shown on the changes you make and the reviews you write."),
+        field("Email address (optional)", input(f.email, (v) => {
+          f.email = v;
+        }, { id: "profile-email", placeholder: "priya@example.org", maxlength: 254, disabled: f.busy }), "Only a label in your local database. Leave it empty to use a private placeholder."),
+        field("First project", input(f.project, (v) => {
+          f.project = v;
+        }, { id: "profile-project", maxlength: 100, disabled: f.busy }), "A project holds files, their history and the people who review them. You can add more."),
+        f.error ? notice("error", f.error) : null,
+        h("div", { class: "splash-actions" }, button(f.busy ? "Creating…" : "Create my workspace", { variant: "primary", type: "submit", id: "profile-go", disabled: f.busy }))
+      )
+    );
+  }
+  function failed() {
+    let l = state.local;
+    return card(
+      h("h1", { class: "splash-title" }, "The workspace on this computer did not start"),
+      notice("error", l.detail || "Something went wrong while starting."),
+      h("p", { class: "muted small" }, "Your data is not touched by a failed start. The logs are in the workspace folder."),
+      h(
+        "div",
+        { class: "splash-actions" },
+        button("Try again", { variant: "primary", id: "local-retry", onClick: () => void retryLocal() }),
+        button("Open the logs folder", { onClick: () => void openLocalFolder() }),
+        button("Use the offline sample", { onClick: () => {
+          resetSample(), state.local.splash = !1, state.live.mode = "offline", state.live.env = "sample", render();
+        } })
+      )
+    );
+  }
+  function splash() {
+    return state.local.splash ? state.local.phase === "failed" ? failed() : state.local.phase === "profile" ? profileForm() : starting() : null;
+  }
+
   // client/src/main.ts
   var VIEWS = {
     changes: changesView,
@@ -5798,7 +6228,7 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
     }
   }
   function draw() {
-    let saved = remember(), view = VIEWS[state.ui.view] ?? changesView, app = shell(view());
+    let saved = remember(), view = VIEWS[state.ui.view] ?? changesView, app = splash() ?? shell(view());
     launcher && launcherHome && launcher.parentElement !== launcherHome && launcherHome.appendChild(launcher), clear(root), root.appendChild(app);
     let slot = document.getElementById("launcher-slot");
     launcher && slot && slot.appendChild(launcher), renderLayer(layer), restore(saved), document.title = state.ui.view === "settings" ? "Dynodoc" : `${VIEW_LABEL[state.ui.view]} · Dynodoc`;
@@ -5910,14 +6340,9 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
     }, 3e4);
     let section2 = launcherSection();
     if (inDesktop() && launcher) {
-      state.desktop = !0, draw();
+      state.desktop = !0, state.local.splash = !0, draw();
       let ds = await startBridge();
-      if (ds) {
-        state.desktopVersion = ds.version, await loadPrefs(), applyAppearance();
-        let info = await startLive();
-        (section2 || ds.unconfirmed || !info?.signed_in && !section2) && (state.ui.settings.section = "accounts", state.ui.view = "settings");
-      }
-      draw(), focusSection(section2);
+      ds && (state.desktopVersion = ds.version, await loadPrefs(), applyAppearance(), state.local.splash = !0, draw(), await startLocalWorkspace() && (startWatch(), loadFolders()), (section2 || ds.unconfirmed) && (state.ui.settings.section = "accounts", state.ui.view = "settings")), draw(), focusSection(section2);
     } else
       draw();
   }

@@ -16,6 +16,8 @@ import { openMenu, confirmDialog } from '../ui/layer.ts';
 import { act, branchContext, branchLabel, currentBranch, docOf, fileIcon, short } from './common.ts';
 import { newDraftDialog, sync, fetchNow, sendForReviewDialog } from './actions.ts';
 import { openInEditor } from './documents.ts';
+import { watchNotices } from './watchbar.ts';
+import { isLocal } from '../data/live.ts';
 
 const OP: Record<string, [string, string]> = { edit: ['M', 'Modified'], add: ['A', 'Added'], remove: ['D', 'Removed'] };
 
@@ -181,6 +183,10 @@ function nothingHere(): HTMLElement {
     cards.push(h('div', { class: 'suggest' }, h('div', null, h('div', { class: 'suggest-title' }, `Push ${ctx.ahead} commit${ctx.ahead === 1 ? '' : 's'} to the server`), h('div', { class: 'suggest-text' }, 'Your commits are on this computer only until you push.')), button('Push', { variant: 'primary', icon: 'up', onClick: sync })));
   if (ctx.kind === 'draft' && ctx.state === 'private' && !(ctx.ahead ?? 0))
     cards.push(h('div', { class: 'suggest' }, h('div', null, h('div', { class: 'suggest-title' }, 'Send this draft for review'), h('div', { class: 'suggest-text' }, 'Open a change request so the team can review and merge it.')), button('Send for review', { onClick: () => sendForReviewDialog() })));
+  if (isLocal()) {
+    cards.push(h('div', { class: 'suggest' }, h('div', null, h('div', { class: 'suggest-title' }, 'Edit a file in Word, Excel or PowerPoint'), h('div', { class: 'suggest-text' }, 'Open a file from Documents; the copy opens in the program your computer uses for it. When you save it there, the changes arrive as a draft to review. Bind the project to a folder to pick up files you save yourself.')), button('Open Documents', { onClick: () => { state.ui.view = 'documents'; render(); } })));
+    return h('div', { class: 'no-changes' }, empty('check', 'Nothing waiting', `No captured changes on ${branchLabel()}. Edits you save in an editor arrive as drafts, and the changes you make in this app are committed as you go.`), h('div', { class: 'suggests' }, cards));
+  }
   cards.push(h('div', { class: 'suggest' }, h('div', null, h('div', { class: 'suggest-title' }, 'Fetch from the server'), h('div', { class: 'suggest-text' }, 'See new revisions, reviews and change requests.')), button('Fetch', { icon: 'sync', onClick: fetchNow })));
   cards.push(h('div', { class: 'suggest' }, h('div', null, h('div', { class: 'suggest-title' }, 'Edit in your editor'), h('div', { class: 'suggest-text' }, 'Editing happens in Word, Excel, PowerPoint or Google’s editors with the Dynodoc add-in. Captured edits appear here.')), button('Open a file…', { onClick: () => { state.ui.view = 'documents'; render(); } })));
   return h('div', { class: 'no-changes' }, empty('check', 'No captured changes', `Nothing waiting on ${branchLabel()}. Here are some friendly suggestions for what to do next.`), h('div', { class: 'suggests' }, cards));
@@ -245,5 +251,7 @@ export function changesView(): HTMLElement {
       ),
     );
   }
-  return h('div', { class: 'split-view' }, left, right);
+  const split = h('div', { class: 'split-view' }, left, right);
+  const bar = watchNotices(state.ui.projectId);
+  return bar ? h('div', { class: 'split-wrap' }, bar, split) : split;
 }

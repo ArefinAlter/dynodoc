@@ -692,3 +692,22 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
   .split-view .pane { min-height: auto; }
   .split-view .pane-scroll { overflow: visible; flex: none; }
 }
+
+/* ---- start-up screen ------------------------------------------------------------------------ */
+.splash { height: 100%; display: grid; place-items: center; padding: 24px; background: var(--background); overflow: auto; }
+.splash-card { width: min(520px, 100%); padding: 28px; display: flex; flex-direction: column; gap: 12px; }
+.splash-brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; }
+.splash-title { font-size: 20px; letter-spacing: -0.015em; }
+.splash-step { display: flex; align-items: center; gap: 10px; font-weight: 500; }
+.splash-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+
+/* ---- folder watch --------------------------------------------------------------------------- */
+.split-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.split-wrap > .split-view { flex: 1; min-height: 0; }
+.watch-notices { padding: 0 16px; border-bottom: 1px solid var(--border); }
+.page > .watch-notices { padding: 0; border: 0; margin-bottom: 12px; }
+.watch-notice { display: flex; align-items: center; gap: 12px; }
+.watch-notice .notice { flex: 1; }
+.watch-actions { display: flex; gap: 6px; flex: none; }
+.folder-card { margin-bottom: 14px; }
+.folder-path { word-break: break-all; margin: 4px 0 8px; }

@@ -49,11 +49,28 @@ fn picked(picks: &Picks, path: std::path::PathBuf) -> Option<Picked> {
     })
 }
 
+/// Debug builds only: `DYNODOC_TEST_PICK` names a JSON file `{ "import": [paths], "folder": [...], ... }`
+/// that answers the dialogs without showing them, so the acceptance scripts can drive the real
+/// window. Release builds do not contain this.
+#[cfg(debug_assertions)]
+fn test_pick(purpose: &str) -> Option<Vec<std::path::PathBuf>> {
+    let file = std::env::var_os("DYNODOC_TEST_PICK")?;
+    let text = std::fs::read_to_string(file).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let list = value.get(purpose)?.as_array()?;
+    Some(list.iter().filter_map(|p| p.as_str().map(std::path::PathBuf::from)).collect())
+}
+
 /// Shows the system's file dialog. `purpose` is `import` (several files), `folder`, `backup_open`
 /// or `backup_save`. Returns what was chosen (nothing if the person cancelled).
 #[tauri::command]
 pub async fn files_pick(webview: Webview, purpose: String) -> Result<Vec<Picked>, String> {
     require_launcher(webview.url())?;
+    #[cfg(debug_assertions)]
+    if let Some(paths) = test_pick(&purpose) {
+        let state = state_of(&webview);
+        return Ok(paths.into_iter().filter_map(|p| picked(&state.picks, p)).collect());
+    }
     let kind = purpose.clone();
     let paths: Vec<std::path::PathBuf> = tauri::async_runtime::spawn_blocking(move || -> Vec<std::path::PathBuf> {
         let dialog = rfd::FileDialog::new();

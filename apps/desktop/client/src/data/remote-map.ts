@@ -370,9 +370,9 @@ export function blockOfKey(key: string, slots: Record<string, Slot>): string {
 
 const EXT: Record<string, string> = { document: 'docx', spreadsheet: 'xlsx', presentation: 'pptx' };
 
-/** A file name for a title, as the editors would save it. */
+/** A file name for a title, as the editors would save it: the title, safe for a file system. */
 export function filenameOf(title: string, kind: string): string {
-  const base = title.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'untitled';
+  const base = title.replace(/[\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 150) || 'Untitled';
   return `${base}.${EXT[kind] ?? 'docx'}`;
 }
 

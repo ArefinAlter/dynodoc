@@ -7,7 +7,7 @@ use crate::AppState;
 use tauri::{Manager, Webview};
 
 #[cfg(test)]
-pub const COMMANDS: [&str; 2] = ["local_status", "local_create_profile"];
+pub const COMMANDS: [&str; 4] = ["local_status", "local_create_profile", "local_retry", "local_open_folder"];
 
 fn state_of(webview: &Webview) -> tauri::State<'_, AppState> {
     webview.app_handle().state::<AppState>()
@@ -30,4 +30,28 @@ pub async fn local_create_profile(
     require_launcher(webview.url())?;
     let local = state_of(&webview).local.clone();
     local.create_profile(&name, email.as_deref().unwrap_or("")).await
+}
+
+/// After a failed start: try again.
+#[tauri::command]
+pub fn local_retry(webview: Webview) -> Result<(), String> {
+    require_launcher(webview.url())?;
+    if state_of(&webview).local.retry() {
+        Ok(())
+    } else {
+        Err("The workspace is not in a failed state.".to_string())
+    }
+}
+
+/// Shows the workspace's logs in the system's file manager.
+#[tauri::command]
+pub fn local_open_folder(webview: Webview) -> Result<(), String> {
+    require_launcher(webview.url())?;
+    use tauri_plugin_opener::OpenerExt;
+    let logs = state_of(&webview).local.layout().logs.clone();
+    webview
+        .app_handle()
+        .opener()
+        .open_path(logs.to_string_lossy().to_string(), None::<&str>)
+        .map_err(|_| "The folder could not be opened.".to_string())
 }

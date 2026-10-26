@@ -230,6 +230,32 @@ export const state = {
     saving: false,
     error: '',
     visitor: null as { display_name: string; expires_at: string } | null,
+    /** Which place the screens show: the workspace on this computer, the configured server, or
+     *  an account's server ("acct:<id>"); empty while nothing is connected. */
+    env: '' as string,
+  },
+  /** Folder watch (data/files.ts): files in bound folders the project does not have yet, the
+   *  last files saved by an editor and what became of them, and each project's folder. */
+  watch: {
+    newFiles: [] as { project_id: string; rel_path: string; name: string; kind: 'new' | 'changed'; document_id: string | null; base_seq: number | null; size: number; mtime_ms: number; token: string }[],
+    recent: [] as { docId: string; title: string; name: string; draftId: string; draftName: string; changes: number; at: number }[],
+    folders: {} as Record<string, string>,
+  },
+  /** The workspace on this computer (data/local.ts): its start-up and who the person is. */
+  local: {
+    /** Show the start-up screen instead of the app (until the workspace is ready or the person
+     *  chose the offline sample). */
+    splash: false,
+    phase: 'starting' as 'starting' | 'profile' | 'ready' | 'failed' | 'closing',
+    step: 'Starting',
+    detail: '' as string,
+    firstRun: false,
+    folder: '',
+    secretsIn: '',
+    restarts: 0,
+    profile: null as { name: string; email: string } | null,
+    /** The first-run form. */
+    form: { name: '', project: 'My documents', email: '', busy: false, error: '' },
   },
 };
 

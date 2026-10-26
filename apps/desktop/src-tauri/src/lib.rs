@@ -238,6 +238,10 @@ pub fn run() {
             #[cfg(desktop)]
             cmd_local::local_create_profile,
             #[cfg(desktop)]
+            cmd_local::local_retry,
+            #[cfg(desktop)]
+            cmd_local::local_open_folder,
+            #[cfg(desktop)]
             cmd_files::files_pick,
             #[cfg(desktop)]
             cmd_files::file_read,

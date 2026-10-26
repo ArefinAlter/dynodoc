@@ -3,7 +3,7 @@
 // launcher's own controls (bridge.ts) and gives them a place in Settings, Accounts.
 import { h, clear } from './dom.ts';
 import { state, setRenderer, setAfterRender, render, go, toast, resetSample } from './state.ts';
-import { isLive, loadPrefs, noticeChanges, noticePrefs, refresh, signOut, startLive, startVisitor } from './data/live.ts';
+import { isLive, loadPrefs, noticeChanges, noticePrefs, refresh, signOut, startVisitor } from './data/live.ts';
 import * as B from './data/backend.ts';
 import { applyAppearance, toggleTheme } from './theme.ts';
 import { commandFor } from './lib/keys.ts';
@@ -22,6 +22,9 @@ import { settingsView, SECTIONS, captureRecording } from './views/settings.ts';
 import { branchContext, currentBranch, docOf } from './views/common.ts';
 import { fetchNow, sync, runBranchAction, switchProject, switchBranch, openProjectList, openBranchList } from './views/actions.ts';
 import { startBridge, launcherSection, focusSection, inDesktop, openServer } from './bridge.ts';
+import { splash } from './views/splash.ts';
+import { startLocalWorkspace } from './data/local.ts';
+import { loadFolders, startWatch } from './data/files.ts';
 
 const VIEWS = {
   changes: changesView,
@@ -81,7 +84,8 @@ function restore(saved: ReturnType<typeof remember>): void {
 function draw(): void {
   const saved = remember();
   const view = VIEWS[state.ui.view] ?? changesView;
-  const app = shell(view());
+  const start = splash();
+  const app = start ?? shell(view());
   // Keep the launcher's element alive across renders: take it out before the old tree goes.
   if (launcher && launcherHome && launcher.parentElement !== launcherHome) launcherHome.appendChild(launcher);
   clear(root);
@@ -198,17 +202,27 @@ async function boot(): Promise<void> {
   const section = launcherSection();
   if (inDesktop() && launcher) {
     state.desktop = true;
+    // Never show the offline sample first: the start-up screen is what a person sees until the
+    // workspace on this computer is ready.
+    state.local.splash = true;
     draw();
     const ds = await startBridge();
     if (ds) {
       state.desktopVersion = ds.version;
       await loadPrefs();
       applyAppearance();
-      // Signed in to the configured server: the screens show its workspace.
-      const info = await startLive();
+      state.local.splash = true;
+      draw();
+      // The workspace on this computer is what the screens show: the app starts its own database
+      // and engine (no server, no account). A server is an addition (Settings, Accounts).
+      const here = await startLocalWorkspace();
+      if (here) {
+        startWatch();
+        void loadFolders();
+      }
       // The launcher shows because the app was asked for it (File menu, a sign-in, a changed
-      // saved address) or because no server is chosen yet. In the first case go straight to it.
-      if (section || ds.unconfirmed || (!info?.signed_in && !section)) {
+      // saved address): go straight to it.
+      if (section || ds.unconfirmed) {
         state.ui.settings.section = 'accounts';
         state.ui.view = 'settings';
       }

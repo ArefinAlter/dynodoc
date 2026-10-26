@@ -10,6 +10,8 @@ import { button, empty, input, pill, tabs, textarea, field, avatar, select, togg
 import { openDialog, closeDialog, confirmDialog } from '../ui/layer.ts';
 import { isAgent, personName, short, when, ROLE_LABEL, ROLE_SUMMARY, viewHeader } from './common.ts';
 import { switchProject } from './actions.ts';
+import { isLocal } from '../data/live.ts';
+import { chooseFolder, stopWatching } from '../data/files.ts';
 
 function newProjectDialog(): void {
   let name = '', description = '';
@@ -55,6 +57,28 @@ function projectCard(p: Project): HTMLElement {
   );
 }
 
+/** The folder a project keeps its Office files in: a copy you open in Word, Excel or PowerPoint is
+ *  written there, and a file saved there is picked up as changes (the app only looks, every two
+ *  seconds, and writes nothing but the copies you ask for). */
+function folderCard(p: Project): HTMLElement | null {
+  if (!state.desktop || !isLocal()) return null;
+  const where = state.watch.folders[p.id];
+  return h(
+    'div',
+    { class: 'card pad folder-card', id: 'project-folder' },
+    h('div', { class: 'card-head' }, icon('projects', 16), h('strong', null, 'Project folder')),
+    where
+      ? h('p', { class: 'mono small folder-path' }, where)
+      : h('p', { class: 'muted small' }, 'Not bound. Bind a folder and Word, Excel and PowerPoint files saved in it are picked up as changes to review. Until you do, copies you open from Documents are written to the Dynodoc folder in your Documents, in a folder named for the project.'),
+    h(
+      'div',
+      { class: 'row-actions' },
+      button(where ? 'Choose another folder…' : 'Choose a folder…', { size: 'sm', variant: where ? 'secondary' : 'primary', id: 'folder-choose', onClick: () => void chooseFolder(p.id) }),
+      where ? button('Stop watching', { size: 'sm', onClick: () => void stopWatching(p.id) }) : null,
+    ),
+  );
+}
+
 function overview(p: Project): HTMLElement {
   const contributors = new Map<string, number>();
   const docIds = new Set(B.docsOf(state.db, p.id).map((d) => d.id));
@@ -68,6 +92,7 @@ function overview(p: Project): HTMLElement {
       h('div', { class: 'card pad' }, h('p', null, p.description || 'No description.'), h('div', { class: 'row-actions' },
         state.ui.projectId === p.id ? pill('current project', 'primary', { mono: false }) : button('Make current', { size: 'sm', variant: 'primary', onClick: () => switchProject(p.id) }),
         select(p.watch, [['requests', 'Watch: pull requests'], ['ignore', 'Watch: standard']], (v) => { p.watch = v; render(); }, { label: 'Watch' }))),
+      folderCard(p),
       h('div', { class: 'section-title' }, 'Files'),
       h('div', { class: 'list-card' }, B.docsOf(state.db, p.id).map((d) => h('div', { class: 'list-item' }, icon(d.kind === 'document' ? 'word' : d.kind === 'spreadsheet' ? 'sheet' : 'slides', 15), h('div', { class: 'grow' }, h('strong', null, d.filename)), h('span', { class: 'mono muted' }, `r${B.mainSeq(state.db, d.id)}`)))),
     ),

@@ -158,9 +158,9 @@ function topbar(): HTMLElement {
     h('span', { class: 'spacer' }),
     h('span', { class: 'status-pills' },
       state.live.mode === 'connecting'
-        ? pill('Connecting…', 'info', { mono: false, title: 'Reading your workspace from the server' })
+        ? pill('Connecting…', 'info', { mono: false, title: 'Reading your workspace' })
         : isLive()
-          ? pill(state.live.saving ? 'Saving…' : state.db.remote?.visitor ? 'Sample workspace' : 'Live', state.live.saving ? 'info' : 'success', { mono: false, title: state.db.remote?.visitor ? `Your own sample workspace on the server, until ${new Date(state.db.remote.visitor.expires_at).toLocaleString()}. Everything you do is saved there.` : 'Showing your workspace on the server. Everything you do is saved there.' })
+          ? pill(state.live.saving ? 'Saving…' : state.live.env === 'local' ? 'On this computer' : state.db.remote?.visitor ? 'Sample workspace' : 'Live', state.live.saving ? 'info' : 'success', { mono: false, title: state.live.env === 'local' ? 'Your workspace is on this computer: its own database and engine, no account, no network. Everything you do is saved here.' : state.db.remote?.visitor ? `Your own sample workspace on the server, until ${new Date(state.db.remote.visitor.expires_at).toLocaleString()}. Everything you do is saved there.` : 'Showing your workspace on the server. Everything you do is saved there.' })
           : pill('Sample data', 'warning', { mono: false, title: 'Offline sample: nothing leaves this window. See Settings, Accounts to use a server.' }),
       ds?.server
         ? h('button', { type: 'button', class: 'server-btn', title: 'Open your workspace on this server in this window', onClick: () => { openServer().catch((e) => toast('error', e instanceof Error ? e.message : String(e))); } }, icon('globe', 13), new URL(ds.server).host, icon('external', 12))

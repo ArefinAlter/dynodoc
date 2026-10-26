@@ -530,6 +530,17 @@ impl Local {
         Ok(AppGuard(slot))
     }
 
+    /// After a failed start: start again (a database that is already running is adopted).
+    pub fn retry(&self) -> bool {
+        if self.status().phase != "failed" {
+            return false;
+        }
+        self.inner.started.store(false, Ordering::SeqCst);
+        self.set("starting", "Starting again");
+        self.start();
+        true
+    }
+
     pub fn is_closing(&self) -> bool {
         self.inner.closing.load(Ordering::SeqCst)
     }

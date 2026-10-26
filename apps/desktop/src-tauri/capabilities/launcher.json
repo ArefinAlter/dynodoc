@@ -25,6 +25,8 @@
     "allow-prefs-save",
     "allow-local-status",
     "allow-local-create-profile",
+    "allow-local-retry",
+    "allow-local-open-folder",
     "allow-files-pick",
     "allow-file-read",
     "allow-file-export",
