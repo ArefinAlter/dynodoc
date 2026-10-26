@@ -82,7 +82,7 @@ pub enum Refused {
     /// The engine did not answer.
     Unreachable,
     /// The engine said no (a bad or used token, a rate limit).
-    No(u16),
+    No,
 }
 
 fn tokens_of(body: &Value) -> Option<Session> {
@@ -113,7 +113,7 @@ pub async fn mint(
             if r.status().is_success() {
                 Ok(r)
             } else {
-                Err(Refused::No(r.status().as_u16()))
+                Err(Refused::No)
             }
         })?
         .json()
@@ -122,7 +122,7 @@ pub async fn mint(
     let token = link
         .get("magic_link_token")
         .and_then(Value::as_str)
-        .ok_or(Refused::No(500))?
+        .ok_or(Refused::No)?
         .to_string();
     let response = http
         .post(format!("{base}/auth/verify"))
@@ -131,10 +131,10 @@ pub async fn mint(
         .await
         .map_err(|_| Refused::Unreachable)?;
     if !response.status().is_success() {
-        return Err(Refused::No(response.status().as_u16()));
+        return Err(Refused::No);
     }
     let body: Value = response.json().await.map_err(|_| Refused::Unreachable)?;
-    tokens_of(&body).ok_or(Refused::No(500))
+    tokens_of(&body).ok_or(Refused::No)
 }
 
 /// Trades the refresh token for a new pair (the engine rotates it).
@@ -150,24 +150,10 @@ pub async fn refresh(
         .await
         .map_err(|_| Refused::Unreachable)?;
     if !response.status().is_success() {
-        return Err(Refused::No(response.status().as_u16()));
+        return Err(Refused::No);
     }
     let body: Value = response.json().await.map_err(|_| Refused::Unreachable)?;
-    tokens_of(&body).ok_or(Refused::No(500))
-}
-
-/// The person's identity id and display name, from `/auth/me`.
-pub async fn me(http: &reqwest::Client, base: &str, session: &Session) -> Result<Value, Refused> {
-    let response = http
-        .get(format!("{base}/auth/me"))
-        .bearer_auth(session.access())
-        .send()
-        .await
-        .map_err(|_| Refused::Unreachable)?;
-    if !response.status().is_success() {
-        return Err(Refused::No(response.status().as_u16()));
-    }
-    response.json().await.map_err(|_| Refused::Unreachable)
+    tokens_of(&body).ok_or(Refused::No)
 }
 
 /// A name and an address a person typed, checked for what the engine accepts.

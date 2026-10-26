@@ -30,7 +30,7 @@ use crate::remote::{Failure, Method, Reply, MAX_ANSWER_BYTES};
 use layout::{Layout, Missing, Programs};
 use secrets::{Preferred, Store};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
 use session::Session;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
@@ -634,24 +634,7 @@ impl Local {
         self.inner.layout.root.clone()
     }
 
-    /// Ends this run's database for a restore, and lets the next start bring a restored one up.
-    pub(crate) fn pg_port(&self) -> u16 {
-        self.inner.pg_port.load(Ordering::SeqCst)
-    }
-
     pub(crate) fn programs(&self) -> Result<Programs, String> {
         self.inner.programs.clone().map_err(|m| m.to_string())
-    }
-
-    pub(crate) fn secrets(&self) -> &Preferred {
-        &self.inner.secrets
-    }
-
-    pub(crate) fn keys_for_backup(&self) -> Option<Arc<engine::Keys>> {
-        self.keys()
-    }
-
-    pub(crate) fn json_status(&self) -> Value {
-        serde_json::to_value(self.status()).unwrap_or_else(|_| json!({}))
     }
 }

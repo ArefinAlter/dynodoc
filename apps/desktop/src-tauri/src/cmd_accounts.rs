@@ -67,7 +67,11 @@ pub fn account_remove(webview: Webview, id: String) -> Result<(), String> {
 /// to hand the code back on this computer. Returns the four-character pairing code the page shows
 /// too.
 #[tauri::command]
-pub async fn account_signin_start(webview: Webview, id: String) -> Result<String, String> {
+pub async fn account_signin_start(
+    webview: Webview,
+    id: String,
+    via_link: Option<bool>,
+) -> Result<String, String> {
     require_launcher(webview.url())?;
     if !crate::accounts::id_ok(&id) {
         return Err("That server is not in your list.".to_string());
@@ -75,7 +79,9 @@ pub async fn account_signin_start(webview: Webview, id: String) -> Result<String
     let app = webview.app_handle().clone();
     let accounts = state_of(&webview).accounts.clone();
     accounts
-        .begin(&id, move |url| open_browser(&app, url))
+        .begin(&id, via_link.unwrap_or(false), move |url| {
+            open_browser(&app, url)
+        })
         .await
 }
 
@@ -133,7 +139,8 @@ pub async fn account_check(webview: Webview, id: String) -> Result<AccountView, 
 fn open_browser(app: &AppHandle, url: &str) -> Result<(), String> {
     #[cfg(debug_assertions)]
     if let Ok(file) = std::env::var("DYNODOC_TEST_BROWSER") {
-        return std::fs::write(file, url).map_err(|_| "The test browser file could not be written.".to_string());
+        return std::fs::write(file, url)
+            .map_err(|_| "The test browser file could not be written.".to_string());
     }
     use tauri_plugin_opener::OpenerExt;
     app.opener()

@@ -255,10 +255,13 @@ fn bad(msg: &str) -> AgentError {
 
 // Anthropic
 
+/// A content block of a streamed Anthropic answer: its index, the tool call (id, name) if it is one, and its text so far.
+type Block = (usize, Option<(String, String)>, String);
+
 #[derive(Default)]
 struct AnthropicReader {
     text: String,
-    blocks: Vec<(usize, Option<(String, String)>, String)>,
+    blocks: Vec<Block>,
     usage: Usage,
     stop: Option<Stop>,
     ended: bool,

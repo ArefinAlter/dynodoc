@@ -5,7 +5,6 @@
 //! or nowhere. On Windows the engine is put in a job object that ends it when the app ends, so a
 //! crash of the app leaves no engine behind.
 
-use std::ffi::OsStr;
 use std::path::Path;
 use std::process::Stdio;
 use std::time::Duration;
@@ -45,7 +44,6 @@ pub async fn run_to_end(mut cmd: Command, limit: Duration) -> Result<Output, Run
     match tokio::time::timeout(limit, child.wait_with_output()).await {
         Ok(Ok(out)) => Ok(Output {
             success: out.status.success(),
-            code: out.status.code(),
             stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
             stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
         }),
@@ -75,7 +73,6 @@ pub async fn run_detaching(
 #[derive(Debug)]
 pub struct Output {
     pub success: bool,
-    pub code: Option<i32>,
     pub stdout: String,
     pub stderr: String,
 }
@@ -242,10 +239,6 @@ pub fn bind_to_app(child: &Child) {
     {
         let _ = child;
     }
-}
-
-pub fn as_os<S: AsRef<OsStr> + ?Sized>(s: &S) -> &OsStr {
-    s.as_ref()
 }
 
 #[cfg(test)]

@@ -115,7 +115,7 @@ impl Programs {
                 .iter()
                 .map(|p| p.join(&file))
                 .find(|p| p.is_file())
-                .ok_or_else(|| Missing(file))
+                .ok_or(Missing(file))
         };
         let pg_root = pg_places
             .iter()

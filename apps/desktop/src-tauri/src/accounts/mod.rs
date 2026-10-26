@@ -136,11 +136,21 @@ mod imp {
         started: Option<Instant>,
     }
 
+    /// A sign-in that waits for the `dynodoc://signin` link instead of the loopback address (for a
+    /// server that is older than the loopback hand-over).
+    struct LinkAttempt {
+        id: String,
+        origin: ServerOrigin,
+        pending: Pending,
+        pairing: String,
+    }
+
     struct Inner {
         dir: PathBuf,
         store: Box<dyn Store>,
         list: Mutex<Vec<Account>>,
         flow: Mutex<Flow>,
+        link: Mutex<Option<Arc<LinkAttempt>>>,
         /// Writes of a renewed session go one at a time.
         write: Mutex<()>,
     }
@@ -204,6 +214,7 @@ mod imp {
                     cancel: None,
                     started: None,
                 }),
+                link: Mutex::new(None),
                 write: Mutex::new(()),
             }))
         }
@@ -477,6 +488,9 @@ mod imp {
         }
 
         pub fn cancel_flow(&self) {
+            if let Ok(mut link) = self.0.link.lock() {
+                *link = None;
+            }
             if let Ok(mut f) = self.0.flow.lock() {
                 if let Some(tx) = f.cancel.take() {
                     let _ = tx.send(true);
@@ -498,6 +512,7 @@ mod imp {
         pub async fn begin(
             &self,
             id: &str,
+            via_link: bool,
             open: impl FnOnce(&str) -> Result<(), String>,
         ) -> Result<String, String> {
             let account = self
@@ -529,6 +544,9 @@ mod imp {
                     },
                 )?;
             let pairing = signin::pairing_code(&request.state);
+            if via_link {
+                return self.begin_link(id, origin, attempt, request, pairing, open);
+            }
             let listener = TcpListener::bind(("127.0.0.1", 0)).await.map_err(|_| {
                 "The app could not listen on this computer for the browser's answer.".to_string()
             })?;
@@ -566,6 +584,115 @@ mod imp {
                     .await;
             });
             Ok(shown)
+        }
+
+        /// The other way, for a server without the loopback hand-over: the server's page ends with a
+        /// `dynodoc://signin?code=..&state=..` link, which the system gives to this app (so the app
+        /// must be installed with its link registered). `complete_link` takes it from there.
+        fn begin_link(
+            &self,
+            id: &str,
+            origin: ServerOrigin,
+            attempt: Attempt,
+            request: signin::Request,
+            pairing: String,
+            open: impl FnOnce(&str) -> Result<(), String>,
+        ) -> Result<String, String> {
+            let url = origin.app_signin_url(&request.challenge, &request.state, signin::PLATFORM);
+            let pending = Pending::default();
+            pending.start(attempt);
+            let mine = Arc::new(LinkAttempt {
+                id: id.to_string(),
+                origin,
+                pending,
+                pairing: pairing.clone(),
+            });
+            if let Ok(mut link) = self.0.link.lock() {
+                *link = Some(mine.clone());
+            }
+            if let Ok(mut f) = self.0.flow.lock() {
+                f.cancel = None;
+                f.view = FlowView {
+                    state: "waiting",
+                    account_id: Some(id.to_string()),
+                    pairing: Some(pairing.clone()),
+                    message: String::new(),
+                };
+            }
+            if let Err(message) = open(url.as_str()) {
+                self.cancel_flow();
+                return Err(message);
+            }
+            // After ten minutes the attempt is over (the pending attempt refuses it by itself).
+            let me = self.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(signin::ATTEMPT_TTL).await;
+                let still =
+                    me.0.link
+                        .lock()
+                        .ok()
+                        .and_then(|l| l.clone())
+                        .is_some_and(|l| Arc::ptr_eq(&l, &mine));
+                if still {
+                    if let Ok(mut link) = me.0.link.lock() {
+                        *link = None;
+                    }
+                    me.set_flow(FlowView {
+                        state: "failed",
+                        account_id: Some(mine.id.clone()),
+                        pairing: Some(mine.pairing.clone()),
+                        message: "The sign-in took too long. Start again.".to_string(),
+                    });
+                }
+            });
+            Ok(pairing)
+        }
+
+        /// A `dynodoc://signin` link came back. True when it is the one a waiting link sign-in is
+        /// for (it is then finished in the background); false when none is waiting or the state is
+        /// not that attempt's, so that nothing changes.
+        pub fn complete_link(&self, code: &str, state: &str) -> bool {
+            let Some(attempt) = self.0.link.lock().ok().and_then(|l| l.clone()) else {
+                return false;
+            };
+            match attempt
+                .pending
+                .complete(Moment::now(), &attempt.origin.as_text(), code, state)
+            {
+                Ok(finish) => {
+                    if let Ok(mut link) = self.0.link.lock() {
+                        *link = None;
+                    }
+                    let me = self.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let outcome = me.finish(&attempt.id, &attempt.origin, &finish).await;
+                        let (state, message) = match outcome {
+                            Ok(()) => ("done", String::new()),
+                            Err(m) => ("failed", m),
+                        };
+                        me.set_flow(FlowView {
+                            state,
+                            account_id: Some(attempt.id.clone()),
+                            pairing: Some(attempt.pairing.clone()),
+                            message,
+                        });
+                    });
+                    true
+                }
+                Err(Refusal::StateMismatch) | Err(Refusal::NothingPending) => false,
+                Err(_) => {
+                    if let Ok(mut link) = self.0.link.lock() {
+                        *link = None;
+                    }
+                    self.set_flow(FlowView {
+                        state: "failed",
+                        account_id: Some(attempt.id.clone()),
+                        pairing: Some(attempt.pairing.clone()),
+                        message: "The sign-in took too long. Start again.".to_string(),
+                    });
+                    true
+                }
+            }
         }
 
         #[allow(clippy::too_many_arguments)]
@@ -754,6 +881,54 @@ mod imp {
             a.put_cookie(&v.id, "again").unwrap();
             a.remove(&v.id).unwrap();
             assert!(a.find(&v.id).is_none() && a.cookie(&v.id).is_none());
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+
+        #[tokio::test]
+        async fn a_link_sign_in_takes_only_the_link_with_its_own_state() {
+            let (a, dir) = accounts("link");
+            let v = a.add("http://127.0.0.1:1").unwrap();
+            let seen = std::sync::Mutex::new(String::new());
+            let pairing = a
+                .begin(&v.id, true, |url| {
+                    *seen.lock().unwrap() = url.to_string();
+                    Ok(())
+                })
+                .await
+                .unwrap();
+            assert_eq!(pairing.len(), 4);
+            let url = url::Url::parse(&seen.lock().unwrap()).unwrap();
+            let keys: Vec<String> = url.query_pairs().map(|(k, _)| k.to_string()).collect();
+            assert_eq!(
+                keys,
+                ["challenge", "state", "platform"],
+                "no loopback port, exactly the three values"
+            );
+            let state = url
+                .query_pairs()
+                .find(|(k, _)| k == "state")
+                .unwrap()
+                .1
+                .to_string();
+            let code = "ab".repeat(32);
+            assert_eq!(a.flow().state, "waiting");
+            // No link, a link for another attempt, and a link for nothing at all change nothing.
+            assert!(!a.complete_link(&code, "not-this-attempts-state-0123456789"));
+            assert_eq!(a.flow().state, "waiting");
+            // Its own state is taken (the trade then fails: nothing listens on that port).
+            assert!(a.complete_link(&code, &state));
+            assert!(
+                !a.complete_link(&code, &state),
+                "an attempt is used up by its link"
+            );
+            for _ in 0..50 {
+                if a.flow().state != "waiting" {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+            assert_eq!(a.flow().state, "failed");
+            assert!(!a.view(&v.id).unwrap().signed_in);
             let _ = std::fs::remove_dir_all(&dir);
         }
 

@@ -114,11 +114,14 @@ pub fn open(text: &str, passphrase: &str) -> Result<BTreeMap<String, String>, Ke
     serde_json::from_slice(&plain).map_err(|_| KeyError::Failed)
 }
 
+/// The passphrase and the keys it opened, once the file is unlocked.
+type Unlocked = Option<(Zeroizing<String>, BTreeMap<String, Zeroizing<String>>)>;
+
 enum Mode {
     Os(OsStore),
     File {
         path: PathBuf,
-        unlocked: Mutex<Option<(Zeroizing<String>, BTreeMap<String, Zeroizing<String>>)>>,
+        unlocked: Mutex<Unlocked>,
     },
 }
 

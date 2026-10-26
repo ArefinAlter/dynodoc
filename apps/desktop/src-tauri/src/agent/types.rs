@@ -52,21 +52,6 @@ impl Kind {
             Kind::Openai | Kind::Deepseek | Kind::Qwen | Kind::Ollama | Kind::Compat
         )
     }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Kind::Anthropic => "Anthropic",
-            Kind::Openai => "OpenAI",
-            Kind::Google => "Google Gemini",
-            Kind::Mistral => "Mistral",
-            Kind::Deepseek => "DeepSeek",
-            Kind::Qwen => "Qwen (Alibaba Cloud)",
-            Kind::Kimi => "Kimi (Moonshot)",
-            Kind::Glm => "GLM (Zhipu)",
-            Kind::Ollama => "Ollama (this computer)",
-            Kind::Compat => "An OpenAI-compatible server",
-        }
-    }
 }
 
 #[derive(Debug, Clone)]

@@ -3479,9 +3479,9 @@ ${text3}` : out.push({ role, text: text3 });
     }
   }
   var polling = !1;
-  async function startSignIn(id) {
+  async function startSignIn(id, viaLink = !1) {
     try {
-      let pairing = await call("account_signin_start", { id });
+      let pairing = await call("account_signin_start", { id, viaLink });
       srv().flow = { state: "waiting", account_id: id, pairing, message: "" }, render(), follow();
     } catch (e) {
       toast("error", "The browser sign-in did not start", text(e));
@@ -6496,7 +6496,7 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
       waiting ? h(
         "div",
         { class: "notice-block", role: "status" },
-        h("p", null, "Your browser has opened this server’s sign-in page. Sign in there, check that the pairing code is ", h("strong", { id: "signin-pairing" }, flow.pairing ?? ""), ", and choose Continue. The page then hands the sign-in back to this app. This request is good for 10 minutes."),
+        h("p", null, "Your browser has opened this server’s sign-in page. Sign in there, check that the pairing code is ", h("strong", { id: "signin-pairing" }, flow.pairing ?? ""), ", and choose Continue. The page then hands the sign-in back to this app. This request is good for 10 minutes. If that page says the link is not valid, the server is older than this app and needs to be updated."),
         h("div", { class: "row-actions" }, button("Cancel", { size: "sm", id: "signin-cancel", onClick: () => void cancelSignIn() }))
       ) : null,
       mine && flow.state === "failed" ? notice("warning", flow.message || "The sign-in did not finish.") : null,
@@ -6506,7 +6506,10 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
         a.signed_in ? [
           button("Sign out", { size: "sm", id: `signout-${a.id}`, onClick: () => confirmDialog("Sign out", h("p", null, `This ends the session on ${a.host} and removes it from this computer. Linked projects stay as they are on both sides.`), "Sign out", () => void signOutOf(a.id)) }),
           button("Check the session", { size: "sm", variant: "ghost", onClick: () => void checkServer(a.id) })
-        ] : button("Sign in with your browser", { size: "sm", variant: "primary", id: `signin-${a.id}`, disabled: waiting, onClick: () => void startSignIn(a.id) }),
+        ] : [
+          button("Sign in with your browser", { size: "sm", variant: "primary", id: `signin-${a.id}`, disabled: waiting, onClick: () => void startSignIn(a.id) }),
+          button("Server older than this app?", { size: "sm", variant: "ghost", id: `signin-link-${a.id}`, disabled: waiting, title: "For a server that has not been updated to hand the sign-in back on this computer: the sign-in ends with a dynodoc:// link, which works when the app is installed.", onClick: () => void startSignIn(a.id, !0) })
+        ],
         button("Remove", { size: "sm", variant: "ghost", onClick: () => confirmDialog("Remove this server", h("p", null, `${a.host} is taken out of this app and its session is removed from this computer. Nothing on the server changes, and projects linked to it stay as they are here.`), "Remove", () => void removeServer(a.id), { danger: !0 }) })
       )
     );

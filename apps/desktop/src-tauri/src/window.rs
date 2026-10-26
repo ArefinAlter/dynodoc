@@ -431,6 +431,13 @@ pub fn begin_browser_sign_in(app: &AppHandle) -> Result<String, SignInStart> {
 /// server's finish page with the code, the state and the verifier in the address FRAGMENT. A
 /// link that is refused changes nothing (the window is only brought forward) and says nothing.
 fn finish_browser_sign_in(app: &AppHandle, state: &AppState, code: &str, link_state: &str) {
+    // A sign-in to a server that the standalone app itself started (decision 020) takes the link
+    // first; it finishes in the background and the window stays where it is.
+    #[cfg(desktop)]
+    if state.accounts.complete_link(code, link_state) {
+        focus_main(app);
+        return;
+    }
     let Some(server) = state.server() else {
         focus_main(app);
         return;

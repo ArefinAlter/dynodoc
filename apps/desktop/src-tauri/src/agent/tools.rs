@@ -147,7 +147,7 @@ mod tests {
             description: "d".into(),
             parameters: json!({ "type": "object" }),
         };
-        assert!(validate(&[ok.clone()]).is_ok());
+        assert!(validate(std::slice::from_ref(&ok)).is_ok());
         let evil = ToolDecl {
             name: "requests.merge".into(),
             ..ok.clone()

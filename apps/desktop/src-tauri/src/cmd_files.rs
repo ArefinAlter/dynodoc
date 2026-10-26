@@ -181,6 +181,7 @@ pub struct Exported {
 /// `Documents/Dynodoc/<project>/`. The name is the page's suggestion, made safe; an existing file
 /// is never overwritten.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn file_export(
     webview: Webview,
     project_id: String,

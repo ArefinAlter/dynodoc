@@ -181,26 +181,6 @@ pub async fn put_state(client: &Client, key: &str, value: &Value) -> Result<Valu
     Ok(json!({ "updated_at": at }))
 }
 
-pub async fn kv_get(client: &Client, key: &str) -> Result<Option<Value>, AppDbError> {
-    client
-        .query_opt("select value from kv where key = $1", &[&key])
-        .await
-        .map(|r| r.map(|r| r.get::<_, Value>(0)))
-        .or_else(|_| err("A setting could not be read."))
-}
-
-pub async fn kv_put(client: &Client, key: &str, value: &Value) -> Result<(), AppDbError> {
-    client
-        .execute(
-            "insert into kv (key, value, updated_at) values ($1, $2, $3)
-             on conflict (key) do update set value = excluded.value, updated_at = excluded.updated_at",
-            &[&key, value, &now_ms()],
-        )
-        .await
-        .map(|_| ())
-        .or_else(|_| err("A setting could not be saved."))
-}
-
 pub fn is_uuid(text: &str) -> bool {
     text.len() == 36
         && text.char_indices().all(|(i, c)| {
@@ -259,12 +239,10 @@ pub fn note_is_valid(n: &Value) -> bool {
         && int("to_seq").is_some()
         && text("kind").is_some_and(|k| NOTE_KINDS.contains(&k))
         && text("summary").is_some_and(|s| !s.trim().is_empty() && s.chars().count() <= 200)
-        && n.get("description").map_or(true, |d| {
-            d.as_str().is_some_and(|s| s.chars().count() <= 4000)
-        })
-        && n.get("edits").map_or(true, |e| {
-            e.is_null() || (e.is_array() && e.to_string().len() <= 64 * 1024)
-        })
+        && n.get("description")
+            .is_none_or(|d| d.as_str().is_some_and(|s| s.chars().count() <= 4000))
+        && n.get("edits")
+            .is_none_or(|e| e.is_null() || (e.is_array() && e.to_string().len() <= 64 * 1024))
 }
 
 pub async fn add_note(client: &Client, n: &Value, author: &str) -> Result<Value, AppDbError> {

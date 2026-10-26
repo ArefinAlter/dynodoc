@@ -9,7 +9,6 @@ use tokio::net::TcpListener;
 
 #[derive(Debug, Clone)]
 pub struct Recorded {
-    pub method: String,
     pub path: String,
     pub headers: Vec<(String, String)>,
     pub body: String,
@@ -86,7 +85,7 @@ pub async fn start(script: Vec<Reply>) -> Server {
                 let mut lines = head.lines();
                 let first = lines.next().unwrap_or("").to_string();
                 let mut it = first.split_whitespace();
-                let (method, path) = (
+                let (_method, path) = (
                     it.next().unwrap_or("").to_string(),
                     it.next().unwrap_or("").to_string(),
                 );
@@ -110,7 +109,6 @@ pub async fn start(script: Vec<Reply>) -> Server {
                 }
                 let body = String::from_utf8_lossy(&buf[head_end..]).to_string();
                 log.lock().unwrap().push(Recorded {
-                    method,
                     path,
                     headers,
                     body,

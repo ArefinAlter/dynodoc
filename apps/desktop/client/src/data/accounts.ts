@@ -85,9 +85,11 @@ export async function removeServer(id: string): Promise<void> {
 
 let polling = false;
 
-export async function startSignIn(id: string): Promise<void> {
+/** `viaLink`: for a server without the loopback hand-over, the sign-in ends with a dynodoc:// link
+ *  that the system gives to the installed app. */
+export async function startSignIn(id: string, viaLink = false): Promise<void> {
   try {
-    const pairing = (await call('account_signin_start', { id })) as string;
+    const pairing = (await call('account_signin_start', { id, viaLink })) as string;
     srv().flow = { state: 'waiting', account_id: id, pairing, message: '' };
     render();
     void follow();

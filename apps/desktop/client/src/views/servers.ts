@@ -68,7 +68,10 @@ function accountRow(id: string): Child {
             button('Sign out', { size: 'sm', id: `signout-${a.id}`, onClick: () => confirmDialog('Sign out', h('p', null, `This ends the session on ${a.host} and removes it from this computer. Linked projects stay as they are on both sides.`), 'Sign out', () => void signOutOf(a.id)) }),
             button('Check the session', { size: 'sm', variant: 'ghost', onClick: () => void checkServer(a.id) }),
           ]
-        : button('Sign in with your browser', { size: 'sm', variant: 'primary', id: `signin-${a.id}`, disabled: waiting, onClick: () => void startSignIn(a.id) }),
+        : [
+            button('Sign in with your browser', { size: 'sm', variant: 'primary', id: `signin-${a.id}`, disabled: waiting, onClick: () => void startSignIn(a.id) }),
+            button('Server older than this app?', { size: 'sm', variant: 'ghost', id: `signin-link-${a.id}`, disabled: waiting, title: 'For a server that has not been updated to hand the sign-in back on this computer: the sign-in ends with a dynodoc:// link, which works when the app is installed.', onClick: () => void startSignIn(a.id, true) }),
+          ],
       button('Remove', { size: 'sm', variant: 'ghost', onClick: () => confirmDialog('Remove this server', h('p', null, `${a.host} is taken out of this app and its session is removed from this computer. Nothing on the server changes, and projects linked to it stay as they are here.`), 'Remove', () => void removeServer(a.id), { danger: true }) }),
     ),
   );

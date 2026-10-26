@@ -63,9 +63,17 @@ In the app (`src-tauri/src/accounts`):
 
 What this does not do: it does not use the server's web view (0.0.1a mode, still there under "Web
 workspace in this window"), it does not need an account to use the app, and it does not make a server
-required. The app does not say it works with Dynodoc servers older than this one: a server without the
-change shows its "not valid" page for a request carrying `redirect_port`, and the app tells the
-person the server needs updating.
+required.
+
+A server that has not been updated with the `redirect_port` change (the hosted pre-alpha server is such
+a server until it is deployed there) shows its "not valid" page for a request carrying the value. For
+that case the app has the other way, chosen by the person ("Server older than this app?"): the same
+request without the port, and the page ends with the `dynodoc://signin` link that decision 017 already
+defines. The system gives that link to the installed app (the installer registers the scheme; a
+portable folder does not), and the app finishes the attempt it started exactly as above: the same
+pending attempt (ten minutes, one at a time, state compared without stopping at the first difference,
+used up by its link), the same redeem and the same credential store. A link with another state
+changes nothing. While the app waits, it tells the person what to look for.
 
 ## Syncing: content, node by node
 

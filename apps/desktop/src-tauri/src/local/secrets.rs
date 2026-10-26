@@ -154,7 +154,7 @@ impl Store for OsStore {
         // A value that is an exact multiple of the chunk size needs an empty last chunk so that
         // `get` knows it has the end.
         let mut parts = parts;
-        if value.len() >= CHUNK && value.len() % CHUNK == 0 {
+        if value.len() >= CHUNK && value.len().is_multiple_of(CHUNK) {
             parts.push("");
         }
         for (i, part) in parts.iter().enumerate() {
@@ -294,10 +294,6 @@ impl Preferred {
             os: OsStore::available(service).then(|| OsStore::new(service)),
             file: FileStore::new(fallback_dir),
         }
-    }
-
-    pub fn uses_credential_store(&self) -> bool {
-        self.os.is_some()
     }
 }
 
