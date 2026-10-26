@@ -134,7 +134,7 @@
     {
       question: 'Will it change my file?',
       answer:
-        'It adds small identity markers (content controls, named ranges or tags) so paragraphs, rows and shapes keep their identity. It changes text only when you choose Apply on a preview of changes that were reviewed and merged in Dynodoc.'
+        'It adds small identity markers (content controls, named ranges or tags) so paragraphs, rows and shapes keep their identity. It changes text only when you choose Apply on a preview of changes that were reviewed and merged in Dynodoc. Replaced text may take on the formatting around it.'
     },
     {
       question: 'Is it in the Microsoft or Google marketplace?',
