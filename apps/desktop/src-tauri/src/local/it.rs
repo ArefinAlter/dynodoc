@@ -25,7 +25,12 @@ async fn wait_for(local: &Local, phase: &str, limit: u64) {
             return;
         }
         assert!(s.phase != "failed", "failed: {:?}", s.detail);
-        assert!(tokio::time::Instant::now() < deadline, "timed out at {} / {}", s.phase, s.step);
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "timed out at {} / {}",
+            s.phase,
+            s.step
+        );
         tokio::time::sleep(Duration::from_millis(300)).await;
     }
 }
@@ -34,7 +39,8 @@ async fn wait_for(local: &Local, phase: &str, limit: u64) {
 #[ignore = "needs DYNODOC_PROGRAMS"]
 async fn a_new_workspace_starts_signs_in_works_and_closes_cleanly() {
     let dir = scratch("one");
-    let exe_dir = std::path::PathBuf::from(std::env::var("DYNODOC_PROGRAMS").expect("DYNODOC_PROGRAMS"));
+    let exe_dir =
+        std::path::PathBuf::from(std::env::var("DYNODOC_PROGRAMS").expect("DYNODOC_PROGRAMS"));
     let local = Local::new(&dir, None, &exe_dir, false);
     local.start();
     wait_for(&local, "profile", 300).await;
@@ -49,16 +55,28 @@ async fn a_new_workspace_starts_signs_in_works_and_closes_cleanly() {
     assert_eq!(me.status, 200);
     assert_eq!(me.body["name"], "Priya Raman");
     let created = local
-        .api(Method::Post, "projects", Some(&json!({ "name": "Riverside survey", "description": "" })), None)
+        .api(
+            Method::Post,
+            "projects",
+            Some(&json!({ "name": "Riverside survey", "description": "" })),
+            None,
+        )
         .await
         .unwrap();
     assert_eq!(created.status, 200, "{:?}", created.body);
-    let list = local.api(Method::Get, "projects", None, None).await.unwrap();
+    let list = local
+        .api(Method::Get, "projects", None, None)
+        .await
+        .unwrap();
     assert_eq!(list.body["items"].as_array().map(Vec::len), Some(1));
 
     // The client's own state.
     let put = local
-        .svc(Method::Put, "state/working", Some(&json!({ "value": [{ "id": "w1" }] })))
+        .svc(
+            Method::Put,
+            "state/working",
+            Some(&json!({ "value": [{ "id": "w1" }] })),
+        )
         .await;
     assert_eq!(put.status, 200);
     let got = local.svc(Method::Get, "state/working", None).await;
@@ -67,14 +85,21 @@ async fn a_new_workspace_starts_signs_in_works_and_closes_cleanly() {
     // Closing stops the engine and the database; the data directory stays.
     local.shutdown().await;
     assert!(local.api(Method::Get, "profile", None, None).await.is_err());
-    assert!(dir.join("workspace").join("pgdata").join("PG_VERSION").exists());
+    assert!(dir
+        .join("workspace")
+        .join("pgdata")
+        .join("PG_VERSION")
+        .exists());
 
     // A second start finds the cluster, needs no first run, and still knows the person and project.
     let again = Local::new(&dir, None, &exe_dir, false);
     again.start();
     wait_for(&again, "ready", 120).await;
     assert!(!again.status().first_run);
-    let list = again.api(Method::Get, "projects", None, None).await.unwrap();
+    let list = again
+        .api(Method::Get, "projects", None, None)
+        .await
+        .unwrap();
     assert_eq!(list.body["items"][0]["name"], "Riverside survey");
     again.shutdown().await;
     let _ = std::fs::remove_dir_all(&dir);

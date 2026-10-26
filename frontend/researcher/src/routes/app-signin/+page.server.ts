@@ -50,6 +50,6 @@ export const actions: Actions = {
     if (!request) return fail(400, { problem: 'invalid' as const });
     const outcome = await issueForForm(event, request);
     if (!outcome.ok) return fail(outcome.status, { problem: outcome.problem });
-    return { url: outcome.url };
+    return { url: outcome.url, loopback: outcome.loopback };
   }
 };

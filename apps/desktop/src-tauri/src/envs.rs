@@ -9,10 +9,10 @@
 use crate::remote::{self, Method, Reply, Target};
 #[cfg(desktop)]
 use crate::AppState;
-#[cfg(desktop)]
-use tauri::Manager;
 use serde_json::Value;
 use tauri::AppHandle;
+#[cfg(desktop)]
+use tauri::Manager;
 
 /// The largest request the client sends to the local engine (an imported file's operations).
 pub const LOCAL_BODY_LIMIT: usize = 24 * 1024 * 1024;
@@ -46,7 +46,10 @@ const NOT_AVAILABLE: &str = "That request is not available from the client.";
 pub fn body_limit(env: &Env, path: &str) -> usize {
     let big = path.ends_with("/batch")
         || path.ends_with("/uploads")
-        || path.contains("/drafts/") && !path.ends_with("/submit") && !path.ends_with("/sync") && !path.ends_with("/withdraw");
+        || path.contains("/drafts/")
+            && !path.ends_with("/submit")
+            && !path.ends_with("/sync")
+            && !path.ends_with("/withdraw");
     match (env, big) {
         (Env::Local, true) => LOCAL_BODY_LIMIT,
         (_, true) => 8 * 1024 * 1024,
@@ -89,7 +92,9 @@ pub async fn call(
         }
         #[cfg(not(desktop))]
         Env::Local => Err("The local workspace is not available on phones.".to_string()),
-        Env::Account(id) => crate::accounts::call(app, id, target, method, path, body, if_match).await,
+        Env::Account(id) => {
+            crate::accounts::call(app, id, target, method, path, body, if_match).await
+        }
     }
 }
 
@@ -106,15 +111,27 @@ mod tests {
             Env::parse(Some("acct:srv_0123abcd")),
             Ok(Env::Account("srv_0123abcd".to_string()))
         );
-        for bad in ["acct:", "acct:../x", "http://evil.example", "LOCAL", "acct:a b"] {
+        for bad in [
+            "acct:",
+            "acct:../x",
+            "http://evil.example",
+            "LOCAL",
+            "acct:a b",
+        ] {
             assert!(Env::parse(Some(bad)).is_err(), "{bad}");
         }
     }
 
     #[test]
     fn only_batches_and_uploads_may_be_large() {
-        assert_eq!(body_limit(&Env::Local, "documents/x/batch"), LOCAL_BODY_LIMIT);
-        assert_eq!(body_limit(&Env::Local, "documents/x/uploads"), LOCAL_BODY_LIMIT);
+        assert_eq!(
+            body_limit(&Env::Local, "documents/x/batch"),
+            LOCAL_BODY_LIMIT
+        );
+        assert_eq!(
+            body_limit(&Env::Local, "documents/x/uploads"),
+            LOCAL_BODY_LIMIT
+        );
         assert_eq!(body_limit(&Env::Local, "projects"), remote::MAX_BODY_BYTES);
         assert!(body_limit(&Env::Account("a".into()), "documents/x/batch") < LOCAL_BODY_LIMIT);
     }

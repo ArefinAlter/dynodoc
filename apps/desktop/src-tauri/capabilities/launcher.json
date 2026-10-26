@@ -48,6 +48,14 @@
     "allow-agent-run",
     "allow-agent-tool-result",
     "allow-agent-cancel",
-    "allow-agent-usage"
+    "allow-agent-usage",
+    "allow-accounts-list",
+    "allow-account-add",
+    "allow-account-remove",
+    "allow-account-signin-start",
+    "allow-account-signin-status",
+    "allow-account-signin-cancel",
+    "allow-account-signout",
+    "allow-account-check"
   ]
 }

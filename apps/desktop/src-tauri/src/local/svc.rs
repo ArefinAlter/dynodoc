@@ -23,17 +23,24 @@ pub fn documents_in(query: &str) -> Vec<String> {
 impl Local {
     /// One request of the client to its own state. `path_and_query` passed `remote::allowed`.
     pub async fn svc(&self, method: Method, path_and_query: &str, body: Option<&Value>) -> Reply {
-        let (path, query) = path_and_query.split_once('?').unwrap_or((path_and_query, ""));
+        let (path, query) = path_and_query
+            .split_once('?')
+            .unwrap_or((path_and_query, ""));
         let Ok(app) = self.app().await else {
             return reply(503, json!({ "error": "The workspace is not ready." }));
         };
         let me = self.identity().await.unwrap_or_else(|| "local".to_string());
         match (method, path) {
-            (Method::Get, "session") => reply(200, json!({ "identity_id": me, "visitor": null, "local": true })),
-            (Method::Get, p) if p.starts_with("state/") => match appdb::get_state(&app, &p[6..]).await {
-                Ok(v) => reply(200, v),
-                Err(e) => reply(404, json!({ "error": e.0 })),
-            },
+            (Method::Get, "session") => reply(
+                200,
+                json!({ "identity_id": me, "visitor": null, "local": true }),
+            ),
+            (Method::Get, p) if p.starts_with("state/") => {
+                match appdb::get_state(&app, &p[6..]).await {
+                    Ok(v) => reply(200, v),
+                    Err(e) => reply(404, json!({ "error": e.0 })),
+                }
+            }
             (Method::Put, p) if p.starts_with("state/") => {
                 let Some(value) = body.and_then(|b| b.get("value")) else {
                     return reply(400, json!({ "error": "Send {\"value\": ...}" }));

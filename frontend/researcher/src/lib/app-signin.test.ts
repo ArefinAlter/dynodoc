@@ -8,6 +8,7 @@ import {
   appLink,
   appSigninPath,
   isChallenge,
+  loopbackLink,
   isCode,
   isState,
   isVerifier,
@@ -66,6 +67,53 @@ describe('the request an app puts in the sign-in page address', () => {
     expect(appSigninPath(request)).toBe(
       `/app-signin?challenge=${CHALLENGE}&state=${STATE}&platform=ios`
     );
+  });
+});
+
+describe('the loopback port of a desktop app (decision 020)', () => {
+  const desktop = `challenge=${CHALLENGE}&state=${STATE}&platform=desktop`;
+
+  it('is accepted as a fourth value for a desktop app, in any order', () => {
+    const want = { challenge: CHALLENGE, state: STATE, platform: 'desktop', redirectPort: 49321 };
+    expect(parseAppSignin(query(`${desktop}&redirect_port=49321`))).toEqual(want);
+    expect(parseAppSignin(query(`redirect_port=49321&${desktop}`))).toEqual(want);
+    expect(parseAppSignin(query(`${desktop}&redirect_port=1024`))?.redirectPort).toBe(1024);
+    expect(parseAppSignin(query(`${desktop}&redirect_port=65535`))?.redirectPort).toBe(65535);
+  });
+
+  it('is refused for a phone, and when it is not a plain unprivileged port, or not alone', () => {
+    const bad = [
+      `${good}&redirect_port=49321`,
+      `${good.replace('android', 'ios')}&redirect_port=49321`,
+      `${desktop}&redirect_port=1023`,
+      `${desktop}&redirect_port=65536`,
+      `${desktop}&redirect_port=0`,
+      `${desktop}&redirect_port=049321`,
+      `${desktop}&redirect_port=+49321`,
+      `${desktop}&redirect_port=4.9e4`,
+      `${desktop}&redirect_port=0x1234`,
+      `${desktop}&redirect_port=`,
+      `${desktop}&redirect_port=49321&redirect_port=49322`,
+      `${desktop}&redirect=49321`,
+      `${desktop}&redirect_port=49321&next=//evil.example`
+    ];
+    for (const text of bad) expect(parseAppSignin(query(text)), text).toBeNull();
+  });
+
+  it('is carried through sign-in in the same spelling, and only when present', () => {
+    const request = parseAppSignin(query(`redirect_port=49321&${desktop}`))!;
+    expect(appSigninPath(request)).toBe(`/app-signin?${desktop}&redirect_port=49321`);
+    expect(appSigninPath(parseAppSignin(query(desktop))!)).toBe(`/app-signin?${desktop}`);
+  });
+
+  it('gives a link to this computer only, with the code and the state and nothing else', () => {
+    expect(loopbackLink(49321, CODE, STATE)).toBe(
+      `http://127.0.0.1:49321/signin?code=${CODE}&state=${STATE}`
+    );
+    expect(() => loopbackLink(80, CODE, STATE)).toThrow();
+    expect(() => loopbackLink(49321, 'nope', STATE)).toThrow();
+    expect(() => loopbackLink(49321, CODE, 'a b')).toThrow();
+    expect(() => loopbackLink(1.5, CODE, STATE)).toThrow();
   });
 });
 

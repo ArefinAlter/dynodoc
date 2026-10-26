@@ -141,7 +141,12 @@ mod tests {
     #[test]
     fn the_layout_keeps_everything_under_one_folder() {
         let layout = Layout::new(Path::new("/data"));
-        for p in [&layout.pgdata, &layout.logs, &layout.run, &layout.state_file] {
+        for p in [
+            &layout.pgdata,
+            &layout.logs,
+            &layout.run,
+            &layout.state_file,
+        ] {
             assert!(p.starts_with("/data/workspace"), "{p:?}");
         }
         assert!(!layout.has_cluster());

@@ -57,7 +57,10 @@ impl Agent {
 
     /// Changes the settings and saves them.
     pub fn update(&self, f: impl FnOnce(&mut AgentConfig)) -> Result<AgentConfig, String> {
-        let mut guard = self.cfg.lock().map_err(|_| "The agent's settings are busy.".to_string())?;
+        let mut guard = self
+            .cfg
+            .lock()
+            .map_err(|_| "The agent's settings are busy.".to_string())?;
         let mut next = guard.clone();
         f(&mut next);
         config::save(&self.config_dir, &next)?;
@@ -68,7 +71,15 @@ impl Agent {
 
 impl Local {
     /// Records one turn's use (tokens and the estimated cost, if a price is set).
-    pub async fn ledger_add(&self, thread: &str, provider: &str, model: &str, input: u64, output: u64, cost: Option<u64>) {
+    pub async fn ledger_add(
+        &self,
+        thread: &str,
+        provider: &str,
+        model: &str,
+        input: u64,
+        output: u64,
+        cost: Option<u64>,
+    ) {
         if let Ok(app) = self.app().await {
             let _ = app
                 .execute(
@@ -81,7 +92,9 @@ impl Local {
 
     /// Tokens used in a thread, tokens and estimated cost used in the last 24 hours.
     pub async fn ledger_totals(&self, thread: &str) -> (u64, u64, u64) {
-        let Ok(app) = self.app().await else { return (0, 0, 0) };
+        let Ok(app) = self.app().await else {
+            return (0, 0, 0);
+        };
         let since = now_ms() - 86_400_000;
         let t: i64 = app
             .query_one("select coalesce(sum(tokens_in + tokens_out), 0)::bigint from usage_ledger where thread = $1", &[&thread])

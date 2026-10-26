@@ -129,9 +129,17 @@ fn http_client() -> reqwest::Client {
 impl Local {
     /// `ordinary` is true for the per-user data folder and false for a portable or test folder
     /// (which then gets a credential-store service name of its own, see `secrets::service_for`).
-    pub fn new(data_dir: &Path, resource_dir: Option<&Path>, exe_dir: &Path, ordinary: bool) -> Self {
+    pub fn new(
+        data_dir: &Path,
+        resource_dir: Option<&Path>,
+        exe_dir: &Path,
+        ordinary: bool,
+    ) -> Self {
         let layout = Layout::new(data_dir);
-        let secrets = Preferred::open(&data_dir.join("secrets"), &secrets::service_for(data_dir, ordinary));
+        let secrets = Preferred::open(
+            &data_dir.join("secrets"),
+            &secrets::service_for(data_dir, ordinary),
+        );
         let status = Status {
             phase: "starting",
             step: "Starting".into(),
@@ -164,7 +172,11 @@ impl Local {
     }
 
     pub fn status(&self) -> Status {
-        self.inner.status.lock().map(|s| s.clone()).unwrap_or_else(|e| e.into_inner().clone())
+        self.inner
+            .status
+            .lock()
+            .map(|s| s.clone())
+            .unwrap_or_else(|e| e.into_inner().clone())
     }
 
     fn set(&self, phase: &'static str, step: &str) {
@@ -191,7 +203,11 @@ impl Local {
     }
 
     pub fn is_ready(&self) -> bool {
-        self.inner.status.lock().map(|s| s.phase == "ready").unwrap_or(false)
+        self.inner
+            .status
+            .lock()
+            .map(|s| s.phase == "ready")
+            .unwrap_or(false)
     }
 
     /// Begins the start-up in the background (once). The page polls `status`.
@@ -213,11 +229,13 @@ impl Local {
     }
 
     fn write_saved(&self, saved: &Saved) -> Result<(), String> {
-        let text = serde_json::to_string_pretty(saved).map_err(|_| "The workspace could not be saved.")?;
+        let text =
+            serde_json::to_string_pretty(saved).map_err(|_| "The workspace could not be saved.")?;
         let path = &self.inner.layout.state_file;
         let temporary = path.with_extension("json.tmp");
         std::fs::write(&temporary, text).map_err(|_| "The workspace could not be saved.")?;
-        std::fs::rename(&temporary, path).map_err(|_| "The workspace could not be saved.".to_string())
+        std::fs::rename(&temporary, path)
+            .map_err(|_| "The workspace could not be saved.".to_string())
     }
 
     fn secret_bundle(&self, create: bool) -> Result<SecretBundle, String> {
@@ -234,20 +252,35 @@ impl Local {
             return Err("The keys of this workspace are not in the credential store any more. Restore the workspace from a backup, or choose Reset in Settings to start a new one.".into());
         }
         let bundle = SecretBundle {
-            owner: secrets::random_hex(24).map_err(|e| e.to_string())?.to_string(),
-            runtime: secrets::random_hex(24).map_err(|e| e.to_string())?.to_string(),
-            paseto: secrets::random_hex(32).map_err(|e| e.to_string())?.to_string(),
-            service: secrets::random_hex(24).map_err(|e| e.to_string())?.to_string(),
+            owner: secrets::random_hex(24)
+                .map_err(|e| e.to_string())?
+                .to_string(),
+            runtime: secrets::random_hex(24)
+                .map_err(|e| e.to_string())?
+                .to_string(),
+            paseto: secrets::random_hex(32)
+                .map_err(|e| e.to_string())?
+                .to_string(),
+            service: secrets::random_hex(24)
+                .map_err(|e| e.to_string())?
+                .to_string(),
         };
-        let text = Zeroizing::new(serde_json::to_string(&bundle).map_err(|_| "No keys could be made.")?);
-        self.inner.secrets.set(SECRETS_ENTRY, &text).map_err(|e| e.to_string())?;
+        let text =
+            Zeroizing::new(serde_json::to_string(&bundle).map_err(|_| "No keys could be made.")?);
+        self.inner
+            .secrets
+            .set(SECRETS_ENTRY, &text)
+            .map_err(|e| e.to_string())?;
         Ok(bundle)
     }
 
     async fn bring_up(&self) -> Result<(), String> {
         let inner = &self.inner;
         self.set("starting", "Preparing the workspace folder");
-        inner.layout.ensure().map_err(|_| "The workspace folder could not be created.".to_string())?;
+        inner
+            .layout
+            .ensure()
+            .map_err(|_| "The workspace folder could not be created.".to_string())?;
         applog::open(inner.layout.logs.join("app.log"));
         applog::note("starting the local workspace");
         let programs = inner.programs.clone().map_err(|m| m.to_string())?;
@@ -269,8 +302,14 @@ impl Local {
             if let Ok(mut s) = inner.status.lock() {
                 s.first_run = true;
             }
-            self.set("starting", "Creating your local database (first launch only; this can take a minute)");
-            database.init_cluster(&keys.owner_password).await.map_err(|e| e.to_string())?;
+            self.set(
+                "starting",
+                "Creating your local database (first launch only; this can take a minute)",
+            );
+            database
+                .init_cluster(&keys.owner_password)
+                .await
+                .map_err(|e| e.to_string())?;
         }
 
         self.set("starting", "Starting the local database");
@@ -304,23 +343,31 @@ impl Local {
             keys: keys.clone(),
         };
         let first = engine::spawn(&launch).await?;
-        inner.base.set(Some(format!("http://127.0.0.1:{}", first.port)));
+        inner
+            .base
+            .set(Some(format!("http://127.0.0.1:{}", first.port)));
         let me = self.clone();
         let base = inner.base.clone();
         let shutdown = inner.shutdown.subscribe();
-        tauri::async_runtime::spawn(engine::supervise(launch, first, base, shutdown, move |event| {
-            if let Ok(mut s) = me.inner.status.lock() {
-                match event {
-                    engine::Event::Up => {}
-                    engine::Event::Down { .. } => s.engine_restarts += 1,
-                    engine::Event::GaveUp(message) => {
-                        s.phase = "failed";
-                        s.step = "The engine stopped".into();
-                        s.detail = Some(message);
+        tauri::async_runtime::spawn(engine::supervise(
+            launch,
+            first,
+            base,
+            shutdown,
+            move |event| {
+                if let Ok(mut s) = me.inner.status.lock() {
+                    match event {
+                        engine::Event::Up => {}
+                        engine::Event::Down { .. } => s.engine_restarts += 1,
+                        engine::Event::GaveUp(message) => {
+                            s.phase = "failed";
+                            s.step = "The engine stopped".into();
+                            s.detail = Some(message);
+                        }
                     }
                 }
-            }
-        }));
+            },
+        ));
 
         self.set("starting", "Opening the workspace's own data");
         let mut client = pg::Pg::connect(port, pg::OWNER, &keys.owner_password, pg::APP_DB)
@@ -381,18 +428,30 @@ impl Local {
         }
         let profile = match profile {
             Some(p) => p.clone(),
-            None => self.load_saved().and_then(|s| s.profile).ok_or("There is no profile yet.")?,
+            None => self
+                .load_saved()
+                .and_then(|s| s.profile)
+                .ok_or("There is no profile yet.")?,
         };
-        let next = session::mint(&self.inner.http, &base, &keys.service, &profile.email, &profile.name)
-            .await
-            .map_err(|_| "The engine did not sign this computer in.".to_string())?;
+        let next = session::mint(
+            &self.inner.http,
+            &base,
+            &keys.service,
+            &profile.email,
+            &profile.name,
+        )
+        .await
+        .map_err(|_| "The engine did not sign this computer in.".to_string())?;
         self.remember(&next);
         *slot = Some(next);
         Ok(())
     }
 
     fn remember(&self, session: &Session) {
-        let _ = self.inner.secrets.set(SESSION_ENTRY, &session.to_saved_text());
+        let _ = self
+            .inner
+            .secrets
+            .set(SESSION_ENTRY, &session.to_saved_text());
     }
 
     /// The first thing a person does: say who they are. Nothing leaves the computer.
@@ -429,13 +488,19 @@ impl Local {
         if_match: Option<&str>,
     ) -> Result<Reply, Failure> {
         for attempt in 0..2 {
-            self.ensure_session(None).await.map_err(|_| Failure::Unreachable)?;
+            self.ensure_session(None)
+                .await
+                .map_err(|_| Failure::Unreachable)?;
             let base = self.inner.base.get().ok_or(Failure::Unreachable)?;
             let token = {
                 let slot = self.inner.session.lock().await;
-                slot.as_ref().map(|s| s.access().to_string()).ok_or(Failure::Unreachable)?
+                slot.as_ref()
+                    .map(|s| s.access().to_string())
+                    .ok_or(Failure::Unreachable)?
             };
-            let reply = self.send(&base, method, path_and_query, &token, body, if_match).await?;
+            let reply = self
+                .send(&base, method, path_and_query, &token, body, if_match)
+                .await?;
             if reply.status == 401 && attempt == 0 {
                 // The token ended (or the engine restarted): make a new one and try once more.
                 *self.inner.session.lock().await = None;

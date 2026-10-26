@@ -56,7 +56,8 @@ fn shared(loopback: bool) -> Option<&'static reqwest::Client> {
     static NORMAL: OnceLock<Option<reqwest::Client>> = OnceLock::new();
     static LOCAL: OnceLock<Option<reqwest::Client>> = OnceLock::new();
     let cell = if loopback { &LOCAL } else { &NORMAL };
-    cell.get_or_init(|| http(loopback, Duration::from_secs(10))).as_ref()
+    cell.get_or_init(|| http(loopback, Duration::from_secs(10)))
+        .as_ref()
 }
 
 /// How long to wait before attempt `n` (0 is the first retry): the provider's own `retry-after` when
@@ -80,7 +81,13 @@ pub fn provider_message(body: &str, key: Option<&str>) -> String {
     let parsed: Option<serde_json::Value> = serde_json::from_str(body).ok();
     let text = parsed
         .as_ref()
-        .and_then(|v| v["error"]["message"].as_str().or_else(|| v["message"].as_str()).or_else(|| v["error"].as_str()).map(str::to_string))
+        .and_then(|v| {
+            v["error"]["message"]
+                .as_str()
+                .or_else(|| v["message"].as_str())
+                .or_else(|| v["error"].as_str())
+                .map(str::to_string)
+        })
         .unwrap_or_else(|| body.lines().next().unwrap_or("").to_string());
     let mut out: String = text.chars().filter(|c| !c.is_control()).take(300).collect();
     if let Some(k) = key {
@@ -91,12 +98,27 @@ pub fn provider_message(body: &str, key: Option<&str>) -> String {
     out
 }
 
-pub fn classify(status: u16, body: &str, retry_after: Option<Duration>, key: Option<&str>) -> AgentError {
+pub fn classify(
+    status: u16,
+    body: &str,
+    retry_after: Option<Duration>,
+    key: Option<&str>,
+) -> AgentError {
     let message = provider_message(body, key);
     match status {
-        429 => AgentError::RateLimited { retry_after_ms: retry_after.map(|d| d.as_millis() as u64) },
-        401 | 403 => AgentError::Rejected(format!("the key was not accepted ({status}). {message}").trim().to_string()),
-        404 => AgentError::Rejected(format!("the model or the address was not found ({status}). {message}").trim().to_string()),
+        429 => AgentError::RateLimited {
+            retry_after_ms: retry_after.map(|d| d.as_millis() as u64),
+        },
+        401 | 403 => AgentError::Rejected(
+            format!("the key was not accepted ({status}). {message}")
+                .trim()
+                .to_string(),
+        ),
+        404 => AgentError::Rejected(
+            format!("the model or the address was not found ({status}). {message}")
+                .trim()
+                .to_string(),
+        ),
         400 | 402 | 413 | 422 => AgentError::Rejected(format!("{message} ({status})")),
         s => AgentError::Provider { status: s, message },
     }
@@ -107,7 +129,12 @@ fn retryable(status: u16) -> bool {
 }
 
 fn retry_after_of(headers: &reqwest::header::HeaderMap) -> Option<Duration> {
-    headers.get("retry-after").and_then(|v| v.to_str().ok()).and_then(|s| s.trim().parse::<f64>().ok()).filter(|s| *s >= 0.0).map(Duration::from_secs_f64)
+    headers
+        .get("retry-after")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.trim().parse::<f64>().ok())
+        .filter(|s| *s >= 0.0)
+        .map(Duration::from_secs_f64)
 }
 
 /// One turn. `on_text` receives the text as it streams. Returns the turn, or what went wrong.
@@ -119,7 +146,8 @@ pub async fn send_turn(
     limits: Limits,
     on_text: &mut (dyn FnMut(&str) + Send),
 ) -> Result<Turn, AgentError> {
-    let body = serde_json::to_vec(&built.body).map_err(|_| AgentError::BadSetup("The request could not be made.".into()))?;
+    let body = serde_json::to_vec(&built.body)
+        .map_err(|_| AgentError::BadSetup("The request could not be made.".into()))?;
     if body.len() > MAX_REQUEST_BYTES {
         return Err(AgentError::TooLarge);
     }
@@ -127,7 +155,12 @@ pub async fn send_turn(
         return Err(AgentError::NoKey);
     }
     let loopback = super::types::is_loopback_host(ep.base.host_str().unwrap_or(""));
-    let client = if limits.connect == Duration::from_secs(10) { shared(loopback).cloned() } else { http(loopback, limits.connect) }.ok_or_else(|| AgentError::BadSetup("The network client could not start.".into()))?;
+    let client = if limits.connect == Duration::from_secs(10) {
+        shared(loopback).cloned()
+    } else {
+        http(loopback, limits.connect)
+    }
+    .ok_or_else(|| AgentError::BadSetup("The network client could not start.".into()))?;
     let key_text = key.map(ApiKey::expose);
     let started = tokio::time::Instant::now();
     let mut attempt = 0;
@@ -156,13 +189,21 @@ pub async fn send_turn(
                     tokio::select! { _ = tokio::time::sleep(wait) => {}, _ = cancel.changed() => return Err(AgentError::Cancelled) }
                     continue;
                 }
-                return Err(if e.is_timeout() { AgentError::TimedOut } else { AgentError::Unreachable });
+                return Err(if e.is_timeout() {
+                    AgentError::TimedOut
+                } else {
+                    AgentError::Unreachable
+                });
             }
         };
         let status = response.status().as_u16();
         if !(200..300).contains(&status) {
             let retry_after = retry_after_of(response.headers());
-            let text = tokio::time::timeout(Duration::from_secs(10), response.text()).await.ok().and_then(Result::ok).unwrap_or_default();
+            let text = tokio::time::timeout(Duration::from_secs(10), response.text())
+                .await
+                .ok()
+                .and_then(Result::ok)
+                .unwrap_or_default();
             if retryable(status) && attempt < limits.retries {
                 let wait = backoff(attempt, retry_after, limits.base_backoff, jitter());
                 attempt += 1;
@@ -222,8 +263,14 @@ mod tests {
     #[test]
     fn the_backoff_follows_retry_after_and_otherwise_doubles() {
         let base = Duration::from_millis(500);
-        assert_eq!(backoff(0, Some(Duration::from_secs(3)), base, 99), Duration::from_secs(3));
-        assert_eq!(backoff(0, Some(Duration::from_secs(900)), base, 0), Duration::from_secs(30));
+        assert_eq!(
+            backoff(0, Some(Duration::from_secs(3)), base, 99),
+            Duration::from_secs(3)
+        );
+        assert_eq!(
+            backoff(0, Some(Duration::from_secs(900)), base, 0),
+            Duration::from_secs(30)
+        );
         assert_eq!(backoff(0, None, base, 0), Duration::from_millis(500));
         assert_eq!(backoff(2, None, base, 0), Duration::from_millis(2000));
         assert!(backoff(30, None, base, 0) <= Duration::from_secs(20));
@@ -235,9 +282,20 @@ mod tests {
         let body = format!("{{\"error\":{{\"message\":\"Incorrect API key provided: {key}\"}}}}");
         let e = classify(401, &body, None, Some(key));
         let shown = e.to_string();
-        assert!(shown.contains("not accepted") && !shown.contains("CANARY"), "{shown}");
-        assert!(matches!(classify(429, "{}", Some(Duration::from_secs(2)), None), AgentError::RateLimited { retry_after_ms: Some(2000) }));
-        assert!(matches!(classify(503, "<html>down</html>", None, None), AgentError::Provider { status: 503, .. }));
+        assert!(
+            shown.contains("not accepted") && !shown.contains("CANARY"),
+            "{shown}"
+        );
+        assert!(matches!(
+            classify(429, "{}", Some(Duration::from_secs(2)), None),
+            AgentError::RateLimited {
+                retry_after_ms: Some(2000)
+            }
+        ));
+        assert!(matches!(
+            classify(503, "<html>down</html>", None, None),
+            AgentError::Provider { status: 503, .. }
+        ));
         assert!(provider_message(&"x".repeat(2000), None).len() <= 300);
     }
 }

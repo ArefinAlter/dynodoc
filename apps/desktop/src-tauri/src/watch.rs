@@ -58,38 +58,46 @@ pub struct Watcher {
 /// Looks at the watched files of a folder (top level and one level of sub-folders).
 pub fn list_folder(root: &Path) -> Vec<(String, PathBuf, Seen)> {
     let mut out = Vec::new();
-    let visit = |dir: &Path, prefix: &str, out: &mut Vec<(String, PathBuf, Seen)>| -> Vec<PathBuf> {
-        let mut subs = Vec::new();
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return subs;
-        };
-        for entry in entries.flatten() {
-            let Ok(meta) = entry.metadata() else { continue };
-            let name = entry.file_name().to_string_lossy().to_string();
-            if meta.is_dir() && !name.starts_with('.') && !name.starts_with('~') && prefix.is_empty() {
-                subs.push(entry.path());
-            } else if meta.is_file() && is_watched_name(&name) {
-                let mtime_ms = meta
-                    .modified()
-                    .ok()
-                    .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                    .map(|d| d.as_millis() as i64)
-                    .unwrap_or(0);
-                out.push((
-                    format!("{prefix}{name}"),
-                    entry.path(),
-                    Seen {
-                        mtime_ms,
-                        size: meta.len(),
-                    },
-                ));
+    let visit =
+        |dir: &Path, prefix: &str, out: &mut Vec<(String, PathBuf, Seen)>| -> Vec<PathBuf> {
+            let mut subs = Vec::new();
+            let Ok(entries) = std::fs::read_dir(dir) else {
+                return subs;
+            };
+            for entry in entries.flatten() {
+                let Ok(meta) = entry.metadata() else { continue };
+                let name = entry.file_name().to_string_lossy().to_string();
+                if meta.is_dir()
+                    && !name.starts_with('.')
+                    && !name.starts_with('~')
+                    && prefix.is_empty()
+                {
+                    subs.push(entry.path());
+                } else if meta.is_file() && is_watched_name(&name) {
+                    let mtime_ms = meta
+                        .modified()
+                        .ok()
+                        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                        .map(|d| d.as_millis() as i64)
+                        .unwrap_or(0);
+                    out.push((
+                        format!("{prefix}{name}"),
+                        entry.path(),
+                        Seen {
+                            mtime_ms,
+                            size: meta.len(),
+                        },
+                    ));
+                }
             }
-        }
-        subs
-    };
+            subs
+        };
     let subs = visit(root, "", &mut out);
     for sub in subs.into_iter().take(50) {
-        let name = sub.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        let name = sub
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
         visit(&sub, &format!("{name}/"), &mut out);
     }
     out.sort_by(|a, b| a.0.cmp(&b.0));
@@ -139,7 +147,9 @@ impl Watcher {
             reported.insert(key.clone(), seen.mtime_ms);
             // A newer look of the same file replaces an older, unread one.
             pending.retain(|c| !(c.project_id == project_id && c.rel_path == rel));
-            let Some(token) = picks.remember(path.clone()) else { continue };
+            let Some(token) = picks.remember(path.clone()) else {
+                continue;
+            };
             pending.push(Change {
                 project_id: project_id.to_string(),
                 name: rel.rsplit('/').next().unwrap_or(&rel).to_string(),
@@ -156,7 +166,10 @@ impl Watcher {
 
     /// The changes found since the last call (each is reported once).
     pub fn drain(&self) -> Vec<Change> {
-        self.pending.lock().map(|mut p| std::mem::take(&mut *p)).unwrap_or_default()
+        self.pending
+            .lock()
+            .map(|mut p| std::mem::take(&mut *p))
+            .unwrap_or_default()
     }
 
     /// Forgets what was looked at for a project (its folder changed or was unbound).
@@ -178,7 +191,14 @@ mod tests {
     use super::*;
 
     fn file(rel: &str, mtime: i64, size: u64) -> (String, PathBuf, Seen) {
-        (rel.to_string(), PathBuf::from(rel), Seen { mtime_ms: mtime, size })
+        (
+            rel.to_string(),
+            PathBuf::from(rel),
+            Seen {
+                mtime_ms: mtime,
+                size,
+            },
+        )
     }
 
     #[test]
@@ -187,7 +207,10 @@ mod tests {
         let picks = Picks::default();
         let known = HashMap::new();
         w.scan("p1", vec![file("a.docx", 100, 10)], &known, &picks);
-        assert!(w.drain().is_empty(), "one look is not enough: an editor may still be writing");
+        assert!(
+            w.drain().is_empty(),
+            "one look is not enough: an editor may still be writing"
+        );
         w.scan("p1", vec![file("a.docx", 100, 10)], &known, &picks);
         let found = w.drain();
         assert_eq!(found.len(), 1);
@@ -204,11 +227,18 @@ mod tests {
         let mut known = HashMap::new();
         known.insert(
             "b.xlsx".to_string(),
-            Known { document_id: "d1".into(), base_seq: 7, seen_mtime_ms: 100 },
+            Known {
+                document_id: "d1".into(),
+                base_seq: 7,
+                seen_mtime_ms: 100,
+            },
         );
         w.scan("p1", vec![file("b.xlsx", 100, 10)], &known, &picks);
         w.scan("p1", vec![file("b.xlsx", 100, 10)], &known, &picks);
-        assert!(w.drain().is_empty(), "unchanged since the project last saw it");
+        assert!(
+            w.drain().is_empty(),
+            "unchanged since the project last saw it"
+        );
         w.scan("p1", vec![file("b.xlsx", 200, 12)], &known, &picks);
         w.scan("p1", vec![file("b.xlsx", 250, 14)], &known, &picks);
         assert!(w.drain().is_empty(), "still being written");

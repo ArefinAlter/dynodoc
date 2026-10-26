@@ -90,7 +90,11 @@ mod tests {
     fn events_are_split_on_blank_lines_across_chunk_boundaries() {
         let mut d = SseDecoder::default();
         let mut all = Vec::new();
-        for chunk in [&b"event: message_start\nda"[..], b"ta: {\"a\":1}\n\n: ping\n\nda", b"ta: one\r\ndata: two\r\n\r\n"] {
+        for chunk in [
+            &b"event: message_start\nda"[..],
+            b"ta: {\"a\":1}\n\n: ping\n\nda",
+            b"ta: one\r\ndata: two\r\n\r\n",
+        ] {
             all.extend(d.push(chunk).unwrap());
         }
         assert_eq!(all.len(), 2);
@@ -108,13 +112,24 @@ mod tests {
         assert_eq!(end.len(), 1);
         assert_eq!(end[0].data, "tail");
         let mut d = SseDecoder::default();
-        assert_eq!(d.push(&vec![b'x'; MAX_LINE + 5]), Err(SseError::LineTooLong));
+        assert_eq!(
+            d.push(&vec![b'x'; MAX_LINE + 5]),
+            Err(SseError::LineTooLong)
+        );
     }
 
     #[test]
     fn comments_and_unknown_fields_are_ignored() {
         let mut d = SseDecoder::default();
-        let ev = d.push(b": hello\nid: 7\nretry: 100\ndata:[DONE]\n\n").unwrap();
-        assert_eq!(ev, vec![SseEvent { event: None, data: "[DONE]".into() }]);
+        let ev = d
+            .push(b": hello\nid: 7\nretry: 100\ndata:[DONE]\n\n")
+            .unwrap();
+        assert_eq!(
+            ev,
+            vec![SseEvent {
+                event: None,
+                data: "[DONE]".into()
+            }]
+        );
     }
 }

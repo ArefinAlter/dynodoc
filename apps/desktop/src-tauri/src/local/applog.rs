@@ -23,7 +23,11 @@ pub fn note(line: &str) {
         .map(|d| d.as_secs())
         .unwrap_or(0);
     let clean: String = line.chars().filter(|c| !c.is_control()).take(500).collect();
-    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
         let _ = writeln!(file, "{when} {clean}");
     }
 }

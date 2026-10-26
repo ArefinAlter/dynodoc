@@ -7,6 +7,12 @@
 //   app  --opens in its own window-->  /app-signin/finish#code=..&state=..&verifier=..
 //   page --POST /auth/app-signin/redeem-->  a session cookie in the app's window
 //
+// A desktop app that keeps its own session (the standalone desktop, decision 020) adds ONE optional
+// value to the request, `redirect_port`, and gets the code on its own loopback listener instead of a
+// custom-scheme link: `http://127.0.0.1:<port>/signin?code=..&state=..`. Then the app itself trades
+// code, state and verifier at /auth/app-signin/redeem (there is no window to finish in). Nothing
+// else about the request, the code or the redeem route changes.
+
 // Every value is checked for length and characters before it is used for anything, on both
 // sides and again by the API.
 
@@ -24,7 +30,14 @@ export interface AppSignin {
   challenge: string;
   state: string;
   platform: Platform;
+  /** Desktop only: the port of the app's loopback listener on this computer (127.0.0.1). */
+  redirectPort?: number;
 }
+
+/** What the app may ask for: an unprivileged port, as plain decimal digits with no sign or zeros. */
+const PORT = /^[1-9][0-9]{3,4}$/;
+export const isRedirectPort = (v: unknown): v is number =>
+  typeof v === 'number' && Number.isInteger(v) && v >= 1024 && v <= 65535;
 
 // base64url(SHA-256(verifier)): 43 characters; the last one carries four bits, so only these
 // sixteen can end a canonical encoding of 32 bytes.
@@ -45,16 +58,34 @@ export function asAppSignin(values: {
   challenge?: unknown;
   state?: unknown;
   platform?: unknown;
+  redirectPort?: unknown;
 }): AppSignin | null {
-  const { challenge, state, platform } = values;
+  const { challenge, state, platform, redirectPort } = values;
   if (!isChallenge(challenge) || !isState(state) || !isPlatform(platform)) return null;
-  return { challenge, state, platform };
+  if (redirectPort === undefined) return { challenge, state, platform };
+  // A loopback listener is a thing of a computer: a phone's app is reached by its own link.
+  if (!isRedirectPort(redirectPort) || platform !== 'desktop') return null;
+  return { challenge, state, platform, redirectPort };
 }
 
-/** The request the app put in the page address: exactly these three values, each once. */
+/**
+ * The request the app put in the page address: exactly these three values, each once, and for a
+ * desktop app one more, `redirect_port`, each once.
+ */
 export function parseAppSignin(query: URLSearchParams): AppSignin | null {
   const keys = [...query.keys()];
-  if (keys.length !== 3 || new Set(keys).size !== 3) return null;
+  const withPort = keys.length === 4;
+  if ((keys.length !== 3 && !withPort) || new Set(keys).size !== keys.length) return null;
+  if (withPort) {
+    const port = query.get('redirect_port');
+    if (port === null || !PORT.test(port)) return null;
+    return asAppSignin({
+      challenge: query.get('challenge'),
+      state: query.get('state'),
+      platform: query.get('platform'),
+      redirectPort: Number(port)
+    });
+  }
   return asAppSignin({
     challenge: query.get('challenge'),
     state: query.get('state'),
@@ -64,13 +95,26 @@ export function parseAppSignin(query: URLSearchParams): AppSignin | null {
 
 /** The page address for a request, rebuilt from its validated parts in one fixed order. */
 export function appSigninPath(request: AppSignin): string {
-  return `/app-signin?challenge=${request.challenge}&state=${request.state}&platform=${request.platform}`;
+  const base = `/app-signin?challenge=${request.challenge}&state=${request.state}&platform=${request.platform}`;
+  return request.redirectPort === undefined
+    ? base
+    : `${base}&redirect_port=${request.redirectPort}`;
 }
 
 /** The link that hands the code to the app. Built only from validated parts. */
 export function appLink(code: string, state: string): string {
   if (!isCode(code) || !isState(state)) throw new Error('not a hand-over code');
   return `dynodoc://signin?code=${code}&state=${state}`;
+}
+
+/**
+ * The address that hands the code to a desktop app's own listener: this computer only
+ * (127.0.0.1), one fixed path, the two values and nothing else. Built only from validated parts.
+ */
+export function loopbackLink(port: number, code: string, state: string): string {
+  if (!isRedirectPort(port) || !isCode(code) || !isState(state))
+    throw new Error('not a hand-over code');
+  return `http://127.0.0.1:${port}/signin?code=${code}&state=${state}`;
 }
 
 export interface Finish {

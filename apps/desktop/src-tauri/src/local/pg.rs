@@ -78,7 +78,11 @@ pub fn server_options(port: u16) -> String {
         "-c lc_messages=C".to_string(),
     ]
     .join(" ")
-        + if cfg!(windows) { "" } else { " -c unix_socket_directories=" }
+        + if cfg!(windows) {
+            ""
+        } else {
+            " -c unix_socket_directories="
+        }
 }
 
 impl Pg {
@@ -96,14 +100,22 @@ impl Pg {
     /// Creates the cluster (first start only). Takes tens of seconds on a busy computer.
     pub async fn init_cluster(&self, owner_password: &str) -> Result<(), PgError> {
         let pwfile = self.layout.run.join("owner.pw");
-        std::fs::write(&pwfile, owner_password).or_else(|_| fail("The local database could not be prepared."))?;
+        std::fs::write(&pwfile, owner_password)
+            .or_else(|_| fail("The local database could not be prepared."))?;
         let mut cmd = self.cmd("initdb");
         cmd.arg("-D")
             .arg(&self.layout.pgdata)
             .args(["-U", OWNER])
             .arg(format!("--pwfile={}", pwfile.display()))
             .args(["--auth-local=scram-sha-256", "--auth-host=scram-sha-256"])
-            .args(["-E", "UTF8", "--locale=C", "--data-checksums", "--no-instructions", "--no-sync"]);
+            .args([
+                "-E",
+                "UTF8",
+                "--locale=C",
+                "--data-checksums",
+                "--no-instructions",
+                "--no-sync",
+            ]);
         let out = procs::run_to_end(cmd, Duration::from_secs(300)).await;
         let _ = std::fs::remove_file(&pwfile);
         match out {
@@ -114,7 +126,9 @@ impl Pg {
                 if !self.layout.has_cluster() {
                     let _ = std::fs::remove_dir_all(&self.layout.pgdata);
                 }
-                fail("The local database could not be created. See the log in the workspace folder.")
+                fail(
+                    "The local database could not be created. See the log in the workspace folder.",
+                )
             }
             Err(e) => fail(e.to_string()),
         }
@@ -201,7 +215,11 @@ impl Pg {
     }
 
     /// Waits until the owner login can run a statement.
-    pub async fn wait_ready(port: u16, owner_password: &str, limit: Duration) -> Result<(), PgError> {
+    pub async fn wait_ready(
+        port: u16,
+        owner_password: &str,
+        limit: Duration,
+    ) -> Result<(), PgError> {
         let deadline = tokio::time::Instant::now() + limit;
         loop {
             if let Ok(client) = Self::connect(port, OWNER, owner_password, "postgres").await {
@@ -258,7 +276,11 @@ impl Pg {
             }
             run(&client, &format!("revoke all on database {db} from public")).await?;
         }
-        run(&client, &format!("grant connect on database {ENGINE_DB} to {RUNTIME}")).await?;
+        run(
+            &client,
+            &format!("grant connect on database {ENGINE_DB} to {RUNTIME}"),
+        )
+        .await?;
         Ok(())
     }
 }
@@ -277,7 +299,10 @@ fn is_hex(text: &str) -> bool {
 /// A line for the log. Never given a secret (callers scrub first).
 fn tracing_note(what: &str, detail: &str) {
     let first: String = detail.lines().take(6).collect::<Vec<_>>().join(" | ");
-    super::applog::note(&format!("{what}: {}", first.chars().take(400).collect::<String>()));
+    super::applog::note(&format!(
+        "{what}: {}",
+        first.chars().take(400).collect::<String>()
+    ));
 }
 
 #[cfg(test)]

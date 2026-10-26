@@ -47,7 +47,10 @@ impl Kind {
     /// Whether to ask for the usage chunk at the end of a stream (providers that document the
     /// option; the others send usage anyway, or not at all).
     pub fn asks_for_usage(self) -> bool {
-        matches!(self, Kind::Openai | Kind::Deepseek | Kind::Qwen | Kind::Ollama | Kind::Compat)
+        matches!(
+            self,
+            Kind::Openai | Kind::Deepseek | Kind::Qwen | Kind::Ollama | Kind::Compat
+        )
     }
 
     pub fn label(self) -> &'static str {
@@ -85,8 +88,12 @@ impl std::fmt::Display for EndpointError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
             Self::NotAnAddress => "The provider's address is not a web address.",
-            Self::Credentials => "A provider's address has no user name, password, query or fragment.",
-            Self::Insecure => "Plain http is only for a server on this computer; use https for any other.",
+            Self::Credentials => {
+                "A provider's address has no user name, password, query or fragment."
+            }
+            Self::Insecure => {
+                "Plain http is only for a server on this computer; use https for any other."
+            }
             Self::BadModel => "A model id uses letters, digits and . _ : / @ + - only.",
         })
     }
@@ -102,7 +109,11 @@ impl Endpoint {
         if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
             return Err(EndpointError::NotAnAddress);
         }
-        if !url.username().is_empty() || url.password().is_some() || url.query().is_some() || url.fragment().is_some() {
+        if !url.username().is_empty()
+            || url.password().is_some()
+            || url.query().is_some()
+            || url.fragment().is_some()
+        {
             return Err(EndpointError::Credentials);
         }
         if url.scheme() == "http" && !is_loopback_host(url.host_str().unwrap_or("")) {
@@ -110,7 +121,9 @@ impl Endpoint {
         }
         let ok = !model.is_empty()
             && model.len() <= 200
-            && model.bytes().all(|b| b.is_ascii_alphanumeric() || b"._:/@+-".contains(&b));
+            && model
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"._:/@+-".contains(&b));
         if !ok {
             return Err(EndpointError::BadModel);
         }
@@ -226,9 +239,14 @@ pub struct Turn {
 #[derive(Debug, Clone, PartialEq)]
 pub enum AgentError {
     /// The provider answered with an error status.
-    Provider { status: u16, message: String },
+    Provider {
+        status: u16,
+        message: String,
+    },
     Rejected(String),
-    RateLimited { retry_after_ms: Option<u64> },
+    RateLimited {
+        retry_after_ms: Option<u64>,
+    },
     Unreachable,
     TimedOut,
     Cancelled,
@@ -271,12 +289,32 @@ mod tests {
     fn addresses_must_be_https_or_this_computer() {
         assert!(Endpoint::parse(Kind::Openai, "https://api.openai.com/v1", "gpt-5").is_ok());
         assert!(Endpoint::parse(Kind::Ollama, "http://127.0.0.1:11434", "llama3.1").is_ok());
-        assert_eq!(Endpoint::parse(Kind::Compat, "http://example.org/v1", "m").unwrap_err(), EndpointError::Insecure);
-        assert_eq!(Endpoint::parse(Kind::Compat, "https://user:pw@example.org", "m").unwrap_err(), EndpointError::Credentials);
-        assert_eq!(Endpoint::parse(Kind::Compat, "https://example.org/v1?key=abc", "m").unwrap_err(), EndpointError::Credentials);
-        assert_eq!(Endpoint::parse(Kind::Compat, "ftp://example.org", "m").unwrap_err(), EndpointError::NotAnAddress);
-        assert_eq!(Endpoint::parse(Kind::Compat, "https://example.org", "a b").unwrap_err(), EndpointError::BadModel);
-        assert_eq!(Endpoint::parse(Kind::Ollama, "http://127.0.0.1:11434", "m").unwrap().host(), "127.0.0.1:11434");
+        assert_eq!(
+            Endpoint::parse(Kind::Compat, "http://example.org/v1", "m").unwrap_err(),
+            EndpointError::Insecure
+        );
+        assert_eq!(
+            Endpoint::parse(Kind::Compat, "https://user:pw@example.org", "m").unwrap_err(),
+            EndpointError::Credentials
+        );
+        assert_eq!(
+            Endpoint::parse(Kind::Compat, "https://example.org/v1?key=abc", "m").unwrap_err(),
+            EndpointError::Credentials
+        );
+        assert_eq!(
+            Endpoint::parse(Kind::Compat, "ftp://example.org", "m").unwrap_err(),
+            EndpointError::NotAnAddress
+        );
+        assert_eq!(
+            Endpoint::parse(Kind::Compat, "https://example.org", "a b").unwrap_err(),
+            EndpointError::BadModel
+        );
+        assert_eq!(
+            Endpoint::parse(Kind::Ollama, "http://127.0.0.1:11434", "m")
+                .unwrap()
+                .host(),
+            "127.0.0.1:11434"
+        );
     }
 
     #[test]
@@ -291,6 +329,9 @@ mod tests {
     fn tool_names_survive_the_wire() {
         assert_eq!(wire_name("history.read"), "history__read");
         assert_eq!(from_wire_name("history__read"), "history.read");
-        assert_eq!(from_wire_name(&wire_name("review.propose_comment")), "review.propose_comment");
+        assert_eq!(
+            from_wire_name(&wire_name("review.propose_comment")),
+            "review.propose_comment"
+        );
     }
 }

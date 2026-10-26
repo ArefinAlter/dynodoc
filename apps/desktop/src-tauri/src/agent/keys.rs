@@ -44,7 +44,11 @@ impl std::fmt::Display for KeyError {
 }
 
 pub fn id_ok(id: &str) -> bool {
-    !id.is_empty() && id.len() <= 40 && id.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
+    !id.is_empty()
+        && id.len() <= 40
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
 }
 
 #[derive(Serialize, Deserialize)]
@@ -60,7 +64,9 @@ fn derive(passphrase: &str, salt: &[u8]) -> Option<Zeroizing<[u8; 32]>> {
     let params = Params::new(19 * 1024, 2, 1, Some(32)).ok()?;
     let argon = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
     let mut out = Zeroizing::new([0u8; 32]);
-    argon.hash_password_into(passphrase.as_bytes(), salt, &mut *out).ok()?;
+    argon
+        .hash_password_into(passphrase.as_bytes(), salt, &mut *out)
+        .ok()?;
     Some(out)
 }
 
@@ -72,9 +78,17 @@ pub fn seal(map: &BTreeMap<String, String>, passphrase: &str) -> Option<String> 
     let key = derive(passphrase, &salt)?;
     let cipher = XChaCha20Poly1305::new(Key::from_slice(&*key));
     let plain = Zeroizing::new(serde_json::to_vec(map).ok()?);
-    let data = cipher.encrypt(XNonce::from_slice(&nonce), plain.as_slice()).ok()?;
+    let data = cipher
+        .encrypt(XNonce::from_slice(&nonce), plain.as_slice())
+        .ok()?;
     let b64 = |b: &[u8]| base64::engine::general_purpose::STANDARD.encode(b);
-    serde_json::to_string(&Sealed { v: VERSION, salt: b64(&salt), nonce: b64(&nonce), data: b64(&data) }).ok()
+    serde_json::to_string(&Sealed {
+        v: VERSION,
+        salt: b64(&salt),
+        nonce: b64(&nonce),
+        data: b64(&data),
+    })
+    .ok()
 }
 
 pub fn open(text: &str, passphrase: &str) -> Result<BTreeMap<String, String>, KeyError> {
@@ -82,21 +96,30 @@ pub fn open(text: &str, passphrase: &str) -> Result<BTreeMap<String, String>, Ke
     if sealed.v != VERSION {
         return Err(KeyError::Failed);
     }
-    let b64 = |s: &str| base64::engine::general_purpose::STANDARD.decode(s).map_err(|_| KeyError::Failed);
+    let b64 = |s: &str| {
+        base64::engine::general_purpose::STANDARD
+            .decode(s)
+            .map_err(|_| KeyError::Failed)
+    };
     let (salt, nonce, data) = (b64(&sealed.salt)?, b64(&sealed.nonce)?, b64(&sealed.data)?);
     if nonce.len() != 24 {
         return Err(KeyError::Failed);
     }
     let key = derive(passphrase, &salt).ok_or(KeyError::Failed)?;
     let cipher = XChaCha20Poly1305::new(Key::from_slice(&*key));
-    let plain = cipher.decrypt(XNonce::from_slice(&nonce), data.as_slice()).map_err(|_| KeyError::WrongPassphrase)?;
+    let plain = cipher
+        .decrypt(XNonce::from_slice(&nonce), data.as_slice())
+        .map_err(|_| KeyError::WrongPassphrase)?;
     let plain = Zeroizing::new(plain);
     serde_json::from_slice(&plain).map_err(|_| KeyError::Failed)
 }
 
 enum Mode {
     Os(OsStore),
-    File { path: PathBuf, unlocked: Mutex<Option<(Zeroizing<String>, BTreeMap<String, Zeroizing<String>>)>> },
+    File {
+        path: PathBuf,
+        unlocked: Mutex<Option<(Zeroizing<String>, BTreeMap<String, Zeroizing<String>>)>>,
+    },
 }
 
 pub struct KeyStore {
@@ -106,7 +129,14 @@ pub struct KeyStore {
 impl KeyStore {
     /// `service` is the credential-store name of this installation (see `secrets::service_for`).
     pub fn open(service: &str, file: PathBuf) -> Self {
-        let mode = if OsStore::available(service) { Mode::Os(OsStore::new(service)) } else { Mode::File { path: file, unlocked: Mutex::new(None) } };
+        let mode = if OsStore::available(service) {
+            Mode::Os(OsStore::new(service))
+        } else {
+            Mode::File {
+                path: file,
+                unlocked: Mutex::new(None),
+            }
+        };
         Self { mode }
     }
 
@@ -118,7 +148,9 @@ impl KeyStore {
     pub fn describe(&self) -> &'static str {
         match &self.mode {
             Mode::Os(os) => os.describe(),
-            Mode::File { .. } => "a file encrypted with your passphrase (no credential store was found)",
+            Mode::File { .. } => {
+                "a file encrypted with your passphrase (no credential store was found)"
+            }
         }
     }
 
@@ -135,7 +167,9 @@ impl KeyStore {
 
     /// Opens the encrypted file with the passphrase (making it, empty, the first time).
     pub fn unlock(&self, passphrase: &str) -> Result<(), KeyError> {
-        let Mode::File { path, unlocked } = &self.mode else { return Ok(()) };
+        let Mode::File { path, unlocked } = &self.mode else {
+            return Ok(());
+        };
         if passphrase.chars().count() < 8 {
             return Err(KeyError::WrongPassphrase);
         }
@@ -144,13 +178,24 @@ impl KeyStore {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => BTreeMap::new(),
             Err(_) => return Err(KeyError::Failed),
         };
-        let map = map.into_iter().map(|(k, v)| (k, Zeroizing::new(v))).collect();
-        *unlocked.lock().map_err(|_| KeyError::Failed)? = Some((Zeroizing::new(passphrase.to_string()), map));
+        let map = map
+            .into_iter()
+            .map(|(k, v)| (k, Zeroizing::new(v)))
+            .collect();
+        *unlocked.lock().map_err(|_| KeyError::Failed)? =
+            Some((Zeroizing::new(passphrase.to_string()), map));
         Ok(())
     }
 
-    fn save(path: &Path, passphrase: &str, map: &BTreeMap<String, Zeroizing<String>>) -> Result<(), KeyError> {
-        let plain: BTreeMap<String, String> = map.iter().map(|(k, v)| (k.clone(), v.to_string())).collect();
+    fn save(
+        path: &Path,
+        passphrase: &str,
+        map: &BTreeMap<String, Zeroizing<String>>,
+    ) -> Result<(), KeyError> {
+        let plain: BTreeMap<String, String> = map
+            .iter()
+            .map(|(k, v)| (k.clone(), v.to_string()))
+            .collect();
         let text = seal(&plain, passphrase).ok_or(KeyError::Failed)?;
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|_| KeyError::Failed)?;
@@ -165,7 +210,10 @@ impl KeyStore {
             return Err(KeyError::BadId);
         }
         match &self.mode {
-            Mode::Os(os) => Ok(os.get(&format!("provider:{id}")).map_err(|_| KeyError::Failed)?.and_then(|s| ApiKey::new(&s))),
+            Mode::Os(os) => Ok(os
+                .get(&format!("provider:{id}"))
+                .map_err(|_| KeyError::Failed)?
+                .and_then(|s| ApiKey::new(&s))),
             Mode::File { unlocked, .. } => {
                 let g = unlocked.lock().map_err(|_| KeyError::Failed)?;
                 let (_, map) = g.as_ref().ok_or(KeyError::Locked)?;
@@ -179,7 +227,9 @@ impl KeyStore {
             return Err(KeyError::BadId);
         }
         match &self.mode {
-            Mode::Os(os) => os.set(&format!("provider:{id}"), key.expose()).map_err(|_| KeyError::Failed),
+            Mode::Os(os) => os
+                .set(&format!("provider:{id}"), key.expose())
+                .map_err(|_| KeyError::Failed),
             Mode::File { path, unlocked } => {
                 let mut g = unlocked.lock().map_err(|_| KeyError::Failed)?;
                 let (pass, map) = g.as_mut().ok_or(KeyError::Locked)?;
@@ -194,7 +244,9 @@ impl KeyStore {
             return Err(KeyError::BadId);
         }
         match &self.mode {
-            Mode::Os(os) => os.delete(&format!("provider:{id}")).map_err(|_| KeyError::Failed),
+            Mode::Os(os) => os
+                .delete(&format!("provider:{id}"))
+                .map_err(|_| KeyError::Failed),
             Mode::File { path, unlocked } => {
                 let mut g = unlocked.lock().map_err(|_| KeyError::Failed)?;
                 let (pass, map) = g.as_mut().ok_or(KeyError::Locked)?;
@@ -216,9 +268,21 @@ mod tests {
         let mut map = BTreeMap::new();
         map.insert("lp1".to_string(), CANARY.to_string());
         let text = seal(&map, "correct horse battery").unwrap();
-        assert!(!text.contains("CANARY") && !text.contains("lp1"), "the file shows nothing of what it holds");
-        assert_eq!(open(&text, "correct horse battery").unwrap().get("lp1").map(String::as_str), Some(CANARY));
-        assert_eq!(open(&text, "wrong horse battery").unwrap_err(), KeyError::WrongPassphrase);
+        assert!(
+            !text.contains("CANARY") && !text.contains("lp1"),
+            "the file shows nothing of what it holds"
+        );
+        assert_eq!(
+            open(&text, "correct horse battery")
+                .unwrap()
+                .get("lp1")
+                .map(String::as_str),
+            Some(CANARY)
+        );
+        assert_eq!(
+            open(&text, "wrong horse battery").unwrap_err(),
+            KeyError::WrongPassphrase
+        );
         // Two seals of the same keys differ (fresh salt and nonce).
         assert_ne!(text, seal(&map, "correct horse battery").unwrap());
     }
@@ -227,10 +291,18 @@ mod tests {
     fn the_file_store_locks_unlocks_and_forgets() {
         let dir = std::env::temp_dir().join(format!("dynodoc-keys-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        let store = KeyStore { mode: Mode::File { path: dir.join("provider-keys.enc"), unlocked: Mutex::new(None) } };
+        let store = KeyStore {
+            mode: Mode::File {
+                path: dir.join("provider-keys.enc"),
+                unlocked: Mutex::new(None),
+            },
+        };
         assert!(store.locked());
         assert_eq!(store.get("lp1").err(), Some(KeyError::Locked));
-        assert_eq!(store.unlock("short").unwrap_err(), KeyError::WrongPassphrase);
+        assert_eq!(
+            store.unlock("short").unwrap_err(),
+            KeyError::WrongPassphrase
+        );
         store.unlock("a long enough passphrase").unwrap();
         let key = ApiKey::new(CANARY).unwrap();
         store.set("lp1", &key).unwrap();
@@ -238,9 +310,17 @@ mod tests {
         let on_disk = std::fs::read_to_string(dir.join("provider-keys.enc")).unwrap();
         assert!(!on_disk.contains("CANARY"));
         // A new run starts locked; the passphrase brings the key back.
-        let again = KeyStore { mode: Mode::File { path: dir.join("provider-keys.enc"), unlocked: Mutex::new(None) } };
+        let again = KeyStore {
+            mode: Mode::File {
+                path: dir.join("provider-keys.enc"),
+                unlocked: Mutex::new(None),
+            },
+        };
         assert!(again.locked());
-        assert_eq!(again.unlock("another passphrase here").unwrap_err(), KeyError::WrongPassphrase);
+        assert_eq!(
+            again.unlock("another passphrase here").unwrap_err(),
+            KeyError::WrongPassphrase
+        );
         again.unlock("a long enough passphrase").unwrap();
         assert_eq!(again.get("lp1").unwrap().unwrap().hint(), "cdef");
         again.delete("lp1").unwrap();

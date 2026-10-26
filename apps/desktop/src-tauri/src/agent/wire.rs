@@ -8,7 +8,10 @@
 //!   `/v1`, and any compatible server): `messages`, `tool_calls` and `role: "tool"`.
 
 use super::sse::SseEvent;
-use super::types::{from_wire_name, wire_name, AgentError, Endpoint, Kind, Msg, Stop, Style, ToolCall, ToolDecl, Turn, Usage};
+use super::types::{
+    from_wire_name, wire_name, AgentError, Endpoint, Kind, Msg, Stop, Style, ToolCall, ToolDecl,
+    Turn, Usage,
+};
 use serde_json::{json, Map, Value};
 
 /// A request, without its key.
@@ -39,7 +42,11 @@ pub fn build(ep: &Endpoint, system: &str, msgs: &[Msg], tools: &[ToolDecl]) -> B
 
 fn build_anthropic(ep: &Endpoint, system: &str, msgs: &[Msg], tools: &[ToolDecl]) -> Built {
     let base = trimmed(&ep.base);
-    let url = if base.ends_with("/v1") { format!("{base}/messages") } else { format!("{base}/v1/messages") };
+    let url = if base.ends_with("/v1") {
+        format!("{base}/messages")
+    } else {
+        format!("{base}/v1/messages")
+    };
     let mut messages: Vec<Value> = Vec::new();
     let mut pending: Vec<Value> = Vec::new();
     let flush = |pending: &mut Vec<Value>, messages: &mut Vec<Value>| {
@@ -49,7 +56,10 @@ fn build_anthropic(ep: &Endpoint, system: &str, msgs: &[Msg], tools: &[ToolDecl]
     };
     for m in msgs {
         match m {
-            Msg::ToolResult { call_id, output, .. } => pending.push(json!({ "type": "tool_result", "tool_use_id": call_id, "content": output })),
+            Msg::ToolResult {
+                call_id, output, ..
+            } => pending
+                .push(json!({ "type": "tool_result", "tool_use_id": call_id, "content": output })),
             Msg::User(t) => {
                 flush(&mut pending, &mut messages);
                 messages.push(json!({ "role": "user", "content": t }));
@@ -80,7 +90,11 @@ fn build_anthropic(ep: &Endpoint, system: &str, msgs: &[Msg], tools: &[ToolDecl]
     }
     Built {
         url,
-        headers: vec![("content-type", "application/json".into()), ("anthropic-version", "2023-06-01".into()), ("accept", "text/event-stream".into())],
+        headers: vec![
+            ("content-type", "application/json".into()),
+            ("anthropic-version", "2023-06-01".into()),
+            ("accept", "text/event-stream".into()),
+        ],
         key_header: Some(("x-api-key", "")),
         body,
     }
@@ -111,7 +125,14 @@ fn build_openai(ep: &Endpoint, system: &str, msgs: &[Msg], tools: &[ToolDecl]) -
             Msg::Assistant { text, calls, .. } => {
                 let mut o = Map::new();
                 o.insert("role".into(), json!("assistant"));
-                o.insert("content".into(), if text.is_empty() { Value::Null } else { json!(text) });
+                o.insert(
+                    "content".into(),
+                    if text.is_empty() {
+                        Value::Null
+                    } else {
+                        json!(text)
+                    },
+                );
                 if !calls.is_empty() {
                     o.insert(
                         "tool_calls".into(),
@@ -120,7 +141,11 @@ fn build_openai(ep: &Endpoint, system: &str, msgs: &[Msg], tools: &[ToolDecl]) -
                 }
                 messages.push(Value::Object(o));
             }
-            Msg::ToolResult { call_id, output, .. } => messages.push(json!({ "role": "tool", "tool_call_id": call_id, "content": output })),
+            Msg::ToolResult {
+                call_id, output, ..
+            } => {
+                messages.push(json!({ "role": "tool", "tool_call_id": call_id, "content": output }))
+            }
         }
     }
     let mut body = json!({ "model": ep.model, "stream": true, "messages": messages });
@@ -132,7 +157,10 @@ fn build_openai(ep: &Endpoint, system: &str, msgs: &[Msg], tools: &[ToolDecl]) -
     }
     Built {
         url: openai_url(ep),
-        headers: vec![("content-type", "application/json".into()), ("accept", "text/event-stream".into())],
+        headers: vec![
+            ("content-type", "application/json".into()),
+            ("accept", "text/event-stream".into()),
+        ],
         key_header: ep.kind.needs_key().then_some(("authorization", "Bearer ")),
         body,
     }
@@ -217,7 +245,8 @@ fn parse_args(text: &str) -> Value {
     if text.trim().is_empty() {
         return json!({});
     }
-    serde_json::from_str(text).unwrap_or_else(|_| json!({ "_unparsed": text.chars().take(2000).collect::<String>() }))
+    serde_json::from_str(text)
+        .unwrap_or_else(|_| json!({ "_unparsed": text.chars().take(2000).collect::<String>() }))
 }
 
 fn bad(msg: &str) -> AgentError {
@@ -237,17 +266,30 @@ struct AnthropicReader {
 
 impl Reader for AnthropicReader {
     fn feed(&mut self, ev: &SseEvent, on_text: &mut dyn FnMut(&str)) -> Result<(), AgentError> {
-        let v: Value = serde_json::from_str(&ev.data).map_err(|_| bad("an event that is not JSON"))?;
+        let v: Value =
+            serde_json::from_str(&ev.data).map_err(|_| bad("an event that is not JSON"))?;
         match v["type"].as_str().unwrap_or("") {
             "message_start" => {
                 let u = &v["message"]["usage"];
-                self.usage.input = ["input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"].iter().filter_map(|k| u[*k].as_u64()).sum();
+                self.usage.input = [
+                    "input_tokens",
+                    "cache_creation_input_tokens",
+                    "cache_read_input_tokens",
+                ]
+                .iter()
+                .filter_map(|k| u[*k].as_u64())
+                .sum();
                 self.usage.output = u["output_tokens"].as_u64().unwrap_or(0);
             }
             "content_block_start" => {
                 let i = v["index"].as_u64().unwrap_or(0) as usize;
                 let b = &v["content_block"];
-                let call = (b["type"] == "tool_use").then(|| (b["id"].as_str().unwrap_or("").to_string(), from_wire_name(b["name"].as_str().unwrap_or(""))));
+                let call = (b["type"] == "tool_use").then(|| {
+                    (
+                        b["id"].as_str().unwrap_or("").to_string(),
+                        from_wire_name(b["name"].as_str().unwrap_or("")),
+                    )
+                });
                 self.blocks.push((i, call, String::new()));
             }
             "content_block_delta" => {
@@ -285,8 +327,13 @@ impl Reader for AnthropicReader {
                 let kind = v["error"]["type"].as_str().unwrap_or("error");
                 let msg = v["error"]["message"].as_str().unwrap_or("");
                 return Err(match kind {
-                    "overloaded_error" | "rate_limit_error" => AgentError::RateLimited { retry_after_ms: None },
-                    _ => AgentError::Provider { status: 0, message: format!("{kind}: {}", msg.chars().take(200).collect::<String>()) },
+                    "overloaded_error" | "rate_limit_error" => AgentError::RateLimited {
+                        retry_after_ms: None,
+                    },
+                    _ => AgentError::Provider {
+                        status: 0,
+                        message: format!("{kind}: {}", msg.chars().take(200).collect::<String>()),
+                    },
                 });
             }
             _ => {}
@@ -298,9 +345,29 @@ impl Reader for AnthropicReader {
         if !self.ended && self.stop.is_none() {
             return Err(bad("the stream ended early"));
         }
-        let calls: Vec<ToolCall> = self.blocks.into_iter().filter_map(|(_, call, json)| call.map(|(id, name)| ToolCall { id, name, args: parse_args(&json) })).collect();
-        let stop = self.stop.unwrap_or(if calls.is_empty() { Stop::End } else { Stop::ToolCalls });
-        Ok(Turn { text: self.text, calls, usage: self.usage, stop, raw: None })
+        let calls: Vec<ToolCall> = self
+            .blocks
+            .into_iter()
+            .filter_map(|(_, call, json)| {
+                call.map(|(id, name)| ToolCall {
+                    id,
+                    name,
+                    args: parse_args(&json),
+                })
+            })
+            .collect();
+        let stop = self.stop.unwrap_or(if calls.is_empty() {
+            Stop::End
+        } else {
+            Stop::ToolCalls
+        });
+        Ok(Turn {
+            text: self.text,
+            calls,
+            usage: self.usage,
+            stop,
+            raw: None,
+        })
     }
 }
 
@@ -332,14 +399,26 @@ impl Reader for OpenAiReader {
         }
         let v: Value = serde_json::from_str(data).map_err(|_| bad("an event that is not JSON"))?;
         if let Some(err) = v.get("error").filter(|e| !e.is_null()) {
-            let msg = err["message"].as_str().or_else(|| err.as_str()).unwrap_or("an error");
-            return Err(AgentError::Provider { status: 0, message: msg.chars().take(300).collect() });
+            let msg = err["message"]
+                .as_str()
+                .or_else(|| err.as_str())
+                .unwrap_or("an error");
+            return Err(AgentError::Provider {
+                status: 0,
+                message: msg.chars().take(300).collect(),
+            });
         }
         self.seen = true;
-        let usage = if v["usage"].is_object() { &v["usage"] } else { &v["choices"][0]["usage"] };
+        let usage = if v["usage"].is_object() {
+            &v["usage"]
+        } else {
+            &v["choices"][0]["usage"]
+        };
         if usage.is_object() {
             self.usage.input = usage["prompt_tokens"].as_u64().unwrap_or(self.usage.input);
-            self.usage.output = usage["completion_tokens"].as_u64().unwrap_or(self.usage.output);
+            self.usage.output = usage["completion_tokens"]
+                .as_u64()
+                .unwrap_or(self.usage.output);
         }
         let choice = &v["choices"][0];
         if let Some(r) = choice["finish_reason"].as_str() {
@@ -356,10 +435,18 @@ impl Reader for OpenAiReader {
             for (n, c) in list.iter().enumerate() {
                 let index = c["index"].as_u64();
                 let id = c["id"].as_str().unwrap_or("");
-                let slot = match (index, self.calls.iter().position(|(i, p)| (index.is_some() && *i == index) || (!id.is_empty() && p.id == id))) {
+                let slot = match (
+                    index,
+                    self.calls.iter().position(|(i, p)| {
+                        (index.is_some() && *i == index) || (!id.is_empty() && p.id == id)
+                    }),
+                ) {
                     (_, Some(p)) => p,
                     _ => {
-                        self.calls.push((index.or(Some((self.calls.len() + n) as u64)), PartialCall::default()));
+                        self.calls.push((
+                            index.or(Some((self.calls.len() + n) as u64)),
+                            PartialCall::default(),
+                        ));
                         self.calls.len() - 1
                     }
                 };
@@ -389,7 +476,15 @@ impl Reader for OpenAiReader {
             .into_iter()
             .enumerate()
             .filter(|(_, (_, p))| !p.name.is_empty())
-            .map(|(n, (_, p))| ToolCall { id: if p.id.is_empty() { format!("call_{n}") } else { p.id }, name: from_wire_name(&p.name), args: parse_args(&p.args) })
+            .map(|(n, (_, p))| ToolCall {
+                id: if p.id.is_empty() {
+                    format!("call_{n}")
+                } else {
+                    p.id
+                },
+                name: from_wire_name(&p.name),
+                args: parse_args(&p.args),
+            })
             .collect();
         let stop = match self.finish.as_deref() {
             Some("tool_calls") | Some("function_call") => Stop::ToolCalls,
@@ -399,7 +494,13 @@ impl Reader for OpenAiReader {
             Some(_) if !calls.is_empty() => Stop::ToolCalls,
             Some(_) => Stop::Other,
         };
-        Ok(Turn { text: self.text, calls, usage: self.usage, stop, raw: None })
+        Ok(Turn {
+            text: self.text,
+            calls,
+            usage: self.usage,
+            stop,
+            raw: None,
+        })
     }
 }
 
@@ -417,15 +518,25 @@ struct GeminiReader {
 
 impl Reader for GeminiReader {
     fn feed(&mut self, ev: &SseEvent, on_text: &mut dyn FnMut(&str)) -> Result<(), AgentError> {
-        let v: Value = serde_json::from_str(&ev.data).map_err(|_| bad("an event that is not JSON"))?;
+        let v: Value =
+            serde_json::from_str(&ev.data).map_err(|_| bad("an event that is not JSON"))?;
         if let Some(err) = v.get("error").filter(|e| !e.is_null()) {
-            return Err(AgentError::Provider { status: err["code"].as_u64().unwrap_or(0) as u16, message: err["message"].as_str().unwrap_or("an error").chars().take(300).collect() });
+            return Err(AgentError::Provider {
+                status: err["code"].as_u64().unwrap_or(0) as u16,
+                message: err["message"]
+                    .as_str()
+                    .unwrap_or("an error")
+                    .chars()
+                    .take(300)
+                    .collect(),
+            });
         }
         self.seen = true;
         let u = &v["usageMetadata"];
         if u.is_object() {
             self.usage.input = u["promptTokenCount"].as_u64().unwrap_or(self.usage.input);
-            self.usage.output = u["candidatesTokenCount"].as_u64().unwrap_or(0) + u["thoughtsTokenCount"].as_u64().unwrap_or(0);
+            self.usage.output = u["candidatesTokenCount"].as_u64().unwrap_or(0)
+                + u["thoughtsTokenCount"].as_u64().unwrap_or(0);
         }
         let cand = &v["candidates"][0];
         if let Some(r) = cand["finishReason"].as_str() {
@@ -435,7 +546,15 @@ impl Reader for GeminiReader {
             for part in parts {
                 self.parts.push(part.clone());
                 if let Some(call) = part.get("functionCall") {
-                    self.calls.push(ToolCall { id: format!("call_{}", self.calls.len()), name: from_wire_name(call["name"].as_str().unwrap_or("")), args: if call["args"].is_null() { json!({}) } else { call["args"].clone() } });
+                    self.calls.push(ToolCall {
+                        id: format!("call_{}", self.calls.len()),
+                        name: from_wire_name(call["name"].as_str().unwrap_or("")),
+                        args: if call["args"].is_null() {
+                            json!({})
+                        } else {
+                            call["args"].clone()
+                        },
+                    });
                 } else if let Some(t) = part["text"].as_str() {
                     // A part marked as a thought is the model's own working, not an answer.
                     if part["thought"] != true && !t.is_empty() {
@@ -459,14 +578,20 @@ impl Reader for GeminiReader {
             Some(_) => Stop::Other,
         };
         let raw = (!self.calls.is_empty()).then(|| json!({ "parts": self.parts }));
-        Ok(Turn { text: self.text, calls: self.calls, usage: self.usage, stop, raw })
+        Ok(Turn {
+            text: self.text,
+            calls: self.calls,
+            usage: self.usage,
+            stop,
+            raw,
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::sse::SseDecoder;
+    use super::*;
 
     fn run(style: Style, wire: &str) -> (Turn, String) {
         let mut d = SseDecoder::default();
@@ -485,23 +610,51 @@ mod tests {
     }
 
     fn tool() -> ToolDecl {
-        ToolDecl { name: "history.read".into(), description: "Revisions".into(), parameters: json!({ "type": "object", "properties": { "document": { "type": "string" } }, "required": ["document"] }) }
+        ToolDecl {
+            name: "history.read".into(),
+            description: "Revisions".into(),
+            parameters: json!({ "type": "object", "properties": { "document": { "type": "string" } }, "required": ["document"] }),
+        }
     }
 
     fn conversation() -> Vec<Msg> {
         vec![
             Msg::User("What changed?".into()),
-            Msg::Assistant { text: "Let me look.".into(), calls: vec![ToolCall { id: "c1".into(), name: "history.read".into(), args: json!({ "document": "Charter.docx" }) }], raw: None },
-            Msg::ToolResult { call_id: "c1".into(), name: "history.read".into(), output: "r15 Merge #1".into() },
+            Msg::Assistant {
+                text: "Let me look.".into(),
+                calls: vec![ToolCall {
+                    id: "c1".into(),
+                    name: "history.read".into(),
+                    args: json!({ "document": "Charter.docx" }),
+                }],
+                raw: None,
+            },
+            Msg::ToolResult {
+                call_id: "c1".into(),
+                name: "history.read".into(),
+                output: "r15 Merge #1".into(),
+            },
         ]
     }
 
     #[test]
     fn anthropic_requests_and_streams() {
-        let b = build(&ep(Kind::Anthropic, "https://api.anthropic.com", "claude-sonnet-4-5"), "Be brief.", &conversation(), &[tool()]);
+        let b = build(
+            &ep(
+                Kind::Anthropic,
+                "https://api.anthropic.com",
+                "claude-sonnet-4-5",
+            ),
+            "Be brief.",
+            &conversation(),
+            &[tool()],
+        );
         assert_eq!(b.url, "https://api.anthropic.com/v1/messages");
         assert_eq!(b.key_header, Some(("x-api-key", "")));
-        assert!(b.headers.iter().any(|(k, v)| *k == "anthropic-version" && v == "2023-06-01"));
+        assert!(b
+            .headers
+            .iter()
+            .any(|(k, v)| *k == "anthropic-version" && v == "2023-06-01"));
         assert_eq!(b.body["system"], "Be brief.");
         assert_eq!(b.body["tools"][0]["name"], "history__read");
         assert_eq!(b.body["messages"][1]["content"][1]["type"], "tool_use");
@@ -523,39 +676,105 @@ event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
         assert_eq!(seen, "Looking now.");
         assert_eq!(turn.text, "Looking now.");
         assert_eq!(turn.stop, Stop::ToolCalls);
-        assert_eq!(turn.usage, Usage { input: 472, output: 57 });
-        assert_eq!(turn.calls, vec![ToolCall { id: "toolu_1".into(), name: "history.read".into(), args: json!({ "document": "Charter.docx" }) }]);
+        assert_eq!(
+            turn.usage,
+            Usage {
+                input: 472,
+                output: 57
+            }
+        );
+        assert_eq!(
+            turn.calls,
+            vec![ToolCall {
+                id: "toolu_1".into(),
+                name: "history.read".into(),
+                args: json!({ "document": "Charter.docx" })
+            }]
+        );
     }
 
     #[test]
     fn an_anthropic_error_event_names_what_went_wrong() {
         let mut r = reader(Style::Anthropic);
         let ev = SseEvent { event: Some("error".into()), data: "{\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}".into() };
-        assert!(matches!(r.feed(&ev, &mut |_| {}), Err(AgentError::RateLimited { .. })));
+        assert!(matches!(
+            r.feed(&ev, &mut |_| {}),
+            Err(AgentError::RateLimited { .. })
+        ));
         let ev = SseEvent { event: Some("error".into()), data: "{\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"bad\"}}".into() };
-        assert!(matches!(r.feed(&ev, &mut |_| {}), Err(AgentError::Provider { .. })));
+        assert!(matches!(
+            r.feed(&ev, &mut |_| {}),
+            Err(AgentError::Provider { .. })
+        ));
     }
 
     #[test]
     fn openai_style_requests_and_streams_with_split_tool_arguments() {
         for (kind, base, url) in [
-            (Kind::Openai, "https://api.openai.com/v1", "https://api.openai.com/v1/chat/completions"),
-            (Kind::Mistral, "https://api.mistral.ai/v1", "https://api.mistral.ai/v1/chat/completions"),
-            (Kind::Deepseek, "https://api.deepseek.com", "https://api.deepseek.com/chat/completions"),
-            (Kind::Qwen, "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions"),
-            (Kind::Kimi, "https://api.moonshot.ai/v1", "https://api.moonshot.ai/v1/chat/completions"),
-            (Kind::Glm, "https://open.bigmodel.cn/api/paas/v4", "https://open.bigmodel.cn/api/paas/v4/chat/completions"),
-            (Kind::Ollama, "http://127.0.0.1:11434", "http://127.0.0.1:11434/v1/chat/completions"),
-            (Kind::Compat, "https://llm.example.org/v1/", "https://llm.example.org/v1/chat/completions"),
+            (
+                Kind::Openai,
+                "https://api.openai.com/v1",
+                "https://api.openai.com/v1/chat/completions",
+            ),
+            (
+                Kind::Mistral,
+                "https://api.mistral.ai/v1",
+                "https://api.mistral.ai/v1/chat/completions",
+            ),
+            (
+                Kind::Deepseek,
+                "https://api.deepseek.com",
+                "https://api.deepseek.com/chat/completions",
+            ),
+            (
+                Kind::Qwen,
+                "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+                "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions",
+            ),
+            (
+                Kind::Kimi,
+                "https://api.moonshot.ai/v1",
+                "https://api.moonshot.ai/v1/chat/completions",
+            ),
+            (
+                Kind::Glm,
+                "https://open.bigmodel.cn/api/paas/v4",
+                "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+            ),
+            (
+                Kind::Ollama,
+                "http://127.0.0.1:11434",
+                "http://127.0.0.1:11434/v1/chat/completions",
+            ),
+            (
+                Kind::Compat,
+                "https://llm.example.org/v1/",
+                "https://llm.example.org/v1/chat/completions",
+            ),
         ] {
-            let b = build(&ep(kind, base, "m"), "Be brief.", &conversation(), &[tool()]);
+            let b = build(
+                &ep(kind, base, "m"),
+                "Be brief.",
+                &conversation(),
+                &[tool()],
+            );
             assert_eq!(b.url, url, "{kind:?}");
             assert_eq!(b.key_header.is_some(), kind.needs_key(), "{kind:?}");
             assert_eq!(b.body["messages"][0]["role"], "system");
-            assert_eq!(b.body["messages"][2]["tool_calls"][0]["function"]["name"], "history__read");
-            assert_eq!(b.body["messages"][2]["tool_calls"][0]["function"]["arguments"], "{\"document\":\"Charter.docx\"}");
+            assert_eq!(
+                b.body["messages"][2]["tool_calls"][0]["function"]["name"],
+                "history__read"
+            );
+            assert_eq!(
+                b.body["messages"][2]["tool_calls"][0]["function"]["arguments"],
+                "{\"document\":\"Charter.docx\"}"
+            );
             assert_eq!(b.body["messages"][3]["role"], "tool");
-            assert_eq!(b.body["stream_options"].is_object(), kind.asks_for_usage(), "{kind:?}");
+            assert_eq!(
+                b.body["stream_options"].is_object(),
+                kind.asks_for_usage(),
+                "{kind:?}"
+            );
         }
         let wire = "data: {\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"On it. \"},\"finish_reason\":null}]}\n\n\
 data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_9\",\"type\":\"function\",\"function\":{\"name\":\"history__read\",\"arguments\":\"\"}}]},\"finish_reason\":null}]}\n\n\
@@ -567,8 +786,21 @@ data: [DONE]\n\n";
         let (turn, seen) = run(Style::OpenAi, wire);
         assert_eq!(seen, "On it. ");
         assert_eq!(turn.stop, Stop::ToolCalls);
-        assert_eq!(turn.usage, Usage { input: 120, output: 31 });
-        assert_eq!(turn.calls, vec![ToolCall { id: "call_9".into(), name: "history.read".into(), args: json!({ "document": "Budget.xlsx" }) }]);
+        assert_eq!(
+            turn.usage,
+            Usage {
+                input: 120,
+                output: 31
+            }
+        );
+        assert_eq!(
+            turn.calls,
+            vec![ToolCall {
+                id: "call_9".into(),
+                name: "history.read".into(),
+                args: json!({ "document": "Budget.xlsx" })
+            }]
+        );
     }
 
     #[test]
@@ -576,7 +808,13 @@ data: [DONE]\n\n";
         // Moonshot: usage inside the last choice. Ollama: the whole call in one chunk, finish "stop".
         let wire = "data: {\"choices\":[{\"delta\":{\"content\":\"Hi\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\",\"usage\":{\"prompt_tokens\":9,\"completion_tokens\":2}}]}\n\ndata: [DONE]\n\n";
         let (turn, _) = run(Style::OpenAi, wire);
-        assert_eq!(turn.usage, Usage { input: 9, output: 2 });
+        assert_eq!(
+            turn.usage,
+            Usage {
+                input: 9,
+                output: 2
+            }
+        );
         assert_eq!(turn.stop, Stop::End);
         let wire = "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"id\":\"c\",\"function\":{\"name\":\"requests__list\",\"arguments\":\"{\\\"state\\\":\\\"open\\\"}\"}}]},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
         let (turn, _) = run(Style::OpenAi, wire);
@@ -587,27 +825,75 @@ data: [DONE]\n\n";
 
     #[test]
     fn gemini_requests_and_streams_and_keeps_its_own_parts() {
-        let b = build(&ep(Kind::Google, "https://generativelanguage.googleapis.com/v1beta", "gemini-2.5-pro"), "Be brief.", &conversation(), &[tool()]);
+        let b = build(
+            &ep(
+                Kind::Google,
+                "https://generativelanguage.googleapis.com/v1beta",
+                "gemini-2.5-pro",
+            ),
+            "Be brief.",
+            &conversation(),
+            &[tool()],
+        );
         assert_eq!(b.url, "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:streamGenerateContent?alt=sse");
         assert_eq!(b.key_header, Some(("x-goog-api-key", "")));
         assert!(!b.url.contains("key="), "the key never goes in the address");
         assert_eq!(b.body["systemInstruction"]["parts"][0]["text"], "Be brief.");
         assert_eq!(b.body["contents"][1]["role"], "model");
-        assert_eq!(b.body["contents"][1]["parts"][1]["functionCall"]["name"], "history__read");
-        assert_eq!(b.body["contents"][2]["parts"][0]["functionResponse"]["response"]["output"], "r15 Merge #1");
-        assert_eq!(b.body["tools"][0]["functionDeclarations"][0]["name"], "history__read");
+        assert_eq!(
+            b.body["contents"][1]["parts"][1]["functionCall"]["name"],
+            "history__read"
+        );
+        assert_eq!(
+            b.body["contents"][2]["parts"][0]["functionResponse"]["response"]["output"],
+            "r15 Merge #1"
+        );
+        assert_eq!(
+            b.body["tools"][0]["functionDeclarations"][0]["name"],
+            "history__read"
+        );
         let wire = "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"Checking. \"}]}}]}\n\n\
 data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"functionCall\":{\"name\":\"requests__list\",\"args\":{\"state\":\"open\"}},\"thoughtSignature\":\"SIG\"}]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":88,\"candidatesTokenCount\":12,\"thoughtsTokenCount\":5}}\n\n";
         let (turn, seen) = run(Style::Gemini, wire);
         assert_eq!(seen, "Checking. ");
         assert_eq!(turn.stop, Stop::ToolCalls);
-        assert_eq!(turn.usage, Usage { input: 88, output: 17 });
+        assert_eq!(
+            turn.usage,
+            Usage {
+                input: 88,
+                output: 17
+            }
+        );
         assert_eq!(turn.calls[0].name, "requests.list");
         assert_eq!(turn.calls[0].args, json!({ "state": "open" }));
         // The signature goes back with the call on the next request.
-        let history = vec![Msg::User("q".into()), Msg::Assistant { text: turn.text.clone(), calls: turn.calls.clone(), raw: turn.raw.clone() }, Msg::ToolResult { call_id: "call_0".into(), name: "requests.list".into(), output: "none".into() }];
-        let again = build(&ep(Kind::Google, "https://generativelanguage.googleapis.com/v1beta", "gemini-2.5-pro"), "", &history, &[tool()]);
-        assert_eq!(again.body["contents"][1]["parts"][1]["thoughtSignature"], "SIG");
+        let history = vec![
+            Msg::User("q".into()),
+            Msg::Assistant {
+                text: turn.text.clone(),
+                calls: turn.calls.clone(),
+                raw: turn.raw.clone(),
+            },
+            Msg::ToolResult {
+                call_id: "call_0".into(),
+                name: "requests.list".into(),
+                output: "none".into(),
+            },
+        ];
+        let again = build(
+            &ep(
+                Kind::Google,
+                "https://generativelanguage.googleapis.com/v1beta",
+                "gemini-2.5-pro",
+            ),
+            "",
+            &history,
+            &[tool()],
+        );
+        assert_eq!(
+            again.body["contents"][1]["parts"][1]["thoughtSignature"],
+            "SIG"
+        );
     }
 
     #[test]

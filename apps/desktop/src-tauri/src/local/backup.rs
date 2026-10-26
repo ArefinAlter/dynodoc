@@ -63,7 +63,9 @@ pub fn entry_ok(name: &str) -> bool {
     !rest.is_empty()
         && !name.contains('\\')
         && !name.contains(':')
-        && Path::new(rest).components().all(|c| matches!(c, Component::Normal(_)))
+        && Path::new(rest)
+            .components()
+            .all(|c| matches!(c, Component::Normal(_)))
 }
 
 /// What a restore says about an archive it will not open.
@@ -93,23 +95,32 @@ fn zip_folder(
     dir: &Path,
     count: &mut usize,
 ) -> std::io::Result<()> {
-    let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
-        let rel = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().replace('\\', "/");
+        let rel = path
+            .strip_prefix(root)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .replace('\\', "/");
         let name = entry.file_name().to_string_lossy().to_string();
         let meta = entry.metadata()?;
         if meta.is_dir() {
             // PostgreSQL refuses to start when one of its (often empty) folders is missing.
-            writer.add_directory(format!("{DATA_PREFIX}{rel}/"), options).map_err(std::io::Error::other)?;
+            writer
+                .add_directory(format!("{DATA_PREFIX}{rel}/"), options)
+                .map_err(std::io::Error::other)?;
             zip_folder(writer, root, &path, count)?;
         } else if meta.is_file() {
             // A lock and a command line from the run that was just stopped are not data.
             if name == "postmaster.pid" || name == "postmaster.opts" {
                 continue;
             }
-            writer.start_file(format!("{DATA_PREFIX}{rel}"), options).map_err(std::io::Error::other)?;
+            writer
+                .start_file(format!("{DATA_PREFIX}{rel}"), options)
+                .map_err(std::io::Error::other)?;
             let mut file = std::fs::File::open(&path)?;
             std::io::copy(&mut file, writer)?;
             *count += 1;
@@ -119,12 +130,17 @@ fn zip_folder(
 }
 
 /// Writes the archive of a stopped cluster. Pure file work (no database, no process).
-pub fn write_archive(layout: &Layout, dest: &Path, app_version: &str) -> Result<BackupInfo, String> {
+pub fn write_archive(
+    layout: &Layout,
+    dest: &Path,
+    app_version: &str,
+) -> Result<BackupInfo, String> {
     let partial = dest.with_extension("zip.partial");
     let result = (|| -> std::io::Result<usize> {
         let file = std::fs::File::create(&partial)?;
         let mut writer = zip::ZipWriter::new(file);
-        let plain = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        let plain = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
         let manifest = Manifest {
             format: FORMAT,
             app_version: app_version.to_string(),
@@ -132,10 +148,18 @@ pub fn write_archive(layout: &Layout, dest: &Path, app_version: &str) -> Result<
             os: current_os().to_string(),
             created_ms: appdb::now_ms(),
         };
-        writer.start_file(MANIFEST, plain).map_err(std::io::Error::other)?;
-        writer.write_all(serde_json::to_string_pretty(&manifest).unwrap_or_default().as_bytes())?;
+        writer
+            .start_file(MANIFEST, plain)
+            .map_err(std::io::Error::other)?;
+        writer.write_all(
+            serde_json::to_string_pretty(&manifest)
+                .unwrap_or_default()
+                .as_bytes(),
+        )?;
         if let Ok(saved) = std::fs::read(&layout.state_file) {
-            writer.start_file(SAVED, plain).map_err(std::io::Error::other)?;
+            writer
+                .start_file(SAVED, plain)
+                .map_err(std::io::Error::other)?;
             writer.write_all(&saved)?;
         }
         let mut count = 0;
@@ -145,7 +169,8 @@ pub fn write_archive(layout: &Layout, dest: &Path, app_version: &str) -> Result<
     })();
     match result {
         Ok(files) => {
-            std::fs::rename(&partial, dest).map_err(|_| "The backup could not be saved there.".to_string())?;
+            std::fs::rename(&partial, dest)
+                .map_err(|_| "The backup could not be saved there.".to_string())?;
             let bytes = std::fs::metadata(dest).map(|m| m.len()).unwrap_or(0);
             Ok(BackupInfo {
                 path: dest.display().to_string(),
@@ -162,27 +187,38 @@ pub fn write_archive(layout: &Layout, dest: &Path, app_version: &str) -> Result<
 
 /// Reads an archive into `into` (a new folder), refusing anything outside the known names.
 pub fn read_archive(src: &Path, into: &Path, layout_pg: &str) -> Result<Manifest, String> {
-    let file = std::fs::File::open(src).map_err(|_| "The backup could not be opened.".to_string())?;
-    let mut archive = zip::ZipArchive::new(file).map_err(|_| "That file is not a Dynodoc backup.".to_string())?;
+    let file =
+        std::fs::File::open(src).map_err(|_| "The backup could not be opened.".to_string())?;
+    let mut archive =
+        zip::ZipArchive::new(file).map_err(|_| "That file is not a Dynodoc backup.".to_string())?;
     let manifest: Manifest = {
         let mut entry = archive
             .by_name(MANIFEST)
             .map_err(|_| "That file is not a Dynodoc backup (it has no manifest).".to_string())?;
         let mut text = String::new();
-        entry.read_to_string(&mut text).map_err(|_| "The backup's manifest could not be read.".to_string())?;
-        serde_json::from_str(&text).map_err(|_| "The backup's manifest is not valid.".to_string())?
+        entry
+            .read_to_string(&mut text)
+            .map_err(|_| "The backup's manifest could not be read.".to_string())?;
+        serde_json::from_str(&text)
+            .map_err(|_| "The backup's manifest is not valid.".to_string())?
     };
     check_manifest(&manifest, layout_pg)?;
-    std::fs::create_dir_all(into).map_err(|_| "The restore folder could not be made.".to_string())?;
+    std::fs::create_dir_all(into)
+        .map_err(|_| "The restore folder could not be made.".to_string())?;
     for i in 0..archive.len() {
-        let mut entry = archive.by_index(i).map_err(|_| "The backup is damaged.".to_string())?;
+        let mut entry = archive
+            .by_index(i)
+            .map_err(|_| "The backup is damaged.".to_string())?;
         let raw = entry.name().to_string();
         let name = raw.trim_end_matches('/').to_string();
         if entry.is_dir() {
             if !entry_ok(&name) {
-                return Err("The backup holds a folder it should not; it was not opened.".to_string());
+                return Err(
+                    "The backup holds a folder it should not; it was not opened.".to_string(),
+                );
             }
-            std::fs::create_dir_all(into.join(&name)).map_err(|_| "The restore folder could not be made.".to_string())?;
+            std::fs::create_dir_all(into.join(&name))
+                .map_err(|_| "The restore folder could not be made.".to_string())?;
             continue;
         }
         if !entry_ok(&name) {
@@ -190,9 +226,11 @@ pub fn read_archive(src: &Path, into: &Path, layout_pg: &str) -> Result<Manifest
         }
         let target = into.join(&name);
         if let Some(parent) = target.parent() {
-            std::fs::create_dir_all(parent).map_err(|_| "The restore folder could not be made.".to_string())?;
+            std::fs::create_dir_all(parent)
+                .map_err(|_| "The restore folder could not be made.".to_string())?;
         }
-        let mut out = std::fs::File::create(&target).map_err(|_| "The restore folder could not be written.".to_string())?;
+        let mut out = std::fs::File::create(&target)
+            .map_err(|_| "The restore folder could not be written.".to_string())?;
         std::io::copy(&mut entry, &mut out).map_err(|_| "The backup is damaged.".to_string())?;
     }
     if !into.join("pgdata").join("PG_VERSION").is_file() {
@@ -240,11 +278,13 @@ impl Local {
     pub async fn backup(&self, dest: PathBuf) -> Result<BackupInfo, String> {
         let layout = self.inner.layout.clone();
         let version = env!("CARGO_PKG_VERSION").to_string();
-        self.begin_maintenance("Closing the database for a moment to make the backup").await?;
-        let out = tauri::async_runtime::spawn_blocking(move || write_archive(&layout, &dest, &version))
-            .await
-            .map_err(|_| "The backup stopped unexpectedly.".to_string())
-            .and_then(|r| r);
+        self.begin_maintenance("Closing the database for a moment to make the backup")
+            .await?;
+        let out =
+            tauri::async_runtime::spawn_blocking(move || write_archive(&layout, &dest, &version))
+                .await
+                .map_err(|_| "The backup stopped unexpectedly.".to_string())
+                .and_then(|r| r);
         self.end_maintenance().await;
         if out.is_ok() {
             applog_note("backup written");
@@ -259,26 +299,42 @@ impl Local {
         let staging = layout.root.join("restore-staging");
         let _ = std::fs::remove_dir_all(&staging);
         let staging_read = staging.clone();
-        let manifest = tauri::async_runtime::spawn_blocking(move || read_archive(&src, &staging_read, &major))
-            .await
-            .map_err(|_| "The backup could not be read.".to_string())??;
+        let manifest =
+            tauri::async_runtime::spawn_blocking(move || read_archive(&src, &staging_read, &major))
+                .await
+                .map_err(|_| "The backup could not be read.".to_string())??;
         // New passwords and keys for the restored data.
         let fresh = SecretBundle {
-            owner: secrets::random_hex(24).map_err(|e| e.to_string())?.to_string(),
-            runtime: secrets::random_hex(24).map_err(|e| e.to_string())?.to_string(),
-            paseto: secrets::random_hex(32).map_err(|e| e.to_string())?.to_string(),
-            service: secrets::random_hex(24).map_err(|e| e.to_string())?.to_string(),
+            owner: secrets::random_hex(24)
+                .map_err(|e| e.to_string())?
+                .to_string(),
+            runtime: secrets::random_hex(24)
+                .map_err(|e| e.to_string())?
+                .to_string(),
+            paseto: secrets::random_hex(32)
+                .map_err(|e| e.to_string())?
+                .to_string(),
+            service: secrets::random_hex(24)
+                .map_err(|e| e.to_string())?
+                .to_string(),
         };
         let (owner_pw, runtime_pw) = (fresh.owner.clone(), fresh.runtime.clone());
-        let programs = self.begin_maintenance("Closing the database for a moment to restore the backup").await?;
+        let programs = self
+            .begin_maintenance("Closing the database for a moment to restore the backup")
+            .await?;
         let work_layout = layout.clone();
         let staging_move = staging.clone();
         let swapped = tauri::async_runtime::spawn_blocking(move || -> Result<PathBuf, String> {
-            let kept = work_layout.root.join(format!("pgdata.before-restore-{}", appdb::now_ms()));
-            std::fs::rename(&work_layout.pgdata, &kept).map_err(|_| "The current data could not be set aside.".to_string())?;
+            let kept = work_layout
+                .root
+                .join(format!("pgdata.before-restore-{}", appdb::now_ms()));
+            std::fs::rename(&work_layout.pgdata, &kept)
+                .map_err(|_| "The current data could not be set aside.".to_string())?;
             if std::fs::rename(staging_move.join("pgdata"), &work_layout.pgdata).is_err() {
                 let _ = std::fs::rename(&kept, &work_layout.pgdata);
-                return Err("The restored data could not be put in place; nothing was changed.".to_string());
+                return Err(
+                    "The restored data could not be put in place; nothing was changed.".to_string(),
+                );
             }
             if let Err(e) = reset_passwords(&programs, &work_layout, &owner_pw, &runtime_pw) {
                 // The restore did not work: the earlier data goes back.
@@ -297,10 +353,19 @@ impl Local {
         .and_then(|r| r);
         if let Ok(kept) = &swapped {
             // The restored data opens with the new keys, so they are stored before it starts.
-            let text = Zeroizing::new(serde_json::to_string(&fresh).map_err(|_| "New keys could not be made.".to_string())?);
-            self.inner.secrets.set(SECRETS_ENTRY, &text).map_err(|e| e.to_string())?;
+            let text = Zeroizing::new(
+                serde_json::to_string(&fresh)
+                    .map_err(|_| "New keys could not be made.".to_string())?,
+            );
+            self.inner
+                .secrets
+                .set(SECRETS_ENTRY, &text)
+                .map_err(|e| e.to_string())?;
             let _ = self.inner.secrets.delete(SESSION_ENTRY);
-            applog_note(&format!("restored; the earlier data is kept in {}", kept.display()));
+            applog_note(&format!(
+                "restored; the earlier data is kept in {}",
+                kept.display()
+            ));
         }
         let _ = std::fs::remove_dir_all(&staging);
         self.end_maintenance().await;
@@ -324,8 +389,11 @@ fn reset_passwords(
     let kept = layout.pgdata.join("pg_hba.conf.scram");
     std::fs::copy(&hba, &kept).map_err(|_| "The restored data has no login rules.".to_string())?;
     let result = tauri::async_runtime::block_on(async {
-        std::fs::write(&hba, "host all all 127.0.0.1/32 trust\nhost all all ::1/128 trust\n")
-            .map_err(|_| "The login rules could not be changed.".to_string())?;
+        std::fs::write(
+            &hba,
+            "host all all 127.0.0.1/32 trust\nhost all all ::1/128 trust\n",
+        )
+        .map_err(|_| "The login rules could not be changed.".to_string())?;
         let database = pg::Pg::new(programs.clone(), layout.clone());
         let port = pg::free_port().map_err(|_| "No local port is free.".to_string())?;
         database.start(port).await.map_err(|e| e.to_string())?;
@@ -369,7 +437,17 @@ mod tests {
         assert!(entry_ok("workspace.json"));
         assert!(entry_ok("pgdata/PG_VERSION"));
         assert!(entry_ok("pgdata/base/1/1259"));
-        for bad in ["pgdata/", "../pgdata/x", "pgdata/../x", "/etc/passwd", "C:/x", "pgdata/a:b", "pgdata\\x", "other/x", "secrets.json"] {
+        for bad in [
+            "pgdata/",
+            "../pgdata/x",
+            "pgdata/../x",
+            "/etc/passwd",
+            "C:/x",
+            "pgdata/a:b",
+            "pgdata\\x",
+            "other/x",
+            "secrets.json",
+        ] {
             assert!(!entry_ok(bad), "{bad}");
         }
     }
@@ -378,8 +456,12 @@ mod tests {
     fn a_backup_from_elsewhere_is_refused_in_plain_words() {
         let ok = manifest(current_os(), "16", FORMAT);
         assert!(check_manifest(&ok, "16").is_ok());
-        assert!(check_manifest(&manifest("plan9", "16", FORMAT), "16").unwrap_err().contains("operating system"));
-        assert!(check_manifest(&manifest(current_os(), "15", FORMAT), "16").unwrap_err().contains("PostgreSQL 15"));
+        assert!(check_manifest(&manifest("plan9", "16", FORMAT), "16")
+            .unwrap_err()
+            .contains("operating system"));
+        assert!(check_manifest(&manifest(current_os(), "15", FORMAT), "16")
+            .unwrap_err()
+            .contains("PostgreSQL 15"));
         assert!(check_manifest(&manifest(current_os(), "16", 2), "16").is_err());
     }
 
@@ -390,7 +472,11 @@ mod tests {
         let layout = Layout::new(&root.join("data"));
         std::fs::create_dir_all(layout.pgdata.join("base").join("1")).unwrap();
         std::fs::write(layout.pgdata.join("PG_VERSION"), "16\n").unwrap();
-        std::fs::write(layout.pgdata.join("base").join("1").join("1259"), vec![7u8; 5000]).unwrap();
+        std::fs::write(
+            layout.pgdata.join("base").join("1").join("1259"),
+            vec![7u8; 5000],
+        )
+        .unwrap();
         std::fs::write(layout.pgdata.join("postmaster.pid"), "123").unwrap();
         std::fs::write(&layout.state_file, "{\"schema\":1}").unwrap();
         let dest = root.join("backup.zip");
@@ -402,11 +488,22 @@ mod tests {
         assert_eq!(info.files, 2);
         let out = root.join("out");
         let m = read_archive(&dest, &out, "16").unwrap();
-        assert!(out.join("pgdata").join("pg_tblspc").is_dir(), "an empty folder of the database comes back");
+        assert!(
+            out.join("pgdata").join("pg_tblspc").is_dir(),
+            "an empty folder of the database comes back"
+        );
         assert_eq!(m.pg_major, "16");
-        assert_eq!(std::fs::read(out.join("pgdata").join("base").join("1").join("1259")).unwrap().len(), 5000);
+        assert_eq!(
+            std::fs::read(out.join("pgdata").join("base").join("1").join("1259"))
+                .unwrap()
+                .len(),
+            5000
+        );
         assert!(!out.join("pgdata").join("postmaster.pid").exists());
-        assert_eq!(std::fs::read_to_string(out.join("workspace.json")).unwrap(), "{\"schema\":1}");
+        assert_eq!(
+            std::fs::read_to_string(out.join("workspace.json")).unwrap(),
+            "{\"schema\":1}"
+        );
         assert!(read_archive(&dest, &root.join("out2"), "17").is_err());
         std::fs::write(root.join("junk.zip"), b"not a zip").unwrap();
         assert!(read_archive(&root.join("junk.zip"), &root.join("out3"), "16").is_err());

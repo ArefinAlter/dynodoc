@@ -11,18 +11,29 @@ use std::path::PathBuf;
 impl Local {
     pub async fn folder_of(&self, project_id: &str) -> Result<Option<PathBuf>, String> {
         let app = self.app().await?;
-        app.query_opt("select folder from folder_binding where project_id = $1", &[&project_id])
-            .await
-            .map(|r| r.map(|r| PathBuf::from(r.get::<_, String>(0))))
-            .map_err(|_| "The project's folder could not be read.".to_string())
+        app.query_opt(
+            "select folder from folder_binding where project_id = $1",
+            &[&project_id],
+        )
+        .await
+        .map(|r| r.map(|r| PathBuf::from(r.get::<_, String>(0))))
+        .map_err(|_| "The project's folder could not be read.".to_string())
     }
 
-    pub async fn bind_folder(&self, project_id: &str, folder: &std::path::Path) -> Result<(), String> {
+    pub async fn bind_folder(
+        &self,
+        project_id: &str,
+        folder: &std::path::Path,
+    ) -> Result<(), String> {
         let app = self.app().await?;
         app.execute(
             "insert into folder_binding (project_id, folder, created_at) values ($1, $2, $3)
              on conflict (project_id) do update set folder = excluded.folder",
-            &[&project_id, &folder.to_string_lossy().to_string(), &now_ms()],
+            &[
+                &project_id,
+                &folder.to_string_lossy().to_string(),
+                &now_ms(),
+            ],
         )
         .await
         .map(|_| ())
@@ -31,14 +42,19 @@ impl Local {
 
     pub async fn unbind_folder(&self, project_id: &str) -> Result<(), String> {
         let app = self.app().await?;
-        app.execute("delete from folder_binding where project_id = $1", &[&project_id])
-            .await
-            .map(|_| ())
-            .map_err(|_| "The folder could not be released.".to_string())
+        app.execute(
+            "delete from folder_binding where project_id = $1",
+            &[&project_id],
+        )
+        .await
+        .map(|_| ())
+        .map_err(|_| "The folder could not be released.".to_string())
     }
 
     pub async fn bound_folders(&self) -> Vec<(String, PathBuf)> {
-        let Ok(app) = self.app().await else { return Vec::new() };
+        let Ok(app) = self.app().await else {
+            return Vec::new();
+        };
         app.query("select project_id, folder from folder_binding", &[])
             .await
             .map(|rows| {
@@ -50,7 +66,9 @@ impl Local {
     }
 
     pub async fn known_files(&self, project_id: &str) -> HashMap<String, Known> {
-        let Ok(app) = self.app().await else { return HashMap::new() };
+        let Ok(app) = self.app().await else {
+            return HashMap::new();
+        };
         app.query(
             "select rel_path, document_id, base_seq, seen_mtime from folder_file where project_id = $1",
             &[&project_id],

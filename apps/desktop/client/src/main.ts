@@ -3,6 +3,7 @@
 // launcher's own controls (bridge.ts) and gives them a place in Settings, Accounts.
 import { h, clear } from './dom.ts';
 import { state, setRenderer, setAfterRender, render, go, toast, resetSample } from './state.ts';
+import { loadAgentCfg, refreshKeyHints } from './data/agentRun.ts';
 import { isLive, loadPrefs, noticeChanges, noticePrefs, refresh, signOut, startVisitor } from './data/live.ts';
 import * as B from './data/backend.ts';
 import { applyAppearance, toggleTheme } from './theme.ts';
@@ -211,12 +212,15 @@ async function boot(): Promise<void> {
       state.desktopVersion = ds.version;
       await loadPrefs();
       applyAppearance();
+      // The agent's keys live in the credential store: the page learns only which entries have one.
+      void loadAgentCfg().then(refreshKeyHints);
       state.local.splash = true;
       draw();
       // The workspace on this computer is what the screens show: the app starts its own database
       // and engine (no server, no account). A server is an addition (Settings, Accounts).
       const here = await startLocalWorkspace();
       if (here) {
+        void loadAgentCfg().then(refreshKeyHints);
         startWatch();
         void loadFolders();
       }

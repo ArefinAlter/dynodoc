@@ -8,15 +8,17 @@
 //! `server`, `deeplink`, `signin`, `sidecar`, `commands`, the capability file and tauri.conf.json).
 
 mod accounts;
-mod commands;
 #[cfg(desktop)]
 mod agent;
+#[cfg(desktop)]
+mod cmd_accounts;
 #[cfg(desktop)]
 mod cmd_agent;
 #[cfg(desktop)]
 mod cmd_files;
 #[cfg(desktop)]
 mod cmd_local;
+mod commands;
 mod config;
 mod deeplink;
 mod envs;
@@ -72,6 +74,9 @@ pub struct AppState {
     /// The agent: provider keys, consent, caps and the runs in progress.
     #[cfg(desktop)]
     pub agent: agent::Agent,
+    /// Servers the person signed in to from the app, with their sessions (decision 020).
+    #[cfg(desktop)]
+    pub accounts: accounts::Accounts,
     /// Folder watch: what the bound folders showed since the page last asked.
     #[cfg(desktop)]
     pub watcher: watch::Watcher,
@@ -173,10 +178,26 @@ fn resolve_state(app: &tauri::AppHandle) -> tauri::Result<AppState> {
             .ok()
             .and_then(|p| p.parent().map(std::path::Path::to_path_buf))
             .unwrap_or_default();
-        local::Local::new(&data_dir, app.path().resource_dir().ok().as_deref(), &exe_dir, ordinary)
+        local::Local::new(
+            &data_dir,
+            app.path().resource_dir().ok().as_deref(),
+            &exe_dir,
+            ordinary,
+        )
     };
     #[cfg(desktop)]
-    let agent = agent::Agent::new(&config_dir, &local::secrets::service_for(&data_dir, ordinary));
+    let agent = agent::Agent::new(
+        &config_dir,
+        &local::secrets::service_for(&data_dir, ordinary),
+    );
+    #[cfg(desktop)]
+    let accounts = {
+        let service = local::secrets::service_for(&data_dir, ordinary);
+        accounts::Accounts::new(
+            &config_dir,
+            local::secrets::Preferred::open(&config_dir.join("sessions"), &service),
+        )
+    };
     let (server, unconfirmed) = split_loaded(config::load(&config_dir, &data_dir));
     Ok(AppState {
         server: Mutex::new(server),
@@ -198,6 +219,8 @@ fn resolve_state(app: &tauri::AppHandle) -> tauri::Result<AppState> {
         watcher: watch::Watcher::default(),
         #[cfg(desktop)]
         agent,
+        #[cfg(desktop)]
+        accounts,
     })
 }
 
@@ -296,6 +319,22 @@ pub fn run() {
             cmd_agent::agent_cancel,
             #[cfg(desktop)]
             cmd_agent::agent_usage,
+            #[cfg(desktop)]
+            cmd_accounts::accounts_list,
+            #[cfg(desktop)]
+            cmd_accounts::account_add,
+            #[cfg(desktop)]
+            cmd_accounts::account_remove,
+            #[cfg(desktop)]
+            cmd_accounts::account_signin_start,
+            #[cfg(desktop)]
+            cmd_accounts::account_signin_status,
+            #[cfg(desktop)]
+            cmd_accounts::account_signin_cancel,
+            #[cfg(desktop)]
+            cmd_accounts::account_signout,
+            #[cfg(desktop)]
+            cmd_accounts::account_check,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -383,6 +422,10 @@ mod tests {
             picks: files::Picks::default(),
             watcher: watch::Watcher::default(),
             agent: agent::Agent::new(std::path::Path::new("."), "online.dynodoc.client.test"),
+            accounts: accounts::Accounts::new(
+                std::path::Path::new("."),
+                local::secrets::FileStore::new(std::path::Path::new("./test-sessions")),
+            ),
         }
     }
 

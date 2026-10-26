@@ -58,7 +58,11 @@ fn test_pick(purpose: &str) -> Option<Vec<std::path::PathBuf>> {
     let text = std::fs::read_to_string(file).ok()?;
     let value: serde_json::Value = serde_json::from_str(&text).ok()?;
     let list = value.get(purpose)?.as_array()?;
-    Some(list.iter().filter_map(|p| p.as_str().map(std::path::PathBuf::from)).collect())
+    Some(
+        list.iter()
+            .filter_map(|p| p.as_str().map(std::path::PathBuf::from))
+            .collect(),
+    )
 }
 
 /// Shows the system's file dialog. `purpose` is `import` (several files), `folder`, `backup_open`
@@ -69,46 +73,53 @@ pub async fn files_pick(webview: Webview, purpose: String) -> Result<Vec<Picked>
     #[cfg(debug_assertions)]
     if let Some(paths) = test_pick(&purpose) {
         let state = state_of(&webview);
-        return Ok(paths.into_iter().filter_map(|p| picked(&state.picks, p)).collect());
+        return Ok(paths
+            .into_iter()
+            .filter_map(|p| picked(&state.picks, p))
+            .collect());
     }
     let kind = purpose.clone();
-    let paths: Vec<std::path::PathBuf> = tauri::async_runtime::spawn_blocking(move || -> Vec<std::path::PathBuf> {
-        let dialog = rfd::FileDialog::new();
-        match kind.as_str() {
-            "import" => dialog
-                .set_title("Add files to this project")
-                .add_filter("Word, Excel and PowerPoint", &["docx", "xlsx", "pptx"])
-                .add_filter("Text and tables", &["txt", "md", "csv"])
-                .pick_files()
-                .unwrap_or_default(),
-            "folder" => dialog
-                .set_title("Choose the folder this project keeps its files in")
-                .pick_folder()
-                .into_iter()
-                .collect(),
-            "backup_open" => dialog
-                .set_title("Choose a Dynodoc backup")
-                .add_filter("Dynodoc backup", &["zip"])
-                .pick_file()
-                .into_iter()
-                .collect(),
-            "backup_save" => dialog
-                .set_title("Save a backup of this workspace")
-                .set_file_name("Dynodoc backup.zip")
-                .add_filter("Dynodoc backup", &["zip"])
-                .save_file()
-                .into_iter()
-                .collect(),
-            _ => Vec::new(),
-        }
-    })
-    .await
-    .map_err(|_| "The file dialog stopped unexpectedly.".to_string())?;
+    let paths: Vec<std::path::PathBuf> =
+        tauri::async_runtime::spawn_blocking(move || -> Vec<std::path::PathBuf> {
+            let dialog = rfd::FileDialog::new();
+            match kind.as_str() {
+                "import" => dialog
+                    .set_title("Add files to this project")
+                    .add_filter("Word, Excel and PowerPoint", &["docx", "xlsx", "pptx"])
+                    .add_filter("Text and tables", &["txt", "md", "csv"])
+                    .pick_files()
+                    .unwrap_or_default(),
+                "folder" => dialog
+                    .set_title("Choose the folder this project keeps its files in")
+                    .pick_folder()
+                    .into_iter()
+                    .collect(),
+                "backup_open" => dialog
+                    .set_title("Choose a Dynodoc backup")
+                    .add_filter("Dynodoc backup", &["zip"])
+                    .pick_file()
+                    .into_iter()
+                    .collect(),
+                "backup_save" => dialog
+                    .set_title("Save a backup of this workspace")
+                    .set_file_name("Dynodoc backup.zip")
+                    .add_filter("Dynodoc backup", &["zip"])
+                    .save_file()
+                    .into_iter()
+                    .collect(),
+                _ => Vec::new(),
+            }
+        })
+        .await
+        .map_err(|_| "The file dialog stopped unexpectedly.".to_string())?;
     if !["import", "folder", "backup_open", "backup_save"].contains(&purpose.as_str()) {
         return Err("That is not something the client may ask for.".to_string());
     }
     let state = state_of(&webview);
-    Ok(paths.into_iter().filter_map(|p| picked(&state.picks, p)).collect())
+    Ok(paths
+        .into_iter()
+        .filter_map(|p| picked(&state.picks, p))
+        .collect())
 }
 
 #[derive(Serialize)]
@@ -128,20 +139,26 @@ pub async fn file_read(webview: Webview, token: String) -> Result<FileBytes, Str
         .picks
         .path(&token)
         .ok_or_else(|| "That file is no longer available. Choose it again.".to_string())?;
-    let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
     let ext = files::extension_of(&name);
     if !["docx", "xlsx", "pptx", "txt", "md", "csv", "doc"].contains(&ext.as_str()) {
         return Err("Only Word, Excel, PowerPoint and text files can be read here.".to_string());
     }
     tauri::async_runtime::spawn_blocking(move || {
-        let meta = std::fs::symlink_metadata(&path).map_err(|_| "The file could not be read.".to_string())?;
+        let meta = std::fs::symlink_metadata(&path)
+            .map_err(|_| "The file could not be read.".to_string())?;
         if !meta.is_file() {
             return Err("That is not a file.".to_string());
         }
         if meta.len() > files::MAX_READ_BYTES {
             return Err("Files are limited to 3 MB (3,000,000 bytes) in this release.".to_string());
         }
-        let bytes = std::fs::read(&path).map_err(|_| "The file could not be read. Is it open in another program?".to_string())?;
+        let bytes = std::fs::read(&path).map_err(|_| {
+            "The file could not be read. Is it open in another program?".to_string()
+        })?;
         Ok(FileBytes {
             name,
             size: meta.len(),
@@ -199,18 +216,25 @@ pub async fn file_export(
         }
     };
     let stem = files::safe_file_name(&name);
-    let path = tauri::async_runtime::spawn_blocking(move || -> Result<std::path::PathBuf, String> {
-        std::fs::create_dir_all(&dir).map_err(|_| "The folder could not be created.".to_string())?;
-        let path = files::free_name(&dir, &stem, &ext);
-        std::fs::write(&path, &bytes).map_err(|_| "The file could not be written.".to_string())?;
-        Ok(path)
-    })
-    .await
-    .map_err(|_| "The file could not be written.".to_string())??;
+    let path =
+        tauri::async_runtime::spawn_blocking(move || -> Result<std::path::PathBuf, String> {
+            std::fs::create_dir_all(&dir)
+                .map_err(|_| "The folder could not be created.".to_string())?;
+            let path = files::free_name(&dir, &stem, &ext);
+            std::fs::write(&path, &bytes)
+                .map_err(|_| "The file could not be written.".to_string())?;
+            Ok(path)
+        })
+        .await
+        .map_err(|_| "The file could not be written.".to_string())??;
     // A copy written into the project's own folder is in step with the revision it was made from:
     // the file watch reports only what is saved after this.
     if let (Some(folder), Some(doc), Some(seq)) = (bound, document_id.as_deref(), base_seq) {
-        if let Some(rel) = path.strip_prefix(&folder).ok().map(|r| r.to_string_lossy().replace('\\', "/")) {
+        if let Some(rel) = path
+            .strip_prefix(&folder)
+            .ok()
+            .map(|r| r.to_string_lossy().replace('\\', "/"))
+        {
             if let Ok(bytes) = std::fs::read(&path) {
                 let mtime = std::fs::metadata(&path)
                     .and_then(|m| m.modified())
@@ -220,7 +244,14 @@ pub async fn file_export(
                     .unwrap_or(0);
                 let _ = state
                     .local
-                    .note_file(&project_id, &rel, doc, seq, &hex::encode(Sha256::digest(&bytes)), mtime)
+                    .note_file(
+                        &project_id,
+                        &rel,
+                        doc,
+                        seq,
+                        &hex::encode(Sha256::digest(&bytes)),
+                        mtime,
+                    )
                     .await;
             }
         }
@@ -242,7 +273,11 @@ pub async fn file_export(
 
 /// Binds a project to a folder the person chose (a token from `files_pick("folder")`).
 #[tauri::command]
-pub async fn folder_bind(webview: Webview, project_id: String, token: String) -> Result<String, String> {
+pub async fn folder_bind(
+    webview: Webview,
+    project_id: String,
+    token: String,
+) -> Result<String, String> {
     require_launcher(webview.url())?;
     let state = state_of(&webview);
     let path = state
@@ -274,14 +309,21 @@ pub struct FolderStatus {
 }
 
 #[tauri::command]
-pub async fn folder_status(webview: Webview, project_id: String) -> Result<Option<FolderStatus>, String> {
+pub async fn folder_status(
+    webview: Webview,
+    project_id: String,
+) -> Result<Option<FolderStatus>, String> {
     require_launcher(webview.url())?;
     let state = state_of(&webview);
     let Some(path) = state.local.folder_of(&project_id).await? else {
         return Ok(None);
     };
     let exists = path.is_dir();
-    let files = if exists { crate::watch::list_folder(&path).len() } else { 0 };
+    let files = if exists {
+        crate::watch::list_folder(&path).len()
+    } else {
+        0
+    };
     Ok(Some(FolderStatus {
         path: path.display().to_string(),
         exists,
@@ -314,18 +356,20 @@ pub async fn watch_seen(
         .picks
         .path(&token)
         .ok_or_else(|| "That file is no longer available.".to_string())?;
-    let (hash, mtime) = tauri::async_runtime::spawn_blocking(move || -> Result<(String, i64), String> {
-        let bytes = std::fs::read(&path).map_err(|_| "The file could not be read.".to_string())?;
-        let mtime = std::fs::metadata(&path)
-            .and_then(|m| m.modified())
-            .ok()
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_millis() as i64)
-            .unwrap_or(0);
-        Ok((hex::encode(Sha256::digest(&bytes)), mtime))
-    })
-    .await
-    .map_err(|_| "The file could not be read.".to_string())??;
+    let (hash, mtime) =
+        tauri::async_runtime::spawn_blocking(move || -> Result<(String, i64), String> {
+            let bytes =
+                std::fs::read(&path).map_err(|_| "The file could not be read.".to_string())?;
+            let mtime = std::fs::metadata(&path)
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as i64)
+                .unwrap_or(0);
+            Ok((hex::encode(Sha256::digest(&bytes)), mtime))
+        })
+        .await
+        .map_err(|_| "The file could not be read.".to_string())??;
     state
         .local
         .note_file(&project_id, &rel_path, &document_id, base_seq, &hash, mtime)

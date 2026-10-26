@@ -323,7 +323,16 @@ async fn call(
 ) -> Result<Reply, String> {
     let place = Env::parse(env)?;
     if place != Env::Server {
-        return envs::call(webview.app_handle(), &place, target, method, path, body, if_match).await;
+        return envs::call(
+            webview.app_handle(),
+            &place,
+            target,
+            method,
+            path,
+            body,
+            if_match,
+        )
+        .await;
     }
     let server = configured(webview)?;
     remote::allowed(target, method, path).map_err(str::to_string)?;
@@ -513,7 +522,16 @@ pub async fn sign_out(webview: Webview) -> Result<(), String> {
 #[tauri::command]
 pub async fn api_get(webview: Webview, path: String, env: Option<String>) -> Result<Reply, String> {
     require_launcher(webview.url())?;
-    call(&webview, env.as_deref(), Target::Api, Method::Get, &path, None, None).await
+    call(
+        &webview,
+        env.as_deref(),
+        Target::Api,
+        Method::Get,
+        &path,
+        None,
+        None,
+    )
+    .await
 }
 
 /// Change something through the server's engine proxy (fixed routes and methods).
@@ -549,7 +567,16 @@ pub async fn api_send(
 #[tauri::command]
 pub async fn svc_get(webview: Webview, path: String, env: Option<String>) -> Result<Reply, String> {
     require_launcher(webview.url())?;
-    call(&webview, env.as_deref(), Target::Svc, Method::Get, &path, None, None).await
+    call(
+        &webview,
+        env.as_deref(),
+        Target::Svc,
+        Method::Get,
+        &path,
+        None,
+        None,
+    )
+    .await
 }
 
 /// Write to the server's pre-alpha service.
@@ -563,7 +590,16 @@ pub async fn svc_send(
 ) -> Result<Reply, String> {
     require_launcher(webview.url())?;
     let method = write_method(&method)?;
-    call(&webview, env.as_deref(), Target::Svc, method, &path, body, None).await
+    call(
+        &webview,
+        env.as_deref(),
+        Target::Svc,
+        method,
+        &path,
+        body,
+        None,
+    )
+    .await
 }
 
 /// The client's preferences (theme, keybindings, providers without keys, ...), from the app's
@@ -637,21 +673,48 @@ mod tests {
     fn every_command_takes_the_second_lock_first() {
         // Source check: each `#[tauri::command]` function begins with require_launcher, so
         // removing the call from one of them is caught here. Every command module is checked.
-        let modules: [(&str, &str, &[&str]); 4] = [
+        let modules: [(&str, &str, &[&str]); 5] = [
             ("commands.rs", include_str!("commands.rs"), &COMMANDS),
-            ("cmd_local.rs", include_str!("cmd_local.rs"), &crate::cmd_local::COMMANDS),
-            ("cmd_files.rs", include_str!("cmd_files.rs"), &crate::cmd_files::COMMANDS),
-            ("cmd_agent.rs", include_str!("cmd_agent.rs"), &crate::cmd_agent::COMMANDS),
+            (
+                "cmd_local.rs",
+                include_str!("cmd_local.rs"),
+                &crate::cmd_local::COMMANDS,
+            ),
+            (
+                "cmd_files.rs",
+                include_str!("cmd_files.rs"),
+                &crate::cmd_files::COMMANDS,
+            ),
+            (
+                "cmd_agent.rs",
+                include_str!("cmd_agent.rs"),
+                &crate::cmd_agent::COMMANDS,
+            ),
+            (
+                "cmd_accounts.rs",
+                include_str!("cmd_accounts.rs"),
+                &crate::cmd_accounts::COMMANDS,
+            ),
         ];
         for (file, source, names) in modules {
-            let body = source.split("#[cfg(test)]
-mod tests").next().unwrap();
+            let body = source
+                .split(
+                    "#[cfg(test)]
+mod tests",
+                )
+                .next()
+                .unwrap();
             let functions: Vec<&str> = body.split("#[tauri::command]").skip(1).collect();
             assert_eq!(functions.len(), names.len(), "{file}");
             for (function, name) in functions.iter().zip(names) {
-                let head = function.split("
+                let head = function
+                    .split(
+                        "
 }
-").next().unwrap();
+",
+                    )
+                    .next()
+                    .unwrap();
                 let after_signature = head.split(") -> ").nth(1).expect(name);
                 let first_statement = after_signature.split('{').nth(1).unwrap().trim_start();
                 assert!(

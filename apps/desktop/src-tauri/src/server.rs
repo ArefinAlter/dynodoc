@@ -112,6 +112,22 @@ impl ServerOrigin {
         url
     }
 
+    /// The same page for the standalone desktop app (decision 020): one more value, the port of
+    /// the app's own listener on this computer. The page hands the code to
+    /// `http://127.0.0.1:<port>/signin` instead of a `dynodoc://` link.
+    pub fn app_signin_url_loopback(
+        &self,
+        challenge: &str,
+        state: &str,
+        platform: &str,
+        port: u16,
+    ) -> Url {
+        let mut url = self.app_signin_url(challenge, state, platform);
+        url.query_pairs_mut()
+            .append_pair("redirect_port", &port.to_string());
+        url
+    }
+
     /// The page the app's own window opens to finish signing in: `<server>/app-signin/finish`,
     /// with nothing after the path. The code, state and verifier are handed to it once it has
     /// loaded (see `signin::Outbox`), as its address fragment; they are in no address the window

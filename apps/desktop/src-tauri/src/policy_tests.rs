@@ -8,6 +8,7 @@ fn commands() -> Vec<&'static str> {
     all.extend(crate::cmd_local::COMMANDS);
     all.extend(crate::cmd_files::COMMANDS);
     all.extend(crate::cmd_agent::COMMANDS);
+    all.extend(crate::cmd_accounts::COMMANDS);
     all
 }
 use serde_json::Value;
@@ -433,10 +434,19 @@ fn the_office_codec_has_no_network_of_its_own() {
     let launcher = fs::read_to_string(root().join("../ui/launcher.js")).unwrap();
     // The page's side only starts a worker from a file of the app and passes data; the client
     // itself (launcher.js) stays free of cross-context messaging.
-    assert!(host.contains("new Worker(\"office-worker.js\")") || host.contains("new Worker('office-worker.js')"));
+    assert!(
+        host.contains("new Worker(\"office-worker.js\")")
+            || host.contains("new Worker('office-worker.js')")
+    );
     assert!(!launcher.contains("new Worker"));
     // Neither file may reach the network (the page's CSP allows nothing but `ipc:` as well).
-    for never in ["fetch(", "WebSocket", "sendBeacon", "EventSource", "importScripts(\"http"] {
+    for never in [
+        "fetch(",
+        "WebSocket",
+        "sendBeacon",
+        "EventSource",
+        "importScripts(\"http",
+    ] {
         assert!(!host.contains(never), "office-host.js has {never}");
         assert!(!worker.contains(never), "office-worker.js has {never}");
     }
@@ -445,7 +455,10 @@ fn the_office_codec_has_no_network_of_its_own() {
         assert!(worker.contains(want), "office-worker.js lacks {want}");
     }
     // The CSP must keep allowing a worker from the app's own files and nothing else.
-    let csp = json("tauri.conf.json")["app"]["security"]["csp"].as_str().unwrap().to_string();
+    let csp = json("tauri.conf.json")["app"]["security"]["csp"]
+        .as_str()
+        .unwrap()
+        .to_string();
     assert!(!csp.contains("worker-src") || csp.contains("worker-src 'self'"));
     assert!(csp.contains("script-src 'self'") && !csp.contains("blob:"));
 }

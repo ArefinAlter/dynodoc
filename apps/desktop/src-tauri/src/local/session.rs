@@ -46,7 +46,10 @@ impl Session {
     }
 
     pub fn to_saved_text(&self) -> String {
-        let left = self.expires.saturating_duration_since(Instant::now()).as_secs();
+        let left = self
+            .expires
+            .saturating_duration_since(Instant::now())
+            .as_secs();
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
@@ -135,7 +138,11 @@ pub async fn mint(
 }
 
 /// Trades the refresh token for a new pair (the engine rotates it).
-pub async fn refresh(http: &reqwest::Client, base: &str, session: &Session) -> Result<Session, Refused> {
+pub async fn refresh(
+    http: &reqwest::Client,
+    base: &str,
+    session: &Session,
+) -> Result<Session, Refused> {
     let response = http
         .post(format!("{base}/auth/refresh"))
         .json(&json!({ "refresh_token": session.refresh }))
@@ -174,17 +181,25 @@ pub fn valid_profile(name: &str, email: &str) -> Result<(String, String), &'stat
         && email.matches('@').count() == 1
         && !email.starts_with('@')
         && !email.ends_with('@')
-        && email.rsplit('@').next().is_some_and(|d| d.contains('.') && !d.starts_with('.') && !d.ends_with('.'))
+        && email
+            .rsplit('@')
+            .next()
+            .is_some_and(|d| d.contains('.') && !d.starts_with('.') && !d.ends_with('.'))
         && email.bytes().all(|b| b.is_ascii_graphic());
     if !ok {
-        return Err("Enter an email address (it stays on this computer unless you sign in to a server).");
+        return Err(
+            "Enter an email address (it stays on this computer unless you sign in to a server).",
+        );
     }
     Ok((name.to_string(), email))
 }
 
 /// An address for a person who gave none: it is only a key in the local database.
 pub fn local_address(random_hex: &str) -> String {
-    format!("me-{}@local.dynodoc.invalid", &random_hex[..random_hex.len().min(12)])
+    format!(
+        "me-{}@local.dynodoc.invalid",
+        &random_hex[..random_hex.len().min(12)]
+    )
 }
 
 #[cfg(test)]

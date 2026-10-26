@@ -66,11 +66,15 @@ pub fn load(config_dir: &Path) -> AgentConfig {
 }
 
 pub fn save(config_dir: &Path, c: &AgentConfig) -> Result<(), String> {
-    std::fs::create_dir_all(config_dir).map_err(|_| "The agent's settings could not be saved.".to_string())?;
-    let text = serde_json::to_string_pretty(c).map_err(|_| "The agent's settings could not be saved.".to_string())?;
+    std::fs::create_dir_all(config_dir)
+        .map_err(|_| "The agent's settings could not be saved.".to_string())?;
+    let text = serde_json::to_string_pretty(c)
+        .map_err(|_| "The agent's settings could not be saved.".to_string())?;
     let tmp = path(config_dir).with_extension("json.tmp");
-    std::fs::write(&tmp, text).map_err(|_| "The agent's settings could not be saved.".to_string())?;
-    std::fs::rename(&tmp, path(config_dir)).map_err(|_| "The agent's settings could not be saved.".to_string())
+    std::fs::write(&tmp, text)
+        .map_err(|_| "The agent's settings could not be saved.".to_string())?;
+    std::fs::rename(&tmp, path(config_dir))
+        .map_err(|_| "The agent's settings could not be saved.".to_string())
 }
 
 /// The estimated cost of a call in millionths of a dollar; `None` when no price is set for the model.
@@ -89,18 +93,28 @@ pub fn allow(c: &AgentConfig, provider_id: &str, host: &str) -> Result<(), Agent
         _ => return Err(AgentError::NoConsent),
     }
     if c.thread_token_cap == 0 || c.day_token_cap == 0 || c.day_cost_cap == 0 {
-        return Err(AgentError::CapReached("A cap in Settings, Providers is zero, which means no model is called.".into()));
+        return Err(AgentError::CapReached(
+            "A cap in Settings, Providers is zero, which means no model is called.".into(),
+        ));
     }
     Ok(())
 }
 
 /// Whether more may be used given what has been used (tokens in a thread, tokens and cost in 24 hours).
-pub fn within_caps(c: &AgentConfig, thread_tokens: u64, day_tokens: u64, day_cost: u64) -> Result<(), AgentError> {
+pub fn within_caps(
+    c: &AgentConfig,
+    thread_tokens: u64,
+    day_tokens: u64,
+    day_cost: u64,
+) -> Result<(), AgentError> {
     if thread_tokens >= c.thread_token_cap {
         return Err(AgentError::CapReached(format!("This thread has used its {} tokens. Raise the cap in Settings, Providers, or start a new thread.", c.thread_token_cap)));
     }
     if day_tokens >= c.day_token_cap {
-        return Err(AgentError::CapReached(format!("The last 24 hours have used the cap of {} tokens. Raise it in Settings, Providers.", c.day_token_cap)));
+        return Err(AgentError::CapReached(format!(
+            "The last 24 hours have used the cap of {} tokens. Raise it in Settings, Providers.",
+            c.day_token_cap
+        )));
     }
     if day_cost >= c.day_cost_cap {
         return Err(AgentError::CapReached("The estimated cost of the last 24 hours has reached its cap. Raise it in Settings, Providers.".into()));
@@ -114,20 +128,39 @@ mod tests {
 
     fn allowed() -> AgentConfig {
         let mut c = AgentConfig::default();
-        c.consent.insert("lp1".into(), Consent { host: "api.example.org".into(), at: 1 });
+        c.consent.insert(
+            "lp1".into(),
+            Consent {
+                host: "api.example.org".into(),
+                at: 1,
+            },
+        );
         c
     }
 
     #[test]
     fn nothing_is_called_without_consent_for_this_host_and_never_when_offline() {
         let mut c = AgentConfig::default();
-        assert_eq!(allow(&c, "lp1", "api.example.org"), Err(AgentError::NoConsent));
+        assert_eq!(
+            allow(&c, "lp1", "api.example.org"),
+            Err(AgentError::NoConsent)
+        );
         c = allowed();
         assert_eq!(allow(&c, "lp1", "api.example.org"), Ok(()));
-        assert_eq!(allow(&c, "lp1", "other.example.org"), Err(AgentError::NoConsent), "a changed address asks again");
-        assert_eq!(allow(&c, "lp2", "api.example.org"), Err(AgentError::NoConsent));
+        assert_eq!(
+            allow(&c, "lp1", "other.example.org"),
+            Err(AgentError::NoConsent),
+            "a changed address asks again"
+        );
+        assert_eq!(
+            allow(&c, "lp2", "api.example.org"),
+            Err(AgentError::NoConsent)
+        );
         c.offline = true;
-        assert_eq!(allow(&c, "lp1", "api.example.org"), Err(AgentError::Offline));
+        assert_eq!(
+            allow(&c, "lp1", "api.example.org"),
+            Err(AgentError::Offline)
+        );
     }
 
     #[test]
@@ -139,7 +172,13 @@ mod tests {
                 1 => c.day_token_cap = 0,
                 _ => c.day_cost_cap = 0,
             }
-            assert!(matches!(allow(&c, "lp1", "api.example.org"), Err(AgentError::CapReached(_))), "{zero}");
+            assert!(
+                matches!(
+                    allow(&c, "lp1", "api.example.org"),
+                    Err(AgentError::CapReached(_))
+                ),
+                "{zero}"
+            );
         }
         let c = allowed();
         assert!(within_caps(&c, 10, 10, 0).is_ok());
@@ -152,7 +191,13 @@ mod tests {
     fn cost_needs_a_price_and_is_in_millionths_of_a_dollar() {
         let mut c = AgentConfig::default();
         assert_eq!(cost(&c, "m", 1000, 1000), None);
-        c.prices.insert("m".into(), Price { input: 3_000_000, output: 15_000_000 });
+        c.prices.insert(
+            "m".into(),
+            Price {
+                input: 3_000_000,
+                output: 15_000_000,
+            },
+        );
         // $3 and $15 per million tokens: 2,000 in and 1,000 out cost $0.006 + $0.015.
         assert_eq!(cost(&c, "m", 2000, 1000), Some(21_000));
     }

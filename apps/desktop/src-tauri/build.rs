@@ -45,6 +45,14 @@ const COMMANDS: &[&str] = &[
     "agent_tool_result",
     "agent_cancel",
     "agent_usage",
+    "accounts_list",
+    "account_add",
+    "account_remove",
+    "account_signin_start",
+    "account_signin_status",
+    "account_signin_cancel",
+    "account_signout",
+    "account_check",
 ];
 
 fn main() {

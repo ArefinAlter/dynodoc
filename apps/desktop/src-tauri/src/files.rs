@@ -54,7 +54,9 @@ pub fn safe_file_name(name: &str) -> String {
         .map(|c| if "\\/:*?\"<>|".contains(c) { ' ' } else { c })
         .collect();
     let collapsed = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
-    let trimmed = collapsed.trim_matches(|c: char| c == '.' || c == ' ').to_string();
+    let trimmed = collapsed
+        .trim_matches(|c: char| c == '.' || c == ' ')
+        .to_string();
     let mut out: String = trimmed.chars().take(150).collect();
     if out.is_empty() {
         out = "Document".to_string();
@@ -113,7 +115,10 @@ mod tests {
 
     #[test]
     fn names_written_to_disk_are_safe() {
-        assert_eq!(safe_file_name("Project Charter (v3)"), "Project Charter (v3)");
+        assert_eq!(
+            safe_file_name("Project Charter (v3)"),
+            "Project Charter (v3)"
+        );
         assert_eq!(safe_file_name("../../etc/passwd"), "etc passwd");
         assert_eq!(safe_file_name("a:b*c?.docx"), "a b c .docx");
         assert_eq!(safe_file_name("   ..  "), "Document");
@@ -129,7 +134,10 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         assert_eq!(free_name(&dir, "Report", "docx"), dir.join("Report.docx"));
         std::fs::write(dir.join("Report.docx"), b"x").unwrap();
-        assert_eq!(free_name(&dir, "Report", "docx"), dir.join("Report (2).docx"));
+        assert_eq!(
+            free_name(&dir, "Report", "docx"),
+            dir.join("Report (2).docx")
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 

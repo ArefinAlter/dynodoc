@@ -23,7 +23,13 @@ pub fn command(program: &Path) -> Command {
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
     // Never let a variable meant for another program reach the database or the engine.
-    for name in ["DATABASE_URL", "MIGRATION_DATABASE_URL", "PGPASSWORD", "PGPASSFILE", "PGSERVICE"] {
+    for name in [
+        "DATABASE_URL",
+        "MIGRATION_DATABASE_URL",
+        "PGPASSWORD",
+        "PGPASSFILE",
+        "PGSERVICE",
+    ] {
         cmd.env_remove(name);
     }
     cmd
@@ -32,7 +38,9 @@ pub fn command(program: &Path) -> Command {
 /// Runs a short program to its end and returns (success, stdout) with a time limit. The
 /// program's standard error is returned as text for the log only after `scrub`.
 pub async fn run_to_end(mut cmd: Command, limit: Duration) -> Result<Output, RunError> {
-    cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
+    cmd.stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
     let child = cmd.spawn().map_err(|_| RunError::Spawn)?;
     match tokio::time::timeout(limit, child.wait_with_output()).await {
         Ok(Ok(out)) => Ok(Output {
@@ -49,7 +57,11 @@ pub async fn run_to_end(mut cmd: Command, limit: Duration) -> Result<Output, Run
 /// Runs a program that starts a long-lived child (such as `pg_ctl start`) and waits only for the
 /// program itself: its output goes to a file, never to a pipe, because the child it leaves
 /// running would keep a pipe open and the wait would never end.
-pub async fn run_detaching(mut cmd: Command, limit: Duration, log: &Path) -> Result<bool, RunError> {
+pub async fn run_detaching(
+    mut cmd: Command,
+    limit: Duration,
+    log: &Path,
+) -> Result<bool, RunError> {
     log_to(&mut cmd, log).map_err(|_| RunError::Spawn)?;
     cmd.kill_on_drop(false);
     let mut child = cmd.spawn().map_err(|_| RunError::Spawn)?;
@@ -85,7 +97,10 @@ impl std::fmt::Display for RunError {
 
 /// Appends a child's standard output and error to a log file (created if need be).
 pub fn log_to(cmd: &mut Command, log: &Path) -> std::io::Result<()> {
-    let file = std::fs::OpenOptions::new().create(true).append(true).open(log)?;
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log)?;
     let err = file.try_clone()?;
     cmd.stdout(Stdio::from(file)).stderr(Stdio::from(err));
     Ok(())
@@ -93,7 +108,10 @@ pub fn log_to(cmd: &mut Command, log: &Path) -> std::io::Result<()> {
 
 /// A log that has grown past `limit` bytes is moved aside (one old copy is kept).
 pub fn rotate(log: &Path, limit: u64) {
-    if std::fs::metadata(log).map(|m| m.len() > limit).unwrap_or(false) {
+    if std::fs::metadata(log)
+        .map(|m| m.len() > limit)
+        .unwrap_or(false)
+    {
         let old = log.with_extension("log.old");
         let _ = std::fs::remove_file(&old);
         let _ = std::fs::rename(log, old);
@@ -240,7 +258,10 @@ mod tests {
         let out = scrub(text, &["TOKEN-abcdef123456"]);
         assert!(!out.contains("s3cr3tvalue"), "{out}");
         assert!(!out.contains("TOKEN-abcdef123456"), "{out}");
-        assert!(out.contains("postgres://dynodoc_owner:[secret]@127.0.0.1:5432"), "{out}");
+        assert!(
+            out.contains("postgres://dynodoc_owner:[secret]@127.0.0.1:5432"),
+            "{out}"
+        );
         assert_eq!(scrub("no urls here", &[]), "no urls here");
         assert_eq!(scrub("https://example.org/a", &[]), "https://example.org/a");
     }

@@ -11,10 +11,19 @@
 use serde_json::{json, Value};
 use tokio_postgres::Client;
 
-pub const STATE_KEYS: [&str; 4] = ["working", "local", "threads", "client"];
+/// `links` is what the client keeps about local projects linked to a server (decision 020).
+pub const STATE_KEYS: [&str; 5] = ["working", "local", "threads", "client", "links"];
 pub const MAX_STATE_BYTES: usize = 256 * 1024;
 pub const MAX_NOTES_PER_DOCUMENT: i64 = 5000;
-const NOTE_KINDS: [&str; 7] = ["revision", "merge", "revert", "cherry_pick", "restore", "rebase", "request"];
+const NOTE_KINDS: [&str; 7] = [
+    "revision",
+    "merge",
+    "revert",
+    "cherry_pick",
+    "restore",
+    "rebase",
+    "request",
+];
 
 /// The schema, one step per number. A step runs once; later releases add steps, never edit one.
 const STEPS: &[&str] = &[
@@ -97,7 +106,9 @@ fn err<T>(m: &str) -> Result<T, AppDbError> {
 /// Brings the schema up to date (each step in its own transaction).
 pub async fn ensure_schema(client: &mut Client) -> Result<(), AppDbError> {
     client
-        .batch_execute("create table if not exists schema_step (n integer primary key, at bigint not null)")
+        .batch_execute(
+            "create table if not exists schema_step (n integer primary key, at bigint not null)",
+        )
         .await
         .or_else(|_| err("The workspace's own data could not be prepared."))?;
     let done: i32 = client
@@ -117,9 +128,12 @@ pub async fn ensure_schema(client: &mut Client) -> Result<(), AppDbError> {
         tx.batch_execute(sql)
             .await
             .or_else(|_| err("The workspace's own data could not be updated."))?;
-        tx.execute("insert into schema_step (n, at) values ($1, $2)", &[&n, &now_ms()])
-            .await
-            .or_else(|_| err("The workspace's own data could not be updated."))?;
+        tx.execute(
+            "insert into schema_step (n, at) values ($1, $2)",
+            &[&n, &now_ms()],
+        )
+        .await
+        .or_else(|_| err("The workspace's own data could not be updated."))?;
         tx.commit()
             .await
             .or_else(|_| err("The workspace's own data could not be updated."))?;
@@ -132,7 +146,10 @@ pub async fn get_state(client: &Client, key: &str) -> Result<Value, AppDbError> 
         return err("Not found");
     }
     let row = client
-        .query_opt("select value, updated_at from client_state where key = $1", &[&key])
+        .query_opt(
+            "select value, updated_at from client_state where key = $1",
+            &[&key],
+        )
         .await
         .or_else(|_| err("The client's state could not be read."))?;
     Ok(match row {
@@ -145,7 +162,11 @@ pub async fn put_state(client: &Client, key: &str, value: &Value) -> Result<Valu
     if !STATE_KEYS.contains(&key) {
         return err("Not found");
     }
-    if serde_json::to_vec(value).map(|v| v.len()).unwrap_or(usize::MAX) > MAX_STATE_BYTES {
+    if serde_json::to_vec(value)
+        .map(|v| v.len())
+        .unwrap_or(usize::MAX)
+        > MAX_STATE_BYTES
+    {
         return err("Too large.");
     }
     let at = now_ms();
@@ -238,8 +259,12 @@ pub fn note_is_valid(n: &Value) -> bool {
         && int("to_seq").is_some()
         && text("kind").is_some_and(|k| NOTE_KINDS.contains(&k))
         && text("summary").is_some_and(|s| !s.trim().is_empty() && s.chars().count() <= 200)
-        && n.get("description").map_or(true, |d| d.as_str().is_some_and(|s| s.chars().count() <= 4000))
-        && n.get("edits").map_or(true, |e| e.is_null() || (e.is_array() && e.to_string().len() <= 64 * 1024))
+        && n.get("description").map_or(true, |d| {
+            d.as_str().is_some_and(|s| s.chars().count() <= 4000)
+        })
+        && n.get("edits").map_or(true, |e| {
+            e.is_null() || (e.is_array() && e.to_string().len() <= 64 * 1024)
+        })
 }
 
 pub async fn add_note(client: &Client, n: &Value, author: &str) -> Result<Value, AppDbError> {
@@ -257,7 +282,10 @@ pub async fn add_note(client: &Client, n: &Value, author: &str) -> Result<Value,
     }
     let from = n["from_seq"].as_i64().unwrap_or(0) as i32;
     let to = n["to_seq"].as_i64().unwrap_or(0) as i32;
-    let merged = n.get("merged_from").and_then(Value::as_str).map(|s| s.chars().take(64).collect::<String>());
+    let merged = n
+        .get("merged_from")
+        .and_then(Value::as_str)
+        .map(|s| s.chars().take(64).collect::<String>());
     let edits = n.get("edits").filter(|e| !e.is_null()).cloned();
     let row = client
         .query_one(
@@ -319,6 +347,9 @@ mod tests {
 
     #[test]
     fn the_state_keys_are_the_hosted_services_four() {
-        assert_eq!(STATE_KEYS, ["working", "local", "threads", "client"]);
+        assert_eq!(
+            STATE_KEYS,
+            ["working", "local", "threads", "client", "links"]
+        );
     }
 }

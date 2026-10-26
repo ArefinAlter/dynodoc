@@ -79,18 +79,28 @@ pub async fn agent_config(webview: Webview) -> Result<ConfigView, String> {
 pub async fn agent_config_set(webview: Webview, patch: Value) -> Result<ConfigView, String> {
     require_launcher(webview.url())?;
     let state = state_of(&webview);
-    let obj = patch.as_object().ok_or_else(|| "Send an object of settings.".to_string())?;
+    let obj = patch
+        .as_object()
+        .ok_or_else(|| "Send an object of settings.".to_string())?;
     let mut prices: Option<BTreeMap<String, Price>> = None;
     if let Some(p) = obj.get("prices") {
-        let map = p.as_object().ok_or_else(|| "Prices are an object of models.".to_string())?;
+        let map = p
+            .as_object()
+            .ok_or_else(|| "Prices are an object of models.".to_string())?;
         if map.len() > 100 {
             return Err("Too many prices (at most 100).".to_string());
         }
         let mut out = BTreeMap::new();
         for (model, v) in map {
-            let ok = !model.is_empty() && model.len() <= 200 && model.bytes().all(|b| b.is_ascii_alphanumeric() || b"._:/@+-".contains(&b));
+            let ok = !model.is_empty()
+                && model.len() <= 200
+                && model
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"._:/@+-".contains(&b));
             let (i, o) = (v["input"].as_u64(), v["output"].as_u64());
-            let (Some(input), Some(output)) = (i, o) else { return Err("A price has an input and an output (millionths of a dollar per million tokens).".to_string()) };
+            let (Some(input), Some(output)) = (i, o) else {
+                return Err("A price has an input and an output (millionths of a dollar per million tokens).".to_string());
+            };
             if !ok || input > 10_000_000_000 || output > 10_000_000_000 {
                 return Err(format!("The price for {model} is not valid."));
             }
@@ -101,13 +111,24 @@ pub async fn agent_config_set(webview: Webview, patch: Value) -> Result<ConfigVi
     let cap = |k: &str| -> Result<Option<u64>, String> {
         match obj.get(k) {
             None => Ok(None),
-            Some(v) => v.as_u64().filter(|n| *n <= 1_000_000_000_000).map(Some).ok_or_else(|| "A cap is a whole number (0 means no model is called).".to_string()),
+            Some(v) => v
+                .as_u64()
+                .filter(|n| *n <= 1_000_000_000_000)
+                .map(Some)
+                .ok_or_else(|| "A cap is a whole number (0 means no model is called).".to_string()),
         }
     };
-    let (t, d, c) = (cap("thread_token_cap")?, cap("day_token_cap")?, cap("day_cost_cap")?);
+    let (t, d, c) = (
+        cap("thread_token_cap")?,
+        cap("day_token_cap")?,
+        cap("day_cost_cap")?,
+    );
     let offline = match obj.get("offline") {
         None => None,
-        Some(v) => Some(v.as_bool().ok_or_else(|| "Offline is on or off.".to_string())?),
+        Some(v) => Some(
+            v.as_bool()
+                .ok_or_else(|| "Offline is on or off.".to_string())?,
+        ),
     };
     state.agent.update(|cfg| {
         if let Some(v) = offline {
@@ -131,16 +152,34 @@ pub async fn agent_config_set(webview: Webview, patch: Value) -> Result<ConfigVi
 
 /// Allows (or stops allowing) a provider entry to receive requests at one host.
 #[tauri::command]
-pub async fn agent_consent(webview: Webview, provider_id: String, host: Option<String>, allow: bool) -> Result<ConfigView, String> {
+pub async fn agent_consent(
+    webview: Webview,
+    provider_id: String,
+    host: Option<String>,
+    allow: bool,
+) -> Result<ConfigView, String> {
     require_launcher(webview.url())?;
     if !id_ok(&provider_id) {
         return Err("That provider entry has no valid name.".to_string());
     }
     let state = state_of(&webview);
     if allow {
-        let host = host.filter(|h| !h.is_empty() && h.len() <= 260 && h.bytes().all(|b| b.is_ascii_alphanumeric() || b"-.:[]".contains(&b))).ok_or_else(|| "The provider's host is missing.".to_string())?;
+        let host = host
+            .filter(|h| {
+                !h.is_empty()
+                    && h.len() <= 260
+                    && h.bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b"-.:[]".contains(&b))
+            })
+            .ok_or_else(|| "The provider's host is missing.".to_string())?;
         state.agent.update(|c| {
-            c.consent.insert(provider_id.clone(), Consent { host, at: crate::local::appdb::now_ms() });
+            c.consent.insert(
+                provider_id.clone(),
+                Consent {
+                    host,
+                    at: crate::local::appdb::now_ms(),
+                },
+            );
         })?;
     } else {
         state.agent.update(|c| {
@@ -157,28 +196,53 @@ pub struct KeyHint {
 
 /// Stores a key for a provider entry. The key is not sent back: only its last four characters.
 #[tauri::command]
-pub fn agent_key_set(webview: Webview, provider_id: String, key: String) -> Result<KeyHint, String> {
+pub fn agent_key_set(
+    webview: Webview,
+    provider_id: String,
+    key: String,
+) -> Result<KeyHint, String> {
     require_launcher(webview.url())?;
-    let key = ApiKey::new(&key).ok_or_else(|| "That does not look like a key (8 to 512 visible characters, no spaces).".to_string())?;
+    let key = ApiKey::new(&key).ok_or_else(|| {
+        "That does not look like a key (8 to 512 visible characters, no spaces).".to_string()
+    })?;
     let state = state_of(&webview);
-    state.agent.keys.set(&provider_id, &key).map_err(|e| e.to_string())?;
+    state
+        .agent
+        .keys
+        .set(&provider_id, &key)
+        .map_err(|e| e.to_string())?;
     Ok(KeyHint { hint: key.hint() })
 }
 
 #[tauri::command]
 pub fn agent_key_clear(webview: Webview, provider_id: String) -> Result<(), String> {
     require_launcher(webview.url())?;
-    state_of(&webview).agent.keys.delete(&provider_id).map_err(|e| e.to_string())
+    state_of(&webview)
+        .agent
+        .keys
+        .delete(&provider_id)
+        .map_err(|e| e.to_string())
 }
 
 /// Which of the entries have a key, as their last four characters.
 #[tauri::command]
-pub fn agent_key_status(webview: Webview, ids: Vec<String>) -> Result<BTreeMap<String, Option<String>>, String> {
+pub fn agent_key_status(
+    webview: Webview,
+    ids: Vec<String>,
+) -> Result<BTreeMap<String, Option<String>>, String> {
     require_launcher(webview.url())?;
     let state = state_of(&webview);
     let mut out = BTreeMap::new();
     for id in ids.into_iter().take(50) {
-        out.insert(id.clone(), state.agent.keys.get(&id).map_err(|e| e.to_string())?.map(|k| k.hint()));
+        out.insert(
+            id.clone(),
+            state
+                .agent
+                .keys
+                .get(&id)
+                .map_err(|e| e.to_string())?
+                .map(|k| k.hint()),
+        );
     }
     Ok(out)
 }
@@ -188,7 +252,11 @@ pub fn agent_key_status(webview: Webview, ids: Vec<String>) -> Result<BTreeMap<S
 pub async fn agent_keys_unlock(webview: Webview, passphrase: String) -> Result<ConfigView, String> {
     require_launcher(webview.url())?;
     let state = state_of(&webview);
-    state.agent.keys.unlock(&passphrase).map_err(|e| e.to_string())?;
+    state
+        .agent
+        .keys
+        .unlock(&passphrase)
+        .map_err(|e| e.to_string())?;
     Ok(view(&state).await)
 }
 
@@ -235,14 +303,33 @@ fn prepare(req: &RunRequest) -> Result<RunInput, String> {
             }
             match t.role.as_str() {
                 "user" => Ok(Msg::User(t.text.clone())),
-                "assistant" => Ok(Msg::Assistant { text: t.text.clone(), calls: vec![], raw: None }),
+                "assistant" => Ok(Msg::Assistant {
+                    text: t.text.clone(),
+                    calls: vec![],
+                    raw: None,
+                }),
                 _ => Err("A message has no valid role.".to_string()),
             }
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let decls: Vec<ToolDecl> = req.tools.iter().map(|t| ToolDecl { name: t.name.clone(), description: t.description.clone(), parameters: t.parameters.clone() }).collect();
+    let decls: Vec<ToolDecl> = req
+        .tools
+        .iter()
+        .map(|t| ToolDecl {
+            name: t.name.clone(),
+            description: t.description.clone(),
+            parameters: t.parameters.clone(),
+        })
+        .collect();
     tools::validate(&decls)?;
-    Ok(RunInput { thread: req.thread.clone(), provider_id: req.provider_id.clone(), endpoint, system: req.system.clone(), history, tools: decls })
+    Ok(RunInput {
+        thread: req.thread.clone(),
+        provider_id: req.provider_id.clone(),
+        endpoint,
+        system: req.system.clone(),
+        history,
+        tools: decls,
+    })
 }
 
 #[derive(Serialize)]
@@ -277,7 +364,9 @@ struct PageIo {
 
 impl Io for PageIo {
     fn emit(&mut self, event: Event) {
-        let _ = self.channel.send(serde_json::to_value(event).unwrap_or(Value::Null));
+        let _ = self
+            .channel
+            .send(serde_json::to_value(event).unwrap_or(Value::Null));
     }
 
     async fn tool(&mut self, call: &ToolCall) -> ToolReply {
@@ -291,7 +380,10 @@ impl Io for PageIo {
         };
         match tokio::time::timeout(Duration::from_secs(180), wait).await {
             Ok(Some(r)) => r,
-            _ => ToolReply { output: String::new(), refused: Some("the tool did not answer in time".to_string()) },
+            _ => ToolReply {
+                output: String::new(),
+                refused: Some("the tool did not answer in time".to_string()),
+            },
         }
     }
 
@@ -299,15 +391,28 @@ impl Io for PageIo {
         self.local.ledger_totals(thread).await
     }
 
-    async fn record(&mut self, thread: &str, provider: &str, model: &str, usage: Usage, cost: Option<u64>) {
-        self.local.ledger_add(thread, provider, model, usage.input, usage.output, cost).await;
+    async fn record(
+        &mut self,
+        thread: &str,
+        provider: &str,
+        model: &str,
+        usage: Usage,
+        cost: Option<u64>,
+    ) {
+        self.local
+            .ledger_add(thread, provider, model, usage.input, usage.output, cost)
+            .await;
     }
 }
 
 /// Runs the agent. Events (text as it streams, tool calls to run, usage, done or an error) come over
 /// the channel; the page answers each tool call with `agent_tool_result`.
 #[tauri::command]
-pub async fn agent_run(webview: Webview, request: RunRequest, on_event: Channel<Value>) -> Result<(), String> {
+pub async fn agent_run(
+    webview: Webview,
+    request: RunRequest,
+    on_event: Channel<Value>,
+) -> Result<(), String> {
     require_launcher(webview.url())?;
     let state = state_of(&webview);
     let fail = |kind: &str, message: String| {
@@ -343,11 +448,29 @@ pub async fn agent_run(webview: Webview, request: RunRequest, on_event: Channel<
             fail("setup", "Too many runs at once.".into());
             return Ok(());
         }
-        runs.insert(run_id.clone(), RunHandle { cancel: cancel_tx, replies: reply_tx });
+        runs.insert(
+            run_id.clone(),
+            RunHandle {
+                cancel: cancel_tx,
+                replies: reply_tx,
+            },
+        );
     }
-    let mut io = PageIo { channel: on_event.clone(), local: state.local.clone(), replies: reply_rx };
+    let mut io = PageIo {
+        channel: on_event.clone(),
+        local: state.local.clone(),
+        replies: reply_rx,
+    };
     let cfg = state.agent.config();
-    let outcome = run::run(&mut io, &cfg, key, input, client::Limits::default(), cancel_rx).await;
+    let outcome = run::run(
+        &mut io,
+        &cfg,
+        key,
+        input,
+        client::Limits::default(),
+        cancel_rx,
+    )
+    .await;
     if let Ok(mut runs) = state.agent.runs.lock() {
         runs.remove(&run_id);
     }
@@ -359,22 +482,39 @@ pub async fn agent_run(webview: Webview, request: RunRequest, on_event: Channel<
 
 /// The page's answer to a tool call of a run.
 #[tauri::command]
-pub async fn agent_tool_result(webview: Webview, run_id: String, call_id: String, output: String, refused: Option<String>) -> Result<(), String> {
+pub async fn agent_tool_result(
+    webview: Webview,
+    run_id: String,
+    call_id: String,
+    output: String,
+    refused: Option<String>,
+) -> Result<(), String> {
     require_launcher(webview.url())?;
     let state = state_of(&webview);
     let sender = {
-        let runs = state.agent.runs.lock().map_err(|_| "The run is busy.".to_string())?;
+        let runs = state
+            .agent
+            .runs
+            .lock()
+            .map_err(|_| "The run is busy.".to_string())?;
         runs.get(&run_id).map(|r| r.replies.clone())
     };
     let sender = sender.ok_or_else(|| "That run has ended.".to_string())?;
-    sender.send((call_id, ToolReply { output, refused })).await.map_err(|_| "That run has ended.".to_string())
+    sender
+        .send((call_id, ToolReply { output, refused }))
+        .await
+        .map_err(|_| "That run has ended.".to_string())
 }
 
 #[tauri::command]
 pub fn agent_cancel(webview: Webview, run_id: String) -> Result<(), String> {
     require_launcher(webview.url())?;
     let state = state_of(&webview);
-    let runs = state.agent.runs.lock().map_err(|_| "The run is busy.".to_string())?;
+    let runs = state
+        .agent
+        .runs
+        .lock()
+        .map_err(|_| "The run is busy.".to_string())?;
     if let Some(r) = runs.get(&run_id) {
         let _ = r.cancel.send(true);
     }
@@ -391,6 +531,13 @@ pub struct Usage24 {
 #[tauri::command]
 pub async fn agent_usage(webview: Webview, thread: Option<String>) -> Result<Usage24, String> {
     require_launcher(webview.url())?;
-    let (t, d, c) = state_of(&webview).local.ledger_totals(thread.as_deref().unwrap_or("")).await;
-    Ok(Usage24 { thread_tokens: t, day_tokens: d, day_cost_micros: c })
+    let (t, d, c) = state_of(&webview)
+        .local
+        .ledger_totals(thread.as_deref().unwrap_or(""))
+        .await;
+    Ok(Usage24 {
+        thread_tokens: t,
+        day_tokens: d,
+        day_cost_micros: c,
+    })
 }

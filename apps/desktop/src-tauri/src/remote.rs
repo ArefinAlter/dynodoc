@@ -191,6 +191,7 @@ const SVC_GET: &[&str] = &[
     "state/local",
     "state/threads",
     "state/client",
+    "state/links",
     "notes",
 ];
 const SVC_SEND: &[(Method, &str)] = &[
@@ -198,6 +199,7 @@ const SVC_SEND: &[(Method, &str)] = &[
     (Method::Put, "state/local"),
     (Method::Put, "state/threads"),
     (Method::Put, "state/client"),
+    (Method::Put, "state/links"),
     (Method::Post, "notes"),
 ];
 
@@ -306,7 +308,7 @@ impl std::fmt::Display for Failure {
     }
 }
 
-fn client() -> Option<&'static reqwest::Client> {
+pub(crate) fn client() -> Option<&'static reqwest::Client> {
     static CLIENT: OnceLock<Option<reqwest::Client>> = OnceLock::new();
     CLIENT
         .get_or_init(|| {

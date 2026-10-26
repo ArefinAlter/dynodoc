@@ -24,23 +24,22 @@ pub struct Keys {
 }
 
 pub fn database_url(user: &str, password: &str, port: u16, database: &str) -> Zeroizing<String> {
-    Zeroizing::new(format!("postgres://{user}:{password}@127.0.0.1:{port}/{database}"))
+    Zeroizing::new(format!(
+        "postgres://{user}:{password}@127.0.0.1:{port}/{database}"
+    ))
 }
 
 /// Applies the engine's migrations and gives the runtime login its explicit privileges. Both are
 /// idempotent; the second also runs after an update that added tables.
-pub async fn migrate(
-    programs: &Programs,
-    pg_port: u16,
-    keys: &Keys,
-) -> Result<(), String> {
+pub async fn migrate(programs: &Programs, pg_port: u16, keys: &Keys) -> Result<(), String> {
     let owner_url = database_url(OWNER, &keys.owner_password, pg_port, ENGINE_DB);
     let runtime_url = database_url(RUNTIME, &keys.runtime_password, pg_port, ENGINE_DB);
-    let secrets = [
-        keys.owner_password.as_str(),
-        keys.runtime_password.as_str(),
-    ];
-    for args in [vec!["migrate"], vec!["grant-runtime", RUNTIME], vec!["check-runtime"]] {
+    let secrets = [keys.owner_password.as_str(), keys.runtime_password.as_str()];
+    for args in [
+        vec!["migrate"],
+        vec!["grant-runtime", RUNTIME],
+        vec!["check-runtime"],
+    ] {
         let mut cmd = procs::command(&programs.engine_cli);
         cmd.args(&args)
             .env("MIGRATION_DATABASE_URL", owner_url.as_str())
@@ -55,7 +54,11 @@ pub async fn migrate(
             .map_err(|e| e.to_string())?;
         if !out.success {
             let detail = procs::scrub(&format!("{} {}", out.stderr, out.stdout), &secrets);
-            super::applog::note(&format!("engine-cli {} failed: {}", args[0], detail.chars().take(300).collect::<String>()));
+            super::applog::note(&format!(
+                "engine-cli {} failed: {}",
+                args[0],
+                detail.chars().take(300).collect::<String>()
+            ));
             return Err(format!(
                 "The workspace's data could not be brought up to date (step: {}).",
                 args[0]
@@ -101,7 +104,13 @@ pub async fn spawn(launch: &Launch) -> Result<Running, String> {
     let mut cmd = procs::command(&launch.programs.engine_api);
     cmd.env(
         "DATABASE_URL",
-        database_url(RUNTIME, &launch.keys.runtime_password, launch.pg_port, ENGINE_DB).as_str(),
+        database_url(
+            RUNTIME,
+            &launch.keys.runtime_password,
+            launch.pg_port,
+            ENGINE_DB,
+        )
+        .as_str(),
     )
     .env("PASETO_LOCAL_KEY", launch.keys.paseto.as_str())
     .env("WEB_SERVICE_KEY", launch.keys.service.as_str())
@@ -114,7 +123,8 @@ pub async fn spawn(launch: &Launch) -> Result<Running, String> {
     .env_remove("MIGRATION_DATABASE_URL")
     .env_remove("MIGRATION_DATABASE_URL_FILE")
     .kill_on_drop(true);
-    procs::log_to(&mut cmd, &launch.layout.engine_log()).map_err(|_| "The engine's log could not be opened.".to_string())?;
+    procs::log_to(&mut cmd, &launch.layout.engine_log())
+        .map_err(|_| "The engine's log could not be opened.".to_string())?;
     let child = cmd
         .spawn()
         .map_err(|_| "The engine could not be started.".to_string())?;
@@ -152,7 +162,10 @@ pub async fn spawn(launch: &Launch) -> Result<Running, String> {
 /// An engine that an earlier run of the app left behind is ended before a new one starts.
 pub async fn stop_orphan(layout: &Layout) {
     let path = layout.engine_pid_file();
-    let Some(pid) = std::fs::read_to_string(&path).ok().and_then(|t| t.trim().parse::<u32>().ok()) else {
+    let Some(pid) = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|t| t.trim().parse::<u32>().ok())
+    else {
         return;
     };
     if procs::alive(pid).await {
@@ -264,6 +277,9 @@ mod tests {
     #[test]
     fn the_connection_url_names_loopback_and_the_login() {
         let url = database_url("dynodoc_runtime", "abc123", 5433, "dynodoc");
-        assert_eq!(&**url, "postgres://dynodoc_runtime:abc123@127.0.0.1:5433/dynodoc");
+        assert_eq!(
+            &**url,
+            "postgres://dynodoc_runtime:abc123@127.0.0.1:5433/dynodoc"
+        );
     }
 }
