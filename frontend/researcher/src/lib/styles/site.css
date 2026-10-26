@@ -144,7 +144,9 @@
   --site-dot: rgb(27 26 23 / 0.17);
   --site-ink-bg: #1b1a17;
   --site-max: 1200px;
-  --site-gutter: 24px;
+  /* Fluid side margin: about 90px at 1280px, 96px at 1366px, growing to a 96px floor plus centring above
+     1400px, so laptops are not cramped. Phones keep 16px (see the max-width: 640px rule). */
+  --site-gutter: clamp(24px, 7vw, 96px);
   --site-radius: 6px;
   --site-radius-sm: 4px;
   --site-section-y: clamp(64px, 8vw, 120px);
