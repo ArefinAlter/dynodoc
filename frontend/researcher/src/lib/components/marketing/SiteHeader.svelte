@@ -1,12 +1,14 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import { page } from '$app/stores';
+  import { env } from '$env/dynamic/public';
   import { ArrowUpRight, ChevronDown, Menu, X } from '@lucide/svelte';
   import ThemeToggle from '$lib/components/ThemeToggle.svelte';
   import {
     NAV_DIRECT,
     NAV_GROUPS,
     isAppHost,
+    signInHref,
     siteHref,
     type NavLink
   } from '$lib/components/site/nav';
@@ -261,7 +263,7 @@
       </ul>
       <div class="actions">
         <ThemeToggle variant={desktop ? 'icon' : 'label'} />
-        <a class="signin" href="/login" onclick={closeAll}>Sign in</a>
+        <a class="signin" href={signInHref(env.PUBLIC_WORKSPACE_URL)} onclick={closeAll}>Sign in</a>
         <a class="cta" href={href('/try')} onclick={closeAll}
           >Try the pre-alpha<ArrowUpRight class="cta-arrow" size={15} aria-hidden="true" /></a
         >

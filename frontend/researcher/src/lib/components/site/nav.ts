@@ -140,6 +140,12 @@ export function siteHref(href: string, relative: boolean): string {
   return relative ? href : `${CANONICAL_ORIGIN}${href}`;
 }
 
+/** Sign-in on the workspace host: PUBLIC_WORKSPACE_URL/login, or same-origin /login. The marketing host has no
+ * sign-in methods of its own, so its "Sign in" must lead to the workspace. */
+export function signInHref(workspaceUrl: string | undefined): string {
+  return workspaceUrl ? `${workspaceUrl.replace(/\/$/, '')}/login` : '/login';
+}
+
 /** The workspace entry point: PUBLIC_WORKSPACE_URL/projects, or same-origin /projects. */
 export function workspaceHref(workspaceUrl: string | undefined): string {
   return workspaceUrl ? `${workspaceUrl.replace(/\/$/, '')}/projects` : '/projects';
