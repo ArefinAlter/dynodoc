@@ -30,8 +30,8 @@
     <h2>About these terms</h2>
     <p>
       These draft terms describe the proposed relationship between the operator of the hosted
-      Dynodoc service, {OPERATOR.legalName}, and the people
-      authorized to use it. The governing law and forum are set out under
+      Dynodoc service, {OPERATOR.legalName}, and the people authorized to use it. The governing law
+      and forum are set out under
       <a href="#disputes">Law and disputes</a>. This page is not an executed agreement or an
       assertion that the operator has entered into a contract with you.
     </p>

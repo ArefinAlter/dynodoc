@@ -40,10 +40,10 @@
       </li>
       <li>
         <strong>Operator:</strong>
-        {OPERATOR.legalName}, the legal operator of the hosted
-        service. For project content it would act as a processor on the customer’s instructions. For
-        account and service-operation records, security logs and anonymous performance measurements
-        it decides how and why information is processed.
+        {OPERATOR.legalName}, the legal operator of the hosted service. For project content it would
+        act as a processor on the customer’s instructions. For account and service-operation
+        records, security logs and anonymous performance measurements it decides how and why
+        information is processed.
       </li>
     </ul>
     <p>
