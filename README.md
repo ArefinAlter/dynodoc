@@ -1,9 +1,11 @@
 # Dynodoc — version control for documents
 
-Live release (14 October 2026): workspace/API `f62d62c`, schema 41.
-Revocable sessions, verified snapshots, restricted API database credentials,
+Live release (23 October 2026): workspace/API `3fa06fd`, schema 47 ([release record](docs/operations/2026-10-23-schema47-release.md)).
+Pre-alpha 0.0.1a (25 October 2026): a [sample workspace](https://app.dynodoc.online/svc/visitor) of your own in the browser (removed after
+24 hours, no account) and an unsigned desktop app for Windows and Linux on the [Releases](https://github.com/ArefinAlter/dynodoc/releases/tag/v0.0.1a) page; see https://dynodoc.online/try.
+Earlier releases deployed revocable sessions, verified snapshots, restricted API database credentials,
 project policy floors/audited metadata, scoped CSP/HSTS and workload admission
-are deployed after upgrade/rollback rehearsal. Read [release evidence](docs/operations/2026-10-11-security-runtime-release.md)
+after upgrade/rollback rehearsal. Read [release evidence](docs/operations/2026-10-11-security-runtime-release.md)
 and [the next storage/offline priorities](docs/ENGINE-EVOLUTION-HANDOFF.md).
 
 > Version control and provenance for documents edited in your own tools. Collect block changes in Projects, review and merge them, and pull a shared history into another working copy.
@@ -14,7 +16,7 @@ a device key signs a one-use challenge and receives a one-hour token for one pro
 renewable without a stored refresh secret. The public site, Projects, profile and admin
 interfaces are rebuilt (see [the site design system](docs/SITE-DESIGN.md)), and the six
 editor add-ins carry a [marketplace listing kit](docs/listings/SUBMISSION-CHECKLIST.md).
-Production runs schema 41 ([release record](docs/operations/2026-10-14-schema41-release.md)); shared writers are off and no marketplace listing exists.
+Production runs schema 47 ([release record](docs/operations/2026-10-23-schema47-release.md)); shared writers are off and no marketplace listing exists.
 
 **Current direction (10 October 2026):** Local/remote document repositories around
 Word/Docs, Excel/Sheets and PowerPoint/Slides. The target is compact change transfer,

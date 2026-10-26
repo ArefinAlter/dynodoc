@@ -23,7 +23,7 @@ test('canonical pages, sitemap, structured metadata and icons are available', as
     (await page.locator('script[type="application/ld+json"]').textContent()) || '{}'
   );
   // The publisher is the operator; Dynodoc is its brand and the WebSite name.
-  expect(metadata['@graph'][0].name).toBe('Verne Systems');
+  expect(metadata['@graph'][0].name).toBe('Verne Ltd.');
   expect(metadata['@graph'][0].brand.name).toBe('Dynodoc');
   expect(metadata['@graph'][1].name).toBe('Dynodoc');
   expect(JSON.stringify(metadata)).not.toMatch(/AGPL/);
@@ -54,6 +54,7 @@ test('canonical pages, sitemap, structured metadata and icons are available', as
 });
 const PUBLIC_PATHS = [
   '/',
+  '/try',
   '/login',
   '/privacy',
   '/terms',
@@ -145,4 +146,12 @@ test('respondent preview evaluates relevance, constraints and calculations witho
   await page.reload();
   await page.getByRole('button', { name: 'Preview', exact: true }).click();
   await expect(page.getByLabel('Age', { exact: true })).toHaveValue('');
+});
+
+test('an unknown address shows a titled not-found page with a way back', async ({ page }) => {
+  const response = await page.goto('/this-page-does-not-exist');
+  expect(response?.status()).toBe(404);
+  await expect(page).toHaveTitle('Page not found · Dynodoc');
+  await expect(page.getByRole('heading', { level: 1, name: 'Page not found' })).toBeVisible();
+  await expect(page.getByRole('link').first()).toBeVisible();
 });

@@ -84,7 +84,7 @@ URL origins, icon pixel sizes, scopes and Google manifest settings on every test
 
 1. Owner supplies the appropriate account access: Microsoft Partner Center, Google
    Cloud/Workspace organization and responsible support contact. The publishing identity
-   is Verne Systems (trading as Verne), with support at info@vernesystems.com and
+   is Verne Ltd., with support at info@vernesystems.com and
    +880 1870 034384 (supplied 13 October 2026; the policies are still unadopted drafts).
    Existing OAuth web sign-in credentials are not proof of publisher setup.
 2. Complete the host acceptance matrix below and retain exact app builds, manifest/

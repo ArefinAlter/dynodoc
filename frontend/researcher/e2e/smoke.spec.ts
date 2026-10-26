@@ -12,12 +12,12 @@ test('homepage states the product, links the calls to action and carries one JSO
   ).toBeVisible();
   const main = page.getByRole('main');
   await expect(main.getByRole('link', { name: 'Open workspace' }).first()).toHaveAttribute(
-    'href'
-    //projects$/
-  );
-  await expect(main.getByRole('link', { name: 'Get the add-ins' }).first()).toHaveAttribute(
     'href',
-    '/add-ins'
+    /\/projects$/
+  );
+  await expect(main.getByRole('link', { name: 'Try the pre-alpha' }).first()).toHaveAttribute(
+    'href',
+    '/try'
   );
   const more = page.getByRole('navigation', { name: 'More about Dynodoc' });
   for (const [name, href] of [
@@ -106,19 +106,19 @@ test('legal pages are linked, readable on mobile and explicitly marked as drafts
   // Each page shows the date its content last changed (its sitemap lastmod). The security and
   // licences pages state facts rather than propose terms, so they carry no draft notice.
   for (const [path, title, dateLine] of [
-    ['/privacy', 'Privacy policy', 'Draft revised 23 October 2026 · Not yet effective'],
-    ['/terms', 'Terms & conditions', 'Draft revised 13 October 2026 · Not yet effective'],
-    ['/cookies', 'Cookies & local storage', 'Draft revised 23 October 2026 · Not yet effective'],
-    ['/security', 'Security', 'Updated 23 October 2026'],
-    ['/subprocessors', 'Subprocessors', 'Draft revised 13 October 2026 · Not yet effective'],
-    ['/acceptable-use', 'Acceptable use', 'Draft revised 13 October 2026 · Not yet effective'],
+    ['/privacy', 'Privacy policy', 'Draft revised 26 October 2026 · Not yet effective'],
+    ['/terms', 'Terms & conditions', 'Draft revised 26 October 2026 · Not yet effective'],
+    ['/cookies', 'Cookies & local storage', 'Draft revised 26 October 2026 · Not yet effective'],
+    ['/security', 'Security', 'Updated 26 October 2026'],
+    ['/subprocessors', 'Subprocessors', 'Draft revised 26 October 2026 · Not yet effective'],
+    ['/acceptable-use', 'Acceptable use', 'Draft revised 26 October 2026 · Not yet effective'],
     [
       '/accessibility',
       'Accessibility statement',
       'Draft revised 13 October 2026 · Not yet effective'
     ],
-    ['/dpa', 'Data processing terms (draft)', 'Draft revised 13 October 2026 · Not yet effective'],
-    ['/licenses', 'Licenses', 'Updated 22 October 2026']
+    ['/dpa', 'Data processing terms (draft)', 'Draft revised 26 October 2026 · Not yet effective'],
+    ['/licenses', 'Licenses', 'Updated 26 October 2026']
   ]) {
     await page.goto(path);
     await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
@@ -143,7 +143,7 @@ test('legal pages are linked, readable on mobile and explicitly marked as drafts
   // The operator is identified on the legal pages and in the footer; only the engine is open.
   await page.goto('/privacy#contact');
   const operator = page.locator('#contact');
-  await expect(operator.getByText('Verne Systems, trading as Verne')).toBeVisible();
+  await expect(operator.getByText('Verne Ltd.', { exact: true })).toBeVisible();
   await expect(
     operator.getByText('8/A, Sher-e-Bangla Road, Zighatola, Dhaka-1209, Bangladesh')
   ).toBeVisible();
