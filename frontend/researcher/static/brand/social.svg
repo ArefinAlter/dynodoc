@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
-<title>Dynodoc: version control for the documents you already write</title>
+<title>Dynodoc: version control for documents, spreadsheets and presentations</title>
 <defs>
 <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#1b1a17" fill-opacity=".17"/></pattern>
 <linearGradient id="fade" x1="0" y1="0" x2="0" y2="1"><stop offset=".3" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
@@ -15,11 +15,12 @@
 <text x="118" y="90" font-family="Geist, 'Public Sans', 'Helvetica Neue', Arial, Helvetica, sans-serif" font-size="32" font-weight="600" letter-spacing="-1" fill="#0f0e0c">dynodoc</text>
 
 <text x="64" y="204" font-family="'Geist Mono', 'Cascadia Code', ui-monospace, Consolas, monospace" font-size="17" font-weight="500" letter-spacing="2.2" fill="#0f6b3f">[ DOCUMENT PROVENANCE ]</text>
-<rect x="60" y="396" width="480" height="26" fill="#d7f25c"/>
-<g font-family="Geist, 'Public Sans', 'Helvetica Neue', Arial, Helvetica, sans-serif" font-size="62" font-weight="520" letter-spacing="-2.4" fill="#0f0e0c">
-<text x="64" y="272">Version control for</text>
-<text x="64" y="345">the documents</text>
-<text x="64" y="418" textLength="472" lengthAdjust="spacingAndGlyphs">you already write.</text>
+<g fill="#d7f25c"><rect id="hl1" x="60" y="303" width="284" height="23"/><rect id="hl2" x="60" y="363" width="429" height="23"/><rect id="hl3" x="60" y="423" width="331" height="23"/></g>
+<g font-family="Geist, 'Public Sans', 'Helvetica Neue', Arial, Helvetica, sans-serif" font-size="54" font-weight="520" letter-spacing="-2" fill="#0f0e0c">
+<text id="t0" x="64" y="262">Version control for</text>
+<text id="t1" x="64" y="322">documents,</text>
+<text id="t2" x="64" y="382">spreadsheets and</text>
+<text id="t3" x="64" y="442">presentations</text>
 </g>
 <text x="64" y="500" font-family="'Geist Mono', 'Cascadia Code', ui-monospace, Consolas, monospace" font-size="19" fill="#45423a">Word · Docs · Excel · Sheets · PowerPoint · Slides</text>
 <text x="64" y="568" font-family="'Geist Mono', 'Cascadia Code', ui-monospace, Consolas, monospace" font-size="19" font-weight="500" fill="#67645a">dynodoc.online</text>
