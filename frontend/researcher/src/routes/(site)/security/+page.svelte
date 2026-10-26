@@ -49,9 +49,11 @@
   <section id="status">
     <h2>What is live today</h2>
     <p>
-      As of 23 October 2026 the hosted service runs the controls marked <strong>Live</strong>. Those
-      marked <strong>In source</strong> are implemented and tested in the code but not yet deployed.
-      Those marked <strong>Not built</strong> do not exist.
+      As of 23 October 2026, apart from the sample-workspace service added on 25 October 2026, the
+      hosted service runs the controls marked <strong>Live</strong>. Those marked
+      <strong>In source</strong>
+      are implemented and tested in the code but not yet deployed. Those marked
+      <strong>Not built</strong> do not exist.
     </p>
     <!-- Scrollable data tables need keyboard access on narrow screens. -->
     <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -147,6 +149,13 @@
               >Per-document and per-account limits on retained shared objects.</td
             ><td><strong>Live</strong></td></tr
           ><tr
+            ><td>Sample workspaces (pre-alpha)</td><td
+              >A small separate service beside the workspace starts sample workspaces for visitors,
+              ends them after 24 hours and keeps the desktop app’s state. It runs read-only with no
+              Linux capabilities, listens on a private socket behind the workspace proxy, and allows
+              six starts per address per hour.</td
+            ><td><strong>Live</strong></td></tr
+          ><tr
             ><td>Independent witness of history</td><td
               >Signed heads kept by someone other than the service, to expose a rewrite.</td
             ><td><strong>Not built</strong></td></tr
@@ -188,9 +197,9 @@
     <ul>
       <li>
         <strong>Sign-in:</strong> an emailed link valid for 15 minutes, or Google sign-in limited to identity,
-        email and profile. The session is an encrypted, HTTP-only cookie for up to 30 days whose login
-        can be revoked on the server; an open event stream stops before its next protected event once
-        the login is revoked.
+        email and profile. The session is an encrypted, HTTP-only cookie that lasts 30 days from its last
+        renewal (it is renewed while you stay active) and whose login can be revoked on the server; an
+        open event stream stops before its next protected event once the login is revoked.
       </li>
       <li>
         <strong>Permissions:</strong> roles are checked again on every read and write, and project rules
@@ -214,17 +223,20 @@
     <ul>
       <li>
         <strong>Transport:</strong> HTTPS only, with HTTP redirected and TLS 1.2 or 1.3 on the workspace.
-        HSTS lasts one year, without subdomains or preloading.
+        HSTS lasts one year on pages and on the workspace (two years on the website’s static files, set
+        by the hosting platform), without subdomains or preloading.
       </li>
       <li>
-        <strong>Scripts:</strong> only from Dynodoc’s own origin with a per-response nonce, no inline
-        script or eval, and no third-party analytics, fonts or CDNs on the website. The three Office panes
-        additionally allow Microsoft’s Office.js hosts and may be framed by Office.
+        <strong>Scripts:</strong> only from Dynodoc’s own origin, or inline with a per-response nonce;
+        no unsafe-inline and no eval. Inline styles are allowed, which the editors need. There are no
+        third-party analytics, fonts or CDNs on the website. The three Office panes additionally allow
+        three Microsoft hosts for Office.js and may be framed by Office.
       </li>
       <li>
         <strong>Limits:</strong> at most 64 ordinary and 256 streaming responses in flight; 120 expensive
         reads per identity per minute with two active at a time; a 15-second SQL statement timeout. Sign-in
-        routes are limited to 60 requests per minute per address, with a short burst allowance.
+        routes are limited to 60 requests per minute per address on the workspace (30 on the administration
+        site), with a burst of up to 60 more.
       </li>
       <li>
         <strong>Logs:</strong> web server access logs record address, time, method, path (without the

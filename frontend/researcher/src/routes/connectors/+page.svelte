@@ -106,7 +106,7 @@
   <ol>
     <li>Open the add-in in your editor and choose <strong>Sign in to Dynodoc</strong>.</li>
     <li>
-      In the browser window that opens, sign in, check that the code matches the one in your editor,
+      Open the browser link it shows, sign in, check that the code matches the one in your editor,
       pick the Dynodoc file and approve.
     </li>
     <li>Return to the editor and choose <strong>I approved this connection</strong>.</li>
@@ -129,7 +129,7 @@
     </li>
     <li>
       The pane loads from Dynodoc, so opening it and syncing need an internet connection. Recorded
-      changes wait in a local queue until you send them.
+      changes wait in a private queue until you send them.
     </li>
     <li>The original file you import into a project must be 3 MB or smaller.</li>
   </ul>

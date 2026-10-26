@@ -19,7 +19,7 @@
       where: 'Home ribbon > Dynodoc',
       captures: 'Existing cell values, formula sources and date-only values.',
       detail:
-        'Named rows keep each cell’s identity. The pane captures up to 2,000 projected cells. Needs ExcelApi 1.13.'
+        'Named ranges keep each row’s identity. The pane captures up to 2,000 projected cells. Needs ExcelApi 1.13.'
     },
     {
       id: 'powerpoint',
@@ -41,16 +41,16 @@
       id: 'sheets',
       name: 'Google Sheets',
       where: 'Extensions > Dynodoc > Open Dynodoc',
-      captures: 'Existing cell values and formula sources.',
-      detail:
-        'Named ranges anchor cells. Each connected file keeps a capture queue of up to 100 KB.'
+      captures: 'Existing cell values, formula sources and date-only values.',
+      detail: 'Named ranges anchor rows. Each connected file keeps a capture queue of up to 100 KB.'
     },
     {
       id: 'slides',
       name: 'Google Slides',
       where: 'Extensions > Dynodoc > Open Dynodoc',
       captures: 'Text in existing slide shapes.',
-      detail: 'The add-on uses the current-file scope only, plus Dynodoc’s connector API.'
+      detail:
+        'The add-on asks for the current presentation only, a sidebar, and requests to Dynodoc’s connector API.'
     }
   ];
 
@@ -85,7 +85,7 @@
   id="editors"
   tone="muted"
   title="Supported editors"
-  lede="The same capture protocol runs in six hosts. Each tab shows the pane that opens beside the file and what it captures."
+  lede="All six add-ins use the same capture protocol. Each tab shows an illustration of the pane that opens beside the file, with sample content, and what the add-in captures."
 >
   <div class="tabs" role="tablist" aria-label="Editor">
     {#each hosts as host, index (host.id)}
@@ -147,7 +147,7 @@
   <p class="foot">
     Capture runs while the pane is open, and there is no background agent. Structure and formatting
     changes go through edited-file push. Add-ins ship as test installs today; marketplace listings
-    are not live.
+    are not live, and installed-editor acceptance has not been run.
     <Btn href="/add-ins" variant="link" arrow>Install steps and limits</Btn>
   </p>
 </Section>

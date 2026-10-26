@@ -47,7 +47,9 @@
             ><td><code>dynodoc_session</code></td><td
               >Encrypted sign-in session. HTTP-only, SameSite=Lax and Secure over HTTPS. Access
               tokens are renewed while your account stays active.</td
-            ><td>Up to 30 days; cleared on sign-out. Server-side revocation can end it sooner.</td
+            ><td
+              >30 days from its last renewal (renewed while your account stays active); cleared on
+              sign-out. Server-side revocation can end it sooner.</td
             ></tr
           ><tr
             ><td><code>oauth_state</code>, <code>oauth_verifier</code>, <code>oauth_next</code></td
@@ -101,6 +103,10 @@
             ><td><code>dynodoc:sheet:…</code></td><td
               >The last sheet tab you viewed in a spreadsheet, per file.</td
             ><td>Until cleared.</td></tr
+          ><tr
+            ><td><code>dynodoc.sheet-size-notice</code> (session storage)</td><td
+              >That you dismissed the small-screen spreadsheet notice.</td
+            ><td>Until the tab is closed.</td></tr
           ><tr
             ><td><code>dynodoc.light-pages</code></td><td
               >Your choice to show documents on white pages in night mode.</td

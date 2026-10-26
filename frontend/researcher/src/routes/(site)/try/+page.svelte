@@ -105,7 +105,7 @@
         key store. The release also has engine-cli on its own for Windows and Linux.
       </li>
       <li>
-        <strong>No auto-update, no telemetry.</strong> Newer releases appear on the
+        <strong>No auto-update, no telemetry of its own.</strong> Newer releases appear on the
         <a href={RELEASE.page}>release page</a>, with notes on what works and what does not.
       </li>
     </ul>

@@ -67,7 +67,7 @@
       works:
         'Google Docs in a desktop browser, as an Editor add-on sidebar (Extensions → Dynodoc → Open Dynodoc).',
       needs:
-        'A Google account and permission for the add-on to read and edit the current document.',
+        'A Google account. The add-on asks for access to the current document only, to show a sidebar, and to send requests to Dynodoc.',
       not: 'Formatting, new, deleted or moved paragraphs, tables, lists, images, footnotes, comments and other tabs. Not the Google Docs mobile apps.',
       marks:
         'One named range per paragraph, named dynodoc.block.<ID>. Named ranges are not shown in the normal Docs interface.'
@@ -79,7 +79,7 @@
         'Records edits to existing cell values, formula text and date-only values, up to 2,000 cells, using the spreadsheet’s own time zone.',
       works: 'Google Sheets in a desktop browser, as an Editor add-on sidebar.',
       needs:
-        'A Google account and permission for the add-on to read and edit the current spreadsheet.',
+        'A Google account. The add-on asks for access to the current spreadsheet only, to show a sidebar, and to send requests to Dynodoc.',
       not: 'Inserting, deleting or sorting rows or columns, formatting, merged cells in synced rows, charts, timestamps and changing a cell type or date format. Not the Sheets mobile apps.',
       marks: 'One named range per synced row, named dynodoc_<ID>.'
     },
@@ -90,7 +90,7 @@
         'Records edits to the text of existing slide shapes, up to 2,000 shapes. Shape accessibility descriptions are preserved.',
       works: 'Google Slides in a desktop browser, as an Editor add-on sidebar.',
       needs:
-        'A Google account and permission for the add-on to read and edit the current presentation.',
+        'A Google account. The add-on asks for access to the current presentation only, to show a sidebar, and to send requests to Dynodoc.',
       not: 'Inserting, deleting or reordering slides or shapes, grouped or table shapes, formatting, media and animations. Not the Slides mobile apps.',
       marks:
         'Nothing visible. Dynodoc keeps a private mapping from Google’s slide and shape IDs in your own Apps Script user storage.'
@@ -101,12 +101,12 @@
     {
       n: '1',
       title: 'Connect',
-      text: 'Choose Sign in to Dynodoc in the pane. A browser window opens, you check the code matches, pick one file and approve. The editor never sees your password.'
+      text: 'Choose Sign in to Dynodoc in the pane, then open the browser link it shows. Check that the code matches, pick one file and approve, then choose I approved this connection in the pane. The editor never sees your password.'
     },
     {
       n: '2',
       title: 'Capture',
-      text: 'Turn capture on. While the pane is open, Dynodoc compares snapshots and keeps edits to existing text in a queue on your device. Nothing is sent yet.'
+      text: 'Turn capture on. While the pane is open, Dynodoc compares snapshots and keeps edits to existing text in a private queue: in the Office pane’s browser storage on your device, or in your private Apps Script user properties for the Google editors. Nothing is sent yet.'
     },
     {
       n: '3',
@@ -144,7 +144,7 @@
     {
       question: 'What happens offline?',
       answer:
-        'Loading the pane, signing in and sending changes need a connection. Captured changes wait in a local queue until you send them. Offline commits and background capture are not available.'
+        'Loading the pane, signing in and sending changes need a connection. Captured changes wait in a private queue until you send them. Offline commits and background capture are not available.'
     }
   ];
   const faqScript = scriptTag({
@@ -175,13 +175,13 @@
     ],
     [
       'What leaves your device',
-      'Changed text and metadata, to app.dynodoc.online over HTTPS, when you connect, preview or push.',
+      'Changed text and metadata, to app.dynodoc.online over HTTPS, when you push. Connecting and previewing send only a request that carries your file-scoped key.',
       'The same, sent by the Apps Script runtime to the same address only.'
     ],
     [
       'Other network calls',
       'Loads Microsoft’s Office.js library from appsforoffice.microsoft.com.',
-      'None by the add-on. Google’s own services run as the host.'
+      'None by the add-on. Google’s own services run as the host, and Google may log script errors because exception logging is switched on in the manifest.'
     ],
     [
       'Written into your file',
@@ -219,7 +219,7 @@
       <p class="covers">{card.covers}</p>
       <dl>
         <div>
-          <dt>Works in</dt>
+          <dt>Designed for</dt>
           <dd>{card.works}</dd>
         </div>
         <div>
@@ -280,7 +280,7 @@
   <Section
     id="microsoft"
     title="Word, Excel and PowerPoint"
-    lede="Task-pane add-ins. After installing, open the Home tab and choose the Dynodoc button."
+    lede="Task-pane add-ins. After installing, open the Home tab and choose the Dynodoc button. If a file holds something an add-in does not cover, such as a table or list in Word, a merged cell in Excel, or a grouped, table or other unsupported shape in PowerPoint, or if paragraphs, rows or slides were inserted or deleted, the pane stops with a message and does not capture. Use Push an edited file for those changes."
     tone="muted"
   >
     <div class="hosts">
@@ -291,7 +291,7 @@
   <Section
     id="google"
     title="Google Docs, Sheets and Slides"
-    lede="Editor add-ons that open in a sidebar from the Extensions menu. Each editor is its own add-on."
+    lede="Editor add-ons that open in a sidebar from the Extensions menu. Each editor is its own add-on. If a file holds a table, list or image in Docs, a merged cell in Sheets, or a grouped, table or other unsupported shape in Slides, or if paragraphs, rows or slides were inserted or deleted, the sidebar stops with a message and does not capture. Use Push an edited file for those changes."
   >
     <div class="hosts">
       {#each google as card (card.host)}{@render hostCard(card)}{/each}
@@ -308,13 +308,22 @@
       <div class="card card--raised" data-reveal>
         <h3 class="h-3">Word, Excel and PowerPoint</h3>
         <ol class="how">
-          <li>Download the add-in file for your app from the add-ins download page.</li>
           <li>
-            Add it to Office. On Windows, add a trusted shared-folder catalog. On Mac, copy the file
-            into the app’s add-in folder. In Office on the web, upload it in the add-ins dialog.
+            Download the add-in file for your app from the <a href="/connectors"
+              >add-ins download page</a
+            >.
+          </li>
+          <li>
+            Add it to Office. On Windows, put the file in a shared folder, add that folder as a
+            trusted add-in catalog, restart Office, then choose Home, Add-ins, Advanced, Shared
+            Folder and pick Dynodoc. On Mac, copy the file into the app’s wef add-in folder and
+            restart the app. In Office on the web, upload it in the add-ins dialog.
           </li>
           <li>Open a saved file and choose Home, then Dynodoc, to open the pane.</li>
-          <li>Choose Sign in to Dynodoc, approve one file in the browser, then turn capture on.</li>
+          <li>
+            Choose Sign in to Dynodoc, follow the link to approve one file in the browser, choose I
+            approved this connection, then turn capture on.
+          </li>
         </ol>
       </div>
       <div class="card card--raised" data-reveal>
@@ -322,12 +331,13 @@
         <ol class="how">
           <li>Download the package for your editor from the add-ins download page and unzip it.</li>
           <li>
-            Create an Apps Script project named Dynodoc. Add each file with the same name and
-            replace the project’s manifest.
+            Create a standalone Apps Script project named Dynodoc. Add each .gs and .html file with
+            the same name (not INSTALL.md or ACCEPTANCE.md), and replace the project’s manifest
+            (turn on showing the manifest in Project Settings first).
           </li>
           <li>
             Choose Deploy, Test deployments, Editor add-on, pick a test file and run it. Google may
-            ask you to authorise access to the current file.
+            ask you to allow access to the current file and requests to Dynodoc.
           </li>
           <li>
             Open Extensions, then Dynodoc, then Open Dynodoc, and sign in to Dynodoc from the
@@ -401,9 +411,9 @@
           need a publisher account that has not been set up yet.
         </li>
         <li>
-          The add-ins have automated protocol and storage tests, but they have not yet passed the
-          installed-host acceptance run on every editor. Treat a test install as a preview, and keep
-          your original files.
+          The add-ins have automated protocol and storage tests. The installed-host acceptance run
+          has not been done for any of the six editors yet. Treat a test install as a preview, and
+          keep your original files.
         </li>
         <li>No dates or approval outcomes are promised.</li>
       </ul>

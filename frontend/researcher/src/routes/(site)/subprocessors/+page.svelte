@@ -20,7 +20,7 @@
     <h2>About this list</h2>
     <p>
       This draft names the providers that the Dynodoc code and deployment configuration actually
-      use. It was checked against the repository on 12 October 2026 and is not an executed
+      use. It was checked against the repository on 26 October 2026 and is not an executed
       agreement. A provider is listed only if it is configured.
     </p>
     <p>
@@ -56,10 +56,11 @@
             ></tr
           ><tr
             ><td><a href="https://resend.com/legal/privacy-policy">Resend</a></td><td
-              >Delivers transactional email: sign-in links and invitations. Used when configured.</td
+              >Delivers transactional email: sign-in links and invitations.</td
             ><td
-              >Recipient address, the sender’s name and reply-to address for invitations, and the
-              message, which contains a link and a file or project name.</td
+              >Recipient address and the message. A sign-in email contains the link. An invitation
+              contains the link, the file or project name, the inviter’s name and email address, the
+              access level, any note the inviter typed, and the reply-to address.</td
             ></tr
           ><tr
             ><td><a href="https://policies.google.com/privacy">Google</a> (your choice)</td><td
@@ -107,7 +108,8 @@
       </li>
       <li>
         <strong>GitHub:</strong> hosts the source code and runs the automated tests, which use synthetic
-        data only. It receives no customer content.
+        data only, and serves the downloads of the desktop app. It receives no customer content; a visitor
+        who downloads the app sends it ordinary request information.
       </li>
     </ul>
   </section>

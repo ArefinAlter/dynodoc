@@ -74,9 +74,9 @@
     <h2>Workspace and website</h2>
     <p>
       The Dynodoc workspace, which is the web application and its operator tools, and this website
-      are &copy; 2026 {OPERATOR.legalName}. They are proprietary, developed in a private repository
-      and not published as open source; no open-source license is offered for them, and no source
-      archive of them is available.
+      are &copy; 2026 {OPERATOR.legalName} They are proprietary, developed in a private repository and
+      not published as open source; no open-source license is offered for them, and no source archive
+      of them is available.
     </p>
     <p>
       A software license is separate from the <a href="/terms">terms of using the hosted service</a

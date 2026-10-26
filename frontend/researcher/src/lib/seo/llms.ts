@@ -38,13 +38,13 @@ const LIMITATIONS = [
 
 const FACTS = [
   `Product: ${SITE_NAME}, a document provenance, review and synchronization platform.`,
-  'Status: early software under active development; hosted test deployment with email and Google sign-in, no paid plan.',
+  'Status: early software under active development; hosted test deployment with email and Google sign-in, no paid plan. Pre-alpha 0.0.1a (25 October 2026): a sample workspace in the browser at https://app.dynodoc.online/svc/visitor (removed after 24 hours, no account) and an unsigned desktop app for Windows x64 and Linux x64; see https://dynodoc.online/try.',
   'Hosting: a hosted application at dynodoc.online; the workspace runs at app.dynodoc.online.',
   `Operator: ${OPERATOR.legalName}, Dhaka, Bangladesh. Contact: ${OPERATOR.email}.`,
   `Licence: ${OPEN_SOURCE_STATEMENT} Private document content placed in the hosted app does not become open source.`,
   'Self-hosting the open engine and API: PostgreSQL 16, Docker, Rust and Task; see the engine repository README. Commands: task up, task migrate, task db:grant-runtime, task run.',
   `Source code: the open-source engine, API and command-line tools are at ${ENGINE_REPO_URL}. The workspace and website source is not published.`,
-  'Prebuilt tools: none is published yet. The command-line tools are built from source; the open-source page lists the platforms they are tested on.'
+  'Prebuilt tools: the engine repository publishes none yet; build from source (the open-source page lists the platforms they are tested on). The Dynodoc 0.0.1a pre-alpha release carries engine-cli on its own for Windows x64 and Linux x64, unsigned.'
 ];
 
 function bullets(lines: string[]): string {

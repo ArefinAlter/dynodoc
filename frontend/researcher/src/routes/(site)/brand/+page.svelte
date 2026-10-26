@@ -25,21 +25,24 @@
       name: 'Mark',
       note: 'Square mark for avatars and small spaces.',
       dark: false,
-      width: 96
+      width: 96,
+      height: 96
     },
     {
       file: 'logo.svg',
       name: 'Logo',
       note: 'Mark and wordmark for paper, white and light backgrounds.',
       dark: false,
-      width: 240
+      width: 240,
+      height: 52
     },
     {
       file: 'logo-dark.svg',
       name: 'Logo for dark backgrounds',
       note: 'Same logo with a light wordmark, for ink and dark backgrounds.',
       dark: true,
-      width: 240
+      width: 240,
+      height: 52
     }
   ] as const;
 
@@ -152,6 +155,7 @@
               src="/brand/{logo.file}"
               alt="Dynodoc {logo.name.toLowerCase()}"
               width={logo.width}
+              height={logo.height}
             />
           </div>
           <h3 class="h-3">{logo.name}</h3>

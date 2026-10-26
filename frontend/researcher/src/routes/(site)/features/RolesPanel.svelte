@@ -11,7 +11,7 @@
   ] as const;
 </script>
 
-<MockWindow title="dynodoc.com/projects/acme/board-pack/settings" {label}>
+<MockWindow title="Project settings · acme / board-pack" {label}>
   <div class="rp">
     <div class="head">
       <b>acme / board-pack</b>

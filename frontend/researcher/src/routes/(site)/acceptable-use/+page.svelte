@@ -107,7 +107,7 @@
       <dd><a href="/security#report">See the security overview</a></dd>
       <dt>Legal operator</dt>
       <dd>
-        {OPERATOR.legalName}. Address and registration details are in the
+        {OPERATOR.legalName} Address and registration details are in the
         <a href="/privacy#contact">privacy policy</a>.
       </dd>
     </dl>

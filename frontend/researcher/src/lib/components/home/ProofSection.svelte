@@ -19,7 +19,7 @@
     <div data-reveal>
       <Stat
         value={6}
-        label="editor add-ins, as test installs. No marketplace listing exists yet."
+        label="editor add-ins, as test installs. No marketplace listing exists, and installed-editor acceptance has not been run."
       />
     </div>
     <div data-reveal>

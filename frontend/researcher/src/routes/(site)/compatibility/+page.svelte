@@ -15,7 +15,10 @@
   type Cell = { level: Level; note: string };
 
   const legend: { level: Level; text: string }[] = [
-    { level: 'yes', text: 'Works for the content named beside it.' },
+    {
+      level: 'yes',
+      text: 'Implemented and covered by automated tests for the content named beside it. The last column says whether it has been run in an installed editor.'
+    },
     { level: 'partial', text: 'Works with the restrictions stated.' },
     { level: 'not-yet', text: 'Not available. Use an edited-file push or the original file.' }
   ];
@@ -188,7 +191,7 @@
     {
       name: 'RTF and other formats',
       level: 'not-yet',
-      note: 'RTF is the next planned adapter. Anything not listed here is not supported.'
+      note: 'RTF is the next planned adapter. Other file formats are not supported, apart from the optional form and survey imports described in the privacy policy.'
     }
   ];
 
@@ -221,7 +224,7 @@
     {
       value: '7 days',
       label: 'Connection lifetime',
-      note: 'An add-in connection expires after approval and can be revoked sooner.'
+      note: 'An add-in connection expires seven days after approval and can be revoked sooner.'
     }
   ];
 
@@ -229,7 +232,7 @@
     {
       name: 'Chrome and Edge',
       level: 'yes',
-      note: 'Chrome on Windows, macOS, Linux and Android; Edge on Windows and macOS, which has the same engine. Chrome on Android is the phone target. The whole browser test suite runs on Chromium 148.'
+      note: 'Chrome on Windows, macOS, Linux and Android; Edge on Windows and macOS, which has the same engine. Chrome on Android is the phone target. The whole browser test suite runs on Chromium 148; Edge, macOS and Android were not run separately.'
     },
     {
       name: 'Firefox',
@@ -361,7 +364,7 @@
         <p class="lede">
           Dynodoc records and reviews supported changes in Word, Excel, PowerPoint and the three
           Google editors. This page lists what is covered today, the minimum host versions, the file
-          formats and the hard limits. It is not a claim of full Office parity. Updated 23 October
+          formats and the hard limits. It is not a claim of full Office parity. Updated 26 October
           2026.
         </p>
         <ul class="legend" aria-label="How to read the chips">
@@ -379,7 +382,7 @@
   <Section
     id="editors"
     title="Editor add-in coverage"
-    lede="Add-ins capture edits to existing text and values while the pane or sidebar is open. Everything else goes through an edited-file push, which keeps the same review and merge rules."
+    lede="Add-ins capture edits to existing text and values while the pane or sidebar is open. Everything else goes through an edited-file push, which keeps the same review and merge rules. If a file holds something an add-in does not cover, such as a table or list in Word and Docs, a merged cell in Excel and Sheets, or a grouped, table or other unsupported shape in PowerPoint and Slides, or if paragraphs, rows or slides were inserted or deleted, the pane or sidebar stops with a message and does not capture."
   >
     <div class="table-wrap matrix" data-reveal>
       <table>
@@ -433,7 +436,7 @@
           <tr>
             <th scope="col">Editor</th>
             <th scope="col">Requires</th>
-            <th scope="col">Runs in</th>
+            <th scope="col">Designed for</th>
             <th scope="col">Not supported</th>
           </tr>
         </thead>

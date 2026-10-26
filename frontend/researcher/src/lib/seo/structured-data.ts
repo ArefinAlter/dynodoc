@@ -60,7 +60,7 @@ const application = {
   name: SITE_NAME,
   url: `${CANONICAL_ORIGIN}/`,
   applicationCategory: 'ProductivityApplication',
-  operatingSystem: 'Web browser',
+  operatingSystem: 'Web browser; Windows and Linux desktop app (pre-alpha)',
   description:
     'Version control and provenance for Word, Google Docs, Excel, Google Sheets, PowerPoint and Google Slides. Changes are captured by editor add-ins, reviewed as change requests, merged under project rules and recorded in an append-only, hash-chained history.',
   image: SITE_IMAGE,

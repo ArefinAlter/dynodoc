@@ -22,6 +22,22 @@
   // Newest first. Distilled from docs/PROJECT-STATUS.md; no dates beyond those recorded there.
   const entries: Entry[] = [
     {
+      id: 'pre-alpha-0-0-1a',
+      iso: '2026-10-25',
+      date: '25 Oct 2026',
+      state: 'live',
+      title: 'Dynodoc 0.0.1a, the first public pre-alpha: sample workspaces and a desktop app',
+      summary:
+        'You can now try Dynodoc without an account, in a sample workspace of your own that is removed after 24 hours, or install an unsigned desktop app for Windows or Linux. The hosted workspace itself is unchanged: it still runs application 3fa06fd on schema 47.',
+      changes: [
+        'The Try page starts a sample workspace: three projects (a team handbook with its budget and review deck, a field guide and a grant application) with history, drafts, change requests, reviews and issues from six invented colleagues. It is yours alone, and a small service beside the hosted workspace limits it to six starts per address per hour.',
+        'The desktop app for Windows x64 (installer and portable zip) and Linux x64 (AppImage and .deb) is a client for changes, history and change requests that connects to the hosted workspace by default. It is unsigned, so Windows SmartScreen warns. It has no auto-update and no telemetry of its own. There is no macOS build yet.',
+        'engine-cli is also published on its own for Windows and Linux x64, and the release lists the SHA-256 of every file.',
+        'The desktop app keeps what the server has no place for (changes captured but not yet committed, commit messages, agent threads) in the small service beside the workspace. The agent’s replies are prepared and no model is called.'
+      ],
+      refs: 'Release v0.0.1a · built from commit a5fde85 · see Try the pre-alpha'
+    },
+    {
       id: 'schema-47-release',
       iso: '2026-10-23',
       date: '23 Oct 2026',
@@ -266,7 +282,7 @@
   <Section
     id="entries"
     title="October 2026"
-    lede="Fourteen entries from the project record, newest first."
+    lede="Fifteen entries from the project record, newest first."
     layout="split"
   >
     <ol class="log">

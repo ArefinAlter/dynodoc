@@ -56,7 +56,7 @@
   ];
 </script>
 
-<MockWindow title="dynodoc.online/admin/audit" {label} class={className}>
+<MockWindow title="Audit trail · acme / board-pack" {label} class={className}>
   <div class="au" use:useInView={{ animate }}>
     <div class="top">
       <div>

@@ -38,6 +38,7 @@
     <div class="stage">
       <div class="plate"><Dino name="rex" art={Rex} /></div>
       <div class="win"><AddinMock host="word" /></div>
+      <p class="cap">Illustration with sample content, not a screenshot of a real file.</p>
     </div>
   </div>
 </section>
@@ -96,6 +97,12 @@
   .win {
     position: relative;
     z-index: 1;
+  }
+  .cap {
+    margin: 10px 0 0;
+    color: var(--color-muted);
+    font-size: 0.8125rem;
+    text-align: right;
   }
 
   @media (min-width: 1000px) {

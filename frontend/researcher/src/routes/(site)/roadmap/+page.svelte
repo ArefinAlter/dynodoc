@@ -90,6 +90,11 @@
           title: 'AI-agent connectors: released but off',
           body: 'The feature exists on the server and is switched off on the hosted pilot, so no agent can connect. Where it is on, a project’s policy decides what an agent may read and whether it may propose changes as a draft, and nothing is allowed by default. A person must submit the draft, and the number of approvals required is set per project (the default is none). The AI-proposals inbox appears only when an agent has proposed something. None has been run with a real AI client.',
           when: '23 Oct 2026'
+        },
+        {
+          title: 'Pre-alpha 0.0.1a: sample workspaces and the desktop app',
+          body: 'A sample workspace of your own in the browser, removed after 24 hours, from a small service beside the hosted workspace. An unsigned desktop app for Windows x64 and Linux x64 that connects to the hosted workspace, with engine-cli on its own for the same two platforms. Pre-alpha: expect rough edges. No macOS build yet.',
+          when: '25 Oct 2026'
         }
       ]
     },
@@ -142,7 +147,7 @@
         },
         {
           title: 'Six-platform builds of the command-line tools and engine',
-          body: 'The public engine repository builds and tests on Linux, macOS and Windows, on Intel or AMD and on Arm processors, and a release workflow builds the command-line tools for all six. These are automated builds only: no prebuilt tools are published, and the binaries would be unsigned.',
+          body: 'The public engine repository builds and tests on Linux, macOS and Windows, on Intel or AMD and on Arm processors, and a release workflow builds the command-line tools for all six. These are automated builds only: the engine repository has published no prebuilt tools, and its binaries would be unsigned. The 0.0.1a pre-alpha release carries engine-cli on its own for Windows and Linux x64, unsigned.',
           when: '21 Oct 2026'
         }
       ]
@@ -205,6 +210,10 @@
         {
           title: 'Project workspace depth',
           body: 'Creating and merging project-wide branches in the web workspace, project-scoped search and releases. Compare, activity, issues and stars exist.'
+        },
+        {
+          title: 'Desktop app next steps',
+          body: 'macOS builds, signed installers, automatic updates, editing document content inside the client, and a faster live mode for large workspaces.'
         }
       ]
     }
@@ -238,7 +247,7 @@
 <main id="main">
   <InfoHero
     title="Roadmap"
-    lede="What is live, what exists only in source, what is being worked on and what comes later. A date appears only where a record gives one; there are no promised release dates. Last reviewed 23 October 2026."
+    lede="What is live, what exists only in source, what is being worked on and what comes later. A date appears only where a record gives one; there are no promised release dates. Last reviewed 26 October 2026."
   >
     {#snippet actions()}
       <Btn href="/features" arrow>See the features</Btn>
@@ -263,7 +272,7 @@
         />
       </li>
       <li data-reveal>
-        <Stat value={0} label="Prebuilt command-line tools published" />
+        <Stat value={0} label="Engine repository releases with prebuilt tools" />
       </li>
       <li data-reveal><Stat value={6} label="Editor connectors, all test builds" /></li>
       <li data-reveal><Stat value={0} label="Marketplace listings submitted or approved" /></li>

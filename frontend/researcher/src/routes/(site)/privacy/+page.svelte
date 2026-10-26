@@ -302,8 +302,10 @@
     <p>
       The desktop app keeps your preferences in a file on your computer. When it is signed in, a
       small service beside the workspace keeps, for your account, the changes captured but not yet
-      committed, commits not yet pushed, commit messages and the agent threads you start in the app.
-      They are removed with a sample workspace, and on request for any account.
+      committed, commits not yet pushed and the agent threads you start in the app, and, for each
+      file, the commit messages you write. The account’s state is removed when a sample workspace
+      ends, and on request for any account. Commit messages stay with the file and are removed on
+      request.
     </p>
   </section>
   <section id="measurements">
@@ -333,14 +335,14 @@
         <a href="https://policies.google.com/privacy">privacy policy</a>.
       </li>
       <li>
-        <strong>Resend, when configured:</strong> receives the recipient address and the message
-        needed to deliver a sign-in link or an invitation. Its handling is described in the
+        <strong>Resend:</strong> receives the recipient address and the message needed to deliver a
+        sign-in link or an invitation. Its handling is described in the
         <a href="https://resend.com/legal/privacy-policy">Resend privacy policy</a>.
       </li>
       <li>
         <strong>Vercel:</strong> serves the public website at dynodoc.online and so receives
         ordinary request information such as IP address and the page requested. See the
-        <a href="https://vercel.com/legal/privacy-policy">Vercel privacy notice</a>. The signed-in
+        <a href="https://vercel.com/legal/privacy-notice">Vercel privacy notice</a>. The signed-in
         workspace does not run on Vercel.
       </li>
       <li>
@@ -406,15 +408,15 @@
     </p>
     <h3>Erasing a whole document</h3>
     <p>
-      An administrator can permanently erase a whole document that is already in Trash, after
-      reviewing an impact preview, typing its title, choosing a reason category and acknowledging
-      that backups persist. In one transaction this removes its files, content, change history,
-      snapshots, named versions, personal drafts, public copies and cached request responses from
-      the live database. A minimal receipt remains: the resource identifier and kind, the
-      administrator’s identifier, the reason category, aggregate counts and the time. It holds no
-      title, email address, file or content. Where shared project history is enabled, published
-      history that depended on the document is removed with it, leaving only opaque receipt
-      commitments and generation counters.
+      An administrator can permanently erase a whole document, after reviewing an impact preview,
+      typing its title, choosing a reason category and acknowledging that backups persist. A
+      document that is not already in Trash is moved there in the same step. In one transaction this
+      removes its files, content, change history, snapshots, named versions, personal drafts, public
+      copies and cached request responses from the live database. A minimal receipt remains: the
+      resource identifier and kind, the administrator’s identifier, the reason category, aggregate
+      counts and the time. It holds no title, email address, file or content. Where shared project
+      history is enabled, published history that depended on the document is removed with it,
+      leaving only opaque receipt commitments and generation counters.
     </p>
     <h3>Erasing an account</h3>
     <p>
@@ -457,7 +459,9 @@
       <table>
         <thead><tr><th>Item</th><th>How long</th></tr></thead><tbody
           ><tr
-            ><td>Login session cookie</td><td>Up to 30 days; ends at sign-out or revocation.</td
+            ><td>Login session cookie</td><td
+              >30 days from its last renewal (renewed while you stay active); ends at sign-out or
+              revocation.</td
             ></tr
           ><tr><td>Email sign-in link</td><td>Valid for 15 minutes.</td></tr><tr
             ><td>Editor connection key</td><td

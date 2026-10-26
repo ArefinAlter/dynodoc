@@ -99,7 +99,7 @@
 <main id="main" use:scrollable>
   <InfoHero
     title="Open source"
-    lede="The engine, the HTTP API and the command-line tools are open source under the MIT licence. This page says how to build them from source, which platforms they are tested on, what that testing covers and what is not published yet. Updated 23 October 2026."
+    lede="The engine, the HTTP API and the command-line tools are open source under the MIT licence. This page says how to build them from source, which platforms they are tested on, what that testing covers and what is not published yet. Updated 26 October 2026."
   >
     {#snippet actions()}
       <Btn href={REPO} external arrow>Open the repository</Btn>
@@ -238,10 +238,16 @@
   <Section
     id="prebuilt"
     title="Prebuilt tools"
-    lede="Prebuilt command-line tools will be published as GitHub releases; none is published yet. Until one is, build from source."
+    lede="Prebuilt command-line tools will be published as GitHub releases of the engine repository; none is published yet. Until one is, build from source."
     layout="split"
   >
     <div class="stack" data-reveal>
+      <p>
+        This page covers the engine repository only. A separate <code>engine-cli</code> build for
+        Windows x64 and Linux x64 comes with the Dynodoc pre-alpha: see
+        <a href="/try">Try the pre-alpha</a>. It is not a release of the engine repository, so the
+        checks and platform figures on this page do not describe it.
+      </p>
       <p>
         The project’s release workflow has built <code>engine-cli</code> and <code>engine-api</code>
         natively for all six platforms, run each binary it built, unpacked each archive into a clean folder

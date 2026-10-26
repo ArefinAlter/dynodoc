@@ -7,7 +7,7 @@
   let { animate = true, label, class: className = '' }: MockProps = $props();
 </script>
 
-<MockWindow title="dynodoc.online/projects/acme/board-pack/pulls/14" {label} class={className}>
+<MockWindow title="Change request #14 · acme / board-pack" {label} class={className}>
   <div class="rv" use:useInView={{ animate }}>
     <div class="head">
       <div class="ttl">Tighten the Q3 summary <span class="mk-muted">#14</span></div>

@@ -43,7 +43,7 @@
           'Insert',
           kind === 'text' ? 'Layout' : kind === 'grid' ? 'Formulas' : 'Design',
           'Review',
-          'Dynodoc'
+          'View'
         ]
   );
   const captured = $derived(
@@ -62,7 +62,9 @@
 <MockWindow variant={host} title={file} {label} class={className}>
   <div class="ad" use:useInView={{ animate }}>
     <div class="menu">
-      {#each tabs as t, i (t)}<span class="tab" class:on={i === tabs.length - 1}>{t}</span>{/each}
+      {#each tabs as t, i (t)}<span class="tab" class:on={i === (google ? tabs.length - 1 : 1)}
+          >{t}</span
+        >{/each}
     </div>
     <div class="tools" aria-hidden="true">
       <i></i><i></i><i></i><i class="sep"></i><i></i><i></i><i></i>

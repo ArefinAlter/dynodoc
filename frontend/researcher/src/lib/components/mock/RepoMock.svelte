@@ -36,7 +36,7 @@
   ] as const;
 </script>
 
-<MockWindow title="dynodoc.online/projects/acme/board-pack" {label} class={className}>
+<MockWindow title="Project · acme / board-pack" {label} class={className}>
   <div class="rp" use:useInView={{ animate }}>
     <div class="crumb">
       <span class="path"><span class="mk-muted">acme</span> / <b>board-pack</b></span>

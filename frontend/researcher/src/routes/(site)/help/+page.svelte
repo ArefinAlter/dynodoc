@@ -229,18 +229,19 @@
           <h3>With an add-in</h3>
           <p>
             Install the add-in for your editor (see <a href="/add-ins">Editors &amp; add-ins</a>),
-            choose <strong>Sign in to Dynodoc</strong>, approve one file in the browser and turn
-            capture on. Edit existing text or values, then push the changes for review. Capture
-            works only while the pane or sidebar is open, and covers existing paragraph text, cell
-            values and shape text.
+            choose <strong>Sign in to Dynodoc</strong>, follow its link to approve one file in the
+            browser, choose <strong>I approved this connection</strong> and turn capture on. Edit existing
+            text or values, then push the changes for review. Capture works only while the pane or sidebar
+            is open, and covers existing paragraph text, cell values and shape text.
           </p>
           <h3>With an edited file</h3>
           <p>
             Edit a copy in any editor. Open the file in the project and choose
-            <strong>Push an edited file</strong>. Files downloaded from Dynodoc carry hidden markers
-            that identify each block exactly; other files are matched by content. The differences
-            become a draft that you can submit for review. Use this route for formatting and
-            structural changes that the add-ins do not capture.
+            <strong>Push an edited file</strong>. Word files downloaded from Dynodoc carry hidden
+            markers that identify each paragraph exactly; other Word files, and Excel and PowerPoint
+            files, are matched by their content. The differences become a draft that you can submit
+            for review. Use this route for formatting and structural changes that the add-ins do not
+            capture.
           </p>
         </section>
 
@@ -433,7 +434,9 @@
               <strong>Add to Home screen</strong>.
             </li>
             <li>Safari on iPhone or iPad: Share, then <strong>Add to Home Screen</strong>.</li>
-            <li>Safari on a Mac: <strong>File</strong>, then <strong>Add to Dock</strong>.</li>
+            <li>
+              Safari 17 or later on a Mac: <strong>File</strong>, then <strong>Add to Dock</strong>.
+            </li>
             <li>Firefox on a computer cannot install it; use another browser or a pinned tab.</li>
           </ul>
           <p>
