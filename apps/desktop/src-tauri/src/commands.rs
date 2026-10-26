@@ -637,10 +637,11 @@ mod tests {
     fn every_command_takes_the_second_lock_first() {
         // Source check: each `#[tauri::command]` function begins with require_launcher, so
         // removing the call from one of them is caught here. Every command module is checked.
-        let modules: [(&str, &str, &[&str]); 3] = [
+        let modules: [(&str, &str, &[&str]); 4] = [
             ("commands.rs", include_str!("commands.rs"), &COMMANDS),
             ("cmd_local.rs", include_str!("cmd_local.rs"), &crate::cmd_local::COMMANDS),
             ("cmd_files.rs", include_str!("cmd_files.rs"), &crate::cmd_files::COMMANDS),
+            ("cmd_agent.rs", include_str!("cmd_agent.rs"), &crate::cmd_agent::COMMANDS),
         ];
         for (file, source, names) in modules {
             let body = source.split("#[cfg(test)]

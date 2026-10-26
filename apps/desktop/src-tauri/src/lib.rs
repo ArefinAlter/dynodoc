@@ -10,6 +10,10 @@
 mod accounts;
 mod commands;
 #[cfg(desktop)]
+mod agent;
+#[cfg(desktop)]
+mod cmd_agent;
+#[cfg(desktop)]
 mod cmd_files;
 #[cfg(desktop)]
 mod cmd_local;
@@ -65,6 +69,9 @@ pub struct AppState {
     /// Files and folders the person chose: the page holds tokens, the app holds paths.
     #[cfg(desktop)]
     pub picks: files::Picks,
+    /// The agent: provider keys, consent, caps and the runs in progress.
+    #[cfg(desktop)]
+    pub agent: agent::Agent,
     /// Folder watch: what the bound folders showed since the page last asked.
     #[cfg(desktop)]
     pub watcher: watch::Watcher,
@@ -168,6 +175,8 @@ fn resolve_state(app: &tauri::AppHandle) -> tauri::Result<AppState> {
             .unwrap_or_default();
         local::Local::new(&data_dir, app.path().resource_dir().ok().as_deref(), &exe_dir, ordinary)
     };
+    #[cfg(desktop)]
+    let agent = agent::Agent::new(&config_dir, &local::secrets::service_for(&data_dir, ordinary));
     let (server, unconfirmed) = split_loaded(config::load(&config_dir, &data_dir));
     Ok(AppState {
         server: Mutex::new(server),
@@ -187,6 +196,8 @@ fn resolve_state(app: &tauri::AppHandle) -> tauri::Result<AppState> {
         picks: files::Picks::default(),
         #[cfg(desktop)]
         watcher: watch::Watcher::default(),
+        #[cfg(desktop)]
+        agent,
     })
 }
 
@@ -261,6 +272,30 @@ pub fn run() {
             cmd_files::watch_poll,
             #[cfg(desktop)]
             cmd_files::watch_seen,
+            #[cfg(desktop)]
+            cmd_agent::agent_config,
+            #[cfg(desktop)]
+            cmd_agent::agent_config_set,
+            #[cfg(desktop)]
+            cmd_agent::agent_consent,
+            #[cfg(desktop)]
+            cmd_agent::agent_key_set,
+            #[cfg(desktop)]
+            cmd_agent::agent_key_clear,
+            #[cfg(desktop)]
+            cmd_agent::agent_key_status,
+            #[cfg(desktop)]
+            cmd_agent::agent_keys_unlock,
+            #[cfg(desktop)]
+            cmd_agent::agent_preview,
+            #[cfg(desktop)]
+            cmd_agent::agent_run,
+            #[cfg(desktop)]
+            cmd_agent::agent_tool_result,
+            #[cfg(desktop)]
+            cmd_agent::agent_cancel,
+            #[cfg(desktop)]
+            cmd_agent::agent_usage,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -347,6 +382,7 @@ mod tests {
             ),
             picks: files::Picks::default(),
             watcher: watch::Watcher::default(),
+            agent: agent::Agent::new(std::path::Path::new("."), "online.dynodoc.client.test"),
         }
     }
 

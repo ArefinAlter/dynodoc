@@ -7,6 +7,7 @@ fn commands() -> Vec<&'static str> {
     let mut all: Vec<&'static str> = crate::commands::COMMANDS.to_vec();
     all.extend(crate::cmd_local::COMMANDS);
     all.extend(crate::cmd_files::COMMANDS);
+    all.extend(crate::cmd_agent::COMMANDS);
     all
 }
 use serde_json::Value;
@@ -142,6 +143,7 @@ fn build_script_and_handler_list_the_same_commands() {
         ("commands", crate::commands::COMMANDS.to_vec()),
         ("cmd_local", crate::cmd_local::COMMANDS.to_vec()),
         ("cmd_files", crate::cmd_files::COMMANDS.to_vec()),
+        ("cmd_agent", crate::cmd_agent::COMMANDS.to_vec()),
     ] {
         for command in list {
             assert!(

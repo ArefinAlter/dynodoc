@@ -33,6 +33,18 @@ const COMMANDS: &[&str] = &[
     "folder_status",
     "watch_poll",
     "watch_seen",
+    "agent_config",
+    "agent_config_set",
+    "agent_consent",
+    "agent_key_set",
+    "agent_key_clear",
+    "agent_key_status",
+    "agent_keys_unlock",
+    "agent_preview",
+    "agent_run",
+    "agent_tool_result",
+    "agent_cancel",
+    "agent_usage",
 ];
 
 fn main() {

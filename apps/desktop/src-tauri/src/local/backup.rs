@@ -101,6 +101,8 @@ fn zip_folder(
         let name = entry.file_name().to_string_lossy().to_string();
         let meta = entry.metadata()?;
         if meta.is_dir() {
+            // PostgreSQL refuses to start when one of its (often empty) folders is missing.
+            writer.add_directory(format!("{DATA_PREFIX}{rel}/"), options).map_err(std::io::Error::other)?;
             zip_folder(writer, root, &path, count)?;
         } else if meta.is_file() {
             // A lock and a command line from the run that was just stopped are not data.
@@ -174,8 +176,13 @@ pub fn read_archive(src: &Path, into: &Path, layout_pg: &str) -> Result<Manifest
     std::fs::create_dir_all(into).map_err(|_| "The restore folder could not be made.".to_string())?;
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i).map_err(|_| "The backup is damaged.".to_string())?;
-        let name = entry.name().to_string();
+        let raw = entry.name().to_string();
+        let name = raw.trim_end_matches('/').to_string();
         if entry.is_dir() {
+            if !entry_ok(&name) {
+                return Err("The backup holds a folder it should not; it was not opened.".to_string());
+            }
+            std::fs::create_dir_all(into.join(&name)).map_err(|_| "The restore folder could not be made.".to_string())?;
             continue;
         }
         if !entry_ok(&name) {
@@ -389,8 +396,13 @@ mod tests {
         let dest = root.join("backup.zip");
         let info = write_archive(&layout, &dest, "0.0.1-beta").unwrap();
         assert_eq!(info.files, 2, "the lock file is not data");
+        std::fs::create_dir_all(layout.pgdata.join("pg_tblspc")).unwrap();
+        let _ = std::fs::remove_file(&dest);
+        let info = write_archive(&layout, &dest, "0.0.1-beta").unwrap();
+        assert_eq!(info.files, 2);
         let out = root.join("out");
         let m = read_archive(&dest, &out, "16").unwrap();
+        assert!(out.join("pgdata").join("pg_tblspc").is_dir(), "an empty folder of the database comes back");
         assert_eq!(m.pg_major, "16");
         assert_eq!(std::fs::read(out.join("pgdata").join("base").join("1").join("1259")).unwrap().len(), 5000);
         assert!(!out.join("pgdata").join("postmaster.pid").exists());

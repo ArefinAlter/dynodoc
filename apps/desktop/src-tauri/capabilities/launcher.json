@@ -36,6 +36,18 @@
     "allow-folder-unbind",
     "allow-folder-status",
     "allow-watch-poll",
-    "allow-watch-seen"
+    "allow-watch-seen",
+    "allow-agent-config",
+    "allow-agent-config-set",
+    "allow-agent-consent",
+    "allow-agent-key-set",
+    "allow-agent-key-clear",
+    "allow-agent-key-status",
+    "allow-agent-keys-unlock",
+    "allow-agent-preview",
+    "allow-agent-run",
+    "allow-agent-tool-result",
+    "allow-agent-cancel",
+    "allow-agent-usage"
   ]
 }
