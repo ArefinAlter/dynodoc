@@ -11,10 +11,13 @@ const EV = 'D:/verne-build/dynodoc/evidence/acc7/';
 mkdirSync(EV, { recursive: true });
 const log = [];
 const say = (...a) => { const l = a.join(' '); console.log(l); log.push(l); };
-const PG = 'D:/verne-build/dynodoc/programs/pg/bin/';
-const CLI = 'D:/verne-build/dynodoc/programs/engine-cli.exe';
+const PROGRAMS = process.env.ACC_PROGRAMS || 'D:/verne-build/dynodoc/programs';
+const PG = PROGRAMS + '/pg/bin/';
+const CLI = PROGRAMS + '/engine-cli.exe';
 
 function secretsFor(home) {
+  // A portable or installed-with-data-folder copy keeps these in a file in its folder, not in the credential store.
+  if (process.env.ACC_PORTABLE) return JSON.parse(readFileSync(home + '/data/secrets/local-secrets.secret', 'utf8'));
   const dir = (home + '\\data').toLowerCase();
   const suffix = createHash('sha256').update(dir).digest('hex').slice(0, 8);
   const target = `local-secrets.online.dynodoc.client.${suffix}`;

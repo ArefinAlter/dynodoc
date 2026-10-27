@@ -7,7 +7,7 @@ export const EXE = 'D:/verne-build/dynodoc/cargo-target/desktop/debug/dynodoc-de
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export { sleep };
 
-export function launch({ home, port = 9333, pickFile, exe = EXE, programs = 'D:/verne-build/dynodoc/programs', extraEnv = {} }) {
+export function launch({ home, port = 9333, pickFile, exe = process.env.ACC_EXE || EXE, programs = 'D:/verne-build/dynodoc/programs', extraEnv = {} }) {
   mkdirSync(home, { recursive: true });
   const env = {
     ...process.env,
