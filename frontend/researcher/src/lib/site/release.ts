@@ -32,28 +32,28 @@ export const ASSETS: (Asset & { url: string })[] = (
       platform: 'Windows x64',
       kind: 'Installer',
       file: 'Dynodoc_0.0.1-beta_x64-setup.exe',
-      bytes: /*WIN_SETUP*/0,
+      bytes: 29802688,
       note: 'Windows 10 or 11. Unsigned: SmartScreen warns; choose More info, then Run anyway. It carries its own database, so it is larger than 0.0.1a.'
     },
     {
       platform: 'Windows x64',
       kind: 'Portable zip',
       file: 'Dynodoc_0.0.1b_windows-x64-portable.zip',
-      bytes: /*WIN_ZIP*/0,
+      bytes: 42952120,
       note: 'No installer: unzip and run Dynodoc.exe (keep the other files beside it; everything it keeps is in the dynodoc-data folder). Needs WebView2, which Windows 11 has.'
     },
     {
       platform: 'Linux x64',
       kind: 'AppImage',
       file: 'Dynodoc_0.0.1-beta_amd64.AppImage',
-      bytes: /*LIN_APPIMAGE*/0,
+      bytes: 115841528,
       note: 'Ubuntu 22.04 or newer, or a similar distribution. Make it executable (chmod +x), then run it.'
     },
     {
       platform: 'Linux x64',
       kind: 'Debian package',
       file: 'Dynodoc_0.0.1-beta_amd64.deb',
-      bytes: /*LIN_DEB*/0,
+      bytes: 41846954,
       note: 'Debian 12, Ubuntu 22.04 or newer: sudo apt install ./Dynodoc_0.0.1-beta_amd64.deb'
     }
   ] satisfies Asset[]
@@ -88,14 +88,14 @@ export const PLATFORMS: PlatformDownloads[] = [
     name: 'Windows',
     requirement:
       'Windows 10 or 11, x64. The installer adds WebView2 only if Windows does not have it (Windows 11 does). It starts its own database, so allow about 110 MB of disk.',
-    primary: file('Installer', 'Dynodoc_0.0.1-beta_x64-setup.exe', /*WIN_SETUP*/0),
+    primary: file('Installer', 'Dynodoc_0.0.1-beta_x64-setup.exe', 29802688),
     more: [
       file(
         'Portable .zip (keep the files beside Dynodoc.exe)',
         'Dynodoc_0.0.1b_windows-x64-portable.zip',
-        /*WIN_ZIP*/0
+        42952120
       ),
-      file('engine-cli on its own, .exe', 'engine-cli_0.0.1b_windows-x64.exe', /*WIN_CLI*/0)
+      file('engine-cli on its own, .exe', 'engine-cli_0.0.1b_windows-x64.exe', 19295744)
     ]
   },
   {
@@ -103,10 +103,10 @@ export const PLATFORMS: PlatformDownloads[] = [
     name: 'Linux',
     requirement:
       'x64, Ubuntu 22.04 or newer, Debian 12 or similar. AppImage on most distributions (needs FUSE 2), .deb for Debian and Ubuntu.',
-    primary: file('Desktop app', 'Dynodoc_0.0.1-beta_amd64.AppImage', /*LIN_APPIMAGE*/0),
+    primary: file('Desktop app', 'Dynodoc_0.0.1-beta_amd64.AppImage', 115841528),
     more: [
-      file('Debian package, .deb', 'Dynodoc_0.0.1-beta_amd64.deb', /*LIN_DEB*/0),
-      file('engine-cli on its own', 'engine-cli_0.0.1b_linux-x64', /*LIN_CLI*/0)
+      file('Debian package, .deb', 'Dynodoc_0.0.1-beta_amd64.deb', 41846954),
+      file('engine-cli on its own', 'engine-cli_0.0.1b_linux-x64', 18826064)
     ]
   }
 ];

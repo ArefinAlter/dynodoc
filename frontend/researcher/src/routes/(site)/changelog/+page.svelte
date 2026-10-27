@@ -35,7 +35,7 @@
         'Sign in to the hosted workspace or a server you run with your browser (a one-time code handed back to the app on your computer, with PKCE), link a project and sync it: changes made on either side travel, changes to the same text on both sides wait for your choice. This needs a small addition to the server’s sign-in page; the hosted workspace does not have it yet, and the app falls back to the dynodoc:// link of 0.0.1a (installer build only).',
         'Backup and restore of the whole workspace, and recovery after a crash. The Windows installer is about 30 MB (it carries the database), unsigned, with a portable zip. It has not been run on macOS, and the Linux build has not been run on a desktop Linux machine.'
       ],
-      refs: 'Release v0.0.1b · built from commit COMMIT · see Try the pre-alpha'
+      refs: 'Release v0.0.1b · built from commit fc47ecf · see Try the pre-alpha'
     },
     {
       id: 'pre-alpha-0-0-1a',
