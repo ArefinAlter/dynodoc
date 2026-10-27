@@ -92,6 +92,11 @@
           when: '23 Oct 2026'
         },
         {
+          title: 'Pre-alpha 0.0.1b: the desktop app works on its own',
+          body: 'The Windows and Linux desktop app starts its own database and engine and keeps your documents and their history on your computer, with no server and no account. It adds an agent that uses your own model provider and key, sign-in to a server with your browser, and syncing a project. Pre-alpha: unsigned, no auto-update, no macOS build yet.',
+          when: '27 Oct 2026'
+        },
+        {
           title: 'Pre-alpha 0.0.1a: sample workspaces and the desktop app',
           body: 'A sample workspace of your own in the browser, removed after 24 hours, from a small service beside the hosted workspace. An unsigned desktop app for Windows x64 and Linux x64 that connects to the hosted workspace, with engine-cli on its own for the same two platforms. Pre-alpha: expect rough edges. No macOS build yet.',
           when: '25 Oct 2026'

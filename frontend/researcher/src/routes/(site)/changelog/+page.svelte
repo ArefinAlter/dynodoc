@@ -22,6 +22,22 @@
   // Newest first. Distilled from docs/PROJECT-STATUS.md; no dates beyond those recorded there.
   const entries: Entry[] = [
     {
+      id: 'pre-alpha-0-0-1b',
+      iso: '2026-10-27',
+      date: '27 Oct 2026',
+      state: 'live',
+      title: 'Dynodoc 0.0.1b: the desktop app works on its own',
+      summary:
+        'The desktop app for Windows and Linux no longer needs a server. It starts its own database and engine, keeps your documents and their history on your computer, and signs in to a server only when you want to sync. The hosted workspace is unchanged.',
+      changes: [
+        'The first launch starts a PostgreSQL database and the Dynodoc engine on your computer (loopback addresses only) and stops them when the app closes. You can import Word, Excel and PowerPoint files, see their history and differences, make drafts and change requests, review and merge with a choice for each conflict, restore an earlier version and export a file that opens in the program your system uses. A folder you bind to a project is watched: a file saved by Word, Excel or PowerPoint becomes a draft.',
+        'An agent that uses your own model provider (Anthropic, Gemini, OpenAI or a service that speaks its format, Ollama) with your own key. The key goes into the operating system’s credential store; nothing is sent until you have seen the request and allowed that address, and you can cap tokens and cost or switch it all off. The agent can read history and propose comments and commit messages; it cannot approve, merge or commit. It was checked against a stand-in provider on this computer; no live provider was called.',
+        'Sign in to the hosted workspace or a server you run with your browser (a one-time code handed back to the app on your computer, with PKCE), link a project and sync it: changes made on either side travel, changes to the same text on both sides wait for your choice. This needs a small addition to the server’s sign-in page; the hosted workspace does not have it yet, and the app falls back to the dynodoc:// link of 0.0.1a (installer build only).',
+        'Backup and restore of the whole workspace, and recovery after a crash. The Windows installer is about 30 MB (it carries the database), unsigned, with a portable zip. It has not been run on macOS, and the Linux build has not been run on a desktop Linux machine.'
+      ],
+      refs: 'Release v0.0.1b · built from commit COMMIT · see Try the pre-alpha'
+    },
+    {
       id: 'pre-alpha-0-0-1a',
       iso: '2026-10-25',
       date: '25 Oct 2026',

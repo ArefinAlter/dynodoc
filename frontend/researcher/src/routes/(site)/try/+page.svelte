@@ -12,7 +12,7 @@
   const title = meta?.title ?? 'Try the pre-alpha · Dynodoc';
   const description =
     meta?.description ??
-    'Try Dynodoc 0.0.1a: a sample workspace of your own in the browser, or the desktop app for Windows and Linux.';
+    'Try Dynodoc 0.0.1b: the desktop app for Windows and Linux that keeps your workspace on your own computer, or a sample workspace in the browser.';
   const workspace = $derived(workspaceHref(env.PUBLIC_WORKSPACE_URL));
 
   // The visitor's platform, after mount only: the server-rendered page has equal cards.
@@ -38,18 +38,20 @@
       <span class="badge">Pre-alpha release · {RELEASE.tag}</span>
       <h1 class="h-1">Try the pre-alpha</h1>
       <p class="lede">
-        Dynodoc 0.0.1a is the first public pre-alpha. It is early software: expect rough edges,
-        missing pieces and changes. You can try it in your browser with a sample workspace of your
-        own, sign in with your account, or install the desktop app for Windows or Linux.
+        Dynodoc 0.0.1b is a pre-alpha: early software, so expect rough edges, missing pieces and
+        changes. The desktop app now works on its own: it keeps your documents and their history in
+        a database on your computer, with no server and no account. Sign in to a server only when
+        you want to sync. You can also try a sample workspace in your browser.
       </p>
       <div class="actions">
-        <Btn href={SAMPLE_WORKSPACE_URL} size="lg" arrow>Start a sample workspace</Btn>
         <Btn
           href={heroPlatform ? heroPlatform.primary.url : '#download'}
-          variant="secondary"
           size="lg"
           data-dl-hero
+          arrow
           >{heroPlatform ? `Download for ${heroPlatform.name}` : 'Download the desktop app'}</Btn
+        >
+        <Btn href={SAMPLE_WORKSPACE_URL} variant="secondary" size="lg">Start a sample workspace</Btn
         >
       </div>
     </div>
@@ -94,15 +96,17 @@
   <Section
     id="download"
     title="Desktop app"
-    lede="The desktop app opens on the client: change requests, history and drafts in the manner of GitHub Desktop. It connects to the hosted pre-alpha server by default, where it can start a sample workspace for you; Settings, Accounts lets you sign in or choose your own server. macOS is not built yet."
+    lede="The desktop app starts its own database and engine, so the workspace lives on your computer. It imports and exports Word, Excel and PowerPoint files, keeps their history, drafts, change requests and reviews, and can use your own model provider for the agent. Sign in with your browser to the hosted server or one you run to sync a project. macOS is not built yet."
   >
     <div data-reveal>
       <DownloadCards {os} />
     </div>
     <ul class="facts" data-reveal>
       <li>
-        <strong>The bundled engine-cli</strong> creates this computer's signing key in the operating system's
-        key store. The release also has engine-cli on its own for Windows and Linux.
+        <strong>Nothing leaves your computer by itself.</strong> The agent calls a model provider only
+        when you add your own key, allow that address and ask; keys and sign-ins are kept in the operating
+        system's credential store. The installer is unsigned, so Windows SmartScreen warns first. The
+        release also has engine-cli on its own for Windows and Linux.
       </li>
       <li>
         <strong>No auto-update, no telemetry of its own.</strong> Newer releases appear on the
