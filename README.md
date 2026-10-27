@@ -1,8 +1,8 @@
 # Dynodoc — version control for documents
 
 Live release (23 October 2026): workspace/API `3fa06fd`, schema 47 ([release record](docs/operations/2026-10-23-schema47-release.md)).
-Pre-alpha 0.0.1b (27 October 2026): a standalone desktop app for Windows and Linux (an installer, a portable zip, an AppImage and a .deb) that starts its own database and engine, with the Office import and export, a folder watch, an agent that uses your own model provider, and optional sign-in to a server with sync, on the [Releases](https://github.com/ArefinAlter/dynodoc/releases/tag/v0.0.1b) page; unsigned, and still a [sample workspace](https://app.dynodoc.online/svc/visitor) of your own in the browser (removed after
-24 hours, no account, still release 0.0.1a); see https://dynodoc.online/try and [what was tested](docs/ACCEPTANCE-0.0.1b.md).
+Pre-alpha 0.0.1c (28 October 2026): a standalone workflow manager for Windows and Linux (an installer, a portable zip, an AppImage and a .deb) that starts its own database and engine, with the Office import and export, a folder watch, an agent that uses your own model provider, and optional sign-in to a server with sync, on the [Releases](https://github.com/ArefinAlter/dynodoc/releases/tag/v0.0.1c) page; unsigned, and still a [sample workspace](https://app.dynodoc.online/svc/visitor) of your own in the browser (removed after
+24 hours, no account, updated web tier); see https://dynodoc.online/try and [what was tested](docs/ACCEPTANCE-0.0.1c.md).
 Earlier releases deployed revocable sessions, verified snapshots, restricted API database credentials,
 project policy floors/audited metadata, scoped CSP/HSTS and workload admission
 after upgrade/rollback rehearsal. Read [release evidence](docs/operations/2026-10-11-security-runtime-release.md)
@@ -298,3 +298,5 @@ are not published as open source. Only the
 open source, under the MIT licence, in their own repository. The operator is Verne Ltd.,
 Dhaka, Bangladesh; see [the legal pages notes](docs/LEGAL-PAGES.md) and
 [the licensing decision](docs/decisions/013-private-application-licence.md).
+
+0.0.1c: Desktop manages document repositories, changes, history, branches, reviews, conflicts, connected accounts and sync. Editing stays in Office/Google applications through add-ins/extensions; the full platform opens in the system browser. The manager supports installed subscription CLIs alongside API keys. The bundled engine remains the verified unchanged 0.1.0 component, with schema 47 and its separate licence notices. See [installed agent connections](docs/INSTALLED-AGENTS.md) and [acceptance](docs/ACCEPTANCE-0.0.1c.md).

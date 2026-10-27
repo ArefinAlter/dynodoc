@@ -1,6 +1,6 @@
 # 0.0.1c development increment
 
-27 October 2026. Internal version `0.0.1-beta.1`. The published Latest installers remain 0.0.1b until a separate packaging and platform-acceptance run.
+27 October 2026. Internal version `0.0.1-beta.1`. Full-release packaging and acceptance are recorded in [ACCEPTANCE-0.0.1c.md](ACCEPTANCE-0.0.1c.md).
 
 ## Existing agent subscriptions
 
@@ -18,6 +18,6 @@ Desktop manages repository workflow, staged changes, history, branches, reviews,
 
 Four installed-agent presets need no API key; the existing tool, consent, offline and budget checks remain. The launcher bundle is regenerated from TypeScript.
 
-Validation: client type checking, generated-bundle consistency and eight test files pass. Native desktop Clippy and tests pass; final policy-guard counts are recorded in the operation report. The managed-stack integration fixture needs DYNODOC_PROGRAMS and was not rerun; no installer acceptance is claimed. No new Office/Google host acceptance, marketplace listing or installer acceptance is claimed.
+Validation: client type checking, generated-bundle consistency and eight test files pass. Native desktop Clippy and tests pass; final policy-guard counts are recorded in the operation report. The managed-stack integration fixture was rerun successfully with the real bundled PostgreSQL/engine, including restart persistence. The final Windows portable first-run form created a repository and opened the manager without page errors. No new Office/Google host acceptance or marketplace listing is claimed.
 
 Deep links keep the existing page handoff restrictions. For a loopback server, use the manager's own workspace button/menu to open its platform in the browser.
