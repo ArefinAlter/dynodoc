@@ -7649,7 +7649,17 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
     activity: activityView,
     agent: agentView,
     settings: settingsView
-  }, root2, layer, launcher = null, launcherHome = null;
+  };
+  function fatal(what) {
+    let app = document.getElementById("app");
+    if (app && app.childElementCount > 0) return;
+    let box = document.getElementById("fatal") ?? document.body.appendChild(h("pre", { id: "fatal", class: "fatal" }));
+    box.textContent = ["Dynodoc could not start its window.", "", what, "", "Please report this at https://dynodoc.online/support with your system (" + navigator.userAgent + ")."].join(`
+`);
+  }
+  window.addEventListener("error", (e) => fatal(e.message + (e.filename ? " (" + e.filename.split("/").pop() + ":" + e.lineno + ")" : "")));
+  window.addEventListener("unhandledrejection", (e) => fatal("A start-up step failed: " + (e.reason instanceof Error ? e.reason.message : String(e.reason))));
+  var root2, layer, launcher = null, launcherHome = null;
   function remember() {
     let a = document.activeElement, scroll = /* @__PURE__ */ new Map(), stick = /* @__PURE__ */ new Set();
     document.querySelectorAll("[data-scroll-key]").forEach((el) => {

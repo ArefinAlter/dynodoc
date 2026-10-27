@@ -147,7 +147,13 @@ export default async function (page, { evidence, sleep, home }) {
   await page.eval("document.querySelector('.crumbs .link')?.click()"); await sleep(300);
   await page.waitFor("document.body.innerText.includes('second copy.docx was saved in its editor')", 90000, 'the second copy');
   // The notice of the second copy leads to its own draft (the first Word draft carries the same name).
-  await page.eval("[...document.querySelectorAll('.watch-notice')].find((n) => n.textContent.includes('second copy.docx')).querySelector('button').click()"); await sleep(1200);
+  // The page re-draws now and then (the folder poll); a click that lands in a re-draw is lost, so check that the
+  // window is on a draft and press again if it is not.
+  for (let tries = 0; tries < 4; tries++) {
+    await page.eval("[...document.querySelectorAll('.watch-notice')].find((n) => n.textContent.includes('second copy.docx'))?.querySelector('button')?.click()"); await sleep(1500);
+    if (await page.eval("(document.querySelector('#branch-picker .picker-value')?.textContent || 'main').trim() !== 'main'")) break;
+    await page.click('[data-view=documents]'); await sleep(700);
+  }
   await page.click('.branch-menu-btn'); await sleep(400);
   await menuItem(/^Send for review/i); await sleep(500);
   await setText('#cr-title', 'Five years of retention');

@@ -30,8 +30,9 @@ function Find-Control($dialog, $id, $class) {
   return $null
 }
 function Answer($dialog, $text) {
-  $edit = Find-Control $dialog '1148' 'Edit'
-  if (-not $edit) { $edit = Find-Control $dialog '1152' 'Edit' }
+  # The file name field: 1148 in an Open dialog, 1152 in the folder picker, 1001 in a Save dialog.
+  $edit = $null
+  foreach ($id in '1148', '1152', '1001') { if (-not $edit) { $edit = Find-Control $dialog $id 'Edit' } }
   $button = Find-Control $dialog '1' 'Button'
   if (-not $edit -or -not $button) { return $false }
   [void][Win]::SendMessage([IntPtr]$edit.Current.NativeWindowHandle, 0x000C, [IntPtr]::Zero, $text)

@@ -41,6 +41,17 @@ const VIEWS = {
   settings: settingsView,
 };
 
+// A page that fails before it has drawn anything would be a blank window with nothing to say why. Until the first
+// draw, an uncaught error is written on the page, in plain text a person can copy into a report.
+function fatal(what: string): void {
+  const app = document.getElementById('app');
+  if (app && app.childElementCount > 0) return;
+  const box = document.getElementById('fatal') ?? document.body.appendChild(h('pre', { id: 'fatal', class: 'fatal' }));
+  box.textContent = ['Dynodoc could not start its window.', '', what, '', 'Please report this at https://dynodoc.online/support with your system (' + navigator.userAgent + ').'].join('\n');
+}
+window.addEventListener('error', (e) => fatal(e.message + (e.filename ? ' (' + e.filename.split('/').pop() + ':' + e.lineno + ')' : '')));
+window.addEventListener('unhandledrejection', (e) => fatal('A start-up step failed: ' + (e.reason instanceof Error ? e.reason.message : String(e.reason))));
+
 let root: HTMLElement;
 let layer: HTMLElement;
 let launcher: HTMLElement | null = null;

@@ -35,7 +35,7 @@ await section(page, 'versioncontrol');
 say('version control options:', (await text(page)).slice(0, 220));
 await section(page, 'general');
 await sleep(1500);
-say('theme applied now:', await page.eval("document.documentElement.getAttribute('data-theme') || document.documentElement.className"));
+say('theme applied now:', await page.eval("document.documentElement.getAttribute('data-scheme') || 'system'"));
 await page.shot(EV + 'settings-dark.png');
 await sleep(1200);
 say('settings file written:', existsSync(settingsFile), existsSync(settingsFile) ? statSync(settingsFile).size + ' bytes' : '');
@@ -45,7 +45,7 @@ say('closed:', await closeGracefully(app.child));
 // ---- second run: the settings are still there ---------------------------------------------------------------------
 ({ app, page } = await start());
 await sleep(800);
-say('after the restart, theme:', await page.eval("document.documentElement.getAttribute('data-theme') || document.documentElement.className"), '| file:', JSON.parse(readFileSync(settingsFile, 'utf8')).theme);
+say('after the restart, theme:', await page.eval("document.documentElement.getAttribute('data-scheme') || 'system'"), '| file:', JSON.parse(readFileSync(settingsFile, 'utf8')).theme);
 const prefs = readFileSync(settingsFile, 'utf8');
 say('the settings file holds no key:', !/sk-|api_key|apikey|password|secret/i.test(prefs));
 await page.shot(EV + 'settings-after-restart.png');

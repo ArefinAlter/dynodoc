@@ -895,3 +895,6 @@ html.frame-border:not(.window-maximized) body::after { content: ''; position: fi
   /* A narrow window gives the controls the room first. */
   html.frameless .topbar .status-pills .server-btn { display: none; }
 }
+
+/* A start-up failure written on the page (main.ts): plain text, easy to copy. */
+.fatal { margin: 0; padding: 32px; white-space: pre-wrap; word-break: break-word; font: 13px/1.5 var(--font-mono); color: var(--foreground); background: var(--background); min-height: 100%; user-select: text; }
