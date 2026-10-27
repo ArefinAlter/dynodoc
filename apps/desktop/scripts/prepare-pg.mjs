@@ -15,7 +15,7 @@
 //   node scripts/prepare-pg.mjs --jar path/to/the.jar        use a jar you downloaded (still checked)
 //   node scripts/prepare-pg.mjs --vcruntime C:/Windows/System32
 //
-// Needs `tar` (Windows 10 and later have one that reads zip and xz).
+// Needs `tar` (Windows 10 and later have one that reads zip and xz) and, elsewhere, `unzip` and `tar` with xz.
 
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -79,7 +79,12 @@ try {
     const r = spawnSync(program, a, { cwd, stdio: 'inherit' });
     if (r.status !== 0) fail(`tar ${a.join(' ')} failed`);
   };
-  tar(['-xf', jar, src.txz], work);
+  if (process.platform === 'win32') tar(['-xf', jar, src.txz], work);
+  else {
+    // GNU tar does not read zip: the jar is a zip file with one archive inside.
+    const r = spawnSync('unzip', ['-o', '-q', jar, src.txz, '-d', work], { stdio: 'inherit' });
+    if (r.status !== 0) fail('unzip failed (install unzip)');
+  }
   const tree = join(work, 'tree');
   mkdirSync(tree);
   tar(['-xf', join(work, src.txz), '-C', tree], work);
