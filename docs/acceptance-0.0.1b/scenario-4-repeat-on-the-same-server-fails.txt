@@ -1,0 +1,26 @@
+## 4. sign in with the browser, link, sync
+local project: Riverside survey | files: 3
+server added: 127.0.0.1:4180 Not signed in. Not signed in Sign in with your browser Use the dynodoc:// link instead Remove
+a bad address is refused: That server was not added http:// is only allowed for localhost, for testing. Use an https:// address.
+the app shows the pairing code 4ZY5 | message: Your browser has opened this server’s sign-in page. Sign in there, check that the pairing code is 4ZY5, and choose Continue. The page then hands the sign-in back to this app. This 
+the app asked the browser to open: http://127.0.0.1:4180/app-signin?challenge=…&state=…&platform=desktop&redirect_port=63626
+  the verifier is not in it: true | it carries a loopback port: true
+browser steps: the server sent a visitor who is not signed in to its own sign-in page, with the request carried through > signed in on the server, back on the same sign-in request > pressed Continue; the browser went to the app on this computer
+  the server page showed the pairing code 4ZY5 (matches the app's: true) | after Continue the browser is at http://127.0.0.1:63626/done | it says: Back to the Dynodoc app The sign-in was handed to the app on this computer. Go back to it: it tells you whether it worked. You can close this tab.
+the app now shows: 127.0.0.1:4180 Signed in as Priya Raman. Signed in Sign out Check the session Remove
+the page is told only whether there is a session: {"cloud":"https://app.dynodoc.online","accounts":[{"id":"srv_310ece9b","server":"http://127.0.0.1:4180","host":"127.0.0.1:4180","cloud":false,"signed_in":true,"name":"Priya Raman","email":null,"added_at":1793106466356}],"store":"Windows Credential Manager"}
+Windows Credential Manager has the session: Target: LegacyGeneric:target=account:srv_310ece9b.online.dynodoc.client.a39d8fa0 | User: account:srv_310ece9b
+accounts.json holds addresses and who the server says you are, no session: true | { "accounts": [ { "added_at": 1793106466356, "email": null, "id": "srv_310ece9b", "name": "Priya Raman", "server": "http://127.0.0.1:4180" } ], "version": 1 }
+## 4b. link and first sync
+linked: Riverside survey Linked to “Riverside survey” on 127.0.0.1:4180 · not synced yet Check Sync now Unlink
+what a sync would do: Project Charter document New here: will be created on the server || Quarterly Review presentation New here: will be created on the server || Budget 2027 spreadsheet New here: will be created on the server
+file:///D:/verne-build/dynodoc/wt/apps/desktop/scripts/acceptance/cdp.mjs:83
+      throw new Error('timed out waiting for ' + label);
+            ^
+
+Error: timed out waiting for #sync-status-97195dcb-7827-42d4-92e7-2731e458dadc to say new file
+    at Object.waitFor (file:///D:/verne-build/dynodoc/wt/apps/desktop/scripts/acceptance/cdp.mjs:83:13)
+    at async file:///D:/verne-build/dynodoc/wt/apps/desktop/scripts/acceptance/acc4.mjs:92:1
+
+Node.js v22.22.2
+acc4 exit 1

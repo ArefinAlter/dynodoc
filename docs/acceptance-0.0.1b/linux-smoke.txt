@@ -1,0 +1,46 @@
+(Reading database ... 59414 files and directories currently installed.)
+Preparing to unpack .../Dynodoc_0.0.1-beta_amd64.deb ...
+Unpacking dynodoc (0.0.1-beta) over (0.0.1-beta) ...
+Setting up dynodoc (0.0.1-beta) ...
+Processing triggers for hicolor-icon-theme (0.17-2) ...
+Processing triggers for desktop-file-utils (0.26-1ubuntu3) ...
+installed: Installed-Size: 99346 Version: 0.0.1-beta 
+started pid 1435
+window 4194307: Changes · Dynodoc
+geometry at start: 1280x820 at 160,40
+window manager hints (no decorations means 0x2 .. 0x0 in the third field): _MOTIF_WM_HINTS(_MOTIF_WM_HINTS) = 0x2, 0x0, 0x0, 0x0, 0x0
+frame extents the window manager gave it: _NET_FRAME_EXTENTS(CARDINAL) = 0, 0, 0, 0
+name entered; waiting for the workspace
+workspace log: 1793109660 starting the local workspace|1793109664 the local workspace is ready|
+geometry now: 1280x820 at 160,40
+   1559 dyno     /usr/lib/Dynodoc/pg/bin/postgres -D /home/dyno/.local/share/online.dynodoc.client/workspace/p
+   1560 dyno     postgres: checkpointer 
+   1561 dyno     postgres: background writer 
+   1563 dyno     postgres: walwriter 
+   1564 dyno     postgres: autovacuum launcher 
+   1565 dyno     postgres: logical replication launcher 
+   1636 dyno     /usr/bin/engine-api
+   1653 dyno     postgres: dynodoc_runtime dynodoc 127.0.0.1(49934) idle
+   1654 dyno     postgres: dynodoc_runtime dynodoc 127.0.0.1(49936) idle
+   1655 dyno     postgres: dynodoc_owner dynodoc_app 127.0.0.1(49944) idle
+   1728 dyno     postgres: dynodoc_runtime dynodoc 127.0.0.1(37430) idle
+   1729 dyno     postgres: dynodoc_runtime dynodoc 127.0.0.1(37434) idle
+   1730 dyno     postgres: dynodoc_runtime dynodoc 127.0.0.1(37438) idle
+   1731 dyno     postgres: dynodoc_runtime dynodoc 127.0.0.1(37444) idle
+   1732 dyno     postgres: dynodoc_runtime dynodoc 127.0.0.1(37454) idle
+   1733 dyno     postgres: dynodoc_runtime dynodoc 127.0.0.1(37470) idle
+after dragging the bar: 1280x820 at 256,104
+after dragging the bottom right corner: 1200x820 at 256,104
+after dragging the left edge: 1152x820 at 304,104
+after a double click on the bar: 1152x820 at 304,104
+after another double click: 1152x820 at 304,104
+after the maximise button: 1600x900 at 0,0
+after the button again: 1152x820 at 304,104
+after the minimise button, visible windows named Dynodoc: 0
+the app ended after the close button
+left running: 0 process(es)
+1793109660 starting the local workspace
+1793109664 the local workspace is ready
+1793109725 closed
+--- stderr (first lines)
+done

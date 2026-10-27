@@ -12,6 +12,11 @@ made on (`D:/verne-build/dynodoc/...`), so edit them before use.
 | `acc5.mjs`, `mockllm.mjs` | Scenario 5: the agent against a mock provider that speaks the Anthropic, OpenAI and Gemini wire formats |
 | `acc6.mjs` | Scenario 6: settings persistence, backup and restore |
 | `acc7.mjs` | Scenario 7: crash safety |
+| `dialog-daemon.ps1`, `file-dialog.ps1` | Answer the real Windows Open, Save and folder dialogs of an installed build by their titles (the release build has no seam for them) |
+| `smoke-install.mjs` | First smoke of an installed copy (installer files, data beside the program) |
+| `frame-shots.mjs`, `frame_shots.py` | The frameless window: real drags, resize, double click, controls, menu, light and dark photographs. The driver refuses to send input or take a picture unless Dynodoc is in front and uncovered |
+| `webwin.mjs` | The web workspace window: a stand-in server page tries every command; all must be refused |
+| `../linux/smoke.sh` | The Linux .deb under Xvfb and openbox as an ordinary user: window, workspace, move, resize, maximise, close |
 
 The debug build's test seams (`DYNODOC_DESKTOP_HOME`, `DYNODOC_PROGRAMS`, `DYNODOC_TEST_PICK`,
 `DYNODOC_TEST_BROWSER`) are not in release builds.

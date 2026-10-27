@@ -1,0 +1,62 @@
+## 5. the agent
+open request in the project before: 
+python-docx: edited runs: 1
+open request to read: #6
+## 5a. providers
+where keys are kept: Keys are kept in Windows Credential Manager.
+entry 1 after storing: stored ····6789 Forget
+the key field is gone from the page, the key is nowhere in it: true | input value cleared: true
+enabled; "in use": true | consent line: Not allowed yet: before the first send you see exactly what would go to this address, and decide.
+Windows Credential Manager target for the key: Target: LegacyGeneric:target=provider:lp1.online.dynodoc.client.a39d8fa0 | User: provider:lp1 | Target: LegacyGeneric:target=provider:lp1.online.dynodoc.client.99e65865 | User: provider:lp1 | Target: LegacyGeneric:target=provider:lp1.online.dynodoc.client.e1a97047 | User: provider:lp1
+preferences file holds no key: true | holds the last four characters only: true
+price table: mock-claude $3 $15
+## 5b. a run
+model picker: Anthropic · mock-claude
+consent dialog says: Send this thread to 127.0.0.1:9741? Anthropic · mock-claude would receive the request below, from this computer, straight to 127.0.0.1:9741. Nothing goes through a Dynodoc server. Your key goes in the x-api-key header and is not part of what is shown. The same kind of request is made each time the agent needs the model again in a thread, and only to this host. You can withdraw this in Settings, Providers. http://127.
+  names the host and the tools it sends: true true | the key is not in it: true
+  nothing sent before the person allows: true
+answer: Worked · 2 tool calls · 0.0 s Let me read the open change requests. Here is what I read. The list said: #6 Retention period in the charter (Project Charter.docx) by you, open, 2 change(s), 0/0 approvals The summary said: #6 Retention period in the charter (open) on Project Charter.docx, by you, based on r20. Description: Eight years, as agreed. Review state: 0 of 0 approvals. Ready to merge. No reviews yet. No conflicts with main. Changes: ¶ 5: "Results are reported to the dis I can read and summarise these; approving and merging are yours. Answered by Anthropic · mock-claude. The text is the 
+tool calls shown: ["requests.list :: ","requests.summarise :: "]
+requests the provider received: 3 | first request tools offered (read only): ["history.read","history.verify","diff.get","documents.list","documents.outline","requests.list","requests.summarise"] | key matched: true
+  second and third requests carried tool results: 0,1,2
+the page cannot reach the provider itself (blocked by the page policy): blocked: TypeError: Failed to fetch | provider saw it: false
+## 5c. propose, refuse, press
+read only thread, answer: Worked · 1 tool call · 1 refused · 0.0 s I drafted one comment on the request. refused: it was not offered in this thread. The tools are only the ones listed. Answered by Anthropic · mock-claude. The text is the model’s, not Dynodoc’s: check it against the doc | tools it was offered: ["history.read","history.verify","diff.get","documents.list","documents.outline","requests.list","requests.summarise"]
+propose thread, tools offered: ["requests.summarise","review.propose_comment","commit.draft_summary"]
+card: Proposed comment on #6 Could you add a line on why the retention period changes? Post as you Open the request
+after pressing Post as you: Posted as you. The comment says it was drafted with the agent. | toast: Comment posted
+the comment is on the request: true | marked as drafted by the agent: true
+merge ask, tool calls: ["requests.merge [refused] :: "]
+merge ask, answer: Worked · 1 tool call · 1 refused · 0.0 s I will merge it. That did not work: refused: there is no such tool. The tools are only the ones listed. Merging is a person's button. Answered by Anthropic · mock-claude. The text is the model’s, not
+the request is still open (the agent could not merge it): true
+## 5d. stop
+streaming text arrives as it is produced: word0 word1 word2 word3 word4 Answered by Anthropic · mock-c
+after Stop: -claude. The text is the model’s, not Dynodoc’s: check it against the documents. | provider saw the connection close: true
+## 5e. offline, limits, consent
+offline on: true
+offline answer: Offline is on in Settings, Providers. | provider calls since: 0
+cap 0 answer: A cap in Settings, Providers is zero, which means no model is called. | provider calls since: 0
+day cap reached answer: The last 24 hours have used the cap of 1 tokens. Raise it in Settings, Providers. | provider calls since: 0
+used in the last 24 hours: 11,029 of 1 | cost: $0.04
+consent withdrawn: Not allowed yet: before the first send you see exactly what would go to this address, and decide.
+asked again; cancelled; answer: Not sent: you did not allow this provider. | provider calls since: 0
+## 5f. a wrong key that the provider echoes back
+error shown: The provider refused the request: the key was not accepted (401). invalid x-api-key: [key]
+the key the provider echoed is not on the screen: true | provider got a request and rejected it: true
+## 5g. OpenAI-style (Ollama kind) and Gemini
+Ollama: picked true | requests: 3 | tools carried results: 0,1,2 | answer: Worked · 2 tool calls · 0.0 s Let me read the open change requests. Here is what I read. The list said: #6 Retention period in the charter (Project Charter.docx) by you, open, 2 ch
+   bearer header not needed for Ollama: true
+Google: picked true | requests: 3 | tools carried results: 0,1,2 | answer: Worked · 2 tool calls · 0.0 s Let me read the open change requests. Here is what I read. The list said: #6 Retention period in the charter (Project Charter.docx) by you, open, 2 ch
+   key in header, not in the address: true
+used now: 18,560 of 1,000,000
+## 6x. persistence across a restart
+closed: true
+after the restart, entry 1: stored ····6789 Forget | consent: allowed: 127.0.0.1:9741 Withdraw
+  base and model kept: http://127.0.0.1:9741 mock-claude | price kept: mock-claude $3 $15 | used in 24 h: 18,560 of 1,000,000
+a run after the restart works without asking again: true | Worked · 2 tool calls · 0.0 s Let me read the open change requests. Here is what I read. The list sa
+closed: true
+## leak scan
+files scanned under the app home (config, logs, web view storage, workspace folders except the database files): 2284 | files holding the key: 0 
+the provider mock logged the key anywhere: false
+first request, as the provider saw it: system text begins: You are helping a team keep its documents under version control in Dynodoc. - Quote revisions by number (r12) and chain  | tools sent: 7
+acc5 exit 0

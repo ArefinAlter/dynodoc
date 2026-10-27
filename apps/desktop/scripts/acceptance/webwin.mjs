@@ -107,9 +107,15 @@ try: u.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
 except Exception: u.SetProcessDPIAware()
 h, t, pid, image = cap.find_window('web workspace', 'dynodoc-desktop')
 cap.bring_front(h)
-import time; time.sleep(0.6)
+import time, ctypes.wintypes as wt; time.sleep(0.6)
 l, tp, r, b = cap.frame_rect(h)
-ImageGrab.grab(bbox=(l - 20, tp - 20, r + 20, b + 20), all_screens=True).save(r'${OUT}/web-window.png')
+# Only photograph the window if nothing else covers it (a person may be working on this computer).
+pts = [(l + 40, tp + 60), (r - 40, tp + 60), (l + 40, b - 40), (r - 40, b - 40), ((l + r) // 2, (tp + b) // 2)]
+root = lambda x, y: u.GetAncestor(u.WindowFromPoint(wt.POINT(x, y)), 2)
+if all(root(x, y) == h for x, y in pts):
+    ImageGrab.grab(bbox=(l, tp, r, b), all_screens=True).save(r'${OUT}/web-window.png')
+else:
+    print('covered by another window: no picture')
 print('window title:', t)
 `], { encoding: 'utf8' });
     results.nativeWindow = (shot.stdout + shot.stderr).trim();

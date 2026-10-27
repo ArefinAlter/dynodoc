@@ -1,0 +1,47 @@
+## 4. sign in with the browser, link, sync
+local project: Riverside survey | files: 3
+server added: 127.0.0.1:4180 Not signed in. Not signed in Sign in with your browser Use the dynodoc:// link instead Remove
+a bad address is refused: Budget 2027 (v21).xlsx was saved Nothing in it differs from the project, so there is nothing to review. | Budget 2027 (v26).xlsx was saved Nothing in it differs
+the app shows the pairing code UTQL | message: Your browser has opened this server’s sign-in page. Sign in there, check that the pairing code is UTQL, and choose Continue. The page then hands the sign-in back to this app. This 
+the app asked the browser to open: http://127.0.0.1:4180/app-signin?challenge=…&state=…&platform=desktop&redirect_port=61139
+  the verifier is not in it: true | it carries a loopback port: true
+browser steps: the server sent a visitor who is not signed in to its own sign-in page, with the request carried through > signed in on the server, back on the same sign-in request > pressed Continue; the browser went to the app on this computer
+  the server page showed the pairing code UTQL (matches the app's: true) | after Continue the browser is at http://127.0.0.1:61139/done | it says: Back to the Dynodoc app The sign-in was handed to the app on this computer. Go back to it: it tells you whether it worked. You can close this tab.
+the app now shows: 127.0.0.1:4180 Signed in as Priya Raman. Signed in Sign out Check the session Remove
+the page is told only whether there is a session: {"cloud":"https://app.dynodoc.online","accounts":[{"id":"srv_2008a777","server":"http://127.0.0.1:4180","host":"127.0.0.1:4180","cloud":false,"signed_in":true,"name":"Priya Raman","email":null,"added_at":1793110208638}],"store":"Windows Credential Manager"}
+Windows Credential Manager has the session: Target: LegacyGeneric:target=account:srv_2008a777.online.dynodoc.client.a39d8fa0 | User: account:srv_2008a777
+accounts.json holds addresses and who the server says you are, no session: true | { "accounts": [ { "added_at": 1793110208638, "email": null, "id": "srv_2008a777", "name": "Priya Raman", "server": "http://127.0.0.1:4180" } ], "version": 1 }
+## 4b. link and first sync
+linked: Riverside survey Linked to “Riverside survey” on 127.0.0.1:4180 · not synced yet Check Sync now Unlink
+what a sync would do: Project Charter document New here: will be created on the server || Quarterly Review presentation New here: will be created on the server || Budget 2027 spreadsheet New here: will be created on the server
+sync says: 3 new files.
+on the server: project Riverside survey with 3 files: Budget 2027, Quarterly Review, Project Charter
+  Project Charter: same nodes, ids and content on both sides: true | server-side chain verifies: true | revisions: here 29 there 15
+  Quarterly Review: same nodes, ids and content on both sides: true | server-side chain verifies: true | revisions: here 14 there 12
+  Budget 2027: same nodes, ids and content on both sides: true | server-side chain verifies: true | revisions: here 26 there 21
+## 4c. edits on both sides
+plan with a change on each side: Project Charter document Send and receive 1 change to the server, 1 change here
+sync says: 1 sent to 127.0.0.1:4180, 1 received.
+both edits are on both sides: true
+  each side verifies its own chain: true true | revisions here 31 there 17
+syncing again finds nothing to do: true
+## 4d. the same paragraph changed on both sides
+plan: Project Charter document Needs your choice 1 change is in conflict. Choose a side for each. Retention: ten years, as agreed on this computer. This computer: Retention: ten years, as agreed on this computer. 127.0.0.1:4180: Retention: five years, as the server has it.
+a sync with the conflict unresolved writes nothing: true
+chose "This computer": This computer: Retention: ten years, as agreed on this computer.
+after the choice, both sides read: "Retention: ten years, as agreed on this computer." / "Retention: ten years, as agreed on this computer."
+  each side verifies: true true
+## 4e. sign out, sign in again, restart
+signed out: 127.0.0.1:4180 Not signed in. Not signed in Sign in with your browser Use the dynodoc:// link instead Remove | credential entry left: 0
+  a request for that server now says: Error: Uncaught (in promise)
+  the server rejects the old session (the cookie was revoked, so a fresh browser is needed): checked by the sign-out call
+second sign-in: pairing matched true | finished at http://127.0.0.1:63723/done
+signed in again: 127.0.0.1:4180 Signed in as Priya Raman. Signed in Sign out Check the session Remove | the second attempt used a new pairing code and state: true
+closed: true
+waiting 40 s so the access token (30 s) has expired while the app is closed…
+after the restart: 127.0.0.1:4180 Signed in as Priya Raman. Signed in Sign out Check the session Remove
+  the session was renewed on the first request (the stored session still works): [{"host":"127.0.0.1:4180","signed_in":true}]
+  a check of the link works: true
+files under the app home that mention the session cookie: 0 
+closed: true
+acc4 exit 0

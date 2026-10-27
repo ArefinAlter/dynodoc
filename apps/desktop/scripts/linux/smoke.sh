@@ -37,7 +37,7 @@ sleep 1
 shot() { import -window root "$OUT/$1.png" 2>/dev/null; }
 geom() { xdotool getwindowgeometry --shell "$1" 2>/dev/null | tr '\n' ' '; }
 parse() { eval "$(xdotool getwindowgeometry --shell "$1")"; X0=$X; Y0=$Y; W0=$WIDTH; H0=$HEIGHT; }
-crop() { convert "$OUT/$1.png" -crop "${W0}x${H0}+${X0}+${Y0}" +repage "$OUT/$2.png" 2>/dev/null; }
+crop() { parse "$WID"; convert "$OUT/$1.png" -crop "${W0}x${H0}+${X0}+${Y0}" +repage "$OUT/$2.png" 2>/dev/null; }
 
 /usr/bin/dynodoc-desktop > "$OUT/app.stdout" 2> "$OUT/app.stderr" &
 APP=$!
@@ -59,7 +59,8 @@ shot 01-first-screen; crop 01-first-screen 01-first-screen-window
 
 # The first screen asks for a name (the field has the focus).
 xdotool windowfocus "$WID" 2>/dev/null; sleep 0.5
-xdotool key ctrl+a
+# Click the name field (the first field of the card, 359 px down in the 1280 by 820 window).
+xdotool mousemove $((X0 + W0 / 2)) $((Y0 + 359)) click 1; sleep 0.5
 xdotool type --delay 60 "Priya Raman"
 sleep 0.5
 shot 02-name;

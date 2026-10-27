@@ -1,0 +1,16 @@
+started; local status: {"phase":"ready","step":"Ready","detail":null,"profile":{"name":"Priya Raman","email":"me-fefec2e436af@local.dynodoc.inv
+  before: Quarterly Review seq 14 engine-cli verify: ok
+  before: Budget 2027 seq 26 engine-cli verify: ok
+  before: Project Charter seq 20 engine-cli verify: ok
+writing a burst of new documents
+burst so far: {"sent":80,"ok":80,"fail":0}
+killed the app and the database (postmaster 27824)
+restarted; local status: {"phase":"ready","step":"Ready","detail":null,"profile":{"name":"Priya Raman","email":"me-fefec2e436af@local.dynodoc.inv
+database log after the crash: 2026-10-27 20:04:13.347 +06 [30164] LOG:  redo starts at 0/250FF08 | 2026-10-27 20:04:13.416 +06 [30164] LOG:  redo done at 0/321B6F0 system usage: CPU: user: 0.01 s, system: 0.01 s, elapsed: 0.06 s | 2026-10-27 20:04:13.461 +06 [25780] LOG:  checkpoint starting: end-of-recovery immediate wait | 2026-10-27 20:04:16.089 +06 [25780] LOG:  checkpoint complete: wrote 1388 buffers (16.9%); 0 WAL file(s) added, 0 removed, 1 recycled; write=0.038 s, sync=2.582 s, total=2.669 s; sync files=70, longest=1.140 s, average=0.037 s; distance=13358 kB, estimate=13358 kB; lsn=0/321B718, redo lsn=0/321B718 | 2026-10-27 20:04:16.135 +06 [27284] LOG:  database system is ready to accept connections
+  after: Quarterly Review events 14 (was 14) contiguous true | server verify {"ok":true} | engine-cli verify through the earlier head: ok
+  after: Budget 2027 events 26 (was 26) contiguous true | server verify {"ok":true} | engine-cli verify through the earlier head: ok
+  after: Project Charter events 20 (was 20) contiguous true | server verify {"ok":true} | engine-cli verify through the earlier head: ok
+burst documents after the crash: complete 80 | empty (created, batch not committed) 0 | partial 0 | chain failures 0
+UI verify: Verified 13 revisions in 3 files: every chain is intact
+closed gracefully: true
+acc7 exit 0

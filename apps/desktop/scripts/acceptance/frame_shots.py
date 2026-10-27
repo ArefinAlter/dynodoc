@@ -69,6 +69,38 @@ def front():
     time.sleep(0.35)
 
 
+# Nothing is sent to a window that is not Dynodoc's, and nothing is photographed that another window covers: a person
+# may be working on this computer, and real mouse and keyboard input goes to whatever is under the pointer or in front.
+def root_of(h: int) -> int:
+    return int(u.GetAncestor(h, 2)) if h else 0  # GA_ROOT
+
+
+def ours_at(x: int, y: int) -> bool:
+    return root_of(u.WindowFromPoint(wt.POINT(int(x), int(y)))) == hwnd
+
+
+def guard(x=None, y=None) -> None:
+    if root_of(u.GetForegroundWindow()) != hwnd:
+        cap.bring_front(hwnd)
+        time.sleep(0.5)
+        if root_of(u.GetForegroundWindow()) != hwnd:
+            raise SystemExit('Dynodoc is not in front and cannot be brought there; nothing was sent')
+    if x is not None and not ours_at(x, y):
+        raise SystemExit(f'another window is at ({x},{y}); nothing was sent')
+
+
+def press(combo: str) -> None:
+    guard()
+    cap.press(combo)
+
+
+def uncovered() -> bool:
+    l, t, r, b = cap.frame_rect(hwnd)
+    w, h = r - l, b - t
+    points = [(l + 40, t + 80), (l + 40, b - 40), (r - 40, b - 40), (l + w // 2, b - 40), (l + 40, t + h // 2), (r - 40, t + h // 2)]
+    return all(ours_at(x, y) for x, y in points)
+
+
 def place(w: int, h: int, x: int = 120, y: int = 70) -> None:
     if u.IsZoomed(hwnd):
         u.ShowWindow(hwnd, 9)  # SW_RESTORE
@@ -82,12 +114,17 @@ def place(w: int, h: int, x: int = 120, y: int = 70) -> None:
         time.sleep(0.5)
 
 
-def shot(what: str, margin: int = 0) -> None:
+def shot(what: str, need_front: bool = True) -> None:
     global n
     n += 1
     time.sleep(0.3)
+    if need_front:
+        guard()
+    if not uncovered():
+        print(json.dumps({'skipped': what, 'why': 'another window covers part of Dynodoc, so a picture of the screen would show it'}))
+        return
     l, t, r, b = cap.frame_rect(hwnd)
-    img = ImageGrab.grab(bbox=(l - margin, t - margin, r + margin, b + margin), all_screens=True)
+    img = ImageGrab.grab(bbox=(l, t, r, b), all_screens=True)
     path = out / f'{a.scheme}-{n:02d}-{what}.png'
     img.save(path)
     print(json.dumps({'shot': str(path), 'size': list(img.size)}))
@@ -100,6 +137,7 @@ def at(x: int, y: int):
 
 def move_to(x: int, y: int) -> None:
     # SetCursorPos is exact in a DPI-aware process; the absolute SendInput mapping drifts by a few pixels.
+    guard(x, y)
     u.SetCursorPos(int(x), int(y))
 
 
@@ -123,6 +161,7 @@ def click(x: int, y: int) -> None:
 
 def drag(x0: int, y0: int, x1: int, y1: int) -> None:
     """A real drag: the pointer is placed exactly, then pressed and moved by relative input, as a mouse does."""
+    guard()
     sx, sy = at(x0, y0)
     dx, dy = x1 - x0, y1 - y0
     cap.send_inputs([cap.mouse_input(0x0004)])  # make sure no button is held
@@ -210,16 +249,16 @@ hover(W // 2, 300)
 click(95, 20)
 hover(900, 560)  # off the button, so no tooltip covers the menu
 shot('application-menu')
-cap.press('escape')
+press('escape')
 time.sleep(0.4)
 # Sidebar closed and open again (Ctrl+backslash).
-cap.press('ctrl+backslash')
+press('ctrl+backslash')
 time.sleep(0.6)
 shot('sidebar-closed')
 click(70, 20)
 hover(900, 560)
 shot('sidebar-closed-menu')
-cap.press('escape')
+press('escape')
 time.sleep(0.5)
 click(28, 20)
 time.sleep(0.6)
@@ -232,10 +271,19 @@ click(mw - 69, 20)
 time.sleep(0.6)
 say('control buttons', restored=not bool(u.IsZoomed(hwnd)))
 shot('restored')
-# Not the active window: bring the desktop forward.
-u.SetForegroundWindow(u.GetShellWindow())
+# Not the active window: a small window of this script takes the focus (in a corner away from Dynodoc).
+import tkinter as tk
+
+holder = tk.Tk()
+holder.title('focus holder')
+holder.geometry('150x40+2+2')
+holder.update()
+holder.focus_force()
+holder.update()
 time.sleep(0.8)
-shot('not-active')
+if root_of(u.GetForegroundWindow()) != hwnd:
+    shot('not-active', need_front=False)
+holder.destroy()
 front()
 # The narrow window (1024 wide), where the controls must not cover Fetch.
 place(1024, 640)
