@@ -131,6 +131,10 @@ const API_GET: &[&str] = &[
     "documents/{u}/connectors",
     "documents/{u}/copies",
     "documents/{u}/verify",
+    "documents/{u}/uploads",
+    "documents/{u}/conflicts",
+    "documents/{u}/members",
+    "documents/{u}/access",
     "notifications",
     "notifications/count",
     "profile",
@@ -153,6 +157,13 @@ const API_SEND: &[(Method, &str)] = &[
     (Method::Post, "projects/{u}/labels"),
     (Method::Delete, "projects/{u}/labels/{u}"),
     (Method::Post, "spaces/{u}/members"),
+    (Method::Post, "documents"),
+    (Method::Post, "documents/{u}/metadata"),
+    (Method::Post, "documents/{u}/uploads"),
+    (Method::Post, "documents/{u}/location"),
+    (Method::Post, "documents/{u}/change-requests"),
+    (Method::Post, "documents/{u}/versions/{u}/restore"),
+    (Method::Post, "documents/{u}/conflicts/{u}/resolve"),
     (Method::Post, "documents/{u}/batch"),
     (Method::Post, "documents/{u}/drafts"),
     (Method::Post, "documents/{u}/drafts/{u}"),
@@ -180,6 +191,7 @@ const SVC_GET: &[&str] = &[
     "state/local",
     "state/threads",
     "state/client",
+    "state/links",
     "notes",
 ];
 const SVC_SEND: &[(Method, &str)] = &[
@@ -187,6 +199,7 @@ const SVC_SEND: &[(Method, &str)] = &[
     (Method::Put, "state/local"),
     (Method::Put, "state/threads"),
     (Method::Put, "state/client"),
+    (Method::Put, "state/links"),
     (Method::Post, "notes"),
 ];
 
@@ -295,7 +308,7 @@ impl std::fmt::Display for Failure {
     }
 }
 
-fn client() -> Option<&'static reqwest::Client> {
+pub(crate) fn client() -> Option<&'static reqwest::Client> {
     static CLIENT: OnceLock<Option<reqwest::Client>> = OnceLock::new();
     CLIENT
         .get_or_init(|| {

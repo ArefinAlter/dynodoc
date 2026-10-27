@@ -8,20 +8,24 @@ import * as B from '../data/backend.ts';
 import { CONNECTORS, HOST_LABEL } from '../data/connectors.ts';
 import { DEFAULT_BINDINGS, comboOf, conflicts, normalize, usable } from '../lib/keys.ts';
 import { ACCESS_INFO, NEVER, TOOLS, DEFAULT_INSTRUCTIONS } from '../lib/agentTools.ts';
-import { PROVIDERS, validate, active, keyHint, type ProviderKind } from '../lib/ladder.ts';
+import { PROVIDERS, validate, active, keyHint, type LadderEntry, type ProviderKind } from '../lib/ladder.ts';
+import { serversSection } from './servers.ts';
+import { loadServers } from '../data/accounts.ts';
+import { dropEntry, forgetKey, loadAgentCfg, setAgentCfg, setConsent, storeKey, unlockKeys } from '../data/agentRun.ts';
 import { button, input, row, rows, section, select, toggle, textarea, segmented, pill, badge, notice, field, avatar, iconButton } from '../ui/controls.ts';
 import { openDialog, closeDialog, confirmDialog } from '../ui/layer.ts';
 import { applyAppearance } from '../theme.ts';
 import { ROLE_LABEL, personName, when, isAgent } from './common.ts';
 import { installSteps } from './connectors.ts';
 import { aboutBody } from './about.ts';
-import { isLive, refresh, signOut, startVisitor } from '../data/live.ts';
-import { call } from '../bridge.ts';
+import { isLive, refresh, signOut, startVisitor, currentTransport } from '../data/live.ts';
+import { backupNow, restoreNow, openLocalFolder } from '../data/local.ts';
 import type { AddinHost, Role } from '../data/types.ts';
 
 export const SECTIONS: { id: SettingsSection; label: string; icon: string; group: string }[] = [
   { id: 'general', label: 'General', icon: 'settings', group: 'App' },
   { id: 'accounts', label: 'Accounts', icon: 'user', group: 'App' },
+  { id: 'workspace', label: 'This computer', icon: 'documents', group: 'App' },
   { id: 'appearance', label: 'Appearance', icon: 'palette', group: 'App' },
   { id: 'keybindings', label: 'Keybindings', icon: 'keyboard', group: 'App' },
   { id: 'integrations', label: 'Integrations', icon: 'external', group: 'App' },
@@ -53,7 +57,7 @@ function general(): Child {
     )),
     section('Links', null, rows(
       row('Web links open in your browser', 'Links to other sites never open in this window.', null, { fixed: true }),
-      row('Preferences are kept for this session', state.desktop ? 'This window does not write the web view’s storage; settings return to their defaults when the app restarts.' : 'The hosted copy keeps nothing in your browser: settings last until you close the tab.', null, { fixed: true }),
+      row(state.desktop ? 'Preferences are saved on this computer' : 'Preferences are kept for this session', state.desktop ? 'Theme, keybindings, providers (never their keys) and the other choices on these pages are written to a settings file in the app’s folder, and used again the next time the app opens. This window does not write the web view’s storage.' : 'The hosted copy keeps nothing in your browser: settings last until you close the tab.', null, { fixed: true }),
     )),
   ];
 }
@@ -79,8 +83,9 @@ function workspaceCard(): Child {
 }
 
 async function saveProfile(name: string, bio: string): Promise<void> {
-  const current = (await call('api_get', { path: 'profile' })) as { status: number; body: { revision?: number } };
-  const reply = (await call('api_send', { method: 'POST', path: 'profile', body: { name, bio, revision: current.body?.revision ?? 0 }, ifMatch: null })) as { status: number; body: { error?: string } };
+  const t = currentTransport();
+  const current = await t.apiGet('profile');
+  const reply = await t.apiSend('POST', 'profile', { name, bio, revision: current.body?.revision ?? 0 });
   if (reply.status >= 300) throw new Error(reply.body?.error || 'The server did not save the profile.');
 }
 
@@ -100,13 +105,33 @@ function accounts(): Child {
         saveProfile(profile.name, profile.bio).then(() => { const meNow = state.db.people.find((x) => x.id === state.db.me); if (meNow) meNow.name = profile.name; toast('success', 'Profile saved on the server'); render(); }).catch((e) => toast('error', 'Profile not saved', e instanceof Error ? e.message : String(e)));
       } })),
     )),
+    serversSection(),
     section(
-      'Dynodoc server',
+      state.desktop ? 'Web workspace in its own window' : 'Dynodoc server',
       state.desktop
-        ? 'Where this app opens your real workspace, how it signs in, and this computer’s signing key. These controls are real: they use the desktop app’s own commands.'
+        ? 'Optional and separate from syncing: this opens a server’s own web workspace in a window of its own (the system’s frame, marked as the server’s page, with no access to this app), with its own sign-in kept by that window, and holds this computer’s signing key for the Office add-ins.'
         : 'Signing in to a server and keeping a key for this computer are in the desktop app. This copy runs on sample data and connects to nothing.',
       state.desktop ? slot : notice('info', 'Pre-alpha release on sample data: no server, no sign-in. Install the desktop app to connect to the Dynodoc cloud or your own server.'),
     ),
+  ];
+}
+
+/** The workspace on this computer: where it lives, what holds its keys, backup and restore. */
+function workspaceSection(): Child {
+  const l = state.local;
+  if (!state.desktop) return notice('info', 'The workspace on this computer is part of the desktop app. This copy runs on sample data and stores nothing.');
+  const running = l.phase === 'ready';
+  return [
+    section('Workspace on this computer', 'Your documents, their history and your reviews live in a database this app starts for you when it opens and stops when it closes. No server and no account are needed.', rows(
+      row('Status', running ? 'The database and the engine are running on this computer, on a loopback address nothing else can reach.' : l.detail || l.step, pill(running ? 'Running' : l.phase === 'failed' ? 'Stopped' : 'Starting', running ? 'success' : l.phase === 'failed' ? 'error' : 'info', { mono: false })),
+      row('Folder', 'Everything the workspace stores on this computer (the logs are in its logs folder).', h('div', { class: 'row-actions' }, h('code', { class: 'small folder-path', id: 'workspace-folder' }, l.folder), button('Open the logs', { size: 'sm', onClick: () => void openLocalFolder() }))),
+      row('Secrets', 'The database passwords and the engine keys are made on the first start and kept in ' + (l.secretsIn || 'the credential store') + '. They are never in a file you could copy by mistake, in a backup, or in a log.', null, { fixed: true }),
+      row('Engine restarts', 'The app starts the engine again if it stops. This counts the restarts since the app opened.', h('span', { class: 'mono' }, String(l.restarts))),
+    )),
+    section('Backup and restore', 'One archive holds the whole workspace. It opens only with the same kind of operating system and the same PostgreSQL version, and it holds your documents unencrypted.', rows(
+      row('Back up this workspace', 'The database closes for a few seconds while the archive is written, then opens again.', button('Back up…', { size: 'sm', id: 'backup-now', disabled: !running, onClick: () => void backupNow() })),
+      row('Restore from a backup', 'Replaces everything in this workspace with the backup. What it replaces is kept beside it, not deleted. New passwords and keys are made for the restored data.', button('Restore…', { size: 'sm', id: 'restore-now', disabled: !running, onClick: () => confirmDialog('Restore a backup', h('p', null, 'This replaces everything in this workspace (documents, history, reviews, and the settings kept with the workspace) with the contents of a backup you choose. What it replaces is kept in the workspace folder and can be put back by hand.'), 'Choose a backup…', () => void restoreNow(), { danger: true }) })),
+    )),
   ];
 }
 
@@ -259,40 +284,144 @@ function prompts(): Child {
 }
 
 let keyDraft: Record<string, string> = {};
+let passDraft = '';
+let capDraft: { thread: string; day: string; cost: string } | null = null;
+let priceDraft = { model: '', input: '', output: '' };
+
+const n0 = (v: number) => v.toLocaleString('en-US');
+const dollars = (micros: number) => (micros / 1_000_000).toString();
+
+function hostOf(base: string): string {
+  try {
+    return new URL(base).host;
+  } catch {
+    return '';
+  }
+}
+
+/** Offline, limits, prices and what the last 24 hours used (desktop app only). */
+function agentLimits(): Child {
+  const cfg = state.agentCfg;
+  if (!cfg) return section('Limits', null, h('p', { class: 'muted small' }, 'Reading the agent’s settings…'));
+  if (!capDraft) capDraft = { thread: String(cfg.thread_token_cap), day: String(cfg.day_token_cap), cost: dollars(cfg.day_cost_cap) };
+  const draft = capDraft;
+  const whole = (v: string) => (/^\d{1,13}$/.test(v.trim()) ? Number(v.trim()) : null);
+  const saveCaps = async () => {
+    const t = whole(draft.thread);
+    const d = whole(draft.day);
+    const c = /^\d{1,7}(\.\d{1,6})?$/.test(draft.cost.trim()) ? Math.round(Number(draft.cost.trim()) * 1_000_000) : null;
+    if (t === null || d === null || c === null) return toast('warning', 'Limits are whole numbers', 'Tokens are whole numbers; the cost is in dollars. 0 means no model is called.');
+    if (await setAgentCfg({ thread_token_cap: t, day_token_cap: d, day_cost_cap: c })) {
+      capDraft = null;
+      toast('success', 'Limits saved');
+    }
+  };
+  const prices = Object.entries(cfg.prices);
+  const models = [...new Set(p().ladder.map((e) => e.model))];
+  const savePrice = async () => {
+    const m = priceDraft.model.trim();
+    const i = Number(priceDraft.input);
+    const o = Number(priceDraft.output);
+    if (!m || !priceDraft.input.trim() || !priceDraft.output.trim() || !Number.isFinite(i) || !Number.isFinite(o) || i < 0 || o < 0) return toast('warning', 'Name the model and give both prices', 'Dollars per million tokens, for example 3 and 15.');
+    const next: Record<string, { input: number; output: number }> = { ...cfg.prices, [m]: { input: Math.round(i * 1_000_000), output: Math.round(o * 1_000_000) } };
+    if (await setAgentCfg({ prices: next })) priceDraft = { model: '', input: '', output: '' };
+  };
+  return [
+    section('Offline', 'One switch for every model call. While it is on the agent answers from prepared replies only.',
+      rows(row('Offline: call no model', 'Takes effect at once, including for a run in progress at its next step.', toggle(cfg.offline, (v) => { void setAgentCfg({ offline: v }); }, 'Offline')))),
+    section('Limits', 'A model call is refused once a limit is reached. A limit of 0 means no model is called at all. They count what the providers report.',
+      rows(
+        row('Tokens per thread', null, input(draft.thread, (v) => { draft.thread = v; }, { id: 'cap-thread', label: 'Tokens per thread' })),
+        row('Tokens per 24 hours', null, input(draft.day, (v) => { draft.day = v; }, { id: 'cap-day', label: 'Tokens per 24 hours' })),
+        row('Estimated cost per 24 hours (US dollars)', 'Needs a price for the model below; without one the cost is not estimated and this limit never trips.', input(draft.cost, (v) => { draft.cost = v; }, { id: 'cap-cost', label: 'Cost per 24 hours' })),
+      ),
+      h('div', { class: 'row-actions' }, button('Save limits', { variant: 'primary', size: 'sm', id: 'caps-save', onClick: () => { void saveCaps(); } }))),
+    section('Prices', 'Dynodoc ships no prices (a price it made up would be a claim about somebody’s pricing). Enter the ones you pay, in US dollars per million tokens, and usage shows an estimate.',
+      prices.length
+        ? h('table', { class: 'table card' }, h('thead', null, h('tr', null, h('th', null, 'Model'), h('th', null, 'Input per million'), h('th', null, 'Output per million'), h('th', null, ''))),
+            h('tbody', null, prices.map(([m, v]) => h('tr', null, h('td', null, h('code', null, m)), h('td', null, `$${dollars(v.input)}`), h('td', null, `$${dollars(v.output)}`),
+              h('td', null, iconButton('trash', `Remove the price of ${m}`, () => { const next = { ...cfg.prices }; delete next[m]; void setAgentCfg({ prices: next }); }))))))
+        : h('p', { class: 'muted small' }, 'No prices set.'),
+      h('div', { class: 'price-form' },
+        field('Model', input(priceDraft.model, (v) => { priceDraft.model = v; }, { id: 'price-model', label: 'Model for the price', placeholder: models[0] ?? 'model id' })),
+        field('Input, $ per million', input(priceDraft.input, (v) => { priceDraft.input = v; }, { id: 'price-in', label: 'Input price' })),
+        field('Output, $ per million', input(priceDraft.output, (v) => { priceDraft.output = v; }, { id: 'price-out', label: 'Output price' })),
+        button('Set price', { size: 'sm', id: 'price-save', onClick: () => { void savePrice(); } }))),
+    section('Used in the last 24 hours', null, h('div', { class: 'stats' },
+      h('div', { class: 'stat card' }, h('div', { class: 'muted small' }, 'Tokens'), h('div', { class: 'stat-value', id: 'used-tokens' }, `${n0(cfg.day_tokens)} of ${n0(cfg.day_token_cap)}`)),
+      h('div', { class: 'stat card' }, h('div', { class: 'muted small' }, 'Estimated cost'), h('div', { class: 'stat-value' }, cfg.day_cost_micros > 0 ? `$${(cfg.day_cost_micros / 1_000_000).toFixed(2)}` : 'not estimated')))),
+  ];
+}
 
 function providers(): Child {
   const list = p().ladder;
   const issues = validate(list);
   const use = active(list);
+  const cfg = state.agentCfg;
+  const desktop = state.desktop;
   const move = (i: number, d: number) => { const j = i + d; if (j < 0 || j >= list.length) return; [list[i], list[j]] = [list[j], list[i]]; render(); };
+  const forget = (e: LadderEntry) => {
+    if (desktop) { void forgetKey(e); return; }
+    state.keys.delete(e.id);
+    e.keyHint = '';
+    render();
+  };
+  const store = (e: LadderEntry) => {
+    const k = (keyDraft[e.id] ?? '').trim();
+    if (!k) return;
+    keyDraft[e.id] = '';
+    if (desktop) { void storeKey(e, k); return; }
+    state.keys.set(e.id, k);
+    e.keyHint = keyHint(k);
+    render();
+  };
   return [
-    section('Provider ladder', 'Bring your own key. The agent would use the first enabled entry that is complete. This release calls no model: the ladder is configured and checked, and the agent’s replies are prepared.',
-      notice('info', state.desktop ? 'Keys stay in this window’s memory: never written to disk, never shown again (only “stored” and the last four characters), and never sent anywhere by this release.' : 'Keys stay in this tab’s memory: never stored in the browser, never shown again (only “stored” and the last four characters), and never sent anywhere.'),
+    section('Provider ladder', desktop ? 'Bring your own key. A new thread uses the first enabled entry that is complete; a thread can pick another in its composer. Requests go from this computer straight to the provider, and only after you have seen what would be sent and allowed that address once.' : 'Bring your own key. The agent would use the first enabled entry that is complete. A hosted copy calls no model: the ladder is configured and checked, and the agent’s replies are prepared.',
+      notice('info', desktop
+        ? `Keys are kept in ${cfg?.keys_where ?? 'the operating system’s credential store'}. They are never written to the preferences file, a log or this window: after you store one, only “stored” and its last four characters are shown.`
+        : 'Keys stay in this tab’s memory: never stored in the browser, never shown again (only “stored” and the last four characters), and never sent anywhere.'),
+      desktop && cfg?.keys_locked
+        ? h('div', { class: 'card pad key-unlock' },
+            h('strong', null, cfg.keys_file_exists ? 'Enter the passphrase for your keys' : 'Choose a passphrase for your keys'),
+            h('p', { class: 'muted small' }, 'No credential store was found on this computer, so keys are kept in one file encrypted with a passphrase. It is asked once each time the app starts and is never saved. At least 8 characters.'),
+            h('div', { class: 'key-entry' },
+              h('input', { type: 'password', class: 'input', id: 'key-pass', autocomplete: 'off', 'aria-label': 'Passphrase for the keys', onInput: (ev: Event) => { passDraft = (ev.target as HTMLInputElement).value; } }),
+              button(cfg.keys_file_exists ? 'Unlock' : 'Create', { size: 'sm', id: 'key-unlock', onClick: async () => { const ok = await unlockKeys(passDraft); passDraft = ''; if (ok) render(); } })))
+        : null,
       h('div', { class: 'ladder' }, list.map((e, i) => {
         const info = PROVIDERS.find((x) => x.kind === e.kind)!;
         const mine = issues.filter((x) => x.id === e.id);
-        return h('div', { class: cx('ladder-row card', use?.id === e.id && 'is-active') },
+        const consent = cfg?.consent[e.id];
+        const host = hostOf(e.base);
+        return h('div', { class: cx('ladder-row card', use?.id === e.id && 'is-active'), 'data-entry': e.id },
           h('div', { class: 'ladder-top' },
             h('span', { class: 'ladder-rank' }, String(i + 1)),
-            select(e.kind, PROVIDERS.map((x) => [x.kind, x.label] as [ProviderKind, string]), (v) => { const pi = PROVIDERS.find((x) => x.kind === v)!; e.kind = v; e.model = pi.model; e.base = pi.base; e.keyHint = ''; state.keys.delete(e.id); render(); }, { label: 'Provider' }),
+            select(e.kind, PROVIDERS.map((x) => [x.kind, x.label] as [ProviderKind, string]), (v) => { const pi = PROVIDERS.find((x) => x.kind === v)!; dropEntry(e); e.kind = v; e.model = pi.model; e.base = pi.base; e.keyHint = ''; state.keys.delete(e.id); render(); }, { label: 'Provider' }),
             use?.id === e.id ? pill('in use', 'success') : null,
             h('span', { class: 'spacer' }),
             toggle(e.enabled, (v) => { e.enabled = v; render(); }, `Enable ${info.label}`),
             iconButton('up', 'Move up', () => move(i, -1), { disabled: i === 0 }),
             iconButton('down', 'Move down', () => move(i, 1), { disabled: i === list.length - 1 }),
-            iconButton('trash', 'Remove', () => { state.keys.delete(e.id); p().ladder = list.filter((x) => x !== e); render(); })),
+            iconButton('trash', 'Remove', () => { dropEntry(e); state.keys.delete(e.id); p().ladder = list.filter((x) => x !== e); render(); })),
           h('div', { class: 'ladder-fields' },
             field('Model', input(e.model, (v) => { e.model = v; }, { id: `lm-${e.id}` })),
             field('Base address', input(e.base, (v) => { e.base = v; }, { id: `lb-${e.id}` })),
             info.needsKey
               ? field('API key', e.keyHint
-                  ? h('div', { class: 'key-stored' }, pill(`stored ····${e.keyHint}`, 'success'), button('Forget', { size: 'sm', variant: 'ghost', onClick: () => { state.keys.delete(e.id); e.keyHint = ''; render(); } }))
+                  ? h('div', { class: 'key-stored' }, pill(`stored ····${e.keyHint}`, 'success'), button('Forget', { size: 'sm', variant: 'ghost', onClick: () => forget(e) }))
                   : h('div', { class: 'key-entry' }, h('input', { type: 'password', class: 'input', id: `lk-${e.id}`, autocomplete: 'off', placeholder: 'Paste a key', 'aria-label': `${info.label} API key`, onInput: (ev: Event) => { keyDraft[e.id] = (ev.target as HTMLInputElement).value; } }),
-                      button('Store', { size: 'sm', onClick: () => { const k = (keyDraft[e.id] ?? '').trim(); if (!k) return; state.keys.set(e.id, k); e.keyHint = keyHint(k); keyDraft[e.id] = ''; render(); } })))
+                      button('Store', { size: 'sm', id: `lks-${e.id}`, onClick: () => store(e) })))
               : field('API key', h('span', { class: 'muted small' }, 'None: Ollama runs on this computer.'))),
+          desktop
+            ? h('div', { class: 'ladder-consent small' },
+                consent && consent.host === host
+                  ? [pill(`allowed: ${consent.host}`, 'success'), button('Withdraw', { size: 'sm', variant: 'ghost', onClick: () => { void setConsent(e.id, null, false); } })]
+                  : h('span', { class: 'muted' }, consent ? `Allowed for ${consent.host}; the address changed, so you are asked again before the next send.` : 'Not allowed yet: before the first send you see exactly what would go to this address, and decide.'))
+            : null,
           mine.length ? notice('warning', mine.map((x) => x.message).join(' ')) : null);
       })),
       h('div', { class: 'row-actions' }, select('', [['', 'Add a provider…'], ...PROVIDERS.map((x) => [x.kind, x.label] as [string, string])], (v) => { if (!v) return; const pi = PROVIDERS.find((x) => x.kind === v)!; list.push({ id: `lp${Date.now().toString(36)}`, kind: pi.kind, enabled: false, model: pi.model, base: pi.base, keyHint: '' }); render(); }, { label: 'Add a provider' }))),
+    desktop ? agentLimits() : null,
   ];
 }
 
@@ -411,7 +540,7 @@ function accessibility(): Child {
 }
 
 const RENDER: Record<SettingsSection, () => Child> = {
-  general, accounts, appearance, keybindings, integrations, versioncontrol: versionControl, notifications, prompts, providers, agent, skills, connectors, team, keys, admin, advanced, accessibility, about: aboutBody,
+  general, accounts, workspace: workspaceSection, appearance, keybindings, integrations, versioncontrol: versionControl, notifications, prompts, providers, agent, skills, connectors, team, keys, admin, advanced, accessibility, about: aboutBody,
 };
 
 export function settingsView(): HTMLElement {
@@ -427,7 +556,7 @@ export function settingsView(): HTMLElement {
       groups.map((g) => {
         const items = SECTIONS.filter((s) => s.group === g && s.label.toLowerCase().includes(q));
         if (!items.length) return null;
-        return [h('div', { class: 'nav-group' }, g), items.map((s) => h('button', { type: 'button', class: cx('nav-row', s.id === ui.section && 'is-selected'), 'aria-current': s.id === ui.section ? 'page' : undefined, 'data-section': s.id, onClick: () => { ui.section = s.id; render(); } }, icon(s.icon, 15), h('span', null, s.label)))];
+        return [h('div', { class: 'nav-group' }, g), items.map((s) => h('button', { type: 'button', class: cx('nav-row', s.id === ui.section && 'is-selected'), 'aria-current': s.id === ui.section ? 'page' : undefined, 'data-section': s.id, onClick: () => { ui.section = s.id; if (s.id === 'providers' && state.desktop) void loadAgentCfg().then(render); if (s.id === 'accounts' && state.desktop) void loadServers(); render(); } }, icon(s.icon, 15), h('span', null, s.label)))];
       })),
     h('div', { class: 'settings-body', 'data-scroll-key': `settings-${ui.section}` }, h('div', { class: 'settings-inner' }, h('h1', { class: 'view-title' }, current.label), RENDER[current.id]())),
   );

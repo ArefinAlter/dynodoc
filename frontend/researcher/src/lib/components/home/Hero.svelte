@@ -29,9 +29,9 @@
         <Btn href={workspace} variant="secondary" size="lg">Open workspace</Btn>
       </div>
       <p class="note">
-        Pre-alpha 0.0.1a: a sample workspace in your browser, or the desktop app for Windows and
-        Linux. Add-ins ship as test installs; marketplace listings are not live. The engine, API and
-        command-line tools are open source (MIT).
+        Pre-alpha 0.0.1b: a desktop app for Windows and Linux that keeps your workspace on your own
+        computer, or a sample workspace in your browser. Add-ins ship as test installs; marketplace
+        listings are not live. The engine, API and command-line tools are open source (MIT).
       </p>
     </div>
 

@@ -1,0 +1,35 @@
+page {"frameless":true,"controls":true,"brand":true,"ua":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0 DynodocApp/0.0.1 (desktop)"}
+{"check": "style", "caption": true, "thickframe": true, "maximizebox": true, "minimizebox": true, "raw": "0x14cf0000"}
+{"check": "hit tests", "left": "HTLEFT", "right": "HTRIGHT", "top": "HTTOP", "bottom": "HTBOTTOM", "top-left": "HTTOPLEFT", "bottom-right": "HTBOTTOMRIGHT", "bar": "HTCLIENT", "middle": "HTCLIENT"}
+{"check": "resize bottom-right", "before": [1296, 729], "after": [1206, 670], "changed": true}
+{"check": "resize left edge", "before": [1296, 729], "after": [1252, 729], "changed": true}
+{"check": "move by the bar", "moved_by": [89, 59]}
+{"shot": "D:\\verne-build\\dynodoc\\evidence\\frame-installed\\light-01-maximized-by-double-click.png", "size": [1920, 1032]}
+{"check": "double click on the bar", "maximized": true, "restored": true}
+{"shot": "D:\\verne-build\\dynodoc\\evidence\\frame-installed\\light-02-main.png", "size": [1282, 722]}
+{"shot": "D:\\verne-build\\dynodoc\\evidence\\frame-installed\\light-03-hover-minimize.png", "size": [1282, 722]}
+{"shot": "D:\\verne-build\\dynodoc\\evidence\\frame-installed\\light-04-hover-maximize.png", "size": [1282, 722]}
+{"shot": "D:\\verne-build\\dynodoc\\evidence\\frame-installed\\light-05-hover-close.png", "size": [1282, 722]}
+{"shot": "D:\\verne-build\\dynodoc\\evidence\\frame-installed\\light-06-application-menu.png", "size": [1282, 722]}
+{"shot": "D:\\verne-build\\dynodoc\\evidence\\frame-installed\\light-07-sidebar-closed.png", "size": [1282, 722]}
+{"shot": "D:\\verne-build\\dynodoc\\evidence\\frame-installed\\light-08-sidebar-closed-menu.png", "size": [1282, 722]}
+{"shot": "D:\\verne-build\\dynodoc\\evidence\\frame-installed\\light-09-maximized.png", "size": [1920, 1032]}
+{"check": "control buttons", "restored": true}
+{"shot": "D:\\verne-build\\dynodoc\\evidence\\frame-installed\\light-10-restored.png", "size": [1282, 722]}
+{"shot": "D:\\verne-build\\dynodoc\\evidence\\frame-installed\\light-11-not-active.png", "size": [1282, 722]}
+{"shot": "D:\\verne-build\\dynodoc\\evidence\\frame-installed\\light-12-narrow-1024.png", "size": [1026, 642]}
+
+{"shot": "D:\\verne-build\\dynodoc\\evidence\\frame-installed\\dark-01-main.png", "size": [1282, 722]}
+{"shot": "D:\\verne-build\\dynodoc\\evidence\\frame-installed\\dark-02-hover-minimize.png", "size": [1282, 722]}
+{"shot": "D:\\verne-build\\dynodoc\\evidence\\frame-installed\\dark-03-hover-maximize.png", "size": [1282, 722]}
+{"shot": "D:\\verne-build\\dynodoc\\evidence\\frame-installed\\dark-04-hover-close.png", "size": [1282, 722]}
+{"shot": "D:\\verne-build\\dynodoc\\evidence\\frame-installed\\dark-05-application-menu.png", "size": [1282, 722]}
+{"shot": "D:\\verne-build\\dynodoc\\evidence\\frame-installed\\dark-06-sidebar-closed.png", "size": [1282, 722]}
+{"shot": "D:\\verne-build\\dynodoc\\evidence\\frame-installed\\dark-07-sidebar-closed-menu.png", "size": [1282, 722]}
+{"shot": "D:\\verne-build\\dynodoc\\evidence\\frame-installed\\dark-08-maximized.png", "size": [1920, 1032]}
+{"check": "control buttons", "restored": true}
+{"shot": "D:\\verne-build\\dynodoc\\evidence\\frame-installed\\dark-09-restored.png", "size": [1282, 722]}
+{"shot": "D:\\verne-build\\dynodoc\\evidence\\frame-installed\\dark-10-not-active.png", "size": [1282, 722]}
+{"shot": "D:\\verne-build\\dynodoc\\evidence\\frame-installed\\dark-11-narrow-1024.png", "size": [1026, 642]}
+
+closed gracefully: true

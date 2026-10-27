@@ -58,7 +58,16 @@
     <p class="notice" role="status">
       Your {data.device} should now open the Dynodoc app and finish signing in.
     </p>
-    <p class="fine">If nothing happened, make sure the app is installed, then press the button.</p>
+    {#if form.loopback}
+      <p class="fine">
+        This page hands the sign-in to the Dynodoc app that is waiting on this computer. If nothing
+        happened, check that the app is still open on its sign-in screen, then press the button.
+      </p>
+    {:else}
+      <p class="fine">
+        If nothing happened, make sure the app is installed, then press the button.
+      </p>
+    {/if}
     <div class="actions"><a class="button" href={form.url}>Open the Dynodoc app</a></div>
     <p class="fine">You can close this tab once the app shows your workspace.</p>
   </AppSigninCard>

@@ -141,12 +141,39 @@ describe('asking for a code: only a real, user-activated form submission of this
       );
     vi.stubGlobal('fetch', fetchMock);
     const outcome = await issueForForm(made(FORM), parsed);
-    expect(outcome).toEqual({ ok: true, url: `dynodoc://signin?code=${CODE}&state=${STATE}` });
+    expect(outcome).toEqual({
+      ok: true,
+      url: `dynodoc://signin?code=${CODE}&state=${STATE}`,
+      loopback: false
+    });
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('http://engine.invalid/auth/app-handover');
     expect(init.headers.authorization).toBe('Bearer the-access-token');
     expect(init.headers['x-dynodoc-service-key']).toBe('service-key-for-tests');
     expect(JSON.parse(init.body)).toEqual(parsed);
+  });
+
+  it('hands a desktop app that listens on this computer its code there, and tells the API only the three values', async () => {
+    mock.accessToken.mockResolvedValue('the-access-token');
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ code: CODE, expires_in: 60 }), { status: 200 })
+      );
+    vi.stubGlobal('fetch', fetchMock);
+    const desktop = { ...parsed, platform: 'desktop' as const, redirectPort: 49321 };
+    const outcome = await issueForForm(made(FORM), desktop);
+    expect(outcome).toEqual({
+      ok: true,
+      url: `http://127.0.0.1:49321/signin?code=${CODE}&state=${STATE}`,
+      loopback: true
+    });
+    const [, init] = fetchMock.mock.calls[0];
+    expect(JSON.parse(init.body)).toEqual({
+      challenge: CHALLENGE,
+      state: STATE,
+      platform: 'desktop'
+    });
   });
 
   it('does nothing at all for a refused submission', async () => {

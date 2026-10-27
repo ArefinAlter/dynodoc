@@ -104,7 +104,8 @@ test('events group into revisions by commit message, else by person and moment',
   assert.equal(describeRun(runs[4], [], {}), 'Comment added');
   assert.equal(describeRun(runs[1], [{ blockId: 'x', op: 'edit', before: 'a', after: 'b' }], { x: '¶ 2' }), 'Edit ¶ 2');
   assert.equal(hex([171, 205]), 'abcd');
-  assert.equal(filenameOf('Budget 2027', 'spreadsheet'), 'budget-2027.xlsx');
+  assert.equal(filenameOf('Budget 2027', 'spreadsheet'), 'Budget 2027.xlsx');
+  assert.equal(filenameOf('a/b: c?', 'document'), 'a b c.docx');
   assert.equal(blockOfKey('T:cell_2', { 'T:cell_2': {} }), 'T:cell_2');
   assert.equal(blockOfKey('B:content', {}), 'B');
 });

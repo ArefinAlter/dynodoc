@@ -1,5 +1,8 @@
 {
   "bundle": {
-    "externalBin": ["binaries/engine-cli"]
+    "externalBin": [
+      "binaries/engine-cli",
+      "binaries/engine-api"
+    ]
   }
 }

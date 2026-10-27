@@ -1,8 +1,8 @@
 # Dynodoc — version control for documents
 
 Live release (23 October 2026): workspace/API `3fa06fd`, schema 47 ([release record](docs/operations/2026-10-23-schema47-release.md)).
-Pre-alpha 0.0.1a (25 October 2026): a [sample workspace](https://app.dynodoc.online/svc/visitor) of your own in the browser (removed after
-24 hours, no account) and an unsigned desktop app for Windows and Linux on the [Releases](https://github.com/ArefinAlter/dynodoc/releases/tag/v0.0.1a) page; see https://dynodoc.online/try.
+Pre-alpha 0.0.1b (27 October 2026): a standalone desktop app for Windows and Linux (an installer, a portable zip, an AppImage and a .deb) that starts its own database and engine, with the Office import and export, a folder watch, an agent that uses your own model provider, and optional sign-in to a server with sync, on the [Releases](https://github.com/ArefinAlter/dynodoc/releases/tag/v0.0.1b) page; unsigned, and still a [sample workspace](https://app.dynodoc.online/svc/visitor) of your own in the browser (removed after
+24 hours, no account, still release 0.0.1a); see https://dynodoc.online/try and [what was tested](docs/ACCEPTANCE-0.0.1b.md).
 Earlier releases deployed revocable sessions, verified snapshots, restricted API database credentials,
 project policy floors/audited metadata, scoped CSP/HSTS and workload admission
 after upgrade/rollback rehearsal. Read [release evidence](docs/operations/2026-10-11-security-runtime-release.md)

@@ -1,0 +1,20 @@
+## 6a. settings
+version control options: App General Accounts This computer Appearance Keybindings Integrations Work Version control Notifications Prompts Agent Providers Agent Skills Connectors Organisation Team and roles Signing keys Administration System Adv
+theme applied now: dark
+settings file written: true 7587 bytes
+closed: true
+after the restart, theme: dark | file: dark
+the settings file holds no key: true
+## 6b. backup and restore
+projects before the backup: ["Riverside survey"]
+backup written: true 13.9 MB
+2000 entries; {   "format": 1,   "app_version": "0.0.1-beta",   "pg_major": "16",   "os": "windows",   "created_ms": 1793109884828 }
+secret-like entries: []
+projects after a new one: ["After the backup 1793109892609","Riverside survey"]
+projects after the restore: ["Riverside survey"] | the later project is gone: true
+  verify Quarterly Review {"ok":true}
+  verify Budget 2027 {"ok":true}
+  verify Project Charter {"ok":true}
+workspace folder now: logs | pgdata | pgdata.before-restore-1793109896751 | run | workspace.json
+closed: true
+acc6 exit 0

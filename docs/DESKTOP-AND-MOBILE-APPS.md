@@ -5,6 +5,22 @@
 skeleton, plus the preparation of Android and iPhone). The code is in
 [`apps/desktop`](../apps/desktop/README.md); this file is the status and the plan around it.
 
+## 0.0.1b: the desktop app is standalone (26 October 2026)
+
+Since 0.0.1b the desktop app is software of its own and no longer only a shell for a server: one
+installer (Windows) or one file (Linux), and the first launch starts a PostgreSQL database and the
+Dynodoc engine on loopback addresses, so the workspace works with no server, no account and no network.
+A server is an addition: sign in with the system browser (decision 020) and sync a project. The agent
+uses the person's own model provider and key. On Windows and Linux the window draws its own frame (a title
+bar made of the client's top bars, its own window controls and an application menu, in the style of T3 Code)
+and a server's own pages open in a second window of the system's, with no access to the app (decision
+[021](decisions/021-desktop-frameless-window-and-web-workspace-window.md)); the one-window passages below
+describe the 0.0.1a shell and still hold for phones. Decisions
+[019](decisions/019-standalone-desktop-local-workspace.md) and
+[020](decisions/020-desktop-web-sign-in-and-sync.md); what was run and what could not be tested:
+[ACCEPTANCE-0.0.1b.md](ACCEPTANCE-0.0.1b.md). The sections below describe the 0.0.1a shell (its
+launcher, navigation policy and key) and the mobile apps, which are unchanged and still need a server.
+
 ## What it is
 
 One Tauri 2 project that opens the Dynodoc server you choose (the hosted workspace, or a

@@ -1,0 +1,8 @@
+# The desktop app's policy tests read source files as text and match LF line endings; keep every
+# text file here LF in the working copy on every operating system (Windows checkouts included).
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.icns binary
+*.exe binary
+*.ps1 -text

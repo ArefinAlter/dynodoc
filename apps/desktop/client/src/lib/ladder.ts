@@ -1,9 +1,10 @@
 // The provider ladder for the agent (bring your own key). The client tries the entries in order
-// and uses the first that is enabled and has what it needs. Keys typed here stay in this window's
-// memory: they are never written to storage, never sent anywhere by this release, and shown only
-// as "stored" with the last four characters. Pure parts are tested in client/test/ladder.test.mjs.
+// and uses the first that is enabled and has what it needs. In the desktop app a key goes to the
+// operating system's credential store through the app (agent_key_set) and is never read back: the
+// page keeps only "stored" and the last four characters. In a hosted copy there is no model call
+// and a typed key stays in the tab's memory. Pure parts are tested in client/test/keys-ladder-hash.test.mjs.
 
-export type ProviderKind = 'anthropic' | 'openai' | 'google' | 'mistral' | 'deepseek' | 'qwen' | 'kimi' | 'glm' | 'ollama';
+export type ProviderKind = 'anthropic' | 'openai' | 'google' | 'mistral' | 'deepseek' | 'qwen' | 'kimi' | 'glm' | 'ollama' | 'compat';
 
 export interface ProviderInfo {
   kind: ProviderKind;
@@ -23,6 +24,7 @@ export const PROVIDERS: ProviderInfo[] = [
   { kind: 'kimi', label: 'Kimi (Moonshot)', base: 'https://api.moonshot.ai/v1', model: 'kimi-k2', needsKey: true },
   { kind: 'glm', label: 'GLM (Zhipu)', base: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4.6', needsKey: true },
   { kind: 'ollama', label: 'Ollama (this computer)', base: 'http://127.0.0.1:11434', model: 'llama3.1', needsKey: false },
+  { kind: 'compat', label: 'OpenAI-compatible server', base: 'http://127.0.0.1:1234/v1', model: 'local-model', needsKey: true },
 ];
 
 export interface LadderEntry {

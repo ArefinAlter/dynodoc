@@ -7,13 +7,25 @@ import { call, refreshDesktopState } from '../bridge.ts';
 import type { Db } from './types.ts';
 import { changed, load, loadThreads, reconcile, renameIds, RemoteError, type Ctx, type Reply, type Session, type Transport } from './remote.ts';
 
-/** The desktop app's commands (src-tauri/src/commands.rs, remote.rs). */
-export const desktopTransport: Transport = {
-  apiGet: (path) => call('api_get', { path }) as Promise<Reply>,
-  apiSend: (method, path, body, ifMatch) => call('api_send', { method, path, body: body ?? null, ifMatch: ifMatch ?? null }) as Promise<Reply>,
-  svcGet: (path) => call('svc_get', { path }) as Promise<Reply>,
-  svcSend: (method, path, body) => call('svc_send', { method, path, body: body ?? null }) as Promise<Reply>,
-};
+/** The desktop app's commands (src-tauri/src/commands.rs, remote.rs) for one place: the workspace
+ *  on this computer (`local`), an account's server (`acct:<id>`), or, with no argument, the one
+ *  configured server through the window's own session (0.0.1a). */
+export function transportFor(env?: string | null): Transport {
+  const e = env ?? null;
+  return {
+    apiGet: (path) => call('api_get', { path, env: e }) as Promise<Reply>,
+    apiSend: (method, path, body, ifMatch) => call('api_send', { method, path, body: body ?? null, ifMatch: ifMatch ?? null, env: e }) as Promise<Reply>,
+    svcGet: (path) => call('svc_get', { path, env: e }) as Promise<Reply>,
+    svcSend: (method, path, body) => call('svc_send', { method, path, body: body ?? null, env: e }) as Promise<Reply>,
+  };
+}
+
+export const desktopTransport: Transport = transportFor();
+
+/** The transport of the place the screens show now. */
+export function currentTransport(): Transport {
+  return transport;
+}
 
 export interface SessionInfo {
   server: string | null;
@@ -29,6 +41,17 @@ let again = false;
 
 export function isLive(): boolean {
   return state.live.mode === 'live';
+}
+
+/** The screens show the workspace on this computer. */
+export function isLocal(): boolean {
+  return state.live.mode === 'live' && state.live.env === 'local';
+}
+
+/** Shows another place: reads it and makes every later change go to it. */
+export async function connectEnv(env: string): Promise<boolean> {
+  state.live.env = env;
+  return connect(transportFor(env === 'server' ? null : env));
 }
 
 /** Reads the server into the client. Keeps the current project when it is still there. */
@@ -60,6 +83,10 @@ export async function connect(t: Transport = desktopTransport): Promise<boolean>
 }
 
 function adopt(db: Db, next: Ctx): void {
+  // Picks a person made for conflicts survive reading the server again.
+  const picks = new Map<string, 'team' | 'draft'>();
+  for (const r of state.db.requests) for (const c of r.conflicts) if (c.choice) picks.set(`${r.id}:${c.blockId}`, c.choice);
+  for (const r of db.requests) for (const c of r.conflicts) c.choice = picks.get(`${r.id}:${c.blockId}`) ?? c.choice;
   ctx = next;
   state.db = db;
   state.ui.verified = {};
@@ -94,7 +121,7 @@ export function disconnect(): void {
 
 /** Read the server again (Fetch). */
 export async function refresh(quiet = false): Promise<void> {
-  if (!isLive()) return;
+  if (!isLive() || state.local.busy) return;
   if (running) {
     again = true;
     return;
@@ -125,7 +152,7 @@ function fail(e: unknown): void {
     disconnect();
     return;
   }
-  toast('error', 'The server did not accept this', message);
+  toast('error', state.live.env === 'local' ? 'This workspace did not accept this' : 'The server did not accept this', message);
 }
 
 /** Called after every render: if the model differs from the server's copy, send the change. */
@@ -139,7 +166,7 @@ export function noticeChanges(): void {
 }
 
 async function sync(): Promise<void> {
-  if (!ctx || !isLive()) return;
+  if (!ctx || !isLive() || state.local.busy) return;
   if (running) {
     again = true;
     return;
@@ -169,8 +196,8 @@ async function sync(): Promise<void> {
       ctx = out.ctx;
       again = true;
     }
-    if (outcome.errors.length) toast('error', 'The server did not accept a change', outcome.errors.join(' '));
-    else if (outcome.done.length) toast('success', 'Saved to the server', outcome.done.slice(0, 3).join(' · '));
+    if (outcome.errors.length) toast('error', state.live.env === 'local' ? 'This workspace did not accept a change' : 'The server did not accept a change', outcome.errors.join(' '));
+    else if (outcome.done.length) toast('success', state.live.env === 'local' ? 'Saved on this computer' : 'Saved to the server', outcome.done.slice(0, 3).join(' · '));
   } catch (e) {
     fail(e);
     // Show the server's state rather than a change it did not take.
@@ -200,7 +227,8 @@ export async function startVisitor(): Promise<void> {
     state.live.visitor = v;
     const ds = await refreshDesktopState();
     state.live.server = ds?.server ?? state.live.server;
-    const ok = await connect();
+    state.live.env = 'server';
+    const ok = await connect(desktopTransport);
     if (ok) toast('success', 'Your sample workspace is ready', `It is yours alone and is removed ${v.expires_at ? `on ${new Date(v.expires_at).toLocaleString()}` : 'after 24 hours'}.`);
   } catch (e) {
     state.live.mode = 'offline';
@@ -225,7 +253,10 @@ export async function startLive(): Promise<SessionInfo | null> {
   try {
     const info = (await call('session_info')) as SessionInfo;
     state.live.server = info.server ?? '';
-    if (info.signed_in) await connect();
+    if (info.signed_in) {
+      state.live.env = 'server';
+      await connect(desktopTransport);
+    }
     return info;
   } catch (e) {
     state.live.error = e instanceof Error ? e.message : String(e);

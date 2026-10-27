@@ -27,6 +27,7 @@ import {
   isCode,
   isState,
   isVerifier,
+  loopbackLink,
   type AppSignin,
   type Platform
 } from '$lib/app-signin';
@@ -85,7 +86,7 @@ export function pairingCode(state: string): string {
 // --- asking for a code: the confirmation page's form ---------------------------------------------
 
 export type FormOutcome =
-  | { ok: true; url: string }
+  | { ok: true; url: string; loopback: boolean }
   | {
       ok: false;
       status: number;
@@ -135,7 +136,12 @@ export async function issueForForm(
         authorization: `Bearer ${token}`,
         ...(key ? { 'x-dynodoc-service-key': key } : {})
       },
-      body: JSON.stringify(parsed),
+      // Exactly the three values the API knows; the app's loopback port stays on this side.
+      body: JSON.stringify({
+        challenge: parsed.challenge,
+        state: parsed.state,
+        platform: parsed.platform
+      }),
       signal: AbortSignal.timeout(15_000)
     });
   } catch {
@@ -146,7 +152,11 @@ export async function issueForForm(
   const answer: unknown = response.ok ? await response.json().catch(() => null) : null;
   const code = (answer as { code?: unknown } | null)?.code;
   if (!isCode(code)) return { ok: false, status: 502, problem: 'failed' };
-  return { ok: true, url: appLink(code, parsed.state) };
+  // A desktop app that listens on this computer gets the code there (decision 020); every other
+  // app gets the custom-scheme link as before.
+  return parsed.redirectPort === undefined
+    ? { ok: true, url: appLink(code, parsed.state), loopback: false }
+    : { ok: true, url: loopbackLink(parsed.redirectPort, code, parsed.state), loopback: true };
 }
 
 // --- trading a code for a session: the app's own window ------------------------------------------

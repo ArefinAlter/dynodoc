@@ -1,0 +1,48 @@
+## 1. first launch
+topbar: Riverside survey / Changes / main On this computer No server Fetch Last fetched just now
+## 2a. import
+files: Name Latest Last change Drafts Requests Editor Updated Budget 2027 Budget 2027.xlsx r21 Added Budget 2027.xlsx · You 0 0 Excel now Project Charter Project Charter.docx r14 Added Project Charter.docx · You 0 0 Word now Quarterly Review Quarterly Review.pptx r12 Added Quarterly Review.pptx · You 0 0 PowerPoint now
+  Project Charter: preview has "Riverside Community Health Survey": true | blocks listed: 13
+  Budget 2027: preview has "Interviewer wages": true | blocks listed: 63
+  Quarterly Review: preview has "Pilot interviews": true | blocks listed: 9
+verify: Verified 3 revisions in 3 files: every chain is intact
+## 3. folder watch
+project folder: Project folder Not bound. Bind a folder and Word, Excel and PowerPoint files saved in it are picked up as changes to review. Until you
+written to the folder: Budget 2027 (v21).xlsx | Project Charter (v14).docx | Quarterly Review (v12).pptx
+lock files (the programs hold the copies open): 2
+python-docx: edited runs: 1
+    word resaved D:\verne-build\dynodoc\scratch\watched\Project Charter (v14).docx 
+    excel edited B4 in D:\verne-build\dynodoc\scratch\watched\Budget 2027 (v21).xlsx 
+    powerpoint edited slide 2 in D:\verne-build\dynodoc\scratch\watched\Quarterly Review (v12).pptx 
+banners: Quarterly Review (v12).pptx was saved in its editor, just now 1 change is in the draft "Edited in PowerPoint 08:02 PM" of Quarterly Review. Review the changes Dismiss Budget 2027 (v21).xlsx was saved in its editor, just now 2 changes are in the draft "Edited in Excel 08:02 PM" of Budget 2027. Review the changes Dismiss Project Charter (v14).docx was saved in its editor, just now 3 changes are in the draft "Edited in Word 08:02 PM" of Project Charter. Review the changes Dismiss
+## 2b. review and merge
+  Project Charter diff:  5 - ¶ 5 Results are reported to the district council each quarter, and the underlying data are retained for seven years under the data protection schedule.  || seven ||  5 + ¶ 5 Results are reported to the district council each quarter, and the underlying data are retained for ten years under the d
+  review comment shown: true
+  merged: Quarterly Review (v12).pptx was saved in its editor, just now 1 change is in the draft "Edited in PowerPoint 08:02 PM" o | toast: Merged #1 into main as r15 | Saved on this computer Merged Edits to Project Charter from its editor
+  Budget 2027 diff:  8 - Budget!B4 · Interviewer wages 18500  || 18500 ||  8 + Budget!B4 · Interviewer wages 19500  || 19500
+  merged: Quarterly Review (v12).pptx was saved in its editor, just now 1 change is in the draft "Edited in PowerPoint 08:02 PM" o | toast: Merged #2 into main as r22 | Saved on this computer Merged Edits to Budget 2027 from its editor
+  Quarterly Review diff:  5 - Slide 2 · Body Questionnaire approved on 12 February Pilot interviews: 41 of 60 complete Translation checks finished for Spanish; Bengali in review Two interviewers left; replacements start on 21 April  || 41 ||  5 + Slide 2 · Body Questionnaire approved on 12 February Pilot interviews: 52 of 6
+  merged: Quarterly Review (v12).pptx was saved in its editor, just now 1 change is in the draft "Edited in PowerPoint 08:02 PM" o | toast: Merged #3 into main as r13 | Saved on this computer Merged Edits to Quarterly Review from its editor
+verify after merges: Verified 9 revisions in 3 files: every chain is intact
+## 2d. versions (named version before the conflict)
+  versions: Quarterly Review (v12).pptx was saved in its editor, just now 1 change is in the draft "Edited in PowerPoint 08:02 PM" of Quarterly Review. Review the changes Dismiss Budget 2027 (v21).xlsx was saved in its editor, 1 min ago 2 changes are in the draft "Edited in Excel 08:02 PM" of Budget 2027. Revie
+## 2c. conflicts
+    word resaved D:\verne-build\dynodoc\scratch\watched\Project Charter (v14) second copy.docx 
+  request text: Quarterly Review (v12).pptx was saved in its editor, 1 min ago 1 change is in the draft "Edited in PowerPoint 08:02 PM" of Quarterly Review. Review the changes Dismiss Budget 2027 (v21).xlsx was saved in its editor, 1 min ago 2 changes are in the draft "Edited in Excel 08:02 PM" of Budget 2027. Review the changes Dismiss Project Charter (v14).docx was saved in its editor, 1 min ago 3 changes are i
+  conflicts card: 1 conflict with main Keep all team's Use all of theirs main changed these blocks after the draft started. Choose what the merge keeps for each. ¶ 5 Before both: Results are reported to the district council each quarter, and the underlying data are retained for seven years under the data protection schedule. Keep the team's current version Results are reported to the district council each quarter, and the underlying data are retained for ten years under the data protection schedule. Use your version Results are reported to the district council each quarter, and the underlying data are retained 
+  after the conflict merge: Quarterly Review (v12).pptx was saved in its editor, 1 min ago 1 change is in the draft "Edited in PowerPoint 08:02 PM" of Quarterly Review. Review the changes  | toast: Merged #4 into main as r18 | Saved on this computer Merged Five years of retention
+  main now reads (their version chosen): retained for five years
+## 2d. restore
+  restore toast: Restored "Steering group copy" into the draft restore-steering-group-copy | Saved on this computer Created the draft restore-steering-group-copy
+  restore merged: Merged #5 into main as r19 | Saved on this computer Merged Restore the steering group copy
+  main reads after the restore: retained for ten years
+  verify: Verified 13 revisions in 3 files: every chain is intact
+## 2e. export
+   Project Charter -> Copy saved D:\verne-build\dynodoc\scratch\watched\Project Charter (v20).docx
+   Budget 2027 -> Copy saved D:\verne-build\dynodoc\scratch\watched\Budget 2027 (v26).xlsx
+   Quarterly Review -> Copy saved D:\verne-build\dynodoc\scratch\watched\Quarterly Review (v14).pptx
+folder now: Budget 2027 (v21).xlsx | Budget 2027 (v26).xlsx | Project Charter (v14) second copy.docx | Project Charter (v14).docx | Project Charter (v20).docx | Quarterly Review (v12).pptx | Quarterly Review (v14).pptx
+merged file opened by the system default program (new Office processes): 1
+## done
+closed gracefully: true
+acc2 exit 0

@@ -3,7 +3,9 @@
 // launcher's own controls (bridge.ts) and gives them a place in Settings, Accounts.
 import { h, clear } from './dom.ts';
 import { state, setRenderer, setAfterRender, render, go, toast, resetSample } from './state.ts';
-import { isLive, loadPrefs, noticeChanges, noticePrefs, refresh, signOut, startLive, startVisitor } from './data/live.ts';
+import { loadAgentCfg, refreshKeyHints } from './data/agentRun.ts';
+import { loadServers } from './data/accounts.ts';
+import { isLive, loadPrefs, noticeChanges, noticePrefs, refresh, signOut, startVisitor } from './data/live.ts';
 import * as B from './data/backend.ts';
 import { applyAppearance, toggleTheme } from './theme.ts';
 import { commandFor } from './lib/keys.ts';
@@ -21,7 +23,11 @@ import { agentView, startThread } from './views/agent.ts';
 import { settingsView, SECTIONS, captureRecording } from './views/settings.ts';
 import { branchContext, currentBranch, docOf } from './views/common.ts';
 import { fetchNow, sync, runBranchAction, switchProject, switchBranch, openProjectList, openBranchList } from './views/actions.ts';
-import { startBridge, launcherSection, focusSection, inDesktop, openServer } from './bridge.ts';
+import { startBridge, launcherSection, focusSection, inDesktop, desktopState } from './bridge.ts';
+import { initFrame, confirmFrame, syncTitle, frameless, openWorkspace, reloadClient, openDevtools, quit } from './ui/frame.ts';
+import { splash } from './views/splash.ts';
+import { startLocalWorkspace } from './data/local.ts';
+import { loadFolders, startWatch } from './data/files.ts';
 
 const VIEWS = {
   changes: changesView,
@@ -34,6 +40,17 @@ const VIEWS = {
   agent: agentView,
   settings: settingsView,
 };
+
+// A page that fails before it has drawn anything would be a blank window with nothing to say why. Until the first
+// draw, an uncaught error is written on the page, in plain text a person can copy into a report.
+function fatal(what: string): void {
+  const app = document.getElementById('app');
+  if (app && app.childElementCount > 0) return;
+  const box = document.getElementById('fatal') ?? document.body.appendChild(h('pre', { id: 'fatal', class: 'fatal' }));
+  box.textContent = ['Dynodoc could not start its window.', '', what, '', 'Please report this at https://dynodoc.online/support with your system (' + navigator.userAgent + ').'].join('\n');
+}
+window.addEventListener('error', (e) => fatal(e.message + (e.filename ? ' (' + e.filename.split('/').pop() + ':' + e.lineno + ')' : '')));
+window.addEventListener('unhandledrejection', (e) => fatal('A start-up step failed: ' + (e.reason instanceof Error ? e.reason.message : String(e.reason))));
 
 let root: HTMLElement;
 let layer: HTMLElement;
@@ -81,7 +98,8 @@ function restore(saved: ReturnType<typeof remember>): void {
 function draw(): void {
   const saved = remember();
   const view = VIEWS[state.ui.view] ?? changesView;
-  const app = shell(view());
+  const start = splash();
+  const app = start ?? shell(view());
   // Keep the launcher's element alive across renders: take it out before the old tree goes.
   if (launcher && launcherHome && launcher.parentElement !== launcherHome) launcherHome.appendChild(launcher);
   clear(root);
@@ -91,6 +109,7 @@ function draw(): void {
   renderLayer(layer);
   restore(saved);
   document.title = state.ui.view === 'settings' ? 'Dynodoc' : `${VIEW_LABEL[state.ui.view]} · Dynodoc`;
+  syncTitle(document.title);
 }
 
 // ---- commands -----------------------------------------------------------------------------------
@@ -117,7 +136,12 @@ function commands(): Command[] {
   if (state.desktop && !isLive()) out.push({ id: 'visitor', label: 'Start a sample workspace on the pre-alpha server', group: 'Account', icon: 'globe', run: () => void startVisitor() });
   if (isLive()) out.push({ id: 'reload', label: 'Read everything from the server again', group: 'Account', icon: 'sync', run: () => void refresh() });
   if (isLive()) out.push({ id: 'signout', label: 'Sign out of the server', group: 'Account', icon: 'user', run: () => void signOut() });
-  if (state.desktop) out.push({ id: 'server', label: 'Open my server’s workspace in this window', group: 'Account', icon: 'globe', run: () => { openServer().then((s) => { if (!s) { state.ui.settings.section = 'accounts'; go('settings'); toast('info', 'Choose a server first'); } }).catch((e) => toast('error', e instanceof Error ? e.message : String(e))); } });
+  if (state.desktop) out.push({ id: 'server', label: 'Open my server’s web workspace (its own window)', group: 'Account', icon: 'globe', keywords: 'web workspace server browser', run: openWorkspace });
+  if (state.desktop) {
+    out.push({ id: 'app.reload', label: 'Reload the app', group: 'App', icon: 'sync', shortcut: 'Ctrl+R', run: reloadClient });
+    if (desktopState()?.devtools) out.push({ id: 'app.devtools', label: 'Open developer tools', group: 'App', icon: 'advanced', shortcut: 'F12', run: openDevtools });
+    if (frameless()) out.push({ id: 'app.quit', label: 'Quit Dynodoc', group: 'App', icon: 'x', shortcut: 'Alt+F4', run: quit });
+  }
   return out;
 }
 
@@ -155,6 +179,13 @@ function runCommand(cmd: string): void {
 function onKey(e: KeyboardEvent): void {
   if (captureRecording(e)) return;
   if (e.key === 'Escape') closeMenu();
+  // The reload the native menu used to carry (the app's command, since a plain reload of the client is
+  // refused by the shell).
+  if (state.desktop && !e.altKey && (e.key === 'F5' || ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'r'))) {
+    e.preventDefault();
+    reloadClient();
+    return;
+  }
   if (dialogOpen()) return;
   if (paletteIsOpen() && !(e.ctrlKey && e.key.toLowerCase() === 'k')) return;
   const target = e.target as HTMLElement | null;
@@ -182,6 +213,7 @@ async function boot(): Promise<void> {
     launcher.classList.add('is-embedded');
   }
   document.documentElement.classList.add('client');
+  initFrame();
   applyAppearance();
   setRenderer(draw);
   setAfterRender(() => {
@@ -198,17 +230,32 @@ async function boot(): Promise<void> {
   const section = launcherSection();
   if (inDesktop() && launcher) {
     state.desktop = true;
+    // Never show the offline sample first: the start-up screen is what a person sees until the
+    // workspace on this computer is ready.
+    state.local.splash = true;
     draw();
     const ds = await startBridge();
     if (ds) {
+      confirmFrame(ds.frame);
       state.desktopVersion = ds.version;
       await loadPrefs();
       applyAppearance();
-      // Signed in to the configured server: the screens show its workspace.
-      const info = await startLive();
+      // The agent's keys live in the credential store: the page learns only which entries have one.
+      void loadAgentCfg().then(refreshKeyHints);
+      state.local.splash = true;
+      draw();
+      // The workspace on this computer is what the screens show: the app starts its own database
+      // and engine (no server, no account). A server is an addition (Settings, Accounts).
+      const here = await startLocalWorkspace();
+      if (here) {
+        void loadAgentCfg().then(refreshKeyHints);
+        void loadServers();
+        startWatch();
+        void loadFolders();
+      }
       // The launcher shows because the app was asked for it (File menu, a sign-in, a changed
-      // saved address) or because no server is chosen yet. In the first case go straight to it.
-      if (section || ds.unconfirmed || (!info?.signed_in && !section)) {
+      // saved address): go straight to it.
+      if (section || ds.unconfirmed) {
         state.ui.settings.section = 'accounts';
         state.ui.view = 'settings';
       }

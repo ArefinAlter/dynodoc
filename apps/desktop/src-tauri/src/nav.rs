@@ -61,10 +61,12 @@ pub fn is_launcher(url: &Url, launcher: &Url) -> bool {
 }
 
 /// The one page the launcher origin serves as a window's document. (Tauri reports the first
-/// load as `/` and a later one as `/index.html`.) Any other path on that origin is never loaded
-/// as a window's page, and never uses up a grant.
+/// load as `/` and a later one as `/index.html`; WebKitGTK reports the first load of the root of a
+/// `tauri://` origin with NO path at all, which the `url` crate keeps as the empty path because the
+/// scheme is not a special one. It is the same document as `/`.) Any other path on that origin is
+/// never loaded as a window's page, and never uses up a grant.
 pub fn is_launcher_page(url: &Url, launcher: &Url) -> bool {
-    is_launcher(url, launcher) && matches!(url.path(), "/" | "/index.html")
+    is_launcher(url, launcher) && matches!(url.path(), "" | "/" | "/index.html")
 }
 
 /// WebView2 reports only main-frame navigations to the navigation handler. WebKitGTK and
@@ -305,6 +307,19 @@ pub fn window_title(url: &Url, server: Option<&ServerOrigin>) -> String {
             None => format!("Dynodoc - {host}"),
         },
         _ => "Dynodoc".to_string(),
+    }
+}
+
+/// The title of the web workspace window, which shows the configured server's own pages (it has no
+/// native access and its frame is the system's, so it never looks like the app's own window). The
+/// title says what it is and whose page it shows, so the person can always tell.
+pub fn web_title(url: &Url, server: Option<&ServerOrigin>) -> String {
+    match (server, url.host_str()) {
+        (Some(server), Some(host)) if server.matches(url) => match url.port() {
+            Some(port) => format!("Dynodoc web workspace - {host}:{port} (the server's page)"),
+            None => format!("Dynodoc web workspace - {host} (the server's page)"),
+        },
+        _ => "Dynodoc web workspace".to_string(),
     }
 }
 
@@ -564,6 +579,39 @@ mod tests {
                     "{path} (ambiguous {ambiguous})"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn the_root_without_a_path_is_the_launchers_page_where_the_scheme_keeps_it() {
+        // WebKitGTK asks the navigation handler about "tauri://localhost" (no slash). On Linux that
+        // is the launcher's first load; refusing it left a blank window. Only the root itself, only
+        // on the launcher's own origin, and only with the shell's permission.
+        let launcher = launcher_origin();
+        let s = server("https://app.dynodoc.online");
+        let origin = launcher.as_str().trim_end_matches('/').to_string();
+        let target = Url::parse(&origin).unwrap();
+        assert!(is_launcher_page(&target, &launcher), "{target}");
+        for ambiguous in [false, true] {
+            assert_eq!(
+                decide(&target, Some(&s), &launcher, true, ambiguous),
+                Decision::Allow
+            );
+            // Without the shell's permission it is refused like any other launcher address.
+            assert_eq!(
+                decide(&target, Some(&s), &launcher, false, ambiguous),
+                Decision::Deny
+            );
+        }
+        // Nothing else gains from it: other origins and other paths stay refused.
+        for other in [
+            "tauri://localhost.evil.example",
+            "tauri://localhost:8080",
+            "https://app.dynodoc.online",
+            "tauri://localhost/launcher.js",
+        ] {
+            let target = Url::parse(other).unwrap();
+            assert!(!is_launcher_page(&target, &launcher), "{other}");
         }
     }
 
@@ -1067,6 +1115,69 @@ mod tests {
             "Dynodoc - xn--bcher-kva.example",
             "the ASCII form shows, so a look-alike is visible"
         );
+    }
+
+    #[test]
+    fn the_web_workspace_title_says_it_is_the_servers_page() {
+        let s = server("https://app.dynodoc.online");
+        let t = |u: &str| web_title(&Url::parse(u).unwrap(), Some(&s));
+        assert_eq!(
+            t("https://app.dynodoc.online/workspace"),
+            "Dynodoc web workspace - app.dynodoc.online (the server's page)"
+        );
+        let local = server("http://127.0.0.1:8080");
+        assert_eq!(
+            web_title(
+                &Url::parse("http://127.0.0.1:8080/x").unwrap(),
+                Some(&local)
+            ),
+            "Dynodoc web workspace - 127.0.0.1:8080 (the server's page)"
+        );
+        // Nothing that is not the configured server gets a host in the title.
+        assert_eq!(t("https://evil.example/"), "Dynodoc web workspace");
+        assert_eq!(
+            web_title(&launcher_url(None), None),
+            "Dynodoc web workspace"
+        );
+    }
+
+    #[test]
+    fn the_desktop_client_window_is_decided_without_a_server() {
+        // The client window (the frameless one that may call the app's commands) is decided with NO
+        // server, so none of the server's pages can load in it: they are links out, or refused.
+        let s = server("https://app.dynodoc.online");
+        let launcher = launcher_origin();
+        for page in [
+            "https://app.dynodoc.online/workspace",
+            "https://app.dynodoc.online/app-signin/finish",
+            "https://app.dynodoc.online/",
+        ] {
+            let url = Url::parse(page).unwrap();
+            assert_ne!(
+                decide(&url, None, &launcher, true, false),
+                Decision::Allow,
+                "{page}"
+            );
+            // Whereas the web window, decided with the server, does load it (finish page aside).
+            if !page.contains("finish") {
+                assert_eq!(
+                    decide(&url, Some(&s), &launcher, false, false),
+                    Decision::Allow,
+                    "{page}"
+                );
+            }
+        }
+        // And the web window never loads the launcher, even when asked to.
+        assert_eq!(
+            decide(&launcher_url(None), Some(&s), &launcher, false, false),
+            Decision::Deny
+        );
+        // A request for a new window from the client never navigates "here" to a server page.
+        let url = Url::parse("https://app.dynodoc.online/workspace").unwrap();
+        assert!(!matches!(
+            new_window(&url, None, &launcher, SECRET),
+            NewWindow::NavigateHere(_)
+        ));
     }
 
     #[test]

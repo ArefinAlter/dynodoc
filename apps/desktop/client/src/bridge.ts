@@ -19,6 +19,10 @@ export interface DesktopState {
   unconfirmed: string | null;
   tools: boolean;
   browser_signin: boolean;
+  /** `custom` when the window has no system title bar and the client draws its own. */
+  frame: 'custom' | 'native';
+  /** The web view's inspector can be opened (debug builds only). */
+  devtools: boolean;
 }
 
 type Invoke = (cmd: string, args?: Record<string, unknown>) => Promise<any>;
@@ -110,7 +114,7 @@ async function connect(address: string, errorId: string, button: HTMLElement, wo
   return true;
 }
 
-/** Opens the saved server's workspace in this window (the same command as "Use this address"). */
+/** Opens the saved server's web workspace in its own window (the same command as "Use this address"). */
 export async function openServer(): Promise<string | null> {
   if (!invoke || !current || !current.server) return null;
   try {

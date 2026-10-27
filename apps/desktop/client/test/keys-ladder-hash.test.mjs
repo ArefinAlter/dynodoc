@@ -62,7 +62,7 @@ const entry = (kind, o = {}) => {
 };
 
 test('the ladder lists the providers the brief names', () => {
-  assert.deepEqual(PROVIDERS.map((p) => p.kind), ['anthropic', 'openai', 'google', 'mistral', 'deepseek', 'qwen', 'kimi', 'glm', 'ollama']);
+  assert.deepEqual(PROVIDERS.map((p) => p.kind), ['anthropic', 'openai', 'google', 'mistral', 'deepseek', 'qwen', 'kimi', 'glm', 'ollama', 'compat']);
 });
 
 test('ladder checks: keys, plain http only to this computer, no credentials in the address', () => {

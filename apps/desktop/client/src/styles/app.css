@@ -565,6 +565,9 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
 .menu-item:hover:not(.is-disabled), .menu-item:focus-visible { background: var(--accent); outline: none; }
 .menu-item.is-disabled { color: var(--muted-foreground); opacity: 0.65; cursor: default; }
 .menu-item.is-danger { color: var(--error-foreground); }
+a.menu-item { color: var(--foreground); text-decoration: none; }
+a.menu-item:hover { text-decoration: none; }
+a.menu-item .icon:last-child { margin-left: auto; color: var(--muted-foreground); }
 .menu-icon { width: 16px; display: inline-grid; place-items: center; color: var(--muted-foreground); flex: none; }
 .menu-label { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .menu-label > span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -692,3 +695,54 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
   .split-view .pane { min-height: auto; }
   .split-view .pane-scroll { overflow: visible; flex: none; }
 }
+
+/* ---- start-up screen ------------------------------------------------------------------------ */
+.splash { height: 100%; display: grid; place-items: center; padding: 24px; background: var(--background); overflow: auto; }
+.splash-card { width: min(520px, 100%); padding: 28px; display: flex; flex-direction: column; gap: 12px; }
+.splash-brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; }
+.splash-title { font-size: 20px; letter-spacing: -0.015em; }
+.splash-step { display: flex; align-items: center; gap: 10px; font-weight: 500; }
+.splash-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+
+/* ---- folder watch --------------------------------------------------------------------------- */
+.split-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.split-wrap > .split-view { flex: 1; min-height: 0; }
+.watch-notices { padding: 0 16px; border-bottom: 1px solid var(--border); flex: none; }
+.watch-notice { display: flex; align-items: center; gap: 12px; }
+.watch-notice .notice { flex: 1; }
+.watch-actions { display: flex; gap: 6px; flex: none; }
+.folder-card { margin-bottom: 14px; }
+.folder-path { word-break: break-all; margin: 4px 0 8px; }
+
+/* ---- window frame (Windows and Linux: the shell makes the window without a system title bar) ----------
+   The top bars are the title bar: they move the window (data-tauri-drag-region, set in views/shell.ts), a
+   double click maximises it, and ui/frame.ts draws minimise, maximise or restore and close at the right edge,
+   46 px wide and the bar's height, with the system's red under the pointer on close, as T3 Code does. */
+.winctl { position: fixed; top: 0; right: 0; height: var(--topbar-h); display: flex; z-index: 58; -webkit-user-select: none; user-select: none; }
+.winctl[hidden] { display: none; }
+.winctl button { display: grid; place-items: center; width: 46px; height: 100%; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--foreground); cursor: default; }
+.winctl button:hover { background: var(--accent); }
+.winctl button:active { background: var(--sidebar-row-hover); }
+.winctl .close:hover, .winctl .close:active { background: #c42b1c; color: #fff; }
+.winctl button:focus-visible { outline-offset: -3px; }
+/* The controls sit over the right end of the bar: leave their room so nothing is under them. */
+html.frameless .topbar { padding-right: 146px; -webkit-user-select: none; user-select: none; }
+html.frameless .brand-row, html.frameless .splash { -webkit-user-select: none; user-select: none; }
+html.frameless .splash .splash-card { -webkit-user-select: text; user-select: text; }
+/* The application menu: the brand in the sidebar's header (the mark alone when the sidebar is closed). */
+.brand { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.brand-btn { height: 28px; padding: 0 8px 0 6px; border: 0; border-radius: var(--radius-md); background: transparent; color: var(--foreground); }
+.brand-btn:hover, .brand-btn[aria-expanded='true'] { background: var(--accent); }
+.brand-btn .brand-chev { color: var(--muted-foreground); }
+/* Not the active window: the bar's text dims, as the system's own bars do. */
+html.window-blurred .crumbs-bar, html.window-blurred .brand-name, html.window-blurred .winctl button { opacity: 0.55; }
+/* Linux has no frame of its own to draw an edge: a one-pixel line, except when the window fills the screen
+   (Windows 11 draws its own edge and rounded corners round the shadowed window, so none is added there). */
+html.frame-border:not(.window-maximized) body::after { content: ''; position: fixed; inset: 0; border: 1px solid var(--border); pointer-events: none; z-index: 90; }
+@media (max-width: 1100px) {
+  /* A narrow window gives the controls the room first. */
+  html.frameless .topbar .status-pills .server-btn { display: none; }
+}
+
+/* A start-up failure written on the page (main.ts): plain text, easy to copy. */
+.fatal { margin: 0; padding: 32px; white-space: pre-wrap; word-break: break-word; font: 13px/1.5 var(--font-mono); color: var(--foreground); background: var(--background); min-height: 100%; user-select: text; }

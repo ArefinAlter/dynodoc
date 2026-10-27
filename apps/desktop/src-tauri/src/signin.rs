@@ -322,6 +322,18 @@ impl fmt::Debug for Finish {
 }
 
 impl Finish {
+    /// The JSON body of the server's redeem route (`POST /auth/app-signin/redeem`): exactly the
+    /// code, the state and the verifier, all URL-safe characters (the code was checked by the
+    /// listener, the other two were made here), so nothing needs escaping.
+    pub fn redeem_body(&self) -> Secret {
+        Secret::new(format!(
+            "{{\"code\":\"{}\",\"state\":\"{}\",\"verifier\":\"{}\"}}",
+            self.code.expose(),
+            self.state.expose(),
+            self.verifier.expose()
+        ))
+    }
+
     /// `code=..&state=..&verifier=..`: the three values are URL-safe characters only, so
     /// nothing needs encoding.
     pub fn fragment(&self) -> Secret {
@@ -1263,11 +1275,10 @@ mod tests {
             .all(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())));
         assert_eq!(kind, format!("{PLATFORM})"));
         assert_eq!(version, normalise_version(env!("CARGO_PKG_VERSION")));
-        // The version this build has is already in the grammar, so nothing is lost by normalising.
-        assert_eq!(
-            normalise_version(env!("CARGO_PKG_VERSION")),
-            env!("CARGO_PKG_VERSION")
-        );
+        // The leading triple of this build's version is what the token carries; a pre-release
+        // suffix such as `-beta` is dropped on purpose (see `normalise_version`).
+        let triple = env!("CARGO_PKG_VERSION").split(['-', '+']).next().unwrap();
+        assert_eq!(normalise_version(env!("CARGO_PKG_VERSION")), triple);
         // Only where it is built and has been run is the browser sign-in offered.
         assert_eq!(APP_TOKEN, cfg!(any(windows, target_os = "android")));
     }

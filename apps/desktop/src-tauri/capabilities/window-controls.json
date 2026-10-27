@@ -1,0 +1,17 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "window-controls",
+  "description": "The client window has no system title bar on Windows and Linux: the bundled client draws the bar and may minimise, maximise or restore, close and move that one window, read whether it is maximised and set its title. Nothing else of the window API (no resizing, hiding, destroying, always-on-top, creating windows or listening to events), and the web window that shows a server's pages is in no capability at all. There is no `remote` section.",
+  "local": true,
+  "windows": ["main"],
+  "platforms": ["linux", "windows"],
+  "permissions": [
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close",
+    "core:window:allow-start-dragging",
+    "core:window:allow-internal-toggle-maximize",
+    "core:window:allow-is-maximized",
+    "core:window:allow-set-title"
+  ]
+}

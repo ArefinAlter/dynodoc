@@ -1,0 +1,37 @@
+set_server -> http://127.0.0.1:4189
+{
+  "windows": {
+    "before": 1,
+    "after": 2,
+    "urls": [
+      "http://127.0.0.1:4189/workspace",
+      "http://tauri.localhost/"
+    ]
+  },
+  "fromTheServersPage": {
+    "internals": "object",
+    "global": "undefined",
+    "get_state": "refused: Command get_state not allowed by ACL",
+    "prefs_load": "refused: Command prefs_load not allowed by ACL",
+    "device_key_create": "refused: Command device_key_create not allowed by ACL",
+    "window_reload": "refused: Command window_reload not allowed by ACL",
+    "devtools_open": "refused: Command devtools_open not allowed by ACL",
+    "window close": "refused: Command plugin:window|close not allowed by ACL",
+    "window start_dragging": "refused: Command plugin:window|start_dragging not allowed by ACL",
+    "window internal_toggle_maximize": "refused: Command plugin:window|internal_toggle_maximize not allowed by ACL",
+    "window minimize": "refused: Command plugin:window|minimize not allowed by ACL",
+    "window set_title": "refused: Command plugin:window|set_title not allowed by ACL",
+    "window is_maximized": "refused: Command plugin:window|is_maximized not allowed by ACL",
+    "window set_size": "refused: Command plugin:window|set_size not allowed by ACL",
+    "event listen": "refused: Command plugin:event|listen not allowed by ACL"
+  },
+  "title": "Stand-in server page",
+  "clientStill": "{\"frameless\":true,\"controls\":true,\"maximized\":null}",
+  "clientCanCallWindow": "is_maximized -> false",
+  "nativeWindow": "window title: Dynodoc web workspace - 127.0.0.1:4189 (the server's page)",
+  "clientAfterNavigatingToTheServer": [
+    "http://127.0.0.1:4189/workspace",
+    "http://tauri.localhost/"
+  ]
+}
+closed gracefully: false

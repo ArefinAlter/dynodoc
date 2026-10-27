@@ -7,10 +7,27 @@
 //! apps/desktop/README.md before changing the security-relevant modules (`nav`, `handoff`,
 //! `server`, `deeplink`, `signin`, `sidecar`, `commands`, the capability file and tauri.conf.json).
 
+mod accounts;
+#[cfg(desktop)]
+mod agent;
+#[cfg(desktop)]
+mod cmd_accounts;
+#[cfg(desktop)]
+mod cmd_agent;
+#[cfg(desktop)]
+mod cmd_files;
+#[cfg(desktop)]
+mod cmd_local;
+#[cfg(desktop)]
+mod cmd_window;
 mod commands;
 mod config;
 mod deeplink;
+mod envs;
+mod files;
 mod handoff;
+#[cfg(desktop)]
+mod local;
 #[cfg(desktop)]
 mod menu;
 mod nav;
@@ -18,6 +35,7 @@ mod remote;
 mod server;
 mod sidecar;
 mod signin;
+mod watch;
 mod window;
 
 #[cfg(test)]
@@ -49,6 +67,21 @@ pub struct AppState {
     pub signin: signin::Pending,
     /// A finished attempt's fragment, waiting for the finish page to load (see signin.rs).
     pub outbox: signin::Outbox,
+    /// The workspace on this computer: its own database and engine (decision 019).
+    #[cfg(desktop)]
+    pub local: local::Local,
+    /// Files and folders the person chose: the page holds tokens, the app holds paths.
+    #[cfg(desktop)]
+    pub picks: files::Picks,
+    /// The agent: provider keys, consent, caps and the runs in progress.
+    #[cfg(desktop)]
+    pub agent: agent::Agent,
+    /// Servers the person signed in to from the app, with their sessions (decision 020).
+    #[cfg(desktop)]
+    pub accounts: accounts::Accounts,
+    /// Folder watch: what the bound folders showed since the page last asked.
+    #[cfg(desktop)]
+    pub watcher: watch::Watcher,
 }
 
 impl AppState {
@@ -102,6 +135,16 @@ fn home_override() -> Option<PathBuf> {
     home.is_absolute().then_some(home)
 }
 
+/// Portable mode: a folder named `dynodoc-data` beside the program keeps the config, the local
+/// workspace and the web view's data there instead of in the per-user folders (the portable zip
+/// ships it empty; delete it to go back). The secrets of such a copy get a credential-store name of
+/// their own, so a portable copy and an installed one never share or overwrite each other's.
+fn portable_home() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?.join("dynodoc-data");
+    dir.is_dir().then_some(dir)
+}
+
 /// The server to open at start-up, and the saved one that is held back. A saved address is
 /// opened only when it matches its seal.
 fn split_loaded(
@@ -115,7 +158,11 @@ fn split_loaded(
 }
 
 fn resolve_state(app: &tauri::AppHandle) -> tauri::Result<AppState> {
-    let (config_dir, data_dir, webview_dir) = match home_override() {
+    let test_home = home_override();
+    let portable = test_home.is_none() && portable_home().is_some();
+    let home = test_home.or_else(portable_home);
+    let ordinary = home.is_none();
+    let (config_dir, data_dir, webview_dir) = match home {
         Some(home) => (
             home.join("config"),
             home.join("data"),
@@ -129,6 +176,33 @@ fn resolve_state(app: &tauri::AppHandle) -> tauri::Result<AppState> {
     };
     std::fs::create_dir_all(&config_dir)?;
     std::fs::create_dir_all(&data_dir)?;
+    #[cfg(desktop)]
+    let local = {
+        let exe_dir = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(std::path::Path::to_path_buf))
+            .unwrap_or_default();
+        local::Local::new(
+            &data_dir,
+            app.path().resource_dir().ok().as_deref(),
+            &exe_dir,
+            ordinary,
+            portable,
+        )
+    };
+    #[cfg(desktop)]
+    let agent = agent::Agent::new(
+        &config_dir,
+        &local::secrets::service_for(&data_dir, ordinary),
+    );
+    #[cfg(desktop)]
+    let accounts = {
+        let service = local::secrets::service_for(&data_dir, ordinary);
+        accounts::Accounts::new(
+            &config_dir,
+            local::secrets::Preferred::open(&config_dir.join("sessions"), &service),
+        )
+    };
     let (server, unconfirmed) = split_loaded(config::load(&config_dir, &data_dir));
     Ok(AppState {
         server: Mutex::new(server),
@@ -142,6 +216,16 @@ fn resolve_state(app: &tauri::AppHandle) -> tauri::Result<AppState> {
             .map_err(|e| std::io::Error::other(format!("no operating-system randomness: {e}")))?,
         signin: signin::Pending::default(),
         outbox: signin::Outbox::default(),
+        #[cfg(desktop)]
+        local,
+        #[cfg(desktop)]
+        picks: files::Picks::default(),
+        #[cfg(desktop)]
+        watcher: watch::Watcher::default(),
+        #[cfg(desktop)]
+        agent,
+        #[cfg(desktop)]
+        accounts,
     })
 }
 
@@ -159,8 +243,18 @@ pub fn run() {
                 .build(),
         );
         // A test home keeps its own folders; the plugin would write to the real profile.
-        if home_override().is_none() {
-            builder = builder.plugin(tauri_plugin_window_state::Builder::default().build());
+        if home_override().is_none() && portable_home().is_none() {
+            // The frame (decorations) is the code's choice, not something a saved state may undo, and
+            // the web window is placed fresh each time.
+            builder = builder.plugin(
+                tauri_plugin_window_state::Builder::default()
+                    .with_state_flags(
+                        tauri_plugin_window_state::StateFlags::all()
+                            - tauri_plugin_window_state::StateFlags::DECORATIONS,
+                    )
+                    .with_denylist(&[window::WEB])
+                    .build(),
+            );
         }
     }
 
@@ -188,10 +282,88 @@ pub fn run() {
             commands::svc_send,
             commands::prefs_load,
             commands::prefs_save,
+            #[cfg(desktop)]
+            cmd_local::local_status,
+            #[cfg(desktop)]
+            cmd_local::local_create_profile,
+            #[cfg(desktop)]
+            cmd_local::local_retry,
+            #[cfg(desktop)]
+            cmd_local::local_open_folder,
+            #[cfg(desktop)]
+            cmd_local::backup_export,
+            #[cfg(desktop)]
+            cmd_local::backup_import,
+            #[cfg(desktop)]
+            cmd_files::files_pick,
+            #[cfg(desktop)]
+            cmd_files::file_read,
+            #[cfg(desktop)]
+            cmd_files::file_export,
+            #[cfg(desktop)]
+            cmd_files::folder_bind,
+            #[cfg(desktop)]
+            cmd_files::folder_unbind,
+            #[cfg(desktop)]
+            cmd_files::folder_status,
+            #[cfg(desktop)]
+            cmd_files::watch_poll,
+            #[cfg(desktop)]
+            cmd_files::watch_seen,
+            #[cfg(desktop)]
+            cmd_agent::agent_config,
+            #[cfg(desktop)]
+            cmd_agent::agent_config_set,
+            #[cfg(desktop)]
+            cmd_agent::agent_consent,
+            #[cfg(desktop)]
+            cmd_agent::agent_key_set,
+            #[cfg(desktop)]
+            cmd_agent::agent_key_clear,
+            #[cfg(desktop)]
+            cmd_agent::agent_key_status,
+            #[cfg(desktop)]
+            cmd_agent::agent_keys_unlock,
+            #[cfg(desktop)]
+            cmd_agent::agent_preview,
+            #[cfg(desktop)]
+            cmd_agent::agent_run,
+            #[cfg(desktop)]
+            cmd_agent::agent_tool_result,
+            #[cfg(desktop)]
+            cmd_agent::agent_cancel,
+            #[cfg(desktop)]
+            cmd_agent::agent_usage,
+            #[cfg(desktop)]
+            cmd_accounts::accounts_list,
+            #[cfg(desktop)]
+            cmd_accounts::account_add,
+            #[cfg(desktop)]
+            cmd_accounts::account_remove,
+            #[cfg(desktop)]
+            cmd_accounts::account_signin_start,
+            #[cfg(desktop)]
+            cmd_accounts::account_signin_status,
+            #[cfg(desktop)]
+            cmd_accounts::account_signin_cancel,
+            #[cfg(desktop)]
+            cmd_accounts::account_signout,
+            #[cfg(desktop)]
+            cmd_accounts::account_check,
+            #[cfg(desktop)]
+            cmd_window::window_reload,
+            #[cfg(desktop)]
+            cmd_window::devtools_open,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
             app.manage(resolve_state(&handle)?);
+            // The workspace on this computer starts in the background while the window opens.
+            #[cfg(desktop)]
+            {
+                app.state::<AppState>().local.start();
+                cmd_files::spawn_watch_loop(&handle);
+            }
             window::create_main(&handle)?;
             // Links that arrived while this was still starting are handled here.
             window::watch_deep_links(&handle);
@@ -201,13 +373,37 @@ pub fn run() {
     #[cfg(desktop)]
     {
         builder = builder
-            .menu(menu::build)
+            .on_window_event(window::on_window_event)
             .on_menu_event(|app, event| menu::handle(app, event.id().as_ref()));
     }
+    // Windows and Linux: the client window has no menu bar (it draws its own) and the web window has
+    // its own menu. macOS: the one menu bar for both.
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder.menu(menu::build);
+    }
 
-    builder
-        .run(tauri::generate_context!())
-        .expect("error while running Dynodoc");
+    let app = builder
+        .build(tauri::generate_context!())
+        .expect("error while building Dynodoc");
+    app.run(|handle, event| {
+        // Closing the app closes the engine and the database first, cleanly.
+        #[cfg(desktop)]
+        if let tauri::RunEvent::ExitRequested { api, .. } = &event {
+            let state = handle.state::<AppState>();
+            if !state.local.is_closing() {
+                api.prevent_exit();
+                let local = state.local.clone();
+                let handle = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    local.shutdown().await;
+                    handle.exit(0);
+                });
+            }
+        }
+        #[cfg(not(desktop))]
+        let _ = (handle, &event);
+    });
 }
 
 #[cfg(test)]
@@ -241,6 +437,21 @@ mod tests {
             click_secret: String::new(),
             signin: signin::Pending::default(),
             outbox: signin::Outbox::default(),
+            #[cfg(desktop)]
+            local: local::Local::new(
+                std::path::Path::new("."),
+                None,
+                std::path::Path::new("."),
+                false,
+                false,
+            ),
+            picks: files::Picks::default(),
+            watcher: watch::Watcher::default(),
+            agent: agent::Agent::new(std::path::Path::new("."), "online.dynodoc.client.test"),
+            accounts: accounts::Accounts::new(
+                std::path::Path::new("."),
+                local::secrets::FileStore::new(std::path::Path::new("./test-sessions")),
+            ),
         }
     }
 

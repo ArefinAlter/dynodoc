@@ -23,6 +23,7 @@ export type View =
 export type SettingsSection =
   | 'general'
   | 'accounts'
+  | 'workspace'
   | 'appearance'
   | 'keybindings'
   | 'integrations'
@@ -166,6 +167,14 @@ export interface AgentMessage {
   at: number;
   calls?: ToolCall[];
   card?: AgentCard;
+  /** Cards drafted by a model's tool calls (the scripted agent uses `card`). */
+  cards?: AgentCard[];
+  /** Still arriving from the provider. */
+  streaming?: boolean;
+  /** Why the run ended early, in words. */
+  error?: string;
+  /** Which model answered: "provider · model", or empty for the prepared replies. */
+  model?: string;
 }
 
 export interface Thread {
@@ -175,6 +184,46 @@ export interface Thread {
   messages: AgentMessage[];
   createdAt: number;
   working: boolean;
+  /** "prepared" (no model) or the id of a provider entry in Settings, Providers. */
+  model: string;
+  /** Tokens this thread has used with a provider (from the app's ledger). */
+  tokens: number;
+}
+
+export interface ServerAccount {
+  id: string;
+  server: string;
+  host: string;
+  cloud: boolean;
+  signed_in: boolean;
+  name: string | null;
+  email: string | null;
+  added_at: number;
+}
+
+export interface ServerFlow {
+  state: 'none' | 'waiting' | 'done' | 'failed';
+  account_id: string | null;
+  pairing: string | null;
+  message: string;
+  /** How the server hands the sign-in back: this computer's own address, or a dynodoc:// link. */
+  via: 'loopback' | 'link';
+}
+
+/** What the app keeps for the agent (src-tauri/src/agent/config.rs) and what holds the keys. */
+export interface AgentCfg {
+  offline: boolean;
+  consent: Record<string, { host: string; at: number }>;
+  thread_token_cap: number;
+  day_token_cap: number;
+  day_cost_cap: number;
+  prices: Record<string, { input: number; output: number }>;
+  keys_where: string;
+  keys_in_credential_store: boolean;
+  keys_locked: boolean;
+  keys_file_exists: boolean;
+  day_tokens: number;
+  day_cost_micros: number;
 }
 
 export interface UiState {
@@ -217,8 +266,31 @@ export const state = {
     online: true,
   } as UiState,
   prefs: structuredCloneSafe(DEFAULT_PREFS),
-  /** Provider keys typed in Settings: in memory only, never rendered, never sent. */
+  /** Provider keys typed in Settings in a copy with no desktop app: in memory only, never rendered,
+   *  never sent. (In the app a key goes to the credential store and the page never holds it.) */
   keys: new Map<string, string>(),
+  /** The desktop app's agent settings (offline, consent, caps, prices); null until read. */
+  agentCfg: null as AgentCfg | null,
+  /** Servers the person signed in to from the app, and the local projects linked to them
+   *  (data/accounts.ts, data/sync.ts). */
+  servers: {
+    loaded: false,
+    cloud: '',
+    store: '',
+    accounts: [] as ServerAccount[],
+    flow: { state: 'none', account_id: null, pairing: null, message: '', via: 'loopback' } as ServerFlow,
+    /** What a request to the server is doing now, in words ("" when idle). */
+    busy: '',
+    /** Projects on each server the person is signed in to (by account id). */
+    projects: {} as Record<string, { id: string; name: string; description: string }[]>,
+    links: {} as Record<string, unknown>,
+    /** The last plan read for a local project's link, and what the person chose in it. */
+    plans: {} as Record<string, unknown>,
+    picks: {} as Record<string, Record<string, Record<string, 'local' | 'remote'>>>,
+    last: {} as Record<string, string>,
+    running: {} as Record<string, boolean>,
+    addDraft: '',
+  },
   /** The desktop shell's bridge, when this page runs inside the app's window. */
   desktop: false,
   /** The desktop app's version, from its get_state command. */
@@ -230,6 +302,34 @@ export const state = {
     saving: false,
     error: '',
     visitor: null as { display_name: string; expires_at: string } | null,
+    /** Which place the screens show: the workspace on this computer, the configured server, or
+     *  an account's server ("acct:<id>"); empty while nothing is connected. */
+    env: '' as string,
+  },
+  /** Folder watch (data/files.ts): files in bound folders the project does not have yet, the
+   *  last files saved by an editor and what became of them, and each project's folder. */
+  watch: {
+    newFiles: [] as { project_id: string; rel_path: string; name: string; kind: 'new' | 'changed'; document_id: string | null; base_seq: number | null; size: number; mtime_ms: number; token: string }[],
+    recent: [] as { docId: string; title: string; name: string; draftId: string; draftName: string; changes: number; at: number }[],
+    folders: {} as Record<string, string>,
+  },
+  /** The workspace on this computer (data/local.ts): its start-up and who the person is. */
+  local: {
+    /** Show the start-up screen instead of the app (until the workspace is ready or the person
+     *  chose the offline sample). */
+    splash: false,
+    phase: 'starting' as 'starting' | 'profile' | 'ready' | 'failed' | 'closing',
+    step: 'Starting',
+    detail: '' as string,
+    firstRun: false,
+    folder: '',
+    secretsIn: '',
+    restarts: 0,
+    profile: null as { name: string; email: string } | null,
+    /** Set while the app has the database closed for a backup or a restore. */
+    busy: '' as string,
+    /** The first-run form. */
+    form: { name: '', project: 'My documents', email: '', busy: false, error: '' },
   },
 };
 
