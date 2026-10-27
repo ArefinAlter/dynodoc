@@ -61,10 +61,12 @@ pub fn is_launcher(url: &Url, launcher: &Url) -> bool {
 }
 
 /// The one page the launcher origin serves as a window's document. (Tauri reports the first
-/// load as `/` and a later one as `/index.html`.) Any other path on that origin is never loaded
-/// as a window's page, and never uses up a grant.
+/// load as `/` and a later one as `/index.html`; WebKitGTK reports the first load of the root of a
+/// `tauri://` origin with NO path at all, which the `url` crate keeps as the empty path because the
+/// scheme is not a special one. It is the same document as `/`.) Any other path on that origin is
+/// never loaded as a window's page, and never uses up a grant.
 pub fn is_launcher_page(url: &Url, launcher: &Url) -> bool {
-    is_launcher(url, launcher) && matches!(url.path(), "/" | "/index.html")
+    is_launcher(url, launcher) && matches!(url.path(), "" | "/" | "/index.html")
 }
 
 /// WebView2 reports only main-frame navigations to the navigation handler. WebKitGTK and
@@ -577,6 +579,39 @@ mod tests {
                     "{path} (ambiguous {ambiguous})"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn the_root_without_a_path_is_the_launchers_page_where_the_scheme_keeps_it() {
+        // WebKitGTK asks the navigation handler about "tauri://localhost" (no slash). On Linux that
+        // is the launcher's first load; refusing it left a blank window. Only the root itself, only
+        // on the launcher's own origin, and only with the shell's permission.
+        let launcher = launcher_origin();
+        let s = server("https://app.dynodoc.online");
+        let origin = launcher.as_str().trim_end_matches('/').to_string();
+        let target = Url::parse(&origin).unwrap();
+        assert!(is_launcher_page(&target, &launcher), "{target}");
+        for ambiguous in [false, true] {
+            assert_eq!(
+                decide(&target, Some(&s), &launcher, true, ambiguous),
+                Decision::Allow
+            );
+            // Without the shell's permission it is refused like any other launcher address.
+            assert_eq!(
+                decide(&target, Some(&s), &launcher, false, ambiguous),
+                Decision::Deny
+            );
+        }
+        // Nothing else gains from it: other origins and other paths stay refused.
+        for other in [
+            "tauri://localhost.evil.example",
+            "tauri://localhost:8080",
+            "https://app.dynodoc.online",
+            "tauri://localhost/launcher.js",
+        ] {
+            let target = Url::parse(other).unwrap();
+            assert!(!is_launcher_page(&target, &launcher), "{other}");
         }
     }
 
