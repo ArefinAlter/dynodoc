@@ -9,8 +9,22 @@ fn commands() -> Vec<&'static str> {
     all.extend(crate::cmd_files::COMMANDS);
     all.extend(crate::cmd_agent::COMMANDS);
     all.extend(crate::cmd_accounts::COMMANDS);
+    all.extend(crate::cmd_window::COMMANDS);
     all
 }
+
+/// The window permissions the client window gets, and no others (capabilities/window-controls.json):
+/// minimise, maximise or restore, close, move that one window, read whether it is maximised, set its
+/// title. No resize, hide, destroy, always-on-top, window creation or event listening.
+const WINDOW_CONTROLS: [&str; 7] = [
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close",
+    "core:window:allow-start-dragging",
+    "core:window:allow-internal-toggle-maximize",
+    "core:window:allow-is-maximized",
+    "core:window:allow-set-title",
+];
 use serde_json::Value;
 use std::fs;
 use std::path::PathBuf;
@@ -63,11 +77,27 @@ fn remote_pages_get_no_capability_at_all() {
         assert_eq!(strings(&object["windows"]), ["main"], "{name}");
         assert!(!object.contains_key("webviews"), "{name}");
         let allowed: Vec<String> = commands().iter().map(|c| permission(c)).collect();
-        for item in strings(&object["permissions"]) {
-            assert!(
-                allowed.contains(&item),
-                "{name}: {item} is not one of the launcher commands"
+        if object["identifier"] == "window-controls" {
+            // The window-control capability holds the exact list above and nothing else, for the
+            // bundled client window only (local, never remote).
+            assert_eq!(
+                strings(&object["permissions"]),
+                WINDOW_CONTROLS,
+                "{name}: the window permissions are exactly the closed list"
             );
+            assert_eq!(object.get("local"), Some(&Value::Bool(true)), "{name}");
+            assert_eq!(
+                strings(&object["platforms"]),
+                ["linux", "windows"],
+                "{name}"
+            );
+        } else {
+            for item in strings(&object["permissions"]) {
+                assert!(
+                    allowed.contains(&item),
+                    "{name}: {item} is not one of the launcher commands"
+                );
+            }
         }
         // Every key must be one of the known ones (no `scope`, `deny`, `webviews` surprises).
         for key in object.keys() {
@@ -86,7 +116,7 @@ fn remote_pages_get_no_capability_at_all() {
             );
         }
     }
-    assert_eq!(files, 2, "capability files");
+    assert_eq!(files, 3, "capability files");
 }
 
 #[test]
@@ -145,6 +175,7 @@ fn build_script_and_handler_list_the_same_commands() {
         ("cmd_local", crate::cmd_local::COMMANDS.to_vec()),
         ("cmd_files", crate::cmd_files::COMMANDS.to_vec()),
         ("cmd_agent", crate::cmd_agent::COMMANDS.to_vec()),
+        ("cmd_window", crate::cmd_window::COMMANDS.to_vec()),
     ] {
         for command in list {
             assert!(
@@ -195,7 +226,7 @@ fn csp_is_strict_and_the_conf_has_no_dangerous_switches() {
     assert_eq!(conf["app"]["withGlobalTauri"], false);
     assert_eq!(
         strings(&security["capabilities"]),
-        ["launcher", "launcher-mobile"]
+        ["launcher", "launcher-mobile", "window-controls"]
     );
     let text = read("tauri.conf.json");
     for never in [
@@ -671,6 +702,74 @@ fn the_permission_handler_and_the_launcher_bridge_are_fixed_choices() {
     let js = read("../ui/launcher.js");
     assert!(js.contains("window.__TAURI_INTERNALS__"));
     assert!(!js.contains("__TAURI__."));
+}
+
+#[test]
+fn window_controls_belong_to_the_client_window_alone() {
+    let launcher = json("capabilities/launcher.json");
+    let mobile = json("capabilities/launcher-mobile.json");
+    let controls = json("capabilities/window-controls.json");
+    // No other capability holds a plugin permission of any kind: window, event, webview, app...
+    for (name, capability) in [("launcher", &launcher), ("launcher-mobile", &mobile)] {
+        for item in strings(&capability["permissions"]) {
+            assert!(!item.contains(':'), "{name}: {item} is not an app command");
+        }
+    }
+    // Not on a phone, not for a remote page, not for the web window (its label is in no capability).
+    assert_eq!(strings(&controls["windows"]), ["main"]);
+    assert!(controls.get("remote").is_none() && controls.get("webviews").is_none());
+    assert!(
+        !read("capabilities/window-controls.json").contains("core:default"),
+        "no bundle of permissions"
+    );
+    let window_rs = read("src/window.rs");
+    let production = &window_rs[..window_rs.find("#[cfg(test)]\nmod tests").unwrap()];
+    assert!(production.contains("pub const WEB: &str = \"web\";"));
+    for file in [
+        "capabilities/launcher.json",
+        "capabilities/launcher-mobile.json",
+        "capabilities/window-controls.json",
+    ] {
+        assert!(!read(file).contains("\"web\""), "{file}");
+    }
+}
+
+#[test]
+fn the_client_calls_only_the_window_commands_it_is_granted() {
+    // Every `plugin:window|name` in the client bundle is one of the closed list (the drag script that
+    // Tauri injects calls start_dragging and internal_toggle_maximize, which the list has too).
+    let granted: Vec<String> = WINDOW_CONTROLS
+        .iter()
+        .map(|p| p.trim_start_matches("core:window:allow-").replace('-', "_"))
+        .collect();
+    let js = read("../ui/launcher.js");
+    let mut used = std::collections::BTreeSet::new();
+    let mut rest = js.as_str();
+    while let Some(at) = rest.find("plugin:window|") {
+        let tail = &rest[at + "plugin:window|".len()..];
+        let name: String = tail
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+            .collect();
+        used.insert(name);
+        rest = &rest[at + 1..];
+    }
+    assert!(!used.is_empty(), "the client draws its own window controls");
+    for name in &used {
+        assert!(
+            granted.contains(name),
+            "the client calls plugin:window|{name}, which no capability grants"
+        );
+    }
+    // And no other plugin's commands.
+    for banned in [
+        "plugin:event|",
+        "plugin:webview|",
+        "plugin:app|",
+        "plugin:path|",
+    ] {
+        assert!(!js.contains(banned), "the client calls {banned}");
+    }
 }
 
 // ---- the committed Android project (src-tauri/gen/android) ----------------------------------

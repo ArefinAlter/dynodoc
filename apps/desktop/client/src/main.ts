@@ -23,7 +23,8 @@ import { agentView, startThread } from './views/agent.ts';
 import { settingsView, SECTIONS, captureRecording } from './views/settings.ts';
 import { branchContext, currentBranch, docOf } from './views/common.ts';
 import { fetchNow, sync, runBranchAction, switchProject, switchBranch, openProjectList, openBranchList } from './views/actions.ts';
-import { startBridge, launcherSection, focusSection, inDesktop, openServer } from './bridge.ts';
+import { startBridge, launcherSection, focusSection, inDesktop, desktopState } from './bridge.ts';
+import { initFrame, confirmFrame, syncTitle, frameless, openWorkspace, reloadClient, openDevtools, quit } from './ui/frame.ts';
 import { splash } from './views/splash.ts';
 import { startLocalWorkspace } from './data/local.ts';
 import { loadFolders, startWatch } from './data/files.ts';
@@ -97,6 +98,7 @@ function draw(): void {
   renderLayer(layer);
   restore(saved);
   document.title = state.ui.view === 'settings' ? 'Dynodoc' : `${VIEW_LABEL[state.ui.view]} · Dynodoc`;
+  syncTitle(document.title);
 }
 
 // ---- commands -----------------------------------------------------------------------------------
@@ -123,7 +125,12 @@ function commands(): Command[] {
   if (state.desktop && !isLive()) out.push({ id: 'visitor', label: 'Start a sample workspace on the pre-alpha server', group: 'Account', icon: 'globe', run: () => void startVisitor() });
   if (isLive()) out.push({ id: 'reload', label: 'Read everything from the server again', group: 'Account', icon: 'sync', run: () => void refresh() });
   if (isLive()) out.push({ id: 'signout', label: 'Sign out of the server', group: 'Account', icon: 'user', run: () => void signOut() });
-  if (state.desktop) out.push({ id: 'server', label: 'Open my server’s workspace in this window', group: 'Account', icon: 'globe', run: () => { openServer().then((s) => { if (!s) { state.ui.settings.section = 'accounts'; go('settings'); toast('info', 'Choose a server first'); } }).catch((e) => toast('error', e instanceof Error ? e.message : String(e))); } });
+  if (state.desktop) out.push({ id: 'server', label: 'Open my server’s web workspace (its own window)', group: 'Account', icon: 'globe', keywords: 'web workspace server browser', run: openWorkspace });
+  if (state.desktop) {
+    out.push({ id: 'app.reload', label: 'Reload the app', group: 'App', icon: 'sync', shortcut: 'Ctrl+R', run: reloadClient });
+    if (desktopState()?.devtools) out.push({ id: 'app.devtools', label: 'Open developer tools', group: 'App', icon: 'advanced', shortcut: 'F12', run: openDevtools });
+    if (frameless()) out.push({ id: 'app.quit', label: 'Quit Dynodoc', group: 'App', icon: 'x', shortcut: 'Alt+F4', run: quit });
+  }
   return out;
 }
 
@@ -161,6 +168,13 @@ function runCommand(cmd: string): void {
 function onKey(e: KeyboardEvent): void {
   if (captureRecording(e)) return;
   if (e.key === 'Escape') closeMenu();
+  // The reload the native menu used to carry (the app's command, since a plain reload of the client is
+  // refused by the shell).
+  if (state.desktop && !e.altKey && (e.key === 'F5' || ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'r'))) {
+    e.preventDefault();
+    reloadClient();
+    return;
+  }
   if (dialogOpen()) return;
   if (paletteIsOpen() && !(e.ctrlKey && e.key.toLowerCase() === 'k')) return;
   const target = e.target as HTMLElement | null;
@@ -188,6 +202,7 @@ async function boot(): Promise<void> {
     launcher.classList.add('is-embedded');
   }
   document.documentElement.classList.add('client');
+  initFrame();
   applyAppearance();
   setRenderer(draw);
   setAfterRender(() => {
@@ -210,6 +225,7 @@ async function boot(): Promise<void> {
     draw();
     const ds = await startBridge();
     if (ds) {
+      confirmFrame(ds.frame);
       state.desktopVersion = ds.version;
       await loadPrefs();
       applyAppearance();

@@ -7,11 +7,12 @@ import { state, render } from '../state.ts';
 import { button, field, input, notice } from '../ui/controls.ts';
 import { createProfile, openLocalFolder, retryLocal } from '../data/local.ts';
 import { resetSample } from '../state.ts';
+import { frameless } from '../ui/frame.ts';
 
 function card(...children: (HTMLElement | null)[]): HTMLElement {
   return h(
     'div',
-    { class: 'splash' },
+    { class: 'splash', 'data-tauri-drag-region': frameless() ? 'deep' : undefined },
     h('div', { class: 'splash-card card' }, h('div', { class: 'splash-brand' }, h('img', { src: `${__ASSET_BASE__}mark.svg`, alt: '', width: 22, height: 22 }), h('span', null, 'Dynodoc')), ...children),
   );
 }

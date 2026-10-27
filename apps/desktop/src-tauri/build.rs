@@ -53,6 +53,8 @@ const COMMANDS: &[&str] = &[
     "account_signin_cancel",
     "account_signout",
     "account_check",
+    "window_reload",
+    "devtools_open",
 ];
 
 fn main() {

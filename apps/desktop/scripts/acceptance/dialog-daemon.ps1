@@ -31,6 +31,7 @@ function Find-Control($dialog, $id, $class) {
 }
 function Answer($dialog, $text) {
   $edit = Find-Control $dialog '1148' 'Edit'
+  if (-not $edit) { $edit = Find-Control $dialog '1152' 'Edit' }
   $button = Find-Control $dialog '1' 'Button'
   if (-not $edit -or -not $button) { return $false }
   [void][Win]::SendMessage([IntPtr]$edit.Current.NativeWindowHandle, 0x000C, [IntPtr]::Zero, $text)

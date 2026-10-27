@@ -17,6 +17,7 @@ import { toast } from '../state.ts';
 import { isLive } from '../data/live.ts';
 import { accountOf, lastSynced, links } from '../data/accounts.ts';
 import { watchNotices } from './watchbar.ts';
+import { frameless, openAppMenu } from '../ui/frame.ts';
 
 interface NavItem {
   view: View;
@@ -86,6 +87,13 @@ function picker(label: string, value: string, iconName: string, onClick: (e: Mou
   );
 }
 
+/** The mark and the name. In a window the client frames itself, they are also the application menu's button. */
+function brand(): HTMLElement {
+  const mark = h('img', { src: `${__ASSET_BASE__}mark.svg`, alt: '', class: 'mark-img', width: 18, height: 18 });
+  if (!frameless()) return h('span', { class: 'brand' }, mark, h('span', { class: 'brand-name' }, 'Dynodoc'));
+  return h('button', { type: 'button', class: 'brand brand-btn', id: 'app-menu', title: 'Application menu', 'aria-label': 'Application menu', 'aria-haspopup': 'menu', onClick: (e: MouseEvent) => openAppMenu(e.currentTarget as HTMLElement) }, mark, h('span', { class: 'brand-name' }, 'Dynodoc'), icon('chevron', 12, 'icon brand-chev'));
+}
+
 function sidebar(): HTMLElement {
   const ctx = branchContext();
   const p = currentProject();
@@ -94,7 +102,7 @@ function sidebar(): HTMLElement {
   return h(
     'aside',
     { class: 'sidebar', 'aria-label': 'Navigation' },
-    h('div', { class: 'brand-row' }, h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Hide sidebar', title: 'Hide sidebar (Ctrl+\\)', onClick: () => { state.prefs.sidebarOpen = false; render(); } }, icon('sidebar', 16)), h('img', { src: `${__ASSET_BASE__}mark.svg`, alt: '', class: 'mark-img', width: 18, height: 18 }), h('span', { class: 'brand-name' }, 'Dynodoc')),
+    h('div', { class: 'brand-row', 'data-tauri-drag-region': frameless() ? 'deep' : undefined }, h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Hide sidebar', title: 'Hide sidebar (Ctrl+\\)', onClick: () => { state.prefs.sidebarOpen = false; render(); } }, icon('sidebar', 16)), brand()),
     h(
       'div',
       { class: 'pickers' },
@@ -154,8 +162,9 @@ function topbar(): HTMLElement {
   const fetching = state.ui.fetching;
   return h(
     'header',
-    { class: 'topbar' },
-    state.prefs.sidebarOpen ? null : h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Show sidebar', onClick: () => { state.prefs.sidebarOpen = true; render(); } }, icon('sidebar', 16)),
+    { class: 'topbar', 'data-tauri-drag-region': frameless() ? 'deep' : undefined },
+    state.prefs.sidebarOpen ? null : h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Show sidebar', title: 'Show sidebar (Ctrl+\\)', onClick: () => { state.prefs.sidebarOpen = true; render(); } }, icon('sidebar', 16)),
+    state.prefs.sidebarOpen || !frameless() ? null : h('button', { type: 'button', class: 'icon-btn', id: 'app-menu', 'aria-label': 'Application menu', title: 'Application menu', 'aria-haspopup': 'menu', onClick: (e: MouseEvent) => openAppMenu(e.currentTarget as HTMLElement) }, h('img', { src: `${__ASSET_BASE__}mark.svg`, alt: '', class: 'mark-img', width: 16, height: 16 })),
     h('nav', { class: 'crumbs-bar', 'aria-label': 'Breadcrumb' }, crumbs()),
     h('span', { class: 'spacer' }),
     h('span', { class: 'status-pills' },
@@ -165,7 +174,7 @@ function topbar(): HTMLElement {
           ? pill(state.live.saving ? 'Saving…' : state.live.env === 'local' ? 'On this computer' : state.db.remote?.visitor ? 'Sample workspace' : 'Live', state.live.saving ? 'info' : 'success', { mono: false, title: state.live.env === 'local' ? 'Your workspace is on this computer: its own database and engine, no account, no network. Everything you do is saved here.' : state.db.remote?.visitor ? `Your own sample workspace on the server, until ${new Date(state.db.remote.visitor.expires_at).toLocaleString()}. Everything you do is saved there.` : 'Showing your workspace on the server. Everything you do is saved there.' })
           : pill('Sample data', 'warning', { mono: false, title: 'Offline sample: nothing leaves this window. See Settings, Accounts to use a server.' }),
       ds?.server
-        ? h('button', { type: 'button', class: 'server-btn', title: 'Open your workspace on this server in this window', onClick: () => { openServer().catch((e) => toast('error', e instanceof Error ? e.message : String(e))); } }, icon('globe', 13), new URL(ds.server).host, icon('external', 12))
+        ? h('button', { type: 'button', class: 'server-btn', title: 'Open your workspace on this server in its own window', onClick: () => { openServer().catch((e) => toast('error', e instanceof Error ? e.message : String(e))); } }, icon('globe', 13), new URL(ds.server).host, icon('external', 12))
         : serverChip(ds),
       ctx.kind === 'draft' && (ctx.behind ?? 0) ? pill(`${ctx.behind} behind main`, 'warning', { mono: false }) : null,
     ),

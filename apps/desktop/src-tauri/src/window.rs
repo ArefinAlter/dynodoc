@@ -1,4 +1,12 @@
-//! The one window, and the hooks that apply `nav`, `handoff`, `deeplink` and `server` to it.
+//! The app's windows, and the hooks that apply `nav`, `handoff`, `deeplink` and `server` to them.
+//!
+//! On a computer there are two kinds. The CLIENT window (`main`) is the app itself: it shows the
+//! bundled Dynodoc client, has no native frame (the client draws the title bar and the window
+//! controls, as T3 Code does) and alone may call the app's commands and the window-control commands.
+//! The WEB window (`web`) shows the configured server's own pages ("Web workspace"): the system's
+//! frame, the system's menu, a title that says whose page it is, and no capability at all, so a page
+//! from a server can never reach a command, move the client window or draw over it. A phone has one
+//! window, as before.
 
 use crate::handoff::{self, Source};
 use crate::nav::{self, Decision, NewWindow};
@@ -12,6 +20,29 @@ use tauri_plugin_opener::OpenerExt;
 use url::Url;
 
 pub const MAIN: &str = "main";
+/// The window that shows the configured server's own pages (desktop only).
+pub const WEB: &str = "web";
+
+/// Which of the two windows a hook belongs to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(desktop), allow(dead_code))]
+enum Role {
+    Client,
+    Web,
+}
+
+impl Role {
+    /// May this window load the configured server's pages? The desktop client never does (it is the
+    /// privileged window); the web window always may; a phone's one window does.
+    fn shows_server(self) -> bool {
+        cfg!(mobile) || self == Role::Web
+    }
+
+    /// May this window load the bundled launcher page (the client)? The web window never may.
+    fn shows_launcher(self) -> bool {
+        cfg!(mobile) || self == Role::Client
+    }
+}
 
 /// Recognises a person's click and makes `target="_blank"` reach the new-window rule (see
 /// the file). `__GESTURE_SECRET__` is replaced by a secret made at start-up.
@@ -65,46 +96,58 @@ fn trace_note(what: &str, note: &dyn std::fmt::Debug) {
     let _ = (what, note);
 }
 
-/// Only one thread creates the window at a time (start-up and a second launch meanwhile).
+/// Only one thread creates a window at a time (start-up and a second launch meanwhile).
 static CREATE: Mutex<()> = Mutex::new(());
 
-/// Create the window. On desktop it opens on the launcher page, which is also the client: with a
-/// server chosen and a session for it the client shows that server's workspace (remote.rs), and
-/// View > Web workspace opens the server's own pages in this window. On phones it opens on the
-/// configured server when there is one, otherwise on the launcher.
-/// Returns the existing window if there already is one.
-pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
-    let _creating = CREATE.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(existing) = main_window(app) {
-        return Ok(existing);
-    }
-    let state = app.state::<AppState>();
-    let start = match state.server() {
-        Some(server) if cfg!(mobile) => WebviewUrl::External(server.entry()),
-        _ => {
-            // The shell itself starts at the launcher: the one navigation it may make there.
-            state.arm_launcher_grant();
-            WebviewUrl::App("index.html".into())
-        }
-    };
+/// What the window shows before the page has painted (the client's `--background`, light and dark), so
+/// a window never flashes the wrong colour at start.
+#[cfg(desktop)]
+const BACKGROUND_LIGHT: tauri::window::Color = tauri::window::Color(253, 253, 253, 255);
+#[cfg(desktop)]
+const BACKGROUND_DARK: tauri::window::Color = tauri::window::Color(10, 10, 10, 255);
 
+/// Will the client start dark? The person's saved choice, else the system's.
+#[cfg(desktop)]
+fn starts_dark(state: &AppState, window: &WebviewWindow) -> bool {
+    let prefs = crate::remote::load_prefs(&state.config_dir);
+    match prefs.get("theme").and_then(|theme| theme.as_str()) {
+        Some("dark") => true,
+        Some("light") => false,
+        _ => window
+            .theme()
+            .is_ok_and(|theme| theme == tauri::Theme::Dark),
+    }
+}
+
+/// What both kinds of window share: the navigation, new-window and page-load rules (each hook knows
+/// which kind of window it belongs to), the click script, the inspector switch and the web view's
+/// data folder.
+fn base_builder<'a>(
+    app: &'a AppHandle,
+    label: &str,
+    start: WebviewUrl,
+    role: Role,
+) -> WebviewWindowBuilder<'a, tauri::Wry, AppHandle> {
+    let state = app.state::<AppState>();
     let navigation_app = app.clone();
     let new_window_app = app.clone();
-    let mut builder = WebviewWindowBuilder::new(app, MAIN, start)
-        .title("Dynodoc")
+    let mut builder = WebviewWindowBuilder::new(app, label, start)
         .devtools(devtools_enabled())
         .on_navigation(move |url| {
             let state = navigation_app.state::<AppState>();
             let launcher = nav::launcher_origin();
-            // The launcher loads only for a navigation the shell started (one-shot).
-            // Only the launcher's own page can use the grant: nothing else on that origin does.
-            let launcher_allowed =
-                nav::launcher_load_allowed(url, &launcher, state.server().is_some(), || {
+            // The client window is decided with NO server, so none of the server's pages can load in
+            // the window that may call the app's commands: they are links out, or refused.
+            let server = state.server().filter(|_| role.shows_server());
+            // The launcher loads only for a navigation the shell started (one-shot), and never in the
+            // web window. Only the launcher's own page can use the grant: nothing else on that origin does.
+            let launcher_allowed = role.shows_launcher()
+                && nav::launcher_load_allowed(url, &launcher, state.server().is_some(), || {
                     state.take_launcher_grant()
                 });
             let decision = nav::decide(
                 url,
-                state.server().as_ref(),
+                server.as_ref(),
                 &launcher,
                 launcher_allowed,
                 nav::frames_are_ambiguous(),
@@ -136,16 +179,19 @@ pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         })
         .on_new_window(move |url, _features| {
             let state = new_window_app.state::<AppState>();
+            let server = state.server().filter(|_| role.shows_server());
             let action = nav::new_window(
                 &url,
-                state.server().as_ref(),
+                server.as_ref(),
                 &nav::launcher_origin(),
                 &state.click_secret,
             );
             match action {
                 NewWindow::NavigateHere(target) => {
+                    // Only a window that shows the server's pages is ever told so (a phone's one
+                    // window, or the web window): the target is a page of that server.
                     trace("new window", &url, &"navigate here");
-                    navigate_main(&new_window_app, target)
+                    navigate_web(&new_window_app, target)
                 }
                 NewWindow::OpenExternal(target) => {
                     trace("new window", &url, &"page asks to open");
@@ -160,14 +206,20 @@ pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
             }
             NewWindowResponse::Deny
         })
-        .on_page_load(|window, payload| {
-            // The title always names the server the page is from.
+        .on_page_load(move |window, payload| {
             if let Some(state) = window.app_handle().try_state::<AppState>() {
-                let title = nav::window_title(payload.url(), state.server().as_ref());
+                // The title always says where the page is from; the web window says it is the server's.
+                let server = state.server().filter(|_| role.shows_server());
+                let title = if role == Role::Web {
+                    nav::web_title(payload.url(), server.as_ref())
+                } else {
+                    nav::window_title(payload.url(), server.as_ref())
+                };
                 let _ = window.set_title(&title);
                 // The browser sign-in's last step: the finish page has loaded, so hand it the
                 // fragment the shell is holding for it (once, only to that page; see signin.rs).
                 if matches!(payload.event(), PageLoadEvent::Finished)
+                    && role.shows_server()
                     && nav::is_finish_page(payload.url(), state.server().as_ref())
                 {
                     // The fragment is only for the server it was made for (the outbox compares), and
@@ -211,28 +263,106 @@ pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     }
     #[cfg(desktop)]
     {
-        builder = builder
-            .initialization_script(link_script(&state.click_secret))
-            .inner_size(1280.0, 820.0)
-            .min_inner_size(800.0, 560.0)
-            .center()
-            // Shown below, after the window-state plugin has put it back where it was.
-            .visible(false);
+        builder = builder.initialization_script(link_script(&state.click_secret));
     }
     if let Some(dir) = &state.webview_dir {
         builder = builder.data_directory(dir.clone());
     }
+    builder
+}
 
-    let window = builder.build()?;
+/// What a window gets once it exists: the app's name in the web view's user agent where it can be
+/// added, the colour shown before the page paints (client window), and then the window itself.
+fn finish_window(window: WebviewWindow, role: Role) -> WebviewWindow {
     // Names the app's own window to the server (decision 017). Where this build cannot do that
     // the browser sign-in is not offered (`signin::APP_TOKEN`).
     #[cfg(windows)]
     append_app_token(&window);
     #[cfg(desktop)]
-    {
+    if role == Role::Client {
+        if let Some(state) = window.app_handle().try_state::<AppState>() {
+            let color = if starts_dark(&state, &window) {
+                BACKGROUND_DARK
+            } else {
+                BACKGROUND_LIGHT
+            };
+            let _ = window.set_background_color(Some(color));
+        }
+        // Shown now, after the window-state plugin has put it back where it was.
         let _ = window.show();
         let _ = window.set_focus();
     }
+    #[cfg(not(desktop))]
+    let _ = role;
+    window
+}
+
+/// Create the client window. On desktop it opens on the launcher page, which is also the client: with
+/// a server chosen and a session for it the client shows that server's workspace (remote.rs), and
+/// "Web workspace" opens the server's own pages in the web window. On phones it opens on the
+/// configured server when there is one, otherwise on the launcher.
+/// Returns the existing window if there already is one.
+pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
+    let _creating = CREATE.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(existing) = main_window(app) {
+        return Ok(existing);
+    }
+    let state = app.state::<AppState>();
+    let start = match state.server() {
+        Some(server) if cfg!(mobile) => WebviewUrl::External(server.entry()),
+        _ => {
+            // The shell itself starts at the launcher: the one navigation it may make there.
+            state.arm_launcher_grant();
+            WebviewUrl::App("index.html".into())
+        }
+    };
+    let mut builder = base_builder(app, MAIN, start, Role::Client).title("Dynodoc");
+    #[cfg(desktop)]
+    {
+        builder = builder
+            .inner_size(1280.0, 820.0)
+            .min_inner_size(800.0, 560.0)
+            .center()
+            // Shown in `finish_window`, after the window-state plugin has put it back where it was.
+            .visible(false);
+        // Windows and Linux: no system title bar; the client draws the bar and the controls, and the
+        // window keeps its shadow, rounded corners (Windows 11) and resize borders. macOS keeps
+        // the system's frame and menu bar.
+        #[cfg(not(target_os = "macos"))]
+        {
+            builder = builder.decorations(false);
+        }
+        #[cfg(windows)]
+        {
+            builder = builder.shadow(true);
+        }
+    }
+    Ok(finish_window(builder.build()?, Role::Client))
+}
+
+/// Show `url`, a page of the configured server, in the web window: created if there is none yet,
+/// otherwise brought forward and sent there. The web window has the system's frame and menu, a title
+/// that says whose page it is, and no capability: nothing in it can call a command.
+#[cfg(desktop)]
+pub fn create_web(app: &AppHandle, url: Url) -> tauri::Result<WebviewWindow> {
+    let _creating = CREATE.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(existing) = web_window(app) {
+        let _ = existing.unminimize();
+        let _ = existing.show();
+        let _ = existing.set_focus();
+        let _ = existing.navigate(url);
+        return Ok(existing);
+    }
+    let builder = base_builder(app, WEB, WebviewUrl::External(url), Role::Web)
+        .title("Dynodoc web workspace")
+        .inner_size(1180.0, 800.0)
+        .min_inner_size(640.0, 480.0)
+        .center();
+    // Windows and Linux: this window's own menu (on macOS the one menu bar serves both windows).
+    #[cfg(not(target_os = "macos"))]
+    let builder = builder.menu(crate::menu::build_web(app)?);
+    let window = finish_window(builder.build()?, Role::Web);
+    let _ = window.set_focus();
     Ok(window)
 }
 
@@ -278,6 +408,40 @@ pub fn main_window(app: &AppHandle) -> Option<WebviewWindow> {
     app.get_webview_window(MAIN)
 }
 
+/// The window that shows the configured server's own pages, if it is open.
+#[cfg(desktop)]
+pub fn web_window(app: &AppHandle) -> Option<WebviewWindow> {
+    app.get_webview_window(WEB)
+}
+
+/// Window events the app cares about. The client window is the app: closing it ends the app, so
+/// the web window goes with it (it would otherwise keep the app alive with no way back to the client).
+#[cfg(desktop)]
+pub fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
+    if window.label() == MAIN && matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
+        if let Some(web) = web_window(window.app_handle()) {
+            let _ = web.destroy();
+        }
+    }
+}
+
+/// Show `url`, a page of the configured server, in a window of its own that can only show web pages
+/// (the web window on a computer; a phone's one window). Runs on a worker thread so it can be called
+/// from inside a webview callback or a command.
+#[cfg(desktop)]
+pub fn navigate_web(app: &AppHandle, url: Url) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let _ = create_web(&app, url);
+    });
+}
+
+/// A phone has the one window: the server's pages load there.
+#[cfg(mobile)]
+pub fn navigate_web(app: &AppHandle, url: Url) {
+    navigate_main(app, url);
+}
+
 /// Bring the window forward (a second launch, a dynodoc:// link). Does nothing before the
 /// app has finished starting (its state does not exist yet).
 pub fn focus_main(app: &AppHandle) {
@@ -301,8 +465,9 @@ pub fn focus_main(app: &AppHandle) {
     let _ = window;
 }
 
-/// Load `url` in the window. It goes through `on_navigation` like any other navigation; the
-/// launcher is allowed through it only because this call said so. Runs on a worker thread so
+/// Load `url` in the client window (a phone's one window). It goes through `on_navigation` like any
+/// other navigation; the launcher is allowed through it only because this call said so. On a computer
+/// the client window never loads the server's pages (use `navigate_web`). Runs on a worker thread so
 /// it can be called from inside a webview callback.
 pub fn navigate_main(app: &AppHandle, url: Url) {
     if nav::is_launcher(&url, &nav::launcher_origin()) {
@@ -333,6 +498,18 @@ pub fn reload_main(app: &AppHandle) {
         }
     }
     let _ = window.reload();
+}
+
+/// Reload the window that has the focus: the web window when it does, otherwise the client.
+#[cfg(desktop)]
+pub fn reload_focused(app: &AppHandle) {
+    if let Some(web) = web_window(app) {
+        if web.is_focused().unwrap_or(false) {
+            let _ = web.reload();
+            return;
+        }
+    }
+    reload_main(app);
 }
 
 pub fn show_launcher(app: &AppHandle, section: Option<&str>) {
@@ -452,8 +629,7 @@ fn finish_browser_sign_in(app: &AppHandle, state: &AppState, code: &str, link_st
             state
                 .outbox
                 .put(finish.fragment(), &server.as_text(), signin::Moment::now());
-            focus_main(app);
-            navigate_main(app, server.finish_url());
+            navigate_web(app, server.finish_url());
         }
         Err(refusal) => {
             trace_note("sign-in link refused", &refusal);
@@ -506,10 +682,8 @@ pub fn open_deep_link(app: &AppHandle, raw: &str) {
         .path()
         .and_then(|path| state.server().and_then(|s| s.join(&path)))
     {
-        Some(url) => {
-            focus_main(app);
-            navigate_main(app, url);
-        }
+        // A page of the configured server opens in the web window; the client window stays the client.
+        Some(url) => navigate_web(app, url),
         None => show_launcher(app, None),
     }
 }
@@ -722,7 +896,7 @@ mod tests {
         assert!(flat(finish).contains(
             "state.outbox.put(finish.fragment(),&server.as_text(),signin::Moment::now());"
         ));
-        assert!(finish.contains("navigate_main(app, server.finish_url());"));
+        assert!(finish.contains("navigate_web(app, server.finish_url());"));
         // The secrets reach no address the window requests.
         for banned in ["eprintln", "println", "format!", "trace("] {
             assert!(
@@ -811,5 +985,84 @@ mod tests {
         assert_eq!(production.matches("nav::needs_sign_in(").count(), 1);
         // Decided from the finished page's address alone.
         assert!(production[gate..call].contains("PageLoadEvent::Finished"));
+    }
+
+    #[test]
+    fn the_servers_pages_open_in_the_web_window_and_never_in_the_client_window() {
+        // The finish page, a deep link's page and a same-server new window all go to the web window.
+        let finish = body("fn finish_browser_sign_in(");
+        assert!(finish.contains("navigate_web(app, server.finish_url());"));
+        assert!(
+            !finish.contains("navigate_main("),
+            "the client window stays the client"
+        );
+        let open = body("pub fn open_deep_link(");
+        assert!(open.contains("Some(url) => navigate_web(app, url),"));
+        assert!(!open.contains("navigate_main(app, url)"));
+        // `navigate_main` is for the launcher: every call in this file passes a launcher address (or,
+        // on phones only, the server's entry for the one window).
+        let all = flat(production());
+        assert_eq!(all.matches("navigate_main(").count(), 4, "{all}");
+        assert!(all.contains("navigate_main(app,nav::launcher_url(section))"));
+        assert!(all.contains("navigate_main(&navigation_app,entry)"));
+        assert!(all.contains("navigate_main(app,url);}"), "phones only");
+    }
+
+    #[test]
+    fn each_window_kind_is_decided_with_its_own_rules() {
+        let production = production();
+        let flat_all = flat(production);
+        // The client is decided with no server and the web window never takes the launcher grant.
+        assert!(flat_all.contains("letserver=state.server().filter(|_|role.shows_server());"));
+        assert!(flat_all
+            .contains("letlauncher_allowed=role.shows_launcher()&&nav::launcher_load_allowed("));
+        assert!(flat_all.contains("nav::decide(url,server.as_ref(),&launcher,launcher_allowed,"));
+        assert!(flat_all.contains("nav::new_window(&url,server.as_ref(),"));
+        // The roles.
+        assert!(flat_all.contains("fnshows_server(self)->bool{cfg!(mobile)||self==Role::Web}"));
+        assert!(flat_all.contains("fnshows_launcher(self)->bool{cfg!(mobile)||self==Role::Client}"));
+        // Only the client builder names the client's label; only the web builder the web label.
+        assert!(flat_all.contains("base_builder(app,MAIN,start,Role::Client)"));
+        assert!(flat_all.contains("base_builder(app,WEB,WebviewUrl::External(url),Role::Web)"));
+    }
+
+    #[test]
+    fn the_client_window_has_no_frame_and_the_web_window_has_the_systems() {
+        let main = body("pub fn create_main(");
+        // No system title bar on Windows and Linux (macOS keeps the system's); the shadow is Windows'.
+        assert!(main.contains(
+            "#[cfg(not(target_os = \"macos\"))]\n        {\n            builder = builder.decorations(false);\n        }"
+        ));
+        assert!(main.contains(
+            "#[cfg(windows)]\n        {\n            builder = builder.shadow(true);\n        }"
+        ));
+        assert_eq!(
+            production().matches(".decorations(").count(),
+            1,
+            "only the client window is frameless"
+        );
+        // The web window is created from an external address, with a menu of its own, and gets no
+        // click on the client's label.
+        let web = body("pub fn create_web(");
+        assert!(web.contains("WebviewUrl::External(url)"));
+        assert!(web.contains("crate::menu::build_web(app)?"));
+        assert!(!web.contains("MAIN"));
+        // The client window closing ends the app: the web window goes with it.
+        let event = flat(body("pub fn on_window_event("));
+        assert!(event.contains("window.label()==MAIN"));
+        assert!(event.contains("tauri::WindowEvent::CloseRequested"));
+        assert!(event.contains("web.destroy()"));
+    }
+
+    #[test]
+    fn both_windows_get_the_apps_name_in_the_user_agent_and_the_click_script() {
+        // One builder makes both kinds of window, so the script that reads clicks (and the inspector
+        // switch) is the same in both, and the finish page's user agent is added in one place.
+        let production = production();
+        assert_eq!(production.matches("WebviewWindowBuilder::new(").count(), 1);
+        let finish = body("fn finish_window(");
+        assert!(finish.contains("append_app_token(&window);"));
+        // The colour before the first paint is the client's only.
+        assert!(flat(finish).contains("ifrole==Role::Client{"));
     }
 }

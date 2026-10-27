@@ -107,9 +107,9 @@ function accounts(): Child {
     )),
     serversSection(),
     section(
-      state.desktop ? 'Web workspace in this window' : 'Dynodoc server',
+      state.desktop ? 'Web workspace in its own window' : 'Dynodoc server',
       state.desktop
-        ? 'Optional and separate from syncing: this opens a server’s own web workspace in this window in place of the workspace on this computer, with its own sign-in kept by the window, and holds this computer’s signing key for the Office add-ins.'
+        ? 'Optional and separate from syncing: this opens a server’s own web workspace in a window of its own (the system’s frame, marked as the server’s page, with no access to this app), with its own sign-in kept by that window, and holds this computer’s signing key for the Office add-ins.'
         : 'Signing in to a server and keeping a key for this computer are in the desktop app. This copy runs on sample data and connects to nothing.',
       state.desktop ? slot : notice('info', 'Pre-alpha release on sample data: no server, no sign-in. Install the desktop app to connect to the Dynodoc cloud or your own server.'),
     ),

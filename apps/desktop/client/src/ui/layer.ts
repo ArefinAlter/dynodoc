@@ -18,6 +18,8 @@ export interface MenuItem {
   danger?: boolean;
   separator?: boolean;
   heading?: string;
+  /** A link out (opens in the system browser); the menu closes after the click has been handled. */
+  href?: string;
   onSelect?: () => void;
 }
 
@@ -49,6 +51,15 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], o: { width?: nu
     items.map((it) => {
       if (it.separator) return h('div', { class: 'menu-sep', role: 'separator' });
       if (it.heading) return h('div', { class: 'menu-heading' }, it.heading);
+      if (it.href) {
+        return h(
+          'a',
+          { class: 'menu-item', role: 'menuitem', href: it.href, target: '_blank', rel: 'noopener noreferrer', onClick: () => { setTimeout(closeMenu, 0); } },
+          h('span', { class: 'menu-icon' }, it.icon ? icon(it.icon, 14) : null),
+          h('span', { class: 'menu-label' }, h('span', null, it.label)),
+          icon('external', 12),
+        );
+      }
       return h(
         'button',
         {

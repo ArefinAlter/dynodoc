@@ -60,6 +60,11 @@ pub struct StateView {
     /// Whether this build can sign in with the system browser: only where its web view names the
     /// app to the server (`signin::APP_TOKEN`); elsewhere the button is not shown.
     browser_signin: bool,
+    /// `custom` when this window has no native frame and the page must draw its own title bar and
+    /// window controls (Windows and Linux); `native` when the system draws them (macOS, phones).
+    frame: &'static str,
+    /// Whether this build can open the web view's inspector (debug builds only).
+    devtools: bool,
 }
 
 #[derive(Serialize)]
@@ -100,10 +105,17 @@ pub fn get_state(webview: Webview) -> Result<StateView, String> {
         unconfirmed: state.unconfirmed().map(|s| s.as_text()),
         tools: cfg!(desktop),
         browser_signin: signin::APP_TOKEN,
+        frame: if webview.window().is_decorated().unwrap_or(true) {
+            "native"
+        } else {
+            "custom"
+        },
+        devtools: window::devtools_enabled(),
     })
 }
 
-/// Validate, remember and open a server. Returns the normalised address.
+/// Validate, remember and open a server in the web window (the client window never shows a server's
+/// pages). Returns the normalised address.
 #[tauri::command]
 pub fn set_server(webview: Webview, address: String) -> Result<String, String> {
     require_launcher(webview.url())?;
@@ -113,11 +125,11 @@ pub fn set_server(webview: Webview, address: String) -> Result<String, String> {
     config::save(&state.config_dir, &state.data_dir, &origin)
         .map_err(|_| "Your choice could not be saved on this computer.".to_string())?;
     state.set_server(origin.clone());
-    window::navigate_main(app, origin.entry());
+    window::navigate_web(app, origin.entry());
     Ok(origin.as_text())
 }
 
-/// Open a pasted sign-in link in this window (see `server::sign_in_url`).
+/// Open a pasted sign-in link in the web window (see `server::sign_in_url`).
 #[tauri::command]
 pub fn open_sign_in_link(webview: Webview, link: String) -> Result<(), String> {
     require_launcher(webview.url())?;
@@ -126,7 +138,7 @@ pub fn open_sign_in_link(webview: Webview, link: String) -> Result<(), String> {
         .server()
         .ok_or_else(|| "Choose a server first.".to_string())?;
     let target = sign_in_url(&server, &link).map_err(|e| e.to_string())?;
-    window::navigate_main(app, target);
+    window::navigate_web(app, target);
     Ok(())
 }
 
@@ -673,7 +685,7 @@ mod tests {
     fn every_command_takes_the_second_lock_first() {
         // Source check: each `#[tauri::command]` function begins with require_launcher, so
         // removing the call from one of them is caught here. Every command module is checked.
-        let modules: [(&str, &str, &[&str]); 5] = [
+        let modules: [(&str, &str, &[&str]); 6] = [
             ("commands.rs", include_str!("commands.rs"), &COMMANDS),
             (
                 "cmd_local.rs",
@@ -694,6 +706,11 @@ mod tests {
                 "cmd_accounts.rs",
                 include_str!("cmd_accounts.rs"),
                 &crate::cmd_accounts::COMMANDS,
+            ),
+            (
+                "cmd_window.rs",
+                include_str!("cmd_window.rs"),
+                &crate::cmd_window::COMMANDS,
             ),
         ];
         for (file, source, names) in modules {

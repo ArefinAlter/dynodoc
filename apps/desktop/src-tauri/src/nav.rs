@@ -308,6 +308,19 @@ pub fn window_title(url: &Url, server: Option<&ServerOrigin>) -> String {
     }
 }
 
+/// The title of the web workspace window, which shows the configured server's own pages (it has no
+/// native access and its frame is the system's, so it never looks like the app's own window). The
+/// title says what it is and whose page it shows, so the person can always tell.
+pub fn web_title(url: &Url, server: Option<&ServerOrigin>) -> String {
+    match (server, url.host_str()) {
+        (Some(server), Some(host)) if server.matches(url) => match url.port() {
+            Some(port) => format!("Dynodoc web workspace - {host}:{port} (the server's page)"),
+            None => format!("Dynodoc web workspace - {host} (the server's page)"),
+        },
+        _ => "Dynodoc web workspace".to_string(),
+    }
+}
+
 /// A URL for the debug log: path only, with a query shown as `?...` and no fragment, so a
 /// sign-in token never reaches a log. A click marker's path IS the click secret, so it is
 /// never printed. (Only debug builds log, so a release build never calls it.)
@@ -1067,6 +1080,69 @@ mod tests {
             "Dynodoc - xn--bcher-kva.example",
             "the ASCII form shows, so a look-alike is visible"
         );
+    }
+
+    #[test]
+    fn the_web_workspace_title_says_it_is_the_servers_page() {
+        let s = server("https://app.dynodoc.online");
+        let t = |u: &str| web_title(&Url::parse(u).unwrap(), Some(&s));
+        assert_eq!(
+            t("https://app.dynodoc.online/workspace"),
+            "Dynodoc web workspace - app.dynodoc.online (the server's page)"
+        );
+        let local = server("http://127.0.0.1:8080");
+        assert_eq!(
+            web_title(
+                &Url::parse("http://127.0.0.1:8080/x").unwrap(),
+                Some(&local)
+            ),
+            "Dynodoc web workspace - 127.0.0.1:8080 (the server's page)"
+        );
+        // Nothing that is not the configured server gets a host in the title.
+        assert_eq!(t("https://evil.example/"), "Dynodoc web workspace");
+        assert_eq!(
+            web_title(&launcher_url(None), None),
+            "Dynodoc web workspace"
+        );
+    }
+
+    #[test]
+    fn the_desktop_client_window_is_decided_without_a_server() {
+        // The client window (the frameless one that may call the app's commands) is decided with NO
+        // server, so none of the server's pages can load in it: they are links out, or refused.
+        let s = server("https://app.dynodoc.online");
+        let launcher = launcher_origin();
+        for page in [
+            "https://app.dynodoc.online/workspace",
+            "https://app.dynodoc.online/app-signin/finish",
+            "https://app.dynodoc.online/",
+        ] {
+            let url = Url::parse(page).unwrap();
+            assert_ne!(
+                decide(&url, None, &launcher, true, false),
+                Decision::Allow,
+                "{page}"
+            );
+            // Whereas the web window, decided with the server, does load it (finish page aside).
+            if !page.contains("finish") {
+                assert_eq!(
+                    decide(&url, Some(&s), &launcher, false, false),
+                    Decision::Allow,
+                    "{page}"
+                );
+            }
+        }
+        // And the web window never loads the launcher, even when asked to.
+        assert_eq!(
+            decide(&launcher_url(None), Some(&s), &launcher, false, false),
+            Decision::Deny
+        );
+        // A request for a new window from the client never navigates "here" to a server page.
+        let url = Url::parse("https://app.dynodoc.online/workspace").unwrap();
+        assert!(!matches!(
+            new_window(&url, None, &launcher, SECRET),
+            NewWindow::NavigateHere(_)
+        ));
     }
 
     #[test]

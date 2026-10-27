@@ -38,6 +38,7 @@ Write-Output ('dialog: ' + $dialog.Current.Name)
 Start-Sleep -Milliseconds 500
 function Answer($text) {
   $edit = Find-Control $dialog '1148' 'Edit'
+  if (-not $edit) { $edit = Find-Control $dialog '1152' 'Edit' }
   $open = Find-Control $dialog '1' 'Button'
   if (-not $edit -or -not $open) { Write-Output 'controls not found'; exit 3 }
   [void][Win]::SendMessage([IntPtr]$edit.Current.NativeWindowHandle, 0x000C, [IntPtr]::Zero, $text)

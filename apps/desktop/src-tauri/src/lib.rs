@@ -18,6 +18,8 @@ mod cmd_agent;
 mod cmd_files;
 #[cfg(desktop)]
 mod cmd_local;
+#[cfg(desktop)]
+mod cmd_window;
 mod commands;
 mod config;
 mod deeplink;
@@ -242,7 +244,17 @@ pub fn run() {
         );
         // A test home keeps its own folders; the plugin would write to the real profile.
         if home_override().is_none() && portable_home().is_none() {
-            builder = builder.plugin(tauri_plugin_window_state::Builder::default().build());
+            // The frame (decorations) is the code's choice, not something a saved state may undo, and
+            // the web window is placed fresh each time.
+            builder = builder.plugin(
+                tauri_plugin_window_state::Builder::default()
+                    .with_state_flags(
+                        tauri_plugin_window_state::StateFlags::all()
+                            - tauri_plugin_window_state::StateFlags::DECORATIONS,
+                    )
+                    .with_denylist(&[window::WEB])
+                    .build(),
+            );
         }
     }
 
@@ -338,6 +350,10 @@ pub fn run() {
             cmd_accounts::account_signout,
             #[cfg(desktop)]
             cmd_accounts::account_check,
+            #[cfg(desktop)]
+            cmd_window::window_reload,
+            #[cfg(desktop)]
+            cmd_window::devtools_open,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -357,8 +373,14 @@ pub fn run() {
     #[cfg(desktop)]
     {
         builder = builder
-            .menu(menu::build)
+            .on_window_event(window::on_window_event)
             .on_menu_event(|app, event| menu::handle(app, event.id().as_ref()));
+    }
+    // Windows and Linux: the client window has no menu bar (it draws its own) and the web window has
+    // its own menu. macOS: the one menu bar for both.
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder.menu(menu::build);
     }
 
     let app = builder

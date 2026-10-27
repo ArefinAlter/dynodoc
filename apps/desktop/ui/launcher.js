@@ -1871,7 +1871,15 @@ ${editLines(r.edits, labels(doc(db, r.docId)))}`
     let r = anchor.getBoundingClientRect(), list2 = h(
       "div",
       { class: "menu-list", role: "menu" },
-      items.map((it) => it.separator ? h("div", { class: "menu-sep", role: "separator" }) : it.heading ? h("div", { class: "menu-heading" }, it.heading) : h(
+      items.map((it) => it.separator ? h("div", { class: "menu-sep", role: "separator" }) : it.heading ? h("div", { class: "menu-heading" }, it.heading) : it.href ? h(
+        "a",
+        { class: "menu-item", role: "menuitem", href: it.href, target: "_blank", rel: "noopener noreferrer", onClick: () => {
+          setTimeout(closeMenu, 0);
+        } },
+        h("span", { class: "menu-icon" }, it.icon ? icon(it.icon, 14) : null),
+        h("span", { class: "menu-label" }, h("span", null, it.label)),
+        icon("external", 12)
+      ) : h(
         "button",
         {
           type: "button",
@@ -2337,9 +2345,9 @@ ${text3}` : out.push({ role, text: text3 });
     return m ? Number(m[1]) : null;
   }, cellText = (v) => v == null ? "" : typeof v == "object" ? textOf(v) : String(v);
   function blocksOf2(kind, nodes) {
-    let blocks = [], slots = {}, root2 = rootOf(nodes);
-    if (!root2) return { blocks, slots };
-    let top = children(nodes, root2.id);
+    let blocks = [], slots = {}, root3 = rootOf(nodes);
+    if (!root3) return { blocks, slots };
+    let top = children(nodes, root3.id);
     if (kind === "spreadsheet") {
       for (let sheet of top) {
         let sf = fieldsOf(sheet);
@@ -2373,9 +2381,9 @@ ${text3}` : out.push({ role, text: text3 });
         let notes = cellText(sf.notes);
         if (notes) {
           let id = `${slide.id}:notes`;
-          blocks.push({ id, label: `Slide ${n} · Notes`, text: notes }), slots[id] = { node: slide.id, field: "notes", own: !1, kind: "notes", parent: root2.id };
+          blocks.push({ id, label: `Slide ${n} · Notes`, text: notes }), slots[id] = { node: slide.id, field: "notes", own: !1, kind: "notes", parent: root3.id };
         } else
-          slots[`${slide.id}:notes`] = { node: slide.id, field: "notes", own: !1, kind: "notes", parent: root2.id };
+          slots[`${slide.id}:notes`] = { node: slide.id, field: "notes", own: !1, kind: "notes", parent: root3.id };
       }
       return { blocks, slots };
     }
@@ -2390,7 +2398,7 @@ ${text3}` : out.push({ role, text: text3 });
         walk(node.id);
       }
     };
-    return walk(root2.id), { blocks, slots };
+    return walk(root3.id), { blocks, slots };
   }
   function applyEvent(nodes, payload) {
     let type = payload.type, id = String(payload.node_id ?? "");
@@ -2465,10 +2473,10 @@ ${text3}` : out.push({ role, text: text3 });
         }
         let after = e.afterId ? slots[e.afterId] : void 0;
         if (ctx2.kind === "document" || !["spreadsheet", "presentation"].includes(String(ctx2.kind))) {
-          let root2 = rootOf(nodes);
-          if (!root2) throw new Unsupported("The file has no content to add to.");
-          let siblings = children(nodes, after?.parent ?? root2.id), i = after ? siblings.findIndex((s2) => s2.id === after.node) : -1, left = i >= 0 ? siblings[i].pos : "", right = siblings[i + 1]?.pos, id = ctx2.newId(), heading = /Heading/.test(e.label ?? "");
-          push2({ type: "NodeCreated", node_id: id, node_type: "item", parent_id: after?.parent ?? root2.id, pos: between(left, right), fields: { label: text3, content: paragraphContent(text3, void 0, heading) } }), slots[e.blockId] = { node: id, field: "label", own: !0, kind: "paragraph", parent: after?.parent ?? root2.id, heading };
+          let root3 = rootOf(nodes);
+          if (!root3) throw new Unsupported("The file has no content to add to.");
+          let siblings = children(nodes, after?.parent ?? root3.id), i = after ? siblings.findIndex((s2) => s2.id === after.node) : -1, left = i >= 0 ? siblings[i].pos : "", right = siblings[i + 1]?.pos, id = ctx2.newId(), heading = /Heading/.test(e.label ?? "");
+          push2({ type: "NodeCreated", node_id: id, node_type: "item", parent_id: after?.parent ?? root3.id, pos: between(left, right), fields: { label: text3, content: paragraphContent(text3, void 0, heading) } }), slots[e.blockId] = { node: id, field: "label", own: !0, kind: "paragraph", parent: after?.parent ?? root3.id, heading };
         } else if (ctx2.kind === "presentation") {
           let slide = after?.kind === "notes" ? after.node : after?.parent;
           if (!slide || !nodes[slide]) throw new Unsupported("New text needs a slide to go on.");
@@ -3077,7 +3085,7 @@ ${text3}` : out.push({ role, text: text3 });
   function disconnect() {
     ctx = null, state.live.mode = "offline", state.live.visitor = null, resetSample();
   }
-  async function refresh(quiet = !1) {
+  async function refresh(quiet2 = !1) {
     if (!(!isLive() || state.local.busy)) {
       if (running) {
         again = !0;
@@ -3086,7 +3094,7 @@ ${text3}` : out.push({ role, text: text3 });
       running = !0, state.ui.fetching = !0, render();
       try {
         let session = { identity: state.db.me, visitor: state.db.remote?.visitor ?? null }, out = await load(transport, session), saved = ctx?.saved;
-        adopt(out.db, out.ctx), saved && (ctx.saved.threads = saved.threads), quiet || toast("success", "Up to date", "Read the latest from the server.");
+        adopt(out.db, out.ctx), saved && (ctx.saved.threads = saved.threads), quiet2 || toast("success", "Up to date", "Read the latest from the server.");
       } catch (e) {
         fail2(e);
       } finally {
@@ -3642,8 +3650,8 @@ ${text3}` : out.push({ role, text: text3 });
 
   // client/src/theme.ts
   function applyAppearance() {
-    let p2 = state.prefs, root2 = document.documentElement;
-    p2.theme === "system" ? root2.removeAttribute("data-scheme") : root2.setAttribute("data-scheme", p2.theme), root2.setAttribute("data-palette", p2.palette), root2.setAttribute("data-density", p2.density), root2.setAttribute("data-font", p2.fontSize), root2.toggleAttribute("data-reduce-motion", p2.reduceMotion), root2.toggleAttribute("data-underline", p2.underlineLinks), p2.accent ? root2.style.setProperty("--accent-custom", p2.accent) : root2.style.removeProperty("--accent-custom"), root2.toggleAttribute("data-accent", !!p2.accent);
+    let p2 = state.prefs, root3 = document.documentElement;
+    p2.theme === "system" ? root3.removeAttribute("data-scheme") : root3.setAttribute("data-scheme", p2.theme), root3.setAttribute("data-palette", p2.palette), root3.setAttribute("data-density", p2.density), root3.setAttribute("data-font", p2.fontSize), root3.toggleAttribute("data-reduce-motion", p2.reduceMotion), root3.toggleAttribute("data-underline", p2.underlineLinks), p2.accent ? root3.style.setProperty("--accent-custom", p2.accent) : root3.style.removeProperty("--accent-custom"), root3.toggleAttribute("data-accent", !!p2.accent);
   }
   function scheme() {
     let p2 = state.prefs.theme;
@@ -4032,15 +4040,15 @@ ${text3}` : out.push({ role, text: text3 });
   var listFilter = "";
   function openProjectList(anchor) {
     listFilter = "";
-    let build = () => {
+    let build2 = () => {
       let q = listFilter.toLowerCase(), all = state.db.projects.filter((p2) => p2.name.toLowerCase().includes(q)), recent = [...all].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 2), item = (p2) => ({ label: p2.name, icon: "repo", checked: p2.id === state.ui.projectId ? !0 : void 0, note: `${docsOf(state.db, p2.id).length} files · ${p2.private ? "private" : "shared"}`, onSelect: () => switchProject(p2.id) });
       return [{ label: "", heading: "Recent" }, ...recent.map(item), { label: "", heading: "All projects" }, ...all.map(item)];
-    }, reopen = () => openMenu(anchor, build(), { width: 320, extra: filterBox("Filter projects", reopen), className: "menu-list-picker" });
+    }, reopen = () => openMenu(anchor, build2(), { width: 320, extra: filterBox("Filter projects", reopen), className: "menu-list-picker" });
     reopen();
   }
   function openBranchList(anchor) {
     listFilter = "";
-    let build = () => {
+    let build2 = () => {
       let q = listFilter.toLowerCase(), drafts2 = state.db.drafts.filter((d) => d.projectId === state.ui.projectId && d.name.includes(q)), mine = drafts2.filter((d) => d.authorId === state.db.me && (d.state === "private" || d.state === "in_review")), others = drafts2.filter((d) => d.authorId !== state.db.me && d.state === "in_review"), closed = drafts2.filter((d) => d.state === "merged" || d.state === "withdrawn"), row2 = (d) => ({
         label: d.name,
         icon: "branch",
@@ -4049,7 +4057,7 @@ ${text3}` : out.push({ role, text: text3 });
         onSelect: () => switchBranch(d.id)
       }), out = [{ label: "", heading: "Default branch" }];
       return "main".includes(q) && out.push({ label: "main", icon: "branch", checked: currentBranch() === "main" ? !0 : void 0, note: "The team version", onSelect: () => switchBranch("main") }), mine.length && out.push({ label: "", heading: "Your drafts" }, ...mine.map(row2)), others.length && out.push({ label: "", heading: "In review by others" }, ...others.map(row2)), closed.length && out.push({ label: "", heading: "Closed" }, ...closed.slice(0, 6).map(row2)), out.push({ label: "", separator: !0 }, { label: "New draft…", icon: "plus", shortcut: "Ctrl+Shift+N", onSelect: () => runBranchAction("new") }), out;
-    }, reopen = () => openMenu(anchor, build(), { width: 340, extra: filterBox("Filter branches", reopen), className: "menu-list-picker" });
+    }, reopen = () => openMenu(anchor, build2(), { width: 340, extra: filterBox("Filter branches", reopen), className: "menu-list-picker" });
     reopen();
   }
   function filterBox(placeholder, reopen) {
@@ -4367,6 +4375,107 @@ ${text3}` : out.push({ role, text: text3 });
     return h("div", { class: "watch-notices" }, out);
   }
 
+  // client/src/ui/frame.ts
+  var custom = !1, controls = null, maximizeButton = null, lastTitle = "", timer2;
+  function frameless() {
+    return custom;
+  }
+  var root = () => document.documentElement;
+  function glyph(kind) {
+    let path = (d) => s("path", { d }), children2 = kind === "min" ? [path("M0 5.5h10")] : kind === "max" ? [s("rect", { x: 0.5, y: 0.5, width: 9, height: 9, rx: 1 })] : kind === "restore" ? [s("rect", { x: 0.5, y: 2.5, width: 7, height: 7, rx: 1 }), path("M2.5 2.5v-1a1 1 0 0 1 1-1h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-1")] : [path("M0.5 0.5l9 9M9.5 0.5l-9 9")];
+    return s("svg", { viewBox: "0 0 10 10", width: 10, height: 10, fill: "none", stroke: "currentColor", "stroke-width": 1, "aria-hidden": "true" }, ...children2);
+  }
+  function quiet(p2) {
+    p2.catch(() => {
+    });
+  }
+  async function syncMaximized() {
+    if (!custom) return;
+    let on = !1;
+    try {
+      on = await call("plugin:window|is_maximized") === !0;
+    } catch {
+      return;
+    }
+    root().classList.toggle("window-maximized", on), maximizeButton && (maximizeButton.replaceChildren(glyph(on ? "restore" : "max")), maximizeButton.setAttribute("aria-label", on ? "Restore" : "Maximize"), maximizeButton.title = on ? "Restore" : "Maximize");
+  }
+  function build() {
+    return maximizeButton = h(
+      "button",
+      { type: "button", class: "max", "aria-label": "Maximize", title: "Maximize", onClick: () => {
+        quiet(call("plugin:window|toggle_maximize").then(syncMaximized));
+      } },
+      glyph("max")
+    ), h(
+      "div",
+      { id: "frame", class: "winctl", role: "group", "aria-label": "Window controls" },
+      h("button", { type: "button", class: "min", "aria-label": "Minimize", title: "Minimize", onClick: () => quiet(call("plugin:window|minimize")) }, glyph("min")),
+      maximizeButton,
+      h("button", { type: "button", class: "close", "aria-label": "Close", title: "Close", onClick: () => quiet(call("plugin:window|close")) }, glyph("close"))
+    );
+  }
+  function setCustom(on) {
+    custom = on, root().classList.toggle("frameless", on), on && !controls && (controls = document.body.appendChild(build())), controls && (controls.hidden = !on);
+  }
+  function initFrame() {
+    if (!inDesktop()) return;
+    let ua = navigator.userAgent;
+    if (/Android|iPhone|iPad|Mac/.test(ua)) return;
+    setCustom(!0), root().classList.toggle("frame-border", /Linux|X11/.test(ua)), window.addEventListener("blur", () => root().classList.add("window-blurred")), window.addEventListener("focus", () => root().classList.remove("window-blurred"));
+    let pending;
+    window.addEventListener("resize", () => {
+      window.clearTimeout(pending), pending = window.setTimeout(() => void syncMaximized(), 60);
+    }), syncMaximized();
+  }
+  function confirmFrame(frame) {
+    frame === "native" && custom && setCustom(!1), frame === "custom" && syncMaximized();
+  }
+  function syncTitle(title) {
+    !custom || title === lastTitle || (lastTitle = title, window.clearTimeout(timer2), timer2 = window.setTimeout(() => quiet(call("plugin:window|set_title", { value: title })), 120));
+  }
+  function openWorkspace() {
+    openServer().then((address) => {
+      address || (state.ui.settings.section = "accounts", go("settings"), toast("info", "Choose a server first"));
+    }).catch((e) => toast("error", e instanceof Error ? e.message : String(e)));
+  }
+  function reloadClient() {
+    quiet(call("window_reload"));
+  }
+  function quit() {
+    quiet(call("plugin:window|close"));
+  }
+  function openDevtools() {
+    call("devtools_open").catch((e) => toast("error", e instanceof Error ? e.message : String(e)));
+  }
+  function openAppMenu(anchor) {
+    let ds = desktopState(), items = [
+      { label: "Settings", icon: "settings", shortcut: "Ctrl+,", onSelect: () => go("settings") },
+      { label: "Accounts and servers", icon: "user", onSelect: () => {
+        state.ui.settings.section = "accounts", go("settings");
+      } },
+      { label: "Keyboard shortcuts", icon: "keyboard", onSelect: () => {
+        state.ui.settings.section = "keybindings", go("settings");
+      } },
+      { label: "Command palette", icon: "search", shortcut: "Ctrl+K", onSelect: () => openPalette() },
+      { label: "Light or dark", icon: state.prefs.theme === "dark" ? "sun" : "moon", shortcut: "Ctrl+Shift+L", onSelect: () => {
+        toggleTheme(), render();
+      } },
+      { label: "", separator: !0 },
+      ds?.server ? { label: "Web workspace", icon: "globe", note: `${new URL(ds.server).host}, in its own window`, onSelect: openWorkspace } : { label: "Web workspace", icon: "globe", note: "Choose a server in Accounts first", disabled: !0 },
+      { label: "", separator: !0 },
+      { label: "Reload", icon: "sync", shortcut: "Ctrl+R", onSelect: reloadClient }
+    ];
+    ds?.devtools && items.push({ label: "Developer tools", icon: "advanced", shortcut: "F12", onSelect: openDevtools }), items.push(
+      { label: "", separator: !0 },
+      { label: "Dynodoc support", icon: "info", href: ds?.support },
+      { label: "About Dynodoc", icon: "info", onSelect: () => {
+        state.ui.settings.section = "about", go("settings");
+      } },
+      { label: "", separator: !0 },
+      { label: "Quit Dynodoc", icon: "x", shortcut: "Alt+F4", onSelect: quit }
+    ), openMenu(anchor, items, { width: 300 });
+  }
+
   // client/src/views/shell.ts
   var NAV = [
     {
@@ -4422,14 +4531,18 @@ ${text3}` : out.push({ role, text: text3 });
       icon("chevron", 14, "icon picker-chev")
     );
   }
+  function brand() {
+    let mark = h("img", { src: "mark.svg", alt: "", class: "mark-img", width: 18, height: 18 });
+    return frameless() ? h("button", { type: "button", class: "brand brand-btn", id: "app-menu", title: "Application menu", "aria-label": "Application menu", "aria-haspopup": "menu", onClick: (e) => openAppMenu(e.currentTarget) }, mark, h("span", { class: "brand-name" }, "Dynodoc"), icon("chevron", 12, "icon brand-chev")) : h("span", { class: "brand" }, mark, h("span", { class: "brand-name" }, "Dynodoc"));
+  }
   function sidebar() {
     let ctx2 = branchContext(), p2 = currentProject(), open2 = state.db.requests.filter((r) => r.projectId === p2.id && r.status === "open").sort((a, b) => b.createdAt - a.createdAt), ds = desktopState();
     return h(
       "aside",
       { class: "sidebar", "aria-label": "Navigation" },
-      h("div", { class: "brand-row" }, h("button", { type: "button", class: "icon-btn", "aria-label": "Hide sidebar", title: "Hide sidebar (Ctrl+\\)", onClick: () => {
+      h("div", { class: "brand-row", "data-tauri-drag-region": frameless() ? "deep" : void 0 }, h("button", { type: "button", class: "icon-btn", "aria-label": "Hide sidebar", title: "Hide sidebar (Ctrl+\\)", onClick: () => {
         state.prefs.sidebarOpen = !1, render();
-      } }, icon("sidebar", 16)), h("img", { src: "mark.svg", alt: "", class: "mark-img", width: 18, height: 18 }), h("span", { class: "brand-name" }, "Dynodoc")),
+      } }, icon("sidebar", 16)), brand()),
       h(
         "div",
         { class: "pickers" },
@@ -4483,17 +4596,18 @@ ${text3}` : out.push({ role, text: text3 });
     let ctx2 = branchContext(), ahead = ctx2.ahead ?? 0, ds = desktopState(), fetching = state.ui.fetching;
     return h(
       "header",
-      { class: "topbar" },
-      state.prefs.sidebarOpen ? null : h("button", { type: "button", class: "icon-btn", "aria-label": "Show sidebar", onClick: () => {
+      { class: "topbar", "data-tauri-drag-region": frameless() ? "deep" : void 0 },
+      state.prefs.sidebarOpen ? null : h("button", { type: "button", class: "icon-btn", "aria-label": "Show sidebar", title: "Show sidebar (Ctrl+\\)", onClick: () => {
         state.prefs.sidebarOpen = !0, render();
       } }, icon("sidebar", 16)),
+      state.prefs.sidebarOpen || !frameless() ? null : h("button", { type: "button", class: "icon-btn", id: "app-menu", "aria-label": "Application menu", title: "Application menu", "aria-haspopup": "menu", onClick: (e) => openAppMenu(e.currentTarget) }, h("img", { src: "mark.svg", alt: "", class: "mark-img", width: 16, height: 16 })),
       h("nav", { class: "crumbs-bar", "aria-label": "Breadcrumb" }, crumbs()),
       h("span", { class: "spacer" }),
       h(
         "span",
         { class: "status-pills" },
         state.live.mode === "connecting" ? pill("Connecting…", "info", { mono: !1, title: "Reading your workspace" }) : isLive() ? pill(state.live.saving ? "Saving…" : state.live.env === "local" ? "On this computer" : state.db.remote?.visitor ? "Sample workspace" : "Live", state.live.saving ? "info" : "success", { mono: !1, title: state.live.env === "local" ? "Your workspace is on this computer: its own database and engine, no account, no network. Everything you do is saved here." : state.db.remote?.visitor ? `Your own sample workspace on the server, until ${new Date(state.db.remote.visitor.expires_at).toLocaleString()}. Everything you do is saved there.` : "Showing your workspace on the server. Everything you do is saved there." }) : pill("Sample data", "warning", { mono: !1, title: "Offline sample: nothing leaves this window. See Settings, Accounts to use a server." }),
-        ds?.server ? h("button", { type: "button", class: "server-btn", title: "Open your workspace on this server in this window", onClick: () => {
+        ds?.server ? h("button", { type: "button", class: "server-btn", title: "Open your workspace on this server in its own window", onClick: () => {
           openServer().catch((e) => toast("error", e instanceof Error ? e.message : String(e)));
         } }, icon("globe", 13), new URL(ds.server).host, icon("external", 12)) : serverChip(ds),
         ctx2.kind === "draft" && (ctx2.behind ?? 0) ? pill(`${ctx2.behind} behind main`, "warning", { mono: !1 }) : null
@@ -6867,8 +6981,8 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
       )),
       serversSection(),
       section(
-        state.desktop ? "Web workspace in this window" : "Dynodoc server",
-        state.desktop ? "Optional and separate from syncing: this opens a server’s own web workspace in this window in place of the workspace on this computer, with its own sign-in kept by the window, and holds this computer’s signing key for the Office add-ins." : "Signing in to a server and keeping a key for this computer are in the desktop app. This copy runs on sample data and connects to nothing.",
+        state.desktop ? "Web workspace in its own window" : "Dynodoc server",
+        state.desktop ? "Optional and separate from syncing: this opens a server’s own web workspace in a window of its own (the system’s frame, marked as the server’s page, with no access to this app), with its own sign-in kept by that window, and holds this computer’s signing key for the Office add-ins." : "Signing in to a server and keeping a key for this computer are in the desktop app. This copy runs on sample data and connects to nothing.",
         state.desktop ? slot : notice("info", "Pre-alpha release on sample data: no server, no sign-in. Install the desktop app to connect to the Dynodoc cloud or your own server.")
       )
     ];
@@ -7466,7 +7580,7 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
   function card(...children2) {
     return h(
       "div",
-      { class: "splash" },
+      { class: "splash", "data-tauri-drag-region": frameless() ? "deep" : void 0 },
       h("div", { class: "splash-card card" }, h("div", { class: "splash-brand" }, h("img", { src: "mark.svg", alt: "", width: 22, height: 22 }), h("span", null, "Dynodoc")), ...children2)
     );
   }
@@ -7535,7 +7649,7 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
     activity: activityView,
     agent: agentView,
     settings: settingsView
-  }, root, layer, launcher = null, launcherHome = null;
+  }, root2, layer, launcher = null, launcherHome = null;
   function remember() {
     let a = document.activeElement, scroll = /* @__PURE__ */ new Map(), stick = /* @__PURE__ */ new Set();
     document.querySelectorAll("[data-scroll-key]").forEach((el) => {
@@ -7566,9 +7680,9 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
   }
   function draw() {
     let saved = remember(), view = VIEWS[state.ui.view] ?? changesView, app = splash() ?? shell(view());
-    launcher && launcherHome && launcher.parentElement !== launcherHome && launcherHome.appendChild(launcher), clear(root), root.appendChild(app);
+    launcher && launcherHome && launcher.parentElement !== launcherHome && launcherHome.appendChild(launcher), clear(root2), root2.appendChild(app);
     let slot = document.getElementById("launcher-slot");
-    launcher && slot && slot.appendChild(launcher), renderLayer(layer), restore(saved), document.title = state.ui.view === "settings" ? "Dynodoc" : `${VIEW_LABEL[state.ui.view]} · Dynodoc`;
+    launcher && slot && slot.appendChild(launcher), renderLayer(layer), restore(saved), document.title = state.ui.view === "settings" ? "Dynodoc" : `${VIEW_LABEL[state.ui.view]} · Dynodoc`, syncTitle(document.title);
   }
   function commands() {
     let out = [];
@@ -7598,11 +7712,7 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
       toggleTheme(), render();
     } }), isLive() || out.push({ id: "reset", label: "Reset the sample project", group: "Advanced", icon: "revert", run: () => {
       resetSample(), toast("success", "Sample data reset");
-    } }), state.desktop && !isLive() && out.push({ id: "visitor", label: "Start a sample workspace on the pre-alpha server", group: "Account", icon: "globe", run: () => void startVisitor() }), isLive() && out.push({ id: "reload", label: "Read everything from the server again", group: "Account", icon: "sync", run: () => void refresh() }), isLive() && out.push({ id: "signout", label: "Sign out of the server", group: "Account", icon: "user", run: () => void signOut() }), state.desktop && out.push({ id: "server", label: "Open my server’s workspace in this window", group: "Account", icon: "globe", run: () => {
-      openServer().then((s2) => {
-        s2 || (state.ui.settings.section = "accounts", go("settings"), toast("info", "Choose a server first"));
-      }).catch((e) => toast("error", e instanceof Error ? e.message : String(e)));
-    } }), out;
+    } }), state.desktop && !isLive() && out.push({ id: "visitor", label: "Start a sample workspace on the pre-alpha server", group: "Account", icon: "globe", run: () => void startVisitor() }), isLive() && out.push({ id: "reload", label: "Read everything from the server again", group: "Account", icon: "sync", run: () => void refresh() }), isLive() && out.push({ id: "signout", label: "Sign out of the server", group: "Account", icon: "user", run: () => void signOut() }), state.desktop && out.push({ id: "server", label: "Open my server’s web workspace (its own window)", group: "Account", icon: "globe", keywords: "web workspace server browser", run: openWorkspace }), state.desktop && (out.push({ id: "app.reload", label: "Reload the app", group: "App", icon: "sync", shortcut: "Ctrl+R", run: reloadClient }), desktopState()?.devtools && out.push({ id: "app.devtools", label: "Open developer tools", group: "App", icon: "advanced", shortcut: "F12", run: openDevtools }), frameless() && out.push({ id: "app.quit", label: "Quit Dynodoc", group: "App", icon: "x", shortcut: "Alt+F4", run: quit })), out;
   }
   function runCommand(cmd) {
     switch (cmd) {
@@ -7661,14 +7771,19 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
     }
   }
   function onKey(e) {
-    if (captureRecording(e) || (e.key === "Escape" && closeMenu(), dialogOpen()) || paletteIsOpen() && !(e.ctrlKey && e.key.toLowerCase() === "k")) return;
+    if (captureRecording(e)) return;
+    if (e.key === "Escape" && closeMenu(), state.desktop && !e.altKey && (e.key === "F5" || (e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "r")) {
+      e.preventDefault(), reloadClient();
+      return;
+    }
+    if (dialogOpen() || paletteIsOpen() && !(e.ctrlKey && e.key.toLowerCase() === "k")) return;
     let target = e.target;
     if (target && launcher && launcher.contains(target)) return;
     let cmd = commandFor(state.prefs.bindings, e);
     !cmd || target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT") && !(e.ctrlKey || e.metaKey || e.altKey) || (e.preventDefault(), !(cmd === "palette" && paletteIsOpen()) && runCommand(cmd));
   }
   async function boot() {
-    root = document.getElementById("app") ?? document.body.appendChild(h("div", { id: "app" })), layer = document.body.appendChild(h("div", { id: "layer" })), document.body.appendChild(h("div", { id: "menus" })), launcher = document.getElementById("launcher"), launcher && (launcherHome = document.body.appendChild(h("div", { id: "launcher-home", hidden: !0 })), launcherHome.appendChild(launcher), launcher.classList.add("is-embedded")), document.documentElement.classList.add("client"), applyAppearance(), setRenderer(draw), setAfterRender(() => {
+    root2 = document.getElementById("app") ?? document.body.appendChild(h("div", { id: "app" })), layer = document.body.appendChild(h("div", { id: "layer" })), document.body.appendChild(h("div", { id: "menus" })), launcher = document.getElementById("launcher"), launcher && (launcherHome = document.body.appendChild(h("div", { id: "launcher-home", hidden: !0 })), launcherHome.appendChild(launcher), launcher.classList.add("is-embedded")), document.documentElement.classList.add("client"), initFrame(), applyAppearance(), setRenderer(draw), setAfterRender(() => {
       noticeChanges(), noticePrefs();
     }), setCommands(commands), document.addEventListener("keydown", onKey), window.matchMedia?.("(prefers-color-scheme: dark)").addEventListener?.("change", () => render()), setInterval(() => {
       !dialogOpen() && !paletteIsOpen() && render();
@@ -7679,7 +7794,7 @@ Each edit to a line came with an edit to its total, so the totals still add up.`
     if (inDesktop() && launcher) {
       state.desktop = !0, state.local.splash = !0, draw();
       let ds = await startBridge();
-      ds && (state.desktopVersion = ds.version, await loadPrefs(), applyAppearance(), loadAgentCfg().then(refreshKeyHints), state.local.splash = !0, draw(), await startLocalWorkspace() && (loadAgentCfg().then(refreshKeyHints), loadServers(), startWatch(), loadFolders()), (section2 || ds.unconfirmed) && (state.ui.settings.section = "accounts", state.ui.view = "settings")), draw(), focusSection(section2);
+      ds && (confirmFrame(ds.frame), state.desktopVersion = ds.version, await loadPrefs(), applyAppearance(), loadAgentCfg().then(refreshKeyHints), state.local.splash = !0, draw(), await startLocalWorkspace() && (loadAgentCfg().then(refreshKeyHints), loadServers(), startWatch(), loadFolders()), (section2 || ds.unconfirmed) && (state.ui.settings.section = "accounts", state.ui.view = "settings")), draw(), focusSection(section2);
     } else
       draw();
   }

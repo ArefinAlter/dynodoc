@@ -51,7 +51,9 @@ access and the database all go through typed commands in Rust.
 | `src-tauri/src/window.rs` | Creates the window and hooks navigation, new-window and deep-link events to the policy. In debug builds it prints each decision to standard error. |
 | `src-tauri/src/blank_targets.js` | **Android only.** The one script Android injects (no secret, no marker): a tap on `<a target="_blank">` is dropped by Android's web view without any callback, so the script turns the target into `_self` for that click and puts it back; the link then goes through the navigation rule like any other. `scripts/blank-targets.test.mjs` runs it against fake nodes. |
 | `src-tauri/src/link_targets.js` | **Desktop only** (not injected on Android: its marker would arrive as a navigation and be dropped). A short script the shell injects into every page of the window, before the page's own scripts. It has no access to the app; it only calls `window.open`. WebView2 raises no event for a click on `<a target="_blank">`, so it turns that click into `window.open`; and a trusted click (`event.isTrusted`) on a link that leaves the page or on a mail link is passed on with a secret that tells the shell a click happened. It keeps its own copy of every built-in it uses (so a page that replaces `Function.prototype.call`, `closest()` or `window.open` sees nothing), and `scripts/link-targets.test.mjs` runs it against such a page. |
-| `src-tauri/src/menu.rs` | The native menu (desktop only). |
+| `src-tauri/src/menu.rs` | The native menus (desktop only): the web window's menu on Windows and Linux, the one menu bar on macOS. The client window has none. |
+| `src-tauri/src/cmd_window.rs` | Two commands for the client's application menu: reload, and the inspector in debug builds. |
+| `client/src/ui/frame.ts` | The client's window frame: window controls, drag regions, focus dimming, the application menu. |
 | `src-tauri/src/policy_tests.rs` | Tests of the configuration files: capabilities, CSP, dependencies, launcher page, workflow triggers. |
 | `src-tauri/tauri.conf.json` | Product name, identifier, CSP, bundle settings, deep-link scheme. |
 | `src-tauri/tauri.{windows,linux,macos}.conf.json` | Add the `engine-cli` sidecar on desktop only (a phone build must not look for it). |
@@ -138,12 +140,26 @@ SHA-256 hash chain that "Verify" recomputes, drafts, rebase with conflicts, revi
 access check). The hosted copy (`--web`) is only this offline sample. The agent's replies are
 prepared in both modes; no model is called.
 
-**The window.** On desktop the window opens on the client; **View > Web workspace** (or the server
-pill in the top bar) opens the server's own pages in this window, and **View > Dynodoc client**
-(Ctrl+Shift+D) comes back. Settings, Accounts keeps the launcher's own controls (choose a server,
-sign in with the browser or an emailed link, this computer's key), with the same ids, texts and
-commands. Phones open on the configured server as before. The window keeps its native frame: it also
-shows your server's pages, and a frameless window would need window permissions for them.
+**The window.** On Windows and Linux the window has no system title bar (decorations off, with the system's
+shadow, rounded corners on Windows 11 and resize borders): the client's own top bars are the title bar, as in
+T3 Code. They move the window, a double click maximises or restores it, and the client draws minimise,
+maximise or restore and close at the right edge (46 px targets, red under the pointer on close, dimmed while
+the window is not active). The native menu bar is replaced by an application menu on the brand in the sidebar's
+header (the mark alone when the sidebar is closed) and by the command palette (Ctrl+K): Settings, Accounts and
+servers, Keyboard shortcuts, Web workspace, Reload (Ctrl+R), Developer tools (debug builds only), Dynodoc
+support, About, Quit. The window permissions (minimise, toggle maximise, close, start dragging, is-maximized,
+set-title) are granted to this window and to the bundled client only (`capabilities/window-controls.json`).
+**Web workspace** (the server pill in the top bar, or the menu) opens the server's own pages in a **separate
+window** with the system's frame and menu and a title that says it is the server's page
+("Dynodoc web workspace - host (the server's page)"). That window is in no capability at all, so a page from a
+server can never call a command, move the client window or draw over it. Its own menu has **Dynodoc client**
+(Ctrl+Shift+D, back to the client window), Open server in browser, Reload (Ctrl+R) and Help; closing the client
+window closes it too. Settings, Accounts keeps the launcher's own controls (choose a server, sign in with the
+browser or an emailed link, this computer's key), with the same ids, texts and commands. Phones open on the
+configured server as before, in their one window. macOS keeps the system's frame and one menu bar (not built in
+this release). Hovering the maximise button does not open Windows 11 Snap Layouts: that needs the window to
+answer the system's hit test for the button, which means native code in the window procedure, and it was left
+out rather than widen what runs in the shell. Dragging the title bar to a screen edge (Aero Snap) and Win+arrows work.
 
 **Build.** `npm run build:client` regenerates `ui/launcher.js` and `ui/launcher.css` from
 `client/src`; `npm run check:client` type-checks and fails if the committed files are stale; `npm
@@ -285,8 +301,10 @@ you, and creation still refuses to replace any file. The key file is under the l
 writes a key file itself: all key code stays in `engine-cli`. The macOS and Linux key-store paths
 have not been run on those systems (stated in KEY-FILE-FORMAT.md too).
 
-**Menu.** File (Change server, Sign in with your browser, Sign in with an emailed link, This computer's key, Open server in
-browser, Quit), Edit, View (Dynodoc client, Web workspace, Reload), Help (Dynodoc support, About). No tray icon, no auto-update,
+**Menu.** The client window's application menu is described under "The window" (Settings, Accounts and servers,
+Keyboard shortcuts, Command palette, Light or dark, Web workspace, Reload, Developer tools in debug builds, Dynodoc
+support, About, Quit). The web window has File (Dynodoc client, Open server in browser, Close window), Edit, View
+(Reload), Help. macOS has the one native menu bar with all of them. No tray icon, no auto-update,
 no analytics. The window remembers its size, position and maximised state, follows the system
 light or dark theme, and is high-DPI aware.
 
