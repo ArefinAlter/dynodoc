@@ -4425,7 +4425,30 @@ ${text3}` : out.push({ role, text: text3 });
     let pending;
     window.addEventListener("resize", () => {
       window.clearTimeout(pending), pending = window.setTimeout(() => void syncMaximized(), 60);
-    }), syncMaximized();
+    }), syncMaximized(), /Linux|X11/.test(ua) && doubleClickToMaximize();
+  }
+  function doubleClickToMaximize() {
+    let at = 0, x = 0, y = 0;
+    document.addEventListener(
+      "mousedown",
+      (e) => {
+        let target = e.target;
+        if (!(e.button === 0 && target && target.closest(".topbar, .brand-row") && !target.closest("button, a, input, select, textarea, label, [role=button], [role=menuitem], [tabindex]"))) {
+          at = 0;
+          return;
+        }
+        if (e.detail >= 2) {
+          at = 0;
+          return;
+        }
+        if (at && e.timeStamp - at < 450 && Math.abs(e.clientX - x) < 6 && Math.abs(e.clientY - y) < 6) {
+          at = 0, quiet(call("plugin:window|toggle_maximize").then(syncMaximized));
+          return;
+        }
+        at = e.timeStamp, x = e.clientX, y = e.clientY;
+      },
+      !0
+    );
   }
   function confirmFrame(frame) {
     frame === "native" && custom && setCustom(!1), frame === "custom" && syncMaximized();

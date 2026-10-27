@@ -44,7 +44,7 @@ APP=$!
 say "started pid $APP"
 WID=""
 for i in $(seq 1 60); do
-  WID=$(xdotool search --onlyvisible --name '^Dynodoc' 2>/dev/null | head -1)
+  WID=$(xdotool search --onlyvisible --name 'Dynodoc' 2>/dev/null | head -1)
   [ -n "$WID" ] && break
   sleep 1
 done
@@ -58,8 +58,7 @@ say "frame extents the window manager gave it: $(xprop -id "$WID" _NET_FRAME_EXT
 shot 01-first-screen; crop 01-first-screen 01-first-screen-window
 
 # The first screen asks for a name (the field has the focus).
-xdotool mousemove $((X0 + W0 / 2)) $((Y0 + H0 / 2)) click 1
-sleep 0.5
+xdotool windowfocus "$WID" 2>/dev/null; sleep 0.5
 xdotool key ctrl+a
 xdotool type --delay 60 "Priya Raman"
 sleep 0.5
@@ -118,7 +117,7 @@ shot 09-application-menu; crop 09-application-menu 09-application-menu-window
 xdotool key Escape; sleep 0.5
 # Minimise with the button and bring it back.
 xdotool mousemove $((X0 + W0 - 115)) $((Y0 + 20)) click 1; sleep 1.2
-say "after the minimise button, visible windows named Dynodoc: $(xdotool search --onlyvisible --name '^Dynodoc' 2>/dev/null | wc -l)"
+say "after the minimise button, visible windows named Dynodoc: $(xdotool search --onlyvisible --name 'Dynodoc' 2>/dev/null | wc -l)"
 xdotool windowmap "$WID" windowactivate "$WID" 2>/dev/null; sleep 1
 # Close with the button: the app must end, with its database and engine.
 parse "$WID"

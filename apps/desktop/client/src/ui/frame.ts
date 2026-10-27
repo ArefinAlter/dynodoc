@@ -103,6 +103,41 @@ export function initFrame(): void {
     pending = window.setTimeout(() => void syncMaximized(), 60);
   });
   void syncMaximized();
+  if (/Linux|X11/.test(ua)) doubleClickToMaximize();
+}
+
+/** GTK starts a window move on the first press of a double click and takes the pointer, so the page may never see
+ *  the second press as part of a double click (its click count stays 1) and Tauri's own drag script, which waits
+ *  for a count of 2, does nothing. On Linux two presses on an empty part of a bar within 450 ms toggle maximise here.
+ *  A count of 2 is left to Tauri's script, so a system that does report it is not toggled twice. */
+function doubleClickToMaximize(): void {
+  let at = 0;
+  let x = 0;
+  let y = 0;
+  document.addEventListener(
+    'mousedown',
+    (e) => {
+      const target = e.target as Element | null;
+      const bar = e.button === 0 && target && target.closest('.topbar, .brand-row') && !target.closest('button, a, input, select, textarea, label, [role=button], [role=menuitem], [tabindex]');
+      if (!bar) {
+        at = 0;
+        return;
+      }
+      if (e.detail >= 2) {
+        at = 0;
+        return;
+      }
+      if (at && e.timeStamp - at < 450 && Math.abs(e.clientX - x) < 6 && Math.abs(e.clientY - y) < 6) {
+        at = 0;
+        quiet(call('plugin:window|toggle_maximize').then(syncMaximized));
+        return;
+      }
+      at = e.timeStamp;
+      x = e.clientX;
+      y = e.clientY;
+    },
+    true,
+  );
 }
 
 /** The app says which frame this window has: remove the controls again where the system draws them. */
