@@ -93,7 +93,7 @@ try {
   mkdirSync(join(out, 'bin'), { recursive: true });
   mkdirSync(join(out, 'lib'), { recursive: true });
   const keep = (from, to, accept) => {
-    for (const name of readdirSync(from)) if (accept(name)) cpSync(join(from, name), join(to, name), { recursive: true });
+    for (const name of readdirSync(from)) if (accept(name)) cpSync(join(from, name), join(to, name), { recursive: true, dereference: true });
   };
   if (platform === 'windows') {
     const DLLS = new Set(['icudt67.dll', 'icuin67.dll', 'icuuc67.dll', 'libcrypto-3-x64.dll', 'libiconv-2.dll', 'libintl-9.dll', 'liblz4.dll', 'libpq.dll', 'libssl-3-x64.dll', 'libwinpthread-1.dll', 'libxml2.dll', 'libzstd.dll', 'zlib1.dll']);
@@ -107,7 +107,10 @@ try {
     // The Linux tree is the usual relocatable layout: bin, lib (the libraries the programs load),
     // lib/postgresql (the modules) and share/postgresql.
     keep(join(tree, 'bin'), join(out, 'bin'), (n) => ['postgres', 'initdb', 'pg_ctl'].includes(n));
-    keep(join(tree, 'lib'), join(out, 'lib'), (n) => /^lib(pq|ssl|crypto|icudata|icui18n|icuuc|xml2|z|lzma)\.so(\.|$)/.test(n));
+    // Only the names the programs ask for (the sonames), copied as real files: the versioned names and
+    // the unversioned links are the same bytes again.
+    const SONAMES = new Set(['libpq.so.5', 'libssl.so.1.1', 'libcrypto.so.1.1', 'libicudata.so.60', 'libicui18n.so.60', 'libicuuc.so.60', 'libxml2.so.2', 'libz.so.1', 'liblzma.so.5']);
+    keep(join(tree, 'lib'), join(out, 'lib'), (n) => SONAMES.has(n));
     mkdirSync(join(out, 'lib', 'postgresql'), { recursive: true });
     keep(join(tree, 'lib', 'postgresql'), join(out, 'lib', 'postgresql'), (n) => /^(plpgsql|pgcrypto|pg_trgm|dict_snowball)\.so$/.test(n) || /^utf8_and_.*\.so$/.test(n));
     const share = join(out, 'share', 'postgresql');

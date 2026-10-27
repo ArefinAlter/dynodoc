@@ -14,6 +14,11 @@ npm ci --ignore-scripts
 node scripts/prepare-sidecar.mjs
 node scripts/prepare-pg.mjs --platform linux
 node client/build.mjs
+# What the database programs load, and from where (the bundle's own lib folder or the system).
+for b in postgres initdb pg_ctl; do
+  echo "--- ldd $b"; ldd src-tauri/resources/pg/bin/$b | sed 's#/work/repo/apps/desktop/src-tauri/resources/pg#PG#'
+  if ldd src-tauri/resources/pg/bin/$b | grep -q "not found"; then echo "a library is missing for $b"; exit 1; fi
+done
 npm run tauri -- build --bundles appimage,deb --config src-tauri/tauri.bundle.conf.json
 mkdir -p /out
 cp -v src-tauri/target/release/bundle/appimage/*.AppImage src-tauri/target/release/bundle/deb/*.deb /out/
