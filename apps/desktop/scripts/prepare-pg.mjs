@@ -104,14 +104,24 @@ try {
     }
     keep(join(tree, 'lib'), join(out, 'lib'), (n) => /^(plpgsql|pgcrypto|pg_trgm|dict_snowball)\.dll$/.test(n) || /^utf8_and_.*\.dll$/.test(n));
   } else {
+    // The Linux tree is the usual relocatable layout: bin, lib (the libraries the programs load),
+    // lib/postgresql (the modules) and share/postgresql.
     keep(join(tree, 'bin'), join(out, 'bin'), (n) => ['postgres', 'initdb', 'pg_ctl'].includes(n));
-    // The shared libraries the three programs load sit in lib/ on Linux, beside the modules.
-    keep(join(tree, 'lib'), join(out, 'lib'), (n) => /\.so(\.|$)/.test(n) && !/^(libecpg|libpgtypes|libpq\.a)/.test(n) && !/(wx|curl|xslt)/.test(n));
+    keep(join(tree, 'lib'), join(out, 'lib'), (n) => /^lib(pq|ssl|crypto|icudata|icui18n|icuuc|xml2|z|lzma)\.so(\.|$)/.test(n));
+    mkdirSync(join(out, 'lib', 'postgresql'), { recursive: true });
+    keep(join(tree, 'lib', 'postgresql'), join(out, 'lib', 'postgresql'), (n) => /^(plpgsql|pgcrypto|pg_trgm|dict_snowball)\.so$/.test(n) || /^utf8_and_.*\.so$/.test(n));
+    const share = join(out, 'share', 'postgresql');
+    mkdirSync(share, { recursive: true });
+    keep(join(tree, 'share', 'postgresql'), share, (n) => !['locale', 'contrib', 'doc', 'man', 'extension'].includes(n));
+    mkdirSync(join(share, 'extension'), { recursive: true });
+    keep(join(tree, 'share', 'postgresql', 'extension'), join(share, 'extension'), (n) => /^(plpgsql|pgcrypto|pg_trgm)/.test(n));
   }
-  mkdirSync(join(out, 'share'), { recursive: true });
-  keep(join(tree, 'share'), join(out, 'share'), (n) => !['locale', 'contrib', 'doc', 'man', 'extension'].includes(n));
-  mkdirSync(join(out, 'share', 'extension'), { recursive: true });
-  keep(join(tree, 'share', 'extension'), join(out, 'share', 'extension'), (n) => /^(plpgsql|pgcrypto|pg_trgm)/.test(n));
+  if (platform === 'windows') {
+    mkdirSync(join(out, 'share'), { recursive: true });
+    keep(join(tree, 'share'), join(out, 'share'), (n) => !['locale', 'contrib', 'doc', 'man', 'extension'].includes(n));
+    mkdirSync(join(out, 'share', 'extension'), { recursive: true });
+    keep(join(tree, 'share', 'extension'), join(out, 'share', 'extension'), (n) => /^(plpgsql|pgcrypto|pg_trgm)/.test(n));
+  }
 
   const bytes = (dir) => readdirSync(dir, { withFileTypes: true }).reduce((n, e) => n + (e.isDirectory() ? bytes(join(dir, e.name)) : statSync(join(dir, e.name)).size), 0);
   console.log(`prepare-pg: ${out} (${(bytes(out) / 1048576).toFixed(1)} MB)`);
