@@ -1095,6 +1095,7 @@ dependencies = [
  "keyring",
  "reqwest",
  "rfd",
+ "rustix",
  "rustls",
  "serde",
  "serde_json",
