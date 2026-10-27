@@ -5,6 +5,17 @@ Decision [012](decisions/012-local-first-document-version-control.md) supersedes
 the research-instrument product scope. Questionnaire support remains an adapter;
 public consultation, civic identity and AI assessment are separate proposals.
 
+## Desktop manager (owner direction, 27 October 2026)
+
+The desktop client is the manager of the workflow, analogous to GitHub Desktop:
+projects, connected files, staged changes, commits, branches, comparisons, reviews,
+retained history, conflicts, accounts and synchronization. Editing stays in native
+applications through Dynodoc extensions and add-ins. The web portal is a separate
+surface and opens in the system browser. The bundled local engine/database remain
+an implementation of offline history and synchronization, not a replacement editor.
+The six Microsoft/Google hosts remain first-class connector targets; their source
+code is not proof of marketplace publication or host acceptance.
+
 ## The user journey
 
 1. An owner creates a private project/repository and connects a document on their

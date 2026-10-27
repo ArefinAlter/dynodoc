@@ -136,7 +136,7 @@ function commands(): Command[] {
   if (state.desktop && !isLive()) out.push({ id: 'visitor', label: 'Start a sample workspace on the pre-alpha server', group: 'Account', icon: 'globe', run: () => void startVisitor() });
   if (isLive()) out.push({ id: 'reload', label: 'Read everything from the server again', group: 'Account', icon: 'sync', run: () => void refresh() });
   if (isLive()) out.push({ id: 'signout', label: 'Sign out of the server', group: 'Account', icon: 'user', run: () => void signOut() });
-  if (state.desktop) out.push({ id: 'server', label: 'Open my server’s web workspace (its own window)', group: 'Account', icon: 'globe', keywords: 'web workspace server browser', run: openWorkspace });
+  if (state.desktop) out.push({ id: 'server', label: 'Open my server’s web workspace in the browser', group: 'Account', icon: 'globe', keywords: 'web workspace server browser', run: openWorkspace });
   if (state.desktop) {
     out.push({ id: 'app.reload', label: 'Reload the app', group: 'App', icon: 'sync', shortcut: 'Ctrl+R', run: reloadClient });
     if (desktopState()?.devtools) out.push({ id: 'app.devtools', label: 'Open developer tools', group: 'App', icon: 'advanced', shortcut: 'F12', run: openDevtools });

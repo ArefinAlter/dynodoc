@@ -11,6 +11,10 @@ use zeroize::Zeroizing;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
+    Codex,
+    Claude,
+    Cursor,
+    Antigravity,
     Anthropic,
     Openai,
     Google,
@@ -41,7 +45,10 @@ impl Kind {
     }
 
     pub fn needs_key(self) -> bool {
-        !matches!(self, Kind::Ollama)
+        !matches!(
+            self,
+            Kind::Ollama | Kind::Codex | Kind::Claude | Kind::Cursor | Kind::Antigravity
+        )
     }
 
     /// Whether to ask for the usage chunk at the end of a stream (providers that document the

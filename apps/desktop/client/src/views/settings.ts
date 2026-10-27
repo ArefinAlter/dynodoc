@@ -107,9 +107,9 @@ function accounts(): Child {
     )),
     serversSection(),
     section(
-      state.desktop ? 'Web workspace in its own window' : 'Dynodoc server',
+      state.desktop ? 'Web workspace in your browser' : 'Dynodoc server',
       state.desktop
-        ? 'Optional and separate from syncing: this opens a server’s own web workspace in a window of its own (the system’s frame, marked as the server’s page, with no access to this app), with its own sign-in kept by that window, and holds this computer’s signing key for the Office add-ins.'
+        ? 'Optional and separate from syncing: this opens the server’s web workspace in your system browser. This desktop app manages document workflow and sync; editing happens in Office and Google applications through the add-ins and extensions.'
         : 'Signing in to a server and keeping a key for this computer are in the desktop app. This copy runs on sample data and connects to nothing.',
       state.desktop ? slot : notice('info', 'Pre-alpha release on sample data: no server, no sign-in. Install the desktop app to connect to the Dynodoc cloud or your own server.'),
     ),
@@ -376,7 +376,7 @@ function providers(): Child {
     render();
   };
   return [
-    section('Provider ladder', desktop ? 'Bring your own key. A new thread uses the first enabled entry that is complete; a thread can pick another in its composer. Requests go from this computer straight to the provider, and only after you have seen what would be sent and allowed that address once.' : 'Bring your own key. The agent would use the first enabled entry that is complete. A hosted copy calls no model: the ladder is configured and checked, and the agent’s replies are prepared.',
+    section('Provider ladder', desktop ? 'Use an API key or a supported installed agent’s existing sign-in. A new thread uses the first enabled entry that is complete; a thread can pick another in its composer. Requests go from this computer straight to the provider, and only after you have seen what would be sent and allowed that address once.' : 'Bring your own key. The agent would use the first enabled entry that is complete. A hosted copy calls no model: the ladder is configured and checked, and the agent’s replies are prepared.',
       notice('info', desktop
         ? `Keys are kept in ${cfg?.keys_where ?? 'the operating system’s credential store'}. They are never written to the preferences file, a log or this window: after you store one, only “stored” and its last four characters are shown.`
         : 'Keys stay in this tab’s memory: never stored in the browser, never shown again (only “stored” and the last four characters), and never sent anywhere.'),
@@ -405,17 +405,17 @@ function providers(): Child {
             iconButton('trash', 'Remove', () => { dropEntry(e); state.keys.delete(e.id); p().ladder = list.filter((x) => x !== e); render(); })),
           h('div', { class: 'ladder-fields' },
             field('Model', input(e.model, (v) => { e.model = v; }, { id: `lm-${e.id}` })),
-            field('Base address', input(e.base, (v) => { e.base = v; }, { id: `lb-${e.id}` })),
+            ['codex','claude','cursor','antigravity'].includes(e.kind) ? field('Account', h('span', { class: 'muted small' }, 'Uses the sign-in saved by the installed agent.')) : field('Base address', input(e.base, (v) => { e.base = v; }, { id: `lb-${e.id}` })),
             info.needsKey
               ? field('API key', e.keyHint
                   ? h('div', { class: 'key-stored' }, pill(`stored ····${e.keyHint}`, 'success'), button('Forget', { size: 'sm', variant: 'ghost', onClick: () => forget(e) }))
                   : h('div', { class: 'key-entry' }, h('input', { type: 'password', class: 'input', id: `lk-${e.id}`, autocomplete: 'off', placeholder: 'Paste a key', 'aria-label': `${info.label} API key`, onInput: (ev: Event) => { keyDraft[e.id] = (ev.target as HTMLInputElement).value; } }),
                       button('Store', { size: 'sm', id: `lks-${e.id}`, onClick: () => store(e) })))
-              : field('API key', h('span', { class: 'muted small' }, 'None: Ollama runs on this computer.'))),
+              : field(e.kind === 'ollama' ? 'API key' : 'Account', h('span', { class: 'muted small' }, e.kind === 'ollama' ? 'None: Ollama runs on this computer.' : 'Uses the installed agent’s own sign-in. Sign in there first. Your plan limits apply; content can leave this computer.'))),
           desktop
             ? h('div', { class: 'ladder-consent small' },
                 consent && consent.host === host
-                  ? [pill(`allowed: ${consent.host}`, 'success'), button('Withdraw', { size: 'sm', variant: 'ghost', onClick: () => { void setConsent(e.id, null, false); } })]
+                  ? [pill(`allowed: ${host.includes('.local-agent.invalid') ? info.label : consent.host}`, 'success'), button('Withdraw', { size: 'sm', variant: 'ghost', onClick: () => { void setConsent(e.id, null, false); } })]
                   : h('span', { class: 'muted' }, consent ? `Allowed for ${consent.host}; the address changed, so you are asked again before the next send.` : 'Not allowed yet: before the first send you see exactly what would go to this address, and decide.'))
             : null,
           mine.length ? notice('warning', mine.map((x) => x.message).join(' ')) : null);

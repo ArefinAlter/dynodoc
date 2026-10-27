@@ -114,8 +114,8 @@ pub fn get_state(webview: Webview) -> Result<StateView, String> {
     })
 }
 
-/// Validate, remember and open a server in the web window (the client window never shows a server's
-/// pages). Returns the normalised address.
+/// Validate and remember a server. Desktop opens its portal in the system browser;
+/// mobile retains its web view. Returns the normalised address.
 #[tauri::command]
 pub fn set_server(webview: Webview, address: String) -> Result<String, String> {
     require_launcher(webview.url())?;
@@ -125,6 +125,9 @@ pub fn set_server(webview: Webview, address: String) -> Result<String, String> {
     config::save(&state.config_dir, &state.data_dir, &origin)
         .map_err(|_| "Your choice could not be saved on this computer.".to_string())?;
     state.set_server(origin.clone());
+    #[cfg(desktop)]
+    window::open_external(app, &origin.entry(), crate::handoff::Source::Click);
+    #[cfg(mobile)]
     window::navigate_web(app, origin.entry());
     Ok(origin.as_text())
 }

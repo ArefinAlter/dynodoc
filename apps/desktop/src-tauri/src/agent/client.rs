@@ -5,6 +5,9 @@
 //! else: an error never holds a header, a body or an address with a query, and what a provider says
 //! is cut to a few hundred characters with the key taken out of it.
 
+#[path = "../../../../../shared/local_agent.rs"]
+pub mod local_agent;
+
 use super::sse::SseDecoder;
 use super::types::{AgentError, ApiKey, Endpoint, Turn};
 use super::wire::{self, Built};
@@ -146,6 +149,31 @@ pub async fn send_turn(
     limits: Limits,
     on_text: &mut (dyn FnMut(&str) + Send),
 ) -> Result<Turn, AgentError> {
+    if local_agent::agent_for_url(&built.url).is_some() {
+        if *cancel.borrow() {
+            return Err(AgentError::Cancelled);
+        }
+        let mut v = tokio::select! {
+            v = local_agent::complete(&built.url, &built.body, limits.total) => v.map_err(|e| AgentError::BadSetup(e.to_string()))?,
+            _ = cancel.changed() => return Err(AgentError::Cancelled),
+        };
+        if v["choices"][0]["message"]["content"]
+            .as_str()
+            .is_some_and(|s| s.len() > MAX_TEXT_BYTES)
+        {
+            return Err(AgentError::TooLarge);
+        }
+        v["choices"][0]["delta"] = v["choices"][0]["message"].take();
+        let mut reader = wire::reader(super::types::Style::OpenAi);
+        reader.feed(
+            &super::sse::SseEvent {
+                event: None,
+                data: v.to_string(),
+            },
+            &mut |text| on_text(text),
+        )?;
+        return reader.finish();
+    }
     let body = serde_json::to_vec(&built.body)
         .map_err(|_| AgentError::BadSetup("The request could not be made.".into()))?;
     if body.len() > MAX_REQUEST_BYTES {
