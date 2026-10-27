@@ -37,6 +37,7 @@
     <div class="container hero__copy">
       <span class="badge">Pre-alpha release · {RELEASE.tag}</span>
       <h1 class="h-1">Try the pre-alpha</h1>
+      <p class="lede">The desktop app manages repositories, changes, history, reviews and sync. Edit in Word, Excel, PowerPoint, Google Docs, Sheets or Slides through their Dynodoc add-in or extension. Open the full platform in your browser.</p>
       <p class="lede">
         Dynodoc 0.0.1b is a pre-alpha: early software, so expect rough edges, missing pieces and
         changes. The desktop app now works on its own: it keeps your documents and their history in

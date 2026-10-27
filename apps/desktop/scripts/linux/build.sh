@@ -29,4 +29,4 @@ done
 npm run tauri -- build --bundles appimage,deb --config src-tauri/tauri.bundle.conf.json
 mkdir -p "$OUT"
 cp -v src-tauri/target/release/bundle/appimage/*.AppImage src-tauri/target/release/bundle/deb/*.deb "$OUT/"
-cp -v src-tauri/binaries/engine-cli-x86_64-unknown-linux-gnu "$OUT/engine-cli_0.0.1b_linux-x64"
+cp -v src-tauri/binaries/engine-cli-x86_64-unknown-linux-gnu "$OUT/engine-cli_0.0.1c_linux-x64"

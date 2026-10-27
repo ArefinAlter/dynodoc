@@ -441,6 +441,8 @@ fn envelope(text: String, usage: Value, body: &Value) -> Result<Value, Error> {
 
 fn client_environment(cmd: &mut tokio::process::Command) {
     cmd.env_clear();
+    #[cfg(unix)]
+    cmd.process_group(0);
     // Forward OS paths and the owning CLI's configuration location, never
     // product credentials, inherited API keys or parent-agent markers.
     for key in [
@@ -496,6 +498,30 @@ fn supervise_tree(child: &tokio::process::Child) -> Result<win32job::Job, Error>
     Ok(job)
 }
 
+#[cfg(unix)]
+struct ProcessGroup(rustix::process::Pid);
+#[cfg(unix)]
+impl Drop for ProcessGroup {
+    fn drop(&mut self) {
+        let _ = rustix::process::kill_process_group(self.0, rustix::process::Signal::KILL);
+    }
+}
+#[cfg(unix)]
+fn supervise_tree(child: &tokio::process::Child) -> Result<ProcessGroup, Error> {
+    let raw = child
+        .id()
+        .filter(|pid| *pid > 1)
+        .and_then(|pid| i32::try_from(pid).ok())
+        .ok_or(Error::Failed)?;
+    Ok(ProcessGroup(
+        rustix::process::Pid::from_raw(raw).ok_or(Error::Failed)?,
+    ))
+}
+#[cfg(not(any(unix, windows)))]
+fn supervise_tree(_: &tokio::process::Child) -> Result<(), Error> {
+    Err(Error::Unsupported)
+}
+
 async fn check_subscription(path: &Path, agent: &str) -> Result<(), Error> {
     let args: &[&str] = match agent {
         "claude" => &["auth", "status"],
@@ -514,7 +540,6 @@ async fn check_subscription(path: &Path, agent: &str) -> Result<(), Error> {
         cmd.creation_flags(0x08000000);
     }
     let mut child = cmd.spawn().map_err(|_| Error::Missing)?;
-    #[cfg(windows)]
     let _job = supervise_tree(&child)?;
     let work = async {
         let mut out = Vec::new();
@@ -576,7 +601,6 @@ async fn run_with(
         cmd.creation_flags(0x08000000);
     }
     let mut child = cmd.spawn().map_err(|_| Error::Missing)?;
-    #[cfg(windows)]
     let _job = supervise_tree(&child)?;
     let work = async {
         let mut stdin = child.stdin.take().ok_or(Error::Failed)?;
@@ -617,7 +641,7 @@ async fn run_with(
 }
 
 /// Complete one existing OpenAI-format request using the chosen installed agent.
-/// Dropping this future (including cancellation by the caller) kills its child.
+/// Dropping this future (including cancellation by the caller) kills its process tree.
 pub async fn complete(url: &str, body: &Value, timeout: Duration) -> Result<Value, Error> {
     let agent = agent_for_url(url).ok_or(Error::Unsupported)?;
     if !installed(agent) {
@@ -790,5 +814,39 @@ mod tests {
             .0,
             "hello"
         );
+    }
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn cancellation_kills_descendants_in_the_private_process_group() {
+        let scratch = Scratch::new().unwrap();
+        let marker = scratch.0.join("descendant-marker");
+        let command = || {
+            let mut cmd = tokio::process::Command::new("/bin/sh");
+            client_environment(&mut cmd);
+            cmd.args([
+                "-c",
+                r#"(sleep 0.3; printf x > "$1") & wait"#,
+                "fixture",
+                marker.to_str().unwrap(),
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .kill_on_drop(true);
+            cmd
+        };
+        assert!(command().status().await.unwrap().success());
+        assert!(
+            marker.exists(),
+            "the descendant control must actually write its fixture"
+        );
+        std::fs::remove_file(&marker).unwrap();
+        let mut child = command().spawn().unwrap();
+        let group = supervise_tree(&child).unwrap();
+        tokio::time::sleep(Duration::from_millis(75)).await;
+        drop(group);
+        let _ = child.wait().await;
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        assert!(!marker.exists(), "a descendant outlived cancellation");
     }
 }

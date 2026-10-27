@@ -28,7 +28,8 @@ const parts = {
 };
 for (const [name, path] of Object.entries(parts)) if (!existsSync(path)) { console.error(`package-portable: ${name} is missing: ${path}`); process.exit(1); }
 
-const label = `Dynodoc_${version.replace('-beta', 'b').replace('-alpha', 'a')}_windows-x64-portable`;
+const release = version === '0.0.1-beta.1' ? '0.0.1c' : version.replace('-beta', 'b').replace('-alpha', 'a');
+const label = `Dynodoc_${release}_windows-x64-portable`;
 const work = join(out, label);
 rmSync(work, { recursive: true, force: true });
 mkdirSync(join(work, 'dynodoc-data'), { recursive: true });

@@ -679,4 +679,36 @@ event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n".to_string()
             "Ollama needs no key and is sent none"
         );
     }
+    #[tokio::test]
+    #[ignore = "real Claude subscription request; VERNE_TEST_SUBSCRIPTION=claude"]
+    async fn native_subscription_provider_live() {
+        assert_eq!(
+            std::env::var("VERNE_TEST_SUBSCRIPTION").as_deref(),
+            Ok("claude")
+        );
+        let base = "https://claude.local-agent.invalid/v1";
+        let mut request = input(Kind::Claude, base, vec![]);
+        request.endpoint.model = "default".into();
+        request.system = "Reply with the single word OK.".into();
+        request.history = vec![Msg::User("ping".into())];
+        let cfg = cfg_for("claude.local-agent.invalid");
+        let mut io = Mock::new(vec![]);
+        let (_tx, cancel) = watch::channel(false);
+        let mut limits = quick();
+        limits.total = Duration::from_secs(120);
+        run(&mut io, &cfg, None, request, limits, cancel)
+            .await
+            .unwrap();
+        let text = io
+            .events
+            .iter()
+            .filter_map(|e| match e {
+                Event::Text { delta } => Some(delta.as_str()),
+                _ => None,
+            })
+            .collect::<String>();
+        assert_eq!(text.trim(), "OK");
+        assert_eq!(io.ledger.len(), 1);
+        assert!(io.events.iter().any(|e| matches!(e, Event::Done { .. })));
+    }
 }

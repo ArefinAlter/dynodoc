@@ -3,12 +3,12 @@
 // GitHub release; their SHA-256 sums are in the release's SHA256SUMS.txt and its notes.
 
 export const RELEASE = {
-  name: 'Dynodoc 0.0.1b (pre-alpha)',
-  version: '0.0.1-beta',
-  tag: 'v0.0.1b',
-  date: '2026-10-27',
-  page: 'https://github.com/ArefinAlter/dynodoc/releases/tag/v0.0.1b',
-  sums: 'https://github.com/ArefinAlter/dynodoc/releases/download/v0.0.1b/SHA256SUMS.txt',
+  name: 'Dynodoc 0.0.1c (pre-alpha)',
+  version: '0.0.1-beta.1',
+  tag: 'v0.0.1c',
+  date: '2026-10-28',
+  page: 'https://github.com/ArefinAlter/dynodoc/releases/tag/v0.0.1c',
+  sums: 'https://github.com/ArefinAlter/dynodoc/releases/download/v0.0.1c/SHA256SUMS.txt',
   sumsFile: 'SHA256SUMS.txt'
 } as const;
 
@@ -31,30 +31,30 @@ export const ASSETS: (Asset & { url: string })[] = (
     {
       platform: 'Windows x64',
       kind: 'Installer',
-      file: 'Dynodoc_0.0.1-beta_x64-setup.exe',
-      bytes: 29802688,
+      file: 'Dynodoc_0.0.1-beta.1_x64-setup.exe',
+      bytes: 29819381,
       note: 'Windows 10 or 11. Unsigned: SmartScreen warns; choose More info, then Run anyway. It carries its own database, so it is larger than 0.0.1a.'
     },
     {
       platform: 'Windows x64',
       kind: 'Portable zip',
-      file: 'Dynodoc_0.0.1b_windows-x64-portable.zip',
-      bytes: 42952120,
+      file: 'Dynodoc_0.0.1c_windows-x64-portable.zip',
+      bytes: 42975982,
       note: 'No installer: unzip and run Dynodoc.exe (keep the other files beside it; everything it keeps is in the dynodoc-data folder). Needs WebView2, which Windows 11 has.'
     },
     {
       platform: 'Linux x64',
       kind: 'AppImage',
-      file: 'Dynodoc_0.0.1-beta_amd64.AppImage',
-      bytes: 115841528,
+      file: 'Dynodoc_0.0.1-beta.1_amd64.AppImage',
+      bytes: 115853816,
       note: 'Ubuntu 22.04 or newer, or a similar distribution. Make it executable (chmod +x), then run it.'
     },
     {
       platform: 'Linux x64',
       kind: 'Debian package',
-      file: 'Dynodoc_0.0.1-beta_amd64.deb',
-      bytes: 41846954,
-      note: 'Debian 12, Ubuntu 22.04 or newer: sudo apt install ./Dynodoc_0.0.1-beta_amd64.deb'
+      file: 'Dynodoc_0.0.1-beta.1_amd64.deb',
+      bytes: 41865518,
+      note: 'Debian 12, Ubuntu 22.04 or newer: sudo apt install ./Dynodoc_0.0.1-beta.1_amd64.deb'
     }
   ] satisfies Asset[]
 ).map((a) => ({ ...a, url: download(a.file) }));
@@ -88,14 +88,14 @@ export const PLATFORMS: PlatformDownloads[] = [
     name: 'Windows',
     requirement:
       'Windows 10 or 11, x64. The installer adds WebView2 only if Windows does not have it (Windows 11 does). It starts its own database, so allow about 110 MB of disk.',
-    primary: file('Installer', 'Dynodoc_0.0.1-beta_x64-setup.exe', 29802688),
+    primary: file('Installer', 'Dynodoc_0.0.1-beta.1_x64-setup.exe', 29819381),
     more: [
       file(
         'Portable .zip (keep the files beside Dynodoc.exe)',
-        'Dynodoc_0.0.1b_windows-x64-portable.zip',
-        42952120
+        'Dynodoc_0.0.1c_windows-x64-portable.zip',
+        42975982
       ),
-      file('engine-cli on its own, .exe', 'engine-cli_0.0.1b_windows-x64.exe', 19295744)
+      file('engine-cli on its own, .exe', 'engine-cli_0.0.1c_windows-x64.exe', 19295744)
     ]
   },
   {
@@ -103,10 +103,10 @@ export const PLATFORMS: PlatformDownloads[] = [
     name: 'Linux',
     requirement:
       'x64, Ubuntu 22.04 or newer, Debian 12 or similar. AppImage on most distributions (needs FUSE 2), .deb for Debian and Ubuntu.',
-    primary: file('Desktop app', 'Dynodoc_0.0.1-beta_amd64.AppImage', 115841528),
+    primary: file('Desktop app', 'Dynodoc_0.0.1-beta.1_amd64.AppImage', 115853816),
     more: [
-      file('Debian package, .deb', 'Dynodoc_0.0.1-beta_amd64.deb', 41846954),
-      file('engine-cli on its own', 'engine-cli_0.0.1b_linux-x64', 18826064)
+      file('Debian package, .deb', 'Dynodoc_0.0.1-beta.1_amd64.deb', 41865518),
+      file('engine-cli on its own', 'engine-cli_0.0.1c_linux-x64', 18826064)
     ]
   }
 ];
