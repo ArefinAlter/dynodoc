@@ -30,6 +30,7 @@ const text = async (sel = '.content') => (await page.text(sel)).replace(/\s+/g, 
 const setText = (sel, v) => page.type(sel, v);
 const api = (env, method, path, body) => (method === 'GET' ? page.invoke('api_get', { path, env }) : page.invoke('api_send', { method, path, body, ifMatch: null, env }));
 const settings = async (id) => { await page.click('[data-view=settings]'); await sleep(300); await page.click(`[data-section=${id}]`); await sleep(700); };
+const shotSync = async (name) => { await page.eval("document.querySelector('[data-project]')?.scrollIntoView({ block: 'start' })"); await sleep(400); await page.shot(EV + name + '.png'); };
 const cm = (needle) => spawnSync('cmd', ['/c', 'cmdkey /list'], { encoding: 'utf8' }).stdout.split(/\r?\n/).filter((l) => l.includes(needle)).map((l) => l.trim());
 const waitText = (sel, re, ms = 30000) => page.waitFor(`new RegExp(${JSON.stringify(re)}).test((document.querySelector(${JSON.stringify(sel)})?.innerText || '').replace(/\\s+/g, ' '))`, ms, `${sel} to say ${re}`);
 
@@ -86,11 +87,11 @@ await page.click(`#sync-check-${proj.id}`);
 await page.waitFor("document.querySelectorAll('[data-action]').length >= 1", 60000, 'the plan');
 await sleep(500);
 say('what a sync would do:', await page.eval("[...document.querySelectorAll('[data-action]')].map((r) => r.innerText.replace(/\\s+/g, ' ')).join(' || ')"));
-await page.shot(EV + 's4d-plan.png');
+await shotSync('s4d-plan');
 await page.click(`#sync-now-${proj.id}`);
 await waitText(`#sync-status-${proj.id}`, 'new file', 120000);
 say('sync says:', await text(`#sync-status-${proj.id}`));
-await page.shot(EV + 's4e-synced.png');
+await shotSync('s4e-synced');
 
 const remoteProjects = (await api(`acct:${id}`, 'GET', 'projects')).body.items;
 const rproj = remoteProjects.find((p) => p.name === proj.name);
@@ -124,7 +125,7 @@ await edit('local', charter.l.id, A, labelOf(charter.ld, A) + ' [edited on this 
 await edit(`acct:${id}`, charter.r.id, B, labelOf(charter.rd, B) + ' [edited on the server]');
 await page.click(`#sync-check-${proj.id}`); await sleep(2500);
 say('plan with a change on each side:', await page.eval("[...document.querySelectorAll('[data-action]')].filter((r) => !/In sync/.test(r.innerText)).map((r) => r.innerText.replace(/\\s+/g, ' ')).join(' || ')"));
-await page.shot(EV + 's4f-plan-both.png');
+await shotSync('s4f-plan-both');
 await page.click(`#sync-now-${proj.id}`);
 await waitText(`#sync-status-${proj.id}`, 'sent to|received', 120000);
 say('sync says:', await text(`#sync-status-${proj.id}`));
@@ -142,19 +143,19 @@ const lw = (await read('local', after.l.id)).latest_seq;
 const rw = (await read(`acct:${id}`, after.r.id)).latest_seq;
 await page.click(`#sync-check-${proj.id}`); await sleep(3000);
 say('plan:', await page.eval("[...document.querySelectorAll('[data-action]')].filter((r) => !/In sync/.test(r.innerText)).map((r) => r.innerText.replace(/\\s+/g, ' ')).join(' || ')"));
-await page.shot(EV + 's4g-conflict.png');
+await shotSync('s4g-conflict');
 await page.click(`#sync-now-${proj.id}`);
 await sleep(6000);
 say('a sync with the conflict unresolved writes nothing:', (await read('local', after.l.id)).latest_seq === lw && (await read(`acct:${id}`, after.r.id)).latest_seq === rw);
 await page.eval("document.querySelector('.conflict input[type=radio]').click()"); await sleep(400);
 say('chose "This computer":', await page.eval("document.querySelector('.conflict label.is-on')?.innerText.replace(/\\s+/g, ' ')"));
-await page.shot(EV + 's4h-conflict-chosen.png');
+await shotSync('s4h-conflict-chosen');
 await page.click(`#sync-now-${proj.id}`);
 await waitText(`#sync-status-${proj.id}`, 'sent to', 120000);
 const resolved = await pair('Project Charter');
 say('after the choice, both sides read:', JSON.stringify(labelOf(resolved.ld, A)), '/', JSON.stringify(labelOf(resolved.rd, A)));
 say('  each side verifies:', (await api('local', 'GET', `documents/${resolved.l.id}/verify`)).body.ok, (await api(`acct:${id}`, 'GET', `documents/${resolved.r.id}/verify`)).body.ok);
-await page.shot(EV + 's4i-resolved.png');
+await shotSync('s4i-resolved');
 
 // ---- sign out and in again, and the session across a restart -------------------------------------------------------------------
 say('## 4e. sign out, sign in again, restart');
